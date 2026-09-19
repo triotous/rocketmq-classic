@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1000" viewBox="0 0 1500 1000">
+ <defs><style>.title{font:700 30px Arial;fill:#172033}.h{font:600 17px Arial;fill:#172033}.t{font:14px Arial;fill:#344054}.b{fill:#f8fafc;stroke:#475467;stroke-width:2;rx:10}.d{fill:#fff7ed;stroke:#c77700;stroke-width:2}.a{stroke:#667085;stroke-width:3;fill:none;marker-end:url(#m)}</style><marker id="m" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0 0L0 6L9 3z" fill="#667085"/></marker></defs>
+ <text x="45" y="55" class="title">Consumer Rebalance Flow</text>
+ <rect x="85" y="105" width="300" height="85" class="b"/><text x="110" y="140" class="h">trigger rebalance</text><text x="110" y="167" class="t">timer / broker notification / startup</text>
+ <rect x="470" y="105" width="300" height="85" class="b"/><text x="495" y="140" class="h">for each subscribed topic</text><text x="495" y="167" class="t">read topicSubscribeInfoTable</text>
+ <rect x="855" y="105" width="300" height="85" class="b"/><text x="880" y="140" class="h">get consumerIdList</text><text x="880" y="167" class="t">GET_CONSUMER_LIST_BY_GROUP</text>
+ <path d="M385 147H470" class="a"/><path d="M770 147H855" class="a"/>
+ <polygon points="1285,110 1385,160 1285,210 1185,160" class="d"/><text x="1220" y="154" class="h">model?</text><text x="1210" y="178" class="t">cluster/broadcast</text>
+ <path d="M1155 147H1185" class="a"/>
+ <rect x="1110" y="300" width="350" height="100" class="b"/><text x="1135" y="338" class="h">BROADCASTING</text><text x="1135" y="366" class="t">assign all queues to this consumer</text>
+ <rect x="720" y="300" width="330" height="120" class="b"/><text x="745" y="338" class="h">CLUSTERING</text><text x="745" y="366" class="t">sort mqAll + cidAll exactly</text><text x="745" y="392" class="t">run allocation strategy</text>
+ <path d="M1285 210V300" class="a"/><path d="M1185 160C1100 220 975 250 930 300" class="a"/>
+ <rect x="385" y="305" width="260" height="110" class="b"/><text x="410" y="343" class="h">target assignment</text><text x="410" y="371" class="t">Set&lt;MessageQueue&gt;</text><text x="410" y="397" class="t">must match Java result</text>
+ <path d="M720 360H645" class="a"/><path d="M1110 350C900 480 700 430 645 385" class="a"/>
+ <rect x="85" y="535" width="350" height="135" class="b"/><text x="110" y="573" class="h">remove queues no longer assigned</text><text x="110" y="601" class="t">mark ProcessQueue dropped</text><text x="110" y="627" class="t">persist offset / unlock if orderly</text><text x="110" y="653" class="t">remove state only when safe</text>
+ <rect x="575" y="535" width="350" height="135" class="b"/><text x="600" y="573" class="h">keep unchanged queues</text><text x="600" y="601" class="t">preserve ProcessQueue identity</text><text x="600" y="627" class="t">do not reset offset</text>
+ <rect x="1065" y="535" width="350" height="135" class="b"/><text x="1090" y="573" class="h">add newly assigned queues</text><text x="1090" y="601" class="t">removeDirtyOffset → computeFromWhere</text><text x="1090" y="627" class="t">lock first if orderly</text><text x="1090" y="653" class="t">create PullRequest</text>
+ <path d="M515 415C390 465 260 480 260 535" class="a"/><path d="M515 415C600 465 750 480 750 535" class="a"/><path d="M515 415C740 455 1240 455 1240 535" class="a"/>
+ <rect x="490" y="770" width="520" height="105" class="b"/><text x="515" y="808" class="h">dispatch pull requests + messageQueueChanged callback</text><text x="515" y="836" class="t">new assignment becomes active; wake pull loop</text>
+ <path d="M260 670C350 735 480 735 580 770" class="a"/><path d="M750 670V770" class="a"/><path d="M1240 670C1150 735 1030 735 920 770" class="a"/>
+ <text x="85" y="940" class="t">Compatibility risk: sorting order, allocation strategy edge cases, dropped queue timing, orderly lock state and offset persistence must all be tested differentially against Java 5.5.1.</text>
+</svg>

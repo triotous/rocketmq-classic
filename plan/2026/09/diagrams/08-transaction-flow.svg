@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="850" viewBox="0 0 1500 850">
+ <defs><style>.title{font:700 30px Arial;fill:#172033}.h{font:600 18px Arial;fill:#172033}.t{font:14px Arial;fill:#344054}.b{fill:#f8fafc;stroke:#475467;stroke-width:2;rx:10}.a{stroke:#667085;stroke-width:3;fill:none;marker-end:url(#m)}.line{stroke:#98a2b3;stroke-width:2;stroke-dasharray:8 8}</style><marker id="m" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0 0L0 6L9 3z" fill="#667085"/></marker></defs>
+ <text x="45" y="55" class="title">Transactional Message Flow</text>
+ <text x="120" y="110" class="h">Application</text><text x="500" y="110" class="h">Rust Transaction Producer</text><text x="1080" y="110" class="h">Broker</text>
+ <path d="M180 130V780M620 130V780M1180 130V780" class="line"/>
+ <rect x="60" y="170" width="240" height="75" class="b"/><text x="85" y="205" class="t">send_message_in_transaction</text><text x="85" y="228" class="t">+ local transaction callback</text>
+ <path d="M300 205H500" class="a"/>
+ <rect x="500" y="280" width="240" height="80" class="b"/><text x="525" y="315" class="t">send prepared/half message</text><text x="525" y="340" class="t">transaction sysFlag</text>
+ <path d="M740 320H1080" class="a"/>
+ <rect x="1060" y="390" width="240" height="75" class="b"/><text x="1085" y="425" class="t">store half message</text><text x="1085" y="448" class="t">return SendResult</text>
+ <path d="M1080 425H740" class="a"/>
+ <rect x="480" y="490" width="280" height="90" class="b"/><text x="505" y="525" class="t">execute local transaction</text><text x="505" y="550" class="t">COMMIT / ROLLBACK / UNKNOWN</text>
+ <path d="M620 360V490" class="a"/>
+ <rect x="820" y="505" width="260" height="75" class="b"/><text x="845" y="540" class="t">END_TRANSACTION</text><text x="845" y="563" class="t">oneway broker command</text>
+ <path d="M760 540H820" class="a"/><path d="M1080 542H1180" class="a"/>
+ <rect x="1020" y="650" width="320" height="85" class="b"/><text x="1045" y="685" class="t">if UNKNOWN / timeout:</text><text x="1045" y="710" class="t">CHECK_TRANSACTION_STATE callback</text>
+ <path d="M1020 692H760" class="a"/>
+ <rect x="480" y="650" width="280" height="85" class="b"/><text x="505" y="685" class="t">transaction check listener</text><text x="505" y="710" class="t">return final local state</text>
+ <text x="60" y="815" class="t">The client must preserve real topic/queue semantics, transaction identifiers, check callback behavior and END_TRANSACTION fields exactly enough for Broker 5.5.1 interoperability.</text>
+</svg>

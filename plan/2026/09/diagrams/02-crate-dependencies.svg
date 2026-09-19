@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="760" viewBox="0 0 1400 760">
+  <defs><style>.title{font:700 30px Arial;fill:#172033}.h{font:600 17px Arial;fill:#172033}.t{font:15px Arial;fill:#344054}.b{fill:#f8fafc;stroke:#475467;stroke-width:2;rx:12}.core{fill:#eef4ff;stroke:#5b7cfa;stroke-width:2;rx:12}.a{stroke:#667085;stroke-width:3;fill:none;marker-end:url(#m)}</style><marker id="m" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0 0L0 6L9 3z" fill="#667085"/></marker></defs>
+  <text x="50" y="55" class="title">Recommended Rust Workspace / Crate Dependencies</text>
+  <rect x="500" y="90" width="400" height="90" class="core"/><text x="535" y="128" class="h">rocketmq-classic</text><text x="535" y="156" class="t">public facade / re-exports</text>
+  <rect x="110" y="245" width="330" height="100" class="b"/><text x="140" y="285" class="h">rocketmq-classic-producer</text><text x="140" y="315" class="t">send / batch / transaction / request</text>
+  <rect x="535" y="245" width="330" height="100" class="b"/><text x="565" y="285" class="h">rocketmq-classic-consumer</text><text x="565" y="315" class="t">pull / push / rebalance / offset</text>
+  <rect x="960" y="245" width="330" height="100" class="b"/><text x="990" y="285" class="h">rocketmq-classic-admin</text><text x="990" y="315" class="t">optional admin/query subset</text>
+  <rect x="140" y="420" width="310" height="100" class="core"/><text x="170" y="460" class="h">rocketmq-classic-core</text><text x="170" y="490" class="t">runtime, route, heartbeat, RPC facade</text>
+  <rect x="545" y="420" width="310" height="100" class="core"/><text x="575" y="460" class="h">rocketmq-classic-remoting</text><text x="575" y="490" class="t">TCP/TLS, pending table, codec, hooks</text>
+  <rect x="950" y="420" width="310" height="100" class="core"/><text x="980" y="460" class="h">rocketmq-classic-protocol</text><text x="980" y="490" class="t">codes, headers, bodies, route</text>
+  <rect x="540" y="595" width="360" height="100" class="core"/><text x="570" y="635" class="h">rocketmq-classic-common</text><text x="570" y="665" class="t">message model, flags, compression, utilities</text>
+  <path d="M610 180 L330 245" class="a"/><path d="M700 180 L700 245" class="a"/><path d="M790 180 L1070 245" class="a"/>
+  <path d="M275 345 L275 420" class="a"/><path d="M700 345 C610 390 420 405 350 420" class="a"/><path d="M1120 345 C930 385 520 390 390 420" class="a"/>
+  <path d="M450 470 L545 470" class="a"/><path d="M855 470 L950 470" class="a"/><path d="M700 520 C700 565 690 575 680 595" class="a"/><path d="M1105 520 C1050 570 870 585 820 610" class="a"/>
+</svg>

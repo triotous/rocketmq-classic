@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900">
+  <defs>
+    <style>
+      .title{font:700 30px Arial,sans-serif;fill:#172033}.sub{font:600 20px Arial,sans-serif;fill:#172033}.txt{font:16px Arial,sans-serif;fill:#172033}.small{font:14px Arial,sans-serif;fill:#344054}.box{fill:#f8fafc;stroke:#344054;stroke-width:2;rx:12}.group{fill:#eef4ff;stroke:#5b7cfa;stroke-width:2;rx:18}.server{fill:#f0fdf4;stroke:#3f8f63;stroke-width:2;rx:12}.arrow{stroke:#475467;stroke-width:3;fill:none;marker-end:url(#a)}
+    </style>
+    <marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#475467"/></marker>
+  </defs>
+  <text x="50" y="55" class="title">RocketMQ 5.5.1 Remoting-compatible Rust Client — Overall Architecture</text>
+
+  <rect x="60" y="105" width="530" height="690" class="group"/>
+  <text x="85" y="145" class="sub">Application-facing rocketmq-classic crates</text>
+  <rect x="100" y="180" width="450" height="105" class="box"/>
+  <text x="125" y="218" class="sub">rocketmq-classic</text>
+  <text x="125" y="250" class="txt">Public API, builders, lifecycle, error model</text>
+
+  <rect x="100" y="325" width="210" height="125" class="box"/>
+  <text x="122" y="365" class="sub">producer</text>
+  <text x="122" y="397" class="txt">send / batch</text>
+  <text x="122" y="422" class="txt">transaction / request</text>
+
+  <rect x="340" y="325" width="210" height="125" class="box"/>
+  <text x="362" y="365" class="sub">consumer</text>
+  <text x="362" y="397" class="txt">pull / push / lite</text>
+  <text x="362" y="422" class="txt">offset / rebalance</text>
+
+  <rect x="100" y="495" width="450" height="115" class="box"/>
+  <text x="125" y="535" class="sub">client-runtime</text>
+  <text x="125" y="567" class="txt">MQClientInstance semantics, route cache, heartbeat,</text>
+  <text x="125" y="593" class="txt">registries, scheduled tasks, callbacks</text>
+
+  <rect x="100" y="650" width="450" height="105" class="box"/>
+  <text x="125" y="690" class="sub">common / protocol model</text>
+  <text x="125" y="722" class="txt">Message, MessageQueue, route, heartbeat, headers</text>
+
+  <rect x="665" y="105" width="350" height="690" class="group"/>
+  <text x="690" y="145" class="sub">Transport compatibility layer</text>
+  <rect x="705" y="190" width="270" height="115" class="box"/>
+  <text x="730" y="230" class="sub">MQClientApi</text>
+  <text x="730" y="262" class="txt">RequestCode ↔ typed RPC</text>
+
+  <rect x="705" y="355" width="270" height="140" class="box"/>
+  <text x="730" y="395" class="sub">RemotingClient</text>
+  <text x="730" y="427" class="txt">connection pool</text>
+  <text x="730" y="452" class="txt">opaque / pending table</text>
+  <text x="730" y="477" class="txt">timeout / oneway / callback</text>
+
+  <rect x="705" y="545" width="270" height="150" class="box"/>
+  <text x="730" y="585" class="sub">Codec</text>
+  <text x="730" y="617" class="txt">JSON + ROCKETMQ header</text>
+  <text x="730" y="642" class="txt">frame / extFields / body</text>
+  <text x="730" y="667" class="txt">LanguageCode::RUST</text>
+
+  <rect x="1085" y="165" width="250" height="180" class="server"/>
+  <text x="1110" y="210" class="sub">NameServer</text>
+  <text x="1110" y="245" class="txt">route lookup</text>
+  <text x="1110" y="272" class="txt">topic metadata</text>
+
+  <rect x="1085" y="455" width="250" height="210" class="server"/>
+  <text x="1110" y="500" class="sub">Broker(s)</text>
+  <text x="1110" y="535" class="txt">send / pull / pop</text>
+  <text x="1110" y="562" class="txt">offset / heartbeat</text>
+  <text x="1110" y="589" class="txt">lock / transaction</text>
+  <text x="1110" y="616" class="txt">request-reply</text>
+
+  <path d="M550 550 C620 550 640 260 705 250" class="arrow"/>
+  <path d="M550 390 C625 390 645 420 705 425" class="arrow"/>
+  <path d="M840 495 L840 545" class="arrow"/>
+  <path d="M975 610 C1030 610 1040 560 1085 560" class="arrow"/>
+  <path d="M975 250 C1030 250 1040 250 1085 250" class="arrow"/>
+  <path d="M1210 345 L1210 455" class="arrow"/>
+
+  <text x="60" y="840" class="small">Compatibility boundary: Rust internals may be idiomatic, but wire protocol, request/response semantics, route/heartbeat behavior,</text>
+  <text x="60" y="865" class="small">and externally observable client behavior are tested against Java rocketmq-client 5.5.1.</text>
+</svg>

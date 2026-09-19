@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="920" viewBox="0 0 1500 920">
+ <defs><style>.title{font:700 30px Arial;fill:#172033}.h{font:600 18px Arial;fill:#172033}.t{font:15px Arial;fill:#344054}.b{fill:#f8fafc;stroke:#475467;stroke-width:2;rx:10}.a{stroke:#667085;stroke-width:3;fill:none;marker-end:url(#m)}.line{stroke:#98a2b3;stroke-width:2;stroke-dasharray:8 8}</style><marker id="m" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0 0L0 6L9 3z" fill="#667085"/></marker></defs>
+ <text x="45" y="55" class="title">Remoting Request / Response Lifecycle</text>
+ <text x="130" y="105" class="h">Caller</text><text x="430" y="105" class="h">RemotingClient</text><text x="760" y="105" class="h">Connection Task</text><text x="1120" y="105" class="h">NameServer / Broker</text>
+ <path d="M170 125V850M500 125V850M830 125V850M1200 125V850" class="line"/>
+ <rect x="70" y="160" width="200" height="70" class="b"/><text x="95" y="190" class="t">invoke(request, timeout)</text><text x="95" y="215" class="t">await Future</text>
+ <path d="M270 195H430" class="a"/>
+ <rect x="385" y="260" width="230" height="100" class="b"/><text x="410" y="292" class="t">assign opaque</text><text x="410" y="318" class="t">oneshot channel</text><text x="410" y="344" class="t">pending.insert(opaque)</text>
+ <path d="M615 310H760" class="a"/>
+ <rect x="720" y="395" width="220" height="105" class="b"/><text x="745" y="428" class="t">encode frame</text><text x="745" y="454" class="t">write_all</text><text x="745" y="480" class="t">flush</text>
+ <path d="M940 445H1120" class="a"/>
+ <rect x="1090" y="535" width="220" height="80" class="b"/><text x="1118" y="570" class="t">process RPC</text><text x="1118" y="596" class="t">echo opaque</text>
+ <path d="M1120 650H940" class="a"/>
+ <rect x="720" y="685" width="220" height="110" class="b"/><text x="745" y="718" class="t">decode response</text><text x="745" y="744" class="t">pending.remove(opaque)</text><text x="745" y="770" class="t">complete exactly once</text>
+ <path d="M720 740H615" class="a"/>
+ <rect x="385" y="705" width="230" height="120" class="b"/><text x="410" y="738" class="t">success / broker error</text><text x="410" y="764" class="t">or timeout task wins</text><text x="410" y="790" class="t">atomic ownership of entry</text>
+ <path d="M385 765H270" class="a"/>
+ <text x="70" y="885" class="t">Critical invariant: exactly one path owns/removes a pending request. This prevents response-vs-timeout races and duplicate callback completion.</text>
+</svg>

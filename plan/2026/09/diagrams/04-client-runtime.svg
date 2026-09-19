@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1450" height="900" viewBox="0 0 1450 900">
+ <defs><style>.title{font:700 30px Arial;fill:#172033}.h{font:600 18px Arial;fill:#172033}.t{font:15px Arial;fill:#344054}.b{fill:#f8fafc;stroke:#475467;stroke-width:2;rx:11}.g{fill:#eef4ff;stroke:#5b7cfa;stroke-width:2;rx:15}.a{stroke:#667085;stroke-width:3;fill:none;marker-end:url(#m)}</style><marker id="m" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0 0L0 6L9 3z" fill="#667085"/></marker></defs>
+ <text x="50" y="55" class="title">Client Runtime Lifecycle (MQClientInstance semantics)</text>
+ <rect x="70" y="105" width="1310" height="690" class="g"/>
+ <rect x="120" y="165" width="260" height="100" class="b"/><text x="145" y="202" class="h">ClientRuntimeManager</text><text x="145" y="230" class="t">keyed by client_id</text><text x="145" y="252" class="t">single construction per key</text>
+ <rect x="465" y="145" width="300" height="140" class="b"/><text x="490" y="185" class="h">ClientRuntime</text><text x="490" y="215" class="t">producer / consumer registries</text><text x="490" y="242" class="t">route + broker address cache</text><text x="490" y="269" class="t">remoting + admin facade</text>
+ <rect x="850" y="150" width="430" height="125" class="b"/><text x="875" y="187" class="h">Background tasks</text><text x="875" y="216" class="t">route refresh · heartbeat · offset persist</text><text x="875" y="243" class="t">rebalance wakeups · timeout scanning / timers</text>
+ <path d="M380 215H465" class="a"/><path d="M765 215H850" class="a"/>
+ <rect x="140" y="365" width="300" height="140" class="b"/><text x="165" y="405" class="h">Start sequence</text><text x="165" y="435" class="t">1. start remoting</text><text x="165" y="461" class="t">2. fetch route / register</text><text x="165" y="487" class="t">3. start services/tasks</text>
+ <rect x="575" y="365" width="300" height="140" class="b"/><text x="600" y="405" class="h">Running</text><text x="600" y="435" class="t">shared per process/client_id</text><text x="600" y="461" class="t">producer + consumer attach</text><text x="600" y="487" class="t">callbacks from broker processed</text>
+ <rect x="1010" y="365" width="300" height="140" class="b"/><text x="1035" y="405" class="h">Shutdown</text><text x="1035" y="435" class="t">unregister client</text><text x="1035" y="461" class="t">cancel tasks / close channels</text><text x="1035" y="487" class="t">drain / release all executors</text>
+ <path d="M440 435H575" class="a"/><path d="M875 435H1010" class="a"/>
+ <rect x="405" y="600" width="640" height="115" class="b"/><text x="435" y="637" class="h">5.5.1 regression requirement</text><text x="435" y="668" class="t">Concurrent first access for the same client_id must not create leaking losing runtimes.</text><text x="435" y="695" class="t">Construction/start failures must roll back timers, tasks, connections and registry entries.</text>
+ <path d="M615 285V365" class="a"/>
+</svg>

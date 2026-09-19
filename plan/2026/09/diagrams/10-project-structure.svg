@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="980" viewBox="0 0 1500 980">
+ <defs><style>.title{font:700 30px Arial;fill:#172033}.h{font:600 17px Arial;fill:#172033}.t{font:14px Arial;fill:#344054}.b{fill:#f8fafc;stroke:#475467;stroke-width:2;rx:10}.core{fill:#eef4ff;stroke:#5b7cfa;stroke-width:2;rx:10}.a{stroke:#667085;stroke-width:2.5;fill:none}</style></defs>
+ <text x="45" y="55" class="title">Repository / Project Structure</text>
+ <rect x="65" y="100" width="280" height="80" class="core"/><text x="90" y="135" class="h">rocketmq-classic-rs/</text><text x="90" y="160" class="t">Cargo workspace root</text>
+ <path d="M205 180V855" class="a"/>
+ <rect x="420" y="105" width="390" height="90" class="b"/><text x="445" y="140" class="h">crates/rocketmq-classic-common</text><text x="445" y="167" class="t">messages, flags, compression, util</text><path d="M205 150H420" class="a"/>
+ <rect x="420" y="220" width="390" height="90" class="b"/><text x="445" y="255" class="h">crates/rocketmq-classic-protocol</text><text x="445" y="282" class="t">codes, headers, bodies, route</text><path d="M205 265H420" class="a"/>
+ <rect x="420" y="335" width="390" height="90" class="b"/><text x="445" y="370" class="h">crates/rocketmq-classic-remoting</text><text x="445" y="397" class="t">codec, TCP/TLS, RPC tracking</text><path d="M205 380H420" class="a"/>
+ <rect x="420" y="450" width="390" height="90" class="b"/><text x="445" y="485" class="h">crates/rocketmq-classic-core</text><text x="445" y="512" class="t">runtime, route, heartbeat</text><path d="M205 495H420" class="a"/>
+ <rect x="420" y="565" width="390" height="90" class="b"/><text x="445" y="600" class="h">crates/rocketmq-classic-producer</text><text x="445" y="627" class="t">public producer implementation</text><path d="M205 610H420" class="a"/>
+ <rect x="420" y="680" width="390" height="90" class="b"/><text x="445" y="715" class="h">crates/rocketmq-classic-consumer</text><text x="445" y="742" class="t">pull/push/rebalance/offset</text><path d="M205 725H420" class="a"/>
+ <rect x="420" y="795" width="390" height="90" class="b"/><text x="445" y="830" class="h">crates/rocketmq-classic</text><text x="445" y="857" class="t">public facade + re-exports</text><path d="M205 840H420" class="a"/>
+
+ <rect x="895" y="150" width="360" height="95" class="b"/><text x="920" y="185" class="h">compat/java-reference/</text><text x="920" y="212" class="t">Maven harness pinned to 5.5.1</text>
+ <rect x="895" y="290" width="360" height="95" class="b"/><text x="920" y="325" class="h">fixtures/</text><text x="920" y="352" class="t">golden frames + expected objects</text>
+ <rect x="895" y="430" width="360" height="95" class="b"/><text x="920" y="465" class="h">integration-tests/</text><text x="920" y="492" class="t">broker cluster scenarios</text>
+ <rect x="895" y="570" width="360" height="95" class="b"/><text x="920" y="605" class="h">tests/differential/</text><text x="920" y="632" class="t">Java vs Rust behavior runner</text>
+ <rect x="895" y="710" width="360" height="95" class="b"/><text x="920" y="745" class="h">docs/compatibility/</text><text x="920" y="772" class="t">matrix, gaps, source mapping</text>
+ <path d="M345 140C760 90 780 197 895 197" class="a"/><path d="M345 140C760 150 780 337 895 337" class="a"/><path d="M345 140C760 210 780 477 895 477" class="a"/><path d="M345 140C760 270 780 617 895 617" class="a"/><path d="M345 140C760 330 780 757 895 757" class="a"/>
+</svg>

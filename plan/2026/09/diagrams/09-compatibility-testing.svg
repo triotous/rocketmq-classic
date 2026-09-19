@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="920" viewBox="0 0 1500 920">
+ <defs><style>.title{font:700 30px Arial;fill:#172033}.h{font:600 18px Arial;fill:#172033}.t{font:14px Arial;fill:#344054}.b{fill:#f8fafc;stroke:#475467;stroke-width:2;rx:10}.g{fill:#eef4ff;stroke:#5b7cfa;stroke-width:2;rx:12}.a{stroke:#667085;stroke-width:3;fill:none;marker-end:url(#m)}</style><marker id="m" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0 0L0 6L9 3z" fill="#667085"/></marker></defs>
+ <text x="45" y="55" class="title">Compatibility Test Strategy</text>
+ <rect x="60" y="105" width="1380" height="710" class="g"/>
+ <rect x="105" y="160" width="330" height="105" class="b"/><text x="130" y="198" class="h">Java 5.5.1 reference harness</text><text x="130" y="226" class="t">fixed config + deterministic inputs</text><text x="130" y="250" class="t">captures observable outputs</text>
+ <rect x="1065" y="160" width="330" height="105" class="b"/><text x="1090" y="198" class="h">Rust candidate harness</text><text x="1090" y="226" class="t">same config + same inputs</text><text x="1090" y="250" class="t">same scenario IDs</text>
+ <rect x="585" y="145" width="330" height="130" class="b"/><text x="610" y="183" class="h">RocketMQ 5.5.1 cluster</text><text x="610" y="211" class="t">NameServer + Broker(s)</text><text x="610" y="237" class="t">TLS/ACL variants where needed</text>
+ <path d="M435 212H585" class="a"/><path d="M1065 212H915" class="a"/>
+ <rect x="115" y="390" width="340" height="140" class="b"/><text x="140" y="428" class="h">Golden protocol tests</text><text x="140" y="456" class="t">Java frame → Rust decode</text><text x="140" y="482" class="t">Rust encode → semantic equality</text><text x="140" y="508" class="t">JSON + ROCKETMQ codecs</text>
+ <rect x="580" y="390" width="340" height="140" class="b"/><text x="605" y="428" class="h">Behavior differential tests</text><text x="605" y="456" class="t">route / retry / offset / rebalance</text><text x="605" y="482" class="t">status + error + timing boundaries</text><text x="605" y="508" class="t">5.5.1 regressions</text>
+ <rect x="1045" y="390" width="340" height="140" class="b"/><text x="1070" y="428" class="h">Cross-language E2E</text><text x="1070" y="456" class="t">Java producer → Rust consumer</text><text x="1070" y="482" class="t">Rust producer → Java consumer</text><text x="1070" y="508" class="t">transaction / request-reply</text>
+ <rect x="365" y="650" width="770" height="100" class="b"/><text x="390" y="688" class="h">Compatibility gate</text><text x="390" y="716" class="t">A feature is “done” only when unit tests + golden protocol tests + broker integration tests + Java differential scenario all pass.</text>
+ <path d="M285 530C320 600 480 620 560 650" class="a"/><path d="M750 530V650" class="a"/><path d="M1215 530C1180 600 1030 620 940 650" class="a"/>
+</svg>

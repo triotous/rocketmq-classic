@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="960" viewBox="0 0 1500 960">
+ <defs><style>.title{font:700 30px Arial;fill:#172033}.h{font:600 17px Arial;fill:#172033}.t{font:14px Arial;fill:#344054}.b{fill:#f8fafc;stroke:#475467;stroke-width:2;rx:10}.d{fill:#fff7ed;stroke:#c77700;stroke-width:2}.a{stroke:#667085;stroke-width:3;fill:none;marker-end:url(#m)}</style><marker id="m" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0 0L0 6L9 3z" fill="#667085"/></marker></defs>
+ <text x="45" y="55" class="title">Producer Send Flow</text>
+ <rect x="70" y="110" width="260" height="80" class="b"/><text x="95" y="145" class="h">validate message/config</text><text x="95" y="171" class="t">topic · body · size · properties</text>
+ <rect x="415" y="110" width="260" height="80" class="b"/><text x="440" y="145" class="h">get TopicPublishInfo</text><text x="440" y="171" class="t">local cache, refresh if needed</text>
+ <rect x="760" y="110" width="260" height="80" class="b"/><text x="785" y="145" class="h">select MessageQueue</text><text x="785" y="171" class="t">selector / fault strategy / retry</text>
+ <rect x="1105" y="110" width="260" height="80" class="b"/><text x="1130" y="145" class="h">resolve broker addr</text><text x="1130" y="171" class="t">master/VIP rules</text>
+ <path d="M330 150H415" class="a"/><path d="M675 150H760" class="a"/><path d="M1020 150H1105" class="a"/>
+ <rect x="1105" y="280" width="260" height="100" class="b"/><text x="1130" y="315" class="h">prepare body/header</text><text x="1130" y="342" class="t">uniq id · flags · sysFlag</text><text x="1130" y="365" class="t">compression · batch · transaction</text>
+ <path d="M1235 190V280" class="a"/>
+ <rect x="760" y="280" width="260" height="100" class="b"/><text x="785" y="315" class="h">sendMessage RPC</text><text x="785" y="342" class="t">SEND_MESSAGE / V2 / BATCH</text><text x="785" y="365" class="t">remaining timeout budget</text>
+ <path d="M1105 330H1020" class="a"/>
+ <rect x="415" y="280" width="260" height="100" class="b"/><text x="440" y="315" class="h">decode response</text><text x="440" y="342" class="t">SendStatus + msgId + offset</text><text x="440" y="365" class="t">update fault item</text>
+ <path d="M760 330H675" class="a"/>
+ <polygon points="215,465 330,535 215,605 100,535" class="d"/><text x="142" y="527" class="h">success?</text><text x="135" y="552" class="t">or non-retry status</text>
+ <path d="M415 330C310 330 215 390 215 465" class="a"/>
+ <rect x="415" y="495" width="310" height="90" class="b"/><text x="440" y="532" class="h">retry next queue/broker</text><text x="440" y="558" class="t">respect retry count + total timeout</text>
+ <path d="M330 535H415" class="a"/>
+ <path d="M570 495C570 430 830 430 875 380" class="a"/>
+ <rect x="70" y="700" width="330" height="100" class="b"/><text x="95" y="737" class="h">return SendResult</text><text x="95" y="765" class="t">SYNC / awaited async future</text>
+ <rect x="515" y="700" width="330" height="100" class="b"/><text x="540" y="737" class="h">oneway</text><text x="540" y="765" class="t">write only; no response tracking</text>
+ <rect x="960" y="700" width="420" height="120" class="b"/><text x="985" y="737" class="h">Hooks / metrics / trace</text><text x="985" y="765" class="t">before/after hooks must observe the same logical result</text><text x="985" y="790" class="t">as Java client behavior</text>
+ <path d="M215 605V700" class="a"/>
+</svg>

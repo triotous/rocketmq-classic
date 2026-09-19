@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="980" viewBox="0 0 1500 980">
+ <defs><style>.title{font:700 30px Arial;fill:#172033}.h{font:600 18px Arial;fill:#172033}.t{font:14px Arial;fill:#344054}.b{fill:#f8fafc;stroke:#475467;stroke-width:2;rx:10}.g{fill:#eef4ff;stroke:#5b7cfa;stroke-width:2;rx:12}.a{stroke:#667085;stroke-width:3;fill:none;marker-end:url(#m)}</style><marker id="m" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0 0L0 6L9 3z" fill="#667085"/></marker></defs>
+ <text x="45" y="55" class="title">Classic Push Consumer Pipeline (client-side pull + callback)</text>
+ <rect x="60" y="105" width="1380" height="760" class="g"/>
+ <rect x="110" y="155" width="270" height="100" class="b"/><text x="135" y="193" class="h">RebalanceService</text><text x="135" y="221" class="t">assign queues → PullRequest</text>
+ <rect x="460" y="155" width="270" height="100" class="b"/><text x="485" y="193" class="h">PullMessageService</text><text x="485" y="221" class="t">schedule / delay / dispatch</text>
+ <rect x="810" y="155" width="270" height="100" class="b"/><text x="835" y="193" class="h">PullAPIWrapper</text><text x="835" y="221" class="t">build PULL_MESSAGE request</text>
+ <rect x="1160" y="155" width="220" height="100" class="b"/><text x="1185" y="193" class="h">Broker</text><text x="1185" y="221" class="t">pull response</text>
+ <path d="M380 205H460" class="a"/><path d="M730 205H810" class="a"/><path d="M1080 205H1160" class="a"/>
+ <rect x="810" y="355" width="270" height="120" class="b"/><text x="835" y="393" class="h">PullResult processing</text><text x="835" y="421" class="t">FOUND / NO_NEW / OFFSET_ILLEGAL</text><text x="835" y="447" class="t">decode/decompress/filter</text>
+ <path d="M1270 255C1270 320 1080 320 945 355" class="a"/>
+ <rect x="460" y="355" width="270" height="120" class="b"/><text x="485" y="393" class="h">ProcessQueue</text><text x="485" y="421" class="t">ordered offset map</text><text x="485" y="447" class="t">cached count/size, dropped, lock</text>
+ <path d="M810 415H730" class="a"/>
+ <rect x="110" y="355" width="270" height="120" class="b"/><text x="135" y="393" class="h">ConsumeMessageService</text><text x="135" y="421" class="t">concurrent or orderly</text><text x="135" y="447" class="t">batching + retry semantics</text>
+ <path d="M460 415H380" class="a"/>
+ <rect x="110" y="595" width="270" height="110" class="b"/><text x="135" y="633" class="h">User listener</text><text x="135" y="661" class="t">success / suspend / retry</text>
+ <path d="M245 475V595" class="a"/>
+ <rect x="460" y="595" width="270" height="110" class="b"/><text x="485" y="633" class="h">OffsetStore</text><text x="485" y="661" class="t">memory + broker/local persistence</text>
+ <path d="M380 650H460" class="a"/>
+ <rect x="810" y="595" width="270" height="110" class="b"/><text x="835" y="633" class="h">next PullRequest</text><text x="835" y="661" class="t">nextBeginOffset + delay</text>
+ <path d="M730 650H810" class="a"/><path d="M945 595C945 540 595 540 595 475" class="a"/>
+ <rect x="1160" y="595" width="220" height="110" class="b"/><text x="1185" y="633" class="h">Retry / DLQ</text><text x="1185" y="661" class="t">sendMessageBack semantics</text>
+ <path d="M380 675C650 800 1050 800 1160 650" class="a"/>
+ <text x="90" y="920" class="t">“Push” consumer is implemented as a client-managed pull loop. Rebalance owns queue assignment; ProcessQueue is the local buffer/state boundary.</text>
+</svg>
