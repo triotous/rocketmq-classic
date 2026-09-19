@@ -1,0 +1,94 @@
+# Plan: Phase 5 — MQClientApi typed RPC facade
+
+> 主計畫：[`00-rocketmq-classic-plan.md`](00-rocketmq-classic-plan.md)，Phase 5；執行索引：[`README.zh-tw.md`](README.zh-tw.md)。
+> 英文為主版本：[`06-phase-05-typed-rpc-api.md`](06-phase-05-typed-rpc-api.md)。此文件是實作計畫，不是已完成／已驗證的報告。
+
+## 1. 目標與範圍
+
+在 Remoting 上建立 single-attempt domain RPC，使本機 integration/differential test 可獨立於 Producer 或 Consumer runtime 執行。
+
+## 2. 前置條件與現況分析
+
+Phase 3–4 的 typed header 與 transport 已驗收。message binary decoder 到 Phase 8 才建立：PullResultExt 先回 raw pull bytes，不在此重寫 decoder。
+
+- 先完成: [Phase 4](05-phase-04-typed-headers-bodies.zh-tw.md).
+
+### 2.1 必讀 Java 參考
+
+- 實作前，依索引的 pinned source 規則確認以下 class/method 與實際 call site；此計畫未獨立驗證 Java artifact。
+- `MQClientAPIImpl`
+- `MQBrokerException`
+- `MQClientException`
+- `PullResultExt`
+- `SendResult`
+
+## 3. 目標檔案與實作契約
+
+以下皆為相對 repository root 的預定新增／修改路徑；目前並不存在 Rust/Java 實作。依前面 phase 已建立的檔案進行最小修改，不重新建立平行版本。
+
+```text
+crates/rocketmq-classic-core/Cargo.toml
+crates/rocketmq-classic-core/src/api/mod.rs
+crates/rocketmq-classic-core/src/api/route.rs
+crates/rocketmq-classic-core/src/api/producer.rs
+crates/rocketmq-classic-core/src/api/consumer.rs
+crates/rocketmq-classic-core/src/api/transaction.rs
+crates/rocketmq-classic-core/src/error.rs
+crates/rocketmq-classic-core/tests/rpc.rs
+integration-tests/Cargo.toml
+integration-tests/tests/broker.rs
+tests/differential/run.sh
+```
+
+MQClientApi 擁有或借用 RemotingClient，不依賴 process singleton。Broker method 接受明確 address、typed input 與 absolute deadline，不含 producer retry loop。NameServer selection/failover 依 Java route 路徑，且使用同一原始 deadline。各 method 先分類 response code，再解碼 success-only field。structured error 保留 raw response code、remark、request code 與 peer；不得記錄 credential 或 message body。
+
+## 4. 依序實作步驟
+
+### 4.1 P5-01 — 建立 core 與明確 error conversion
+
+新增向下依賴 remoting/protocol/common 的 core crate。區分 malformed protocol、connect、closed、timeout、Broker/NameServer response、invalid config 與 unsupported feature。保留 error source 與 raw unknown code。以 scripted loopback peer 測試各 mapping，不為 mock 新增只有單一實作的 transport interface。
+
+### 4.2 P5-02 — 實作 route lookup
+
+以 typed header 建立 GET_ROUTEINFO_BY_TOPIC，解碼 TopicRouteData。涵蓋 existing/missing topic、首個 NameServer 失效、empty server list 與 malformed response。不得靜默製造 writable route。Producer route creation fallback 是 Phase 7 policy，不可偽裝成 route RPC 成功。
+
+### 4.3 P5-03 — 實作 producer 單次呼叫
+
+新增 send V1/V2、batch 與 end-transaction method。依 Java 映射 SEND_OK 及 storage/slave status，保留全部 SendResult identifier 與 region/trace field。實作 sync/future/oneway transport 選擇，不挑 queue 或重試 message。end transaction 的 invocation mode 由 Java call site 確認。
+
+### 4.4 P5-04 / P5-07 — 實作 consumer method 與逐 RPC status map
+
+新增 pull、query/update offset、consumer list、send-back 與 lock/unlock。pull 回傳 status、next/min/max、suggested broker 與 raw binary body；non-found status 不可當作 generic error。offset-not-found 與 transport failure 分開。遵守 Java oneway offset/unlock mode 及逐操作 success response shape。
+
+### 4.5 P5-05 / P5-06 — 新增 lifecycle 與 extension RPC
+
+實作 heartbeat/unregister，以及 source 確認有使用時的 heartbeat V2 negotiation。以 Phase 4 model 加入 Lite/assignment/request-mode/POP/ACK/change-invisibility lower-level call；尚未 decode 的 message 回 raw bytes。即使 public exposure 未決，各 family 仍需盤點；不能把 Broker 不支援 response 當成相容證據。
+
+### 4.6 P5-08 — 讓 RPC 證據可執行
+
+新增不發布的 workspace test package rocketmq-classic-integration。Broker test 在一般 cargo test 中明確 ignored，必須提供 RMQ_NAMESRV_ADDR；以 --ignored 執行卻缺設定時明確失敗，不可靜默略過。建立 tests/differential/run.sh 的 --phase N：隔離 setup、Java result、Rust result、comparator，缺 scenario 時回 nonzero。記錄 required profile 與 seed data。pure test 仍不需要 Docker。
+
+## 5. 驗證
+
+先寫對應失敗測試／Oracle fixture，再依序實作；以下 case 必須成為可執行檢查，而非人工勾選。共通命令、證據規則與 integration 前置設定見執行索引。
+
+- [ ] **P5-V01** — 每個 method 皆測 scripted success、預期 domain outcome、unknown error code 及 malformed success response。
+- [ ] **P5-V02** — 每個 supported method 都在 pinned 本機 Broker/NameServer 執行，具備 Java success/error differential 證據。
+- [ ] **P5-V03** — 單次 Broker method 只送一個 attempt；NameServer failover 與 oneway 遵守文件中的 deadline/pending 規則。
+
+### 5.1 實作完成後的本機命令
+
+下列命令由本 phase 或前面的 phase 建立對應 entry point 後執行；此次文件拆分未執行或宣稱測試通過。
+
+```bash
+cargo test -p rocketmq-classic-core --test rpc --locked
+RMQ_NAMESRV_ADDR=127.0.0.1:9876 cargo test -p rocketmq-classic-integration --test broker --locked -- --ignored
+bash tests/differential/run.sh --phase 5
+```
+
+## 6. 驗收與交接
+
+core API 可在沒有 public Producer/Consumer class 時執行。Phase 6 接收 route/heartbeat/unregister primitive；Phase 8 將 message decode 接到既有 raw pull result。
+
+- 交接需附變更檔案、case ID、實際命令／結果、fixture provenance，以及 matrix 狀態與未完成項目；共通規則見索引。
+- 下一階段: [Phase 6](07-phase-06-runtime-routing-heartbeat.zh-tw.md).

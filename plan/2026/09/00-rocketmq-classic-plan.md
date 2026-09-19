@@ -14,6 +14,8 @@
 
 ## 1. How to use this document
 
+Detailed, sequential implementation plans for Phase 0–18 are available in the [English phase index](README.md) and [Traditional Chinese phase index](README.zh-tw.md). Each phase has a paired English/Traditional Chinese plan with prerequisites, ordered tasks, verification and handoff criteria; read the index's dependency clarifications before starting.
+
 Each phase contains:
 
 - **Goal** — what must work when the phase finishes.

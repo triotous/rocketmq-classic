@@ -1,0 +1,89 @@
+# Plan: Phase 6 — Client runtime、routing 與 heartbeat
+
+> 主計畫：[`00-rocketmq-classic-plan.md`](00-rocketmq-classic-plan.md)，Phase 6；執行索引：[`README.zh-tw.md`](README.zh-tw.md)。
+> 英文為主版本：[`07-phase-06-runtime-routing-heartbeat.md`](07-phase-06-runtime-routing-heartbeat.md)。此文件是實作計畫，不是已完成／已驗證的報告。
+
+## 1. 目標與範圍
+
+依 client identity 管理與共享 runtime resource，提供一致 routing 與 heartbeat snapshot，並證明完整 startup rollback/shutdown。
+
+## 2. 前置條件與現況分析
+
+Phase 5 RPC 已驗收。consumer pull/rebalance 尚未實作；runtime 只提供必要 registration 與 wakeup contract，不在此建立 Consumer scheduler。
+
+- 先完成: [Phase 5](06-phase-05-typed-rpc-api.zh-tw.md).
+
+### 2.1 必讀 Java 參考
+
+- 實作前，依索引的 pinned source 規則確認以下 class/method 與實際 call site；此計畫未獨立驗證 Java artifact。
+- `MQClientManager`
+- `MQClientInstance`
+- `ClientConfig`
+- `TopicPublishInfo`
+- `ClientRemotingProcessor`
+- `RebalanceService`
+- `PullMessageService`
+
+## 3. 目標檔案與實作契約
+
+以下皆為相對 repository root 的預定新增／修改路徑；目前並不存在 Rust/Java 實作。依前面 phase 已建立的檔案進行最小修改，不重新建立平行版本。
+
+```text
+crates/rocketmq-classic-core/src/config.rs
+crates/rocketmq-classic-core/src/runtime/manager.rs
+crates/rocketmq-classic-core/src/runtime/runtime.rs
+crates/rocketmq-classic-core/src/runtime/tasks.rs
+crates/rocketmq-classic-core/src/route/cache.rs
+crates/rocketmq-classic-core/src/heartbeat.rs
+crates/rocketmq-classic-core/tests/runtime.rs
+docs/architecture/ADR-0002-client-runtime-sharing.md
+```
+
+ClientRuntimeManager 是明確可共享 handle，不是不可重設的 global singleton。後續 facade 共享 default manager，測試可指定 manager。client-ID entry 管理 single initialization；比對 TLS/auth/NameServer 等 runtime-affecting 設定，遇衝突拒絕，不靜默共享不相容 transport。建立 Created→Starting→Running→ShuttingDown→Stopped 與 startup failure。group registration 依 identity 管理，不依 Arc strong count。
+
+## 4. 依序實作步驟
+
+### 4.1 P6-01 / P6-02 — 建立 identity 與 single-flight creation
+
+以 fixture 測試 ClientConfig ID，包含 instance/unit 組成及 blank local serve address 視為 unset。先以 per-key OnceCell 或 entry 取得 ownership，再建立 socket/task。不同 key 可並行初始化。初始化失敗只移除自己的 entry，依文件允許 retry。在 ADR-0002 明確記錄 runtime ownership。
+
+### 4.2 P6-03 / P6-04 — 實作 lifecycle 與 group lease
+
+start/shutdown transition 序列化，文件指定處需冪等。producer/consumer registration 回傳 identity token 用於 rollback/unregister；依 Java 拒絕重複 group。一個 producer shutdown 不可停止其他 registration 仍使用的 runtime。避免 registry 與 runtime handle 形成 strong-reference cycle。
+
+### 4.3 P6-05 / P6-08 — 發布一致 route snapshot
+
+fetch 時不持有 cache lock，先完整轉換 route，再替換 topic/broker/publish/subscribe 一致 snapshot。重用 Phase 1 conversion，包含 static/ordered route。master/slave publish/subscribe resolution 與 VIP port transformation 使用純函式，含 port 檢查與 IPv6。除非 Java 要求，暫時 refresh failure 不應丟棄有效 cached route。
+
+### 4.4 P6-06 / P6-07 — 管理 periodic task 與 heartbeat snapshot
+
+集中預設值：route poll 30000 ms、heartbeat 30000 ms、offset persistence 5000 ms；由 Java 確認 initial delay 與 missed-tick 行為。各 task 皆有 cancellation 與 join owner。offset tick 只呼叫已註冊且存在的 consumer persistence capability。於鎖外以 snapshot 建構 heartbeat；測 subscription version、V1/V2 設定、unregister 及 producer-only/consumer-only 組合。
+
+### 4.5 P6-09 / P6-10 — 註冊 inbound slot 並處理 failure rollback
+
+依 group/client identity 路由 inbound check-transaction、consumer-change、reset-offset、consumer-status、direct-consume 與 reply-push。負責 phase 啟用 handler 前回明確 protocol error，不能假裝成功。在 registration、transport start 及各 task start 後注入 failure，反向撤回已取得資源並 join。最後一個 registration shutdown 應在有界 deadline 內，先向 Broker unregister 再關 transport。
+
+## 5. 驗證
+
+先寫對應失敗測試／Oracle fixture，再依序實作；以下 case 必須成為可執行檢查，而非人工勾選。共通命令、證據規則與 integration 前置設定見執行索引。
+
+- [ ] **P6-V01** — 同 ID 大量並行 get_or_create 只產生一個 identity/task set/socket pool；不同 ID 不被全域序列化。
+- [ ] **P6-V02** — stale failed creation 與 unregister token 不得移除 replacement；不相容共享設定被拒絕。
+- [ ] **P6-V03** — paused-time timer、route snapshot reader 及全部 startup-failure point 不留下 partial state 或 task leak。
+- [ ] **P6-V04** — 本機 Broker 可見正確 heartbeat/subscription change 與 unregister；一個共享使用者 shutdown 後另一個仍可使用。
+
+### 5.1 實作完成後的本機命令
+
+下列命令由本 phase 或前面的 phase 建立對應 entry point 後執行；此次文件拆分未執行或宣稱測試通過。
+
+```bash
+cargo test -p rocketmq-classic-core --test runtime --locked
+bash tests/differential/run.sh --phase 6
+```
+
+## 6. 驗收與交接
+
+Phase 7 接收 lifecycle registration、route resolution 與 shared transport ownership。stub handler 不可標為 COMPATIBLE，matrix 必須註明啟用 phase。
+
+- 交接需附變更檔案、case ID、實際命令／結果、fixture provenance，以及 matrix 狀態與未完成項目；共通規則見索引。
+- 下一階段: [Phase 7](08-phase-07-producer-core.zh-tw.md).
