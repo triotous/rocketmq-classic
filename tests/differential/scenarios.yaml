@@ -1,0 +1,23 @@
+{
+  "java_client_version": "5.5.1",
+  "server_version": "5.3.4",
+  "scenarios": [
+    {"id":"ROUTE-001-get-existing-topic","phase":0,"execution_phase":19,"profile":"basic","inputs":{"topic":"compat_phase0_route"},"normalization":["opaque","timestamps"],"live_status":"PENDING_PHASE_19"},
+    {"id":"ROUTE-002-topic-not-exist","phase":0,"execution_phase":19,"profile":"basic","inputs":{"topic":"compat_phase0_missing"},"normalization":["opaque","timestamps"],"live_status":"PENDING_PHASE_19"},
+    {"id":"HEARTBEAT-001","phase":0,"execution_phase":19,"profile":"basic","inputs":{"producer_group":"compat_phase0"},"normalization":["opaque","timestamps"],"live_status":"PENDING_PHASE_19"},
+    {"id":"PROD-001-sync-send","phase":0,"execution_phase":19,"profile":"basic","inputs":{"topic":"compat_phase0_send","body":"fixed"},"normalization":["opaque","message_id"],"live_status":"PENDING_PHASE_19"},
+    {"id":"PROD-002-async-send","phase":0,"execution_phase":19,"profile":"basic","inputs":{"topic":"compat_phase0_send","body":"fixed"},"normalization":["opaque","message_id"],"live_status":"PENDING_PHASE_19"},
+    {"id":"PROD-003-oneway-send","phase":0,"execution_phase":19,"profile":"basic","inputs":{"topic":"compat_phase0_send","body":"fixed"},"normalization":["opaque","message_id"],"live_status":"PENDING_PHASE_19"},
+    {"id":"PROD-004-batch-send","phase":0,"execution_phase":19,"profile":"basic","inputs":{"topic":"compat_phase0_batch","messages":2},"normalization":["opaque","message_id"],"live_status":"PENDING_PHASE_19"},
+    {"id":"PROD-005-send-timeout","phase":0,"execution_phase":19,"profile":"two-broker","inputs":{"topic":"compat_phase0_timeout","timeout_ms":100},"normalization":["opaque"],"live_status":"PENDING_PHASE_19"},
+    {"id":"CONS-001-query-offset","phase":0,"execution_phase":19,"profile":"basic","inputs":{"group":"compat_phase0"},"normalization":["opaque"],"live_status":"PENDING_PHASE_19"},
+    {"id":"CONS-002-pull-found","phase":0,"execution_phase":19,"profile":"basic","inputs":{"topic":"compat_phase0_pull"},"normalization":["opaque","message_id","timestamps"],"live_status":"PENDING_PHASE_19"},
+    {"id":"CONS-003-pull-no-new-msg","phase":0,"execution_phase":19,"profile":"basic","inputs":{"topic":"compat_phase0_pull"},"normalization":["opaque"],"live_status":"PENDING_PHASE_19"},
+    {"id":"CONS-004-update-offset","phase":0,"execution_phase":19,"profile":"basic","inputs":{"group":"compat_phase0","offset":0},"normalization":["opaque"],"live_status":"PENDING_PHASE_19"},
+    {"id":"REBAL-001-average-10q-3c","phase":0,"execution_phase":19,"profile":"two-broker","inputs":{"queues":10,"consumers":3},"normalization":[],"live_status":"PENDING_PHASE_19"},
+    {"id":"ORDER-001-lock-unlock","phase":0,"execution_phase":19,"profile":"two-broker","inputs":{"group":"compat_phase0_order"},"normalization":["opaque"],"live_status":"PENDING_PHASE_19"},
+    {"id":"TX-001-commit","phase":0,"execution_phase":19,"profile":"basic","inputs":{"topic":"compat_phase0_tx"},"normalization":["opaque","message_id"],"live_status":"PENDING_PHASE_19"},
+    {"id":"TX-002-rollback","phase":0,"execution_phase":19,"profile":"basic","inputs":{"topic":"compat_phase0_tx"},"normalization":["opaque","message_id"],"live_status":"PENDING_PHASE_19"},
+    {"id":"REQ-001-request-reply-success","phase":0,"execution_phase":19,"profile":"basic","inputs":{"topic":"compat_phase0_request"},"normalization":["opaque","message_id","timestamps"],"live_status":"PENDING_PHASE_19"}
+  ]
+}
