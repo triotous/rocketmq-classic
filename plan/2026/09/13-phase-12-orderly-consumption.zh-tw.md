@@ -3,6 +3,12 @@
 > 主計畫：[`00-rocketmq-classic-plan.md`](00-rocketmq-classic-plan.md)，Phase 12；執行索引：[`README.zh-tw.md`](README.zh-tw.md)。
 > 英文為主版本：[`13-phase-12-orderly-consumption.md`](13-phase-12-orderly-consumption.md)。此文件是實作計畫，不是已完成／已驗證的報告。
 
+## 執行契約
+
+- **完整移植 Java client 5.5.1 的設定、功能與控制流程**，包含預設值、驗證、callback、error、retry 與 lifecycle。Java source/method/configuration 與 Rust、unit-test ID 必須雙向對照；不可新增 Rust 專有公開設定／功能，也不可缺少 Java client 能力。Rust 命名／ownership 可不同，可觀察語意不可不同。測試接點保持 private。
+- **只實作 client**。Java client 5.5.1 維持 Oracle；**RocketMQ server V5_3_4（5.3.4）**是 production／本機 Docker 基準，不是 client source 基準。server 限制不能作為刪除 client 功能的理由；兩種 client 對同一 server 比較，無法執行的成功路徑仍保留 source／fixture 證據。
+- **Phase 0–18 以 unit test 為主要測試方式**，輔以 Java golden／離線 differential，以及 transport 必要的小型 scripted loopback test。live Broker 或 Docker 都不是階段前置條件。Broker、TLS/auth cluster、跨語言、端對端與 server stress 執行集中至 [Phase 19](20-phase-19-docker-local-validation.zh-tw.md)；非本地檢查於該階段列為 owner 手動驗證。階段驗收不等於最終相容性／發布驗收。
+
 ## 1. 目標與範圍
 
 加入 per-queue 有序 listener、Broker lock renewal/expiry，以及 rebalance-safe offset commit。不宣稱跨 queue 全域排序或 exactly-once side effect。
@@ -56,11 +62,12 @@ gain 時先 lock，才啟用正常 pull/consume。loss 時先 dropped、停止 q
 
 ## 5. 驗證
 
-先寫對應失敗測試／Oracle fixture，再依序實作；以下 case 必須成為可執行檢查，而非人工勾選。共通命令、證據規則與 integration 前置設定見執行索引。
+先寫對應失敗測試／Oracle fixture，再依序實作；以下 case 必須成為可執行檢查，而非人工勾選。以下檢查不依賴 Docker 或 live Broker，使用 Java fixture、可控時鐘及 scripted peer；共通命令與證據規則見執行索引。
 
 - [ ] **P12-V01** — table test 涵蓋 partial lock success、renewal response race、exact expiry 與全部 supported listener/context result。
 - [ ] **P12-V02** — 不同 queue 可獨立前進，各 queue 在 suspend、rollback、retry 與 lock loss 中維持順序。
-- [ ] **P12-V03** — 本機 mixed Java/Rust orderly consumer 競爭、slow callback rebalance 與 shutdown 不產生 stale commit；Broker lock state 在 cleanup/expiry 後收斂。
+
+- [ ] **P12-U01** — scripted lock result、paused time 與 slow-callback barrier 驗證競爭、renewal/expiry、rebalance 及 shutdown 不產生 stale commit。
 
 ### 5.1 實作完成後的本機命令
 
@@ -69,8 +76,13 @@ gain 時先 lock，才啟用正常 pull/consume。loss 時先 dropped、停止 q
 ```bash
 cargo test -p rocketmq-classic-consumer --test orderly --locked
 cargo build -p rocketmq-classic --examples --locked
-bash tests/differential/run.sh --phase 12
 ```
+
+### 5.2 Phase 19 live 測試交接
+
+保留以下 case ID 及行為要求，於 Phase 19 使用 5.3.4 Docker server 執行；不是本 phase 的通過條件，不可提前標 PASS。
+
+- [ ] **P12-V03** — 本機 mixed Java/Rust orderly consumer 競爭、slow callback rebalance 與 shutdown 不產生 stale commit；Broker lock state 在 cleanup/expiry 後收斂。
 
 ## 6. 驗收與交接
 

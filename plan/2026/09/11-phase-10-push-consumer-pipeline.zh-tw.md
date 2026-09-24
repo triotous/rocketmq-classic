@@ -3,6 +3,12 @@
 > 主計畫：[`00-rocketmq-classic-plan.md`](00-rocketmq-classic-plan.md)，Phase 10；執行索引：[`README.zh-tw.md`](README.zh-tw.md)。
 > 英文為主版本：[`11-phase-10-push-consumer-pipeline.md`](11-phase-10-push-consumer-pipeline.md)。此文件是實作計畫，不是已完成／已驗證的報告。
 
+## 執行契約
+
+- **完整移植 Java client 5.5.1 的設定、功能與控制流程**，包含預設值、驗證、callback、error、retry 與 lifecycle。Java source/method/configuration 與 Rust、unit-test ID 必須雙向對照；不可新增 Rust 專有公開設定／功能，也不可缺少 Java client 能力。Rust 命名／ownership 可不同，可觀察語意不可不同。測試接點保持 private。
+- **只實作 client**。Java client 5.5.1 維持 Oracle；**RocketMQ server V5_3_4（5.3.4）**是 production／本機 Docker 基準，不是 client source 基準。server 限制不能作為刪除 client 功能的理由；兩種 client 對同一 server 比較，無法執行的成功路徑仍保留 source／fixture 證據。
+- **Phase 0–18 以 unit test 為主要測試方式**，輔以 Java golden／離線 differential，以及 transport 必要的小型 scripted loopback test。live Broker 或 Docker 都不是階段前置條件。Broker、TLS/auth cluster、跨語言、端對端與 server stress 執行集中至 [Phase 19](20-phase-19-docker-local-validation.zh-tw.md)；非本地檢查於該階段列為 owner 手動驗證。階段驗收不等於最終相容性／發布驗收。
+
 ## 1. 目標與範圍
 
 實作有界 pull scheduling、ProcessQueue 與 concurrent listener/retry 語意。multi-client assignment 刻意由緊接的 Phase 11 完成。
@@ -65,12 +71,13 @@ FOUND 更新 next pull offset、插入 message，提交有界 consume work。NO_
 
 ## 5. 驗證
 
-先寫對應失敗測試／Oracle fixture，再依序實作；以下 case 必須成為可執行檢查，而非人工勾選。共通命令、證據規則與 integration 前置設定見執行索引。
+先寫對應失敗測試／Oracle fixture，再依序實作；以下 case 必須成為可執行檢查，而非人工勾選。以下檢查不依賴 Docker 或 live Broker，使用 Java fixture、可控時鐘及 scripted peer；共通命令與證據規則見執行索引。
 
 - [ ] **P10-V01** — ProcessQueue duplicate/gap/out-of-order completion 證明 counter 正確，且不 commit 越過 unresolved offset。
 - [ ] **P10-V02** — paused-time scheduler 證明 task 有界、threshold 正確、拒絕 dropped generation，send-back 失敗仍保留 retry。
-- [ ] **P10-V03** — test-only fixed assignment 消費 Java 產生的 message，並以本機 Broker 測 listener success/partial/failure、retry count 與 configured DLQ transition。
 - [ ] **P10-V04** — 每個 startup step 的 failure injection 及 slow callback shutdown，不丟失 unacknowledged work，也無 owned-task leak。
+
+- [ ] **P10-U01** — private fixed-assignment test 注入 Java message fixture 與 scripted send-back response，驗證 listener success/partial/failure、retry 及 DLQ decision。
 
 ### 5.1 實作完成後的本機命令
 
@@ -78,8 +85,13 @@ FOUND 更新 next pull offset、插入 message，提交有界 consume work。NO_
 
 ```bash
 cargo test -p rocketmq-classic-consumer --test push_pipeline --locked
-bash tests/differential/run.sh --phase 10
 ```
+
+### 5.2 Phase 19 live 測試交接
+
+保留以下 case ID 及行為要求，於 Phase 19 使用 5.3.4 Docker server 執行；不是本 phase 的通過條件，不可提前標 PASS。
+
+- [ ] **P10-V03** — test-only fixed assignment 消費 Java 產生的 message，並以本機 Broker 測 listener success/partial/failure、retry count 與 configured DLQ transition。
 
 ## 6. 驗收與交接
 

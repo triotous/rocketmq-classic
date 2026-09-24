@@ -3,13 +3,19 @@
 > Parent: [`00-rocketmq-classic-plan.md`](00-rocketmq-classic-plan.md), Phase 14; execution index: [`README.md`](README.md).
 > Translation: [`15-phase-14-transaction-producer.zh-tw.md`](15-phase-14-transaction-producer.zh-tw.md). This is an implementation plan, not a report of completed or verified implementation.
 
+## Execution contract
+
+- Port **all Java client 5.5.1 settings, features and control flows**, including defaults, validation, callbacks, errors, retries and lifecycle. Map Java source/method/configuration to Rust and unit-test IDs in both directions; no extra public Rust setting/feature and no missing Java client capability. Rust naming/ownership may differ, not observable semantics. Internal test seams stay private.
+- Implement the **client only**. Java client 5.5.1 remains the oracle; **RocketMQ server V5_3_4 (5.3.4)** is the production/local Docker baseline, not the client source baseline. A server limitation does not authorize deleting a client feature; compare both clients against the same server and retain source/fixture coverage for unavailable success paths.
+- **Phase 0–18 primarily use unit tests**, supplemented by Java golden/offline differential tests and small scripted loopback tests where transport requires them. No live Broker or Docker is a phase prerequisite. Broker, TLS/auth cluster, cross-language, end-to-end and server stress execution belongs to [Phase 19](20-phase-19-docker-local-validation.md); non-local checks become owner-executed manual items there. Phase acceptance is not final compatibility/release acceptance.
+
 ## 1. Goal and scope
 
 Implement half-message, local decision and Broker transaction-check flows using the existing Producer and inbound transport. A successful half send does not itself imply committed visibility.
 
 ## 2. Prerequisites and current-state analysis
 
-Phases 7–8 producer/decoder and Phase 6 processor registry are accepted; Phase 13 scope gate is closed. Reuse Phase 4/5 end/check transaction headers and RPCs.
+Phases 7–8 producer/decoder and Phase 6 processor registry are accepted; Phase 13 complete source-mapping audit is closed. Reuse Phase 4/5 end/check transaction headers and RPCs.
 
 - Read/complete first: [Phase 13](14-phase-13-lite-assignment-pop.md).
 
@@ -57,11 +63,12 @@ Decode inbound header/message with existing bounded codecs, locate the correct p
 
 ## 5. Verification
 
-Write the failing check/oracle fixture before its implementation. The cases below must become runnable checks, not manual checklist-only claims. Shared commands, evidence rules and integration prerequisites are in the execution index.
+Write the failing check/oracle fixture before its implementation. The cases below must become runnable checks, not manual checklist-only claims. Run these checks without Docker or a live Broker; use Java fixtures, controlled clocks and scripted peers. Shared commands and evidence rules are in the execution index.
 
 - [ ] **P14-V01** — Fixtures verify half properties/flags and all end/check fields for commit, rollback, unknown and non-OK send statuses.
 - [ ] **P14-V02** — Error/panic/cancellation, repeated checks, slow callbacks and shutdown races never produce accidental commit or reader blockage.
-- [ ] **P14-V03** — Local Broker commit becomes consumable, rollback remains invisible and Unknown resolves through an actual Broker check; compare Java behavior with a bounded configured check interval.
+
+- [ ] **P14-U01** — Scripted half-send/check inputs verify commit/rollback/unknown decisions and exact end-transaction fields; no fixture claims actual Broker visibility.
 
 ### 5.1 Local commands after implementation
 
@@ -69,12 +76,17 @@ Run after this phase or earlier phases create the named entry points. This docum
 
 ```bash
 cargo test -p rocketmq-classic-producer --test transaction --locked
-bash tests/differential/run.sh --phase 14
 ```
+
+### 5.2 Phase 19 live-test handoff
+
+Retain these case IDs and behavior requirements for Phase 19 execution against Docker server 5.3.4; they are not this phase's pass conditions and must not be marked PASS early.
+
+- [ ] **P14-V03** — Local Broker commit becomes consumable, rollback remains invisible and Unknown resolves through an actual Broker check; compare Java behavior with a bounded configured check interval.
 
 ## 6. Acceptance and handoff
 
-Cross-language visibility and shutdown evidence are linked in the matrix. Do not equate successful END_TRANSACTION transport with proven transaction compatibility.
+Unit shutdown/visibility decisions and pending Phase 19 cross-language scenarios are linked in the matrix. Do not equate successful END_TRANSACTION transport with proven transaction compatibility.
 
 - Handoff includes changed paths, case IDs, actual commands/results, fixture provenance and matrix status/gaps; follow the shared rules in the index.
 - Next: [Phase 15](16-phase-15-request-reply.md).

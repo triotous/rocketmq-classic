@@ -3,13 +3,19 @@
 > Parent: [`00-rocketmq-classic-plan.md`](00-rocketmq-classic-plan.md), Phase 3; execution index: [`README.md`](README.md).
 > Translation: [`04-phase-03-remoting-transport.zh-tw.md`](04-phase-03-remoting-transport.zh-tw.md). This is an implementation plan, not a report of completed or verified implementation.
 
+## Execution contract
+
+- Port **all Java client 5.5.1 settings, features and control flows**, including defaults, validation, callbacks, errors, retries and lifecycle. Map Java source/method/configuration to Rust and unit-test IDs in both directions; no extra public Rust setting/feature and no missing Java client capability. Rust naming/ownership may differ, not observable semantics. Internal test seams stay private.
+- Implement the **client only**. Java client 5.5.1 remains the oracle; **RocketMQ server V5_3_4 (5.3.4)** is the production/local Docker baseline, not the client source baseline. A server limitation does not authorize deleting a client feature; compare both clients against the same server and retain source/fixture coverage for unavailable success paths.
+- **Phase 0–18 primarily use unit tests**, supplemented by Java golden/offline differential tests and small scripted loopback tests where transport requires them. No live Broker or Docker is a phase prerequisite. Broker, TLS/auth cluster, cross-language, end-to-end and server stress execution belongs to [Phase 19](20-phase-19-docker-local-validation.md); non-local checks become owner-executed manual items there. Phase acceptance is not final compatibility/release acceptance.
+
 ## 1. Goal and scope
 
 Provide deadline-bound invoke/oneway and inbound dispatch with exactly one terminal owner per request and explicit task shutdown.
 
 ## 2. Prerequisites and current-state analysis
 
-Phase 2 cross-codec checks pass. Use the Phase 0 local cluster and TLS CA, but use a loopback scripted peer for deterministic races and failures.
+Phase 2 cross-codec checks pass. Use scripted loopback peers and ephemeral test certificates for transport/TLS tests. Docker Broker/TLS profiles are created in Phase 19.
 
 - Read/complete first: [Phase 2](03-phase-02-remoting-codec.md).
 
@@ -63,16 +69,17 @@ Use tokio-rustls/rustls with normal trust-chain and hostname verification. Plain
 
 ### 4.6 P3-09 — Close and join all owned work
 
-Reject new work, cancel creation, close connections, drain pending requests, stop processors/timers and join tasks. Define repeated shutdown as safe and ensure a task never awaits its own join. Record ownership and the timeout-race hardening difference in ADR-0001 and KNOWN_DIFFERENCES.md without claiming bug-for-bug behavior.
+Reject new work, cancel creation, close connections, drain pending requests, stop processors/timers and join tasks. Define repeated shutdown as safe and ensure a task never awaits its own join. Record Java flow mappings and ownership in ADR-0001. Any observable discrepancy blocks parity and requires review, not an intentional-difference waiver.
 
 ## 5. Verification
 
-Write the failing check/oracle fixture before its implementation. The cases below must become runnable checks, not manual checklist-only claims. Shared commands, evidence rules and integration prerequisites are in the execution index.
+Write the failing check/oracle fixture before its implementation. The cases below must become runnable checks, not manual checklist-only claims. Run these checks without Docker or a live Broker; use Java fixtures, controlled clocks and scripted peers. Shared commands and evidence rules are in the execution index.
 
 - [ ] **P3-V01** — Barrier-controlled response/timeout/cancellation/shutdown races produce at most one completion and zero pending entries; repeat through opaque wrap.
 - [ ] **P3-V02** — Old-generation close cannot evict a replacement; concurrent creation shares one connection; saturated writes respect the deadline.
 - [ ] **P3-V03** — Loopback inbound requests, unsupported/oneway behavior and concurrent responses work without blocking the reader.
-- [ ] **P3-V04** — Local Broker raw route invoke works; local TLS trusted CA succeeds and wrong hostname/untrusted CA fails; shutdown leaves zero tasks/sockets.
+
+- [ ] **P3-U01** — Scripted TCP/TLS peers verify raw route framing, trusted/untrusted CA and hostname failures, deadlines and zero owned tasks after shutdown.
 
 ### 5.1 Local commands after implementation
 
@@ -82,6 +89,12 @@ Run after this phase or earlier phases create the named entry points. This docum
 cargo test -p rocketmq-classic-remoting --test transport --locked
 cargo test -p rocketmq-classic-remoting --locked
 ```
+
+### 5.2 Phase 19 live-test handoff
+
+Retain these case IDs and behavior requirements for Phase 19 execution against Docker server 5.3.4; they are not this phase's pass conditions and must not be marked PASS early.
+
+- [ ] **P3-V04** — Local Broker raw route invoke works; local TLS trusted CA succeeds and wrong hostname/untrusted CA fails; shutdown leaves zero tasks/sockets.
 
 ## 6. Acceptance and handoff
 

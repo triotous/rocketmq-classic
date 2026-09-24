@@ -3,6 +3,12 @@
 > Parent: [`00-rocketmq-classic-plan.md`](00-rocketmq-classic-plan.md), Phase 1; execution index: [`README.md`](README.md).
 > Translation: [`02-phase-01-common-protocol-models.zh-tw.md`](02-phase-01-common-protocol-models.zh-tw.md). This is an implementation plan, not a report of completed or verified implementation.
 
+## Execution contract
+
+- Port **all Java client 5.5.1 settings, features and control flows**, including defaults, validation, callbacks, errors, retries and lifecycle. Map Java source/method/configuration to Rust and unit-test IDs in both directions; no extra public Rust setting/feature and no missing Java client capability. Rust naming/ownership may differ, not observable semantics. Internal test seams stay private.
+- Implement the **client only**. Java client 5.5.1 remains the oracle; **RocketMQ server V5_3_4 (5.3.4)** is the production/local Docker baseline, not the client source baseline. A server limitation does not authorize deleting a client feature; compare both clients against the same server and retain source/fixture coverage for unavailable success paths.
+- **Phase 0–18 primarily use unit tests**, supplemented by Java golden/offline differential tests and small scripted loopback tests where transport requires them. No live Broker or Docker is a phase prerequisite. Broker, TLS/auth cluster, cross-language, end-to-end and server stress execution belongs to [Phase 19](20-phase-19-docker-local-validation.md); non-local checks become owner-executed manual items there. Phase acceptance is not final compatibility/release acceptance.
+
 ## 1. Goal and scope
 
 Create the minimum buildable Rust workspace and lossless message/protocol models. No network I/O, Producer retries or Consumer scheduling belongs here.
@@ -85,7 +91,7 @@ Port the full pinned RequestCode/ResponseCode inventory, not just the master-pla
 
 ## 5. Verification
 
-Write the failing check/oracle fixture before its implementation. The cases below must become runnable checks, not manual checklist-only claims. Shared commands, evidence rules and integration prerequisites are in the execution index.
+Write the failing check/oracle fixture before its implementation. The cases below must become runnable checks, not manual checklist-only claims. Run these checks without Docker or a live Broker; use Java fixtures, controlled clocks and scripted peers. Shared commands and evidence rules are in the execution index.
 
 - [ ] **P1-V01** — Raw codes, signed boundaries, LanguageCode and SerializeType mappings round-trip without field loss.
 - [ ] **P1-V02** — Property golden cases cover separators, Unicode, empty input, duplicates and unknown keys.

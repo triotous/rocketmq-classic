@@ -4,7 +4,7 @@
   <rect x="500" y="90" width="400" height="90" class="core"/><text x="535" y="128" class="h">rocketmq-classic</text><text x="535" y="156" class="t">public facade / re-exports</text>
   <rect x="110" y="245" width="330" height="100" class="b"/><text x="140" y="285" class="h">rocketmq-classic-producer</text><text x="140" y="315" class="t">send / batch / transaction / request</text>
   <rect x="535" y="245" width="330" height="100" class="b"/><text x="565" y="285" class="h">rocketmq-classic-consumer</text><text x="565" y="315" class="t">pull / push / rebalance / offset</text>
-  <rect x="960" y="245" width="330" height="100" class="b"/><text x="990" y="285" class="h">rocketmq-classic-admin</text><text x="990" y="315" class="t">optional admin/query subset</text>
+  <rect x="960" y="245" width="330" height="100" class="b"/><text x="990" y="285" class="h">rocketmq-classic-admin</text><text x="990" y="315" class="t">complete client admin/query API</text>
   <rect x="140" y="420" width="310" height="100" class="core"/><text x="170" y="460" class="h">rocketmq-classic-core</text><text x="170" y="490" class="t">runtime, route, heartbeat, RPC facade</text>
   <rect x="545" y="420" width="310" height="100" class="core"/><text x="575" y="460" class="h">rocketmq-classic-remoting</text><text x="575" y="490" class="t">TCP/TLS, pending table, codec, hooks</text>
   <rect x="950" y="420" width="310" height="100" class="core"/><text x="980" y="460" class="h">rocketmq-classic-protocol</text><text x="980" y="490" class="t">codes, headers, bodies, route</text>

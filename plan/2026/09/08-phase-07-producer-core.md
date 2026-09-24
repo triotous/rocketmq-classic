@@ -3,6 +3,12 @@
 > Parent: [`00-rocketmq-classic-plan.md`](00-rocketmq-classic-plan.md), Phase 7; execution index: [`README.md`](README.md).
 > Translation: [`08-phase-07-producer-core.zh-tw.md`](08-phase-07-producer-core.zh-tw.md). This is an implementation plan, not a report of completed or verified implementation.
 
+## Execution contract
+
+- Port **all Java client 5.5.1 settings, features and control flows**, including defaults, validation, callbacks, errors, retries and lifecycle. Map Java source/method/configuration to Rust and unit-test IDs in both directions; no extra public Rust setting/feature and no missing Java client capability. Rust naming/ownership may differ, not observable semantics. Internal test seams stay private.
+- Implement the **client only**. Java client 5.5.1 remains the oracle; **RocketMQ server V5_3_4 (5.3.4)** is the production/local Docker baseline, not the client source baseline. A server limitation does not authorize deleting a client feature; compare both clients against the same server and retain source/fixture coverage for unavailable success paths.
+- **Phase 0–18 primarily use unit tests**, supplemented by Java golden/offline differential tests and small scripted loopback tests where transport requires them. No live Broker or Docker is a phase prerequisite. Broker, TLS/auth cluster, cross-language, end-to-end and server stress execution belongs to [Phase 19](20-phase-19-docker-local-validation.md); non-local checks become owner-executed manual items there. Phase acceptance is not final compatibility/release acceptance.
+
 ## 1. Goal and scope
 
 Deliver sync/future/oneway/batch sends with Java-compatible validation, queue selection, compression and retry budgets. Transaction and request/reply remain later phases.
@@ -70,16 +76,15 @@ Capture the 5.5.1 batch-validation changes in negative Java fixtures: empty batc
 
 ### 4.6 P7-12 — Add latency fault behavior only after basic sends pass
 
-Port latency isolation tables, unavailable-broker fallback and optional detector behavior from the pinned source using an injectable clock in pure tests. Any detector task belongs to Producer shutdown. Extend the two-Broker profile for first-attempt failure and route changes; do not replace compatibility with a new circuit-breaker library.
+Port latency isolation tables, unavailable-broker fallback and optional detector behavior from the pinned source using an injectable clock in pure tests. Any detector task belongs to Producer shutdown. Register first-attempt failure and route-change cases for the Phase 19 two-Broker profile; do not replace compatibility with a new circuit-breaker library.
 
 ## 5. Verification
 
-Write the failing check/oracle fixture before its implementation. The cases below must become runnable checks, not manual checklist-only claims. Shared commands, evidence rules and integration prerequisites are in the execution index.
+Write the failing check/oracle fixture before its implementation. The cases below must become runnable checks, not manual checklist-only claims. Run these checks without Docker or a live Broker; use Java fixtures, controlled clocks and scripted peers. Shared commands and evidence rules are in the execution index.
 
 - [ ] **P7-V01** — Default values and validation boundaries match Java, including threshold−1/threshold/threshold+1 and max-size ±1.
-- [ ] **P7-V02** — Sync, async-mode, oneway, explicit queue, selector and valid/invalid batch scenarios pass Java differential comparison.
-- [ ] **P7-V03** — Two-Broker failure tests prove attempt counts, status classification, deadline exhaustion and unmodified original body/unique ID.
-- [ ] **P7-V04** — Sustained local sends and repeated start/shutdown leave zero pending requests, connections and producer-owned tasks.
+
+- [ ] **P7-U01** — Scripted two-address failures and Java decision fixtures verify retries, statuses, deadlines, body/ID preservation and repeated lifecycle cleanup.
 
 ### 5.1 Local commands after implementation
 
@@ -88,8 +93,15 @@ Run after this phase or earlier phases create the named entry points. This docum
 ```bash
 cargo test -p rocketmq-classic-producer --locked
 cargo build -p rocketmq-classic --examples --locked
-bash tests/differential/run.sh --phase 7
 ```
+
+### 5.2 Phase 19 live-test handoff
+
+Retain these case IDs and behavior requirements for Phase 19 execution against Docker server 5.3.4; they are not this phase's pass conditions and must not be marked PASS early.
+
+- [ ] **P7-V02** — Sync, async-mode, oneway, explicit queue, selector and valid/invalid batch scenarios pass Java differential comparison.
+- [ ] **P7-V03** — Two-Broker failure tests prove attempt counts, status classification, deadline exhaustion and unmodified original body/unique ID.
+- [ ] **P7-V04** — Sustained local sends and repeated start/shutdown leave zero pending requests, connections and producer-owned tasks.
 
 ## 6. Acceptance and handoff
 

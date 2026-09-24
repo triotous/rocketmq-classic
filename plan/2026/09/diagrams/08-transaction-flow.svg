@@ -16,5 +16,5 @@
  <rect x="1020" y="650" width="320" height="85" class="b"/><text x="1045" y="685" class="t">if UNKNOWN / timeout:</text><text x="1045" y="710" class="t">CHECK_TRANSACTION_STATE callback</text>
  <path d="M1020 692H760" class="a"/>
  <rect x="480" y="650" width="280" height="85" class="b"/><text x="505" y="685" class="t">transaction check listener</text><text x="505" y="710" class="t">return final local state</text>
- <text x="60" y="815" class="t">The client must preserve real topic/queue semantics, transaction identifiers, check callback behavior and END_TRANSACTION fields exactly enough for Broker 5.5.1 interoperability.</text>
+ <text x="60" y="815" class="t">The client must preserve real topic/queue semantics, transaction identifiers, check callback behavior and END_TRANSACTION fields exactly enough for Broker 5.3.4 interoperability.</text>
 </svg>

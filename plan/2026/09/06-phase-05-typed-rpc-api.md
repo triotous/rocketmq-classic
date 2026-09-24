@@ -3,9 +3,15 @@
 > Parent: [`00-rocketmq-classic-plan.md`](00-rocketmq-classic-plan.md), Phase 5; execution index: [`README.md`](README.md).
 > Translation: [`06-phase-05-typed-rpc-api.zh-tw.md`](06-phase-05-typed-rpc-api.zh-tw.md). This is an implementation plan, not a report of completed or verified implementation.
 
+## Execution contract
+
+- Port **all Java client 5.5.1 settings, features and control flows**, including defaults, validation, callbacks, errors, retries and lifecycle. Map Java source/method/configuration to Rust and unit-test IDs in both directions; no extra public Rust setting/feature and no missing Java client capability. Rust naming/ownership may differ, not observable semantics. Internal test seams stay private.
+- Implement the **client only**. Java client 5.5.1 remains the oracle; **RocketMQ server V5_3_4 (5.3.4)** is the production/local Docker baseline, not the client source baseline. A server limitation does not authorize deleting a client feature; compare both clients against the same server and retain source/fixture coverage for unavailable success paths.
+- **Phase 0–18 primarily use unit tests**, supplemented by Java golden/offline differential tests and small scripted loopback tests where transport requires them. No live Broker or Docker is a phase prerequisite. Broker, TLS/auth cluster, cross-language, end-to-end and server stress execution belongs to [Phase 19](20-phase-19-docker-local-validation.md); non-local checks become owner-executed manual items there. Phase acceptance is not final compatibility/release acceptance.
+
 ## 1. Goal and scope
 
-Implement one-attempt domain RPCs over Remoting, and make their local integration/differential tests runnable independently of a Producer or Consumer runtime.
+Implement one-attempt domain RPCs over Remoting and verify them with unit tests, Java fixtures and scripted peers independently of Producer/Consumer runtime or live servers.
 
 ## 2. Prerequisites and current-state analysis
 
@@ -35,8 +41,6 @@ crates/rocketmq-classic-core/src/api/consumer.rs
 crates/rocketmq-classic-core/src/api/transaction.rs
 crates/rocketmq-classic-core/src/error.rs
 crates/rocketmq-classic-core/tests/rpc.rs
-integration-tests/Cargo.toml
-integration-tests/tests/broker.rs
 tests/differential/run.sh
 ```
 
@@ -66,15 +70,16 @@ Implement heartbeat/unregister and source-confirmed heartbeat V2 negotiation whe
 
 ### 4.6 P5-08 — Make RPC evidence executable
 
-Create a non-published workspace test package named rocketmq-classic-integration. Its Broker tests are explicitly ignored in ordinary cargo test and require RMQ_NAMESRV_ADDR; running --ignored without configuration fails clearly rather than silently skipping. Build tests/differential/run.sh with --phase N: isolated setup, Java result, Rust result, comparator, nonzero on missing scenarios. Document required profiles and seed data. Pure tests still run without Docker.
+Build table-driven RPC request/status/error tests with scripted peers and Java fixtures. Register live case IDs, required profiles and comparison rules in tests/differential/scenarios.yaml with execution_phase=19. Phase 19 creates the integration package and live differential runner; ordinary cargo test must not depend on Docker.
 
 ## 5. Verification
 
-Write the failing check/oracle fixture before its implementation. The cases below must become runnable checks, not manual checklist-only claims. Shared commands, evidence rules and integration prerequisites are in the execution index.
+Write the failing check/oracle fixture before its implementation. The cases below must become runnable checks, not manual checklist-only claims. Run these checks without Docker or a live Broker; use Java fixtures, controlled clocks and scripted peers. Shared commands and evidence rules are in the execution index.
 
 - [ ] **P5-V01** — Every method has scripted success, expected domain outcome, unknown error code and malformed-success-response tests.
-- [ ] **P5-V02** — Each supported method runs against the pinned local Broker/NameServer, with Java success/error differential evidence.
 - [ ] **P5-V03** — One Broker method call emits one attempt; NameServer failover and oneway paths obey their documented deadline/pending rules.
+
+- [ ] **P5-U01** — Java-derived request/response fixtures cover each RPC success/error branch and exact invocation mode without a live server.
 
 ### 5.1 Local commands after implementation
 
@@ -82,9 +87,13 @@ Run after this phase or earlier phases create the named entry points. This docum
 
 ```bash
 cargo test -p rocketmq-classic-core --test rpc --locked
-RMQ_NAMESRV_ADDR=127.0.0.1:9876 cargo test -p rocketmq-classic-integration --test broker --locked -- --ignored
-bash tests/differential/run.sh --phase 5
 ```
+
+### 5.2 Phase 19 live-test handoff
+
+Retain these case IDs and behavior requirements for Phase 19 execution against Docker server 5.3.4; they are not this phase's pass conditions and must not be marked PASS early.
+
+- [ ] **P5-V02** — Each supported method runs against the pinned local Broker/NameServer, with Java success/error differential evidence.
 
 ## 6. Acceptance and handoff
 

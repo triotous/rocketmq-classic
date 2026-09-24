@@ -3,6 +3,12 @@
 > 主計畫：[`00-rocketmq-classic-plan.md`](00-rocketmq-classic-plan.md)，Phase 8；執行索引：[`README.zh-tw.md`](README.zh-tw.md)。
 > 英文為主版本：[`09-phase-08-message-decode-pull-results.md`](09-phase-08-message-decode-pull-results.md)。此文件是實作計畫，不是已完成／已驗證的報告。
 
+## 執行契約
+
+- **完整移植 Java client 5.5.1 的設定、功能與控制流程**，包含預設值、驗證、callback、error、retry 與 lifecycle。Java source/method/configuration 與 Rust、unit-test ID 必須雙向對照；不可新增 Rust 專有公開設定／功能，也不可缺少 Java client 能力。Rust 命名／ownership 可不同，可觀察語意不可不同。測試接點保持 private。
+- **只實作 client**。Java client 5.5.1 維持 Oracle；**RocketMQ server V5_3_4（5.3.4）**是 production／本機 Docker 基準，不是 client source 基準。server 限制不能作為刪除 client 功能的理由；兩種 client 對同一 server 比較，無法執行的成功路徑仍保留 source／fixture 證據。
+- **Phase 0–18 以 unit test 為主要測試方式**，輔以 Java golden／離線 differential，以及 transport 必要的小型 scripted loopback test。live Broker 或 Docker 都不是階段前置條件。Broker、TLS/auth cluster、跨語言、端對端與 server stress 執行集中至 [Phase 19](20-phase-19-docker-local-validation.zh-tw.md)；非本地檢查於該階段列為 owner 手動驗證。階段驗收不等於最終相容性／發布驗收。
+
 ## 1. 目標與範圍
 
 解碼 Broker message record 並處理 pull result；不排程 consumption 或提交 offset。
@@ -53,11 +59,11 @@ Phase 5 PullResultExt 完成 status mapping 後才處理。FOUND 解碼 message�
 
 ### 4.4 P8-04 — 只實作正確的 post-pull filtering
 
-移植 PullAPIWrapper 實際執行的 tag filtering 與 class-filter 相關行為。SQL92 留在 Broker。不可嘗試在 Rust 執行任意 Java class-filter bytecode；public class-filter API 應列為範圍決策，不可假稱相容。本機過濾後 batch 可能為空，但 nextBeginOffset 仍須採 Broker 提供值。
+移植 PullAPIWrapper 實際執行的 tag filtering 與 class-filter 相關行為。SQL92 留在 Broker。不可嘗試在 Rust 執行任意 Java class-filter bytecode；完整移植 client-side public class-filter API／設定及 source 定義的 registration/upload/filter-server 流程；server-side Java execution 不屬 client 實作。本機過濾後 batch 可能為空，但 nextBeginOffset 仍須採 Broker 提供值。
 
 ## 5. 驗證
 
-先寫對應失敗測試／Oracle fixture，再依序實作；以下 case 必須成為可執行檢查，而非人工勾選。共通命令、證據規則與 integration 前置設定見執行索引。
+先寫對應失敗測試／Oracle fixture，再依序實作；以下 case 必須成為可執行檢查，而非人工勾選。以下檢查不依賴 Docker 或 live Broker，使用 Java fixture、可控時鐘及 scripted peer；共通命令與證據規則見執行索引。
 
 - [ ] **P8-V01** — single/multiple record、全部支援的 magic/host/compression 與 body-option 組合，Java decoded JSON 與 Rust 相等。
 - [ ] **P8-V02** — 在每個 byte 截斷 valid record；變造 size/magic/property 並測超量 decompression output：不得 panic、overread 或無界配置。
@@ -70,7 +76,6 @@ Phase 5 PullResultExt 完成 status mapping 後才處理。FOUND 解碼 message�
 ```bash
 cargo test -p rocketmq-classic-common --test message_decode --locked
 cargo test -p rocketmq-classic-consumer --locked
-bash tests/differential/run.sh --phase 8
 ```
 
 ## 6. 驗收與交接

@@ -3,13 +3,19 @@
 > 主計畫：[`00-rocketmq-classic-plan.md`](00-rocketmq-classic-plan.md)，Phase 3；執行索引：[`README.zh-tw.md`](README.zh-tw.md)。
 > 英文為主版本：[`04-phase-03-remoting-transport.md`](04-phase-03-remoting-transport.md)。此文件是實作計畫，不是已完成／已驗證的報告。
 
+## 執行契約
+
+- **完整移植 Java client 5.5.1 的設定、功能與控制流程**，包含預設值、驗證、callback、error、retry 與 lifecycle。Java source/method/configuration 與 Rust、unit-test ID 必須雙向對照；不可新增 Rust 專有公開設定／功能，也不可缺少 Java client 能力。Rust 命名／ownership 可不同，可觀察語意不可不同。測試接點保持 private。
+- **只實作 client**。Java client 5.5.1 維持 Oracle；**RocketMQ server V5_3_4（5.3.4）**是 production／本機 Docker 基準，不是 client source 基準。server 限制不能作為刪除 client 功能的理由；兩種 client 對同一 server 比較，無法執行的成功路徑仍保留 source／fixture 證據。
+- **Phase 0–18 以 unit test 為主要測試方式**，輔以 Java golden／離線 differential，以及 transport 必要的小型 scripted loopback test。live Broker 或 Docker 都不是階段前置條件。Broker、TLS/auth cluster、跨語言、端對端與 server stress 執行集中至 [Phase 19](20-phase-19-docker-local-validation.zh-tw.md)；非本地檢查於該階段列為 owner 手動驗證。階段驗收不等於最終相容性／發布驗收。
+
 ## 1. 目標與範圍
 
 提供受 deadline 限制的 invoke/oneway 與 inbound dispatch；每個 request 只有一個 terminal owner，所有 task 有明確 shutdown。
 
 ## 2. 前置條件與現況分析
 
-Phase 2 cross-codec 檢查已通過。使用 Phase 0 本機 cluster 與 TLS CA；race 與 failure 則以 loopback scripted peer 進行可重現測試。
+Phase 2 cross-codec 檢查已通過。使用 scripted peer 與暫存 TLS certificate；race 與 failure 則以 loopback scripted peer 進行可重現測試。
 
 - 先完成: [Phase 2](03-phase-02-remoting-codec.zh-tw.md).
 
@@ -63,16 +69,17 @@ admission、connection acquisition、TCP/TLS handshake、outbound queue wait、w
 
 ### 4.6 P3-09 — 關閉並 join 全部受管理工作
 
-拒絕新工作、取消 creation、關閉 connection、清空 pending、停止 processor/timer 並 join task。重複 shutdown 必須安全，task 不得等待自身 join。在 ADR-0001 與 KNOWN_DIFFERENCES.md 記錄 ownership 與 timeout-race 強化差異，不宣稱 bug-for-bug 行為。
+拒絕新工作、取消 creation、關閉 connection、清空 pending、停止 processor/timer 並 join task。重複 shutdown 必須安全，task 不得等待自身 join。在 ADR-0001 記錄 Java flow mapping 與 ownership；任何可觀察差異都阻擋 parity 並需審查，不以 intentional-difference 豁免。
 
 ## 5. 驗證
 
-先寫對應失敗測試／Oracle fixture，再依序實作；以下 case 必須成為可執行檢查，而非人工勾選。共通命令、證據規則與 integration 前置設定見執行索引。
+先寫對應失敗測試／Oracle fixture，再依序實作；以下 case 必須成為可執行檢查，而非人工勾選。以下檢查不依賴 Docker 或 live Broker，使用 Java fixture、可控時鐘及 scripted peer；共通命令與證據規則見執行索引。
 
 - [ ] **P3-V01** — 以 barrier 控制 response/timeout/cancellation/shutdown race，最多完成一次且 pending 為零；包含 opaque wrap。
 - [ ] **P3-V02** — old-generation close 不得移除 replacement；並行 creation 只產生一個 connection；write 飽和仍遵守 deadline。
 - [ ] **P3-V03** — loopback inbound request、unsupported/oneway 行為及並行 response 正常，reader 不被阻塞。
-- [ ] **P3-V04** — 本機 Broker raw route invoke 成功；本機 TLS trusted CA 成功，wrong hostname/untrusted CA 失敗；shutdown 後 task/socket 為零。
+
+- [ ] **P3-U01** — scripted TCP/TLS peer 驗證 raw route framing、CA 信任／不信任與 hostname 失敗、deadline 及 shutdown 後零 owned task。
 
 ### 5.1 實作完成後的本機命令
 
@@ -82,6 +89,12 @@ admission、connection acquisition、TCP/TLS handshake、outbound queue wait、w
 cargo test -p rocketmq-classic-remoting --test transport --locked
 cargo test -p rocketmq-classic-remoting --locked
 ```
+
+### 5.2 Phase 19 live 測試交接
+
+保留以下 case ID 及行為要求，於 Phase 19 使用 5.3.4 Docker server 執行；不是本 phase 的通過條件，不可提前標 PASS。
+
+- [ ] **P3-V04** — 本機 Broker raw route invoke 成功；本機 TLS trusted CA 成功，wrong hostname/untrusted CA 失敗；shutdown 後 task/socket 為零。
 
 ## 6. 驗收與交接
 

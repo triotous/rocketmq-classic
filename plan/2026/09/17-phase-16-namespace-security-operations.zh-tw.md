@@ -3,9 +3,15 @@
 > 主計畫：[`00-rocketmq-classic-plan.md`](00-rocketmq-classic-plan.md)，Phase 16；執行索引：[`README.zh-tw.md`](README.zh-tw.md)。
 > 英文為主版本：[`17-phase-16-namespace-security-operations.md`](17-phase-16-namespace-security-operations.md)。此文件是實作計畫，不是已完成／已驗證的報告。
 
+## 執行契約
+
+- **完整移植 Java client 5.5.1 的設定、功能與控制流程**，包含預設值、驗證、callback、error、retry 與 lifecycle。Java source/method/configuration 與 Rust、unit-test ID 必須雙向對照；不可新增 Rust 專有公開設定／功能，也不可缺少 Java client 能力。Rust 命名／ownership 可不同，可觀察語意不可不同。測試接點保持 private。
+- **只實作 client**。Java client 5.5.1 維持 Oracle；**RocketMQ server V5_3_4（5.3.4）**是 production／本機 Docker 基準，不是 client source 基準。server 限制不能作為刪除 client 功能的理由；兩種 client 對同一 server 比較，無法執行的成功路徑仍保留 source／fixture 證據。
+- **Phase 0–18 以 unit test 為主要測試方式**，輔以 Java golden／離線 differential，以及 transport 必要的小型 scripted loopback test。live Broker 或 Docker 都不是階段前置條件。Broker、TLS/auth cluster、跨語言、端對端與 server stress 執行集中至 [Phase 19](20-phase-19-docker-local-validation.zh-tw.md)；非本地檢查於該階段列為 owner 手動驗證。階段驗收不等於最終相容性／發布驗收。
+
 ## 1. 目標與範圍
 
-完成跨功能 public configuration 與行為，不將 authentication policy 寫死於 socket code。以 fixture 與本機 TLS/auth profile 驗證；部署專屬檢查留至 Phase 18。
+完成全部 Java 5.5.1 namespace、hook、auth/TLS、trace 與 channel-event 設定／流程。本階段使用 unit test、signing fixture 與 scripted TLS peer；Docker interoperability 與部署專屬驗證屬 Phase 19。
 
 ## 2. 前置條件與現況分析
 
@@ -38,7 +44,6 @@ crates/rocketmq-classic-core/src/config.rs
 crates/rocketmq-classic-producer/src/trace.rs
 crates/rocketmq-classic-consumer/src/consume/
 crates/rocketmq-classic-remoting/tests/security.rs
-integration-tests/compose.yaml
 docs/security.md
 docs/compatibility/KNOWN_DIFFERENCES.md
 ```
@@ -53,31 +58,32 @@ namespace 在 logical wire boundary 只 wrapping 一次；user-visible result �
 
 ### 4.2 P16-02 (16.2) — 實作有順序與明確 error semantics 的 hook
 
-提供 approved Java surface 所需 before-request/after-response hook 及 producer/consumer hook context。以 source fixture 記錄 success、error、timeout、retry 與 oneway 的呼叫順序；不存在 after-response 的情況不可虛構。before-request failure 終止 send，不遺留 pending entry。user hook 在 shared lock 與 reader loop 外執行；記錄是否允許 blocking 及 bounded execution。auth hook 可修改 extFields，但不可繞過 frame limit。
+提供 Java 5.5.1 存在的 before-request/after-response hook 及 producer/consumer hook context。以 source fixture 記錄 success、error、timeout、retry 與 oneway 的呼叫順序；不存在 after-response 的情況不可虛構。before-request failure 終止 send，不遺留 pending entry。user hook 在 shared lock 與 reader loop 外執行；記錄是否允許 blocking 及 bounded execution。auth hook 可修改 extFields，但不可繞過 frame limit。
 
-### 4.3 P16-03 (16.3) — 實作核准且固定版本的 auth 路徑
+### 4.3 P16-03 (16.3) — 實作固定版本的全部 Java client auth 路徑
 
-先確認精確 5.5.1 client signer、canonicalization、body inclusion、excluded field、algorithm 與 server configuration。只透過 hook 實作核准路徑；盡可能重用已存在且維護中的相容 crypto dependency，不手寫密碼演算法。使用 synthetic credential 對兩種 serialization 進行 signature golden test，包含 non-ASCII field、retry 與 oneway。wrong secret/missing credential/tampered body 在本機 auth profile 必須失敗。不得提交真實 credential 或靜默降級為 unauthenticated transport。
+先確認精確 5.5.1 client signer、canonicalization、body inclusion、excluded field、algorithm 與 server configuration。透過等價 hook 實作全部 source 確認的 Java client auth 路徑；盡可能重用已存在且維護中的相容 crypto dependency，不手寫密碼演算法。使用 synthetic credential 對兩種 serialization 進行 signature golden test，包含 non-ASCII field、retry 與 oneway。wrong secret/missing credential/tampered body 在本機 auth profile 必須失敗。不得提交真實 credential 或靜默降級為 unauthenticated transport。
 
 ### 4.4 P16-04 (16.4) — 補齊 facade TLS configuration 與 failure test
 
-提供 trusted CA、server-name 行為，以及核准 mTLS profile 需要時的 client identity。啟動 task 前驗證 unreadable/malformed credential。測 CA trust、wrong name、expired certificate、unsupported handshake 與缺少必要 client certificate。保留 IPv6/DNS identity 與 original deadline。記錄本機 test CA 與 production trust setup 差異，不提供 accept-all switch。
+提供 trusted CA、server-name 行為，以及Java client identity 語意需要時的 client identity。啟動 task 前驗證 unreadable/malformed credential。測 CA trust、wrong name、expired certificate、unsupported handshake 與缺少必要 client certificate。保留 IPv6/DNS identity 與 original deadline。記錄本機 test CA 與 production trust setup 差異，不提供 accept-all switch。
 
-### 4.5 P16-05 (16.5) — 實作或明確延後 trace parity
+### 4.5 P16-05 (16.5) — 實作完整 trace parity
 
-owner 核准 scope 後，依 Java 實作 trace event field/order 與 trace message encoding，附 golden fixture。使用 bounded trace queue 與停用 tracing 的 isolated internal producer，避免 recursion；定義 source-compatible overflow 與 shutdown-flush。trace failure 不可靜默改變 business-send result。若延後，記錄核准的 user-visible gap，不提供 no-op trace option。
+以 golden fixture 實作全部 Java trace configuration、event field/order 與 encoding。採用符合 Java 的 queue/overflow 及 shutdown-flush 行為，使用 isolated internal producer 避免 recursion。trace failure 必須符合 Java business-send 語意。trace 為必要，不可延後形成缺口或提供 no-op option。
 
 ### 4.6 P16-06 (16.6) — 提供受管理 connection event 與維運文件
 
-提供 connect/close/exception/idle observation，包含 connection generation 與經遮蔽 peer detail。經 reader 外的 bounded owned dispatch 投遞；optional telemetry 與 correctness-critical hook 分別定義 overflow semantics。測 slow observer 與 shutdown drain。記錄 namespace、security、hook、trace selection 與 certificate provisioning 的 facade example；目標部署專屬驗證集中至 Phase 18。
+提供 connect/close/exception/idle observation，包含 connection generation 與經遮蔽 peer detail。經 reader 外的 bounded owned dispatch 投遞；optional telemetry 與 correctness-critical hook 分別定義 overflow semantics。測 slow observer 與 shutdown drain。記錄 namespace、security、hook、trace selection 與 certificate provisioning 的 facade example；目標部署專屬驗證集中至 Phase 19。
 
 ## 5. 驗證
 
-先寫對應失敗測試／Oracle fixture，再依序實作；以下 case 必須成為可執行檢查，而非人工勾選。共通命令、證據規則與 integration 前置設定見執行索引。
+先寫對應失敗測試／Oracle fixture，再依序實作；以下 case 必須成為可執行檢查，而非人工勾選。以下檢查不依賴 Docker 或 live Broker，使用 Java fixture、可控時鐘及 scripted peer；共通命令與證據規則見執行索引。
 
 - [ ] **P16-V01** — namespace fixture 通過 send/consume/retry/DLQ/offset/transaction/reply；既有 no-namespace 行為不變。
-- [ ] **P16-V02** — auth signature golden 與本機 TLS/auth 正反例在無不安全 bypass 下通過；hook retry/order/cancellation 不遺留 pending entry。
-- [ ] **P16-V03** — 支援 trace 時，event 可與 Java 交叉解碼、無 recursion 且 bounded flush 正常；slow channel observer 不阻塞 transport。
+- [ ] **P16-V03** — trace event 可與 Java 交叉解碼、無 recursion 且 bounded flush 正常；slow channel observer 不阻塞 transport。
+
+- [ ] **P16-U01** — signing fixture 與 scripted TLS peer 覆蓋安全正反例；hook order/retry/cancellation 與 trace flush 可重現。
 
 ### 5.1 實作完成後的本機命令
 
@@ -86,17 +92,17 @@ owner 核准 scope 後，依 Java 實作 trace event field/order 與 trace messa
 ```bash
 cargo test -p rocketmq-classic-remoting --test security --locked
 cargo test --workspace --all-features --locked
-bash tests/differential/run.sh --phase 16
 ```
+
+### 5.2 Phase 19 live 測試交接
+
+保留以下 case ID 及行為要求，於 Phase 19 使用 5.3.4 Docker server 執行；不是本 phase 的通過條件，不可提前標 PASS。
+
+- [ ] **P16-V02** — auth signature golden 與本機 TLS/auth 正反例在無不安全 bypass 下通過；hook retry/order/cancellation 不遺留 pending entry。
 
 ## 6. 驗收與交接
 
-所有對外宣稱 production setting 皆可透過 facade 設定。release claim 前記錄 security 與 optional trace scope；實際 production topology 驗收由 owner 在 Phase 18 執行。
+每個 Java client 設定均有等價 Rust API／設定途徑，不含 Rust 專有公開選項。security/trace unit 證據完整；Docker interoperability 與 owner production topology 驗證屬 Phase 19。
 
 - 交接需附變更檔案、case ID、實際命令／結果、fixture provenance，以及 matrix 狀態與未完成項目；共通規則見索引。
 - 下一階段: [Phase 17](18-phase-17-admin-query.zh-tw.md).
-
-## 7. 待決問題／必要決策
-
-1. v1.0 必須支援哪一種 pinned 5.5.1 ACL/auth mode 與 TLS topology（server TLS 或 mTLS、custom CA、proxy）？這決定 P16-03/04 及最終 owner-run security profile。
-2. v1.0 是否必須具備 Java message trace parity？若否，需核准明確 documented gap，不做 no-op implementation；P16-05 依賴此決策。

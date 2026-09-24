@@ -3,9 +3,15 @@
 > Parent: [`00-rocketmq-classic-plan.md`](00-rocketmq-classic-plan.md), Phase 0; execution index: [`README.md`](README.md).
 > Translation: [`01-phase-00-reference-oracle.zh-tw.md`](01-phase-00-reference-oracle.zh-tw.md). This is an implementation plan, not a report of completed or verified implementation.
 
+## Execution contract
+
+- Port **all Java client 5.5.1 settings, features and control flows**, including defaults, validation, callbacks, errors, retries and lifecycle. Map Java source/method/configuration to Rust and unit-test IDs in both directions; no extra public Rust setting/feature and no missing Java client capability. Rust naming/ownership may differ, not observable semantics. Internal test seams stay private.
+- Implement the **client only**. Java client 5.5.1 remains the oracle; **RocketMQ server V5_3_4 (5.3.4)** is the production/local Docker baseline, not the client source baseline. A server limitation does not authorize deleting a client feature; compare both clients against the same server and retain source/fixture coverage for unavailable success paths.
+- **Phase 0–18 primarily use unit tests**, supplemented by Java golden/offline differential tests and small scripted loopback tests where transport requires them. No live Broker or Docker is a phase prerequisite. Broker, TLS/auth cluster, cross-language, end-to-end and server stress execution belongs to [Phase 19](20-phase-19-docker-local-validation.md); non-local checks become owner-executed manual items there. Phase acceptance is not final compatibility/release acceptance.
+
 ## 1. Goal and scope
 
-Build the executable Java oracle, reproducible local Broker environment and evidence inventory before any Rust protocol implementation. This phase creates infrastructure, not a Rust client.
+Build the executable offline Java oracle and complete source/settings/feature inventory before Rust protocol implementation. Docker cluster creation and live scenario execution are Phase 19 work.
 
 ## 2. Prerequisites and current-state analysis
 
@@ -38,9 +44,6 @@ compat/java-reference/src/main/java/compat/Main.java
 fixtures/README.md
 fixtures/remoting/
 fixtures/messages/
-integration-tests/compose.yaml
-integration-tests/setup.sh
-integration-tests/README.md
 tests/differential/scenarios.yaml
 tests/differential/compare.py
 docs/compatibility/JAVA_5_5_1_COMPATIBILITY.md
@@ -58,7 +61,7 @@ Resolve `rocketmq-all-5.5.1` to its peeled commit and compare with `efa1be59d6fc
 
 ### 4.2 P0-01 — Create evidence and scope inventories
 
-Create the master-plan matrix columns verbatim, including source/Rust mappings, request code, golden/unit/integration/differential identifiers and status values. Inventory public client APIs and every numeric RequestCode/ResponseCode from the pinned source; distinguish a registered constant from an implemented operation. Add source class/method links and planned phase ownership. Start all implementation rows at TODO; include transaction, reply, Lite/POP, admin, namespace, hooks and security rows. Record optional-scope decisions as pending, not COMPATIBLE.
+Create the master-plan matrix columns, adding Java setting name/type/default/unit/range/validation, public method/overload, source control-flow branches, Rust mappings and unit-test IDs. Audit Java-to-Rust completeness and Rust-to-Java absence of extra public features/settings. Include inherited, deprecated and environment/system-property configuration paths. All client capabilities are mandatory, including Lite/POP, allocation strategies, admin, namespace, hooks, security and trace; no optional scope exclusions.
 
 ### 4.3 P0-02 — Implement protocol fixture I/O
 
@@ -66,11 +69,11 @@ Use Java public APIs or a narrowly documented same-package adapter where the rel
 
 ### 4.4 P0-03 — Create deterministic scenarios and comparator
 
-Register all Phase 0 scenario IDs from the master plan, plus heartbeat, offset update and negative header cases. Implement route/send/pull/offset/lock scenarios first; use isolated topics/groups and explicit initial offsets. Pure allocation and header cases run without a Broker. Add comparator self-tests proving that nondeterministic IDs can be normalized but changed status or queue order still fails. Future scenario IDs may be registered but must remain unimplemented rather than reporting success.
+Register all Phase 0 scenario IDs plus heartbeat, offset update and negative headers. Implement offline fixture/allocation/header scenarios and comparator self-tests now. Register live route/send/pull/offset/lock scenarios with execution_phase=19, required profile and isolated topic/group requirements; pending live cases never report PASS.
 
-### 4.5 P0-04 — Provide the local cluster and deterministic setup
+### 4.5 P0-04 — Specify Phase 19 environment requirements
 
-Create a basic NameServer + Broker Compose profile from a verified 5.5.1 distribution/image; record checksums or image digest and mapped/advertised addresses. Add readiness checks using a real route/admin operation, not a fixed sleep. setup.sh creates fixed queues/topics/groups idempotently in the isolated test cluster and documents reset/cleanup without touching external data. Add a two-Broker profile and local TLS CA profile; add an auth profile only after the pinned auth path is identified. Never disable certificate validation for the TLS profile.
+Record server_version=5.3.4 separately from java_client_version=5.5.1 in scenario metadata. Inventory basic, two-Broker, TLS/auth and feature-specific environment needs for P19-01/02. Do not create/start Docker or require live server evidence here. Unit-test manifest validation and missing-prerequisite reporting.
 
 ### 4.6 P0-05 — Check in reproducible evidence
 
@@ -78,12 +81,13 @@ Use Appendix B fixture names. Every .bin has a .json sibling with source version
 
 ## 5. Verification
 
-Write the failing check/oracle fixture before its implementation. The cases below must become runnable checks, not manual checklist-only claims. Shared commands, evidence rules and integration prerequisites are in the execution index.
+Write the failing check/oracle fixture before its implementation. The cases below must become runnable checks, not manual checklist-only claims. Run these checks without Docker or a live Broker; use Java fixtures, controlled clocks and scripted peers. Shared commands and evidence rules are in the execution index.
 
 - [ ] **P0-V01** — Run fixture generation twice; metadata hashes match raw files and normalized semantic results match.
 - [ ] **P0-V02** — Java decodes both codec families it produced; malformed fixtures fail; comparator self-test detects meaningful differences.
-- [ ] **P0-V03** — Basic local cluster: Java producer/consumer, route, heartbeat, pull, offset and lock operations produce nonempty machine-readable evidence.
 - [ ] **P0-V04** — Changing the Maven client version causes verification to fail; no scenario with missing prerequisites reports PASS.
+
+- [ ] **P0-U01** — Fixture construction covers route, heartbeat, send, pull, offsets and lock/unlock without a Broker; scenario metadata separates client/server versions and pending live evidence.
 
 ### 5.1 Local commands after implementation
 
@@ -93,13 +97,17 @@ Run after this phase or earlier phases create the named entry points. This docum
 mvn -f compat/java-reference/pom.xml verify
 mvn -f compat/java-reference/pom.xml exec:java -Dexec.mainClass=compat.Main -Dexec.args="fixtures --output target/java-fixtures"
 python3 tests/differential/compare.py --self-test
-docker compose -f integration-tests/compose.yaml up -d
-bash integration-tests/setup.sh
 ```
+
+### 5.2 Phase 19 live-test handoff
+
+Retain these case IDs and behavior requirements for Phase 19 execution against Docker server 5.3.4; they are not this phase's pass conditions and must not be marked PASS early.
+
+- [ ] **P0-V03** — Basic local cluster: Java producer/consumer, route, heartbeat, pull, offset and lock operations produce nonempty machine-readable evidence.
 
 ## 6. Acceptance and handoff
 
-Commit the verified baseline record, fixture manifest, working local cluster recipe and TODO matrix together. Phase 1 may begin only after the required oracle evidence is reproducible; deployment-only tests are collected for Phase 18, not used as a substitute for this local gate.
+Hand off the verified Java baseline, reproducible offline fixtures, complete source/configuration inventory and Phase 19 live-test manifest. Phase 1 starts after offline oracle checks pass; no working cluster is required.
 
 - Handoff includes changed paths, case IDs, actual commands/results, fixture provenance and matrix status/gaps; follow the shared rules in the index.
 - Next: [Phase 1](02-phase-01-common-protocol-models.md).

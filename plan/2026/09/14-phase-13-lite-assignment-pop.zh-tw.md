@@ -3,13 +3,19 @@
 > 主計畫：[`00-rocketmq-classic-plan.md`](00-rocketmq-classic-plan.md)，Phase 13；執行索引：[`README.zh-tw.md`](README.zh-tw.md)。
 > 英文為主版本：[`14-phase-13-lite-assignment-pop.md`](14-phase-13-lite-assignment-pop.md)。此文件是實作計畫，不是已完成／已驗證的報告。
 
+## 執行契約
+
+- **完整移植 Java client 5.5.1 的設定、功能與控制流程**，包含預設值、驗證、callback、error、retry 與 lifecycle。Java source/method/configuration 與 Rust、unit-test ID 必須雙向對照；不可新增 Rust 專有公開設定／功能，也不可缺少 Java client 能力。Rust 命名／ownership 可不同，可觀察語意不可不同。測試接點保持 private。
+- **只實作 client**。Java client 5.5.1 維持 Oracle；**RocketMQ server V5_3_4（5.3.4）**是 production／本機 Docker 基準，不是 client source 基準。server 限制不能作為刪除 client 功能的理由；兩種 client 對同一 server 比較，無法執行的成功路徑仍保留 source／fixture 證據。
+- **Phase 0–18 以 unit test 為主要測試方式**，輔以 Java golden／離線 differential，以及 transport 必要的小型 scripted loopback test。live Broker 或 Docker 都不是階段前置條件。Broker、TLS/auth cluster、跨語言、端對端與 server stress 執行集中至 [Phase 19](20-phase-19-docker-local-validation.zh-tw.md)；非本地檢查於該階段列為 owner 手動驗證。階段驗收不等於最終相容性／發布驗收。
+
 ## 1. 目標與範圍
 
-完成明確選定的額外 consumer surface，保留 Broker 發出的 POP receipt metadata。不得擴張成未核准的新 high-level POP framework。
+完成全部 Java 5.5.1 額外 consumer 能力與設定，保留 POP receipt，精確對齊 Java public/lower-level exposure。不可發明 Rust 專有 high-level POP framework。
 
 ## 2. 前置條件與現況分析
 
-Phase 4–5 extension model/RPC、Phase 8 decoding 與 Phase 11 assignment 已備妥。主計畫允許 supported/deferred/lower-level-only API，因此 P13-01 是 scope gate；不依賴決策的 inventory 可先做。
+Phase 4–5 model/RPC、Phase 8 decoding 與 Phase 11 assignment 已備妥。P13-01 是完整性稽核，不是允許延後 Java API。
 
 - 先完成: [Phase 12](13-phase-12-orderly-consumption.zh-tw.md).
 
@@ -41,9 +47,9 @@ classic pull offset 與 POP receipt 分開。POP receipt 保留原 extra-info by
 
 ## 4. 依序實作步驟
 
-### 4.1 P13-01 — 核准完整 method-level scope 表
+### 4.1 P13-01 — 稽核完整 method/configuration 表
 
-盤點 Lite Pull 的 subscribe/unsubscribe、assign、poll、seek、pause/resume、committed offset、auto/manual commit 與 timestamp/queue helper；另外盤點 assignment/request-mode 及全部實際 POP call。每項選擇 v1 supported、later 或 lower-level-only，需 owner 核准並記錄 user-visible gap。不可降低 Phase 5 已要求的 baseline lower-level RPC。未核准項目維持 TODO，不可標 intentional difference。
+盤點 Lite subscribe/unsubscribe、assign、poll、seek、pause/resume、offset、auto/manual commit、timestamp/queue helper、assignment/request-mode 及每個實際 POP call。每個 Java method、設定與流程都映射 Rust 及 unit evidence。對齊 Java visibility；只有 Java 本身無 high-level API 才可 lower-level-only。若 Java 有 Push POP 路徑，必須完整實作；不可缺少功能或提供 no-op option。
 
 ### 4.2 P13-02 — 實作 Lite mode 與有界 polling
 
@@ -59,11 +65,12 @@ classic pull offset 與 POP receipt 分開。POP receipt 保留原 extra-info by
 
 ## 5. 驗證
 
-先寫對應失敗測試／Oracle fixture，再依序實作；以下 case 必須成為可執行檢查，而非人工勾選。共通命令、證據規則與 integration 前置設定見執行索引。
+先寫對應失敗測試／Oracle fixture，再依序實作；以下 case 必須成為可執行檢查，而非人工勾選。以下檢查不依賴 Docker 或 live Broker，使用 Java fixture、可控時鐘及 scripted peer；共通命令與證據規則見執行索引。
 
 - [ ] **P13-V01** — 每個 supported Lite method 具 success/error differential；seek versus late pull、pause/resume 與 commit/restart 不跳過 prefetched message。
-- [ ] **P13-V02** — 本機 POP/ACK/change-invisibility 測 success、expiry/redelivery、changed receipt、malformed extra-info 與 mixed-queue mapping。
-- [ ] **P13-V03** — 每個 Java consumer-facing API 均分類；supported 項有 integration 證據，deferred 項不列入對外 parity。
+- [ ] **P13-V03** — 每個 Java consumer-facing API／設定均完成實作與 unit 證據，適用時附 Phase 19 live scenario；不可延後或增加公開能力。
+
+- [ ] **P13-U01** — Java Lite/POP fixture 與可控時鐘覆蓋每個 method、receipt expiry/replacement、redelivery decision 及 mixed-queue mapping。
 
 ### 5.1 實作完成後的本機命令
 
@@ -71,16 +78,17 @@ classic pull offset 與 POP receipt 分開。POP receipt 保留原 extra-info by
 
 ```bash
 cargo test -p rocketmq-classic-consumer --test lite_pop --locked
-bash tests/differential/run.sh --phase 13
 ```
+
+### 5.2 Phase 19 live 測試交接
+
+保留以下 case ID 及行為要求，於 Phase 19 使用 5.3.4 Docker server 執行；不是本 phase 的通過條件，不可提前標 PASS。
+
+- [ ] **P13-V02** — 本機 POP/ACK/change-invisibility 測 success、expiry/redelivery、changed receipt、malformed extra-info 與 mixed-queue mapping。
 
 ## 6. 驗收與交接
 
-在完成核准 surface，或記錄 owner-approved gap 且通過 lower-level baseline 前，不進入 Phase 14。不得靜默省略。
+全部本階段 Java 能力完成實作並通過 unit/fixture check 後，才進入 Phase 14。live evidence 留待 Phase 19；不可透過核准豁免實作缺口。
 
 - 交接需附變更檔案、case ID、實際命令／結果、fixture provenance，以及 matrix 狀態與未完成項目；共通規則見索引。
 - 下一階段: [Phase 14](15-phase-14-transaction-producer.zh-tw.md).
-
-## 7. 待決問題／必要決策
-
-1. v1.0 必須支援哪些 Lite Pull/public POP API？是否允許部分只提供 lower-level？這決定 P13-01/02 與 public facade example；Phase 5 lower-level call 仍為必要。

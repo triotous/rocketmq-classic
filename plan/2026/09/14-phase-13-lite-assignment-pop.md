@@ -3,13 +3,19 @@
 > Parent: [`00-rocketmq-classic-plan.md`](00-rocketmq-classic-plan.md), Phase 13; execution index: [`README.md`](README.md).
 > Translation: [`14-phase-13-lite-assignment-pop.zh-tw.md`](14-phase-13-lite-assignment-pop.zh-tw.md). This is an implementation plan, not a report of completed or verified implementation.
 
+## Execution contract
+
+- Port **all Java client 5.5.1 settings, features and control flows**, including defaults, validation, callbacks, errors, retries and lifecycle. Map Java source/method/configuration to Rust and unit-test IDs in both directions; no extra public Rust setting/feature and no missing Java client capability. Rust naming/ownership may differ, not observable semantics. Internal test seams stay private.
+- Implement the **client only**. Java client 5.5.1 remains the oracle; **RocketMQ server V5_3_4 (5.3.4)** is the production/local Docker baseline, not the client source baseline. A server limitation does not authorize deleting a client feature; compare both clients against the same server and retain source/fixture coverage for unavailable success paths.
+- **Phase 0–18 primarily use unit tests**, supplemented by Java golden/offline differential tests and small scripted loopback tests where transport requires them. No live Broker or Docker is a phase prerequisite. Broker, TLS/auth cluster, cross-language, end-to-end and server stress execution belongs to [Phase 19](20-phase-19-docker-local-validation.md); non-local checks become owner-executed manual items there. Phase acceptance is not final compatibility/release acceptance.
+
 ## 1. Goal and scope
 
-Finish the explicitly selected additional consumer surface and preserve Broker-issued POP receipt metadata. Do not invent a new high-level POP framework absent from the approved scope.
+Complete all additional Java 5.5.1 consumer capabilities and configuration, preserving POP receipts and matching Java public/lower-level exposure exactly. Do not invent a Rust-only high-level POP framework.
 
 ## 2. Prerequisites and current-state analysis
 
-Phases 4–5 extension models/RPCs, Phase 8 decoding and Phase 11 assignment are ready. P13-01 is a scope gate because the master plan allows supported/deferred/lower-level-only APIs; code-independent inventory work may proceed before owner approval.
+Phases 4–5 models/RPCs, Phase 8 decoding and Phase 11 assignment are ready. P13-01 is a completeness audit, not permission to defer Java APIs.
 
 - Read/complete first: [Phase 12](13-phase-12-orderly-consumption.md).
 
@@ -41,9 +47,9 @@ Keep classic pull offsets and POP receipts separate. A POP receipt retains origi
 
 ## 4. Ordered implementation tasks
 
-### 4.1 P13-01 — Approve a complete method-level scope table
+### 4.1 P13-01 — Audit the complete method/configuration table
 
-Inventory subscribe/unsubscribe, assign, poll, seek, pause/resume, committed offsets, auto/manual commit and timestamp/queue helpers for Lite Pull; inventory assignment/request-mode and all actual POP calls separately. For each row choose v1 supported, later or lower-level-only, with owner approval and user-visible gap wording. Do not downgrade baseline lower-level RPCs already required by Phase 5. Unapproved rows stay TODO, not intentional differences.
+Inventory Lite subscribe/unsubscribe, assign, poll, seek, pause/resume, offsets, auto/manual commit, timestamp/queue helpers, assignment/request-mode and every actual POP call. Map every Java method, configuration and flow to Rust and unit evidence. Match Java visibility; lower-level-only is valid only where Java itself has no higher-level API. Complete Java Push POP paths if present; no missing feature or no-op option is allowed.
 
 ### 4.2 P13-02 — Implement Lite modes and bounded polling
 
@@ -59,11 +65,12 @@ Decode pop results and extra-info using source-derived delimiters/field rules wi
 
 ## 5. Verification
 
-Write the failing check/oracle fixture before its implementation. The cases below must become runnable checks, not manual checklist-only claims. Shared commands, evidence rules and integration prerequisites are in the execution index.
+Write the failing check/oracle fixture before its implementation. The cases below must become runnable checks, not manual checklist-only claims. Run these checks without Docker or a live Broker; use Java fixtures, controlled clocks and scripted peers. Shared commands and evidence rules are in the execution index.
 
 - [ ] **P13-V01** — Every supported Lite method has success/error differential evidence; seek versus late pull, pause/resume and commit/restart do not skip prefetched messages.
-- [ ] **P13-V02** — POP/ACK/change-invisibility local tests cover success, expiry/redelivery, changed receipt, malformed extra-info and mixed-queue mapping.
-- [ ] **P13-V03** — Every Java consumer-facing API is classified; supported entries have integration evidence and deferred rows are excluded from advertised parity.
+- [ ] **P13-V03** — Every Java consumer-facing API/setting is implemented with unit evidence and a Phase 19 live scenario where applicable; no deferred or extra public capability.
+
+- [ ] **P13-U01** — Java Lite/POP fixtures and a controlled clock cover each method, receipt expiry/replacement, redelivery decisions and mixed-queue mapping.
 
 ### 5.1 Local commands after implementation
 
@@ -71,16 +78,17 @@ Run after this phase or earlier phases create the named entry points. This docum
 
 ```bash
 cargo test -p rocketmq-classic-consumer --test lite_pop --locked
-bash tests/differential/run.sh --phase 13
 ```
+
+### 5.2 Phase 19 live-test handoff
+
+Retain these case IDs and behavior requirements for Phase 19 execution against Docker server 5.3.4; they are not this phase's pass conditions and must not be marked PASS early.
+
+- [ ] **P13-V02** — POP/ACK/change-invisibility local tests cover success, expiry/redelivery, changed receipt, malformed extra-info and mixed-queue mapping.
 
 ## 6. Acceptance and handoff
 
-Do not start Phase 14 until this phase has either implemented the approved surface or recorded owner-approved gaps and passing lower-level baselines. No silent omission is allowed.
+Do not start Phase 14 until every Java capability owned here is implemented and passes unit/fixture checks. Live evidence remains pending Phase 19; implementation gaps cannot be approved away.
 
 - Handoff includes changed paths, case IDs, actual commands/results, fixture provenance and matrix status/gaps; follow the shared rules in the index.
 - Next: [Phase 14](15-phase-14-transaction-producer.md).
-
-## 7. Open questions / decisions required
-
-1. Which Lite Pull/public POP APIs are required for v1.0, and may any remain lower-level-only? This controls P13-01/02 and public facade examples; lower-level Phase 5 calls remain required.

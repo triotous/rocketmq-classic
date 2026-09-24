@@ -3,6 +3,12 @@
 > 主計畫：[`00-rocketmq-classic-plan.md`](00-rocketmq-classic-plan.md)，Phase 15；執行索引：[`README.zh-tw.md`](README.zh-tw.md)。
 > 英文為主版本：[`16-phase-15-request-reply.md`](16-phase-15-request-reply.md)。此文件是實作計畫，不是已完成／已驗證的報告。
 
+## 執行契約
+
+- **完整移植 Java client 5.5.1 的設定、功能與控制流程**，包含預設值、驗證、callback、error、retry 與 lifecycle。Java source/method/configuration 與 Rust、unit-test ID 必須雙向對照；不可新增 Rust 專有公開設定／功能，也不可缺少 Java client 能力。Rust 命名／ownership 可不同，可觀察語意不可不同。測試接點保持 private。
+- **只實作 client**。Java client 5.5.1 維持 Oracle；**RocketMQ server V5_3_4（5.3.4）**是 production／本機 Docker 基準，不是 client source 基準。server 限制不能作為刪除 client 功能的理由；兩種 client 對同一 server 比較，無法執行的成功路徑仍保留 source／fixture 證據。
+- **Phase 0–18 以 unit test 為主要測試方式**，輔以 Java golden／離線 differential，以及 transport 必要的小型 scripted loopback test。live Broker 或 Docker 都不是階段前置條件。Broker、TLS/auth cluster、跨語言、端對端與 server stress 執行集中至 [Phase 19](20-phase-19-docker-local-validation.zh-tw.md)；非本地檢查於該階段列為 owner 手動驗證。階段驗收不等於最終相容性／發布驗收。
+
 ## 1. 目標與範圍
 
 實作 message-level correlation、reply construction 與 Broker-pushed reply delivery，與 Remoting opaque matching 分開。
@@ -56,11 +62,12 @@ reply、timeout、cancellation、send failure 與 shutdown 共用 remove-and-com
 
 ## 5. 驗證
 
-先寫對應失敗測試／Oracle fixture，再依序實作；以下 case 必須成為可執行檢查，而非人工勾選。共通命令、證據規則與 integration 前置設定見執行索引。
+先寫對應失敗測試／Oracle fixture，再依序實作；以下 case 必須成為可執行檢查，而非人工勾選。以下檢查不依賴 Docker 或 live Broker，使用 Java fixture、可控時鐘及 scripted peer；共通命令與證據規則見執行索引。
 
 - [ ] **P15-V01** — property/reply-header golden fixture 符合 Java；invalid request metadata 在 send 前失敗。
 - [ ] **P15-V02** — 所有 terminal race 只有一個 owner，pending 歸零；涵蓋兩個 producer 共享 runtime 且各自 shutdown。
-- [ ] **P15-V03** — 本機 Broker 上 Java requester↔Rust responder 與 Rust requester↔Java responder 可運作；no responder 與 late reply 產生相容 timeout。
+
+- [ ] **P15-U01** — Java request/reply fixture 與注入 reply/no-reply/late-reply event 驗證雙方角色、correlation 與 timeout 語意。
 
 ### 5.1 實作完成後的本機命令
 
@@ -68,8 +75,13 @@ reply、timeout、cancellation、send failure 與 shutdown 共用 remove-and-com
 
 ```bash
 cargo test -p rocketmq-classic-producer --test request_reply --locked
-bash tests/differential/run.sh --phase 15
 ```
+
+### 5.2 Phase 19 live 測試交接
+
+保留以下 case ID 及行為要求，於 Phase 19 使用 5.3.4 Docker server 執行；不是本 phase 的通過條件，不可提前標 PASS。
+
+- [ ] **P15-V03** — 本機 Broker 上 Java requester↔Rust responder 與 Rust requester↔Java responder 可運作；no responder 與 late reply 產生相容 timeout。
 
 ## 6. 驗收與交接
 

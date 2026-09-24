@@ -3,6 +3,12 @@
 > Parent: [`00-rocketmq-classic-plan.md`](00-rocketmq-classic-plan.md), Phase 9; execution index: [`README.md`](README.md).
 > Translation: [`10-phase-09-pull-offset-store.zh-tw.md`](10-phase-09-pull-offset-store.zh-tw.md). This is an implementation plan, not a report of completed or verified implementation.
 
+## Execution contract
+
+- Port **all Java client 5.5.1 settings, features and control flows**, including defaults, validation, callbacks, errors, retries and lifecycle. Map Java source/method/configuration to Rust and unit-test IDs in both directions; no extra public Rust setting/feature and no missing Java client capability. Rust naming/ownership may differ, not observable semantics. Internal test seams stay private.
+- Implement the **client only**. Java client 5.5.1 remains the oracle; **RocketMQ server V5_3_4 (5.3.4)** is the production/local Docker baseline, not the client source baseline. A server limitation does not authorize deleting a client feature; compare both clients against the same server and retain source/fixture coverage for unavailable success paths.
+- **Phase 0–18 primarily use unit tests**, supplemented by Java golden/offline differential tests and small scripted loopback tests where transport requires them. No live Broker or Docker is a phase prerequisite. Broker, TLS/auth cluster, cross-language, end-to-end and server stress execution belongs to [Phase 19](20-phase-19-docker-local-validation.md); non-local checks become owner-executed manual items there. Phase acceptance is not final compatibility/release acceptance.
+
 ## 1. Goal and scope
 
 Provide explicit pull and crash-safe offset persistence before any Push scheduler. Pulling a batch must not implicitly acknowledge it.
@@ -64,11 +70,12 @@ Add typed header/response fixtures and single-attempt RPCs for search offset, mi
 
 ## 5. Verification
 
-Write the failing check/oracle fixture before its implementation. The cases below must become runnable checks, not manual checklist-only claims. Shared commands, evidence rules and integration prerequisites are in the execution index.
+Write the failing check/oracle fixture before its implementation. The cases below must become runnable checks, not manual checklist-only claims. Run these checks without Docker or a live Broker; use Java fixtures, controlled clocks and scripted peers. Shared commands and evidence rules are in the execution index.
 
 - [ ] **P9-V01** — All read/update/freeze modes match Java, including missing offsets, increase-only races and transport failure distinction.
 - [ ] **P9-V02** — Fault injection before/after each local-file write/rename step preserves a recoverable old or new snapshot; corrupt primary/backup and path traversal are tested.
-- [ ] **P9-V03** — Local Broker manual pull/restart resumes from the persisted next offset; all pull statuses, suggested broker and boundary RPCs match Java.
+
+- [ ] **P9-U01** — Scripted pull/offset responses and temporary-file restart tests verify every pull status, next-offset recovery, broker selection and boundary RPC.
 
 ### 5.1 Local commands after implementation
 
@@ -77,8 +84,13 @@ Run after this phase or earlier phases create the named entry points. This docum
 ```bash
 cargo test -p rocketmq-classic-consumer --test offsets --locked
 cargo build -p rocketmq-classic --examples --locked
-bash tests/differential/run.sh --phase 9
 ```
+
+### 5.2 Phase 19 live-test handoff
+
+Retain these case IDs and behavior requirements for Phase 19 execution against Docker server 5.3.4; they are not this phase's pass conditions and must not be marked PASS early.
+
+- [ ] **P9-V03** — Local Broker manual pull/restart resumes from the persisted next offset; all pull statuses, suggested broker and boundary RPCs match Java.
 
 ## 6. Acceptance and handoff
 

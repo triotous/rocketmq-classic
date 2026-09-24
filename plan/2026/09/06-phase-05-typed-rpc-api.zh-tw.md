@@ -3,6 +3,12 @@
 > 主計畫：[`00-rocketmq-classic-plan.md`](00-rocketmq-classic-plan.md)，Phase 5；執行索引：[`README.zh-tw.md`](README.zh-tw.md)。
 > 英文為主版本：[`06-phase-05-typed-rpc-api.md`](06-phase-05-typed-rpc-api.md)。此文件是實作計畫，不是已完成／已驗證的報告。
 
+## 執行契約
+
+- **完整移植 Java client 5.5.1 的設定、功能與控制流程**，包含預設值、驗證、callback、error、retry 與 lifecycle。Java source/method/configuration 與 Rust、unit-test ID 必須雙向對照；不可新增 Rust 專有公開設定／功能，也不可缺少 Java client 能力。Rust 命名／ownership 可不同，可觀察語意不可不同。測試接點保持 private。
+- **只實作 client**。Java client 5.5.1 維持 Oracle；**RocketMQ server V5_3_4（5.3.4）**是 production／本機 Docker 基準，不是 client source 基準。server 限制不能作為刪除 client 功能的理由；兩種 client 對同一 server 比較，無法執行的成功路徑仍保留 source／fixture 證據。
+- **Phase 0–18 以 unit test 為主要測試方式**，輔以 Java golden／離線 differential，以及 transport 必要的小型 scripted loopback test。live Broker 或 Docker 都不是階段前置條件。Broker、TLS/auth cluster、跨語言、端對端與 server stress 執行集中至 [Phase 19](20-phase-19-docker-local-validation.zh-tw.md)；非本地檢查於該階段列為 owner 手動驗證。階段驗收不等於最終相容性／發布驗收。
+
 ## 1. 目標與範圍
 
 在 Remoting 上建立 single-attempt domain RPC，使本機 integration/differential test 可獨立於 Producer 或 Consumer runtime 執行。
@@ -35,8 +41,6 @@ crates/rocketmq-classic-core/src/api/consumer.rs
 crates/rocketmq-classic-core/src/api/transaction.rs
 crates/rocketmq-classic-core/src/error.rs
 crates/rocketmq-classic-core/tests/rpc.rs
-integration-tests/Cargo.toml
-integration-tests/tests/broker.rs
 tests/differential/run.sh
 ```
 
@@ -66,15 +70,16 @@ MQClientApi 擁有或借用 RemotingClient，不依賴 process singleton。Broke
 
 ### 4.6 P5-08 — 讓 RPC 證據可執行
 
-新增不發布的 workspace test package rocketmq-classic-integration。Broker test 在一般 cargo test 中明確 ignored，必須提供 RMQ_NAMESRV_ADDR；以 --ignored 執行卻缺設定時明確失敗，不可靜默略過。建立 tests/differential/run.sh 的 --phase N：隔離 setup、Java result、Rust result、comparator，缺 scenario 時回 nonzero。記錄 required profile 與 seed data。pure test 仍不需要 Docker。
+以 scripted peer 與 Java fixture 建立 table-driven RPC request/status/error test。在 tests/differential/scenarios.yaml 登錄 live case ID、required profile、比較規則與 execution_phase=19。Phase 19 建立 integration package 與 live differential runner；一般 cargo test 不依賴 Docker。
 
 ## 5. 驗證
 
-先寫對應失敗測試／Oracle fixture，再依序實作；以下 case 必須成為可執行檢查，而非人工勾選。共通命令、證據規則與 integration 前置設定見執行索引。
+先寫對應失敗測試／Oracle fixture，再依序實作；以下 case 必須成為可執行檢查，而非人工勾選。以下檢查不依賴 Docker 或 live Broker，使用 Java fixture、可控時鐘及 scripted peer；共通命令與證據規則見執行索引。
 
 - [ ] **P5-V01** — 每個 method 皆測 scripted success、預期 domain outcome、unknown error code 及 malformed success response。
-- [ ] **P5-V02** — 每個 supported method 都在 pinned 本機 Broker/NameServer 執行，具備 Java success/error differential 證據。
 - [ ] **P5-V03** — 單次 Broker method 只送一個 attempt；NameServer failover 與 oneway 遵守文件中的 deadline/pending 規則。
+
+- [ ] **P5-U01** — 以 Java request/response fixture 覆蓋每個 RPC 成功／錯誤分支及精確 invocation mode，不依賴 live server。
 
 ### 5.1 實作完成後的本機命令
 
@@ -82,9 +87,13 @@ MQClientApi 擁有或借用 RemotingClient，不依賴 process singleton。Broke
 
 ```bash
 cargo test -p rocketmq-classic-core --test rpc --locked
-RMQ_NAMESRV_ADDR=127.0.0.1:9876 cargo test -p rocketmq-classic-integration --test broker --locked -- --ignored
-bash tests/differential/run.sh --phase 5
 ```
+
+### 5.2 Phase 19 live 測試交接
+
+保留以下 case ID 及行為要求，於 Phase 19 使用 5.3.4 Docker server 執行；不是本 phase 的通過條件，不可提前標 PASS。
+
+- [ ] **P5-V02** — 每個 supported method 都在 pinned 本機 Broker/NameServer 執行，具備 Java success/error differential 證據。
 
 ## 6. 驗收與交接
 

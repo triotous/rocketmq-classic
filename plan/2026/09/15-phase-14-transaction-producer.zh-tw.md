@@ -3,13 +3,19 @@
 > 主計畫：[`00-rocketmq-classic-plan.md`](00-rocketmq-classic-plan.md)，Phase 14；執行索引：[`README.zh-tw.md`](README.zh-tw.md)。
 > 英文為主版本：[`15-phase-14-transaction-producer.md`](15-phase-14-transaction-producer.md)。此文件是實作計畫，不是已完成／已驗證的報告。
 
+## 執行契約
+
+- **完整移植 Java client 5.5.1 的設定、功能與控制流程**，包含預設值、驗證、callback、error、retry 與 lifecycle。Java source/method/configuration 與 Rust、unit-test ID 必須雙向對照；不可新增 Rust 專有公開設定／功能，也不可缺少 Java client 能力。Rust 命名／ownership 可不同，可觀察語意不可不同。測試接點保持 private。
+- **只實作 client**。Java client 5.5.1 維持 Oracle；**RocketMQ server V5_3_4（5.3.4）**是 production／本機 Docker 基準，不是 client source 基準。server 限制不能作為刪除 client 功能的理由；兩種 client 對同一 server 比較，無法執行的成功路徑仍保留 source／fixture 證據。
+- **Phase 0–18 以 unit test 為主要測試方式**，輔以 Java golden／離線 differential，以及 transport 必要的小型 scripted loopback test。live Broker 或 Docker 都不是階段前置條件。Broker、TLS/auth cluster、跨語言、端對端與 server stress 執行集中至 [Phase 19](20-phase-19-docker-local-validation.zh-tw.md)；非本地檢查於該階段列為 owner 手動驗證。階段驗收不等於最終相容性／發布驗收。
+
 ## 1. 目標與範圍
 
 使用既有 Producer 與 inbound transport 實作 half-message、local decision 與 Broker transaction-check。half send 成功不代表已 commit 可見。
 
 ## 2. 前置條件與現況分析
 
-Phase 7–8 producer/decoder 與 Phase 6 processor registry 已驗收；Phase 13 scope gate 已關閉。重用 Phase 4/5 end/check transaction header 與 RPC。
+Phase 7–8 producer/decoder 與 Phase 6 processor registry 已驗收；Phase 13 完整 source-mapping 稽核已完成。重用 Phase 4/5 end/check transaction header 與 RPC。
 
 - 先完成: [Phase 13](14-phase-13-lite-assignment-pop.zh-tw.md).
 
@@ -57,11 +63,12 @@ start 時要求 local/check callback，依 producer group 註冊，拒絕重複 
 
 ## 5. 驗證
 
-先寫對應失敗測試／Oracle fixture，再依序實作；以下 case 必須成為可執行檢查，而非人工勾選。共通命令、證據規則與 integration 前置設定見執行索引。
+先寫對應失敗測試／Oracle fixture，再依序實作；以下 case 必須成為可執行檢查，而非人工勾選。以下檢查不依賴 Docker 或 live Broker，使用 Java fixture、可控時鐘及 scripted peer；共通命令與證據規則見執行索引。
 
 - [ ] **P14-V01** — fixture 驗證 half property/flag，以及 commit、rollback、unknown 與 non-OK send status 的全部 end/check field。
 - [ ] **P14-V02** — error/panic/cancellation、repeated check、slow callback 與 shutdown race 不產生意外 commit 或 reader blockage。
-- [ ] **P14-V03** — 本機 Broker commit 可消費、rollback 不可見、Unknown 透過真正 Broker check 解決；以有界 configured check interval 比對 Java 行為。
+
+- [ ] **P14-U01** — scripted half-send/check input 驗證 commit/rollback/unknown decision 及精確 end-transaction field；fixture 不宣稱實際 Broker visibility。
 
 ### 5.1 實作完成後的本機命令
 
@@ -69,8 +76,13 @@ start 時要求 local/check callback，依 producer group 註冊，拒絕重複 
 
 ```bash
 cargo test -p rocketmq-classic-producer --test transaction --locked
-bash tests/differential/run.sh --phase 14
 ```
+
+### 5.2 Phase 19 live 測試交接
+
+保留以下 case ID 及行為要求，於 Phase 19 使用 5.3.4 Docker server 執行；不是本 phase 的通過條件，不可提前標 PASS。
+
+- [ ] **P14-V03** — 本機 Broker commit 可消費、rollback 不可見、Unknown 透過真正 Broker check 解決；以有界 configured check interval 比對 Java 行為。
 
 ## 6. 驗收與交接
 

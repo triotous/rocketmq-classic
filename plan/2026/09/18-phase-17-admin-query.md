@@ -3,13 +3,19 @@
 > Parent: [`00-rocketmq-classic-plan.md`](00-rocketmq-classic-plan.md), Phase 17; execution index: [`README.md`](README.md).
 > Translation: [`18-phase-17-admin-query.zh-tw.md`](18-phase-17-admin-query.zh-tw.md). This is an implementation plan, not a report of completed or verified implementation.
 
+## Execution contract
+
+- Port **all Java client 5.5.1 settings, features and control flows**, including defaults, validation, callbacks, errors, retries and lifecycle. Map Java source/method/configuration to Rust and unit-test IDs in both directions; no extra public Rust setting/feature and no missing Java client capability. Rust naming/ownership may differ, not observable semantics. Internal test seams stay private.
+- Implement the **client only**. Java client 5.5.1 remains the oracle; **RocketMQ server V5_3_4 (5.3.4)** is the production/local Docker baseline, not the client source baseline. A server limitation does not authorize deleting a client feature; compare both clients against the same server and retain source/fixture coverage for unavailable success paths.
+- **Phase 0–18 primarily use unit tests**, supplemented by Java golden/offline differential tests and small scripted loopback tests where transport requires them. No live Broker or Docker is a phase prerequisite. Broker, TLS/auth cluster, cross-language, end-to-end and server stress execution belongs to [Phase 19](20-phase-19-docker-local-validation.md); non-local checks become owner-executed manual items there. Phase acceptance is not final compatibility/release acceptance.
+
 ## 1. Goal and scope
 
-Expose the approved MQAdmin/query operations and finish client-side administrative processors. Do not expand into the rocketmq-tools command suite, Broker management server or Dashboard.
+Expose every Java 5.5.1 rocketmq-client MQAdmin/query operation and complete every client-side administrative processor. Do not port the separate rocketmq-tools suite, Broker server or Dashboard.
 
 ## 2. Prerequisites and current-state analysis
 
-Phases 0–16 are accepted. Reuse Phase 9 offset-boundary RPCs, Phase 8 message decoding, Phase 6 processor dispatch and Phase 16 namespace/hooks. Optional admin crate creation requires actual approved operations; otherwise place the small facade in core/public crate.
+Phases 0–16 unit gates pass. Reuse Phase 9 offset RPCs, Phase 8 decoder, Phase 6 dispatch and Phase 16 namespace/hooks. Crate packaging is internal; all Java client admin APIs remain mandatory.
 
 - Read/complete first: [Phase 16](17-phase-16-namespace-security-operations.md).
 
@@ -40,13 +46,13 @@ Each operation follows typed models→single-attempt MQClientApi→public facade
 
 ## 4. Ordered implementation tasks
 
-### 4.1 P17-01 — Approve the exact client admin surface
+### 4.1 P17-01 — Audit the complete client admin surface
 
-Inventory methods from pinned rocketmq-client MQAdmin, not the separate tools artifact. For create topic, fetch publish/subscribe queues, search/min/max offsets, earliest store time, view message and query-by-key/topic, record supported/deferred and owner approval. Include inbound reset-offset, status, running-info and direct-consume processor obligations from the client inventory. Keep already-used offset primitives supported regardless of optional admin exposure.
+Inventory every pinned rocketmq-client MQAdmin method and configuration, not the separate tools artifact. Include create topic, publish/subscribe queues, search/min/max offset, earliest store time, view/query message and every source-confirmed operation. Include inbound reset/status/running-info/direct-consume obligations. Map all to Rust and unit tests; no supported/deferred selection.
 
 ### 4.2 P17-02 — Reuse models and add missing RPC evidence
 
-For approved missing operations, add request/response models and fixtures before network methods. Reuse route conversion and offset-boundary APIs without duplicate constants. Validate topic/key/time range/max count and distinguish unique client ID lookup from offset message ID lookup using Java source. Decode view/query messages with existing bounded decoder and apply namespace stripping consistently.
+For all missing Java operations, add request/response models and fixtures before network methods. Reuse route conversion and offset-boundary APIs without duplicate constants. Validate topic/key/time range/max count and distinguish unique client ID lookup from offset message ID lookup using Java source. Decode view/query messages with existing bounded decoder and apply namespace stripping consistently.
 
 ### 4.3 P17-03 — Implement query fan-out and public results
 
@@ -58,15 +64,16 @@ Reset-offset pauses affected queues, fences generations, coordinates in-flight w
 
 ### 4.5 P17-05 — Audit the remaining unsupported processors
 
-Revisit every Phase 6 stub. Each is now an implemented tested handler or a documented owner-approved intentional difference; no generic success stub survives. Add minimal public examples for approved query/create operations and keep permission requirements explicit. Update REQUEST_CODES.md and the method-level matrix with direct evidence IDs.
+Replace every Java-supported Phase 6 processor stub with a source-aligned tested implementation. No intentional feature difference or generic success stub may remain. Add public query/create examples, permission requirements and source/unit evidence IDs.
 
 ## 5. Verification
 
-Write the failing check/oracle fixture before its implementation. The cases below must become runnable checks, not manual checklist-only claims. Shared commands, evidence rules and integration prerequisites are in the execution index.
+Write the failing check/oracle fixture before its implementation. The cases below must become runnable checks, not manual checklist-only claims. Run these checks without Docker or a live Broker; use Java fixtures, controlled clocks and scripted peers. Shared commands and evidence rules are in the execution index.
 
-- [ ] **P17-V01** — Each approved operation has success, not-found/permission/error and malformed-response coverage; existing offset/route behavior is unchanged.
-- [ ] **P17-V02** — Local multi-Broker query results match Java for duplicate keys, bounded time ranges and partial failure.
+- [ ] **P17-V01** — Each Java client operation has success, not-found/permission/error and malformed-response coverage; existing offset/route behavior is unchanged.
 - [ ] **P17-V03** — Reset versus slow callback/late pull cannot restore old offsets; direct-consume leaves regular offsets unchanged and status requests remain responsive.
+
+- [ ] **P17-U01** — Scripted multi-Broker query responses verify duplicate-key merge, bounded time range, partial failure and exact Java errors.
 
 ### 5.1 Local commands after implementation
 
@@ -75,16 +82,17 @@ Run after this phase or earlier phases create the named entry points. This docum
 ```bash
 cargo test -p rocketmq-classic-core --test admin --locked
 cargo test -p rocketmq-classic-consumer --locked
-bash tests/differential/run.sh --phase 17
 ```
+
+### 5.2 Phase 19 live-test handoff
+
+Retain these case IDs and behavior requirements for Phase 19 execution against Docker server 5.3.4; they are not this phase's pass conditions and must not be marked PASS early.
+
+- [ ] **P17-V02** — Local multi-Broker query results match Java for duplicate keys, bounded time ranges and partial failure.
 
 ## 6. Acceptance and handoff
 
-Phase 18 receives a fully classified public-method and inbound-processor inventory. Do not call the entire Java public API compatible if owner-approved exclusions remain undocumented.
+Phase 18 receives complete public-method, configuration and inbound-processor mappings with passing unit evidence. No Java client API or setting may be excluded; live evidence is pending Phase 19.
 
 - Handoff includes changed paths, case IDs, actual commands/results, fixture provenance and matrix status/gaps; follow the shared rules in the index.
 - Next: [Phase 18](19-phase-18-compatibility-release-gate.md).
-
-## 7. Open questions / decisions required
-
-1. Which MQAdmin operations must be public in the first stable release? Approve the method list at P17-01; existing offset primitives and safe handling of inbound administrative requests cannot simply be removed.

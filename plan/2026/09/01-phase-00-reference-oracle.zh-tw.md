@@ -3,9 +3,15 @@
 > 主計畫：[`00-rocketmq-classic-plan.md`](00-rocketmq-classic-plan.md)，Phase 0；執行索引：[`README.zh-tw.md`](README.zh-tw.md)。
 > 英文為主版本：[`01-phase-00-reference-oracle.md`](01-phase-00-reference-oracle.md)。此文件是實作計畫，不是已完成／已驗證的報告。
 
+## 執行契約
+
+- **完整移植 Java client 5.5.1 的設定、功能與控制流程**，包含預設值、驗證、callback、error、retry 與 lifecycle。Java source/method/configuration 與 Rust、unit-test ID 必須雙向對照；不可新增 Rust 專有公開設定／功能，也不可缺少 Java client 能力。Rust 命名／ownership 可不同，可觀察語意不可不同。測試接點保持 private。
+- **只實作 client**。Java client 5.5.1 維持 Oracle；**RocketMQ server V5_3_4（5.3.4）**是 production／本機 Docker 基準，不是 client source 基準。server 限制不能作為刪除 client 功能的理由；兩種 client 對同一 server 比較，無法執行的成功路徑仍保留 source／fixture 證據。
+- **Phase 0–18 以 unit test 為主要測試方式**，輔以 Java golden／離線 differential，以及 transport 必要的小型 scripted loopback test。live Broker 或 Docker 都不是階段前置條件。Broker、TLS/auth cluster、跨語言、端對端與 server stress 執行集中至 [Phase 19](20-phase-19-docker-local-validation.zh-tw.md)；非本地檢查於該階段列為 owner 手動驗證。階段驗收不等於最終相容性／發布驗收。
+
 ## 1. 目標與範圍
 
-在實作 Rust 協定前，建立可執行的 Java Oracle、可重現的本機 Broker 環境及證據清單。本階段建立驗證基礎，不實作 Rust client。
+在 Rust 協定實作前建立可離線執行的 Java Oracle 與完整 source／設定／功能清單。Docker cluster 建立及 live scenario 執行屬於 Phase 19。
 
 ## 2. 前置條件與現況分析
 
@@ -38,9 +44,6 @@ compat/java-reference/src/main/java/compat/Main.java
 fixtures/README.md
 fixtures/remoting/
 fixtures/messages/
-integration-tests/compose.yaml
-integration-tests/setup.sh
-integration-tests/README.md
 tests/differential/scenarios.yaml
 tests/differential/compare.py
 docs/compatibility/JAVA_5_5_1_COMPATIBILITY.md
@@ -58,7 +61,7 @@ Oracle CLI 提供 `fixtures --output <dir>`、`decode --input <file>`、`scenari
 
 ### 4.2 P0-01 — 建立證據與範圍清單
 
-依主計畫建立完整 matrix 欄位，包含 source/Rust mapping、request code、golden/unit/integration/differential 識別資訊與狀態值。盤點 pinned source 的 public client API 及所有 RequestCode/ResponseCode 數值；區分「已有常數」與「已實作操作」。加入 source class/method 連結與負責 phase。實作項目一律從 TODO 開始；納入 transaction、reply、Lite/POP、admin、namespace、hooks 與 security。選配範圍未決時記為 pending，不可標為 COMPATIBLE。
+依主計畫建立 matrix，補上 Java setting name/type/default/unit/range/validation、public method/overload、source 控制流程分支、Rust mapping 與 unit-test ID。雙向稽核 Java-to-Rust 完整性及 Rust-to-Java 無額外公開功能／設定。納入 inherited、deprecated、environment/system-property 設定途徑。全部 client 能力均必要，包含 Lite/POP、allocation strategy、admin、namespace、hook、security 與 trace；不可選配刪減。
 
 ### 4.3 P0-02 — 實作協定 fixture 輸入輸出
 
@@ -66,11 +69,11 @@ Oracle CLI 提供 `fixtures --output <dir>`、`decode --input <file>`、`scenari
 
 ### 4.4 P0-03 — 建立可重現情境與 comparator
 
-登錄主計畫所有 Phase 0 scenario ID，並補上 heartbeat、offset update 及 header 反例。先實作 route/send/pull/offset/lock；採用隔離的 topic/group 及明確初始 offset。純 allocation 與 header 情境不需要 Broker。comparator self-test 必須證明非決定性 ID 可正規化，但 status 或 queue 順序改變仍會失敗。未來 scenario ID 可先登錄，但未實作時必須明示，不可回報成功。
+登錄主計畫全部 Phase 0 scenario ID，另加 heartbeat、offset update 與 header 反例。本階段實作離線 fixture/allocation/header scenario 與 comparator self-test。live route/send/pull/offset/lock scenario 記錄 execution_phase=19、required profile 及隔離 topic/group 要求；待執行 live case 不可回報 PASS。
 
-### 4.5 P0-04 — 提供本機 cluster 與可重現 setup
+### 4.5 P0-04 — 定義 Phase 19 環境需求
 
-以已驗證的 5.5.1 distribution/image 建立基本 NameServer + Broker Compose profile；記錄 checksum 或 image digest，以及映射與 advertised address。readiness 必須使用實際 route/admin 操作，不可固定 sleep。setup.sh 在隔離測試 cluster 以冪等方式建立固定 queue/topic/group，說明 reset/cleanup，且不得操作外部資料。加入 two-Broker 與本機 TLS CA profile；確認 pinned auth 路徑後才建立 auth profile。TLS profile 不可關閉憑證驗證。
+scenario metadata 分別記錄 server_version=5.3.4 與 java_client_version=5.5.1。盤點 basic、two-Broker、TLS/auth 及特定功能環境需求，交給 P19-01/02。本階段不建立／啟動 Docker，不要求 live server 證據。以 unit test 驗證 manifest 及缺少前置條件的回報。
 
 ### 4.6 P0-05 — 提交可重現證據
 
@@ -78,12 +81,13 @@ Oracle CLI 提供 `fixtures --output <dir>`、`decode --input <file>`、`scenari
 
 ## 5. 驗證
 
-先寫對應失敗測試／Oracle fixture，再依序實作；以下 case 必須成為可執行檢查，而非人工勾選。共通命令、證據規則與 integration 前置設定見執行索引。
+先寫對應失敗測試／Oracle fixture，再依序實作；以下 case 必須成為可執行檢查，而非人工勾選。以下檢查不依賴 Docker 或 live Broker，使用 Java fixture、可控時鐘及 scripted peer；共通命令與證據規則見執行索引。
 
 - [ ] **P0-V01** — 產生 fixtures 兩次；metadata hash 符合 raw file，正規化 semantic result 一致。
 - [ ] **P0-V02** — Java 可解碼自身產生的兩種 codec；畸形 fixture 失敗；comparator self-test 能找出有意義差異。
-- [ ] **P0-V03** — 基本本機 cluster：Java producer/consumer、route、heartbeat、pull、offset 與 lock 操作產生非空的 machine-readable 證據。
 - [ ] **P0-V04** — 修改 Maven client 版本會使驗證失敗；缺少前置條件的 scenario 不得回報 PASS。
+
+- [ ] **P0-U01** — 不啟動 Broker 即可建構 route、heartbeat、send、pull、offset 與 lock/unlock fixture；scenario metadata 區分 client/server 版本及待執行 live 證據。
 
 ### 5.1 實作完成後的本機命令
 
@@ -93,13 +97,17 @@ Oracle CLI 提供 `fixtures --output <dir>`、`decode --input <file>`、`scenari
 mvn -f compat/java-reference/pom.xml verify
 mvn -f compat/java-reference/pom.xml exec:java -Dexec.mainClass=compat.Main -Dexec.args="fixtures --output target/java-fixtures"
 python3 tests/differential/compare.py --self-test
-docker compose -f integration-tests/compose.yaml up -d
-bash integration-tests/setup.sh
 ```
+
+### 5.2 Phase 19 live 測試交接
+
+保留以下 case ID 及行為要求，於 Phase 19 使用 5.3.4 Docker server 執行；不是本 phase 的通過條件，不可提前標 PASS。
+
+- [ ] **P0-V03** — 基本本機 cluster：Java producer/consumer、route、heartbeat、pull、offset 與 lock 操作產生非空的 machine-readable 證據。
 
 ## 6. 驗收與交接
 
-一併提交已驗證基準、fixture manifest、可執行本機 cluster 步驟與 TODO matrix。必要 Oracle 證據可重現後才能開始 Phase 1；僅能在部署環境進行的測試收集至 Phase 18，不可取代本機門檻。
+一併提交已驗證基準、fixture manifest、離線 Oracle 證據與完整 source/configuration matrix。離線門檻通過後開始 Phase 1；Docker、live scenario 及非本地手動驗證需求交至 Phase 19，不在本階段啟動 cluster。
 
 - 交接需附變更檔案、case ID、實際命令／結果、fixture provenance，以及 matrix 狀態與未完成項目；共通規則見索引。
 - 下一階段: [Phase 1](02-phase-01-common-protocol-models.zh-tw.md).

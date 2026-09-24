@@ -8,13 +8,15 @@
 >
 > **Reference release:** Apache RocketMQ `rocketmq-all-5.5.1`, released 2026-08-20, tag commit `efa1be59d6fc747ad220f036c86030f05f0419f9`.
 >
-> **Primary rule:** do not mechanically translate Java classes. Match protocol, externally observable behavior, lifecycle, error semantics, routing, retry, offset, rebalance and transaction behavior. Rust internals should use Rust/Tokio primitives rather than copying Netty/JVM abstractions.
+> **Primary rule:** completely map Java client 5.5.1 code, configuration, features and control flows to Rust. No additional public Rust setting/feature and no missing Java setting/feature is allowed. Defaults, validation, errors, callbacks, retry and lifecycle must align. Rust ownership/Tokio primitives may replace JVM internals, not change observable semantics.
+>
+> **Server baseline:** production uses **V5_3_4 (5.3.4)**; Phase 19 uses this version in Docker. The client reference remains **5.5.1**. Implement only client code, never Broker/NameServer/server behavior.
 
 ---
 
 ## 1. How to use this document
 
-Detailed, sequential implementation plans for Phase 0–18 are available in the [English phase index](README.md) and [Traditional Chinese phase index](README.zh-tw.md). Each phase has a paired English/Traditional Chinese plan with prerequisites, ordered tasks, verification and handoff criteria; read the index's dependency clarifications before starting.
+Detailed, sequential implementation plans for Phase 0–19 are available in the [English phase index](README.md) and [Traditional Chinese phase index](README.zh-tw.md). Each phase has a paired English/Traditional Chinese plan with prerequisites, ordered tasks, verification and handoff criteria; read the index's dependency clarifications before starting.
 
 Each phase contains:
 
@@ -34,11 +36,23 @@ The expected workflow for every task is:
 4. Implement the smallest Rust change.
 5. Run unit tests.
 6. Run golden protocol tests if the change touches protocol or serialization.
-7. Run broker integration tests if the change touches an RPC.
-8. Run Java-vs-Rust differential tests if the change affects behavior.
+7. Add source-derived unit/scripted-peer RPC checks; register live Broker scenarios for Phase 19.
+8. Run offline Java-vs-Rust fixture comparisons now; execute server-dependent differential tests in Phase 19.
 9. Update the implementation log and compatibility matrix.
 
 **Do not mark a feature complete based only on “it can connect to a Broker”.**
+
+---
+
+### 1.1 Phase gates and complete parity
+
+**Phase 0–18 use unit tests as the primary gate.** Java golden/offline differential tests, temporary-file checks and small scripted loopback peers supplement unit tests without a live Broker or Docker dependency. Any Broker/integration/cross-language/cluster requirement in the feature specifications below is a **Phase 19 live-test obligation**, not a prerequisite for completing the owning implementation phase. Test its client decisions and emitted/consumed data with Java fixtures now, preserve its scenario ID, and record `execution_phase=19`. Unit success must never be reported as live evidence.
+
+Phase 19 builds Docker environments, runs every locally executable suite (including earlier offline suites) and lists only genuinely non-local requirements as owner-executed manual items. Final compatibility/release acceptance belongs to Phase 19; all required evidence must pass.
+
+Audit both directions: every Java public method/overload, inherited/deprecated setting, system-property/environment configuration and control-flow branch maps to Rust implementation and unit evidence; every Rust public setting/feature has a Java counterpart. Include names/types/defaults/units/ranges/validation, callback/error/order/retry/lifecycle semantics and actual source call sites. No optional feature exclusions, no-op settings or extra Rust tuning options are allowed. Test seams are private. Internal safety/ownership adaptations cannot alter valid-input behavior or Java configuration semantics; observable discrepancies block parity rather than receiving a waiver.
+
+Keep implementation `UNIT_VERIFIED`, live `PENDING_PHASE_19`, server-version results and final `COMPATIBLE` separate. A matched Java/Rust rejection on 5.3.4 proves only that rejection path, not successful support. Preserve full client implementation; use a verified supplementary local server profile for unavailable success paths when feasible, otherwise track genuinely non-local evidence explicitly. Missing evidence remains blocked.
 
 ---
 
@@ -51,6 +65,7 @@ This plan is based only on public Apache RocketMQ sources.
 | Release        | `rocketmq-all-5.5.1`                          |
 | Release date   | 2026-08-20                                    |
 | Release commit | `efa1be59d6fc747ad220f036c86030f05f0419f9`    |
+| Server baseline | `V5_3_4` / `5.3.4` (production; verified image/digest in Phase 19) |
 | Java artifact  | `org.apache.rocketmq:rocketmq-client:5.5.1`   |
 | Transport      | RocketMQ Remoting protocol over TCP/TLS       |
 | Serialization  | JSON and ROCKETMQ private header codec        |
@@ -97,7 +112,7 @@ As of **2026-09-19**, exact-name searches across public crates.io/docs.rs indexe
 | Shared client runtime    | `rocketmq-classic-core`     | `rocketmq_classic_core`     |
 | Producer implementation  | `rocketmq-classic-producer` | `rocketmq_classic_producer` |
 | Consumer implementation  | `rocketmq-classic-consumer` | `rocketmq_classic_consumer` |
-| Optional admin/query API | `rocketmq-classic-admin`    | `rocketmq_classic_admin`    |
+| Client admin/query API | `rocketmq-classic-admin`    | `rocketmq_classic_admin`    |
 
 Crates.io names are first-come, first-served, and collision checks are case-insensitive and treat `-` and `_` variants as conflicting names. **Immediately before the first publish**, repeat exact-name checks on crates.io for every package above. If any name has become occupied, change the whole prefix consistently rather than publishing a mixture of naming schemes.
 
@@ -124,9 +139,9 @@ Recommended publishing rule:
 | Producer behavior         | **Mandatory.** queue selection, timeout budget, retries and send status handling must match.                                 |
 | Consumer behavior         | **Mandatory for v1.0.** offsets, pull status, ProcessQueue semantics, retry, rebalance and orderly locking must match.       |
 | Lifecycle                 | **Mandatory.** start/shutdown/register/unregister/background task behavior must not leak resources.                          |
-| Public API                | Similar semantics, but Rust naming and `async` design are allowed.                                                           |
+| Public API                | Complete settings/features/flows parity; Rust naming/ownership may differ, observable semantics may not.                                                           |
 | Internal class layout     | **Not required.** Do not recreate Java inheritance, executors or Netty classes literally.                                    |
-| Bug-for-bug compatibility | Not a goal unless a bug changes wire-visible semantics required by an existing deployment.                                   |
+| Bug-for-bug compatibility | Investigate source discrepancies explicitly; no observable difference may be waived as an extra feature or omitted Java behavior.                                   |
 
 A Rust API may therefore look idiomatic:
 
@@ -145,7 +160,7 @@ let result = producer.send(
 ).await?;
 ```
 
-It does **not** need to copy Java setters, callbacks and class names as long as observable semantics are equivalent.
+Rust names and ownership need not copy Java class syntax, but every Java setting, callback mode, feature and flow requires an equivalent public path and source-backed behavior. An async API must not erase distinct Java sync/async/oneway semantics.
 
 ---
 
@@ -155,7 +170,7 @@ It does **not** need to copy Java setters, callbacks and class names as long as 
 
 ![Overall architecture](diagrams/01-overall-architecture.svg)
 
-The compatibility boundary is below the public Rust API. Everything from typed RPC down to the wire must be validated against Java 5.5.1/Broker 5.5.1.
+The compatibility boundary includes the public Rust API/configuration and all internal observable flows down to the wire. Validate against Java client 5.5.1; Phase 19 interoperability uses production-baseline server 5.3.4.
 
 ### 4.2 Workspace dependency structure
 
@@ -228,7 +243,7 @@ Recommended initial baseline:
 7. Unknown `extFields` must not be discarded when round-tripping a `RemotingCommand`.
 8. All timeout values use a single monotonic deadline internally; retries consume the remaining budget.
 9. A feature touching serialization is not complete without a golden fixture.
-10. A feature touching Broker behavior is not complete without an integration test.
+10. A feature touching Broker behavior needs unit/scripted-peer coverage now and a registered Phase 19 live test; final compatibility requires that live evidence.
 
 ---
 
@@ -276,7 +291,9 @@ Create columns:
 - unit-test ID;
 - integration-test ID;
 - differential-test ID;
-- status: `TODO / IN_PROGRESS / PARTIAL / COMPATIBLE / INTENTIONAL_DIFFERENCE`;
+- status: `TODO / IN_PROGRESS / PARTIAL / UNIT_VERIFIED / COMPATIBLE`;
+- separate live status (`PENDING_PHASE_19 / PASS / FAIL / BLOCKED`) and server version;
+- configuration defaults/types/units/ranges/validation, flow branches and reverse public-API mapping;
 - notes.
 
 Start with at least:
@@ -331,18 +348,9 @@ Create scenario IDs such as:
 
 Each scenario writes a machine-readable result JSON.
 
-### P0-04 — Broker test environment
+### P0-04 — Inventory Phase 19 environment requirements
 
-Provide a reproducible local RocketMQ 5.5.1 test cluster with:
-
-- one NameServer;
-- one Broker for basic tests;
-- optional two-Broker profile for retry/route tests;
-- TLS profile;
-- auth/ACL profile if supported by target scope;
-- deterministic topic/group setup script.
-
-Keep test configuration in source control.
+Record Java client 5.5.1 and server 5.3.4 independently in the scenario manifest. Inventory basic/two-Broker/TLS/auth and feature-specific profiles, isolated topic/group state and expected outcomes. Unit-test manifest validation and missing prerequisites. Phase 19 creates Docker/setup scripts and executes all live scenarios; Phase 0 does not require a cluster.
 
 ### P0-05 — Golden fixture metadata
 
@@ -364,7 +372,7 @@ Every fixture should have a sidecar metadata file containing:
 
 ## Definition of Done
 
-- Reference harness starts a Java producer and consumer against Broker 5.5.1.
+- Reference harness generates and cross-decodes deterministic offline Java fixtures without a Broker; live producer/consumer execution is registered for Phase 19.
 - At least route lookup, heartbeat, send, pull, offset query/update and lock/unlock fixtures exist.
 - Compatibility matrix exists and is version-pinned.
 
@@ -899,11 +907,11 @@ Shutdown sequence must:
 
 Request-reply completion must be **exactly once**. Add a deterministic test where response completion, timeout and cancellation race.
 
-A post-5.5.1 upstream report also describes a response-vs-timeout table race near the timeout boundary. Fixing that race is recommended because it does not intentionally change protocol semantics; document it as a hardening improvement rather than claiming bug-for-bug parity.
+Trace response-versus-timeout behavior to the pinned Java source and preserve terminal completion semantics. Use deterministic tests; investigate any observable discrepancy before changing behavior, rather than accepting a hardening difference by default.
 
 ## Definition of Done
 
-A raw typed test command can be sent to a 5.5.1 NameServer/Broker and receive a correctly matched response under concurrent load, timeout and connection-close tests.
+A raw typed test command can be sent to a 5.3.4 NameServer/Broker and receive a correctly matched response under concurrent load, timeout and connection-close tests.
 
 ---
 
@@ -1262,7 +1270,7 @@ Multiple Producers/Consumers can share a runtime and route/heartbeat background 
 
 ## Goal
 
-Deliver the first useful client milestone: a production-shaped Producer that can send to RocketMQ 5.5.1 without Proxy/gRPC.
+Deliver the first useful client milestone: a production-shaped Producer that can send to RocketMQ server 5.3.4 without Proxy/gRPC.
 
 ## Architecture
 
@@ -1568,7 +1576,7 @@ Preserve semantics for:
 
 Needed for broadcasting compatibility.
 
-Make filesystem location configurable while preserving a Java-compatible default strategy if practical. Use atomic file replacement to avoid corrupted state.
+Expose the Java-equivalent local-offset path configuration with its exact defaults and precedence; do not add a Rust-only storage setting. Match Java read/recovery/error semantics, using safe internal file ownership without changing observable behavior.
 
 ### P9-04 — Pull API
 
@@ -1584,7 +1592,7 @@ Route to the correct Broker ID using suggested broker logic.
 
 ### P9-05 — Offset boundary helpers
 
-Implement search/max/min/earliest offset RPCs if they are part of the public compatibility surface selected for v1.0.
+Implement all Java search/max/min/earliest offset RPCs and their public client configuration/behavior.
 
 ## Tests
 
@@ -1805,7 +1813,7 @@ Golden scenarios:
 
 ### P11-03 — Other Java strategies
 
-Implement the 5.5.1 public strategies selected for parity, including circle and consistent-hash variants and machine-room strategy if present in the public API.
+Implement every Java 5.5.1 public allocation strategy, including all source-confirmed circle, consistent-hash and machine-room variants. No strategy may be excluded.
 
 Each gets direct Java-vs-Rust allocation differential tests.
 
@@ -1942,7 +1950,7 @@ Orderly per-queue processing remains ordered under concurrent queues and consume
 
 Cover additional Remoting consumer features present in the Java 5.5.1 codebase rather than stopping at classic Push Consumer.
 
-This phase can be split into separate milestones if the project's required public surface is smaller.
+All Java consumer capabilities are mandatory; milestones cannot reduce the public surface or omit control flows.
 
 ## Java reference
 
@@ -1954,15 +1962,9 @@ This phase can be split into separate milestones if the project's required publi
 
 ## Implementation tasks
 
-### P13-01 — Compatibility-scope decision
+### P13-01 — Complete method/configuration/flow audit
 
-Before coding, update matrix for each Java public API:
-
-- supported in v1.0;
-- supported later;
-- intentionally not exposed but lower-level RPC available.
-
-Do not silently omit APIs while calling the project “1:1”.
+Map every Java consumer API, setting and source flow to Rust and unit evidence. Preserve public versus lower-level visibility as Java defines it. No deferred feature, missing higher-level Java API or additional Rust-only POP framework is allowed. Complete all source-confirmed Java Push POP paths, not only ACK RPCs.
 
 ### P13-02 — Lite Pull
 
@@ -1974,7 +1976,7 @@ Implement `QUERY_ASSIGNMENT` and static/request-mode response conversion.
 
 ### P13-04 — POP lower-level API
 
-Implement and integration-test:
+Implement and unit-test now; execute live checks in Phase 19:
 
 - pop;
 - ack;
@@ -1989,7 +1991,7 @@ Implement and integration-test:
 
 ## Definition of Done
 
-Every Java 5.5.1 consumer-facing API has an explicit compatibility status and all “supported” entries have integration tests.
+Every Java 5.5.1 consumer-facing API/setting/flow is implemented with unit evidence and registered Phase 19 live coverage; no exclusions.
 
 ---
 
@@ -2064,7 +2066,7 @@ Transaction callback workers/tasks are owned by producer/runtime and must termin
 
 ## Definition of Done
 
-Broker 5.5.1 completes commit/rollback/check flows with the Rust producer and the final message visibility matches Java behavior.
+Broker 5.3.4 completes commit/rollback/check flows with the Rust producer and the final message visibility matches Java behavior.
 
 ---
 
@@ -2167,7 +2169,7 @@ Hooks must be able to modify ext fields before encode for auth/signature use cas
 
 Do not hardwire auth into Remoting transport. Implement through hooks/interceptors where possible.
 
-If targeting Apache's current ACL implementation, pin behavior to the server/client code available in 5.5.1 and build dedicated signed-request fixtures.
+Port all auth paths exposed by Java client 5.5.1 with dedicated signed-request fixtures. Validate interoperability against server 5.3.4 in Phase 19; classify unsupported server paths separately without removing client support.
 
 ## 16.4 TLS
 
@@ -2175,7 +2177,7 @@ Complete all configuration/public API documentation and interoperability tests.
 
 ## 16.5 Trace hooks
 
-If message trace parity is in scope:
+Message trace configuration and behavior parity is mandatory:
 
 - reproduce trace event semantics;
 - keep trace producer isolated from normal producer recursion;
@@ -2204,9 +2206,9 @@ The client can run in the target production security topology without applicatio
 
 Close the gap between “send/consume works” and Java `rocketmq-client` public capabilities.
 
-Use the compatibility matrix to decide exactly which `MQAdmin` operations are part of the first stable release.
+Use the compatibility matrix to enumerate and implement every Java rocketmq-client `MQAdmin` operation/configuration; no selection or exclusions. The separate tools artifact remains outside client scope.
 
-Candidate operations include:
+Required operations include (complete from source, not an exhaustive list):
 
 - create topic where client API exposes it;
 - fetch publish/subscribe queues;
@@ -2221,11 +2223,11 @@ Each operation follows the same rule: typed header/body → `MQClientApi` → pu
 
 ---
 
-# Phase 18 — Compatibility, Performance and Release Gate
+# Phase 18 — Complete Unit Parity and Prepare Final Validation
 
 ## Goal
 
-Prove compatibility rather than declaring it.
+Complete all Java source/settings/flow coverage with unit tests, golden/offline differential tests, deterministic races, fuzz smoke and microbenchmarks. Hand off live suites to Phase 19; no release or complete interoperability claim is authorized here.
 
 ## Architecture
 
@@ -2248,15 +2250,15 @@ Used for:
 
 Used for every Remoting/header/message encoding.
 
-### Layer C — Broker integration tests
+### Layer C — Broker integration tests (Phase 19)
 
-Use actual RocketMQ 5.5.1 NameServer/Broker.
+Use actual RocketMQ 5.3.4 NameServer/Broker in Phase 19; Phase 18 uses fixtures/scripted peers.
 
-### Layer D — Java/Rust differential tests
+### Layer D — Java/Rust differential tests (offline now, live in Phase 19)
 
 Same initial cluster state + same logical input. Compare normalized results.
 
-### Layer E — Cross-language interoperability
+### Layer E — Cross-language interoperability (Phase 19)
 
 Required combinations:
 
@@ -2305,7 +2307,7 @@ Properties:
 
 ## 18.4 Concurrency/stress tests
 
-Required stress suites:
+Use deterministic unit/scripted-peer versions in Phase 18; execute server-backed stress in Phase 19:
 
 - thousands of concurrent sends;
 - response near timeout boundary;
@@ -2345,7 +2347,20 @@ After repeated start/shutdown cycles assert:
 
 ## Definition of Done
 
-A release candidate may be tagged only when every advertised compatibility-matrix entry is `COMPATIBLE` or explicitly documented as `INTENTIONAL_DIFFERENCE`.
+Phase 18 completes only when all Java client settings/features/flows have passing unit evidence and the reverse audit finds no extra public Rust capability. Live evidence remains pending Phase 19; no intentional feature/configuration/behavior difference can satisfy parity.
+
+---
+
+# Phase 19 — Docker Local Validation and Final Acceptance
+
+The implementation-ready [English plan](20-phase-19-docker-local-validation.md) and [Traditional Chinese plan](20-phase-19-docker-local-validation.zh-tw.md) define environment setup, profiles, scenario coverage, runners, manual items and final gates.
+
+1. Pin verified unmodified RocketMQ server **5.3.4** Docker artifacts; retain **Java client 5.5.1** as the independent oracle.
+2. Build isolated basic/two-Broker/TLS/auth and source-required feature/failover profiles with readiness, idempotent setup and safe teardown. Implement no server code.
+3. Run all Phase 0–18 unit/golden/offline suites plus every local Broker/differential/cross-language/recovery/stress test. Preserve original scenario IDs, reconcile expected/executed cases and fail on missing/skipped evidence.
+4. Compare every client setting/feature/flow in both directions. Separate 5.3.4 rejection behavior from successful feature evidence; use verified supplementary local profiles when needed without replacing production-baseline results.
+5. List genuinely non-local production network, real CA/auth provisioning, production HA/failover and capacity/soak checks as owner-executed manual items with commands, expected results, cleanup and evidence. Locally runnable checks cannot be waived manually.
+6. Final approval requires complete parity, all required local/manual evidence and zero extra public Rust settings/features. Missing evidence remains BLOCKED. Publishing/tagging requires separate authorization.
 
 ---
 
@@ -2371,14 +2386,14 @@ Suggested delivery order:
 | Orderly consume            |          |                   |        ✓ |                           ✓ |
 | Transaction producer       |          |                   |        ✓ |                           ✓ |
 | Request/reply              |          |                   |        ✓ |                           ✓ |
-| Lite Pull                  |          |                   | optional |            ✓/documented gap |
-| POP lower-level APIs       |          |                   | optional |            ✓/documented gap |
+| Lite Pull                  |          |                   | later phase |            ✓ |
+| POP lower-level APIs       |          |                   | later phase |            ✓ |
 | Namespace                  |        ✓ |                 ✓ |        ✓ |                           ✓ |
 | TLS                        |        ✓ |                 ✓ |        ✓ |                           ✓ |
 | Auth/ACL hooks             | hook API |                 ✓ |        ✓ |                           ✓ |
-| Trace                      |          |          optional | optional |            ✓/documented gap |
-| Admin/query                |          |           partial |  partial | compatibility-matrix driven |
-| Java differential suite    | Producer | Producer+Consumer | Advanced |     Full advertised surface |
+| Trace                      |          |       later phase | later phase |            ✓ |
+| Admin/query                |          |           partial |  partial | all Java client operations |
+| Java differential suite    | Producer | Producer+Consumer | Advanced |     Full Java client surface |
 
 The exact release labels are less important than the rule: **do not start advanced Consumer work until Remoting/route/Producer are stable.**
 
@@ -2485,7 +2500,8 @@ A junior developer should not edit all crates at once. A suggested ownership spl
 | 13    | lite/pop                               |
 | 14    | transaction                            |
 | 15    | request-reply                          |
-| 16+   | cross-cutting/security/admin/hardening |
+| 16–18 | cross-cutting/security/admin/unit parity |
+| 19 | Docker environments, all local tests, manual evidence and final gate |
 
 If a task unexpectedly requires changing a lower completed phase's public contract, stop the PR and write an ADR explaining why. This is a signal that the earlier abstraction may be wrong.
 
@@ -2535,7 +2551,7 @@ Every implementation PR should answer all of the following.
 
 # 24. CI Gates
 
-Recommended CI jobs:
+Phase 0–18 require server-free jobs 1–5 and offline portions of 9–12. Phase 19 adds mandatory Docker/live portions of 6–12; all suites run for final acceptance. Recommended jobs:
 
 1. `cargo fmt --check`;
 2. `cargo clippy --workspace --all-targets --all-features -- -D warnings`;
@@ -2624,7 +2640,7 @@ Code review should be stricter in the first five areas.
 
 # 27. Explicit Non-Goals for the Initial Implementation
 
-Unless separately approved, do not implement these while the base client is incomplete:
+This client-only plan does not implement:
 
 - Broker/server implementation;
 - NameServer server implementation;
@@ -2645,19 +2661,19 @@ Before claiming v1.0 compatibility, all of the following must be true:
 
 - [ ] Source baseline is pinned to `rocketmq-all-5.5.1` / `efa1be59...`.
 - [ ] JSON and ROCKETMQ Remoting codecs cross-decode with Java fixtures.
-- [ ] All advertised RequestCode/header/body mappings are fixture-tested.
-- [ ] Rust Producer works directly with 5.5.1 NameServer/Broker without Proxy.
+- [ ] All Java client RequestCode/header/body mappings and inbound flows are fixture-tested.
+- [ ] Rust Producer works directly with 5.3.4 NameServer/Broker without Proxy.
 - [ ] Producer sync/async/oneway/batch/retry behavior passes differential tests.
 - [ ] Pull/Push consumers decode messages and persist offsets compatibly.
-- [ ] Supported allocation strategies produce exactly the same assignments as Java.
+- [ ] Every Java allocation strategy produces exactly the same assignments.
 - [ ] Orderly consumption lock lifecycle passes multi-consumer tests.
-- [ ] Transaction commit/rollback/check works against Broker 5.5.1.
+- [ ] Transaction commit/rollback/check works against Broker 5.3.4.
 - [ ] Request/reply completes exactly once under timeout races.
 - [ ] Runtime concurrent construction regression test passes.
 - [ ] start/shutdown stress tests show no owned-task/connection leaks.
-- [ ] TLS and selected auth mode have interoperability tests.
-- [ ] Every Java 5.5.1 public client feature has a compatibility-matrix status.
-- [ ] All intentional differences are documented with user-visible impact.
+- [ ] Every Java TLS/auth path has source/unit coverage and applicable Phase 19 interoperability evidence.
+- [ ] Every Java 5.5.1 public client setting/feature/flow is implemented with complete evidence; reverse audit finds no extra Rust public setting/feature.
+- [ ] All locally executable tests ran in Phase 19; required non-local manual evidence passed and no unresolved parity gap remains.
 
 Only after these gates pass should the project describe itself as a 5.5.1-compatible Rust Remoting client rather than “experimental”.
 
@@ -2688,7 +2704,7 @@ Once implementation begins, create and maintain these files in the repository:
 | ------------------------------------------------------ | ------------------------------------------------ |
 | `docs/compatibility/JAVA_5_5_1_COMPATIBILITY.md`       | source/class/API compatibility matrix            |
 | `docs/compatibility/REQUEST_CODES.md`                  | request code → header/body → Rust implementation |
-| `docs/compatibility/KNOWN_DIFFERENCES.md`              | intentional deviations                           |
+| `docs/compatibility/KNOWN_DIFFERENCES.md`              | unresolved blockers/server limitations, not feature waivers |
 | `docs/architecture/ADR-0001-remoting-transport.md`     | Tokio transport design                           |
 | `docs/architecture/ADR-0002-client-runtime-sharing.md` | client-ID runtime ownership                      |
 | `docs/architecture/ADR-0003-consumer-process-queue.md` | ProcessQueue concurrency model                   |
