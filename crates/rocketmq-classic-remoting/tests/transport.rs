@@ -58,6 +58,18 @@ struct ContextCallback {
     events: Arc<std::sync::Mutex<Vec<&'static str>>>,
 }
 
+struct EventCallback(Arc<std::sync::Mutex<Vec<&'static str>>>);
+
+impl InvokeCallback for EventCallback {
+    fn operation_complete_with_context(&self, _: &InvokeCallbackResult) {
+        self.0.lock().unwrap().push("complete");
+    }
+
+    fn operation_fail(&self, _: &TransportError) {
+        self.0.lock().unwrap().push("fail");
+    }
+}
+
 impl InvokeCallback for ContextCallback {
     fn operation_complete_with_context(&self, context: &InvokeCallbackResult) {
         self.events.lock().unwrap().push("complete");
@@ -71,6 +83,32 @@ impl InvokeCallback for ContextCallback {
     fn operation_fail(&self, _: &TransportError) {
         self.events.lock().unwrap().push("fail");
     }
+}
+
+#[tokio::test]
+async fn p3_async_connect_failure_calls_fail_without_complete() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    drop(listener);
+    let client = RemotingClient::new(TransportMode::Plain);
+    let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+    client
+        .invoke_async(
+            address,
+            command(1),
+            Instant::now() + Duration::from_secs(1),
+            Arc::new(EventCallback(events.clone())),
+        )
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while events.lock().unwrap().is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(*events.lock().unwrap(), vec!["fail"]);
+    client.shutdown().await;
 }
 
 #[tokio::test]

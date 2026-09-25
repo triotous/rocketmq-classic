@@ -1270,7 +1270,13 @@ impl ClientInner {
 
 fn run_callback(job: CallbackJob) {
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        job.callback.operation_complete_with_context(&job.context);
+        let connect_failed = matches!(
+            job.context.error,
+            Some(TransportError::Connect(_) | TransportError::Tls(_))
+        );
+        if !connect_failed {
+            job.callback.operation_complete_with_context(&job.context);
+        }
         match (&job.context.response, &job.context.error) {
             (Some(response), _) => job.callback.operation_succeed(response),
             (None, Some(error)) => job.callback.operation_fail(error),
