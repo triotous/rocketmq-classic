@@ -4,7 +4,7 @@ A Rust reimplementation of the Apache RocketMQ 5.5.1 Java client, with RocketMQ 
 
 ## Current workspace
 
-The current workspace contains `rocketmq-classic-common` and `rocketmq-classic-protocol`. It is pinned to Rust 1.85.0 (MSRV 1.85) and uses edition 2024. The packages are not yet a complete client; network, producer/consumer and lifecycle features are planned in later phases.
+The current workspace contains `rocketmq-classic-common`, `rocketmq-classic-protocol`, and `rocketmq-classic-remoting` (bounded command-frame codecs). It is pinned to Rust 1.85.0 (MSRV 1.85) and uses edition 2024. The packages are not yet a complete client; network, producer/consumer and lifecycle features are planned in later phases.
 
 Run workspace checks with:
 

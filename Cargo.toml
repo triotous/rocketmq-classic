@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/rocketmq-classic-common",
     "crates/rocketmq-classic-protocol",
+    "crates/rocketmq-classic-remoting",
 ]
 
 [workspace.package]
@@ -15,3 +16,4 @@ publish = false
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"
+bytes = "1.10.1"

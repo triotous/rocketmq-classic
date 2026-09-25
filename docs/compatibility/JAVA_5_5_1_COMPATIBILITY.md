@@ -12,14 +12,21 @@
 
 Phase 1 provides the initial Rust 2024 workspace (`rocketmq-classic-common` and `rocketmq-classic-protocol`), pinned to Rust 1.85.0/MSRV 1.85. The common crate contains message/property models and message/pull flags; protocol contains the full pinned 166-request/68-response integer registry, language and serialization tags, route conversion models, and heartbeat JSON models. Unit coverage cross-checks the Phase 0 fixture sidecars, Java UTF-16 queue ordering, malformed property handling, static/ordered route cases, Java-compatible JSON field names, signed values, and flag preservation. Registry and offline-fixture coverage are not client feature completion or live Broker validation.
 
+## Phase 2 Remoting codec status
+
+The `rocketmq-classic-remoting` crate now contains JSON and RocketMQ private-header codecs plus bounded incremental full-frame encoding/decoding. The 16 MiB maximum frame limit includes the four-byte prefix, matching Java Netty's default. Java fixture coverage includes transaction, request/reply, large request-code narrowing evidence, and optimized/ordinary `FastCodesHeader` equivalence. Maven verify also decodes two Rust-generated frames using the pinned Java client. P2-V01/V02/V03 are unit-verified; this does not represent live Broker execution or complete client compatibility. Java absent/empty remark and body distinctions that are not represented on the wire are documented in the crate codec behavior.
+
 ## Initial bidirectional inventory
 
 The matrix starts with the source areas required by the master plan. Later phase commits must add each public method/overload, inherited/deprecated setting, source branch, configuration default/type/unit/range/validation, Rust mapping, fixture and unit-test ID. Phase 18 closes both directions, including proof that Rust exposes no Java-incompatible public setting. `TODO` means not yet implemented; no feature completion is claimed here.
 
 | Java class/source (5.5.1 tag) | Java method/setting scope | Rust mapping / test ID | Request code / fixture | Implementation | Live / server |
 |---|---|---|---|---|---|
-| `remoting/.../protocol/RemotingCommand.java` | encode/decode, response/oneway flags, opaque, ext fields | Phase 2 | protocol fixture families | TODO | PENDING_PHASE_19 / 5.3.4 |
-| `remoting/.../protocol/RocketMQSerializable.java` | private header encoding/decoding | Phase 2 | JSON + ROCKETMQ self-test | TODO | PENDING_PHASE_19 / 5.3.4 |
+| `remoting/.../protocol/RemotingCommand.java` | `encode`, `decode`, `headerEncode`, `headerDecode`, `fastEncodeHeader`, response/oneway bits | `crates/rocketmq-classic-remoting/src/{command.rs,codec/frame.rs,codec/json_header.rs}`; P2-V01–V03 | route/heartbeat/send/pull/offset/lock/transaction/reply fixture families | UNIT_VERIFIED | PENDING_PHASE_19 / 5.3.4 |
+| `remoting/.../protocol/RocketMQSerializable.java` | `rocketMQProtocolEncode/Decode`, `mapSerialize/Deserialize`, `writeStr/readStr` | `crates/rocketmq-classic-remoting/src/codec/rocketmq_header.rs`; P2-V01/V02 | dual-codec Java fixtures, private-large-code, FastCodesHeader equivalence | UNIT_VERIFIED | PENDING_PHASE_19 / 5.3.4 |
+| `remoting/.../netty/NettyEncoder.java`, `NettyDecoder.java` | `encode/decode`, 16 MiB `FRAME_MAX_LENGTH` | `codec/frame.rs::encode/decode_next`; P2-V02/V03 | frame limit and fragmentation tests | UNIT_VERIFIED | PENDING_PHASE_19 / 5.3.4 |
+| `remoting/.../protocol/FastCodesHeader.java` | `encode/decode` fast custom-header path | Java fixture generator `writeFastHeaderFixtures`; P2-V01 | `header-fast-001.bin` vs `header-ordinary-001.bin` | UNIT_VERIFIED | PENDING_PHASE_19 / 5.3.4 |
+| Phase 2 Rust → Java decode | Java `RemotingCommand.decode` | `compat.Main.verifyRustFixtures`; Maven verify | `fixtures/remoting/rust-generated/*.bin` | UNIT_VERIFIED | PENDING_PHASE_19 / 5.3.4 |
 | `remoting/.../protocol/RequestCode.java` | complete numeric request registry | Phase 1 | `REQUEST_CODES.md` | TODO | PENDING_PHASE_19 / 5.3.4 |
 | `remoting/.../protocol/ResponseCode.java` | complete response registry and aliases | Phase 1 | `REQUEST_CODES.md` | TODO | PENDING_PHASE_19 / 5.3.4 |
 | `client/.../impl/MQClientAPIImpl.java` | typed RPC calls, response interpretation | Phase 5 | route/send/pull/offset/lock | TODO | PENDING_PHASE_19 / 5.3.4 |

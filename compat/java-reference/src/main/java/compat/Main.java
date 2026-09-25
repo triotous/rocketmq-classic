@@ -10,6 +10,10 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import org.apache.rocketmq.remoting.CommandCustomHeader;
+import org.apache.rocketmq.remoting.protocol.FastCodesHeader;
 import org.apache.rocketmq.remoting.protocol.LanguageCode;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.remoting.protocol.SerializeType;
@@ -33,6 +37,10 @@ public final class Main {
         if ("decode".equals(args[0])) {
             Path input = option(args, "--input");
             System.out.println(toJson(decode(Files.readAllBytes(input))));
+            return;
+        }
+        if ("verify-rust-fixtures".equals(args[0])) {
+            verifyRustFixtures(option(args, "--dir"));
             return;
         }
         if ("scenario".equals(args[0])) {
@@ -92,17 +100,68 @@ public final class Main {
         Files.createDirectories(output);
         String[] ids = {"ROUTE-001-get-existing-topic", "HEARTBEAT-001", "PROD-001-sync-send",
             "CONS-002-pull-found", "CONS-003-pull-no-new-msg", "CONS-001-query-offset",
-            "CONS-004-update-offset", "ORDER-001-lock-unlock"};
-        int[] codes = {105, 34, 10, 11, 11, 14, 15, 41};
+            "CONS-004-update-offset", "ORDER-001-lock-unlock", "TX-001-end-transaction",
+            "REQREP-001-send-reply", "PRIVATE-LARGE-CODE"};
+        int[] codes = {105, 34, 10, 11, 11, 14, 15, 41, 37, 324, 987654};
         for (int i = 0; i < ids.length; i++) {
             writeFixture(output, ids[i], codes[i], i % 2 == 0 ? SerializeType.JSON : SerializeType.ROCKETMQ);
+            for (SerializeType type : SerializeType.values()) {
+                writeFixture(output, ids[i] + "-" + type.name(), codes[i], type);
+            }
         }
+        writeFixture(output, "HEADER-PROOF-001", 10, SerializeType.JSON);
+        writeFixture(output, "PRIVATE-LARGE-CODE", 987654, SerializeType.ROCKETMQ);
+        writeFastHeaderFixtures(output);
         selfTest();
+    }
+
+    private static void verifyRustFixtures(Path directory) throws Exception {
+        if (!Files.isDirectory(directory)) throw new IOException("missing Rust fixture directory: " + directory);
+        int count = 0;
+        Map<String, Map<String, Object>> decodedByName = new LinkedHashMap<>();
+        try (var files = Files.list(directory)) {
+            for (Path file : (Iterable<Path>) files.filter(path -> path.toString().endsWith(".bin"))::iterator) {
+                decodedByName.put(file.getFileName().toString(), decode(Files.readAllBytes(file)));
+                count++;
+            }
+        }
+        Map<String, Object> json = decodedByName.get("json-route.bin");
+        Map<String, Object> rocketmq = decodedByName.get("rocketmq-transaction.bin");
+        require(json != null && ((Number) json.get("code")).intValue() == 105, "Rust JSON route fixture decoded");
+        require(rocketmq != null && ((Number) rocketmq.get("code")).intValue() == 37, "Rust RocketMQ transaction fixture decoded");
+        require(json.get("body_length").equals(4) && rocketmq.get("body_length").equals(4), "Rust fixture bodies decoded");
+        require("RUST".equals(json.get("language")) && "RUST".equals(rocketmq.get("language")), "Rust language decoded");
+        require("rust-phase-2".equals(((Map<?, ?>) json.get("ext_fields")).get("oracle")), "Rust JSON ext field decoded");
+        require("rust-phase-2".equals(((Map<?, ?>) rocketmq.get("ext_fields")).get("oracle")), "Rust private ext field decoded");
+        require(count == 2, "exactly two Rust-generated fixtures decoded");
+        System.out.println("Java decoded " + count + " Rust-generated fixture(s)");
     }
 
     private static void writeFixture(Path output, String id, int code, SerializeType type) throws Exception {
         RemotingCommand command = command(code, type, id);
-        byte[] frame = bytes(command.encode());
+        writeFixture(output, id, code, type, command, bytes(command.encode()));
+    }
+
+    private static void writeFastHeaderFixtures(Path output) throws Exception {
+        RemotingCommand fast = command(10, SerializeType.ROCKETMQ, "HEADER-FAST-001");
+        fast.setRemark("header-equivalent");
+        fast.setExtFields(new java.util.HashMap<>(Map.of("oracle", "5.5.1")));
+        fast.writeCustomHeader(new FixtureFastHeader("fixture-topic"));
+        ByteBuf buffer = Unpooled.buffer();
+        fast.fastEncodeHeader(buffer);
+        buffer.writeBytes(fast.getBody() == null ? new byte[0] : fast.getBody());
+        byte[] fastFrame = new byte[buffer.readableBytes()];
+        buffer.readBytes(fastFrame);
+        buffer.release();
+        writeFixture(output, "HEADER-FAST-001", 10, SerializeType.ROCKETMQ, fast, fastFrame);
+
+        RemotingCommand ordinary = command(10, SerializeType.ROCKETMQ, "header-equivalent");
+        ordinary.addExtField("topic", "fixture-topic");
+        writeFixture(output, "HEADER-ORDINARY-001", 10, SerializeType.ROCKETMQ, ordinary, bytes(ordinary.encode()));
+    }
+
+    private static void writeFixture(Path output, String id, int code, SerializeType type,
+            RemotingCommand command, byte[] frame) throws Exception {
         Map<String, Object> semantic = decode(frame);
         String stem = id.toLowerCase().replaceAll("[^a-z0-9-]", "-");
         Path binary = output.resolve(stem + ".bin");
@@ -141,6 +200,28 @@ public final class Main {
         System.out.println(toJson(result));
     }
 
+    private static final class FixtureFastHeader implements CommandCustomHeader, FastCodesHeader {
+        private final String topic;
+
+        private FixtureFastHeader(String topic) {
+            this.topic = topic;
+        }
+
+        @Override
+        public void checkFields() {
+        }
+
+        @Override
+        public void encode(ByteBuf out) {
+            writeIfNotNull(out, "topic", topic);
+        }
+
+        @Override
+        public void decode(java.util.HashMap<String, String> fields) {
+            // This fixture exercises the Java encoder path only.
+        }
+    }
+
     private static RemotingCommand command(int code, SerializeType type, String remark) {
         RemotingCommand command = RemotingCommand.createRequestCommand(code, null);
         command.setLanguage(LanguageCode.RUST);
@@ -148,6 +229,7 @@ public final class Main {
         command.setOpaque(7);
         command.setRemark(remark);
         command.addExtField("oracle", "5.5.1");
+        if (remark.startsWith("HEADER-PROOF")) command.addExtField("topic", "fixture-topic");
         command.setSerializeTypeCurrentRPC(type);
         return command;
     }
