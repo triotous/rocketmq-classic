@@ -21,3 +21,41 @@ pub enum CodecError {
     #[error("invalid UTF-8 in RocketMQ header")]
     InvalidUtf8,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum TransportError {
+    #[error("connection failed: {0}")]
+    Connect(String),
+    #[error("request send failed: {0}")]
+    Send(String),
+    #[error("operation deadline expired")]
+    Timeout,
+    #[error("invalid client configuration: {0}")]
+    InvalidConfiguration(String),
+    #[error("request admission limit reached")]
+    TooManyRequests,
+    #[error("peer requested the client to go away")]
+    GoAway,
+    #[error("connection is closed")]
+    Closed,
+    #[error("request was interrupted because its channel was closed")]
+    Interrupted,
+    #[error("TLS setup or handshake failed: {0}")]
+    Tls(String),
+    #[error("malformed frame: {0}")]
+    MalformedFrame(CodecError),
+    #[error("codec: {0}")]
+    Codec(CodecError),
+    #[error("inbound request processor is overloaded")]
+    InboundOverloaded,
+    #[error("client has shut down")]
+    Shutdown,
+    #[error("opaque identifiers are exhausted")]
+    OpaqueExhausted,
+}
+
+impl From<CodecError> for TransportError {
+    fn from(error: CodecError) -> Self {
+        Self::Codec(error)
+    }
+}
