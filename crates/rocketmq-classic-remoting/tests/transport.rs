@@ -1006,6 +1006,48 @@ impl RpcHook for TestHook {
     }
 }
 
+#[tokio::test]
+async fn p3_rpc_hooks_deduplicate_and_clear() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        for _ in 0..2 {
+            let request = read_command(&mut stream).await;
+            let mut response = command(12);
+            response.opaque = request.opaque;
+            response.mark_response();
+            write_command(&mut stream, &response).await;
+        }
+    });
+    let client = RemotingClient::new(TransportMode::Plain);
+    let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let hook: Arc<dyn RpcHook> = Arc::new(TestHook(events.clone()));
+    client.add_rpc_hook(hook.clone());
+    client.add_rpc_hook(hook);
+    client
+        .invoke(
+            &address.to_string(),
+            command(1),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+    assert_eq!(*events.lock().unwrap(), vec!["before", "after"]);
+    client.clear_rpc_hooks();
+    client
+        .invoke(
+            &address.to_string(),
+            command(1),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+    assert_eq!(*events.lock().unwrap(), vec!["before", "after"]);
+    peer.await.unwrap();
+    client.shutdown().await;
+}
+
 struct BeforeCounter(Arc<AtomicUsize>);
 impl RpcHook for BeforeCounter {
     fn before_request(&self, _: &str, _: &RemotingCommand) {
@@ -1573,6 +1615,44 @@ async fn p3_after_hook_runs_when_processor_returns_no_response() {
         .unwrap();
     assert!(peer.await.unwrap());
     assert_eq!(after_hook_calls.load(Ordering::SeqCst), 1);
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn p3_request_pipeline_pipe_runs_new_stage_before_existing_stage() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut request = command(810);
+        request.opaque = 52;
+        write_command(&mut stream, &request).await;
+        read_command(&mut stream).await
+    });
+    let client = RemotingClient::new(TransportMode::Plain);
+    let stages = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let old_stage = stages.clone();
+    client.set_request_pipeline(Some(Arc::new(move |_: &RemotingCommand| {
+        old_stage.lock().unwrap().push("existing");
+        Ok(())
+    })));
+    let new_stage = stages.clone();
+    client.pipe_request_pipeline(Arc::new(move |_: &RemotingCommand| {
+        new_stage.lock().unwrap().push("new");
+        Ok(())
+    }));
+    client.register_processor(810, Arc::new(|_: RemotingCommand| Ok(Some(command(812)))));
+    assert!(
+        client
+            .is_address_reachable(
+                &address.to_string(),
+                Instant::now() + Duration::from_secs(2)
+            )
+            .await
+    );
+    let response = peer.await.unwrap();
+    assert_eq!(response.code, 812);
+    assert_eq!(*stages.lock().unwrap(), vec!["new", "existing"]);
     client.shutdown().await;
 }
 

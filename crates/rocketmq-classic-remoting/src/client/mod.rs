@@ -155,6 +155,36 @@ where
     }
 }
 
+struct PipedRequestPipeline {
+    source: Arc<dyn RequestPipeline>,
+    existing: Arc<dyn RequestPipeline>,
+}
+
+impl RequestPipeline for PipedRequestPipeline {
+    fn execute(&self, request: &RemotingCommand) -> Result<(), i32> {
+        self.source.execute(request)?;
+        self.existing.execute(request)
+    }
+
+    fn execute_with_context(
+        &self,
+        context: &RequestContext,
+        request: &RemotingCommand,
+    ) -> Result<(), i32> {
+        self.source.execute_with_context(context, request)?;
+        self.existing.execute_with_context(context, request)
+    }
+
+    fn execute_detailed(
+        &self,
+        context: &RequestContext,
+        request: &RemotingCommand,
+    ) -> Result<(), RequestPipelineError> {
+        self.source.execute_detailed(context, request)?;
+        self.existing.execute_detailed(context, request)
+    }
+}
+
 pub struct ContextRequestPipeline<F>(pub F);
 
 impl<F> RequestPipeline for ContextRequestPipeline<F>
@@ -670,7 +700,17 @@ impl RemotingClient {
     }
 
     pub fn add_rpc_hook(&self, hook: Arc<dyn RpcHook>) {
-        self.inner.rpc_hooks.lock().unwrap().push(hook);
+        let mut hooks = self.inner.rpc_hooks.lock().unwrap();
+        if !hooks
+            .iter()
+            .any(|registered| Arc::ptr_eq(registered, &hook))
+        {
+            hooks.push(hook);
+        }
+    }
+
+    pub fn clear_rpc_hooks(&self) {
+        self.inner.rpc_hooks.lock().unwrap().clear();
     }
 
     pub fn set_channel_event_listener(&self, listener: Option<Arc<dyn ChannelEventListener>>) {
@@ -683,6 +723,17 @@ impl RemotingClient {
 
     pub fn set_request_pipeline(&self, pipeline: Option<Arc<dyn RequestPipeline>>) {
         *self.inner.request_pipeline.lock().unwrap() = pipeline;
+    }
+
+    pub fn pipe_request_pipeline(&self, pipeline: Arc<dyn RequestPipeline>) {
+        let mut existing = self.inner.request_pipeline.lock().unwrap();
+        *existing = Some(match existing.take() {
+            Some(existing) => Arc::new(PipedRequestPipeline {
+                source: pipeline,
+                existing,
+            }),
+            None => pipeline,
+        });
     }
 
     /// Returns whether the connection to `addr` currently has outbound queue capacity.
