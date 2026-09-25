@@ -1095,7 +1095,9 @@ impl RemotingClient {
         }
     }
 
-    /// Waits for bounded local queue admission and socket write; it does not imply Broker storage.
+    /// Schedules a one-way request and returns without waiting for admission or socket write.
+    /// Completion does not imply Broker receipt or storage; post-return transport failures are
+    /// intentionally not observable, matching Java's listener-based oneway API.
     pub async fn invoke_oneway(
         &self,
         addr: &str,
@@ -1109,26 +1111,30 @@ impl RemotingClient {
             return Err(TransportError::Timeout);
         }
         command.mark_oneway();
-        let connection = self.inner.connection(addr, deadline).await?;
-        if Instant::now() >= deadline {
-            return Err(TransportError::Timeout);
-        }
-        let _admission = self
-            .inner
-            .acquire_admission(self.inner.oneway_admission.clone(), deadline)
-            .await?;
-        for hook in self.inner.rpc_hooks.lock().unwrap().clone() {
-            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                hook.before_request(addr, &command)
-            }));
-        }
-        let frame = frame::encode(&command, self.inner.max_frame_size)?;
-        time::timeout(
-            deadline.saturating_duration_since(Instant::now()),
-            connection.send(frame, deadline),
-        )
-        .await
-        .map_err(|_| TransportError::Timeout)??;
+        let client = self.clone();
+        let addr = addr.to_owned();
+        let task = tokio::spawn(async move {
+            let Ok(connection) = client.inner.connection(&addr, deadline).await else {
+                return;
+            };
+            for hook in client.inner.rpc_hooks.lock().unwrap().clone() {
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    hook.before_request(&addr, &command)
+                }));
+            }
+            let Ok(_admission) = client
+                .inner
+                .acquire_admission(client.inner.oneway_admission.clone(), deadline)
+                .await
+            else {
+                return;
+            };
+            let Ok(frame) = frame::encode(&command, client.inner.max_frame_size) else {
+                return;
+            };
+            let _ = connection.send(frame, deadline).await;
+        });
+        self.inner.spawn(task);
         Ok(())
     }
 
@@ -1482,10 +1488,12 @@ async fn scan_available_name_servers(
         .map(|inner| inner.config.connect_timeout)
         .unwrap_or_else(|| std::time::Duration::from_secs(3));
     let mut interval = time::interval(interval_duration);
+    interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+    let mut scans = tokio::task::JoinSet::new();
     loop {
         tokio::select! {
             _ = interval.tick() => {
-                let Some(inner) = inner.upgrade() else { return };
+                let Some(inner) = inner.upgrade() else { break };
                 let configured = inner.nameservers.lock().unwrap().clone();
                 inner
                     .available_nameservers
@@ -1493,20 +1501,47 @@ async fn scan_available_name_servers(
                     .unwrap()
                     .retain(|address| configured.contains(address));
                 for address in configured {
-                    if inner.closed.load(Ordering::Acquire) {
-                        return;
-                    }
-                    let deadline = Instant::now() + inner.config.connect_timeout;
-                    if inner.connection(&address, deadline).await.is_ok() {
-                        inner.available_nameservers.lock().unwrap().insert(address);
+                    let inner = inner.clone();
+                    scans.spawn(async move {
+                        let deadline = Instant::now() + inner.config.connect_timeout;
+                        let connection = inner.connection(&address, deadline).await.ok();
+                        (address, connection)
+                    });
+                }
+            }
+            result = scans.join_next(), if !scans.is_empty() => {
+                if let Some(Ok((address, connection))) = result {
+                    if let Some(inner) = inner.upgrade() {
+                        if !inner.closed.load(Ordering::Acquire)
+                            && inner.nameservers.lock().unwrap().contains(&address)
+                        {
+                            let is_current = connection.as_ref().is_some_and(|connection| {
+                                !connection.is_closed()
+                                    && inner
+                                        .connections
+                                        .lock()
+                                        .unwrap()
+                                        .get(&address)
+                                        .is_some_and(|current| {
+                                            current.generation == connection.generation
+                                        })
+                            });
+                            let mut current = inner.available_nameservers.lock().unwrap();
+                            if is_current {
+                                current.insert(address);
+                            } else {
+                                current.remove(&address);
+                            }
+                        }
                     } else {
-                        inner.available_nameservers.lock().unwrap().remove(&address);
+                        break;
                     }
                 }
             }
-            result = shutdown.changed() => if result.is_err() || *shutdown.borrow() { return },
+            result = shutdown.changed() => if result.is_err() || *shutdown.borrow() { break },
         }
     }
+    scans.shutdown().await;
 }
 
 async fn timeout_scheduler(

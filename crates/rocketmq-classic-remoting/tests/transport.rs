@@ -248,6 +248,41 @@ async fn p3_nameserver_update_shuffles_changed_lists_and_preserves_duplicates() 
 }
 
 #[tokio::test]
+async fn p3_nameserver_scan_probes_addresses_concurrently_and_tracks_results() {
+    let first_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let first_address = first_listener.local_addr().unwrap();
+    let second_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let second_address = second_listener.local_addr().unwrap();
+    let accept_first = tokio::spawn(async move { first_listener.accept().await.unwrap() });
+    let accept_second = tokio::spawn(async move { second_listener.accept().await.unwrap() });
+    let client = RemotingClient::with_config(ClientConfig {
+        connect_timeout: Duration::from_millis(40),
+        scan_available_nameserver: true,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    client.update_name_server_address_list(vec![
+        first_address.to_string(),
+        second_address.to_string(),
+    ]);
+    let accepted = tokio::time::timeout(Duration::from_millis(250), async {
+        let (first, second) = tokio::join!(accept_first, accept_second);
+        (first.unwrap(), second.unwrap())
+    })
+    .await
+    .expect("scan must attempt each NameServer without serial connect-timeout delay");
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while client.get_available_name_srv_list().len() != 2 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    drop(accepted);
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn p3_nameserver_list_selection_and_availability_tracking() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -541,9 +576,9 @@ async fn p3_v02_single_flight_shares_connection_and_stale_close_keeps_generation
     a.unwrap();
     b.unwrap();
     c.unwrap();
+    peer.await.unwrap();
     assert_eq!(accepted.load(Ordering::SeqCst), 1);
     client.shutdown().await;
-    peer.await.unwrap();
 }
 
 #[tokio::test]
@@ -795,6 +830,45 @@ async fn p3_sync_timeout_closes_socket_when_java_heuristic_requires_it() {
         Err(TransportError::Timeout)
     ));
     assert_eq!(peer.await.unwrap(), 0);
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn p3_oneway_returns_after_scheduling_before_peer_receives_frame() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let (accepted_tx, accepted_rx) = tokio::sync::oneshot::channel();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let _ = accepted_tx.send(());
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        read_command(&mut stream).await
+    });
+    let client = RemotingClient::with_config(ClientConfig {
+        scan_available_nameserver: false,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    let returned = tokio::time::timeout(
+        Duration::from_millis(50),
+        client.invoke_oneway(
+            &address.to_string(),
+            command(13),
+            Instant::now() + Duration::from_secs(2),
+        ),
+    )
+    .await
+    .expect("Java oneway returns after registering asynchronous work");
+    returned.unwrap();
+    tokio::time::timeout(Duration::from_secs(1), accepted_rx)
+        .await
+        .unwrap()
+        .unwrap();
+    let received = tokio::time::timeout(Duration::from_secs(1), peer)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(received.is_oneway());
     client.shutdown().await;
 }
 
