@@ -540,32 +540,24 @@ impl RemotingClient {
             .collect::<HashSet<_>>();
         addresses.shuffle(&mut rand::rng());
         *nameservers = addresses;
-        {
+        let removed_chosen = {
             let mut chosen = self.inner.chosen_nameserver.lock().unwrap();
             if chosen
                 .as_ref()
                 .is_some_and(|address| removed.contains(address))
             {
-                *chosen = None;
+                chosen.take()
+            } else {
+                None
             }
-        }
+        };
         self.inner
             .available_nameservers
             .lock()
             .unwrap()
             .retain(|address| !removed.contains(address));
-        for address in &removed {
-            self.inner.connection_closed_for_address(address);
-        }
-        let removed_connections = {
-            let mut connections = self.inner.connections.lock().unwrap();
-            removed
-                .iter()
-                .filter_map(|address| connections.remove(address))
-                .collect::<Vec<_>>()
-        };
-        for connection in removed_connections {
-            connection.close();
+        if let Some(address) = removed_chosen {
+            self.inner.connection_closed_for_address(&address);
         }
     }
 

@@ -331,6 +331,71 @@ async fn p3_nameserver_list_selection_and_availability_tracking() {
 }
 
 #[tokio::test]
+async fn p3_nameserver_update_keeps_non_chosen_removed_connection_open() {
+    async fn peer() -> (
+        String,
+        tokio::sync::oneshot::Receiver<()>,
+        tokio::task::JoinHandle<std::io::Result<()>>,
+    ) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let (accepted, accepted_rx) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let _ = accepted.send(());
+            let mut byte = [0];
+            stream.read_exact(&mut byte).await.map(|_| ())
+        });
+        (address, accepted_rx, task)
+    }
+
+    let (first_address, first_accepted, mut first_peer) = peer().await;
+    let (second_address, second_accepted, mut second_peer) = peer().await;
+    let client = RemotingClient::with_config(ClientConfig {
+        scan_available_nameserver: false,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    client.update_name_server_address_list(vec![first_address.clone(), second_address.clone()]);
+    let selected = client
+        .get_and_create_name_server_channel_async(Instant::now() + Duration::from_secs(1))
+        .await
+        .unwrap();
+    let other_address = if selected.as_str() == first_address {
+        &second_address
+    } else {
+        &first_address
+    };
+    assert!(
+        client
+            .is_address_reachable(other_address, Instant::now() + Duration::from_secs(1))
+            .await
+    );
+    first_accepted.await.unwrap();
+    second_accepted.await.unwrap();
+
+    client.update_name_server_address_list(vec![selected.as_str().to_owned()]);
+    tokio::task::yield_now().await;
+    if other_address == &first_address {
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), &mut first_peer)
+                .await
+                .is_err()
+        );
+    } else {
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), &mut second_peer)
+                .await
+                .is_err()
+        );
+    }
+
+    client.shutdown().await;
+    assert!(first_peer.await.unwrap().is_err());
+    assert!(second_peer.await.unwrap().is_err());
+}
+
+#[tokio::test]
 async fn p3_nameserver_selection_fails_over_after_connect_failure() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let good = listener.local_addr().unwrap();
