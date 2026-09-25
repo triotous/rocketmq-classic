@@ -153,7 +153,7 @@ async fn p3_async_callback_contains_response_future_metadata_and_timeout_grace()
     assert!(!context.timed_out);
     assert!(context.error.is_none());
     assert!(context.elapsed >= Duration::from_millis(100));
-    assert_eq!(*events.lock().unwrap(), vec!["complete", "succeed"]);
+    assert_eq!(*events.lock().unwrap(), vec!["succeed", "complete"]);
     peer.await.unwrap();
     client.shutdown().await;
 }
@@ -183,7 +183,7 @@ async fn p3_expired_async_callback_retains_request_and_timeout_metadata() {
     assert_eq!(context.error, Some(TransportError::Timeout));
     assert!(context.timed_out);
     assert!(!context.send_request_ok);
-    assert_eq!(*events.lock().unwrap(), vec!["complete", "fail"]);
+    assert_eq!(*events.lock().unwrap(), vec!["fail", "complete"]);
     client.shutdown().await;
 }
 
@@ -1216,7 +1216,7 @@ async fn p3_async_callback_completes_on_deadline_failure() {
             .unwrap(),
         TransportError::Timeout
     );
-    assert_eq!(*events.lock().unwrap(), vec!["complete", "fail"]);
+    assert_eq!(*events.lock().unwrap(), vec!["fail", "complete"]);
     client.shutdown().await;
     peer.await.unwrap();
 }
