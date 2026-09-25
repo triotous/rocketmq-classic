@@ -54,6 +54,7 @@ struct InvokeOptions {
     admitted: bool,
     retried_go_away: bool,
     close_socket_on_timeout: bool,
+    timeout_millis: std::time::Duration,
 }
 
 struct CallbackJob {
@@ -846,6 +847,7 @@ impl RemotingClient {
                                         admitted: true,
                                         retried_go_away: false,
                                         close_socket_on_timeout: false,
+                                        timeout_millis: std::time::Duration::ZERO,
                                     },
                                     Some(CallbackTracking {
                                         send_status: send_status.clone(),
@@ -928,6 +930,7 @@ impl RemotingClient {
                 admitted: false,
                 retried_go_away: false,
                 close_socket_on_timeout: false,
+                timeout_millis: std::time::Duration::ZERO,
             },
             None,
         )
@@ -948,6 +951,7 @@ impl RemotingClient {
                 admitted: false,
                 retried_go_away: false,
                 close_socket_on_timeout: true,
+                timeout_millis: timeout,
             },
             None,
         )
@@ -973,6 +977,7 @@ impl RemotingClient {
         if let Some(callback) = &callback {
             callback.channel_established.store(true, Ordering::Release);
         }
+        let timeout_budget = deadline.saturating_duration_since(Instant::now());
         if Instant::now() >= deadline {
             return Err(TransportError::Timeout);
         }
@@ -985,7 +990,6 @@ impl RemotingClient {
                     .await?,
             )
         };
-        let timeout_budget = deadline.saturating_duration_since(Instant::now());
         if !options.retried_go_away {
             for hook in self.inner.rpc_hooks.lock().unwrap().clone() {
                 let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -1049,6 +1053,7 @@ impl RemotingClient {
                                 admitted: true,
                                 retried_go_away: true,
                                 close_socket_on_timeout: options.close_socket_on_timeout,
+                                timeout_millis: options.timeout_millis,
                             },
                             callback,
                         ));
@@ -1079,8 +1084,8 @@ impl RemotingClient {
                 self.inner.cancel_pending(opaque, connection.generation);
                 if options.close_socket_on_timeout
                     && self.inner.config.close_socket_if_timeout
-                    && (response_wait > std::time::Duration::from_millis(100)
-                        || response_wait > timeout_budget / 4)
+                    && (timeout_budget > std::time::Duration::from_millis(100)
+                        || timeout_budget > options.timeout_millis / 4)
                 {
                     connection.close();
                 }
