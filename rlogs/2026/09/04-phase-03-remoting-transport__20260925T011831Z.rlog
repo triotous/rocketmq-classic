@@ -178,3 +178,10 @@
 - Updated the inventory and project docs to distinguish the mapped getter APIs from remaining Java executor/channel object lifecycle differences.
 - Validation PASS after implementation and documentation updates: format check; workspace offline tests (73 unit/integration tests plus doc tests); all-target/all-feature Clippy with warnings denied; workspace metadata checker; Java oracle Maven verify (17 scenarios, 2 Rust frame decodes); differential self-test; diff check.
 - This maps two public methods but does not close full inventory or parity. Phase 3 remains active and Phase 4 remains blocked; no live Broker/Docker validation; P3-V04 remains pending Phase 19.
+
+## Continuation update (2026-09-25T07:25Z)
+
+- Reviewed Java client public method declarations and the Rust client surface. Confirmed `disableCallbackExecutor` suppresses even a custom executor: corrected `set_callback_executor` to discard assignments in disabled mode, adjusted its getter contract, and added a regression assertion. Inventory notes Java `getAndCreateChannel` internal behavior without promoting private APIs to public requirements.
+- Committed code and docs from the prior getter mapping as `8dc6ec1` and `344289c`; this continuation remains uncommitted pending focused review and logging.
+- Focused callback/configuration tests PASS; full gates PASS: `cargo fmt --all --check`; `cargo test --workspace --locked --offline` (73 unit/integration tests plus doc tests); workspace all-target/all-feature Clippy with warnings denied; metadata checker; Maven Java oracle (17 offline scenarios, two Rust-generated frame decodes); differential self-test; `git diff --check`. No live Broker/Docker validation.
+- Phase 3 remains NOT ACCEPTED: source/API/config inventory and full branch parity review have outstanding entries. Phase 4 remains blocked; P3-V04 remains `PENDING_PHASE_19`.
