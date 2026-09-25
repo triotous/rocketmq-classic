@@ -1387,6 +1387,7 @@ impl ClientInner {
 
     fn spawn(&self, task: JoinHandle<()>) {
         let mut tasks = self.tasks.lock().unwrap();
+        tasks.retain(|task| !task.is_finished());
         if self.closed.load(Ordering::Acquire) {
             task.abort();
         } else {
