@@ -185,3 +185,9 @@
 - Committed code and docs from the prior getter mapping as `8dc6ec1` and `344289c`; this continuation remains uncommitted pending focused review and logging.
 - Focused callback/configuration tests PASS; full gates PASS: `cargo fmt --all --check`; `cargo test --workspace --locked --offline` (73 unit/integration tests plus doc tests); workspace all-target/all-feature Clippy with warnings denied; metadata checker; Maven Java oracle (17 offline scenarios, two Rust-generated frame decodes); differential self-test; `git diff --check`. No live Broker/Docker validation.
 - Phase 3 remains NOT ACCEPTED: source/API/config inventory and full branch parity review have outstanding entries. Phase 4 remains blocked; P3-V04 remains `PENDING_PHASE_19`.
+
+## Continuation update (2026-09-25T07:32Z)
+
+- Extended the source inventory beyond `RemotingClient` interface declarations: concrete Java channel-close overloads, inherited `NettyRemotingAbstract` inspection/framework methods, processor/event behavior, and Netty client constructor/config lifecycle are now explicitly mapped or marked unavailable. Mutable `getRPCHook()`/`getProcessorTable()` access and Netty channel/context APIs are recorded as intentional API differences, not claimed parity.
+- Cross-checked all public `NettyClientConfig` getter/setter pairs and documented explicit-config versus JVM system-property behavior. No Java reference files changed; no new implementation change in this inventory pass.
+- Review remains incomplete at branch-level behavior and parity; Phase 3 is not accepted, Phase 4 remains blocked, and P3-V04 remains pending Phase 19.
