@@ -45,12 +45,14 @@ struct ProcessorRegistration {
 
 struct CallbackTracking {
     send_status: Arc<AtomicBool>,
+    channel_established: Arc<AtomicBool>,
     opaque: Arc<AtomicI32>,
 }
 
 struct CallbackJob {
     callback: Arc<dyn InvokeCallback>,
     context: InvokeCallbackResult,
+    channel_established: Arc<AtomicBool>,
     _permit: Option<tokio::sync::OwnedSemaphorePermit>,
 }
 
@@ -805,6 +807,7 @@ impl RemotingClient {
                     timed_out: true,
                     elapsed: std::time::Duration::ZERO,
                 },
+                channel_established: Arc::new(AtomicBool::new(true)),
                 _permit: None,
             };
             self.inner.dispatch_callback(callback);
@@ -815,32 +818,37 @@ impl RemotingClient {
         let started = Instant::now();
         let callback_request = command.clone();
         let send_status = Arc::new(AtomicBool::new(false));
+        let channel_established = Arc::new(AtomicBool::new(false));
         let callback_opaque = Arc::new(AtomicI32::new(command.opaque));
         let task = tokio::spawn(async move {
             let (result, permit) = match client.inner.connection(&addr, deadline).await {
-                Ok(_) => match client
-                    .inner
-                    .acquire_admission(client.inner.async_admission.clone(), deadline)
-                    .await
-                {
-                    Ok(permit) => (
-                        client
-                            .invoke_inner(
-                                &addr,
-                                command,
-                                deadline,
-                                true,
-                                false,
-                                Some(CallbackTracking {
-                                    send_status: send_status.clone(),
-                                    opaque: callback_opaque.clone(),
-                                }),
-                            )
-                            .await,
-                        Some(permit),
-                    ),
-                    Err(error) => (Err(error), None),
-                },
+                Ok(_) => {
+                    channel_established.store(true, Ordering::Release);
+                    match client
+                        .inner
+                        .acquire_admission(client.inner.async_admission.clone(), deadline)
+                        .await
+                    {
+                        Ok(permit) => (
+                            client
+                                .invoke_inner(
+                                    &addr,
+                                    command,
+                                    deadline,
+                                    true,
+                                    false,
+                                    Some(CallbackTracking {
+                                        send_status: send_status.clone(),
+                                        channel_established: channel_established.clone(),
+                                        opaque: callback_opaque.clone(),
+                                    }),
+                                )
+                                .await,
+                            Some(permit),
+                        ),
+                        Err(error) => (Err(error), None),
+                    }
+                }
                 Err(error) => (Err(error), None),
             };
             let mut context =
@@ -850,6 +858,7 @@ impl RemotingClient {
             let job = CallbackJob {
                 callback: callback.clone(),
                 context,
+                channel_established: channel_established.clone(),
                 _permit: permit,
             };
             client.inner.dispatch_callback(job);
@@ -931,6 +940,9 @@ impl RemotingClient {
         }
         let request_for_hooks = command.clone();
         let connection = self.inner.connection(addr, deadline).await?;
+        if let Some(callback) = &callback {
+            callback.channel_established.store(true, Ordering::Release);
+        }
         if Instant::now() >= deadline {
             return Err(TransportError::Timeout);
         }
@@ -1341,17 +1353,14 @@ impl ClientInner {
 
 fn run_callback(job: CallbackJob) {
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let connect_failed = matches!(
-            job.context.error,
-            Some(TransportError::Connect(_) | TransportError::Tls(_))
-        );
+        let connect_failed = !job.channel_established.load(Ordering::Acquire);
+        if !connect_failed {
+            job.callback.operation_complete_with_context(&job.context);
+        }
         match (&job.context.response, &job.context.error) {
             (Some(response), _) => job.callback.operation_succeed(response),
             (None, Some(error)) => job.callback.operation_fail(error),
             (None, None) => job.callback.operation_fail(&TransportError::Closed),
-        }
-        if !connect_failed {
-            job.callback.operation_complete_with_context(&job.context);
         }
     }));
 }

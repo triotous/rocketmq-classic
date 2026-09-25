@@ -153,7 +153,7 @@ async fn p3_async_callback_contains_response_future_metadata_and_timeout_grace()
     assert!(!context.timed_out);
     assert!(context.error.is_none());
     assert!(context.elapsed >= Duration::from_millis(100));
-    assert_eq!(*events.lock().unwrap(), vec!["succeed", "complete"]);
+    assert_eq!(*events.lock().unwrap(), vec!["complete", "succeed"]);
     peer.await.unwrap();
     client.shutdown().await;
 }
@@ -183,7 +183,7 @@ async fn p3_expired_async_callback_retains_request_and_timeout_metadata() {
     assert_eq!(context.error, Some(TransportError::Timeout));
     assert!(context.timed_out);
     assert!(!context.send_request_ok);
-    assert_eq!(*events.lock().unwrap(), vec!["fail", "complete"]);
+    assert_eq!(*events.lock().unwrap(), vec!["complete", "fail"]);
     client.shutdown().await;
 }
 
@@ -1340,9 +1340,48 @@ async fn p3_async_callback_completes_on_deadline_failure() {
             .unwrap(),
         TransportError::Timeout
     );
-    assert_eq!(*events.lock().unwrap(), vec!["fail", "complete"]);
+    assert_eq!(*events.lock().unwrap(), vec!["complete", "fail"]);
     client.shutdown().await;
     peer.await.unwrap();
+}
+
+#[tokio::test]
+async fn p3_async_go_away_retry_connect_failure_completes_before_failure() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut first, _) = listener.accept().await.unwrap();
+        drop(listener);
+        let request = read_command(&mut first).await;
+        let mut go_away = command(response::GO_AWAY);
+        go_away.opaque = request.opaque;
+        go_away.mark_response();
+        write_command(&mut first, &go_away).await;
+        drop(first);
+    });
+    let client = RemotingClient::new(TransportMode::Plain);
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+    client
+        .invoke_async(
+            address.to_string(),
+            command(1),
+            Instant::now() + Duration::from_secs(2),
+            Arc::new(ContextCallback {
+                sender: tx,
+                events: events.clone(),
+            }),
+        )
+        .unwrap();
+    let context = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(context.error, Some(TransportError::Connect(_))));
+    assert_eq!(context.response, None);
+    assert_eq!(*events.lock().unwrap(), vec!["complete", "fail"]);
+    client.shutdown().await;
+    peer.abort();
 }
 
 #[tokio::test]
