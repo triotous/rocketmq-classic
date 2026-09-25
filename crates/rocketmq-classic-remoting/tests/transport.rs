@@ -854,6 +854,14 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
     assert!(defaults.close_socket_if_timeout);
     assert!(defaults.scan_available_nameserver);
     assert!(defaults.socks_proxy.is_none());
+    let callback_executor_disabled = RemotingClient::with_config(ClientConfig {
+        disable_callback_executor: true,
+        ..defaults.clone()
+    })
+    .unwrap();
+    callback_executor_disabled.set_callback_executor(Some(Arc::new(ThreadCallbackExecutor)));
+    assert!(callback_executor_disabled.get_callback_executor().is_none());
+    callback_executor_disabled.shutdown().await;
     assert!(
         ClientConfig {
             socks_proxy: Some(SocksProxyConfig::new("localhost:1080")),

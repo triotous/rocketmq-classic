@@ -722,11 +722,20 @@ impl RemotingClient {
     }
 
     pub fn set_callback_executor(&self, executor: Option<Arc<dyn CallbackExecutor>>) {
-        *self.inner.callback_executor.lock().unwrap() = executor;
+        *self.inner.callback_executor.lock().unwrap() =
+            if self.inner.config.disable_callback_executor {
+                None
+            } else {
+                executor
+            };
     }
 
     pub fn get_callback_executor(&self) -> Option<Arc<dyn CallbackExecutor>> {
-        self.inner.callback_executor.lock().unwrap().clone()
+        if self.inner.config.disable_callback_executor {
+            None
+        } else {
+            self.inner.callback_executor.lock().unwrap().clone()
+        }
     }
 
     pub fn set_request_pipeline(&self, pipeline: Option<Arc<dyn RequestPipeline>>) {
