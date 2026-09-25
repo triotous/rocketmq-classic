@@ -1190,6 +1190,72 @@ async fn p3_callback_executor_rejection_runs_callback_inline() {
 }
 
 #[tokio::test]
+async fn p3_async_connection_is_acquired_before_admission_wait() {
+    let first_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let first_address = first_listener.local_addr().unwrap();
+    let second_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let second_address = second_listener.local_addr().unwrap();
+    let (second_connection_tx, second_connection_rx) = tokio::sync::oneshot::channel();
+    let peer = tokio::spawn(async move {
+        let (mut first_stream, _) = first_listener.accept().await.unwrap();
+        let first_request = read_command(&mut first_stream).await;
+        let (mut second_stream, _) = second_listener.accept().await.unwrap();
+        let _ = second_connection_tx.send(());
+        let mut first_response = command(31);
+        first_response.opaque = first_request.opaque;
+        first_response.mark_response();
+        write_command(&mut first_stream, &first_response).await;
+        let second_request = read_command(&mut second_stream).await;
+        let mut second_response = command(32);
+        second_response.opaque = second_request.opaque;
+        second_response.mark_response();
+        write_command(&mut second_stream, &second_response).await;
+    });
+    let client = RemotingClient::with_config(ClientConfig {
+        async_semaphore_value: 1,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    let (first_tx, first_rx) = tokio::sync::oneshot::channel();
+    let first_tx = Arc::new(std::sync::Mutex::new(Some(first_tx)));
+    client
+        .invoke_async(
+            first_address.to_string(),
+            command(1),
+            Instant::now() + Duration::from_secs(2),
+            Arc::new(move |result: Result<RemotingCommand, TransportError>| {
+                if let Some(sender) = first_tx.lock().unwrap().take() {
+                    let _ = sender.send(result);
+                }
+            }),
+        )
+        .unwrap();
+    let (second_tx, second_rx) = tokio::sync::oneshot::channel();
+    let second_tx = Arc::new(std::sync::Mutex::new(Some(second_tx)));
+    client
+        .invoke_async(
+            second_address.to_string(),
+            command(2),
+            Instant::now() + Duration::from_secs(2),
+            Arc::new(move |result: Result<RemotingCommand, TransportError>| {
+                if let Some(sender) = second_tx.lock().unwrap().take() {
+                    let _ = sender.send(result);
+                }
+            }),
+        )
+        .unwrap();
+
+    tokio::time::timeout(Duration::from_secs(1), second_connection_rx)
+        .await
+        .expect("second connection was not acquired while waiting for admission")
+        .unwrap();
+    assert_eq!(first_rx.await.unwrap().unwrap().code, 31);
+    assert_eq!(second_rx.await.unwrap().unwrap().code, 32);
+    peer.await.unwrap();
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn p3_async_admission_timeout_completes_through_callback() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();

@@ -817,27 +817,30 @@ impl RemotingClient {
         let send_status = Arc::new(AtomicBool::new(false));
         let callback_opaque = Arc::new(AtomicI32::new(command.opaque));
         let task = tokio::spawn(async move {
-            let permit = client
-                .inner
-                .acquire_admission(client.inner.async_admission.clone(), deadline)
-                .await;
-            let (result, permit) = match permit {
-                Ok(permit) => (
-                    client
-                        .invoke_inner(
-                            &addr,
-                            command,
-                            deadline,
-                            true,
-                            false,
-                            Some(CallbackTracking {
-                                send_status: send_status.clone(),
-                                opaque: callback_opaque.clone(),
-                            }),
-                        )
-                        .await,
-                    Some(permit),
-                ),
+            let (result, permit) = match client.inner.connection(&addr, deadline).await {
+                Ok(_) => match client
+                    .inner
+                    .acquire_admission(client.inner.async_admission.clone(), deadline)
+                    .await
+                {
+                    Ok(permit) => (
+                        client
+                            .invoke_inner(
+                                &addr,
+                                command,
+                                deadline,
+                                true,
+                                false,
+                                Some(CallbackTracking {
+                                    send_status: send_status.clone(),
+                                    opaque: callback_opaque.clone(),
+                                }),
+                            )
+                            .await,
+                        Some(permit),
+                    ),
+                    Err(error) => (Err(error), None),
+                },
                 Err(error) => (Err(error), None),
             };
             let mut context =
@@ -926,6 +929,11 @@ impl RemotingClient {
         if Instant::now() >= deadline {
             return Err(TransportError::Timeout);
         }
+        let request_for_hooks = command.clone();
+        let connection = self.inner.connection(addr, deadline).await?;
+        if Instant::now() >= deadline {
+            return Err(TransportError::Timeout);
+        }
         let _admission = if admitted {
             None
         } else {
@@ -935,11 +943,6 @@ impl RemotingClient {
                     .await?,
             )
         };
-        let request_for_hooks = command.clone();
-        let connection = self.inner.connection(addr, deadline).await?;
-        if Instant::now() >= deadline {
-            return Err(TransportError::Timeout);
-        }
         if !retried_go_away {
             for hook in self.inner.rpc_hooks.lock().unwrap().clone() {
                 let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -1056,14 +1059,14 @@ impl RemotingClient {
             return Err(TransportError::Timeout);
         }
         command.mark_oneway();
-        let _admission = self
-            .inner
-            .acquire_admission(self.inner.oneway_admission.clone(), deadline)
-            .await?;
         let connection = self.inner.connection(addr, deadline).await?;
         if Instant::now() >= deadline {
             return Err(TransportError::Timeout);
         }
+        let _admission = self
+            .inner
+            .acquire_admission(self.inner.oneway_admission.clone(), deadline)
+            .await?;
         for hook in self.inner.rpc_hooks.lock().unwrap().clone() {
             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 hook.before_request(addr, &command)
