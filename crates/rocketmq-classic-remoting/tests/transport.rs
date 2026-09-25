@@ -53,11 +53,23 @@ fn command(code: i32) -> RemotingCommand {
     }
 }
 
-struct ContextCallback(tokio::sync::mpsc::UnboundedSender<InvokeCallbackResult>);
+struct ContextCallback {
+    sender: tokio::sync::mpsc::UnboundedSender<InvokeCallbackResult>,
+    events: Arc<std::sync::Mutex<Vec<&'static str>>>,
+}
 
 impl InvokeCallback for ContextCallback {
     fn operation_complete_with_context(&self, context: &InvokeCallbackResult) {
-        let _ = self.0.send(context.clone());
+        self.events.lock().unwrap().push("complete");
+        let _ = self.sender.send(context.clone());
+    }
+
+    fn operation_succeed(&self, _: &RemotingCommand) {
+        self.events.lock().unwrap().push("succeed");
+    }
+
+    fn operation_fail(&self, _: &TransportError) {
+        self.events.lock().unwrap().push("fail");
     }
 }
 
@@ -76,6 +88,7 @@ async fn p3_async_callback_contains_response_future_metadata_and_timeout_grace()
     });
     let client = RemotingClient::new(TransportMode::Plain);
     let (callback_tx, mut callback_rx) = tokio::sync::mpsc::unbounded_channel();
+    let events = Arc::new(std::sync::Mutex::new(Vec::new()));
     let mut request = command(18);
     request.opaque = 73;
     client
@@ -83,7 +96,10 @@ async fn p3_async_callback_contains_response_future_metadata_and_timeout_grace()
             address.to_string(),
             request,
             Instant::now() + Duration::from_millis(50),
-            Arc::new(ContextCallback(callback_tx)),
+            Arc::new(ContextCallback {
+                sender: callback_tx,
+                events: events.clone(),
+            }),
         )
         .unwrap();
     let context = tokio::time::timeout(Duration::from_secs(2), callback_rx.recv())
@@ -99,6 +115,7 @@ async fn p3_async_callback_contains_response_future_metadata_and_timeout_grace()
     assert!(!context.timed_out);
     assert!(context.error.is_none());
     assert!(context.elapsed >= Duration::from_millis(100));
+    assert_eq!(*events.lock().unwrap(), vec!["complete", "succeed"]);
     peer.await.unwrap();
     client.shutdown().await;
 }
@@ -107,6 +124,7 @@ async fn p3_async_callback_contains_response_future_metadata_and_timeout_grace()
 async fn p3_expired_async_callback_retains_request_and_timeout_metadata() {
     let client = RemotingClient::new(TransportMode::Plain);
     let (callback_tx, mut callback_rx) = tokio::sync::mpsc::unbounded_channel();
+    let events = Arc::new(std::sync::Mutex::new(Vec::new()));
     let mut request = command(20);
     request.opaque = 74;
     client
@@ -114,7 +132,10 @@ async fn p3_expired_async_callback_retains_request_and_timeout_metadata() {
             "127.0.0.1:1",
             request,
             Instant::now(),
-            Arc::new(ContextCallback(callback_tx)),
+            Arc::new(ContextCallback {
+                sender: callback_tx,
+                events: events.clone(),
+            }),
         )
         .unwrap();
     let context = callback_rx.recv().await.unwrap();
@@ -124,6 +145,7 @@ async fn p3_expired_async_callback_retains_request_and_timeout_metadata() {
     assert_eq!(context.error, Some(TransportError::Timeout));
     assert!(context.timed_out);
     assert!(!context.send_request_ok);
+    assert_eq!(*events.lock().unwrap(), vec!["complete", "fail"]);
     client.shutdown().await;
 }
 
@@ -285,6 +307,7 @@ async fn p3_nameserver_recovers_selection_after_chosen_channel_closes() {
     });
     let second_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let second_address = second_listener.local_addr().unwrap();
+    let (close_second_tx, close_second_rx) = tokio::sync::oneshot::channel();
     let second_peer = tokio::spawn(async move {
         let (mut stream, _) = second_listener.accept().await.unwrap();
         let request = read_command(&mut stream).await;
@@ -292,6 +315,7 @@ async fn p3_nameserver_recovers_selection_after_chosen_channel_closes() {
         response.opaque = request.opaque;
         response.mark_response();
         write_command(&mut stream, &response).await;
+        let _ = close_second_rx.await;
     });
     let client = RemotingClient::with_config(ClientConfig {
         scan_available_nameserver: false,
@@ -302,20 +326,36 @@ async fn p3_nameserver_recovers_selection_after_chosen_channel_closes() {
         first_address.to_string(),
         second_address.to_string(),
     ]);
-    assert_eq!(
-        client
-            .invoke_name_server(command(1), Instant::now() + Duration::from_secs(2))
-            .await
-            .unwrap()
-            .code,
-        21
-    );
-    assert_eq!(
-        client.get_available_name_srv_list(),
-        vec![first_address.to_string()]
-    );
-    let _ = close_first_tx.send(());
-    first_peer.await.unwrap();
+    let first_response = client
+        .invoke_name_server(command(1), Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap();
+    let (closed_address, expected_recovery, close_selected, close_backup) =
+        match first_response.code {
+            21 => (
+                first_address.to_string(),
+                22,
+                Box::new(move || {
+                    let _ = close_first_tx.send(());
+                }) as Box<dyn FnOnce()>,
+                Box::new(move || {
+                    let _ = close_second_tx.send(());
+                }) as Box<dyn FnOnce()>,
+            ),
+            22 => (
+                second_address.to_string(),
+                21,
+                Box::new(move || {
+                    let _ = close_second_tx.send(());
+                }) as Box<dyn FnOnce()>,
+                Box::new(move || {
+                    let _ = close_first_tx.send(());
+                }) as Box<dyn FnOnce()>,
+            ),
+            code => panic!("unexpected NameServer response {code}"),
+        };
+    assert_eq!(client.get_available_name_srv_list(), vec![closed_address]);
+    close_selected();
     tokio::time::timeout(Duration::from_secs(1), async {
         while !client.get_available_name_srv_list().is_empty() {
             tokio::task::yield_now().await;
@@ -329,8 +369,10 @@ async fn p3_nameserver_recovers_selection_after_chosen_channel_closes() {
             .await
             .unwrap()
             .code,
-        22
+        expected_recovery
     );
+    close_backup();
+    first_peer.await.unwrap();
     second_peer.await.unwrap();
     client.shutdown().await;
 }
@@ -1114,28 +1156,29 @@ async fn p3_async_callback_completes_on_deadline_failure() {
         tokio::time::sleep(Duration::from_millis(1200)).await;
     });
     let client = RemotingClient::new(TransportMode::Plain);
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    let tx = Arc::new(std::sync::Mutex::new(Some(tx)));
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let events = Arc::new(std::sync::Mutex::new(Vec::new()));
     client
         .invoke_async(
             address.to_string(),
             command(1),
             Instant::now() + Duration::from_millis(20),
-            Arc::new(move |result: Result<RemotingCommand, TransportError>| {
-                if let Some(tx) = tx.lock().unwrap().take() {
-                    let _ = tx.send(result);
-                }
+            Arc::new(ContextCallback {
+                sender: tx,
+                events: events.clone(),
             }),
         )
         .unwrap();
     assert_eq!(
-        tokio::time::timeout(Duration::from_secs(2), rx)
+        tokio::time::timeout(Duration::from_secs(2), rx.recv())
             .await
             .unwrap()
             .unwrap()
-            .unwrap_err(),
+            .error
+            .unwrap(),
         TransportError::Timeout
     );
+    assert_eq!(*events.lock().unwrap(), vec!["complete", "fail"]);
     client.shutdown().await;
     peer.await.unwrap();
 }
