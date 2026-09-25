@@ -733,8 +733,17 @@ async fn p3_u01_inflight_invoke_times_out_when_peer_does_not_reply() {
     let address = listener.local_addr().unwrap();
     let peer = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
-        let _request = read_command(&mut stream).await;
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        let timed_out = read_command(&mut stream).await;
+        tokio::time::sleep(Duration::from_millis(40)).await;
+        let mut response = command(91);
+        response.opaque = timed_out.opaque;
+        response.mark_response();
+        write_command(&mut stream, &response).await;
+        let next = read_command(&mut stream).await;
+        let mut response = command(92);
+        response.opaque = next.opaque;
+        response.mark_response();
+        write_command(&mut stream, &response).await;
     });
     let client = RemotingClient::new(TransportMode::Plain);
     let result = client
@@ -745,8 +754,48 @@ async fn p3_u01_inflight_invoke_times_out_when_peer_does_not_reply() {
         )
         .await;
     assert!(matches!(result, Err(TransportError::Timeout)));
+    assert_eq!(
+        client
+            .invoke(
+                &address.to_string(),
+                command(request::GET_ROUTEINFO_BY_TOPIC),
+                Instant::now() + Duration::from_secs(1),
+            )
+            .await
+            .unwrap()
+            .code,
+        92
+    );
     client.shutdown().await;
     peer.await.unwrap();
+}
+
+#[tokio::test]
+async fn p3_sync_timeout_closes_socket_when_java_heuristic_requires_it() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let _request = read_command(&mut stream).await;
+        let mut byte = [0; 1];
+        tokio::time::timeout(Duration::from_secs(1), stream.read(&mut byte))
+            .await
+            .unwrap()
+            .unwrap()
+    });
+    let client = RemotingClient::new(TransportMode::Plain);
+    assert!(matches!(
+        client
+            .invoke_sync(
+                &address.to_string(),
+                command(request::GET_ROUTEINFO_BY_TOPIC),
+                Duration::from_millis(200),
+            )
+            .await,
+        Err(TransportError::Timeout)
+    ));
+    assert_eq!(peer.await.unwrap(), 0);
+    client.shutdown().await;
 }
 
 #[tokio::test]

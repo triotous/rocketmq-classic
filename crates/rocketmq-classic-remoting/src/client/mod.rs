@@ -49,6 +49,13 @@ struct CallbackTracking {
     opaque: Arc<AtomicI32>,
 }
 
+#[derive(Clone, Copy)]
+struct InvokeOptions {
+    admitted: bool,
+    retried_go_away: bool,
+    close_socket_on_timeout: bool,
+}
+
 struct CallbackJob {
     callback: Arc<dyn InvokeCallback>,
     context: InvokeCallbackResult,
@@ -835,8 +842,11 @@ impl RemotingClient {
                                     &addr,
                                     command,
                                     deadline,
-                                    true,
-                                    false,
+                                    InvokeOptions {
+                                        admitted: true,
+                                        retried_go_away: false,
+                                        close_socket_on_timeout: false,
+                                    },
                                     Some(CallbackTracking {
                                         send_status: send_status.clone(),
                                         channel_established: channel_established.clone(),
@@ -910,8 +920,18 @@ impl RemotingClient {
         command: RemotingCommand,
         deadline: Instant,
     ) -> Result<RemotingCommand, TransportError> {
-        self.invoke_inner(addr, command, deadline, false, false, None)
-            .await
+        self.invoke_inner(
+            addr,
+            command,
+            deadline,
+            InvokeOptions {
+                admitted: false,
+                retried_go_away: false,
+                close_socket_on_timeout: false,
+            },
+            None,
+        )
+        .await
     }
 
     pub async fn invoke_sync(
@@ -920,7 +940,18 @@ impl RemotingClient {
         command: RemotingCommand,
         timeout: std::time::Duration,
     ) -> Result<RemotingCommand, TransportError> {
-        self.invoke(addr, command, Instant::now() + timeout).await
+        self.invoke_inner(
+            addr,
+            command,
+            Instant::now() + timeout,
+            InvokeOptions {
+                admitted: false,
+                retried_go_away: false,
+                close_socket_on_timeout: true,
+            },
+            None,
+        )
+        .await
     }
 
     async fn invoke_inner(
@@ -928,8 +959,7 @@ impl RemotingClient {
         addr: &str,
         mut command: RemotingCommand,
         deadline: Instant,
-        admitted: bool,
-        retried_go_away: bool,
+        options: InvokeOptions,
         callback: Option<CallbackTracking>,
     ) -> Result<RemotingCommand, TransportError> {
         if self.inner.closed.load(Ordering::Acquire) {
@@ -946,7 +976,7 @@ impl RemotingClient {
         if Instant::now() >= deadline {
             return Err(TransportError::Timeout);
         }
-        let _admission = if admitted {
+        let _admission = if options.admitted {
             None
         } else {
             Some(
@@ -955,14 +985,14 @@ impl RemotingClient {
                     .await?,
             )
         };
-        if !retried_go_away {
+        let timeout_budget = deadline.saturating_duration_since(Instant::now());
+        if !options.retried_go_away {
             for hook in self.inner.rpc_hooks.lock().unwrap().clone() {
                 let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     hook.before_request(addr, &command)
                 }));
             }
         }
-        let response_timeout_budget = deadline.saturating_duration_since(Instant::now());
         let pending_deadline = if callback.is_some() {
             deadline + std::time::Duration::from_secs(1)
         } else {
@@ -1009,14 +1039,17 @@ impl RemotingClient {
             Ok(Ok(Ok(response))) => {
                 pending.disarm();
                 if response.code == rocketmq_classic_protocol::codes::response::GO_AWAY {
-                    if self.inner.config.enable_reconnect_for_go_away && !retried_go_away {
+                    if self.inner.config.enable_reconnect_for_go_away && !options.retried_go_away {
                         self.inner.connection_closed(connection.generation, None);
                         let mut retry = Box::pin(self.invoke_inner(
                             addr,
                             request_for_hooks,
                             deadline,
-                            true,
-                            true,
+                            InvokeOptions {
+                                admitted: true,
+                                retried_go_away: true,
+                                close_socket_on_timeout: options.close_socket_on_timeout,
+                            },
                             callback,
                         ));
                         return retry.as_mut().await;
@@ -1044,10 +1077,10 @@ impl RemotingClient {
             }
             Err(_) => {
                 self.inner.cancel_pending(opaque, connection.generation);
-                if callback.is_none()
+                if options.close_socket_on_timeout
                     && self.inner.config.close_socket_if_timeout
                     && (response_wait > std::time::Duration::from_millis(100)
-                        || response_wait > response_timeout_budget / 4)
+                        || response_wait > timeout_budget / 4)
                 {
                     connection.close();
                 }
