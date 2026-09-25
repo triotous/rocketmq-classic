@@ -8,6 +8,10 @@
 - Source paths, artifact hashes and tool versions: `compat/java-reference/README.md`
 - Status vocabulary: implementation `TODO / IN_PROGRESS / PARTIAL / UNIT_VERIFIED / COMPATIBLE`; live `PENDING_PHASE_19 / PASS / FAIL / BLOCKED`. Fixture existence is not implementation or live-server evidence.
 
+## Phase 1 model and registry status
+
+Phase 1 provides the initial Rust 2024 workspace (`rocketmq-classic-common` and `rocketmq-classic-protocol`), pinned to Rust 1.85.0/MSRV 1.85. The common crate contains message/property models and message/pull flags; protocol contains the full pinned 166-request/68-response integer registry, language and serialization tags, route conversion models, and heartbeat JSON models. Unit coverage cross-checks the Phase 0 fixture sidecars, Java UTF-16 queue ordering, malformed property handling, static/ordered route cases, Java-compatible JSON field names, signed values, and flag preservation. Registry and offline-fixture coverage are not client feature completion or live Broker validation.
+
 ## Initial bidirectional inventory
 
 The matrix starts with the source areas required by the master plan. Later phase commits must add each public method/overload, inherited/deprecated setting, source branch, configuration default/type/unit/range/validation, Rust mapping, fixture and unit-test ID. Phase 18 closes both directions, including proof that Rust exposes no Java-incompatible public setting. `TODO` means not yet implemented; no feature completion is claimed here.

@@ -1,0 +1,68 @@
+use std::collections::BTreeMap;
+
+use super::{MessageProperties, NAME_VALUE_SEPARATOR, PROPERTY_SEPARATOR};
+
+/// Serialize message properties with RocketMQ's U+0001/U+0002 separators.
+/// Null Java values are omitted; Rust's owned map cannot contain null values.
+pub fn encode_properties(properties: &MessageProperties) -> String {
+    let mut encoded = String::new();
+    for (key, value) in properties {
+        encoded.push_str(key);
+        encoded.push(NAME_VALUE_SEPARATOR);
+        encoded.push_str(value);
+        encoded.push(PROPERTY_SEPARATOR);
+    }
+    encoded
+}
+
+/// Parse properties using Java MessageDecoder's permissive record rules.
+/// Duplicate keys use last-value-wins; malformed and too-short entries are ignored.
+/// Unlike user-property validation, this wire decoder retains empty values and keys.
+pub fn decode_properties(encoded: &str) -> MessageProperties {
+    let mut properties = BTreeMap::new();
+    for record in encoded.split(PROPERTY_SEPARATOR) {
+        if record.encode_utf16().count() < 3 {
+            continue;
+        }
+        let Some((key, value)) = record.split_once(NAME_VALUE_SEPARATOR) else {
+            continue;
+        };
+        if !key.is_empty() {
+            properties.insert(key.to_owned(), value.to_owned());
+        }
+    }
+    properties
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_property_map_encodes_to_empty_string() {
+        assert_eq!(encode_properties(&MessageProperties::new()), "");
+        assert!(decode_properties("").is_empty());
+    }
+
+    #[test]
+    fn encode_and_decode_unicode_properties() {
+        let mut properties = MessageProperties::new();
+        properties.insert("鍵".into(), "值🙂".into());
+        assert_eq!(
+            decode_properties(&encode_properties(&properties)),
+            properties
+        );
+    }
+
+    #[test]
+    fn java_malformed_duplicate_and_unknown_entries() {
+        let decoded = decode_properties(
+            "x\u{1}1\u{2}broken\u{2}a\u{1}2\u{2}a\u{1}3\u{2}EMPTY\u{1}\u{2}UNKNOWN\u{1}kept\u{2}",
+        );
+        assert_eq!(decoded.get("a").map(String::as_str), Some("3"));
+        assert_eq!(decoded.get("UNKNOWN").map(String::as_str), Some("kept"));
+        assert_eq!(decoded.get("x").map(String::as_str), Some("1"));
+        assert_eq!(decoded.get("EMPTY").map(String::as_str), Some(""));
+        assert!(!decoded.contains_key("broken"));
+    }
+}

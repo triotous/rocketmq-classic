@@ -12,3 +12,7 @@
 - Scope note: Phase 0 fixtures encode command/header examples; they do not represent live Broker success or the complete all-client feature matrix. Live cases remain PENDING_PHASE_19 and subsequent phases expand feature evidence.
 - Phase/commit status: Phase 0 implementation ready for review/commit; phases 1–19 not started.
 - Final plan verification: Phase 0 deliverables checked against English plan. Offline oracle gates pass; Phase 19 live gate remains intentionally pending.
+
+- Phase 0 committed: 63a895c. Created next branch from completed phase commit.
+- Phase 1 branch: 02-phase-01-common-protocol-models; implementation in progress.
+- Follow-up session note: restored tracked phase-0 log had the Phase 1 branch note uncommitted, so this appended update records it in the Phase 1 commit for audit continuity.

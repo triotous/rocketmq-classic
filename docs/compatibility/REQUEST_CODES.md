@@ -1,6 +1,6 @@
 # RocketMQ Java client 5.5.1 request/response code inventory
 
-The numeric source of truth is the pinned Java tag `rocketmq-all-5.5.1`, especially `remoting/src/main/java/org/apache/rocketmq/remoting/protocol/RequestCode.java`, `ResponseCode.java`, and `RemotingSysResponseCode.java`. Phase 0 records required early fixture families; Phase 1 must complete the audited registry before coding Rust constants. A registered code does not imply an RPC implementation.
+The numeric source of truth is the pinned Java tag `rocketmq-all-5.5.1`, especially `remoting/src/main/java/org/apache/rocketmq/remoting/protocol/RequestCode.java`, `ResponseCode.java`, and `RemotingSysResponseCode.java`. Phase 1 generated and checked in the complete public static integer registry from those sources in `crates/rocketmq-classic-protocol/src/codes/{request,response}.rs`; a registered code does not imply an RPC implementation.
 
 | Code | Java name | Client operation | Rust implementation status |
 |---:|---|---|---|
@@ -15,4 +15,4 @@ The numeric source of truth is the pinned Java tag `rocketmq-all-5.5.1`, especia
 | 105 | GET_ROUTEINFO_BY_TOPIC | NameServer route | TODO |
 | 200050+ | POP family | POP consumer | TODO |
 
-This is an initial checklist, not the full Java numeric registry. See `JAVA_5_5_1_COMPATIBILITY.md` for status semantics.
+The table above is a selected checklist; `crates/rocketmq-classic-protocol/src/codes/request.rs` contains all 166 public Java RequestCode constants, and `response.rs` contains the 5 RemotingSysResponseCode plus 63 ResponseCode constants. Each file is generated/audited against the pinned Java source. Registry presence does not imply RPC implementation. See `JAVA_5_5_1_COMPATIBILITY.md` for status semantics.
