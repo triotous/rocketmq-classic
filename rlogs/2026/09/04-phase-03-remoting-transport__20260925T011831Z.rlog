@@ -171,3 +171,10 @@
 - Updated the bidirectional inventory, compatibility matrix, README and ADR with API/test mappings and remaining semantic differences.
 - Validation PASS: `cargo fmt --all --check`; workspace tests offline (73 unit/integration tests plus doc tests); all-target/all-feature Clippy with warnings denied; workspace metadata checker; Java oracle Maven verify (17 manifest scenarios and two Rust fixture decodes); differential self-test; `git diff --check`.
 - Phase 3 remains unaccepted: full two-way public API/config inventory and line-by-line branch review still have open items; no Phase 4 transition. No live Broker/Docker validation; P3-V04 remains Phase 19. Java reference checkout remains untouched.
+
+## Continuation update (2026-09-25T07:16Z)
+
+- Added `get_callback_executor` and `get_channel_event_listener` to cover Java's corresponding public getters. Extended existing callback/channel-event tests to verify same-object retrieval, clear-to-None and restore behavior.
+- Updated the inventory and project docs to distinguish the mapped getter APIs from remaining Java executor/channel object lifecycle differences.
+- Validation PASS after implementation and documentation updates: format check; workspace offline tests (73 unit/integration tests plus doc tests); all-target/all-feature Clippy with warnings denied; workspace metadata checker; Java oracle Maven verify (17 scenarios, 2 Rust frame decodes); differential self-test; diff check.
+- This maps two public methods but does not close full inventory or parity. Phase 3 remains active and Phase 4 remains blocked; no live Broker/Docker validation; P3-V04 remains pending Phase 19.
