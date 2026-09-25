@@ -17,6 +17,7 @@ tokio-rustls.workspace = true
 tokio-socks.workspace = true
 rustls-native-certs.workspace = true
 rustls-pemfile.workspace = true
+rand.workspace = true
 
 [dev-dependencies]
 rcgen.workspace = true

@@ -13,6 +13,7 @@ use std::{
     },
 };
 
+use rand::seq::SliceRandom;
 use tokio::{
     sync::{mpsc, oneshot},
     task::JoinHandle,
@@ -479,29 +480,26 @@ impl RemotingClient {
         Self { inner }
     }
 
-    /// Replaces the configured NameServer list, preserving order and removing duplicates.
-    pub fn update_name_server_address_list(&self, addresses: Vec<String>) {
+    /// Replaces the configured NameServer list and randomizes its order when changed.
+    pub fn update_name_server_address_list(&self, mut addresses: Vec<String>) {
         if addresses.is_empty() {
             return;
         }
-        let mut unique = Vec::new();
-        for address in addresses {
-            if !unique.contains(&address) {
-                unique.push(address);
-            }
-        }
         let mut nameservers = self.inner.nameservers.lock().unwrap();
-        if nameservers.len() == unique.len()
-            && nameservers.iter().all(|address| unique.contains(address))
+        if nameservers.len() == addresses.len()
+            && addresses
+                .iter()
+                .all(|address| nameservers.contains(address))
         {
             return;
         }
         let removed = nameservers
             .iter()
-            .filter(|address| !unique.contains(address))
+            .filter(|address| !addresses.contains(address))
             .cloned()
             .collect::<HashSet<_>>();
-        *nameservers = unique;
+        addresses.shuffle(&mut rand::rng());
+        *nameservers = addresses;
         {
             let mut chosen = self.inner.chosen_nameserver.lock().unwrap();
             if chosen

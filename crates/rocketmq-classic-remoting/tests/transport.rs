@@ -128,6 +128,66 @@ async fn p3_expired_async_callback_retains_request_and_timeout_metadata() {
 }
 
 #[tokio::test]
+async fn p3_nameserver_update_shuffles_changed_lists_and_preserves_duplicates() {
+    let client = RemotingClient::with_config(ClientConfig {
+        scan_available_nameserver: false,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    let addresses = vec![
+        "127.0.0.1:1001".into(),
+        "127.0.0.1:1001".into(),
+        "127.0.0.1:1002".into(),
+    ];
+    client.update_name_server_address_list(addresses);
+    let reordered_same_list = vec![
+        "127.0.0.1:1002".into(),
+        "127.0.0.1:1001".into(),
+        "127.0.0.1:1001".into(),
+    ];
+    client.update_name_server_address_list(reordered_same_list);
+    let initial = client.get_name_server_address_list();
+    assert_eq!(initial.len(), 3);
+    assert_eq!(
+        initial
+            .iter()
+            .filter(|addr| *addr == "127.0.0.1:1001")
+            .count(),
+        2
+    );
+    assert_eq!(
+        initial
+            .iter()
+            .filter(|addr| *addr == "127.0.0.1:1002")
+            .count(),
+        1
+    );
+    client.update_name_server_address_list(vec![
+        "127.0.0.1:1002".into(),
+        "127.0.0.1:1001".into(),
+        "127.0.0.1:1001".into(),
+    ]);
+    assert_eq!(client.get_name_server_address_list(), initial);
+
+    client.update_name_server_address_list(vec![
+        "127.0.0.1:1002".into(),
+        "127.0.0.1:1002".into(),
+        "127.0.0.1:1003".into(),
+    ]);
+    let mut updated = client.get_name_server_address_list();
+    updated.sort();
+    assert_eq!(
+        updated,
+        vec![
+            "127.0.0.1:1002".to_owned(),
+            "127.0.0.1:1002".to_owned(),
+            "127.0.0.1:1003".to_owned(),
+        ]
+    );
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn p3_nameserver_list_selection_and_availability_tracking() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
