@@ -1128,7 +1128,15 @@ async fn p3_caller_callback_executor_routes_callbacks_to_owned_executor() {
         write_command(&mut stream, &response).await;
     });
     let client = RemotingClient::new(TransportMode::Plain);
-    client.set_callback_executor(Some(Arc::new(ThreadCallbackExecutor)));
+    let callback_executor: Arc<dyn CallbackExecutor> = Arc::new(ThreadCallbackExecutor);
+    client.set_callback_executor(Some(callback_executor.clone()));
+    assert!(Arc::ptr_eq(
+        &client.get_callback_executor().unwrap(),
+        &callback_executor
+    ));
+    client.set_callback_executor(None);
+    assert!(client.get_callback_executor().is_none());
+    client.set_callback_executor(Some(callback_executor));
     let caller_thread = std::thread::current().id();
     let (callback_tx, callback_rx) = tokio::sync::oneshot::channel();
     let callback_tx = Arc::new(std::sync::Mutex::new(Some(callback_tx)));
@@ -1364,7 +1372,15 @@ async fn p3_hooks_and_channel_connect_event_follow_successful_exchange() {
     let client = RemotingClient::new(TransportMode::Plain);
     let events = Arc::new(std::sync::Mutex::new(Vec::new()));
     client.add_rpc_hook(Arc::new(TestHook(events.clone())));
-    client.set_channel_event_listener(Some(Arc::new(TestEvents(events.clone()))));
+    let channel_listener: Arc<dyn ChannelEventListener> = Arc::new(TestEvents(events.clone()));
+    client.set_channel_event_listener(Some(channel_listener.clone()));
+    assert!(Arc::ptr_eq(
+        &client.get_channel_event_listener().unwrap(),
+        &channel_listener
+    ));
+    client.set_channel_event_listener(None);
+    assert!(client.get_channel_event_listener().is_none());
+    client.set_channel_event_listener(Some(channel_listener));
     client
         .invoke(
             &address.to_string(),

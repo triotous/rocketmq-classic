@@ -717,8 +717,16 @@ impl RemotingClient {
         *self.inner.channel_listener.lock().unwrap() = listener;
     }
 
+    pub fn get_channel_event_listener(&self) -> Option<Arc<dyn ChannelEventListener>> {
+        self.inner.channel_listener.lock().unwrap().clone()
+    }
+
     pub fn set_callback_executor(&self, executor: Option<Arc<dyn CallbackExecutor>>) {
         *self.inner.callback_executor.lock().unwrap() = executor;
+    }
+
+    pub fn get_callback_executor(&self) -> Option<Arc<dyn CallbackExecutor>> {
+        self.inner.callback_executor.lock().unwrap().clone()
     }
 
     pub fn set_request_pipeline(&self, pipeline: Option<Arc<dyn RequestPipeline>>) {
