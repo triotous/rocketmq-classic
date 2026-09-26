@@ -918,7 +918,9 @@ impl RemotingClient {
             };
             let mut context =
                 InvokeCallbackResult::from_result(callback_request, result, started.elapsed());
-            context.send_request_ok = send_status.load(Ordering::Acquire);
+            context.send_request_ok = send_status.load(Ordering::Acquire)
+                || (channel_established.load(Ordering::Acquire)
+                    && context.error == Some(TransportError::Timeout));
             context.request.opaque = callback_opaque.load(Ordering::Acquire);
             let job = CallbackJob {
                 callback: callback.clone(),

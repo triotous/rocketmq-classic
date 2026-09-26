@@ -1886,24 +1886,22 @@ async fn p3_async_admission_timeout_completes_through_callback() {
         )
         .unwrap();
     accepted_rx.await.unwrap();
-    let (second_tx, second_rx) = tokio::sync::oneshot::channel();
-    let second_tx = Arc::new(std::sync::Mutex::new(Some(second_tx)));
+    let (second_context_tx, mut second_context_rx) = tokio::sync::mpsc::unbounded_channel();
     client
         .invoke_async(
             address.to_string(),
             command(1),
             Instant::now() + Duration::from_millis(20),
-            Arc::new(move |result: Result<RemotingCommand, TransportError>| {
-                if let Some(sender) = second_tx.lock().unwrap().take() {
-                    let _ = sender.send(result);
-                }
+            Arc::new(ContextCallback {
+                sender: second_context_tx,
+                events: Arc::new(std::sync::Mutex::new(Vec::new())),
             }),
         )
         .unwrap();
-    assert_eq!(
-        second_rx.await.unwrap().unwrap_err(),
-        TransportError::Timeout
-    );
+    let second_context = second_context_rx.recv().await.unwrap();
+    assert_eq!(second_context.error, Some(TransportError::Timeout));
+    assert!(second_context.send_request_ok);
+    assert!(second_context.timed_out);
     assert!(callback_rx.await.unwrap().is_err());
     client.shutdown().await;
     peer.await.unwrap();
