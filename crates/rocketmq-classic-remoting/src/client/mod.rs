@@ -1201,7 +1201,6 @@ impl RemotingClient {
         if Instant::now() >= deadline {
             return std::future::ready(Err(TransportError::Timeout));
         }
-        command.mark_oneway();
         let client = self.clone();
         let addr = addr.to_owned();
         let task = tokio::spawn(async move {
@@ -1213,6 +1212,7 @@ impl RemotingClient {
                     hook.before_request(&addr, &command)
                 }));
             }
+            command.mark_oneway();
             let Ok(_admission) = client
                 .inner
                 .acquire_admission(client.inner.oneway_admission.clone(), deadline)

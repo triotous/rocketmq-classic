@@ -1011,6 +1011,8 @@ async fn p3_outbound_rpc_hook_runs_before_oneway_admission_wait() {
     .unwrap();
     let hook_calls = Arc::new(AtomicUsize::new(0));
     client.add_rpc_hook(Arc::new(BeforeCounter(hook_calls.clone())));
+    let hook_flags = Arc::new(std::sync::Mutex::new(Vec::new()));
+    client.add_rpc_hook(Arc::new(OnewayHookFlagRecorder(hook_flags.clone())));
     let first = RemotingCommand {
         body: Some(vec![7; 8 * 1024 * 1024]),
         ..command(101)
@@ -1048,6 +1050,7 @@ async fn p3_outbound_rpc_hook_runs_before_oneway_admission_wait() {
             .unwrap(),
         (101, 102)
     );
+    assert_eq!(*hook_flags.lock().unwrap(), vec![false, false]);
     client.shutdown().await;
 }
 
@@ -1515,6 +1518,13 @@ struct BeforeCounter(Arc<AtomicUsize>);
 impl RpcHook for BeforeCounter {
     fn before_request(&self, _: &str, _: &RemotingCommand) {
         self.0.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+struct OnewayHookFlagRecorder(Arc<std::sync::Mutex<Vec<bool>>>);
+impl RpcHook for OnewayHookFlagRecorder {
+    fn before_request(&self, _: &str, request: &RemotingCommand) {
+        self.0.lock().unwrap().push(request.is_oneway());
     }
 }
 
