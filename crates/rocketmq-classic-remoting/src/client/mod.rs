@@ -1990,6 +1990,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn accepted_inbound_requests_are_dispatched_when_shutdown_starts() {
+        struct InlineExecutor;
+
+        impl RequestExecutor for InlineExecutor {
+            fn execute(&self, task: CallbackTask) -> Result<(), String> {
+                task();
+                Ok(())
+            }
+        }
+
+        let client = RemotingClient::new(TransportMode::Plain);
+        let processed = Arc::new(AtomicUsize::new(0));
+        let processed_by_handler = processed.clone();
+        client.register_processor_with_executor(
+            test_command().code,
+            Arc::new(move |_| {
+                processed_by_handler.fetch_add(1, Ordering::SeqCst);
+                Ok(None)
+            }),
+            Some(Arc::new(InlineExecutor)),
+        );
+        client
+            .inner
+            .inbound
+            .try_send(processor::InboundRequest {
+                generation: 0,
+                remote_addr: "test:0".into(),
+                command: test_command(),
+            })
+            .unwrap();
+        client.inner.shutdown.send(true).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while processed.load(Ordering::SeqCst) != 1 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("accepted inbound request was dropped during shutdown");
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
     async fn callback_workers_drain_tasks_accepted_before_shutdown() {
         let (sender, receiver) = mpsc::unbounded_channel();
         let (shutdown, _) = tokio::sync::watch::channel(false);

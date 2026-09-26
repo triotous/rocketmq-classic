@@ -52,33 +52,31 @@ pub(super) fn start(
             tokio::select! {
                 request = receiver.recv() => match request {
                     Some(request) => {
-                        let permit = tokio::select! {
-                            result = work.reserve() => match result { Ok(permit) => permit, Err(_) => return },
-                            result = shutdown.changed() => if result.is_err() || *shutdown.borrow() { return } else { continue },
-                        };
+                        let Ok(permit) = work.reserve().await else { return };
                         permit.send(request);
                     }
                     None => return,
                 },
-                result = shutdown.changed() => if result.is_err() || *shutdown.borrow() { return },
+                result = shutdown.changed() => {
+                    if result.is_err() || *shutdown.borrow() {
+                        receiver.close();
+                        while let Some(request) = receiver.recv().await {
+                            if work.send(request).await.is_err() {
+                                return;
+                            }
+                        }
+                        return;
+                    }
+                },
             }
         }
     }));
     for _ in 0..worker_count {
         let inner = inner.clone();
-        let mut shutdown = shutdown_sender.subscribe();
         let receiver = worker_rx.clone();
         tasks.push(tokio::spawn(async move {
             loop {
-                let mut guard = receiver.lock().await;
-                let request = tokio::select! {
-                    request = guard.recv() => request,
-                    result = shutdown.changed() => {
-                        if result.is_err() || *shutdown.borrow() { return }
-                        continue;
-                    },
-                };
-                drop(guard);
+                let request = receiver.lock().await.recv().await;
                 match request {
                     Some(request) => process_one(&inner, request),
                     None => return,
