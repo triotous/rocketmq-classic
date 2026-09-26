@@ -47,6 +47,7 @@ struct CallbackTracking {
     send_status: Arc<AtomicBool>,
     channel_established: Arc<AtomicBool>,
     opaque: Arc<AtomicI32>,
+    request: Arc<Mutex<RemotingCommand>>,
 }
 
 #[derive(Clone, Copy)]
@@ -872,7 +873,7 @@ impl RemotingClient {
         let client = self.clone();
         let addr = addr.into();
         let started = Instant::now();
-        let callback_request = command.clone();
+        let callback_request_state = Arc::new(Mutex::new(command.clone()));
         let send_status = Arc::new(AtomicBool::new(false));
         let channel_established = Arc::new(AtomicBool::new(false));
         let callback_opaque = Arc::new(AtomicI32::new(command.opaque));
@@ -906,6 +907,7 @@ impl RemotingClient {
                                         send_status: send_status.clone(),
                                         channel_established: channel_established.clone(),
                                         opaque: callback_opaque.clone(),
+                                        request: callback_request_state.clone(),
                                     }),
                                 )
                                 .await,
@@ -916,8 +918,11 @@ impl RemotingClient {
                 }
                 Err(error) => (Err(error), None),
             };
-            let mut context =
-                InvokeCallbackResult::from_result(callback_request, result, started.elapsed());
+            let mut context = InvokeCallbackResult::from_result(
+                callback_request_state.lock().unwrap().clone(),
+                result,
+                started.elapsed(),
+            );
             context.send_request_ok = send_status.load(Ordering::Acquire)
                 || (channel_established.load(Ordering::Acquire)
                     && context.error == Some(TransportError::Timeout));
@@ -1107,6 +1112,9 @@ impl RemotingClient {
                             body: request_for_hooks.body.clone(),
                             ..RemotingCommand::default()
                         };
+                        if let Some(callback) = &callback {
+                            *callback.request.lock().unwrap() = retry_request.clone();
+                        }
                         let mut retry = Box::pin(self.invoke_inner(
                             addr,
                             retry_request,

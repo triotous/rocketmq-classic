@@ -1993,6 +1993,71 @@ async fn p3_async_go_away_retry_connect_failure_completes_before_failure() {
 }
 
 #[tokio::test]
+async fn p3_async_go_away_retry_callback_reports_reconstructed_request() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut first, _) = listener.accept().await.unwrap();
+        let request = read_command(&mut first).await;
+        let mut go_away = command(response::GO_AWAY);
+        go_away.opaque = request.opaque;
+        go_away.mark_response();
+        write_command(&mut first, &go_away).await;
+        drop(first);
+        let (mut second, _) = listener.accept().await.unwrap();
+        let retry = read_command(&mut second).await;
+        let mut response = command(42);
+        response.opaque = retry.opaque;
+        response.mark_response();
+        write_command(&mut second, &response).await;
+        retry
+    });
+    let client = RemotingClient::new(TransportMode::Plain);
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let request = RemotingCommand {
+        flag: 1 << 8,
+        remark: Some("original remark".into()),
+        ext_fields: Some(std::collections::BTreeMap::from([(
+            "trace".into(),
+            "preserved".into(),
+        )])),
+        body: Some(vec![4, 5, 6]),
+        ..command(1)
+    };
+    client
+        .invoke_async(
+            address.to_string(),
+            request,
+            Instant::now() + Duration::from_secs(2),
+            Arc::new(ContextCallback {
+                sender: tx,
+                events: Arc::new(std::sync::Mutex::new(Vec::new())),
+            }),
+        )
+        .unwrap();
+    let context = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(context.response.unwrap().code, 42);
+    assert_eq!(
+        context.request.language,
+        rocketmq_classic_protocol::codes::LanguageCode::Java
+    );
+    assert_eq!(context.request.flag, 0);
+    assert_eq!(context.request.remark, None);
+    assert_eq!(
+        context.request.ext_fields.unwrap().get("trace").unwrap(),
+        "preserved"
+    );
+    assert_eq!(context.request.body, Some(vec![4, 5, 6]));
+    assert_ne!(context.request.opaque, 0);
+    client.shutdown().await;
+    let retry = peer.await.unwrap();
+    assert_eq!(context.request.opaque, retry.opaque);
+}
+
+#[tokio::test]
 async fn p3_go_away_retries_once_on_a_new_connection() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
