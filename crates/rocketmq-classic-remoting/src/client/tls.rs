@@ -153,8 +153,8 @@ impl TlsConfig {
             })
             .unwrap_or_else(|| Path::new("/etc/rocketmq/tls.properties").to_owned());
         if configured_path.is_file() {
-            if let Ok(file_properties) = read_java_properties(&configured_path) {
-                properties.extend(file_properties);
+            if let Ok(bytes) = std::fs::read(&configured_path) {
+                properties.extend(parse_java_properties(&bytes)?);
             }
         }
         let mut config = Self {
@@ -312,6 +312,10 @@ fn read_tls_file(base_dir: &Path, value: &str) -> Result<Vec<u8>, TransportError
 
 fn read_java_properties(path: &Path) -> Result<HashMap<String, String>, TransportError> {
     let bytes = std::fs::read(path).map_err(|error| TransportError::Tls(error.to_string()))?;
+    parse_java_properties(&bytes)
+}
+
+fn parse_java_properties(bytes: &[u8]) -> Result<HashMap<String, String>, TransportError> {
     let source = bytes
         .iter()
         .map(|byte| char::from(*byte))
@@ -571,6 +575,18 @@ mod tests {
             ..config
         };
         assert!(config_with_unused_material.connector().is_ok());
+    }
+
+    #[test]
+    fn java_tls_properties_constructor_ignores_missing_file_but_rejects_malformed_escapes() {
+        let missing = test_dir().join("missing.properties");
+        assert!(TlsConfig::from_java_properties(&HashMap::new(), Some(&missing)).is_ok());
+
+        let directory = test_dir();
+        let properties_file = directory.join("tls.properties");
+        fs::write(&properties_file, r"tls.client.keyPassword=\uZZZZ").unwrap();
+        assert!(TlsConfig::from_java_properties(&HashMap::new(), Some(&properties_file)).is_err());
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
