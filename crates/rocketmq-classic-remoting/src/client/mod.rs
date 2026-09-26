@@ -33,7 +33,7 @@ pub use config::{ClientConfig, SocksProxyConfig};
 pub use connection::TransportMode;
 pub use connection_manager::Address;
 pub use processor::RequestProcessor;
-pub use tls::TlsConfig;
+pub use tls::{PrivateKeyDecryptionStrategy, TlsConfig};
 
 const OUTBOUND_QUEUE_CAPACITY: usize = 128;
 const INBOUND_QUEUE_CAPACITY: usize = 128;
