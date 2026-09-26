@@ -893,8 +893,9 @@ impl RemotingClient {
                         .acquire_admission(client.inner.async_admission.clone(), deadline)
                         .await
                     {
-                        Ok(permit) => (
-                            client
+                        Ok(permit) => {
+                            let mut admission = Some(permit);
+                            let result = client
                                 .invoke_inner(
                                     &addr,
                                     command,
@@ -912,10 +913,11 @@ impl RemotingClient {
                                         opaque: callback_opaque.clone(),
                                         request: callback_request_state.clone(),
                                     }),
+                                    &mut admission,
                                 )
-                                .await,
-                            Some(permit),
-                        ),
+                                .await;
+                            (result, admission)
+                        }
                         Err(error) => (Err(error), None),
                     }
                 }
@@ -984,6 +986,7 @@ impl RemotingClient {
         command: RemotingCommand,
         deadline: Instant,
     ) -> Result<RemotingCommand, TransportError> {
+        let mut admission = None;
         self.invoke_inner(
             addr,
             command,
@@ -996,6 +999,7 @@ impl RemotingClient {
                 timeout_millis: std::time::Duration::ZERO,
             },
             None,
+            &mut admission,
         )
         .await
     }
@@ -1006,6 +1010,7 @@ impl RemotingClient {
         command: RemotingCommand,
         timeout: std::time::Duration,
     ) -> Result<RemotingCommand, TransportError> {
+        let mut admission = None;
         self.invoke_inner(
             addr,
             command,
@@ -1018,6 +1023,7 @@ impl RemotingClient {
                 timeout_millis: timeout,
             },
             None,
+            &mut admission,
         )
         .await
     }
@@ -1029,6 +1035,7 @@ impl RemotingClient {
         deadline: Instant,
         options: InvokeOptions,
         callback: Option<CallbackTracking>,
+        admission: &mut Option<tokio::sync::OwnedSemaphorePermit>,
     ) -> Result<RemotingCommand, TransportError> {
         if self.inner.closed.load(Ordering::Acquire) {
             return Err(TransportError::Shutdown);
@@ -1052,15 +1059,13 @@ impl RemotingClient {
                 }));
             }
         }
-        let _admission = if options.admitted {
-            None
-        } else {
-            Some(
+        if !options.admitted {
+            *admission = Some(
                 self.inner
                     .acquire_admission(self.inner.async_admission.clone(), deadline)
                     .await?,
-            )
-        };
+            );
+        }
         let pending_deadline = if callback.is_some() {
             deadline + std::time::Duration::from_secs(1)
         } else {
@@ -1119,18 +1124,20 @@ impl RemotingClient {
                             body: request_for_hooks.body.clone(),
                             ..RemotingCommand::default()
                         };
+                        admission.take();
                         let mut retry = Box::pin(self.invoke_inner(
                             addr,
                             retry_request.clone(),
                             deadline,
                             InvokeOptions {
-                                admitted: true,
+                                admitted: false,
                                 retried_go_away: true,
                                 run_rpc_hooks: false,
                                 close_socket_on_timeout: options.close_socket_on_timeout,
                                 timeout_millis: options.timeout_millis,
                             },
                             callback.clone(),
+                            admission,
                         ));
                         let result = retry.as_mut().await;
                         if let Ok(response) = &result {

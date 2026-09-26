@@ -2225,6 +2225,110 @@ async fn p3_go_away_retries_once_on_a_new_connection() {
 }
 
 #[tokio::test]
+async fn p3_go_away_retry_reacquires_async_admission() {
+    let first_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = first_listener.local_addr().unwrap();
+    let competitor_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let competitor_address = competitor_listener.local_addr().unwrap();
+    let (go_away_tx, go_away_rx) = tokio::sync::oneshot::channel();
+    let (competitor_seen_tx, competitor_seen_rx) = tokio::sync::oneshot::channel();
+    let (release_competitor_tx, release_competitor_rx) = tokio::sync::oneshot::channel();
+    let (retry_seen_tx, retry_seen_rx) = tokio::sync::oneshot::channel();
+    let peers = tokio::spawn(async move {
+        let (mut first_stream, _) = first_listener.accept().await.unwrap();
+        let first_request = read_command(&mut first_stream).await;
+        let _ = go_away_rx.await;
+        let mut go_away = command(response::GO_AWAY);
+        go_away.opaque = first_request.opaque;
+        go_away.mark_response();
+        write_command(&mut first_stream, &go_away).await;
+        drop(first_stream);
+
+        let (mut competitor_stream, _) = competitor_listener.accept().await.unwrap();
+        let competitor_request = read_command(&mut competitor_stream).await;
+        let _ = competitor_seen_tx.send(());
+        let _ = release_competitor_rx.await;
+        let mut competitor_response = command(52);
+        competitor_response.opaque = competitor_request.opaque;
+        competitor_response.mark_response();
+        write_command(&mut competitor_stream, &competitor_response).await;
+
+        let (mut retry_stream, _) = first_listener.accept().await.unwrap();
+        let retry_request = read_command(&mut retry_stream).await;
+        let mut retry_response = command(53);
+        retry_response.opaque = retry_request.opaque;
+        retry_response.mark_response();
+        write_command(&mut retry_stream, &retry_response).await;
+        let _ = retry_seen_tx.send(retry_request.code);
+    });
+    let client = RemotingClient::with_config(ClientConfig {
+        async_semaphore_value: 1,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    let (competitor_hook_tx, competitor_hook_rx) = tokio::sync::oneshot::channel();
+    let competitor_hook_tx = Arc::new(std::sync::Mutex::new(Some(competitor_hook_tx)));
+    let hook_sender = competitor_hook_tx.clone();
+    client.add_rpc_hook(Arc::new(move |_: &str, request: &RemotingCommand| {
+        if request.code == 52 {
+            if let Some(sender) = hook_sender.lock().unwrap().take() {
+                let _ = sender.send(());
+            }
+        }
+    }));
+
+    let (first_done_tx, first_done_rx) = tokio::sync::oneshot::channel();
+    let first_done_tx = Arc::new(std::sync::Mutex::new(Some(first_done_tx)));
+    client
+        .invoke_async(
+            address.to_string(),
+            command(51),
+            Instant::now() + Duration::from_secs(3),
+            Arc::new(move |result: Result<RemotingCommand, TransportError>| {
+                if let Some(sender) = first_done_tx.lock().unwrap().take() {
+                    let _ = sender.send(result);
+                }
+            }),
+        )
+        .unwrap();
+    let (competitor_done_tx, competitor_done_rx) = tokio::sync::oneshot::channel();
+    let competitor_done_tx = Arc::new(std::sync::Mutex::new(Some(competitor_done_tx)));
+    client
+        .invoke_async(
+            competitor_address.to_string(),
+            command(52),
+            Instant::now() + Duration::from_secs(3),
+            Arc::new(move |result: Result<RemotingCommand, TransportError>| {
+                if let Some(sender) = competitor_done_tx.lock().unwrap().take() {
+                    let _ = sender.send(result);
+                }
+            }),
+        )
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(1), competitor_hook_rx)
+        .await
+        .expect("competitor must reach admission wait before GO_AWAY")
+        .unwrap();
+    let _ = go_away_tx.send(());
+    tokio::time::timeout(Duration::from_secs(1), competitor_seen_rx)
+        .await
+        .expect("queued competitor should receive the released admission permit")
+        .unwrap();
+    let mut retry_seen_rx = retry_seen_rx;
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), &mut retry_seen_rx)
+            .await
+            .is_err()
+    );
+    let _ = release_competitor_tx.send(());
+    assert_eq!(competitor_done_rx.await.unwrap().unwrap().code, 52);
+    assert_eq!(first_done_rx.await.unwrap().unwrap().code, 53);
+    assert_eq!(retry_seen_rx.await.unwrap(), 51);
+    client.shutdown().await;
+    peers.await.unwrap();
+}
+
+#[tokio::test]
 async fn p3_connect_failure_does_not_run_before_rpc_hooks() {
     let client = RemotingClient::new(TransportMode::Plain);
     let hook_calls = Arc::new(AtomicUsize::new(0));
