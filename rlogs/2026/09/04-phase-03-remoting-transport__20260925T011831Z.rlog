@@ -236,4 +236,4 @@
 ## Continuation update (2026-09-25; scan semantics review)
 
 - Further source review established that Java schedules `scanAvailableNameSrv` per address on `scanExecutor`; the protected `scanChannelTablesOfNameServer` method is present but has no call site in this pinned source. Updated the inventory to avoid describing the stale-response scan as the active Java path.
-- Rust availability cleanup now matches Java scan-start pruning and getter exposure, but scan submissions, overlap/races and channel-wrapper activity/replacement still differ. Tests and workspace gates remain as recorded above. No live Broker, Maven or Docker validation; Phase 3 acceptance remains pending.
+- Rust availability cleanup now matches Java scan-start pruning and getter exposure, but scan submissions, overlap/races and channel-wrapper activity/replacement still differ. Updated compatibility matrix, inventory, and ADR; tests and workspace gates remain as recorded above. No live Broker, Maven or Docker validation; Phase 3 acceptance remains pending.
