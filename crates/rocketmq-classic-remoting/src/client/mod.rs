@@ -1894,6 +1894,7 @@ async fn timeout_scheduler(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicUsize;
 
     fn test_command() -> RemotingCommand {
         RemotingCommand::default()
@@ -1986,6 +1987,30 @@ mod tests {
         assert_eq!(client.inner.pending.lock().unwrap().len(), 0);
         client.shutdown().await;
         assert!(client.inner.tasks.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn callback_workers_drain_tasks_accepted_before_shutdown() {
+        let (sender, receiver) = mpsc::unbounded_channel();
+        let (shutdown, _) = tokio::sync::watch::channel(false);
+        let completed = Arc::new(AtomicUsize::new(0));
+        for _ in 0..32 {
+            let completed = completed.clone();
+            sender
+                .send(Box::new(move || {
+                    completed.fetch_add(1, Ordering::SeqCst);
+                }) as CallbackTask)
+                .unwrap();
+        }
+        let workers = start_callback_workers(receiver, shutdown.subscribe(), 2);
+        shutdown.send(true).unwrap();
+        for worker in workers {
+            tokio::time::timeout(std::time::Duration::from_secs(2), worker)
+                .await
+                .expect("callback worker did not drain accepted tasks")
+                .unwrap();
+        }
+        assert_eq!(completed.load(Ordering::SeqCst), 32);
     }
 
     #[test]
