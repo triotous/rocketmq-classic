@@ -1196,25 +1196,23 @@ impl RemotingClient {
         }
     }
 
-    /// Polls connection acquisition once at call time, then schedules a managed one-way operation
-    /// and returns a ready result future without waiting for connection completion, admission, or
-    /// socket write. Completion does not imply Broker receipt or storage; post-return transport
-    /// failures are not observable.
+    /// Starts connection acquisition at call time, then schedules a managed one-way operation and
+    /// returns a ready future without waiting for connection completion, admission, or socket
+    /// write. Synchronous acquisition errors are returned directly; post-return transport failures
+    /// are not observable. Completion does not imply Broker receipt or storage.
     pub fn invoke_oneway(
         &self,
         addr: &str,
         mut command: RemotingCommand,
         deadline: Instant,
-    ) -> std::future::Ready<Result<(), TransportError>> {
+    ) -> Result<std::future::Ready<Result<(), TransportError>>, TransportError> {
         if self.inner.closed.load(Ordering::Acquire) {
-            return std::future::ready(Err(TransportError::Shutdown));
+            return Err(TransportError::Shutdown);
         }
         if Instant::now() >= deadline {
-            return std::future::ready(Err(TransportError::Timeout));
+            return Err(TransportError::Timeout);
         }
-        if let Err(error) = connection_manager::Address::parse(addr) {
-            return std::future::ready(Err(error));
-        }
+        connection_manager::Address::parse(addr)?;
         let client = self.clone();
         let addr = addr.to_owned();
         let (connection_tx, connection_rx) = tokio::sync::oneshot::channel();
@@ -1253,7 +1251,7 @@ impl RemotingClient {
             let _ = connection.send(frame, deadline).await;
         });
         self.inner.spawn(task);
-        std::future::ready(Ok(()))
+        Ok(std::future::ready(Ok(())))
     }
 
     /// Closes connections, fails pending calls, and joins all client-owned tasks.
@@ -1768,11 +1766,13 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let client = RemotingClient::new(TransportMode::Plain);
-        let _result = client.invoke_oneway(
-            &address.to_string(),
-            test_command(),
-            Instant::now() + std::time::Duration::from_secs(1),
-        );
+        let _result = client
+            .invoke_oneway(
+                &address.to_string(),
+                test_command(),
+                Instant::now() + std::time::Duration::from_secs(1),
+            )
+            .unwrap();
         {
             let connecting = client.inner.connecting.lock().unwrap();
             let gate = connecting

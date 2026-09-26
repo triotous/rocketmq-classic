@@ -692,9 +692,15 @@ async fn p3_v02_single_flight_shares_connection_and_stale_close_keeps_generation
     let client = RemotingClient::new(TransportMode::Plain);
     let deadline = Instant::now() + Duration::from_secs(2);
     let address = addr.to_string();
-    let a = client.invoke_oneway(&address, command(1), deadline);
-    let b = client.invoke_oneway(&address, command(2), deadline);
-    let c = client.invoke_oneway(&address, command(3), deadline);
+    let a = client
+        .invoke_oneway(&address, command(1), deadline)
+        .unwrap();
+    let b = client
+        .invoke_oneway(&address, command(2), deadline)
+        .unwrap();
+    let c = client
+        .invoke_oneway(&address, command(3), deadline)
+        .unwrap();
     a.await.unwrap();
     b.await.unwrap();
     c.await.unwrap();
@@ -971,11 +977,13 @@ async fn p3_oneway_returns_after_scheduling_before_peer_receives_frame() {
         ..ClientConfig::default()
     })
     .unwrap();
-    let returned = client.invoke_oneway(
-        &address.to_string(),
-        command(13),
-        Instant::now() + Duration::from_secs(2),
-    );
+    let returned = client
+        .invoke_oneway(
+            &address.to_string(),
+            command(13),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .unwrap();
     drop(returned);
     tokio::time::timeout(Duration::from_secs(1), accepted_rx)
         .await
@@ -990,17 +998,14 @@ async fn p3_oneway_returns_after_scheduling_before_peer_receives_frame() {
 }
 
 #[tokio::test]
-async fn p3_oneway_reports_invalid_address_to_returned_result() {
+async fn p3_oneway_reports_invalid_address_synchronously() {
     let client = RemotingClient::new(TransportMode::Plain);
-    let result = client
-        .invoke_oneway(
-            "invalid-address",
-            command(14),
-            Instant::now() + Duration::from_secs(1),
-        )
-        .await;
+    let result = client.invoke_oneway(
+        "invalid-address",
+        command(14),
+        Instant::now() + Duration::from_secs(1),
+    );
     assert!(matches!(result, Err(TransportError::Connect(_))));
-    client.shutdown().await;
 }
 
 #[tokio::test]
@@ -1014,11 +1019,13 @@ async fn p3_oneway_starts_connection_acquisition_at_call_time() {
         read_command(&mut stream).await
     });
     let client = RemotingClient::new(TransportMode::Plain);
-    let returned = client.invoke_oneway(
-        &address.to_string(),
-        command(14),
-        Instant::now() + Duration::from_secs(2),
-    );
+    let returned = client
+        .invoke_oneway(
+            &address.to_string(),
+            command(14),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .unwrap();
     tokio::time::timeout(Duration::from_secs(1), accepted_rx)
         .await
         .expect("connection acquisition should be scheduled before method return")
@@ -1060,11 +1067,15 @@ async fn p3_outbound_rpc_hook_runs_before_oneway_admission_wait() {
         body: Some(vec![7; 8 * 1024 * 1024]),
         ..command(101)
     };
-    drop(client.invoke_oneway(
-        &address.to_string(),
-        first,
-        Instant::now() + Duration::from_secs(10),
-    ));
+    drop(
+        client
+            .invoke_oneway(
+                &address.to_string(),
+                first,
+                Instant::now() + Duration::from_secs(10),
+            )
+            .unwrap(),
+    );
     tokio::time::timeout(Duration::from_secs(2), async {
         while hook_calls.load(Ordering::SeqCst) < 1 {
             tokio::task::yield_now().await;
@@ -1073,11 +1084,15 @@ async fn p3_outbound_rpc_hook_runs_before_oneway_admission_wait() {
     .await
     .unwrap();
     tokio::time::sleep(Duration::from_millis(100)).await;
-    drop(client.invoke_oneway(
-        &address.to_string(),
-        command(102),
-        Instant::now() + Duration::from_secs(10),
-    ));
+    drop(
+        client
+            .invoke_oneway(
+                &address.to_string(),
+                command(102),
+                Instant::now() + Duration::from_secs(10),
+            )
+            .unwrap(),
+    );
     tokio::time::timeout(Duration::from_secs(2), async {
         while hook_calls.load(Ordering::SeqCst) < 2 {
             tokio::task::yield_now().await;
