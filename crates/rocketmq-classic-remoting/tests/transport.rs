@@ -1552,6 +1552,52 @@ async fn p3_outbound_rpc_hook_runs_before_async_admission_wait() {
 }
 
 #[tokio::test]
+async fn p3_outbound_rpc_hook_runs_before_sync_admission_wait() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let (received_tx, received_rx) = tokio::sync::oneshot::channel();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let first = read_command(&mut stream).await;
+        let _ = received_tx.send(());
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        let mut response = command(42);
+        response.opaque = first.opaque;
+        response.mark_response();
+        write_command(&mut stream, &response).await;
+    });
+    let client = RemotingClient::with_config(ClientConfig {
+        async_semaphore_value: 1,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    let hook_calls = Arc::new(AtomicUsize::new(0));
+    client.add_rpc_hook(Arc::new(BeforeCounter(hook_calls.clone())));
+    let first_client = client.clone();
+    let first_address = address.to_string();
+    let first = tokio::spawn(async move {
+        first_client
+            .invoke_sync(&first_address, command(1), Duration::from_secs(2))
+            .await
+    });
+    tokio::time::timeout(Duration::from_secs(1), received_rx)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        client
+            .invoke_sync(&address.to_string(), command(2), Duration::from_millis(100),)
+            .await
+            .unwrap_err(),
+        TransportError::Timeout
+    );
+    assert_eq!(hook_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(first.await.unwrap().unwrap().code, 42);
+    client.shutdown().await;
+    peer.await.unwrap();
+}
+
+#[tokio::test]
 async fn p3_async_admission_timeout_completes_through_callback() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
