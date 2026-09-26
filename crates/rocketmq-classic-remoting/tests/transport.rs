@@ -682,14 +682,12 @@ async fn p3_v02_single_flight_shares_connection_and_stale_close_keeps_generation
     let client = RemotingClient::new(TransportMode::Plain);
     let deadline = Instant::now() + Duration::from_secs(2);
     let address = addr.to_string();
-    let (a, b, c) = tokio::join!(
-        client.invoke_oneway(&address, command(1), deadline),
-        client.invoke_oneway(&address, command(2), deadline),
-        client.invoke_oneway(&address, command(3), deadline),
-    );
-    a.unwrap();
-    b.unwrap();
-    c.unwrap();
+    let a = client.invoke_oneway(&address, command(1), deadline);
+    let b = client.invoke_oneway(&address, command(2), deadline);
+    let c = client.invoke_oneway(&address, command(3), deadline);
+    a.await.unwrap();
+    b.await.unwrap();
+    c.await.unwrap();
     peer.await.unwrap();
     assert_eq!(accepted.load(Ordering::SeqCst), 1);
     client.shutdown().await;
@@ -963,17 +961,12 @@ async fn p3_oneway_returns_after_scheduling_before_peer_receives_frame() {
         ..ClientConfig::default()
     })
     .unwrap();
-    let returned = tokio::time::timeout(
-        Duration::from_millis(50),
-        client.invoke_oneway(
-            &address.to_string(),
-            command(13),
-            Instant::now() + Duration::from_secs(2),
-        ),
-    )
-    .await
-    .expect("Java oneway returns after registering asynchronous work");
-    returned.unwrap();
+    let returned = client.invoke_oneway(
+        &address.to_string(),
+        command(13),
+        Instant::now() + Duration::from_secs(2),
+    );
+    drop(returned);
     tokio::time::timeout(Duration::from_secs(1), accepted_rx)
         .await
         .unwrap()
@@ -1490,6 +1483,72 @@ async fn p3_async_connection_is_acquired_before_admission_wait() {
     assert_eq!(second_rx.await.unwrap().unwrap().code, 32);
     peer.await.unwrap();
     client.shutdown().await;
+}
+
+#[tokio::test]
+async fn p3_outbound_rpc_hook_runs_before_async_admission_wait() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let _request = read_command(&mut stream).await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    });
+    let client = RemotingClient::with_config(ClientConfig {
+        async_semaphore_value: 1,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    let (hook_tx, hook_rx) = tokio::sync::oneshot::channel();
+    let hook_tx = Arc::new(std::sync::Mutex::new(Some(hook_tx)));
+    let hook_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let count_for_hook = hook_count.clone();
+    client.add_rpc_hook(Arc::new(move |_: &str, _: &RemotingCommand| {
+        if count_for_hook.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 1 {
+            if let Some(sender) = hook_tx.lock().unwrap().take() {
+                let _ = sender.send(());
+            }
+        }
+    }));
+    let (first_tx, _first_rx) = tokio::sync::oneshot::channel();
+    let first_tx = Arc::new(std::sync::Mutex::new(Some(first_tx)));
+    client
+        .invoke_async(
+            address.to_string(),
+            command(1),
+            Instant::now() + Duration::from_secs(2),
+            Arc::new(move |result: Result<RemotingCommand, TransportError>| {
+                if let Some(sender) = first_tx.lock().unwrap().take() {
+                    let _ = sender.send(result);
+                }
+            }),
+        )
+        .unwrap();
+    let (second_tx, second_rx) = tokio::sync::oneshot::channel();
+    let second_tx = Arc::new(std::sync::Mutex::new(Some(second_tx)));
+    client
+        .invoke_async(
+            address.to_string(),
+            command(2),
+            Instant::now() + Duration::from_millis(100),
+            Arc::new(move |result: Result<RemotingCommand, TransportError>| {
+                if let Some(sender) = second_tx.lock().unwrap().take() {
+                    let _ = sender.send(result);
+                }
+            }),
+        )
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(1), hook_rx)
+        .await
+        .expect("the second hook must run before the saturated semaphore wait")
+        .unwrap();
+    assert_eq!(hook_count.load(std::sync::atomic::Ordering::SeqCst), 2);
+    assert_eq!(
+        second_rx.await.unwrap().unwrap_err(),
+        TransportError::Timeout
+    );
+    client.shutdown().await;
+    peer.await.unwrap();
 }
 
 #[tokio::test]

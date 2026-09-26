@@ -819,6 +819,11 @@ impl RemotingClient {
             let (result, permit) = match client.inner.connection(&addr, deadline).await {
                 Ok(_) => {
                     channel_established.store(true, Ordering::Release);
+                    for hook in client.inner.rpc_hooks.lock().unwrap().clone() {
+                        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            hook.before_request(&addr, &command)
+                        }));
+                    }
                     match client
                         .inner
                         .acquire_admission(client.inner.async_admission.clone(), deadline)
@@ -968,6 +973,13 @@ impl RemotingClient {
         if Instant::now() >= deadline {
             return Err(TransportError::Timeout);
         }
+        if !options.retried_go_away && !options.admitted {
+            for hook in self.inner.rpc_hooks.lock().unwrap().clone() {
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    hook.before_request(addr, &command)
+                }));
+            }
+        }
         let _admission = if options.admitted {
             None
         } else {
@@ -977,13 +989,6 @@ impl RemotingClient {
                     .await?,
             )
         };
-        if !options.retried_go_away {
-            for hook in self.inner.rpc_hooks.lock().unwrap().clone() {
-                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    hook.before_request(addr, &command)
-                }));
-            }
-        }
         let pending_deadline = if callback.is_some() {
             deadline + std::time::Duration::from_secs(1)
         } else {
@@ -1082,20 +1087,20 @@ impl RemotingClient {
         }
     }
 
-    /// Schedules a one-way request and returns without waiting for admission or socket write.
-    /// Completion does not imply Broker receipt or storage; post-return transport failures are
-    /// intentionally not observable, matching Java's listener-based oneway API.
-    pub async fn invoke_oneway(
+    /// Starts a managed one-way operation at call time and returns a ready result future without
+    /// waiting for admission or socket write. Completion does not imply Broker receipt or storage;
+    /// post-return transport failures are intentionally not observable.
+    pub fn invoke_oneway(
         &self,
         addr: &str,
         mut command: RemotingCommand,
         deadline: Instant,
-    ) -> Result<(), TransportError> {
+    ) -> std::future::Ready<Result<(), TransportError>> {
         if self.inner.closed.load(Ordering::Acquire) {
-            return Err(TransportError::Shutdown);
+            return std::future::ready(Err(TransportError::Shutdown));
         }
         if Instant::now() >= deadline {
-            return Err(TransportError::Timeout);
+            return std::future::ready(Err(TransportError::Timeout));
         }
         command.mark_oneway();
         let client = self.clone();
@@ -1122,7 +1127,7 @@ impl RemotingClient {
             let _ = connection.send(frame, deadline).await;
         });
         self.inner.spawn(task);
-        Ok(())
+        std::future::ready(Ok(()))
     }
 
     /// Closes connections, fails pending calls, and joins all client-owned tasks.
