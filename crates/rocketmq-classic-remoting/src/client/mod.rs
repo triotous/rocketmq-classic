@@ -37,7 +37,6 @@ pub use tls::TlsConfig;
 
 const OUTBOUND_QUEUE_CAPACITY: usize = 128;
 const INBOUND_QUEUE_CAPACITY: usize = 128;
-const CALLBACK_QUEUE_CAPACITY: usize = 65535;
 const CHANNEL_EVENT_QUEUE_CAPACITY: usize = 10001;
 
 #[derive(Clone)]
@@ -69,6 +68,8 @@ struct CallbackJob {
     _permit: Option<tokio::sync::OwnedSemaphorePermit>,
 }
 
+type CallbackTask = Box<dyn FnOnce() + Send + 'static>;
+
 struct PendingEntry {
     generation: u64,
     deadline: Instant,
@@ -96,7 +97,7 @@ struct ClientInner {
     outbound_queue_capacity: usize,
     async_admission: Arc<tokio::sync::Semaphore>,
     oneway_admission: Arc<tokio::sync::Semaphore>,
-    callback_sender: mpsc::Sender<CallbackJob>,
+    callback_sender: mpsc::UnboundedSender<CallbackTask>,
     callback_executor: Mutex<Option<Arc<dyn CallbackExecutor>>>,
     rpc_hooks: Mutex<Vec<Arc<dyn RpcHook>>>,
     channel_listener: Mutex<Option<Arc<dyn ChannelEventListener>>>,
@@ -404,6 +405,16 @@ pub trait CallbackExecutor: Send + Sync + 'static {
     ) -> Result<(), Box<dyn FnOnce() + Send + 'static>>;
 }
 
+struct ClientCallbackExecutor {
+    sender: mpsc::UnboundedSender<CallbackTask>,
+}
+
+impl CallbackExecutor for ClientCallbackExecutor {
+    fn execute(&self, task: CallbackTask) -> Result<(), CallbackTask> {
+        self.sender.send(task).map_err(|error| error.0)
+    }
+}
+
 pub trait ChannelEventListener: Send + Sync + 'static {
     fn on_connect(&self, _remote_addr: &str) {}
     fn on_close(&self, _remote_addr: &str) {}
@@ -432,9 +443,13 @@ impl RemotingClient {
         let max_frame_size = DEFAULT_MAX_FRAME_SIZE;
         let (inbound, inbound_rx) = mpsc::channel(INBOUND_QUEUE_CAPACITY);
         let (shutdown, _) = tokio::sync::watch::channel(false);
-        let (callback_sender, callback_receiver) = mpsc::channel(CALLBACK_QUEUE_CAPACITY);
+        let (callback_sender, callback_receiver) = mpsc::unbounded_channel();
         let (channel_event_sender, channel_event_receiver) =
             mpsc::channel(CHANNEL_EVENT_QUEUE_CAPACITY);
+        let default_callback_executor: Arc<dyn CallbackExecutor> =
+            Arc::new(ClientCallbackExecutor {
+                sender: callback_sender.clone(),
+            });
         let inner = Arc::new(ClientInner {
             connections: Mutex::new(HashMap::new()),
             connecting: Mutex::new(HashMap::new()),
@@ -453,7 +468,7 @@ impl RemotingClient {
             async_admission: Arc::new(tokio::sync::Semaphore::new(config.async_semaphore_value)),
             oneway_admission: Arc::new(tokio::sync::Semaphore::new(config.oneway_semaphore_value)),
             callback_sender,
-            callback_executor: Mutex::new(None),
+            callback_executor: Mutex::new(Some(default_callback_executor)),
             config,
             outbound_queue_capacity: OUTBOUND_QUEUE_CAPACITY,
             rpc_hooks: Mutex::new(Vec::new()),
@@ -511,7 +526,7 @@ impl RemotingClient {
     fn with_limits(security: TransportMode, max_frame_size: usize, initial_opaque: i32) -> Self {
         let (inbound, inbound_rx) = mpsc::channel(INBOUND_QUEUE_CAPACITY);
         let (shutdown, _) = tokio::sync::watch::channel(false);
-        let (callback_sender, _callback_receiver) = mpsc::channel(CALLBACK_QUEUE_CAPACITY);
+        let (callback_sender, _callback_receiver) = mpsc::unbounded_channel();
         let (channel_event_sender, _channel_event_receiver) =
             mpsc::channel(CHANNEL_EVENT_QUEUE_CAPACITY);
         let inner = Arc::new(ClientInner {
@@ -855,7 +870,11 @@ impl RemotingClient {
             if self.inner.config.disable_callback_executor {
                 None
             } else {
-                executor
+                Some(executor.unwrap_or_else(|| {
+                    Arc::new(ClientCallbackExecutor {
+                        sender: self.inner.callback_sender.clone(),
+                    })
+                }))
             };
     }
 
@@ -1533,39 +1552,34 @@ impl ClientInner {
     }
 
     fn dispatch_callback(&self, job: CallbackJob) {
+        let task: CallbackTask = Box::new(move || run_callback(job));
         if self.config.disable_callback_executor {
-            run_callback(job);
+            task();
             return;
         }
         if let Some(executor) = self.callback_executor.lock().unwrap().clone() {
-            let callback = Arc::new(Mutex::new(Some(
-                Box::new(move || run_callback(job)) as Box<dyn FnOnce() + Send + 'static>
-            )));
-            let callback_for_task = callback.clone();
-            let task: Box<dyn FnOnce() + Send + 'static> = Box::new(move || {
-                if let Some(callback) = callback_for_task.lock().unwrap().take() {
-                    callback();
+            let task = Arc::new(Mutex::new(Some(task)));
+            let task_for_executor = task.clone();
+            let dispatched: CallbackTask = Box::new(move || {
+                if let Some(task) = task_for_executor.lock().unwrap().take() {
+                    task();
                 }
             });
-            let result =
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| executor.execute(task)));
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                executor.execute(dispatched)
+            }));
             match result {
                 Ok(Ok(())) => {}
-                Ok(Err(_rejected)) => {
-                    if let Some(callback) = callback.lock().unwrap().take() {
-                        callback();
-                    }
-                }
-                Err(_) => {
-                    if let Some(callback) = callback.lock().unwrap().take() {
-                        callback();
+                Ok(Err(_)) | Err(_) => {
+                    if let Some(task) = task.lock().unwrap().take() {
+                        task();
                     }
                 }
             }
             return;
         }
-        if let Err(error) = self.callback_sender.try_send(job) {
-            run_callback(error.into_inner());
+        if let Err(error) = self.callback_sender.send(task) {
+            (error.0)();
         }
     }
 
@@ -1659,7 +1673,7 @@ fn start_channel_event_worker(
 }
 
 fn start_callback_workers(
-    receiver: mpsc::Receiver<CallbackJob>,
+    receiver: mpsc::UnboundedReceiver<CallbackTask>,
     shutdown: tokio::sync::watch::Receiver<bool>,
     worker_count: usize,
 ) -> Vec<JoinHandle<()>> {
@@ -1678,8 +1692,8 @@ fn start_callback_workers(
                                 if changed.is_err() || *shutdown.borrow() {
                                     let queued = std::iter::from_fn(|| receiver.try_recv().ok()).collect::<Vec<_>>();
                                     drop(receiver);
-                                    for job in queued {
-                                        let _ = tokio::task::spawn_blocking(move || run_callback(job)).await;
+                                    for task in queued {
+                                        let _ = tokio::task::spawn_blocking(task).await;
                                     }
                                     return;
                                 }
@@ -1687,8 +1701,8 @@ fn start_callback_workers(
                             }
                         }
                     };
-                    let Some(job) = job else { return };
-                    let _ = tokio::task::spawn_blocking(move || run_callback(job)).await;
+                    let Some(task) = job else { return };
+                    let _ = tokio::task::spawn_blocking(task).await;
                 }
             })
         })

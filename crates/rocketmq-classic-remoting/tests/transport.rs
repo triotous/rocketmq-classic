@@ -1755,6 +1755,7 @@ async fn p3_caller_callback_executor_routes_callbacks_to_owned_executor() {
         write_command(&mut stream, &response).await;
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    assert!(client.get_callback_executor().is_some());
     let callback_executor: Arc<dyn CallbackExecutor> = Arc::new(ThreadCallbackExecutor);
     client.set_callback_executor(Some(callback_executor.clone()));
     assert!(Arc::ptr_eq(
@@ -1762,7 +1763,8 @@ async fn p3_caller_callback_executor_routes_callbacks_to_owned_executor() {
         &callback_executor
     ));
     client.set_callback_executor(None);
-    assert!(client.get_callback_executor().is_none());
+    let default_executor = client.get_callback_executor().unwrap();
+    assert!(!Arc::ptr_eq(&default_executor, &callback_executor));
     client.set_callback_executor(Some(callback_executor));
     let caller_thread = std::thread::current().id();
     let (callback_tx, callback_rx) = tokio::sync::oneshot::channel();
