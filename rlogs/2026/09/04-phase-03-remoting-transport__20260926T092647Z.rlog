@@ -11,3 +11,5 @@
 - Remaining Phase 3 blockers: complete public Java API/config/error and lifecycle parity; TLS Java property/config reload and encrypted-key strategy; hook panic/equality behavior; executor/event lifecycle and overload; ChannelWrapper recovery/reconnect and NameServer scan scheduling; exact ResponseFuture timeout races/error causes; Java Netty channel/context capabilities and worker/allocator settings. Inventory rows marked partial/not mapped remain blockers.
 - Gate/status: Phase 3 NOT ACCEPTED; Phase 4 remains blocked. P3-V04 remains PENDING_PHASE_19.
 - Commit status: code/tests/docs and this log are uncommitted at log creation; commit after final review.
+
+- Commit update: implementation/tests committed as `34e7be2` (`fix(remoting): begin oneway connection acquisition synchronously`); compatibility docs and this execution log committed as `7dfe7fd` (`docs(remoting): record oneway acquisition parity boundary`). Final worktree was clean after the commits.
