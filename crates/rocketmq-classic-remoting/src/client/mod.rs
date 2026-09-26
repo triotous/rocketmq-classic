@@ -133,6 +133,42 @@ pub enum RpcHookError {
     Failed(String),
 }
 
+fn rpc_hook_transport_error(error: RpcHookError) -> TransportError {
+    match error {
+        RpcHookError::Abort {
+            response_code,
+            remark,
+        } => TransportError::RpcHook(format!(
+            "aborted with response code {response_code}: {}",
+            remark.unwrap_or_default()
+        )),
+        RpcHookError::Failed(message) => TransportError::RpcHook(message),
+    }
+}
+
+fn run_before_rpc_hooks(
+    hooks: &[Arc<dyn RpcHook>],
+    remote_addr: &str,
+    request: &RemotingCommand,
+) -> Result<(), RpcHookError> {
+    for hook in hooks {
+        hook.before_request_result(remote_addr, request)?;
+    }
+    Ok(())
+}
+
+fn run_after_rpc_hooks(
+    hooks: &[Arc<dyn RpcHook>],
+    remote_addr: &str,
+    request: &RemotingCommand,
+    response: &RemotingCommand,
+) -> Result<(), RpcHookError> {
+    for hook in hooks {
+        hook.after_response_result(remote_addr, request, response)?;
+    }
+    Ok(())
+}
+
 /// Routes a processor task to an application-owned executor. Returning `Err` rejects the task.
 pub trait RequestExecutor: Send + Sync + 'static {
     fn execute(&self, task: Box<dyn FnOnce() + Send + 'static>) -> Result<(), String>;
@@ -226,8 +262,14 @@ where
     }
 }
 
-/// RPC interception hooks; hook panics are isolated from transport tasks.
+/// RPC interception hooks. Hook errors are propagated through the request path. Outbound hook
+/// panics propagate from the invoking task; inbound hook panics map to SYSTEM_ERROR.
 pub trait RpcHook: Send + Sync + 'static {
+    /// Optional equality key used to reproduce Java `List.contains` deduplication.
+    fn equality_key(&self) -> Option<String> {
+        None
+    }
+
     fn before_request(&self, _remote_addr: &str, _request: &RemotingCommand) {}
     fn after_response(
         &self,
@@ -765,10 +807,12 @@ impl RemotingClient {
 
     pub fn add_rpc_hook(&self, hook: Arc<dyn RpcHook>) {
         let mut hooks = self.inner.rpc_hooks.lock().unwrap();
-        if !hooks
-            .iter()
-            .any(|registered| Arc::ptr_eq(registered, &hook))
-        {
+        if !hooks.iter().any(|registered| {
+            Arc::ptr_eq(registered, &hook)
+                || registered
+                    .equality_key()
+                    .is_some_and(|key| hook.equality_key().as_ref() == Some(&key))
+        }) {
             hooks.push(hook);
         }
     }
@@ -886,10 +930,20 @@ impl RemotingClient {
             let (result, permit) = match client.inner.connection(&addr, deadline).await {
                 Ok(_) => {
                     channel_established.store(true, Ordering::Release);
-                    for hook in client.inner.rpc_hooks.lock().unwrap().clone() {
-                        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            hook.before_request(&addr, &command)
-                        }));
+                    let hooks = client.inner.rpc_hooks.lock().unwrap().clone();
+                    if let Err(error) = run_before_rpc_hooks(&hooks, &addr, &command) {
+                        let context = InvokeCallbackResult::from_result(
+                            callback_request_state.lock().unwrap().clone(),
+                            Err(rpc_hook_transport_error(error)),
+                            started.elapsed(),
+                        );
+                        client.inner.dispatch_callback(CallbackJob {
+                            callback: callback.clone(),
+                            context,
+                            channel_established: channel_established.clone(),
+                            _permit: None,
+                        });
+                        return;
                     }
                     match client
                         .inner
@@ -1056,11 +1110,8 @@ impl RemotingClient {
             return Err(TransportError::Timeout);
         }
         if options.run_rpc_hooks && !options.retried_go_away && !options.admitted {
-            for hook in self.inner.rpc_hooks.lock().unwrap().clone() {
-                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    hook.before_request(addr, &command)
-                }));
-            }
+            let hooks = self.inner.rpc_hooks.lock().unwrap().clone();
+            run_before_rpc_hooks(&hooks, addr, &command).map_err(rpc_hook_transport_error)?;
         }
         if !options.admitted {
             *admission = Some(
@@ -1144,12 +1195,9 @@ impl RemotingClient {
                         ));
                         let result = retry.as_mut().await;
                         if let Ok(response) = &result {
-                            for hook in self.inner.rpc_hooks.lock().unwrap().clone() {
-                                let _ =
-                                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                                        hook.after_response(addr, &request_for_hooks, response)
-                                    }));
-                            }
+                            let hooks = self.inner.rpc_hooks.lock().unwrap().clone();
+                            run_after_rpc_hooks(&hooks, addr, &request_for_hooks, response)
+                                .map_err(rpc_hook_transport_error)?;
                             if let Some(callback) = &callback {
                                 let mut request = retry_request;
                                 request.opaque = callback.opaque.load(Ordering::Acquire);
@@ -1161,11 +1209,9 @@ impl RemotingClient {
                     return Err(TransportError::GoAway);
                 }
                 if options.run_rpc_hooks && !options.retried_go_away {
-                    for hook in self.inner.rpc_hooks.lock().unwrap().clone() {
-                        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            hook.after_response(addr, &request_for_hooks, &response)
-                        }));
-                    }
+                    let hooks = self.inner.rpc_hooks.lock().unwrap().clone();
+                    run_after_rpc_hooks(&hooks, addr, &request_for_hooks, &response)
+                        .map_err(rpc_hook_transport_error)?;
                 }
                 Ok(response)
             }
@@ -1232,10 +1278,9 @@ impl RemotingClient {
             let Ok(Ok(connection)) = connection_rx.await else {
                 return;
             };
-            for hook in client.inner.rpc_hooks.lock().unwrap().clone() {
-                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    hook.before_request(&addr, &command)
-                }));
+            let hooks = client.inner.rpc_hooks.lock().unwrap().clone();
+            if run_before_rpc_hooks(&hooks, &addr, &command).is_err() {
+                return;
             }
             command.mark_oneway();
             let Ok(_admission) = client

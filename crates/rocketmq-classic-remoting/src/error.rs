@@ -40,6 +40,8 @@ pub enum TransportError {
     Closed,
     #[error("request was interrupted because its channel was closed")]
     Interrupted,
+    #[error("RPC hook failed: {0}")]
+    RpcHook(String),
     #[error("TLS setup or handshake failed: {0}")]
     Tls(String),
     #[error("malformed frame: {0}")]

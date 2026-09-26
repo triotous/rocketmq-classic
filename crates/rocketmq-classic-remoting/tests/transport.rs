@@ -1522,6 +1522,10 @@ impl CallbackExecutor for ThreadCallbackExecutor {
 
 struct TestHook(Arc<std::sync::Mutex<Vec<&'static str>>>);
 impl RpcHook for TestHook {
+    fn equality_key(&self) -> Option<String> {
+        Some("test-hook".into())
+    }
+
     fn before_request(&self, _: &str, _: &RemotingCommand) {
         self.0.lock().unwrap().push("before");
     }
@@ -1548,7 +1552,7 @@ async fn p3_rpc_hooks_deduplicate_and_clear() {
     let events = Arc::new(std::sync::Mutex::new(Vec::new()));
     let hook: Arc<dyn RpcHook> = Arc::new(TestHook(events.clone()));
     client.add_rpc_hook(hook.clone());
-    client.add_rpc_hook(hook);
+    client.add_rpc_hook(Arc::new(TestHook(events.clone())));
     client
         .invoke(
             &address.to_string(),
@@ -2588,6 +2592,143 @@ async fn p3_rpc_hook_abort_and_failures_map_to_java_response_paths() {
     assert_eq!(aborted.remark.as_deref(), Some("hook stopped request"));
     assert_eq!(responses.get(&72).unwrap().code, response::SYSTEM_ERROR);
     assert_eq!(processor_calls.load(Ordering::SeqCst), 1);
+    client.shutdown().await;
+}
+
+struct EquivalentTestHook {
+    key: &'static str,
+    counter: Arc<AtomicUsize>,
+}
+
+impl RpcHook for EquivalentTestHook {
+    fn equality_key(&self) -> Option<String> {
+        Some(self.key.into())
+    }
+
+    fn before_request(&self, _: &str, _: &RemotingCommand) {
+        self.counter.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+#[tokio::test]
+async fn p3_rpc_hook_equality_keys_match_java_contains_semantics() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let request = read_command(&mut stream).await;
+        let mut response = command(843);
+        response.opaque = request.opaque;
+        response.mark_response();
+        write_command(&mut stream, &response).await;
+    });
+    let client = RemotingClient::new(TransportMode::Plain);
+    let calls = Arc::new(AtomicUsize::new(0));
+    client.add_rpc_hook(Arc::new(EquivalentTestHook {
+        key: "same",
+        counter: calls.clone(),
+    }));
+    client.add_rpc_hook(Arc::new(EquivalentTestHook {
+        key: "same",
+        counter: calls.clone(),
+    }));
+    client
+        .invoke(
+            &address.to_string(),
+            command(844),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+    peer.await.unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    client.shutdown().await;
+}
+
+struct OutboundFailingHook;
+
+impl RpcHook for OutboundFailingHook {
+    fn before_request_result(
+        &self,
+        _: &str,
+        request: &RemotingCommand,
+    ) -> Result<(), RpcHookError> {
+        if request.code == 840 {
+            Err(RpcHookError::Failed("before rejected request".into()))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn after_response_result(
+        &self,
+        _: &str,
+        request: &RemotingCommand,
+        _: &RemotingCommand,
+    ) -> Result<(), RpcHookError> {
+        if request.code == 841 {
+            Err(RpcHookError::Failed("after rejected response".into()))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[tokio::test]
+async fn p3_outbound_hook_failures_are_not_ignored() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let request = read_command(&mut stream).await;
+        assert_eq!(request.code, 841);
+        let mut response = command(842);
+        response.opaque = request.opaque;
+        response.mark_response();
+        write_command(&mut stream, &response).await;
+    });
+    let client = RemotingClient::new(TransportMode::Plain);
+    client.add_rpc_hook(Arc::new(OutboundFailingHook));
+
+    assert!(matches!(
+        client
+            .invoke(
+                &address.to_string(),
+                command(840),
+                Instant::now() + Duration::from_secs(2),
+            )
+            .await,
+        Err(TransportError::RpcHook(message)) if message == "before rejected request"
+    ));
+    let (callback_tx, callback_rx) = tokio::sync::oneshot::channel();
+    let callback_tx = Arc::new(std::sync::Mutex::new(Some(callback_tx)));
+    client
+        .invoke_async(
+            address.to_string(),
+            command(840),
+            Instant::now() + Duration::from_secs(2),
+            Arc::new(move |result| {
+                if let Some(callback_tx) = callback_tx.lock().unwrap().take() {
+                    let _ = callback_tx.send(result);
+                }
+            }),
+        )
+        .unwrap();
+    assert!(matches!(
+        callback_rx.await.unwrap(),
+        Err(TransportError::RpcHook(message)) if message == "before rejected request"
+    ));
+    assert!(matches!(
+        client
+            .invoke(
+                &address.to_string(),
+                command(841),
+                Instant::now() + Duration::from_secs(2),
+            )
+            .await,
+        Err(TransportError::RpcHook(message)) if message == "after rejected response"
+    ));
+    peer.await.unwrap();
     client.shutdown().await;
 }
 
