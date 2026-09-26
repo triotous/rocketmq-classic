@@ -817,6 +817,26 @@ impl RemotingClient {
         }
     }
 
+    /// Returns a snapshot of the registered hooks.
+    pub fn get_rpc_hooks(&self) -> Vec<Arc<dyn RpcHook>> {
+        self.inner.rpc_hooks.lock().unwrap().clone()
+    }
+
+    /// Removes a registered hook by identity or its optional Java-equality key.
+    pub fn remove_rpc_hook(&self, hook: &Arc<dyn RpcHook>) -> bool {
+        let mut hooks = self.inner.rpc_hooks.lock().unwrap();
+        let position = hooks.iter().position(|registered| {
+            Arc::ptr_eq(registered, hook)
+                || registered
+                    .equality_key()
+                    .is_some_and(|key| hook.equality_key().as_ref() == Some(&key))
+        });
+        position.is_some_and(|position| {
+            hooks.remove(position);
+            true
+        })
+    }
+
     pub fn clear_rpc_hooks(&self) {
         self.inner.rpc_hooks.lock().unwrap().clear();
     }
@@ -985,9 +1005,16 @@ impl RemotingClient {
                 result,
                 started.elapsed(),
             );
-            context.send_request_ok = send_status.load(Ordering::Acquire)
-                || (channel_established.load(Ordering::Acquire)
-                    && context.error == Some(TransportError::Timeout));
+            context.send_request_ok = match context.error {
+                Some(
+                    TransportError::Closed | TransportError::Shutdown | TransportError::Send(_),
+                ) => false,
+                Some(TransportError::Timeout) => {
+                    send_status.load(Ordering::Acquire)
+                        || channel_established.load(Ordering::Acquire)
+                }
+                _ => send_status.load(Ordering::Acquire),
+            };
             let job = CallbackJob {
                 callback: callback.clone(),
                 context,

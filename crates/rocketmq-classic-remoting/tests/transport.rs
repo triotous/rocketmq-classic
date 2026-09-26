@@ -1552,6 +1552,12 @@ async fn p3_rpc_hooks_deduplicate_and_clear() {
     let events = Arc::new(std::sync::Mutex::new(Vec::new()));
     let hook: Arc<dyn RpcHook> = Arc::new(TestHook(events.clone()));
     client.add_rpc_hook(hook.clone());
+    let equivalent_hook: Arc<dyn RpcHook> = Arc::new(TestHook(events.clone()));
+    client.add_rpc_hook(equivalent_hook.clone());
+    assert_eq!(client.get_rpc_hooks().len(), 1);
+    assert!(client.remove_rpc_hook(&equivalent_hook));
+    assert!(client.get_rpc_hooks().is_empty());
+    client.add_rpc_hook(hook.clone());
     client.add_rpc_hook(Arc::new(TestHook(events.clone())));
     client
         .invoke(
@@ -2000,6 +2006,47 @@ async fn p3_async_admission_timeout_completes_through_callback() {
 }
 
 #[tokio::test]
+async fn p3_async_peer_close_after_send_marks_send_request_failed() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let _request = read_command(&mut stream).await;
+        drop(stream);
+    });
+    let client = RemotingClient::new(TransportMode::Plain);
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+    client
+        .invoke_async(
+            address.to_string(),
+            command(1),
+            Instant::now() + Duration::from_secs(2),
+            Arc::new(ContextCallback {
+                sender: tx,
+                events: events.clone(),
+            }),
+        )
+        .unwrap();
+    let context = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(context.error, Some(TransportError::Closed));
+    assert!(!context.send_request_ok);
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while events.lock().unwrap().len() < 2 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(*events.lock().unwrap(), vec!["complete", "fail"]);
+    peer.await.unwrap();
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn p3_async_callback_completes_on_deadline_failure() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -2438,6 +2485,35 @@ async fn p3_go_away_response_uses_explicit_transport_error() {
     assert_eq!(error, TransportError::GoAway);
     client.shutdown().await;
     peer.await.unwrap();
+}
+
+#[tokio::test]
+async fn p3_channel_connect_event_fires_when_dial_fails() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    drop(listener);
+    let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let client = RemotingClient::new(TransportMode::Plain);
+    client.set_channel_event_listener(Some(Arc::new(TestEvents(events.clone()))));
+    assert!(
+        client
+            .invoke(
+                &address,
+                command(1),
+                Instant::now() + Duration::from_secs(1)
+            )
+            .await
+            .is_err()
+    );
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while events.lock().unwrap().is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(*events.lock().unwrap(), vec!["connect"]);
+    client.shutdown().await;
 }
 
 #[tokio::test]

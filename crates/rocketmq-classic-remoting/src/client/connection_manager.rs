@@ -106,6 +106,7 @@ impl ClientInner {
         }
         let mut shutdown = self.shutdown.subscribe();
         let connect_deadline = deadline.min(Instant::now() + self.config.connect_timeout);
+        self.notify_channel(&key, super::ChannelEvent::Connect);
         let mut dial = Box::pin(connection::connect(
             &key,
             &self.security,
@@ -150,7 +151,6 @@ impl ClientInner {
         }
         connections.insert(key.clone(), connection.clone());
         drop(connections);
-        self.notify_channel(&key, super::ChannelEvent::Connect);
         self.notify_channel(&key, super::ChannelEvent::Active);
         Ok(connection)
     }
