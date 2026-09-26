@@ -1518,6 +1518,16 @@ impl RpcHook for BeforeCounter {
     }
 }
 
+struct AfterRequestRecorder(Arc<std::sync::Mutex<Vec<(RemotingCommand, RemotingCommand)>>>);
+impl RpcHook for AfterRequestRecorder {
+    fn after_response(&self, _: &str, request: &RemotingCommand, response: &RemotingCommand) {
+        self.0
+            .lock()
+            .unwrap()
+            .push((request.clone(), response.clone()));
+    }
+}
+
 struct TestEvents(Arc<std::sync::Mutex<Vec<&'static str>>>);
 impl ChannelEventListener for TestEvents {
     fn on_connect(&self, _: &str) {
@@ -1820,7 +1830,7 @@ async fn p3_outbound_rpc_hook_runs_before_async_admission_wait() {
 }
 
 #[tokio::test]
-async fn p3_outbound_rpc_hook_runs_before_sync_admission_wait() {
+async fn p3_sync_invoke_does_not_run_outbound_rpc_hooks() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let (received_tx, received_rx) = tokio::sync::oneshot::channel();
@@ -1859,7 +1869,7 @@ async fn p3_outbound_rpc_hook_runs_before_sync_admission_wait() {
             .unwrap_err(),
         TransportError::Timeout
     );
-    assert_eq!(hook_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(hook_calls.load(Ordering::SeqCst), 0);
     assert_eq!(first.await.unwrap().unwrap().code, 42);
     client.shutdown().await;
     peer.await.unwrap();
@@ -2162,6 +2172,8 @@ async fn p3_go_away_retries_once_on_a_new_connection() {
     let client = RemotingClient::new(TransportMode::Plain);
     let hook_calls = Arc::new(AtomicUsize::new(0));
     client.add_rpc_hook(Arc::new(BeforeCounter(hook_calls.clone())));
+    let after_hook = Arc::new(std::sync::Mutex::new(Vec::new()));
+    client.add_rpc_hook(Arc::new(AfterRequestRecorder(after_hook.clone())));
     let original = RemotingCommand {
         flag: 1 << 8,
         remark: Some("must not survive Java-style request reconstruction".into()),
@@ -2182,6 +2194,13 @@ async fn p3_go_away_retries_once_on_a_new_connection() {
         .unwrap();
     assert_eq!(result.code, 42);
     assert_eq!(hook_calls.load(Ordering::SeqCst), 1);
+    let (after_request, after_response) = after_hook.lock().unwrap().pop().unwrap();
+    assert_eq!(
+        after_request.remark.as_deref(),
+        Some("must not survive Java-style request reconstruction")
+    );
+    assert_eq!(after_request.flag, 1 << 8);
+    assert_eq!(after_response.code, 42);
     client.shutdown().await;
     let retry = peer.await.unwrap();
     assert_eq!(retry.code, 1);

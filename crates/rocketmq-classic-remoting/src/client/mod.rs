@@ -55,6 +55,7 @@ struct CallbackTracking {
 struct InvokeOptions {
     admitted: bool,
     retried_go_away: bool,
+    run_rpc_hooks: bool,
     close_socket_on_timeout: bool,
     timeout_millis: std::time::Duration,
 }
@@ -901,6 +902,7 @@ impl RemotingClient {
                                     InvokeOptions {
                                         admitted: true,
                                         retried_go_away: false,
+                                        run_rpc_hooks: true,
                                         close_socket_on_timeout: false,
                                         timeout_millis: std::time::Duration::ZERO,
                                     },
@@ -989,6 +991,7 @@ impl RemotingClient {
             InvokeOptions {
                 admitted: false,
                 retried_go_away: false,
+                run_rpc_hooks: true,
                 close_socket_on_timeout: false,
                 timeout_millis: std::time::Duration::ZERO,
             },
@@ -1010,6 +1013,7 @@ impl RemotingClient {
             InvokeOptions {
                 admitted: false,
                 retried_go_away: false,
+                run_rpc_hooks: false,
                 close_socket_on_timeout: true,
                 timeout_millis: timeout,
             },
@@ -1041,7 +1045,7 @@ impl RemotingClient {
         if Instant::now() >= deadline {
             return Err(TransportError::Timeout);
         }
-        if !options.retried_go_away && !options.admitted {
+        if options.run_rpc_hooks && !options.retried_go_away && !options.admitted {
             for hook in self.inner.rpc_hooks.lock().unwrap().clone() {
                 let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     hook.before_request(addr, &command)
@@ -1122,13 +1126,20 @@ impl RemotingClient {
                             InvokeOptions {
                                 admitted: true,
                                 retried_go_away: true,
+                                run_rpc_hooks: false,
                                 close_socket_on_timeout: options.close_socket_on_timeout,
                                 timeout_millis: options.timeout_millis,
                             },
                             callback.clone(),
                         ));
                         let result = retry.as_mut().await;
-                        if result.is_ok() {
+                        if let Ok(response) = &result {
+                            for hook in self.inner.rpc_hooks.lock().unwrap().clone() {
+                                let _ =
+                                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                        hook.after_response(addr, &request_for_hooks, response)
+                                    }));
+                            }
                             if let Some(callback) = &callback {
                                 let mut request = retry_request;
                                 request.opaque = callback.opaque.load(Ordering::Acquire);
@@ -1139,10 +1150,12 @@ impl RemotingClient {
                     }
                     return Err(TransportError::GoAway);
                 }
-                for hook in self.inner.rpc_hooks.lock().unwrap().clone() {
-                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        hook.after_response(addr, &request_for_hooks, &response)
-                    }));
+                if options.run_rpc_hooks && !options.retried_go_away {
+                    for hook in self.inner.rpc_hooks.lock().unwrap().clone() {
+                        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            hook.after_response(addr, &request_for_hooks, &response)
+                        }));
+                    }
                 }
                 Ok(response)
             }
