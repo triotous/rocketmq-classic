@@ -300,22 +300,22 @@ async fn run_connection(
             result = reader.read(&mut read_buffer) => match result {
                 Ok(0) => break Some(TransportError::Closed),
                 Ok(length) => {
+                    if let Some(inner) = inner.upgrade() {
+                        if let Some(connection) = inner
+                            .connections
+                            .lock()
+                            .unwrap()
+                            .values()
+                            .find(|connection| connection.generation == generation)
+                            .cloned()
+                        {
+                            connection.mark_active();
+                        }
+                    }
                     input.extend_from_slice(&read_buffer[..length]);
                     loop {
                         match frame::decode_next(&mut input, max_frame_size) {
                             Ok(Some(command)) => {
-                                if let Some(inner) = inner.upgrade() {
-                                    if let Some(connection) = inner
-                                        .connections
-                                        .lock()
-                                        .unwrap()
-                                        .values()
-                                        .find(|connection| connection.generation == generation)
-                                        .cloned()
-                                    {
-                                        connection.mark_active();
-                                    }
-                                }
                                 if command.is_response() {
                                     if let Some(inner) = inner.upgrade() {
                                         inner.complete_response(generation, command);

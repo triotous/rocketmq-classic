@@ -1279,6 +1279,54 @@ async fn p3_nameserver_channel_interval_has_no_implicit_scan_behavior() {
     peer.await.unwrap();
 }
 
+struct IdleListener(tokio::sync::mpsc::UnboundedSender<String>);
+
+impl rocketmq_classic_remoting::client::ChannelEventListener for IdleListener {
+    fn on_idle(&self, remote_addr: &str) {
+        let _ = self.0.send(remote_addr.to_owned());
+    }
+}
+
+#[tokio::test]
+async fn p3_max_idle_time_observes_partial_read_activity_like_all_idle_timer() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        tokio::time::sleep(Duration::from_millis(800)).await;
+        let _ = stream.write_all(&[0, 0]).await;
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    });
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+    let client = RemotingClient::with_config(ClientConfig {
+        max_idle_time: Duration::from_secs(1),
+        scan_available_nameserver: false,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    client.set_channel_event_listener(Some(Arc::new(IdleListener(event_tx))));
+    assert!(
+        client
+            .is_address_reachable(
+                &address.to_string(),
+                Instant::now() + Duration::from_secs(1)
+            )
+            .await
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_millis(1300), event_rx.recv())
+            .await
+            .is_err()
+    );
+    let event_address = tokio::time::timeout(Duration::from_secs(2), event_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(event_address, address.to_string());
+    client.shutdown().await;
+    peer.abort();
+}
+
 #[tokio::test]
 async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
     let defaults = ClientConfig::default();
