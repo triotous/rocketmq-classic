@@ -100,7 +100,7 @@ struct ClientInner {
     callback_sender: mpsc::UnboundedSender<CallbackTask>,
     callback_executor: Mutex<Option<Arc<dyn CallbackExecutor>>>,
     rpc_hooks: Mutex<Vec<Arc<dyn RpcHook>>>,
-    channel_listener: Mutex<Option<Arc<dyn ChannelEventListener>>>,
+    channel_listener: Option<Arc<dyn ChannelEventListener>>,
     channel_event_sender: mpsc::Sender<(String, ChannelEvent)>,
     request_pipeline: Mutex<Option<Arc<dyn RequestPipeline>>>,
     nameservers: Mutex<Vec<String>>,
@@ -474,6 +474,13 @@ impl RemotingClient {
     }
 
     pub fn with_config(config: ClientConfig) -> Result<Self, TransportError> {
+        Self::with_config_and_channel_event_listener(config, None)
+    }
+
+    pub fn with_config_and_channel_event_listener(
+        config: ClientConfig,
+        channel_listener: Option<Arc<dyn ChannelEventListener>>,
+    ) -> Result<Self, TransportError> {
         config.validate()?;
         let socks_proxy_routes = config.parse_socks_proxy_config()?;
         let max_frame_size = DEFAULT_MAX_FRAME_SIZE;
@@ -515,7 +522,7 @@ impl RemotingClient {
             config,
             outbound_queue_capacity: OUTBOUND_QUEUE_CAPACITY,
             rpc_hooks: Mutex::new(Vec::new()),
-            channel_listener: Mutex::new(None),
+            channel_listener,
             channel_event_sender,
             request_pipeline: Mutex::new(None),
             nameservers: Mutex::new(Vec::new()),
@@ -534,7 +541,7 @@ impl RemotingClient {
             inner.spawn(task);
         }
         inner.spawn(start_channel_event_worker(
-            Arc::downgrade(&inner),
+            inner.channel_listener.clone(),
             channel_event_receiver,
             inner.shutdown.subscribe(),
         ));
@@ -605,7 +612,7 @@ impl RemotingClient {
             callback_sender,
             callback_executor: Mutex::new(None),
             rpc_hooks: Mutex::new(Vec::new()),
-            channel_listener: Mutex::new(None),
+            channel_listener: None,
             channel_event_sender,
             request_pipeline: Mutex::new(None),
             nameservers: Mutex::new(Vec::new()),
@@ -910,12 +917,8 @@ impl RemotingClient {
         self.inner.rpc_hooks.lock().unwrap().clear();
     }
 
-    pub fn set_channel_event_listener(&self, listener: Option<Arc<dyn ChannelEventListener>>) {
-        *self.inner.channel_listener.lock().unwrap() = listener;
-    }
-
     pub fn get_channel_event_listener(&self) -> Option<Arc<dyn ChannelEventListener>> {
-        self.inner.channel_listener.lock().unwrap().clone()
+        self.inner.channel_listener.clone()
     }
 
     pub fn set_callback_executor(&self, executor: Option<Arc<dyn CallbackExecutor>>) {
@@ -1445,7 +1448,7 @@ impl ClientInner {
     }
 
     fn notify_channel(&self, address: &str, event: ChannelEvent) {
-        if self.channel_listener.lock().unwrap().is_some() {
+        if self.channel_listener.is_some() {
             let _ = self
                 .channel_event_sender
                 .try_send((address.to_owned(), event));
@@ -1697,7 +1700,7 @@ fn run_callback(job: CallbackJob) {
 }
 
 fn start_channel_event_worker(
-    inner: Weak<ClientInner>,
+    listener: Option<Arc<dyn ChannelEventListener>>,
     mut receiver: mpsc::Receiver<(String, ChannelEvent)>,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> JoinHandle<()> {
@@ -1713,11 +1716,7 @@ fn start_channel_event_worker(
             let Some((address, event)) = event else {
                 return;
             };
-            let Some(client) = inner.upgrade() else {
-                return;
-            };
-            let listener = client.channel_listener.lock().unwrap().clone();
-            let Some(listener) = listener else { continue };
+            let Some(listener) = &listener else { continue };
             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match event {
                 ChannelEvent::Connect => listener.on_connect(&address),
                 ChannelEvent::Close => listener.on_close(&address),
@@ -2114,7 +2113,7 @@ mod tests {
             callback_sender,
             callback_executor: Mutex::new(None),
             rpc_hooks: Mutex::new(Vec::new()),
-            channel_listener: Mutex::new(None),
+            channel_listener: None,
             channel_event_sender,
             request_pipeline: Mutex::new(None),
             nameservers: Mutex::new(Vec::new()),

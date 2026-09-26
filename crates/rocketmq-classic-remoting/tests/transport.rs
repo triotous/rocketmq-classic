@@ -1340,13 +1340,15 @@ async fn p3_max_idle_time_observes_partial_read_activity_like_all_idle_timer() {
         tokio::time::sleep(Duration::from_secs(2)).await;
     });
     let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
-    let client = RemotingClient::with_config(ClientConfig {
-        max_idle_time: Duration::from_secs(1),
-        scan_available_nameserver: false,
-        ..ClientConfig::default()
-    })
+    let client = RemotingClient::with_config_and_channel_event_listener(
+        ClientConfig {
+            max_idle_time: Duration::from_secs(1),
+            scan_available_nameserver: false,
+            ..ClientConfig::default()
+        },
+        Some(Arc::new(IdleListener(event_tx))),
+    )
     .unwrap();
-    client.set_channel_event_listener(Some(Arc::new(IdleListener(event_tx))));
     assert!(
         client
             .is_address_reachable(
@@ -2610,8 +2612,11 @@ async fn p3_channel_connect_event_fires_when_dial_fails() {
     let address = listener.local_addr().unwrap().to_string();
     drop(listener);
     let events = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let client = RemotingClient::new(TransportMode::Plain);
-    client.set_channel_event_listener(Some(Arc::new(TestEvents(events.clone()))));
+    let client = RemotingClient::with_config_and_channel_event_listener(
+        ClientConfig::default(),
+        Some(Arc::new(TestEvents(events.clone()))),
+    )
+    .unwrap();
     assert!(
         client
             .invoke(
@@ -2645,18 +2650,19 @@ async fn p3_hooks_and_channel_connect_event_follow_successful_exchange() {
         response.mark_response();
         write_command(&mut stream, &response).await;
     });
-    let client = RemotingClient::new(TransportMode::Plain);
     let events = Arc::new(std::sync::Mutex::new(Vec::new()));
-    client.add_rpc_hook(Arc::new(TestHook(events.clone())));
     let channel_listener: Arc<dyn ChannelEventListener> = Arc::new(TestEvents(events.clone()));
-    client.set_channel_event_listener(Some(channel_listener.clone()));
+    let client = RemotingClient::with_config_and_channel_event_listener(
+        ClientConfig::default(),
+        Some(channel_listener.clone()),
+    )
+    .unwrap();
+    client.add_rpc_hook(Arc::new(TestHook(events.clone())));
     assert!(Arc::ptr_eq(
         &client.get_channel_event_listener().unwrap(),
         &channel_listener
     ));
-    client.set_channel_event_listener(None);
-    assert!(client.get_channel_event_listener().is_none());
-    client.set_channel_event_listener(Some(channel_listener));
+    assert!(client.get_channel_event_listener().is_some());
     client
         .invoke(
             &address.to_string(),
