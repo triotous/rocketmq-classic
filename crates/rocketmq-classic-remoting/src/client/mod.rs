@@ -93,6 +93,7 @@ struct ClientInner {
     security: TransportMode,
     max_frame_size: usize,
     config: ClientConfig,
+    socks_proxy_routes: HashMap<String, config::SocksProxyConfig>,
     outbound_queue_capacity: usize,
     async_admission: Arc<tokio::sync::Semaphore>,
     oneway_admission: Arc<tokio::sync::Semaphore>,
@@ -474,6 +475,7 @@ impl RemotingClient {
 
     pub fn with_config(config: ClientConfig) -> Result<Self, TransportError> {
         config.validate()?;
+        let socks_proxy_routes = config.parse_socks_proxy_config()?;
         let max_frame_size = DEFAULT_MAX_FRAME_SIZE;
         let (inbound, inbound_rx) = mpsc::channel(INBOUND_QUEUE_CAPACITY);
         let (shutdown, _) = tokio::sync::watch::channel(false);
@@ -520,6 +522,7 @@ impl RemotingClient {
             available_nameservers: Mutex::new(HashSet::new()),
             chosen_nameserver: Mutex::new(None),
             nameserver_index: AtomicU64::new(0),
+            socks_proxy_routes,
         });
         let processor_tasks = processor::start(
             Arc::downgrade(&inner),
@@ -595,6 +598,7 @@ impl RemotingClient {
                 transport: security.clone(),
                 ..ClientConfig::default()
             },
+            socks_proxy_routes: HashMap::new(),
             outbound_queue_capacity: OUTBOUND_QUEUE_CAPACITY,
             async_admission: Arc::new(tokio::sync::Semaphore::new(65535)),
             oneway_admission: Arc::new(tokio::sync::Semaphore::new(65535)),
@@ -2035,6 +2039,7 @@ mod tests {
             security: TransportMode::Plain,
             max_frame_size: DEFAULT_MAX_FRAME_SIZE,
             config,
+            socks_proxy_routes: HashMap::new(),
             outbound_queue_capacity: OUTBOUND_QUEUE_CAPACITY,
             async_admission: Arc::new(tokio::sync::Semaphore::new(8)),
             oneway_admission: Arc::new(tokio::sync::Semaphore::new(8)),

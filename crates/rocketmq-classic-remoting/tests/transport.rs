@@ -14,7 +14,7 @@ use rocketmq_classic_remoting::{
         Address, CallbackExecutor, ChannelEventListener, ClientConfig, ContextRequestPipeline,
         InvokeCallback, InvokeCallbackResult, RemotingClient, RequestContext, RequestExecutor,
         RequestPipeline, RequestPipelineError, RequestProcessor, RpcHook, RpcHookError,
-        SocksProxyConfig, TransportMode, tls::TlsConfig,
+        TransportMode, tls::TlsConfig,
     },
     codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
     error::TransportError,
@@ -1422,7 +1422,7 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
             .is_ok()
         );
     }
-    assert!(defaults.socks_proxy.is_none());
+    assert_eq!(defaults.socks_proxy_config, "{}");
     let callback_executor_disabled = RemotingClient::with_config(ClientConfig {
         disable_callback_executor: true,
         ..defaults.clone()
@@ -1433,7 +1433,7 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
     callback_executor_disabled.shutdown().await;
     assert!(
         ClientConfig {
-            socks_proxy: Some(SocksProxyConfig::new("localhost:1080")),
+            socks_proxy_config: r#"{"0.0.0.0/0":{"addr":"localhost:1080"}}"#.into(),
             ..defaults.clone()
         }
         .validate()
@@ -1510,21 +1510,17 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
             client_socket_receive_buffer_size: usize::MAX,
             ..defaults.clone()
         },
-        ClientConfig {
-            socks_proxy: Some(SocksProxyConfig::new("invalid")),
-            ..defaults.clone()
-        },
-        ClientConfig {
-            socks_proxy: Some(SocksProxyConfig {
-                address: "localhost:1080".into(),
-                username: Some("user".into()),
-                password: None,
-            }),
-            ..defaults.clone()
-        },
     ] {
         assert!(invalid.validate().is_err());
     }
+    assert!(
+        ClientConfig {
+            socks_proxy_config: r#"{"not-a-cidr":{"addr":"invalid","username":"user"}}"#.into(),
+            ..defaults.clone()
+        }
+        .validate()
+        .is_ok()
+    );
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -3347,11 +3343,10 @@ async fn p3_u01_socks5_proxy_tunnels_a_remoting_request() {
         let _ = tokio::join!(a, b);
     });
     let config = ClientConfig {
-        socks_proxy: Some(SocksProxyConfig::with_credentials(
-            proxy_address.to_string(),
-            "rocket",
-            "secret",
-        )),
+        socks_proxy_config: format!(
+            r#"{{"127.0.0.0/8":{{"addr":"{}","username":"rocket","password":"secret"}}}}"#,
+            proxy_address
+        ),
         ..ClientConfig::default()
     };
     let client = RemotingClient::with_config(config).unwrap();

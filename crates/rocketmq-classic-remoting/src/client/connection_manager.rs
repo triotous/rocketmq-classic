@@ -107,10 +107,12 @@ impl ClientInner {
         let mut shutdown = self.shutdown.subscribe();
         let connect_deadline = deadline.min(Instant::now() + self.config.connect_timeout);
         self.notify_channel(&key, super::ChannelEvent::Connect);
+        let (host, _) = connection::split_address(&key)?;
+        let proxy = super::config::ClientConfig::proxy_for(&self.socks_proxy_routes, &host);
         let mut dial = Box::pin(connection::connect(
             &key,
             &self.security,
-            self.config.socks_proxy.as_ref(),
+            proxy.as_ref(),
             self.config.client_socket_send_buffer_size,
             self.config.client_socket_receive_buffer_size,
             connect_deadline,

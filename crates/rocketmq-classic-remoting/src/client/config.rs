@@ -1,11 +1,18 @@
+use std::collections::HashMap;
+
+use serde::Deserialize;
+
 use super::TransportMode;
 use crate::error::TransportError;
 
 /// SOCKS5 proxy settings corresponding to Java's `SocksProxyConfig`.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Deserialize, serde::Serialize, PartialEq, Eq)]
 pub struct SocksProxyConfig {
+    #[serde(rename = "addr")]
     pub address: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
 }
 
@@ -54,7 +61,8 @@ pub struct ClientConfig {
     pub enable_reconnect_for_go_away: bool,
     /// Java `long maxReconnectIntervalTimeSeconds`; retained but unused by the pinned client.
     pub max_reconnect_interval_time_seconds: i64,
-    pub socks_proxy: Option<SocksProxyConfig>,
+    /// Java `NettyClientConfig.socksProxyConfig` JSON text, keyed by IPv4 CIDR.
+    pub socks_proxy_config: String,
 }
 
 impl Default for ClientConfig {
@@ -81,7 +89,7 @@ impl Default for ClientConfig {
             scan_available_nameserver: true,
             enable_reconnect_for_go_away: true,
             max_reconnect_interval_time_seconds: 60,
-            socks_proxy: None,
+            socks_proxy_config: "{}".into(),
         }
     }
 }
@@ -104,21 +112,112 @@ impl ClientConfig {
                 "write buffer low/high water marks must both be zero or satisfy low <= high".into(),
             ));
         }
-        if let Some(proxy) = &self.socks_proxy {
-            if !matches!(
-                super::connection::split_address(&proxy.address),
-                Ok((ref host, port)) if !host.is_empty() && port != 0
-            ) {
-                return Err(TransportError::InvalidConfiguration(
-                    "SOCKS5 proxy address must be a socket address".into(),
-                ));
-            }
-            if proxy.username.is_some() != proxy.password.is_some() {
-                return Err(TransportError::InvalidConfiguration(
-                    "SOCKS5 username and password must be configured together".into(),
-                ));
-            }
-        }
         Ok(())
+    }
+
+    /// Java-compatible getter/setter behavior: retain JSON text until client construction.
+    pub fn get_socks_proxy_config(&self) -> &str {
+        &self.socks_proxy_config
+    }
+
+    pub fn set_socks_proxy_config(&mut self, json: impl Into<String>) {
+        self.socks_proxy_config = json.into();
+    }
+
+    pub(super) fn parse_socks_proxy_config(
+        &self,
+    ) -> Result<HashMap<String, SocksProxyConfig>, TransportError> {
+        if self.socks_proxy_config.trim() == "null" {
+            return Ok(HashMap::new());
+        }
+        serde_json::from_str(&self.socks_proxy_config)
+            .map_err(|error| TransportError::InvalidConfiguration(error.to_string()))
+    }
+
+    pub(super) fn proxy_for(
+        routes: &HashMap<String, SocksProxyConfig>,
+        host: &str,
+    ) -> Option<SocksProxyConfig> {
+        routes.iter().find_map(|(cidr, proxy)| {
+            if cidr == "0.0.0.0/0" || ipv4_in_cidr(host, cidr) {
+                Some(proxy.clone())
+            } else {
+                None
+            }
+        })
+    }
+}
+
+fn ipv4_in_cidr(address: &str, cidr: &str) -> bool {
+    let Some(address) = address.parse::<std::net::Ipv4Addr>().ok() else {
+        return false;
+    };
+    let Some((network, prefix)) = cidr.split_once('/') else {
+        return false;
+    };
+    let (Ok(network), Ok(prefix)) = (network.parse::<std::net::Ipv4Addr>(), prefix.parse::<u32>())
+    else {
+        return false;
+    };
+    if prefix > 32 {
+        return false;
+    }
+    let mask = u32::MAX.wrapping_shl((32 - prefix) % 32);
+    u32::from(address) & mask == u32::from(network) & mask
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ClientConfig, SocksProxyConfig};
+
+    #[test]
+    fn java_socks_proxy_json_round_trips_java_field_names() {
+        let mut config = ClientConfig::default();
+        let json = r#"{"10.1.0.0/16":{"addr":"proxy.internal:1080","username":"user","password":"secret"}}"#;
+        config.set_socks_proxy_config(json);
+        assert_eq!(config.get_socks_proxy_config(), json);
+        assert_eq!(
+            config.parse_socks_proxy_config().unwrap()["10.1.0.0/16"],
+            SocksProxyConfig::with_credentials("proxy.internal:1080", "user", "secret")
+        );
+        let malformed = ClientConfig {
+            socks_proxy_config: r#"{"broken":{]"#.into(),
+            ..ClientConfig::default()
+        };
+        assert!(malformed.validate().is_ok());
+        assert!(malformed.parse_socks_proxy_config().is_err());
+        let null_map = ClientConfig {
+            socks_proxy_config: "null".into(),
+            ..ClientConfig::default()
+        };
+        assert!(null_map.parse_socks_proxy_config().unwrap().is_empty());
+    }
+
+    #[test]
+    fn socks_proxy_routes_match_ipv4_cidr_and_java_default_route() {
+        let routes = std::collections::HashMap::from([
+            (
+                "10.20.0.0/16".into(),
+                SocksProxyConfig::new("private-proxy:1080"),
+            ),
+            (
+                "0.0.0.0/0".into(),
+                SocksProxyConfig::new("default-proxy:1080"),
+            ),
+        ]);
+        assert_eq!(
+            ClientConfig::proxy_for(&routes, "10.20.4.5")
+                .unwrap()
+                .address,
+            "private-proxy:1080"
+        );
+        assert_eq!(
+            ClientConfig::proxy_for(&routes, "192.0.2.5")
+                .unwrap()
+                .address,
+            "default-proxy:1080"
+        );
+        assert!(ClientConfig::proxy_for(&routes, "broker.example").is_some());
+        assert!(ClientConfig::proxy_for(&routes, "2001:db8::1").is_some());
     }
 }
