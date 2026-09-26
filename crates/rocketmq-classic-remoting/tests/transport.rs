@@ -182,7 +182,7 @@ async fn p3_expired_async_callback_retains_request_and_timeout_metadata() {
     assert!(context.response.is_none());
     assert_eq!(context.error, Some(TransportError::Timeout));
     assert!(context.timed_out);
-    assert!(!context.send_request_ok);
+    assert!(context.send_request_ok);
     tokio::time::timeout(Duration::from_secs(1), async {
         loop {
             if events.lock().unwrap().len() == 2 {
@@ -822,11 +822,16 @@ async fn p3_default_processor_handles_unknown_codes_but_exact_registration_wins(
         (first, second)
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.with_processor_table(|processors| {
+        processors.insert(
+            900_002,
+            rocketmq_classic_remoting::client::ProcessorRegistration {
+                processor: Arc::new(|_: RemotingCommand| Ok(Some(command(902)))),
+                executor: None,
+            },
+        );
+    });
     client.register_default_processor(Some(Arc::new(|_: RemotingCommand| Ok(Some(command(901))))));
-    client.register_processor(
-        900_002,
-        Arc::new(|_: RemotingCommand| Ok(Some(command(902)))),
-    );
     assert!(
         client
             .is_address_reachable(
@@ -1535,6 +1540,18 @@ impl RpcHook for TestHook {
 }
 
 #[tokio::test]
+async fn p3_rpc_hook_live_list_can_be_mutated_and_is_shared() {
+    let client = RemotingClient::new(TransportMode::Plain);
+    let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let hook: Arc<dyn RpcHook> = Arc::new(TestHook(events));
+    client.with_rpc_hooks(|hooks| hooks.push(hook.clone()));
+    assert!(Arc::ptr_eq(&client.get_rpc_hooks()[0], &hook));
+    client.with_rpc_hooks(|hooks| hooks.clear());
+    assert!(client.get_rpc_hooks().is_empty());
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn p3_rpc_hooks_deduplicate_and_clear() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -1908,7 +1925,7 @@ async fn p3_outbound_rpc_hook_runs_before_async_admission_wait() {
 }
 
 #[tokio::test]
-async fn p3_sync_invoke_does_not_run_outbound_rpc_hooks() {
+async fn p3_sync_invoke_runs_outbound_rpc_hooks_before_admission() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let (received_tx, received_rx) = tokio::sync::oneshot::channel();
@@ -1947,7 +1964,7 @@ async fn p3_sync_invoke_does_not_run_outbound_rpc_hooks() {
             .unwrap_err(),
         TransportError::Timeout
     );
-    assert_eq!(hook_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(hook_calls.load(Ordering::SeqCst), 2);
     assert_eq!(first.await.unwrap().unwrap().code, 42);
     client.shutdown().await;
     peer.await.unwrap();
@@ -2006,7 +2023,7 @@ async fn p3_async_admission_timeout_completes_through_callback() {
 }
 
 #[tokio::test]
-async fn p3_async_peer_close_after_send_marks_send_request_failed() {
+async fn p3_async_peer_close_preserves_public_wrapper_default_send_status() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let peer = tokio::spawn(async move {
@@ -2033,7 +2050,7 @@ async fn p3_async_peer_close_after_send_marks_send_request_failed() {
         .unwrap()
         .unwrap();
     assert_eq!(context.error, Some(TransportError::Closed));
-    assert!(!context.send_request_ok);
+    assert!(context.send_request_ok);
     tokio::time::timeout(Duration::from_secs(1), async {
         while events.lock().unwrap().len() < 2 {
             tokio::task::yield_now().await;

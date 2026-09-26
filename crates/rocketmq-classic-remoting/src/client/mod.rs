@@ -41,14 +41,13 @@ const CALLBACK_QUEUE_CAPACITY: usize = 65535;
 const CHANNEL_EVENT_QUEUE_CAPACITY: usize = 10001;
 
 #[derive(Clone)]
-struct ProcessorRegistration {
-    processor: Arc<dyn RequestProcessor>,
-    executor: Option<Arc<dyn RequestExecutor>>,
+pub struct ProcessorRegistration {
+    pub processor: Arc<dyn RequestProcessor>,
+    pub executor: Option<Arc<dyn RequestExecutor>>,
 }
 
 #[derive(Clone)]
 struct CallbackTracking {
-    send_status: Arc<AtomicBool>,
     channel_established: Arc<AtomicBool>,
     opaque: Arc<AtomicI32>,
     request: Arc<Mutex<RemotingCommand>>,
@@ -350,13 +349,9 @@ impl InvokeCallbackResult {
             Err(error) => Self {
                 request,
                 response: None,
-                send_request_ok: !matches!(
-                    error,
-                    TransportError::Connect(_)
-                        | TransportError::Send(_)
-                        | TransportError::Tls(_)
-                        | TransportError::Closed
-                ),
+                // Java's async wrapper constructs a fresh ResponseFuture for exceptional
+                // completion; its public sendRequestOK field therefore keeps the true default.
+                send_request_ok: true,
                 timed_out: error == TransportError::Timeout,
                 error: Some(error),
                 elapsed,
@@ -822,6 +817,12 @@ impl RemotingClient {
         self.inner.rpc_hooks.lock().unwrap().clone()
     }
 
+    /// Provides lock-protected access to the live RPC-hook list.
+    pub fn with_rpc_hooks<R>(&self, operation: impl FnOnce(&mut Vec<Arc<dyn RpcHook>>) -> R) -> R {
+        let mut hooks = self.inner.rpc_hooks.lock().unwrap();
+        operation(&mut hooks)
+    }
+
     /// Removes a registered hook by identity or its optional Java-equality key.
     pub fn remove_rpc_hook(&self, hook: &Arc<dyn RpcHook>) -> bool {
         let mut hooks = self.inner.rpc_hooks.lock().unwrap();
@@ -929,7 +930,7 @@ impl RemotingClient {
                     request: command,
                     response: None,
                     error: Some(TransportError::Timeout),
-                    send_request_ok: false,
+                    send_request_ok: true,
                     timed_out: true,
                     elapsed: std::time::Duration::ZERO,
                 },
@@ -943,7 +944,6 @@ impl RemotingClient {
         let addr = addr.into();
         let started = Instant::now();
         let callback_request_state = Arc::new(Mutex::new(command.clone()));
-        let send_status = Arc::new(AtomicBool::new(false));
         let channel_established = Arc::new(AtomicBool::new(false));
         let callback_opaque = Arc::new(AtomicI32::new(command.opaque));
         let task = tokio::spawn(async move {
@@ -985,7 +985,6 @@ impl RemotingClient {
                                         timeout_millis: std::time::Duration::ZERO,
                                     },
                                     Some(CallbackTracking {
-                                        send_status: send_status.clone(),
                                         channel_established: channel_established.clone(),
                                         opaque: callback_opaque.clone(),
                                         request: callback_request_state.clone(),
@@ -1000,21 +999,13 @@ impl RemotingClient {
                 }
                 Err(error) => (Err(error), None),
             };
-            let mut context = InvokeCallbackResult::from_result(
+            let context = InvokeCallbackResult::from_result(
                 callback_request_state.lock().unwrap().clone(),
                 result,
                 started.elapsed(),
             );
-            context.send_request_ok = match context.error {
-                Some(
-                    TransportError::Closed | TransportError::Shutdown | TransportError::Send(_),
-                ) => false,
-                Some(TransportError::Timeout) => {
-                    send_status.load(Ordering::Acquire)
-                        || channel_established.load(Ordering::Acquire)
-                }
-                _ => send_status.load(Ordering::Acquire),
-            };
+            // invokeAsyncImpl synthesizes a default-true ResponseFuture on failure;
+            // the internal requestFail flag is not the public callback's flag.
             let job = CallbackJob {
                 callback: callback.clone(),
                 context,
@@ -1025,6 +1016,15 @@ impl RemotingClient {
         });
         self.inner.spawn(task);
         Ok(())
+    }
+
+    /// Provides lock-protected access to the live processor table.
+    pub fn with_processor_table<R>(
+        &self,
+        operation: impl FnOnce(&mut HashMap<i32, ProcessorRegistration>) -> R,
+    ) -> R {
+        let mut processors = self.inner.processors.lock().unwrap();
+        operation(&mut processors)
     }
 
     pub fn register_processor(&self, code: i32, processor: Arc<dyn RequestProcessor>) {
@@ -1102,7 +1102,7 @@ impl RemotingClient {
             InvokeOptions {
                 admitted: false,
                 retried_go_away: false,
-                run_rpc_hooks: false,
+                run_rpc_hooks: true,
                 close_socket_on_timeout: true,
                 timeout_millis: timeout,
             },
@@ -1170,11 +1170,7 @@ impl RemotingClient {
         let frame = frame::encode(&command, self.inner.max_frame_size)?;
         let remaining = deadline.saturating_duration_since(Instant::now());
         match time::timeout(remaining, connection.send(frame, deadline)).await {
-            Ok(Ok(())) => {
-                if let Some(callback) = &callback {
-                    callback.send_status.store(true, Ordering::Release);
-                }
-            }
+            Ok(Ok(())) => {}
             Ok(Err(error)) => {
                 self.inner.cancel_pending(opaque, connection.generation);
                 pending.disarm();
