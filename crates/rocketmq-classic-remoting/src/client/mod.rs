@@ -2242,6 +2242,160 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn pooled_allocator_recycles_frame_after_encode_failure() {
+        let (client_io, _peer_io) = tokio::io::duplex(64);
+        let connection = connection::Connection::spawn(
+            Box::new(client_io),
+            23,
+            Weak::new(),
+            DEFAULT_MAX_FRAME_SIZE,
+            OUTBOUND_QUEUE_CAPACITY,
+            None,
+            "test:0".into(),
+            true,
+        );
+        assert!(matches!(
+            connection.encode_command(&test_command(), 1),
+            Err(TransportError::Codec(_))
+        ));
+        assert_eq!(connection.pooled_frame_count(), 1);
+        connection.close();
+        connection.join().await;
+    }
+
+    #[tokio::test]
+    async fn pooled_allocator_recycles_frame_after_queue_admission_timeout() {
+        let (client_io, mut peer_io) = tokio::io::duplex(1);
+        let connection = connection::Connection::spawn(
+            Box::new(client_io),
+            22,
+            Weak::new(),
+            DEFAULT_MAX_FRAME_SIZE,
+            1,
+            None,
+            "test:0".into(),
+            true,
+        );
+        let active_sender = {
+            let connection = connection.clone();
+            tokio::spawn(async move {
+                connection
+                    .send(
+                        vec![0; 128],
+                        Instant::now() + std::time::Duration::from_secs(5),
+                    )
+                    .await
+            })
+        };
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while connection.outbound_capacity() != 1 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("writer did not dequeue the active frame");
+        let mut first_byte = [0];
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            tokio::io::AsyncReadExt::read_exact(&mut peer_io, &mut first_byte),
+        )
+        .await
+        .expect("writer did not begin sending the active frame")
+        .unwrap();
+        connection.try_send(vec![0; 128], Instant::now()).unwrap();
+        let result = connection
+            .send(
+                vec![0; 128],
+                Instant::now() + std::time::Duration::from_millis(10),
+            )
+            .await;
+        assert!(matches!(result, Err(TransportError::Timeout)), "{result:?}");
+        assert_eq!(connection.pooled_frame_count(), 1);
+        connection.close();
+        connection.join().await;
+        active_sender.abort();
+        let _ = active_sender.await;
+    }
+
+    #[tokio::test]
+    async fn pooled_allocator_recycles_frames_after_write_error() {
+        let (client_io, peer_io) = tokio::io::duplex(1);
+        let connection = connection::Connection::spawn(
+            Box::new(client_io),
+            26,
+            Weak::new(),
+            DEFAULT_MAX_FRAME_SIZE,
+            OUTBOUND_QUEUE_CAPACITY,
+            None,
+            "test:0".into(),
+            true,
+        );
+        drop(peer_io);
+        let result = connection
+            .send(
+                vec![0; 128],
+                Instant::now() + std::time::Duration::from_secs(2),
+            )
+            .await;
+        assert!(matches!(result, Err(TransportError::Send(_))));
+        connection.join().await;
+        assert_eq!(connection.pooled_frame_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn pooled_allocator_recycles_frames_after_send_cancellation_and_shutdown() {
+        for shutdown in [false, true] {
+            let (client_io, mut peer_io) = tokio::io::duplex(1);
+            let connection = connection::Connection::spawn(
+                Box::new(client_io),
+                if shutdown { 25 } else { 24 },
+                Weak::new(),
+                DEFAULT_MAX_FRAME_SIZE,
+                1,
+                None,
+                "test:0".into(),
+                true,
+            );
+            let sender = {
+                let connection = connection.clone();
+                tokio::spawn(async move {
+                    connection
+                        .send(
+                            vec![0; 128],
+                            Instant::now() + std::time::Duration::from_secs(5),
+                        )
+                        .await
+                })
+            };
+            tokio::time::timeout(std::time::Duration::from_secs(1), async {
+                while connection.outbound_capacity() != 1 {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .expect("writer did not dequeue the frame");
+            let mut first_byte = [0];
+            tokio::time::timeout(
+                std::time::Duration::from_secs(1),
+                tokio::io::AsyncReadExt::read_exact(&mut peer_io, &mut first_byte),
+            )
+            .await
+            .expect("writer did not begin sending the frame")
+            .unwrap();
+            if shutdown {
+                connection.close();
+            } else {
+                sender.abort();
+            }
+            let _ = sender.await;
+            tokio::time::timeout(std::time::Duration::from_secs(1), connection.join())
+                .await
+                .expect("connection did not stop");
+            assert_eq!(connection.pooled_frame_count(), 1);
+        }
+    }
+
+    #[tokio::test]
     async fn pooled_allocator_keeps_at_most_four_buffers_per_connection() {
         let (client_io, _peer_io) = tokio::io::duplex(64);
         let connection = connection::Connection::spawn(

@@ -195,29 +195,27 @@ mod tests {
 
     #[test]
     fn socks_proxy_routes_match_ipv4_cidr_and_java_default_route() {
-        let routes = std::collections::HashMap::from([
-            (
-                "10.20.0.0/16".into(),
-                SocksProxyConfig::new("private-proxy:1080"),
-            ),
-            (
-                "0.0.0.0/0".into(),
-                SocksProxyConfig::new("default-proxy:1080"),
-            ),
-        ]);
+        let private_route = std::collections::HashMap::from([(
+            "10.20.0.0/16".into(),
+            SocksProxyConfig::new("private-proxy:1080"),
+        )]);
         assert_eq!(
-            ClientConfig::proxy_for(&routes, "10.20.4.5")
+            ClientConfig::proxy_for(&private_route, "10.20.4.5")
                 .unwrap()
                 .address,
             "private-proxy:1080"
         );
+        let default_route = std::collections::HashMap::from([(
+            "0.0.0.0/0".into(),
+            SocksProxyConfig::new("default-proxy:1080"),
+        )]);
         assert_eq!(
-            ClientConfig::proxy_for(&routes, "192.0.2.5")
+            ClientConfig::proxy_for(&default_route, "192.0.2.5")
                 .unwrap()
                 .address,
             "default-proxy:1080"
         );
-        assert!(ClientConfig::proxy_for(&routes, "broker.example").is_some());
-        assert!(ClientConfig::proxy_for(&routes, "2001:db8::1").is_some());
+        assert!(ClientConfig::proxy_for(&default_route, "broker.example").is_some());
+        assert!(ClientConfig::proxy_for(&default_route, "2001:db8::1").is_some());
     }
 }
