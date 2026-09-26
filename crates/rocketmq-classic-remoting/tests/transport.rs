@@ -283,6 +283,55 @@ async fn p3_nameserver_scan_probes_addresses_concurrently_and_tracks_results() {
 }
 
 #[tokio::test]
+async fn p3_nameserver_update_prunes_availability_on_next_scan() {
+    async fn peer() -> (String, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let task = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut byte = [0];
+            let _ = stream.read_exact(&mut byte).await;
+        });
+        (address, task)
+    }
+
+    let (first_address, first_peer) = peer().await;
+    let (second_address, second_peer) = peer().await;
+    let client = RemotingClient::with_config(ClientConfig {
+        connect_timeout: Duration::from_millis(300),
+        scan_available_nameserver: true,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    client.update_name_server_address_list(vec![first_address.clone(), second_address.clone()]);
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while client.get_available_name_srv_list().len() != 2 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+
+    client.update_name_server_address_list(vec![first_address.clone()]);
+    let mut available = client.get_available_name_srv_list();
+    available.sort();
+    assert_eq!(available, vec![first_address, second_address.clone()]);
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while client
+            .get_available_name_srv_list()
+            .contains(&second_address)
+        {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    client.shutdown().await;
+    first_peer.await.unwrap();
+    second_peer.await.unwrap();
+}
+
+#[tokio::test]
 async fn p3_nameserver_list_selection_and_availability_tracking() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();

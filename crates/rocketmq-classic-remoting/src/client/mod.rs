@@ -551,11 +551,6 @@ impl RemotingClient {
                 None
             }
         };
-        self.inner
-            .available_nameservers
-            .lock()
-            .unwrap()
-            .retain(|address| !removed.contains(address));
         if let Some(address) = removed_chosen {
             self.inner.connection_closed_for_address(&address);
         }
@@ -566,11 +561,11 @@ impl RemotingClient {
     }
 
     pub fn get_available_name_srv_list(&self) -> Vec<String> {
-        let nameservers = self.inner.nameservers.lock().unwrap();
-        let available = self.inner.available_nameservers.lock().unwrap();
-        nameservers
+        self.inner
+            .available_nameservers
+            .lock()
+            .unwrap()
             .iter()
-            .filter(|address| available.contains(*address))
             .cloned()
             .collect()
     }
@@ -1505,26 +1500,25 @@ async fn scan_available_name_servers(
             result = scans.join_next(), if !scans.is_empty() => {
                 if let Some(Ok((address, connection))) = result {
                     if let Some(inner) = inner.upgrade() {
-                        if !inner.closed.load(Ordering::Acquire)
-                            && inner.nameservers.lock().unwrap().contains(&address)
-                        {
-                            let is_current = connection.as_ref().is_some_and(|connection| {
-                                !connection.is_closed()
-                                    && inner
-                                        .connections
-                                        .lock()
-                                        .unwrap()
-                                        .get(&address)
-                                        .is_some_and(|current| {
-                                            current.generation == connection.generation
-                                        })
-                            });
-                            let mut current = inner.available_nameservers.lock().unwrap();
-                            if is_current {
-                                current.insert(address);
-                            } else {
-                                current.remove(&address);
-                            }
+                        if inner.closed.load(Ordering::Acquire) {
+                            continue;
+                        }
+                        let is_current = connection.as_ref().is_some_and(|connection| {
+                            !connection.is_closed()
+                                && inner
+                                    .connections
+                                    .lock()
+                                    .unwrap()
+                                    .get(&address)
+                                    .is_some_and(|current| {
+                                        current.generation == connection.generation
+                                    })
+                        });
+                        let mut available = inner.available_nameservers.lock().unwrap();
+                        if is_current {
+                            available.insert(address);
+                        } else {
+                            available.remove(&address);
                         }
                     } else {
                         break;
