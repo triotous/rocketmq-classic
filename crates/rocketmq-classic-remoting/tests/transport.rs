@@ -204,6 +204,9 @@ async fn p3_nameserver_update_shuffles_changed_lists_and_preserves_duplicates() 
         ..ClientConfig::default()
     })
     .unwrap();
+    assert_eq!(client.get_name_server_address_list(), None);
+    client.update_name_server_address_list(Vec::new());
+    assert_eq!(client.get_name_server_address_list(), None);
     let addresses = vec![
         "127.0.0.1:1001".into(),
         "127.0.0.1:1001".into(),
@@ -216,7 +219,7 @@ async fn p3_nameserver_update_shuffles_changed_lists_and_preserves_duplicates() 
         "127.0.0.1:1001".into(),
     ];
     client.update_name_server_address_list(reordered_same_list);
-    let initial = client.get_name_server_address_list();
+    let initial = client.get_name_server_address_list().unwrap();
     assert_eq!(initial.len(), 3);
     assert_eq!(
         initial
@@ -237,14 +240,14 @@ async fn p3_nameserver_update_shuffles_changed_lists_and_preserves_duplicates() 
         "127.0.0.1:1001".into(),
         "127.0.0.1:1001".into(),
     ]);
-    assert_eq!(client.get_name_server_address_list(), initial);
+    assert_eq!(client.get_name_server_address_list(), Some(initial));
 
     client.update_name_server_address_list(vec![
         "127.0.0.1:1002".into(),
         "127.0.0.1:1002".into(),
         "127.0.0.1:1003".into(),
     ]);
-    let mut updated = client.get_name_server_address_list();
+    let mut updated = client.get_name_server_address_list().unwrap();
     updated.sort();
     assert_eq!(
         updated,
@@ -362,9 +365,9 @@ async fn p3_nameserver_list_selection_and_availability_tracking() {
     })
     .unwrap();
     client.update_name_server_address_list(vec![address.to_string(), "127.0.0.1:1".into()]);
-    assert_eq!(client.get_name_server_address_list().len(), 2);
+    assert_eq!(client.get_name_server_address_list().unwrap().len(), 2);
     client.update_name_server_address_list(Vec::new());
-    assert_eq!(client.get_name_server_address_list().len(), 2);
+    assert_eq!(client.get_name_server_address_list().unwrap().len(), 2);
     assert!(client.get_available_name_srv_list().is_empty());
     let response = client
         .invoke_name_server(command(1), Instant::now() + Duration::from_secs(2))

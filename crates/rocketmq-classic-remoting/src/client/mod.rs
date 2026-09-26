@@ -666,8 +666,9 @@ impl RemotingClient {
         }
     }
 
-    pub fn get_name_server_address_list(&self) -> Vec<String> {
-        self.inner.nameservers.lock().unwrap().clone()
+    pub fn get_name_server_address_list(&self) -> Option<Vec<String>> {
+        let nameservers = self.inner.nameservers.lock().unwrap();
+        (!nameservers.is_empty()).then(|| nameservers.clone())
     }
 
     pub fn get_available_name_srv_list(&self) -> Vec<String> {
@@ -687,7 +688,7 @@ impl RemotingClient {
         command: RemotingCommand,
         deadline: Instant,
     ) -> Result<RemotingCommand, TransportError> {
-        let addresses = self.get_name_server_address_list();
+        let addresses = self.get_name_server_address_list().unwrap_or_default();
         if addresses.is_empty() {
             return Err(TransportError::InvalidConfiguration(
                 "no NameServer addresses configured".into(),
@@ -822,7 +823,7 @@ impl RemotingClient {
         &self,
         deadline: Instant,
     ) -> Result<Address, TransportError> {
-        let addresses = self.get_name_server_address_list();
+        let addresses = self.get_name_server_address_list().unwrap_or_default();
         if addresses.is_empty() {
             return Err(TransportError::InvalidConfiguration(
                 "no NameServer addresses configured".into(),
