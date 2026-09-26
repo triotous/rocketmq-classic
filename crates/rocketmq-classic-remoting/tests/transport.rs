@@ -1966,6 +1966,7 @@ async fn p3_async_go_away_retry_connect_failure_completes_before_failure() {
         go_away.mark_response();
         write_command(&mut first, &go_away).await;
         drop(first);
+        request.opaque
     });
     let client = RemotingClient::new(TransportMode::Plain);
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -1973,7 +1974,16 @@ async fn p3_async_go_away_retry_connect_failure_completes_before_failure() {
     client
         .invoke_async(
             address.to_string(),
-            command(1),
+            RemotingCommand {
+                flag: 1 << 8,
+                remark: Some("original request metadata".into()),
+                ext_fields: Some(std::collections::BTreeMap::from([(
+                    "trace".into(),
+                    "original".into(),
+                )])),
+                body: Some(vec![7, 8, 9]),
+                ..command(1)
+            },
             Instant::now() + Duration::from_secs(2),
             Arc::new(ContextCallback {
                 sender: tx,
@@ -1987,9 +1997,81 @@ async fn p3_async_go_away_retry_connect_failure_completes_before_failure() {
         .unwrap();
     assert!(matches!(context.error, Some(TransportError::Connect(_))));
     assert_eq!(context.response, None);
+    assert_eq!(context.request.flag, 1 << 8);
+    assert_eq!(
+        context.request.remark.as_deref(),
+        Some("original request metadata")
+    );
+    assert_eq!(
+        context.request.ext_fields.unwrap().get("trace").unwrap(),
+        "original"
+    );
+    assert_eq!(context.request.body, Some(vec![7, 8, 9]));
+    assert_eq!(context.request.opaque, peer.await.unwrap());
     assert_eq!(*events.lock().unwrap(), vec!["complete", "fail"]);
     client.shutdown().await;
-    peer.abort();
+}
+
+#[tokio::test]
+async fn p3_async_second_go_away_callback_retains_original_request() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let mut opaques = Vec::new();
+        for _ in 0..2 {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let request = read_command(&mut stream).await;
+            opaques.push(request.opaque);
+            let mut go_away = command(response::GO_AWAY);
+            go_away.opaque = request.opaque;
+            go_away.mark_response();
+            write_command(&mut stream, &go_away).await;
+        }
+        opaques
+    });
+    let client = RemotingClient::new(TransportMode::Plain);
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let request = RemotingCommand {
+        flag: 1 << 8,
+        remark: Some("original request metadata".into()),
+        ext_fields: Some(std::collections::BTreeMap::from([(
+            "trace".into(),
+            "original".into(),
+        )])),
+        body: Some(vec![7, 8, 9]),
+        ..command(1)
+    };
+    client
+        .invoke_async(
+            address.to_string(),
+            request,
+            Instant::now() + Duration::from_secs(2),
+            Arc::new(ContextCallback {
+                sender: tx,
+                events: events.clone(),
+            }),
+        )
+        .unwrap();
+    let context = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(context.error, Some(TransportError::GoAway));
+    assert_eq!(context.response, None);
+    assert_eq!(context.request.flag, 1 << 8);
+    assert_eq!(
+        context.request.remark.as_deref(),
+        Some("original request metadata")
+    );
+    assert_eq!(
+        context.request.ext_fields.unwrap().get("trace").unwrap(),
+        "original"
+    );
+    assert_eq!(context.request.body, Some(vec![7, 8, 9]));
+    assert_eq!(context.request.opaque, peer.await.unwrap()[0]);
+    assert_eq!(*events.lock().unwrap(), vec!["complete", "fail"]);
+    client.shutdown().await;
 }
 
 #[tokio::test]

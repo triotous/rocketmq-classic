@@ -43,6 +43,7 @@ struct ProcessorRegistration {
     executor: Option<Arc<dyn RequestExecutor>>,
 }
 
+#[derive(Clone)]
 struct CallbackTracking {
     send_status: Arc<AtomicBool>,
     channel_established: Arc<AtomicBool>,
@@ -926,7 +927,6 @@ impl RemotingClient {
             context.send_request_ok = send_status.load(Ordering::Acquire)
                 || (channel_established.load(Ordering::Acquire)
                     && context.error == Some(TransportError::Timeout));
-            context.request.opaque = callback_opaque.load(Ordering::Acquire);
             let job = CallbackJob {
                 callback: callback.clone(),
                 context,
@@ -1071,6 +1071,9 @@ impl RemotingClient {
         command.opaque = opaque;
         if let Some(callback) = &callback {
             callback.opaque.store(opaque, Ordering::Release);
+            if !options.retried_go_away {
+                callback.request.lock().unwrap().opaque = opaque;
+            }
         }
         let mut pending =
             pending::PendingGuard::new(Arc::downgrade(&self.inner), opaque, connection.generation);
@@ -1112,12 +1115,9 @@ impl RemotingClient {
                             body: request_for_hooks.body.clone(),
                             ..RemotingCommand::default()
                         };
-                        if let Some(callback) = &callback {
-                            *callback.request.lock().unwrap() = retry_request.clone();
-                        }
                         let mut retry = Box::pin(self.invoke_inner(
                             addr,
-                            retry_request,
+                            retry_request.clone(),
                             deadline,
                             InvokeOptions {
                                 admitted: true,
@@ -1125,9 +1125,17 @@ impl RemotingClient {
                                 close_socket_on_timeout: options.close_socket_on_timeout,
                                 timeout_millis: options.timeout_millis,
                             },
-                            callback,
+                            callback.clone(),
                         ));
-                        return retry.as_mut().await;
+                        let result = retry.as_mut().await;
+                        if result.is_ok() {
+                            if let Some(callback) = &callback {
+                                let mut request = retry_request;
+                                request.opaque = callback.opaque.load(Ordering::Acquire);
+                                *callback.request.lock().unwrap() = request;
+                            }
+                        }
+                        return result;
                     }
                     return Err(TransportError::GoAway);
                 }
