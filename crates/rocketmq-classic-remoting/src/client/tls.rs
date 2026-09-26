@@ -185,26 +185,32 @@ impl TlsConfig {
             self.key_password = Some(value.clone());
         }
         if let Some(path) = properties.get("tls.client.trustCertPath") {
-            if !path.is_empty() {
-                self.ca_pem = Some(read_tls_file(base_dir, path)?);
-            }
+            self.ca_pem = if path.is_empty() {
+                None
+            } else {
+                Some(read_tls_file(base_dir, path)?)
+            };
         }
         if let Some(path) = properties.get("tls.client.certPath") {
-            if !path.is_empty() {
-                self.client_cert_pem = Some(read_tls_file(base_dir, path)?);
-            }
+            self.client_cert_pem = if path.is_empty() {
+                None
+            } else {
+                Some(read_tls_file(base_dir, path)?)
+            };
         }
         if let Some(path) = properties.get("tls.client.keyPath") {
-            if !path.is_empty() {
+            self.client_key_pem = if path.is_empty() {
+                None
+            } else {
                 let path = resolve_tls_path(base_dir, path);
-                self.client_key_pem = Some(match &self.decryption_strategy {
+                Some(match &self.decryption_strategy {
                     Some(strategy) => {
                         strategy.decrypt_private_key(&path, true, self.key_password.as_deref())?
                     }
                     None => std::fs::read(path)
                         .map_err(|error| TransportError::Tls(error.to_string()))?,
-                });
-            }
+                })
+            };
         }
         Ok(())
     }
