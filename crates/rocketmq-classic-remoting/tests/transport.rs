@@ -1047,8 +1047,9 @@ async fn p3_u01_tls_verifies_ca_and_hostname_without_insecure_fallback() {
     let cert_pem = certificate.cert.pem();
     let ca = TlsConfig {
         ca_pem: Some(cert_pem.as_bytes().to_vec()),
-        client_cert_pem: None,
-        client_key_pem: None,
+        test_mode: false,
+        auth_server: true,
+        ..TlsConfig::default()
     };
     let server_config = tokio_rustls::rustls::ServerConfig::builder()
         .with_no_client_auth()
@@ -1101,6 +1102,67 @@ async fn p3_u01_tls_verifies_ca_and_hostname_without_insecure_fallback() {
         .await;
     assert!(matches!(result, Err(TransportError::Tls(_))));
     bad_name.shutdown().await;
+    peer.await.unwrap();
+}
+
+#[tokio::test]
+async fn p3_tls_matches_java_trust_all_modes() {
+    let certificate =
+        rcgen::generate_simple_self_signed(vec!["certificate-name-does-not-match".into()]).unwrap();
+    let server_config = tokio_rustls::rustls::ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(
+            vec![certificate.cert.der().clone()],
+            tokio_rustls::rustls::pki_types::PrivateKeyDer::Pkcs8(
+                tokio_rustls::rustls::pki_types::PrivatePkcs8KeyDer::from(
+                    certificate.key_pair.serialize_der(),
+                ),
+            ),
+        )
+        .unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(server_config));
+    let peer = tokio::spawn(async move {
+        for _ in 0..2 {
+            let (socket, _) = listener.accept().await.unwrap();
+            let Ok(mut stream) = acceptor.accept(socket).await else {
+                continue;
+            };
+            if let Ok(request) =
+                tokio::time::timeout(Duration::from_secs(1), read_command(&mut stream)).await
+            {
+                let mut reply = command(request::GET_ROUTEINFO_BY_TOPIC);
+                reply.opaque = request.opaque;
+                reply.mark_response();
+                let _ = write_command(&mut stream, &reply).await;
+            }
+        }
+    });
+    for config in [
+        TlsConfig {
+            test_mode: true,
+            auth_server: true,
+            ..TlsConfig::default()
+        },
+        TlsConfig {
+            test_mode: false,
+            auth_server: false,
+            ..TlsConfig::default()
+        },
+    ] {
+        let client = RemotingClient::new(TransportMode::Tls(config));
+        let response = client
+            .invoke(
+                &format!("localhost:{port}"),
+                command(1),
+                Instant::now() + Duration::from_secs(2),
+            )
+            .await
+            .unwrap();
+        assert!(response.is_response());
+        client.shutdown().await;
+    }
     peer.await.unwrap();
 }
 
@@ -2625,8 +2687,9 @@ async fn p3_u01_tls_rejects_untrusted_ca() {
     });
     let client = RemotingClient::new(TransportMode::Tls(TlsConfig {
         ca_pem: Some(Vec::new()),
-        client_cert_pem: None,
-        client_key_pem: None,
+        test_mode: false,
+        auth_server: true,
+        ..TlsConfig::default()
     }));
     let result = client
         .invoke(
