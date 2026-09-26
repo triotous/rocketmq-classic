@@ -183,6 +183,16 @@ async fn p3_expired_async_callback_retains_request_and_timeout_metadata() {
     assert_eq!(context.error, Some(TransportError::Timeout));
     assert!(context.timed_out);
     assert!(!context.send_request_ok);
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if events.lock().unwrap().len() == 2 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
     assert_eq!(*events.lock().unwrap(), vec!["complete", "fail"]);
     client.shutdown().await;
 }
@@ -2000,14 +2010,25 @@ async fn p3_go_away_retries_once_on_a_new_connection() {
         response.opaque = retry.opaque;
         response.mark_response();
         write_command(&mut second, &response).await;
+        retry
     });
     let client = RemotingClient::new(TransportMode::Plain);
     let hook_calls = Arc::new(AtomicUsize::new(0));
     client.add_rpc_hook(Arc::new(BeforeCounter(hook_calls.clone())));
+    let original = RemotingCommand {
+        flag: 1 << 8,
+        remark: Some("must not survive Java-style request reconstruction".into()),
+        ext_fields: Some(std::collections::BTreeMap::from([(
+            "trace".into(),
+            "preserved".into(),
+        )])),
+        body: Some(vec![1, 2, 3]),
+        ..command(1)
+    };
     let result = client
         .invoke(
             &address.to_string(),
-            command(1),
+            original,
             Instant::now() + Duration::from_secs(2),
         )
         .await
@@ -2015,7 +2036,16 @@ async fn p3_go_away_retries_once_on_a_new_connection() {
     assert_eq!(result.code, 42);
     assert_eq!(hook_calls.load(Ordering::SeqCst), 1);
     client.shutdown().await;
-    peer.await.unwrap();
+    let retry = peer.await.unwrap();
+    assert_eq!(retry.code, 1);
+    assert_eq!(
+        retry.language,
+        rocketmq_classic_protocol::codes::LanguageCode::Java
+    );
+    assert_eq!(retry.flag, 0);
+    assert_eq!(retry.remark, None);
+    assert_eq!(retry.ext_fields.unwrap().get("trace").unwrap(), "preserved");
+    assert_eq!(retry.body, Some(vec![1, 2, 3]));
 }
 
 #[tokio::test]

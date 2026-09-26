@@ -1100,9 +1100,16 @@ impl RemotingClient {
                 if response.code == rocketmq_classic_protocol::codes::response::GO_AWAY {
                     if self.inner.config.enable_reconnect_for_go_away && !options.retried_go_away {
                         self.inner.connection_closed(connection.generation, None);
+                        let retry_request = RemotingCommand {
+                            code: request_for_hooks.code,
+                            language: rocketmq_classic_protocol::codes::LanguageCode::Java,
+                            ext_fields: request_for_hooks.ext_fields.clone(),
+                            body: request_for_hooks.body.clone(),
+                            ..RemotingCommand::default()
+                        };
                         let mut retry = Box::pin(self.invoke_inner(
                             addr,
-                            request_for_hooks,
+                            retry_request,
                             deadline,
                             InvokeOptions {
                                 admitted: true,
