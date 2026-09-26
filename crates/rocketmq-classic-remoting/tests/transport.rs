@@ -1323,6 +1323,15 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
     assert!(defaults.close_socket_if_timeout);
     assert!(defaults.scan_available_nameserver);
     assert!(defaults.enable_reconnect_for_go_away);
+    assert_eq!(defaults.max_reconnect_interval_time_seconds, 60);
+    assert!(
+        ClientConfig {
+            max_reconnect_interval_time_seconds: 0,
+            ..defaults.clone()
+        }
+        .validate()
+        .is_ok()
+    );
     assert!(defaults.socks_proxy.is_none());
     let callback_executor_disabled = RemotingClient::with_config(ClientConfig {
         disable_callback_executor: true,

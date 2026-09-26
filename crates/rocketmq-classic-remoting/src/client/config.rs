@@ -51,6 +51,8 @@ pub struct ClientConfig {
     pub close_socket_if_timeout: bool,
     pub scan_available_nameserver: bool,
     pub enable_reconnect_for_go_away: bool,
+    /// Java `maxReconnectIntervalTimeSeconds`; retained but unused by the pinned client.
+    pub max_reconnect_interval_time_seconds: u64,
     pub socks_proxy: Option<SocksProxyConfig>,
 }
 
@@ -76,6 +78,7 @@ impl Default for ClientConfig {
             close_socket_if_timeout: true,
             scan_available_nameserver: true,
             enable_reconnect_for_go_away: true,
+            max_reconnect_interval_time_seconds: 60,
             socks_proxy: None,
         }
     }
