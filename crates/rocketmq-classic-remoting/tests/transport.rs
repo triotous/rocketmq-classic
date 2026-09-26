@@ -980,6 +980,68 @@ async fn p3_oneway_returns_after_scheduling_before_peer_receives_frame() {
 }
 
 #[tokio::test]
+async fn p3_outbound_rpc_hook_runs_before_oneway_admission_wait() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let (drain_tx, drain_rx) = tokio::sync::oneshot::channel();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let _ = drain_rx.await;
+        let first = read_command(&mut stream).await;
+        let second = read_command(&mut stream).await;
+        (first.code, second.code)
+    });
+    let client = RemotingClient::with_config(ClientConfig {
+        oneway_semaphore_value: 1,
+        client_socket_send_buffer_size: 1024,
+        max_idle_time: Duration::ZERO,
+        scan_available_nameserver: false,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    let hook_calls = Arc::new(AtomicUsize::new(0));
+    client.add_rpc_hook(Arc::new(BeforeCounter(hook_calls.clone())));
+    let first = RemotingCommand {
+        body: Some(vec![7; 8 * 1024 * 1024]),
+        ..command(101)
+    };
+    drop(client.invoke_oneway(
+        &address.to_string(),
+        first,
+        Instant::now() + Duration::from_secs(10),
+    ));
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while hook_calls.load(Ordering::SeqCst) < 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    drop(client.invoke_oneway(
+        &address.to_string(),
+        command(102),
+        Instant::now() + Duration::from_secs(10),
+    ));
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while hook_calls.load(Ordering::SeqCst) < 2 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("oneway hook must run before waiting for semaphore admission");
+    let _ = drain_tx.send(());
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(8), peer)
+            .await
+            .unwrap()
+            .unwrap(),
+        (101, 102)
+    );
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn p3_u01_tls_verifies_ca_and_hostname_without_insecure_fallback() {
     let certificate = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
     let cert_pem = certificate.cert.pem();
@@ -1082,10 +1144,12 @@ async fn p3_nameserver_channel_interval_has_no_implicit_scan_behavior() {
 #[tokio::test]
 async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
     let defaults = ClientConfig::default();
+    assert!(matches!(defaults.transport, TransportMode::Plain));
     assert_eq!(defaults.connect_timeout, Duration::from_millis(3000));
     assert_eq!(defaults.async_semaphore_value, 65535);
     assert_eq!(defaults.oneway_semaphore_value, 65535);
     assert_eq!(defaults.worker_threads, 4);
+    assert!(!defaults.disable_callback_executor);
     assert_eq!(
         defaults.callback_executor_threads,
         std::thread::available_parallelism()
@@ -1120,6 +1184,7 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
     assert_eq!(defaults.max_idle_time, Duration::from_secs(120));
     assert!(defaults.close_socket_if_timeout);
     assert!(defaults.scan_available_nameserver);
+    assert!(defaults.enable_reconnect_for_go_away);
     assert!(defaults.socks_proxy.is_none());
     let callback_executor_disabled = RemotingClient::with_config(ClientConfig {
         disable_callback_executor: true,
@@ -1137,14 +1202,26 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
         .validate()
         .is_ok()
     );
-    assert!(
+    for invalid in [
+        ClientConfig {
+            connect_timeout: Duration::ZERO,
+            ..defaults.clone()
+        },
         ClientConfig {
             async_semaphore_value: 0,
             ..defaults.clone()
-        }
-        .validate()
-        .is_err()
-    );
+        },
+        ClientConfig {
+            oneway_semaphore_value: 0,
+            ..defaults.clone()
+        },
+        ClientConfig {
+            worker_threads: 0,
+            ..defaults.clone()
+        },
+    ] {
+        assert!(invalid.validate().is_err());
+    }
     assert!(
         ClientConfig {
             callback_executor_threads: 0,
@@ -1187,14 +1264,30 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
         .validate()
         .is_ok()
     );
-    assert!(
+    for invalid in [
         ClientConfig {
             client_socket_send_buffer_size: usize::MAX,
             ..defaults.clone()
-        }
-        .validate()
-        .is_err()
-    );
+        },
+        ClientConfig {
+            client_socket_receive_buffer_size: usize::MAX,
+            ..defaults.clone()
+        },
+        ClientConfig {
+            socks_proxy: Some(SocksProxyConfig::new("invalid")),
+            ..defaults.clone()
+        },
+        ClientConfig {
+            socks_proxy: Some(SocksProxyConfig {
+                address: "localhost:1080".into(),
+                username: Some("user".into()),
+                password: None,
+            }),
+            ..defaults.clone()
+        },
+    ] {
+        assert!(invalid.validate().is_err());
+    }
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -1246,6 +1339,29 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
             .iter()
             .any(|event| event == "callback")
     );
+}
+
+struct PanickingCallbackExecutor;
+
+impl CallbackExecutor for PanickingCallbackExecutor {
+    fn execute(
+        &self,
+        _task: Box<dyn FnOnce() + Send + 'static>,
+    ) -> Result<(), Box<dyn FnOnce() + Send + 'static>> {
+        panic!("executor panic");
+    }
+}
+
+struct InlineCallbackExecutor;
+
+impl CallbackExecutor for InlineCallbackExecutor {
+    fn execute(
+        &self,
+        task: Box<dyn FnOnce() + Send + 'static>,
+    ) -> Result<(), Box<dyn FnOnce() + Send + 'static>> {
+        task();
+        Ok(())
+    }
 }
 
 struct RejectingCallbackExecutor;
@@ -1430,6 +1546,49 @@ async fn p3_caller_callback_executor_routes_callbacks_to_owned_executor() {
     assert!(result.unwrap().is_response());
     assert_ne!(callback_thread, caller_thread);
     peer.await.unwrap();
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn p3_callback_executor_panic_falls_back_and_callback_panic_is_contained() {
+    let client = RemotingClient::new(TransportMode::Plain);
+    client.set_callback_executor(Some(Arc::new(PanickingCallbackExecutor)));
+    let executor_fallback = Arc::new(AtomicUsize::new(0));
+    let seen = executor_fallback.clone();
+    client
+        .invoke_async(
+            "127.0.0.1:1",
+            command(1),
+            Instant::now() - Duration::from_millis(1),
+            Arc::new(move |_: Result<RemotingCommand, TransportError>| {
+                seen.fetch_add(1, Ordering::SeqCst);
+            }),
+        )
+        .unwrap();
+    assert_eq!(executor_fallback.load(Ordering::SeqCst), 1);
+
+    client.set_callback_executor(Some(Arc::new(InlineCallbackExecutor)));
+    client
+        .invoke_async(
+            "127.0.0.1:1",
+            command(2),
+            Instant::now() - Duration::from_millis(1),
+            Arc::new(|_: Result<RemotingCommand, TransportError>| panic!("callback panic")),
+        )
+        .unwrap();
+    let after_callback_panic = Arc::new(AtomicUsize::new(0));
+    let seen = after_callback_panic.clone();
+    client
+        .invoke_async(
+            "127.0.0.1:1",
+            command(3),
+            Instant::now() - Duration::from_millis(1),
+            Arc::new(move |_: Result<RemotingCommand, TransportError>| {
+                seen.fetch_add(1, Ordering::SeqCst);
+            }),
+        )
+        .unwrap();
+    assert_eq!(after_callback_panic.load(Ordering::SeqCst), 1);
     client.shutdown().await;
 }
 

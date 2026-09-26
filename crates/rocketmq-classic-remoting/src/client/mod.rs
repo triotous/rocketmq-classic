@@ -600,29 +600,65 @@ impl RemotingClient {
                 return Err(TransportError::Timeout);
             }
             let address = &addresses[(start + offset) % addresses.len()];
+            if !self
+                .inner
+                .nameservers
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|configured| configured == address)
+            {
+                continue;
+            }
             let connection = match self.inner.connection(address, deadline).await {
                 Ok(connection) => connection,
                 Err(error) => {
-                    self.inner
-                        .available_nameservers
+                    let nameservers = self.inner.nameservers.lock().unwrap();
+                    let replacement_exists = self
+                        .inner
+                        .connections
                         .lock()
                         .unwrap()
-                        .remove(address);
+                        .get(address)
+                        .is_some_and(|current| !current.is_closed());
+                    if nameservers.iter().any(|configured| configured == address)
+                        && !replacement_exists
+                    {
+                        self.inner
+                            .available_nameservers
+                            .lock()
+                            .unwrap()
+                            .remove(address);
+                    }
                     last_error = Some(error);
                     continue;
                 }
             };
-            *self.inner.chosen_nameserver.lock().unwrap() = Some(address.clone());
+            let selected = {
+                let nameservers = self.inner.nameservers.lock().unwrap();
+                if nameservers.iter().any(|configured| configured == address) {
+                    *self.inner.chosen_nameserver.lock().unwrap() = Some(address.clone());
+                    true
+                } else {
+                    false
+                }
+            };
+            if !selected {
+                continue;
+            }
             match self.invoke(address, command, deadline).await {
                 Ok(response) => {
-                    let connection_is_current = !connection.is_closed()
-                        && self
-                            .inner
-                            .connections
-                            .lock()
-                            .unwrap()
-                            .get(address)
-                            .is_some_and(|current| current.generation == connection.generation);
+                    let nameservers = self.inner.nameservers.lock().unwrap();
+                    let connection_is_current =
+                        nameservers.iter().any(|configured| configured == address)
+                            && !connection.is_closed()
+                            && self
+                                .inner
+                                .connections
+                                .lock()
+                                .unwrap()
+                                .get(address)
+                                .is_some_and(|current| current.generation == connection.generation);
                     if connection_is_current {
                         self.inner
                             .available_nameservers
@@ -630,23 +666,41 @@ impl RemotingClient {
                             .unwrap()
                             .insert(address.clone());
                     }
+                    drop(nameservers);
                     return Ok(response);
                 }
                 Err(error) => {
-                    self.inner
-                        .available_nameservers
-                        .lock()
-                        .unwrap()
-                        .remove(address);
-                    if matches!(
-                        error,
-                        TransportError::Connect(_)
-                            | TransportError::Send(_)
-                            | TransportError::Closed
-                            | TransportError::Tls(_)
-                    ) {
-                        *self.inner.chosen_nameserver.lock().unwrap() = None;
+                    let nameservers = self.inner.nameservers.lock().unwrap();
+                    let connection_is_current =
+                        nameservers.iter().any(|configured| configured == address)
+                            && !connection.is_closed()
+                            && self
+                                .inner
+                                .connections
+                                .lock()
+                                .unwrap()
+                                .get(address)
+                                .is_some_and(|current| current.generation == connection.generation);
+                    if connection_is_current {
+                        self.inner
+                            .available_nameservers
+                            .lock()
+                            .unwrap()
+                            .remove(address);
+                        if matches!(
+                            error,
+                            TransportError::Connect(_)
+                                | TransportError::Send(_)
+                                | TransportError::Closed
+                                | TransportError::Tls(_)
+                        ) {
+                            let mut chosen = self.inner.chosen_nameserver.lock().unwrap();
+                            if chosen.as_deref() == Some(address.as_str()) {
+                                *chosen = None;
+                            }
+                        }
                     }
+                    drop(nameservers);
                     return Err(error);
                 }
             }
@@ -664,18 +718,22 @@ impl RemotingClient {
                 "no NameServer addresses configured".into(),
             ));
         }
-        if let Some(chosen) = self.inner.chosen_nameserver.lock().unwrap().clone() {
-            if addresses.contains(&chosen)
-                && self
-                    .inner
-                    .connections
-                    .lock()
-                    .unwrap()
-                    .get(&chosen)
-                    .is_some_and(|connection| !connection.is_closed())
-            {
-                return Address::parse(&chosen);
-            }
+        let chosen = {
+            let nameservers = self.inner.nameservers.lock().unwrap();
+            let chosen = self.inner.chosen_nameserver.lock().unwrap().clone();
+            chosen.filter(|address| {
+                nameservers.contains(address)
+                    && self
+                        .inner
+                        .connections
+                        .lock()
+                        .unwrap()
+                        .get(address)
+                        .is_some_and(|connection| !connection.is_closed())
+            })
+        };
+        if let Some(chosen) = chosen {
+            return Address::parse(&chosen);
         }
         let start =
             self.inner.nameserver_index.fetch_add(1, Ordering::Relaxed) as usize % addresses.len();
@@ -687,8 +745,11 @@ impl RemotingClient {
             let address = &addresses[(start + offset) % addresses.len()];
             match self.inner.connection(address, deadline).await {
                 Ok(_) => {
-                    *self.inner.chosen_nameserver.lock().unwrap() = Some(address.clone());
-                    return Address::parse(address);
+                    let nameservers = self.inner.nameservers.lock().unwrap();
+                    if nameservers.iter().any(|configured| configured == address) {
+                        *self.inner.chosen_nameserver.lock().unwrap() = Some(address.clone());
+                        return Address::parse(address);
+                    }
                 }
                 Err(error) => last_error = Some(error),
             }
@@ -1508,22 +1569,36 @@ async fn scan_available_name_servers(
                         if inner.closed.load(Ordering::Acquire) {
                             continue;
                         }
-                        let is_current = connection.as_ref().is_some_and(|connection| {
-                            !connection.is_closed()
-                                && inner
-                                    .connections
-                                    .lock()
-                                    .unwrap()
-                                    .get(&address)
-                                    .is_some_and(|current| {
-                                        current.generation == connection.generation
-                                    })
-                        });
-                        let mut available = inner.available_nameservers.lock().unwrap();
-                        if is_current {
-                            available.insert(address);
-                        } else {
-                            available.remove(&address);
+                        let address_is_configured = inner
+                            .nameservers
+                            .lock()
+                            .unwrap()
+                            .iter()
+                            .any(|configured| configured == &address);
+                        if !address_is_configured {
+                            continue;
+                        }
+                        let current_generation = inner
+                            .connections
+                            .lock()
+                            .unwrap()
+                            .get(&address)
+                            .filter(|current| !current.is_closed())
+                            .map(|current| current.generation);
+                        let probe_generation = connection
+                            .filter(|connection| !connection.is_closed())
+                            .map(|connection| connection.generation);
+                        let nameservers = inner.nameservers.lock().unwrap();
+                        if nameservers.iter().any(|configured| configured == &address) {
+                            match name_server_probe_availability(probe_generation, current_generation) {
+                                Some(true) => {
+                                    inner.available_nameservers.lock().unwrap().insert(address);
+                                }
+                                Some(false) => {
+                                    inner.available_nameservers.lock().unwrap().remove(&address);
+                                }
+                                None => {}
+                            }
                         }
                     } else {
                         break;
@@ -1534,6 +1609,17 @@ async fn scan_available_name_servers(
         }
     }
     scans.shutdown().await;
+}
+
+fn name_server_probe_availability(
+    probe_generation: Option<u64>,
+    current_generation: Option<u64>,
+) -> Option<bool> {
+    match (probe_generation, current_generation) {
+        (Some(probe), Some(current)) if probe == current => Some(true),
+        (_, Some(_)) => None,
+        (_, None) => Some(false),
+    }
 }
 
 async fn timeout_scheduler(
@@ -1579,6 +1665,15 @@ mod tests {
 
     fn test_command() -> RemotingCommand {
         RemotingCommand::default()
+    }
+
+    #[test]
+    fn stale_name_server_probe_does_not_override_current_generation_availability() {
+        assert_eq!(name_server_probe_availability(Some(7), Some(7)), Some(true));
+        assert_eq!(name_server_probe_availability(Some(7), Some(8)), None);
+        assert_eq!(name_server_probe_availability(None, Some(8)), None);
+        assert_eq!(name_server_probe_availability(Some(7), None), Some(false));
+        assert_eq!(name_server_probe_availability(None, None), Some(false));
     }
 
     #[tokio::test]
