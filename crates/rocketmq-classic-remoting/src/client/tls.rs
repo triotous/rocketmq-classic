@@ -96,9 +96,12 @@ impl fmt::Debug for TlsConfig {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("TlsConfig")
-            .field("ca_pem", &self.ca_pem)
-            .field("client_cert_pem", &self.client_cert_pem)
-            .field("client_key_pem", &self.client_key_pem)
+            .field("ca_pem_configured", &self.ca_pem.is_some())
+            .field(
+                "client_cert_pem_configured",
+                &self.client_cert_pem.is_some(),
+            )
+            .field("client_key_pem_configured", &self.client_key_pem.is_some())
             .field("test_mode", &self.test_mode)
             .field("auth_server", &self.auth_server)
             .field("key_password_configured", &self.key_password.is_some())
@@ -509,6 +512,8 @@ mod tests {
         assert!(config.auth_server);
         assert_eq!(config.ca_pem.as_deref(), Some(b"ca bytes".as_slice()));
         assert_eq!(config.key_password.as_deref(), Some("secret"));
+        let debug = format!("{config:?}");
+        assert!(!debug.contains("secret"));
         fs::remove_dir_all(directory).unwrap();
     }
 
