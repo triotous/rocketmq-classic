@@ -34,7 +34,6 @@ pub(crate) struct Connection {
     sender: mpsc::Sender<OutboundFrame>,
     address: String,
     last_activity: std::sync::Mutex<std::time::Instant>,
-    last_response: std::sync::Mutex<std::time::Instant>,
     closed: Arc<AtomicBool>,
     task: tokio::sync::Mutex<Option<JoinHandle<()>>>,
     shutdown: tokio::sync::watch::Sender<bool>,
@@ -61,7 +60,6 @@ impl Connection {
             sender,
             address: address.clone(),
             last_activity: std::sync::Mutex::new(std::time::Instant::now()),
-            last_response: std::sync::Mutex::new(std::time::Instant::now()),
             closed: closed.clone(),
             task: tokio::sync::Mutex::new(None),
             shutdown,
@@ -170,15 +168,6 @@ impl Connection {
 
     pub(crate) fn mark_active(&self) {
         *self.last_activity.lock().unwrap() = std::time::Instant::now();
-    }
-
-    pub(crate) fn mark_response(&self) {
-        *self.last_response.lock().unwrap() = std::time::Instant::now();
-        self.mark_active();
-    }
-
-    pub(crate) fn last_response_for(&self) -> std::time::Duration {
-        self.last_response.lock().unwrap().elapsed()
     }
 
     pub(crate) fn is_closed(&self) -> bool {
@@ -329,16 +318,6 @@ async fn run_connection(
                                 }
                                 if command.is_response() {
                                     if let Some(inner) = inner.upgrade() {
-                                        let connection = inner
-                                            .connections
-                                            .lock()
-                                            .unwrap()
-                                            .values()
-                                            .find(|connection| connection.generation == generation)
-                                            .cloned();
-                                        if let Some(connection) = connection {
-                                            connection.mark_response();
-                                        }
                                         inner.complete_response(generation, command);
                                     }
                                 } else if let Some(inner) = inner.upgrade() {

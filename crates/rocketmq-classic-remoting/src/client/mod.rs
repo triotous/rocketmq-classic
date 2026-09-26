@@ -1559,24 +1559,6 @@ async fn timeout_scheduler(
                         connection.close();
                     }
                 }
-                if !inner.config.channel_not_active_interval.is_zero() {
-                    let nameservers = inner.nameservers.lock().unwrap().clone();
-                    let stale_connections = inner
-                        .connections
-                        .lock()
-                        .unwrap()
-                        .iter()
-                        .filter(|(address, connection)| {
-                            nameservers.contains(address)
-                                && connection.last_response_for()
-                                    >= inner.config.channel_not_active_interval
-                        })
-                        .map(|(_, connection)| connection.clone())
-                        .collect::<Vec<_>>();
-                    for connection in stale_connections {
-                        connection.close();
-                    }
-                }
                 let now = Instant::now();
                 let expired = {
                     let pending = inner.pending.lock().unwrap();

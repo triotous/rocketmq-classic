@@ -1043,6 +1043,43 @@ async fn p3_u01_tls_verifies_ca_and_hostname_without_insecure_fallback() {
 }
 
 #[tokio::test]
+async fn p3_nameserver_channel_interval_has_no_implicit_scan_behavior() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let request = read_command(&mut stream).await;
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+        let mut response = command(42);
+        response.opaque = request.opaque;
+        response.mark_response();
+        write_command(&mut stream, &response).await;
+    });
+    let client = RemotingClient::with_config(ClientConfig {
+        channel_not_active_interval: Duration::from_millis(20),
+        max_idle_time: Duration::ZERO,
+        scan_available_nameserver: false,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    client.update_name_server_address_list(vec![address.to_string()]);
+    assert_eq!(
+        client
+            .invoke(
+                &address.to_string(),
+                command(1),
+                Instant::now() + Duration::from_secs(3),
+            )
+            .await
+            .unwrap()
+            .code,
+        42
+    );
+    client.shutdown().await;
+    peer.await.unwrap();
+}
+
+#[tokio::test]
 async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
     let defaults = ClientConfig::default();
     assert_eq!(defaults.connect_timeout, Duration::from_millis(3000));
