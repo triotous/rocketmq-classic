@@ -990,6 +990,20 @@ async fn p3_oneway_returns_after_scheduling_before_peer_receives_frame() {
 }
 
 #[tokio::test]
+async fn p3_oneway_reports_invalid_address_to_returned_result() {
+    let client = RemotingClient::new(TransportMode::Plain);
+    let result = client
+        .invoke_oneway(
+            "invalid-address",
+            command(14),
+            Instant::now() + Duration::from_secs(1),
+        )
+        .await;
+    assert!(matches!(result, Err(TransportError::Connect(_))));
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn p3_oneway_starts_connection_acquisition_at_call_time() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();

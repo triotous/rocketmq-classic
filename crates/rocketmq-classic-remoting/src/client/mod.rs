@@ -7,6 +7,8 @@ pub mod tls;
 
 use std::{
     collections::{HashMap, HashSet},
+    future::Future,
+    pin::Pin,
     sync::{
         Arc, Mutex, Weak,
         atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering},
@@ -14,6 +16,7 @@ use std::{
 };
 
 use rand::seq::SliceRandom;
+use std::task::{Context, Poll, Waker};
 use tokio::{
     sync::{mpsc, oneshot},
     task::JoinHandle,
@@ -1193,10 +1196,10 @@ impl RemotingClient {
         }
     }
 
-    /// Starts connection establishment at call time, then schedules a managed one-way operation
+    /// Polls connection acquisition once at call time, then schedules a managed one-way operation
     /// and returns a ready result future without waiting for connection completion, admission, or
-    /// socket write. Tokio may not poll the connection task before this method returns. Completion
-    /// does not imply Broker receipt or storage; post-return transport failures are not observable.
+    /// socket write. Completion does not imply Broker receipt or storage; post-return transport
+    /// failures are not observable.
     pub fn invoke_oneway(
         &self,
         addr: &str,
@@ -1209,19 +1212,24 @@ impl RemotingClient {
         if Instant::now() >= deadline {
             return std::future::ready(Err(TransportError::Timeout));
         }
+        if let Err(error) = connection_manager::Address::parse(addr) {
+            return std::future::ready(Err(error));
+        }
         let client = self.clone();
         let addr = addr.to_owned();
         let (connection_tx, connection_rx) = tokio::sync::oneshot::channel();
         let connection_client = client.clone();
         let connection_addr = addr.clone();
-        let connection_task = tokio::spawn(async move {
+        let connection_task = async move {
             let result = connection_client
                 .inner
                 .connection(&connection_addr, deadline)
                 .await;
             let _ = connection_tx.send(result);
-        });
-        self.inner.spawn(connection_task);
+        };
+        if let Some(connection_task) = spawn_after_initial_poll(connection_task) {
+            self.inner.spawn(connection_task);
+        }
         let task = tokio::spawn(async move {
             let Ok(Ok(connection)) = connection_rx.await else {
                 return;
@@ -1506,6 +1514,37 @@ impl ClientInner {
     }
 }
 
+struct NotifyWake(Arc<tokio::sync::Notify>);
+
+impl std::task::Wake for NotifyWake {
+    fn wake(self: Arc<Self>) {
+        self.0.notify_one();
+    }
+}
+
+fn spawn_after_initial_poll<F>(future: F) -> Option<JoinHandle<()>>
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    let mut future = Box::pin(future);
+    let notify = Arc::new(tokio::sync::Notify::new());
+    let waker = Waker::from(Arc::new(NotifyWake(notify.clone())));
+    let mut context = Context::from_waker(&waker);
+    match Pin::as_mut(&mut future).poll(&mut context) {
+        Poll::Ready(()) => None,
+        Poll::Pending => Some(tokio::spawn(async move {
+            loop {
+                let notified = notify.notified();
+                tokio::pin!(notified);
+                tokio::select! {
+                    _ = &mut notified => {}
+                    _ = &mut future => break,
+                }
+            }
+        })),
+    }
+}
+
 fn run_callback(job: CallbackJob) {
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let connect_failed = !job.channel_established.load(Ordering::Acquire);
@@ -1722,6 +1761,41 @@ mod tests {
 
     fn test_command() -> RemotingCommand {
         RemotingCommand::default()
+    }
+
+    #[tokio::test]
+    async fn oneway_connection_acquisition_enters_connect_before_return() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let client = RemotingClient::new(TransportMode::Plain);
+        let _result = client.invoke_oneway(
+            &address.to_string(),
+            test_command(),
+            Instant::now() + std::time::Duration::from_secs(1),
+        );
+        {
+            let connecting = client.inner.connecting.lock().unwrap();
+            let gate = connecting
+                .get(&address.to_string())
+                .and_then(Weak::upgrade)
+                .expect("acquisition should register its single-flight gate before return");
+            assert!(gate.try_lock().is_err(), "dial future should hold the gate");
+        }
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn spawned_connection_future_is_polled_before_return() {
+        let polls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let polls_for_future = polls.clone();
+        let task = spawn_after_initial_poll(async move {
+            polls_for_future.fetch_add(1, Ordering::SeqCst);
+            std::future::pending::<()>().await;
+        })
+        .expect("pending future should be spawned");
+        assert_eq!(polls.load(Ordering::SeqCst), 1);
+        task.abort();
+        let _ = task.await;
     }
 
     #[test]
