@@ -187,33 +187,37 @@ impl TlsConfig {
         if let Some(value) = properties.get("tls.client.keyPassword") {
             self.key_password = Some(value.clone());
         }
-        if let Some(path) = properties.get("tls.client.trustCertPath") {
-            self.ca_pem = if path.is_empty() {
-                None
-            } else {
-                Some(read_tls_file(base_dir, path)?)
-            };
-        }
-        if let Some(path) = properties.get("tls.client.certPath") {
-            self.client_cert_pem = if path.is_empty() {
-                None
-            } else {
-                Some(read_tls_file(base_dir, path)?)
-            };
-        }
-        if let Some(path) = properties.get("tls.client.keyPath") {
-            self.client_key_pem = if path.is_empty() {
-                None
-            } else {
-                let path = resolve_tls_path(base_dir, path);
-                Some(match &self.decryption_strategy {
-                    Some(strategy) => {
-                        strategy.decrypt_private_key(&path, true, self.key_password.as_deref())?
-                    }
-                    None => std::fs::read(path)
-                        .map_err(|error| TransportError::Tls(error.to_string()))?,
-                })
-            };
+        if !self.test_mode {
+            if let Some(path) = properties.get("tls.client.trustCertPath") {
+                self.ca_pem = if path.is_empty() {
+                    None
+                } else {
+                    Some(read_tls_file(base_dir, path)?)
+                };
+            }
+            if let Some(path) = properties.get("tls.client.certPath") {
+                self.client_cert_pem = if path.is_empty() {
+                    None
+                } else {
+                    Some(read_tls_file(base_dir, path)?)
+                };
+            }
+            if let Some(path) = properties.get("tls.client.keyPath") {
+                self.client_key_pem = if path.is_empty() {
+                    None
+                } else {
+                    let path = resolve_tls_path(base_dir, path);
+                    Some(match &self.decryption_strategy {
+                        Some(strategy) => strategy.decrypt_private_key(
+                            &path,
+                            true,
+                            self.key_password.as_deref(),
+                        )?,
+                        None => std::fs::read(path)
+                            .map_err(|error| TransportError::Tls(error.to_string()))?,
+                    })
+                };
+            }
         }
         Ok(())
     }
@@ -265,8 +269,9 @@ impl TlsConfig {
                 .dangerous()
                 .with_custom_certificate_verifier(Arc::new(TrustAllServerVerifier))
         };
-        let config = match (!self.test_mode, &self.client_cert_pem, &self.client_key_pem) {
-            (true, Some(cert_pem), Some(key_pem)) => {
+        let config = match (self.test_mode, &self.client_cert_pem, &self.client_key_pem) {
+            (true, _, _) => builder.with_no_client_auth(),
+            (false, Some(cert_pem), Some(key_pem)) => {
                 let certs = rustls_pemfile::certs(&mut BufReader::new(cert_pem.as_slice()))
                     .collect::<Result<Vec<_>, _>>()
                     .map_err(|error| TransportError::Tls(error.to_string()))?;
@@ -280,7 +285,7 @@ impl TlsConfig {
                     .with_client_auth_cert(certs, key)
                     .map_err(|error| TransportError::Tls(error.to_string()))?
             }
-            (false, _, _) | (true, None, None) => builder.with_no_client_auth(),
+            (false, None, None) => builder.with_no_client_auth(),
             _ => {
                 return Err(TransportError::Tls(
                     "client certificate and key must be set together".into(),
@@ -518,6 +523,38 @@ mod tests {
     }
 
     #[test]
+    fn java_tls_test_mode_ignores_client_material_and_decryption_strategy() {
+        let calls = Arc::new(Mutex::new(0));
+        let observed = calls.clone();
+        let strategy: Arc<dyn PrivateKeyDecryptionStrategy> =
+            Arc::new(move |_: &std::path::Path, _: bool, _: Option<&str>| {
+                *observed.lock().unwrap() += 1;
+                panic!("test mode must not decrypt client key material")
+            });
+        let properties = HashMap::from([
+            ("tls.test.mode.enable".into(), "true".into()),
+            ("tls.client.trustCertPath".into(), "missing-ca.pem".into()),
+            ("tls.client.certPath".into(), "missing-cert.pem".into()),
+            ("tls.client.keyPath".into(), "missing-key.pem".into()),
+        ]);
+        let config =
+            TlsConfig::from_java_properties_with_strategy(&properties, None, Some(strategy))
+                .unwrap();
+
+        assert!(config.ca_pem.is_none());
+        assert!(config.client_cert_pem.is_none());
+        assert!(config.client_key_pem.is_none());
+        assert_eq!(*calls.lock().unwrap(), 0);
+        assert!(config.connector().is_ok());
+        let config_with_unused_material = TlsConfig {
+            client_cert_pem: Some(b"not a certificate".to_vec()),
+            client_key_pem: Some(b"not a private key".to_vec()),
+            ..config
+        };
+        assert!(config_with_unused_material.connector().is_ok());
+    }
+
+    #[test]
     fn java_tls_transport_selection_matches_tls_enable_and_mode_defaults() {
         use super::TransportMode;
 
@@ -572,6 +609,7 @@ mod tests {
             },
         );
         let properties = std::collections::HashMap::from([
+            ("tls.test.mode.enable".into(), "false".into()),
             ("tls.client.keyPath".into(), "encrypted.key".into()),
             ("tls.client.keyPassword".into(), "secret".into()),
         ]);
