@@ -141,6 +141,7 @@ impl ClientInner {
                 self.config.write_buffer_low_water_mark,
             )),
             key.clone(),
+            self.config.pooled_byte_buffer_allocator_enabled,
         );
         let mut connections = self.connections.lock().unwrap();
         if self.closed.load(std::sync::atomic::Ordering::Acquire) {

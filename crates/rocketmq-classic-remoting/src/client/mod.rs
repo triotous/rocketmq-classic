@@ -24,9 +24,7 @@ use tokio::{
 };
 
 use crate::{
-    codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
-    command::RemotingCommand,
-    error::TransportError,
+    codec::frame::DEFAULT_MAX_FRAME_SIZE, command::RemotingCommand, error::TransportError,
 };
 
 pub use config::{ClientConfig, SocksProxyConfig};
@@ -87,6 +85,7 @@ struct ClientInner {
     processors: Mutex<HashMap<i32, ProcessorRegistration>>,
     default_processor: Mutex<Option<ProcessorRegistration>>,
     inbound: mpsc::Sender<processor::InboundRequest>,
+    public_executor: Arc<TokioRequestExecutor>,
     shutdown: tokio::sync::watch::Sender<bool>,
     shutdown_complete: tokio::sync::OnceCell<()>,
     closed: AtomicBool,
@@ -172,6 +171,41 @@ fn run_after_rpc_hooks(
 /// Routes a processor task to an application-owned executor. Returning `Err` rejects the task.
 pub trait RequestExecutor: Send + Sync + 'static {
     fn execute(&self, task: Box<dyn FnOnce() + Send + 'static>) -> Result<(), String>;
+}
+
+struct TokioExecutorState {
+    closed: AtomicBool,
+    admission: Mutex<()>,
+}
+
+impl TokioExecutorState {
+    fn execute(
+        &self,
+        sender: &mpsc::UnboundedSender<CallbackTask>,
+        task: CallbackTask,
+    ) -> Result<(), String> {
+        let _admission = self.admission.lock().unwrap();
+        if self.closed.load(Ordering::Acquire) {
+            return Err("client public executor is shut down".into());
+        }
+        sender.send(task).map_err(|error| error.to_string())
+    }
+
+    fn shutdown(&self) {
+        let _admission = self.admission.lock().unwrap();
+        self.closed.store(true, Ordering::Release);
+    }
+}
+
+struct TokioRequestExecutor {
+    sender: mpsc::UnboundedSender<CallbackTask>,
+    state: Arc<TokioExecutorState>,
+}
+
+impl RequestExecutor for TokioRequestExecutor {
+    fn execute(&self, task: CallbackTask) -> Result<(), String> {
+        self.state.execute(&self.sender, task)
+    }
 }
 
 pub trait RequestPipeline: Send + Sync + 'static {
@@ -467,8 +501,15 @@ impl RemotingClient {
             max_frame_size,
             async_admission: Arc::new(tokio::sync::Semaphore::new(config.async_semaphore_value)),
             oneway_admission: Arc::new(tokio::sync::Semaphore::new(config.oneway_semaphore_value)),
-            callback_sender,
+            callback_sender: callback_sender.clone(),
             callback_executor: Mutex::new(Some(default_callback_executor)),
+            public_executor: Arc::new(TokioRequestExecutor {
+                sender: callback_sender.clone(),
+                state: Arc::new(TokioExecutorState {
+                    closed: AtomicBool::new(false),
+                    admission: Mutex::new(()),
+                }),
+            }),
             config,
             outbound_queue_capacity: OUTBOUND_QUEUE_CAPACITY,
             rpc_hooks: Mutex::new(Vec::new()),
@@ -484,6 +525,7 @@ impl RemotingClient {
             Arc::downgrade(&inner),
             inbound_rx,
             inner.config.worker_threads,
+            inner.config.disable_netty_worker_group,
         );
         for task in processor_tasks {
             inner.spawn(task);
@@ -493,9 +535,7 @@ impl RemotingClient {
             channel_event_receiver,
             inner.shutdown.subscribe(),
         ));
-        let callback_workers = if inner.config.disable_callback_executor {
-            0
-        } else if inner.config.callback_executor_threads == 0 {
+        let callback_workers = if inner.config.callback_executor_threads == 0 {
             4
         } else {
             inner.config.callback_executor_threads
@@ -542,6 +582,13 @@ impl RemotingClient {
             shutdown_complete: tokio::sync::OnceCell::new(),
             closed: AtomicBool::new(false),
             tasks: Mutex::new(Vec::new()),
+            public_executor: Arc::new(TokioRequestExecutor {
+                sender: callback_sender.clone(),
+                state: Arc::new(TokioExecutorState {
+                    closed: AtomicBool::new(false),
+                    admission: Mutex::new(()),
+                }),
+            }),
             security: security.clone(),
             max_frame_size,
             config: ClientConfig {
@@ -566,6 +613,7 @@ impl RemotingClient {
             Arc::downgrade(&inner),
             inbound_rx,
             inner.config.worker_threads,
+            false,
         );
         for task in processor_tasks {
             inner.spawn(task);
@@ -1186,7 +1234,7 @@ impl RemotingClient {
         }
         let mut pending =
             pending::PendingGuard::new(Arc::downgrade(&self.inner), opaque, connection.generation);
-        let frame = frame::encode(&command, self.inner.max_frame_size)?;
+        let frame = connection.encode_command(&command, self.inner.max_frame_size)?;
         let remaining = deadline.saturating_duration_since(Instant::now());
         match time::timeout(remaining, connection.send(frame, deadline)).await {
             Ok(Ok(())) => {}
@@ -1332,7 +1380,7 @@ impl RemotingClient {
             else {
                 return;
             };
-            let Ok(frame) = frame::encode(&command, client.inner.max_frame_size) else {
+            let Ok(frame) = connection.encode_command(&command, client.inner.max_frame_size) else {
                 return;
             };
             let _ = connection.send(frame, deadline).await;
@@ -1401,6 +1449,7 @@ impl ClientInner {
 
     fn shutdown(&self) {
         self.closed.store(true, Ordering::Release);
+        self.public_executor.state.shutdown();
         let _ = self.shutdown.send(true);
     }
 
@@ -1544,9 +1593,12 @@ impl ClientInner {
                 ..RemotingCommand::default()
             };
             response.mark_response();
-            if let Ok(bytes) = frame::encode(&response, client.max_frame_size) {
-                let _ =
-                    connection.try_send(bytes, Instant::now() + std::time::Duration::from_secs(30));
+            if let Ok(bytes) = connection.encode_command(&response, client.max_frame_size) {
+                if let Err(error) =
+                    connection.try_send(bytes, Instant::now() + std::time::Duration::from_secs(30))
+                {
+                    client.connection_closed(generation, Some(error));
+                }
             }
         }));
     }
@@ -1932,6 +1984,81 @@ mod tests {
         assert!(client.inner.tasks.lock().unwrap().is_empty());
     }
 
+    #[test]
+    fn public_executor_rejects_submissions_after_client_shutdown() {
+        let (sender, mut receiver) = mpsc::unbounded_channel();
+        let state = TokioExecutorState {
+            closed: AtomicBool::new(false),
+            admission: Mutex::new(()),
+        };
+        state
+            .execute(&sender, Box::new(|| {}))
+            .expect("running executor accepts tasks");
+        assert!(receiver.try_recv().is_ok());
+        state.shutdown();
+        assert!(state.execute(&sender, Box::new(|| {})).is_err());
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn worker_group_toggle_controls_handler_dispatch_path() {
+        let config = ClientConfig {
+            disable_netty_worker_group: true,
+            ..ClientConfig::default()
+        };
+        let (inbound, receiver) = mpsc::channel(INBOUND_QUEUE_CAPACITY);
+        let (shutdown, _) = tokio::sync::watch::channel(false);
+        let (callback_sender, _callback_receiver) = mpsc::unbounded_channel();
+        let (channel_event_sender, _channel_event_receiver) =
+            mpsc::channel(CHANNEL_EVENT_QUEUE_CAPACITY);
+        let executor = Arc::new(TokioRequestExecutor {
+            sender: callback_sender.clone(),
+            state: Arc::new(TokioExecutorState {
+                closed: AtomicBool::new(false),
+                admission: Mutex::new(()),
+            }),
+        });
+        let inner = Arc::new(ClientInner {
+            connections: Mutex::new(HashMap::new()),
+            connecting: Mutex::new(HashMap::new()),
+            pending: Mutex::new(HashMap::new()),
+            opaque: AtomicI32::new(0),
+            generation: AtomicU64::new(1),
+            processors: Mutex::new(HashMap::new()),
+            default_processor: Mutex::new(None),
+            inbound,
+            public_executor: executor,
+            shutdown,
+            shutdown_complete: tokio::sync::OnceCell::new(),
+            closed: AtomicBool::new(false),
+            tasks: Mutex::new(Vec::new()),
+            security: TransportMode::Plain,
+            max_frame_size: DEFAULT_MAX_FRAME_SIZE,
+            config,
+            outbound_queue_capacity: OUTBOUND_QUEUE_CAPACITY,
+            async_admission: Arc::new(tokio::sync::Semaphore::new(8)),
+            oneway_admission: Arc::new(tokio::sync::Semaphore::new(8)),
+            callback_sender,
+            callback_executor: Mutex::new(None),
+            rpc_hooks: Mutex::new(Vec::new()),
+            channel_listener: Mutex::new(None),
+            channel_event_sender,
+            request_pipeline: Mutex::new(None),
+            nameservers: Mutex::new(Vec::new()),
+            available_nameservers: Mutex::new(HashSet::new()),
+            chosen_nameserver: Mutex::new(None),
+            nameserver_index: AtomicU64::new(0),
+        });
+        let tasks = processor::start(
+            Arc::downgrade(&inner),
+            receiver,
+            inner.config.worker_threads,
+            inner.config.disable_netty_worker_group,
+        );
+        assert!(tasks.is_empty());
+        inner.public_executor.state.shutdown();
+    }
+
     #[tokio::test]
     async fn stale_generation_close_cannot_evict_replacement() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -2053,6 +2180,148 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn pooled_allocator_reuses_frame_capacity_after_successful_write() {
+        let (client_io, mut peer_io) = tokio::io::duplex(4096);
+        let connection = connection::Connection::spawn(
+            Box::new(client_io),
+            30,
+            Weak::new(),
+            DEFAULT_MAX_FRAME_SIZE,
+            OUTBOUND_QUEUE_CAPACITY,
+            None,
+            "test:0".into(),
+            true,
+        );
+        let command = RemotingCommand {
+            body: Some(vec![7; 128]),
+            ..test_command()
+        };
+        let first = connection
+            .encode_command(&command, DEFAULT_MAX_FRAME_SIZE)
+            .unwrap();
+        let first_capacity = first.capacity();
+        connection
+            .send(first, Instant::now() + std::time::Duration::from_secs(2))
+            .await
+            .unwrap();
+        let mut length = [0; 4];
+        tokio::io::AsyncReadExt::read_exact(&mut peer_io, &mut length)
+            .await
+            .unwrap();
+        let remaining = u32::from_be_bytes(length) as usize;
+        let mut received = vec![0; remaining];
+        tokio::io::AsyncReadExt::read_exact(&mut peer_io, &mut received)
+            .await
+            .unwrap();
+        assert_eq!(connection.pooled_frame_count(), 1);
+        assert!(connection.pooled_frame_capacity() >= first_capacity);
+
+        let second = connection
+            .encode_command(&command, DEFAULT_MAX_FRAME_SIZE)
+            .unwrap();
+        assert!(second.capacity() >= first_capacity);
+        connection
+            .send(second, Instant::now() + std::time::Duration::from_secs(2))
+            .await
+            .unwrap();
+        tokio::io::AsyncReadExt::read_exact(&mut peer_io, &mut length)
+            .await
+            .unwrap();
+        let remaining = u32::from_be_bytes(length) as usize;
+        received.resize(remaining, 0);
+        tokio::io::AsyncReadExt::read_exact(&mut peer_io, &mut received)
+            .await
+            .unwrap();
+        connection.close();
+        connection.join().await;
+    }
+
+    #[tokio::test]
+    async fn pooled_allocator_keeps_at_most_four_buffers_per_connection() {
+        let (client_io, _peer_io) = tokio::io::duplex(64);
+        let connection = connection::Connection::spawn(
+            Box::new(client_io),
+            27,
+            Weak::new(),
+            DEFAULT_MAX_FRAME_SIZE,
+            OUTBOUND_QUEUE_CAPACITY,
+            None,
+            "test:0".into(),
+            true,
+        );
+        for _ in 0..8 {
+            connection.recycle_frame(Vec::with_capacity(128));
+        }
+        assert_eq!(connection.pooled_frame_count(), 4);
+        connection.close();
+        connection.join().await;
+    }
+
+    #[tokio::test]
+    async fn pooled_allocator_recycles_frames_when_queue_is_full_or_closed() {
+        let (client_io, peer_io) = tokio::io::duplex(1);
+        let peer_task = tokio::spawn(async move {
+            let _peer_io = peer_io;
+            std::future::pending::<()>().await;
+        });
+        let connection = connection::Connection::spawn(
+            Box::new(client_io),
+            29,
+            Weak::new(),
+            DEFAULT_MAX_FRAME_SIZE,
+            1,
+            None,
+            "test:0".into(),
+            true,
+        );
+        let deadline = Instant::now() + std::time::Duration::from_secs(5);
+        connection.try_send(vec![0; 128], deadline).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while connection.outbound_capacity() != 1 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        connection.try_send(vec![0; 128], deadline).unwrap();
+        let rejected = connection
+            .encode_command(&test_command(), DEFAULT_MAX_FRAME_SIZE)
+            .unwrap();
+        assert!(matches!(
+            connection.try_send(rejected, Instant::now()),
+            Err(TransportError::InboundOverloaded)
+        ));
+        assert!(connection.pooled_frame_count() > 0);
+        connection.close();
+        connection.join().await;
+        peer_task.abort();
+        assert!(connection.pooled_frame_count() > 0);
+
+        let (client_io, _peer_io) = tokio::io::duplex(1);
+        let closed_connection = connection::Connection::spawn(
+            Box::new(client_io),
+            28,
+            Weak::new(),
+            DEFAULT_MAX_FRAME_SIZE,
+            1,
+            None,
+            "test:0".into(),
+            true,
+        );
+        closed_connection.close();
+        closed_connection.join().await;
+        let rejected = closed_connection
+            .encode_command(&test_command(), DEFAULT_MAX_FRAME_SIZE)
+            .unwrap();
+        assert!(matches!(
+            closed_connection.try_send(rejected, Instant::now()),
+            Err(TransportError::Closed)
+        ));
+        assert_eq!(closed_connection.pooled_frame_count(), 1);
+        closed_connection.join().await;
+    }
+
+    #[tokio::test]
     async fn write_watermarks_follow_queued_bytes_with_hysteresis() {
         let (client_io, mut peer_io) = tokio::io::duplex(64);
         let connection = connection::Connection::spawn(
@@ -2063,6 +2332,7 @@ mod tests {
             OUTBOUND_QUEUE_CAPACITY,
             Some((8, 3)),
             "test:0".into(),
+            true,
         );
         let deadline = Instant::now() + std::time::Duration::from_secs(2);
         connection.try_send(vec![0; 8], deadline).unwrap();
@@ -2093,6 +2363,7 @@ mod tests {
             OUTBOUND_QUEUE_CAPACITY,
             None,
             "test:0".into(),
+            true,
         );
         let deadline = Instant::now() + std::time::Duration::from_millis(100);
         for _ in 0..super::OUTBOUND_QUEUE_CAPACITY {

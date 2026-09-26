@@ -23,16 +23,33 @@ pub(super) trait AsyncIo: AsyncRead + AsyncWrite + Unpin + Send {}
 impl<T: AsyncRead + AsyncWrite + Unpin + Send> AsyncIo for T {}
 
 struct OutboundFrame {
-    bytes: Vec<u8>,
+    bytes: Option<Vec<u8>>,
+    frame_pool: Arc<std::sync::Mutex<Vec<Vec<u8>>>>,
+    pooled: bool,
     deadline: Instant,
     cancelled: Option<tokio::sync::oneshot::Receiver<()>>,
-    written: tokio::sync::oneshot::Sender<Result<(), TransportError>>,
+    written: Option<tokio::sync::oneshot::Sender<Result<(), TransportError>>>,
+}
+
+impl Drop for OutboundFrame {
+    fn drop(&mut self) {
+        if self.pooled {
+            if let Some(mut bytes) = self.bytes.take() {
+                bytes.clear();
+                let mut pool = self.frame_pool.lock().unwrap();
+                if pool.len() < 4 {
+                    pool.push(bytes);
+                }
+            }
+        }
+    }
 }
 
 pub(crate) struct Connection {
     pub(crate) generation: u64,
     sender: mpsc::Sender<OutboundFrame>,
     address: String,
+    pooled_byte_buffer_allocator_enabled: bool,
     last_activity: std::sync::Mutex<std::time::Instant>,
     closed: Arc<AtomicBool>,
     task: tokio::sync::Mutex<Option<JoinHandle<()>>>,
@@ -40,9 +57,30 @@ pub(crate) struct Connection {
     queued_write_bytes: Arc<std::sync::atomic::AtomicUsize>,
     write_watermarks: Option<(usize, usize)>,
     writable: Arc<AtomicBool>,
+    frame_pool: Arc<std::sync::Mutex<Vec<Vec<u8>>>>,
+}
+
+struct FrameGuard<'a> {
+    connection: &'a Connection,
+    bytes: Option<Vec<u8>>,
+}
+
+impl FrameGuard<'_> {
+    fn take(&mut self) -> Vec<u8> {
+        self.bytes.take().expect("frame is present until queued")
+    }
+}
+
+impl Drop for FrameGuard<'_> {
+    fn drop(&mut self) {
+        if let Some(bytes) = self.bytes.take() {
+            self.connection.recycle_frame(bytes);
+        }
+    }
 }
 
 impl Connection {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn spawn(
         stream: BoxedStream,
         generation: u64,
@@ -51,14 +89,19 @@ impl Connection {
         outbound_queue_capacity: usize,
         write_watermarks: Option<(usize, usize)>,
         address: String,
+        pooled_byte_buffer_allocator_enabled: bool,
     ) -> Arc<Self> {
         let (sender, receiver) = mpsc::channel(outbound_queue_capacity);
         let closed = Arc::new(AtomicBool::new(false));
         let (shutdown, shutdown_rx) = tokio::sync::watch::channel(false);
+        let disable_worker_group = inner
+            .upgrade()
+            .is_some_and(|client| client.config.disable_netty_worker_group);
         let connection = Arc::new(Self {
             generation,
             sender,
             address: address.clone(),
+            pooled_byte_buffer_allocator_enabled,
             last_activity: std::sync::Mutex::new(std::time::Instant::now()),
             closed: closed.clone(),
             task: tokio::sync::Mutex::new(None),
@@ -66,6 +109,7 @@ impl Connection {
             queued_write_bytes: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             write_watermarks,
             writable: Arc::new(AtomicBool::new(true)),
+            frame_pool: Arc::new(std::sync::Mutex::new(Vec::new())),
         });
         let task = tokio::spawn(run_connection(
             stream,
@@ -80,6 +124,9 @@ impl Connection {
                 queued_write_bytes: connection.queued_write_bytes.clone(),
                 write_watermarks,
                 writable: connection.writable.clone(),
+                pooled_byte_buffer_allocator_enabled,
+                frame_pool: connection.frame_pool.clone(),
+                disable_worker_group,
             },
         ));
         connection
@@ -90,27 +137,73 @@ impl Connection {
         connection
     }
 
+    pub(crate) fn encode_command(
+        &self,
+        command: &crate::command::RemotingCommand,
+        max_frame_size: usize,
+    ) -> Result<Vec<u8>, TransportError> {
+        let mut bytes = self.take_frame_buffer();
+        if let Err(error) = frame::encode_into(command, max_frame_size, &mut bytes) {
+            self.recycle_frame(bytes);
+            return Err(TransportError::Codec(error));
+        }
+        Ok(bytes)
+    }
+
+    fn take_frame_buffer(&self) -> Vec<u8> {
+        if self.pooled_byte_buffer_allocator_enabled {
+            self.frame_pool.lock().unwrap().pop().unwrap_or_default()
+        } else {
+            Vec::new()
+        }
+    }
+
+    pub(crate) fn recycle_frame(&self, mut bytes: Vec<u8>) {
+        if self.pooled_byte_buffer_allocator_enabled {
+            bytes.clear();
+            let mut pool = self.frame_pool.lock().unwrap();
+            if pool.len() < 4 {
+                pool.push(bytes);
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn outbound_capacity(&self) -> usize {
+        self.sender.capacity()
+    }
+
+    #[cfg(test)]
+    pub(super) fn pooled_frame_count(&self) -> usize {
+        self.frame_pool.lock().unwrap().len()
+    }
+
+    #[cfg(test)]
+    pub(super) fn pooled_frame_capacity(&self) -> usize {
+        self.frame_pool
+            .lock()
+            .unwrap()
+            .iter()
+            .map(Vec::capacity)
+            .max()
+            .unwrap_or_default()
+    }
+
     pub(crate) async fn send(
         &self,
         bytes: Vec<u8>,
         deadline: Instant,
     ) -> Result<(), TransportError> {
+        let mut frame = FrameGuard {
+            connection: self,
+            bytes: Some(bytes),
+        };
         let (written, response) = tokio::sync::oneshot::channel();
-        let length = bytes.len();
+        let length = frame.bytes.as_ref().unwrap().len();
         self.reserve_write_bytes(length);
         let (cancel, cancelled) = tokio::sync::oneshot::channel();
         let mut cancel = Some(cancel);
-        let queued = time::timeout_at(
-            deadline,
-            self.sender.send(OutboundFrame {
-                bytes,
-                deadline,
-                cancelled: Some(cancelled),
-                written,
-            }),
-        )
-        .await;
-        match queued {
+        let permit = match time::timeout_at(deadline, self.sender.reserve()).await {
             Err(_) => {
                 self.release_write_bytes(length);
                 return Err(TransportError::Timeout);
@@ -119,8 +212,16 @@ impl Connection {
                 self.release_write_bytes(length);
                 return Err(TransportError::Closed);
             }
-            Ok(Ok(())) => {}
-        }
+            Ok(Ok(permit)) => permit,
+        };
+        permit.send(OutboundFrame {
+            bytes: Some(frame.take()),
+            frame_pool: self.frame_pool.clone(),
+            pooled: self.pooled_byte_buffer_allocator_enabled,
+            deadline,
+            cancelled: Some(cancelled),
+            written: Some(written),
+        });
         let result = time::timeout_at(deadline, response)
             .await
             .map_err(|_| {
@@ -136,20 +237,23 @@ impl Connection {
         let (written, _response) = tokio::sync::oneshot::channel();
         self.reserve_write_bytes(bytes.len());
         let length = bytes.len();
-        self.sender
-            .try_send(OutboundFrame {
-                bytes,
-                deadline,
-                cancelled: None,
-                written,
-            })
-            .map_err(|error| {
+        match self.sender.try_send(OutboundFrame {
+            bytes: Some(bytes),
+            frame_pool: self.frame_pool.clone(),
+            pooled: self.pooled_byte_buffer_allocator_enabled,
+            deadline,
+            cancelled: None,
+            written: Some(written),
+        }) {
+            Ok(()) => Ok(()),
+            Err(error) => {
                 self.release_write_bytes(length);
                 match error {
-                    mpsc::error::TrySendError::Full(_) => TransportError::InboundOverloaded,
-                    mpsc::error::TrySendError::Closed(_) => TransportError::Closed,
+                    mpsc::error::TrySendError::Full(_) => Err(TransportError::InboundOverloaded),
+                    mpsc::error::TrySendError::Closed(_) => Err(TransportError::Closed),
                 }
-            })
+            }
+        }
     }
 
     pub(crate) fn close(&self) {
@@ -230,6 +334,9 @@ struct ConnectionTask {
     queued_write_bytes: Arc<std::sync::atomic::AtomicUsize>,
     write_watermarks: Option<(usize, usize)>,
     writable: Arc<AtomicBool>,
+    pooled_byte_buffer_allocator_enabled: bool,
+    frame_pool: Arc<std::sync::Mutex<Vec<Vec<u8>>>>,
+    disable_worker_group: bool,
 }
 
 async fn run_connection(
@@ -247,6 +354,9 @@ async fn run_connection(
         queued_write_bytes,
         write_watermarks,
         writable,
+        pooled_byte_buffer_allocator_enabled,
+        frame_pool,
+        disable_worker_group,
     } = task;
     let (mut reader, mut writer) = tokio::io::split(stream);
     let mut input = BytesMut::with_capacity(8192);
@@ -256,12 +366,12 @@ async fn run_connection(
             biased;
             result = shutdown.changed() => if result.is_err() || *shutdown.borrow() { break None },
             frame = outbound.recv() => match frame {
-                Some(frame) => {
-                    let OutboundFrame { bytes, deadline, mut cancelled, written } = frame;
+                Some(mut frame) => {
+                    let bytes = frame.bytes.as_ref().expect("queued frame bytes");
                     let write_length = bytes.len();
                     let result = tokio::select! {
-                        result = time::timeout_at(deadline, writer.write_all(&bytes)) => result.map_err(|_| TransportError::Timeout).and_then(|result| result.map_err(|error| TransportError::Send(error.to_string()))),
-                        _ = async { match &mut cancelled { Some(cancelled) => { let _ = cancelled.await; }, None => std::future::pending().await } } => Err(TransportError::Closed),
+                        result = time::timeout_at(frame.deadline, writer.write_all(bytes)) => result.map_err(|_| TransportError::Timeout).and_then(|result| result.map_err(|error| TransportError::Send(error.to_string()))),
+                        _ = async { match &mut frame.cancelled { Some(cancelled) => { let _ = cancelled.await; }, None => std::future::pending().await } } => Err(TransportError::Closed),
                         result = shutdown.changed() => {
                             let _ = result;
                             Err(TransportError::Shutdown)
@@ -289,7 +399,19 @@ async fn run_connection(
                             writable.store(true, std::sync::atomic::Ordering::Release);
                         }
                     }
-                    let _ = written.send(result.clone());
+                    if let Some(bytes) = frame.bytes.take() {
+                        if pooled_byte_buffer_allocator_enabled {
+                            let mut bytes = bytes;
+                            bytes.clear();
+                            let mut pool = frame_pool.lock().unwrap();
+                            if pool.len() < 4 {
+                                pool.push(bytes);
+                            }
+                        }
+                    }
+                    if let Some(written) = frame.written.take() {
+                        let _ = written.send(result.clone());
+                    }
                     if result.is_err() {
                         break if result == Err(TransportError::Shutdown) { None } else { result.err() }
                     }
@@ -321,14 +443,19 @@ async fn run_connection(
                                         inner.complete_response(generation, command);
                                     }
                                 } else if let Some(inner) = inner.upgrade() {
-                                    let oneway = command.is_oneway();
-                                    let opaque = command.opaque;
-                                    if inner.inbound.try_send(super::processor::InboundRequest {
+                                    let request = super::processor::InboundRequest {
                                         generation,
                                         remote_addr: address.clone(),
                                         command,
-                                    }).is_err() && !oneway {
-                                        inner.send_overload_response(generation, opaque);
+                                    };
+                                    if disable_worker_group {
+                                        super::processor::process_one(&Arc::downgrade(&inner), request);
+                                    } else {
+                                        let oneway = request.command.is_oneway();
+                                        let opaque = request.command.opaque;
+                                        if inner.inbound.try_send(request).is_err() && !oneway {
+                                            inner.send_overload_response(generation, opaque);
+                                        }
                                     }
                                 } else {
                                     break 'connection None;

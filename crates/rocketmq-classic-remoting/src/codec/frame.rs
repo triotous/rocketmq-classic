@@ -13,6 +13,16 @@ pub const DEFAULT_MAX_FRAME_SIZE: usize = 16 * 1024 * 1024;
 // ponytail: Java's FastCodesHeader optimization is covered by equivalent golden frames;
 // keep the common encoder exact until Phase 18 measurements justify specialization.
 pub fn encode(command: &RemotingCommand, max_frame_size: usize) -> Result<Vec<u8>, CodecError> {
+    let mut frame = Vec::new();
+    encode_into(command, max_frame_size, &mut frame)?;
+    Ok(frame)
+}
+
+pub fn encode_into(
+    command: &RemotingCommand,
+    max_frame_size: usize,
+    frame: &mut Vec<u8>,
+) -> Result<(), CodecError> {
     let max_header_length = max_frame_size.saturating_sub(8).min(0x00ff_ffff);
     let header = match command.serialization {
         SerializeType::Json => json_header::encode(command, max_header_length)?,
@@ -39,12 +49,13 @@ pub fn encode(command: &RemotingCommand, max_frame_size: usize) -> Result<Vec<u8
     let declared =
         u32::try_from(declared_length).map_err(|_| CodecError::FieldTooWide("frame length"))?;
     let marked_header = (u32::from(command.serialization.code()) << 24) | header.len() as u32;
-    let mut frame = Vec::with_capacity(total_length);
+    frame.clear();
+    frame.reserve(total_length);
     frame.extend_from_slice(&declared.to_be_bytes());
     frame.extend_from_slice(&marked_header.to_be_bytes());
     frame.extend_from_slice(&header);
     frame.extend_from_slice(body);
-    Ok(frame)
+    Ok(())
 }
 
 pub fn decode_next(

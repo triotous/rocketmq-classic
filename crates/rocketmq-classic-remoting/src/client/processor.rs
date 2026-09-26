@@ -2,7 +2,7 @@ use std::sync::{Arc, Weak};
 
 use tokio::sync::mpsc;
 
-use crate::{codec::frame, command::RemotingCommand, error::TransportError};
+use crate::command::RemotingCommand;
 
 use super::{ClientInner, INBOUND_QUEUE_CAPACITY, ProcessorRegistration};
 
@@ -34,22 +34,30 @@ pub(super) fn start(
     inner: Weak<ClientInner>,
     mut receiver: mpsc::Receiver<InboundRequest>,
     worker_count: usize,
+    disable_worker_group: bool,
 ) -> Vec<tokio::task::JoinHandle<()>> {
     let Some(client) = inner.upgrade() else {
         return Vec::new();
     };
+    let shutdown_sender = client.shutdown.clone();
+    if disable_worker_group {
+        return Vec::new();
+    }
     let (work, worker_rx) = mpsc::channel(INBOUND_QUEUE_CAPACITY);
     let worker_rx = Arc::new(tokio::sync::Mutex::new(worker_rx));
     let mut tasks = Vec::with_capacity(worker_count + 1);
-    let mut shutdown = client.shutdown.subscribe();
+    let mut shutdown = shutdown_sender.subscribe();
     tasks.push(tokio::spawn(async move {
         loop {
             tokio::select! {
                 request = receiver.recv() => match request {
-                    Some(request) => tokio::select! {
-                        result = work.send(request) => if result.is_err() { return },
-                        result = shutdown.changed() => if result.is_err() || *shutdown.borrow() { return },
-                    },
+                    Some(request) => {
+                        let permit = tokio::select! {
+                            result = work.reserve() => match result { Ok(permit) => permit, Err(_) => return },
+                            result = shutdown.changed() => if result.is_err() || *shutdown.borrow() { return } else { continue },
+                        };
+                        permit.send(request);
+                    }
                     None => return,
                 },
                 result = shutdown.changed() => if result.is_err() || *shutdown.borrow() { return },
@@ -58,7 +66,7 @@ pub(super) fn start(
     }));
     for _ in 0..worker_count {
         let inner = inner.clone();
-        let mut shutdown = client.shutdown.subscribe();
+        let mut shutdown = shutdown_sender.subscribe();
         let receiver = worker_rx.clone();
         tasks.push(tokio::spawn(async move {
             loop {
@@ -72,7 +80,7 @@ pub(super) fn start(
                 };
                 drop(guard);
                 match request {
-                    Some(request) => process_one(&inner, request).await,
+                    Some(request) => process_one(&inner, request),
                     None => return,
                 }
             }
@@ -81,7 +89,7 @@ pub(super) fn start(
     tasks
 }
 
-async fn process_one(inner: &Weak<ClientInner>, request: InboundRequest) {
+pub(super) fn process_one(inner: &Weak<ClientInner>, request: InboundRequest) {
     let Some(client) = inner.upgrade() else {
         return;
     };
@@ -115,37 +123,36 @@ async fn process_one(inner: &Weak<ClientInner>, request: InboundRequest) {
         return;
     }
 
-    let executor = registration.executor.clone();
+    let executor = registration
+        .executor
+        .clone()
+        .unwrap_or_else(|| client.public_executor.clone());
     let request_for_rejection = request.clone();
     let task_inner = inner.clone();
-    let task: Box<dyn FnOnce() + Send + 'static> =
-        Box::new(move || process_registered(&task_inner, request, registration));
-    match executor {
-        Some(executor) => {
-            let task = Arc::new(std::sync::Mutex::new(Some(task)));
-            let task_for_executor = task.clone();
-            let dispatched: Box<dyn FnOnce() + Send + 'static> = Box::new(move || {
-                if let Some(task) = task_for_executor.lock().unwrap().take() {
-                    task();
-                }
-            });
-            let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                executor.execute(dispatched)
-            }))
-            .map_or(true, |result| result.is_err());
-            if rejected && task.lock().unwrap().take().is_some() {
-                send_response(
-                    inner,
-                    request_for_rejection,
-                    error_response(
-                        response::SYSTEM_BUSY,
-                        "[OVERLOAD]system busy, start flow control for a while",
-                    ),
-                );
+    let task: Box<dyn FnOnce() + Send + 'static> = Box::new(move || {
+        process_registered(&task_inner, request, registration);
+    });
+    {
+        let task = Arc::new(std::sync::Mutex::new(Some(task)));
+        let task_for_executor = task.clone();
+        let dispatched: Box<dyn FnOnce() + Send + 'static> = Box::new(move || {
+            if let Some(task) = task_for_executor.lock().unwrap().take() {
+                task();
             }
-        }
-        None => {
-            let _ = tokio::task::spawn_blocking(task).await;
+        });
+        let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            executor.execute(dispatched)
+        }))
+        .map_or(true, |result| result.is_err());
+        if rejected && task.lock().unwrap().take().is_some() {
+            send_response(
+                inner,
+                request_for_rejection,
+                error_response(
+                    response::SYSTEM_BUSY,
+                    "[OVERLOAD]system busy, start flow control for a while",
+                ),
+            );
         }
     }
 }
@@ -298,7 +305,7 @@ fn send_response(
         .find(|connection| connection.generation == request.generation)
         .cloned();
     if let Some(connection) = connection {
-        match frame::encode(&response, client.max_frame_size) {
+        match connection.encode_command(&response, client.max_frame_size) {
             Ok(encoded) => {
                 if let Err(error) = connection.try_send(
                     encoded,
@@ -307,9 +314,7 @@ fn send_response(
                     client.connection_closed(request.generation, Some(error));
                 }
             }
-            Err(error) => {
-                client.connection_closed(request.generation, Some(TransportError::Codec(error)))
-            }
+            Err(error) => client.connection_closed(request.generation, Some(error)),
         }
     }
 }

@@ -767,6 +767,45 @@ async fn p3_v03_inbound_dispatch_and_reordered_parallel_responses() {
 }
 
 #[tokio::test]
+async fn p3_disabled_worker_group_dispatches_inbound_request_on_connection_path() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let outbound = read_command(&mut stream).await;
+        let mut response = command(outbound.code);
+        response.opaque = outbound.opaque;
+        response.mark_response();
+        write_command(&mut stream, &response).await;
+        let mut request = command(900_005);
+        request.opaque = 45;
+        write_command(&mut stream, &request).await;
+        read_command(&mut stream).await
+    });
+    let client = RemotingClient::with_config(ClientConfig {
+        disable_netty_worker_group: true,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    client.register_processor(
+        900_005,
+        Arc::new(|_: RemotingCommand| Ok(Some(command(905)))),
+    );
+    client
+        .invoke(
+            &address.to_string(),
+            command(1),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+    let response = peer.await.unwrap();
+    assert_eq!(response.code, 905);
+    assert_eq!(response.opaque, 45);
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn p3_inbound_oneway_runs_processor_but_never_writes_response() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -1371,6 +1410,7 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
     assert!(defaults.close_socket_if_timeout);
     assert!(defaults.scan_available_nameserver);
     assert!(defaults.enable_reconnect_for_go_away);
+    assert!(!defaults.disable_netty_worker_group);
     assert_eq!(defaults.max_reconnect_interval_time_seconds, 60);
     for value in [i64::MIN, -1, 0, i64::MAX] {
         assert!(
@@ -1442,7 +1482,7 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
             ..defaults.clone()
         }
         .validate()
-        .is_err()
+        .is_ok()
     );
     assert!(
         ClientConfig {
@@ -3111,7 +3151,11 @@ async fn p3_processor_specific_and_default_executors_route_or_reject_tasks() {
         let two = read_command(&mut stream).await;
         [one, two]
     });
-    let client = RemotingClient::new(TransportMode::Plain);
+    let client = RemotingClient::with_config(ClientConfig {
+        callback_executor_threads: 1,
+        ..ClientConfig::default()
+    })
+    .unwrap();
     let (processor_tx, processor_rx) = tokio::sync::oneshot::channel();
     let processor_tx = Arc::new(std::sync::Mutex::new(Some(processor_tx)));
     let executions = Arc::new(AtomicUsize::new(0));

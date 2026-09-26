@@ -47,6 +47,7 @@ pub struct ClientConfig {
     pub write_buffer_high_water_mark: usize,
     pub write_buffer_low_water_mark: usize,
     pub pooled_byte_buffer_allocator_enabled: bool,
+    pub disable_netty_worker_group: bool,
     pub max_idle_time: std::time::Duration,
     pub close_socket_if_timeout: bool,
     pub scan_available_nameserver: bool,
@@ -74,6 +75,7 @@ impl Default for ClientConfig {
             write_buffer_high_water_mark: 0,
             write_buffer_low_water_mark: 0,
             pooled_byte_buffer_allocator_enabled: false,
+            disable_netty_worker_group: false,
             max_idle_time: std::time::Duration::from_secs(120),
             close_socket_if_timeout: true,
             scan_available_nameserver: true,
@@ -100,11 +102,6 @@ impl ClientConfig {
         if self.write_buffer_low_water_mark > self.write_buffer_high_water_mark {
             return Err(TransportError::InvalidConfiguration(
                 "write buffer low/high water marks must both be zero or satisfy low <= high".into(),
-            ));
-        }
-        if self.pooled_byte_buffer_allocator_enabled {
-            return Err(TransportError::InvalidConfiguration(
-                "pooled byte buffer allocation is not supported by this transport".into(),
             ));
         }
         if let Some(proxy) = &self.socks_proxy {
