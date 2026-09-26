@@ -51,8 +51,8 @@ pub struct ClientConfig {
     pub close_socket_if_timeout: bool,
     pub scan_available_nameserver: bool,
     pub enable_reconnect_for_go_away: bool,
-    /// Java `maxReconnectIntervalTimeSeconds`; retained but unused by the pinned client.
-    pub max_reconnect_interval_time_seconds: u64,
+    /// Java `long maxReconnectIntervalTimeSeconds`; retained but unused by the pinned client.
+    pub max_reconnect_interval_time_seconds: i64,
     pub socks_proxy: Option<SocksProxyConfig>,
 }
 
