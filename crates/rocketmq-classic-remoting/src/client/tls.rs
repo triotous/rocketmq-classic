@@ -384,6 +384,16 @@ fn read_java_properties(path: &Path) -> Result<HashMap<String, String>, Transpor
     Ok(properties)
 }
 
+fn read_java_unicode_escape(chars: &mut impl Iterator<Item = char>) -> Result<u32, TransportError> {
+    let digits = chars.take(4).collect::<String>();
+    if digits.len() != 4 {
+        return Err(TransportError::Tls(
+            "invalid Unicode escape in TLS properties".into(),
+        ));
+    }
+    u32::from_str_radix(&digits, 16).map_err(|error| TransportError::Tls(error.to_string()))
+}
+
 fn unescape_java_property(value: &str) -> Result<String, TransportError> {
     let mut result = String::with_capacity(value.len());
     let mut chars = value.chars();
@@ -398,15 +408,24 @@ fn unescape_java_property(value: &str) -> Result<String, TransportError> {
             Some('r') => result.push('\r'),
             Some('f') => result.push('\u{000c}'),
             Some('u') => {
-                let digits = chars.by_ref().take(4).collect::<String>();
-                if digits.len() != 4 {
-                    return Err(TransportError::Tls(
-                        "invalid Unicode escape in TLS properties".into(),
-                    ));
-                }
-                let code = u32::from_str_radix(&digits, 16)
-                    .map_err(|error| TransportError::Tls(error.to_string()))?;
-                result.push(char::from_u32(code).ok_or_else(|| {
+                let code = read_java_unicode_escape(&mut chars)?;
+                let character = if (0xD800..=0xDBFF).contains(&code) {
+                    if chars.next() != Some('\\') || chars.next() != Some('u') {
+                        return Err(TransportError::Tls(
+                            "high surrogate must be followed by a low surrogate escape".into(),
+                        ));
+                    }
+                    let low = read_java_unicode_escape(&mut chars)?;
+                    if !(0xDC00..=0xDFFF).contains(&low) {
+                        return Err(TransportError::Tls(
+                            "high surrogate must be followed by a low surrogate escape".into(),
+                        ));
+                    }
+                    0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00)
+                } else {
+                    code
+                };
+                result.push(char::from_u32(character).ok_or_else(|| {
                     TransportError::Tls("invalid Unicode scalar in TLS properties".into())
                 })?);
             }
@@ -552,6 +571,18 @@ mod tests {
             ..config
         };
         assert!(config_with_unused_material.connector().is_ok());
+    }
+
+    #[test]
+    fn java_tls_properties_decode_surrogate_pair_unicode_escapes() {
+        let directory = test_dir();
+        let properties_file = directory.join("tls.properties");
+        fs::write(&properties_file, r"tls.client.keyPassword=\uD83D\uDE80").unwrap();
+        let config =
+            TlsConfig::from_java_properties(&HashMap::new(), Some(&properties_file)).unwrap();
+
+        assert_eq!(config.key_password.as_deref(), Some("🚀"));
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
