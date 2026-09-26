@@ -990,6 +990,35 @@ async fn p3_oneway_returns_after_scheduling_before_peer_receives_frame() {
 }
 
 #[tokio::test]
+async fn p3_oneway_starts_connection_acquisition_at_call_time() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let (accepted_tx, accepted_rx) = tokio::sync::oneshot::channel();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let _ = accepted_tx.send(());
+        read_command(&mut stream).await
+    });
+    let client = RemotingClient::new(TransportMode::Plain);
+    let returned = client.invoke_oneway(
+        &address.to_string(),
+        command(14),
+        Instant::now() + Duration::from_secs(2),
+    );
+    tokio::time::timeout(Duration::from_secs(1), accepted_rx)
+        .await
+        .expect("connection acquisition should be scheduled before method return")
+        .unwrap();
+    drop(returned);
+    let received = tokio::time::timeout(Duration::from_secs(1), peer)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(received.is_oneway());
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn p3_outbound_rpc_hook_runs_before_oneway_admission_wait() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();

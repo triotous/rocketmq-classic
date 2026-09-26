@@ -1193,9 +1193,10 @@ impl RemotingClient {
         }
     }
 
-    /// Starts a managed one-way operation at call time and returns a ready result future without
-    /// waiting for admission or socket write. Completion does not imply Broker receipt or storage;
-    /// post-return transport failures are intentionally not observable.
+    /// Starts connection establishment at call time, then schedules a managed one-way operation
+    /// and returns a ready result future without waiting for connection completion, admission, or
+    /// socket write. Tokio may not poll the connection task before this method returns. Completion
+    /// does not imply Broker receipt or storage; post-return transport failures are not observable.
     pub fn invoke_oneway(
         &self,
         addr: &str,
@@ -1210,8 +1211,19 @@ impl RemotingClient {
         }
         let client = self.clone();
         let addr = addr.to_owned();
+        let (connection_tx, connection_rx) = tokio::sync::oneshot::channel();
+        let connection_client = client.clone();
+        let connection_addr = addr.clone();
+        let connection_task = tokio::spawn(async move {
+            let result = connection_client
+                .inner
+                .connection(&connection_addr, deadline)
+                .await;
+            let _ = connection_tx.send(result);
+        });
+        self.inner.spawn(connection_task);
         let task = tokio::spawn(async move {
-            let Ok(connection) = client.inner.connection(&addr, deadline).await else {
+            let Ok(Ok(connection)) = connection_rx.await else {
                 return;
             };
             for hook in client.inner.rpc_hooks.lock().unwrap().clone() {
