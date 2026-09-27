@@ -137,33 +137,49 @@ impl ClientConfig {
     pub(super) fn proxy_for(
         routes: &HashMap<String, SocksProxyConfig>,
         host: &str,
-    ) -> Option<SocksProxyConfig> {
-        routes.iter().find_map(|(cidr, proxy)| {
-            if cidr == "0.0.0.0/0" || ipv4_in_cidr(host, cidr) {
-                Some(proxy.clone())
-            } else {
-                None
+    ) -> Result<Option<SocksProxyConfig>, TransportError> {
+        for (cidr, proxy) in routes {
+            if cidr == "0.0.0.0/0" || ipv4_in_cidr(host, cidr)? {
+                return Ok(Some(proxy.clone()));
             }
-        })
+        }
+        Ok(None)
     }
 }
 
-fn ipv4_in_cidr(address: &str, cidr: &str) -> bool {
-    let Some(address) = address.parse::<std::net::Ipv4Addr>().ok() else {
-        return false;
-    };
-    let Some((network, prefix)) = cidr.split_once('/') else {
-        return false;
-    };
-    let (Ok(network), Ok(prefix)) = (network.parse::<std::net::Ipv4Addr>(), prefix.parse::<u32>())
-    else {
-        return false;
-    };
-    if prefix > 32 {
-        return false;
+fn ipv4_in_cidr(address: &str, cidr: &str) -> Result<bool, TransportError> {
+    let address = java_ip_to_int(address)?;
+    let mut parts = cidr.split('/');
+    let network = parts.next().unwrap_or_default();
+    let prefix = parts.next().ok_or_else(|| {
+        TransportError::InvalidConfiguration(format!("invalid SOCKS proxy CIDR: {cidr}"))
+    })?;
+    let network = java_ip_to_int(network)?;
+    let prefix = prefix.parse::<i32>().map_err(|error| {
+        TransportError::InvalidConfiguration(format!("invalid SOCKS proxy CIDR {cidr}: {error}"))
+    })?;
+    // Java int shifts mask the shift distance to five bits, including /0 and out-of-range prefixes.
+    let mask = (-1_i32).wrapping_shl(32_i32.wrapping_sub(prefix) as u32);
+    Ok((address & mask) == (network & mask))
+}
+
+fn java_ip_to_int(ip: &str) -> Result<i32, TransportError> {
+    let octets = ip.split('.').collect::<Vec<_>>();
+    if octets.len() != 4 {
+        return Err(TransportError::InvalidConfiguration(format!(
+            "invalid IPv4 address in SOCKS proxy CIDR: {ip}"
+        )));
     }
-    let mask = u32::MAX.wrapping_shl((32 - prefix) % 32);
-    u32::from(address) & mask == u32::from(network) & mask
+    let mut address = 0_i32;
+    for (index, octet) in octets.iter().enumerate() {
+        let value = octet.parse::<i32>().map_err(|error| {
+            TransportError::InvalidConfiguration(format!(
+                "invalid IPv4 address in SOCKS proxy CIDR {ip}: {error}"
+            ))
+        })?;
+        address |= value.wrapping_shl((24 - index * 8) as u32);
+    }
+    Ok(address)
 }
 
 #[cfg(test)]
@@ -194,13 +210,14 @@ mod tests {
     }
 
     #[test]
-    fn socks_proxy_routes_match_ipv4_cidr_and_java_default_route() {
+    fn socks_proxy_routes_match_java_ipv4_cidr_and_error_behavior() {
         let private_route = std::collections::HashMap::from([(
             "10.20.0.0/16".into(),
             SocksProxyConfig::new("private-proxy:1080"),
         )]);
         assert_eq!(
             ClientConfig::proxy_for(&private_route, "10.20.4.5")
+                .unwrap()
                 .unwrap()
                 .address,
             "private-proxy:1080"
@@ -212,10 +229,55 @@ mod tests {
         assert_eq!(
             ClientConfig::proxy_for(&default_route, "192.0.2.5")
                 .unwrap()
+                .unwrap()
                 .address,
             "default-proxy:1080"
         );
-        assert!(ClientConfig::proxy_for(&default_route, "broker.example").is_some());
-        assert!(ClientConfig::proxy_for(&default_route, "2001:db8::1").is_some());
+        assert!(
+            ClientConfig::proxy_for(&default_route, "broker.example")
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            ClientConfig::proxy_for(&default_route, "2001:db8::1")
+                .unwrap()
+                .is_some()
+        );
+
+        let zero_prefix = std::collections::HashMap::from([(
+            "10.20.0.0/0".into(),
+            SocksProxyConfig::new("zero-prefix-proxy:1080"),
+        )]);
+        assert!(
+            ClientConfig::proxy_for(&zero_prefix, "10.20.4.5")
+                .unwrap()
+                .is_none()
+        );
+        assert!(ClientConfig::proxy_for(&private_route, "broker.example").is_err());
+        let invalid_cidr = std::collections::HashMap::from([(
+            "10.20.0.0/not-a-prefix".into(),
+            SocksProxyConfig::new("proxy:1080"),
+        )]);
+        assert!(ClientConfig::proxy_for(&invalid_cidr, "10.20.4.5").is_err());
+
+        // Java ipToInt parses signed integers and Java int shifts mask shift counts to 0..31.
+        let java_shifted_prefix = std::collections::HashMap::from([(
+            "10.20.0.0/33".into(),
+            SocksProxyConfig::new("shifted-prefix-proxy:1080"),
+        )]);
+        assert!(
+            ClientConfig::proxy_for(&java_shifted_prefix, "10.20.4.5")
+                .unwrap()
+                .is_some()
+        );
+        let java_integer_octets = std::collections::HashMap::from([(
+            "266.20.0.0/16".into(),
+            SocksProxyConfig::new("integer-octet-proxy:1080"),
+        )]);
+        assert!(
+            ClientConfig::proxy_for(&java_integer_octets, "10.20.4.5")
+                .unwrap()
+                .is_some()
+        );
     }
 }
