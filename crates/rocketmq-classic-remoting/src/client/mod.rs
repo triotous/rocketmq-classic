@@ -2866,10 +2866,26 @@ mod tests {
             "test:0".into(),
             true,
         );
-        let deadline = Instant::now() + std::time::Duration::from_secs(2);
-        connection.try_send(vec![0; 8], deadline).unwrap();
+        assert!(connection.is_writable());
+        connection.reserve_write_bytes(8);
+        assert!(
+            connection.is_writable(),
+            "Java stays writable at the high mark"
+        );
+        connection.reserve_write_bytes(1);
         assert!(!connection.is_writable());
-        let mut buffer = [0; 8];
+        connection.release_write_bytes(6);
+        assert!(
+            !connection.is_writable(),
+            "Java stays unwritable at the low mark"
+        );
+        connection.release_write_bytes(1);
+        assert!(connection.is_writable());
+
+        let deadline = Instant::now() + std::time::Duration::from_secs(2);
+        connection.try_send(vec![0; 9], deadline).unwrap();
+        assert!(!connection.is_writable());
+        let mut buffer = [0; 9];
         tokio::io::AsyncReadExt::read_exact(&mut peer_io, &mut buffer)
             .await
             .unwrap();

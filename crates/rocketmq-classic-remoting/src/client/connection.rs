@@ -286,13 +286,13 @@ impl Connection {
         self.writable.load(std::sync::atomic::Ordering::Acquire)
     }
 
-    fn reserve_write_bytes(&self, length: usize) {
+    pub(super) fn reserve_write_bytes(&self, length: usize) {
         let queued = self
             .queued_write_bytes
             .fetch_add(length, std::sync::atomic::Ordering::AcqRel)
             .saturating_add(length);
         if let Some((high, _)) = self.write_watermarks {
-            if queued >= high {
+            if queued > high {
                 self.writable
                     .store(false, std::sync::atomic::Ordering::Release);
             }
@@ -305,7 +305,7 @@ impl Connection {
             .fetch_sub(length, std::sync::atomic::Ordering::AcqRel)
             .saturating_sub(length);
         if let Some((_, low)) = self.write_watermarks {
-            if queued <= low {
+            if queued < low {
                 self.writable
                     .store(true, std::sync::atomic::Ordering::Release);
             }
@@ -408,7 +408,7 @@ async fn run_connection(
                         .fetch_sub(write_length, std::sync::atomic::Ordering::AcqRel)
                         .saturating_sub(write_length);
                     if let Some((_, low)) = write_watermarks {
-                        if queued <= low {
+                        if queued < low {
                             writable.store(true, std::sync::atomic::Ordering::Release);
                         }
                     }

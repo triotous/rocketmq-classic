@@ -105,12 +105,23 @@ impl ClientConfig {
                     .into(),
             ));
         }
-        if self.write_buffer_low_water_mark > self.write_buffer_high_water_mark {
+        if self.write_buffer_low_water_mark > 0
+            && self.write_buffer_high_water_mark > 0
+            && self.write_buffer_low_water_mark > self.write_buffer_high_water_mark
+        {
             return Err(TransportError::InvalidConfiguration(
-                "write buffer low/high water marks must both be zero or satisfy low <= high".into(),
+                "write buffer low water mark must not exceed high water mark when both are enabled"
+                    .into(),
             ));
         }
         Ok(())
+    }
+
+    pub(super) fn write_buffer_watermarks(&self) -> Option<(usize, usize)> {
+        (self.write_buffer_low_water_mark > 0 && self.write_buffer_high_water_mark > 0).then_some((
+            self.write_buffer_high_water_mark,
+            self.write_buffer_low_water_mark,
+        ))
     }
 
     /// Java-compatible getter/setter behavior: retain JSON text until client construction.
@@ -183,6 +194,40 @@ fn java_ip_to_int(ip: &str) -> Result<i32, TransportError> {
 #[cfg(test)]
 mod tests {
     use super::{ClientConfig, SocksProxyConfig};
+
+    #[test]
+    fn write_buffer_watermarks_match_java_enablement() {
+        let defaults = ClientConfig::default();
+        assert_eq!(defaults.write_buffer_watermarks(), None);
+
+        let low_only = ClientConfig {
+            write_buffer_low_water_mark: 10,
+            ..defaults.clone()
+        };
+        assert!(low_only.validate().is_ok());
+        assert_eq!(low_only.write_buffer_watermarks(), None);
+
+        let high_only = ClientConfig {
+            write_buffer_high_water_mark: 128,
+            ..defaults.clone()
+        };
+        assert!(high_only.validate().is_ok());
+        assert_eq!(high_only.write_buffer_watermarks(), None);
+
+        let enabled = ClientConfig {
+            write_buffer_high_water_mark: 128,
+            write_buffer_low_water_mark: 32,
+            ..defaults.clone()
+        };
+        assert_eq!(enabled.write_buffer_watermarks(), Some((128, 32)));
+
+        let invalid = ClientConfig {
+            write_buffer_high_water_mark: 32,
+            write_buffer_low_water_mark: 128,
+            ..defaults
+        };
+        assert!(invalid.validate().is_err());
+    }
 
     #[test]
     fn java_socks_proxy_json_round_trips_java_field_names() {
