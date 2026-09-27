@@ -1478,11 +1478,11 @@ impl ClientInner {
         if self.closed.load(Ordering::Acquire) {
             return Err(TransportError::Shutdown);
         }
-        if let Ok(permit) = semaphore.clone().try_acquire_owned() {
-            return Ok(permit);
-        }
         if Instant::now() >= deadline {
             return Err(TransportError::TooManyRequests);
+        }
+        if let Ok(permit) = semaphore.clone().try_acquire_owned() {
+            return Ok(permit);
         }
         let mut shutdown = self.shutdown.subscribe();
         tokio::select! {
@@ -2029,10 +2029,21 @@ mod tests {
             TransportError::Timeout
         );
         let available = Arc::new(tokio::sync::Semaphore::new(1));
+        assert_eq!(
+            client
+                .inner
+                .acquire_admission(available.clone(), Instant::now())
+                .await
+                .unwrap_err(),
+            TransportError::TooManyRequests
+        );
         assert!(
             client
                 .inner
-                .acquire_admission(available, Instant::now())
+                .acquire_admission(
+                    available,
+                    Instant::now() + std::time::Duration::from_millis(10),
+                )
                 .await
                 .is_ok()
         );

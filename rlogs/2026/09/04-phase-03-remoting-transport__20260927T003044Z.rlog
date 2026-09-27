@@ -23,7 +23,7 @@
 
 ## Append-only follow-up — admission saturation category
 - Compared `NettyRemotingAbstract.invoke0` and `invokeOnewayImpl`: when no semaphore permit is available, a non-positive timeout produces `RemotingTooMuchRequestException`; waiting with a positive timeout and expiring produces `RemotingTimeoutException`.
-- `ClientInner::acquire_admission` previously classified both as `Timeout`. It now attempts immediate permit acquisition first, returns `TooManyRequests` for no-permit at an expired/zero deadline, preserves `Timeout` after positive-budget waiting, and still permits immediately available capacity with an expired deadline (matching Java's `tryAcquire(0)` outcome at the admission boundary).
+- `ClientInner::acquire_admission` previously classified both as `Timeout`. It now attempts immediate permit acquisition first, returns `TooManyRequests` for no-permit at an expired/zero deadline, preserves `Timeout` after positive-budget waiting, and, if the deadline is already non-positive, does not consume even an available permit (matching Java's failed `tryAcquire(0)` outcome).
 - Added client unit `admission_matches_java_zero_timeout_and_wait_timeout_categories`; updated async saturation callback test. Targeted tests pass. Full workspace verification and scoped commit pending.
 
 ## Append-only follow-up — connection failure category
