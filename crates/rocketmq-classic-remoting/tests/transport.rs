@@ -1899,6 +1899,18 @@ impl ChannelEventListener for TestEvents {
     fn on_connect(&self, _: &str) {
         self.0.lock().unwrap().push("connect");
     }
+
+    fn on_exception(&self, _: &str) {
+        self.0.lock().unwrap().push("exception");
+    }
+
+    fn on_close(&self, _: &str) {
+        self.0.lock().unwrap().push("close");
+    }
+
+    fn on_active(&self, _: &str) {
+        self.0.lock().unwrap().push("active");
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -2805,6 +2817,53 @@ async fn p3_go_away_response_maps_to_java_send_exception() {
     );
     client.shutdown().await;
     peer.await.unwrap();
+}
+
+#[tokio::test]
+async fn p3_malformed_frame_notifies_exception_then_close() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let _request = read_command(&mut stream).await;
+        stream.write_all(&[0, 0, 0, 0]).await.unwrap();
+    });
+    let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let client = RemotingClient::with_config_and_channel_event_listener(
+        ClientConfig::default(),
+        Some(Arc::new(TestEvents(events.clone()))),
+    )
+    .unwrap();
+    assert!(
+        client
+            .invoke(
+                &address.to_string(),
+                command(1),
+                Instant::now() + Duration::from_secs(2),
+            )
+            .await
+            .is_err()
+    );
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            let complete = {
+                let events = events.lock().unwrap();
+                events.contains(&"active") && events.contains(&"close")
+            };
+            if complete {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        *events.lock().unwrap(),
+        vec!["connect", "active", "exception", "close"]
+    );
+    peer.await.unwrap();
+    client.shutdown().await;
 }
 
 #[tokio::test]

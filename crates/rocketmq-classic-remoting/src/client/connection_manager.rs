@@ -172,14 +172,12 @@ impl ClientInner {
                 (connection.generation == generation).then(|| address.clone())
             });
         if let Some(address) = &address {
-            self.notify_channel(
-                address,
-                if failure.is_none() || failure == Some(TransportError::Closed) {
-                    super::ChannelEvent::Close
-                } else {
-                    super::ChannelEvent::Exception
-                },
-            );
+            if failure.is_some() && failure != Some(TransportError::Closed) {
+                self.notify_channel(address, super::ChannelEvent::Exception);
+                self.notify_channel(address, super::ChannelEvent::Close);
+            } else {
+                self.notify_channel(address, super::ChannelEvent::Close);
+            }
             let mut chosen = self.chosen_nameserver.lock().unwrap();
             if chosen.as_ref() == Some(address) {
                 *chosen = None;
