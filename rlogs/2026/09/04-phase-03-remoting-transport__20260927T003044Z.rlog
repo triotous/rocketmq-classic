@@ -19,6 +19,12 @@
 
 ## Status
 - This session addresses one confirmed Java send-failure mapping only; no Phase 3 acceptance claim. API/config and remaining connect/timeout/admission/shutdown paths are still under audit; Netty-specific context/executor lifecycle differences remain explicitly partial. P3-V04 stays in Phase 19; Phase 4 has not started.
+
+## Append-only follow-up — SOCKS IPv4 CIDR edge semantics
+- Compared `RemotingHelper.ipInCIDR`/`ipToInt` with Rust routing. Rust had treated malformed targets/CIDRs as non-matches and used a conventional `/0` mask; Java parses dotted components as signed integers, applies Java's masked `int` shift semantics, and lets parse failures escape as unchecked errors.
+- Updated CIDR matching to return typed configuration errors for malformed IPv4/CIDR values and to reproduce Java integer/shift behavior, including `/0`, out-of-range prefixes and integer octets. Added unit assertions for matching, no-route errors, invalid-prefix errors, `/0`, `/33`, and signed-integer component parsing. Documented remaining exception-class difference and route-order non-guarantee.
+- Targeted test `socks_proxy_routes_match_java_ipv4_cidr_and_error_behavior` passed offline. The first full run exposed a mistaken test vector (the non-octet-aligned Java shift result was calculated incorrectly); corrected the vector to `266.20.0.0/16`, reran the focused test, then passed all gates: `cargo fmt --all --check`; workspace Clippy with warnings denied; workspace offline tests (11 common, 9 protocol, 1 protocol fixture, 34 remoting unit, 4 codec, 66 transport); workspace metadata checker; differential self-test; and `git diff --check`.
+- Remaining nuance: routing now rejects invalid inputs, but Java exposes unchecked parsing exceptions whereas Rust returns `TransportError::InvalidConfiguration`; that public error-category mismatch is recorded rather than claimed equivalent.
 - Changes were committed in `aa5bdb2` (`fix(remoting): classify async write failures like Java`) and `9d0f64e` (`fix(remoting): map frame encoding failures to send errors`).
 
 ## Append-only correction — synchronous invocation semaphore parity
