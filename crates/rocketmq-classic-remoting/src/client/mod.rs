@@ -1948,7 +1948,7 @@ async fn scan_available_name_servers(
                         let _permit = scan_workers.acquire_owned().await.ok()?;
                         let probe_timeout = inner.config.connect_timeout_duration();
                         let deadline = Instant::now() + probe_timeout;
-                        let connection = inner.connection(&address, deadline).await.ok();
+                        let connection = inner.connection(&address, deadline).await;
                         Some((address, connection))
                     });
                 }
@@ -1976,8 +1976,9 @@ async fn scan_available_name_servers(
                             .filter(|current| !current.is_closed())
                             .map(|current| current.generation);
                         let probe_generation = connection
-                            .filter(|connection| !connection.is_closed())
-                            .map(|connection| connection.generation);
+                            .map(|connection| {
+                                (!connection.is_closed()).then_some(connection.generation)
+                            });
                         let nameservers = inner.nameservers.lock().unwrap();
                         if nameservers.iter().any(|configured| configured == &address) {
                             match name_server_probe_availability(probe_generation, current_generation) {
@@ -2002,9 +2003,12 @@ async fn scan_available_name_servers(
 }
 
 fn name_server_probe_availability(
-    probe_generation: Option<u64>,
+    probe_generation: Result<Option<u64>, TransportError>,
     current_generation: Option<u64>,
 ) -> Option<bool> {
+    let Ok(probe_generation) = probe_generation else {
+        return None;
+    };
     match (probe_generation, current_generation) {
         (Some(probe), Some(current)) if probe == current => Some(true),
         (_, Some(_)) => None,
@@ -2111,11 +2115,31 @@ mod tests {
 
     #[test]
     fn stale_name_server_probe_does_not_override_current_generation_availability() {
-        assert_eq!(name_server_probe_availability(Some(7), Some(7)), Some(true));
-        assert_eq!(name_server_probe_availability(Some(7), Some(8)), None);
-        assert_eq!(name_server_probe_availability(None, Some(8)), None);
-        assert_eq!(name_server_probe_availability(Some(7), None), Some(false));
-        assert_eq!(name_server_probe_availability(None, None), Some(false));
+        assert_eq!(
+            name_server_probe_availability(Ok(Some(7)), Some(7)),
+            Some(true)
+        );
+        assert_eq!(name_server_probe_availability(Ok(Some(7)), Some(8)), None);
+        assert_eq!(name_server_probe_availability(Ok(None), Some(8)), None);
+        assert_eq!(
+            name_server_probe_availability(Ok(Some(7)), None),
+            Some(false)
+        );
+        assert_eq!(name_server_probe_availability(Ok(None), None), Some(false));
+        assert_eq!(
+            name_server_probe_availability(
+                Err(TransportError::Connect("probe failed".into())),
+                Some(8)
+            ),
+            None
+        );
+        assert_eq!(
+            name_server_probe_availability(
+                Err(TransportError::Connect("probe failed".into())),
+                None
+            ),
+            None
+        );
     }
 
     #[tokio::test]
