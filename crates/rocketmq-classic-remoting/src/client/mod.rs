@@ -86,6 +86,7 @@ struct Startup {
 struct ClientInner {
     connections: Mutex<HashMap<String, Arc<connection::Connection>>>,
     connecting: Mutex<HashMap<String, Weak<tokio::sync::Mutex<()>>>>,
+    retired_connections: Mutex<HashMap<u64, (String, Arc<connection::Connection>)>>,
     pending: Mutex<HashMap<i32, PendingEntry>>,
     opaque: AtomicI32,
     generation: AtomicU64,
@@ -481,6 +482,7 @@ impl RemotingClient {
             });
         let inner = Arc::new(ClientInner {
             connections: Mutex::new(HashMap::new()),
+            retired_connections: Mutex::new(HashMap::new()),
             connecting: Mutex::new(HashMap::new()),
             pending: Mutex::new(HashMap::new()),
             opaque: AtomicI32::new(0),
@@ -538,6 +540,7 @@ impl RemotingClient {
             mpsc::channel(CHANNEL_EVENT_QUEUE_CAPACITY);
         let inner = Arc::new(ClientInner {
             connections: Mutex::new(HashMap::new()),
+            retired_connections: Mutex::new(HashMap::new()),
             connecting: Mutex::new(HashMap::new()),
             pending: Mutex::new(HashMap::new()),
             opaque: AtomicI32::new(initial_opaque),
@@ -964,6 +967,7 @@ impl RemotingClient {
             self.inner.interrupt_pull_requests(&key);
             self.inner.connection_closed_for_address(&key);
         }
+        self.inner.close_retired_connections(addresses);
     }
 
     pub fn invoke_async(
@@ -1312,8 +1316,10 @@ impl RemotingClient {
             Ok(Ok(Ok(response))) => {
                 pending.disarm();
                 if response.code == rocketmq_classic_protocol::codes::response::GO_AWAY {
-                    if self.inner.config.enable_reconnect_for_go_away && !options.retried_go_away {
-                        self.inner.connection_closed(connection.generation, None);
+                    if self.inner.config.enable_reconnect_for_go_away
+                        && !options.retried_go_away
+                        && self.inner.retire_for_go_away(addr, connection.clone())
+                    {
                         let retry_request = RemotingCommand {
                             code: request_for_hooks.code,
                             language: rocketmq_classic_protocol::codes::LanguageCode::Java,
@@ -1494,13 +1500,21 @@ impl RemotingClient {
                     self.inner.shutdown();
                     startup.take();
                 }
-                let connections = {
+                let mut connections = {
                     let mut table = self.inner.connections.lock().unwrap();
                     table
                         .drain()
                         .map(|(_, connection)| connection)
                         .collect::<Vec<_>>()
                 };
+                connections.extend(
+                    self.inner
+                        .retired_connections
+                        .lock()
+                        .unwrap()
+                        .drain()
+                        .map(|(_, (_, connection))| connection),
+                );
                 for connection in &connections {
                     connection.close();
                 }
@@ -2515,6 +2529,7 @@ mod tests {
         });
         let inner = Arc::new(ClientInner {
             connections: Mutex::new(HashMap::new()),
+            retired_connections: Mutex::new(HashMap::new()),
             connecting: Mutex::new(HashMap::new()),
             pending: Mutex::new(HashMap::new()),
             opaque: AtomicI32::new(0),

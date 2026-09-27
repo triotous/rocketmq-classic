@@ -3026,6 +3026,67 @@ async fn p3_go_away_retries_once_on_a_new_connection() {
 }
 
 #[tokio::test]
+async fn p3_go_away_replacement_keeps_other_old_connection_requests_alive() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut old_connection, _) = listener.accept().await.unwrap();
+        let first = read_command(&mut old_connection).await;
+        let second = read_command(&mut old_connection).await;
+        let mut go_away = command(response::GO_AWAY);
+        go_away.opaque = first.opaque;
+        go_away.mark_response();
+        write_command(&mut old_connection, &go_away).await;
+
+        let (mut replacement, _) = listener.accept().await.unwrap();
+        let retry = read_command(&mut replacement).await;
+        let mut existing_response = command(62);
+        existing_response.opaque = second.opaque;
+        existing_response.mark_response();
+        write_command(&mut old_connection, &existing_response).await;
+
+        let mut retry_response = command(61);
+        retry_response.opaque = retry.opaque;
+        retry_response.mark_response();
+        write_command(&mut replacement, &retry_response).await;
+    });
+    let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
+    let first_client = client.clone();
+    let first_address = address.to_string();
+    let first = tokio::spawn(async move {
+        first_client
+            .invoke(
+                &first_address,
+                command(1),
+                Instant::now() + Duration::from_secs(2),
+            )
+            .await
+    });
+    let second_client = client.clone();
+    let second_address = address.to_string();
+    let second = tokio::spawn(async move {
+        second_client
+            .invoke(
+                &second_address,
+                command(2),
+                Instant::now() + Duration::from_secs(2),
+            )
+            .await
+    });
+
+    let results = tokio::time::timeout(Duration::from_secs(2), async {
+        (first.await.unwrap(), second.await.unwrap())
+    })
+    .await
+    .expect("replacement must leave other requests on the old connection alive");
+    assert_eq!(results.0.unwrap().code, 61);
+    assert_eq!(results.1.unwrap().code, 62);
+    client.shutdown().await;
+    peer.await.unwrap();
+}
+
+#[tokio::test]
 async fn p3_go_away_retry_reacquires_async_admission() {
     let first_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = first_listener.local_addr().unwrap();

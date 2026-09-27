@@ -54,6 +54,7 @@ pub(crate) struct Connection {
     address: String,
     pooled_byte_buffer_allocator_enabled: bool,
     closed: Arc<AtomicBool>,
+    retired: AtomicBool,
     task: tokio::sync::Mutex<Option<JoinHandle<()>>>,
     shutdown: tokio::sync::watch::Sender<bool>,
     queued_write_bytes: Arc<std::sync::atomic::AtomicUsize>,
@@ -104,6 +105,7 @@ impl Connection {
             address: address.clone(),
             pooled_byte_buffer_allocator_enabled,
             closed: closed.clone(),
+            retired: AtomicBool::new(false),
             task: tokio::sync::Mutex::new(None),
             shutdown,
             queued_write_bytes: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
@@ -269,6 +271,15 @@ impl Connection {
                 }
             }
         }
+    }
+
+    pub(crate) fn mark_retired(&self) {
+        self.retired
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+
+    pub(crate) fn is_retired(&self) -> bool {
+        self.retired.load(std::sync::atomic::Ordering::Acquire)
     }
 
     pub(crate) fn close(&self) {

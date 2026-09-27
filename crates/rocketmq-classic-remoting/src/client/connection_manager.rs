@@ -52,6 +52,79 @@ impl Address {
 }
 
 impl ClientInner {
+    pub(super) fn retire_for_go_away(
+        &self,
+        address: &str,
+        connection: Arc<connection::Connection>,
+    ) -> bool {
+        let generation = connection.generation;
+        let address = Address::parse(address)
+            .map(|address| address.0)
+            .unwrap_or_else(|_| address.to_owned());
+        let mut retired = self.retired_connections.lock().unwrap();
+        if retired.contains_key(&generation) {
+            return true;
+        }
+        if connection.is_closed() {
+            return true;
+        }
+        let mut connections = self.connections.lock().unwrap();
+        let current = connections
+            .iter()
+            .find(|(_, current)| current.generation == generation)
+            .map(|(address, current)| (address.clone(), current.clone()));
+        let Some((address, current)) = current else {
+            if connections
+                .get(&address)
+                .is_some_and(|current| current.generation != generation)
+                || connection.is_closed()
+            {
+                return false;
+            }
+            connection.mark_retired();
+            retired.insert(generation, (address, connection));
+            return true;
+        };
+        if current.is_closed() || connection.is_closed() {
+            return false;
+        }
+        current.mark_retired();
+        connections.remove(&address);
+        retired.insert(generation, (address, current));
+        true
+    }
+
+    pub(super) fn close_retired_connections(&self, addresses: &[String]) {
+        let normalized = addresses
+            .iter()
+            .filter_map(|address| Address::parse(address).ok())
+            .map(|address| address.0)
+            .collect::<std::collections::HashSet<_>>();
+        let retired = {
+            let mut table = self.retired_connections.lock().unwrap();
+            let generations = table
+                .iter()
+                .filter_map(|(generation, (address, _))| {
+                    normalized.contains(address).then_some(*generation)
+                })
+                .collect::<Vec<_>>();
+            generations
+                .into_iter()
+                .filter_map(|generation| table.remove(&generation))
+                .collect::<Vec<_>>()
+        };
+        for (address, connection) in retired {
+            connection.close();
+            self.fail_generation(
+                connection.generation,
+                TransportError::SendRequest {
+                    remote_addr: address,
+                    cause: None,
+                },
+            );
+        }
+    }
+
     pub(super) fn connection_closed_for_address(&self, address: &str) {
         let generation = self
             .connections
@@ -77,7 +150,7 @@ impl ClientInner {
         }
         let key = Address::parse(address)?.0;
         if let Some(connection) = self.connections.lock().unwrap().get(&key).cloned() {
-            if !connection.is_closed() {
+            if !connection.is_closed() && !connection.is_retired() {
                 return Ok(connection);
             }
         }
@@ -100,7 +173,7 @@ impl ClientInner {
             return Err(TransportError::Shutdown);
         }
         if let Some(connection) = self.connections.lock().unwrap().get(&key).cloned() {
-            if !connection.is_closed() {
+            if !connection.is_closed() && !connection.is_retired() {
                 return Ok(connection);
             }
         }
@@ -159,6 +232,11 @@ impl ClientInner {
     }
 
     pub(super) fn connection_closed(&self, generation: u64, failure: Option<TransportError>) {
+        let was_retired = self
+            .retired_connections
+            .lock()
+            .unwrap()
+            .contains_key(&generation);
         let address = self
             .connections
             .lock()
@@ -166,35 +244,48 @@ impl ClientInner {
             .iter()
             .find_map(|(address, connection)| {
                 (connection.generation == generation).then(|| address.clone())
+            })
+            .or_else(|| {
+                self.retired_connections
+                    .lock()
+                    .unwrap()
+                    .get(&generation)
+                    .map(|(address, _)| address.clone())
             });
         if let Some(address) = &address {
             if failure.is_some() && failure != Some(TransportError::Closed) {
                 self.notify_channel(address, super::ChannelEvent::Exception);
-                self.notify_channel(address, super::ChannelEvent::Close);
-            } else {
-                self.notify_channel(address, super::ChannelEvent::Close);
             }
-            let mut chosen = self.chosen_nameserver.lock().unwrap();
-            if chosen.as_ref() == Some(address) {
-                *chosen = None;
+            self.notify_channel(address, super::ChannelEvent::Close);
+            if !was_retired {
+                let mut chosen = self.chosen_nameserver.lock().unwrap();
+                if chosen.as_deref() == Some(address.as_str()) {
+                    *chosen = None;
+                }
+                drop(chosen);
+                self.available_nameservers.lock().unwrap().remove(address);
             }
-            drop(chosen);
-            self.available_nameservers.lock().unwrap().remove(address);
         }
-        let removed = {
-            let mut connections = self.connections.lock().unwrap();
-            let addresses = connections
-                .iter()
-                .filter_map(|(address, connection)| {
-                    (connection.generation == generation).then_some(address.clone())
-                })
-                .collect::<Vec<_>>();
-            addresses
-                .into_iter()
-                .filter_map(|address| connections.remove(&address))
-                .collect::<Vec<_>>()
-        };
-        for connection in removed {
+        if !was_retired {
+            let removed = {
+                let mut connections = self.connections.lock().unwrap();
+                let addresses = connections
+                    .iter()
+                    .filter_map(|(address, connection)| {
+                        (connection.generation == generation).then_some(address.clone())
+                    })
+                    .collect::<Vec<_>>();
+                addresses
+                    .into_iter()
+                    .filter_map(|address| connections.remove(&address))
+                    .collect::<Vec<_>>()
+            };
+            for connection in removed {
+                connection.close();
+            }
+        }
+        let retired = self.retired_connections.lock().unwrap().remove(&generation);
+        if let Some((_, connection)) = retired {
             connection.close();
         }
         self.fail_generation(generation, failure.unwrap_or(TransportError::Closed));
