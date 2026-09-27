@@ -27,6 +27,12 @@
 - Remaining nuance: routing now rejects invalid inputs, but Java exposes unchecked parsing exceptions whereas Rust returns `TransportError::InvalidConfiguration`; that public error-category mismatch is recorded rather than claimed equivalent.
 - Changes were committed in `aa5bdb2` (`fix(remoting): classify async write failures like Java`) and `9d0f64e` (`fix(remoting): map frame encoding failures to send errors`).
 
+## Append-only follow-up — unbounded inbound dispatch queues
+- Audited Java `NettyRemotingClient` public executor construction (`Executors.newFixedThreadPool`) and default processor submission. Java's fixed worker pool uses an unbounded `LinkedBlockingQueue`; accepted requests do not receive an overload response merely because an internal fixed queue reached capacity.
+- Rust previously used two bounded inbound queues of 128 requests and replied SYSTEM_BUSY on the first queue's saturation, creating observable overload at a threshold Java does not have. Changed inbound staging and worker queues to unbounded Tokio channels and removed the bounded-queue overload branch. Custom processor executor rejection and explicit processor `rejectRequest` behavior remain unchanged.
+- Added `inbound_dispatch_queue_accepts_more_than_legacy_capacity`, verifying 256 inbound requests are accepted and processed, and retained shutdown-drain coverage. Updated compatibility notes; Netty thread identities, Tokio staging/ordering, and executor shutdown semantics remain PARTIAL.
+- `cargo fmt --all --check`, `cargo test -p rocketmq-classic-remoting --offline --lib`, workspace Clippy with warnings denied, and `git diff --check` passed. Workspace integration tests, metadata check and differential self-test remain to run before commit.
+
 ## Append-only correction — synchronous invocation semaphore parity
 - The earlier follow-up incorrectly concluded that Java `invokeSync` bypasses `semaphoreAsync`. Full virtual dispatch inspection shows `NettyRemotingAbstract.invokeSyncImpl` calls `invokeImpl`; the concrete `NettyRemotingClient.invokeImpl` runs outbound hooks and calls `super.invokeImpl`, which enters `invoke0` and acquires `semaphoreAsync`. GO_AWAY retry calls `super.invokeImpl` too, reacquiring the permit after the first response future releases it.
 - Reverted Rust's `InvokeOptions::use_admission` bypass. Sync hooks continue to run before admission. Updated `p3_sync_invoke_obeys_async_admission_and_runs_hooks_first` to assert a second sync invocation times out while an earlier sync call occupies the only async permit.
