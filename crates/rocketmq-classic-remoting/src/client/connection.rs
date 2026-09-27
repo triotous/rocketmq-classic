@@ -11,7 +11,10 @@ use tokio::{
 use tokio_rustls::rustls::pki_types::ServerName;
 use tokio_socks::tcp::Socks5Stream;
 
-use crate::{codec::frame, error::TransportError};
+use crate::{
+    codec::frame,
+    error::{ErrorSource, TransportError},
+};
 
 use super::{ClientInner, config::SocksProxyConfig};
 
@@ -400,10 +403,10 @@ async fn run_connection(
                                 Some(deadline) => time::timeout_at(deadline, writer.write_all(bytes))
                                     .await
                                     .map_err(|_| TransportError::Timeout)?
-                                    .map_err(|error| TransportError::Send(error.to_string())),
+                                    .map_err(|error| TransportError::SendSource(ErrorSource::new(error))),
                                 None => writer.write_all(bytes)
                                     .await
-                                    .map_err(|error| TransportError::Send(error.to_string())),
+                                    .map_err(|error| TransportError::SendSource(ErrorSource::new(error))),
                             }
                         } => result,
                         _ = async { match &mut frame.cancelled { Some(cancelled) => { let _ = cancelled.await; }, None => std::future::pending().await } } => Err(TransportError::Closed),
@@ -513,24 +516,24 @@ pub(super) async fn connect(
                 }
                 _ => Socks5Stream::connect(proxy.address.as_str(), (host.as_str(), port)).await,
             }
-            .map_err(|error| TransportError::Connect(error.to_string()))?
+            .map_err(TransportError::connect_source)?
             .into_inner();
             let socket = socket2::SockRef::from(&stream);
             if send_buffer_size > 0 {
                 socket
                     .set_send_buffer_size(send_buffer_size)
-                    .map_err(|error| TransportError::Connect(error.to_string()))?;
+                    .map_err(TransportError::connect_source)?;
             }
             if receive_buffer_size > 0 {
                 socket
                     .set_recv_buffer_size(receive_buffer_size)
-                    .map_err(|error| TransportError::Connect(error.to_string()))?;
+                    .map_err(TransportError::connect_source)?;
             }
             Ok(Box::new(stream) as BoxedStream)
         } else {
             let addresses = tokio::net::lookup_host((host.as_str(), port))
                 .await
-                .map_err(|error| TransportError::Connect(error.to_string()))?
+                .map_err(TransportError::connect_source)?
                 .collect::<Vec<_>>();
             if addresses.is_empty() {
                 return Err(TransportError::Connect(
@@ -545,17 +548,17 @@ pub(super) async fn connect(
                 } else {
                     TcpSocket::new_v4()
                 }
-                .map_err(|error| TransportError::Connect(error.to_string()))?;
+                .map_err(TransportError::connect_source)?;
                 let socket_ref = socket2::SockRef::from(&socket);
                 if send_buffer_size > 0 {
                     socket_ref
                         .set_send_buffer_size(send_buffer_size)
-                        .map_err(|error| TransportError::Connect(error.to_string()))?;
+                        .map_err(TransportError::connect_source)?;
                 }
                 if receive_buffer_size > 0 {
                     socket_ref
                         .set_recv_buffer_size(receive_buffer_size)
-                        .map_err(|error| TransportError::Connect(error.to_string()))?;
+                        .map_err(TransportError::connect_source)?;
                 }
                 match socket.connect(address).await {
                     Ok(stream) => {
@@ -565,15 +568,13 @@ pub(super) async fn connect(
                     Err(error) => last_error = Some(error),
                 }
             }
-            let stream = connected.ok_or_else(|| {
-                TransportError::Connect(
-                    last_error
-                        .map_or_else(|| "connection failed".into(), |error| error.to_string()),
-                )
+            let stream = connected.ok_or_else(|| match last_error {
+                Some(error) => TransportError::connect_source(error),
+                None => TransportError::Connect("connection failed".into()),
             })?;
             stream
                 .set_nodelay(true)
-                .map_err(|error| TransportError::Connect(error.to_string()))?;
+                .map_err(TransportError::connect_source)?;
             Ok(Box::new(stream) as BoxedStream)
         }
     })
@@ -582,8 +583,7 @@ pub(super) async fn connect(
     match mode {
         TransportMode::Plain => Ok(stream),
         TransportMode::Tls(config) => {
-            let server_name = ServerName::try_from(host)
-                .map_err(|error| TransportError::Tls(error.to_string()))?;
+            let server_name = ServerName::try_from(host).map_err(TransportError::tls_source)?;
             let connector = config.connector()?;
             time::timeout(
                 deadline.saturating_duration_since(Instant::now()),
@@ -592,7 +592,7 @@ pub(super) async fn connect(
             .await
             .map_err(|_| TransportError::Timeout)?
             .map(|tls| Box::new(tls) as BoxedStream)
-            .map_err(|error| TransportError::Tls(error.to_string()))
+            .map_err(TransportError::tls_source)
         }
     }
 }

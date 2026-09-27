@@ -15,7 +15,7 @@ use std::{
     },
 };
 
-use rand::seq::SliceRandom;
+use rand::{Rng, seq::SliceRandom};
 use std::task::{Context, Poll, Waker};
 use tokio::{
     sync::{mpsc, oneshot},
@@ -35,6 +35,7 @@ pub use tls::{PrivateKeyDecryptionStrategy, TlsConfig};
 #[cfg(test)]
 const LEGACY_OUTBOUND_QUEUE_CAPACITY: usize = 128;
 const CHANNEL_EVENT_QUEUE_CAPACITY: usize = 10001;
+const NAME_SERVER_SCAN_MAX_IN_FLIGHT: usize = 42;
 const SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(90);
 
 #[derive(Clone)]
@@ -151,27 +152,32 @@ fn rpc_hook_transport_error(error: RpcHookError) -> TransportError {
 }
 
 fn classify_connection_error(remote_addr: &str, error: TransportError) -> TransportError {
-    match error {
-        TransportError::Connect(_) | TransportError::Tls(_) | TransportError::Closed => {
-            TransportError::ConnectRequest {
-                remote_addr: remote_addr.to_owned(),
-                cause: None,
-            }
+    let cause = match error {
+        TransportError::Connect(message) | TransportError::Tls(message) => {
+            Some(crate::error::ErrorSource::message(message))
         }
-        error => error,
+        TransportError::ConnectSource(source) | TransportError::TlsSource(source) => Some(source),
+        TransportError::Closed => None,
+        error => return error,
+    };
+    TransportError::ConnectRequest {
+        remote_addr: remote_addr.to_owned(),
+        cause,
     }
 }
 
 fn classify_write_error(remote_addr: &str, error: TransportError) -> TransportError {
-    match error {
-        TransportError::Send(_)
-        | TransportError::Closed
-        | TransportError::Codec(_)
-        | TransportError::MalformedFrame(_) => TransportError::SendRequest {
-            remote_addr: remote_addr.to_owned(),
-            cause: None,
-        },
-        error => error,
+    let cause = match error {
+        TransportError::Send(message) => Some(crate::error::ErrorSource::message(message)),
+        TransportError::SendSource(source) => Some(source),
+        TransportError::Closed | TransportError::Codec(_) | TransportError::MalformedFrame(_) => {
+            None
+        }
+        error => return error,
+    };
+    TransportError::SendRequest {
+        remote_addr: remote_addr.to_owned(),
+        cause,
     }
 }
 
@@ -367,7 +373,7 @@ impl InvokeCallbackResult {
                 // Java's async wrapper constructs a fresh ResponseFuture for exceptional
                 // completion; its public sendRequestOK field therefore keeps the true default.
                 send_request_ok: true,
-                timed_out: error == TransportError::Timeout,
+                timed_out: error.is_timeout(),
                 error: Some(error),
                 elapsed,
             },
@@ -516,7 +522,7 @@ impl RemotingClient {
             nameservers: Mutex::new(Vec::new()),
             available_nameservers: Mutex::new(HashSet::new()),
             chosen_nameserver: Mutex::new(None),
-            nameserver_index: AtomicU64::new(0),
+            nameserver_index: AtomicU64::new(rand::rng().random_range(0..999)),
             socks_proxy_routes,
         });
         Ok(Self { inner })
@@ -723,7 +729,10 @@ impl RemotingClient {
             .as_ref()
             .and_then(|address| addresses.iter().position(|candidate| candidate == address))
             .unwrap_or_else(|| {
-                self.inner.nameserver_index.fetch_add(1, Ordering::Relaxed) as usize
+                self.inner
+                    .nameserver_index
+                    .fetch_add(1, Ordering::Relaxed)
+                    .wrapping_add(1) as usize
                     % addresses.len()
             });
         let mut last_error = None;
@@ -970,13 +979,18 @@ impl RemotingClient {
         if self.inner.closed.load(Ordering::Acquire) {
             return Err(TransportError::Shutdown);
         }
+        let addr = addr.into();
         if Instant::now() >= deadline {
             let callback = CallbackJob {
                 callback,
                 context: InvokeCallbackResult {
                     request: command,
                     response: None,
-                    error: Some(TransportError::Timeout),
+                    error: Some(TransportError::timeout(
+                        crate::error::TimeoutPhase::Operation,
+                        Some(addr.clone()),
+                        None,
+                    )),
                     send_request_ok: true,
                     timed_out: true,
                     elapsed: std::time::Duration::ZERO,
@@ -988,7 +1002,6 @@ impl RemotingClient {
             return Ok(());
         }
         let client = self.clone();
-        let addr = addr.into();
         let started = Instant::now();
         let callback_request_state = Arc::new(Mutex::new(command.clone()));
         let channel_established = Arc::new(AtomicBool::new(false));
@@ -1041,7 +1054,15 @@ impl RemotingClient {
                                 .await;
                             (result, admission)
                         }
-                        Err(error) => (Err(error), None),
+                        Err(error) => {
+                            let error = match error {
+                                TransportError::TimeoutWithContext { phase, timeout, .. } => {
+                                    TransportError::timeout(phase, Some(addr.clone()), timeout)
+                                }
+                                error => error,
+                            };
+                            (Err(error), None)
+                        }
                     }
                 }
                 Err(error) => (Err(classify_connection_error(&addr, error)), None),
@@ -1174,21 +1195,38 @@ impl RemotingClient {
         if self.inner.closed.load(Ordering::Acquire) {
             return Err(TransportError::Shutdown);
         }
+        let timeout = (!options.timeout_millis.is_zero()).then_some(options.timeout_millis);
         if Instant::now() >= deadline {
-            return Err(TransportError::Timeout);
+            return Err(TransportError::TimeoutWithContext {
+                phase: crate::error::TimeoutPhase::Operation,
+                remote_addr: Some(addr.to_owned()),
+                timeout,
+            });
         }
         let request_for_hooks = command.clone();
         let connection = self
             .inner
             .connection(addr, deadline)
             .await
-            .map_err(|error| classify_connection_error(addr, error))?;
+            .map_err(|error| classify_connection_error(addr, error))
+            .map_err(|error| match error {
+                TransportError::Timeout => TransportError::TimeoutWithContext {
+                    phase: crate::error::TimeoutPhase::Connection,
+                    remote_addr: Some(addr.to_owned()),
+                    timeout,
+                },
+                error => error,
+            })?;
         if let Some(callback) = &callback {
             callback.channel_established.store(true, Ordering::Release);
         }
         let timeout_budget = deadline.saturating_duration_since(Instant::now());
         if Instant::now() >= deadline {
-            return Err(TransportError::Timeout);
+            return Err(TransportError::TimeoutWithContext {
+                phase: crate::error::TimeoutPhase::Admission,
+                remote_addr: Some(addr.to_owned()),
+                timeout,
+            });
         }
         if options.run_rpc_hooks && !options.retried_go_away && !options.admitted {
             let hooks = self.inner.rpc_hooks.lock().unwrap().clone();
@@ -1201,14 +1239,24 @@ impl RemotingClient {
                 .await
             {
                 Ok(permit) => *admission = Some(permit),
-                Err(error)
-                    if options.close_socket_on_timeout && error != TransportError::Shutdown =>
-                {
-                    connection.close();
-                    return Err(TransportError::SendRequest {
-                        remote_addr: addr.to_owned(),
-                        cause: Some(error.to_string()),
-                    });
+                Err(error) if error.is_timeout() || error == TransportError::TooManyRequests => {
+                    let error = if error.is_timeout() {
+                        TransportError::TimeoutWithContext {
+                            phase: crate::error::TimeoutPhase::Admission,
+                            remote_addr: Some(addr.to_owned()),
+                            timeout,
+                        }
+                    } else {
+                        error
+                    };
+                    if options.close_socket_on_timeout {
+                        connection.close();
+                        return Err(TransportError::SendRequest {
+                            remote_addr: addr.to_owned(),
+                            cause: Some(crate::error::ErrorSource::message(error.to_string())),
+                        });
+                    }
+                    return Err(error);
                 }
                 Err(error) => return Err(error),
             }
@@ -1247,7 +1295,11 @@ impl RemotingClient {
             Err(_) => {
                 self.inner.cancel_pending(opaque, connection.generation);
                 pending.disarm();
-                return Err(TransportError::Timeout);
+                return Err(TransportError::TimeoutWithContext {
+                    phase: crate::error::TimeoutPhase::Write,
+                    remote_addr: Some(addr.to_owned()),
+                    timeout,
+                });
             }
         }
         let response_deadline = if callback.is_some() {
@@ -1300,15 +1352,17 @@ impl RemotingClient {
                     return Err(TransportError::SendRequest {
                         remote_addr: connection.address().to_owned(),
                         cause: Some(if options.retried_go_away {
-                            format!(
-                                "Receive GO_AWAY twice in request from connection generation={}",
-                                connection.generation
-                            )
+                            crate::error::ErrorSource::new(crate::error::GoAwayCause {
+                                connection_generation: connection.generation,
+                                remote_addr: connection.address().to_owned(),
+                                retried: true,
+                            })
                         } else {
-                            format!(
-                                "Receive GO_AWAY from connection generation={}",
-                                connection.generation
-                            )
+                            crate::error::ErrorSource::new(crate::error::GoAwayCause {
+                                connection_generation: connection.generation,
+                                remote_addr: connection.address().to_owned(),
+                                retried: false,
+                            })
                         }),
                     });
                 }
@@ -1326,7 +1380,11 @@ impl RemotingClient {
             Ok(Err(_)) => {
                 pending.disarm();
                 if Instant::now() >= deadline {
-                    Err(TransportError::Timeout)
+                    Err(TransportError::TimeoutWithContext {
+                        phase: crate::error::TimeoutPhase::Response,
+                        remote_addr: Some(addr.to_owned()),
+                        timeout,
+                    })
                 } else {
                     Err(TransportError::Closed)
                 }
@@ -1341,7 +1399,11 @@ impl RemotingClient {
                     connection.close();
                 }
                 pending.disarm();
-                Err(TransportError::Timeout)
+                Err(TransportError::TimeoutWithContext {
+                    phase: crate::error::TimeoutPhase::Response,
+                    remote_addr: Some(addr.to_owned()),
+                    timeout,
+                })
             }
         }
     }
@@ -1397,7 +1459,13 @@ impl RemotingClient {
                 let _admission = client
                     .inner
                     .acquire_admission(client.inner.oneway_admission.clone(), deadline)
-                    .await?;
+                    .await
+                    .map_err(|error| match error {
+                        TransportError::TimeoutWithContext { phase, timeout, .. } => {
+                            TransportError::timeout(phase, Some(addr.clone()), timeout)
+                        }
+                        error => error,
+                    })?;
                 let frame = connection.encode_command(&command, client.inner.max_frame_size)?;
                 connection
                     .send(frame, deadline)
@@ -1502,7 +1570,11 @@ impl ClientInner {
         let mut shutdown = self.shutdown.subscribe();
         tokio::select! {
             permit = time::timeout_at(deadline, semaphore.acquire_owned()) => permit
-                .map_err(|_| TransportError::Timeout)?
+                .map_err(|_| TransportError::timeout(
+                    crate::error::TimeoutPhase::Admission,
+                    None,
+                    Some(deadline.saturating_duration_since(Instant::now())),
+                ))?
                 .map_err(|_| TransportError::Shutdown),
             changed = shutdown.changed() => {
                 let _ = changed;
@@ -1811,6 +1883,21 @@ fn start_callback_workers(
         .collect()
 }
 
+fn name_server_scan_batch(
+    mut configured: Vec<String>,
+    cursor: &mut usize,
+    available_slots: usize,
+) -> Vec<String> {
+    if configured.is_empty() || available_slots == 0 {
+        return Vec::new();
+    }
+    let start = *cursor % configured.len();
+    configured.rotate_left(start);
+    let scheduled = configured.len().min(available_slots);
+    *cursor = cursor.wrapping_add(scheduled);
+    configured.into_iter().take(scheduled).collect()
+}
+
 async fn scan_available_name_servers(
     inner: Weak<ClientInner>,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
@@ -1822,6 +1909,8 @@ async fn scan_available_name_servers(
     let mut interval = time::interval(interval_duration.max(std::time::Duration::from_millis(1)));
     interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
     let mut scans = tokio::task::JoinSet::new();
+    let mut scan_cursor = 0;
+    let scan_workers = Arc::new(tokio::sync::Semaphore::new(10));
     loop {
         tokio::select! {
             _ = interval.tick() => {
@@ -1832,17 +1921,25 @@ async fn scan_available_name_servers(
                     .lock()
                     .unwrap()
                     .retain(|address| configured.contains(address));
-                for address in configured {
+                if configured.is_empty() {
+                    scan_cursor = 0;
+                    continue;
+                }
+                let available_slots = NAME_SERVER_SCAN_MAX_IN_FLIGHT.saturating_sub(scans.len());
+                let batch = name_server_scan_batch(configured, &mut scan_cursor, available_slots);
+                for address in batch {
                     let inner = inner.clone();
+                    let scan_workers = scan_workers.clone();
                     scans.spawn(async move {
+                        let _permit = scan_workers.acquire_owned().await.ok()?;
                         let deadline = Instant::now() + inner.config.connect_timeout;
                         let connection = inner.connection(&address, deadline).await.ok();
-                        (address, connection)
+                        Some((address, connection))
                     });
                 }
             }
             result = scans.join_next(), if !scans.is_empty() => {
-                if let Some(Ok((address, connection))) = result {
+                if let Some(Ok(Some((address, connection)))) = result {
                     if let Some(inner) = inner.upgrade() {
                         if inner.closed.load(Ordering::Acquire) {
                             continue;
@@ -1904,7 +2001,10 @@ async fn timeout_scheduler(
     inner: Weak<ClientInner>,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
-    let mut interval = time::interval(std::time::Duration::from_secs(1));
+    let mut interval = time::interval_at(
+        Instant::now() + std::time::Duration::from_secs(3),
+        std::time::Duration::from_secs(1),
+    );
     loop {
         tokio::select! {
             _ = interval.tick() => {
@@ -1926,6 +2026,30 @@ async fn timeout_scheduler(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn name_server_scan_batch_bounds_work_and_rotates_fairly() {
+        let addresses: Vec<_> = (0..50).map(|index| format!("address-{index}")).collect();
+        let mut cursor = 0;
+        let first = name_server_scan_batch(addresses.clone(), &mut cursor, 42);
+        assert_eq!(first.len(), 42);
+        assert_eq!(first.first().unwrap(), "address-0");
+        let second = name_server_scan_batch(addresses, &mut cursor, 42);
+        assert_eq!(second.len(), 42);
+        assert_eq!(second.first().unwrap(), "address-42");
+        assert!(second.contains(&"address-49".to_owned()));
+        assert!(second.contains(&"address-0".to_owned()));
+
+        let mut cursor = 7;
+        let batch = name_server_scan_batch(
+            (0..50).map(|index| format!("address-{index}")).collect(),
+            &mut cursor,
+            0,
+        );
+        assert!(batch.is_empty());
+        assert_eq!(cursor, 7);
+    }
+
     use std::sync::atomic::AtomicUsize;
 
     fn test_command() -> RemotingCommand {
@@ -1992,7 +2116,7 @@ mod tests {
                 .unwrap_err(),
             TransportError::TooManyRequests
         );
-        assert_eq!(
+        assert!(
             client
                 .inner
                 .acquire_admission(
@@ -2000,8 +2124,8 @@ mod tests {
                     Instant::now() + std::time::Duration::from_millis(10),
                 )
                 .await
-                .unwrap_err(),
-            TransportError::Timeout
+                .unwrap_err()
+                .is_timeout()
         );
         let available = Arc::new(tokio::sync::Semaphore::new(1));
         let _permit = client
@@ -2695,14 +2819,14 @@ mod tests {
             classify_connection_error(remote_addr, TransportError::Connect("refused".into())),
             TransportError::ConnectRequest {
                 remote_addr: remote_addr.into(),
-                cause: None,
+                cause: Some(crate::error::ErrorSource::message("refused")),
             }
         );
         assert_eq!(
             classify_connection_error(remote_addr, TransportError::Tls("handshake".into())),
             TransportError::ConnectRequest {
                 remote_addr: remote_addr.into(),
-                cause: None,
+                cause: Some(crate::error::ErrorSource::message("handshake")),
             }
         );
         assert_eq!(
@@ -2713,7 +2837,7 @@ mod tests {
             classify_write_error(remote_addr, TransportError::Send("broken pipe".into())),
             TransportError::SendRequest {
                 remote_addr: remote_addr.into(),
-                cause: None,
+                cause: Some(crate::error::ErrorSource::message("broken pipe")),
             }
         );
         assert_eq!(
@@ -2774,7 +2898,7 @@ mod tests {
                 Instant::now() + std::time::Duration::from_secs(2),
             )
             .await;
-        assert!(matches!(result, Err(TransportError::Send(_))));
+        assert!(matches!(result, Err(TransportError::SendSource(_))));
         connection.join().await;
         assert_eq!(connection.pooled_frame_count(), 1);
     }

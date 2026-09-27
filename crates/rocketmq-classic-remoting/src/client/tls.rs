@@ -859,6 +859,27 @@ mod tests {
     }
 
     #[test]
+    fn java_pbes2_3des_encrypted_private_key_is_decrypted_and_loaded() {
+        let pem = include_bytes!("../../tests/fixtures/tls/java-pbes2-3des.key");
+        let decrypted = decrypt_private_key_pem(pem, Some("1234")).unwrap();
+        assert!(decrypted.starts_with(b"-----BEGIN RSA PRIVATE KEY-----"));
+        let mut reader = BufReader::new(decrypted.as_slice());
+        assert!(rustls_pemfile::private_key(&mut reader).unwrap().is_some());
+
+        let config = TlsConfig {
+            test_mode: false,
+            client_cert_pem: Some(
+                include_bytes!("../../tests/fixtures/tls/java-pbes2-3des-cert.pem").to_vec(),
+            ),
+            client_key_pem: Some(decrypted),
+            ..TlsConfig::default()
+        };
+        let connector = config.connector();
+        assert!(connector.is_ok(), "{}", connector.err().unwrap());
+        assert!(decrypt_private_key_pem(pem, Some("wrong-password")).is_err());
+    }
+
+    #[test]
     fn unencrypted_private_key_is_preserved() {
         let pem = b"-----BEGIN PRIVATE KEY-----\nAQID\n-----END PRIVATE KEY-----\n";
         assert_eq!(

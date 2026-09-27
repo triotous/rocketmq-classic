@@ -233,13 +233,13 @@ async fn p3_future_connect_failure_includes_java_remote_address_and_null_cause()
             .invoke_sync(&address, command(1), Duration::from_secs(1))
             .await,
     ] {
-        assert_eq!(
+        assert!(matches!(
             result,
             Err(TransportError::ConnectRequest {
-                remote_addr: address.clone(),
-                cause: None,
-            })
-        );
+                remote_addr,
+                cause: Some(_),
+            }) if remote_addr == address
+        ));
     }
     client.shutdown().await;
 }
@@ -315,7 +315,14 @@ async fn p3_expired_async_callback_retains_request_and_timeout_metadata() {
     assert_eq!(context.request.code, 20);
     assert_eq!(context.request.opaque, 74);
     assert!(context.response.is_none());
-    assert_eq!(context.error, Some(TransportError::Timeout));
+    assert!(matches!(
+        context.error,
+        Some(TransportError::TimeoutWithContext {
+            phase: rocketmq_classic_remoting::error::TimeoutPhase::Operation,
+            remote_addr: Some(ref remote_addr),
+            ..
+        }) if remote_addr == "127.0.0.1:1"
+    ));
     assert!(context.timed_out);
     assert!(context.send_request_ok);
     tokio::time::timeout(Duration::from_secs(1), async {
@@ -1195,7 +1202,7 @@ async fn p3_u01_raw_route_deadline_and_shutdown() {
     let expired = client
         .invoke(&addr.to_string(), command(1), Instant::now())
         .await;
-    assert!(matches!(expired, Err(TransportError::Timeout)));
+    assert!(matches!(expired, Err(error) if error.is_timeout()));
     client.shutdown().await;
     assert!(matches!(
         client
@@ -1236,7 +1243,7 @@ async fn p3_u01_inflight_invoke_times_out_when_peer_does_not_reply() {
             Instant::now() + Duration::from_millis(20),
         )
         .await;
-    assert!(matches!(result, Err(TransportError::Timeout)));
+    assert!(matches!(result, Err(error) if error.is_timeout()));
     assert_eq!(
         client
             .invoke(
@@ -1276,7 +1283,7 @@ async fn p3_sync_timeout_closes_socket_when_java_heuristic_requires_it() {
                 Duration::from_millis(200),
             )
             .await,
-        Err(TransportError::Timeout)
+        Err(error) if error.is_timeout()
     ));
     assert_eq!(peer.await.unwrap(), 0);
     client.shutdown().await;
@@ -1452,7 +1459,7 @@ async fn p3_oneway_future_reports_admission_timeout() {
             Instant::now() + Duration::from_millis(50),
         )
         .unwrap();
-    assert_eq!(operation.await, Err(TransportError::Timeout));
+    assert!(matches!(operation.await, Err(error) if error.is_timeout()));
     peer.await.unwrap();
     client.shutdown().await;
 }
@@ -1673,13 +1680,13 @@ async fn p3_u01_tls_verifies_ca_and_hostname_without_insecure_fallback() {
             Instant::now() + Duration::from_secs(2),
         )
         .await;
-    assert_eq!(
+    assert!(matches!(
         result,
         Err(TransportError::ConnectRequest {
-            remote_addr: format!("127.0.0.1:{port}"),
-            cause: None,
-        })
-    );
+            remote_addr,
+            cause: Some(_),
+        }) if remote_addr == format!("127.0.0.1:{port}")
+    ));
     bad_name.shutdown().await;
     peer.await.unwrap();
 }
@@ -2417,7 +2424,10 @@ async fn p3_callback_executor_rejection_runs_callback_inline() {
         .unwrap();
     assert!(matches!(
         callback_rx.await.unwrap(),
-        Err(TransportError::Timeout)
+        Err(TransportError::TimeoutWithContext {
+            phase: rocketmq_classic_remoting::error::TimeoutPhase::Operation,
+            ..
+        })
     ));
     client.shutdown().await;
 }
@@ -2548,10 +2558,7 @@ async fn p3_outbound_rpc_hook_runs_before_async_admission_wait() {
         .expect("the second hook must run before the saturated semaphore wait")
         .unwrap();
     assert_eq!(hook_count.load(std::sync::atomic::Ordering::SeqCst), 2);
-    assert_eq!(
-        second_rx.await.unwrap().unwrap_err(),
-        TransportError::Timeout
-    );
+    assert!(second_rx.await.unwrap().unwrap_err().is_timeout());
     client.shutdown().await;
     peer.await.unwrap();
 }
@@ -2650,7 +2657,12 @@ async fn p3_async_admission_timeout_completes_through_callback() {
         )
         .unwrap();
     let second_context = second_context_rx.recv().await.unwrap();
-    assert_eq!(second_context.error, Some(TransportError::Timeout));
+    assert!(
+        second_context
+            .error
+            .as_ref()
+            .is_some_and(TransportError::is_timeout)
+    );
     assert!(second_context.send_request_ok);
     assert!(second_context.timed_out);
     assert!(callback_rx.await.unwrap().is_err());
@@ -2729,14 +2741,14 @@ async fn p3_async_callback_completes_on_deadline_failure() {
             }),
         )
         .unwrap();
-    assert_eq!(
+    assert!(
         tokio::time::timeout(Duration::from_secs(2), rx.recv())
             .await
             .unwrap()
             .unwrap()
             .error
-            .unwrap(),
-        TransportError::Timeout
+            .unwrap()
+            .is_timeout()
     );
     assert_eq!(*events.lock().unwrap(), vec!["complete", "fail"]);
     client.shutdown().await;
@@ -2786,13 +2798,13 @@ async fn p3_async_go_away_retry_connect_failure_completes_before_failure() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(
+    assert!(matches!(
         context.error,
         Some(TransportError::ConnectRequest {
-            remote_addr: address.to_string(),
-            cause: None,
-        })
-    );
+            remote_addr,
+            cause: Some(_),
+        }) if remote_addr == address.to_string()
+    ));
     assert_eq!(context.response, None);
     assert_eq!(context.request.flag, 1 << 8);
     assert_eq!(
@@ -2862,7 +2874,8 @@ async fn p3_async_second_go_away_callback_retains_original_request() {
     assert!(
         cause
             .unwrap()
-            .starts_with("Receive GO_AWAY twice in request from connection generation=")
+            .to_string()
+            .starts_with("Receive GO_AWAY twice in request from channelId=")
     );
     assert_eq!(context.response, None);
     assert_eq!(context.request.flag, 1 << 8);
@@ -3171,7 +3184,8 @@ async fn p3_go_away_response_maps_to_java_send_exception() {
     assert!(
         cause
             .unwrap()
-            .starts_with("Receive GO_AWAY from connection generation=")
+            .to_string()
+            .starts_with("Receive GO_AWAY from channelId=")
     );
     client.shutdown().await;
     peer.await.unwrap();
@@ -4046,13 +4060,13 @@ async fn p3_u01_tls_rejects_untrusted_ca() {
             Instant::now() + Duration::from_secs(2),
         )
         .await;
-    assert_eq!(
+    assert!(matches!(
         result,
         Err(TransportError::ConnectRequest {
-            remote_addr: format!("localhost:{port}"),
-            cause: None,
-        })
-    );
+            remote_addr,
+            cause: Some(_),
+        }) if remote_addr == format!("localhost:{port}")
+    ));
     client.shutdown().await;
     peer.await.unwrap();
 }
