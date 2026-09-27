@@ -317,6 +317,25 @@ impl Connection {
             let _ = task.await;
         }
     }
+
+    pub(crate) async fn join_until(&self, deadline: Instant) -> bool {
+        let mut task = self.task.lock().await;
+        let Some(join) = task.as_mut() else {
+            return true;
+        };
+        if tokio::time::timeout_at(deadline, join).await.is_err() {
+            return false;
+        }
+        task.take();
+        true
+    }
+
+    pub(crate) async fn abort_task(&self) {
+        if let Some(task) = self.task.lock().await.take() {
+            task.abort();
+            let _ = task.await;
+        }
+    }
 }
 
 struct ConnectionTask {

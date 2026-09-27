@@ -1,0 +1,31 @@
+# Phase 3 remoting transport parity review — 2026-09-27T06:00:00Z
+
+## User decision and scope
+- User explicitly chose to retain Rust shutdown/drain semantics and cap shutdown waiting at 90 seconds to match the Java ServiceThread join bound.
+- Implement one shared 90-second absolute deadline across owned task, connection, and callback worker joins; abort remaining Tokio async tasks at expiry. Synchronous callbacks already running in `spawn_blocking` cannot be forcibly stopped, so this is a bound on `shutdown().await`, not a guarantee that arbitrary user code ends.
+- Continue automatable parity review after this focused shutdown change; do not modify either Phase 3 plan, declare Phase 3 complete early, or start Phase 4.
+
+## Plan
+1. Implement shared shutdown deadline and bounded joins with a short injectable/private test duration.
+2. Add a deterministic blocking-callback test demonstrating drain-before-deadline and bounded return after timeout.
+3. Run targeted and full Rust validation; update compatibility ledger and rlog; review and commit the shutdown change separately.
+4. Continue remaining parity inventory and plan acceptance audits in follow-up work.
+
+## Changes
+- Added a single absolute 90-second shutdown deadline shared by owned task, connection, and callback worker joins. On expiry, remaining async task handles are aborted; completed and pending invokes are still failed during shutdown initiation.
+- Added `Connection::join_until` and `Connection::abort_task` for deadline-bounded connection shutdown.
+- Preserved owned callback draining before the deadline. Documented that `spawn_blocking` user callbacks cannot be forcibly terminated, though shutdown returns after the async worker is aborted.
+- Changed shutdown ledger rows from `MAPPED` to `PARTIAL` to reflect the bounded lifecycle difference and added test coverage.
+- Added a deterministic unit test with an intentionally blocked callback and a short private timeout; it verifies shutdown returns at the limit while the underlying user callback remains blocked, then releases it to avoid leaking test work.
+
+## Verification
+- `cargo test -p rocketmq-classic-remoting shutdown_ --offline` — passed (6 unit tests, 3 transport tests).
+- `cargo test --workspace --offline` — passed (all workspace tests).
+- `cargo clippy --workspace --all-targets --offline -- -D warnings` — passed.
+- `cargo fmt --all --check` — passed.
+- `python3 scripts/check-workspace-metadata.py` — passed.
+- `python3 tests/differential/compare.py --self-test` — passed.
+- `git diff --check` — passed.
+
+## Remaining
+- This only implements and verifies the user's shutdown-timeout decision. Phase 3 parity review, public API/config dual-inventory, partial-item disposition, and bilingual plan acceptance audit remain open; do not declare Phase 3 complete or start Phase 4.

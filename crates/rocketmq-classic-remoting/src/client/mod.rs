@@ -35,6 +35,7 @@ pub use tls::{PrivateKeyDecryptionStrategy, TlsConfig};
 
 const OUTBOUND_QUEUE_CAPACITY: usize = 128;
 const CHANNEL_EVENT_QUEUE_CAPACITY: usize = 10001;
+const SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(90);
 
 #[derive(Clone)]
 pub struct ProcessorRegistration {
@@ -1457,11 +1458,16 @@ impl RemotingClient {
         Ok(std::future::ready(Ok(())))
     }
 
-    /// Closes connections, fails pending calls, and joins all client-owned tasks.
+    /// Closes connections, fails pending calls, and drains client-owned tasks for up to 90 seconds.
     pub async fn shutdown(&self) {
+        self.shutdown_with_timeout(SHUTDOWN_TIMEOUT).await;
+    }
+
+    async fn shutdown_with_timeout(&self, timeout: std::time::Duration) {
         self.inner
             .shutdown_complete
             .get_or_init(|| async {
+                let deadline = Instant::now() + timeout;
                 self.inner.shutdown();
                 let connections = {
                     let mut table = self.inner.connections.lock().unwrap();
@@ -1474,18 +1480,47 @@ impl RemotingClient {
                     connection.close();
                 }
                 self.inner.fail_all_pending();
-                let tasks = std::mem::take(&mut *self.inner.tasks.lock().unwrap());
-                for task in tasks {
-                    let _ = task.await;
+                let mut tasks = std::mem::take(&mut *self.inner.tasks.lock().unwrap());
+                let mut timed_out = false;
+                for task in &mut tasks {
+                    if tokio::time::timeout_at(deadline, task).await.is_err() {
+                        timed_out = true;
+                        break;
+                    }
                 }
-                for connection in connections {
-                    connection.join().await;
+                if timed_out {
+                    for task in &tasks {
+                        task.abort();
+                    }
+                    for connection in &connections {
+                        connection.abort_task().await;
+                    }
+                } else {
+                    for connection in &connections {
+                        if !connection.join_until(deadline).await {
+                            timed_out = true;
+                            break;
+                        }
+                    }
+                    if timed_out {
+                        for connection in &connections {
+                            connection.abort_task().await;
+                        }
+                    }
                 }
                 let _ = self.inner.callback_shutdown.send(true);
-                let callback_workers =
+                let mut callback_workers =
                     std::mem::take(&mut *self.inner.callback_workers.lock().unwrap());
-                for worker in callback_workers {
-                    let _ = worker.await;
+                for worker in &mut callback_workers {
+                    if tokio::time::timeout_at(deadline, worker).await.is_err() {
+                        timed_out = true;
+                        break;
+                    }
+                }
+                if timed_out {
+                    for worker in &callback_workers {
+                        worker.abort();
+                    }
                 }
             })
             .await;
@@ -2829,6 +2864,57 @@ mod tests {
         ));
         assert!(client.inner.tasks.lock().unwrap().is_empty());
         peer.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn shutdown_bounds_wait_for_a_blocking_callback() {
+        let client = RemotingClient::new(TransportMode::Plain);
+        let started = Arc::new(AtomicBool::new(false));
+        let finished = Arc::new(AtomicBool::new(false));
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let release_rx = Arc::new(Mutex::new(release_rx));
+        let callback_started = started.clone();
+        let callback_finished = finished.clone();
+        let callback_release = release_rx.clone();
+        client.inner.dispatch_callback(CallbackJob {
+            callback: Arc::new(move |_: Result<RemotingCommand, TransportError>| {
+                callback_started.store(true, Ordering::Release);
+                callback_release.lock().unwrap().recv().unwrap();
+                callback_finished.store(true, Ordering::Release);
+            }),
+            context: InvokeCallbackResult {
+                request: test_command(),
+                response: None,
+                error: Some(TransportError::Shutdown),
+                send_request_ok: true,
+                timed_out: false,
+                elapsed: std::time::Duration::ZERO,
+            },
+            channel_established: Arc::new(AtomicBool::new(true)),
+            _permit: None,
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while !started.load(Ordering::Acquire) {
+                tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .unwrap();
+
+        let started_at = Instant::now();
+        client
+            .shutdown_with_timeout(std::time::Duration::from_millis(30))
+            .await;
+        assert!(started_at.elapsed() < std::time::Duration::from_millis(250));
+        assert!(!finished.load(Ordering::Acquire));
+        release_tx.send(()).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while !finished.load(Ordering::Acquire) {
+                tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .unwrap();
     }
 
     #[tokio::test]
