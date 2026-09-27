@@ -1038,6 +1038,52 @@ async fn p3_sync_timeout_closes_socket_when_java_heuristic_requires_it() {
 }
 
 #[tokio::test]
+async fn p3_sync_admission_failure_maps_to_send_request_and_closes_socket() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let (received_tx, received_rx) = tokio::sync::oneshot::channel();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let _request = read_command(&mut stream).await;
+        let _ = received_tx.send(());
+        let mut byte = [0; 1];
+        tokio::time::timeout(Duration::from_secs(2), stream.read(&mut byte))
+            .await
+            .unwrap()
+            .unwrap()
+    });
+    let client = RemotingClient::with_config(ClientConfig {
+        async_semaphore_value: 1,
+        close_socket_if_timeout: true,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    let first_client = client.clone();
+    let first_address = address.to_string();
+    let first = tokio::spawn(async move {
+        first_client
+            .invoke_sync(&first_address, command(1), Duration::from_secs(2))
+            .await
+    });
+    tokio::time::timeout(Duration::from_secs(1), received_rx)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        client
+            .invoke_sync(&address.to_string(), command(2), Duration::from_millis(300))
+            .await,
+        Err(TransportError::SendRequest { .. })
+    ));
+    assert_eq!(peer.await.unwrap(), 0);
+    assert!(matches!(
+        first.await.unwrap(),
+        Err(TransportError::SendRequest { .. })
+    ));
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn p3_oneway_returns_after_scheduling_before_peer_receives_frame() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -2068,13 +2114,13 @@ async fn p3_sync_invoke_obeys_async_admission_and_runs_hooks_first() {
     let (received_tx, received_rx) = tokio::sync::oneshot::channel();
     let peer = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
-        let first = read_command(&mut stream).await;
+        let _first = read_command(&mut stream).await;
         let _ = received_tx.send(());
-        tokio::time::sleep(Duration::from_millis(250)).await;
-        let mut response = command(42);
-        response.opaque = first.opaque;
-        response.mark_response();
-        write_command(&mut stream, &response).await;
+        let mut byte = [0; 1];
+        tokio::time::timeout(Duration::from_secs(2), stream.read(&mut byte))
+            .await
+            .unwrap()
+            .unwrap()
     });
     let client = RemotingClient::with_config(ClientConfig {
         async_semaphore_value: 1,
@@ -2094,15 +2140,17 @@ async fn p3_sync_invoke_obeys_async_admission_and_runs_hooks_first() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(
+    assert!(matches!(
         client
             .invoke_sync(&address.to_string(), command(2), Duration::from_millis(100))
-            .await
-            .unwrap_err(),
-        TransportError::Timeout
-    );
+            .await,
+        Err(TransportError::SendRequest { .. })
+    ));
     assert_eq!(hook_calls.load(Ordering::SeqCst), 2);
-    assert_eq!(first.await.unwrap().unwrap().code, 42);
+    assert!(matches!(
+        first.await.unwrap(),
+        Err(TransportError::SendRequest { .. })
+    ));
     client.shutdown().await;
     peer.await.unwrap();
 }

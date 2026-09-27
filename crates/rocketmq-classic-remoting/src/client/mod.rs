@@ -1244,11 +1244,21 @@ impl RemotingClient {
             run_before_rpc_hooks(&hooks, addr, &command).map_err(rpc_hook_transport_error)?;
         }
         if !options.admitted {
-            *admission = Some(
-                self.inner
-                    .acquire_admission(self.inner.async_admission.clone(), deadline)
-                    .await?,
-            );
+            match self
+                .inner
+                .acquire_admission(self.inner.async_admission.clone(), deadline)
+                .await
+            {
+                Ok(permit) => *admission = Some(permit),
+                Err(error) if options.close_socket_on_timeout => {
+                    connection.close();
+                    return Err(TransportError::SendRequest {
+                        remote_addr: addr.to_owned(),
+                        cause: Some(error.to_string()),
+                    });
+                }
+                Err(error) => return Err(error),
+            }
         }
         let pending_deadline = if callback.is_some() {
             deadline + std::time::Duration::from_secs(1)
