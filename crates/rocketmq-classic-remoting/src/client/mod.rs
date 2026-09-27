@@ -1455,16 +1455,19 @@ impl RemotingClient {
         }
     }
 
-    /// Starts connection acquisition at call time, then schedules a managed one-way operation and
-    /// returns a ready future without waiting for connection completion, admission, or socket
-    /// write. Synchronous acquisition errors are returned directly; post-return transport failures
-    /// are not observable. Completion does not imply Broker receipt or storage.
+    /// Starts connection acquisition at call time and returns a future for connection, admission,
+    /// and socket-write completion. The future does not wait for a Broker response, and dropping it
+    /// does not cancel the client-owned operation. Success means the frame was written locally;
+    /// it does not imply Broker receipt or storage.
     pub fn invoke_oneway(
         &self,
         addr: &str,
         mut command: RemotingCommand,
         deadline: Instant,
-    ) -> Result<std::future::Ready<Result<(), TransportError>>, TransportError> {
+    ) -> Result<
+        impl std::future::Future<Output = Result<(), TransportError>> + Send + 'static,
+        TransportError,
+    > {
         if !self.inner.started.load(Ordering::Acquire) {
             return Err(TransportError::NotStarted);
         }
@@ -1490,29 +1493,31 @@ impl RemotingClient {
         if let Some(connection_task) = spawn_after_initial_poll(connection_task) {
             self.inner.spawn(connection_task);
         }
+        let (completion_tx, completion_rx) = tokio::sync::oneshot::channel();
         let task = tokio::spawn(async move {
-            let Ok(Ok(connection)) = connection_rx.await else {
-                return;
-            };
-            let hooks = client.inner.rpc_hooks.lock().unwrap().clone();
-            if run_before_rpc_hooks(&hooks, &addr, &command).is_err() {
-                return;
+            let result = async {
+                let connection = connection_rx
+                    .await
+                    .map_err(|_| TransportError::Closed)?
+                    .map_err(|error| classify_connection_error(&addr, error))?;
+                let hooks = client.inner.rpc_hooks.lock().unwrap().clone();
+                run_before_rpc_hooks(&hooks, &addr, &command).map_err(rpc_hook_transport_error)?;
+                command.mark_oneway();
+                let _admission = client
+                    .inner
+                    .acquire_admission(client.inner.oneway_admission.clone(), deadline)
+                    .await?;
+                let frame = connection.encode_command(&command, client.inner.max_frame_size)?;
+                connection
+                    .send(frame, deadline)
+                    .await
+                    .map_err(|error| classify_write_error(&addr, error))
             }
-            command.mark_oneway();
-            let Ok(_admission) = client
-                .inner
-                .acquire_admission(client.inner.oneway_admission.clone(), deadline)
-                .await
-            else {
-                return;
-            };
-            let Ok(frame) = connection.encode_command(&command, client.inner.max_frame_size) else {
-                return;
-            };
-            let _ = connection.send(frame, deadline).await;
+            .await;
+            let _ = completion_tx.send(result);
         });
         self.inner.spawn(task);
-        Ok(std::future::ready(Ok(())))
+        Ok(async move { completion_rx.await.unwrap_or(Err(TransportError::Closed)) })
     }
 
     /// Closes connections, fails pending calls, and drains client-owned tasks for up to 90 seconds.
@@ -2861,6 +2866,34 @@ mod tests {
         .await
         .unwrap();
         connection.close();
+        connection.join().await;
+    }
+
+    #[tokio::test]
+    async fn response_style_write_waits_until_connection_shutdown() {
+        let (client_io, _peer_io) = tokio::io::duplex(1);
+        let connection = connection::Connection::spawn(
+            Box::new(client_io),
+            33,
+            Weak::new(),
+            DEFAULT_MAX_FRAME_SIZE,
+            (64 * 1024, 32 * 1024),
+            "test:0".into(),
+            true,
+        );
+        let writer = {
+            let connection = connection.clone();
+            tokio::spawn(
+                async move { connection.send_without_deadline(vec![0; 1024 * 1024]).await },
+            )
+        };
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(
+            !writer.is_finished(),
+            "unbounded response write must remain pending"
+        );
+        connection.close();
+        assert_eq!(writer.await.unwrap(), Err(TransportError::Shutdown));
         connection.join().await;
     }
 

@@ -26,7 +26,7 @@ struct OutboundFrame {
     bytes: Option<Vec<u8>>,
     frame_pool: Arc<std::sync::Mutex<Vec<Vec<u8>>>>,
     pooled: bool,
-    deadline: Instant,
+    deadline: Option<Instant>,
     cancelled: Option<tokio::sync::oneshot::Receiver<()>>,
     written: Option<tokio::sync::oneshot::Sender<Result<(), TransportError>>>,
 }
@@ -196,6 +196,18 @@ impl Connection {
         bytes: Vec<u8>,
         deadline: Instant,
     ) -> Result<(), TransportError> {
+        self.send_with_deadline(bytes, Some(deadline)).await
+    }
+
+    pub(crate) async fn send_without_deadline(&self, bytes: Vec<u8>) -> Result<(), TransportError> {
+        self.send_with_deadline(bytes, None).await
+    }
+
+    async fn send_with_deadline(
+        &self,
+        bytes: Vec<u8>,
+        deadline: Option<Instant>,
+    ) -> Result<(), TransportError> {
         let mut frame = FrameGuard {
             connection: self,
             bytes: Some(bytes),
@@ -205,7 +217,7 @@ impl Connection {
         self.reserve_write_bytes(length);
         let (cancel, cancelled) = tokio::sync::oneshot::channel();
         let mut cancel = Some(cancel);
-        if Instant::now() >= deadline {
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
             self.release_write_bytes(length);
             return Err(TransportError::Timeout);
         }
@@ -221,13 +233,14 @@ impl Connection {
             drop(error.0);
             return Err(TransportError::Closed);
         }
-        let result = time::timeout_at(deadline, response)
-            .await
-            .map_err(|_| {
+        let write_result = match deadline {
+            Some(deadline) => time::timeout_at(deadline, response).await.map_err(|_| {
                 drop(cancel.take());
                 TransportError::Timeout
-            })?
-            .map_err(|_| TransportError::Closed)?;
+            })?,
+            None => response.await,
+        };
+        let result = write_result.map_err(|_| TransportError::Closed)?;
         drop(cancel.take());
         result
     }
@@ -241,7 +254,7 @@ impl Connection {
             bytes: Some(bytes),
             frame_pool: self.frame_pool.clone(),
             pooled: self.pooled_byte_buffer_allocator_enabled,
-            deadline,
+            deadline: Some(deadline),
             cancelled: None,
             written: Some(written),
         }) {
@@ -382,7 +395,17 @@ async fn run_connection(
                     let bytes = frame.bytes.as_ref().expect("queued frame bytes");
                     let write_length = bytes.len();
                     let result = tokio::select! {
-                        result = time::timeout_at(frame.deadline, writer.write_all(bytes)) => result.map_err(|_| TransportError::Timeout).and_then(|result| result.map_err(|error| TransportError::Send(error.to_string()))),
+                        result = async {
+                            match frame.deadline {
+                                Some(deadline) => time::timeout_at(deadline, writer.write_all(bytes))
+                                    .await
+                                    .map_err(|_| TransportError::Timeout)?
+                                    .map_err(|error| TransportError::Send(error.to_string())),
+                                None => writer.write_all(bytes)
+                                    .await
+                                    .map_err(|error| TransportError::Send(error.to_string())),
+                            }
+                        } => result,
                         _ = async { match &mut frame.cancelled { Some(cancelled) => { let _ = cancelled.await; }, None => std::future::pending().await } } => Err(TransportError::Closed),
                         result = shutdown.changed() => {
                             let _ = result;

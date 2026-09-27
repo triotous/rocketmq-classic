@@ -1399,6 +1399,91 @@ async fn p3_oneway_returns_after_scheduling_before_peer_receives_frame() {
 }
 
 #[tokio::test]
+async fn p3_oneway_future_reports_connection_failure() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    drop(listener);
+    let client = RemotingClient::with_config(ClientConfig {
+        scan_available_nameserver: false,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    client.start().unwrap();
+    let operation = client
+        .invoke_oneway(
+            &address.to_string(),
+            command(14),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .unwrap();
+    assert!(operation.await.is_err());
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn p3_oneway_future_reports_admission_timeout() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (_stream, _) = listener.accept().await.unwrap();
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    });
+    let client = RemotingClient::with_config(ClientConfig {
+        oneway_semaphore_value: 0,
+        scan_available_nameserver: false,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    client.start().unwrap();
+    let operation = client
+        .invoke_oneway(
+            &address.to_string(),
+            command(14),
+            Instant::now() + Duration::from_millis(50),
+        )
+        .unwrap();
+    assert_eq!(operation.await, Err(TransportError::Timeout));
+    peer.await.unwrap();
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn p3_oneway_future_reports_saturated_write_deadline() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let (accepted_tx, accepted_rx) = tokio::sync::oneshot::channel();
+    let peer = tokio::spawn(async move {
+        let (_stream, _) = listener.accept().await.unwrap();
+        let _ = accepted_tx.send(());
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    });
+    let client = RemotingClient::with_config(ClientConfig {
+        client_socket_send_buffer_size: 1024,
+        scan_available_nameserver: false,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    client.start().unwrap();
+    let operation = client
+        .invoke_oneway(
+            &address.to_string(),
+            RemotingCommand {
+                body: Some(vec![7; 8 * 1024 * 1024]),
+                ..command(15)
+            },
+            Instant::now() + Duration::from_millis(250),
+        )
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(1), accepted_rx)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(operation.await, Err(TransportError::Timeout));
+    peer.abort();
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn p3_oneway_reports_invalid_address_synchronously() {
     let client = RemotingClient::new(TransportMode::Plain);
     client.start().unwrap();
@@ -1422,7 +1507,7 @@ async fn p3_oneway_starts_connection_acquisition_at_call_time() {
     });
     let client = RemotingClient::new(TransportMode::Plain);
     client.start().unwrap();
-    let returned = client
+    let operation = client
         .invoke_oneway(
             &address.to_string(),
             command(14),
@@ -1433,12 +1518,12 @@ async fn p3_oneway_starts_connection_acquisition_at_call_time() {
         .await
         .expect("connection acquisition should be scheduled before method return")
         .unwrap();
-    drop(returned);
     let received = tokio::time::timeout(Duration::from_secs(1), peer)
         .await
         .unwrap()
         .unwrap();
     assert!(received.is_oneway());
+    assert_eq!(operation.await, Ok(()));
     client.shutdown().await;
 }
 
