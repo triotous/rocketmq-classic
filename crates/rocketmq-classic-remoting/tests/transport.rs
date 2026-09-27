@@ -2823,9 +2823,11 @@ async fn p3_go_away_response_maps_to_java_send_exception() {
 async fn p3_malformed_frame_notifies_exception_then_close() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
+    let (request_seen_tx, request_seen_rx) = tokio::sync::oneshot::channel();
     let peer = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
         let _request = read_command(&mut stream).await;
+        let _ = request_seen_tx.send(());
         stream.write_all(&[0, 0, 0, 0]).await.unwrap();
     });
     let events = Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -2834,14 +2836,24 @@ async fn p3_malformed_frame_notifies_exception_then_close() {
         Some(Arc::new(TestEvents(events.clone()))),
     )
     .unwrap();
-    assert!(matches!(
-        client
+    let invoke_client = client.clone();
+    let invoke_address = address.to_string();
+    let invoke = tokio::spawn(async move {
+        invoke_client
             .invoke(
-                &address.to_string(),
+                &invoke_address,
                 command(1),
                 Instant::now() + Duration::from_secs(2),
             )
-            .await,
+            .await
+    });
+    tokio::time::timeout(Duration::from_secs(1), request_seen_rx)
+        .await
+        .expect("peer did not observe invoke")
+        .unwrap();
+    let result = invoke.await.unwrap();
+    assert!(matches!(
+        result,
         Err(TransportError::SendRequest {
             remote_addr,
             cause: None,

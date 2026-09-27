@@ -162,12 +162,13 @@ fn classify_connection_error(remote_addr: &str, error: TransportError) -> Transp
 
 fn classify_write_error(remote_addr: &str, error: TransportError) -> TransportError {
     match error {
-        TransportError::Send(_) | TransportError::Closed | TransportError::Codec(_) => {
-            TransportError::SendRequest {
-                remote_addr: remote_addr.to_owned(),
-                cause: None,
-            }
-        }
+        TransportError::Send(_)
+        | TransportError::Closed
+        | TransportError::Codec(_)
+        | TransportError::MalformedFrame(_) => TransportError::SendRequest {
+            remote_addr: remote_addr.to_owned(),
+            cause: None,
+        },
         error => error,
     }
 }
@@ -2592,6 +2593,19 @@ mod tests {
             classify_write_error(
                 remote_addr,
                 TransportError::Codec(crate::error::CodecError::FrameTooLarge {
+                    length: 128,
+                    limit: 64,
+                }),
+            ),
+            TransportError::SendRequest {
+                remote_addr: remote_addr.into(),
+                cause: None,
+            }
+        );
+        assert_eq!(
+            classify_write_error(
+                remote_addr,
+                TransportError::MalformedFrame(crate::error::CodecError::FrameTooLarge {
                     length: 128,
                     limit: 64,
                 }),

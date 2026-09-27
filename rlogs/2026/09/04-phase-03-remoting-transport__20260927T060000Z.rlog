@@ -28,4 +28,5 @@
 - `git diff --check` — passed.
 
 ## Remaining
-- This only implements and verifies the user's shutdown-timeout decision. Phase 3 parity review, public API/config dual-inventory, partial-item disposition, and bilingual plan acceptance audit remain open; do not declare Phase 3 complete or start Phase 4.
+- Additional Java `requestFail`/`failFast` source review confirmed pending connection-failure categories, including a local malformed-command encoding error occurring after pending registration. The per-invoke send path already classifies this as send-request failure; the separate async connection writer now includes a malformed-frame error in the same classification. Tightened the malformed-peer test to await request arrival before trusting the response classification, so an early connect error cannot pass it accidentally.
+- This only implements and verifies the user's shutdown-timeout decision plus a focused send-failure classification correction. Phase 3 parity review, public API/config dual-inventory, partial-item disposition, and bilingual plan acceptance audit remain open; do not declare Phase 3 complete or start Phase 4.

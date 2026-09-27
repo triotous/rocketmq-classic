@@ -333,7 +333,6 @@ impl Connection {
     pub(crate) async fn abort_task(&self) {
         if let Some(task) = self.task.lock().await.take() {
             task.abort();
-            let _ = task.await;
         }
     }
 }
