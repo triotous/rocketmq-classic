@@ -1,5 +1,11 @@
 use std::{collections::HashMap, fmt, io::BufReader, path::Path, sync::Arc};
 
+use base64::Engine;
+use cbc::cipher::{BlockDecryptMut, KeyIvInit, block_padding::Pkcs7};
+use des::Des;
+use md5::{Digest, Md5};
+use pkcs8::{EncryptedPrivateKeyInfo, PrivateKeyInfo, der::Decode, der::zeroize::Zeroizing};
+
 use tokio_rustls::TlsConnector;
 use tokio_rustls::rustls::client::danger::{
     HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier,
@@ -62,7 +68,7 @@ pub struct TlsConfig {
     /// Mirrors Java's `tls.client.authServer` (default `false`); effective only when test mode is disabled.
     /// False disables server trust and hostname checks, matching Java's trust-all behavior.
     pub auth_server: bool,
-    /// Java `tls.client.keyPassword`; retained for configured key-decryption strategies.
+    /// Java `tls.client.keyPassword`; used for encrypted PKCS#8 files and configured strategies.
     pub key_password: Option<String>,
     /// Rust equivalent of Java's replaceable `TlsHelper.DecryptionStrategy`.
     pub decryption_strategy: Option<Arc<dyn PrivateKeyDecryptionStrategy>>,
@@ -213,8 +219,7 @@ impl TlsConfig {
                             true,
                             self.key_password.as_deref(),
                         )?,
-                        None => std::fs::read(path)
-                            .map_err(|error| TransportError::Tls(error.to_string()))?,
+                        None => decrypt_private_key_file(&path, self.key_password.as_deref())?,
                     })
                 };
             }
@@ -294,6 +299,130 @@ impl TlsConfig {
         };
         Ok(TlsConnector::from(Arc::new(config)))
     }
+}
+
+fn decrypt_private_key_file(
+    path: &Path,
+    password: Option<&str>,
+) -> Result<Vec<u8>, TransportError> {
+    let pem = std::fs::read(path).map_err(|error| TransportError::Tls(error.to_string()))?;
+    decrypt_private_key_pem(&pem, password)
+}
+
+fn decrypt_private_key_pem(pem: &[u8], password: Option<&str>) -> Result<Vec<u8>, TransportError> {
+    let pem = std::str::from_utf8(pem)
+        .map_err(|error| TransportError::Tls(format!("invalid private key PEM: {error}")))?;
+    let (label, body) = parse_private_key_pem(pem)?;
+    if label != "ENCRYPTED PRIVATE KEY" {
+        return Ok(pem.as_bytes().to_vec());
+    }
+    let Some(password) = password else {
+        return Err(TransportError::Tls(
+            "tls.client.keyPassword is required for encrypted private keys".into(),
+        ));
+    };
+    let encrypted = EncryptedPrivateKeyInfo::try_from(body.as_slice())
+        .map_err(|error| TransportError::Tls(format!("invalid encrypted private key: {error}")))?;
+    let decrypted = Zeroizing::new(match encrypted.encryption_algorithm.pbes1() {
+        Some(algorithm)
+            if algorithm.encryption
+                == pkcs8::pkcs5::pbes1::EncryptionScheme::PbeWithMd5AndDesCbc =>
+        {
+            decrypt_pbes1_md5_des(&encrypted, password)?
+        }
+        Some(_) => {
+            return Err(TransportError::Tls(
+                "unsupported encrypted private key algorithm".into(),
+            ));
+        }
+        None => encrypted
+            .decrypt(password)
+            .map_err(|error| {
+                TransportError::Tls(format!("unable to decrypt private key: {error}"))
+            })?
+            .to_bytes()
+            .to_vec(),
+    });
+    let private_key = PrivateKeyInfo::from_der(&decrypted)
+        .map_err(|error| TransportError::Tls(format!("invalid decrypted private key: {error}")))?;
+    let (label, der) = if private_key.algorithm.oid.to_string() == "1.2.840.113549.1.1.1" {
+        ("RSA PRIVATE KEY", private_key.private_key)
+    } else {
+        ("PRIVATE KEY", decrypted.as_slice())
+    };
+    let mut output = format!("-----BEGIN {label}-----\n").into_bytes();
+    let encoded = Zeroizing::new(base64::engine::general_purpose::STANDARD.encode(der));
+    for chunk in encoded.as_bytes().chunks(64) {
+        output.extend_from_slice(chunk);
+        output.push(b'\n');
+    }
+    output.extend_from_slice(format!("-----END {label}-----\n").as_bytes());
+    Ok(output)
+}
+
+fn parse_private_key_pem(pem: &str) -> Result<(&str, Vec<u8>), TransportError> {
+    let mut lines = pem.lines();
+    let first = lines.next().unwrap_or_default();
+    let label = first
+        .strip_prefix("-----BEGIN ")
+        .and_then(|line| line.strip_suffix("-----"))
+        .ok_or_else(|| TransportError::Tls("invalid private key PEM header".into()))?;
+    let mut encoded = String::new();
+    let mut ended = false;
+    for line in lines {
+        if line == format!("-----END {label}-----") {
+            ended = true;
+            break;
+        }
+        encoded.push_str(line.trim());
+    }
+    if !ended {
+        return Err(TransportError::Tls("unterminated private key PEM".into()));
+    }
+    let der = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .map_err(|error| TransportError::Tls(format!("invalid private key PEM body: {error}")))?;
+    Ok((label, der))
+}
+
+fn decrypt_pbes1_md5_des(
+    encrypted: &EncryptedPrivateKeyInfo<'_>,
+    password: &str,
+) -> Result<Vec<u8>, TransportError> {
+    let Some(algorithm) = encrypted.encryption_algorithm.pbes1() else {
+        return Err(TransportError::Tls(
+            "unsupported encrypted private key algorithm".into(),
+        ));
+    };
+    if algorithm.encryption != pkcs8::pkcs5::pbes1::EncryptionScheme::PbeWithMd5AndDesCbc {
+        return Err(TransportError::Tls(
+            "unsupported encrypted private key algorithm".into(),
+        ));
+    }
+
+    let password = password.as_bytes();
+    if algorithm.parameters.iteration_count == 0 {
+        return Err(TransportError::Tls(
+            "invalid encrypted private key iteration count".into(),
+        ));
+    }
+    let mut digest = Md5::new();
+    digest.update(password);
+    digest.update(algorithm.parameters.salt);
+    let mut key_and_iv = Zeroizing::new(<[u8; 16]>::from(digest.finalize()));
+    for _ in 1..algorithm.parameters.iteration_count {
+        *key_and_iv = Md5::digest(*key_and_iv).into();
+    }
+    let (key, iv) = key_and_iv.split_at(8);
+    type DesCbcDecryptor = cbc::Decryptor<Des>;
+    let mut plaintext = Zeroizing::new(encrypted.encrypted_data.to_vec());
+    let plaintext = DesCbcDecryptor::new_from_slices(key, iv)
+        .map_err(|error| TransportError::Tls(error.to_string()))?
+        .decrypt_padded_mut::<Pkcs7>(&mut plaintext)
+        .map_err(|_| {
+            TransportError::Tls("unable to decrypt private key with configured password".into())
+        })?;
+    Ok(plaintext.to_vec())
 }
 
 fn resolve_tls_path(base_dir: &Path, value: &str) -> std::path::PathBuf {
@@ -499,12 +628,13 @@ impl ServerCertVerifier for TrustAllServerVerifier {
 mod tests {
     use std::{
         fs,
+        io::BufReader,
         path::PathBuf,
         sync::{Arc, Mutex},
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use super::{PrivateKeyDecryptionStrategy, TlsConfig};
+    use super::{PrivateKeyDecryptionStrategy, TlsConfig, decrypt_private_key_pem};
     use std::collections::HashMap;
 
     fn test_dir() -> PathBuf {
@@ -637,6 +767,104 @@ mod tests {
             .unwrap(),
             TransportMode::Tls(_)
         ));
+    }
+
+    #[test]
+    fn java_pbes1_md5_des_encrypted_private_key_is_decrypted_with_java_password() {
+        let java_pem = include_bytes!("../../tests/fixtures/tls/java-pbes1-client.key");
+        let decrypted = decrypt_private_key_pem(java_pem, Some("1234")).unwrap();
+        assert!(decrypted.starts_with(b"-----BEGIN RSA PRIVATE KEY-----"));
+        let mut reader = BufReader::new(decrypted.as_slice());
+        assert!(rustls_pemfile::private_key(&mut reader).unwrap().is_some());
+        assert!(decrypt_private_key_pem(java_pem, Some("wrong-password")).is_err());
+        assert!(decrypt_private_key_pem(java_pem, None).is_err());
+        assert!(decrypt_private_key_pem(java_pem, Some("")).is_err());
+
+        let pem = include_bytes!("../../tests/fixtures/tls/pbes1-2048.key");
+        let decrypted = decrypt_private_key_pem(pem, Some("java-pbes1-password")).unwrap();
+        let mut reader = BufReader::new(decrypted.as_slice());
+        assert!(rustls_pemfile::private_key(&mut reader).unwrap().is_some());
+    }
+
+    #[test]
+    fn pbes1_key_is_loaded_from_java_properties_with_key_password() {
+        let directory = test_dir();
+        let key_path = directory.join("client.key");
+        fs::write(
+            &key_path,
+            include_bytes!("../../tests/fixtures/tls/pbes1-2048.key"),
+        )
+        .unwrap();
+        let cert_path = directory.join("client.pem");
+        fs::write(
+            &cert_path,
+            include_bytes!("../../tests/fixtures/tls/pbes1-2048-cert.pem"),
+        )
+        .unwrap();
+        let properties = HashMap::from([
+            ("tls.test.mode.enable".into(), "false".into()),
+            ("tls.client.authServer".into(), "false".into()),
+            (
+                "tls.client.certPath".into(),
+                cert_path.display().to_string(),
+            ),
+            ("tls.client.keyPath".into(), key_path.display().to_string()),
+            (
+                "tls.client.keyPassword".into(),
+                "java-pbes1-password".into(),
+            ),
+        ]);
+        let config = TlsConfig::from_java_properties(&properties, None).unwrap();
+        let decrypted = config.client_key_pem.as_ref().unwrap();
+        assert!(decrypted.starts_with(b"-----BEGIN RSA PRIVATE KEY-----"));
+        let mut reader = BufReader::new(decrypted.as_slice());
+        assert!(rustls_pemfile::private_key(&mut reader).unwrap().is_some());
+        let connector = config.connector();
+        assert!(connector.is_ok(), "{}", connector.err().unwrap());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn pbes2_encrypted_private_key_is_decrypted() {
+        let pem = include_bytes!("../../tests/fixtures/tls/pbes2-aes256.key");
+        let decrypted = decrypt_private_key_pem(pem, Some("rust-test-password")).unwrap();
+        assert!(decrypted.starts_with(b"-----BEGIN RSA PRIVATE KEY-----"));
+        let mut reader = BufReader::new(decrypted.as_slice());
+        assert!(rustls_pemfile::private_key(&mut reader).unwrap().is_some());
+        assert!(decrypt_private_key_pem(pem, Some("wrong-password")).is_err());
+
+        let directory = test_dir();
+        let key_path = directory.join("server.key");
+        let cert_path = directory.join("server.pem");
+        fs::write(&key_path, pem).unwrap();
+        fs::write(
+            &cert_path,
+            include_bytes!("../../tests/fixtures/tls/pbes2-cert.pem"),
+        )
+        .unwrap();
+        let properties = HashMap::from([
+            ("tls.test.mode.enable".into(), "false".into()),
+            ("tls.client.authServer".into(), "false".into()),
+            (
+                "tls.client.certPath".into(),
+                cert_path.display().to_string(),
+            ),
+            ("tls.client.keyPath".into(), key_path.display().to_string()),
+            ("tls.client.keyPassword".into(), "rust-test-password".into()),
+        ]);
+        let config = TlsConfig::from_java_properties(&properties, None).unwrap();
+        let connector = config.connector();
+        assert!(connector.is_ok(), "{}", connector.err().unwrap());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn unencrypted_private_key_is_preserved() {
+        let pem = b"-----BEGIN PRIVATE KEY-----\nAQID\n-----END PRIVATE KEY-----\n";
+        assert_eq!(
+            decrypt_private_key_pem(pem, Some("irrelevant")).unwrap(),
+            pem
+        );
     }
 
     #[test]
