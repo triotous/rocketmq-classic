@@ -1638,13 +1638,15 @@ impl ClientInner {
                 .collect::<Vec<_>>()
         };
         for (id, address) in ids {
-            let error = if error == TransportError::Closed {
-                TransportError::SendRequest {
+            let error = match &error {
+                TransportError::Closed
+                | TransportError::Send(_)
+                | TransportError::Codec(_)
+                | TransportError::MalformedFrame(_) => TransportError::SendRequest {
                     remote_addr: address,
                     cause: None,
-                }
-            } else {
-                error.clone()
+                },
+                _ => error.clone(),
             };
             self.finish_pending(id, generation, Err(error));
         }

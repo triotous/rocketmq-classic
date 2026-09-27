@@ -2834,16 +2834,19 @@ async fn p3_malformed_frame_notifies_exception_then_close() {
         Some(Arc::new(TestEvents(events.clone()))),
     )
     .unwrap();
-    assert!(
+    assert!(matches!(
         client
             .invoke(
                 &address.to_string(),
                 command(1),
                 Instant::now() + Duration::from_secs(2),
             )
-            .await
-            .is_err()
-    );
+            .await,
+        Err(TransportError::SendRequest {
+            remote_addr,
+            cause: None,
+        }) if remote_addr == address.to_string()
+    ));
     tokio::time::timeout(Duration::from_secs(1), async {
         loop {
             let complete = {
