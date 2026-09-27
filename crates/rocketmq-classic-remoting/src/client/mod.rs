@@ -1918,9 +1918,9 @@ async fn scan_available_name_servers(
 ) {
     let interval_duration = inner
         .upgrade()
-        .map(|inner| inner.config.connect_timeout)
+        .map(|inner| inner.config.scan_interval())
         .unwrap_or_else(|| std::time::Duration::from_secs(3));
-    let mut interval = time::interval(interval_duration.max(std::time::Duration::from_millis(1)));
+    let mut interval = time::interval(interval_duration);
     interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
     let mut scans = tokio::task::JoinSet::new();
     let mut scan_cursor = 0;
@@ -1946,7 +1946,8 @@ async fn scan_available_name_servers(
                     let scan_workers = scan_workers.clone();
                     scans.spawn(async move {
                         let _permit = scan_workers.acquire_owned().await.ok()?;
-                        let deadline = Instant::now() + inner.config.connect_timeout;
+                        let probe_timeout = inner.config.connect_timeout_duration();
+                        let deadline = Instant::now() + probe_timeout;
                         let connection = inner.connection(&address, deadline).await.ok();
                         Some((address, connection))
                     });

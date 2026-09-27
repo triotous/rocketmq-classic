@@ -62,34 +62,31 @@ impl ClientInner {
             .map(|address| address.0)
             .unwrap_or_else(|_| address.to_owned());
         let mut retired = self.retired_connections.lock().unwrap();
-        if retired.contains_key(&generation) {
-            return true;
-        }
-        if connection.is_closed() {
-            return true;
+        if retired.contains_key(&generation) || connection.is_retired() {
+            return false;
         }
         let mut connections = self.connections.lock().unwrap();
         let current = connections
             .iter()
             .find(|(_, current)| current.generation == generation)
             .map(|(address, current)| (address.clone(), current.clone()));
-        let Some((address, current)) = current else {
-            if connections
-                .get(&address)
-                .is_some_and(|current| current.generation != generation)
-                || connection.is_closed()
-            {
-                return false;
+        let (address, current) = match current {
+            Some((address, current)) => {
+                connections.remove(&address);
+                (address, current)
             }
-            connection.mark_retired();
-            retired.insert(generation, (address, connection));
-            return true;
+            None => {
+                if connections.contains_key(&address) {
+                    return false;
+                }
+                connection.mark_retired();
+                if !connection.is_closed() {
+                    retired.insert(generation, (address, connection));
+                }
+                return true;
+            }
         };
-        if current.is_closed() || connection.is_closed() {
-            return false;
-        }
         current.mark_retired();
-        connections.remove(&address);
         retired.insert(generation, (address, current));
         true
     }
@@ -178,10 +175,11 @@ impl ClientInner {
             }
         }
         let mut shutdown = self.shutdown.subscribe();
-        let connect_deadline = if self.config.connect_timeout.is_zero() {
+        let connect_timeout = self.config.connect_timeout_duration();
+        let connect_deadline = if self.config.connect_timeout == 0 {
             deadline
         } else {
-            deadline.min(Instant::now() + self.config.connect_timeout)
+            deadline.min(Instant::now() + connect_timeout)
         };
         let (host, _) = connection::split_address(&key)?;
         let proxy = super::config::ClientConfig::proxy_for(&self.socks_proxy_routes, &host)?;
@@ -232,26 +230,21 @@ impl ClientInner {
     }
 
     pub(super) fn connection_closed(&self, generation: u64, failure: Option<TransportError>) {
-        let was_retired = self
-            .retired_connections
-            .lock()
-            .unwrap()
-            .contains_key(&generation);
-        let address = self
-            .connections
-            .lock()
-            .unwrap()
-            .iter()
-            .find_map(|(address, connection)| {
-                (connection.generation == generation).then(|| address.clone())
-            })
-            .or_else(|| {
-                self.retired_connections
-                    .lock()
-                    .unwrap()
-                    .get(&generation)
-                    .map(|(address, _)| address.clone())
-            });
+        let (was_retired, address, removed) = {
+            let mut retired = self.retired_connections.lock().unwrap();
+            let mut connections = self.connections.lock().unwrap();
+            if let Some((address, _)) = retired.remove(&generation) {
+                (true, Some(address), None)
+            } else {
+                let address = connections.iter().find_map(|(address, connection)| {
+                    (connection.generation == generation).then(|| address.clone())
+                });
+                let removed = address
+                    .as_ref()
+                    .and_then(|address| connections.remove(address));
+                (false, address, removed)
+            }
+        };
         if let Some(address) = &address {
             if failure.is_some() && failure != Some(TransportError::Closed) {
                 self.notify_channel(address, super::ChannelEvent::Exception);
@@ -266,26 +259,7 @@ impl ClientInner {
                 self.available_nameservers.lock().unwrap().remove(address);
             }
         }
-        if !was_retired {
-            let removed = {
-                let mut connections = self.connections.lock().unwrap();
-                let addresses = connections
-                    .iter()
-                    .filter_map(|(address, connection)| {
-                        (connection.generation == generation).then_some(address.clone())
-                    })
-                    .collect::<Vec<_>>();
-                addresses
-                    .into_iter()
-                    .filter_map(|address| connections.remove(&address))
-                    .collect::<Vec<_>>()
-            };
-            for connection in removed {
-                connection.close();
-            }
-        }
-        let retired = self.retired_connections.lock().unwrap().remove(&generation);
-        if let Some((_, connection)) = retired {
+        if let Some(connection) = removed {
             connection.close();
         }
         self.fail_generation(generation, failure.unwrap_or(TransportError::Closed));

@@ -42,8 +42,10 @@ impl SocksProxyConfig {
 #[derive(Clone, Debug)]
 pub struct ClientConfig {
     pub transport: TransportMode,
-    pub connect_timeout: std::time::Duration,
-    pub channel_not_active_interval: std::time::Duration,
+    /// Java `connectTimeoutMillis`; negative values leave Netty's 30-second default in effect.
+    pub connect_timeout: i32,
+    /// Java `channelNotActiveInterval` in milliseconds; inert in the pinned client's normal flow.
+    pub channel_not_active_interval: i64,
     pub async_semaphore_value: usize,
     pub oneway_semaphore_value: usize,
     pub worker_threads: usize,
@@ -55,7 +57,8 @@ pub struct ClientConfig {
     pub write_buffer_low_water_mark: usize,
     pub pooled_byte_buffer_allocator_enabled: bool,
     pub disable_netty_worker_group: bool,
-    pub max_idle_time: std::time::Duration,
+    /// Java `clientChannelMaxIdleTimeSeconds`; non-positive values disable idle detection.
+    pub max_idle_time: i32,
     pub close_socket_if_timeout: bool,
     pub scan_available_nameserver: bool,
     pub enable_reconnect_for_go_away: bool,
@@ -69,8 +72,8 @@ impl Default for ClientConfig {
     fn default() -> Self {
         Self {
             transport: TransportMode::Plain,
-            connect_timeout: std::time::Duration::from_millis(3000),
-            channel_not_active_interval: std::time::Duration::from_secs(60),
+            connect_timeout: 3000,
+            channel_not_active_interval: 60_000,
             async_semaphore_value: 65535,
             oneway_semaphore_value: 65535,
             worker_threads: 4,
@@ -84,7 +87,7 @@ impl Default for ClientConfig {
             write_buffer_low_water_mark: 0,
             pooled_byte_buffer_allocator_enabled: false,
             disable_netty_worker_group: false,
-            max_idle_time: std::time::Duration::from_secs(120),
+            max_idle_time: 120,
             close_socket_if_timeout: true,
             scan_available_nameserver: true,
             enable_reconnect_for_go_away: true,
@@ -95,6 +98,22 @@ impl Default for ClientConfig {
 }
 
 impl ClientConfig {
+    pub(super) fn connect_timeout_duration(&self) -> std::time::Duration {
+        if self.connect_timeout < 0 {
+            std::time::Duration::from_secs(30)
+        } else {
+            std::time::Duration::from_millis(self.connect_timeout as u64)
+        }
+    }
+
+    pub(super) fn scan_interval(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(self.connect_timeout.max(100) as u64)
+    }
+
+    pub(super) fn max_idle_time_duration(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(self.max_idle_time.max(0) as u64)
+    }
+
     pub fn validate(&self) -> Result<(), TransportError> {
         if self.worker_threads == 0
             || i32::try_from(self.worker_threads).is_err()
@@ -107,9 +126,6 @@ impl ClientConfig {
             || i32::try_from(self.client_socket_receive_buffer_size).is_err()
             || i32::try_from(self.write_buffer_high_water_mark).is_err()
             || i32::try_from(self.write_buffer_low_water_mark).is_err()
-            || self.connect_timeout > std::time::Duration::from_millis(i32::MAX as u64)
-            || self.max_idle_time > std::time::Duration::from_secs(i32::MAX as u64)
-            || self.channel_not_active_interval > std::time::Duration::from_millis(i64::MAX as u64)
         {
             return Err(TransportError::InvalidConfiguration(
                 "integer client settings must fit their Java signed integer ranges; worker count must be nonzero"
@@ -209,6 +225,33 @@ fn java_ip_to_int(ip: &str) -> Result<i32, TransportError> {
 #[cfg(test)]
 mod tests {
     use super::{ClientConfig, SocksProxyConfig};
+
+    #[test]
+    fn signed_time_settings_match_java_normalization() {
+        let defaults = ClientConfig::default();
+        assert_eq!(
+            defaults.connect_timeout_duration(),
+            std::time::Duration::from_secs(3)
+        );
+        assert_eq!(defaults.scan_interval(), std::time::Duration::from_secs(3));
+
+        let negative = ClientConfig {
+            connect_timeout: -1,
+            max_idle_time: -1,
+            channel_not_active_interval: -1,
+            ..defaults
+        };
+        assert!(negative.validate().is_ok());
+        assert_eq!(
+            negative.connect_timeout_duration(),
+            std::time::Duration::from_secs(30)
+        );
+        assert_eq!(
+            negative.scan_interval(),
+            std::time::Duration::from_millis(100)
+        );
+        assert_eq!(negative.max_idle_time_duration(), std::time::Duration::ZERO);
+    }
 
     #[test]
     fn write_buffer_watermarks_match_java_enablement() {

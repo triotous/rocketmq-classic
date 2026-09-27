@@ -412,7 +412,7 @@ async fn p3_nameserver_scan_probes_addresses_concurrently_and_tracks_results() {
     let accept_first = tokio::spawn(async move { first_listener.accept().await.unwrap() });
     let accept_second = tokio::spawn(async move { second_listener.accept().await.unwrap() });
     let client = RemotingClient::with_config(ClientConfig {
-        connect_timeout: Duration::from_millis(40),
+        connect_timeout: 40,
         scan_available_nameserver: true,
         ..ClientConfig::default()
     })
@@ -455,7 +455,7 @@ async fn p3_nameserver_update_prunes_availability_on_next_scan() {
     let (first_address, first_peer) = peer().await;
     let (second_address, second_peer) = peer().await;
     let client = RemotingClient::with_config(ClientConfig {
-        connect_timeout: Duration::from_millis(300),
+        connect_timeout: 300,
         scan_available_nameserver: true,
         ..ClientConfig::default()
     })
@@ -505,7 +505,7 @@ async fn p3_nameserver_list_selection_and_availability_tracking() {
     });
     let client = RemotingClient::with_config(ClientConfig {
         scan_available_nameserver: false,
-        connect_timeout: Duration::from_secs(3600),
+        connect_timeout: 3_600_000,
         ..ClientConfig::default()
     })
     .unwrap();
@@ -1559,7 +1559,7 @@ async fn p3_outbound_rpc_hook_runs_before_oneway_admission_wait() {
     let client = RemotingClient::with_config(ClientConfig {
         oneway_semaphore_value: 1,
         client_socket_send_buffer_size: 1024,
-        max_idle_time: Duration::ZERO,
+        max_idle_time: 0,
         scan_available_nameserver: false,
         ..ClientConfig::default()
     })
@@ -1767,8 +1767,8 @@ async fn p3_nameserver_channel_interval_has_no_implicit_scan_behavior() {
         write_command(&mut stream, &response).await;
     });
     let client = RemotingClient::with_config(ClientConfig {
-        channel_not_active_interval: Duration::from_millis(20),
-        max_idle_time: Duration::ZERO,
+        channel_not_active_interval: 20,
+        max_idle_time: 0,
         scan_available_nameserver: false,
         ..ClientConfig::default()
     })
@@ -1812,7 +1812,7 @@ async fn p3_max_idle_time_observes_partial_read_activity_like_all_idle_timer() {
     let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
     let client = RemotingClient::with_config_and_channel_event_listener(
         ClientConfig {
-            max_idle_time: Duration::from_millis(600),
+            max_idle_time: 1,
             scan_available_nameserver: false,
             ..ClientConfig::default()
         },
@@ -1833,7 +1833,7 @@ async fn p3_max_idle_time_observes_partial_read_activity_like_all_idle_timer() {
             .await
             .is_err()
     );
-    let event_address = tokio::time::timeout(Duration::from_millis(400), event_rx.recv())
+    let event_address = tokio::time::timeout(Duration::from_millis(800), event_rx.recv())
         .await
         .unwrap()
         .unwrap();
@@ -1846,7 +1846,15 @@ async fn p3_max_idle_time_observes_partial_read_activity_like_all_idle_timer() {
 async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
     let defaults = ClientConfig::default();
     assert!(matches!(defaults.transport, TransportMode::Plain));
-    assert_eq!(defaults.connect_timeout, Duration::from_millis(3000));
+    assert_eq!(defaults.connect_timeout, 3000);
+    assert!(
+        ClientConfig {
+            connect_timeout: -1,
+            ..defaults.clone()
+        }
+        .validate()
+        .is_ok()
+    );
     assert_eq!(defaults.async_semaphore_value, 65535);
     assert_eq!(defaults.oneway_semaphore_value, 65535);
     assert_eq!(defaults.worker_threads, 4);
@@ -1857,13 +1865,10 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
             .map(usize::from)
             .unwrap_or(1)
     );
-    assert_eq!(
-        defaults.channel_not_active_interval,
-        Duration::from_secs(60)
-    );
+    assert_eq!(defaults.channel_not_active_interval, 60_000);
     assert!(
         ClientConfig {
-            channel_not_active_interval: Duration::ZERO,
+            channel_not_active_interval: -1,
             ..defaults.clone()
         }
         .validate()
@@ -1871,7 +1876,7 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
     );
     assert!(
         ClientConfig {
-            max_idle_time: Duration::ZERO,
+            max_idle_time: 0,
             ..defaults.clone()
         }
         .validate()
@@ -1879,7 +1884,7 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
     );
     for zero_capacity in [
         ClientConfig {
-            connect_timeout: Duration::ZERO,
+            connect_timeout: 0,
             ..defaults.clone()
         },
         ClientConfig {
@@ -1898,7 +1903,15 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
     assert_eq!(defaults.write_buffer_high_water_mark, 0);
     assert_eq!(defaults.write_buffer_low_water_mark, 0);
     assert!(!defaults.pooled_byte_buffer_allocator_enabled);
-    assert_eq!(defaults.max_idle_time, Duration::from_secs(120));
+    assert_eq!(defaults.max_idle_time, 120);
+    assert!(
+        ClientConfig {
+            max_idle_time: -1,
+            ..defaults.clone()
+        }
+        .validate()
+        .is_ok()
+    );
     assert!(defaults.close_socket_if_timeout);
     assert!(defaults.scan_available_nameserver);
     assert!(defaults.enable_reconnect_for_go_away);
@@ -1971,10 +1984,6 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
         },
         ClientConfig {
             write_buffer_low_water_mark: i32::MAX as usize + 1,
-            ..defaults.clone()
-        },
-        ClientConfig {
-            channel_not_active_interval: Duration::from_millis(i64::MAX as u64 + 1),
             ..defaults.clone()
         },
     ] {
@@ -3082,6 +3091,84 @@ async fn p3_go_away_replacement_keeps_other_old_connection_requests_alive() {
     .expect("replacement must leave other requests on the old connection alive");
     assert_eq!(results.0.unwrap().code, 61);
     assert_eq!(results.1.unwrap().code, 62);
+    client.shutdown().await;
+    peer.await.unwrap();
+}
+
+#[tokio::test]
+async fn p3_multiple_go_away_responses_on_retired_connection_only_retry_once() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut old_connection, _) = listener.accept().await.unwrap();
+        let first = read_command(&mut old_connection).await;
+        let second = read_command(&mut old_connection).await;
+
+        let mut go_away = command(response::GO_AWAY);
+        go_away.opaque = first.opaque;
+        go_away.mark_response();
+        write_command(&mut old_connection, &go_away).await;
+
+        let (mut replacement, _) = listener.accept().await.unwrap();
+        let retry = read_command(&mut replacement).await;
+        let mut second_go_away = command(response::GO_AWAY);
+        second_go_away.opaque = second.opaque;
+        second_go_away.mark_response();
+        write_command(&mut old_connection, &second_go_away).await;
+
+        let mut response = command(63);
+        response.opaque = retry.opaque;
+        response.mark_response();
+        write_command(&mut replacement, &response).await;
+    });
+    let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
+    let first_client = client.clone();
+    let first_address = address.to_string();
+    let first = tokio::spawn(async move {
+        first_client
+            .invoke(
+                &first_address,
+                command(1),
+                Instant::now() + Duration::from_secs(2),
+            )
+            .await
+    });
+    let second_client = client.clone();
+    let second_address = address.to_string();
+    let second = tokio::spawn(async move {
+        second_client
+            .invoke(
+                &second_address,
+                command(2),
+                Instant::now() + Duration::from_secs(2),
+            )
+            .await
+    });
+
+    let (first, second) = tokio::time::timeout(Duration::from_secs(2), async {
+        (first.await.unwrap(), second.await.unwrap())
+    })
+    .await
+    .expect("GO_AWAY requests did not finish");
+    let results = [first, second];
+    assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+    assert_eq!(
+        results
+            .iter()
+            .filter_map(|result| result.as_ref().ok())
+            .next()
+            .unwrap()
+            .code,
+        63
+    );
+    assert_eq!(
+        results
+            .iter()
+            .filter(|result| matches!(result, Err(TransportError::SendRequest { .. })))
+            .count(),
+        1
+    );
     client.shutdown().await;
     peer.await.unwrap();
 }

@@ -114,7 +114,7 @@ impl Connection {
             frame_pool: Arc::new(std::sync::Mutex::new(Vec::new())),
         });
         let max_idle_time = inner.upgrade().map_or(std::time::Duration::ZERO, |client| {
-            client.config.max_idle_time
+            client.config.max_idle_time_duration()
         });
         let task = tokio::spawn(run_connection(
             stream,
