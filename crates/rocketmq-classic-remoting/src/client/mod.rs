@@ -1306,7 +1306,7 @@ impl RemotingClient {
                     }
                     return Err(TransportError::SendRequest {
                         remote_addr: connection.address().to_owned(),
-                        cause: if options.retried_go_away {
+                        cause: Some(if options.retried_go_away {
                             format!(
                                 "Receive GO_AWAY twice in request from connection generation={}",
                                 connection.generation
@@ -1316,7 +1316,7 @@ impl RemotingClient {
                                 "Receive GO_AWAY from connection generation={}",
                                 connection.generation
                             )
-                        },
+                        }),
                     });
                 }
                 if options.run_rpc_hooks && !options.retried_go_away {
@@ -1573,11 +1573,21 @@ impl ClientInner {
             let pending = self.pending.lock().unwrap();
             pending
                 .iter()
-                .filter_map(|(id, item)| (item.generation == generation).then_some(*id))
+                .filter_map(|(id, item)| {
+                    (item.generation == generation).then_some((*id, item.address.clone()))
+                })
                 .collect::<Vec<_>>()
         };
-        for id in ids {
-            self.finish_pending(id, generation, Err(error.clone()));
+        for (id, address) in ids {
+            let error = if error == TransportError::Closed {
+                TransportError::SendRequest {
+                    remote_addr: address,
+                    cause: None,
+                }
+            } else {
+                error.clone()
+            };
+            self.finish_pending(id, generation, Err(error));
         }
     }
 

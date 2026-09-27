@@ -2151,7 +2151,13 @@ async fn p3_async_peer_close_preserves_public_wrapper_default_send_status() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(context.error, Some(TransportError::Closed));
+    assert_eq!(
+        context.error,
+        Some(TransportError::SendRequest {
+            remote_addr: address.to_string(),
+            cause: None,
+        })
+    );
     assert!(context.send_request_ok);
     tokio::time::timeout(Duration::from_secs(1), async {
         while events.lock().unwrap().len() < 2 {
@@ -2309,7 +2315,11 @@ async fn p3_async_second_go_away_callback_retains_original_request() {
         panic!("expected Java-compatible send-request error");
     };
     assert_eq!(remote_addr, address.to_string());
-    assert!(cause.starts_with("Receive GO_AWAY twice in request from connection generation="));
+    assert!(
+        cause
+            .unwrap()
+            .starts_with("Receive GO_AWAY twice in request from connection generation=")
+    );
     assert_eq!(context.response, None);
     assert_eq!(context.request.flag, 1 << 8);
     assert_eq!(
@@ -2609,7 +2619,11 @@ async fn p3_go_away_response_maps_to_java_send_exception() {
         panic!("expected Java-compatible send-request error");
     };
     assert_eq!(remote_addr, address.to_string());
-    assert!(cause.starts_with("Receive GO_AWAY from connection generation="));
+    assert!(
+        cause
+            .unwrap()
+            .starts_with("Receive GO_AWAY from connection generation=")
+    );
     client.shutdown().await;
     peer.await.unwrap();
 }
