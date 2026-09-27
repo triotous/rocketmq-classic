@@ -75,11 +75,13 @@ Reject new work, cancel creation, close connections, drain pending requests, sto
 
 Write the failing check/oracle fixture before its implementation. The cases below must become runnable checks, not manual checklist-only claims. Run these checks without Docker or a live Broker; use Java fixtures, controlled clocks and scripted peers. Shared commands and evidence rules are in the execution index.
 
-- [ ] **P3-V01** — Barrier-controlled response/timeout/cancellation/shutdown races produce at most one completion and zero pending entries; repeat through opaque wrap.
-- [ ] **P3-V02** — Old-generation close cannot evict a replacement; concurrent creation shares one connection; unbounded outbound enqueue accepts beyond former queue sizes while a blocked socket write respects the operation deadline.
-- [ ] **P3-V03** — Loopback inbound requests, unsupported/oneway behavior and concurrent responses work without blocking the reader.
+- [x] **P3-V01** — Barrier-controlled response/timeout/cancellation/shutdown races produce at most one completion and zero pending entries; repeat through opaque wrap.
+- [x] **P3-V02** — Old-generation close cannot evict a replacement; concurrent creation shares one connection; unbounded outbound enqueue accepts beyond former queue sizes while a blocked socket write respects the operation deadline.
+- [x] **P3-V03** — Loopback inbound requests, unsupported/oneway behavior and concurrent responses work without blocking the reader.
 
-- [ ] **P3-U01** — Scripted TCP/TLS peers verify raw route framing, trusted/untrusted CA and hostname failures, deadlines and zero owned tasks after shutdown.
+- [x] **P3-U01** — Scripted TCP/TLS peers verify raw route framing, trusted/untrusted CA and hostname failures, deadlines and zero owned tasks after shutdown.
+
+These four checked items record local automated-test evidence only; they do not constitute Phase 3 acceptance. The Java/Rust executor and callback lifecycle review remains documented as partial where Tokio scheduling/ownership differs, and P3-V04 remains deferred to Phase 19.
 
 ### 5.1 Local commands after implementation
 

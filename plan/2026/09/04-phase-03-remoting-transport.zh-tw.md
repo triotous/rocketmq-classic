@@ -75,11 +75,13 @@ admission、connection acquisition、TCP/TLS handshake、socket write 與 respon
 
 先寫對應失敗測試／Oracle fixture，再依序實作；以下 case 必須成為可執行檢查，而非人工勾選。以下檢查不依賴 Docker 或 live Broker，使用 Java fixture、可控時鐘及 scripted peer；共通命令與證據規則見執行索引。
 
-- [ ] **P3-V01** — 以 barrier 控制 response/timeout/cancellation/shutdown race，最多完成一次且 pending 為零；包含 opaque wrap。
-- [ ] **P3-V02** — old-generation close 不得移除 replacement；並行 creation 只產生一個 connection；無界 outbound enqueue 可超過先前 queue 容量，socket write 阻塞仍遵守 operation deadline。
-- [ ] **P3-V03** — loopback inbound request、unsupported/oneway 行為及並行 response 正常，reader 不被阻塞。
+- [x] **P3-V01** — 以 barrier 控制 response/timeout/cancellation/shutdown race，最多完成一次且 pending 為零；包含 opaque wrap。
+- [x] **P3-V02** — old-generation close 不得移除 replacement；並行 creation 只產生一個 connection；無界 outbound enqueue 可超過先前 queue 容量，socket write 阻塞仍遵守 operation deadline。
+- [x] **P3-V03** — loopback inbound request、unsupported/oneway 行為及並行 response 正常，reader 不被阻塞。
 
-- [ ] **P3-U01** — scripted TCP/TLS peer 驗證 raw route framing、CA 信任／不信任與 hostname 失敗、deadline 及 shutdown 後零 owned task。
+- [x] **P3-U01** — scripted TCP/TLS peer 驗證 raw route framing、CA 信任／不信任與 hostname 失敗、deadline 及 shutdown 後零 owned task。
+
+以上四項勾選只記錄本機自動化測試證據，不代表 Phase 3 已驗收。Java/Rust executor 與 callback lifecycle review 仍於 inventory 標示 Tokio 排程／所有權差異；P3-V04 仍延後至 Phase 19。
 
 ### 5.1 實作完成後的本機命令
 
