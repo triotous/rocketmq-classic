@@ -50,7 +50,6 @@ pub(crate) struct Connection {
     sender: mpsc::Sender<OutboundFrame>,
     address: String,
     pooled_byte_buffer_allocator_enabled: bool,
-    last_activity: std::sync::Mutex<std::time::Instant>,
     closed: Arc<AtomicBool>,
     task: tokio::sync::Mutex<Option<JoinHandle<()>>>,
     shutdown: tokio::sync::watch::Sender<bool>,
@@ -102,7 +101,6 @@ impl Connection {
             sender,
             address: address.clone(),
             pooled_byte_buffer_allocator_enabled,
-            last_activity: std::sync::Mutex::new(std::time::Instant::now()),
             closed: closed.clone(),
             task: tokio::sync::Mutex::new(None),
             shutdown,
@@ -110,6 +108,9 @@ impl Connection {
             write_watermarks,
             writable: Arc::new(AtomicBool::new(true)),
             frame_pool: Arc::new(std::sync::Mutex::new(Vec::new())),
+        });
+        let max_idle_time = inner.upgrade().map_or(std::time::Duration::ZERO, |client| {
+            client.config.max_idle_time
         });
         let task = tokio::spawn(run_connection(
             stream,
@@ -125,6 +126,7 @@ impl Connection {
                 write_watermarks,
                 writable: connection.writable.clone(),
                 pooled_byte_buffer_allocator_enabled,
+                max_idle_time,
                 frame_pool: connection.frame_pool.clone(),
                 disable_worker_group,
             },
@@ -266,14 +268,6 @@ impl Connection {
         &self.address
     }
 
-    pub(crate) fn idle_for(&self) -> std::time::Duration {
-        self.last_activity.lock().unwrap().elapsed()
-    }
-
-    pub(crate) fn mark_active(&self) {
-        *self.last_activity.lock().unwrap() = std::time::Instant::now();
-    }
-
     pub(crate) fn is_closed(&self) -> bool {
         self.closed.load(std::sync::atomic::Ordering::Acquire)
     }
@@ -335,6 +329,7 @@ struct ConnectionTask {
     write_watermarks: Option<(usize, usize)>,
     writable: Arc<AtomicBool>,
     pooled_byte_buffer_allocator_enabled: bool,
+    max_idle_time: std::time::Duration,
     frame_pool: Arc<std::sync::Mutex<Vec<Vec<u8>>>>,
     disable_worker_group: bool,
 }
@@ -355,16 +350,25 @@ async fn run_connection(
         write_watermarks,
         writable,
         pooled_byte_buffer_allocator_enabled,
+        max_idle_time,
         frame_pool,
         disable_worker_group,
     } = task;
     let (mut reader, mut writer) = tokio::io::split(stream);
+    let idle_timer = time::sleep(max_idle_time);
+    tokio::pin!(idle_timer);
     let mut input = BytesMut::with_capacity(8192);
     let mut read_buffer = vec![0; 8192];
     let failure = 'connection: loop {
         tokio::select! {
             biased;
             result = shutdown.changed() => if result.is_err() || *shutdown.borrow() { break None },
+            _ = &mut idle_timer, if !max_idle_time.is_zero() => {
+                if let Some(inner) = inner.upgrade() {
+                    inner.notify_channel(&address, super::ChannelEvent::Idle);
+                }
+                break None;
+            },
             frame = outbound.recv() => match frame {
                 Some(mut frame) => {
                     let bytes = frame.bytes.as_ref().expect("queued frame bytes");
@@ -377,19 +381,10 @@ async fn run_connection(
                             Err(TransportError::Shutdown)
                         }
                     };
-                    if result.is_ok() {
-                        if let Some(inner) = inner.upgrade() {
-                            let connection = inner
-                                .connections
-                                .lock()
-                                .unwrap()
-                                .values()
-                                .find(|connection| connection.generation == generation)
-                                .cloned();
-                            if let Some(connection) = connection {
-                                connection.mark_active();
-                            }
-                        }
+                    if result.is_ok() && !max_idle_time.is_zero() {
+                        idle_timer
+                            .as_mut()
+                            .reset(Instant::now() + max_idle_time);
                     }
                     let queued = queued_write_bytes
                         .fetch_sub(write_length, std::sync::atomic::Ordering::AcqRel)
@@ -422,17 +417,10 @@ async fn run_connection(
             result = reader.read(&mut read_buffer) => match result {
                 Ok(0) => break Some(TransportError::Closed),
                 Ok(length) => {
-                    if let Some(inner) = inner.upgrade() {
-                        if let Some(connection) = inner
-                            .connections
-                            .lock()
-                            .unwrap()
-                            .values()
-                            .find(|connection| connection.generation == generation)
-                            .cloned()
-                        {
-                            connection.mark_active();
-                        }
+                    if !max_idle_time.is_zero() {
+                        idle_timer
+                            .as_mut()
+                            .reset(Instant::now() + max_idle_time);
                     }
                     input.extend_from_slice(&read_buffer[..length]);
                     loop {

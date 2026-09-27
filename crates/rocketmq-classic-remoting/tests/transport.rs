@@ -1457,14 +1457,14 @@ async fn p3_max_idle_time_observes_partial_read_activity_like_all_idle_timer() {
     let address = listener.local_addr().unwrap();
     let peer = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
-        tokio::time::sleep(Duration::from_millis(800)).await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
         let _ = stream.write_all(&[0, 0]).await;
         tokio::time::sleep(Duration::from_secs(2)).await;
     });
     let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
     let client = RemotingClient::with_config_and_channel_event_listener(
         ClientConfig {
-            max_idle_time: Duration::from_secs(1),
+            max_idle_time: Duration::from_millis(600),
             scan_available_nameserver: false,
             ..ClientConfig::default()
         },
@@ -1480,11 +1480,11 @@ async fn p3_max_idle_time_observes_partial_read_activity_like_all_idle_timer() {
             .await
     );
     assert!(
-        tokio::time::timeout(Duration::from_millis(1300), event_rx.recv())
+        tokio::time::timeout(Duration::from_millis(750), event_rx.recv())
             .await
             .is_err()
     );
-    let event_address = tokio::time::timeout(Duration::from_secs(2), event_rx.recv())
+    let event_address = tokio::time::timeout(Duration::from_millis(400), event_rx.recv())
         .await
         .unwrap()
         .unwrap();
@@ -1528,6 +1528,22 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
         .validate()
         .is_ok()
     );
+    for zero_capacity in [
+        ClientConfig {
+            connect_timeout: Duration::ZERO,
+            ..defaults.clone()
+        },
+        ClientConfig {
+            async_semaphore_value: 0,
+            ..defaults.clone()
+        },
+        ClientConfig {
+            oneway_semaphore_value: 0,
+            ..defaults.clone()
+        },
+    ] {
+        assert!(zero_capacity.validate().is_ok());
+    }
     assert_eq!(defaults.client_socket_send_buffer_size, 0);
     assert_eq!(defaults.client_socket_receive_buffer_size, 0);
     assert_eq!(defaults.write_buffer_high_water_mark, 0);
@@ -1566,26 +1582,14 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
         .validate()
         .is_ok()
     );
-    for invalid in [
-        ClientConfig {
-            connect_timeout: Duration::ZERO,
-            ..defaults.clone()
-        },
-        ClientConfig {
-            async_semaphore_value: 0,
-            ..defaults.clone()
-        },
-        ClientConfig {
-            oneway_semaphore_value: 0,
-            ..defaults.clone()
-        },
+    assert!(
         ClientConfig {
             worker_threads: 0,
             ..defaults.clone()
-        },
-    ] {
-        assert!(invalid.validate().is_err());
-    }
+        }
+        .validate()
+        .is_err()
+    );
     assert!(
         ClientConfig {
             callback_executor_threads: 0,

@@ -105,7 +105,11 @@ impl ClientInner {
             }
         }
         let mut shutdown = self.shutdown.subscribe();
-        let connect_deadline = deadline.min(Instant::now() + self.config.connect_timeout);
+        let connect_deadline = if self.config.connect_timeout.is_zero() {
+            deadline
+        } else {
+            deadline.min(Instant::now() + self.config.connect_timeout)
+        };
         self.notify_channel(&key, super::ChannelEvent::Connect);
         let (host, _) = connection::split_address(&key)?;
         let proxy = super::config::ClientConfig::proxy_for(&self.socks_proxy_routes, &host)?;

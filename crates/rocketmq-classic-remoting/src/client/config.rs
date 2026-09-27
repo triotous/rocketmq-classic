@@ -96,15 +96,13 @@ impl Default for ClientConfig {
 
 impl ClientConfig {
     pub fn validate(&self) -> Result<(), TransportError> {
-        if self.connect_timeout.is_zero()
-            || self.async_semaphore_value == 0
-            || self.oneway_semaphore_value == 0
-            || self.worker_threads == 0
+        if self.worker_threads == 0
             || i32::try_from(self.client_socket_send_buffer_size).is_err()
             || i32::try_from(self.client_socket_receive_buffer_size).is_err()
         {
             return Err(TransportError::InvalidConfiguration(
-                "timeouts, semaphore limits, and worker counts must be nonzero".into(),
+                "worker counts must be nonzero and socket buffer sizes must fit Java signed int"
+                    .into(),
             ));
         }
         if self.write_buffer_low_water_mark > self.write_buffer_high_water_mark {

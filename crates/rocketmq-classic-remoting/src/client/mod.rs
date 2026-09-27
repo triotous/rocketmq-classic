@@ -1813,7 +1813,7 @@ async fn scan_available_name_servers(
         .upgrade()
         .map(|inner| inner.config.connect_timeout)
         .unwrap_or_else(|| std::time::Duration::from_secs(3));
-    let mut interval = time::interval(interval_duration);
+    let mut interval = time::interval(interval_duration.max(std::time::Duration::from_millis(1)));
     interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
     let mut scans = tokio::task::JoinSet::new();
     loop {
@@ -1903,20 +1903,6 @@ async fn timeout_scheduler(
         tokio::select! {
             _ = interval.tick() => {
                 let Some(inner) = inner.upgrade() else { return };
-                if !inner.config.max_idle_time.is_zero() {
-                    let idle_connections = inner
-                        .connections
-                        .lock()
-                        .unwrap()
-                        .values()
-                        .filter(|connection| connection.idle_for() >= inner.config.max_idle_time)
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    for connection in idle_connections {
-                        inner.notify_channel(connection.address(), ChannelEvent::Idle);
-                        connection.close();
-                    }
-                }
                 let now = Instant::now();
                 let expired = {
                     let pending = inner.pending.lock().unwrap();
