@@ -112,6 +112,47 @@ async fn p3_async_connect_failure_calls_fail_without_complete() {
 }
 
 #[tokio::test]
+async fn p3_shutdown_drains_callback_from_pending_invoke() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let (request_seen_tx, request_seen_rx) = tokio::sync::oneshot::channel();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let _request = read_command(&mut stream).await;
+        let _ = request_seen_tx.send(());
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    });
+    let client = RemotingClient::new(TransportMode::Plain);
+    let (callback_tx, mut callback_rx) = tokio::sync::mpsc::unbounded_channel();
+    let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+    client
+        .invoke_async(
+            address.to_string(),
+            command(91),
+            Instant::now() + Duration::from_secs(5),
+            Arc::new(ContextCallback {
+                sender: callback_tx,
+                events: events.clone(),
+            }),
+        )
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(2), request_seen_rx)
+        .await
+        .expect("peer did not receive invoke before shutdown")
+        .unwrap();
+
+    client.shutdown().await;
+
+    let context = tokio::time::timeout(Duration::from_secs(1), callback_rx.recv())
+        .await
+        .expect("shutdown lost the pending invoke callback")
+        .unwrap();
+    assert_eq!(context.error, Some(TransportError::Shutdown));
+    assert_eq!(*events.lock().unwrap(), vec!["complete", "fail"]);
+    peer.abort();
+}
+
+#[tokio::test]
 async fn p3_future_connect_failure_includes_java_remote_address_and_null_cause() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap().to_string();
@@ -793,6 +834,10 @@ async fn p3_v03_inbound_dispatch_and_reordered_parallel_responses() {
     assert_eq!(
         unsupported_response.code,
         response::REQUEST_CODE_NOT_SUPPORTED
+    );
+    assert_eq!(
+        unsupported_response.remark.as_deref(),
+        Some(" request type 888888 not supported")
     );
     assert_eq!(unsupported_response.opaque, 42);
     client.shutdown().await;

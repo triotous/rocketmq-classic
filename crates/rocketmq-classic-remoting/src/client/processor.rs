@@ -98,13 +98,11 @@ pub(super) fn process_one(inner: &Weak<ClientInner>, request: InboundRequest) {
         .cloned()
         .or_else(|| client.default_processor.lock().unwrap().clone());
     let Some(registration) = registration else {
+        let remark = format!(" request type {} not supported", request.command.code);
         send_response(
             inner,
             request,
-            error_response(
-                response::REQUEST_CODE_NOT_SUPPORTED,
-                "request code not supported",
-            ),
+            error_response(response::REQUEST_CODE_NOT_SUPPORTED, &remark),
         );
         return;
     };
