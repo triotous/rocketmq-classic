@@ -2946,6 +2946,10 @@ async fn p3_rpc_hook_abort_and_failures_map_to_java_response_paths() {
     assert_eq!(aborted.code, 831);
     assert_eq!(aborted.remark.as_deref(), Some("hook stopped request"));
     assert_eq!(responses.get(&72).unwrap().code, response::SYSTEM_ERROR);
+    assert_eq!(
+        responses.get(&72).unwrap().remark.as_deref(),
+        Some("after hook failed")
+    );
     assert_eq!(processor_calls.load(Ordering::SeqCst), 1);
     client.shutdown().await;
 }
@@ -2963,6 +2967,37 @@ impl RpcHook for EquivalentTestHook {
     fn before_request(&self, _: &str, _: &RemotingCommand) {
         self.counter.fetch_add(1, Ordering::SeqCst);
     }
+}
+
+#[tokio::test]
+async fn p3_processor_failure_is_exposed_in_system_error_remark() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut request = command(845);
+        request.opaque = 74;
+        write_command(&mut stream, &request).await;
+        read_command(&mut stream).await
+    });
+    let client = RemotingClient::new(TransportMode::Plain);
+    client.register_processor(
+        845,
+        Arc::new(|_: RemotingCommand| Err("processor failed".into())),
+    );
+    assert!(
+        client
+            .is_address_reachable(
+                &address.to_string(),
+                Instant::now() + Duration::from_secs(2)
+            )
+            .await
+    );
+    let response = peer.await.unwrap();
+    assert_eq!(response.code, response::SYSTEM_ERROR);
+    assert_eq!(response.remark.as_deref(), Some("processor failed"));
+    assert_eq!(response.opaque, 74);
+    client.shutdown().await;
 }
 
 #[tokio::test]
@@ -3148,6 +3183,7 @@ async fn p3_before_hook_failure_runs_pipeline_and_after_hook_but_skips_processor
     );
     let response = peer.await.unwrap();
     assert_eq!(response.code, response::SYSTEM_ERROR);
+    assert_eq!(response.remark.as_deref(), Some("before hook failed"));
     assert_eq!(pipeline_calls.load(Ordering::SeqCst), 1);
     assert_eq!(processor_calls.load(Ordering::SeqCst), 0);
     assert_eq!(

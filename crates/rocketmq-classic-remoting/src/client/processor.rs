@@ -169,13 +169,9 @@ fn process_registered(
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 hook.before_request_result(&request.remote_addr, &request_for_hooks)
             }))
-            .unwrap_or_else(|_| {
-                Err(super::RpcHookError::Failed(
-                    "RPC before hook panicked".into(),
-                ))
-            })
+            .unwrap_or_else(|payload| Err(super::RpcHookError::Failed(panic_message(payload))))
         });
-        let before_failed = match before_result {
+        let before_failure = match before_result {
             Err(super::RpcHookError::Abort {
                 response_code,
                 remark,
@@ -184,10 +180,10 @@ fn process_registered(
                     response_code,
                     remark.as_deref().unwrap_or("RPC hook aborted request"),
                 ));
-                false
+                None
             }
-            Err(super::RpcHookError::Failed(_)) => true,
-            Ok(()) => false,
+            Err(super::RpcHookError::Failed(message)) => Some(message),
+            Ok(()) => None,
         };
         if response.is_none() {
             let pipeline = client.request_pipeline.lock().unwrap().clone();
@@ -199,10 +195,8 @@ fn process_registered(
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     pipeline.execute_detailed(&context, &request_for_hooks)
                 }))
-                .unwrap_or_else(|_| {
-                    Err(super::RequestPipelineError::Failed(
-                        "request pipeline panicked".into(),
-                    ))
+                .unwrap_or_else(|payload| {
+                    Err(super::RequestPipelineError::Failed(panic_message(payload)))
                 })
             } else {
                 Ok(())
@@ -217,11 +211,14 @@ fn process_registered(
                         remark.as_deref().unwrap_or("request pipeline aborted"),
                     ));
                 }
-                Err(super::RequestPipelineError::Failed(_)) => {
-                    response = Some(error_response(response::SYSTEM_ERROR, "system error"));
+                Err(super::RequestPipelineError::Failed(message)) => {
+                    response = Some(error_response(response::SYSTEM_ERROR, &message));
                 }
-                Ok(()) if before_failed => {
-                    response = Some(error_response(response::SYSTEM_ERROR, "system error"));
+                Ok(()) if before_failure.is_some() => {
+                    response = Some(error_response(
+                        response::SYSTEM_ERROR,
+                        before_failure.as_deref().unwrap_or_default(),
+                    ));
                     run_after_hooks = true;
                 }
                 Ok(()) => {
@@ -233,8 +230,14 @@ fn process_registered(
                             response = processed_response;
                             run_after_hooks = true;
                         }
-                        Ok(Err(_)) | Err(_) => {
-                            response = Some(error_response(response::SYSTEM_ERROR, "system error"));
+                        Ok(Err(message)) => {
+                            response = Some(error_response(response::SYSTEM_ERROR, &message));
+                        }
+                        Err(payload) => {
+                            response = Some(error_response(
+                                response::SYSTEM_ERROR,
+                                &panic_message(payload),
+                            ));
                         }
                     }
                 }
@@ -251,11 +254,7 @@ fn process_registered(
                         response.as_ref(),
                     )
                 }))
-                .unwrap_or_else(|_| {
-                    Err(super::RpcHookError::Failed(
-                        "RPC after hook panicked".into(),
-                    ))
-                });
+                .unwrap_or_else(|payload| Err(super::RpcHookError::Failed(panic_message(payload))));
                 match result {
                     Ok(()) => {}
                     Err(super::RpcHookError::Abort {
@@ -268,8 +267,8 @@ fn process_registered(
                         ));
                         break;
                     }
-                    Err(super::RpcHookError::Failed(_)) => {
-                        response = Some(error_response(response::SYSTEM_ERROR, "system error"));
+                    Err(super::RpcHookError::Failed(message)) => {
+                        response = Some(error_response(response::SYSTEM_ERROR, &message));
                         break;
                     }
                 }
@@ -313,6 +312,16 @@ fn send_response(
             }
             Err(error) => client.connection_closed(request.generation, Some(error)),
         }
+    }
+}
+
+fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else if let Some(message) = payload.downcast_ref::<&'static str>() {
+        (*message).into()
+    } else {
+        "request processing panicked".into()
     }
 }
 
