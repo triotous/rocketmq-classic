@@ -34,8 +34,8 @@ pub enum TransportError {
     InvalidConfiguration(String),
     #[error("request admission limit reached")]
     TooManyRequests,
-    #[error("peer requested the client to go away")]
-    GoAway,
+    #[error("request send failed for {remote_addr}: {cause}")]
+    SendRequest { remote_addr: String, cause: String },
     #[error("connection is closed")]
     Closed,
     #[error("request was interrupted because its channel was closed")]

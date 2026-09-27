@@ -2305,7 +2305,11 @@ async fn p3_async_second_go_away_callback_retains_original_request() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(context.error, Some(TransportError::GoAway));
+    let Some(TransportError::SendRequest { remote_addr, cause }) = context.error else {
+        panic!("expected Java-compatible send-request error");
+    };
+    assert_eq!(remote_addr, address.to_string());
+    assert!(cause.starts_with("Receive GO_AWAY twice in request from connection generation="));
     assert_eq!(context.response, None);
     assert_eq!(context.request.flag, 1 << 8);
     assert_eq!(
@@ -2577,7 +2581,7 @@ async fn p3_connect_failure_does_not_run_before_rpc_hooks() {
 }
 
 #[tokio::test]
-async fn p3_go_away_response_uses_explicit_transport_error() {
+async fn p3_go_away_response_maps_to_java_send_exception() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let peer = tokio::spawn(async move {
@@ -2601,7 +2605,11 @@ async fn p3_go_away_response_uses_explicit_transport_error() {
         )
         .await
         .unwrap_err();
-    assert_eq!(error, TransportError::GoAway);
+    let TransportError::SendRequest { remote_addr, cause } = error else {
+        panic!("expected Java-compatible send-request error");
+    };
+    assert_eq!(remote_addr, address.to_string());
+    assert!(cause.starts_with("Receive GO_AWAY from connection generation="));
     client.shutdown().await;
     peer.await.unwrap();
 }

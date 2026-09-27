@@ -1,0 +1,20 @@
+# Phase 3 remoting transport — execution log (20260927T000114Z)
+
+## Scope and decision
+- Continued Java 5.5.1 error-path parity review. Verified pinned `NettyRemotingClient.invokeImpl`: terminal GO_AWAY maps to `RemotingSendRequestException(remoteAddr, Throwable(...))`, with distinct causes for first/second GO_AWAY.
+- Replaced the Rust-only `TransportError::GoAway` with Java-aligned `TransportError::SendRequest { remote_addr, cause }` for terminal GO_AWAY. Kept Rust generation identifier in the message where Java formats channel id, since Tokio transport has no Netty channel id; this is a partial metadata mapping, not exact cause-string parity.
+- Retained `Closed` for callback result with no response/error: that is an internal impossible/fallback path and changing it to a Java send exception with an empty address would have invented misleading metadata.
+
+## Actions and validation
+- Added/updated tests for no-retry GO_AWAY, second GO_AWAY callback error, and existing retry behavior.
+- Updated the Phase 3 inventory, compatibility overview, and remoting ADR to remove the obsolete standalone GO_AWAY error mapping and reflect constructor-only channel listener semantics.
+- `cargo test -p rocketmq-classic-remoting p3_go_away --locked --offline` — passed (3 tests).
+- `cargo test -p rocketmq-classic-remoting p3_async_second_go_away_callback_retains_original_request --locked --offline` — passed.
+- `cargo fmt --all --check` — passed.
+- `cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings` — passed.
+- `cargo test --workspace --locked --offline` — passed (all workspace tests, including 63 remoting integration tests).
+- `git diff --check` — passed before final edit; rerun before commit.
+
+## Status
+- Phase 3 remains unaccepted. This addresses one confirmed error-classification path only. Full exception/cause coverage, API/config inventory semantic parity, and P3-V04 Phase 19 live validation remain outstanding. Phase 4 not started.
+- Changes not yet committed at log creation.

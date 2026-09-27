@@ -1304,7 +1304,20 @@ impl RemotingClient {
                         }
                         return result;
                     }
-                    return Err(TransportError::GoAway);
+                    return Err(TransportError::SendRequest {
+                        remote_addr: connection.address().to_owned(),
+                        cause: if options.retried_go_away {
+                            format!(
+                                "Receive GO_AWAY twice in request from connection generation={}",
+                                connection.generation
+                            )
+                        } else {
+                            format!(
+                                "Receive GO_AWAY from connection generation={}",
+                                connection.generation
+                            )
+                        },
+                    });
                 }
                 if options.run_rpc_hooks && !options.retried_go_away {
                     let hooks = self.inner.rpc_hooks.lock().unwrap().clone();
