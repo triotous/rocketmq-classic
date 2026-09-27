@@ -56,8 +56,6 @@ pub enum TransportError {
     MalformedFrame(CodecError),
     #[error("codec: {0}")]
     Codec(CodecError),
-    #[error("inbound request processor is overloaded")]
-    InboundOverloaded,
     #[error("client has not been started")]
     NotStarted,
     #[error("client has shut down")]

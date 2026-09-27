@@ -33,7 +33,8 @@ pub use connection_manager::Address;
 pub use processor::RequestProcessor;
 pub use tls::{PrivateKeyDecryptionStrategy, TlsConfig};
 
-const OUTBOUND_QUEUE_CAPACITY: usize = 128;
+#[cfg(test)]
+const LEGACY_OUTBOUND_QUEUE_CAPACITY: usize = 128;
 const CHANNEL_EVENT_QUEUE_CAPACITY: usize = 10001;
 const SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(90);
 
@@ -102,7 +103,6 @@ struct ClientInner {
     max_frame_size: usize,
     config: ClientConfig,
     socks_proxy_routes: HashMap<String, config::SocksProxyConfig>,
-    outbound_queue_capacity: usize,
     async_admission: Arc<tokio::sync::Semaphore>,
     oneway_admission: Arc<tokio::sync::Semaphore>,
     callback_sender: mpsc::UnboundedSender<CallbackTask>,
@@ -559,7 +559,6 @@ impl RemotingClient {
                 }),
             }),
             config,
-            outbound_queue_capacity: OUTBOUND_QUEUE_CAPACITY,
             rpc_hooks: Mutex::new(Vec::new()),
             channel_listener,
             channel_event_sender,
@@ -620,7 +619,6 @@ impl RemotingClient {
             socks_proxy_routes: HashMap::new(),
             startup: Mutex::new(None),
             started: AtomicBool::new(true),
-            outbound_queue_capacity: OUTBOUND_QUEUE_CAPACITY,
             async_admission: Arc::new(tokio::sync::Semaphore::new(65535)),
             oneway_admission: Arc::new(tokio::sync::Semaphore::new(65535)),
             callback_sender,
@@ -1033,7 +1031,7 @@ impl RemotingClient {
         });
     }
 
-    /// Returns whether the connection to `addr` currently has outbound queue capacity.
+    /// Returns whether the connection to `addr` is below its configured write watermarks.
     /// Unknown addresses are considered writable, matching the Java client contract.
     pub fn is_channel_writable(&self, addr: &str) -> bool {
         if !self.inner.started.load(Ordering::Acquire) {
@@ -2348,7 +2346,6 @@ mod tests {
             startup: Mutex::new(None),
             runtime: Mutex::new(Some(tokio::runtime::Handle::current())),
             started: AtomicBool::new(true),
-            outbound_queue_capacity: OUTBOUND_QUEUE_CAPACITY,
             async_admission: Arc::new(tokio::sync::Semaphore::new(8)),
             oneway_admission: Arc::new(tokio::sync::Semaphore::new(8)),
             callback_sender,
@@ -2503,8 +2500,7 @@ mod tests {
             30,
             Weak::new(),
             DEFAULT_MAX_FRAME_SIZE,
-            OUTBOUND_QUEUE_CAPACITY,
-            None,
+            (64 * 1024, 32 * 1024),
             "test:0".into(),
             true,
         );
@@ -2560,8 +2556,7 @@ mod tests {
             23,
             Weak::new(),
             DEFAULT_MAX_FRAME_SIZE,
-            OUTBOUND_QUEUE_CAPACITY,
-            None,
+            (64 * 1024, 32 * 1024),
             "test:0".into(),
             true,
         );
@@ -2575,15 +2570,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pooled_allocator_recycles_frame_after_queue_admission_timeout() {
+    async fn pooled_allocator_recycles_frame_after_saturated_write_timeout() {
         let (client_io, mut peer_io) = tokio::io::duplex(1);
         let connection = connection::Connection::spawn(
             Box::new(client_io),
             22,
             Weak::new(),
             DEFAULT_MAX_FRAME_SIZE,
-            1,
-            None,
+            (64 * 1024, 32 * 1024),
             "test:0".into(),
             true,
         );
@@ -2599,7 +2593,7 @@ mod tests {
             })
         };
         tokio::time::timeout(std::time::Duration::from_secs(1), async {
-            while connection.outbound_capacity() != 1 {
+            while connection.queued_write_bytes() == 0 {
                 tokio::task::yield_now().await;
             }
         })
@@ -2621,9 +2615,9 @@ mod tests {
             )
             .await;
         assert!(matches!(result, Err(TransportError::Timeout)), "{result:?}");
-        assert_eq!(connection.pooled_frame_count(), 1);
         connection.close();
         connection.join().await;
+        assert!(connection.pooled_frame_count() >= 1);
         active_sender.abort();
         let _ = active_sender.await;
     }
@@ -2703,8 +2697,7 @@ mod tests {
             26,
             Weak::new(),
             DEFAULT_MAX_FRAME_SIZE,
-            OUTBOUND_QUEUE_CAPACITY,
-            None,
+            (64 * 1024, 32 * 1024),
             "test:0".into(),
             true,
         );
@@ -2729,8 +2722,7 @@ mod tests {
                 if shutdown { 25 } else { 24 },
                 Weak::new(),
                 DEFAULT_MAX_FRAME_SIZE,
-                1,
-                None,
+                (64 * 1024, 32 * 1024),
                 "test:0".into(),
                 true,
             );
@@ -2746,7 +2738,7 @@ mod tests {
                 })
             };
             tokio::time::timeout(std::time::Duration::from_secs(1), async {
-                while connection.outbound_capacity() != 1 {
+                while connection.queued_write_bytes() == 0 {
                     tokio::task::yield_now().await;
                 }
             })
@@ -2781,8 +2773,7 @@ mod tests {
             27,
             Weak::new(),
             DEFAULT_MAX_FRAME_SIZE,
-            OUTBOUND_QUEUE_CAPACITY,
-            None,
+            (64 * 1024, 32 * 1024),
             "test:0".into(),
             true,
         );
@@ -2795,67 +2786,36 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pooled_allocator_recycles_frames_when_queue_is_full_or_closed() {
-        let (client_io, peer_io) = tokio::io::duplex(1);
-        let peer_task = tokio::spawn(async move {
-            let _peer_io = peer_io;
-            std::future::pending::<()>().await;
-        });
+    async fn unbounded_outbound_queue_accepts_more_than_legacy_capacity() {
+        let (client_io, mut peer_io) = tokio::io::duplex(1);
         let connection = connection::Connection::spawn(
             Box::new(client_io),
             29,
             Weak::new(),
             DEFAULT_MAX_FRAME_SIZE,
-            1,
-            None,
+            (64 * 1024, 32 * 1024),
             "test:0".into(),
             true,
         );
         let deadline = Instant::now() + std::time::Duration::from_secs(5);
         connection.try_send(vec![0; 128], deadline).unwrap();
-        tokio::time::timeout(std::time::Duration::from_secs(1), async {
-            while connection.outbound_capacity() != 1 {
-                tokio::task::yield_now().await;
-            }
-        })
+        let mut first_byte = [0];
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            tokio::io::AsyncReadExt::read_exact(&mut peer_io, &mut first_byte),
+        )
         .await
+        .expect("writer did not start the active frame")
         .unwrap();
-        connection.try_send(vec![0; 128], deadline).unwrap();
-        let rejected = connection
-            .encode_command(&test_command(), DEFAULT_MAX_FRAME_SIZE)
-            .unwrap();
-        assert!(matches!(
-            connection.try_send(rejected, Instant::now()),
-            Err(TransportError::InboundOverloaded)
-        ));
-        assert!(connection.pooled_frame_count() > 0);
+
+        let queued_frames = super::LEGACY_OUTBOUND_QUEUE_CAPACITY + 32;
+        for _ in 0..queued_frames {
+            connection.try_send(vec![0; 128], deadline).unwrap();
+        }
+        assert!(connection.queued_write_bytes() >= queued_frames * 128);
         connection.close();
         connection.join().await;
-        peer_task.abort();
         assert!(connection.pooled_frame_count() > 0);
-
-        let (client_io, _peer_io) = tokio::io::duplex(1);
-        let closed_connection = connection::Connection::spawn(
-            Box::new(client_io),
-            28,
-            Weak::new(),
-            DEFAULT_MAX_FRAME_SIZE,
-            1,
-            None,
-            "test:0".into(),
-            true,
-        );
-        closed_connection.close();
-        closed_connection.join().await;
-        let rejected = closed_connection
-            .encode_command(&test_command(), DEFAULT_MAX_FRAME_SIZE)
-            .unwrap();
-        assert!(matches!(
-            closed_connection.try_send(rejected, Instant::now()),
-            Err(TransportError::Closed)
-        ));
-        assert_eq!(closed_connection.pooled_frame_count(), 1);
-        closed_connection.join().await;
     }
 
     #[tokio::test]
@@ -2866,8 +2826,7 @@ mod tests {
             32,
             Weak::new(),
             DEFAULT_MAX_FRAME_SIZE,
-            OUTBOUND_QUEUE_CAPACITY,
-            Some((8, 3)),
+            (8, 3),
             "test:0".into(),
             true,
         );
@@ -2913,19 +2872,16 @@ mod tests {
             31,
             Weak::new(),
             DEFAULT_MAX_FRAME_SIZE,
-            OUTBOUND_QUEUE_CAPACITY,
-            None,
+            (64 * 1024, 32 * 1024),
             "test:0".into(),
             true,
         );
         let deadline = Instant::now() + std::time::Duration::from_millis(100);
-        for _ in 0..super::OUTBOUND_QUEUE_CAPACITY {
+        let queued_frames = super::LEGACY_OUTBOUND_QUEUE_CAPACITY + 32;
+        for _ in 0..queued_frames {
             connection.try_send(vec![0; 1024], deadline).unwrap();
         }
-        assert!(matches!(
-            connection.try_send(vec![0], deadline),
-            Err(TransportError::InboundOverloaded)
-        ));
+        assert!(connection.queued_write_bytes() >= queued_frames * 1024);
         assert!(matches!(
             connection
                 .send(

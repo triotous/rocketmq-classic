@@ -141,7 +141,6 @@ impl ClientInner {
             generation,
             Arc::downgrade(self),
             self.max_frame_size,
-            self.outbound_queue_capacity,
             self.config.write_buffer_watermarks(),
             key.clone(),
             self.config.pooled_byte_buffer_allocator_enabled,

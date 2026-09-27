@@ -128,11 +128,15 @@ impl ClientConfig {
         Ok(())
     }
 
-    pub(super) fn write_buffer_watermarks(&self) -> Option<(usize, usize)> {
-        (self.write_buffer_low_water_mark > 0 && self.write_buffer_high_water_mark > 0).then_some((
-            self.write_buffer_high_water_mark,
-            self.write_buffer_low_water_mark,
-        ))
+    pub(super) fn write_buffer_watermarks(&self) -> (usize, usize) {
+        if self.write_buffer_low_water_mark > 0 && self.write_buffer_high_water_mark > 0 {
+            (
+                self.write_buffer_high_water_mark,
+                self.write_buffer_low_water_mark,
+            )
+        } else {
+            (64 * 1024, 32 * 1024)
+        }
     }
 
     /// Java-compatible getter/setter behavior: retain JSON text until client construction.
@@ -209,28 +213,35 @@ mod tests {
     #[test]
     fn write_buffer_watermarks_match_java_enablement() {
         let defaults = ClientConfig::default();
-        assert_eq!(defaults.write_buffer_watermarks(), None);
+        assert_eq!(defaults.write_buffer_watermarks(), (64 * 1024, 32 * 1024));
 
         let low_only = ClientConfig {
             write_buffer_low_water_mark: 10,
             ..defaults.clone()
         };
         assert!(low_only.validate().is_ok());
-        assert_eq!(low_only.write_buffer_watermarks(), None);
+        assert_eq!(low_only.write_buffer_watermarks(), (64 * 1024, 32 * 1024));
 
         let high_only = ClientConfig {
             write_buffer_high_water_mark: 128,
             ..defaults.clone()
         };
         assert!(high_only.validate().is_ok());
-        assert_eq!(high_only.write_buffer_watermarks(), None);
+        assert_eq!(high_only.write_buffer_watermarks(), (64 * 1024, 32 * 1024));
 
         let enabled = ClientConfig {
             write_buffer_high_water_mark: 128,
             write_buffer_low_water_mark: 32,
             ..defaults.clone()
         };
-        assert_eq!(enabled.write_buffer_watermarks(), Some((128, 32)));
+        assert_eq!(enabled.write_buffer_watermarks(), (128, 32));
+
+        let disabled = ClientConfig {
+            write_buffer_high_water_mark: 128,
+            write_buffer_low_water_mark: 0,
+            ..defaults.clone()
+        };
+        assert_eq!(disabled.write_buffer_watermarks(), (64 * 1024, 32 * 1024));
 
         let invalid = ClientConfig {
             write_buffer_high_water_mark: 32,

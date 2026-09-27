@@ -929,7 +929,7 @@ async fn p3_v03_inbound_dispatch_and_reordered_parallel_responses() {
 }
 
 #[tokio::test]
-async fn p3_inbound_responses_survive_outbound_queue_saturation() {
+async fn p3_inbound_responses_survive_unbounded_outbound_backlog() {
     const INBOUND_REQUESTS: usize = 140;
     const RESPONSE_BODY_SIZE: usize = 64 * 1024;
 
@@ -997,7 +997,7 @@ async fn p3_inbound_responses_survive_outbound_queue_saturation() {
         }
     })
     .await
-    .expect("inbound response writes should fill the bounded outbound queue");
+    .expect("queued outbound response bytes should exceed the configured watermark");
 
     let _ = drain_tx.send(());
     assert_eq!(

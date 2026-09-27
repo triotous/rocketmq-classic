@@ -47,14 +47,14 @@ impl Drop for OutboundFrame {
 
 pub(crate) struct Connection {
     pub(crate) generation: u64,
-    sender: mpsc::Sender<OutboundFrame>,
+    sender: mpsc::UnboundedSender<OutboundFrame>,
     address: String,
     pooled_byte_buffer_allocator_enabled: bool,
     closed: Arc<AtomicBool>,
     task: tokio::sync::Mutex<Option<JoinHandle<()>>>,
     shutdown: tokio::sync::watch::Sender<bool>,
     queued_write_bytes: Arc<std::sync::atomic::AtomicUsize>,
-    write_watermarks: Option<(usize, usize)>,
+    write_watermarks: (usize, usize),
     writable: Arc<AtomicBool>,
     frame_pool: Arc<std::sync::Mutex<Vec<Vec<u8>>>>,
 }
@@ -85,12 +85,11 @@ impl Connection {
         generation: u64,
         inner: Weak<ClientInner>,
         max_frame_size: usize,
-        outbound_queue_capacity: usize,
-        write_watermarks: Option<(usize, usize)>,
+        write_watermarks: (usize, usize),
         address: String,
         pooled_byte_buffer_allocator_enabled: bool,
     ) -> Arc<Self> {
-        let (sender, receiver) = mpsc::channel(outbound_queue_capacity);
+        let (sender, receiver) = mpsc::unbounded_channel();
         let closed = Arc::new(AtomicBool::new(false));
         let (shutdown, shutdown_rx) = tokio::sync::watch::channel(false);
         let disable_worker_group = inner
@@ -171,8 +170,9 @@ impl Connection {
     }
 
     #[cfg(test)]
-    pub(super) fn outbound_capacity(&self) -> usize {
-        self.sender.capacity()
+    pub(super) fn queued_write_bytes(&self) -> usize {
+        self.queued_write_bytes
+            .load(std::sync::atomic::Ordering::Acquire)
     }
 
     #[cfg(test)]
@@ -205,25 +205,22 @@ impl Connection {
         self.reserve_write_bytes(length);
         let (cancel, cancelled) = tokio::sync::oneshot::channel();
         let mut cancel = Some(cancel);
-        let permit = match time::timeout_at(deadline, self.sender.reserve()).await {
-            Err(_) => {
-                self.release_write_bytes(length);
-                return Err(TransportError::Timeout);
-            }
-            Ok(Err(_)) => {
-                self.release_write_bytes(length);
-                return Err(TransportError::Closed);
-            }
-            Ok(Ok(permit)) => permit,
-        };
-        permit.send(OutboundFrame {
+        if Instant::now() >= deadline {
+            self.release_write_bytes(length);
+            return Err(TransportError::Timeout);
+        }
+        if let Err(error) = self.sender.send(OutboundFrame {
             bytes: Some(frame.take()),
             frame_pool: self.frame_pool.clone(),
             pooled: self.pooled_byte_buffer_allocator_enabled,
             deadline,
             cancelled: Some(cancelled),
             written: Some(written),
-        });
+        }) {
+            self.release_write_bytes(length);
+            drop(error.0);
+            return Err(TransportError::Closed);
+        }
         let result = time::timeout_at(deadline, response)
             .await
             .map_err(|_| {
@@ -240,7 +237,7 @@ impl Connection {
         let (written, _response) = tokio::sync::oneshot::channel();
         self.reserve_write_bytes(bytes.len());
         let length = bytes.len();
-        match self.sender.try_send(OutboundFrame {
+        match self.sender.send(OutboundFrame {
             bytes: Some(bytes),
             frame_pool: self.frame_pool.clone(),
             pooled: self.pooled_byte_buffer_allocator_enabled,
@@ -252,8 +249,7 @@ impl Connection {
             Err(error) => {
                 self.release_write_bytes(length);
                 match error {
-                    mpsc::error::TrySendError::Full(_) => Err(TransportError::InboundOverloaded),
-                    mpsc::error::TrySendError::Closed(_) => Err(TransportError::Closed),
+                    mpsc::error::SendError(_) => Err(TransportError::Closed),
                 }
             }
         }
@@ -274,12 +270,7 @@ impl Connection {
     }
 
     pub(crate) fn is_writable(&self) -> bool {
-        !self.is_closed()
-            && self
-                .write_watermarks
-                .map_or(self.sender.capacity() > 0, |_| {
-                    self.writable.load(std::sync::atomic::Ordering::Acquire)
-                })
+        !self.is_closed() && self.writable.load(std::sync::atomic::Ordering::Acquire)
     }
 
     #[cfg(test)]
@@ -292,11 +283,10 @@ impl Connection {
             .queued_write_bytes
             .fetch_add(length, std::sync::atomic::Ordering::AcqRel)
             .saturating_add(length);
-        if let Some((high, _)) = self.write_watermarks {
-            if queued > high {
-                self.writable
-                    .store(false, std::sync::atomic::Ordering::Release);
-            }
+        let (high, _) = self.write_watermarks;
+        if queued > high {
+            self.writable
+                .store(false, std::sync::atomic::Ordering::Release);
         }
     }
 
@@ -305,11 +295,10 @@ impl Connection {
             .queued_write_bytes
             .fetch_sub(length, std::sync::atomic::Ordering::AcqRel)
             .saturating_sub(length);
-        if let Some((_, low)) = self.write_watermarks {
-            if queued < low {
-                self.writable
-                    .store(true, std::sync::atomic::Ordering::Release);
-            }
+        let (_, low) = self.write_watermarks;
+        if queued < low {
+            self.writable
+                .store(true, std::sync::atomic::Ordering::Release);
         }
     }
 
@@ -345,7 +334,7 @@ struct ConnectionTask {
     max_frame_size: usize,
     address: String,
     queued_write_bytes: Arc<std::sync::atomic::AtomicUsize>,
-    write_watermarks: Option<(usize, usize)>,
+    write_watermarks: (usize, usize),
     writable: Arc<AtomicBool>,
     pooled_byte_buffer_allocator_enabled: bool,
     max_idle_time: std::time::Duration,
@@ -355,7 +344,7 @@ struct ConnectionTask {
 
 async fn run_connection(
     stream: BoxedStream,
-    mut outbound: mpsc::Receiver<OutboundFrame>,
+    mut outbound: mpsc::UnboundedReceiver<OutboundFrame>,
     inner: Weak<ClientInner>,
     task: ConnectionTask,
 ) {
@@ -408,10 +397,9 @@ async fn run_connection(
                     let queued = queued_write_bytes
                         .fetch_sub(write_length, std::sync::atomic::Ordering::AcqRel)
                         .saturating_sub(write_length);
-                    if let Some((_, low)) = write_watermarks {
-                        if queued < low {
-                            writable.store(true, std::sync::atomic::Ordering::Release);
-                        }
+                    let (_, low) = write_watermarks;
+                    if queued < low {
+                        writable.store(true, std::sync::atomic::Ordering::Release);
                     }
                     if let Some(bytes) = frame.bytes.take() {
                         if pooled_byte_buffer_allocator_enabled {
