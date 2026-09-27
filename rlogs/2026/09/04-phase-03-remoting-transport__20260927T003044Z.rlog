@@ -21,11 +21,11 @@
 - This session addresses one confirmed Java send-failure mapping only; no Phase 3 acceptance claim. API/config and remaining connect/timeout/admission/shutdown paths are still under audit; Netty-specific context/executor lifecycle differences remain explicitly partial. P3-V04 stays in Phase 19; Phase 4 has not started.
 - Changes were committed in `aa5bdb2` (`fix(remoting): classify async write failures like Java`) and `9d0f64e` (`fix(remoting): map frame encoding failures to send errors`).
 
-## Append-only follow-up — sync invoke bypasses async semaphore
-- Java `NettyRemotingClient.invokeSync` calls `invokeSyncImpl` and waits for its response future; that path does not acquire `semaphoreAsync` (async callback/future and oneway APIs use admission semaphores).
-- Rust previously routed `invoke_sync` through shared `invoke_inner` and unintentionally acquired async admission. Added private `InvokeOptions::use_admission`: future/callback calls use async admission, while sync calls skip it; GO_AWAY retry inherits this choice.
-- Replaced the old test that expected a saturated async semaphore to timeout sync calls with `p3_sync_invoke_runs_outbound_rpc_hooks_without_async_admission`: an in-flight async callback occupies the sole async permit, but sync invoke succeeds and outbound hooks run for both.
-- Java source reviewed: `NettyRemotingClient.invokeSync`, `NettyRemotingAbstract.invoke0` and `invokeOnewayImpl`. Targeted test and complete gates pass: `cargo fmt --all --check`, workspace Clippy with warnings denied, workspace tests (11 common, 9 protocol, 34 remoting unit, 4 codec, 64 transport), workspace metadata check, differential comparator self-test and `git diff --check`.
+## Append-only correction — synchronous invocation semaphore parity
+- The earlier follow-up incorrectly concluded that Java `invokeSync` bypasses `semaphoreAsync`. Full virtual dispatch inspection shows `NettyRemotingAbstract.invokeSyncImpl` calls `invokeImpl`; the concrete `NettyRemotingClient.invokeImpl` runs outbound hooks and calls `super.invokeImpl`, which enters `invoke0` and acquires `semaphoreAsync`. GO_AWAY retry calls `super.invokeImpl` too, reacquiring the permit after the first response future releases it.
+- Reverted Rust's `InvokeOptions::use_admission` bypass. Sync hooks continue to run before admission. Updated `p3_sync_invoke_obeys_async_admission_and_runs_hooks_first` to assert a second sync invocation times out while an earlier sync call occupies the only async permit.
+- Corrected compatibility inventory/overview claims and this log. The preceding commit `6e583d1` is superseded behaviorally by this corrective change; the audit finding is retained here transparently.
+- Validation passed: targeted sync admission loopback test; `cargo fmt --all --check`; workspace Clippy with warnings denied; workspace offline tests (11 common, 9 protocol, 34 remoting unit, 4 codec, 64 transport); workspace metadata check; differential self-test; `git diff --check`. Corrective commits: pending.
 
 ## Append-only follow-up — admission saturation category
 - Compared `NettyRemotingAbstract.invoke0` and `invokeOnewayImpl`: when no semaphore permit is available, a non-positive timeout produces `RemotingTooMuchRequestException`; waiting with a positive timeout and expiring produces `RemotingTimeoutException`.
