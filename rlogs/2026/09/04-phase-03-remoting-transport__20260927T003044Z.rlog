@@ -21,6 +21,11 @@
 - This session addresses one confirmed Java send-failure mapping only; no Phase 3 acceptance claim. API/config and remaining connect/timeout/admission/shutdown paths are still under audit; Netty-specific context/executor lifecycle differences remain explicitly partial. P3-V04 stays in Phase 19; Phase 4 has not started.
 - Changes were committed in `aa5bdb2` (`fix(remoting): classify async write failures like Java`) and `9d0f64e` (`fix(remoting): map frame encoding failures to send errors`).
 
+## Append-only follow-up — admission saturation category
+- Compared `NettyRemotingAbstract.invoke0` and `invokeOnewayImpl`: when no semaphore permit is available, a non-positive timeout produces `RemotingTooMuchRequestException`; waiting with a positive timeout and expiring produces `RemotingTimeoutException`.
+- `ClientInner::acquire_admission` previously classified both as `Timeout`. It now attempts immediate permit acquisition first, returns `TooManyRequests` for no-permit at an expired/zero deadline, preserves `Timeout` after positive-budget waiting, and still permits immediately available capacity with an expired deadline (matching Java's `tryAcquire(0)` outcome at the admission boundary).
+- Added client unit `admission_matches_java_zero_timeout_and_wait_timeout_categories`; updated async saturation callback test. Targeted tests pass. Full workspace verification and scoped commit pending.
+
 ## Append-only follow-up — connection failure category
 - Audited `NettyRemotingClient.invoke`, `invokeSync`, `invokeAsync` and the GO_AWAY retry future path. Failed initial channel creation / inactive channel paths report `RemotingConnectException(addr)` (whose cause is null); they do not expose the underlying connect/TLS exception as the public remoting cause. The public callback reports failure only when no channel has been established; a retry connection failure after the initial channel reports complete then fail.
 - Added `TransportError::ConnectRequest { remote_addr, cause }` and map underlying `Connect`, `Tls` and `Closed` errors at the invoke connection-establishment boundary, preserving deadline/shutdown classifications. Future and sync scripted refused-connection test asserts address and null cause. Callback reports the typed failure for initial connect, while retaining fail-only ordering; retry callback retains its complete-before-fail path.
