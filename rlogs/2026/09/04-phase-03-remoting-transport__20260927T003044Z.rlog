@@ -1,0 +1,21 @@
+# Phase 3 remoting transport — execution log (20260927T003044Z)
+
+## Scope and decision
+- Continued Java 5.5.1 exception-path audit using `NettyRemotingAbstract.invoke0`, its `writeAndFlush(...).addListener` failure branch, and `requestFail`.
+- Confirmed asynchronous socket write failures are reported by Java as `RemotingSendRequestException(remoteAddress, null)`: failed channel future calls `requestFail`, sets send status false without assigning a cause, then callback construction includes channel remote address and null cause.
+- Mapped Rust `TransportError::Send` / `Closed` returned from the asynchronous write to `SendRequest { remote_addr, cause: None }`; preserved `Timeout` unchanged. This applies only after the frame has been admitted to writer and the write-result future completes with failure; queue admission timeout remains timeout.
+- Updated compatibility inventory and callback/error taxonomy notes. Broader admission/connect/shutdown taxonomy remains PARTIAL pending further Java branch-by-branch audit.
+
+## Validation
+- `cargo fmt --all` — passed.
+- Targeted tests `asynchronous_write_failure_matches_java_request_fail_classification` and `pooled_allocator_recycles_frames_after_write_error` — passed.
+- `cargo fmt --all --check` — passed.
+- `cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings` — passed.
+- `cargo test --workspace --locked --offline` — passed (11 common, 10 protocol incl. fixture, 33 remoting unit, 4 codec, 63 transport).
+- `python3 scripts/check-workspace-metadata.py` — passed.
+- `python3 tests/differential/compare.py --self-test` — passed.
+- `git diff --check` — passed.
+
+## Status
+- This session addresses one confirmed Java send-failure mapping only; no Phase 3 acceptance claim. API/config and remaining connect/timeout/admission/shutdown paths are still under audit; Netty-specific context/executor lifecycle differences remain explicitly partial. P3-V04 stays in Phase 19; Phase 4 has not started.
+- Changes are ready for a scoped implementation commit after final diff review.
