@@ -61,7 +61,7 @@ Admission, connection acquisition, TCP/TLS handshake, socket write and response 
 
 ### 4.4 P3-07 — Dispatch inbound requests off the reader
 
-Classify response versus request before pending lookup. Dispatch requests by raw code through a bounded owned processor executor; send replies with the original opaque and response bit. Unsupported requests get the Java-compatible unsupported code, except inbound oneway commands must not receive replies. Define explicit overload behavior from the oracle; never silently drop accepted transaction/reply work.
+Classify response versus request before pending lookup. Dispatch requests by raw code through owned processor workers with queue admission matching Java's executor backlog (unbounded where the Java executor uses an unbounded queue); send replies with the original opaque and response bit. Unsupported requests get the Java-compatible unsupported code, except inbound oneway commands must not receive replies. Define rejection behavior from the oracle; never silently drop accepted transaction/reply work.
 
 ### 4.5 P3-08 — Implement verified TLS
 

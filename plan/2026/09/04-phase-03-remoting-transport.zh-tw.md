@@ -61,7 +61,7 @@ admission、connection acquisition、TCP/TLS handshake、socket write 與 respon
 
 ### 4.4 P3-07 — 將 inbound request 移出 reader 處理
 
-先區分 response 與 request，再查 pending。依 raw code 將 request 交給有界且受管理 processor executor；response 保留原 opaque 並設定 response bit。不支援的 request 回 Java 相容 unsupported code，但 inbound oneway 不得回覆。依 Oracle 定義 overload 行為；不得靜默丟棄已接受的 transaction/reply 工作。
+先區分 response 與 request，再查 pending。依 raw code 將 request 交給受管理 processor workers，queue admission 須符合 Java executor backlog 行為（Java 採無界 queue 時，Rust 亦不設人為容量上限）；response 保留原 opaque 並設定 response bit。不支援的 request 回 Java 相容 unsupported code，但 inbound oneway 不得回覆。依 Oracle 定義 rejection 行為；不得靜默丟棄已接受的 transaction/reply 工作。
 
 ### 4.5 P3-08 — 實作具驗證的 TLS
 
