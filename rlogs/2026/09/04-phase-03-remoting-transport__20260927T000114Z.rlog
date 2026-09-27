@@ -22,3 +22,5 @@
 ## Status
 - Phase 3 remains unaccepted. This addresses confirmed error-classification paths only. Full exception/cause coverage, API/config inventory semantic parity and P3-V04 Phase 19 live validation remain outstanding. Phase 4 not started.
 - Initial implementation committed as `1bcdcc5`; the peer-close follow-up is staged for a separate commit.
+
+- Commit status correction: the peer-close follow-up described above was committed as `5019c79` (`fix(remoting): classify peer close as Java send failure`); the earlier “staged” note reflected status before that commit.
