@@ -53,6 +53,67 @@ fn command(code: i32) -> RemotingCommand {
     }
 }
 
+#[test]
+fn p3_client_can_be_constructed_without_runtime_and_start_requires_one() {
+    let client = RemotingClient::new(TransportMode::Plain);
+    assert!(matches!(
+        client.start(),
+        Err(TransportError::InvalidConfiguration(_))
+    ));
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        client.start().unwrap();
+        client.shutdown().await;
+    });
+}
+
+#[tokio::test]
+async fn p3_client_start_is_explicit_and_idempotent() {
+    let client = RemotingClient::new(TransportMode::Plain);
+    let deadline = Instant::now() + Duration::from_secs(1);
+    assert_eq!(
+        client.invoke("127.0.0.1:1", command(1), deadline).await,
+        Err(TransportError::NotStarted)
+    );
+    assert_eq!(
+        client
+            .invoke_sync("127.0.0.1:1", command(1), Duration::from_secs(1))
+            .await,
+        Err(TransportError::NotStarted)
+    );
+    assert_eq!(
+        client.invoke_name_server(command(1), deadline).await,
+        Err(TransportError::NotStarted)
+    );
+    assert!(!client.is_address_reachable("127.0.0.1:1", deadline).await);
+    assert!(matches!(
+        client.invoke_oneway("127.0.0.1:1", command(1), deadline),
+        Err(TransportError::NotStarted)
+    ));
+    assert!(matches!(
+        client.invoke_async(
+            "127.0.0.1:1",
+            command(1),
+            deadline,
+            Arc::new(|_: Result<RemotingCommand, TransportError>| {}),
+        ),
+        Err(TransportError::NotStarted)
+    ));
+
+    client.start().unwrap();
+    client.start().unwrap();
+    assert!(matches!(
+        client.invoke("127.0.0.1:1", command(1), deadline).await,
+        Err(TransportError::ConnectRequest { .. })
+    ));
+    client.shutdown().await;
+    assert_eq!(client.start(), Err(TransportError::Shutdown));
+}
+
 struct ContextCallback {
     sender: tokio::sync::mpsc::UnboundedSender<InvokeCallbackResult>,
     events: Arc<std::sync::Mutex<Vec<&'static str>>>,
@@ -91,6 +152,7 @@ async fn p3_async_connect_failure_calls_fail_without_complete() {
     let address = listener.local_addr().unwrap().to_string();
     drop(listener);
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     let events = Arc::new(std::sync::Mutex::new(Vec::new()));
     client
         .invoke_async(
@@ -123,6 +185,7 @@ async fn p3_shutdown_drains_callback_from_pending_invoke() {
         tokio::time::sleep(Duration::from_secs(2)).await;
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     let (callback_tx, mut callback_rx) = tokio::sync::mpsc::unbounded_channel();
     let events = Arc::new(std::sync::Mutex::new(Vec::new()));
     client
@@ -158,6 +221,7 @@ async fn p3_future_connect_failure_includes_java_remote_address_and_null_cause()
     let address = listener.local_addr().unwrap().to_string();
     drop(listener);
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     for result in [
         client
             .invoke(
@@ -195,6 +259,7 @@ async fn p3_async_callback_contains_response_future_metadata_and_timeout_grace()
         write_command(&mut stream, &response).await;
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     let (callback_tx, mut callback_rx) = tokio::sync::mpsc::unbounded_channel();
     let events = Arc::new(std::sync::Mutex::new(Vec::new()));
     let mut request = command(18);
@@ -231,6 +296,7 @@ async fn p3_async_callback_contains_response_future_metadata_and_timeout_grace()
 #[tokio::test]
 async fn p3_expired_async_callback_retains_request_and_timeout_metadata() {
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     let (callback_tx, mut callback_rx) = tokio::sync::mpsc::unbounded_channel();
     let events = Arc::new(std::sync::Mutex::new(Vec::new()));
     let mut request = command(20);
@@ -274,6 +340,7 @@ async fn p3_nameserver_update_shuffles_changed_lists_and_preserves_duplicates() 
         ..ClientConfig::default()
     })
     .unwrap();
+    client.start().unwrap();
     assert_eq!(client.get_name_server_address_list(), None);
     client.update_name_server_address_list(Vec::new());
     assert_eq!(client.get_name_server_address_list(), None);
@@ -344,6 +411,7 @@ async fn p3_nameserver_scan_probes_addresses_concurrently_and_tracks_results() {
         ..ClientConfig::default()
     })
     .unwrap();
+    client.start().unwrap();
     client.update_name_server_address_list(vec![
         first_address.to_string(),
         second_address.to_string(),
@@ -386,6 +454,7 @@ async fn p3_nameserver_update_prunes_availability_on_next_scan() {
         ..ClientConfig::default()
     })
     .unwrap();
+    client.start().unwrap();
     client.update_name_server_address_list(vec![first_address.clone(), second_address.clone()]);
     tokio::time::timeout(Duration::from_secs(1), async {
         while client.get_available_name_srv_list().len() != 2 {
@@ -434,6 +503,7 @@ async fn p3_nameserver_list_selection_and_availability_tracking() {
         ..ClientConfig::default()
     })
     .unwrap();
+    client.start().unwrap();
     client.update_name_server_address_list(vec![address.to_string(), "127.0.0.1:1".into()]);
     assert_eq!(client.get_name_server_address_list().unwrap().len(), 2);
     client.update_name_server_address_list(Vec::new());
@@ -488,6 +558,7 @@ async fn p3_nameserver_update_keeps_non_chosen_removed_connection_open() {
         ..ClientConfig::default()
     })
     .unwrap();
+    client.start().unwrap();
     client.update_name_server_address_list(vec![first_address.clone(), second_address.clone()]);
     let selected = client
         .get_and_create_name_server_channel_async(Instant::now() + Duration::from_secs(1))
@@ -549,6 +620,7 @@ async fn p3_nameserver_selection_fails_over_after_connect_failure() {
         ..ClientConfig::default()
     })
     .unwrap();
+    client.start().unwrap();
     client.update_name_server_address_list(vec![bad.to_string(), good.to_string()]);
     let response = client
         .invoke_name_server(command(2), Instant::now() + Duration::from_secs(2))
@@ -592,6 +664,7 @@ async fn p3_nameserver_recovers_selection_after_chosen_channel_closes() {
         ..ClientConfig::default()
     })
     .unwrap();
+    client.start().unwrap();
     client.update_name_server_address_list(vec![
         first_address.to_string(),
         second_address.to_string(),
@@ -662,6 +735,7 @@ async fn p3_channel_management_matches_java_unknown_writable_and_explicit_close_
         ..ClientConfig::default()
     })
     .unwrap();
+    client.start().unwrap();
     let address_string = address.to_string();
     assert!(client.is_channel_writable(&address_string));
     assert!(
@@ -693,6 +767,7 @@ async fn p3_close_channels_interrupts_pending_pull_requests_only() {
         tokio::time::sleep(Duration::from_millis(100)).await;
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     let pull_client = client.clone();
     let pull_address = address.clone();
     let pull = tokio::spawn(async move {
@@ -735,6 +810,7 @@ async fn p3_v01_parallel_responses_and_opaque_lifecycle() {
         }
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     let deadline = Instant::now() + Duration::from_secs(2);
     let address = addr.to_string();
     let (first, second) = tokio::join!(
@@ -763,6 +839,7 @@ async fn p3_v02_single_flight_shares_connection_and_stale_close_keeps_generation
         }
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     let deadline = Instant::now() + Duration::from_secs(2);
     let address = addr.to_string();
     let a = client
@@ -814,6 +891,7 @@ async fn p3_v03_inbound_dispatch_and_reordered_parallel_responses() {
         (processor_response, unsupported_response)
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     client.register_processor(
         777_777,
         Arc::new(|_request: RemotingCommand| Ok(Some(command(99)))),
@@ -864,6 +942,7 @@ async fn p3_disabled_worker_group_dispatches_inbound_request_on_connection_path(
         ..ClientConfig::default()
     })
     .unwrap();
+    client.start().unwrap();
     client.register_processor(
         900_005,
         Arc::new(|_: RemotingCommand| Ok(Some(command(905)))),
@@ -901,6 +980,7 @@ async fn p3_inbound_oneway_runs_processor_but_never_writes_response() {
         result.is_err()
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     client.register_processor(
         900_003,
         Arc::new(move |request: RemotingCommand| {
@@ -938,6 +1018,7 @@ async fn p3_default_processor_handles_unknown_codes_but_exact_registration_wins(
         (first, second)
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     client.with_processor_table(|processors| {
         processors.insert(
             900_002,
@@ -980,6 +1061,7 @@ async fn p3_u01_raw_route_deadline_shutdown_and_address_parsing() {
         write_command(&mut stream, &reply).await;
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     let response = client
         .invoke(
             &addr.to_string(),
@@ -1030,6 +1112,7 @@ async fn p3_u01_inflight_invoke_times_out_when_peer_does_not_reply() {
         write_command(&mut stream, &response).await;
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     let result = client
         .invoke(
             &address.to_string(),
@@ -1068,6 +1151,7 @@ async fn p3_sync_timeout_closes_socket_when_java_heuristic_requires_it() {
             .unwrap()
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     assert!(matches!(
         client
             .invoke_sync(
@@ -1103,6 +1187,7 @@ async fn p3_sync_admission_failure_maps_to_send_request_and_closes_socket() {
         ..ClientConfig::default()
     })
     .unwrap();
+    client.start().unwrap();
     let first_client = client.clone();
     let first_address = address.to_string();
     let first = tokio::spawn(async move {
@@ -1144,6 +1229,7 @@ async fn p3_sync_admission_shutdown_keeps_shutdown_category() {
         ..ClientConfig::default()
     })
     .unwrap();
+    client.start().unwrap();
     let first_client = client.clone();
     let first_address = address.to_string();
     let first = tokio::spawn(async move {
@@ -1185,6 +1271,7 @@ async fn p3_oneway_returns_after_scheduling_before_peer_receives_frame() {
         ..ClientConfig::default()
     })
     .unwrap();
+    client.start().unwrap();
     let returned = client
         .invoke_oneway(
             &address.to_string(),
@@ -1208,6 +1295,7 @@ async fn p3_oneway_returns_after_scheduling_before_peer_receives_frame() {
 #[tokio::test]
 async fn p3_oneway_reports_invalid_address_synchronously() {
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     let result = client.invoke_oneway(
         "invalid-address",
         command(14),
@@ -1227,6 +1315,7 @@ async fn p3_oneway_starts_connection_acquisition_at_call_time() {
         read_command(&mut stream).await
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     let returned = client
         .invoke_oneway(
             &address.to_string(),
@@ -1267,6 +1356,7 @@ async fn p3_outbound_rpc_hook_runs_before_oneway_admission_wait() {
         ..ClientConfig::default()
     })
     .unwrap();
+    client.start().unwrap();
     let hook_calls = Arc::new(AtomicUsize::new(0));
     client.add_rpc_hook(Arc::new(BeforeCounter(hook_calls.clone())));
     let hook_flags = Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -1361,6 +1451,7 @@ async fn p3_u01_tls_verifies_ca_and_hostname_without_insecure_fallback() {
         }
     });
     let client = RemotingClient::new(TransportMode::Tls(ca.clone()));
+    client.start().unwrap();
     let result = client
         .invoke(
             &format!("localhost:{port}"),
@@ -1372,6 +1463,8 @@ async fn p3_u01_tls_verifies_ca_and_hostname_without_insecure_fallback() {
     client.shutdown().await;
 
     let bad_name = RemotingClient::new(TransportMode::Tls(ca));
+
+    bad_name.start().unwrap();
     let result = bad_name
         .invoke(
             &format!("127.0.0.1:{port}"),
@@ -1437,6 +1530,7 @@ async fn p3_tls_matches_java_trust_all_modes() {
         },
     ] {
         let client = RemotingClient::new(TransportMode::Tls(config));
+        client.start().unwrap();
         let response = client
             .invoke(
                 &format!("localhost:{port}"),
@@ -1471,6 +1565,7 @@ async fn p3_nameserver_channel_interval_has_no_implicit_scan_behavior() {
         ..ClientConfig::default()
     })
     .unwrap();
+    client.start().unwrap();
     client.update_name_server_address_list(vec![address.to_string()]);
     assert_eq!(
         client
@@ -1516,6 +1611,7 @@ async fn p3_max_idle_time_observes_partial_read_activity_like_all_idle_timer() {
         Some(Arc::new(IdleListener(event_tx))),
     )
     .unwrap();
+    client.start().unwrap();
     assert!(
         client
             .is_address_reachable(
@@ -1616,6 +1712,7 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
         ..defaults.clone()
     })
     .unwrap();
+    callback_executor_disabled.start().unwrap();
     callback_executor_disabled.set_callback_executor(Some(Arc::new(ThreadCallbackExecutor)));
     assert!(callback_executor_disabled.get_callback_executor().is_none());
     callback_executor_disabled.shutdown().await;
@@ -1709,6 +1806,7 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
         write_command(&mut stream, &response).await;
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     let observed = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
     let hook_observed = observed.clone();
     client.add_rpc_hook(Arc::new(move |_: &str, _: &RemotingCommand| {
@@ -1813,6 +1911,7 @@ impl RpcHook for TestHook {
 #[tokio::test]
 async fn p3_rpc_hook_live_list_can_be_mutated_and_is_shared() {
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     let events = Arc::new(std::sync::Mutex::new(Vec::new()));
     let hook: Arc<dyn RpcHook> = Arc::new(TestHook(events));
     client.with_rpc_hooks(|hooks| hooks.push(hook.clone()));
@@ -1837,6 +1936,7 @@ async fn p3_rpc_hooks_deduplicate_and_clear() {
         }
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     let events = Arc::new(std::sync::Mutex::new(Vec::new()));
     let hook: Arc<dyn RpcHook> = Arc::new(TestHook(events.clone()));
     client.add_rpc_hook(hook.clone());
@@ -1932,6 +2032,7 @@ async fn p3_callback_executor_runs_callbacks_on_bounded_workers() {
         ..ClientConfig::default()
     })
     .unwrap();
+    client.start().unwrap();
     let active = Arc::new(AtomicUsize::new(0));
     let max_active = Arc::new(AtomicUsize::new(0));
     let completed = Arc::new(AtomicUsize::new(0));
@@ -1979,6 +2080,7 @@ async fn p3_caller_callback_executor_routes_callbacks_to_owned_executor() {
         write_command(&mut stream, &response).await;
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     assert!(client.get_callback_executor().is_some());
     let callback_executor: Arc<dyn CallbackExecutor> = Arc::new(ThreadCallbackExecutor);
     client.set_callback_executor(Some(callback_executor.clone()));
@@ -2014,6 +2116,7 @@ async fn p3_caller_callback_executor_routes_callbacks_to_owned_executor() {
 #[tokio::test]
 async fn p3_callback_executor_panic_falls_back_and_callback_panic_is_contained() {
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     client.set_callback_executor(Some(Arc::new(PanickingCallbackExecutor)));
     let executor_fallback = Arc::new(AtomicUsize::new(0));
     let seen = executor_fallback.clone();
@@ -2057,6 +2160,7 @@ async fn p3_callback_executor_panic_falls_back_and_callback_panic_is_contained()
 #[tokio::test]
 async fn p3_callback_executor_rejection_runs_callback_inline() {
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     client.set_callback_executor(Some(Arc::new(RejectingCallbackExecutor)));
     let (callback_tx, callback_rx) = tokio::sync::oneshot::channel();
     let callback_tx = Arc::new(std::sync::Mutex::new(Some(callback_tx)));
@@ -2104,6 +2208,7 @@ async fn p3_async_connection_is_acquired_before_admission_wait() {
         ..ClientConfig::default()
     })
     .unwrap();
+    client.start().unwrap();
     let (first_tx, first_rx) = tokio::sync::oneshot::channel();
     let first_tx = Arc::new(std::sync::Mutex::new(Some(first_tx)));
     client
@@ -2157,6 +2262,7 @@ async fn p3_outbound_rpc_hook_runs_before_async_admission_wait() {
         ..ClientConfig::default()
     })
     .unwrap();
+    client.start().unwrap();
     let (hook_tx, hook_rx) = tokio::sync::oneshot::channel();
     let hook_tx = Arc::new(std::sync::Mutex::new(Some(hook_tx)));
     let hook_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -2229,6 +2335,7 @@ async fn p3_sync_invoke_obeys_async_admission_and_runs_hooks_first() {
         ..ClientConfig::default()
     })
     .unwrap();
+    client.start().unwrap();
     let hook_calls = Arc::new(AtomicUsize::new(0));
     client.add_rpc_hook(Arc::new(BeforeCounter(hook_calls.clone())));
     let first_client = client.clone();
@@ -2273,6 +2380,7 @@ async fn p3_async_admission_timeout_completes_through_callback() {
         ..ClientConfig::default()
     })
     .unwrap();
+    client.start().unwrap();
     let (callback_tx, callback_rx) = tokio::sync::oneshot::channel();
     let callback_tx = Arc::new(std::sync::Mutex::new(Some(callback_tx)));
     client
@@ -2319,6 +2427,7 @@ async fn p3_async_peer_close_preserves_public_wrapper_default_send_status() {
         drop(stream);
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let events = Arc::new(std::sync::Mutex::new(Vec::new()));
     client
@@ -2365,6 +2474,7 @@ async fn p3_async_callback_completes_on_deadline_failure() {
         tokio::time::sleep(Duration::from_millis(1200)).await;
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let events = Arc::new(std::sync::Mutex::new(Vec::new()));
     client
@@ -2408,6 +2518,7 @@ async fn p3_async_go_away_retry_connect_failure_completes_before_failure() {
         request.opaque
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let events = Arc::new(std::sync::Mutex::new(Vec::new()));
     client
@@ -2475,6 +2586,7 @@ async fn p3_async_second_go_away_callback_retains_original_request() {
         opaques
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let events = Arc::new(std::sync::Mutex::new(Vec::new()));
     let request = RemotingCommand {
@@ -2548,6 +2660,7 @@ async fn p3_async_go_away_retry_callback_reports_reconstructed_request() {
         retry
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let request = RemotingCommand {
         flag: 1 << 8,
@@ -2613,6 +2726,7 @@ async fn p3_go_away_retries_once_on_a_new_connection() {
         retry
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     let hook_calls = Arc::new(AtomicUsize::new(0));
     client.add_rpc_hook(Arc::new(BeforeCounter(hook_calls.clone())));
     let after_hook = Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -2699,6 +2813,7 @@ async fn p3_go_away_retry_reacquires_async_admission() {
         ..ClientConfig::default()
     })
     .unwrap();
+    client.start().unwrap();
     let (competitor_hook_tx, competitor_hook_rx) = tokio::sync::oneshot::channel();
     let competitor_hook_tx = Arc::new(std::sync::Mutex::new(Some(competitor_hook_tx)));
     let hook_sender = competitor_hook_tx.clone();
@@ -2764,6 +2879,7 @@ async fn p3_go_away_retry_reacquires_async_admission() {
 #[tokio::test]
 async fn p3_connect_failure_does_not_run_before_rpc_hooks() {
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     let hook_calls = Arc::new(AtomicUsize::new(0));
     client.add_rpc_hook(Arc::new(BeforeCounter(hook_calls.clone())));
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -2798,6 +2914,7 @@ async fn p3_go_away_response_maps_to_java_send_exception() {
         ..ClientConfig::default()
     })
     .unwrap();
+    client.start().unwrap();
     let error = client
         .invoke(
             &address.to_string(),
@@ -2836,6 +2953,7 @@ async fn p3_malformed_frame_notifies_exception_then_close() {
         Some(Arc::new(TestEvents(events.clone()))),
     )
     .unwrap();
+    client.start().unwrap();
     let invoke_client = client.clone();
     let invoke_address = address.to_string();
     let invoke = tokio::spawn(async move {
@@ -2892,6 +3010,7 @@ async fn p3_channel_connect_event_fires_when_dial_fails() {
         Some(Arc::new(TestEvents(events.clone()))),
     )
     .unwrap();
+    client.start().unwrap();
     assert!(
         client
             .invoke(
@@ -2932,6 +3051,7 @@ async fn p3_hooks_and_channel_connect_event_follow_successful_exchange() {
         Some(channel_listener.clone()),
     )
     .unwrap();
+    client.start().unwrap();
     client.add_rpc_hook(Arc::new(TestHook(events.clone())));
     assert!(Arc::ptr_eq(
         &client.get_channel_event_listener().unwrap(),
@@ -3036,6 +3156,7 @@ async fn p3_rpc_hook_abort_and_failures_map_to_java_response_paths() {
         [first, second]
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     let processor_calls = Arc::new(AtomicUsize::new(0));
     for code in [830, 832] {
         let processor_calls = processor_calls.clone();
@@ -3100,6 +3221,7 @@ async fn p3_processor_failure_is_exposed_in_system_error_remark() {
         read_command(&mut stream).await
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     client.register_processor(
         845,
         Arc::new(|_: RemotingCommand| Err("processor failed".into())),
@@ -3132,6 +3254,7 @@ async fn p3_rpc_hook_equality_keys_match_java_contains_semantics() {
         write_command(&mut stream, &response).await;
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     let calls = Arc::new(AtomicUsize::new(0));
     client.add_rpc_hook(Arc::new(EquivalentTestHook {
         key: "same",
@@ -3197,6 +3320,7 @@ async fn p3_outbound_hook_failures_are_not_ignored() {
         write_command(&mut stream, &response).await;
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     client.add_rpc_hook(Arc::new(OutboundFailingHook));
 
     assert!(matches!(
@@ -3274,6 +3398,7 @@ async fn p3_before_hook_failure_runs_pipeline_and_after_hook_but_skips_processor
         read_command(&mut stream).await
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     let pipeline_calls = Arc::new(AtomicUsize::new(0));
     let after_hook_code = Arc::new(AtomicUsize::new(0));
     let processor_calls = Arc::new(AtomicUsize::new(0));
@@ -3348,6 +3473,7 @@ async fn p3_after_hook_runs_when_processor_returns_no_response() {
             .is_err()
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     let after_hook_calls = Arc::new(AtomicUsize::new(0));
     client.register_processor(834, Arc::new(|_: RemotingCommand| Ok(None)));
     client.add_rpc_hook(Arc::new(OptionalResponseHook(after_hook_calls.clone())));
@@ -3376,6 +3502,7 @@ async fn p3_request_pipeline_pipe_runs_new_stage_before_existing_stage() {
         read_command(&mut stream).await
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     let stages = Arc::new(std::sync::Mutex::new(Vec::new()));
     let old_stage = stages.clone();
     client.set_request_pipeline(Some(Arc::new(move |_: &RemotingCommand| {
@@ -3414,6 +3541,7 @@ async fn p3_pipeline_abort_preserves_java_style_code_and_message() {
         read_command(&mut stream).await
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     client.register_processor(811, Arc::new(|_: RemotingCommand| Ok(Some(command(813)))));
     client.set_request_pipeline(Some(Arc::new(AbortPipeline)));
     assert!(
@@ -3472,6 +3600,7 @@ async fn p3_processor_specific_and_default_executors_route_or_reject_tasks() {
         ..ClientConfig::default()
     })
     .unwrap();
+    client.start().unwrap();
     let (processor_tx, processor_rx) = tokio::sync::oneshot::channel();
     let processor_tx = Arc::new(std::sync::Mutex::new(Some(processor_tx)));
     let executions = Arc::new(AtomicUsize::new(0));
@@ -3528,6 +3657,7 @@ async fn p3_context_aware_pipeline_receives_connection_metadata() {
         (request.opaque, response)
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     let (context_tx, context_rx) = tokio::sync::oneshot::channel();
     let context_tx = Arc::new(std::sync::Mutex::new(Some(context_tx)));
     client.register_processor(810, Arc::new(|_: RemotingCommand| Ok(Some(command(811)))));
@@ -3578,6 +3708,7 @@ async fn p3_request_pipeline_and_processor_rejection_return_configured_codes() {
         (pipeline_reply, rejected_reply)
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
     client.register_processor(77, Arc::new(RejectingProcessor));
     client.register_processor(78, Arc::new(|_: RemotingCommand| Ok(None)));
     client.set_request_pipeline(Some(Arc::new(|_: &RemotingCommand| Err(733))));
@@ -3670,6 +3801,7 @@ async fn p3_u01_socks5_proxy_tunnels_a_remoting_request() {
         ..ClientConfig::default()
     };
     let client = RemotingClient::with_config(config).unwrap();
+    client.start().unwrap();
     let response = client
         .invoke(
             &broker_address.to_string(),
@@ -3711,6 +3843,7 @@ async fn p3_u01_tls_rejects_untrusted_ca() {
         auth_server: true,
         ..TlsConfig::default()
     }));
+    client.start().unwrap();
     let result = client
         .invoke(
             &format!("localhost:{port}"),

@@ -76,6 +76,12 @@ struct PendingEntry {
     response: oneshot::Sender<Result<RemotingCommand, TransportError>>,
 }
 
+struct Startup {
+    inbound_receiver: mpsc::UnboundedReceiver<processor::InboundRequest>,
+    callback_receiver: mpsc::UnboundedReceiver<CallbackTask>,
+    channel_event_receiver: mpsc::Receiver<(String, ChannelEvent)>,
+}
+
 struct ClientInner {
     connections: Mutex<HashMap<String, Arc<connection::Connection>>>,
     connecting: Mutex<HashMap<String, Weak<tokio::sync::Mutex<()>>>>,
@@ -104,6 +110,8 @@ struct ClientInner {
     rpc_hooks: Mutex<Vec<Arc<dyn RpcHook>>>,
     channel_listener: Option<Arc<dyn ChannelEventListener>>,
     channel_event_sender: mpsc::Sender<(String, ChannelEvent)>,
+    startup: Mutex<Option<Startup>>,
+    started: AtomicBool,
     request_pipeline: Mutex<Option<Arc<dyn RequestPipeline>>>,
     nameservers: Mutex<Vec<String>>,
     available_nameservers: Mutex<HashSet<String>>,
@@ -485,7 +493,7 @@ pub trait ChannelEventListener: Send + Sync + 'static {
     fn on_active(&self, _remote_addr: &str) {}
 }
 
-/// Deadline-based RocketMQ remoting client. Construction requires an active Tokio runtime.
+/// Deadline-based RocketMQ remoting client. Call [`start`](Self::start) before using transport operations.
 #[derive(Clone)]
 pub struct RemotingClient {
     inner: Arc<ClientInner>,
@@ -554,6 +562,12 @@ impl RemotingClient {
             rpc_hooks: Mutex::new(Vec::new()),
             channel_listener,
             channel_event_sender,
+            startup: Mutex::new(Some(Startup {
+                inbound_receiver: inbound_rx,
+                callback_receiver,
+                channel_event_receiver,
+            })),
+            started: AtomicBool::new(false),
             request_pipeline: Mutex::new(None),
             nameservers: Mutex::new(Vec::new()),
             available_nameservers: Mutex::new(HashSet::new()),
@@ -561,42 +575,6 @@ impl RemotingClient {
             nameserver_index: AtomicU64::new(0),
             socks_proxy_routes,
         });
-        let processor_tasks = processor::start(
-            Arc::downgrade(&inner),
-            inbound_rx,
-            inner.config.worker_threads,
-            inner.config.disable_netty_worker_group,
-        );
-        for task in processor_tasks {
-            inner.spawn(task);
-        }
-        inner.spawn(start_channel_event_worker(
-            inner.channel_listener.clone(),
-            channel_event_receiver,
-            inner.shutdown.subscribe(),
-        ));
-        let callback_workers = if inner.config.callback_executor_threads == 0 {
-            4
-        } else {
-            inner.config.callback_executor_threads
-        };
-        *inner.callback_workers.lock().unwrap() = start_callback_workers(
-            callback_receiver,
-            inner.callback_shutdown.subscribe(),
-            callback_workers,
-        );
-        let scheduler = tokio::spawn(timeout_scheduler(
-            Arc::downgrade(&inner),
-            inner.shutdown.subscribe(),
-        ));
-        inner.spawn(scheduler);
-        if inner.config.scan_available_nameserver {
-            let scan = tokio::spawn(scan_available_name_servers(
-                Arc::downgrade(&inner),
-                inner.shutdown.subscribe(),
-            ));
-            inner.spawn(scan);
-        }
         Ok(Self { inner })
     }
 
@@ -637,6 +615,8 @@ impl RemotingClient {
                 ..ClientConfig::default()
             },
             socks_proxy_routes: HashMap::new(),
+            startup: Mutex::new(None),
+            started: AtomicBool::new(true),
             outbound_queue_capacity: OUTBOUND_QUEUE_CAPACITY,
             async_admission: Arc::new(tokio::sync::Semaphore::new(65535)),
             oneway_admission: Arc::new(tokio::sync::Semaphore::new(65535)),
@@ -666,6 +646,61 @@ impl RemotingClient {
         ));
         inner.spawn(scheduler);
         Self { inner }
+    }
+
+    /// Starts the client's background workers. Repeated calls are harmless.
+    pub fn start(&self) -> Result<(), TransportError> {
+        if self.inner.closed.load(Ordering::Acquire) {
+            return Err(TransportError::Shutdown);
+        }
+        let mut startup = self.inner.startup.lock().unwrap();
+        if self.inner.closed.load(Ordering::Acquire) {
+            return Err(TransportError::Shutdown);
+        }
+        if self.inner.started.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        tokio::runtime::Handle::try_current().map_err(|_| {
+            TransportError::InvalidConfiguration("start requires an active Tokio runtime".into())
+        })?;
+        let startup_state = startup.take().ok_or_else(|| {
+            TransportError::InvalidConfiguration("client startup state is unavailable".into())
+        })?;
+        for task in processor::start(
+            Arc::downgrade(&self.inner),
+            startup_state.inbound_receiver,
+            self.inner.config.worker_threads,
+            self.inner.config.disable_netty_worker_group,
+        ) {
+            self.inner.spawn(task);
+        }
+        self.inner.spawn(start_channel_event_worker(
+            self.inner.channel_listener.clone(),
+            startup_state.channel_event_receiver,
+            self.inner.shutdown.subscribe(),
+        ));
+        let callback_workers = if self.inner.config.callback_executor_threads == 0 {
+            4
+        } else {
+            self.inner.config.callback_executor_threads
+        };
+        *self.inner.callback_workers.lock().unwrap() = start_callback_workers(
+            startup_state.callback_receiver,
+            self.inner.callback_shutdown.subscribe(),
+            callback_workers,
+        );
+        self.inner.spawn(tokio::spawn(timeout_scheduler(
+            Arc::downgrade(&self.inner),
+            self.inner.shutdown.subscribe(),
+        )));
+        if self.inner.config.scan_available_nameserver {
+            self.inner.spawn(tokio::spawn(scan_available_name_servers(
+                Arc::downgrade(&self.inner),
+                self.inner.shutdown.subscribe(),
+            )));
+        }
+        self.inner.started.store(true, Ordering::Release);
+        Ok(())
     }
 
     /// Replaces the configured NameServer list and randomizes its order when changed.
@@ -726,6 +761,9 @@ impl RemotingClient {
         command: RemotingCommand,
         deadline: Instant,
     ) -> Result<RemotingCommand, TransportError> {
+        if !self.inner.started.load(Ordering::Acquire) {
+            return Err(TransportError::NotStarted);
+        }
         let addresses = self.get_name_server_address_list().unwrap_or_default();
         if addresses.is_empty() {
             return Err(TransportError::InvalidConfiguration(
@@ -861,6 +899,9 @@ impl RemotingClient {
         &self,
         deadline: Instant,
     ) -> Result<Address, TransportError> {
+        if !self.inner.started.load(Ordering::Acquire) {
+            return Err(TransportError::NotStarted);
+        }
         let addresses = self.get_name_server_address_list().unwrap_or_default();
         if addresses.is_empty() {
             return Err(TransportError::InvalidConfiguration(
@@ -991,6 +1032,9 @@ impl RemotingClient {
     /// Returns whether the connection to `addr` currently has outbound queue capacity.
     /// Unknown addresses are considered writable, matching the Java client contract.
     pub fn is_channel_writable(&self, addr: &str) -> bool {
+        if !self.inner.started.load(Ordering::Acquire) {
+            return true;
+        }
         let Ok(address) = Address::parse(addr) else {
             return true;
         };
@@ -1005,7 +1049,8 @@ impl RemotingClient {
 
     /// Opens or reuses a connection and reports whether it is active before `deadline`.
     pub async fn is_address_reachable(&self, addr: &str, deadline: Instant) -> bool {
-        self.inner.connection(addr, deadline).await.is_ok()
+        self.inner.started.load(Ordering::Acquire)
+            && self.inner.connection(addr, deadline).await.is_ok()
     }
 
     /// Closes any currently cached channels for the supplied addresses.
@@ -1026,6 +1071,9 @@ impl RemotingClient {
         deadline: Instant,
         callback: Arc<dyn InvokeCallback>,
     ) -> Result<(), TransportError> {
+        if !self.inner.started.load(Ordering::Acquire) {
+            return Err(TransportError::NotStarted);
+        }
         if self.inner.closed.load(Ordering::Acquire) {
             return Err(TransportError::Shutdown);
         }
@@ -1227,6 +1275,9 @@ impl RemotingClient {
         callback: Option<CallbackTracking>,
         admission: &mut Option<tokio::sync::OwnedSemaphorePermit>,
     ) -> Result<RemotingCommand, TransportError> {
+        if !self.inner.started.load(Ordering::Acquire) {
+            return Err(TransportError::NotStarted);
+        }
         if self.inner.closed.load(Ordering::Acquire) {
             return Err(TransportError::Shutdown);
         }
@@ -1412,6 +1463,9 @@ impl RemotingClient {
         mut command: RemotingCommand,
         deadline: Instant,
     ) -> Result<std::future::Ready<Result<(), TransportError>>, TransportError> {
+        if !self.inner.started.load(Ordering::Acquire) {
+            return Err(TransportError::NotStarted);
+        }
         if self.inner.closed.load(Ordering::Acquire) {
             return Err(TransportError::Shutdown);
         }
@@ -1469,7 +1523,11 @@ impl RemotingClient {
             .shutdown_complete
             .get_or_init(|| async {
                 let deadline = Instant::now() + timeout;
-                self.inner.shutdown();
+                {
+                    let mut startup = self.inner.startup.lock().unwrap();
+                    self.inner.shutdown();
+                    startup.take();
+                }
                 let connections = {
                     let mut table = self.inner.connections.lock().unwrap();
                     table
@@ -1981,6 +2039,7 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
         let _result = client
             .invoke_oneway(
                 &address.to_string(),
@@ -2025,6 +2084,7 @@ mod tests {
     #[tokio::test]
     async fn admission_matches_java_zero_timeout_and_wait_timeout_categories() {
         let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
         let semaphore = Arc::new(tokio::sync::Semaphore::new(0));
         assert_eq!(
             client
@@ -2117,6 +2177,8 @@ mod tests {
         }
 
         let client = RemotingClient::new(TransportMode::Plain);
+
+        client.start().unwrap();
         let processed = Arc::new(AtomicUsize::new(0));
         let processed_by_handler = processed.clone();
         client.register_processor_with_executor(
@@ -2160,6 +2222,8 @@ mod tests {
         }
 
         let client = RemotingClient::new(TransportMode::Plain);
+
+        client.start().unwrap();
         let processed = Arc::new(AtomicUsize::new(0));
         let processed_by_handler = processed.clone();
         client.register_processor_with_executor(
@@ -2277,6 +2341,8 @@ mod tests {
             max_frame_size: DEFAULT_MAX_FRAME_SIZE,
             config,
             socks_proxy_routes: HashMap::new(),
+            startup: Mutex::new(None),
+            started: AtomicBool::new(true),
             outbound_queue_capacity: OUTBOUND_QUEUE_CAPACITY,
             async_admission: Arc::new(tokio::sync::Semaphore::new(8)),
             oneway_admission: Arc::new(tokio::sync::Semaphore::new(8)),
@@ -2310,6 +2376,7 @@ mod tests {
             let (_replacement, _) = listener.accept().await.unwrap();
         });
         let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
         let first = client
             .inner
             .connection(
@@ -2358,6 +2425,7 @@ mod tests {
     #[tokio::test]
     async fn cancelled_invoke_guard_removes_only_its_pending_generation() {
         let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
         let deadline = Instant::now() + std::time::Duration::from_secs(1);
         let (opaque, receiver) = client
             .inner
@@ -2374,6 +2442,7 @@ mod tests {
     #[tokio::test]
     async fn response_timeout_and_shutdown_race_has_one_terminal_completion() {
         let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
         let generation = 21;
         let deadline = Instant::now() + std::time::Duration::from_secs(1);
         let (opaque, receiver) = client
@@ -2860,6 +2929,7 @@ mod tests {
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         });
         let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
         let invoke_client = client.clone();
         let invoke = tokio::spawn(async move {
             invoke_client
@@ -2883,6 +2953,7 @@ mod tests {
     #[tokio::test]
     async fn shutdown_bounds_wait_for_a_blocking_callback() {
         let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
         let started = Arc::new(AtomicBool::new(false));
         let finished = Arc::new(AtomicBool::new(false));
         let (release_tx, release_rx) = std::sync::mpsc::channel();
@@ -2934,6 +3005,7 @@ mod tests {
     #[tokio::test]
     async fn shutdown_is_idempotent_and_new_calls_are_rejected() {
         let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
         client.shutdown().await;
         client.shutdown().await;
         assert!(matches!(

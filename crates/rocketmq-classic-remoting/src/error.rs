@@ -58,6 +58,8 @@ pub enum TransportError {
     Codec(CodecError),
     #[error("inbound request processor is overloaded")]
     InboundOverloaded,
+    #[error("client has not been started")]
+    NotStarted,
     #[error("client has shut down")]
     Shutdown,
     #[error("opaque identifiers are exhausted")]
