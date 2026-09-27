@@ -146,6 +146,18 @@ fn rpc_hook_transport_error(error: RpcHookError) -> TransportError {
     }
 }
 
+fn classify_connection_error(remote_addr: &str, error: TransportError) -> TransportError {
+    match error {
+        TransportError::Connect(_) | TransportError::Tls(_) | TransportError::Closed => {
+            TransportError::ConnectRequest {
+                remote_addr: remote_addr.to_owned(),
+                cause: None,
+            }
+        }
+        error => error,
+    }
+}
+
 fn classify_write_error(remote_addr: &str, error: TransportError) -> TransportError {
     match error {
         TransportError::Send(_) | TransportError::Closed | TransportError::Codec(_) => {
@@ -1084,7 +1096,7 @@ impl RemotingClient {
                         Err(error) => (Err(error), None),
                     }
                 }
-                Err(error) => (Err(error), None),
+                Err(error) => (Err(classify_connection_error(&addr, error)), None),
             };
             let context = InvokeCallbackResult::from_result(
                 callback_request_state.lock().unwrap().clone(),
@@ -1215,7 +1227,11 @@ impl RemotingClient {
             return Err(TransportError::Timeout);
         }
         let request_for_hooks = command.clone();
-        let connection = self.inner.connection(addr, deadline).await?;
+        let connection = self
+            .inner
+            .connection(addr, deadline)
+            .await
+            .map_err(|error| classify_connection_error(addr, error))?;
         if let Some(callback) = &callback {
             callback.channel_established.store(true, Ordering::Release);
         }
@@ -2424,6 +2440,24 @@ mod tests {
     #[test]
     fn asynchronous_write_failure_matches_java_request_fail_classification() {
         let remote_addr = "127.0.0.1:10911";
+        assert_eq!(
+            classify_connection_error(remote_addr, TransportError::Connect("refused".into())),
+            TransportError::ConnectRequest {
+                remote_addr: remote_addr.into(),
+                cause: None,
+            }
+        );
+        assert_eq!(
+            classify_connection_error(remote_addr, TransportError::Tls("handshake".into())),
+            TransportError::ConnectRequest {
+                remote_addr: remote_addr.into(),
+                cause: None,
+            }
+        );
+        assert_eq!(
+            classify_connection_error(remote_addr, TransportError::Timeout),
+            TransportError::Timeout
+        );
         assert_eq!(
             classify_write_error(remote_addr, TransportError::Send("broken pipe".into())),
             TransportError::SendRequest {

@@ -26,6 +26,11 @@ pub enum CodecError {
 pub enum TransportError {
     #[error("connection failed: {0}")]
     Connect(String),
+    #[error("connect to {remote_addr} failed: {cause:?}")]
+    ConnectRequest {
+        remote_addr: String,
+        cause: Option<String>,
+    },
     #[error("request send failed: {0}")]
     Send(String),
     #[error("operation deadline expired")]

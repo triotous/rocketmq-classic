@@ -112,6 +112,35 @@ async fn p3_async_connect_failure_calls_fail_without_complete() {
 }
 
 #[tokio::test]
+async fn p3_future_connect_failure_includes_java_remote_address_and_null_cause() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    drop(listener);
+    let client = RemotingClient::new(TransportMode::Plain);
+    for result in [
+        client
+            .invoke(
+                &address,
+                command(1),
+                Instant::now() + Duration::from_secs(1),
+            )
+            .await,
+        client
+            .invoke_sync(&address, command(1), Duration::from_secs(1))
+            .await,
+    ] {
+        assert_eq!(
+            result,
+            Err(TransportError::ConnectRequest {
+                remote_addr: address.clone(),
+                cause: None,
+            })
+        );
+    }
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn p3_async_callback_contains_response_future_metadata_and_timeout_grace() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -1218,7 +1247,13 @@ async fn p3_u01_tls_verifies_ca_and_hostname_without_insecure_fallback() {
             Instant::now() + Duration::from_secs(2),
         )
         .await;
-    assert!(matches!(result, Err(TransportError::Tls(_))));
+    assert_eq!(
+        result,
+        Err(TransportError::ConnectRequest {
+            remote_addr: format!("127.0.0.1:{port}"),
+            cause: None,
+        })
+    );
     bad_name.shutdown().await;
     peer.await.unwrap();
 }
@@ -2249,7 +2284,13 @@ async fn p3_async_go_away_retry_connect_failure_completes_before_failure() {
         .await
         .unwrap()
         .unwrap();
-    assert!(matches!(context.error, Some(TransportError::Connect(_))));
+    assert_eq!(
+        context.error,
+        Some(TransportError::ConnectRequest {
+            remote_addr: address.to_string(),
+            cause: None,
+        })
+    );
     assert_eq!(context.response, None);
     assert_eq!(context.request.flag, 1 << 8);
     assert_eq!(
@@ -3429,7 +3470,13 @@ async fn p3_u01_tls_rejects_untrusted_ca() {
             Instant::now() + Duration::from_secs(2),
         )
         .await;
-    assert!(matches!(result, Err(TransportError::Tls(_))));
+    assert_eq!(
+        result,
+        Err(TransportError::ConnectRequest {
+            remote_addr: format!("localhost:{port}"),
+            cause: None,
+        })
+    );
     client.shutdown().await;
     peer.await.unwrap();
 }
