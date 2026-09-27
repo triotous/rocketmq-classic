@@ -86,6 +86,8 @@ struct ClientInner {
     inbound: mpsc::UnboundedSender<processor::InboundRequest>,
     public_executor: Arc<TokioRequestExecutor>,
     shutdown: tokio::sync::watch::Sender<bool>,
+    callback_shutdown: tokio::sync::watch::Sender<bool>,
+    callback_workers: Mutex<Vec<JoinHandle<()>>>,
     shutdown_complete: tokio::sync::OnceCell<()>,
     closed: AtomicBool,
     tasks: Mutex<Vec<JoinHandle<()>>>,
@@ -509,6 +511,7 @@ impl RemotingClient {
         let max_frame_size = DEFAULT_MAX_FRAME_SIZE;
         let (inbound, inbound_rx) = mpsc::unbounded_channel();
         let (shutdown, _) = tokio::sync::watch::channel(false);
+        let (callback_shutdown, _) = tokio::sync::watch::channel(false);
         let (callback_sender, callback_receiver) = mpsc::unbounded_channel();
         let (channel_event_sender, channel_event_receiver) =
             mpsc::channel(CHANNEL_EVENT_QUEUE_CAPACITY);
@@ -526,6 +529,8 @@ impl RemotingClient {
             default_processor: Mutex::new(None),
             inbound,
             shutdown,
+            callback_shutdown,
+            callback_workers: Mutex::new(Vec::new()),
             shutdown_complete: tokio::sync::OnceCell::new(),
             closed: AtomicBool::new(false),
             tasks: Mutex::new(Vec::new()),
@@ -573,13 +578,11 @@ impl RemotingClient {
         } else {
             inner.config.callback_executor_threads
         };
-        for task in start_callback_workers(
+        *inner.callback_workers.lock().unwrap() = start_callback_workers(
             callback_receiver,
-            inner.shutdown.subscribe(),
+            inner.callback_shutdown.subscribe(),
             callback_workers,
-        ) {
-            inner.spawn(task);
-        }
+        );
         let scheduler = tokio::spawn(timeout_scheduler(
             Arc::downgrade(&inner),
             inner.shutdown.subscribe(),
@@ -599,6 +602,7 @@ impl RemotingClient {
     fn with_limits(security: TransportMode, max_frame_size: usize, initial_opaque: i32) -> Self {
         let (inbound, inbound_rx) = mpsc::unbounded_channel();
         let (shutdown, _) = tokio::sync::watch::channel(false);
+        let (callback_shutdown, _) = tokio::sync::watch::channel(false);
         let (callback_sender, _callback_receiver) = mpsc::unbounded_channel();
         let (channel_event_sender, _channel_event_receiver) =
             mpsc::channel(CHANNEL_EVENT_QUEUE_CAPACITY);
@@ -612,6 +616,8 @@ impl RemotingClient {
             default_processor: Mutex::new(None),
             inbound,
             shutdown,
+            callback_shutdown,
+            callback_workers: Mutex::new(Vec::new()),
             shutdown_complete: tokio::sync::OnceCell::new(),
             closed: AtomicBool::new(false),
             tasks: Mutex::new(Vec::new()),
@@ -1475,6 +1481,12 @@ impl RemotingClient {
                 for connection in connections {
                     connection.join().await;
                 }
+                let _ = self.inner.callback_shutdown.send(true);
+                let callback_workers =
+                    std::mem::take(&mut *self.inner.callback_workers.lock().unwrap());
+                for worker in callback_workers {
+                    let _ = worker.await;
+                }
             })
             .await;
     }
@@ -2141,9 +2153,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn callback_workers_drain_tasks_accepted_before_shutdown() {
+    async fn callback_workers_drain_late_tasks_after_client_shutdown_starts() {
         let (sender, receiver) = mpsc::unbounded_channel();
-        let (shutdown, _) = tokio::sync::watch::channel(false);
+        let (shutdown, _shutdown_receiver) = tokio::sync::watch::channel(false);
+        let (callback_shutdown, _) = tokio::sync::watch::channel(false);
         let completed = Arc::new(AtomicUsize::new(0));
         for _ in 0..32 {
             let completed = completed.clone();
@@ -2153,15 +2166,22 @@ mod tests {
                 }) as CallbackTask)
                 .unwrap();
         }
-        let workers = start_callback_workers(receiver, shutdown.subscribe(), 2);
+        let workers = start_callback_workers(receiver, callback_shutdown.subscribe(), 2);
         shutdown.send(true).unwrap();
+        let late_completed = completed.clone();
+        sender
+            .send(Box::new(move || {
+                late_completed.fetch_add(1, Ordering::SeqCst);
+            }) as CallbackTask)
+            .unwrap();
+        callback_shutdown.send(true).unwrap();
         for worker in workers {
             tokio::time::timeout(std::time::Duration::from_secs(2), worker)
                 .await
                 .expect("callback worker did not drain accepted tasks")
                 .unwrap();
         }
-        assert_eq!(completed.load(Ordering::SeqCst), 32);
+        assert_eq!(completed.load(Ordering::SeqCst), 33);
     }
 
     #[test]
@@ -2188,6 +2208,7 @@ mod tests {
         };
         let (inbound, receiver) = mpsc::unbounded_channel();
         let (shutdown, _) = tokio::sync::watch::channel(false);
+        let (callback_shutdown, _) = tokio::sync::watch::channel(false);
         let (callback_sender, _callback_receiver) = mpsc::unbounded_channel();
         let (channel_event_sender, _channel_event_receiver) =
             mpsc::channel(CHANNEL_EVENT_QUEUE_CAPACITY);
@@ -2209,6 +2230,8 @@ mod tests {
             inbound,
             public_executor: executor,
             shutdown,
+            callback_shutdown,
+            callback_workers: Mutex::new(Vec::new()),
             shutdown_complete: tokio::sync::OnceCell::new(),
             closed: AtomicBool::new(false),
             tasks: Mutex::new(Vec::new()),
