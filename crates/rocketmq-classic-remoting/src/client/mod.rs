@@ -111,6 +111,7 @@ struct ClientInner {
     channel_listener: Option<Arc<dyn ChannelEventListener>>,
     channel_event_sender: mpsc::Sender<(String, ChannelEvent)>,
     startup: Mutex<Option<Startup>>,
+    runtime: Mutex<Option<tokio::runtime::Handle>>,
     started: AtomicBool,
     request_pipeline: Mutex<Option<Arc<dyn RequestPipeline>>>,
     nameservers: Mutex<Vec<String>>,
@@ -567,6 +568,7 @@ impl RemotingClient {
                 callback_receiver,
                 channel_event_receiver,
             })),
+            runtime: Mutex::new(None),
             started: AtomicBool::new(false),
             request_pipeline: Mutex::new(None),
             nameservers: Mutex::new(Vec::new()),
@@ -608,6 +610,7 @@ impl RemotingClient {
                     admission: Mutex::new(()),
                 }),
             }),
+            runtime: Mutex::new(Some(tokio::runtime::Handle::current())),
             security: security.clone(),
             max_frame_size,
             config: ClientConfig {
@@ -660,9 +663,10 @@ impl RemotingClient {
         if self.inner.started.load(Ordering::Acquire) {
             return Ok(());
         }
-        tokio::runtime::Handle::try_current().map_err(|_| {
+        let runtime = tokio::runtime::Handle::try_current().map_err(|_| {
             TransportError::InvalidConfiguration("start requires an active Tokio runtime".into())
         })?;
+        *self.inner.runtime.lock().unwrap() = Some(runtime);
         let startup_state = startup.take().ok_or_else(|| {
             TransportError::InvalidConfiguration("client startup state is unavailable".into())
         })?;
@@ -2342,6 +2346,7 @@ mod tests {
             config,
             socks_proxy_routes: HashMap::new(),
             startup: Mutex::new(None),
+            runtime: Mutex::new(Some(tokio::runtime::Handle::current())),
             started: AtomicBool::new(true),
             outbound_queue_capacity: OUTBOUND_QUEUE_CAPACITY,
             async_admission: Arc::new(tokio::sync::Semaphore::new(8)),
@@ -2940,9 +2945,24 @@ mod tests {
     async fn pending_calls_complete_on_shutdown_and_owned_tasks_join() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
+        let (request_seen_tx, request_seen_rx) = oneshot::channel();
         let peer = tokio::spawn(async move {
-            let (_stream, _) = listener.accept().await.unwrap();
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut first_byte = [0; 1];
+            tokio::io::AsyncReadExt::read_exact(&mut stream, &mut first_byte)
+                .await
+                .unwrap();
+            request_seen_tx.send(()).unwrap();
+            let mut remaining = [0; 64];
+            loop {
+                if tokio::io::AsyncReadExt::read(&mut stream, &mut remaining)
+                    .await
+                    .unwrap()
+                    == 0
+                {
+                    break;
+                }
+            }
         });
         let client = RemotingClient::new(TransportMode::Plain);
         client.start().unwrap();
@@ -2956,13 +2976,18 @@ mod tests {
                 )
                 .await
         });
-        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        tokio::time::timeout(std::time::Duration::from_secs(1), request_seen_rx)
+            .await
+            .expect("peer did not receive the pending request")
+            .unwrap();
         client.shutdown().await;
         assert!(matches!(
             invoke.await.unwrap(),
             Err(TransportError::Shutdown)
         ));
         assert!(client.inner.tasks.lock().unwrap().is_empty());
+        assert!(client.inner.connections.lock().unwrap().is_empty());
+        assert!(client.inner.pending.lock().unwrap().is_empty());
         peer.await.unwrap();
     }
 

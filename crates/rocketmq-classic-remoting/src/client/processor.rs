@@ -301,12 +301,14 @@ fn send_response(
     if let Some(connection) = connection {
         match connection.encode_command(&response, client.max_frame_size) {
             Ok(encoded) => {
-                if let Err(error) = connection.try_send(
-                    encoded,
-                    tokio::time::Instant::now() + std::time::Duration::from_secs(30),
-                ) {
-                    client.connection_closed(request.generation, Some(error));
-                }
+                let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
+                let Some(runtime) = client.runtime.lock().unwrap().clone() else {
+                    return;
+                };
+                let task = runtime.spawn(async move {
+                    let _ = connection.send(encoded, deadline).await;
+                });
+                client.spawn(task);
             }
             Err(error) => client.connection_closed(request.generation, Some(error)),
         }

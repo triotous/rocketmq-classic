@@ -97,11 +97,22 @@ impl Default for ClientConfig {
 impl ClientConfig {
     pub fn validate(&self) -> Result<(), TransportError> {
         if self.worker_threads == 0
+            || i32::try_from(self.worker_threads).is_err()
+            || i32::try_from(self.callback_executor_threads).is_err()
+            || i32::try_from(self.async_semaphore_value).is_err()
+            || i32::try_from(self.oneway_semaphore_value).is_err()
+            || self.async_semaphore_value > tokio::sync::Semaphore::MAX_PERMITS
+            || self.oneway_semaphore_value > tokio::sync::Semaphore::MAX_PERMITS
             || i32::try_from(self.client_socket_send_buffer_size).is_err()
             || i32::try_from(self.client_socket_receive_buffer_size).is_err()
+            || i32::try_from(self.write_buffer_high_water_mark).is_err()
+            || i32::try_from(self.write_buffer_low_water_mark).is_err()
+            || self.connect_timeout > std::time::Duration::from_millis(i32::MAX as u64)
+            || self.max_idle_time > std::time::Duration::from_secs(i32::MAX as u64)
+            || self.channel_not_active_interval > std::time::Duration::from_millis(i64::MAX as u64)
         {
             return Err(TransportError::InvalidConfiguration(
-                "worker counts must be nonzero and socket buffer sizes must fit Java signed int"
+                "integer client settings must fit their Java signed integer ranges; worker count must be nonzero"
                     .into(),
             ));
         }

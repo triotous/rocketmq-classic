@@ -824,7 +824,7 @@ async fn p3_v01_parallel_responses_and_opaque_lifecycle() {
     client.shutdown().await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn p3_v02_single_flight_shares_connection_and_stale_close_keeps_generation() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -842,18 +842,25 @@ async fn p3_v02_single_flight_shares_connection_and_stale_close_keeps_generation
     client.start().unwrap();
     let deadline = Instant::now() + Duration::from_secs(2);
     let address = addr.to_string();
-    let a = client
-        .invoke_oneway(&address, command(1), deadline)
-        .unwrap();
-    let b = client
-        .invoke_oneway(&address, command(2), deadline)
-        .unwrap();
-    let c = client
-        .invoke_oneway(&address, command(3), deadline)
-        .unwrap();
-    a.await.unwrap();
-    b.await.unwrap();
-    c.await.unwrap();
+    let barrier = Arc::new(tokio::sync::Barrier::new(4));
+    let mut calls = Vec::new();
+    for code in 1..=3 {
+        let client = client.clone();
+        let address = address.clone();
+        let barrier = barrier.clone();
+        calls.push(tokio::spawn(async move {
+            barrier.wait().await;
+            client
+                .invoke_oneway(&address, command(code), deadline)
+                .unwrap()
+                .await
+                .unwrap();
+        }));
+    }
+    barrier.wait().await;
+    for call in calls {
+        call.await.unwrap();
+    }
     peer.await.unwrap();
     assert_eq!(accepted.load(Ordering::SeqCst), 1);
     client.shutdown().await;
@@ -918,6 +925,101 @@ async fn p3_v03_inbound_dispatch_and_reordered_parallel_responses() {
         Some(" request type 888888 not supported")
     );
     assert_eq!(unsupported_response.opaque, 42);
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn p3_inbound_responses_survive_outbound_queue_saturation() {
+    const INBOUND_REQUESTS: usize = 140;
+    const RESPONSE_BODY_SIZE: usize = 64 * 1024;
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let (saturated_tx, saturated_rx) = tokio::sync::oneshot::channel();
+    let (drain_tx, drain_rx) = tokio::sync::oneshot::channel();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let outbound = read_command(&mut stream).await;
+        for opaque in 0..INBOUND_REQUESTS {
+            let mut request = command(900_010);
+            request.opaque = opaque as i32;
+            write_command(&mut stream, &request).await;
+        }
+        saturated_tx.send(()).unwrap();
+        let _ = drain_rx.await;
+        let mut response = command(outbound.code);
+        response.opaque = outbound.opaque;
+        response.mark_response();
+        write_command(&mut stream, &response).await;
+        let mut responses = Vec::with_capacity(INBOUND_REQUESTS);
+        for _ in 0..INBOUND_REQUESTS {
+            responses.push(read_command(&mut stream).await);
+        }
+        responses
+    });
+    let client = RemotingClient::with_config(ClientConfig {
+        client_socket_send_buffer_size: 1024,
+        write_buffer_high_water_mark: 64 * 1024,
+        write_buffer_low_water_mark: 32 * 1024,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    client.start().unwrap();
+    client.register_processor(
+        900_010,
+        Arc::new(|_: RemotingCommand| {
+            Ok(Some(RemotingCommand {
+                body: Some(vec![0x5a; RESPONSE_BODY_SIZE]),
+                ..command(910)
+            }))
+        }),
+    );
+    let invoke = tokio::spawn({
+        let client = client.clone();
+        let address = address.to_string();
+        async move {
+            client
+                .invoke(
+                    &address,
+                    command(911),
+                    Instant::now() + Duration::from_secs(10),
+                )
+                .await
+        }
+    });
+    tokio::time::timeout(Duration::from_secs(2), saturated_rx)
+        .await
+        .unwrap()
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while client.is_channel_writable(&address.to_string()) {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("inbound response writes should fill the bounded outbound queue");
+
+    let _ = drain_tx.send(());
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(2), invoke)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap()
+            .code,
+        911
+    );
+    let responses = tokio::time::timeout(Duration::from_secs(10), peer)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(responses.len(), INBOUND_REQUESTS);
+    assert!(responses.iter().all(|response| {
+        response.code == 910
+            && response.is_response()
+            && response.body.as_deref() == Some(&vec![0x5a; RESPONSE_BODY_SIZE])
+    }));
+    assert!(client.is_channel_writable(&address.to_string()));
     client.shutdown().await;
 }
 
@@ -1050,6 +1152,10 @@ async fn p3_default_processor_handles_unknown_codes_but_exact_registration_wins(
 
 #[tokio::test]
 async fn p3_u01_raw_route_deadline_shutdown_and_address_parsing() {
+    let unstarted = RemotingClient::new(TransportMode::Plain);
+    unstarted.shutdown().await;
+    assert_eq!(unstarted.start(), Err(TransportError::Shutdown));
+
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let peer = tokio::spawn(async move {
@@ -1732,6 +1838,46 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
         .validate()
         .is_err()
     );
+    for invalid_capacity in [
+        ClientConfig {
+            worker_threads: i32::MAX as usize + 1,
+            ..defaults.clone()
+        },
+        ClientConfig {
+            callback_executor_threads: i32::MAX as usize + 1,
+            ..defaults.clone()
+        },
+        ClientConfig {
+            async_semaphore_value: i32::MAX as usize + 1,
+            ..defaults.clone()
+        },
+        ClientConfig {
+            oneway_semaphore_value: i32::MAX as usize + 1,
+            ..defaults.clone()
+        },
+        ClientConfig {
+            async_semaphore_value: tokio::sync::Semaphore::MAX_PERMITS.saturating_add(1),
+            ..defaults.clone()
+        },
+        ClientConfig {
+            oneway_semaphore_value: tokio::sync::Semaphore::MAX_PERMITS.saturating_add(1),
+            ..defaults.clone()
+        },
+        ClientConfig {
+            write_buffer_high_water_mark: i32::MAX as usize + 1,
+            ..defaults.clone()
+        },
+        ClientConfig {
+            write_buffer_low_water_mark: i32::MAX as usize + 1,
+            ..defaults.clone()
+        },
+        ClientConfig {
+            channel_not_active_interval: Duration::from_millis(i64::MAX as u64 + 1),
+            ..defaults.clone()
+        },
+    ] {
+        assert!(invalid_capacity.validate().is_err());
+    }
     assert!(
         ClientConfig {
             callback_executor_threads: 0,

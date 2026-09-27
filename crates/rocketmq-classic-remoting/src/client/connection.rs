@@ -235,6 +235,7 @@ impl Connection {
         result
     }
 
+    #[cfg(test)]
     pub(crate) fn try_send(&self, bytes: Vec<u8>, deadline: Instant) -> Result<(), TransportError> {
         let (written, _response) = tokio::sync::oneshot::channel();
         self.reserve_write_bytes(bytes.len());
