@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 
 use crate::command::RemotingCommand;
 
-use super::{ClientInner, INBOUND_QUEUE_CAPACITY, ProcessorRegistration};
+use super::{ClientInner, ProcessorRegistration};
 
 pub trait RequestProcessor: Send + Sync + 'static {
     fn process(&self, request: RemotingCommand) -> Result<Option<RemotingCommand>, String>;
@@ -32,7 +32,7 @@ pub(super) struct InboundRequest {
 
 pub(super) fn start(
     inner: Weak<ClientInner>,
-    mut receiver: mpsc::Receiver<InboundRequest>,
+    mut receiver: mpsc::UnboundedReceiver<InboundRequest>,
     worker_count: usize,
     disable_worker_group: bool,
 ) -> Vec<tokio::task::JoinHandle<()>> {
@@ -43,7 +43,7 @@ pub(super) fn start(
     if disable_worker_group {
         return Vec::new();
     }
-    let (work, worker_rx) = mpsc::channel(INBOUND_QUEUE_CAPACITY);
+    let (work, worker_rx) = mpsc::unbounded_channel();
     let worker_rx = Arc::new(tokio::sync::Mutex::new(worker_rx));
     let mut tasks = Vec::with_capacity(worker_count + 1);
     let mut shutdown = shutdown_sender.subscribe();
@@ -52,8 +52,7 @@ pub(super) fn start(
             tokio::select! {
                 request = receiver.recv() => match request {
                     Some(request) => {
-                        let Ok(permit) = work.reserve().await else { return };
-                        permit.send(request);
+                        let _ = work.send(request);
                     }
                     None => return,
                 },
@@ -61,7 +60,7 @@ pub(super) fn start(
                     if result.is_err() || *shutdown.borrow() {
                         receiver.close();
                         while let Some(request) = receiver.recv().await {
-                            if work.send(request).await.is_err() {
+                            if work.send(request).is_err() {
                                 return;
                             }
                         }

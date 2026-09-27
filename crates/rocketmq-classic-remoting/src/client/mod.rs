@@ -34,7 +34,6 @@ pub use processor::RequestProcessor;
 pub use tls::{PrivateKeyDecryptionStrategy, TlsConfig};
 
 const OUTBOUND_QUEUE_CAPACITY: usize = 128;
-const INBOUND_QUEUE_CAPACITY: usize = 128;
 const CHANNEL_EVENT_QUEUE_CAPACITY: usize = 10001;
 
 #[derive(Clone)]
@@ -84,7 +83,7 @@ struct ClientInner {
     generation: AtomicU64,
     processors: Mutex<HashMap<i32, ProcessorRegistration>>,
     default_processor: Mutex<Option<ProcessorRegistration>>,
-    inbound: mpsc::Sender<processor::InboundRequest>,
+    inbound: mpsc::UnboundedSender<processor::InboundRequest>,
     public_executor: Arc<TokioRequestExecutor>,
     shutdown: tokio::sync::watch::Sender<bool>,
     shutdown_complete: tokio::sync::OnceCell<()>,
@@ -508,7 +507,7 @@ impl RemotingClient {
         config.validate()?;
         let socks_proxy_routes = config.parse_socks_proxy_config()?;
         let max_frame_size = DEFAULT_MAX_FRAME_SIZE;
-        let (inbound, inbound_rx) = mpsc::channel(INBOUND_QUEUE_CAPACITY);
+        let (inbound, inbound_rx) = mpsc::unbounded_channel();
         let (shutdown, _) = tokio::sync::watch::channel(false);
         let (callback_sender, callback_receiver) = mpsc::unbounded_channel();
         let (channel_event_sender, channel_event_receiver) =
@@ -598,7 +597,7 @@ impl RemotingClient {
 
     #[cfg(test)]
     fn with_limits(security: TransportMode, max_frame_size: usize, initial_opaque: i32) -> Self {
-        let (inbound, inbound_rx) = mpsc::channel(INBOUND_QUEUE_CAPACITY);
+        let (inbound, inbound_rx) = mpsc::unbounded_channel();
         let (shutdown, _) = tokio::sync::watch::channel(false);
         let (callback_sender, _callback_receiver) = mpsc::unbounded_channel();
         let (channel_event_sender, _channel_event_receiver) =
@@ -1652,36 +1651,6 @@ impl ClientInner {
         }
     }
 
-    fn send_overload_response(self: &Arc<Self>, generation: u64, opaque: i32) {
-        let client = self.clone();
-        self.spawn(tokio::spawn(async move {
-            let connection = client
-                .connections
-                .lock()
-                .unwrap()
-                .values()
-                .find(|connection| connection.generation == generation)
-                .cloned();
-            let Some(connection) = connection else {
-                return;
-            };
-            let mut response = RemotingCommand {
-                code: rocketmq_classic_protocol::codes::response::SYSTEM_BUSY,
-                remark: Some("[OVERLOAD]system busy, start flow control for a while".into()),
-                opaque,
-                ..RemotingCommand::default()
-            };
-            response.mark_response();
-            if let Ok(bytes) = connection.encode_command(&response, client.max_frame_size) {
-                if let Err(error) =
-                    connection.try_send(bytes, Instant::now() + std::time::Duration::from_secs(30))
-                {
-                    client.connection_closed(generation, Some(error));
-                }
-            }
-        }));
-    }
-
     fn dispatch_callback(&self, job: CallbackJob) {
         let task: CallbackTask = Box::new(move || run_callback(job));
         if self.config.disable_callback_executor {
@@ -2101,6 +2070,49 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn inbound_dispatch_queue_accepts_more_than_legacy_capacity() {
+        struct InlineExecutor;
+
+        impl RequestExecutor for InlineExecutor {
+            fn execute(&self, task: CallbackTask) -> Result<(), String> {
+                task();
+                Ok(())
+            }
+        }
+
+        let client = RemotingClient::new(TransportMode::Plain);
+        let processed = Arc::new(AtomicUsize::new(0));
+        let processed_by_handler = processed.clone();
+        client.register_processor_with_executor(
+            test_command().code,
+            Arc::new(move |_| {
+                processed_by_handler.fetch_add(1, Ordering::SeqCst);
+                Ok(None)
+            }),
+            Some(Arc::new(InlineExecutor)),
+        );
+        for _ in 0..256 {
+            client
+                .inner
+                .inbound
+                .send(processor::InboundRequest {
+                    generation: 0,
+                    remote_addr: "test:0".into(),
+                    command: test_command(),
+                })
+                .unwrap();
+        }
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while processed.load(Ordering::SeqCst) != 256 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("unbounded inbound queue did not dispatch all accepted requests");
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
     async fn accepted_inbound_requests_are_dispatched_when_shutdown_starts() {
         struct InlineExecutor;
 
@@ -2125,7 +2137,7 @@ mod tests {
         client
             .inner
             .inbound
-            .try_send(processor::InboundRequest {
+            .send(processor::InboundRequest {
                 generation: 0,
                 remote_addr: "test:0".into(),
                 command: test_command(),
@@ -2188,7 +2200,7 @@ mod tests {
             disable_netty_worker_group: true,
             ..ClientConfig::default()
         };
-        let (inbound, receiver) = mpsc::channel(INBOUND_QUEUE_CAPACITY);
+        let (inbound, receiver) = mpsc::unbounded_channel();
         let (shutdown, _) = tokio::sync::watch::channel(false);
         let (callback_sender, _callback_receiver) = mpsc::unbounded_channel();
         let (channel_event_sender, _channel_event_receiver) =

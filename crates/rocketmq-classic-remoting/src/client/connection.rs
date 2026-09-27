@@ -451,11 +451,7 @@ async fn run_connection(
                                     if disable_worker_group {
                                         super::processor::process_one(&Arc::downgrade(&inner), request);
                                     } else {
-                                        let oneway = request.command.is_oneway();
-                                        let opaque = request.command.opaque;
-                                        if inner.inbound.try_send(request).is_err() && !oneway {
-                                            inner.send_overload_response(generation, opaque);
-                                        }
+                                        let _ = inner.inbound.send(request);
                                     }
                                 } else {
                                     break 'connection None;
