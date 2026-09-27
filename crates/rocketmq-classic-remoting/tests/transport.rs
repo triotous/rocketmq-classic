@@ -11,10 +11,9 @@ use rocketmq_classic_protocol::codes::{SerializeType, request, response};
 use rocketmq_classic_remoting::{
     RemotingCommand,
     client::{
-        Address, CallbackExecutor, ChannelEventListener, ClientConfig, ContextRequestPipeline,
-        InvokeCallback, InvokeCallbackResult, RemotingClient, RequestContext, RequestExecutor,
-        RequestPipeline, RequestPipelineError, RequestProcessor, RpcHook, RpcHookError,
-        TransportMode, tls::TlsConfig,
+        CallbackExecutor, ChannelEventListener, ClientConfig, InvokeCallback, InvokeCallbackResult,
+        RemotingClient, RequestExecutor, RequestPipeline, RequestPipelineError, RequestProcessor,
+        RpcHook, RpcHookError, TransportMode, tls::TlsConfig,
     },
     codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
     error::TransportError,
@@ -545,6 +544,11 @@ async fn p3_nameserver_update_keeps_non_chosen_removed_connection_open() {
         let task = tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
             let _ = accepted.send(());
+            let request = read_command(&mut stream).await;
+            let mut response = command(2);
+            response.opaque = request.opaque;
+            response.mark_response();
+            write_command(&mut stream, &response).await;
             let mut byte = [0];
             stream.read_exact(&mut byte).await.map(|_| ())
         });
@@ -560,24 +564,34 @@ async fn p3_nameserver_update_keeps_non_chosen_removed_connection_open() {
     .unwrap();
     client.start().unwrap();
     client.update_name_server_address_list(vec![first_address.clone(), second_address.clone()]);
-    let selected = client
-        .get_and_create_name_server_channel_async(Instant::now() + Duration::from_secs(1))
+    let selected_response = client
+        .invoke_name_server(command(1), Instant::now() + Duration::from_secs(1))
         .await
         .unwrap();
-    let other_address = if selected.as_str() == first_address {
+    assert!(selected_response.is_response());
+    let selected = client
+        .get_available_name_srv_list()
+        .into_iter()
+        .next()
+        .unwrap();
+    let other_address = if selected == first_address {
         &second_address
     } else {
         &first_address
     };
-    assert!(
-        client
-            .is_address_reachable(other_address, Instant::now() + Duration::from_secs(1))
-            .await
-    );
+    let other_response = client
+        .invoke(
+            other_address,
+            command(1),
+            Instant::now() + Duration::from_secs(1),
+        )
+        .await
+        .unwrap();
+    assert!(other_response.is_response());
     first_accepted.await.unwrap();
     second_accepted.await.unwrap();
 
-    client.update_name_server_address_list(vec![selected.as_str().to_owned()]);
+    client.update_name_server_address_list(vec![selected.clone()]);
     tokio::task::yield_now().await;
     if other_address == &first_address {
         assert!(
@@ -1151,7 +1165,7 @@ async fn p3_default_processor_handles_unknown_codes_but_exact_registration_wins(
 }
 
 #[tokio::test]
-async fn p3_u01_raw_route_deadline_shutdown_and_address_parsing() {
+async fn p3_u01_raw_route_deadline_and_shutdown() {
     let unstarted = RemotingClient::new(TransportMode::Plain);
     unstarted.shutdown().await;
     assert_eq!(unstarted.start(), Err(TransportError::Shutdown));
@@ -1182,10 +1196,6 @@ async fn p3_u01_raw_route_deadline_shutdown_and_address_parsing() {
         .invoke(&addr.to_string(), command(1), Instant::now())
         .await;
     assert!(matches!(expired, Err(TransportError::Timeout)));
-    assert!(Address::parse("[::1]:10911").is_ok());
-    assert!(Address::parse("localhost:10911").is_ok());
-    assert!(Address::parse("::1:10911").is_err());
-    assert!(Address::parse("localhost:70000").is_err());
     client.shutdown().await;
     assert!(matches!(
         client
@@ -3327,11 +3337,7 @@ impl RequestPipeline for AbortPipeline {
         Ok(())
     }
 
-    fn execute_detailed(
-        &self,
-        _: &RequestContext,
-        _: &RemotingCommand,
-    ) -> Result<(), RequestPipelineError> {
+    fn execute_detailed(&self, _: &RemotingCommand) -> Result<(), RequestPipelineError> {
         Err(RequestPipelineError::Abort {
             response_code: 812,
             remark: Some("pipeline stopped request".into()),
@@ -3872,48 +3878,6 @@ async fn p3_processor_specific_and_default_executors_route_or_reject_tasks() {
     assert_eq!(responses.get(&61), Some(&822));
     assert_eq!(responses.get(&62), Some(&response::SYSTEM_BUSY));
     assert_eq!(executions.load(Ordering::SeqCst), 1);
-    client.shutdown().await;
-}
-
-#[tokio::test]
-async fn p3_context_aware_pipeline_receives_connection_metadata() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    let peer = tokio::spawn(async move {
-        let (mut stream, _) = listener.accept().await.unwrap();
-        let mut request = command(810);
-        request.opaque = 51;
-        write_command(&mut stream, &request).await;
-        let response = read_command(&mut stream).await;
-        (request.opaque, response)
-    });
-    let client = RemotingClient::new(TransportMode::Plain);
-    client.start().unwrap();
-    let (context_tx, context_rx) = tokio::sync::oneshot::channel();
-    let context_tx = Arc::new(std::sync::Mutex::new(Some(context_tx)));
-    client.register_processor(810, Arc::new(|_: RemotingCommand| Ok(Some(command(811)))));
-    client.set_request_pipeline(Some(Arc::new(ContextRequestPipeline(
-        move |context: &RequestContext, _request: &RemotingCommand| {
-            if let Some(sender) = context_tx.lock().unwrap().take() {
-                let _ = sender.send(context.clone());
-            }
-            Ok(())
-        },
-    ))));
-    assert!(
-        client
-            .is_address_reachable(
-                &address.to_string(),
-                Instant::now() + Duration::from_secs(2)
-            )
-            .await
-    );
-    let (request_opaque, response) = peer.await.unwrap();
-    let context = context_rx.await.unwrap();
-    assert_eq!(context.remote_addr, address.to_string());
-    assert_ne!(context.connection_generation, 0);
-    assert!(response.is_response());
-    assert_eq!(response.opaque, request_opaque);
     client.shutdown().await;
 }
 

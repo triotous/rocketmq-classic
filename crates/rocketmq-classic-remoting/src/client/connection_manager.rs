@@ -7,10 +7,10 @@ use crate::error::TransportError;
 use super::{ClientInner, connection};
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct Address(String);
+pub(super) struct Address(String);
 
 impl Address {
-    pub fn parse(value: &str) -> Result<Self, TransportError> {
+    pub(super) fn parse(value: &str) -> Result<Self, TransportError> {
         let normalized = if value.starts_with('[') {
             let (host, port) = value
                 .strip_prefix('[')
@@ -46,7 +46,7 @@ impl Address {
         Ok(Self(normalized))
     }
 
-    pub fn as_str(&self) -> &str {
+    pub(super) fn as_str(&self) -> &str {
         &self.0
     }
 }

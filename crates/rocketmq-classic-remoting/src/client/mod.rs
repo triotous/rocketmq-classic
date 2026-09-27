@@ -29,7 +29,6 @@ use crate::{
 
 pub use config::{ClientConfig, SocksProxyConfig};
 pub use connection::TransportMode;
-pub use connection_manager::Address;
 pub use processor::RequestProcessor;
 pub use tls::{PrivateKeyDecryptionStrategy, TlsConfig};
 
@@ -118,12 +117,6 @@ struct ClientInner {
     available_nameservers: Mutex<HashSet<String>>,
     chosen_nameserver: Mutex<Option<String>>,
     nameserver_index: AtomicU64,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RequestContext {
-    pub remote_addr: String,
-    pub connection_generation: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -248,20 +241,8 @@ impl RequestExecutor for TokioRequestExecutor {
 pub trait RequestPipeline: Send + Sync + 'static {
     fn execute(&self, request: &RemotingCommand) -> Result<(), i32>;
 
-    fn execute_with_context(
-        &self,
-        _context: &RequestContext,
-        request: &RemotingCommand,
-    ) -> Result<(), i32> {
+    fn execute_detailed(&self, request: &RemotingCommand) -> Result<(), RequestPipelineError> {
         self.execute(request)
-    }
-
-    fn execute_detailed(
-        &self,
-        context: &RequestContext,
-        request: &RemotingCommand,
-    ) -> Result<(), RequestPipelineError> {
-        self.execute_with_context(context, request)
             .map_err(|response_code| RequestPipelineError::Abort {
                 response_code,
                 remark: Some("request pipeline aborted".into()),
@@ -289,47 +270,9 @@ impl RequestPipeline for PipedRequestPipeline {
         self.existing.execute(request)
     }
 
-    fn execute_with_context(
-        &self,
-        context: &RequestContext,
-        request: &RemotingCommand,
-    ) -> Result<(), i32> {
-        self.source.execute_with_context(context, request)?;
-        self.existing.execute_with_context(context, request)
-    }
-
-    fn execute_detailed(
-        &self,
-        context: &RequestContext,
-        request: &RemotingCommand,
-    ) -> Result<(), RequestPipelineError> {
-        self.source.execute_detailed(context, request)?;
-        self.existing.execute_detailed(context, request)
-    }
-}
-
-pub struct ContextRequestPipeline<F>(pub F);
-
-impl<F> RequestPipeline for ContextRequestPipeline<F>
-where
-    F: Fn(&RequestContext, &RemotingCommand) -> Result<(), i32> + Send + Sync + 'static,
-{
-    fn execute(&self, request: &RemotingCommand) -> Result<(), i32> {
-        (self.0)(
-            &RequestContext {
-                remote_addr: String::new(),
-                connection_generation: 0,
-            },
-            request,
-        )
-    }
-
-    fn execute_with_context(
-        &self,
-        context: &RequestContext,
-        request: &RemotingCommand,
-    ) -> Result<(), i32> {
-        (self.0)(context, request)
+    fn execute_detailed(&self, request: &RemotingCommand) -> Result<(), RequestPipelineError> {
+        self.source.execute_detailed(request)?;
+        self.existing.execute_detailed(request)
     }
 }
 
@@ -897,58 +840,6 @@ impl RemotingClient {
         Err(last_error.unwrap_or(TransportError::Timeout))
     }
 
-    pub async fn get_and_create_name_server_channel_async(
-        &self,
-        deadline: Instant,
-    ) -> Result<Address, TransportError> {
-        if !self.inner.started.load(Ordering::Acquire) {
-            return Err(TransportError::NotStarted);
-        }
-        let addresses = self.get_name_server_address_list().unwrap_or_default();
-        if addresses.is_empty() {
-            return Err(TransportError::InvalidConfiguration(
-                "no NameServer addresses configured".into(),
-            ));
-        }
-        let chosen = {
-            let nameservers = self.inner.nameservers.lock().unwrap();
-            let chosen = self.inner.chosen_nameserver.lock().unwrap().clone();
-            chosen.filter(|address| {
-                nameservers.contains(address)
-                    && self
-                        .inner
-                        .connections
-                        .lock()
-                        .unwrap()
-                        .get(address)
-                        .is_some_and(|connection| !connection.is_closed())
-            })
-        };
-        if let Some(chosen) = chosen {
-            return Address::parse(&chosen);
-        }
-        let start =
-            self.inner.nameserver_index.fetch_add(1, Ordering::Relaxed) as usize % addresses.len();
-        let mut last_error = None;
-        for offset in 0..addresses.len() {
-            if Instant::now() >= deadline {
-                return Err(TransportError::Timeout);
-            }
-            let address = &addresses[(start + offset) % addresses.len()];
-            match self.inner.connection(address, deadline).await {
-                Ok(_) => {
-                    let nameservers = self.inner.nameservers.lock().unwrap();
-                    if nameservers.iter().any(|configured| configured == address) {
-                        *self.inner.chosen_nameserver.lock().unwrap() = Some(address.clone());
-                        return Address::parse(address);
-                    }
-                }
-                Err(error) => last_error = Some(error),
-            }
-        }
-        Err(last_error.unwrap_or(TransportError::Timeout))
-    }
-
     pub fn add_rpc_hook(&self, hook: Arc<dyn RpcHook>) {
         let mut hooks = self.inner.rpc_hooks.lock().unwrap();
         if !hooks.iter().any(|registered| {
@@ -1037,7 +928,7 @@ impl RemotingClient {
         if !self.inner.started.load(Ordering::Acquire) {
             return true;
         }
-        let Ok(address) = Address::parse(addr) else {
+        let Ok(address) = connection_manager::Address::parse(addr) else {
             return true;
         };
         self.inner
@@ -1058,7 +949,7 @@ impl RemotingClient {
     /// Closes any currently cached channels for the supplied addresses.
     pub fn close_channels(&self, addresses: &[String]) {
         for address in addresses {
-            let key = Address::parse(address)
+            let key = connection_manager::Address::parse(address)
                 .map(|address| address.as_str().to_owned())
                 .unwrap_or_else(|_| address.clone());
             self.inner.interrupt_pull_requests(&key);
@@ -2130,6 +2021,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn start_and_shutdown_race_leaves_no_owned_tasks_or_connections() {
+        for _ in 0..16 {
+            let client = RemotingClient::new(TransportMode::Plain);
+            let barrier = Arc::new(tokio::sync::Barrier::new(3));
+            let start_client = client.clone();
+            let start_barrier = barrier.clone();
+            let start = tokio::spawn(async move {
+                start_barrier.wait().await;
+                start_client.start()
+            });
+            let shutdown_client = client.clone();
+            let shutdown_barrier = barrier.clone();
+            let shutdown = tokio::spawn(async move {
+                shutdown_barrier.wait().await;
+                shutdown_client.shutdown().await;
+            });
+            barrier.wait().await;
+            let _ = start.await.unwrap();
+            shutdown.await.unwrap();
+            assert!(client.inner.tasks.lock().unwrap().is_empty());
+            assert!(client.inner.connections.lock().unwrap().is_empty());
+            assert!(client.inner.pending.lock().unwrap().is_empty());
+            assert_eq!(client.start(), Err(TransportError::Shutdown));
+        }
+    }
+
+    #[tokio::test]
     async fn pending_terminal_race_and_opaque_wrap_never_replace_live_entries() {
         let client =
             RemotingClient::with_limits(TransportMode::Plain, DEFAULT_MAX_FRAME_SIZE, i32::MAX);
@@ -2169,6 +2087,149 @@ mod tests {
         assert!(matches!(second_rx.await, Ok(Err(TransportError::Closed))));
         assert_eq!(client.inner.pending.lock().unwrap().len(), 0);
         client.shutdown().await;
+        assert!(client.inner.tasks.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn wire_response_timeout_cancellation_and_shutdown_race_leaves_no_pending() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (request_tx, request_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut prefix = [0; 4];
+            stream.read_exact(&mut prefix).await.unwrap();
+            let frame_length = u32::from_be_bytes(prefix) as usize;
+            let mut frame_bytes = bytes::BytesMut::with_capacity(frame_length + 4);
+            frame_bytes.extend_from_slice(&prefix);
+            frame_bytes.resize(frame_length + 4, 0);
+            stream.read_exact(&mut frame_bytes[4..]).await.unwrap();
+            let request =
+                crate::codec::frame::decode_next(&mut frame_bytes, DEFAULT_MAX_FRAME_SIZE)
+                    .unwrap()
+                    .unwrap();
+            request_tx.send(request.opaque).unwrap();
+            let _ = release_rx.await;
+            let mut response = test_command();
+            response.opaque = request.opaque;
+            response.mark_response();
+            let _ = stream
+                .write_all(&crate::codec::frame::encode(&response, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .await;
+        });
+
+        let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
+        let invoke_client = client.clone();
+        let address_string = address.to_string();
+        let invoke = tokio::spawn(async move {
+            invoke_client
+                .invoke(
+                    &address_string,
+                    test_command(),
+                    Instant::now() + std::time::Duration::from_secs(5),
+                )
+                .await
+        });
+        let opaque = tokio::time::timeout(std::time::Duration::from_secs(2), request_rx)
+            .await
+            .expect("invoke frame was not written")
+            .unwrap();
+
+        let generation = client
+            .inner
+            .pending
+            .lock()
+            .unwrap()
+            .get(&opaque)
+            .expect("wire request must own a pending entry")
+            .generation;
+        let barrier = Arc::new(tokio::sync::Barrier::new(5));
+        let cancel_barrier = barrier.clone();
+        let cancel = tokio::spawn(async move {
+            cancel_barrier.wait().await;
+            invoke.abort();
+        });
+        let timeout_inner = client.inner.clone();
+        let timeout_barrier = barrier.clone();
+        let timeout = tokio::spawn(async move {
+            timeout_barrier.wait().await;
+            timeout_inner.expire_pending(opaque, generation);
+        });
+        let shutdown_client = client.clone();
+        let shutdown_barrier = barrier.clone();
+        let shutdown = tokio::spawn(async move {
+            shutdown_barrier.wait().await;
+            shutdown_client.shutdown().await;
+        });
+        let release_barrier = barrier.clone();
+        let release = tokio::spawn(async move {
+            release_barrier.wait().await;
+            let _ = release_tx.send(());
+        });
+        barrier.wait().await;
+        cancel.await.unwrap();
+        timeout.await.unwrap();
+        release.await.unwrap();
+        shutdown.await.unwrap();
+        let _ = peer.await;
+        assert!(client.inner.pending.lock().unwrap().is_empty());
+        assert!(client.inner.tasks.lock().unwrap().is_empty());
+        assert!(client.inner.connections.lock().unwrap().is_empty());
+        assert!(!client.inner.pending.lock().unwrap().contains_key(&opaque));
+    }
+
+    #[tokio::test]
+    async fn connection_creation_racing_shutdown_closes_unpublished_or_published_socket() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (accepted_tx, accepted_rx) = tokio::sync::oneshot::channel();
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let _ = accepted_tx.send(());
+            let mut byte = [0; 1];
+            assert!(
+                matches!(
+                    tokio::time::timeout(
+                        std::time::Duration::from_secs(2),
+                        tokio::io::AsyncReadExt::read(&mut stream, &mut byte),
+                    )
+                    .await,
+                    Ok(Ok(0)) | Ok(Err(_))
+                ),
+                "shutdown left the accepted socket open"
+            );
+        });
+        let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
+        let connect_client = client.clone();
+        let connect = tokio::spawn(async move {
+            connect_client
+                .inner
+                .connection(
+                    &address.to_string(),
+                    Instant::now() + std::time::Duration::from_secs(5),
+                )
+                .await
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(2), accepted_rx)
+            .await
+            .expect("connection attempt did not reach the peer")
+            .unwrap();
+        tokio::task::yield_now().await;
+        client.shutdown().await;
+        if let Ok(connection) = connect.await.unwrap() {
+            assert!(
+                connection.is_closed(),
+                "shutdown left a published connection open"
+            );
+        }
+        peer.await.unwrap();
+        assert!(client.inner.connections.lock().unwrap().is_empty());
+        assert!(client.inner.pending.lock().unwrap().is_empty());
         assert!(client.inner.tasks.lock().unwrap().is_empty());
     }
 

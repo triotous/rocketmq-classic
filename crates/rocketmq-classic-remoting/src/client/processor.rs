@@ -186,12 +186,8 @@ fn process_registered(
         if response.is_none() {
             let pipeline = client.request_pipeline.lock().unwrap().clone();
             let pipeline_result = if let Some(pipeline) = pipeline {
-                let context = super::RequestContext {
-                    remote_addr: request.remote_addr.clone(),
-                    connection_generation: request.generation,
-                };
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    pipeline.execute_detailed(&context, &request_for_hooks)
+                    pipeline.execute_detailed(&request_for_hooks)
                 }))
                 .unwrap_or_else(|payload| {
                     Err(super::RequestPipelineError::Failed(panic_message(payload)))
