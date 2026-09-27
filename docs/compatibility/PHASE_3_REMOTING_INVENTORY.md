@@ -4,6 +4,14 @@ Java source baseline: `rocketmq-all-5.5.1`, commit `efa1be59d6fc747ad220f036c860
 
 Status meanings: `MAPPED` means a Rust API or internal behavior and named local test exists; `PARTIAL` means behavior differs or not all Java branches are covered; `NOT MAPPED` means no Rust equivalent. No row claims live Broker validation.
 
+## Explicit acceptance decisions
+
+The user has accepted these specific Rust-native differences for Phase 3: (1) Java's later reads of mutable `NettyClientConfig` versus Rust's immutable construction-time `ClientConfig` snapshot; (2) Rust queued-byte writability/watermark accounting versus Netty outbound-buffer writability; (3) NameServer scan deferral versus Java queue rejection, plus the documented overlap/scheduling and list/wrapper differences; and (4) omission of Java APIs whose contract requires Netty/JVM objects such as `Channel`, `ChannelHandlerContext`, `ResponseFuture`, and `ChannelWrapper`. These decisions accept the listed representation/behavior differences only; they do not waive missing transport control flow, protocol features, or unreviewed observable behavior. Existing Rust tests and Java source mappings remain evidence requirements.
+
+The user also decided that support for TLS encryption algorithms or key sizes unavailable in the selected RustCrypto/rustls dependencies is not mandatory. This applies only to those provider/library capability limits; it does not waive TLS modes, trust/hostname validation, Java fixtures currently supported by the dependencies, or Phase 19 live-validation requirements.
+
+These decisions do not cover other differences in the inventory. In particular, Java `ChannelWrapper` reconnect/replacement behavior and Rust frame-buffer reuse versus Netty's pooled allocator remain source-review items; Java signed-duration edge cases outside Rust `Duration`, Java hook `equals` without a Rust `equality_key`, and the exact admission/error/callback control paths still require evidence/disposition. Do not treat acceptance of framework-object APIs as acceptance of Rust-only public APIs generally; the Rust-only surface audit/no-extra-capability rule still applies.
+
 ## Public client/service methods
 
 | Java declaration/source | Rust mapping | Coverage / status |
