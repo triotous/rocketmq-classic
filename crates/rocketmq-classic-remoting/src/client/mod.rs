@@ -1478,6 +1478,12 @@ impl ClientInner {
         if self.closed.load(Ordering::Acquire) {
             return Err(TransportError::Shutdown);
         }
+        if let Ok(permit) = semaphore.clone().try_acquire_owned() {
+            return Ok(permit);
+        }
+        if Instant::now() >= deadline {
+            return Err(TransportError::TooManyRequests);
+        }
         let mut shutdown = self.shutdown.subscribe();
         tokio::select! {
             permit = time::timeout_at(deadline, semaphore.acquire_owned()) => permit
@@ -1997,6 +2003,40 @@ mod tests {
         assert_eq!(name_server_probe_availability(None, Some(8)), None);
         assert_eq!(name_server_probe_availability(Some(7), None), Some(false));
         assert_eq!(name_server_probe_availability(None, None), Some(false));
+    }
+
+    #[tokio::test]
+    async fn admission_matches_java_zero_timeout_and_wait_timeout_categories() {
+        let client = RemotingClient::new(TransportMode::Plain);
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(0));
+        assert_eq!(
+            client
+                .inner
+                .acquire_admission(semaphore.clone(), Instant::now())
+                .await
+                .unwrap_err(),
+            TransportError::TooManyRequests
+        );
+        assert_eq!(
+            client
+                .inner
+                .acquire_admission(
+                    semaphore,
+                    Instant::now() + std::time::Duration::from_millis(10),
+                )
+                .await
+                .unwrap_err(),
+            TransportError::Timeout
+        );
+        let available = Arc::new(tokio::sync::Semaphore::new(1));
+        assert!(
+            client
+                .inner
+                .acquire_admission(available, Instant::now())
+                .await
+                .is_ok()
+        );
+        client.shutdown().await;
     }
 
     #[tokio::test]
