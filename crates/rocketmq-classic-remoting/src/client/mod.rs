@@ -1250,7 +1250,9 @@ impl RemotingClient {
                 .await
             {
                 Ok(permit) => *admission = Some(permit),
-                Err(error) if options.close_socket_on_timeout => {
+                Err(error)
+                    if options.close_socket_on_timeout && error != TransportError::Shutdown =>
+                {
                     connection.close();
                     return Err(TransportError::SendRequest {
                         remote_addr: addr.to_owned(),
