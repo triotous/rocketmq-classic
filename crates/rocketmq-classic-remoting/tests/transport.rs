@@ -2062,7 +2062,7 @@ async fn p3_outbound_rpc_hook_runs_before_async_admission_wait() {
 }
 
 #[tokio::test]
-async fn p3_sync_invoke_runs_outbound_rpc_hooks_without_async_admission() {
+async fn p3_sync_invoke_obeys_async_admission_and_runs_hooks_first() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let (received_tx, received_rx) = tokio::sync::oneshot::channel();
@@ -2070,12 +2070,8 @@ async fn p3_sync_invoke_runs_outbound_rpc_hooks_without_async_admission() {
         let (mut stream, _) = listener.accept().await.unwrap();
         let first = read_command(&mut stream).await;
         let _ = received_tx.send(());
-        let second = read_command(&mut stream).await;
+        tokio::time::sleep(Duration::from_millis(250)).await;
         let mut response = command(42);
-        response.opaque = second.opaque;
-        response.mark_response();
-        write_command(&mut stream, &response).await;
-        let mut response = command(43);
         response.opaque = first.opaque;
         response.mark_response();
         write_command(&mut stream, &response).await;
@@ -2087,34 +2083,26 @@ async fn p3_sync_invoke_runs_outbound_rpc_hooks_without_async_admission() {
     .unwrap();
     let hook_calls = Arc::new(AtomicUsize::new(0));
     client.add_rpc_hook(Arc::new(BeforeCounter(hook_calls.clone())));
-    let (first_tx, first_rx) = tokio::sync::oneshot::channel();
-    let first_tx = Arc::new(std::sync::Mutex::new(Some(first_tx)));
-    client
-        .invoke_async(
-            address.to_string(),
-            command(1),
-            Instant::now() + Duration::from_secs(2),
-            Arc::new(move |result: Result<RemotingCommand, TransportError>| {
-                if let Some(sender) = first_tx.lock().unwrap().take() {
-                    let _ = sender.send(result);
-                }
-            }),
-        )
-        .unwrap();
+    let first_client = client.clone();
+    let first_address = address.to_string();
+    let first = tokio::spawn(async move {
+        first_client
+            .invoke_sync(&first_address, command(1), Duration::from_secs(2))
+            .await
+    });
     tokio::time::timeout(Duration::from_secs(1), received_rx)
         .await
         .unwrap()
         .unwrap();
     assert_eq!(
         client
-            .invoke_sync(&address.to_string(), command(2), Duration::from_secs(1))
+            .invoke_sync(&address.to_string(), command(2), Duration::from_millis(100))
             .await
-            .unwrap()
-            .code,
-        42
+            .unwrap_err(),
+        TransportError::Timeout
     );
-    assert_eq!(first_rx.await.unwrap().unwrap().code, 43);
     assert_eq!(hook_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(first.await.unwrap().unwrap().code, 42);
     client.shutdown().await;
     peer.await.unwrap();
 }
