@@ -8,5 +8,7 @@
 
 - No Rust client implementation exists at the start of Phase 0; all Rust mappings are pending their owning phase.
 - Java harness fixtures are offline protocol-command evidence, not live NameServer/Broker outcomes.
+- Rust intentionally keeps TLS config reload state per client for isolation. Java 5.5.1 reloads `tls.config.file` into process-global mutable settings whenever a new SSL context is built, so a later client can observe a file reload while existing clients retain their old context. This is an accepted Rust-native isolation exception, not a RocketMQ wire/API capability; do not describe it as strict Java TLS lifecycle parity.
+- Transport lifecycle remains partially non-equivalent where Java depends on Netty thread/event-loop identity: channel-event queue admission is bounded to 10001 in both, but worker start, scheduling and shutdown/drain differ; Tokio idle timer expiry emits/closes from the connection task and does not reproduce Netty timer scheduling precision.
 - Live Broker behavior, TLS/auth profiles and cross-language cases remain `PENDING_PHASE_19` until executed against a verified server artifact.
 - Phase 0 harness emits selected request codes and is not yet the complete Java public API/configuration inventory; completion is required by Phases 18–19.
