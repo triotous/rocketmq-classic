@@ -53,6 +53,7 @@ struct CallbackTracking {
 #[derive(Clone, Copy)]
 struct InvokeOptions {
     admitted: bool,
+    use_admission: bool,
     retried_go_away: bool,
     run_rpc_hooks: bool,
     close_socket_on_timeout: bool,
@@ -1078,6 +1079,7 @@ impl RemotingClient {
                                     deadline,
                                     InvokeOptions {
                                         admitted: true,
+                                        use_admission: true,
                                         retried_go_away: false,
                                         run_rpc_hooks: true,
                                         close_socket_on_timeout: false,
@@ -1176,6 +1178,7 @@ impl RemotingClient {
             deadline,
             InvokeOptions {
                 admitted: false,
+                use_admission: true,
                 retried_go_away: false,
                 run_rpc_hooks: true,
                 close_socket_on_timeout: false,
@@ -1200,6 +1203,7 @@ impl RemotingClient {
             Instant::now() + timeout,
             InvokeOptions {
                 admitted: false,
+                use_admission: false,
                 retried_go_away: false,
                 run_rpc_hooks: true,
                 close_socket_on_timeout: true,
@@ -1243,7 +1247,7 @@ impl RemotingClient {
             let hooks = self.inner.rpc_hooks.lock().unwrap().clone();
             run_before_rpc_hooks(&hooks, addr, &command).map_err(rpc_hook_transport_error)?;
         }
-        if !options.admitted {
+        if !options.admitted && options.use_admission {
             *admission = Some(
                 self.inner
                     .acquire_admission(self.inner.async_admission.clone(), deadline)
@@ -1313,6 +1317,7 @@ impl RemotingClient {
                             deadline,
                             InvokeOptions {
                                 admitted: false,
+                                use_admission: options.use_admission,
                                 retried_go_away: true,
                                 run_rpc_hooks: false,
                                 close_socket_on_timeout: options.close_socket_on_timeout,
