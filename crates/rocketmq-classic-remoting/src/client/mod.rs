@@ -148,10 +148,12 @@ fn rpc_hook_transport_error(error: RpcHookError) -> TransportError {
 
 fn classify_write_error(remote_addr: &str, error: TransportError) -> TransportError {
     match error {
-        TransportError::Send(_) | TransportError::Closed => TransportError::SendRequest {
-            remote_addr: remote_addr.to_owned(),
-            cause: None,
-        },
+        TransportError::Send(_) | TransportError::Closed | TransportError::Codec(_) => {
+            TransportError::SendRequest {
+                remote_addr: remote_addr.to_owned(),
+                cause: None,
+            }
+        }
         error => error,
     }
 }
@@ -1252,7 +1254,9 @@ impl RemotingClient {
         }
         let mut pending =
             pending::PendingGuard::new(Arc::downgrade(&self.inner), opaque, connection.generation);
-        let frame = connection.encode_command(&command, self.inner.max_frame_size)?;
+        let frame = connection
+            .encode_command(&command, self.inner.max_frame_size)
+            .map_err(|error| classify_write_error(connection.address(), error))?;
         let remaining = deadline.saturating_duration_since(Instant::now());
         match time::timeout(remaining, connection.send(frame, deadline)).await {
             Ok(Ok(())) => {}
@@ -2429,6 +2433,19 @@ mod tests {
         );
         assert_eq!(
             classify_write_error(remote_addr, TransportError::Closed),
+            TransportError::SendRequest {
+                remote_addr: remote_addr.into(),
+                cause: None,
+            }
+        );
+        assert_eq!(
+            classify_write_error(
+                remote_addr,
+                TransportError::Codec(crate::error::CodecError::FrameTooLarge {
+                    length: 128,
+                    limit: 64,
+                }),
+            ),
             TransportError::SendRequest {
                 remote_addr: remote_addr.into(),
                 cause: None,
