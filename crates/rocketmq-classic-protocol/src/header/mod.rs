@@ -6,15 +6,17 @@ pub type HeaderMap = BTreeMap<String, String>;
 
 mod basic;
 pub use basic::{
-    CheckTransactionStateRequestHeader, CheckTransactionStateResponseHeader,
-    ConsumeMessageDirectlyResultRequestHeader, ConsumerSendMsgBackRequestHeader,
-    EndTransactionRequestHeader, EndTransactionResponseHeader, GetConsumerListByGroupRequestHeader,
-    GetConsumerStatusRequestHeader, GetRouteInfoRequestHeader, LockBatchMqRequestHeader,
-    NotificationRequestHeader, NotificationResponseHeader, PullMessageRequestHeader,
-    PullMessageResponseHeader, QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
-    ReplyMessageRequestHeader, ResetOffsetRequestHeader, SendMessageRequestHeaderV1,
-    SendMessageRequestHeaderV2, SendMessageResponseHeader, UnlockBatchMqRequestHeader,
-    UnregisterClientRequestHeader, UnregisterClientResponseHeader,
+    AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader, CheckTransactionStateRequestHeader,
+    CheckTransactionStateResponseHeader, ConsumeMessageDirectlyResultRequestHeader,
+    ConsumerSendMsgBackRequestHeader, EndTransactionRequestHeader, EndTransactionResponseHeader,
+    GetConsumerListByGroupRequestHeader, GetConsumerStatusRequestHeader, GetRouteInfoRequestHeader,
+    LiteSubscriptionCtlRequestHeader, LockBatchMqRequestHeader, NotificationRequestHeader,
+    NotificationResponseHeader, PollingInfoRequestHeader, PollingInfoResponseHeader,
+    PopLiteMessageRequestHeader, PopMessageRequestHeader, PopMessageResponseHeader,
+    PullMessageRequestHeader, PullMessageResponseHeader, QueryConsumerOffsetRequestHeader,
+    QueryConsumerOffsetResponseHeader, ReplyMessageRequestHeader, ResetOffsetRequestHeader,
+    SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
+    UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
     UpdateConsumerOffsetRequestHeader,
 };
 

@@ -607,6 +607,249 @@ pub struct ConsumeMessageDirectlyResultRequestHeader {
     pub group_sys_flag: Option<i32>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PopMessageRequestHeader {
+    pub consumer_group: String,
+    pub topic: String,
+    pub queue_id: i32,
+    pub max_msg_nums: i32,
+    pub invisible_time: i64,
+    pub poll_time: i64,
+    pub born_time: i64,
+    pub init_mode: i32,
+    pub expression_type: Option<String>,
+    pub expression: Option<String>,
+    pub order: Option<bool>,
+    pub attempt_id: Option<String>,
+}
+
+impl CommandHeader for PopMessageRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("consumerGroup".into(), self.consumer_group.clone());
+        fields.insert("topic".into(), self.topic.clone());
+        fields.insert("queueId".into(), self.queue_id.to_string());
+        fields.insert("maxMsgNums".into(), self.max_msg_nums.to_string());
+        fields.insert("invisibleTime".into(), self.invisible_time.to_string());
+        fields.insert("pollTime".into(), self.poll_time.to_string());
+        fields.insert("bornTime".into(), self.born_time.to_string());
+        fields.insert("initMode".into(), self.init_mode.to_string());
+        put_optional(fields, "expType", self.expression_type.as_deref());
+        put_optional(fields, "exp", self.expression.as_deref());
+        put_optional(fields, "order", self.order);
+        put_optional(fields, "attemptId", self.attempt_id.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
+            topic: required_string(fields, "topic")?.to_owned(),
+            queue_id: required_i32(fields, "queueId")?,
+            max_msg_nums: required_i32(fields, "maxMsgNums")?,
+            invisible_time: required_i64(fields, "invisibleTime")?,
+            poll_time: required_i64(fields, "pollTime")?,
+            born_time: required_i64(fields, "bornTime")?,
+            init_mode: required_i32(fields, "initMode")?,
+            expression_type: optional_string(fields, "expType"),
+            expression: optional_string(fields, "exp"),
+            order: optional_java_boolean(fields, "order"),
+            attempt_id: optional_string(fields, "attemptId"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PopMessageResponseHeader {
+    pub pop_time: i64,
+    pub invisible_time: i64,
+    pub revive_queue_id: i32,
+    pub rest_num: i64,
+    pub start_offset_info: Option<String>,
+    pub msg_offset_info: Option<String>,
+    pub order_count_info: Option<String>,
+}
+
+impl CommandHeader for PopMessageResponseHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("popTime".into(), self.pop_time.to_string());
+        fields.insert("invisibleTime".into(), self.invisible_time.to_string());
+        fields.insert("reviveQid".into(), self.revive_queue_id.to_string());
+        fields.insert("restNum".into(), self.rest_num.to_string());
+        put_optional(fields, "startOffsetInfo", self.start_offset_info.as_deref());
+        put_optional(fields, "msgOffsetInfo", self.msg_offset_info.as_deref());
+        put_optional(fields, "orderCountInfo", self.order_count_info.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            pop_time: required_i64(fields, "popTime")?,
+            invisible_time: required_i64(fields, "invisibleTime")?,
+            revive_queue_id: required_i32(fields, "reviveQid")?,
+            rest_num: required_i64(fields, "restNum")?,
+            start_offset_info: optional_string(fields, "startOffsetInfo"),
+            msg_offset_info: optional_string(fields, "msgOffsetInfo"),
+            order_count_info: optional_string(fields, "orderCountInfo"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct AckMessageRequestHeader {
+    pub consumer_group: String,
+    pub topic: String,
+    pub queue_id: i32,
+    pub extra_info: String,
+    pub offset: i64,
+    pub lite_topic: Option<String>,
+}
+
+impl CommandHeader for AckMessageRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("consumerGroup".into(), self.consumer_group.clone());
+        fields.insert("topic".into(), self.topic.clone());
+        fields.insert("queueId".into(), self.queue_id.to_string());
+        fields.insert("extraInfo".into(), self.extra_info.clone());
+        fields.insert("offset".into(), self.offset.to_string());
+        put_optional(fields, "liteTopic", self.lite_topic.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
+            topic: required_string(fields, "topic")?.to_owned(),
+            queue_id: required_i32(fields, "queueId")?,
+            extra_info: required_string(fields, "extraInfo")?.to_owned(),
+            offset: required_i64(fields, "offset")?,
+            lite_topic: optional_string(fields, "liteTopic"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ChangeInvisibleTimeRequestHeader {
+    pub consumer_group: String,
+    pub topic: String,
+    pub queue_id: i32,
+    pub extra_info: String,
+    pub offset: i64,
+    pub invisible_time: i64,
+    pub lite_topic: Option<String>,
+    pub suspend: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PollingInfoRequestHeader {
+    pub consumer_group: String,
+    pub topic: String,
+    pub queue_id: i32,
+}
+
+impl CommandHeader for PollingInfoRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("consumerGroup".into(), self.consumer_group.clone());
+        fields.insert("topic".into(), self.topic.clone());
+        fields.insert("queueId".into(), self.queue_id.to_string());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
+            topic: required_string(fields, "topic")?.to_owned(),
+            queue_id: required_i32(fields, "queueId")?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PollingInfoResponseHeader {
+    pub polling_num: i32,
+}
+
+impl CommandHeader for PollingInfoResponseHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("pollingNum".into(), self.polling_num.to_string());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            polling_num: required_i32(fields, "pollingNum")?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PopLiteMessageRequestHeader {
+    pub client_id: String,
+    pub consumer_group: String,
+    pub topic: String,
+    pub max_msg_num: i32,
+    pub invisible_time: i64,
+    pub poll_time: i64,
+    pub born_time: i64,
+    pub attempt_id: Option<String>,
+}
+
+impl CommandHeader for PopLiteMessageRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("clientId".into(), self.client_id.clone());
+        fields.insert("consumerGroup".into(), self.consumer_group.clone());
+        fields.insert("topic".into(), self.topic.clone());
+        fields.insert("maxMsgNum".into(), self.max_msg_num.to_string());
+        fields.insert("invisibleTime".into(), self.invisible_time.to_string());
+        fields.insert("pollTime".into(), self.poll_time.to_string());
+        fields.insert("bornTime".into(), self.born_time.to_string());
+        put_optional(fields, "attemptId", self.attempt_id.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            client_id: required_string(fields, "clientId")?.to_owned(),
+            consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
+            topic: required_string(fields, "topic")?.to_owned(),
+            max_msg_num: required_i32(fields, "maxMsgNum")?,
+            invisible_time: required_i64(fields, "invisibleTime")?,
+            poll_time: required_i64(fields, "pollTime")?,
+            born_time: required_i64(fields, "bornTime")?,
+            attempt_id: optional_string(fields, "attemptId"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct LiteSubscriptionCtlRequestHeader;
+
+impl CommandHeader for LiteSubscriptionCtlRequestHeader {
+    fn encode_fields(&self, _fields: &mut HeaderMap) {}
+    fn decode_fields(_fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self)
+    }
+}
+
+impl CommandHeader for ChangeInvisibleTimeRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("consumerGroup".into(), self.consumer_group.clone());
+        fields.insert("topic".into(), self.topic.clone());
+        fields.insert("queueId".into(), self.queue_id.to_string());
+        fields.insert("extraInfo".into(), self.extra_info.clone());
+        fields.insert("offset".into(), self.offset.to_string());
+        fields.insert("invisibleTime".into(), self.invisible_time.to_string());
+        put_optional(fields, "liteTopic", self.lite_topic.as_deref());
+        fields.insert("suspend".into(), self.suspend.to_string());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
+            topic: required_string(fields, "topic")?.to_owned(),
+            queue_id: required_i32(fields, "queueId")?,
+            extra_info: required_string(fields, "extraInfo")?.to_owned(),
+            offset: required_i64(fields, "offset")?,
+            invisible_time: required_i64(fields, "invisibleTime")?,
+            lite_topic: optional_string(fields, "liteTopic"),
+            suspend: java_boolean(fields, "suspend"),
+        })
+    }
+}
+
 impl CommandHeader for ConsumeMessageDirectlyResultRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
         fields.insert("consumerGroup".into(), self.consumer_group.clone());

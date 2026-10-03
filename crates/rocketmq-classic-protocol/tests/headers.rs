@@ -1,11 +1,12 @@
 use rocketmq_classic_protocol::header::{
-    CheckTransactionStateRequestHeader, CheckTransactionStateResponseHeader, CommandHeader,
-    ConsumerSendMsgBackRequestHeader, EndTransactionRequestHeader,
-    GetConsumerListByGroupRequestHeader, GetRouteInfoRequestHeader, HeaderMap,
-    PullMessageRequestHeader, PullMessageResponseHeader, QueryConsumerOffsetRequestHeader,
-    QueryConsumerOffsetResponseHeader, ReplyMessageRequestHeader, SendMessageRequestHeaderV1,
-    SendMessageRequestHeaderV2, SendMessageResponseHeader, UnregisterClientRequestHeader,
-    UpdateConsumerOffsetRequestHeader,
+    AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader, CheckTransactionStateRequestHeader,
+    CheckTransactionStateResponseHeader, CommandHeader, ConsumerSendMsgBackRequestHeader,
+    EndTransactionRequestHeader, GetConsumerListByGroupRequestHeader, GetRouteInfoRequestHeader,
+    HeaderMap, NotificationRequestHeader, PollingInfoRequestHeader, PollingInfoResponseHeader,
+    PopMessageRequestHeader, PopMessageResponseHeader, PullMessageRequestHeader,
+    PullMessageResponseHeader, QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
+    ReplyMessageRequestHeader, SendMessageRequestHeaderV1, SendMessageRequestHeaderV2,
+    SendMessageResponseHeader, UnregisterClientRequestHeader, UpdateConsumerOffsetRequestHeader,
 };
 
 fn json_header_map(name: &str) -> HeaderMap {
@@ -73,6 +74,69 @@ fn java_request_and_response_header_fixtures_decode() {
     .unwrap();
     assert_eq!(send_back.group, "workers");
     assert_eq!(send_back.offset, 9);
+
+    let pop =
+        PopMessageRequestHeader::decode_fields(&java_ext_fields("header-pop-request")).unwrap();
+    assert_eq!(pop.max_msg_nums, 16);
+    assert_eq!(pop.invisible_time, 30_000);
+    let ack =
+        AckMessageRequestHeader::decode_fields(&java_ext_fields("header-ack-request")).unwrap();
+    assert_eq!(ack.offset, 9);
+    let change = ChangeInvisibleTimeRequestHeader::decode_fields(&java_ext_fields(
+        "header-change-invisible-request",
+    ))
+    .unwrap();
+    assert_eq!(change.invisible_time, 60_000);
+    let notification =
+        NotificationRequestHeader::decode_fields(&java_ext_fields("header-notification-request"))
+            .unwrap();
+    assert_eq!(notification.born_time, 1_712_345_678_901);
+    let polling =
+        PollingInfoRequestHeader::decode_fields(&java_ext_fields("header-polling-request"))
+            .unwrap();
+    assert_eq!(polling.queue_id, 1);
+    let polling_response =
+        PollingInfoResponseHeader::decode_fields(&java_ext_fields("header-polling-response"))
+            .unwrap();
+    assert_eq!(polling_response.polling_num, 2);
+
+    let pop =
+        PopMessageRequestHeader::decode_fields(&java_ext_fields("header-pop-request")).unwrap();
+    assert_eq!(pop.max_msg_nums, 16);
+    assert_eq!(pop.invisible_time, 30_000);
+    let ack =
+        AckMessageRequestHeader::decode_fields(&java_ext_fields("header-ack-request")).unwrap();
+    assert_eq!(ack.offset, 9);
+    let change = ChangeInvisibleTimeRequestHeader::decode_fields(&java_ext_fields(
+        "header-change-invisible-request",
+    ))
+    .unwrap();
+    assert_eq!(change.invisible_time, 60_000);
+    let notification =
+        NotificationRequestHeader::decode_fields(&java_ext_fields("header-notification-request"))
+            .unwrap();
+    assert_eq!(notification.born_time, 1_712_345_678_901);
+    let polling =
+        PollingInfoRequestHeader::decode_fields(&java_ext_fields("header-polling-request"))
+            .unwrap();
+    assert_eq!(polling.queue_id, 1);
+    let polling_response =
+        PollingInfoResponseHeader::decode_fields(&java_ext_fields("header-polling-response"))
+            .unwrap();
+    assert_eq!(polling_response.polling_num, 2);
+    let pop_response = PopMessageResponseHeader {
+        pop_time: 1,
+        invisible_time: 2,
+        revive_queue_id: 3,
+        rest_num: 4,
+        ..PopMessageResponseHeader::default()
+    };
+    let mut fields = HeaderMap::new();
+    pop_response.encode_fields(&mut fields);
+    assert_eq!(
+        PopMessageResponseHeader::decode_fields(&fields),
+        Ok(pop_response)
+    );
 
     let consumers = GetConsumerListByGroupRequestHeader::decode_fields(&java_ext_fields(
         "header-consumer-list-request",
