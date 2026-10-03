@@ -28,3 +28,11 @@
 - Added source-derived transaction end/check headers, reply-send header, notification/reset-offset/consumer-status/direct-consume request headers, common reply-property constants, and reset/status/direct-consume body models.
 - Protocol crate validation after this work: 19 unit tests, 6 header integration tests, and 1 existing fixture integration test pass; targeted Clippy passes.
 - Still outstanding: Java typed fixtures for transaction/reply/runtime and consumer extensions; POP/Lite/ACK/change-invisibility family models; exhaustive required/optional invalid-field table; broader JSON body fixtures; final P4-V01/V02/V03 gate.
+
+## Post-interruption commit reconciliation
+- User noted the explicit no-uncommitted-changes requirement; inspected the tree and confirmed only this Phase 4 session's staged-intended changes were pending (Java fixtures and POP/ACK/etc typed models). No files were reverted or discarded.
+- Added Java fixtures/tests for unregister, send-back, POP, ACK, change-invisibility, notification and polling; verified pinned Java oracle compile and fixture generation.
+- Committed Java consumer-extension fixtures as `33856c0 test(protocol): add Java consumer extension fixtures`.
+- Committed POP/ACK/change-invisibility/polling typed headers and Rust fixture assertions as `57d4361 feat(protocol): add POP and ack consumer headers`.
+- Validation passed immediately before commits: `cargo test -p rocketmq-classic-protocol --test headers --locked --offline` (6 tests), `cargo clippy -p rocketmq-classic-protocol --all-targets --locked --offline -- -D warnings`, `cargo fmt --all --check`, `mvn -q -f compat/java-reference/pom.xml verify`, `git diff --check`.
+- Tree is clean. Phase 4 remains incomplete: P4-03 assignment/request-mode/Lite models and source/callsite audit continue; P4-04 transaction/reply/runtime headers lack Java fixture coverage; P4-05 exhaustive all-field canonical/negative fixture audit and P4-V01/V02/V03 full gates remain.
