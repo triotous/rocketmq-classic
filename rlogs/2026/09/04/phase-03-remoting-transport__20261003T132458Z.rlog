@@ -10,8 +10,8 @@
 - Re-read the Phase 3 plan, compatibility matrix, detailed remoting inventory, known differences and recent commits.
 - Confirmed P3-V01/V02/V03/U01 local tests exist and prior full workspace gates passed.
 - Found stale `PARTIAL` summary wording in JAVA_5_5_1_COMPATIBILITY.md that contradicts detailed accepted dispositions and user decisions. Callback timeout scanner grace and shutdown/callback behavior have named tests in the detailed inventory.
-- Updating the compatibility summary and recording this continuation; no Rust code behavior gap identified in this pass.
+- Updated the compatibility summary and ADR to reflect current local acceptance and previously approved runtime/API differences; no Rust code behavior gap identified in this pass.
 
 ## Validation and status
 - Validation passed: transport integration tests (77 passed); `cargo fmt --all --check`; `cargo clippy --workspace --all-targets --locked --offline -- -D warnings`; workspace metadata check; differential comparator self-test; `git diff --check`.
-- Commit status: pending separate documentation/log commit.
+- Committed compatibility reconciliation in `e78dcc5`; broader document status sync is recorded in this continuation.
