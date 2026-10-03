@@ -7,10 +7,10 @@ pub type HeaderMap = BTreeMap<String, String>;
 mod basic;
 pub use basic::{
     ConsumerSendMsgBackRequestHeader, GetConsumerListByGroupRequestHeader,
-    GetRouteInfoRequestHeader, PullMessageRequestHeader, PullMessageResponseHeader,
-    QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
+    GetRouteInfoRequestHeader, LockBatchMqRequestHeader, PullMessageRequestHeader,
+    PullMessageResponseHeader, QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
     SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
-    UnregisterClientRequestHeader, UpdateConsumerOffsetRequestHeader,
+    UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UpdateConsumerOffsetRequestHeader,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

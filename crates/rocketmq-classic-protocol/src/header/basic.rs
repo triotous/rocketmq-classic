@@ -237,6 +237,34 @@ pub struct GetConsumerListByGroupRequestHeader {
     pub consumer_group: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct LockBatchMqRequestHeader {
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
+}
+
+impl CommandHeader for LockBatchMqRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
+        })
+    }
+}
+
+pub type UnlockBatchMqRequestHeader = LockBatchMqRequestHeader;
+
 impl CommandHeader for GetConsumerListByGroupRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
         fields.insert("consumerGroup".into(), self.consumer_group.clone());
