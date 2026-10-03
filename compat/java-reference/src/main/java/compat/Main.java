@@ -26,6 +26,14 @@ import org.apache.rocketmq.remoting.protocol.header.SendMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.SendMessageRequestHeaderV2;
 import org.apache.rocketmq.remoting.protocol.header.SendMessageResponseHeader;
 import org.apache.rocketmq.remoting.protocol.header.UpdateConsumerOffsetRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.UnregisterClientRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.ConsumerSendMsgBackRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.PopMessageRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.AckMessageRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.ChangeInvisibleTimeRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.NotificationRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.PollingInfoRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.PollingInfoResponseHeader;
 import org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader;
 
 public final class Main {
@@ -201,6 +209,66 @@ public final class Main {
         GetConsumerListByGroupRequestHeader consumerList = new GetConsumerListByGroupRequestHeader();
         consumerList.setConsumerGroup("workers");
         writeTypedHeaderFixture(output, "consumer-list-request", 38, consumerList);
+
+        UnregisterClientRequestHeader unregister = new UnregisterClientRequestHeader();
+        unregister.setClientID("client-1");
+        unregister.setProducerGroup("producers");
+        writeTypedHeaderFixture(output, "unregister-request", 35, unregister);
+
+        ConsumerSendMsgBackRequestHeader sendBack = new ConsumerSendMsgBackRequestHeader();
+        sendBack.setOffset(9L);
+        sendBack.setGroup("workers");
+        sendBack.setDelayLevel(3);
+        sendBack.setOriginMsgId("msg-1");
+        sendBack.setOriginTopic("orders");
+        sendBack.setUnitMode(false);
+        sendBack.setMaxReconsumeTimes(16);
+        writeTypedHeaderFixture(output, "send-back-request", 36, sendBack);
+
+        PopMessageRequestHeader pop = new PopMessageRequestHeader();
+        pop.setConsumerGroup("workers");
+        pop.setTopic("orders");
+        pop.setQueueId(1);
+        pop.setMaxMsgNums(16);
+        pop.setInvisibleTime(30_000L);
+        pop.setPollTime(1_000L);
+        pop.setBornTime(1_712_345_678_901L);
+        pop.setInitMode(0);
+        writeTypedHeaderFixture(output, "pop-request", 200050, pop);
+
+        AckMessageRequestHeader ack = new AckMessageRequestHeader();
+        ack.setConsumerGroup("workers");
+        ack.setTopic("orders");
+        ack.setQueueId(1);
+        ack.setExtraInfo("startOffset popTime invisibleTime queueId");
+        ack.setOffset(9L);
+        writeTypedHeaderFixture(output, "ack-request", 200051, ack);
+
+        ChangeInvisibleTimeRequestHeader change = new ChangeInvisibleTimeRequestHeader();
+        change.setConsumerGroup("workers");
+        change.setTopic("orders");
+        change.setQueueId(1);
+        change.setExtraInfo("startOffset popTime invisibleTime queueId");
+        change.setOffset(9L);
+        change.setInvisibleTime(60_000L);
+        writeTypedHeaderFixture(output, "change-invisible-request", 200053, change);
+
+        NotificationRequestHeader notification = new NotificationRequestHeader();
+        notification.setConsumerGroup("workers");
+        notification.setTopic("orders");
+        notification.setQueueId(1);
+        notification.setPollTime(1_000L);
+        notification.setBornTime(1_712_345_678_901L);
+        writeTypedHeaderFixture(output, "notification-request", 200054, notification);
+
+        PollingInfoRequestHeader polling = new PollingInfoRequestHeader();
+        polling.setConsumerGroup("workers");
+        polling.setTopic("orders");
+        polling.setQueueId(1);
+        writeTypedHeaderFixture(output, "polling-request", 200055, polling);
+        PollingInfoResponseHeader pollingResponse = new PollingInfoResponseHeader();
+        pollingResponse.setPollingNum(2);
+        writeTypedHeaderFixture(output, "polling-response", RemotingCommand.createResponseCommandWithHeader(0, pollingResponse));
         System.out.println("Generated typed Java header fixtures in " + output);
     }
 
