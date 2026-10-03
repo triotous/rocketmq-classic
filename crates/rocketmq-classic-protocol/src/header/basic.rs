@@ -1,6 +1,6 @@
 use super::{
-    CommandHeader, HeaderMap, ProtocolError, optional_i32, optional_i64, optional_java_boolean,
-    optional_string, required_i32, required_i64, required_string,
+    CommandHeader, HeaderMap, ProtocolError, java_boolean, optional_i32, optional_i64,
+    optional_java_boolean, optional_string, required_i32, required_i64, required_string,
 };
 
 fn put_optional<T: ToString>(fields: &mut HeaderMap, name: &str, value: Option<T>) {
@@ -63,17 +63,17 @@ impl CommandHeader for UpdateConsumerOffsetRequestHeader {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct QueryConsumerOffsetResponseHeader {
-    pub offset: Option<i64>,
+    pub offset: i64,
 }
 
 impl CommandHeader for QueryConsumerOffsetResponseHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        put_optional(fields, "offset", self.offset);
+        fields.insert("offset".into(), self.offset.to_string());
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
-            offset: optional_i64(fields, "offset")?,
+            offset: required_i64(fields, "offset")?,
         })
     }
 }
@@ -146,10 +146,10 @@ impl CommandHeader for PullMessageRequestHeader {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PullMessageResponseHeader {
-    pub suggest_which_broker_id: Option<i64>,
-    pub next_begin_offset: Option<i64>,
-    pub min_offset: Option<i64>,
-    pub max_offset: Option<i64>,
+    pub suggest_which_broker_id: i64,
+    pub next_begin_offset: i64,
+    pub min_offset: i64,
+    pub max_offset: i64,
     pub offset_delta: Option<i64>,
     pub topic_sys_flag: Option<i32>,
     pub group_sys_flag: Option<i32>,
@@ -158,10 +158,13 @@ pub struct PullMessageResponseHeader {
 
 impl CommandHeader for PullMessageResponseHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        put_optional(fields, "suggestWhichBrokerId", self.suggest_which_broker_id);
-        put_optional(fields, "nextBeginOffset", self.next_begin_offset);
-        put_optional(fields, "minOffset", self.min_offset);
-        put_optional(fields, "maxOffset", self.max_offset);
+        fields.insert(
+            "suggestWhichBrokerId".into(),
+            self.suggest_which_broker_id.to_string(),
+        );
+        fields.insert("nextBeginOffset".into(), self.next_begin_offset.to_string());
+        fields.insert("minOffset".into(), self.min_offset.to_string());
+        fields.insert("maxOffset".into(), self.max_offset.to_string());
         put_optional(fields, "offsetDelta", self.offset_delta);
         put_optional(fields, "topicSysFlag", self.topic_sys_flag);
         put_optional(fields, "groupSysFlag", self.group_sys_flag);
@@ -170,10 +173,10 @@ impl CommandHeader for PullMessageResponseHeader {
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
-            suggest_which_broker_id: optional_i64(fields, "suggestWhichBrokerId")?,
-            next_begin_offset: optional_i64(fields, "nextBeginOffset")?,
-            min_offset: optional_i64(fields, "minOffset")?,
-            max_offset: optional_i64(fields, "maxOffset")?,
+            suggest_which_broker_id: required_i64(fields, "suggestWhichBrokerId")?,
+            next_begin_offset: required_i64(fields, "nextBeginOffset")?,
+            min_offset: required_i64(fields, "minOffset")?,
+            max_offset: required_i64(fields, "maxOffset")?,
             offset_delta: optional_i64(fields, "offsetDelta")?,
             topic_sys_flag: optional_i32(fields, "topicSysFlag")?,
             group_sys_flag: optional_i32(fields, "groupSysFlag")?,
@@ -230,6 +233,23 @@ impl CommandHeader for GetRouteInfoRequestHeader {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct GetConsumerListByGroupRequestHeader {
+    pub consumer_group: String,
+}
+
+impl CommandHeader for GetConsumerListByGroupRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("consumerGroup".into(), self.consumer_group.clone());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ConsumerSendMsgBackRequestHeader {
     pub group: String,
     pub origin_topic: String,
@@ -237,7 +257,7 @@ pub struct ConsumerSendMsgBackRequestHeader {
     pub delay_level: i32,
     pub origin_msg_id: Option<String>,
     pub max_reconsume_times: Option<i32>,
-    pub unit_mode: Option<bool>,
+    pub unit_mode: bool,
 }
 
 impl CommandHeader for ConsumerSendMsgBackRequestHeader {
@@ -248,7 +268,7 @@ impl CommandHeader for ConsumerSendMsgBackRequestHeader {
         fields.insert("delayLevel".into(), self.delay_level.to_string());
         put_optional(fields, "originMsgId", self.origin_msg_id.as_deref());
         put_optional(fields, "maxReconsumeTimes", self.max_reconsume_times);
-        put_optional(fields, "unitMode", self.unit_mode);
+        fields.insert("unitMode".into(), self.unit_mode.to_string());
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
@@ -259,16 +279,16 @@ impl CommandHeader for ConsumerSendMsgBackRequestHeader {
             delay_level: required_i32(fields, "delayLevel")?,
             origin_msg_id: optional_string(fields, "originMsgId"),
             max_reconsume_times: optional_i32(fields, "maxReconsumeTimes")?,
-            unit_mode: optional_java_boolean(fields, "unitMode"),
+            unit_mode: java_boolean(fields, "unitMode"),
         })
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SendMessageResponseHeader {
-    pub msg_id: Option<String>,
-    pub queue_id: Option<i32>,
-    pub queue_offset: Option<i64>,
+    pub msg_id: String,
+    pub queue_id: i32,
+    pub queue_offset: i64,
     pub transaction_id: Option<String>,
     pub batch_uniq_id: Option<String>,
     pub recall_handle: Option<String>,
@@ -276,9 +296,9 @@ pub struct SendMessageResponseHeader {
 
 impl CommandHeader for SendMessageResponseHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        put_optional(fields, "msgId", self.msg_id.as_deref());
-        put_optional(fields, "queueId", self.queue_id);
-        put_optional(fields, "queueOffset", self.queue_offset);
+        fields.insert("msgId".into(), self.msg_id.clone());
+        fields.insert("queueId".into(), self.queue_id.to_string());
+        fields.insert("queueOffset".into(), self.queue_offset.to_string());
         put_optional(fields, "transactionId", self.transaction_id.as_deref());
         put_optional(fields, "batchUniqId", self.batch_uniq_id.as_deref());
         put_optional(fields, "recallHandle", self.recall_handle.as_deref());
@@ -286,9 +306,9 @@ impl CommandHeader for SendMessageResponseHeader {
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
-            msg_id: optional_string(fields, "msgId"),
-            queue_id: optional_i32(fields, "queueId")?,
-            queue_offset: optional_i64(fields, "queueOffset")?,
+            msg_id: required_string(fields, "msgId")?.to_owned(),
+            queue_id: required_i32(fields, "queueId")?,
+            queue_offset: required_i64(fields, "queueOffset")?,
             transaction_id: optional_string(fields, "transactionId"),
             batch_uniq_id: optional_string(fields, "batchUniqId"),
             recall_handle: optional_string(fields, "recallHandle"),
@@ -528,14 +548,14 @@ mod tests {
     fn missing_and_invalid_response_header_values_name_the_field() {
         assert_eq!(
             QueryConsumerOffsetResponseHeader::decode_fields(&HeaderMap::new()),
-            Ok(QueryConsumerOffsetResponseHeader { offset: None })
+            Err(ProtocolError::MissingField("offset"))
         );
         assert_eq!(
             QueryConsumerOffsetResponseHeader::decode_fields(&HeaderMap::from([(
                 "offset".into(),
                 "12".into()
             )])),
-            Ok(QueryConsumerOffsetResponseHeader { offset: Some(12) })
+            Ok(QueryConsumerOffsetResponseHeader { offset: 12 })
         );
         assert!(matches!(
             QueryConsumerOffsetResponseHeader::decode_fields(&HeaderMap::from([(
