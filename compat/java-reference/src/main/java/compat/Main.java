@@ -17,6 +17,16 @@ import org.apache.rocketmq.remoting.protocol.FastCodesHeader;
 import org.apache.rocketmq.remoting.protocol.LanguageCode;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.remoting.protocol.SerializeType;
+import org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.PullMessageRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.PullMessageResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.QueryConsumerOffsetRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.QueryConsumerOffsetResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.SendMessageRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.SendMessageRequestHeaderV2;
+import org.apache.rocketmq.remoting.protocol.header.SendMessageResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.UpdateConsumerOffsetRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader;
 
 public final class Main {
     private static final int MAX_FRAME_SIZE = 16 * 1024 * 1024;
@@ -34,6 +44,11 @@ public final class Main {
             generateFixtures(output);
             return;
         }
+        if ("header-fixtures".equals(args[0])) {
+            Path output = option(args, "--output");
+            generateHeaderFixtures(output);
+            return;
+        }
         if ("decode".equals(args[0])) {
             Path input = option(args, "--input");
             System.out.println(toJson(decode(Files.readAllBytes(input))));
@@ -49,7 +64,7 @@ public final class Main {
             writeScenario(id, output);
             return;
         }
-        throw new IllegalArgumentException("usage: self-test | fixtures --output DIR | decode --input FILE | scenario --id ID --output FILE");
+        throw new IllegalArgumentException("usage: self-test | fixtures --output DIR | header-fixtures --output DIR | decode --input FILE | scenario --id ID --output FILE");
     }
 
     private static Path option(String[] args, String name) {
@@ -115,6 +130,107 @@ public final class Main {
         selfTest();
     }
 
+    private static void generateHeaderFixtures(Path output) throws Exception {
+        Files.createDirectories(output);
+        GetRouteInfoRequestHeader route = new GetRouteInfoRequestHeader();
+        route.setTopic("orders");
+        writeTypedHeaderFixture(output, "route-request", 105, route);
+
+        SendMessageRequestHeader send = new SendMessageRequestHeader();
+        send.setProducerGroup("producers");
+        send.setTopic("orders");
+        send.setDefaultTopic("TBW102");
+        send.setDefaultTopicQueueNums(4);
+        send.setQueueId(2);
+        send.setSysFlag(1);
+        send.setBornTimestamp(1712345678901L);
+        send.setFlag(7);
+        send.setProperties("TAGS\\u0001blue");
+        send.setReconsumeTimes(0);
+        send.setUnitMode(false);
+        send.setMaxReconsumeTimes(16);
+        send.setBatch(false);
+        writeTypedHeaderFixture(output, "send-v1", 10, send);
+        writeTypedHeaderFixture(output, "send-v2", 310,
+            SendMessageRequestHeaderV2.createSendMessageRequestHeaderV2(send));
+
+        PullMessageRequestHeader pull = new PullMessageRequestHeader();
+        pull.setConsumerGroup("workers");
+        pull.setTopic("orders");
+        pull.setQueueId(1);
+        pull.setQueueOffset(9L);
+        pull.setMaxMsgNums(32);
+        pull.setSysFlag(0);
+        pull.setCommitOffset(8L);
+        pull.setSuspendTimeoutMillis(15000L);
+        pull.setSubVersion(1712345678901L);
+        writeTypedHeaderFixture(output, "pull-request", 11, pull);
+
+        PullMessageResponseHeader pullResponse = new PullMessageResponseHeader();
+        pullResponse.setSuggestWhichBrokerId(0L);
+        pullResponse.setNextBeginOffset(10L);
+        pullResponse.setMinOffset(0L);
+        pullResponse.setMaxOffset(100L);
+        RemotingCommand response = RemotingCommand.createResponseCommandWithHeader(0, pullResponse);
+        writeTypedHeaderFixture(output, "pull-response", response);
+
+        QueryConsumerOffsetRequestHeader queryOffset = new QueryConsumerOffsetRequestHeader();
+        queryOffset.setConsumerGroup("workers");
+        queryOffset.setTopic("orders");
+        queryOffset.setQueueId(1);
+        writeTypedHeaderFixture(output, "query-offset-request", 14, queryOffset);
+        QueryConsumerOffsetResponseHeader queryResponse = new QueryConsumerOffsetResponseHeader();
+        queryResponse.setOffset(9L);
+        writeTypedHeaderFixture(output, "query-offset-response",
+            RemotingCommand.createResponseCommandWithHeader(0, queryResponse));
+
+        UpdateConsumerOffsetRequestHeader update = new UpdateConsumerOffsetRequestHeader();
+        update.setConsumerGroup("workers");
+        update.setTopic("orders");
+        update.setQueueId(1);
+        update.setCommitOffset(9L);
+        writeTypedHeaderFixture(output, "update-offset-request", 15, update);
+
+        SendMessageResponseHeader sendResponse = new SendMessageResponseHeader();
+        sendResponse.setMsgId("msg-1");
+        sendResponse.setQueueId(2);
+        sendResponse.setQueueOffset(99L);
+        writeTypedHeaderFixture(output, "send-response",
+            RemotingCommand.createResponseCommandWithHeader(0, sendResponse));
+
+        GetConsumerListByGroupRequestHeader consumerList = new GetConsumerListByGroupRequestHeader();
+        consumerList.setConsumerGroup("workers");
+        writeTypedHeaderFixture(output, "consumer-list-request", 38, consumerList);
+        System.out.println("Generated typed Java header fixtures in " + output);
+    }
+
+    private static void writeTypedHeaderFixture(Path output, String id, int code,
+            CommandCustomHeader header) throws Exception {
+        RemotingCommand command = RemotingCommand.createRequestCommand(code, header);
+        command.setLanguage(LanguageCode.JAVA);
+        command.setVersion(0);
+        command.setOpaque(101);
+        writeTypedHeaderFixture(output, id, command);
+    }
+
+    private static void writeTypedHeaderFixture(Path output, String id, RemotingCommand command)
+            throws Exception {
+        command.setLanguage(LanguageCode.JAVA);
+        command.setVersion(0);
+        command.setOpaque(101);
+        command.setSerializeTypeCurrentRPC(SerializeType.JSON);
+        byte[] frame = bytes(command.encode());
+        Map<String, Object> decoded = decode(frame);
+        String stem = "header-" + id;
+        Files.write(output.resolve(stem + ".bin"), frame);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("java_client_version", "5.5.1");
+        metadata.put("scenario_id", "P4-HEADER-" + id.toUpperCase());
+        metadata.put("request_code", command.getCode());
+        metadata.put("normalized_fields", decoded);
+        Files.writeString(output.resolve(stem + ".json"), toJson(metadata) + "\n", StandardCharsets.UTF_8);
+    }
+
     private static void verifyRustFixtures(Path directory) throws Exception {
         if (!Files.isDirectory(directory)) throw new IOException("missing Rust fixture directory: " + directory);
         int count = 0;
@@ -125,16 +241,41 @@ public final class Main {
                 count++;
             }
         }
-        Map<String, Object> json = decodedByName.get("json-route.bin");
-        Map<String, Object> rocketmq = decodedByName.get("rocketmq-transaction.bin");
-        require(json != null && ((Number) json.get("code")).intValue() == 105, "Rust JSON route fixture decoded");
-        require(rocketmq != null && ((Number) rocketmq.get("code")).intValue() == 37, "Rust RocketMQ transaction fixture decoded");
-        require(json.get("body_length").equals(4) && rocketmq.get("body_length").equals(4), "Rust fixture bodies decoded");
-        require("RUST".equals(json.get("language")) && "RUST".equals(rocketmq.get("language")), "Rust language decoded");
-        require("rust-phase-2".equals(((Map<?, ?>) json.get("ext_fields")).get("oracle")), "Rust JSON ext field decoded");
-        require("rust-phase-2".equals(((Map<?, ?>) rocketmq.get("ext_fields")).get("oracle")), "Rust private ext field decoded");
-        require(count == 2, "exactly two Rust-generated fixtures decoded");
+        if (count == 2) {
+            Map<String, Object> json = decodedByName.get("json-route.bin");
+            Map<String, Object> rocketmq = decodedByName.get("rocketmq-transaction.bin");
+            require(json != null && ((Number) json.get("code")).intValue() == 105, "Rust JSON route fixture decoded");
+            require(rocketmq != null && ((Number) rocketmq.get("code")).intValue() == 37, "Rust RocketMQ transaction fixture decoded");
+            require(json.get("body_length").equals(4) && rocketmq.get("body_length").equals(4), "Rust fixture bodies decoded");
+            require("RUST".equals(json.get("language")) && "RUST".equals(rocketmq.get("language")), "Rust language decoded");
+            require("rust-phase-2".equals(((Map<?, ?>) json.get("ext_fields")).get("oracle")), "Rust JSON ext field decoded");
+            require("rust-phase-2".equals(((Map<?, ?>) rocketmq.get("ext_fields")).get("oracle")), "Rust private ext field decoded");
+        } else {
+            require(count >= 6, "Rust typed header fixtures were supplied");
+            Map<String, Map<String, Object>> byName = new LinkedHashMap<>();
+            try (var files = Files.list(directory)) {
+                for (Path file : (Iterable<Path>) files.filter(path -> path.toString().endsWith(".bin"))::iterator) {
+                    String name = file.getFileName().toString();
+                    byName.put(name, decode(Files.readAllBytes(file)));
+                }
+            }
+            assertExtField(byName, "typed-route.bin", 105, "topic", "orders");
+            assertExtField(byName, "typed-send-v1.bin", 10, "producerGroup", "producers");
+            assertExtField(byName, "typed-send-v2.bin", 310, "a", "producers");
+            assertExtField(byName, "typed-pull.bin", 11, "consumerGroup", "workers");
+            assertExtField(byName, "typed-query-offset.bin", 14, "consumerGroup", "workers");
+            assertExtField(byName, "typed-update-offset.bin", 15, "commitOffset", "9");
+        }
         System.out.println("Java decoded " + count + " Rust-generated fixture(s)");
+    }
+
+    private static void assertExtField(Map<String, Map<String, Object>> decoded, String name,
+            int code, String field, String expected) {
+        Map<String, Object> command = decoded.get(name);
+        require(command != null, "Rust typed fixture exists: " + name);
+        require(((Number) command.get("code")).intValue() == code, "Rust typed fixture code: " + name);
+        require(expected.equals(((Map<?, ?>) command.get("ext_fields")).get(field)),
+            "Rust typed fixture field " + field + ": " + name);
     }
 
     private static void writeFixture(Path output, String id, int code, SerializeType type) throws Exception {

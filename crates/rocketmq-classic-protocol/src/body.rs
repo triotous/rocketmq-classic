@@ -4,12 +4,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct UnregisterClientRequestBody {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub client_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub producer_group: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub consumer_group: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub producer_group: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -55,8 +55,8 @@ pub struct UnlockBatchResponseBody {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsumerListByGroupResponseBody {
-    #[serde(default)]
-    pub consumer_id_list: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consumer_id_list: Option<Vec<String>>,
 }
 
 #[cfg(test)]
@@ -104,7 +104,7 @@ mod tests {
     fn consumer_list_body_keeps_empty_and_nonempty_lists_distinct() {
         assert_eq!(
             serde_json::to_value(ConsumerListByGroupResponseBody::default()).unwrap(),
-            json!({"consumerIdList": []})
+            json!({})
         );
     }
 

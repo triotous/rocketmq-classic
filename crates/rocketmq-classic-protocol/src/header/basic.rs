@@ -1,6 +1,6 @@
 use super::{
-    CommandHeader, HeaderMap, ProtocolError, java_boolean, optional_i32, optional_i64,
-    optional_java_boolean, optional_string, required_i32, required_i64, required_string,
+    CommandHeader, HeaderMap, ProtocolError, optional_i32, optional_i64, optional_java_boolean,
+    optional_string, required_i32, required_i64, required_string,
 };
 
 fn put_optional<T: ToString>(fields: &mut HeaderMap, name: &str, value: Option<T>) {
@@ -307,7 +307,9 @@ impl CommandHeader for ConsumerSendMsgBackRequestHeader {
             delay_level: required_i32(fields, "delayLevel")?,
             origin_msg_id: optional_string(fields, "originMsgId"),
             max_reconsume_times: optional_i32(fields, "maxReconsumeTimes")?,
-            unit_mode: java_boolean(fields, "unitMode"),
+            unit_mode: fields
+                .get("unitMode")
+                .is_some_and(|value| value.eq_ignore_ascii_case("true")),
         })
     }
 }
@@ -359,7 +361,6 @@ pub struct SendMessageRequestHeaderV2 {
     pub k: Option<bool>,
     pub l: Option<i32>,
     pub m: Option<bool>,
-    pub n: Option<String>,
 }
 
 impl CommandHeader for SendMessageRequestHeaderV2 {
@@ -377,7 +378,6 @@ impl CommandHeader for SendMessageRequestHeaderV2 {
         put_optional(fields, "k", self.k);
         put_optional(fields, "l", self.l);
         put_optional(fields, "m", self.m);
-        put_optional(fields, "n", self.n.as_deref());
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
@@ -395,7 +395,6 @@ impl CommandHeader for SendMessageRequestHeaderV2 {
             k: optional_java_boolean(fields, "k"),
             l: optional_i32(fields, "l")?,
             m: optional_java_boolean(fields, "m"),
-            n: optional_string(fields, "n"),
         })
     }
 }
@@ -416,7 +415,6 @@ impl SendMessageRequestHeaderV2 {
             k: header.unit_mode,
             l: header.max_reconsume_times,
             m: header.batch,
-            n: header.broker_name.clone(),
         }
     }
 
@@ -435,7 +433,6 @@ impl SendMessageRequestHeaderV2 {
             unit_mode: self.k,
             max_reconsume_times: self.l,
             batch: self.m,
-            broker_name: self.n.clone(),
         }
     }
 }
@@ -455,7 +452,6 @@ pub struct SendMessageRequestHeaderV1 {
     pub unit_mode: Option<bool>,
     pub max_reconsume_times: Option<i32>,
     pub batch: Option<bool>,
-    pub broker_name: Option<String>,
 }
 
 impl CommandHeader for SendMessageRequestHeaderV1 {
@@ -476,7 +472,6 @@ impl CommandHeader for SendMessageRequestHeaderV1 {
         put_optional(fields, "unitMode", self.unit_mode);
         put_optional(fields, "maxReconsumeTimes", self.max_reconsume_times);
         put_optional(fields, "batch", self.batch);
-        put_optional(fields, "brokerName", self.broker_name.as_deref());
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
@@ -494,7 +489,6 @@ impl CommandHeader for SendMessageRequestHeaderV1 {
             unit_mode: optional_java_boolean(fields, "unitMode"),
             max_reconsume_times: optional_i32(fields, "maxReconsumeTimes")?,
             batch: optional_java_boolean(fields, "batch"),
-            broker_name: optional_string(fields, "brokerName"),
         })
     }
 }
@@ -538,7 +532,6 @@ mod tests {
             unit_mode: Some(true),
             max_reconsume_times: Some(16),
             batch: Some(false),
-            broker_name: Some("broker-a".into()),
         };
         let v2 = SendMessageRequestHeaderV2::from_v1(&v1);
         assert_eq!(v2.normalized_v1(), v1);
@@ -547,7 +540,7 @@ mod tests {
         let decoded = SendMessageRequestHeaderV2::decode_fields(&v2_fields).unwrap();
         assert_eq!(decoded.normalized_v1(), v1);
         assert_eq!(v2_fields["a"], "producer");
-        assert_eq!(v2_fields["n"], "broker-a");
+        assert!(!v2_fields.contains_key("n"));
     }
 
     #[test]
