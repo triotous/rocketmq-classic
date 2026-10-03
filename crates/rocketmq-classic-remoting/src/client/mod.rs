@@ -1265,11 +1265,7 @@ impl RemotingClient {
                 Err(error) => return Err(error),
             }
         }
-        let pending_deadline = if callback.is_some() {
-            deadline + std::time::Duration::from_secs(1)
-        } else {
-            deadline
-        };
+        let pending_deadline = deadline + std::time::Duration::from_secs(1);
         let (opaque, receiver) = self.inner.insert_pending(
             connection.generation,
             pending_deadline,
@@ -1306,10 +1302,10 @@ impl RemotingClient {
                 });
             }
         }
-        let response_deadline = if callback.is_some() {
-            deadline + std::time::Duration::from_secs(1)
-        } else {
+        let response_deadline = if options.close_socket_on_timeout {
             deadline
+        } else {
+            pending_deadline
         };
         let response_wait = response_deadline.saturating_duration_since(Instant::now());
         match time::timeout(response_wait, receiver).await {

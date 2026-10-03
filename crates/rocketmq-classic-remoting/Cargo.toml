@@ -28,3 +28,4 @@ cipher.workspace = true
 
 [dev-dependencies]
 rcgen.workspace = true
+tokio = { workspace = true, features = ["test-util"] }

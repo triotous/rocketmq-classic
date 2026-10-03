@@ -1217,7 +1217,7 @@ async fn p3_u01_raw_route_deadline_and_shutdown() {
 }
 
 #[tokio::test]
-async fn p3_u01_inflight_invoke_times_out_when_peer_does_not_reply() {
+async fn p3_u01_inflight_invoke_accepts_late_response_before_scanner_cleanup() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let peer = tokio::spawn(async move {
@@ -1243,7 +1243,7 @@ async fn p3_u01_inflight_invoke_times_out_when_peer_does_not_reply() {
             Instant::now() + Duration::from_millis(20),
         )
         .await;
-    assert!(matches!(result, Err(error) if error.is_timeout()));
+    assert_eq!(result.unwrap().code, 91);
     assert_eq!(
         client
             .invoke(
