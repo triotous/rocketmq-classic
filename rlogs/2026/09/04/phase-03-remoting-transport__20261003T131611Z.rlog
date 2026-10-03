@@ -14,3 +14,6 @@
 - Aligned compatibility conclusions with those decisions and documented P3-V01/V02/V03/U01 as local Phase 3 acceptance gates. Did not claim Broker/live validation.
 - Validation passed: transport integration suite (77 tests); full workspace tests (all passed); `cargo fmt --all --check`; `cargo clippy --workspace --all-targets --locked --offline -- -D warnings`; workspace metadata check; differential comparator self-test; `git diff --check`.
 - Audit note: no additional concrete local behavior gap was identified in this pass; callback scanner's nominal 3s start, 1s cadence and +1s timeout grace remain represented and tested. Final review/commit pending.
+- Final audit found stale compatibility-summary wording and a log path that did not mirror the numbered-plan directory. Corrected the summary's acceptance scope and moved this session log to the existing `rlogs/2026/09/04/` plan-specific directory before commit.
+- Re-read both complete Phase 3 plans and verified local gate IDs P3-V01/V02/V03/U01 against named transport tests; P3-V04 remains an explicitly unchecked Phase 19 handoff.
+- Final status: Phase 3 locally complete under user dispositions; live Broker/TLS validation remains Phase 19. Documentation/log commit pending.
