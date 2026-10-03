@@ -59,6 +59,52 @@ pub struct ConsumerListByGroupResponseBody {
     pub consumer_id_list: Option<Vec<String>>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ResetOffsetBody {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset_table: Option<Vec<(MessageQueue, i64)>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GetConsumerStatusBody {
+    #[serde(default)]
+    pub message_queue_table: Vec<(MessageQueue, i64)>,
+    #[serde(default)]
+    pub consumer_table: std::collections::BTreeMap<String, Vec<(MessageQueue, i64)>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsumeMessageDirectlyResult {
+    #[serde(default)]
+    pub order: bool,
+    #[serde(default = "default_auto_commit")]
+    pub auto_commit: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consume_result: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remark: Option<String>,
+    #[serde(default)]
+    pub spent_time_mills: i64,
+}
+
+fn default_auto_commit() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct UnregisterClientBody {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consumer_group: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub producer_group: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -119,5 +165,31 @@ mod tests {
         let value = serde_json::to_value(body).unwrap();
         assert_eq!(value["mqSet"][0]["brokerName"], "broker-a");
         assert_eq!(value["mqSet"][0]["queueId"], 0);
+    }
+
+    #[test]
+    fn runtime_inbound_bodies_keep_map_and_optional_shapes() {
+        let queue = MessageQueue::new("orders", "broker-a", 1);
+        let reset = ResetOffsetBody {
+            offset_table: Some(vec![(queue.clone(), 7)]),
+        };
+        let value = serde_json::to_value(reset).unwrap();
+        assert_eq!(value["offsetTable"][0][0]["queueId"], 1);
+
+        let status = GetConsumerStatusBody {
+            message_queue_table: vec![(queue.clone(), 7)],
+            consumer_table: std::collections::BTreeMap::from([(
+                "consumer-a".into(),
+                vec![(queue, 8)],
+            )]),
+        };
+        let value = serde_json::to_value(status).unwrap();
+        assert_eq!(value["consumerTable"]["consumer-a"][0][1], 8);
+
+        let direct: ConsumeMessageDirectlyResult =
+            serde_json::from_value(serde_json::json!({"order":false, "spentTimeMills":0})).unwrap();
+        let value = serde_json::to_value(direct).unwrap();
+        assert_eq!(value["autoCommit"], true);
+        assert!(value.get("consumeResult").is_none());
     }
 }

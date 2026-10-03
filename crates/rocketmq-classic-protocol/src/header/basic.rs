@@ -1,6 +1,6 @@
 use super::{
-    CommandHeader, HeaderMap, ProtocolError, optional_i32, optional_i64, optional_java_boolean,
-    optional_string, required_i32, required_i64, required_string,
+    CommandHeader, HeaderMap, ProtocolError, java_boolean, optional_i32, optional_i64,
+    optional_java_boolean, optional_string, required_i32, required_i64, required_string,
 };
 
 fn put_optional<T: ToString>(fields: &mut HeaderMap, name: &str, value: Option<T>) {
@@ -322,6 +322,354 @@ pub struct SendMessageResponseHeader {
     pub transaction_id: Option<String>,
     pub batch_uniq_id: Option<String>,
     pub recall_handle: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct UnregisterClientResponseHeader;
+
+impl CommandHeader for UnregisterClientResponseHeader {
+    fn encode_fields(&self, _fields: &mut HeaderMap) {}
+
+    fn decode_fields(_fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct EndTransactionRequestHeader {
+    pub topic: Option<String>,
+    pub producer_group: String,
+    pub transaction_state_table_offset: i64,
+    pub commit_log_offset: i64,
+    pub commit_or_rollback: i32,
+    pub from_transaction_check: Option<bool>,
+    pub msg_id: String,
+    pub transaction_id: Option<String>,
+}
+
+impl CommandHeader for EndTransactionRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "topic", self.topic.as_deref());
+        fields.insert("producerGroup".into(), self.producer_group.clone());
+        fields.insert(
+            "tranStateTableOffset".into(),
+            self.transaction_state_table_offset.to_string(),
+        );
+        fields.insert("commitLogOffset".into(), self.commit_log_offset.to_string());
+        fields.insert(
+            "commitOrRollback".into(),
+            self.commit_or_rollback.to_string(),
+        );
+        put_optional(fields, "fromTransactionCheck", self.from_transaction_check);
+        fields.insert("msgId".into(), self.msg_id.clone());
+        put_optional(fields, "transactionId", self.transaction_id.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            topic: optional_string(fields, "topic"),
+            producer_group: required_string(fields, "producerGroup")?.to_owned(),
+            transaction_state_table_offset: required_i64(fields, "tranStateTableOffset")?,
+            commit_log_offset: required_i64(fields, "commitLogOffset")?,
+            commit_or_rollback: required_i32(fields, "commitOrRollback")?,
+            from_transaction_check: optional_java_boolean(fields, "fromTransactionCheck"),
+            msg_id: required_string(fields, "msgId")?.to_owned(),
+            transaction_id: optional_string(fields, "transactionId"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct EndTransactionResponseHeader;
+
+impl CommandHeader for EndTransactionResponseHeader {
+    fn encode_fields(&self, _fields: &mut HeaderMap) {}
+    fn decode_fields(_fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CheckTransactionStateRequestHeader {
+    pub topic: Option<String>,
+    pub transaction_state_table_offset: i64,
+    pub commit_log_offset: i64,
+    pub msg_id: Option<String>,
+    pub transaction_id: Option<String>,
+    pub offset_msg_id: Option<String>,
+}
+
+impl CommandHeader for CheckTransactionStateRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "topic", self.topic.as_deref());
+        fields.insert(
+            "tranStateTableOffset".into(),
+            self.transaction_state_table_offset.to_string(),
+        );
+        fields.insert("commitLogOffset".into(), self.commit_log_offset.to_string());
+        put_optional(fields, "msgId", self.msg_id.as_deref());
+        put_optional(fields, "transactionId", self.transaction_id.as_deref());
+        put_optional(fields, "offsetMsgId", self.offset_msg_id.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            topic: optional_string(fields, "topic"),
+            transaction_state_table_offset: required_i64(fields, "tranStateTableOffset")?,
+            commit_log_offset: required_i64(fields, "commitLogOffset")?,
+            msg_id: optional_string(fields, "msgId"),
+            transaction_id: optional_string(fields, "transactionId"),
+            offset_msg_id: optional_string(fields, "offsetMsgId"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CheckTransactionStateResponseHeader {
+    pub producer_group: String,
+    pub transaction_state_table_offset: i64,
+    pub commit_log_offset: i64,
+    pub commit_or_rollback: i32,
+}
+
+impl CommandHeader for CheckTransactionStateResponseHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("producerGroup".into(), self.producer_group.clone());
+        fields.insert(
+            "tranStateTableOffset".into(),
+            self.transaction_state_table_offset.to_string(),
+        );
+        fields.insert("commitLogOffset".into(), self.commit_log_offset.to_string());
+        fields.insert(
+            "commitOrRollback".into(),
+            self.commit_or_rollback.to_string(),
+        );
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            producer_group: required_string(fields, "producerGroup")?.to_owned(),
+            transaction_state_table_offset: required_i64(fields, "tranStateTableOffset")?,
+            commit_log_offset: required_i64(fields, "commitLogOffset")?,
+            commit_or_rollback: required_i32(fields, "commitOrRollback")?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ReplyMessageRequestHeader {
+    pub producer_group: String,
+    pub topic: String,
+    pub default_topic: String,
+    pub default_topic_queue_nums: i32,
+    pub queue_id: i32,
+    pub sys_flag: i32,
+    pub born_timestamp: i64,
+    pub flag: i32,
+    pub properties: Option<String>,
+    pub reconsume_times: Option<i32>,
+    pub unit_mode: bool,
+    pub born_host: String,
+    pub store_host: String,
+    pub store_timestamp: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct NotificationRequestHeader {
+    pub consumer_group: String,
+    pub topic: String,
+    pub queue_id: i32,
+    pub poll_time: i64,
+    pub born_time: i64,
+    pub order: Option<bool>,
+    pub attempt_id: Option<String>,
+    pub lite_consumer: bool,
+    pub client_id: Option<String>,
+    pub expression_type: Option<String>,
+    pub expression: Option<String>,
+}
+
+impl CommandHeader for NotificationRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("consumerGroup".into(), self.consumer_group.clone());
+        fields.insert("topic".into(), self.topic.clone());
+        fields.insert("queueId".into(), self.queue_id.to_string());
+        fields.insert("pollTime".into(), self.poll_time.to_string());
+        fields.insert("bornTime".into(), self.born_time.to_string());
+        put_optional(fields, "order", self.order);
+        put_optional(fields, "attemptId", self.attempt_id.as_deref());
+        fields.insert("isLiteConsumer".into(), self.lite_consumer.to_string());
+        put_optional(fields, "clientId", self.client_id.as_deref());
+        put_optional(fields, "expType", self.expression_type.as_deref());
+        put_optional(fields, "exp", self.expression.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
+            topic: required_string(fields, "topic")?.to_owned(),
+            queue_id: required_i32(fields, "queueId")?,
+            poll_time: required_i64(fields, "pollTime")?,
+            born_time: required_i64(fields, "bornTime")?,
+            order: optional_java_boolean(fields, "order"),
+            attempt_id: optional_string(fields, "attemptId"),
+            lite_consumer: java_boolean(fields, "isLiteConsumer"),
+            client_id: optional_string(fields, "clientId"),
+            expression_type: optional_string(fields, "expType"),
+            expression: optional_string(fields, "exp"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct NotificationResponseHeader {
+    pub has_msg: bool,
+    pub polling_full: bool,
+}
+
+impl CommandHeader for NotificationResponseHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("hasMsg".into(), self.has_msg.to_string());
+        fields.insert("pollingFull".into(), self.polling_full.to_string());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            has_msg: java_boolean(fields, "hasMsg"),
+            polling_full: java_boolean(fields, "pollingFull"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ResetOffsetRequestHeader {
+    pub group: String,
+    pub topic: String,
+    pub queue_id: i32,
+    pub offset: Option<i64>,
+    pub timestamp: i64,
+    pub force: bool,
+}
+
+impl CommandHeader for ResetOffsetRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("group".into(), self.group.clone());
+        fields.insert("topic".into(), self.topic.clone());
+        fields.insert("queueId".into(), self.queue_id.to_string());
+        put_optional(fields, "offset", self.offset);
+        fields.insert("timestamp".into(), self.timestamp.to_string());
+        fields.insert("isForce".into(), self.force.to_string());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            group: required_string(fields, "group")?.to_owned(),
+            topic: required_string(fields, "topic")?.to_owned(),
+            queue_id: optional_i32(fields, "queueId")?.unwrap_or(-1),
+            offset: optional_i64(fields, "offset")?,
+            timestamp: required_i64(fields, "timestamp")?,
+            force: java_boolean(fields, "isForce"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct GetConsumerStatusRequestHeader {
+    pub topic: String,
+    pub group: String,
+    pub client_addr: Option<String>,
+}
+
+impl CommandHeader for GetConsumerStatusRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("topic".into(), self.topic.clone());
+        fields.insert("group".into(), self.group.clone());
+        put_optional(fields, "clientAddr", self.client_addr.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            topic: required_string(fields, "topic")?.to_owned(),
+            group: required_string(fields, "group")?.to_owned(),
+            client_addr: optional_string(fields, "clientAddr"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ConsumeMessageDirectlyResultRequestHeader {
+    pub consumer_group: String,
+    pub client_id: Option<String>,
+    pub msg_id: Option<String>,
+    pub broker_name: Option<String>,
+    pub topic: Option<String>,
+    pub topic_sys_flag: Option<i32>,
+    pub group_sys_flag: Option<i32>,
+}
+
+impl CommandHeader for ConsumeMessageDirectlyResultRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("consumerGroup".into(), self.consumer_group.clone());
+        put_optional(fields, "clientId", self.client_id.as_deref());
+        put_optional(fields, "msgId", self.msg_id.as_deref());
+        put_optional(fields, "brokerName", self.broker_name.as_deref());
+        put_optional(fields, "topic", self.topic.as_deref());
+        put_optional(fields, "topicSysFlag", self.topic_sys_flag);
+        put_optional(fields, "groupSysFlag", self.group_sys_flag);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
+            client_id: optional_string(fields, "clientId"),
+            msg_id: optional_string(fields, "msgId"),
+            broker_name: optional_string(fields, "brokerName"),
+            topic: optional_string(fields, "topic"),
+            topic_sys_flag: optional_i32(fields, "topicSysFlag")?,
+            group_sys_flag: optional_i32(fields, "groupSysFlag")?,
+        })
+    }
+}
+
+impl CommandHeader for ReplyMessageRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("producerGroup".into(), self.producer_group.clone());
+        fields.insert("topic".into(), self.topic.clone());
+        fields.insert("defaultTopic".into(), self.default_topic.clone());
+        fields.insert(
+            "defaultTopicQueueNums".into(),
+            self.default_topic_queue_nums.to_string(),
+        );
+        fields.insert("queueId".into(), self.queue_id.to_string());
+        fields.insert("sysFlag".into(), self.sys_flag.to_string());
+        fields.insert("bornTimestamp".into(), self.born_timestamp.to_string());
+        fields.insert("flag".into(), self.flag.to_string());
+        put_optional(fields, "properties", self.properties.as_deref());
+        put_optional(fields, "reconsumeTimes", self.reconsume_times);
+        fields.insert("unitMode".into(), self.unit_mode.to_string());
+        fields.insert("bornHost".into(), self.born_host.clone());
+        fields.insert("storeHost".into(), self.store_host.clone());
+        fields.insert("storeTimestamp".into(), self.store_timestamp.to_string());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            producer_group: required_string(fields, "producerGroup")?.to_owned(),
+            topic: required_string(fields, "topic")?.to_owned(),
+            default_topic: required_string(fields, "defaultTopic")?.to_owned(),
+            default_topic_queue_nums: required_i32(fields, "defaultTopicQueueNums")?,
+            queue_id: required_i32(fields, "queueId")?,
+            sys_flag: required_i32(fields, "sysFlag")?,
+            born_timestamp: required_i64(fields, "bornTimestamp")?,
+            flag: required_i32(fields, "flag")?,
+            properties: optional_string(fields, "properties"),
+            reconsume_times: optional_i32(fields, "reconsumeTimes")?,
+            unit_mode: java_boolean(fields, "unitMode"),
+            born_host: required_string(fields, "bornHost")?.to_owned(),
+            store_host: required_string(fields, "storeHost")?.to_owned(),
+            store_timestamp: required_i64(fields, "storeTimestamp")?,
+        })
+    }
 }
 
 impl CommandHeader for SendMessageResponseHeader {

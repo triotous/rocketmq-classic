@@ -22,3 +22,9 @@
 - P4-V01 first wave passes both directions. P4-V02 has unknown-field preservation and required-field coverage for initial headers; it is not yet exhaustive over every model. P4-V03 V1/V2 fixture normalization passes; broader body collection/omission coverage remains in progress.
 - `REQUEST_CODES.md` distinguishes typed model completion from Phase 5 RPC implementation. Consumer extension families and transaction/reply/runtime inbound models are still outstanding; Phase 4 is not complete.
 - Validation: protocol crate tests (18 unit + 4 integration + 1 fixture test); targeted Clippy; Maven `verify` (Java oracle self-test, 17 scenario manifest validation, 2 existing and 6 new Rust frames decoded); workspace metadata check and differential self-test.
+
+## Follow-on model work
+- Added exact source-derived unregister and send-back request fixtures plus models; added empty unregister response header.
+- Added source-derived transaction end/check headers, reply-send header, notification/reset-offset/consumer-status/direct-consume request headers, common reply-property constants, and reset/status/direct-consume body models.
+- Protocol crate validation after this work: 19 unit tests, 6 header integration tests, and 1 existing fixture integration test pass; targeted Clippy passes.
+- Still outstanding: Java typed fixtures for transaction/reply/runtime and consumer extensions; POP/Lite/ACK/change-invisibility family models; exhaustive required/optional invalid-field table; broader JSON body fixtures; final P4-V01/V02/V03 gate.

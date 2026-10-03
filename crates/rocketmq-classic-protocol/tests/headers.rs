@@ -1,8 +1,11 @@
 use rocketmq_classic_protocol::header::{
-    CommandHeader, GetConsumerListByGroupRequestHeader, GetRouteInfoRequestHeader, HeaderMap,
+    CheckTransactionStateRequestHeader, CheckTransactionStateResponseHeader, CommandHeader,
+    ConsumerSendMsgBackRequestHeader, EndTransactionRequestHeader,
+    GetConsumerListByGroupRequestHeader, GetRouteInfoRequestHeader, HeaderMap,
     PullMessageRequestHeader, PullMessageResponseHeader, QueryConsumerOffsetRequestHeader,
-    QueryConsumerOffsetResponseHeader, SendMessageRequestHeaderV1, SendMessageRequestHeaderV2,
-    SendMessageResponseHeader, UpdateConsumerOffsetRequestHeader,
+    QueryConsumerOffsetResponseHeader, ReplyMessageRequestHeader, SendMessageRequestHeaderV1,
+    SendMessageRequestHeaderV2, SendMessageResponseHeader, UnregisterClientRequestHeader,
+    UpdateConsumerOffsetRequestHeader,
 };
 
 fn json_header_map(name: &str) -> HeaderMap {
@@ -59,12 +62,101 @@ fn java_request_and_response_header_fixtures_decode() {
     let send_response =
         SendMessageResponseHeader::decode_fields(&java_ext_fields("header-send-response")).unwrap();
     assert_eq!(send_response.msg_id, "msg-1");
+    let unregister =
+        UnregisterClientRequestHeader::decode_fields(&java_ext_fields("header-unregister-request"))
+            .unwrap();
+    assert_eq!(unregister.client_id, "client-1");
+    assert_eq!(unregister.producer_group.as_deref(), Some("producers"));
+    let send_back = ConsumerSendMsgBackRequestHeader::decode_fields(&java_ext_fields(
+        "header-send-back-request",
+    ))
+    .unwrap();
+    assert_eq!(send_back.group, "workers");
+    assert_eq!(send_back.offset, 9);
 
     let consumers = GetConsumerListByGroupRequestHeader::decode_fields(&java_ext_fields(
         "header-consumer-list-request",
     ))
     .unwrap();
     assert_eq!(consumers.consumer_group, "workers");
+}
+
+#[test]
+fn transaction_and_reply_headers_round_trip_typed_fields() {
+    let end = EndTransactionRequestHeader {
+        topic: Some("orders".into()),
+        producer_group: "producers".into(),
+        transaction_state_table_offset: 3,
+        commit_log_offset: 9,
+        commit_or_rollback: 8,
+        from_transaction_check: Some(false),
+        msg_id: "msg-1".into(),
+        transaction_id: Some("tx-1".into()),
+    };
+    let mut fields = HeaderMap::new();
+    end.encode_fields(&mut fields);
+    assert_eq!(EndTransactionRequestHeader::decode_fields(&fields), Ok(end));
+
+    let check = CheckTransactionStateRequestHeader {
+        topic: Some("orders".into()),
+        transaction_state_table_offset: 3,
+        commit_log_offset: 9,
+        msg_id: Some("msg-1".into()),
+        transaction_id: Some("tx-1".into()),
+        offset_msg_id: Some("offset-id".into()),
+    };
+    fields.clear();
+    check.encode_fields(&mut fields);
+    assert_eq!(
+        CheckTransactionStateRequestHeader::decode_fields(&fields),
+        Ok(check)
+    );
+
+    let response = CheckTransactionStateResponseHeader {
+        producer_group: "producers".into(),
+        transaction_state_table_offset: 3,
+        commit_log_offset: 9,
+        commit_or_rollback: 8,
+    };
+    fields.clear();
+    response.encode_fields(&mut fields);
+    assert_eq!(
+        CheckTransactionStateResponseHeader::decode_fields(&fields),
+        Ok(response)
+    );
+
+    let reply = ReplyMessageRequestHeader {
+        producer_group: "producers".into(),
+        topic: "orders".into(),
+        default_topic: "TBW102".into(),
+        default_topic_queue_nums: 4,
+        queue_id: 2,
+        sys_flag: 1,
+        born_timestamp: 5,
+        flag: 7,
+        properties: None,
+        reconsume_times: None,
+        unit_mode: false,
+        born_host: "127.0.0.1:1".into(),
+        store_host: "127.0.0.1:2".into(),
+        store_timestamp: 6,
+    };
+    fields.clear();
+    reply.encode_fields(&mut fields);
+    assert_eq!(ReplyMessageRequestHeader::decode_fields(&fields), Ok(reply));
+}
+
+#[test]
+fn transaction_end_response_and_reply_property_names_are_java_constants() {
+    use rocketmq_classic_common::message::constants::*;
+    let mut fields = HeaderMap::from([("unexpected".into(), "value".into())]);
+    rocketmq_classic_protocol::header::EndTransactionResponseHeader.encode_fields(&mut fields);
+    assert_eq!(fields.get("unexpected").map(String::as_str), Some("value"));
+    assert_eq!(PROPERTY_CORRELATION_ID, "CORRELATION_ID");
+    assert_eq!(PROPERTY_MESSAGE_REPLY_TO_CLIENT, "REPLY_TO_CLIENT");
+    assert_eq!(PROPERTY_MESSAGE_TTL, "TTL");
+    assert_eq!(PROPERTY_REPLY_MESSAGE_ARRIVE_TIME, "ARRIVE_TIME");
+    assert_eq!(PROPERTY_PUSH_REPLY_TIME, "PUSH_REPLY_TIME");
 }
 
 #[test]
