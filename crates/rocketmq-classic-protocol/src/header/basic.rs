@@ -1,0 +1,551 @@
+use super::{
+    CommandHeader, HeaderMap, ProtocolError, optional_i32, optional_i64, optional_java_boolean,
+    optional_string, required_i32, required_i64, required_string,
+};
+
+fn put_optional<T: ToString>(fields: &mut HeaderMap, name: &str, value: Option<T>) {
+    if let Some(value) = value {
+        fields.insert(name.to_owned(), value.to_string());
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct QueryConsumerOffsetRequestHeader {
+    pub consumer_group: String,
+    pub topic: String,
+    pub queue_id: i32,
+    pub set_zero_if_not_found: Option<bool>,
+}
+
+impl CommandHeader for QueryConsumerOffsetRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("consumerGroup".into(), self.consumer_group.clone());
+        fields.insert("topic".into(), self.topic.clone());
+        fields.insert("queueId".into(), self.queue_id.to_string());
+        put_optional(fields, "setZeroIfNotFound", self.set_zero_if_not_found);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
+            topic: required_string(fields, "topic")?.to_owned(),
+            queue_id: required_i32(fields, "queueId")?,
+            set_zero_if_not_found: optional_java_boolean(fields, "setZeroIfNotFound"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct UpdateConsumerOffsetRequestHeader {
+    pub consumer_group: String,
+    pub topic: String,
+    pub queue_id: i32,
+    pub commit_offset: i64,
+}
+
+impl CommandHeader for UpdateConsumerOffsetRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("consumerGroup".into(), self.consumer_group.clone());
+        fields.insert("topic".into(), self.topic.clone());
+        fields.insert("queueId".into(), self.queue_id.to_string());
+        fields.insert("commitOffset".into(), self.commit_offset.to_string());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
+            topic: required_string(fields, "topic")?.to_owned(),
+            queue_id: required_i32(fields, "queueId")?,
+            commit_offset: required_i64(fields, "commitOffset")?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct QueryConsumerOffsetResponseHeader {
+    pub offset: Option<i64>,
+}
+
+impl CommandHeader for QueryConsumerOffsetResponseHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "offset", self.offset);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            offset: optional_i64(fields, "offset")?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PullMessageRequestHeader {
+    pub consumer_group: String,
+    pub topic: String,
+    pub lite_topic: Option<String>,
+    pub queue_id: i32,
+    pub queue_offset: i64,
+    pub max_msg_nums: i32,
+    pub sys_flag: i32,
+    pub commit_offset: i64,
+    pub suspend_timeout_millis: i64,
+    pub subscription: Option<String>,
+    pub sub_version: i64,
+    pub expression_type: Option<String>,
+    pub max_msg_bytes: Option<i32>,
+    pub request_source: Option<i32>,
+    pub proxy_forward_client_id: Option<String>,
+}
+
+impl CommandHeader for PullMessageRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("consumerGroup".into(), self.consumer_group.clone());
+        fields.insert("topic".into(), self.topic.clone());
+        put_optional(fields, "liteTopic", self.lite_topic.as_deref());
+        fields.insert("queueId".into(), self.queue_id.to_string());
+        fields.insert("queueOffset".into(), self.queue_offset.to_string());
+        fields.insert("maxMsgNums".into(), self.max_msg_nums.to_string());
+        fields.insert("sysFlag".into(), self.sys_flag.to_string());
+        fields.insert("commitOffset".into(), self.commit_offset.to_string());
+        fields.insert(
+            "suspendTimeoutMillis".into(),
+            self.suspend_timeout_millis.to_string(),
+        );
+        put_optional(fields, "subscription", self.subscription.as_deref());
+        fields.insert("subVersion".into(), self.sub_version.to_string());
+        put_optional(fields, "expressionType", self.expression_type.as_deref());
+        put_optional(fields, "maxMsgBytes", self.max_msg_bytes);
+        put_optional(fields, "requestSource", self.request_source);
+        put_optional(
+            fields,
+            "proxyFrowardClientId",
+            self.proxy_forward_client_id.as_deref(),
+        );
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
+            topic: required_string(fields, "topic")?.to_owned(),
+            lite_topic: optional_string(fields, "liteTopic"),
+            queue_id: required_i32(fields, "queueId")?,
+            queue_offset: required_i64(fields, "queueOffset")?,
+            max_msg_nums: required_i32(fields, "maxMsgNums")?,
+            sys_flag: required_i32(fields, "sysFlag")?,
+            commit_offset: required_i64(fields, "commitOffset")?,
+            suspend_timeout_millis: required_i64(fields, "suspendTimeoutMillis")?,
+            subscription: optional_string(fields, "subscription"),
+            sub_version: required_i64(fields, "subVersion")?,
+            expression_type: optional_string(fields, "expressionType"),
+            max_msg_bytes: optional_i32(fields, "maxMsgBytes")?,
+            request_source: optional_i32(fields, "requestSource")?,
+            proxy_forward_client_id: optional_string(fields, "proxyFrowardClientId"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PullMessageResponseHeader {
+    pub suggest_which_broker_id: Option<i64>,
+    pub next_begin_offset: Option<i64>,
+    pub min_offset: Option<i64>,
+    pub max_offset: Option<i64>,
+    pub offset_delta: Option<i64>,
+    pub topic_sys_flag: Option<i32>,
+    pub group_sys_flag: Option<i32>,
+    pub forbidden_type: Option<i32>,
+}
+
+impl CommandHeader for PullMessageResponseHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "suggestWhichBrokerId", self.suggest_which_broker_id);
+        put_optional(fields, "nextBeginOffset", self.next_begin_offset);
+        put_optional(fields, "minOffset", self.min_offset);
+        put_optional(fields, "maxOffset", self.max_offset);
+        put_optional(fields, "offsetDelta", self.offset_delta);
+        put_optional(fields, "topicSysFlag", self.topic_sys_flag);
+        put_optional(fields, "groupSysFlag", self.group_sys_flag);
+        put_optional(fields, "forbiddenType", self.forbidden_type);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            suggest_which_broker_id: optional_i64(fields, "suggestWhichBrokerId")?,
+            next_begin_offset: optional_i64(fields, "nextBeginOffset")?,
+            min_offset: optional_i64(fields, "minOffset")?,
+            max_offset: optional_i64(fields, "maxOffset")?,
+            offset_delta: optional_i64(fields, "offsetDelta")?,
+            topic_sys_flag: optional_i32(fields, "topicSysFlag")?,
+            group_sys_flag: optional_i32(fields, "groupSysFlag")?,
+            forbidden_type: optional_i32(fields, "forbiddenType")?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct UnregisterClientRequestHeader {
+    pub client_id: String,
+    pub producer_group: Option<String>,
+    pub consumer_group: Option<String>,
+}
+
+impl CommandHeader for UnregisterClientRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("clientID".into(), self.client_id.clone());
+        put_optional(fields, "producerGroup", self.producer_group.as_deref());
+        put_optional(fields, "consumerGroup", self.consumer_group.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            client_id: required_string(fields, "clientID")?.to_owned(),
+            producer_group: optional_string(fields, "producerGroup"),
+            consumer_group: optional_string(fields, "consumerGroup"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct GetRouteInfoRequestHeader {
+    pub topic: String,
+    pub accept_standard_json_only: Option<bool>,
+}
+
+impl CommandHeader for GetRouteInfoRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("topic".into(), self.topic.clone());
+        put_optional(
+            fields,
+            "acceptStandardJsonOnly",
+            self.accept_standard_json_only,
+        );
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            topic: required_string(fields, "topic")?.to_owned(),
+            accept_standard_json_only: optional_java_boolean(fields, "acceptStandardJsonOnly"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ConsumerSendMsgBackRequestHeader {
+    pub group: String,
+    pub origin_topic: String,
+    pub offset: i64,
+    pub delay_level: i32,
+    pub origin_msg_id: Option<String>,
+    pub max_reconsume_times: Option<i32>,
+    pub unit_mode: Option<bool>,
+}
+
+impl CommandHeader for ConsumerSendMsgBackRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("group".into(), self.group.clone());
+        fields.insert("originTopic".into(), self.origin_topic.clone());
+        fields.insert("offset".into(), self.offset.to_string());
+        fields.insert("delayLevel".into(), self.delay_level.to_string());
+        put_optional(fields, "originMsgId", self.origin_msg_id.as_deref());
+        put_optional(fields, "maxReconsumeTimes", self.max_reconsume_times);
+        put_optional(fields, "unitMode", self.unit_mode);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            group: required_string(fields, "group")?.to_owned(),
+            origin_topic: required_string(fields, "originTopic")?.to_owned(),
+            offset: required_i64(fields, "offset")?,
+            delay_level: required_i32(fields, "delayLevel")?,
+            origin_msg_id: optional_string(fields, "originMsgId"),
+            max_reconsume_times: optional_i32(fields, "maxReconsumeTimes")?,
+            unit_mode: optional_java_boolean(fields, "unitMode"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SendMessageResponseHeader {
+    pub msg_id: Option<String>,
+    pub queue_id: Option<i32>,
+    pub queue_offset: Option<i64>,
+    pub transaction_id: Option<String>,
+    pub batch_uniq_id: Option<String>,
+    pub recall_handle: Option<String>,
+}
+
+impl CommandHeader for SendMessageResponseHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "msgId", self.msg_id.as_deref());
+        put_optional(fields, "queueId", self.queue_id);
+        put_optional(fields, "queueOffset", self.queue_offset);
+        put_optional(fields, "transactionId", self.transaction_id.as_deref());
+        put_optional(fields, "batchUniqId", self.batch_uniq_id.as_deref());
+        put_optional(fields, "recallHandle", self.recall_handle.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            msg_id: optional_string(fields, "msgId"),
+            queue_id: optional_i32(fields, "queueId")?,
+            queue_offset: optional_i64(fields, "queueOffset")?,
+            transaction_id: optional_string(fields, "transactionId"),
+            batch_uniq_id: optional_string(fields, "batchUniqId"),
+            recall_handle: optional_string(fields, "recallHandle"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SendMessageRequestHeaderV2 {
+    pub a: String,
+    pub b: String,
+    pub c: String,
+    pub d: i32,
+    pub e: i32,
+    pub f: i32,
+    pub g: i64,
+    pub h: i32,
+    pub i: Option<String>,
+    pub j: Option<i32>,
+    pub k: Option<bool>,
+    pub l: Option<i32>,
+    pub m: Option<bool>,
+    pub n: Option<String>,
+}
+
+impl CommandHeader for SendMessageRequestHeaderV2 {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("a".into(), self.a.clone());
+        fields.insert("b".into(), self.b.clone());
+        fields.insert("c".into(), self.c.clone());
+        fields.insert("d".into(), self.d.to_string());
+        fields.insert("e".into(), self.e.to_string());
+        fields.insert("f".into(), self.f.to_string());
+        fields.insert("g".into(), self.g.to_string());
+        fields.insert("h".into(), self.h.to_string());
+        put_optional(fields, "i", self.i.as_deref());
+        put_optional(fields, "j", self.j);
+        put_optional(fields, "k", self.k);
+        put_optional(fields, "l", self.l);
+        put_optional(fields, "m", self.m);
+        put_optional(fields, "n", self.n.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            a: required_string(fields, "a")?.to_owned(),
+            b: required_string(fields, "b")?.to_owned(),
+            c: required_string(fields, "c")?.to_owned(),
+            d: required_i32(fields, "d")?,
+            e: required_i32(fields, "e")?,
+            f: required_i32(fields, "f")?,
+            g: required_i64(fields, "g")?,
+            h: required_i32(fields, "h")?,
+            i: optional_string(fields, "i"),
+            j: optional_i32(fields, "j")?,
+            k: optional_java_boolean(fields, "k"),
+            l: optional_i32(fields, "l")?,
+            m: optional_java_boolean(fields, "m"),
+            n: optional_string(fields, "n"),
+        })
+    }
+}
+
+impl SendMessageRequestHeaderV2 {
+    pub fn from_v1(header: &SendMessageRequestHeaderV1) -> Self {
+        Self {
+            a: header.producer_group.clone(),
+            b: header.topic.clone(),
+            c: header.default_topic.clone(),
+            d: header.default_topic_queue_nums,
+            e: header.queue_id,
+            f: header.sys_flag,
+            g: header.born_timestamp,
+            h: header.flag,
+            i: header.properties.clone(),
+            j: header.reconsume_times,
+            k: header.unit_mode,
+            l: header.max_reconsume_times,
+            m: header.batch,
+            n: header.broker_name.clone(),
+        }
+    }
+
+    pub fn normalized_v1(&self) -> SendMessageRequestHeaderV1 {
+        SendMessageRequestHeaderV1 {
+            producer_group: self.a.clone(),
+            topic: self.b.clone(),
+            default_topic: self.c.clone(),
+            default_topic_queue_nums: self.d,
+            queue_id: self.e,
+            sys_flag: self.f,
+            born_timestamp: self.g,
+            flag: self.h,
+            properties: self.i.clone(),
+            reconsume_times: self.j,
+            unit_mode: self.k,
+            max_reconsume_times: self.l,
+            batch: self.m,
+            broker_name: self.n.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SendMessageRequestHeaderV1 {
+    pub producer_group: String,
+    pub topic: String,
+    pub default_topic: String,
+    pub default_topic_queue_nums: i32,
+    pub queue_id: i32,
+    pub sys_flag: i32,
+    pub born_timestamp: i64,
+    pub flag: i32,
+    pub properties: Option<String>,
+    pub reconsume_times: Option<i32>,
+    pub unit_mode: Option<bool>,
+    pub max_reconsume_times: Option<i32>,
+    pub batch: Option<bool>,
+    pub broker_name: Option<String>,
+}
+
+impl CommandHeader for SendMessageRequestHeaderV1 {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("producerGroup".into(), self.producer_group.clone());
+        fields.insert("topic".into(), self.topic.clone());
+        fields.insert("defaultTopic".into(), self.default_topic.clone());
+        fields.insert(
+            "defaultTopicQueueNums".into(),
+            self.default_topic_queue_nums.to_string(),
+        );
+        fields.insert("queueId".into(), self.queue_id.to_string());
+        fields.insert("sysFlag".into(), self.sys_flag.to_string());
+        fields.insert("bornTimestamp".into(), self.born_timestamp.to_string());
+        fields.insert("flag".into(), self.flag.to_string());
+        put_optional(fields, "properties", self.properties.as_deref());
+        put_optional(fields, "reconsumeTimes", self.reconsume_times);
+        put_optional(fields, "unitMode", self.unit_mode);
+        put_optional(fields, "maxReconsumeTimes", self.max_reconsume_times);
+        put_optional(fields, "batch", self.batch);
+        put_optional(fields, "brokerName", self.broker_name.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            producer_group: required_string(fields, "producerGroup")?.to_owned(),
+            topic: required_string(fields, "topic")?.to_owned(),
+            default_topic: required_string(fields, "defaultTopic")?.to_owned(),
+            default_topic_queue_nums: required_i32(fields, "defaultTopicQueueNums")?,
+            queue_id: required_i32(fields, "queueId")?,
+            sys_flag: required_i32(fields, "sysFlag")?,
+            born_timestamp: required_i64(fields, "bornTimestamp")?,
+            flag: required_i32(fields, "flag")?,
+            properties: optional_string(fields, "properties"),
+            reconsume_times: optional_i32(fields, "reconsumeTimes")?,
+            unit_mode: optional_java_boolean(fields, "unitMode"),
+            max_reconsume_times: optional_i32(fields, "maxReconsumeTimes")?,
+            batch: optional_java_boolean(fields, "batch"),
+            broker_name: optional_string(fields, "brokerName"),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn query_offset_preserves_unknown_fields_and_optional_false() {
+        let raw = HeaderMap::from([
+            ("consumerGroup".into(), "workers".into()),
+            ("topic".into(), "orders".into()),
+            ("queueId".into(), "0".into()),
+            ("setZeroIfNotFound".into(), "false".into()),
+            ("futureField".into(), "keep".into()),
+        ]);
+        let mut updated = raw.clone();
+        let mut typed = QueryConsumerOffsetRequestHeader::decode_fields(&raw).unwrap();
+        typed.set_zero_if_not_found = Some(true);
+        typed.encode_fields(&mut updated);
+
+        assert_eq!(updated["setZeroIfNotFound"], "true");
+        assert_eq!(updated["futureField"], "keep");
+        assert_eq!(raw["setZeroIfNotFound"], "false");
+    }
+
+    #[test]
+    fn send_v1_and_v2_normalize_to_the_same_fields() {
+        let v1 = SendMessageRequestHeaderV1 {
+            producer_group: "producer".into(),
+            topic: "orders".into(),
+            default_topic: "TBW102".into(),
+            default_topic_queue_nums: 4,
+            queue_id: 2,
+            sys_flag: 1,
+            born_timestamp: i64::MAX,
+            flag: 7,
+            properties: Some("TAGS\u{1}blue".into()),
+            reconsume_times: Some(0),
+            unit_mode: Some(true),
+            max_reconsume_times: Some(16),
+            batch: Some(false),
+            broker_name: Some("broker-a".into()),
+        };
+        let v2 = SendMessageRequestHeaderV2::from_v1(&v1);
+        assert_eq!(v2.normalized_v1(), v1);
+        let mut v2_fields = HeaderMap::new();
+        v2.encode_fields(&mut v2_fields);
+        let decoded = SendMessageRequestHeaderV2::decode_fields(&v2_fields).unwrap();
+        assert_eq!(decoded.normalized_v1(), v1);
+        assert_eq!(v2_fields["a"], "producer");
+        assert_eq!(v2_fields["n"], "broker-a");
+    }
+
+    #[test]
+    fn pull_headers_round_trip_required_and_optional_fields() {
+        let header = PullMessageRequestHeader {
+            consumer_group: "workers".into(),
+            topic: "orders".into(),
+            queue_id: -1,
+            queue_offset: i64::MIN,
+            max_msg_nums: 32,
+            sys_flag: 0,
+            commit_offset: 0,
+            suspend_timeout_millis: 15_000,
+            sub_version: i64::MAX,
+            proxy_forward_client_id: Some("proxy".into()),
+            ..PullMessageRequestHeader::default()
+        };
+        let mut fields = HeaderMap::new();
+        header.encode_fields(&mut fields);
+        assert_eq!(PullMessageRequestHeader::decode_fields(&fields), Ok(header));
+        assert!(!fields.contains_key("subscription"));
+        assert_eq!(fields["proxyFrowardClientId"], "proxy");
+    }
+
+    #[test]
+    fn missing_and_invalid_response_header_values_name_the_field() {
+        assert_eq!(
+            QueryConsumerOffsetResponseHeader::decode_fields(&HeaderMap::new()),
+            Ok(QueryConsumerOffsetResponseHeader { offset: None })
+        );
+        assert_eq!(
+            QueryConsumerOffsetResponseHeader::decode_fields(&HeaderMap::from([(
+                "offset".into(),
+                "12".into()
+            )])),
+            Ok(QueryConsumerOffsetResponseHeader { offset: Some(12) })
+        );
+        assert!(matches!(
+            QueryConsumerOffsetResponseHeader::decode_fields(&HeaderMap::from([(
+                "offset".into(),
+                "9223372036854775808".into()
+            )])),
+            Err(ProtocolError::InvalidField {
+                field: "offset",
+                ..
+            })
+        ));
+    }
+}
