@@ -11,6 +11,8 @@ import java.util.Map;
 import java.util.TreeMap;
 import org.apache.rocketmq.client.ClientConfig;
 import org.apache.rocketmq.client.exception.OffsetNotFoundException;
+import org.apache.rocketmq.client.exception.MQBrokerException;
+import org.apache.rocketmq.client.exception.MQClientException;
 import org.apache.rocketmq.client.impl.CommunicationMode;
 import org.apache.rocketmq.client.impl.MQClientAPIImpl;
 import org.apache.rocketmq.client.producer.SendResult;
@@ -112,6 +114,36 @@ public final class InvokedRpcFixtures {
         cases.add(new String[] {"route-success.json", fixture("route-success", capture,
             RequestCode.GET_ROUTEINFO_BY_TOPIC, "orderTopicConf=oracle-order")});
 
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.TOPIC_NOT_EXIST, "offline");
+        try {
+            api.getTopicRouteInfoFromNameServer("oracle-topic", 10000);
+            throw new IllegalStateException("missing route accepted");
+        } catch (MQClientException expected) {
+            check(expected.getResponseCode() == ResponseCode.TOPIC_NOT_EXIST, "missing route code");
+        }
+        cases.add(new String[] {"route-not-found.json", fixture("route-not-found", capture,
+            RequestCode.GET_ROUTEINFO_BY_TOPIC, "MQClientException;code=17")});
+
+        capture.response = RemotingCommand.createResponseCommand(987654, "unknown");
+        try {
+            api.getTopicRouteInfoFromNameServer("oracle-topic", 10000);
+            throw new IllegalStateException("unknown route accepted");
+        } catch (MQClientException expected) {
+            check(expected.getResponseCode() == 987654, "unknown route code");
+        }
+        cases.add(new String[] {"route-unknown.json", fixture("route-unknown", capture,
+            RequestCode.GET_ROUTEINFO_BY_TOPIC, "MQClientException;code=987654")});
+
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, "no body");
+        try {
+            api.getTopicRouteInfoFromNameServer("oracle-topic", 10000);
+            throw new IllegalStateException("bodyless route accepted");
+        } catch (MQClientException expected) {
+            check(expected.getResponseCode() == ResponseCode.SUCCESS, "bodyless route code");
+        }
+        cases.add(new String[] {"route-no-body.json", fixture("route-no-body", capture,
+            RequestCode.GET_ROUTEINFO_BY_TOPIC, "MQClientException;code=0;malformed")});
+
         SendMessageRequestHeader send = new SendMessageRequestHeader();
         send.setProducerGroup("producer");
         send.setTopic("oracle-topic");
@@ -137,6 +169,31 @@ public final class InvokedRpcFixtures {
         cases.add(new String[] {"send-success.json", fixture("send-success", capture,
             RequestCode.SEND_MESSAGE_V2, "SEND_OK;queueOffset=17;offsetMsgId=broker-message")});
 
+        capture.response = RemotingCommand.createResponseCommand(987654, "unknown");
+        try {
+            api.sendMessage("broker:10911", "broker",
+                new Message("oracle-topic", "payload".getBytes(StandardCharsets.UTF_8)), send, 10000,
+                CommunicationMode.SYNC, null, null);
+            throw new IllegalStateException("unknown send accepted");
+        } catch (MQBrokerException expected) {
+            check(expected.getResponseCode() == 987654, "unknown send code");
+        }
+        cases.add(new String[] {"send-unknown.json", fixture("send-unknown", capture,
+            RequestCode.SEND_MESSAGE_V2, "MQBrokerException;code=987654")});
+
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, "no header");
+        try {
+            api.sendMessage("broker:10911", "broker",
+                new Message("oracle-topic", "payload".getBytes(StandardCharsets.UTF_8)), send, 10000,
+                CommunicationMode.SYNC, null, null);
+            throw new IllegalStateException("headerless send accepted");
+        } catch (Exception expected) {
+            check(expected instanceof NullPointerException,
+                "headerless send exception: " + expected);
+        }
+        cases.add(new String[] {"send-no-header.json", fixture("send-no-header", capture,
+            RequestCode.SEND_MESSAGE_V2, "NullPointerException;malformed")});
+
         QueryConsumerOffsetRequestHeader offset = new QueryConsumerOffsetRequestHeader();
         offset.setConsumerGroup("consumer");
         offset.setTopic("oracle-topic");
@@ -158,6 +215,26 @@ public final class InvokedRpcFixtures {
         }
         cases.add(new String[] {"offset-not-found.json", fixture("offset-not-found", capture,
             RequestCode.QUERY_CONSUMER_OFFSET, "OffsetNotFoundException;code=22")});
+
+        capture.response = RemotingCommand.createResponseCommand(987654, "unknown");
+        try {
+            api.queryConsumerOffset("broker:10911", offset, 10000);
+            throw new IllegalStateException("unknown offset accepted");
+        } catch (MQBrokerException expected) {
+            check(expected.getResponseCode() == 987654, "unknown offset code");
+        }
+        cases.add(new String[] {"offset-unknown.json", fixture("offset-unknown", capture,
+            RequestCode.QUERY_CONSUMER_OFFSET, "MQBrokerException;code=987654")});
+
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, "no header");
+        try {
+            api.queryConsumerOffset("broker:10911", offset, 10000);
+            throw new IllegalStateException("headerless offset accepted");
+        } catch (NullPointerException expected) {
+            // The pinned Java implementation dereferences the absent decoded header.
+        }
+        cases.add(new String[] {"offset-no-header.json", fixture("offset-no-header", capture,
+            RequestCode.QUERY_CONSUMER_OFFSET, "NullPointerException;malformed")});
 
         for (String[] item : cases) {
             Path file = output.resolve(item[0]);

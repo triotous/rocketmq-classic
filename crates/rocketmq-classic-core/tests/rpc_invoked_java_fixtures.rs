@@ -100,14 +100,21 @@ async fn java_invoked_sync_cases_match_rust_requests_and_outcomes() {
     let entries: Vec<_> = fs::read_dir(&dir).unwrap().collect();
     assert_eq!(
         entries.len(),
-        4,
+        11,
         "all pinned Java invoked cases must be compared"
     );
     for name in [
         "route-success",
+        "route-not-found",
+        "route-unknown",
+        "route-no-body",
         "send-success",
+        "send-unknown",
+        "send-no-header",
         "offset-success",
         "offset-not-found",
+        "offset-unknown",
+        "offset-no-header",
     ] {
         let fixture: Value =
             serde_json::from_slice(&fs::read(dir.join(format!("{name}.json"))).unwrap()).unwrap();
@@ -117,14 +124,22 @@ async fn java_invoked_sync_cases_match_rust_requests_and_outcomes() {
             "org.apache.rocketmq:rocketmq-client:5.5.1"
         );
         assert_eq!(fixture["provenance"]["serverBaselineContacted"], false);
-        let (api, client, addr) = scripted(fixture.clone(), name == "route-success").await;
+        let (api, client, addr) = scripted(fixture.clone(), name.starts_with("route-")).await;
         let deadline = Instant::now() + Duration::from_secs(3);
         let outcome = match name {
-            "route-success" => {
-                let route = api.get_topic_route("oracle-topic", deadline).await.unwrap();
-                format!("orderTopicConf={}", route.order_topic_conf.unwrap())
+            name if name.starts_with("route-") => {
+                match api.get_topic_route("oracle-topic", deadline).await {
+                    Ok(route) => format!("orderTopicConf={}", route.order_topic_conf.unwrap()),
+                    Err(RpcError::Response { code, .. }) => {
+                        format!("MQClientException;code={code}")
+                    }
+                    Err(RpcError::MalformedResponse { .. }) => {
+                        "MQClientException;code=0;malformed".into()
+                    }
+                    other => panic!("unexpected route result: {other:?}"),
+                }
             }
-            "send-success" => {
+            name if name.starts_with("send-") => {
                 let header = SendMessageRequestHeaderV1 {
                     producer_group: "producer".into(),
                     topic: "oracle-topic".into(),
@@ -138,7 +153,7 @@ async fn java_invoked_sync_cases_match_rust_requests_and_outcomes() {
                     batch: Some(false),
                     ..Default::default()
                 };
-                let result = api
+                match api
                     .send_message(
                         &addr,
                         "broker",
@@ -150,13 +165,22 @@ async fn java_invoked_sync_cases_match_rust_requests_and_outcomes() {
                         deadline,
                     )
                     .await
-                    .unwrap()
-                    .unwrap();
-                assert_eq!(result.status, SendStatus::SendOk);
-                format!(
-                    "SEND_OK;queueOffset={};offsetMsgId={}",
-                    result.queue_offset, result.offset_msg_id
-                )
+                {
+                    Ok(Some(result)) => {
+                        assert_eq!(result.status, SendStatus::SendOk);
+                        format!(
+                            "SEND_OK;queueOffset={};offsetMsgId={}",
+                            result.queue_offset, result.offset_msg_id
+                        )
+                    }
+                    Err(RpcError::Response { code, .. }) => {
+                        format!("MQBrokerException;code={code}")
+                    }
+                    Err(RpcError::MalformedResponse { .. }) => {
+                        "NullPointerException;malformed".into()
+                    }
+                    other => panic!("unexpected send result: {other:?}"),
+                }
             }
             _ => {
                 let header = QueryConsumerOffsetRequestHeader {
@@ -168,7 +192,14 @@ async fn java_invoked_sync_cases_match_rust_requests_and_outcomes() {
                 match api.query_consumer_offset(&addr, &header, deadline).await {
                     Ok(Some(offset)) => format!("offset={offset}"),
                     Err(RpcError::Response { code, .. }) => {
-                        format!("OffsetNotFoundException;code={code}")
+                        if code == 22 {
+                            format!("OffsetNotFoundException;code={code}")
+                        } else {
+                            format!("MQBrokerException;code={code}")
+                        }
+                    }
+                    Err(RpcError::MalformedResponse { .. }) => {
+                        "NullPointerException;malformed".into()
                     }
                     other => panic!("unexpected offset result: {other:?}"),
                 }
