@@ -834,6 +834,141 @@ public final class InvokedRpcOracle {
         } catch (org.apache.rocketmq.client.exception.MQClientException expected) {
             check(expected.getResponseCode() == ResponseCode.SYSTEM_ERROR, "request mode error code");
         }
+        checkDecodedFailures(capture, api, message, send, pull, offset, producer);
         System.out.println("Invoked Java 5.5.1 MQClientAPIImpl: send/pull including async callbacks, offset, route, consumer list, assignment, lock/unlock, send-back, request mode, POP/Lite/ACK/change dispatch and callbacks (mock transport)");
+    }
+
+    private static void checkDecodedFailures(Capture capture, MQClientAPIImpl api, Message message,
+        SendMessageRequestHeader send, PullMessageRequestHeader pull, QueryConsumerOffsetRequestHeader offset,
+        DefaultMQProducerImpl producer) throws Exception {
+        final int unknown = 987654;
+        capture.response = RemotingCommand.createResponseCommand(unknown, "unknown");
+        try {
+            api.getTopicRouteInfoFromNameServer("oracle-topic", 10000);
+            throw new IllegalStateException("unknown route accepted");
+        } catch (org.apache.rocketmq.client.exception.MQClientException expected) {
+            check(expected.getResponseCode() == unknown, "unknown route code");
+        }
+        dispatched(capture, "invokeSync", RequestCode.GET_ROUTEINFO_BY_TOPIC, null);
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, "no body");
+        try {
+            api.getTopicRouteInfoFromNameServer("oracle-topic", 10000);
+            throw new IllegalStateException("bodyless route accepted");
+        } catch (org.apache.rocketmq.client.exception.MQClientException expected) {
+            check(expected.getResponseCode() == ResponseCode.SUCCESS, "bodyless route code");
+        }
+        dispatched(capture, "invokeSync", RequestCode.GET_ROUTEINFO_BY_TOPIC, null);
+
+        capture.response = RemotingCommand.createResponseCommand(unknown, "unknown");
+        try {
+            api.sendMessage("broker:10911", "broker", message, send, 10000, CommunicationMode.SYNC, null, null);
+            throw new IllegalStateException("unknown send accepted");
+        } catch (MQBrokerException expected) {
+            check(expected.getResponseCode() == unknown, "unknown send code");
+        }
+        dispatched(capture, "invokeSync", RequestCode.SEND_MESSAGE_V2, "broker:10911");
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, "no header");
+        try {
+            api.sendMessage("broker:10911", "broker", message, send, 10000, CommunicationMode.SYNC, null, null);
+            throw new IllegalStateException("headerless send accepted");
+        } catch (NullPointerException expected) {
+            dispatched(capture, "invokeSync", RequestCode.SEND_MESSAGE_V2, "broker:10911");
+        }
+
+        final SendResult[] sendResult = new SendResult[1];
+        final Throwable[] sendError = new Throwable[1];
+        SendCallback callback = new SendCallback() {
+            @Override public void onSuccess(SendResult value) { sendResult[0] = value; }
+            @Override public void onException(Throwable value) { sendError[0] = value; }
+        };
+        for (int code : new int[] {unknown, ResponseCode.SUCCESS}) {
+            sendResult[0] = null;
+            sendError[0] = null;
+            api.sendMessage("broker:10911", "broker", message, send, 10000,
+                CommunicationMode.ASYNC, callback, null, null, 0, null, producer);
+            dispatched(capture, "invokeAsync", RequestCode.SEND_MESSAGE_V2, "broker:10911");
+            capture.asyncCallback.operationSucceed(RemotingCommand.createResponseCommand(code, "no header"));
+            check(sendResult[0] == null && sendError[0] != null,
+                "async send unknown/malformed callback " + code);
+            if (code == unknown) {
+                check(sendError[0] instanceof MQBrokerException
+                    && ((MQBrokerException) sendError[0]).getResponseCode() == unknown,
+                    "async unknown send code");
+            } else {
+                check(sendError[0] instanceof NullPointerException, "async headerless send outcome");
+            }
+        }
+
+        capture.response = RemotingCommand.createResponseCommand(unknown, "unknown");
+        try {
+            api.pullMessage("broker:10911", pull, 10000, CommunicationMode.SYNC, null);
+            throw new IllegalStateException("unknown pull accepted");
+        } catch (MQBrokerException expected) {
+            check(expected.getResponseCode() == unknown, "unknown pull code");
+        }
+        dispatched(capture, "invokeSync", RequestCode.PULL_MESSAGE, "broker:10911");
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, "no header");
+        try {
+            api.pullMessage("broker:10911", pull, 10000, CommunicationMode.SYNC, null);
+            throw new IllegalStateException("headerless pull accepted");
+        } catch (NullPointerException expected) {
+            dispatched(capture, "invokeSync", RequestCode.PULL_MESSAGE, "broker:10911");
+        }
+        final PullResult[] pullResult = new PullResult[1];
+        final Throwable[] pullError = new Throwable[1];
+        PullCallback pullCallback = new PullCallback() {
+            @Override public void onSuccess(PullResult value) { pullResult[0] = value; }
+            @Override public void onException(Throwable value) { pullError[0] = value; }
+        };
+        for (int code : new int[] {unknown, ResponseCode.SUCCESS}) {
+            pullResult[0] = null;
+            pullError[0] = null;
+            api.pullMessage("broker:10911", pull, 10000, CommunicationMode.ASYNC, pullCallback);
+            dispatched(capture, "invokeAsync", RequestCode.PULL_MESSAGE, "broker:10911");
+            capture.asyncCallback.operationSucceed(RemotingCommand.createResponseCommand(code, "no header"));
+            check(pullResult[0] == null && pullError[0] != null,
+                "async pull unknown/malformed callback " + code);
+            if (code == unknown) {
+                check(pullError[0] instanceof MQBrokerException
+                    && ((MQBrokerException) pullError[0]).getResponseCode() == unknown,
+                    "async unknown pull code");
+            } else {
+                check(pullError[0] instanceof NullPointerException, "async headerless pull outcome");
+            }
+        }
+
+        capture.response = RemotingCommand.createResponseCommand(unknown, "unknown");
+        try {
+            api.queryConsumerOffset("broker:10911", offset, 10000);
+            throw new IllegalStateException("unknown offset accepted");
+        } catch (MQBrokerException expected) {
+            check(expected.getResponseCode() == unknown, "unknown offset code");
+        }
+        dispatched(capture, "invokeSync", RequestCode.QUERY_CONSUMER_OFFSET, "broker:10911");
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, "no header");
+        try {
+            api.queryConsumerOffset("broker:10911", offset, 10000);
+            throw new IllegalStateException("headerless offset accepted");
+        } catch (NullPointerException expected) {
+            dispatched(capture, "invokeSync", RequestCode.QUERY_CONSUMER_OFFSET, "broker:10911");
+        }
+
+        capture.response = RemotingCommand.createResponseCommand(unknown, "unknown");
+        try {
+            api.queryAssignment("broker:10911", "oracle-topic", "consumer", "client", "AVG",
+                MessageModel.CLUSTERING, 10000);
+            throw new IllegalStateException("unknown assignment accepted");
+        } catch (MQBrokerException expected) {
+            check(expected.getResponseCode() == unknown, "unknown assignment code");
+        }
+        dispatched(capture, "invokeSync", RequestCode.QUERY_ASSIGNMENT, "broker:10911");
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, "no body");
+        try {
+            api.queryAssignment("broker:10911", "oracle-topic", "consumer", "client", "AVG",
+                MessageModel.CLUSTERING, 10000);
+            throw new IllegalStateException("bodyless assignment accepted");
+        } catch (NullPointerException expected) {
+            dispatched(capture, "invokeSync", RequestCode.QUERY_ASSIGNMENT, "broker:10911");
+        }
     }
 }
