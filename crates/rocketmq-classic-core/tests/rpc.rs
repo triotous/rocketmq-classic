@@ -516,6 +516,145 @@ async fn oneway_offset_returns_without_reply_and_expired_deadline_emits_nothing(
     client.shutdown().await;
 }
 
+// An expired oneway deadline must not put a frame on the wire, regardless of
+// which public facade entry point selects the oneway transport.
+#[tokio::test]
+async fn expired_oneway_variants_emit_no_request() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap().to_string();
+    let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
+    let api = MQClientApi::new(client.clone());
+    let expired = Instant::now() - Duration::from_millis(1);
+    let results = [
+        api.oneway(
+            &addr,
+            request::UPDATE_CONSUMER_OFFSET,
+            &UpdateConsumerOffsetRequestHeader::default(),
+            None,
+            expired,
+        )
+        .await,
+        api.update_consumer_offset(
+            &addr,
+            &UpdateConsumerOffsetRequestHeader::default(),
+            true,
+            expired,
+        )
+        .await,
+        api.unlock_batch_mq(&addr, &UnlockBatchRequestBody::default(), true, expired)
+            .await,
+        api.end_transaction_oneway(
+            &addr,
+            &EndTransactionRequestHeader::default(),
+            None,
+            expired,
+        )
+        .await,
+    ];
+    for result in results {
+        assert!(
+            matches!(result, Err(RpcError::Transport(TransportError::Timeout))),
+            "{result:?}"
+        );
+    }
+    for kind in [
+        SendKind::V1,
+        SendKind::V2,
+        SendKind::Batch,
+        SendKind::ReplyV1,
+        SendKind::ReplyV2,
+    ] {
+        let result = api
+            .send_message(
+                &addr,
+                "broker",
+                &Default::default(),
+                vec![1],
+                "unique",
+                kind,
+                SendMode::Oneway,
+                expired,
+            )
+            .await;
+        assert!(
+            matches!(result, Err(RpcError::Transport(TransportError::Timeout))),
+            "{kind:?}: {result:?}"
+        );
+    }
+    assert!(
+        timeout(Duration::from_millis(100), listener.accept())
+            .await
+            .is_err()
+    );
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn unsolicited_oneway_reply_without_pending_does_not_poison_next_request() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap().to_string();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let oneway = read_command(&mut stream).await;
+        assert_eq!(oneway.code, request::UPDATE_CONSUMER_OFFSET);
+        assert!(oneway.is_oneway());
+        let mut unsolicited = RemotingCommand {
+            code: response::SYSTEM_ERROR,
+            opaque: oneway.opaque,
+            ..RemotingCommand::default()
+        };
+        unsolicited.mark_response();
+        stream
+            .write_all(&frame::encode(&unsolicited, DEFAULT_MAX_FRAME_SIZE).unwrap())
+            .await
+            .unwrap();
+        // Give the reader time to discard the unsolicited reply before a new
+        // request is registered; concurrent late replies need separate coverage.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let next = timeout(Duration::from_secs(1), read_command(&mut stream))
+            .await
+            .unwrap();
+        assert_eq!(next.code, request::QUERY_CONSUMER_OFFSET);
+        assert!(!next.is_oneway());
+        let mut reply = RemotingCommand {
+            code: response::SUCCESS,
+            opaque: next.opaque,
+            ext_fields: Some([("offset".into(), "42".into())].into()),
+            ..RemotingCommand::default()
+        };
+        reply.mark_response();
+        stream
+            .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+            .await
+            .unwrap();
+    });
+    let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
+    let api = MQClientApi::new(client.clone());
+    api.update_consumer_offset(
+        &addr,
+        &Default::default(),
+        true,
+        Instant::now() + Duration::from_secs(2),
+    )
+    .await
+    .unwrap();
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    assert_eq!(
+        api.query_consumer_offset(
+            &addr,
+            &Default::default(),
+            Instant::now() + Duration::from_secs(2)
+        )
+        .await
+        .unwrap(),
+        Some(42)
+    );
+    peer.await.unwrap();
+    client.shutdown().await;
+}
+
 #[tokio::test]
 async fn nameserver_deadline_does_not_fail_over_after_first_peer_stalls() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
