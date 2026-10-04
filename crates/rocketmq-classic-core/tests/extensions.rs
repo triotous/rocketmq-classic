@@ -284,7 +284,14 @@ async fn change_invisible_time_returns_java_ack_metadata() {
                 );
             }
             response::SUCCESS => assert!(matches!(result, Err(RpcError::MalformedResponse { .. }))),
-            _ => assert_eq!(result.unwrap().status, AckStatus::NoExist),
+            _ => {
+                let result = result.unwrap();
+                assert_eq!(result.status, AckStatus::NoExist);
+                assert_eq!(
+                    (result.pop_time, result.invisible_time, result.revive_qid),
+                    (None, None, None)
+                );
+            }
         }
         task.await.unwrap();
         client.shutdown().await;
@@ -525,6 +532,87 @@ async fn assignment_invalid_json_and_heartbeat_v2_default_flags() {
         assert!(!result.is_sub_change && !result.is_support_heartbeat_v2);
         task.await.unwrap();
         client.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn populated_assignment_and_pop_replies_preserve_domain_data() {
+    let (api, client, addr, task) = peer(
+        request::QUERY_ASSIGNMENT,
+        response::SUCCESS,
+        Some(br#"{"messageQueueAssignments":[{"messageQueue":{"topic":"orders","brokerName":"broker","queueId":2},"mode":"PULL","attachments":{"key":"value"}}]}"#.to_vec()),
+        None,
+    ).await;
+    let result = api
+        .query_assignment(&addr, &Default::default(), deadline())
+        .await
+        .unwrap();
+    let assignments = result.message_queue_assignments.unwrap();
+    assert_eq!(assignments.len(), 1);
+    let queue = assignments[0].message_queue.as_ref().unwrap();
+    assert_eq!(
+        (queue.topic(), queue.broker_name(), queue.queue_id()),
+        ("orders", "broker", 2)
+    );
+    assert_eq!(assignments[0].attachments.as_ref().unwrap()["key"], "value");
+    task.await.unwrap();
+    client.shutdown().await;
+
+    let fields = Some(
+        [
+            ("popTime".into(), "1".into()),
+            ("invisibleTime".into(), "2".into()),
+            ("reviveQid".into(), "0".into()),
+            ("restNum".into(), "3".into()),
+        ]
+        .into(),
+    );
+    for code in [request::POP_MESSAGE, request::POP_LITE_MESSAGE] {
+        for (status, expected) in [
+            (response::SUCCESS, PopStatus::Found),
+            (response::PULL_NOT_FOUND, PopStatus::PollingNotFound),
+            (response::POLLING_TIMEOUT, PopStatus::PollingNotFound),
+            (response::POLLING_FULL, PopStatus::PollingFull),
+        ] {
+            let (api, client, addr, task) =
+                peer(code, status, Some(vec![0, 255, 42]), fields.clone()).await;
+            if code == request::POP_MESSAGE {
+                let result = api
+                    .pop_message(&addr, &Default::default(), deadline())
+                    .await
+                    .unwrap();
+                assert_eq!(result.status, expected);
+                assert_eq!(result.raw_messages, Some(vec![0, 255, 42]));
+                let header = result.header.unwrap();
+                assert_eq!(
+                    (
+                        header.pop_time,
+                        header.invisible_time,
+                        header.revive_queue_id,
+                        header.rest_num
+                    ),
+                    (1, 2, 0, 3)
+                );
+            } else {
+                let result = api
+                    .pop_lite_message(&addr, &Default::default(), deadline())
+                    .await
+                    .unwrap();
+                assert_eq!(result.status, expected);
+                assert_eq!(result.raw_messages, Some(vec![0, 255, 42]));
+                let header = result.header.unwrap();
+                assert_eq!(
+                    (
+                        header.pop_time,
+                        header.invisible_time,
+                        header.revive_queue_id
+                    ),
+                    (1, 2, 0)
+                );
+            }
+            task.await.unwrap();
+            client.shutdown().await;
+        }
     }
 }
 

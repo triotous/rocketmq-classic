@@ -106,7 +106,34 @@ async fn pull_statuses_and_malformed_success() {
         let result = api.pull_message(&addr, &header, deadline()).await.unwrap();
         assert_eq!(result.status, status);
         assert_eq!(result.next_begin_offset, 12);
+        assert_eq!(result.min_offset, 1);
+        assert_eq!(result.max_offset, 30);
+        assert_eq!(result.suggest_which_broker_id, 2);
+        assert_eq!(result.offset_delta, None);
         assert_eq!(result.raw_messages, Some(vec![0, 255, 42]));
+        client.shutdown().await;
+    }
+    for key in [
+        "nextBeginOffset",
+        "minOffset",
+        "maxOffset",
+        "suggestWhichBrokerId",
+    ] {
+        let mut invalid = response_header.clone();
+        invalid.insert(key.into(), "invalid".into());
+        let (api, client, addr) = scripted(
+            response::SUCCESS,
+            Some(invalid),
+            None,
+            request::PULL_MESSAGE,
+            false,
+        )
+        .await;
+        malformed(
+            api.pull_message(&addr, &header, deadline()).await,
+            request::PULL_MESSAGE,
+            &addr,
+        );
         client.shutdown().await;
     }
     for (code, fields) in [(response::SUCCESS, None), (9123, None)] {
@@ -193,6 +220,23 @@ async fn offset_lookup_and_update_modes() {
 
 #[tokio::test]
 async fn list_send_back_lock_and_unlock() {
+    let (api, client, addr) = scripted(
+        response::SUCCESS,
+        None,
+        Some(br#"{"lockOKMQSet":[{"topic":"orders","brokerName":"broker","queueId":2}]}"#.to_vec()),
+        request::LOCK_BATCH_MQ,
+        false,
+    )
+    .await;
+    let locked = api
+        .lock_batch_mq(&addr, &LockBatchRequestBody::default(), deadline())
+        .await
+        .unwrap();
+    assert_eq!(locked.len(), 1);
+    assert_eq!(locked[0].topic(), "orders");
+    assert_eq!(locked[0].broker_name(), "broker");
+    assert_eq!(locked[0].queue_id(), 2);
+    client.shutdown().await;
     let (api, client, addr) = scripted(
         response::SUCCESS,
         None,

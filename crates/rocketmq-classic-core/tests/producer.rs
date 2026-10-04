@@ -101,6 +101,24 @@ fn header() -> SendMessageRequestHeaderV1 {
     }
 }
 
+fn assert_send_result(
+    result: rocketmq_classic_core::api::producer::SendResult,
+    status: SendStatus,
+) {
+    assert_eq!(result.status, status);
+    assert_eq!(result.msg_id, "uniq");
+    assert_eq!(result.offset_msg_id, "offset-id");
+    assert_eq!(result.topic, "orders");
+    assert_eq!(result.broker_name, "broker");
+    assert_eq!(result.queue_id, 2);
+    assert_eq!(result.queue_offset, 17);
+    assert_eq!(result.transaction_id.as_deref(), Some("tx"));
+    assert_eq!(result.batch_uniq_id.as_deref(), Some("batch-id"));
+    assert_eq!(result.recall_handle.as_deref(), Some("recall"));
+    assert_eq!(result.region_id, "europe");
+    assert!(!result.trace_on);
+}
+
 #[tokio::test]
 async fn send_statuses_errors_and_malformed_headers() {
     for (code, expected) in [
@@ -234,53 +252,54 @@ async fn every_send_variant_classifies_reply_before_decoding() {
         (SendKind::ReplyV1, request::SEND_REPLY_MESSAGE),
         (SendKind::ReplyV2, request::SEND_REPLY_MESSAGE_V2),
     ] {
-        for (response_code, reply_fields) in [
-            (response::SUCCESS, true),
-            (response::FLUSH_DISK_TIMEOUT, true),
-            (response::FLUSH_SLAVE_TIMEOUT, true),
-            (response::SLAVE_NOT_AVAILABLE, true),
-            (99123, false),
-            (response::SUCCESS, false),
-        ] {
-            let (addr, task) = peer(response_code, reply_fields, code, false).await;
-            let client = RemotingClient::new(TransportMode::Plain);
-            client.start().unwrap();
-            let result = MQClientApi::new(client.clone())
-                .send_message(
-                    &addr,
-                    "broker",
-                    &header(),
-                    b"payload".to_vec(),
-                    "uniq",
-                    kind,
-                    SendMode::Sync,
-                    Instant::now() + Duration::from_secs(2),
-                )
-                .await;
-            match (response_code, reply_fields) {
-                (99123, _) => assert!(matches!(
-                    result,
-                    Err(RpcError::Response { code: 99123, .. })
-                )),
-                (_, false) => assert!(matches!(result, Err(RpcError::MalformedResponse { .. }))),
-                (response::SUCCESS, _) => {
-                    assert_eq!(result.unwrap().unwrap().status, SendStatus::SendOk)
+        for mode in [SendMode::Sync, SendMode::Future] {
+            for (response_code, reply_fields) in [
+                (response::SUCCESS, true),
+                (response::FLUSH_DISK_TIMEOUT, true),
+                (response::FLUSH_SLAVE_TIMEOUT, true),
+                (response::SLAVE_NOT_AVAILABLE, true),
+                (99123, false),
+                (response::SUCCESS, false),
+            ] {
+                let (addr, task) = peer(response_code, reply_fields, code, false).await;
+                let client = RemotingClient::new(TransportMode::Plain);
+                client.start().unwrap();
+                let result = MQClientApi::new(client.clone())
+                    .send_message(
+                        &addr,
+                        "broker",
+                        &header(),
+                        b"payload".to_vec(),
+                        "uniq",
+                        kind,
+                        mode,
+                        Instant::now() + Duration::from_secs(2),
+                    )
+                    .await;
+                match (response_code, reply_fields) {
+                    (99123, _) => assert!(matches!(
+                        result,
+                        Err(RpcError::Response { code: 99123, .. })
+                    )),
+                    (_, false) => {
+                        assert!(matches!(result, Err(RpcError::MalformedResponse { .. })))
+                    }
+                    (response::SUCCESS, _) => {
+                        assert_send_result(result.unwrap().unwrap(), SendStatus::SendOk)
+                    }
+                    (response::FLUSH_DISK_TIMEOUT, _) => {
+                        assert_send_result(result.unwrap().unwrap(), SendStatus::FlushDiskTimeout)
+                    }
+                    (response::FLUSH_SLAVE_TIMEOUT, _) => {
+                        assert_send_result(result.unwrap().unwrap(), SendStatus::FlushSlaveTimeout)
+                    }
+                    _ => {
+                        assert_send_result(result.unwrap().unwrap(), SendStatus::SlaveNotAvailable)
+                    }
                 }
-                (response::FLUSH_DISK_TIMEOUT, _) => assert_eq!(
-                    result.unwrap().unwrap().status,
-                    SendStatus::FlushDiskTimeout
-                ),
-                (response::FLUSH_SLAVE_TIMEOUT, _) => assert_eq!(
-                    result.unwrap().unwrap().status,
-                    SendStatus::FlushSlaveTimeout
-                ),
-                _ => assert_eq!(
-                    result.unwrap().unwrap().status,
-                    SendStatus::SlaveNotAvailable
-                ),
+                task.await.unwrap();
+                client.shutdown().await;
             }
-            task.await.unwrap();
-            client.shutdown().await;
         }
     }
 }
