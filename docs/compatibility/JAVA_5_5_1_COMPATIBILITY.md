@@ -29,7 +29,7 @@ The matrix starts with the source areas required by the master plan. Work on eac
 | Phase 2 Rust → Java decode | Java `RemotingCommand.decode` | `compat.Main.verifyRustFixtures`; Maven verify | `fixtures/remoting/rust-generated/*.bin` | UNIT_VERIFIED | PENDING_PHASE_19 / 5.3.4 |
 | `remoting/.../protocol/RequestCode.java` | complete numeric request registry | Phase 1 | `REQUEST_CODES.md` | TODO | PENDING_PHASE_19 / 5.3.4 |
 | `remoting/.../protocol/ResponseCode.java` | complete response registry and aliases | Phase 1 | `REQUEST_CODES.md` | TODO | PENDING_PHASE_19 / 5.3.4 |
-| `client/.../impl/MQClientAPIImpl.java` | typed RPC calls, response interpretation | Phase 5 | route/send/pull/offset/lock | TODO | PENDING_PHASE_19 / 5.3.4 |
+| `client/.../impl/MQClientAPIImpl.java` | typed RPC calls, response interpretation | `crates/rocketmq-classic-core/src/api/`; `rpc`, `producer`, `consumer`, `extensions`, `rpc_java_fixtures` tests | `fixtures/rpc` (selected send/pull/offset/route branches) | PARTIAL: RPC attempts and scripted status tests; exhaustive Java request/response/mode differential outstanding | PENDING_PHASE_19 / 5.3.4 |
 | `client/.../impl/factory/MQClientInstance.java` | shared runtime, routing, heartbeat, lifecycle | Phase 6 | `HEARTBEAT-001` | TODO | PENDING_PHASE_19 / 5.3.4 |
 | `client/.../impl/producer/DefaultMQProducerImpl.java` | validation, send modes, retries, callbacks | Phase 7 | `PROD-*` | TODO | PENDING_PHASE_19 / 5.3.4 |
 | `client/.../impl/consumer/PullAPIWrapper.java` | pull results, decoding, filtering | Phase 8 | `CONS-*` | TODO | PENDING_PHASE_19 / 5.3.4 |
