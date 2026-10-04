@@ -8,6 +8,8 @@ pub enum RpcError {
     Transport(#[from] TransportError),
     #[error("invalid RPC header: {0}")]
     Header(#[from] ProtocolError),
+    #[error("unsupported RPC feature: {0}")]
+    Unsupported(&'static str),
     #[error("invalid response for request {request_code} from {peer}: {reason}")]
     MalformedResponse {
         request_code: i32,

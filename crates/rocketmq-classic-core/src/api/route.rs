@@ -21,9 +21,9 @@ impl MQClientApi {
             accept_standard_json_only: None,
         }
         .encode_fields(&mut fields);
-        let reply = self
+        let (reply, peer) = self
             .remoting
-            .invoke_name_server(
+            .invoke_name_server_with_peer(
                 RemotingCommand {
                     code: request::GET_ROUTEINFO_BY_TOPIC,
                     ext_fields: Some(fields),
@@ -32,8 +32,6 @@ impl MQClientApi {
                 deadline,
             )
             .await?;
-        // The remoting NameServer selector does not expose the selected peer yet.
-        let peer = "<NameServer peer unavailable>".to_owned();
         if reply.code != response::SUCCESS {
             return Err(RpcError::Response {
                 request_code: request::GET_ROUTEINFO_BY_TOPIC,

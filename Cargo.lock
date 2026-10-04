@@ -582,6 +582,7 @@ dependencies = [
  "rocketmq-classic-common",
  "rocketmq-classic-protocol",
  "rocketmq-classic-remoting",
+ "serde",
  "serde_json",
  "thiserror 2.0.21",
  "tokio",

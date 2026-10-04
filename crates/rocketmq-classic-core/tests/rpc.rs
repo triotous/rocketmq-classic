@@ -68,10 +68,52 @@ async fn route_success_unknown_status_and_malformed_success() {
                 assert!(result.unwrap().publish_queues("test-topic").is_empty());
             }
             (response::SUCCESS, _) => assert!(matches!(result, Err(RpcError::MalformedResponse { .. }))),
-            (expected, _) => assert!(matches!(result, Err(RpcError::Response { code, request_code: request::GET_ROUTEINFO_BY_TOPIC, .. }) if code == expected)),
+            (expected, _) => assert!(matches!(result, Err(RpcError::Response { code, peer, request_code: request::GET_ROUTEINFO_BY_TOPIC, .. }) if code == expected && peer == client.get_name_server_address_list().unwrap()[0])),
         }
         client.shutdown().await;
     }
+}
+
+#[tokio::test]
+async fn route_fails_over_unavailable_nameserver_before_deadline() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let good = listener.local_addr().unwrap();
+    let unavailable = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let bad = unavailable.local_addr().unwrap();
+    drop(unavailable);
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut len = [0; 4];
+        stream.read_exact(&mut len).await.unwrap();
+        let mut bytes = BytesMut::from(&len[..]);
+        bytes.resize(u32::from_be_bytes(len) as usize + 4, 0);
+        stream.read_exact(&mut bytes[4..]).await.unwrap();
+        let incoming = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
+            .unwrap()
+            .unwrap();
+        let mut reply = RemotingCommand {
+            code: response::TOPIC_NOT_EXIST,
+            opaque: incoming.opaque,
+            ..RemotingCommand::default()
+        };
+        reply.mark_response();
+        stream
+            .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+            .await
+            .unwrap();
+    });
+    let client = RemotingClient::new(TransportMode::Plain);
+    // The selector starts at index 1; this forces the first connection to fail.
+    client.update_name_server_address_list(vec![good.to_string(), bad.to_string()]);
+    client.start().unwrap();
+    let result = MQClientApi::new(client.clone())
+        .get_topic_route("test-topic", Instant::now() + Duration::from_secs(2))
+        .await;
+    assert!(
+        matches!(result, Err(RpcError::Response { peer, code: response::TOPIC_NOT_EXIST, .. }) if peer == good.to_string())
+    );
+    peer.await.unwrap();
+    client.shutdown().await;
 }
 
 #[tokio::test]

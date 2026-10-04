@@ -715,6 +715,17 @@ impl RemotingClient {
         command: RemotingCommand,
         deadline: Instant,
     ) -> Result<RemotingCommand, TransportError> {
+        self.invoke_name_server_with_peer(command, deadline)
+            .await
+            .map(|(response, _)| response)
+    }
+
+    /// Invokes a NameServer and returns the address that supplied the response.
+    pub async fn invoke_name_server_with_peer(
+        &self,
+        command: RemotingCommand,
+        deadline: Instant,
+    ) -> Result<(RemotingCommand, String), TransportError> {
         if !self.inner.started.load(Ordering::Acquire) {
             return Err(TransportError::NotStarted);
         }
@@ -811,7 +822,7 @@ impl RemotingClient {
                             .insert(address.clone());
                     }
                     drop(nameservers);
-                    return Ok(response);
+                    return Ok((response, address.clone()));
                 }
                 Err(error) => {
                     let nameservers = self.inner.nameservers.lock().unwrap();
