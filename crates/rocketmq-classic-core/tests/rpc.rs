@@ -9,8 +9,18 @@ use rocketmq_classic_core::{
     error::RpcError,
 };
 use rocketmq_classic_protocol::{
+    body::{
+        BatchAckMessageRequestBody, LiteSubscriptionCtlRequestBody, LockBatchRequestBody,
+        QueryAssignmentRequestBody, SetMessageRequestModeRequestBody, UnlockBatchRequestBody,
+    },
     codes::{request, response},
-    header::UpdateConsumerOffsetRequestHeader,
+    header::{
+        AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader,
+        ConsumerSendMsgBackRequestHeader, EndTransactionRequestHeader, PopLiteMessageRequestHeader,
+        PopMessageRequestHeader, PullMessageRequestHeader, QueryConsumerOffsetRequestHeader,
+        UnregisterClientRequestHeader, UpdateConsumerOffsetRequestHeader,
+    },
+    heartbeat::HeartbeatData,
 };
 use rocketmq_classic_remoting::{
     RemotingCommand,
@@ -47,9 +57,289 @@ async fn silent_peer() -> (String, tokio::task::JoinHandle<RemotingCommand>) {
             Ok(Ok(0)) | Err(_) => {}
             other => panic!("unexpected second attempt: {other:?}"),
         }
+        assert!(
+            timeout(Duration::from_millis(25), listener.accept())
+                .await
+                .is_err(),
+            "unexpected retry on a new connection"
+        );
         command
     });
     (addr, task)
+}
+
+// Each case sends to a silent Broker: a timed-out request must not retry, while
+// a oneway call must complete without waiting for the Broker's response.
+macro_rules! broker_attempt {
+    ($name:expr, $code:expr, $oneway:expr, |$api:ident, $addr:ident, $deadline:ident| $call:expr) => {{
+        let (address, peer) = silent_peer().await;
+        let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
+        let $api = MQClientApi::new(client.clone());
+        let $addr = address.as_str();
+        let $deadline = Instant::now() + Duration::from_millis(100);
+        let result = $call.await;
+        if $oneway {
+            assert!(result.is_ok(), "{}: {result:?}", $name);
+        } else {
+            assert!(
+                matches!(result, Err(RpcError::Transport(ref error)) if error.is_timeout() || matches!(error, TransportError::SendRequest { .. })),
+                "{}: {result:?}",
+                $name
+            );
+        }
+        let command = peer.await.unwrap();
+        assert_eq!(command.code, $code, "{}", $name);
+        assert_eq!(command.is_oneway(), $oneway, "{}", $name);
+        client.shutdown().await;
+    }};
+}
+
+#[tokio::test]
+async fn broker_methods_use_one_attempt_and_honor_deadline() {
+    broker_attempt!(
+        "request",
+        request::QUERY_CONSUMER_OFFSET,
+        false,
+        |api, addr, deadline| api.request(
+            addr,
+            request::QUERY_CONSUMER_OFFSET,
+            &QueryConsumerOffsetRequestHeader::default(),
+            None,
+            deadline
+        )
+    );
+    broker_attempt!(
+        "oneway",
+        request::UPDATE_CONSUMER_OFFSET,
+        true,
+        |api, addr, deadline| api.oneway(
+            addr,
+            request::UPDATE_CONSUMER_OFFSET,
+            &UpdateConsumerOffsetRequestHeader::default(),
+            None,
+            deadline
+        )
+    );
+
+    broker_attempt!(
+        "pull_message",
+        request::PULL_MESSAGE,
+        false,
+        |api, addr, deadline| api.pull_message(
+            addr,
+            &PullMessageRequestHeader::default(),
+            deadline
+        )
+    );
+    broker_attempt!(
+        "query_consumer_offset",
+        request::QUERY_CONSUMER_OFFSET,
+        false,
+        |api, addr, deadline| api.query_consumer_offset(
+            addr,
+            &QueryConsumerOffsetRequestHeader::default(),
+            deadline
+        )
+    );
+    broker_attempt!(
+        "update_consumer_offset",
+        request::UPDATE_CONSUMER_OFFSET,
+        false,
+        |api, addr, deadline| api.update_consumer_offset(
+            addr,
+            &UpdateConsumerOffsetRequestHeader::default(),
+            false,
+            deadline
+        )
+    );
+    broker_attempt!(
+        "update_consumer_offset oneway",
+        request::UPDATE_CONSUMER_OFFSET,
+        true,
+        |api, addr, deadline| api.update_consumer_offset(
+            addr,
+            &UpdateConsumerOffsetRequestHeader::default(),
+            true,
+            deadline
+        )
+    );
+    broker_attempt!(
+        "get_consumer_list_by_group",
+        request::GET_CONSUMER_LIST_BY_GROUP,
+        false,
+        |api, addr, deadline| api.get_consumer_list_by_group(addr, "group", deadline)
+    );
+    broker_attempt!(
+        "consumer_send_message_back",
+        request::CONSUMER_SEND_MSG_BACK,
+        false,
+        |api, addr, deadline| api.consumer_send_message_back(
+            addr,
+            &ConsumerSendMsgBackRequestHeader::default(),
+            deadline
+        )
+    );
+    broker_attempt!(
+        "lock_batch_mq",
+        request::LOCK_BATCH_MQ,
+        false,
+        |api, addr, deadline| api.lock_batch_mq(addr, &LockBatchRequestBody::default(), deadline)
+    );
+    broker_attempt!(
+        "unlock_batch_mq",
+        request::UNLOCK_BATCH_MQ,
+        false,
+        |api, addr, deadline| api.unlock_batch_mq(
+            addr,
+            &UnlockBatchRequestBody::default(),
+            false,
+            deadline
+        )
+    );
+    broker_attempt!(
+        "unlock_batch_mq oneway",
+        request::UNLOCK_BATCH_MQ,
+        true,
+        |api, addr, deadline| api.unlock_batch_mq(
+            addr,
+            &UnlockBatchRequestBody::default(),
+            true,
+            deadline
+        )
+    );
+
+    broker_attempt!(
+        "send_heartbeat",
+        request::HEART_BEAT,
+        false,
+        |api, addr, deadline| api.send_heartbeat(addr, &HeartbeatData::default(), deadline)
+    );
+    broker_attempt!(
+        "send_heartbeat_v2",
+        request::HEART_BEAT,
+        false,
+        |api, addr, deadline| api.send_heartbeat_v2(addr, &HeartbeatData::default(), deadline)
+    );
+    broker_attempt!(
+        "unregister_client",
+        request::UNREGISTER_CLIENT,
+        false,
+        |api, addr, deadline| api.unregister_client(
+            addr,
+            &UnregisterClientRequestHeader::default(),
+            deadline
+        )
+    );
+    broker_attempt!(
+        "query_assignment",
+        request::QUERY_ASSIGNMENT,
+        false,
+        |api, addr, deadline| api.query_assignment(
+            addr,
+            &QueryAssignmentRequestBody::default(),
+            deadline
+        )
+    );
+    broker_attempt!(
+        "set_message_request_mode",
+        request::SET_MESSAGE_REQUEST_MODE,
+        false,
+        |api, addr, deadline| api.set_message_request_mode(
+            addr,
+            &SetMessageRequestModeRequestBody::default(),
+            deadline
+        )
+    );
+    broker_attempt!(
+        "lite_subscription_ctl",
+        request::LITE_SUBSCRIPTION_CTL,
+        false,
+        |api, addr, deadline| api.lite_subscription_ctl(
+            addr,
+            &LiteSubscriptionCtlRequestBody::default(),
+            deadline
+        )
+    );
+    broker_attempt!(
+        "pop_message",
+        request::POP_MESSAGE,
+        false,
+        |api, addr, deadline| api.pop_message(addr, &PopMessageRequestHeader::default(), deadline)
+    );
+    broker_attempt!(
+        "pop_lite_message",
+        request::POP_LITE_MESSAGE,
+        false,
+        |api, addr, deadline| api.pop_lite_message(
+            addr,
+            &PopLiteMessageRequestHeader::default(),
+            deadline
+        )
+    );
+    broker_attempt!(
+        "ack_message",
+        request::ACK_MESSAGE,
+        false,
+        |api, addr, deadline| api.ack_message(addr, &AckMessageRequestHeader::default(), deadline)
+    );
+    broker_attempt!(
+        "batch_ack_message",
+        request::BATCH_ACK_MESSAGE,
+        false,
+        |api, addr, deadline| api.batch_ack_message(
+            addr,
+            &BatchAckMessageRequestBody::default(),
+            deadline
+        )
+    );
+    broker_attempt!(
+        "change_invisible_time",
+        request::CHANGE_MESSAGE_INVISIBLETIME,
+        false,
+        |api, addr, deadline| api.change_invisible_time(
+            addr,
+            &ChangeInvisibleTimeRequestHeader::default(),
+            deadline
+        )
+    );
+
+    broker_attempt!(
+        "end_transaction_oneway",
+        request::END_TRANSACTION,
+        true,
+        |api, addr, deadline| api.end_transaction_oneway(
+            addr,
+            &EndTransactionRequestHeader::default(),
+            Some("done".into()),
+            deadline
+        )
+    );
+    for (kind, code) in [
+        (SendKind::V1, request::SEND_MESSAGE),
+        (SendKind::V2, request::SEND_MESSAGE_V2),
+        (SendKind::Batch, request::SEND_BATCH_MESSAGE),
+        (SendKind::ReplyV1, request::SEND_REPLY_MESSAGE),
+        (SendKind::ReplyV2, request::SEND_REPLY_MESSAGE_V2),
+    ] {
+        for mode in [SendMode::Sync, SendMode::Future, SendMode::Oneway] {
+            broker_attempt!(
+                format!("send_message {kind:?} {mode:?}"),
+                code,
+                mode == SendMode::Oneway,
+                |api, addr, deadline| api.send_message(
+                    addr,
+                    "broker",
+                    &Default::default(),
+                    b"payload".to_vec(),
+                    "unique",
+                    kind,
+                    mode,
+                    deadline
+                )
+            );
+        }
+    }
 }
 
 async fn route_reply(code: i32, body: Option<Vec<u8>>) -> (MQClientApi, RemotingClient) {
