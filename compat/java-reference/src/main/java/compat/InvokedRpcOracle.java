@@ -7,6 +7,12 @@ import org.apache.rocketmq.client.impl.CommunicationMode;
 import org.apache.rocketmq.client.impl.MQClientAPIImpl;
 import org.apache.rocketmq.client.consumer.PullResult;
 import org.apache.rocketmq.client.consumer.PullStatus;
+import org.apache.rocketmq.client.consumer.PopCallback;
+import org.apache.rocketmq.client.consumer.PopResult;
+import org.apache.rocketmq.client.consumer.PopStatus;
+import org.apache.rocketmq.client.consumer.AckCallback;
+import org.apache.rocketmq.client.consumer.AckResult;
+import org.apache.rocketmq.client.consumer.AckStatus;
 import org.apache.rocketmq.client.exception.MQBrokerException;
 import org.apache.rocketmq.client.exception.OffsetNotFoundException;
 import org.apache.rocketmq.client.producer.SendResult;
@@ -38,6 +44,9 @@ import org.apache.rocketmq.remoting.protocol.header.PopMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.PopLiteMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.AckMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ChangeInvisibleTimeRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.ChangeInvisibleTimeResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.PopMessageResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.PopLiteMessageResponseHeader;
 import java.util.Collections;
 import org.apache.rocketmq.remoting.protocol.heartbeat.HeartbeatData;
 import org.apache.rocketmq.remoting.RemotingClient;
@@ -88,6 +97,136 @@ public final class InvokedRpcOracle {
     private static void dispatched(Capture capture, String mode, int code, String address) {
         check(mode.equals(capture.mode) && code == capture.request.getCode()
             && java.util.Objects.equals(address, capture.address), "dispatch " + code + " " + mode);
+    }
+
+    private static void checkPopCallbacks(Capture capture, MQClientAPIImpl api,
+        PopMessageRequestHeader pop, PopLiteMessageRequestHeader lite) throws Exception {
+        final PopResult[] result = new PopResult[1];
+        final Throwable[] error = new Throwable[1];
+        PopCallback callback = new PopCallback() {
+            @Override public void onSuccess(PopResult value) { result[0] = value; }
+            @Override public void onException(Throwable value) { error[0] = value; }
+        };
+        for (boolean isLite : new boolean[] {false, true}) {
+            int requestCode = isLite ? RequestCode.POP_LITE_MESSAGE : RequestCode.POP_MESSAGE;
+            for (int code : new int[] {ResponseCode.SUCCESS, ResponseCode.POLLING_FULL,
+                ResponseCode.POLLING_TIMEOUT, ResponseCode.PULL_NOT_FOUND, ResponseCode.SYSTEM_ERROR}) {
+                result[0] = null;
+                error[0] = null;
+                if (isLite) api.popLiteMessageAsync("broker", "broker:10911", lite, 10000, callback);
+                else api.popMessageAsync("broker", "broker:10911", pop, 10000, callback);
+                dispatched(capture, "invokeAsync", requestCode, "broker:10911");
+                RemotingCommand reply;
+                if (isLite) {
+                    PopLiteMessageResponseHeader header = new PopLiteMessageResponseHeader();
+                    header.setPopTime(123L);
+                    header.setInvisibleTime(456L);
+                    header.setReviveQid(2);
+                    reply = RemotingCommand.createResponseCommandWithHeader(code, header);
+                } else {
+                    PopMessageResponseHeader header = new PopMessageResponseHeader();
+                    header.setPopTime(123L);
+                    header.setInvisibleTime(456L);
+                    header.setReviveQid(2);
+                    header.setRestNum(7L);
+                    reply = RemotingCommand.createResponseCommandWithHeader(code, header);
+                }
+                reply.makeCustomHeaderToNet();
+                if (code == ResponseCode.SUCCESS) reply.setBody(new byte[0]);
+                capture.asyncCallback.operationSucceed(reply);
+                if (code == ResponseCode.SYSTEM_ERROR) {
+                    check(result[0] == null && error[0] instanceof MQBrokerException
+                        && ((MQBrokerException) error[0]).getResponseCode() == code,
+                        "pop broker error " + requestCode);
+                } else {
+                    PopStatus status = code == ResponseCode.SUCCESS ? PopStatus.FOUND
+                        : code == ResponseCode.POLLING_FULL ? PopStatus.POLLING_FULL : PopStatus.POLLING_NOT_FOUND;
+                    check(error[0] == null && result[0] != null && result[0].getPopStatus() == status
+                        && (isLite ? result[0].getRestNum() == 0L
+                            : result[0].getRestNum() == 7L)
+                        && (code != ResponseCode.SUCCESS || (result[0].getMsgFoundList() != null
+                            && result[0].getMsgFoundList().isEmpty()
+                            && (isLite || (result[0].getPopTime() == 123L
+                                && result[0].getInvisibleTime() == 456L)))),
+                        "pop response " + requestCode + " " + code);
+                }
+            }
+            result[0] = null;
+            error[0] = null;
+            if (isLite) api.popLiteMessageAsync("broker", "broker:10911", lite, 10000, callback);
+            else api.popMessageAsync("broker", "broker:10911", pop, 10000, callback);
+            IllegalStateException transportError = new IllegalStateException("transport");
+            capture.asyncCallback.operationFail(transportError);
+            check(result[0] == null && error[0] == transportError, "pop transport error " + requestCode);
+        }
+    }
+
+    private static void checkAckCallbacks(Capture capture, MQClientAPIImpl api,
+        AckMessageRequestHeader ack, BatchAckMessageRequestBody batch,
+        ChangeInvisibleTimeRequestHeader change) throws Exception {
+        final AckResult[] result = new AckResult[1];
+        final Throwable[] error = new Throwable[1];
+        AckCallback callback = new AckCallback() {
+            @Override public void onSuccess(AckResult value) { result[0] = value; }
+            @Override public void onException(Throwable value) { error[0] = value; }
+        };
+        for (int kind = 0; kind < 4; kind++) {
+            int requestCode = kind == 1 ? RequestCode.BATCH_ACK_MESSAGE
+                : kind == 3 ? RequestCode.CHANGE_MESSAGE_INVISIBLETIME : RequestCode.ACK_MESSAGE;
+            for (int code : new int[] {ResponseCode.SUCCESS, ResponseCode.SYSTEM_ERROR}) {
+                result[0] = null;
+                error[0] = null;
+                dispatchAck(api, kind, ack, batch, change, callback);
+                dispatched(capture, "invokeAsync", requestCode, "broker:10911");
+                RemotingCommand reply;
+                if (kind == 3) {
+                    ChangeInvisibleTimeResponseHeader header = new ChangeInvisibleTimeResponseHeader();
+                    header.setPopTime(123L);
+                    header.setInvisibleTime(456L);
+                    header.setReviveQid(2);
+                    reply = RemotingCommand.createResponseCommandWithHeader(code, header);
+                    reply.makeCustomHeaderToNet();
+                } else reply = RemotingCommand.createResponseCommand(code, "offline");
+                capture.asyncCallback.operationSucceed(reply);
+                check(error[0] == null && result[0] != null
+                    && result[0].getStatus() == (code == ResponseCode.SUCCESS ? AckStatus.OK : AckStatus.NO_EXIST)
+                    && (kind == 3 && code == ResponseCode.SUCCESS
+                        ? result[0].getPopTime() == 123L
+                            && "17 123 456 2 0 broker 2 17".equals(result[0].getExtraInfo())
+                        : result[0].getPopTime() == 0L && result[0].getExtraInfo() == null),
+                    "ack response " + kind + " " + code);
+            }
+            if (kind == 3) {
+                for (int code : new int[] {ResponseCode.SUCCESS, ResponseCode.SYSTEM_ERROR}) {
+                    result[0] = null;
+                    error[0] = null;
+                    dispatchAck(api, kind, ack, batch, change, callback);
+                    capture.asyncCallback.operationSucceed(RemotingCommand.createResponseCommand(code, "no header"));
+                    check(error[0] == null && result[0] != null
+                        && result[0].getStatus() == (code == ResponseCode.SUCCESS ? AckStatus.OK : AckStatus.NO_EXIST)
+                        && (code != ResponseCode.SUCCESS || (result[0].getPopTime() == 0L
+                            && "17 0 0 0 0 broker 2 17".equals(result[0].getExtraInfo()))),
+                        "change missing response header " + code);
+                }
+            }
+            result[0] = null;
+            error[0] = null;
+            dispatchAck(api, kind, ack, batch, change, callback);
+            IllegalStateException transportError = new IllegalStateException("transport");
+            capture.asyncCallback.operationFail(transportError);
+            check(result[0] == null && error[0] == transportError, "ack transport error " + kind);
+        }
+    }
+
+    private static void dispatchAck(MQClientAPIImpl api, int kind, AckMessageRequestHeader ack,
+        BatchAckMessageRequestBody batch, ChangeInvisibleTimeRequestHeader change, AckCallback callback)
+        throws Exception {
+        switch (kind) {
+            case 0: api.ackMessageAsync("broker:10911", 10000, callback, ack); break;
+            case 1: api.batchAckMessageAsync("broker:10911", 10000, callback, batch); break;
+            case 2: api.ackLiteMessageAsync("broker:10911", 10000, callback, ack); break;
+            default: api.changeInvisibleTimeAsync("broker", "broker:10911", change, 10000, callback);
+        }
     }
 
     public static void run() throws Exception {
@@ -515,6 +654,10 @@ public final class InvokedRpcOracle {
         change.setTopic("oracle-topic");
         api.changeInvisibleTimeAsync("broker", "broker:10911", change, 10000, null);
         dispatched(capture, "invokeAsync", RequestCode.CHANGE_MESSAGE_INVISIBLETIME, "broker:10911");
+        change.setOffset(17L);
+        change.setQueueId(2);
+        checkPopCallbacks(capture, api, pop, lite);
+        checkAckCallbacks(capture, api, ack, batch, change);
         capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
         api.setMessageRequestMode("broker:10911", "oracle-topic", "consumer", MessageRequestMode.POP, 2, 10000);
         dispatched(capture, "invokeSync", RequestCode.SET_MESSAGE_REQUEST_MODE, "broker:10911");
@@ -529,6 +672,6 @@ public final class InvokedRpcOracle {
         } catch (org.apache.rocketmq.client.exception.MQClientException expected) {
             check(expected.getResponseCode() == ResponseCode.SYSTEM_ERROR, "request mode error code");
         }
-        System.out.println("Invoked Java 5.5.1 MQClientAPIImpl: send/pull, offset, route, lock/unlock, send-back, request mode, POP/Lite/ACK/change dispatch (mock transport; send async success/error callbacks invoked)");
+        System.out.println("Invoked Java 5.5.1 MQClientAPIImpl: send/pull, offset, route, lock/unlock, send-back, request mode, POP/Lite/ACK/change dispatch and callbacks (mock transport)");
     }
 }
