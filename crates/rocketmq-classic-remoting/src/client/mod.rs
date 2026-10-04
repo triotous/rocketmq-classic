@@ -2083,6 +2083,58 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn oneway_never_registers_pending_even_when_peer_replies() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let (seen_tx, seen_rx) = tokio::sync::oneshot::channel();
+        let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut length = [0u8; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut frame = bytes::BytesMut::from(&length[..]);
+            frame.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut frame[4..]).await.unwrap();
+            let request = crate::codec::frame::decode_next(&mut frame, DEFAULT_MAX_FRAME_SIZE)
+                .unwrap()
+                .unwrap();
+            assert!(request.is_oneway());
+            seen_tx.send(request.opaque).unwrap();
+            reply_rx.await.unwrap();
+            let mut response = RemotingCommand {
+                opaque: request.opaque,
+                ..RemotingCommand::default()
+            };
+            response.mark_response();
+            stream
+                .write_all(&crate::codec::frame::encode(&response, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .await
+                .unwrap();
+        });
+
+        let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
+        client
+            .invoke_oneway(
+                &address,
+                test_command(),
+                Instant::now() + std::time::Duration::from_secs(2),
+            )
+            .unwrap()
+            .await
+            .unwrap();
+        let opaque = seen_rx.await.unwrap();
+        assert!(!client.inner.pending.lock().unwrap().contains_key(&opaque));
+        assert!(client.inner.pending.lock().unwrap().is_empty());
+        reply_tx.send(()).unwrap();
+        peer.await.unwrap();
+        assert!(client.inner.pending.lock().unwrap().is_empty());
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
     async fn oneway_connection_acquisition_enters_connect_before_return() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
