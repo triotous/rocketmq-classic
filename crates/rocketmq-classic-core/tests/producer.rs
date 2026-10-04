@@ -260,6 +260,9 @@ async fn every_send_variant_classifies_reply_before_decoding() {
                 (response::SLAVE_NOT_AVAILABLE, true),
                 (99123, false),
                 (response::SUCCESS, false),
+                (response::FLUSH_DISK_TIMEOUT, false),
+                (response::FLUSH_SLAVE_TIMEOUT, false),
+                (response::SLAVE_NOT_AVAILABLE, false),
             ] {
                 let (addr, task) = peer(response_code, reply_fields, code, false).await;
                 let client = RemotingClient::new(TransportMode::Plain);

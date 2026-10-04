@@ -136,6 +136,22 @@ async fn pull_statuses_and_malformed_success() {
         );
         client.shutdown().await;
     }
+    let (api, client, addr) = scripted(
+        response::SUCCESS,
+        Some(response_header.clone()),
+        None,
+        request::PULL_MESSAGE,
+        false,
+    )
+    .await;
+    assert_eq!(
+        api.pull_message(&addr, &header, deadline())
+            .await
+            .unwrap()
+            .raw_messages,
+        None
+    );
+    client.shutdown().await;
     for (code, fields) in [(response::SUCCESS, None), (9123, None)] {
         let (api, client, addr) = scripted(code, fields, None, request::PULL_MESSAGE, false).await;
         let result = api.pull_message(&addr, &header, deadline()).await;

@@ -379,6 +379,32 @@ async fn route_reply(code: i32, body: Option<Vec<u8>>) -> (MQClientApi, Remoting
 
 #[tokio::test]
 async fn route_success_unknown_status_and_malformed_success() {
+    let nonempty = serde_json::to_vec(&rocketmq_classic_protocol::route::TopicRouteData {
+        queue_datas: vec![rocketmq_classic_protocol::route::QueueData {
+            broker_name: "broker-a".into(),
+            write_queue_nums: 2,
+            perm: 6,
+            ..Default::default()
+        }],
+        broker_datas: vec![rocketmq_classic_protocol::route::BrokerData {
+            broker_name: "broker-a".into(),
+            broker_addrs: Some([(0, "broker:10911".into())].into()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .unwrap();
+    let (api, client) = route_reply(response::SUCCESS, Some(nonempty)).await;
+    let queues = api
+        .get_topic_route("test-topic", Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap()
+        .publish_queues("test-topic");
+    assert_eq!(queues.len(), 2);
+    assert_eq!(queues[0].broker_name(), "broker-a");
+    assert_eq!(queues[0].queue_id(), 0);
+    assert_eq!(queues[1].queue_id(), 1);
+    client.shutdown().await;
     for (code, body) in [
         (response::SUCCESS, Some(br#"{"queueDatas":[],"brokerDatas":[],"filterServerTable":{},"topicQueueMappingByBroker":null}"#.to_vec())),
         (response::TOPIC_NOT_EXIST, None),
