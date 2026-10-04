@@ -248,18 +248,183 @@ pub struct ConsumerListByGroupResponseBody {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
-pub struct ResetOffsetBody {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub offset_table: Option<Vec<(MessageQueue, i64)>>,
+pub struct GetConsumerStatusBody {
+    #[serde(default, with = "message_queue_offset_table")]
+    pub message_queue_table: Vec<(MessageQueue, i64)>,
+    #[serde(default, with = "nested_message_queue_offset_table")]
+    pub consumer_table: std::collections::BTreeMap<String, Vec<(MessageQueue, i64)>>,
+}
+
+impl GetConsumerStatusBody {
+    pub fn encode_java_json(&self) -> Result<Vec<u8>, serde_json::Error> {
+        let queue_table = encode_java_queue_table_text(&self.message_queue_table)?;
+        let mut consumer_entries = Vec::new();
+        for (consumer, entries) in &self.consumer_table {
+            consumer_entries.push(format!(
+                "{}:{}",
+                serde_json::to_string(consumer)?,
+                encode_java_queue_table_text(entries)?
+            ));
+        }
+        let consumer_table = format!("{{{}}}", consumer_entries.join(","));
+        Ok(format!(
+            "{{\"consumerTable\":{},\"messageQueueTable\":{}}}",
+            consumer_table, queue_table
+        )
+        .into_bytes())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
-pub struct GetConsumerStatusBody {
-    #[serde(default)]
-    pub message_queue_table: Vec<(MessageQueue, i64)>,
-    #[serde(default)]
-    pub consumer_table: std::collections::BTreeMap<String, Vec<(MessageQueue, i64)>>,
+pub struct ResetOffsetBody {
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        with = "optional_message_queue_offset_table"
+    )]
+    pub offset_table: Option<Vec<(MessageQueue, i64)>>,
+}
+
+impl ResetOffsetBody {
+    pub fn encode_java_json(&self) -> Result<Vec<u8>, serde_json::Error> {
+        let entries = self.offset_table.as_deref().unwrap_or_default();
+        let table = encode_java_queue_table_text(entries)?;
+        Ok(format!("{{\"offsetTable\":{table}}}").into_bytes())
+    }
+}
+
+fn encode_java_queue_table_text(
+    entries: &[(MessageQueue, i64)],
+) -> Result<String, serde_json::Error> {
+    let mut parts = Vec::with_capacity(entries.len());
+    for (queue, offset) in entries {
+        let queue_key = format!(
+            "{{\"brokerName\":{},\"queueId\":{},\"topic\":{}}}",
+            serde_json::to_string(queue.broker_name())?,
+            serde_json::to_string(&queue.queue_id())?,
+            serde_json::to_string(queue.topic())?
+        );
+        parts.push(format!("{queue_key}:{}", serde_json::to_string(offset)?));
+    }
+    Ok(format!("{{{}}}", parts.join(",")))
+}
+
+type QueueOffsetEntries = Vec<(MessageQueue, i64)>;
+type ConsumerQueueOffsets = std::collections::BTreeMap<String, QueueOffsetEntries>;
+
+mod message_queue_offset_table {
+    use super::encode_table;
+    use super::{MessageQueue, QueueOffsetEntries};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(entries: &QueueOffsetEntries, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        encode_table(entries)
+            .map_err(serde::ser::Error::custom)?
+            .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<QueueOffsetEntries, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let encoded = std::collections::BTreeMap::<String, i64>::deserialize(deserializer)?;
+        encoded
+            .into_iter()
+            .map(|(key, offset)| {
+                let queue: MessageQueue =
+                    serde_json::from_str(&key).map_err(serde::de::Error::custom)?;
+                Ok((queue, offset))
+            })
+            .collect()
+    }
+}
+
+fn encode_table(
+    entries: &[(MessageQueue, i64)],
+) -> Result<std::collections::BTreeMap<String, i64>, serde_json::Error> {
+    entries
+        .iter()
+        .map(|(queue, offset)| Ok((serde_json::to_string(queue)?, *offset)))
+        .collect()
+}
+
+mod nested_message_queue_offset_table {
+    use super::ConsumerQueueOffsets;
+    use super::encode_table;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(entries: &ConsumerQueueOffsets, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let encoded = entries
+            .iter()
+            .map(|(key, values)| {
+                Ok((
+                    key,
+                    encode_table(values).map_err(serde::ser::Error::custom)?,
+                ))
+            })
+            .collect::<Result<std::collections::BTreeMap<_, _>, S::Error>>()?;
+        encoded.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<ConsumerQueueOffsets, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw =
+            std::collections::BTreeMap::<String, serde_json::Value>::deserialize(deserializer)?;
+        raw.into_iter()
+            .map(|(key, value)| {
+                let entries = super::decode_table(value).map_err(serde::de::Error::custom)?;
+                Ok((key, entries))
+            })
+            .collect()
+    }
+}
+
+fn decode_table(value: serde_json::Value) -> Result<Vec<(MessageQueue, i64)>, serde_json::Error> {
+    value
+        .as_object()
+        .ok_or_else(|| serde::de::Error::custom("expected MessageQueue-keyed object"))?
+        .iter()
+        .map(|(key, value)| {
+            let queue = serde_json::from_str(key)?;
+            let offset = serde_json::from_value(value.clone())?;
+            Ok((queue, offset))
+        })
+        .collect()
+}
+
+mod optional_message_queue_offset_table {
+    use super::*;
+    use serde::{Deserialize, Deserializer, Serializer};
+    pub fn serialize<S>(
+        entries: &Option<Vec<(MessageQueue, i64)>>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match entries {
+            Some(entries) => super::message_queue_offset_table::serialize(entries, serializer),
+            None => serializer.serialize_none(),
+        }
+    }
+    pub fn deserialize<'de, D>(
+        deserializer: D,
+    ) -> Result<Option<Vec<(MessageQueue, i64)>>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Option::<serde_json::Value>::deserialize(deserializer)?
+            .map(|value| super::decode_table(value).map_err(serde::de::Error::custom))
+            .transpose()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -270,11 +435,22 @@ pub struct ConsumeMessageDirectlyResult {
     #[serde(default = "default_auto_commit")]
     pub auto_commit: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub consume_result: Option<String>,
+    pub consume_result: Option<ConsumeMessageResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remark: Option<String>,
     #[serde(default)]
     pub spent_time_mills: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ConsumeMessageResult {
+    CrSuccess,
+    CrLater,
+    CrRollback,
+    CrCommit,
+    CrThrowException,
+    CrReturnNull,
 }
 
 fn default_auto_commit() -> bool {
@@ -361,7 +537,11 @@ mod tests {
             offset_table: Some(vec![(queue.clone(), 7)]),
         };
         let value = serde_json::to_value(reset).unwrap();
-        assert_eq!(value["offsetTable"][0][0]["queueId"], 1);
+        let offset_table = value["offsetTable"].as_object().unwrap();
+        assert_eq!(offset_table.values().next().unwrap(), 7);
+        let key: serde_json::Value =
+            serde_json::from_str(offset_table.keys().next().unwrap()).unwrap();
+        assert_eq!(key["queueId"], 1);
 
         let status = GetConsumerStatusBody {
             message_queue_table: vec![(queue.clone(), 7)],
@@ -371,13 +551,25 @@ mod tests {
             )]),
         };
         let value = serde_json::to_value(status).unwrap();
-        assert_eq!(value["consumerTable"]["consumer-a"][0][1], 8);
+        let consumer_table = value["consumerTable"]["consumer-a"].as_object().unwrap();
+        assert_eq!(consumer_table.values().next().unwrap(), 8);
+        let queue_key: serde_json::Value =
+            serde_json::from_str(consumer_table.keys().next().unwrap()).unwrap();
+        assert_eq!(queue_key["queueId"], 1);
 
         let direct: ConsumeMessageDirectlyResult =
             serde_json::from_value(serde_json::json!({"order":false, "spentTimeMills":0})).unwrap();
         let value = serde_json::to_value(direct).unwrap();
         assert_eq!(value["autoCommit"], true);
         assert!(value.get("consumeResult").is_none());
+        let direct = ConsumeMessageDirectlyResult {
+            consume_result: Some(ConsumeMessageResult::CrSuccess),
+            ..ConsumeMessageDirectlyResult::default()
+        };
+        assert_eq!(
+            serde_json::to_value(direct).unwrap()["consumeResult"],
+            "CR_SUCCESS"
+        );
     }
 
     #[test]

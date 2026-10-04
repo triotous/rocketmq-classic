@@ -353,6 +353,7 @@ fn java_json_body_fixtures_decode_to_typed_assignment_lite_and_batch_models() {
             assert_eq!(queue.topic(), "orders");
             assert_eq!(queue.broker_name(), "broker-a");
             assert_eq!(*offset, 9);
+            assert_eq!(typed.encode_java_json().unwrap(), raw);
         } else {
             let table = decode_java_queue_offset_body(&raw, "messageQueueTable");
             let typed = GetConsumerStatusBody {
@@ -373,6 +374,7 @@ fn java_json_body_fixtures_decode_to_typed_assignment_lite_and_batch_models() {
             assert_eq!(queue.topic(), "orders");
             assert_eq!(queue.broker_name(), "broker-a");
             assert_eq!(*offset, 9);
+            assert_eq!(typed.encode_java_json().unwrap(), raw);
         }
     }
 

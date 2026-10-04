@@ -598,6 +598,7 @@ dependencies = [
  "pkcs8",
  "rand",
  "rcgen",
+ "rocketmq-classic-common",
  "rocketmq-classic-protocol",
  "rustls-native-certs",
  "rustls-pemfile",
