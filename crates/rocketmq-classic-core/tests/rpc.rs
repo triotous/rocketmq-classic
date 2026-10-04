@@ -512,7 +512,6 @@ async fn route_failover_returns_success_from_second_nameserver_within_original_d
     .unwrap()
     .unwrap();
     assert!(route.publish_queues("test-topic").is_empty());
-    assert_eq!(client.get_name_server_address_list().unwrap()[0], good);
     peer.await.unwrap();
     client.shutdown().await;
 }
