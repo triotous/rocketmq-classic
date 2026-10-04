@@ -470,6 +470,54 @@ async fn route_fails_over_unavailable_nameserver_before_deadline() {
 }
 
 #[tokio::test]
+async fn route_failover_returns_success_from_second_nameserver_within_original_deadline() {
+    let good_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let good = good_listener.local_addr().unwrap().to_string();
+    let unavailable = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let bad = unavailable.local_addr().unwrap().to_string();
+    drop(unavailable);
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = good_listener.accept().await.unwrap();
+        let incoming = read_command(&mut stream).await;
+        assert_eq!(incoming.code, request::GET_ROUTEINFO_BY_TOPIC);
+        assert_eq!(incoming.ext_fields.as_ref().unwrap()["topic"], "test-topic");
+        let mut reply = RemotingCommand {
+            code: response::SUCCESS,
+            opaque: incoming.opaque,
+            body: Some(br#"{"queueDatas":[],"brokerDatas":[],"filterServerTable":{},"topicQueueMappingByBroker":null}"#.to_vec()),
+            ..RemotingCommand::default()
+        };
+        reply.mark_response();
+        stream
+            .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+            .await
+            .unwrap();
+        assert!(
+            timeout(Duration::from_millis(100), read_command(&mut stream))
+                .await
+                .is_err(),
+            "route lookup retried after a successful response"
+        );
+    });
+    let client = RemotingClient::new(TransportMode::Plain);
+    // The initial selector chooses index 1, the refused endpoint.
+    client.update_name_server_address_list(vec![good.clone(), bad]);
+    client.start().unwrap();
+    let route = timeout(
+        Duration::from_secs(2),
+        MQClientApi::new(client.clone())
+            .get_topic_route("test-topic", Instant::now() + Duration::from_secs(1)),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(route.publish_queues("test-topic").is_empty());
+    assert_eq!(client.get_name_server_address_list().unwrap()[0], good);
+    peer.await.unwrap();
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn route_without_nameserver_keeps_transport_error() {
     let client = RemotingClient::new(TransportMode::Plain);
     client.start().unwrap();
