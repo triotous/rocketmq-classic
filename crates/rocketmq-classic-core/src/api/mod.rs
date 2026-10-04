@@ -1,3 +1,6 @@
+pub mod consumer;
+pub mod extensions;
+pub mod producer;
 pub mod route;
 
 use crate::error::RpcError;
