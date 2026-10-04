@@ -18,6 +18,7 @@ mvn -f compat/java-reference/pom.xml exec:java -Dexec.args='fixtures --output fi
 mvn -f compat/java-reference/pom.xml exec:java -Dexec.args='decode --input fixtures/remoting/route-001-get-existing-topic.bin'
 mvn -f compat/java-reference/pom.xml exec:java -Dexec.args='scenario --id HEARTBEAT-001 --output target/heartbeat.json'
 python3 tests/differential/compare.py --self-test
+mvn -f compat/java-reference/pom.xml exec:java -Dexec.args=invoked-rpc-oracle
 ```
 
 The fixture command emits offline Remoting command frames (no live Broker). A frame is accompanied by JSON with version provenance, scenario, request code, decoded semantic fields, body length, full-frame SHA-256 and the command used to generate it. Live scenarios in `tests/differential/scenarios.yaml` explicitly remain `PENDING_PHASE_19`; command-frame fixtures are not claims of successful Broker operations.
@@ -26,7 +27,9 @@ The fixture command emits offline Remoting command frames (no live Broker). A fr
 
 Run `compat/java-reference/run-rpc-differential.sh` from any directory. It regenerates 15 deterministic Java 5.5.1 response frames under `fixtures/rpc/`, decodes them in the Rust typed-header test, emits Rust frames under `target/p5-rust-rpc-frames/`, and uses the pinned Java decoder to check response code, response flag, ext fields and body bytes. `cargo test -p rocketmq-classic-core --test rpc_java_fixtures --locked` also checks the checked-in evidence without Maven. The labeled outcomes follow `MQClientAPIImpl.processSendResponse`, `processPullResponse`, and `queryConsumerOffset` in pinned source; they are not executions of those methods. `server_baseline_not_contacted` explicitly denotes no server interaction.
 
-Coverage: send (four status codes), pull (four status codes with raw FOUND bytes), query offset (success and not-found), unknown send code, route error, and missing success headers. Gaps: actual Java `MQClientAPIImpl` invocation, request construction/mode, route success/body, heartbeat, lifecycle, lock/unlock, send-back, extensions, Java exception types, malformed numeric headers, and all live behavior. These are not P5-U01 or P5-V01 completion claims; keep Phase 19 cases pending.
+Frame coverage: send (four status codes), pull (four status codes with raw FOUND bytes), query offset (success and not-found), unknown send code, route error, and missing success headers. These frame fixtures do not exercise `MQClientAPIImpl` and are not P5-U01 or P5-V01 completion claims; keep Phase 19 cases pending.
+
+The separate `invoked-rpc-oracle` command (also run by Maven `test`) executes pinned `MQClientAPIImpl` with an injected mock `RemotingClient`: it asserts send V2 oneway request/body, query-offset synchronous request and decoded success offset, and route synchronous request plus topic-not-exist exception. No Broker or NameServer is contacted. This command writes no fixture files; the 15 response frames and their `java_outcome` labels remain source-derived, not executed method results. Invocation coverage is limited to these three branches; async send, send response processing, route success, offset not-found, and all other RPC branches remain unverified by invocation.
 
 ## Licensing
 

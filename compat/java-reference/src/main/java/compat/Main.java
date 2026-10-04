@@ -77,8 +77,13 @@ public final class Main {
     }
 
     public static void main(String[] args) throws Exception {
+        if (args.length > 0 && "invoked-rpc-oracle".equals(args[0])) {
+            InvokedRpcOracle.run();
+            return;
+        }
         if (args.length == 0 || "self-test".equals(args[0])) {
             selfTest();
+            InvokedRpcOracle.run();
             return;
         }
         if ("fixtures".equals(args[0])) {
