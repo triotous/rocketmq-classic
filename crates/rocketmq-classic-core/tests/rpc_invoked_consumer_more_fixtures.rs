@@ -1,0 +1,222 @@
+use std::{fs, path::PathBuf, time::Duration};
+
+use bytes::BytesMut;
+use rocketmq_classic_common::message::MessageQueue;
+use rocketmq_classic_core::{
+    api::{MQClientApi, consumer::PullStatus},
+    error::RpcError,
+};
+use rocketmq_classic_protocol::{
+    body::{LockBatchRequestBody, UnlockBatchRequestBody},
+    header::PullMessageRequestHeader,
+};
+use rocketmq_classic_remoting::{
+    RemotingCommand,
+    client::{RemotingClient, TransportMode},
+    codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
+};
+use serde_json::Value;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpListener,
+    time::Instant,
+};
+
+fn decode_base64(encoded: &str) -> Vec<u8> {
+    let alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let (mut result, mut bits, mut count) = (Vec::new(), 0u32, 0);
+    for char in encoded.bytes().take_while(|char| *char != b'=') {
+        let digit = alphabet.iter().position(|item| *item == char).unwrap();
+        bits = (bits << 6) | digit as u32;
+        count += 6;
+        if count >= 8 {
+            count -= 8;
+            result.push((bits >> count) as u8);
+            bits &= (1 << count) - 1;
+        }
+    }
+    result
+}
+
+fn body(value: &Value) -> Option<Vec<u8>> {
+    value.as_str().map(decode_base64)
+}
+
+#[tokio::test]
+async fn java_invoked_consumer_more_requests_and_outcomes_match() {
+    let dir =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/rpc-invoked-consumer-more");
+    let names = [
+        "pull-found",
+        "pull-no-new",
+        "pull-no-matched",
+        "pull-offset-illegal",
+        "pull-error",
+        "pull-unknown",
+        "lock-success",
+        "lock-error",
+        "lock-unknown",
+        "unlock-sync-success",
+        "unlock-sync-error",
+        "unlock-sync-unknown",
+        "unlock-oneway",
+    ];
+    assert_eq!(fs::read_dir(&dir).unwrap().count(), names.len());
+    for name in names {
+        let fixture: Value =
+            serde_json::from_slice(&fs::read(dir.join(format!("{name}.json"))).unwrap()).unwrap();
+        assert_eq!(fixture["case"], name);
+        assert_eq!(
+            fixture["mode"],
+            if name == "unlock-oneway" {
+                "ONEWAY"
+            } else {
+                "SYNC"
+            }
+        );
+        assert_eq!(
+            fixture["provenance"]["client"],
+            "org.apache.rocketmq:rocketmq-client:5.5.1"
+        );
+        assert_eq!(fixture["provenance"]["serverBaselineContacted"], false);
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        let expected = fixture.clone();
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut len = [0; 4];
+            stream.read_exact(&mut len).await.unwrap();
+            let mut frame_bytes = BytesMut::from(&len[..]);
+            frame_bytes.resize(u32::from_be_bytes(len) as usize + 4, 0);
+            stream.read_exact(&mut frame_bytes[4..]).await.unwrap();
+            let incoming = frame::decode_next(&mut frame_bytes, DEFAULT_MAX_FRAME_SIZE)
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                incoming.code,
+                expected["request"]["code"].as_i64().unwrap() as i32
+            );
+            assert_eq!(
+                incoming.ext_fields.as_ref().unwrap(),
+                &serde_json::from_value(expected["request"]["ext"].clone()).unwrap()
+            );
+            if expected["request"]["bodyBase64"].is_null() {
+                assert_eq!(incoming.body, None);
+            } else {
+                assert_eq!(
+                    serde_json::from_slice::<Value>(incoming.body.as_ref().unwrap()).unwrap(),
+                    serde_json::from_slice::<Value>(
+                        &body(&expected["request"]["bodyBase64"]).unwrap()
+                    )
+                    .unwrap()
+                );
+            }
+            assert_eq!(incoming.is_oneway(), expected["mode"] == "ONEWAY");
+            if expected["mode"] == "ONEWAY" {
+                return;
+            }
+            let response = &expected["response"];
+            let mut reply = RemotingCommand {
+                code: response["code"].as_i64().unwrap() as i32,
+                opaque: incoming.opaque,
+                remark: response["remark"].as_str().map(str::to_owned),
+                ext_fields: Some(serde_json::from_value(response["ext"].clone()).unwrap()),
+                body: body(&response["bodyBase64"]),
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .await
+                .unwrap();
+        });
+        let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
+        let api = MQClientApi::new(client.clone());
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let queue = MessageQueue::new("oracle-topic", "broker", 2);
+        let outcome = if name.starts_with("pull-") {
+            let header = PullMessageRequestHeader {
+                consumer_group: "consumer".into(),
+                topic: "oracle-topic".into(),
+                queue_id: 2,
+                queue_offset: 10,
+                max_msg_nums: 1,
+                sys_flag: 0,
+                commit_offset: 0,
+                suspend_timeout_millis: 0,
+                sub_version: 1,
+                ..Default::default()
+            };
+            match api.pull_message(&addr, &header, deadline).await {
+                Ok(result) => {
+                    let status = match result.status {
+                        PullStatus::Found => "Found",
+                        PullStatus::NoNewMessage => "NoNewMessage",
+                        PullStatus::NoMatchedMessage => "NoMatchedMessage",
+                        PullStatus::OffsetIllegal => "OffsetIllegal",
+                    };
+                    let raw = result
+                        .raw_messages
+                        .as_ref()
+                        .map(|bytes| {
+                            assert_eq!(bytes, &[0, 255, 42]);
+                            "AP8q"
+                        })
+                        .unwrap_or("null");
+                    format!(
+                        "status={status};next={};min={};max={};broker={};raw={raw}",
+                        result.next_begin_offset,
+                        result.min_offset,
+                        result.max_offset,
+                        result.suggest_which_broker_id
+                    )
+                }
+                Err(RpcError::Response { code, .. }) => format!("MQBrokerException;code={code}"),
+                other => panic!("unexpected pull result: {other:?}"),
+            }
+        } else if name.starts_with("lock-") {
+            let body = LockBatchRequestBody {
+                consumer_group: Some("consumer".into()),
+                client_id: Some("client".into()),
+                mq_set: vec![queue],
+                ..Default::default()
+            };
+            match api.lock_batch_mq(&addr, &body, deadline).await {
+                Ok(queues) => {
+                    assert_eq!(queues.len(), 1);
+                    format!(
+                        "queues={}:{}:{}",
+                        queues[0].topic(),
+                        queues[0].broker_name(),
+                        queues[0].queue_id()
+                    )
+                }
+                Err(RpcError::Response { code, .. }) => format!("MQBrokerException;code={code}"),
+                other => panic!("unexpected lock result: {other:?}"),
+            }
+        } else {
+            let body = UnlockBatchRequestBody {
+                consumer_group: Some("consumer".into()),
+                client_id: Some("client".into()),
+                mq_set: vec![queue],
+                ..Default::default()
+            };
+            match api
+                .unlock_batch_mq(&addr, &body, name == "unlock-oneway", deadline)
+                .await
+            {
+                Ok(()) => "ok".into(),
+                Err(RpcError::Response { code, .. }) => format!("MQBrokerException;code={code}"),
+                other => panic!("unexpected unlock result: {other:?}"),
+            }
+        };
+        assert_eq!(outcome, fixture["outcome"], "{name}");
+        tokio::time::timeout(Duration::from_secs(3), peer)
+            .await
+            .unwrap()
+            .unwrap();
+        client.shutdown().await;
+    }
+}
