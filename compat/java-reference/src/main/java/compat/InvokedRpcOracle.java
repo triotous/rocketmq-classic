@@ -1,5 +1,6 @@
 package compat;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import org.apache.rocketmq.client.ClientConfig;
@@ -99,6 +100,89 @@ public final class InvokedRpcOracle {
     private static void dispatched(Capture capture, String mode, int code, String address) {
         check(mode.equals(capture.mode) && code == capture.request.getCode()
             && java.util.Objects.equals(address, capture.address), "dispatch " + code + " " + mode);
+    }
+
+    private static void checkSendModes(Capture capture, MQClientAPIImpl api, Message message,
+        SendMessageRequestHeader header, DefaultMQProducerImpl producer, int code) throws Exception {
+        byte[] body = message.getBody();
+        check(api.sendMessage("broker:10911", "broker", message, header, 10000,
+            CommunicationMode.ONEWAY, null, null) == null, "oneway send result " + code);
+        dispatched(capture, "invokeOneway", code, "broker:10911");
+        check(java.util.Arrays.equals(body, capture.request.getBody()), "oneway send body " + code);
+        capture.request.makeCustomHeaderToNet();
+        check("oracle-topic".equals(capture.request.getExtFields().get(
+            code == RequestCode.SEND_MESSAGE || code == RequestCode.SEND_REPLY_MESSAGE ? "topic" : "b")),
+            "send header topic " + code);
+
+        SendMessageResponseHeader responseHeader = new SendMessageResponseHeader();
+        responseHeader.setMsgId("mode-message");
+        responseHeader.setQueueId(2);
+        responseHeader.setQueueOffset(23L);
+        final SendResult[] result = new SendResult[1];
+        final Throwable[] error = new Throwable[1];
+        SendCallback callback = new SendCallback() {
+            @Override public void onSuccess(SendResult value) { result[0] = value; }
+            @Override public void onException(Throwable value) { error[0] = value; }
+        };
+        for (int status : new int[] {ResponseCode.SUCCESS, ResponseCode.FLUSH_DISK_TIMEOUT,
+            ResponseCode.FLUSH_SLAVE_TIMEOUT, ResponseCode.SLAVE_NOT_AVAILABLE, ResponseCode.SYSTEM_ERROR}) {
+            RemotingCommand reply = status == ResponseCode.SYSTEM_ERROR
+                ? RemotingCommand.createResponseCommand(status, "offline")
+                : RemotingCommand.createResponseCommandWithHeader(status, responseHeader);
+            reply.makeCustomHeaderToNet();
+            capture.response = reply;
+            if (status == ResponseCode.SYSTEM_ERROR) {
+                try {
+                    api.sendMessage("broker:10911", "broker", message, header, 10000,
+                        CommunicationMode.SYNC, null, null);
+                    throw new IllegalStateException("sync send error accepted " + code);
+                } catch (MQBrokerException expected) {
+                    check(expected.getResponseCode() == status, "sync send broker error " + code);
+                }
+            } else {
+                SendResult sync = api.sendMessage("broker:10911", "broker", message, header, 10000,
+                    CommunicationMode.SYNC, null, null);
+                checkSendOutcome(sync, status, "sync " + code);
+            }
+            dispatched(capture, "invokeSync", code, "broker:10911");
+            check(java.util.Arrays.equals(body, capture.request.getBody()), "sync send body " + code);
+
+            result[0] = null;
+            error[0] = null;
+            check(api.sendMessage("broker:10911", "broker", message, header, 10000,
+                CommunicationMode.ASYNC, callback, null, null, 0, null, producer) == null,
+                "async send result " + code);
+            dispatched(capture, "invokeAsync", code, "broker:10911");
+            check(java.util.Arrays.equals(body, capture.request.getBody()), "async send body " + code);
+            check(capture.asyncCallback != null, "async send callback " + code);
+            capture.asyncCallback.operationSucceed(reply);
+            if (status == ResponseCode.SYSTEM_ERROR) {
+                check(result[0] == null && error[0] instanceof MQBrokerException
+                    && ((MQBrokerException) error[0]).getResponseCode() == status,
+                    "async send broker error " + code);
+            } else {
+                check(error[0] == null, "async send exception " + code);
+                checkSendOutcome(result[0], status, "async " + code);
+            }
+        }
+        result[0] = null;
+        error[0] = null;
+        api.sendMessage("broker:10911", "broker", message, header, 10000,
+            CommunicationMode.ASYNC, callback, null, null, 0, null, producer);
+        dispatched(capture, "invokeAsync", code, "broker:10911");
+        IllegalStateException transportError = new IllegalStateException("transport");
+        capture.asyncCallback.operationFail(transportError);
+        check(result[0] == null && error[0] instanceof org.apache.rocketmq.client.exception.MQClientException
+            && error[0].getCause() == transportError, "async send transport error " + code);
+    }
+
+    private static void checkSendOutcome(SendResult result, int code, String label) {
+        check(result != null && result.getSendStatus() == (code == ResponseCode.SUCCESS ? SendStatus.SEND_OK
+            : code == ResponseCode.FLUSH_DISK_TIMEOUT ? SendStatus.FLUSH_DISK_TIMEOUT
+            : code == ResponseCode.FLUSH_SLAVE_TIMEOUT ? SendStatus.FLUSH_SLAVE_TIMEOUT
+            : SendStatus.SLAVE_NOT_AVAILABLE)
+            && "mode-message".equals(result.getOffsetMsgId()) && result.getQueueOffset() == 23L,
+            "send outcome " + label + " " + code);
     }
 
     private static void checkPopCallbacks(Capture capture, MQClientAPIImpl api,
@@ -344,6 +428,22 @@ public final class InvokedRpcOracle {
             CommunicationMode.ONEWAY, null, null);
         dispatched(capture, "invokeOneway", RequestCode.SEND_BATCH_MESSAGE, "broker:10911");
         check(java.util.Arrays.equals(sendBatch.getBody(), capture.request.getBody()), "batch send body");
+
+        // The pinned client's static switch is sampled at class initialization; restore it for other callers.
+        Field smartMsg = MQClientAPIImpl.class.getDeclaredField("sendSmartMsg");
+        smartMsg.setAccessible(true);
+        boolean originalSmartMsg = smartMsg.getBoolean(null);
+        try {
+            smartMsg.setBoolean(null, false);
+            checkSendModes(capture, api, message, send, producer, RequestCode.SEND_MESSAGE);
+            checkSendModes(capture, api, replyMessage, send, producer, RequestCode.SEND_REPLY_MESSAGE);
+            checkSendModes(capture, api, sendBatch, send, producer, RequestCode.SEND_BATCH_MESSAGE);
+            smartMsg.setBoolean(null, true);
+            checkSendModes(capture, api, replyMessage, send, producer, RequestCode.SEND_REPLY_MESSAGE_V2);
+            checkSendModes(capture, api, sendBatch, send, producer, RequestCode.SEND_BATCH_MESSAGE);
+        } finally {
+            smartMsg.setBoolean(null, originalSmartMsg);
+        }
 
         PullMessageRequestHeader pull = new PullMessageRequestHeader();
         pull.setConsumerGroup("consumer");
