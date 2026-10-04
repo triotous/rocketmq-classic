@@ -534,3 +534,69 @@ async fn successful_consumer_responses_decode_only_required_payloads() {
     .unwrap();
     client.shutdown().await;
 }
+
+#[tokio::test]
+async fn consumer_void_success_has_no_malformed_response_payload() {
+    // Update, send-back and unlock decode no success body or headers; malformed
+    // success is meaningless for these methods, even when the peer sends junk.
+    let junk = Some(b"invalid json".to_vec());
+    let fields = Some(HeaderMap::from([("offset".into(), "invalid".into())]));
+    let (api, client, addr) = scripted(
+        response::SUCCESS,
+        fields.clone(),
+        junk.clone(),
+        request::UPDATE_CONSUMER_OFFSET,
+        false,
+    )
+    .await;
+    api.update_consumer_offset(&addr, &Default::default(), false, deadline())
+        .await
+        .unwrap();
+    client.shutdown().await;
+
+    let (api, client, addr) = scripted(
+        response::SUCCESS,
+        fields.clone(),
+        junk.clone(),
+        request::CONSUMER_SEND_MSG_BACK,
+        false,
+    )
+    .await;
+    api.consumer_send_message_back(&addr, &Default::default(), deadline())
+        .await
+        .unwrap();
+    client.shutdown().await;
+
+    let (api, client, addr) = scripted(
+        response::SUCCESS,
+        fields,
+        junk,
+        request::UNLOCK_BATCH_MQ,
+        false,
+    )
+    .await;
+    api.unlock_batch_mq(&addr, &Default::default(), false, deadline())
+        .await
+        .unwrap();
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn consumer_list_missing_success_body_is_domain_error() {
+    let (api, client, addr) = scripted(
+        response::SUCCESS,
+        None,
+        None,
+        request::GET_CONSUMER_LIST_BY_GROUP,
+        false,
+    )
+    .await;
+    rejected(
+        api.get_consumer_list_by_group(&addr, "workers", deadline())
+            .await,
+        request::GET_CONSUMER_LIST_BY_GROUP,
+        &addr,
+        response::SUCCESS,
+    );
+    client.shutdown().await;
+}

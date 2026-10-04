@@ -527,3 +527,109 @@ async fn assignment_invalid_json_and_heartbeat_v2_default_flags() {
         client.shutdown().await;
     }
 }
+
+#[tokio::test]
+async fn void_extension_success_ignores_unread_payload() {
+    // These methods consume only the response status. There is no decoded success
+    // payload to make malformed; junk body/fields must not change a success.
+    let junk = Some(b"not json".to_vec());
+    let fields = Some([("unexpected".into(), "not a number".into())].into());
+    let (api, client, addr, task) = peer(
+        request::UNREGISTER_CLIENT,
+        response::SUCCESS,
+        junk.clone(),
+        fields.clone(),
+    )
+    .await;
+    api.unregister_client(&addr, &Default::default(), deadline())
+        .await
+        .unwrap();
+    task.await.unwrap();
+    client.shutdown().await;
+
+    let (api, client, addr, task) = peer(
+        request::SET_MESSAGE_REQUEST_MODE,
+        response::SUCCESS,
+        junk.clone(),
+        fields.clone(),
+    )
+    .await;
+    api.set_message_request_mode(&addr, &Default::default(), deadline())
+        .await
+        .unwrap();
+    task.await.unwrap();
+    client.shutdown().await;
+
+    let (api, client, addr, task) = peer(
+        request::LITE_SUBSCRIPTION_CTL,
+        response::SUCCESS,
+        junk,
+        fields,
+    )
+    .await;
+    api.lite_subscription_ctl(&addr, &Default::default(), deadline())
+        .await
+        .unwrap();
+    task.await.unwrap();
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn heartbeat_and_ack_success_have_no_malformed_payload() {
+    // Heartbeat reads only the wire version; V2 flags are optional and invalid
+    // flags default false. Ack and batch ack only inspect the status code.
+    for v2 in [false, true] {
+        let (api, client, addr, task) = peer(
+            request::HEART_BEAT,
+            response::SUCCESS,
+            Some(b"invalid json".to_vec()),
+            Some([("isSubChange".into(), "invalid".into())].into()),
+        )
+        .await;
+        if v2 {
+            let result = api
+                .send_heartbeat_v2(&addr, &Default::default(), deadline())
+                .await
+                .unwrap();
+            assert_eq!(result.version, 515);
+            assert!(!result.is_sub_change && !result.is_support_heartbeat_v2);
+        } else {
+            assert_eq!(
+                api.send_heartbeat(&addr, &Default::default(), deadline())
+                    .await
+                    .unwrap(),
+                515
+            );
+        }
+        task.await.unwrap();
+        client.shutdown().await;
+    }
+    for batch in [false, true] {
+        let code = if batch {
+            request::BATCH_ACK_MESSAGE
+        } else {
+            request::ACK_MESSAGE
+        };
+        for status in [response::SUCCESS, response::SYSTEM_ERROR, 999] {
+            let (api, client, addr, task) =
+                peer(code, status, Some(b"invalid json".to_vec()), None).await;
+            let result = if batch {
+                api.batch_ack_message(&addr, &Default::default(), deadline())
+                    .await
+            } else {
+                api.ack_message(&addr, &Default::default(), deadline())
+                    .await
+            };
+            assert_eq!(
+                result.unwrap(),
+                if status == response::SUCCESS {
+                    AckStatus::Ok
+                } else {
+                    AckStatus::NoExist
+                }
+            );
+            task.await.unwrap();
+            client.shutdown().await;
+        }
+    }
+}
