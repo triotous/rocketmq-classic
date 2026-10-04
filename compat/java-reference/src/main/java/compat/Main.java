@@ -41,6 +41,7 @@ import org.apache.rocketmq.remoting.protocol.header.CheckTransactionStateRespons
 import org.apache.rocketmq.remoting.protocol.header.ReplyMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ResetOffsetRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.NotificationResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.NotifyUnsubscribeLiteRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.PopLiteMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetConsumerStatusRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ConsumeMessageDirectlyResultRequestHeader;
@@ -351,6 +352,9 @@ public final class Main {
         direct.setConsumerGroup("workers");
         writeTypedHeaderFixture(output, "consume-directly-request", 309, direct);
         writeTypedHeaderFixture(output, "lite-subscription-request", 200071, new LiteSubscriptionCtlRequestHeader());
+        NotifyUnsubscribeLiteRequestHeader unsubscribe = new NotifyUnsubscribeLiteRequestHeader();
+        unsubscribe.setLiteTopic("lite-orders"); unsubscribe.setConsumerGroup("workers"); unsubscribe.setClientId("client");
+        writeTypedHeaderFixture(output, "notify-unsubscribe-lite-request", 200073, unsubscribe);
         LockBatchMqRequestHeader lockHeader = new LockBatchMqRequestHeader();
         lockHeader.setNamespace("tenant"); lockHeader.setBrokerName("broker-a");
         writeTypedHeaderFixture(output, "lock-batch-request", 41, lockHeader);

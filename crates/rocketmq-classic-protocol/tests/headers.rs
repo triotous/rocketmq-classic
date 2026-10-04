@@ -13,9 +13,9 @@ use rocketmq_classic_protocol::{
         GetConsumerListByGroupRequestHeader, GetConsumerStatusRequestHeader,
         GetRouteInfoRequestHeader, HeaderMap, LiteSubscriptionCtlRequestHeader,
         LockBatchMqRequestHeader, NotificationRequestHeader, NotificationResponseHeader,
-        PollingInfoRequestHeader, PollingInfoResponseHeader, PopLiteMessageRequestHeader,
-        PopMessageRequestHeader, PopMessageResponseHeader, PullMessageRequestHeader,
-        PullMessageResponseHeader, QueryConsumerOffsetRequestHeader,
+        NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader, PollingInfoResponseHeader,
+        PopLiteMessageRequestHeader, PopMessageRequestHeader, PopMessageResponseHeader,
+        PullMessageRequestHeader, PullMessageResponseHeader, QueryConsumerOffsetRequestHeader,
         QueryConsumerOffsetResponseHeader, ReplyMessageRequestHeader, ResetOffsetRequestHeader,
         SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
         UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
@@ -195,6 +195,11 @@ fn java_request_and_response_header_fixtures_decode() {
     ))
     .unwrap();
     assert_eq!(lite_ctl, LiteSubscriptionCtlRequestHeader);
+    let unsubscribe = NotifyUnsubscribeLiteRequestHeader::decode_fields(&java_ext_fields(
+        "header-notify-unsubscribe-lite-request",
+    ))
+    .unwrap();
+    assert_eq!(unsubscribe.lite_topic, "lite-orders");
 
     let send_batch =
         SendMessageRequestHeaderV2::decode_fields(&java_ext_fields("header-send-batch-v2"))

@@ -824,6 +824,29 @@ impl CommandHeader for LiteSubscriptionCtlRequestHeader {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct NotifyUnsubscribeLiteRequestHeader {
+    pub lite_topic: String,
+    pub consumer_group: String,
+    pub client_id: String,
+}
+
+impl CommandHeader for NotifyUnsubscribeLiteRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("liteTopic".into(), self.lite_topic.clone());
+        fields.insert("consumerGroup".into(), self.consumer_group.clone());
+        fields.insert("clientId".into(), self.client_id.clone());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            lite_topic: required_string(fields, "liteTopic")?.to_owned(),
+            consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
+            client_id: required_string(fields, "clientId")?.to_owned(),
+        })
+    }
+}
+
 impl CommandHeader for ChangeInvisibleTimeRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
         fields.insert("consumerGroup".into(), self.consumer_group.clone());

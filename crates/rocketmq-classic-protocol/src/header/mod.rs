@@ -11,13 +11,13 @@ pub use basic::{
     ConsumerSendMsgBackRequestHeader, EndTransactionRequestHeader, EndTransactionResponseHeader,
     GetConsumerListByGroupRequestHeader, GetConsumerStatusRequestHeader, GetRouteInfoRequestHeader,
     LiteSubscriptionCtlRequestHeader, LockBatchMqRequestHeader, NotificationRequestHeader,
-    NotificationResponseHeader, PollingInfoRequestHeader, PollingInfoResponseHeader,
-    PopLiteMessageRequestHeader, PopMessageRequestHeader, PopMessageResponseHeader,
-    PullMessageRequestHeader, PullMessageResponseHeader, QueryConsumerOffsetRequestHeader,
-    QueryConsumerOffsetResponseHeader, ReplyMessageRequestHeader, ResetOffsetRequestHeader,
-    SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
-    UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
-    UpdateConsumerOffsetRequestHeader,
+    NotificationResponseHeader, NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader,
+    PollingInfoResponseHeader, PopLiteMessageRequestHeader, PopMessageRequestHeader,
+    PopMessageResponseHeader, PullMessageRequestHeader, PullMessageResponseHeader,
+    QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader, ReplyMessageRequestHeader,
+    ResetOffsetRequestHeader, SendMessageRequestHeaderV1, SendMessageRequestHeaderV2,
+    SendMessageResponseHeader, UnlockBatchMqRequestHeader, UnregisterClientRequestHeader,
+    UnregisterClientResponseHeader, UpdateConsumerOffsetRequestHeader,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
