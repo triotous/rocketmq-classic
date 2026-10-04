@@ -49,6 +49,30 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-java-invoked-consumer-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.ConsumerInvokedFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/rpc-invoked-consumer</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>verify-java-invoked-producer-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.ProducerInvokedFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/rpc-invoked-producer</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-java-invoked-ext-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

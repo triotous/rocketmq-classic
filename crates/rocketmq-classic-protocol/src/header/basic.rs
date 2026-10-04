@@ -280,6 +280,7 @@ impl CommandHeader for GetConsumerListByGroupRequestHeader {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ConsumerSendMsgBackRequestHeader {
     pub group: String,
+    pub broker_name: Option<String>,
     pub origin_topic: String,
     pub offset: i64,
     pub delay_level: i32,
@@ -291,6 +292,7 @@ pub struct ConsumerSendMsgBackRequestHeader {
 impl CommandHeader for ConsumerSendMsgBackRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
         fields.insert("group".into(), self.group.clone());
+        put_optional(fields, "bname", self.broker_name.as_deref());
         fields.insert("originTopic".into(), self.origin_topic.clone());
         fields.insert("offset".into(), self.offset.to_string());
         fields.insert("delayLevel".into(), self.delay_level.to_string());
@@ -302,6 +304,7 @@ impl CommandHeader for ConsumerSendMsgBackRequestHeader {
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
             group: required_string(fields, "group")?.to_owned(),
+            broker_name: optional_string(fields, "bname"),
             origin_topic: required_string(fields, "originTopic")?.to_owned(),
             offset: required_i64(fields, "offset")?,
             delay_level: required_i32(fields, "delayLevel")?,

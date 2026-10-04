@@ -774,7 +774,7 @@ fn header_validation_matrix() {
             "group originTopic offset delayLevel",
             "delayLevel maxReconsumeTimes",
             "offset",
-            "originMsgId maxReconsumeTimes",
+            "bname originMsgId maxReconsumeTimes",
             "unitMode"
         ),
         row!(
