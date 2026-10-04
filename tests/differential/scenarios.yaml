@@ -18,6 +18,10 @@
     {"id":"ORDER-001-lock-unlock","phase":0,"execution_phase":19,"profile":"two-broker","inputs":{"group":"compat_phase0_order"},"normalization":["opaque"],"live_status":"PENDING_PHASE_19"},
     {"id":"TX-001-commit","phase":0,"execution_phase":19,"profile":"basic","inputs":{"topic":"compat_phase0_tx"},"normalization":["opaque","message_id"],"live_status":"PENDING_PHASE_19"},
     {"id":"TX-002-rollback","phase":0,"execution_phase":19,"profile":"basic","inputs":{"topic":"compat_phase0_tx"},"normalization":["opaque","message_id"],"live_status":"PENDING_PHASE_19"},
-    {"id":"REQ-001-request-reply-success","phase":0,"execution_phase":19,"profile":"basic","inputs":{"topic":"compat_phase0_request"},"normalization":["opaque","message_id","timestamps"],"live_status":"PENDING_PHASE_19"}
+    {"id":"REQ-001-request-reply-success","phase":0,"execution_phase":19,"profile":"basic","inputs":{"topic":"compat_phase0_request"},"normalization":["opaque","message_id","timestamps"],"live_status":"PENDING_PHASE_19"},
+    {"id":"P5-V02-route","phase":5,"execution_phase":19,"profile":"basic","inputs":{"topic":"compat_p5_route"},"normalization":["opaque","timestamps"],"live_status":"PENDING_PHASE_19"},
+    {"id":"P5-V02-producer","phase":5,"execution_phase":19,"profile":"basic","inputs":{"topic":"compat_p5_send","methods":["send-v1","send-v2","batch","reply-v1","reply-v2","end-transaction"]},"normalization":["opaque","message_id","timestamps"],"live_status":"PENDING_PHASE_19"},
+    {"id":"P5-V02-consumer","phase":5,"execution_phase":19,"profile":"two-broker","inputs":{"group":"compat_p5_consumer","methods":["pull","query-offset","update-offset","consumer-list","send-back","lock","unlock"]},"normalization":["opaque","message_id","timestamps"],"live_status":"PENDING_PHASE_19"},
+    {"id":"P5-V02-extensions","phase":5,"execution_phase":19,"profile":"basic","inputs":{"group":"compat_p5_extension","methods":["heartbeat","heartbeat-v2","unregister","assignment","request-mode","lite-subscription","pop","pop-lite","ack","batch-ack","change-invisible-time"]},"normalization":["opaque","message_id","timestamps"],"live_status":"PENDING_PHASE_19"}
   ]
 }
