@@ -43,6 +43,8 @@ async fn java_invoked_consumer_requests_and_outcomes_match() {
         "consumer-list-empty",
         "consumer-list-no-body",
         "consumer-list-error",
+        "consumer-list-unknown",
+        "consumer-list-invalid-json",
         "send-back-success",
         "send-back-error",
         "send-back-unknown",
@@ -111,6 +113,7 @@ async fn java_invoked_consumer_requests_and_outcomes_match() {
                     "MQBrokerException;code=0;malformed".into()
                 }
                 Err(RpcError::Response { code, .. }) => format!("MQBrokerException;code={code}"),
+                Err(RpcError::MalformedResponse { .. }) => "JSONException;malformed".into(),
                 other => panic!("unexpected consumer list result: {other:?}"),
             }
         } else {

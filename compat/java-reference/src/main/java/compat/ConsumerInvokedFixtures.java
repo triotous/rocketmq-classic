@@ -131,6 +131,27 @@ public final class ConsumerInvokedFixtures {
         record(output, verify, capture, "consumer-list-error", RequestCode.GET_CONSUMER_LIST_BY_GROUP,
             "MQBrokerException;code=1");
 
+        capture.response = RemotingCommand.createResponseCommand(987654, "offline");
+        try {
+            api.getConsumerIdListByGroup("broker:10911", "consumer", 10000);
+            throw new IllegalStateException("unknown consumer list code accepted");
+        } catch (MQBrokerException expected) {
+            check(expected.getResponseCode() == 987654, "unknown consumer list code");
+        }
+        record(output, verify, capture, "consumer-list-unknown", RequestCode.GET_CONSUMER_LIST_BY_GROUP,
+            "MQBrokerException;code=987654");
+
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        capture.response.setBody("{".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        try {
+            api.getConsumerIdListByGroup("broker:10911", "consumer", 10000);
+            throw new IllegalStateException("malformed consumer list accepted");
+        } catch (com.alibaba.fastjson2.JSONException expected) {
+            // The pinned client propagates the JSON decoder's failure.
+        }
+        record(output, verify, capture, "consumer-list-invalid-json", RequestCode.GET_CONSUMER_LIST_BY_GROUP,
+            "JSONException;malformed");
+
         MessageExt retry = new MessageExt();
         retry.setTopic("oracle-topic");
         retry.setCommitLogOffset(19L);
