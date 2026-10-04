@@ -107,5 +107,10 @@ fn pinned_java_rpc_replies_decode_in_rust() {
 }
 
 fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    use std::fmt::Write;
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        write!(output, "{byte:02x}").unwrap();
+    }
+    output
 }
