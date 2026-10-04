@@ -2135,6 +2135,102 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn late_oneway_response_does_not_complete_concurrent_pending_request() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        async fn read_request(stream: &mut tokio::net::TcpStream) -> RemotingCommand {
+            let mut length = [0u8; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut frame = bytes::BytesMut::from(&length[..]);
+            frame.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut frame[4..]).await.unwrap();
+            crate::codec::frame::decode_next(&mut frame, DEFAULT_MAX_FRAME_SIZE)
+                .unwrap()
+                .unwrap()
+        }
+
+        async fn reply(stream: &mut tokio::net::TcpStream, opaque: i32) {
+            let mut response = RemotingCommand {
+                opaque,
+                ..RemotingCommand::default()
+            };
+            response.mark_response();
+            stream
+                .write_all(&crate::codec::frame::encode(&response, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .await
+                .unwrap();
+        }
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let (pending_tx, pending_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let oneway = read_request(&mut stream).await;
+            assert!(oneway.is_oneway());
+            let pending = read_request(&mut stream).await;
+            assert!(!pending.is_oneway());
+            assert_ne!(oneway.opaque, pending.opaque);
+            pending_tx.send(pending.opaque).unwrap();
+            release_rx.await.unwrap();
+            reply(&mut stream, oneway.opaque).await;
+            let probe = read_request(&mut stream).await;
+            reply(&mut stream, probe.opaque).await;
+            // The probe reply acknowledges that the reader passed the late oneway reply.
+            (pending.opaque, stream)
+        });
+
+        let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
+        let mut oneway = test_command();
+        oneway.opaque = 777;
+        client
+            .invoke_oneway(
+                &address,
+                oneway,
+                Instant::now() + std::time::Duration::from_secs(10),
+            )
+            .unwrap()
+            .await
+            .unwrap();
+        let invoke_client = client.clone();
+        let invoke_address = address.clone();
+        let pending = tokio::spawn(async move {
+            invoke_client
+                .invoke(
+                    &invoke_address,
+                    test_command(),
+                    Instant::now() + std::time::Duration::from_secs(10),
+                )
+                .await
+        });
+        let opaque = pending_rx.await.unwrap();
+        assert!(client.inner.pending.lock().unwrap().contains_key(&opaque));
+        release_tx.send(()).unwrap();
+        let probe = client
+            .invoke(
+                &address,
+                test_command(),
+                Instant::now() + std::time::Duration::from_secs(10),
+            )
+            .await
+            .unwrap();
+        assert_ne!(probe.opaque, opaque);
+        assert!(
+            !pending.is_finished(),
+            "late oneway response completed pending invoke"
+        );
+        assert!(client.inner.pending.lock().unwrap().contains_key(&opaque));
+        let (target, mut stream) = peer.await.unwrap();
+        assert_eq!(target, opaque);
+        reply(&mut stream, opaque).await;
+        assert_eq!(pending.await.unwrap().unwrap().opaque, opaque);
+        assert!(client.inner.pending.lock().unwrap().is_empty());
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
     async fn oneway_connection_acquisition_enters_connect_before_return() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
