@@ -9,7 +9,7 @@ use rocketmq_classic_core::{
     error::RpcError,
 };
 use rocketmq_classic_protocol::header::{
-    QueryConsumerOffsetRequestHeader, SendMessageRequestHeaderV1,
+    QueryConsumerOffsetRequestHeader, SendMessageRequestHeaderV1, UpdateConsumerOffsetRequestHeader,
 };
 use rocketmq_classic_remoting::{
     RemotingCommand,
@@ -47,10 +47,18 @@ fn bytes(value: &Value) -> Option<Vec<u8>> {
     })
 }
 
-async fn scripted(fixture: Value, route: bool) -> (MQClientApi, RemotingClient, String) {
+async fn scripted(
+    fixture: Value,
+    route: bool,
+) -> (
+    MQClientApi,
+    RemotingClient,
+    String,
+    tokio::task::JoinHandle<()>,
+) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap().to_string();
-    tokio::spawn(async move {
+    let peer = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
         let mut len = [0; 4];
         stream.read_exact(&mut len).await.unwrap();
@@ -70,7 +78,12 @@ async fn scripted(fixture: Value, route: bool) -> (MQClientApi, RemotingClient, 
             incoming.body.as_ref(),
             bytes(&expected["bodyBase64"]).as_ref()
         );
-        assert!(!incoming.is_oneway());
+        let oneway = fixture["mode"] == "ONEWAY";
+        assert_eq!(incoming.is_oneway(), oneway);
+        if oneway {
+            assert!(fixture["response"].is_null());
+            return;
+        }
         assert_eq!(fixture["mode"], "SYNC");
         let expected = &fixture["response"];
         let mut reply = RemotingCommand {
@@ -91,16 +104,16 @@ async fn scripted(fixture: Value, route: bool) -> (MQClientApi, RemotingClient, 
         client.update_name_server_address_list(vec![addr.clone()]);
     }
     client.start().unwrap();
-    (MQClientApi::new(client.clone()), client, addr)
+    (MQClientApi::new(client.clone()), client, addr, peer)
 }
 
 #[tokio::test]
-async fn java_invoked_sync_cases_match_rust_requests_and_outcomes() {
+async fn java_invoked_cases_match_rust_requests_and_outcomes() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/rpc-invoked");
     let entries: Vec<_> = fs::read_dir(&dir).unwrap().collect();
     assert_eq!(
         entries.len(),
-        11,
+        15,
         "all pinned Java invoked cases must be compared"
     );
     for name in [
@@ -115,6 +128,10 @@ async fn java_invoked_sync_cases_match_rust_requests_and_outcomes() {
         "offset-not-found",
         "offset-unknown",
         "offset-no-header",
+        "update-success",
+        "update-error",
+        "update-unknown",
+        "update-oneway",
     ] {
         let fixture: Value =
             serde_json::from_slice(&fs::read(dir.join(format!("{name}.json"))).unwrap()).unwrap();
@@ -124,7 +141,7 @@ async fn java_invoked_sync_cases_match_rust_requests_and_outcomes() {
             "org.apache.rocketmq:rocketmq-client:5.5.1"
         );
         assert_eq!(fixture["provenance"]["serverBaselineContacted"], false);
-        let (api, client, addr) = scripted(fixture.clone(), name.starts_with("route-")).await;
+        let (api, client, addr, peer) = scripted(fixture.clone(), name.starts_with("route-")).await;
         let deadline = Instant::now() + Duration::from_secs(3);
         let outcome = match name {
             name if name.starts_with("route-") => {
@@ -182,7 +199,25 @@ async fn java_invoked_sync_cases_match_rust_requests_and_outcomes() {
                     other => panic!("unexpected send result: {other:?}"),
                 }
             }
-            _ => {
+            name if name.starts_with("update-") => {
+                let header = UpdateConsumerOffsetRequestHeader {
+                    consumer_group: "consumer".into(),
+                    topic: "oracle-topic".into(),
+                    queue_id: 2,
+                    commit_offset: 42,
+                };
+                match api
+                    .update_consumer_offset(&addr, &header, name == "update-oneway", deadline)
+                    .await
+                {
+                    Ok(()) => "ok".into(),
+                    Err(RpcError::Response { code, .. }) => {
+                        format!("MQBrokerException;code={code}")
+                    }
+                    other => panic!("unexpected update result: {other:?}"),
+                }
+            }
+            name if name.starts_with("offset-") => {
                 let header = QueryConsumerOffsetRequestHeader {
                     consumer_group: "consumer".into(),
                     topic: "oracle-topic".into(),
@@ -204,8 +239,13 @@ async fn java_invoked_sync_cases_match_rust_requests_and_outcomes() {
                     other => panic!("unexpected offset result: {other:?}"),
                 }
             }
+            _ => panic!("unexpected case {name}"),
         };
         assert_eq!(outcome, fixture["outcome"], "{name}");
+        tokio::time::timeout(Duration::from_secs(3), peer)
+            .await
+            .expect("scripted peer timed out")
+            .expect("scripted peer request comparison failed");
         client.shutdown().await;
     }
 }

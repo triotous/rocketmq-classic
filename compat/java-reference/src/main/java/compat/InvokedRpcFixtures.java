@@ -26,6 +26,7 @@ import org.apache.rocketmq.remoting.protocol.header.QueryConsumerOffsetRequestHe
 import org.apache.rocketmq.remoting.protocol.header.QueryConsumerOffsetResponseHeader;
 import org.apache.rocketmq.remoting.protocol.header.SendMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.SendMessageResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.UpdateConsumerOffsetRequestHeader;
 import org.apache.rocketmq.remoting.protocol.route.TopicRouteData;
 
 /** Persisted semantic evidence from real client invocations with only the transport mocked. */
@@ -88,12 +89,13 @@ public final class InvokedRpcFixtures {
 
     private static String fixture(String name, Capture capture, int code, String outcome) {
         check(capture.request != null && capture.request.getCode() == code
-            && "invokeSync".equals(capture.mode), name + " dispatch");
+            && ("invokeSync".equals(capture.mode) || "invokeOneway".equals(capture.mode)), name + " dispatch");
         return "{\"provenance\":{\"client\":\"org.apache.rocketmq:rocketmq-client:5.5.1\","
             + "\"entrypoint\":\"MQClientAPIImpl\",\"transport\":\"mock RemotingClient\","
             + "\"serverBaselineContacted\":false},\"case\":" + quote(name)
-            + ",\"mode\":\"SYNC\",\"request\":" + command(capture.request)
-            + ",\"response\":" + command(capture.response)
+            + ",\"mode\":" + quote("invokeOneway".equals(capture.mode) ? "ONEWAY" : "SYNC")
+            + ",\"request\":" + command(capture.request)
+            + ",\"response\":" + (capture.response == null ? "null" : command(capture.response))
             + ",\"outcome\":" + quote(outcome) + "}\n";
     }
 
@@ -235,6 +237,41 @@ public final class InvokedRpcFixtures {
         }
         cases.add(new String[] {"offset-no-header.json", fixture("offset-no-header", capture,
             RequestCode.QUERY_CONSUMER_OFFSET, "NullPointerException;malformed")});
+
+        UpdateConsumerOffsetRequestHeader update = new UpdateConsumerOffsetRequestHeader();
+        update.setConsumerGroup("consumer");
+        update.setTopic("oracle-topic");
+        update.setQueueId(2);
+        update.setCommitOffset(42L);
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        api.updateConsumerOffset("broker:10911", update, 10000);
+        cases.add(new String[] {"update-success.json", fixture("update-success", capture,
+            RequestCode.UPDATE_CONSUMER_OFFSET, "ok")});
+
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SYSTEM_ERROR, "offline");
+        try {
+            api.updateConsumerOffset("broker:10911", update, 10000);
+            throw new IllegalStateException("update error accepted");
+        } catch (MQBrokerException expected) {
+            check(expected.getResponseCode() == ResponseCode.SYSTEM_ERROR, "update error code");
+        }
+        cases.add(new String[] {"update-error.json", fixture("update-error", capture,
+            RequestCode.UPDATE_CONSUMER_OFFSET, "MQBrokerException;code=1")});
+
+        capture.response = RemotingCommand.createResponseCommand(987654, "unknown");
+        try {
+            api.updateConsumerOffset("broker:10911", update, 10000);
+            throw new IllegalStateException("unknown update accepted");
+        } catch (MQBrokerException expected) {
+            check(expected.getResponseCode() == 987654, "unknown update code");
+        }
+        cases.add(new String[] {"update-unknown.json", fixture("update-unknown", capture,
+            RequestCode.UPDATE_CONSUMER_OFFSET, "MQBrokerException;code=987654")});
+
+        capture.response = null;
+        api.updateConsumerOffsetOneway("broker:10911", update, 10000);
+        cases.add(new String[] {"update-oneway.json", fixture("update-oneway", capture,
+            RequestCode.UPDATE_CONSUMER_OFFSET, "ok")});
 
         for (String[] item : cases) {
             Path file = output.resolve(item[0]);
