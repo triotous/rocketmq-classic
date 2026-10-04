@@ -77,6 +77,10 @@ public final class Main {
     }
 
     public static void main(String[] args) throws Exception {
+        if (args.length > 0 && "rpc-invoked-fixtures".equals(args[0])) {
+            InvokedRpcFixtures.run(option(args, "--output"), java.util.Arrays.asList(args).contains("--verify"));
+            return;
+        }
         if (args.length > 0 && "invoked-rpc-oracle".equals(args[0])) {
             InvokedRpcOracle.run();
             return;

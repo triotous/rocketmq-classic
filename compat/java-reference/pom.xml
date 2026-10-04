@@ -37,6 +37,18 @@
             <configuration><arguments><argument>self-test</argument></arguments></configuration>
           </execution>
           <execution>
+            <id>verify-java-invoked-rpc-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <arguments>
+                <argument>rpc-invoked-fixtures</argument><argument>--output</argument>
+                <argument>${project.basedir}/../../fixtures/rpc-invoked</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-rust-generated-remoting-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>
