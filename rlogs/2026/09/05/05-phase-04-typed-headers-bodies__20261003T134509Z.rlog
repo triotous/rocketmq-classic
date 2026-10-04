@@ -36,3 +36,13 @@
 - Committed POP/ACK/change-invisibility/polling typed headers and Rust fixture assertions as `57d4361 feat(protocol): add POP and ack consumer headers`.
 - Validation passed immediately before commits: `cargo test -p rocketmq-classic-protocol --test headers --locked --offline` (6 tests), `cargo clippy -p rocketmq-classic-protocol --all-targets --locked --offline -- -D warnings`, `cargo fmt --all --check`, `mvn -q -f compat/java-reference/pom.xml verify`, `git diff --check`.
 - Tree is clean. Phase 4 remains incomplete: P4-03 assignment/request-mode/Lite models and source/callsite audit continue; P4-04 transaction/reply/runtime headers lack Java fixture coverage; P4-05 exhaustive all-field canonical/negative fixture audit and P4-V01/V02/V03 full gates remain.
+
+## Continuation session 20261004T000619Z
+- Worktree started clean on branch  at .
+- Reconfirmed Java 5.5.1 call sites for , , , and ; these require Phase 4 models.
+- Next work: source-shaped assignment/request-mode/Lite/BatchAck body models, tests and inventory update; then transaction/reply/runtime fixtures and exhaustive field validation.
+- Implemented source-callsite-backed bodies for QUERY_ASSIGNMENT, SET_MESSAGE_REQUEST_MODE, LITE_SUBSCRIPTION_CTL, and BATCH_ACK_MESSAGE. BatchAck uses Java compact field names and BitSet base64 encoding; Lite action/mode/offset enums preserve Java enum names and defaults.
+- Protocol tests now exercise assignment/request-mode/Lite nested JSON and BatchAck base64 round-trip; protocol tests (22 unit + 6 header integration + 1 fixture integration) and Clippy pass.
+- Confirmed Java 5.5.1 `MQClientAPIImpl` call sites for all four body families, including batch ack path through `DefaultMQPushConsumerImpl`.
+- Commits: `d9558cc feat(protocol): add assignment lite and batch ack bodies`; `10dd2df docs(protocol): record Phase 4 model coverage`.
+- Worktree should be clean after committing this log update; Phase 4 acceptance gates remain pending.
