@@ -578,6 +578,7 @@ dependencies = [
 name = "rocketmq-classic-protocol"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "rocketmq-classic-common",
  "serde",
  "serde_json",
