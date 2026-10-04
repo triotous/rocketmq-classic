@@ -98,14 +98,8 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
             match (incoming.body.as_ref(), body(&request["bodyBase64"])) {
                 (None, None) => (),
                 (Some(actual), Some(reference)) => {
-                    let mut actual: Value = serde_json::from_slice(actual).unwrap();
-                    let mut reference: Value = serde_json::from_slice(&reference).unwrap();
-                    if incoming.code == 34 {
-                        // Known wire gap: Rust emits isWithoutSub; Java emits withoutSub.
-                        assert_eq!(actual["isWithoutSub"], reference["withoutSub"]);
-                        actual.as_object_mut().unwrap().remove("isWithoutSub");
-                        reference.as_object_mut().unwrap().remove("withoutSub");
-                    }
+                    let actual: Value = serde_json::from_slice(actual).unwrap();
+                    let reference: Value = serde_json::from_slice(&reference).unwrap();
                     assert_eq!(actual, reference);
                 }
                 other => panic!("body presence mismatch: {other:?}"),
@@ -211,16 +205,6 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
         };
         peer.await.unwrap();
         client.shutdown().await;
-        if name == "heartbeat-v2-success" {
-            // Known gap: Java's MixAll keys are uppercase, but Rust reads camelCase.
-            assert_eq!(result, "version=551;sub=false;support=false");
-            assert_eq!(fixture["outcome"], "version=551;sub=true;support=true");
-        } else if name == "heartbeat-v2-default" {
-            // Java reports zero when V2 flags are absent; Rust returns the response version.
-            assert_eq!(result, "version=515;sub=false;support=false");
-            assert_eq!(fixture["outcome"], "version=0;sub=false;support=false");
-        } else {
-            assert_eq!(result, fixture["outcome"], "{name}");
-        }
+        assert_eq!(result, fixture["outcome"], "{name}");
     }
 }

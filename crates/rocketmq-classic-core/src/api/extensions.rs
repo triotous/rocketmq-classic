@@ -116,10 +116,10 @@ impl MQClientApi {
         Ok(HeartbeatV2Result {
             version: reply.version,
             is_sub_change: fields
-                .and_then(|f| f.get("isSubChange"))
+                .and_then(|f| f.get("IS_SUB_CHANGE"))
                 .is_some_and(|v| v.eq_ignore_ascii_case("true")),
             is_support_heartbeat_v2: fields
-                .and_then(|f| f.get("isSupportHeartbeatV2"))
+                .and_then(|f| f.get("IS_SUPPORT_HEART_BEAT_V2"))
                 .is_some_and(|v| v.eq_ignore_ascii_case("true")),
         })
     }

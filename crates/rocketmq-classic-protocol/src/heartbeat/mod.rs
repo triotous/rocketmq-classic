@@ -143,7 +143,7 @@ pub struct HeartbeatData {
     pub consumer_data_set: HashSet<ConsumerData>,
     #[serde(default)]
     pub heartbeat_fingerprint: i32,
-    #[serde(default)]
+    #[serde(default, rename = "withoutSub", alias = "isWithoutSub")]
     pub is_without_sub: bool,
 }
 
@@ -170,6 +170,15 @@ mod tests {
         });
         let value = serde_json::to_value(&heartbeat).unwrap();
         assert_eq!(value["clientID"], "client");
+        assert_eq!(value["withoutSub"], false);
+        assert!(value.get("isWithoutSub").is_none());
+        assert!(
+            serde_json::from_value::<HeartbeatData>(serde_json::json!({
+                "withoutSub": true
+            }))
+            .unwrap()
+            .is_without_sub
+        );
         assert_eq!(
             value["consumerDataSet"][0]["subscriptionDataSet"][0]["subVersion"],
             i64::MAX

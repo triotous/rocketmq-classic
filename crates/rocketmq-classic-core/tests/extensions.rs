@@ -85,8 +85,8 @@ async fn heartbeat_versions_and_unregister_header() {
         None,
         Some(
             [
-                ("isSubChange".into(), "true".into()),
-                ("isSupportHeartbeatV2".into(), "true".into()),
+                ("IS_SUB_CHANGE".into(), "true".into()),
+                ("IS_SUPPORT_HEART_BEAT_V2".into(), "true".into()),
             ]
             .into(),
         ),
@@ -532,8 +532,8 @@ async fn assignment_invalid_json_and_heartbeat_v2_default_flags() {
         None,
         Some(
             [
-                ("isSubChange".into(), "not true".into()),
-                ("isSupportHeartbeatV2".into(), "FALSE".into()),
+                ("IS_SUB_CHANGE".into(), "not true".into()),
+                ("IS_SUPPORT_HEART_BEAT_V2".into(), "FALSE".into()),
             ]
             .into(),
         ),
@@ -680,14 +680,14 @@ async fn void_extension_success_ignores_unread_payload() {
 
 #[tokio::test]
 async fn heartbeat_and_ack_success_have_no_malformed_payload() {
-    // Heartbeat reads only the wire version; V2 flags are optional and invalid
+    // Heartbeat reads only the wire version; V2 extension fields are optional and invalid
     // flags default false. Ack and batch ack only inspect the status code.
     for v2 in [false, true] {
         let (api, client, addr, task) = peer(
             request::HEART_BEAT,
             response::SUCCESS,
             Some(b"invalid json".to_vec()),
-            Some([("isSubChange".into(), "invalid".into())].into()),
+            Some([("IS_SUB_CHANGE".into(), "invalid".into())].into()),
         )
         .await;
         if v2 {

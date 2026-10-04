@@ -125,8 +125,9 @@ public final class ExtensionMoreInvokedFixtures {
         record(dir, verify, c, "heartbeat-v2-success", RequestCode.HEART_BEAT, "version=551;sub=true;support=true");
         c.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
         v2 = api.sendHeartbeatV2("broker:10911", heartbeat, 10000);
-        check(!v2.isSubChange() && !v2.isSupportV2(), "v2 defaults");
-        record(dir, verify, c, "heartbeat-v2-default", RequestCode.HEART_BEAT, "version=0;sub=false;support=false");
+        check(v2.getVersion() == c.response.getVersion() && !v2.isSubChange() && !v2.isSupportV2(), "v2 defaults");
+        record(dir, verify, c, "heartbeat-v2-default", RequestCode.HEART_BEAT,
+            "version=" + v2.getVersion() + ";sub=false;support=false");
         for (int code : new int[] {1, 987654}) {
             c.response = RemotingCommand.createResponseCommand(code, "offline");
             try {
