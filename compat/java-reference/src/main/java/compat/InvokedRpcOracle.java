@@ -11,7 +11,13 @@ import org.apache.rocketmq.client.exception.MQBrokerException;
 import org.apache.rocketmq.client.exception.OffsetNotFoundException;
 import org.apache.rocketmq.client.producer.SendResult;
 import org.apache.rocketmq.client.producer.SendStatus;
+import org.apache.rocketmq.client.producer.SendCallback;
+import org.apache.rocketmq.client.producer.DefaultMQProducer;
+import org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl;
 import org.apache.rocketmq.common.message.Message;
+import org.apache.rocketmq.common.message.MessageAccessor;
+import org.apache.rocketmq.common.message.MessageBatch;
+import org.apache.rocketmq.common.message.MessageConst;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.common.message.MessageRequestMode;
@@ -35,6 +41,7 @@ import org.apache.rocketmq.remoting.protocol.header.ChangeInvisibleTimeRequestHe
 import java.util.Collections;
 import org.apache.rocketmq.remoting.protocol.heartbeat.HeartbeatData;
 import org.apache.rocketmq.remoting.RemotingClient;
+import org.apache.rocketmq.remoting.InvokeCallback;
 import org.apache.rocketmq.remoting.netty.NettyClientConfig;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.remoting.protocol.RequestCode;
@@ -56,6 +63,7 @@ public final class InvokedRpcOracle {
         String address;
         RemotingCommand request;
         RemotingCommand response;
+        InvokeCallback asyncCallback;
 
         RemotingClient proxy() {
             return (RemotingClient) Proxy.newProxyInstance(RemotingClient.class.getClassLoader(),
@@ -64,6 +72,7 @@ public final class InvokedRpcOracle {
                         mode = method.getName();
                         address = (String) args[0];
                         request = (RemotingCommand) args[1];
+                        asyncCallback = method.getName().equals("invokeAsync") ? (InvokeCallback) args[3] : null;
                         return method.getName().equals("invokeSync") ? response : null;
                     }
                     if (method.getReturnType() == boolean.class) return false;
@@ -143,6 +152,57 @@ public final class InvokedRpcOracle {
         check("invokeAsync".equals(capture.mode) && "broker:10911".equals(capture.address),
             "async send transport");
         check(capture.request.getCode() == RequestCode.SEND_MESSAGE_V2, "async send code");
+
+        DefaultMQProducerImpl producer = new DefaultMQProducerImpl(new DefaultMQProducer("oracle-producer"));
+        final SendResult[] asyncResult = new SendResult[1];
+        final Throwable[] asyncError = new Throwable[1];
+        SendCallback sendCallback = new SendCallback() {
+            @Override
+            public void onSuccess(SendResult result) {
+                asyncResult[0] = result;
+            }
+
+            @Override
+            public void onException(Throwable error) {
+                asyncError[0] = error;
+            }
+        };
+        check(api.sendMessage("broker:10911", "broker", message, send, 10000,
+            CommunicationMode.ASYNC, sendCallback, null, null, 0, null, producer) == null,
+            "async send callback dispatch result");
+        dispatched(capture, "invokeAsync", RequestCode.SEND_MESSAGE_V2, "broker:10911");
+        check(capture.asyncCallback != null, "async send transport callback captured");
+        RemotingCommand asyncReply = RemotingCommand.createResponseCommandWithHeader(ResponseCode.SUCCESS, sendReply);
+        asyncReply.makeCustomHeaderToNet();
+        capture.asyncCallback.operationSucceed(asyncReply);
+        check(asyncResult[0] != null && asyncResult[0].getSendStatus() == SendStatus.SEND_OK
+            && "broker-message".equals(asyncResult[0].getOffsetMsgId())
+            && asyncResult[0].getQueueOffset() == 17L && asyncError[0] == null,
+            "async send callback success result");
+
+        asyncResult[0] = null;
+        check(api.sendMessage("broker:10911", "broker", message, send, 10000,
+            CommunicationMode.ASYNC, sendCallback, null, null, 0, null, producer) == null,
+            "async send error dispatch result");
+        dispatched(capture, "invokeAsync", RequestCode.SEND_MESSAGE_V2, "broker:10911");
+        capture.asyncCallback.operationSucceed(RemotingCommand.createResponseCommand(ResponseCode.SYSTEM_ERROR, "offline"));
+        check(asyncResult[0] == null && asyncError[0] instanceof MQBrokerException
+            && ((MQBrokerException) asyncError[0]).getResponseCode() == ResponseCode.SYSTEM_ERROR,
+            "async send broker error callback");
+
+        Message replyMessage = new Message("oracle-topic", "reply".getBytes(StandardCharsets.UTF_8));
+        MessageAccessor.putProperty(replyMessage, MessageConst.PROPERTY_MESSAGE_TYPE, MixAll.REPLY_MESSAGE_FLAG);
+        api.sendMessage("broker:10911", "broker", replyMessage, send, 10000,
+            CommunicationMode.ONEWAY, null, null);
+        dispatched(capture, "invokeOneway", RequestCode.SEND_REPLY_MESSAGE_V2, "broker:10911");
+        check("reply".equals(new String(capture.request.getBody(), StandardCharsets.UTF_8)),
+            "reply send body");
+        MessageBatch sendBatch = MessageBatch.generateFromList(Collections.singletonList(message));
+        sendBatch.setBody(sendBatch.encode());
+        api.sendMessage("broker:10911", "broker", sendBatch, send, 10000,
+            CommunicationMode.ONEWAY, null, null);
+        dispatched(capture, "invokeOneway", RequestCode.SEND_BATCH_MESSAGE, "broker:10911");
+        check(java.util.Arrays.equals(sendBatch.getBody(), capture.request.getBody()), "batch send body");
 
         PullMessageRequestHeader pull = new PullMessageRequestHeader();
         pull.setConsumerGroup("consumer");
@@ -469,6 +529,6 @@ public final class InvokedRpcOracle {
         } catch (org.apache.rocketmq.client.exception.MQClientException expected) {
             check(expected.getResponseCode() == ResponseCode.SYSTEM_ERROR, "request mode error code");
         }
-        System.out.println("Invoked Java 5.5.1 MQClientAPIImpl: send/pull, offset, route, lock/unlock, send-back, request mode, POP/Lite/ACK/change dispatch (mock transport; async callbacks not invoked)");
+        System.out.println("Invoked Java 5.5.1 MQClientAPIImpl: send/pull, offset, route, lock/unlock, send-back, request mode, POP/Lite/ACK/change dispatch (mock transport; send async success/error callbacks invoked)");
     }
 }
