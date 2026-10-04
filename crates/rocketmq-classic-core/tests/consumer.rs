@@ -141,7 +141,13 @@ async fn offset_lookup_and_update_modes() {
             .await;
         match code {
             response::SUCCESS => assert_eq!(result.unwrap(), Some(7)),
-            response::QUERY_NOT_FOUND => assert_eq!(result.unwrap(), None),
+            response::QUERY_NOT_FOUND => assert!(matches!(
+                result,
+                Err(RpcError::Response {
+                    code: response::QUERY_NOT_FOUND,
+                    ..
+                })
+            )),
             _ => assert!(matches!(result, Err(RpcError::Response { .. }))),
         }
         client.shutdown().await;
@@ -283,4 +289,248 @@ async fn list_send_back_lock_and_unlock() {
         .unwrap();
         client.shutdown().await;
     }
+}
+
+fn rejected(
+    result: Result<impl std::fmt::Debug, RpcError>,
+    request_code: i32,
+    addr: &str,
+    code: i32,
+) {
+    match result {
+        Err(RpcError::Response {
+            request_code: actual,
+            peer,
+            code: actual_code,
+            remark,
+        }) => {
+            assert_eq!(actual, request_code);
+            assert_eq!(peer, addr);
+            assert_eq!(actual_code, code);
+            assert_eq!(remark.as_deref(), Some("broker error"));
+        }
+        other => panic!("expected broker rejection: {other:?}"),
+    }
+}
+
+fn malformed(result: Result<impl std::fmt::Debug, RpcError>, request_code: i32, addr: &str) {
+    match result {
+        Err(RpcError::MalformedResponse {
+            request_code: actual,
+            peer,
+            reason,
+        }) => {
+            assert_eq!(actual, request_code);
+            assert_eq!(peer, addr);
+            assert!(!reason.is_empty());
+        }
+        other => panic!("expected malformed response: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn every_consumer_rpc_rejects_unexpected_status_before_decoding() {
+    for code in [response::QUERY_NOT_FOUND, 9123] {
+        let (api, client, addr) = scripted(
+            code,
+            None,
+            Some(b"invalid json".to_vec()),
+            request::PULL_MESSAGE,
+            false,
+        )
+        .await;
+        rejected(
+            api.pull_message(&addr, &PullMessageRequestHeader::default(), deadline())
+                .await,
+            request::PULL_MESSAGE,
+            &addr,
+            code,
+        );
+        client.shutdown().await;
+
+        let (api, client, addr) =
+            scripted(code, None, None, request::QUERY_CONSUMER_OFFSET, false).await;
+        rejected(
+            api.query_consumer_offset(
+                &addr,
+                &QueryConsumerOffsetRequestHeader::default(),
+                deadline(),
+            )
+            .await,
+            request::QUERY_CONSUMER_OFFSET,
+            &addr,
+            code,
+        );
+        client.shutdown().await;
+
+        let (api, client, addr) =
+            scripted(code, None, None, request::UPDATE_CONSUMER_OFFSET, false).await;
+        rejected(
+            api.update_consumer_offset(
+                &addr,
+                &UpdateConsumerOffsetRequestHeader::default(),
+                false,
+                deadline(),
+            )
+            .await,
+            request::UPDATE_CONSUMER_OFFSET,
+            &addr,
+            code,
+        );
+        client.shutdown().await;
+
+        let (api, client, addr) = scripted(
+            code,
+            None,
+            Some(b"invalid json".to_vec()),
+            request::GET_CONSUMER_LIST_BY_GROUP,
+            false,
+        )
+        .await;
+        rejected(
+            api.get_consumer_list_by_group(&addr, "workers", deadline())
+                .await,
+            request::GET_CONSUMER_LIST_BY_GROUP,
+            &addr,
+            code,
+        );
+        client.shutdown().await;
+
+        let (api, client, addr) =
+            scripted(code, None, None, request::CONSUMER_SEND_MSG_BACK, false).await;
+        rejected(
+            api.consumer_send_message_back(
+                &addr,
+                &ConsumerSendMsgBackRequestHeader::default(),
+                deadline(),
+            )
+            .await,
+            request::CONSUMER_SEND_MSG_BACK,
+            &addr,
+            code,
+        );
+        client.shutdown().await;
+
+        let (api, client, addr) = scripted(
+            code,
+            None,
+            Some(b"invalid json".to_vec()),
+            request::LOCK_BATCH_MQ,
+            false,
+        )
+        .await;
+        rejected(
+            api.lock_batch_mq(&addr, &LockBatchRequestBody::default(), deadline())
+                .await,
+            request::LOCK_BATCH_MQ,
+            &addr,
+            code,
+        );
+        client.shutdown().await;
+
+        let (api, client, addr) = scripted(code, None, None, request::UNLOCK_BATCH_MQ, false).await;
+        rejected(
+            api.unlock_batch_mq(&addr, &UnlockBatchRequestBody::default(), false, deadline())
+                .await,
+            request::UNLOCK_BATCH_MQ,
+            &addr,
+            code,
+        );
+        client.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn successful_consumer_responses_decode_only_required_payloads() {
+    for fields in [
+        None,
+        Some(HeaderMap::from([("offset".into(), "bad".into())])),
+    ] {
+        let (api, client, addr) = scripted(
+            response::SUCCESS,
+            fields,
+            None,
+            request::QUERY_CONSUMER_OFFSET,
+            false,
+        )
+        .await;
+        malformed(
+            api.query_consumer_offset(
+                &addr,
+                &QueryConsumerOffsetRequestHeader::default(),
+                deadline(),
+            )
+            .await,
+            request::QUERY_CONSUMER_OFFSET,
+            &addr,
+        );
+        client.shutdown().await;
+    }
+    for body in [b"invalid json".to_vec(), b"null".to_vec()] {
+        let (api, client, addr) = scripted(
+            response::SUCCESS,
+            None,
+            Some(body.clone()),
+            request::GET_CONSUMER_LIST_BY_GROUP,
+            false,
+        )
+        .await;
+        malformed(
+            api.get_consumer_list_by_group(&addr, "workers", deadline())
+                .await,
+            request::GET_CONSUMER_LIST_BY_GROUP,
+            &addr,
+        );
+        client.shutdown().await;
+
+        let (api, client, addr) = scripted(
+            response::SUCCESS,
+            None,
+            Some(body),
+            request::LOCK_BATCH_MQ,
+            false,
+        )
+        .await;
+        malformed(
+            api.lock_batch_mq(&addr, &LockBatchRequestBody::default(), deadline())
+                .await,
+            request::LOCK_BATCH_MQ,
+            &addr,
+        );
+        client.shutdown().await;
+    }
+    for body in [br#"{}"#.to_vec(), br#"{"consumerIdList":[]}"#.to_vec()] {
+        let (api, client, addr) = scripted(
+            response::SUCCESS,
+            None,
+            Some(body.clone()),
+            request::GET_CONSUMER_LIST_BY_GROUP,
+            false,
+        )
+        .await;
+        let expected = if body == b"{}" { None } else { Some(vec![]) };
+        assert_eq!(
+            api.get_consumer_list_by_group(&addr, "workers", deadline())
+                .await
+                .unwrap(),
+            expected
+        );
+        client.shutdown().await;
+    }
+    let (api, client, addr) = scripted(
+        response::SUCCESS,
+        None,
+        None,
+        request::CONSUMER_SEND_MSG_BACK,
+        false,
+    )
+    .await;
+    api.consumer_send_message_back(
+        &addr,
+        &ConsumerSendMsgBackRequestHeader::default(),
+        deadline(),
+    )
+    .await
+    .unwrap();
+    client.shutdown().await;
 }
