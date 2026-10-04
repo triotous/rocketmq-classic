@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 bytes.workspace = true
+rocketmq-classic-common = { path = "../rocketmq-classic-common" }
 rocketmq-classic-protocol = { path = "../rocketmq-classic-protocol" }
 serde.workspace = true
 serde_json.workspace = true

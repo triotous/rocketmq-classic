@@ -1,11 +1,21 @@
 use std::{env, fs, path::PathBuf};
 
 use rocketmq_classic_protocol::{
+    body::{
+        BatchAck, BatchAckMessageRequestBody, ConsumeMessageDirectlyResult, ConsumeMessageResult,
+        GetConsumerStatusBody, LiteSubscriptionAction, LiteSubscriptionCtlRequestBody,
+        LiteSubscriptionDto, MessageRequestMode, OffsetOption, OffsetOptionType,
+        QueryAssignmentRequestBody, ResetOffsetBody, SetMessageRequestModeRequestBody,
+    },
     codes::{LanguageCode, SerializeType},
     header::{
-        CommandHeader, GetRouteInfoRequestHeader, PullMessageRequestHeader,
-        QueryConsumerOffsetRequestHeader, SendMessageRequestHeaderV1, SendMessageRequestHeaderV2,
-        UpdateConsumerOffsetRequestHeader,
+        AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader,
+        CheckTransactionStateRequestHeader, CheckTransactionStateResponseHeader, CommandHeader,
+        EndTransactionRequestHeader, GetRouteInfoRequestHeader, NotificationRequestHeader,
+        NotificationResponseHeader, PopMessageRequestHeader, PullMessageRequestHeader,
+        PullMessageResponseHeader, QueryConsumerOffsetRequestHeader, ReplyMessageRequestHeader,
+        ResetOffsetRequestHeader, SendMessageRequestHeaderV1, SendMessageRequestHeaderV2,
+        SendMessageResponseHeader, UpdateConsumerOffsetRequestHeader,
     },
 };
 use rocketmq_classic_remoting::{codec::frame, command::RemotingCommand};
@@ -19,6 +29,10 @@ fn main() {
     fs::create_dir_all(&output).expect("create output directory");
     if mode == "p4-headers" {
         generate_p4_headers(&output);
+        return;
+    }
+    if mode == "p4-bodies" {
+        generate_p4_bodies(&output);
         return;
     }
     for (name, code, serialization) in [
@@ -99,6 +113,26 @@ fn generate_p4_headers(output: &std::path::Path) {
     );
     write_typed(
         output,
+        "typed-send-batch-v2.bin",
+        320,
+        &SendMessageRequestHeaderV2 {
+            a: "producers".into(),
+            b: "orders".into(),
+            c: "TBW102".into(),
+            d: 4,
+            e: 2,
+            f: 1,
+            g: 1_712_345_678_901,
+            h: 7,
+            i: Some("TAGS\\u0001blue".into()),
+            j: Some(0),
+            k: Some(false),
+            l: Some(16),
+            m: Some(true),
+        },
+    );
+    write_typed(
+        output,
         "typed-pull.bin",
         11,
         &PullMessageRequestHeader {
@@ -136,6 +170,168 @@ fn generate_p4_headers(output: &std::path::Path) {
             commit_offset: 9,
         },
     );
+    write_typed(
+        output,
+        "typed-end-transaction.bin",
+        37,
+        &EndTransactionRequestHeader {
+            topic: Some("orders".into()),
+            producer_group: "producers".into(),
+            transaction_state_table_offset: 3,
+            commit_log_offset: 9,
+            commit_or_rollback: 8,
+            from_transaction_check: Some(false),
+            msg_id: "msg-1".into(),
+            transaction_id: Some("tx-1".into()),
+        },
+    );
+    write_typed(
+        output,
+        "typed-check-transaction.bin",
+        39,
+        &CheckTransactionStateRequestHeader {
+            topic: Some("orders".into()),
+            transaction_state_table_offset: 3,
+            commit_log_offset: 9,
+            msg_id: Some("msg-1".into()),
+            transaction_id: Some("tx-1".into()),
+            offset_msg_id: Some("offset-1".into()),
+        },
+    );
+    write_typed(
+        output,
+        "typed-check-transaction-response.bin",
+        0,
+        &CheckTransactionStateResponseHeader {
+            producer_group: "producers".into(),
+            transaction_state_table_offset: 3,
+            commit_log_offset: 9,
+            commit_or_rollback: 8,
+        },
+    );
+    write_typed(
+        output,
+        "typed-reply.bin",
+        324,
+        &ReplyMessageRequestHeader {
+            producer_group: "producers".into(),
+            topic: "orders".into(),
+            default_topic: "TBW102".into(),
+            default_topic_queue_nums: 4,
+            queue_id: 2,
+            sys_flag: 1,
+            born_timestamp: 5,
+            flag: 7,
+            properties: Some("CORRELATION_ID=correlation-1".into()),
+            reconsume_times: None,
+            unit_mode: false,
+            born_host: "127.0.0.1:1001".into(),
+            store_host: "127.0.0.1:10911".into(),
+            store_timestamp: 6,
+        },
+    );
+    write_typed(
+        output,
+        "typed-pull-response.bin",
+        0,
+        &PullMessageResponseHeader {
+            suggest_which_broker_id: 0,
+            next_begin_offset: 10,
+            min_offset: 0,
+            max_offset: 100,
+            ..PullMessageResponseHeader::default()
+        },
+    );
+    write_typed(
+        output,
+        "typed-send-response.bin",
+        0,
+        &SendMessageResponseHeader {
+            msg_id: "msg-1".into(),
+            queue_id: 2,
+            queue_offset: 99,
+            ..SendMessageResponseHeader::default()
+        },
+    );
+    write_typed(
+        output,
+        "typed-notification.bin",
+        200054,
+        &NotificationRequestHeader {
+            consumer_group: "workers".into(),
+            topic: "orders".into(),
+            queue_id: 1,
+            poll_time: 1000,
+            born_time: 1_712_345_678_901,
+            ..NotificationRequestHeader::default()
+        },
+    );
+    write_typed(
+        output,
+        "typed-notification-response.bin",
+        0,
+        &NotificationResponseHeader {
+            has_msg: true,
+            polling_full: false,
+        },
+    );
+    write_typed(
+        output,
+        "typed-reset-offset.bin",
+        211,
+        &ResetOffsetRequestHeader {
+            group: "workers".into(),
+            topic: "orders".into(),
+            queue_id: 1,
+            offset: Some(9),
+            timestamp: 1_712_345_678_901,
+            force: true,
+        },
+    );
+    write_typed(
+        output,
+        "typed-pop.bin",
+        200050,
+        &PopMessageRequestHeader {
+            consumer_group: "workers".into(),
+            topic: "orders".into(),
+            queue_id: 1,
+            max_msg_nums: 16,
+            invisible_time: 30_000,
+            poll_time: 1_000,
+            born_time: 1_712_345_678_901,
+            init_mode: 0,
+            ..PopMessageRequestHeader::default()
+        },
+    );
+    write_typed(
+        output,
+        "typed-ack.bin",
+        200051,
+        &AckMessageRequestHeader {
+            consumer_group: "workers".into(),
+            topic: "orders".into(),
+            queue_id: 1,
+            extra_info: "startOffset popTime invisibleTime queueId".into(),
+            offset: 9,
+            lite_topic: None,
+        },
+    );
+    write_typed(
+        output,
+        "typed-change-invisible.bin",
+        200053,
+        &ChangeInvisibleTimeRequestHeader {
+            consumer_group: "workers".into(),
+            topic: "orders".into(),
+            queue_id: 1,
+            extra_info: "startOffset popTime invisibleTime queueId".into(),
+            offset: 9,
+            invisible_time: 60_000,
+            lite_topic: None,
+            suspend: false,
+        },
+    );
 }
 
 fn write_typed(output: &std::path::Path, name: &str, code: i32, header: &impl CommandHeader) {
@@ -153,4 +349,118 @@ fn write_typed(output: &std::path::Path, name: &str, code: i32, header: &impl Co
         frame::encode(&command, frame::DEFAULT_MAX_FRAME_SIZE).expect("encode typed header"),
     )
     .expect("write typed header fixture");
+}
+
+fn write_body(output: &std::path::Path, name: &str, code: i32, body: &impl serde::Serialize) {
+    let command = RemotingCommand {
+        code,
+        language: LanguageCode::Rust,
+        opaque: 102,
+        body: Some(serde_json::to_vec(body).expect("serialize typed body")),
+        ..RemotingCommand::default()
+    };
+    fs::write(
+        output.join(name),
+        frame::encode(&command, frame::DEFAULT_MAX_FRAME_SIZE).expect("encode typed body frame"),
+    )
+    .expect("write typed body fixture");
+}
+
+fn generate_p4_bodies(output: &std::path::Path) {
+    write_body(
+        output,
+        "body-query-assignment.bin",
+        400,
+        &QueryAssignmentRequestBody {
+            topic: Some("orders".into()),
+            consumer_group: Some("workers".into()),
+            client_id: Some("client".into()),
+            strategy_name: Some("AllocateMessageQueueAveragely".into()),
+            message_model: Some(rocketmq_classic_protocol::heartbeat::MessageModel::Clustering),
+        },
+    );
+    write_body(
+        output,
+        "body-set-request-mode.bin",
+        401,
+        &SetMessageRequestModeRequestBody {
+            topic: Some("orders".into()),
+            consumer_group: Some("workers".into()),
+            mode: MessageRequestMode::Pop,
+            pop_share_queue_num: 2,
+        },
+    );
+    write_body(
+        output,
+        "body-lite-subscription.bin",
+        200071,
+        &LiteSubscriptionCtlRequestBody {
+            subscription_set: Some(vec![LiteSubscriptionDto {
+                action: Some(LiteSubscriptionAction::CompleteAdd),
+                client_id: Some("client".into()),
+                group: Some("workers".into()),
+                topic: Some("orders".into()),
+                lite_topic_set: Some(vec!["lite-orders".into()]),
+                offset_option: Some(OffsetOption {
+                    option_type: Some(OffsetOptionType::Policy),
+                    value: 1,
+                }),
+                version: 2,
+            }]),
+        },
+    );
+    write_body(
+        output,
+        "body-batch-ack.bin",
+        200151,
+        &BatchAckMessageRequestBody {
+            broker_name: Some("broker-a".into()),
+            acks: Some(vec![BatchAck {
+                consumer_group: Some("workers".into()),
+                topic: Some("orders".into()),
+                retry: Some("0".into()),
+                start_offset: 100,
+                queue_id: 1,
+                revive_queue_id: 0,
+                pop_time: 10,
+                invisible_time: 20,
+                bit_set: Some(vec![0b0000_0101]),
+            }]),
+        },
+    );
+    write_body(
+        output,
+        "body-reset-offset.bin",
+        212,
+        &ResetOffsetBody {
+            offset_table: Some(vec![(
+                rocketmq_classic_common::message::MessageQueue::new("orders", "broker-a", 1),
+                9,
+            )]),
+        },
+    );
+    write_body(
+        output,
+        "body-consumer-status.bin",
+        223,
+        &GetConsumerStatusBody {
+            message_queue_table: vec![(
+                rocketmq_classic_common::message::MessageQueue::new("orders", "broker-a", 1),
+                9,
+            )],
+            consumer_table: std::collections::BTreeMap::new(),
+        },
+    );
+    write_body(
+        output,
+        "body-consume-directly.bin",
+        309,
+        &ConsumeMessageDirectlyResult {
+            order: false,
+            auto_commit: true,
+            consume_result: Some(ConsumeMessageResult::CrSuccess),
+            remark: None,
+            spent_time_mills: 2,
+        },
+    );
 }

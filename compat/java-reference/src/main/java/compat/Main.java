@@ -34,6 +34,33 @@ import org.apache.rocketmq.remoting.protocol.header.ChangeInvisibleTimeRequestHe
 import org.apache.rocketmq.remoting.protocol.header.NotificationRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.PollingInfoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.PollingInfoResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.EndTransactionRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.EndTransactionResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.CheckTransactionStateRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.CheckTransactionStateResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.ReplyMessageRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.ResetOffsetRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.NotificationResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.PopLiteMessageRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.GetConsumerStatusRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.ConsumeMessageDirectlyResultRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.LiteSubscriptionCtlRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.LockBatchMqRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.UnlockBatchMqRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.UnregisterClientResponseHeader;
+import org.apache.rocketmq.remoting.protocol.body.QueryAssignmentRequestBody;
+import org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody;
+import org.apache.rocketmq.remoting.protocol.body.LiteSubscriptionCtlRequestBody;
+import org.apache.rocketmq.remoting.protocol.body.BatchAck;
+import org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody;
+import org.apache.rocketmq.remoting.protocol.body.ResetOffsetBody;
+import org.apache.rocketmq.remoting.protocol.body.GetConsumerStatusBody;
+import org.apache.rocketmq.remoting.protocol.body.ConsumeMessageDirectlyResult;
+import org.apache.rocketmq.remoting.protocol.body.CMResult;
+import org.apache.rocketmq.common.message.MessageRequestMode;
+import org.apache.rocketmq.common.lite.LiteSubscriptionDTO;
+import org.apache.rocketmq.common.lite.LiteSubscriptionAction;
+import org.apache.rocketmq.common.lite.OffsetOption;
 import org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader;
 
 public final class Main {
@@ -64,6 +91,10 @@ public final class Main {
         }
         if ("verify-rust-fixtures".equals(args[0])) {
             verifyRustFixtures(option(args, "--dir"));
+            return;
+        }
+        if ("verify-rust-bodies".equals(args[0])) {
+            verifyRustBodies(option(args, "--dir"));
             return;
         }
         if ("scenario".equals(args[0])) {
@@ -160,6 +191,8 @@ public final class Main {
         send.setBatch(false);
         writeTypedHeaderFixture(output, "send-v1", 10, send);
         writeTypedHeaderFixture(output, "send-v2", 310,
+            SendMessageRequestHeaderV2.createSendMessageRequestHeaderV2(send));
+        writeTypedHeaderFixture(output, "send-batch-v2", 320,
             SendMessageRequestHeaderV2.createSendMessageRequestHeaderV2(send));
 
         PullMessageRequestHeader pull = new PullMessageRequestHeader();
@@ -269,6 +302,104 @@ public final class Main {
         PollingInfoResponseHeader pollingResponse = new PollingInfoResponseHeader();
         pollingResponse.setPollingNum(2);
         writeTypedHeaderFixture(output, "polling-response", RemotingCommand.createResponseCommandWithHeader(0, pollingResponse));
+
+        EndTransactionRequestHeader endTransaction = new EndTransactionRequestHeader();
+        endTransaction.setTopic("orders"); endTransaction.setProducerGroup("producers");
+        endTransaction.setTranStateTableOffset(3L); endTransaction.setCommitLogOffset(9L);
+        endTransaction.setCommitOrRollback(8); endTransaction.setFromTransactionCheck(false);
+        endTransaction.setMsgId("msg-1"); endTransaction.setTransactionId("tx-1");
+        writeTypedHeaderFixture(output, "end-transaction-request", 37, endTransaction);
+        writeTypedHeaderFixture(output, "end-transaction-response",
+            RemotingCommand.createResponseCommandWithHeader(0, new EndTransactionResponseHeader()));
+
+        CheckTransactionStateRequestHeader checkTransaction = new CheckTransactionStateRequestHeader();
+        checkTransaction.setTopic("orders"); checkTransaction.setTranStateTableOffset(3L);
+        checkTransaction.setCommitLogOffset(9L); checkTransaction.setMsgId("msg-1");
+        checkTransaction.setTransactionId("tx-1"); checkTransaction.setOffsetMsgId("offset-1");
+        writeTypedHeaderFixture(output, "check-transaction-request", 39, checkTransaction);
+
+        CheckTransactionStateResponseHeader checkResponse = new CheckTransactionStateResponseHeader();
+        checkResponse.setProducerGroup("producers"); checkResponse.setTranStateTableOffset(3L);
+        checkResponse.setCommitLogOffset(9L); checkResponse.setCommitOrRollback(8);
+        writeTypedHeaderFixture(output, "check-transaction-response", RemotingCommand.createResponseCommandWithHeader(0, checkResponse));
+
+        ReplyMessageRequestHeader reply = new ReplyMessageRequestHeader();
+        reply.setProducerGroup("producers"); reply.setTopic("orders"); reply.setDefaultTopic("TBW102");
+        reply.setDefaultTopicQueueNums(4); reply.setQueueId(2); reply.setSysFlag(1);
+        reply.setBornTimestamp(5L); reply.setFlag(7); reply.setProperties("CORRELATION_ID=correlation-1");
+        reply.setUnitMode(false); reply.setBornHost("127.0.0.1:1001");
+        reply.setStoreHost("127.0.0.1:10911"); reply.setStoreTimestamp(6L);
+        writeTypedHeaderFixture(output, "reply-request", 324, reply);
+
+        ResetOffsetRequestHeader reset = new ResetOffsetRequestHeader();
+        reset.setGroup("workers"); reset.setTopic("orders"); reset.setQueueId(1);
+        reset.setOffset(9L); reset.setTimestamp(1_712_345_678_901L); reset.setForce(true);
+        writeTypedHeaderFixture(output, "reset-offset-request", 211, reset);
+
+        NotificationResponseHeader notificationResponse = new NotificationResponseHeader();
+        notificationResponse.setHasMsg(true); notificationResponse.setPollingFull(false);
+        writeTypedHeaderFixture(output, "notification-response", RemotingCommand.createResponseCommandWithHeader(0, notificationResponse));
+
+        PopLiteMessageRequestHeader popLite = new PopLiteMessageRequestHeader();
+        popLite.setClientId("client"); popLite.setConsumerGroup("workers"); popLite.setTopic("orders");
+        popLite.setMaxMsgNum(1); popLite.setInvisibleTime(1000L); popLite.setPollTime(1L); popLite.setBornTime(1L);
+        writeTypedHeaderFixture(output, "pop-lite-request", 200070, popLite);
+        GetConsumerStatusRequestHeader status = new GetConsumerStatusRequestHeader();
+        status.setTopic("orders"); status.setGroup("workers");
+        writeTypedHeaderFixture(output, "consumer-status-request", 221, status);
+        ConsumeMessageDirectlyResultRequestHeader direct = new ConsumeMessageDirectlyResultRequestHeader();
+        direct.setConsumerGroup("workers");
+        writeTypedHeaderFixture(output, "consume-directly-request", 309, direct);
+        writeTypedHeaderFixture(output, "lite-subscription-request", 200071, new LiteSubscriptionCtlRequestHeader());
+        LockBatchMqRequestHeader lockHeader = new LockBatchMqRequestHeader();
+        lockHeader.setNamespace("tenant"); lockHeader.setBrokerName("broker-a");
+        writeTypedHeaderFixture(output, "lock-batch-request", 41, lockHeader);
+        UnlockBatchMqRequestHeader unlockHeader = new UnlockBatchMqRequestHeader();
+        unlockHeader.setNamespace("tenant"); unlockHeader.setBrokerName("broker-a");
+        writeTypedHeaderFixture(output, "unlock-batch-request", 42, unlockHeader);
+        writeTypedHeaderFixture(output, "unregister-response",
+            RemotingCommand.createResponseCommandWithHeader(0, new UnregisterClientResponseHeader()));
+
+        QueryAssignmentRequestBody assignmentBody = new QueryAssignmentRequestBody();
+        assignmentBody.setTopic("orders"); assignmentBody.setConsumerGroup("workers");
+        assignmentBody.setClientId("client"); assignmentBody.setStrategyName("AllocateMessageQueueAveragely");
+        assignmentBody.setMessageModel(org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel.CLUSTERING);
+        writeJsonBodyFixture(output, "body-query-assignment", 400, assignmentBody.encode());
+
+        ResetOffsetBody resetBody = new ResetOffsetBody();
+        resetBody.setOffsetTable(java.util.Map.of(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker-a", 1), 9L));
+        writeJsonBodyFixture(output, "body-reset-offset", 212, resetBody.encode());
+        GetConsumerStatusBody statusBody = new GetConsumerStatusBody();
+        statusBody.setMessageQueueTable(java.util.Map.of(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker-a", 1), 9L));
+        statusBody.setConsumerTable(java.util.Map.of());
+        writeJsonBodyFixture(output, "body-consumer-status", 223, statusBody.encode());
+
+        SetMessageRequestModeRequestBody modeBody = new SetMessageRequestModeRequestBody();
+        modeBody.setTopic("orders"); modeBody.setConsumerGroup("workers");
+        modeBody.setMode(MessageRequestMode.POP); modeBody.setPopShareQueueNum(2);
+        writeJsonBodyFixture(output, "body-set-request-mode", 401, modeBody.encode());
+
+        LiteSubscriptionDTO dto = new LiteSubscriptionDTO().setAction(LiteSubscriptionAction.COMPLETE_ADD)
+            .setClientId("client").setGroup("workers").setTopic("orders")
+            .setLiteTopicSet(java.util.Set.of("lite-orders"));
+        dto.setOffsetOption(new OffsetOption(OffsetOption.Type.POLICY, OffsetOption.POLICY_MIN_VALUE));
+        dto.setVersion(2L);
+        LiteSubscriptionCtlRequestBody liteBody = new LiteSubscriptionCtlRequestBody();
+        liteBody.setSubscriptionSet(java.util.Set.of(dto));
+        writeJsonBodyFixture(output, "body-lite-subscription", 200071, liteBody.encode());
+
+        BatchAck batchAck = new BatchAck();
+        batchAck.setConsumerGroup("workers"); batchAck.setTopic("orders"); batchAck.setRetry("0");
+        batchAck.setStartOffset(100L); batchAck.setQueueId(1); batchAck.setReviveQueueId(0);
+        batchAck.setPopTime(10L); batchAck.setInvisibleTime(20L);
+        java.util.BitSet bitSet = new java.util.BitSet(); bitSet.set(0); bitSet.set(2); batchAck.setBitSet(bitSet);
+        BatchAckMessageRequestBody batchBody = new BatchAckMessageRequestBody();
+        batchBody.setBrokerName("broker-a"); batchBody.setAcks(java.util.List.of(batchAck));
+        writeJsonBodyFixture(output, "body-batch-ack", 200151, batchBody.encode());
+
+        ConsumeMessageDirectlyResult directBody = new ConsumeMessageDirectlyResult();
+        directBody.setConsumeResult(CMResult.CR_SUCCESS); directBody.setSpentTimeMills(2L);
+        writeJsonBodyFixture(output, "body-consume-directly", 309, directBody.encode());
         System.out.println("Generated typed Java header fixtures in " + output);
     }
 
@@ -299,6 +430,12 @@ public final class Main {
         Files.writeString(output.resolve(stem + ".json"), toJson(metadata) + "\n", StandardCharsets.UTF_8);
     }
 
+    private static void writeJsonBodyFixture(Path output, String id, int code, byte[] body) throws Exception {
+        RemotingCommand command = command(code, SerializeType.JSON, id);
+        command.setBody(body);
+        writeFixture(output, id, code, SerializeType.JSON, command, bytes(command.encode()));
+    }
+
     private static void verifyRustFixtures(Path directory) throws Exception {
         if (!Files.isDirectory(directory)) throw new IOException("missing Rust fixture directory: " + directory);
         int count = 0;
@@ -319,7 +456,7 @@ public final class Main {
             require("rust-phase-2".equals(((Map<?, ?>) json.get("ext_fields")).get("oracle")), "Rust JSON ext field decoded");
             require("rust-phase-2".equals(((Map<?, ?>) rocketmq.get("ext_fields")).get("oracle")), "Rust private ext field decoded");
         } else {
-            require(count >= 6, "Rust typed header fixtures were supplied");
+            require(count >= 18, "Rust typed header fixtures were supplied");
             Map<String, Map<String, Object>> byName = new LinkedHashMap<>();
             try (var files = Files.list(directory)) {
                 for (Path file : (Iterable<Path>) files.filter(path -> path.toString().endsWith(".bin"))::iterator) {
@@ -330,9 +467,22 @@ public final class Main {
             assertExtField(byName, "typed-route.bin", 105, "topic", "orders");
             assertExtField(byName, "typed-send-v1.bin", 10, "producerGroup", "producers");
             assertExtField(byName, "typed-send-v2.bin", 310, "a", "producers");
+        assertExtField(byName, "typed-send-batch-v2.bin", 320, "a", "producers");
             assertExtField(byName, "typed-pull.bin", 11, "consumerGroup", "workers");
             assertExtField(byName, "typed-query-offset.bin", 14, "consumerGroup", "workers");
             assertExtField(byName, "typed-update-offset.bin", 15, "commitOffset", "9");
+            assertExtField(byName, "typed-end-transaction.bin", 37, "producerGroup", "producers");
+            assertExtField(byName, "typed-check-transaction.bin", 39, "commitLogOffset", "9");
+            assertExtField(byName, "typed-check-transaction-response.bin", 0, "commitOrRollback", "8");
+            assertExtField(byName, "typed-reply.bin", 324, "bornHost", "127.0.0.1:1001");
+            assertExtField(byName, "typed-send-response.bin", 0, "msgId", "msg-1");
+            assertExtField(byName, "typed-pull-response.bin", 0, "nextBeginOffset", "10");
+            assertExtField(byName, "typed-notification.bin", 200054, "consumerGroup", "workers");
+            assertExtField(byName, "typed-notification-response.bin", 0, "hasMsg", "true");
+            assertExtField(byName, "typed-reset-offset.bin", 211, "timestamp", "1712345678901");
+            assertExtField(byName, "typed-pop.bin", 200050, "maxMsgNums", "16");
+            assertExtField(byName, "typed-ack.bin", 200051, "extraInfo", "startOffset popTime invisibleTime queueId");
+            assertExtField(byName, "typed-change-invisible.bin", 200053, "invisibleTime", "60000");
         }
         System.out.println("Java decoded " + count + " Rust-generated fixture(s)");
     }
@@ -344,6 +494,45 @@ public final class Main {
         require(((Number) command.get("code")).intValue() == code, "Rust typed fixture code: " + name);
         require(expected.equals(((Map<?, ?>) command.get("ext_fields")).get(field)),
             "Rust typed fixture field " + field + ": " + name);
+    }
+
+    private static void verifyRustBodies(Path directory) throws Exception {
+        Map<String, Map<String, Object>> decoded = new LinkedHashMap<>();
+        try (var files = Files.list(directory)) {
+            for (Path file : (Iterable<Path>) files.filter(path -> path.toString().endsWith(".bin"))::iterator) {
+                decoded.put(file.getFileName().toString(), decode(Files.readAllBytes(file)));
+            }
+        }
+        require(decoded.size() == 7, "seven Rust typed JSON body frames decoded");
+        assertBodyField(directory, decoded, "body-query-assignment.bin", 400, "topic", "orders");
+        assertBodyField(directory, decoded, "body-set-request-mode.bin", 401, "mode", "POP");
+        assertBodyField(directory, decoded, "body-lite-subscription.bin", 200071, "subscriptionSet", null);
+        assertBodyField(directory, decoded, "body-batch-ack.bin", 200151, "brokerName", "broker-a");
+        assertBodyField(directory, decoded, "body-reset-offset.bin", 212, "offsetTable", null);
+        assertBodyField(directory, decoded, "body-consumer-status.bin", 223, "messageQueueTable", null);
+        assertBodyField(directory, decoded, "body-consume-directly.bin", 309, "consumeResult", "CR_SUCCESS");
+        require(decoded.containsKey("body-consume-directly.bin"), "direct consume body decoded");
+        for (String name : decoded.keySet()) {
+            require(!decoded.get(name).get("body_length").equals(0), "typed body is non-empty: " + name);
+        }
+        System.out.println("Java decoded " + decoded.size() + " Rust typed body fixture(s)");
+    }
+
+    private static void assertBodyField(Path directory, Map<String, Map<String, Object>> decoded,
+            String name, int code, String field, String expected) throws Exception {
+        Map<String, Object> command = decoded.get(name);
+        require(command != null, "Rust typed body exists: " + name);
+        require(((Number) command.get("code")).intValue() == code, "Rust typed body code: " + name);
+        byte[] frame = Files.readAllBytes(directory.resolve(name));
+        int headerLength = RemotingCommand.getHeaderLength(ByteBuffer.wrap(frame, 4, 4).getInt());
+        byte[] body = Arrays.copyOfRange(frame, 8 + headerLength, frame.length);
+        Map<?, ?> json = (Map<?, ?>) com.alibaba.fastjson2.JSON.parse(body);
+        Object actual = json.get(field);
+        if (expected == null) require(actual != null, "Rust typed body field: " + name + "/" + field);
+        else {
+            String actualText = actual == null ? "null" : String.valueOf(actual);
+            require(expected.equals(actualText), "Rust typed body value: " + name + "/" + field + " got " + actualText);
+        }
     }
 
     private static void writeFixture(Path output, String id, int code, SerializeType type) throws Exception {
