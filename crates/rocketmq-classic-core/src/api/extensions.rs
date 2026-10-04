@@ -305,14 +305,6 @@ impl MQClientApi {
                 deadline,
             )
             .await?;
-        if reply.code != response::SUCCESS {
-            return Ok(ChangeInvisibleTimeResult {
-                status: AckStatus::NoExist,
-                pop_time: None,
-                invisible_time: None,
-                revive_qid: None,
-            });
-        }
         let fields = reply.ext_fields.as_ref();
         let malformed = |key: &str| RpcError::MalformedResponse {
             request_code: request::CHANGE_MESSAGE_INVISIBLETIME,
@@ -322,16 +314,26 @@ impl MQClientApi {
         let parse = |key: &str| -> Result<i64, RpcError> {
             fields
                 .and_then(|f| f.get(key))
-                .ok_or_else(|| malformed(key))?
-                .parse()
-                .map_err(|_| malformed(key))
+                .map(|value| value.parse().map_err(|_| malformed(key)))
+                .unwrap_or(Ok(0))
         };
-        let revive_qid = parse("reviveQid")?;
+        // Java decodes the header before inspecting the status, with absent primitive fields defaulting to zero.
+        let pop_time = parse("popTime")?;
+        let invisible_time = parse("invisibleTime")?;
+        let revive_qid = i32::try_from(parse("reviveQid")?).map_err(|_| malformed("reviveQid"))?;
+        if reply.code != response::SUCCESS {
+            return Ok(ChangeInvisibleTimeResult {
+                status: AckStatus::NoExist,
+                pop_time: None,
+                invisible_time: None,
+                revive_qid: None,
+            });
+        }
         Ok(ChangeInvisibleTimeResult {
             status: AckStatus::Ok,
-            pop_time: Some(parse("popTime")?),
-            invisible_time: Some(parse("invisibleTime")?),
-            revive_qid: Some(i32::try_from(revive_qid).map_err(|_| malformed("reviveQid"))?),
+            pop_time: Some(pop_time),
+            invisible_time: Some(invisible_time),
+            revive_qid: Some(revive_qid),
         })
     }
 }
