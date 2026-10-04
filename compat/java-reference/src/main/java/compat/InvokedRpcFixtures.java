@@ -146,6 +146,18 @@ public final class InvokedRpcFixtures {
         cases.add(new String[] {"route-no-body.json", fixture("route-no-body", capture,
             RequestCode.GET_ROUTEINFO_BY_TOPIC, "MQClientException;code=0;malformed")});
 
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, "invalid JSON");
+        capture.response.setBody("{".getBytes(StandardCharsets.UTF_8));
+        try {
+            api.getTopicRouteInfoFromNameServer("oracle-topic", 10000);
+            throw new IllegalStateException("invalid route accepted");
+        } catch (RuntimeException expected) {
+            check(expected.getClass().getName().startsWith("com.alibaba.fastjson2."),
+                "invalid route parse failure");
+        }
+        cases.add(new String[] {"route-invalid-json.json", fixture("route-invalid-json", capture,
+            RequestCode.GET_ROUTEINFO_BY_TOPIC, "JsonParseException;malformed")});
+
         SendMessageRequestHeader send = new SendMessageRequestHeader();
         send.setProducerGroup("producer");
         send.setTopic("oracle-topic");

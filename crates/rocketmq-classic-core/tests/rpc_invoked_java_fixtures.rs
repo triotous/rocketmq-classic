@@ -113,7 +113,7 @@ async fn java_invoked_cases_match_rust_requests_and_outcomes() {
     let entries: Vec<_> = fs::read_dir(&dir).unwrap().collect();
     assert_eq!(
         entries.len(),
-        15,
+        16,
         "all pinned Java invoked cases must be compared"
     );
     for name in [
@@ -121,6 +121,7 @@ async fn java_invoked_cases_match_rust_requests_and_outcomes() {
         "route-not-found",
         "route-unknown",
         "route-no-body",
+        "route-invalid-json",
         "send-success",
         "send-unknown",
         "send-no-header",
@@ -151,7 +152,11 @@ async fn java_invoked_cases_match_rust_requests_and_outcomes() {
                         format!("MQClientException;code={code}")
                     }
                     Err(RpcError::MalformedResponse { .. }) => {
-                        "MQClientException;code=0;malformed".into()
+                        if name == "route-invalid-json" {
+                            "JsonParseException;malformed".into()
+                        } else {
+                            "MQClientException;code=0;malformed".into()
+                        }
                     }
                     other => panic!("unexpected route result: {other:?}"),
                 }
