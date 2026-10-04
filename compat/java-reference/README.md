@@ -22,6 +22,12 @@ python3 tests/differential/compare.py --self-test
 
 The fixture command emits offline Remoting command frames (no live Broker). A frame is accompanied by JSON with version provenance, scenario, request code, decoded semantic fields, body length, full-frame SHA-256 and the command used to generate it. Live scenarios in `tests/differential/scenarios.yaml` explicitly remain `PENDING_PHASE_19`; command-frame fixtures are not claims of successful Broker operations.
 
+## Phase 5 offline reply differential
+
+Run `compat/java-reference/run-rpc-differential.sh` from any directory. It regenerates 15 deterministic Java 5.5.1 response frames under `fixtures/rpc/`, decodes them in the Rust typed-header test, emits Rust frames under `target/p5-rust-rpc-frames/`, and uses the pinned Java decoder to check response code, response flag, ext fields and body bytes. `cargo test -p rocketmq-classic-core --test rpc_java_fixtures --locked` also checks the checked-in evidence without Maven. The labeled outcomes follow `MQClientAPIImpl.processSendResponse`, `processPullResponse`, and `queryConsumerOffset` in pinned source; they are not executions of those methods. `server_baseline_not_contacted` explicitly denotes no server interaction.
+
+Coverage: send (four status codes), pull (four status codes with raw FOUND bytes), query offset (success and not-found), unknown send code, route error, and missing success headers. Gaps: actual Java `MQClientAPIImpl` invocation, request construction/mode, route success/body, heartbeat, lifecycle, lock/unlock, send-back, extensions, Java exception types, malformed numeric headers, and all live behavior. These are not P5-U01 or P5-V01 completion claims; keep Phase 19 cases pending.
+
 ## Licensing
 
 RocketMQ client artifacts are Apache License 2.0. This harness uses the published dependency and does not copy RocketMQ implementation sources. Preserve Apache NOTICE/license obligations if future work copies source-derived code or fixtures.

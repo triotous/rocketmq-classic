@@ -95,6 +95,14 @@ public final class Main {
             generateBodyFixtures(option(args, "--output"));
             return;
         }
+        if ("rpc-fixtures".equals(args[0])) {
+            RpcFixtures.generate(option(args, "--output"));
+            return;
+        }
+        if ("verify-rpc-frames".equals(args[0])) {
+            RpcFixtures.verify(option(args, "--dir"), option(args, "--oracle"));
+            return;
+        }
         if ("decode".equals(args[0])) {
             Path input = option(args, "--input");
             System.out.println(toJson(decode(Files.readAllBytes(input))));
