@@ -7,6 +7,7 @@ import org.apache.rocketmq.client.impl.CommunicationMode;
 import org.apache.rocketmq.client.impl.MQClientAPIImpl;
 import org.apache.rocketmq.client.consumer.PullResult;
 import org.apache.rocketmq.client.consumer.PullStatus;
+import org.apache.rocketmq.client.consumer.PullCallback;
 import org.apache.rocketmq.client.consumer.PopCallback;
 import org.apache.rocketmq.client.consumer.PopResult;
 import org.apache.rocketmq.client.consumer.PopStatus;
@@ -26,6 +27,7 @@ import org.apache.rocketmq.common.message.MessageBatch;
 import org.apache.rocketmq.common.message.MessageConst;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.message.MessageQueue;
+import org.apache.rocketmq.common.message.MessageQueueAssignment;
 import org.apache.rocketmq.common.message.MessageRequestMode;
 import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.remoting.common.HeartbeatV2Result;
@@ -382,11 +384,49 @@ public final class InvokedRpcOracle {
         check("invokeSync".equals(capture.mode) && capture.request.getCode() == RequestCode.PULL_MESSAGE,
             "pull error transport");
 
-        check(api.pullMessage("broker:10911", pull, 10000, CommunicationMode.ASYNC, null) == null,
-            "async pull dispatch result");
-        check("invokeAsync".equals(capture.mode) && "broker:10911".equals(capture.address),
-            "async pull transport");
-        check(capture.request.getCode() == RequestCode.PULL_MESSAGE, "async pull code");
+        final PullResult[] asyncPullResult = new PullResult[1];
+        final Throwable[] asyncPullError = new Throwable[1];
+        PullCallback pullCallback = new PullCallback() {
+            @Override public void onSuccess(PullResult value) { asyncPullResult[0] = value; }
+            @Override public void onException(Throwable value) { asyncPullError[0] = value; }
+        };
+        for (int code : new int[] {ResponseCode.SUCCESS, ResponseCode.PULL_NOT_FOUND,
+            ResponseCode.PULL_RETRY_IMMEDIATELY, ResponseCode.PULL_OFFSET_MOVED, ResponseCode.SYSTEM_ERROR}) {
+            asyncPullResult[0] = null;
+            asyncPullError[0] = null;
+            check(api.pullMessage("broker:10911", pull, 10000, CommunicationMode.ASYNC, pullCallback) == null,
+                "async pull dispatch result");
+            dispatched(capture, "invokeAsync", RequestCode.PULL_MESSAGE, "broker:10911");
+            RemotingCommand reply = code == ResponseCode.SYSTEM_ERROR
+                ? RemotingCommand.createResponseCommand(code, "offline")
+                : RemotingCommand.createResponseCommandWithHeader(code, pullReply);
+            reply.makeCustomHeaderToNet();
+            if (code == ResponseCode.SUCCESS) reply.setBody("raw".getBytes(StandardCharsets.UTF_8));
+            capture.asyncCallback.operationSucceed(reply);
+            if (code == ResponseCode.SYSTEM_ERROR) {
+                check(asyncPullResult[0] == null && asyncPullError[0] instanceof MQBrokerException
+                    && ((MQBrokerException) asyncPullError[0]).getResponseCode() == code,
+                    "async pull broker error");
+            } else {
+                check(asyncPullError[0] == null && asyncPullResult[0] != null
+                    && asyncPullResult[0].getPullStatus() == (code == ResponseCode.SUCCESS ? PullStatus.FOUND
+                        : code == ResponseCode.PULL_NOT_FOUND ? PullStatus.NO_NEW_MSG
+                        : code == ResponseCode.PULL_RETRY_IMMEDIATELY ? PullStatus.NO_MATCHED_MSG
+                        : PullStatus.OFFSET_ILLEGAL)
+                    && asyncPullResult[0].getNextBeginOffset() == 11L
+                    && asyncPullResult[0].getMinOffset() == 0L
+                    && asyncPullResult[0].getMaxOffset() == 20L,
+                    "async pull completion " + code);
+            }
+        }
+        asyncPullResult[0] = null;
+        asyncPullError[0] = null;
+        api.pullMessage("broker:10911", pull, 10000, CommunicationMode.ASYNC, pullCallback);
+        dispatched(capture, "invokeAsync", RequestCode.PULL_MESSAGE, "broker:10911");
+        IllegalStateException pullTransportError = new IllegalStateException("transport");
+        capture.asyncCallback.operationFail(pullTransportError);
+        check(asyncPullResult[0] == null && asyncPullError[0] == pullTransportError,
+            "async pull transport failure");
 
         UpdateConsumerOffsetRequestHeader update = new UpdateConsumerOffsetRequestHeader();
         update.setConsumerGroup("consumer");
@@ -503,6 +543,12 @@ public final class InvokedRpcOracle {
         dispatched(capture, "invokeSync", RequestCode.GET_CONSUMER_LIST_BY_GROUP, "broker:10911");
         capture.request.makeCustomHeaderToNet();
         check("consumer".equals(capture.request.getExtFields().get("consumerGroup")), "consumer list group");
+        consumers.setConsumerIdList(Collections.emptyList());
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        capture.response.setBody(consumers.encode());
+        check(api.getConsumerIdListByGroup("broker:10911", "consumer", 10000).isEmpty(),
+            "empty consumer list body");
+        dispatched(capture, "invokeSync", RequestCode.GET_CONSUMER_LIST_BY_GROUP, "broker:10911");
         capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
         try {
             api.getConsumerIdListByGroup("broker:10911", "consumer", 10000);
@@ -529,6 +575,22 @@ public final class InvokedRpcOracle {
             QueryAssignmentRequestBody.class);
         check("oracle-topic".equals(assignmentRequest.getTopic())
             && "consumer".equals(assignmentRequest.getConsumerGroup()), "assignment request body");
+        MessageQueueAssignment populated = new MessageQueueAssignment();
+        populated.setMessageQueue(new MessageQueue("oracle-topic", "broker", 2));
+        populated.setMode(MessageRequestMode.POP);
+        populated.setAttachments(Collections.singletonMap("source", "oracle"));
+        assignments.setMessageQueueAssignments(Collections.singleton(populated));
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        capture.response.setBody(assignments.encode());
+        java.util.Set<MessageQueueAssignment> decodedAssignments = api.queryAssignment(
+            "broker:10911", "oracle-topic", "consumer", "client", "AVG", MessageModel.CLUSTERING, 10000);
+        dispatched(capture, "invokeSync", RequestCode.QUERY_ASSIGNMENT, "broker:10911");
+        check(decodedAssignments != null && decodedAssignments.size() == 1, "populated assignment size");
+        MessageQueueAssignment decodedAssignment = decodedAssignments.iterator().next();
+        check(new MessageQueue("oracle-topic", "broker", 2).equals(decodedAssignment.getMessageQueue())
+            && decodedAssignment.getMode() == MessageRequestMode.POP
+            && "oracle".equals(decodedAssignment.getAttachments().get("source")),
+            "populated assignment fields");
         capture.response = RemotingCommand.createResponseCommand(ResponseCode.SYSTEM_ERROR, "offline");
         try {
             api.queryAssignment("broker:10911", "oracle-topic", "consumer", "client", "AVG",
@@ -672,6 +734,6 @@ public final class InvokedRpcOracle {
         } catch (org.apache.rocketmq.client.exception.MQClientException expected) {
             check(expected.getResponseCode() == ResponseCode.SYSTEM_ERROR, "request mode error code");
         }
-        System.out.println("Invoked Java 5.5.1 MQClientAPIImpl: send/pull, offset, route, lock/unlock, send-back, request mode, POP/Lite/ACK/change dispatch and callbacks (mock transport)");
+        System.out.println("Invoked Java 5.5.1 MQClientAPIImpl: send/pull including async callbacks, offset, route, consumer list, assignment, lock/unlock, send-back, request mode, POP/Lite/ACK/change dispatch and callbacks (mock transport)");
     }
 }
