@@ -575,6 +575,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rocketmq-classic-core"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "rocketmq-classic-common",
+ "rocketmq-classic-protocol",
+ "rocketmq-classic-remoting",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
 name = "rocketmq-classic-protocol"
 version = "0.1.0"
 dependencies = [
