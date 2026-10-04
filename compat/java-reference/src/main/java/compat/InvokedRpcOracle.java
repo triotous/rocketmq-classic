@@ -15,6 +15,14 @@ import org.apache.rocketmq.common.message.Message;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.common.message.MessageRequestMode;
+import org.apache.rocketmq.common.MixAll;
+import org.apache.rocketmq.remoting.common.HeartbeatV2Result;
+import org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel;
+import org.apache.rocketmq.remoting.protocol.body.QueryAssignmentRequestBody;
+import org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody;
+import org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody;
+import org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody;
+import org.apache.rocketmq.remoting.protocol.header.EndTransactionRequestHeader;
 import org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody;
 import org.apache.rocketmq.remoting.protocol.body.LockBatchRequestBody;
 import org.apache.rocketmq.remoting.protocol.body.LockBatchResponseBody;
@@ -287,6 +295,80 @@ public final class InvokedRpcOracle {
         check(capture.request.getCode() == RequestCode.GET_ROUTEINFO_BY_TOPIC, "route code");
         check("oracle-topic".equals(capture.request.getExtFields().get("topic")), "route topic");
 
+        GetConsumerListByGroupResponseBody consumers = new GetConsumerListByGroupResponseBody();
+        consumers.setConsumerIdList(java.util.Arrays.asList("client-a", "client-b"));
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        capture.response.setBody(consumers.encode());
+        check(api.getConsumerIdListByGroup("broker:10911", "consumer", 10000)
+            .equals(java.util.Arrays.asList("client-a", "client-b")), "consumer list body");
+        dispatched(capture, "invokeSync", RequestCode.GET_CONSUMER_LIST_BY_GROUP, "broker:10911");
+        capture.request.makeCustomHeaderToNet();
+        check("consumer".equals(capture.request.getExtFields().get("consumerGroup")), "consumer list group");
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        try {
+            api.getConsumerIdListByGroup("broker:10911", "consumer", 10000);
+            throw new IllegalStateException("absent consumer list accepted");
+        } catch (MQBrokerException expected) {
+            check(expected.getResponseCode() == ResponseCode.SUCCESS, "absent consumer list code");
+        }
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SYSTEM_ERROR, "offline");
+        try {
+            api.getConsumerIdListByGroup("broker:10911", "consumer", 10000);
+            throw new IllegalStateException("consumer list error accepted");
+        } catch (MQBrokerException expected) {
+            check(expected.getResponseCode() == ResponseCode.SYSTEM_ERROR, "consumer list error code");
+        }
+
+        QueryAssignmentResponseBody assignments = new QueryAssignmentResponseBody();
+        assignments.setMessageQueueAssignments(Collections.emptySet());
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        capture.response.setBody(assignments.encode());
+        check(api.queryAssignment("broker:10911", "oracle-topic", "consumer", "client", "AVG",
+            MessageModel.CLUSTERING, 10000).isEmpty(), "empty assignments");
+        dispatched(capture, "invokeSync", RequestCode.QUERY_ASSIGNMENT, "broker:10911");
+        QueryAssignmentRequestBody assignmentRequest = QueryAssignmentRequestBody.decode(capture.request.getBody(),
+            QueryAssignmentRequestBody.class);
+        check("oracle-topic".equals(assignmentRequest.getTopic())
+            && "consumer".equals(assignmentRequest.getConsumerGroup()), "assignment request body");
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SYSTEM_ERROR, "offline");
+        try {
+            api.queryAssignment("broker:10911", "oracle-topic", "consumer", "client", "AVG",
+                MessageModel.CLUSTERING, 10000);
+            throw new IllegalStateException("assignment error accepted");
+        } catch (MQBrokerException expected) {
+            check(expected.getResponseCode() == ResponseCode.SYSTEM_ERROR, "assignment error code");
+        }
+
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        capture.response.setVersion(551);
+        capture.response.addExtField(MixAll.IS_SUB_CHANGE, "true");
+        capture.response.addExtField(MixAll.IS_SUPPORT_HEART_BEAT_V2, "true");
+        HeartbeatV2Result v2 = api.sendHeartbeatV2("broker:10911", heartbeat, 10000);
+        check(v2.getVersion() == 551 && v2.isSubChange() && v2.isSupportV2(), "heartbeat v2 fields");
+        dispatched(capture, "invokeSync", RequestCode.HEART_BEAT, "broker:10911");
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        v2 = api.sendHeartbeatV2("broker:10911", heartbeat, 10000);
+        check(!v2.isSubChange() && !v2.isSupportV2(), "heartbeat v2 absent fields");
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SYSTEM_ERROR, "offline");
+        try {
+            api.sendHeartbeatV2("broker:10911", heartbeat, 10000);
+            throw new IllegalStateException("heartbeat v2 error accepted");
+        } catch (MQBrokerException expected) {
+            check(expected.getResponseCode() == ResponseCode.SYSTEM_ERROR, "heartbeat v2 error code");
+        }
+
+        EndTransactionRequestHeader end = new EndTransactionRequestHeader();
+        end.setProducerGroup("producer");
+        end.setTranStateTableOffset(7L);
+        end.setCommitLogOffset(19L);
+        end.setCommitOrRollback(8);
+        end.setMsgId("transaction-id");
+        api.endTransactionOneway("broker:10911", end, "offline end", 10000);
+        dispatched(capture, "invokeOneway", RequestCode.END_TRANSACTION, "broker:10911");
+        capture.request.makeCustomHeaderToNet();
+        check("offline end".equals(capture.request.getRemark())
+            && "19".equals(capture.request.getExtFields().get("commitLogOffset")), "end transaction request");
+
         MessageQueue queue = new MessageQueue("oracle-topic", "broker", 2);
         LockBatchRequestBody lock = new LockBatchRequestBody();
         lock.setConsumerGroup("consumer");
@@ -360,6 +442,13 @@ public final class InvokedRpcOracle {
         ack.setTopic("oracle-topic");
         api.ackMessageAsync("broker:10911", 10000, null, ack);
         dispatched(capture, "invokeAsync", RequestCode.ACK_MESSAGE, "broker:10911");
+        BatchAckMessageRequestBody batch = new BatchAckMessageRequestBody();
+        batch.setBrokerName("broker");
+        batch.setAcks(Collections.emptyList());
+        api.batchAckMessageAsync("broker:10911", 10000, null, batch);
+        dispatched(capture, "invokeAsync", RequestCode.BATCH_ACK_MESSAGE, "broker:10911");
+        check("broker".equals(BatchAckMessageRequestBody.decode(capture.request.getBody(),
+            BatchAckMessageRequestBody.class).getBrokerName()), "batch ack body");
         api.ackLiteMessageAsync("broker:10911", 10000, null, ack);
         dispatched(capture, "invokeAsync", RequestCode.ACK_MESSAGE, "broker:10911");
         ChangeInvisibleTimeRequestHeader change = new ChangeInvisibleTimeRequestHeader();
