@@ -14,6 +14,8 @@ Java client **5.5.1** is the source/behavior baseline; server **V5_3_4 (5.3.4)**
 
 Read the English primary as authoritative; use its paired Chinese file for the same requirements. Finish the current phase’s gate before the next, with the explicit cumulative Push gate described in section 3.
 
+Use a separate branch to distinguish each implementation phase. Commits record incremental work within that phase's branch; a commit is not a phase boundary or proof of phase acceptance. Work may be committed before the phase gate passes, provided its remaining gaps and verification status are stated accurately. Do not mark a phase complete or hand off to the next phase until its acceptance gate passes.
+
 | Order | Phase | English primary | 繁體中文 |
 | ---: | ---: | --- | --- |
 | 01 | 0 | [Freeze the reference and test oracle](01-phase-00-reference-oracle.md) | [凍結參考基準與測試 Oracle](01-phase-00-reference-oracle.zh-tw.md) |

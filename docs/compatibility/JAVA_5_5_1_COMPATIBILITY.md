@@ -18,7 +18,7 @@ The `rocketmq-classic-remoting` crate now contains JSON and RocketMQ private-hea
 
 ## Initial bidirectional inventory
 
-The matrix starts with the source areas required by the master plan. Later phase commits must add each public method/overload, inherited/deprecated setting, source branch, configuration default/type/unit/range/validation, Rust mapping, fixture and unit-test ID. Phase 18 closes both directions, including proof that Rust exposes no Java-incompatible public setting. `TODO` means not yet implemented; no feature completion is claimed here.
+The matrix starts with the source areas required by the master plan. Work on each phase branch must add each public method/overload, inherited/deprecated setting, source branch, configuration default/type/unit/range/validation, Rust mapping, fixture and unit-test ID as applicable. Commits within a phase branch may record partial progress; they do not signal phase acceptance. Phase 18 closes both directions, including proof that Rust exposes no Java-incompatible public setting. `TODO` means not yet implemented; no feature completion is claimed here.
 
 | Java class/source (5.5.1 tag) | Java method/setting scope | Rust mapping / test ID | Request code / fixture | Implementation | Live / server |
 |---|---|---|---|---|---|
