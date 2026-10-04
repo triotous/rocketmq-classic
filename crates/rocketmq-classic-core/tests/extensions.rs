@@ -9,9 +9,12 @@ use rocketmq_classic_core::{
     error::RpcError,
 };
 use rocketmq_classic_protocol::{
-    body::{QueryAssignmentRequestBody, SetMessageRequestModeRequestBody},
+    body::{
+        BatchAckMessageRequestBody, LiteSubscriptionCtlRequestBody, QueryAssignmentRequestBody,
+        SetMessageRequestModeRequestBody,
+    },
     codes::{request, response},
-    header::{PopMessageRequestHeader, UnregisterClientRequestHeader},
+    header::{PopLiteMessageRequestHeader, PopMessageRequestHeader, UnregisterClientRequestHeader},
     heartbeat::HeartbeatData,
 };
 use rocketmq_classic_remoting::{
@@ -283,6 +286,243 @@ async fn change_invisible_time_returns_java_ack_metadata() {
             response::SUCCESS => assert!(matches!(result, Err(RpcError::MalformedResponse { .. }))),
             _ => assert_eq!(result.unwrap().status, AckStatus::NoExist),
         }
+        task.await.unwrap();
+        client.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn synchronous_extension_status_matrix() {
+    for status in [response::SUCCESS, response::SYSTEM_ERROR, 999] {
+        macro_rules! check {
+            ($code:expr, $method:ident, $data:expr) => {{
+                let (api, client, addr, task) = peer($code, status, None, None).await;
+                let result = api.$method(&addr, &$data, deadline()).await;
+                if status == response::SUCCESS {
+                    if $code == request::QUERY_ASSIGNMENT {
+                        assert!(matches!(result, Err(RpcError::MalformedResponse { .. })));
+                    } else {
+                        assert!(result.is_ok(), "code {}: {result:?}", $code);
+                    }
+                } else {
+                    assert!(matches!(result, Err(RpcError::Response { request_code, code, peer, remark })
+                        if request_code == $code && code == status && peer == addr && remark.as_deref() == Some("rejected")));
+                }
+                task.await.unwrap();
+                client.shutdown().await;
+            }};
+        }
+        check!(
+            request::HEART_BEAT,
+            send_heartbeat,
+            HeartbeatData::default()
+        );
+        check!(
+            request::HEART_BEAT,
+            send_heartbeat_v2,
+            HeartbeatData::default()
+        );
+        check!(
+            request::UNREGISTER_CLIENT,
+            unregister_client,
+            UnregisterClientRequestHeader::default()
+        );
+        check!(
+            request::QUERY_ASSIGNMENT,
+            query_assignment,
+            QueryAssignmentRequestBody::default()
+        );
+        check!(
+            request::SET_MESSAGE_REQUEST_MODE,
+            set_message_request_mode,
+            SetMessageRequestModeRequestBody::default()
+        );
+        check!(
+            request::LITE_SUBSCRIPTION_CTL,
+            lite_subscription_ctl,
+            LiteSubscriptionCtlRequestBody::default()
+        );
+    }
+}
+
+#[tokio::test]
+async fn async_extension_status_and_malformed_matrix() {
+    for status in [
+        response::SUCCESS,
+        response::PULL_NOT_FOUND,
+        response::POLLING_TIMEOUT,
+        response::POLLING_FULL,
+        999,
+    ] {
+        for lite in [false, true] {
+            let code = if lite {
+                request::POP_LITE_MESSAGE
+            } else {
+                request::POP_MESSAGE
+            };
+            let fields = Some(
+                [
+                    ("popTime".into(), "1".into()),
+                    ("invisibleTime".into(), "2".into()),
+                    ("reviveQid".into(), "0".into()),
+                    ("restNum".into(), "3".into()),
+                ]
+                .into(),
+            );
+            let (api, client, addr, task) = peer(code, status, Some(vec![1]), fields).await;
+            let result = if lite {
+                api.pop_lite_message(&addr, &PopLiteMessageRequestHeader::default(), deadline())
+                    .await
+                    .map(|r| r.status)
+            } else {
+                api.pop_message(&addr, &PopMessageRequestHeader::default(), deadline())
+                    .await
+                    .map(|r| r.status)
+            };
+            let expected = match status {
+                response::SUCCESS => PopStatus::Found,
+                response::POLLING_FULL => PopStatus::PollingFull,
+                _ => PopStatus::PollingNotFound,
+            };
+            if status == 999 {
+                assert!(matches!(result, Err(RpcError::Response { code: 999, .. })));
+            } else {
+                assert_eq!(result.unwrap(), expected);
+            }
+            task.await.unwrap();
+            client.shutdown().await;
+        }
+    }
+    for code in [request::POP_MESSAGE, request::POP_LITE_MESSAGE] {
+        for (status, body, fields) in [
+            (response::SUCCESS, None, None),
+            (response::SUCCESS, Some(vec![1]), None),
+            (
+                response::POLLING_TIMEOUT,
+                None,
+                Some([("popTime".into(), "invalid".into())].into()),
+            ),
+        ] {
+            let (api, client, addr, task) = peer(code, status, body, fields).await;
+            let result = if code == request::POP_MESSAGE {
+                api.pop_message(&addr, &Default::default(), deadline())
+                    .await
+                    .map(|_| ())
+            } else {
+                api.pop_lite_message(&addr, &Default::default(), deadline())
+                    .await
+                    .map(|_| ())
+            };
+            assert!(
+                matches!(result, Err(RpcError::MalformedResponse { request_code, .. }) if request_code == code)
+            );
+            task.await.unwrap();
+            client.shutdown().await;
+        }
+    }
+    for status in [response::SUCCESS, response::SYSTEM_ERROR, 999] {
+        for batch in [false, true] {
+            let code = if batch {
+                request::BATCH_ACK_MESSAGE
+            } else {
+                request::ACK_MESSAGE
+            };
+            let (api, client, addr, task) = peer(code, status, None, None).await;
+            let result = if batch {
+                api.batch_ack_message(&addr, &BatchAckMessageRequestBody::default(), deadline())
+                    .await
+            } else {
+                api.ack_message(&addr, &Default::default(), deadline())
+                    .await
+            };
+            assert_eq!(
+                result.unwrap(),
+                if status == response::SUCCESS {
+                    AckStatus::Ok
+                } else {
+                    AckStatus::NoExist
+                }
+            );
+            assert_eq!(task.await.unwrap().body.is_some(), batch);
+            client.shutdown().await;
+        }
+    }
+    for key in ["popTime", "invisibleTime", "reviveQid"] {
+        for value in [
+            None,
+            Some("invalid"),
+            Some("99999999999999999999999999999999999"),
+        ] {
+            let mut fields: std::collections::BTreeMap<String, String> = [
+                ("popTime".into(), "12".into()),
+                ("invisibleTime".into(), "30".into()),
+                ("reviveQid".into(), "2".into()),
+            ]
+            .into();
+            if let Some(value) = value {
+                fields.insert(key.into(), value.into());
+            } else {
+                fields.remove(key);
+            }
+            let (api, client, addr, task) = peer(
+                request::CHANGE_MESSAGE_INVISIBLETIME,
+                response::SUCCESS,
+                None,
+                Some(fields),
+            )
+            .await;
+            let result = api
+                .change_invisible_time(&addr, &Default::default(), deadline())
+                .await;
+            assert!(matches!(
+                result,
+                Err(RpcError::MalformedResponse {
+                    request_code: request::CHANGE_MESSAGE_INVISIBLETIME,
+                    ..
+                })
+            ));
+            task.await.unwrap();
+            client.shutdown().await;
+        }
+    }
+}
+
+#[tokio::test]
+async fn assignment_invalid_json_and_heartbeat_v2_default_flags() {
+    for body in [Some(b"not json".to_vec()), Some(b"{}".to_vec())] {
+        let (api, client, addr, task) =
+            peer(request::QUERY_ASSIGNMENT, response::SUCCESS, body, None).await;
+        let result = api
+            .query_assignment(&addr, &Default::default(), deadline())
+            .await;
+        match result {
+            Err(RpcError::MalformedResponse { request_code, .. }) => {
+                assert_eq!(request_code, request::QUERY_ASSIGNMENT)
+            }
+            Ok(body) => assert!(body.message_queue_assignments.is_none()),
+            other => panic!("unexpected assignment reply: {other:?}"),
+        }
+        task.await.unwrap();
+        client.shutdown().await;
+    }
+    for fields in [
+        None,
+        Some(
+            [
+                ("isSubChange".into(), "not true".into()),
+                ("isSupportHeartbeatV2".into(), "FALSE".into()),
+            ]
+            .into(),
+        ),
+    ] {
+        let (api, client, addr, task) =
+            peer(request::HEART_BEAT, response::SUCCESS, None, fields).await;
+        let result = api
+            .send_heartbeat_v2(&addr, &Default::default(), deadline())
+            .await
+            .unwrap();
+        assert_eq!(result.version, 515);
+        assert!(!result.is_sub_change && !result.is_support_heartbeat_v2);
         task.await.unwrap();
         client.shutdown().await;
     }

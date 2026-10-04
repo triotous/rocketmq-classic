@@ -212,6 +212,13 @@ impl MQClientApi {
             .request(addr, request::POP_MESSAGE, header, None, deadline)
             .await?;
         let status = pop_status(&reply, request::POP_MESSAGE, addr)?;
+        if status == PopStatus::Found && reply.body.is_none() {
+            return Err(RpcError::MalformedResponse {
+                request_code: request::POP_MESSAGE,
+                peer: addr.into(),
+                reason: "missing pop message body".into(),
+            });
+        }
         let parsed = Some(decode_header(&reply, request::POP_MESSAGE, addr)?);
         Ok(PopReply {
             status,
@@ -230,6 +237,13 @@ impl MQClientApi {
             .request(addr, request::POP_LITE_MESSAGE, header, None, deadline)
             .await?;
         let status = pop_status(&reply, request::POP_LITE_MESSAGE, addr)?;
+        if status == PopStatus::Found && reply.body.is_none() {
+            return Err(RpcError::MalformedResponse {
+                request_code: request::POP_LITE_MESSAGE,
+                peer: addr.into(),
+                reason: "missing pop lite message body".into(),
+            });
+        }
         let parsed = Some(decode_header(&reply, request::POP_LITE_MESSAGE, addr)?);
         Ok(PopReply {
             status,
