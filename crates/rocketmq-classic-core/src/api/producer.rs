@@ -134,14 +134,7 @@ impl MQClientApi {
             .expect("decoded response header exists");
         Ok(Some(SendResult {
             status,
-            msg_id: if kind == SendKind::Batch {
-                result
-                    .batch_uniq_id
-                    .clone()
-                    .unwrap_or_else(|| uniq_msg_id.to_owned())
-            } else {
-                uniq_msg_id.to_owned()
-            },
+            msg_id: uniq_msg_id.to_owned(),
             offset_msg_id: result.msg_id,
             topic: header.topic.clone(),
             broker_name: broker_name.to_owned(),

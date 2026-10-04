@@ -137,7 +137,8 @@ async fn send_statuses_errors_and_malformed_headers() {
         if let Some(expected) = expected {
             let result = result.unwrap().unwrap();
             assert_eq!(result.status, expected);
-            assert_eq!(result.msg_id, "batch-id");
+            assert_eq!(result.msg_id, "uniq");
+            assert_eq!(result.batch_uniq_id.as_deref(), Some("batch-id"));
             assert_eq!(result.offset_msg_id, "offset-id");
             assert_eq!(result.transaction_id.as_deref(), Some("tx"));
             assert_eq!(result.recall_handle.as_deref(), Some("recall"));
@@ -222,4 +223,64 @@ async fn oneway_send_and_end_transaction_do_not_wait_for_reply() {
         .unwrap();
     task.await.unwrap();
     client.shutdown().await;
+}
+
+#[tokio::test]
+async fn every_send_variant_classifies_reply_before_decoding() {
+    for (kind, code) in [
+        (SendKind::V1, request::SEND_MESSAGE),
+        (SendKind::V2, request::SEND_MESSAGE_V2),
+        (SendKind::Batch, request::SEND_BATCH_MESSAGE),
+        (SendKind::ReplyV1, request::SEND_REPLY_MESSAGE),
+        (SendKind::ReplyV2, request::SEND_REPLY_MESSAGE_V2),
+    ] {
+        for (response_code, reply_fields) in [
+            (response::SUCCESS, true),
+            (response::FLUSH_DISK_TIMEOUT, true),
+            (response::FLUSH_SLAVE_TIMEOUT, true),
+            (response::SLAVE_NOT_AVAILABLE, true),
+            (99123, false),
+            (response::SUCCESS, false),
+        ] {
+            let (addr, task) = peer(response_code, reply_fields, code, false).await;
+            let client = RemotingClient::new(TransportMode::Plain);
+            client.start().unwrap();
+            let result = MQClientApi::new(client.clone())
+                .send_message(
+                    &addr,
+                    "broker",
+                    &header(),
+                    b"payload".to_vec(),
+                    "uniq",
+                    kind,
+                    SendMode::Sync,
+                    Instant::now() + Duration::from_secs(2),
+                )
+                .await;
+            match (response_code, reply_fields) {
+                (99123, _) => assert!(matches!(
+                    result,
+                    Err(RpcError::Response { code: 99123, .. })
+                )),
+                (_, false) => assert!(matches!(result, Err(RpcError::MalformedResponse { .. }))),
+                (response::SUCCESS, _) => {
+                    assert_eq!(result.unwrap().unwrap().status, SendStatus::SendOk)
+                }
+                (response::FLUSH_DISK_TIMEOUT, _) => assert_eq!(
+                    result.unwrap().unwrap().status,
+                    SendStatus::FlushDiskTimeout
+                ),
+                (response::FLUSH_SLAVE_TIMEOUT, _) => assert_eq!(
+                    result.unwrap().unwrap().status,
+                    SendStatus::FlushSlaveTimeout
+                ),
+                _ => assert_eq!(
+                    result.unwrap().unwrap().status,
+                    SendStatus::SlaveNotAvailable
+                ),
+            }
+            task.await.unwrap();
+            client.shutdown().await;
+        }
+    }
 }
