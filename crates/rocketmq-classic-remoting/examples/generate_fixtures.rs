@@ -3,19 +3,28 @@ use std::{env, fs, path::PathBuf};
 use rocketmq_classic_protocol::{
     body::{
         BatchAck, BatchAckMessageRequestBody, ConsumeMessageDirectlyResult, ConsumeMessageResult,
-        GetConsumerStatusBody, LiteSubscriptionAction, LiteSubscriptionCtlRequestBody,
-        LiteSubscriptionDto, MessageRequestMode, OffsetOption, OffsetOptionType,
+        ConsumerListByGroupResponseBody, GetConsumerStatusBody, LiteSubscriptionAction,
+        LiteSubscriptionCtlRequestBody, LiteSubscriptionDto, LockBatchRequestBody,
+        LockBatchResponseBody, MessageRequestMode, OffsetOption, OffsetOptionType,
         QueryAssignmentRequestBody, ResetOffsetBody, SetMessageRequestModeRequestBody,
+        UnlockBatchRequestBody,
     },
     codes::{LanguageCode, SerializeType},
     header::{
         AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader,
         CheckTransactionStateRequestHeader, CheckTransactionStateResponseHeader, CommandHeader,
-        EndTransactionRequestHeader, GetRouteInfoRequestHeader, NotificationRequestHeader,
-        NotificationResponseHeader, PopMessageRequestHeader, PullMessageRequestHeader,
-        PullMessageResponseHeader, QueryConsumerOffsetRequestHeader, ReplyMessageRequestHeader,
-        ResetOffsetRequestHeader, SendMessageRequestHeaderV1, SendMessageRequestHeaderV2,
-        SendMessageResponseHeader, UpdateConsumerOffsetRequestHeader,
+        ConsumeMessageDirectlyResultRequestHeader, ConsumerSendMsgBackRequestHeader,
+        EndTransactionRequestHeader, EndTransactionResponseHeader,
+        GetConsumerListByGroupRequestHeader, GetConsumerStatusRequestHeader,
+        GetRouteInfoRequestHeader, LiteSubscriptionCtlRequestHeader, LockBatchMqRequestHeader,
+        NotificationRequestHeader, NotificationResponseHeader, NotifyUnsubscribeLiteRequestHeader,
+        PollingInfoRequestHeader, PollingInfoResponseHeader, PopLiteMessageRequestHeader,
+        PopLiteMessageResponseHeader, PopMessageRequestHeader, PopMessageResponseHeader,
+        PullMessageRequestHeader, PullMessageResponseHeader, QueryConsumerOffsetRequestHeader,
+        QueryConsumerOffsetResponseHeader, ReplyMessageRequestHeader, ResetOffsetRequestHeader,
+        SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
+        UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
+        UpdateConsumerOffsetRequestHeader,
     },
 };
 use rocketmq_classic_remoting::{codec::frame, command::RemotingCommand};
@@ -62,6 +71,99 @@ fn main() {
 }
 
 fn generate_p4_headers(output: &std::path::Path) {
+    // Decode the checked-in Java 5.5.1 oracle through each public Rust model,
+    // then emit a Rust frame for the same request or response role.
+    write_oracle_header::<QueryConsumerOffsetResponseHeader>(
+        output,
+        "typed-query-offset-response.bin",
+        "header-query-offset-response",
+        0,
+    );
+    write_oracle_header::<UnregisterClientRequestHeader>(
+        output,
+        "typed-unregister-request.bin",
+        "header-unregister-request",
+        35,
+    );
+    write_oracle_header::<LockBatchMqRequestHeader>(
+        output,
+        "typed-lock-batch-request.bin",
+        "header-lock-batch-request",
+        41,
+    );
+    write_oracle_header::<UnlockBatchMqRequestHeader>(
+        output,
+        "typed-unlock-batch-request.bin",
+        "header-unlock-batch-request",
+        42,
+    );
+    write_oracle_header::<GetConsumerListByGroupRequestHeader>(
+        output,
+        "typed-consumer-list-request.bin",
+        "header-consumer-list-request",
+        38,
+    );
+    write_oracle_header::<ConsumerSendMsgBackRequestHeader>(
+        output,
+        "typed-send-back-request.bin",
+        "header-send-back-request",
+        36,
+    );
+    write_oracle_header::<UnregisterClientResponseHeader>(
+        output,
+        "typed-unregister-response.bin",
+        "header-unregister-response",
+        0,
+    );
+    write_oracle_header::<EndTransactionResponseHeader>(
+        output,
+        "typed-end-transaction-response.bin",
+        "header-end-transaction-response",
+        0,
+    );
+    write_oracle_header::<GetConsumerStatusRequestHeader>(
+        output,
+        "typed-consumer-status-request.bin",
+        "header-consumer-status-request",
+        221,
+    );
+    write_oracle_header::<PollingInfoRequestHeader>(
+        output,
+        "typed-polling-request.bin",
+        "header-polling-request",
+        200055,
+    );
+    write_oracle_header::<PollingInfoResponseHeader>(
+        output,
+        "typed-polling-response.bin",
+        "header-polling-response",
+        0,
+    );
+    write_oracle_header::<PopLiteMessageRequestHeader>(
+        output,
+        "typed-pop-lite-request.bin",
+        "header-pop-lite-request",
+        200070,
+    );
+    write_oracle_header::<LiteSubscriptionCtlRequestHeader>(
+        output,
+        "typed-lite-subscription-request.bin",
+        "header-lite-subscription-request",
+        200071,
+    );
+    write_oracle_header::<NotifyUnsubscribeLiteRequestHeader>(
+        output,
+        "typed-notify-unsubscribe-lite-request.bin",
+        "header-notify-unsubscribe-lite-request",
+        200073,
+    );
+    write_oracle_header::<ConsumeMessageDirectlyResultRequestHeader>(
+        output,
+        "typed-consume-directly-request.bin",
+        "header-consume-directly-request",
+        309,
+    );
+
     write_typed(
         output,
         "typed-route.bin",
@@ -128,7 +230,7 @@ fn generate_p4_headers(output: &std::path::Path) {
             j: Some(0),
             k: Some(false),
             l: Some(16),
-            m: Some(true),
+            m: Some(false),
         },
     );
     write_typed(
@@ -230,6 +332,50 @@ fn generate_p4_headers(output: &std::path::Path) {
             store_timestamp: 6,
         },
     );
+    let binary_reply = vec![0, 255, 128, 42, 10];
+    write_typed_body(
+        output,
+        "typed-reply-v2.bin",
+        325,
+        &SendMessageRequestHeaderV2 {
+            a: "producers".into(),
+            b: "orders".into(),
+            c: "TBW102".into(),
+            d: 4,
+            e: 2,
+            f: 1,
+            g: 5,
+            h: 7,
+            i: Some("CORRELATION_ID=correlation-1".into()),
+            j: Some(0),
+            k: Some(false),
+            l: None,
+            m: Some(false),
+        },
+        binary_reply.clone(),
+    );
+    write_typed_body(
+        output,
+        "typed-reply-push.bin",
+        326,
+        &ReplyMessageRequestHeader {
+            producer_group: "producers".into(),
+            topic: "orders".into(),
+            default_topic: "TBW102".into(),
+            default_topic_queue_nums: 4,
+            queue_id: 2,
+            sys_flag: 1,
+            born_timestamp: 5,
+            flag: 7,
+            properties: Some("CORRELATION_ID=correlation-1".into()),
+            reconsume_times: None,
+            unit_mode: false,
+            born_host: "127.0.0.1:1001".into(),
+            store_host: "127.0.0.1:10911".into(),
+            store_timestamp: 6,
+        },
+        binary_reply,
+    );
     write_typed(
         output,
         "typed-pull-response.bin",
@@ -263,6 +409,7 @@ fn generate_p4_headers(output: &std::path::Path) {
             queue_id: 1,
             poll_time: 1000,
             born_time: 1_712_345_678_901,
+            order: Some(false),
             ..NotificationRequestHeader::default()
         },
     );
@@ -301,7 +448,35 @@ fn generate_p4_headers(output: &std::path::Path) {
             poll_time: 1_000,
             born_time: 1_712_345_678_901,
             init_mode: 0,
+            order: Some(false),
             ..PopMessageRequestHeader::default()
+        },
+    );
+    write_typed(
+        output,
+        "typed-pop-lite-response.bin",
+        0,
+        &PopLiteMessageResponseHeader {
+            pop_time: 10,
+            invisible_time: 20,
+            revive_queue_id: 1,
+            start_offset_info: Some("orders@0:100".into()),
+            msg_offset_info: Some("orders@0:101".into()),
+            order_count_info: Some("0".into()),
+        },
+    );
+    write_typed(
+        output,
+        "typed-pop-response.bin",
+        0,
+        &PopMessageResponseHeader {
+            pop_time: 10,
+            invisible_time: 20,
+            revive_queue_id: 1,
+            rest_num: 3,
+            start_offset_info: Some("orders@0:100".into()),
+            msg_offset_info: Some("orders@0:101".into()),
+            order_count_info: Some("0".into()),
         },
     );
     write_typed(
@@ -334,7 +509,38 @@ fn generate_p4_headers(output: &std::path::Path) {
     );
 }
 
+fn write_oracle_header<H: CommandHeader>(
+    output: &std::path::Path,
+    name: &str,
+    stem: &str,
+    code: i32,
+) {
+    let path = format!(
+        "{}/../../fixtures/remoting/{stem}.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let metadata: serde_json::Value =
+        serde_json::from_slice(&fs::read(&path).expect("read Java header oracle"))
+            .expect("parse Java header oracle");
+    assert_eq!(metadata["java_client_version"], "5.5.1", "{stem}");
+    assert_eq!(metadata["request_code"], code, "{stem}");
+    let fields = serde_json::from_value(metadata["normalized_fields"]["ext_fields"].clone())
+        .expect("parse Java ext fields");
+    let header = H::decode_fields(&fields).expect("decode Java header oracle");
+    write_typed(output, name, code, &header);
+}
+
 fn write_typed(output: &std::path::Path, name: &str, code: i32, header: &impl CommandHeader) {
+    write_typed_body(output, name, code, header, Vec::new());
+}
+
+fn write_typed_body(
+    output: &std::path::Path,
+    name: &str,
+    code: i32,
+    header: &impl CommandHeader,
+    body: Vec<u8>,
+) {
     let mut ext_fields = std::collections::BTreeMap::new();
     header.encode_fields(&mut ext_fields);
     let command = RemotingCommand {
@@ -342,6 +548,7 @@ fn write_typed(output: &std::path::Path, name: &str, code: i32, header: &impl Co
         language: LanguageCode::Rust,
         opaque: 101,
         ext_fields: Some(ext_fields),
+        body: if body.is_empty() { None } else { Some(body) },
         ..RemotingCommand::default()
     };
     fs::write(
@@ -352,11 +559,20 @@ fn write_typed(output: &std::path::Path, name: &str, code: i32, header: &impl Co
 }
 
 fn write_body(output: &std::path::Path, name: &str, code: i32, body: &impl serde::Serialize) {
+    write_body_bytes(
+        output,
+        name,
+        code,
+        serde_json::to_vec(body).expect("serialize typed body"),
+    );
+}
+
+fn write_body_bytes(output: &std::path::Path, name: &str, code: i32, body: Vec<u8>) {
     let command = RemotingCommand {
         code,
         language: LanguageCode::Rust,
         opaque: 102,
-        body: Some(serde_json::to_vec(body).expect("serialize typed body")),
+        body: Some(body),
         ..RemotingCommand::default()
     };
     fs::write(
@@ -428,28 +644,32 @@ fn generate_p4_bodies(output: &std::path::Path) {
             }]),
         },
     );
-    write_body(
+    write_body_bytes(
         output,
         "body-reset-offset.bin",
         212,
-        &ResetOffsetBody {
+        ResetOffsetBody {
             offset_table: Some(vec![(
                 rocketmq_classic_common::message::MessageQueue::new("orders", "broker-a", 1),
                 9,
             )]),
-        },
+        }
+        .encode_java_json()
+        .expect("encode Java-compatible reset body"),
     );
-    write_body(
+    write_body_bytes(
         output,
         "body-consumer-status.bin",
         223,
-        &GetConsumerStatusBody {
+        GetConsumerStatusBody {
             message_queue_table: vec![(
                 rocketmq_classic_common::message::MessageQueue::new("orders", "broker-a", 1),
                 9,
             )],
             consumer_table: std::collections::BTreeMap::new(),
-        },
+        }
+        .encode_java_json()
+        .expect("encode Java-compatible consumer status body"),
     );
     write_body(
         output,
@@ -461,6 +681,67 @@ fn generate_p4_bodies(output: &std::path::Path) {
             consume_result: Some(ConsumeMessageResult::CrSuccess),
             remark: None,
             spent_time_mills: 2,
+        },
+    );
+    let queue = rocketmq_classic_common::message::MessageQueue::new("orders", "broker-a", 1);
+    for (name, body) in [
+        (
+            "body-consumer-list-absent.bin",
+            ConsumerListByGroupResponseBody {
+                consumer_id_list: None,
+            },
+        ),
+        (
+            "body-consumer-list-empty.bin",
+            ConsumerListByGroupResponseBody {
+                consumer_id_list: Some(vec![]),
+            },
+        ),
+        (
+            "body-consumer-list-populated.bin",
+            ConsumerListByGroupResponseBody {
+                consumer_id_list: Some(vec!["client-a".into(), "client-b".into()]),
+            },
+        ),
+    ] {
+        write_body(output, name, 38, &body);
+    }
+    write_body(
+        output,
+        "body-lock-request.bin",
+        41,
+        &LockBatchRequestBody {
+            consumer_group: Some("workers".into()),
+            client_id: Some("client".into()),
+            only_this_broker: false,
+            mq_set: vec![queue.clone()],
+        },
+    );
+    write_body(
+        output,
+        "body-unlock-request.bin",
+        42,
+        &UnlockBatchRequestBody {
+            consumer_group: Some("workers".into()),
+            client_id: Some("client".into()),
+            only_this_broker: true,
+            mq_set: vec![queue.clone()],
+        },
+    );
+    write_body(
+        output,
+        "body-lock-response.bin",
+        41,
+        &LockBatchResponseBody {
+            lock_okmq_set: vec![queue.clone()],
+        },
+    );
+    write_body(
+        output,
+        "body-unlock-response.bin",
+        42,
+        &LockBatchResponseBody {
+            lock_okmq_set: vec![queue],
         },
     );
 }

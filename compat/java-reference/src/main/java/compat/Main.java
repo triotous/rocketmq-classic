@@ -43,6 +43,8 @@ import org.apache.rocketmq.remoting.protocol.header.ResetOffsetRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.NotificationResponseHeader;
 import org.apache.rocketmq.remoting.protocol.header.NotifyUnsubscribeLiteRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.PopLiteMessageRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.PopLiteMessageResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.PopMessageResponseHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetConsumerStatusRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ConsumeMessageDirectlyResultRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.LiteSubscriptionCtlRequestHeader;
@@ -57,6 +59,10 @@ import org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody;
 import org.apache.rocketmq.remoting.protocol.body.ResetOffsetBody;
 import org.apache.rocketmq.remoting.protocol.body.GetConsumerStatusBody;
 import org.apache.rocketmq.remoting.protocol.body.ConsumeMessageDirectlyResult;
+import org.apache.rocketmq.remoting.protocol.body.LockBatchRequestBody;
+import org.apache.rocketmq.remoting.protocol.body.UnlockBatchRequestBody;
+import org.apache.rocketmq.remoting.protocol.body.LockBatchResponseBody;
+import org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody;
 import org.apache.rocketmq.remoting.protocol.body.CMResult;
 import org.apache.rocketmq.common.message.MessageRequestMode;
 import org.apache.rocketmq.common.lite.LiteSubscriptionDTO;
@@ -83,6 +89,10 @@ public final class Main {
         if ("header-fixtures".equals(args[0])) {
             Path output = option(args, "--output");
             generateHeaderFixtures(output);
+            return;
+        }
+        if ("body-fixtures".equals(args[0])) {
+            generateBodyFixtures(option(args, "--output"));
             return;
         }
         if ("decode".equals(args[0])) {
@@ -331,6 +341,20 @@ public final class Main {
         reply.setUnitMode(false); reply.setBornHost("127.0.0.1:1001");
         reply.setStoreHost("127.0.0.1:10911"); reply.setStoreTimestamp(6L);
         writeTypedHeaderFixture(output, "reply-request", 324, reply);
+        SendMessageRequestHeader replySend = new SendMessageRequestHeader();
+        replySend.setProducerGroup("producers"); replySend.setTopic("orders");
+        replySend.setDefaultTopic("TBW102"); replySend.setDefaultTopicQueueNums(4);
+        replySend.setQueueId(2); replySend.setSysFlag(1); replySend.setBornTimestamp(5L);
+        replySend.setFlag(7); replySend.setProperties("CORRELATION_ID=correlation-1");
+        replySend.setUnitMode(false);
+        byte[] binaryReply = new byte[] {0, (byte) 255, (byte) 128, 42, 10};
+        RemotingCommand replyV2 = RemotingCommand.createRequestCommand(325,
+            SendMessageRequestHeaderV2.createSendMessageRequestHeaderV2(replySend));
+        replyV2.setBody(binaryReply);
+        writeTypedHeaderFixture(output, "reply-v2-request", replyV2);
+        RemotingCommand replyPush = RemotingCommand.createRequestCommand(326, reply);
+        replyPush.setBody(binaryReply);
+        writeTypedHeaderFixture(output, "reply-push-request", replyPush);
 
         ResetOffsetRequestHeader reset = new ResetOffsetRequestHeader();
         reset.setGroup("workers"); reset.setTopic("orders"); reset.setQueueId(1);
@@ -345,6 +369,19 @@ public final class Main {
         popLite.setClientId("client"); popLite.setConsumerGroup("workers"); popLite.setTopic("orders");
         popLite.setMaxMsgNum(1); popLite.setInvisibleTime(1000L); popLite.setPollTime(1L); popLite.setBornTime(1L);
         writeTypedHeaderFixture(output, "pop-lite-request", 200070, popLite);
+        PopLiteMessageResponseHeader popLiteResponse = new PopLiteMessageResponseHeader();
+        popLiteResponse.setPopTime(10L); popLiteResponse.setInvisibleTime(20L); popLiteResponse.setReviveQid(1);
+        popLiteResponse.setStartOffsetInfo("orders@0:100"); popLiteResponse.setMsgOffsetInfo("orders@0:101");
+        popLiteResponse.setOrderCountInfo("0");
+        writeTypedHeaderFixture(output, "pop-lite-response",
+            RemotingCommand.createResponseCommandWithHeader(0, popLiteResponse));
+        PopMessageResponseHeader popResponse = new PopMessageResponseHeader();
+        popResponse.setPopTime(10L); popResponse.setInvisibleTime(20L);
+        popResponse.setReviveQid(1); popResponse.setRestNum(3L);
+        popResponse.setStartOffsetInfo("orders@0:100"); popResponse.setMsgOffsetInfo("orders@0:101");
+        popResponse.setOrderCountInfo("0");
+        writeTypedHeaderFixture(output, "pop-response",
+            RemotingCommand.createResponseCommandWithHeader(0, popResponse));
         GetConsumerStatusRequestHeader status = new GetConsumerStatusRequestHeader();
         status.setTopic("orders"); status.setGroup("workers");
         writeTypedHeaderFixture(output, "consumer-status-request", 221, status);
@@ -404,7 +441,34 @@ public final class Main {
         ConsumeMessageDirectlyResult directBody = new ConsumeMessageDirectlyResult();
         directBody.setConsumeResult(CMResult.CR_SUCCESS); directBody.setSpentTimeMills(2L);
         writeJsonBodyFixture(output, "body-consume-directly", 309, directBody.encode());
+
         System.out.println("Generated typed Java header fixtures in " + output);
+    }
+
+    private static void generateBodyFixtures(Path output) throws Exception {
+        Files.createDirectories(output);
+        GetConsumerListByGroupResponseBody absent = new GetConsumerListByGroupResponseBody();
+        writeJsonBodyFixture(output, "body-consumer-list-absent", 38, absent.encode());
+        GetConsumerListByGroupResponseBody empty = new GetConsumerListByGroupResponseBody();
+        empty.setConsumerIdList(java.util.List.of());
+        writeJsonBodyFixture(output, "body-consumer-list-empty", 38, empty.encode());
+        GetConsumerListByGroupResponseBody populated = new GetConsumerListByGroupResponseBody();
+        populated.setConsumerIdList(java.util.List.of("client-a", "client-b"));
+        writeJsonBodyFixture(output, "body-consumer-list-populated", 38, populated.encode());
+
+        org.apache.rocketmq.common.message.MessageQueue mq =
+            new org.apache.rocketmq.common.message.MessageQueue("orders", "broker-a", 1);
+        LockBatchRequestBody lock = new LockBatchRequestBody();
+        lock.setConsumerGroup("workers"); lock.setClientId("client"); lock.setMqSet(java.util.Set.of(mq));
+        writeJsonBodyFixture(output, "body-lock-request", 41, lock.encode());
+        UnlockBatchRequestBody unlock = new UnlockBatchRequestBody();
+        unlock.setConsumerGroup("workers"); unlock.setClientId("client"); unlock.setOnlyThisBroker(true);
+        unlock.setMqSet(java.util.Set.of(mq));
+        writeJsonBodyFixture(output, "body-unlock-request", 42, unlock.encode());
+        LockBatchResponseBody response = new LockBatchResponseBody();
+        response.setLockOKMQSet(java.util.Set.of(mq));
+        writeJsonBodyFixture(output, "body-lock-response", 41, response.encode());
+        writeJsonBodyFixture(output, "body-unlock-response", 42, response.encode());
     }
 
     private static void writeTypedHeaderFixture(Path output, String id, int code,
@@ -468,6 +532,44 @@ public final class Main {
                     byName.put(name, decode(Files.readAllBytes(file)));
                 }
             }
+            assertAllExtFields(byName, "typed-route.bin", 105);
+            assertAllExtFields(byName, "typed-send-v1.bin", 10);
+            assertAllExtFields(byName, "typed-send-v2.bin", 310);
+            assertAllExtFields(byName, "typed-send-batch-v2.bin", 320);
+            assertAllExtFields(byName, "typed-pull.bin", 11);
+            assertAllExtFields(byName, "typed-query-offset.bin", 14);
+            assertAllExtFields(byName, "typed-update-offset.bin", 15);
+            assertAllExtFields(byName, "typed-end-transaction.bin", 37);
+            assertAllExtFields(byName, "typed-check-transaction.bin", 39);
+            assertAllExtFields(byName, "typed-check-transaction-response.bin", 0);
+            assertAllExtFields(byName, "typed-reply.bin", 324);
+            assertAllExtFields(byName, "typed-reply-v2.bin", 325);
+            assertAllExtFields(byName, "typed-reply-push.bin", 326);
+            assertAllExtFields(byName, "typed-send-response.bin", 0);
+            assertAllExtFields(byName, "typed-pull-response.bin", 0);
+            assertAllExtFields(byName, "typed-notification.bin", 200054);
+            assertAllExtFields(byName, "typed-notification-response.bin", 0);
+            assertAllExtFields(byName, "typed-reset-offset.bin", 211);
+            assertAllExtFields(byName, "typed-pop.bin", 200050);
+            assertAllExtFields(byName, "typed-pop-response.bin", 0);
+            assertAllExtFields(byName, "typed-pop-lite-response.bin", 0);
+            assertAllExtFields(byName, "typed-ack.bin", 200051);
+            assertAllExtFields(byName, "typed-change-invisible.bin", 200053);
+            assertAllExtFields(byName, "typed-query-offset-response.bin", 0);
+            assertAllExtFields(byName, "typed-unregister-request.bin", 35);
+            assertAllExtFields(byName, "typed-lock-batch-request.bin", 41);
+            assertAllExtFields(byName, "typed-unlock-batch-request.bin", 42);
+            assertAllExtFields(byName, "typed-consumer-list-request.bin", 38);
+            assertAllExtFields(byName, "typed-send-back-request.bin", 36);
+            assertAllExtFields(byName, "typed-unregister-response.bin", 0);
+            assertAllExtFields(byName, "typed-end-transaction-response.bin", 0);
+            assertAllExtFields(byName, "typed-consumer-status-request.bin", 221);
+            assertAllExtFields(byName, "typed-polling-request.bin", 200055);
+            assertAllExtFields(byName, "typed-polling-response.bin", 0);
+            assertAllExtFields(byName, "typed-pop-lite-request.bin", 200070);
+            assertAllExtFields(byName, "typed-lite-subscription-request.bin", 200071);
+            assertAllExtFields(byName, "typed-notify-unsubscribe-lite-request.bin", 200073);
+            assertAllExtFields(byName, "typed-consume-directly-request.bin", 309);
             assertExtField(byName, "typed-route.bin", 105, "topic", "orders");
             assertExtField(byName, "typed-send-v1.bin", 10, "producerGroup", "producers");
             assertExtField(byName, "typed-send-v2.bin", 310, "a", "producers");
@@ -487,6 +589,15 @@ public final class Main {
             assertExtField(byName, "typed-pop.bin", 200050, "maxMsgNums", "16");
             assertExtField(byName, "typed-ack.bin", 200051, "extraInfo", "startOffset popTime invisibleTime queueId");
             assertExtField(byName, "typed-change-invisible.bin", 200053, "invisibleTime", "60000");
+            for (String id : new String[] {"reply-v2", "reply-push"}) {
+                byte[] rustBody = frameBody(Files.readAllBytes(directory.resolve("typed-" + id + ".bin")));
+                Path javaPath = Path.of("../../fixtures/remoting/header-" +
+                    (id.equals("reply-v2") ? "reply-v2-request" : "reply-push-request") + ".bin");
+                if (!Files.exists(javaPath)) javaPath = Path.of("fixtures/remoting", javaPath.getFileName().toString());
+                byte[] javaBody = frameBody(Files.readAllBytes(javaPath));
+                require(Arrays.equals(javaBody, rustBody) && Arrays.equals(javaBody,
+                    new byte[] {0, (byte) 255, (byte) 128, 42, 10}), "binary reply body: " + id);
+            }
         }
         System.out.println("Java decoded " + count + " Rust-generated fixture(s)");
     }
@@ -500,6 +611,63 @@ public final class Main {
             "Rust typed fixture field " + field + ": " + name);
     }
 
+    @SuppressWarnings("unchecked")
+    private static void assertAllExtFields(Map<String, Map<String, Object>> decoded, String name,
+            int code) throws Exception {
+        Map<String, Object> rustCommand = decoded.get(name);
+        require(rustCommand != null, "Rust typed fixture exists: " + name);
+        require(((Number) rustCommand.get("code")).intValue() == code, "Rust typed fixture code: " + name);
+        String fixtureStem;
+        switch (name) {
+            case "typed-route.bin": fixtureStem = "header-route-request"; break;
+            case "typed-send-v1.bin": fixtureStem = "header-send-v1"; break;
+            case "typed-send-v2.bin": fixtureStem = "header-send-v2"; break;
+            case "typed-send-batch-v2.bin": fixtureStem = "header-send-batch-v2"; break;
+            case "typed-pull.bin": fixtureStem = "header-pull-request"; break;
+            case "typed-pull-response.bin": fixtureStem = "header-pull-response"; break;
+            case "typed-query-offset.bin": fixtureStem = "header-query-offset-request"; break;
+            case "typed-update-offset.bin": fixtureStem = "header-update-offset-request"; break;
+            case "typed-end-transaction.bin": fixtureStem = "header-end-transaction-request"; break;
+            case "typed-check-transaction.bin": fixtureStem = "header-check-transaction-request"; break;
+            case "typed-check-transaction-response.bin": fixtureStem = "header-check-transaction-response"; break;
+            case "typed-reply.bin": fixtureStem = "header-reply-request"; break;
+            case "typed-reply-v2.bin": fixtureStem = "header-reply-v2-request"; break;
+            case "typed-reply-push.bin": fixtureStem = "header-reply-push-request"; break;
+            case "typed-pop-response.bin": fixtureStem = "header-pop-response"; break;
+            case "typed-send-response.bin": fixtureStem = "header-send-response"; break;
+            case "typed-notification.bin": fixtureStem = "header-notification-request"; break;
+            case "typed-notification-response.bin": fixtureStem = "header-notification-response"; break;
+            case "typed-reset-offset.bin": fixtureStem = "header-reset-offset-request"; break;
+            case "typed-pop.bin": fixtureStem = "header-pop-request"; break;
+            case "typed-pop-lite-response.bin": fixtureStem = "header-pop-lite-response"; break;
+            case "typed-ack.bin": fixtureStem = "header-ack-request"; break;
+            case "typed-change-invisible.bin": fixtureStem = "header-change-invisible-request"; break;
+            case "typed-query-offset-response.bin": fixtureStem = "header-query-offset-response"; break;
+            case "typed-unregister-request.bin": fixtureStem = "header-unregister-request"; break;
+            case "typed-lock-batch-request.bin": fixtureStem = "header-lock-batch-request"; break;
+            case "typed-unlock-batch-request.bin": fixtureStem = "header-unlock-batch-request"; break;
+            case "typed-consumer-list-request.bin": fixtureStem = "header-consumer-list-request"; break;
+            case "typed-send-back-request.bin": fixtureStem = "header-send-back-request"; break;
+            case "typed-unregister-response.bin": fixtureStem = "header-unregister-response"; break;
+            case "typed-end-transaction-response.bin": fixtureStem = "header-end-transaction-response"; break;
+            case "typed-consumer-status-request.bin": fixtureStem = "header-consumer-status-request"; break;
+            case "typed-polling-request.bin": fixtureStem = "header-polling-request"; break;
+            case "typed-polling-response.bin": fixtureStem = "header-polling-response"; break;
+            case "typed-pop-lite-request.bin": fixtureStem = "header-pop-lite-request"; break;
+            case "typed-lite-subscription-request.bin": fixtureStem = "header-lite-subscription-request"; break;
+            case "typed-notify-unsubscribe-lite-request.bin": fixtureStem = "header-notify-unsubscribe-lite-request"; break;
+            case "typed-consume-directly-request.bin": fixtureStem = "header-consume-directly-request"; break;
+            default: throw new IllegalArgumentException("no Java oracle fixture for " + name);
+        }
+        Path metadataPath = Path.of("../../fixtures/remoting", fixtureStem + ".json");
+        if (!Files.exists(metadataPath)) metadataPath = Path.of("fixtures/remoting", fixtureStem + ".json");
+        Map<String, Object> metadata = com.alibaba.fastjson2.JSON.parseObject(Files.readString(metadataPath));
+        Map<String, Object> canonical = (Map<String, Object>) ((Map<String, Object>) metadata.get("normalized_fields")).get("ext_fields");
+        Map<String, Object> actual = (Map<String, Object>) rustCommand.get("ext_fields");
+        require(canonical.equals(actual), "Rust typed ext fields match Java 5.5.1 fixture: " + name
+            + " expected=" + canonical + " actual=" + actual);
+    }
+
     private static void verifyRustBodies(Path directory) throws Exception {
         Map<String, Map<String, Object>> decoded = new LinkedHashMap<>();
         try (var files = Files.list(directory)) {
@@ -507,7 +675,42 @@ public final class Main {
                 decoded.put(file.getFileName().toString(), decode(Files.readAllBytes(file)));
             }
         }
-        require(decoded.size() == 7, "seven Rust typed JSON body frames decoded");
+        require(decoded.size() == 14, "all Rust typed JSON body frames decoded");
+        for (String name : decoded.keySet()) {
+            String stem = name.replace(".bin", "");
+            byte[] rustFrame = Files.readAllBytes(directory.resolve(name));
+            Path javaPath = Path.of("../../fixtures/remoting", stem + ".bin");
+            if (!Files.exists(javaPath)) javaPath = Path.of("fixtures/remoting", stem + ".bin");
+            byte[] javaFrame = Files.readAllBytes(javaPath);
+            Object rustBody = com.alibaba.fastjson2.JSON.parse(frameBody(rustFrame));
+            Object javaBody = com.alibaba.fastjson2.JSON.parse(frameBody(javaFrame));
+            if (rustBody instanceof Map && javaBody instanceof Map) {
+                Map<?, ?> rustMap = (Map<?, ?>) rustBody;
+                Map<?, ?> javaMap = (Map<?, ?>) javaBody;
+                if (rustMap.containsKey("offsetTable") && javaMap.containsKey("offsetTable")) {
+                    require(normalizeQueueTable(rustMap.get("offsetTable"))
+                        .equals(normalizeQueueTable(javaMap.get("offsetTable"))),
+                        "Rust typed offset table matches Java: " + stem);
+                    continue;
+                }
+            }
+            require(javaBody.equals(rustBody), "Rust typed body matches Java 5.5.1 body: " + stem
+                + " expected=" + javaBody + " actual=" + rustBody);
+        }
+        verifyJavaBodyAtPath("body-consumer-list-absent");
+        verifyJavaBodyAtPath("body-consumer-list-empty");
+        verifyJavaBodyAtPath("body-consumer-list-populated");
+        verifyJavaBodyAtPath("body-lock-request");
+        verifyJavaBodyAtPath("body-unlock-request");
+        verifyJavaBodyAtPath("body-lock-response");
+        verifyJavaBodyAtPath("body-unlock-response");
+        verifyRustBodyAgainstJava(directory, "body-consumer-list-absent.bin");
+        verifyRustBodyAgainstJava(directory, "body-consumer-list-empty.bin");
+        verifyRustBodyAgainstJava(directory, "body-consumer-list-populated.bin");
+        verifyRustBodyAgainstJava(directory, "body-lock-request.bin");
+        verifyRustBodyAgainstJava(directory, "body-unlock-request.bin");
+        verifyRustBodyAgainstJava(directory, "body-lock-response.bin");
+        verifyRustBodyAgainstJava(directory, "body-unlock-response.bin");
         assertBodyField(directory, decoded, "body-query-assignment.bin", 400, "topic", "orders");
         assertBodyField(directory, decoded, "body-set-request-mode.bin", 401, "mode", "POP");
         assertBodyField(directory, decoded, "body-lite-subscription.bin", 200071, "subscriptionSet", null);
@@ -515,11 +718,47 @@ public final class Main {
         assertBodyField(directory, decoded, "body-reset-offset.bin", 212, "offsetTable", null);
         assertBodyField(directory, decoded, "body-consumer-status.bin", 223, "messageQueueTable", null);
         assertBodyField(directory, decoded, "body-consume-directly.bin", 309, "consumeResult", "CR_SUCCESS");
+        assertBodyField(directory, decoded, "body-consumer-list-empty.bin", 38, "consumerIdList", null);
+        assertBodyField(directory, decoded, "body-consumer-list-populated.bin", 38, "consumerIdList", null);
+        assertBodyField(directory, decoded, "body-lock-request.bin", 41, "mqSet", null);
+        assertBodyField(directory, decoded, "body-unlock-request.bin", 42, "mqSet", null);
+        assertBodyField(directory, decoded, "body-lock-response.bin", 41, "lockOKMQSet", null);
         require(decoded.containsKey("body-consume-directly.bin"), "direct consume body decoded");
         for (String name : decoded.keySet()) {
             require(!decoded.get(name).get("body_length").equals(0), "typed body is non-empty: " + name);
         }
         System.out.println("Java decoded " + decoded.size() + " Rust typed body fixture(s)");
+    }
+
+    private static void verifyRustBodyAgainstJava(Path rustDirectory, String name) throws Exception {
+        byte[] rustFrame = Files.readAllBytes(rustDirectory.resolve(name));
+        Path javaPath = Path.of("../../fixtures/remoting", name);
+        if (!Files.exists(javaPath)) javaPath = Path.of("fixtures/remoting", name);
+        Object rustBody = com.alibaba.fastjson2.JSON.parse(frameBody(rustFrame));
+        Object javaBody = com.alibaba.fastjson2.JSON.parse(frameBody(Files.readAllBytes(javaPath)));
+        require(javaBody.equals(rustBody), "Rust typed body matches Java 5.5.1 body: " + name
+            + " expected=" + javaBody + " actual=" + rustBody);
+    }
+
+    private static void verifyJavaBodyAtPath(String stem) throws Exception {
+        Path path = Path.of("../../fixtures/remoting", stem + ".bin");
+        if (!Files.exists(path)) path = Path.of("fixtures/remoting", stem + ".bin");
+        byte[] frame = Files.readAllBytes(path);
+        Object body = com.alibaba.fastjson2.JSON.parse(frameBody(frame));
+        if (stem.startsWith("body-consumer-list-")) {
+            org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody decoded = com.alibaba.fastjson2.JSON.parseObject(
+                frameBody(frame), org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody.class);
+            if (stem.endsWith("absent")) require(decoded.getConsumerIdList() == null, "absent consumer list preserved");
+            if (stem.endsWith("empty")) require(decoded.getConsumerIdList() != null && decoded.getConsumerIdList().isEmpty(), "empty consumer list preserved");
+            if (stem.endsWith("populated")) require(decoded.getConsumerIdList().size() == 2, "populated consumer list preserved");
+        } else if (stem.endsWith("response")) {
+            LockBatchResponseBody decoded = com.alibaba.fastjson2.JSON.parseObject(frameBody(frame), LockBatchResponseBody.class);
+            require(!decoded.getLockOKMQSet().isEmpty(), "lock/unlock response queue set decoded");
+        } else if (stem.endsWith("request")) {
+            LockBatchRequestBody decoded = com.alibaba.fastjson2.JSON.parseObject(frameBody(frame), LockBatchRequestBody.class);
+            require(decoded.getMqSet() != null && !decoded.getMqSet().isEmpty(), "lock/unlock request queue set decoded");
+        }
+        require(body != null, "Java body parsed: " + stem);
     }
 
     private static void assertBodyField(Path directory, Map<String, Map<String, Object>> decoded,
@@ -537,6 +776,21 @@ public final class Main {
             String actualText = actual == null ? "null" : String.valueOf(actual);
             require(expected.equals(actualText), "Rust typed body value: " + name + "/" + field + " got " + actualText);
         }
+    }
+
+    private static byte[] frameBody(byte[] frame) {
+        int headerLength = RemotingCommand.getHeaderLength(ByteBuffer.wrap(frame, 4, 4).getInt());
+        return Arrays.copyOfRange(frame, 8 + headerLength, frame.length);
+    }
+
+    private static Map<String, Object> normalizeQueueTable(Object table) {
+        Map<String, Object> normalized = new LinkedHashMap<>();
+        ((Map<?, ?>) table).forEach((key, value) -> {
+            Object queue = key instanceof String
+                ? com.alibaba.fastjson2.JSON.parse((String) key) : key;
+            normalized.put(com.alibaba.fastjson2.JSON.toJSONString(queue), value);
+        });
+        return normalized;
     }
 
     private static void writeFixture(Path output, String id, int code, SerializeType type) throws Exception {

@@ -693,6 +693,38 @@ impl CommandHeader for PopMessageResponseHeader {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PopLiteMessageResponseHeader {
+    pub pop_time: i64,
+    pub invisible_time: i64,
+    pub revive_queue_id: i32,
+    pub start_offset_info: Option<String>,
+    pub msg_offset_info: Option<String>,
+    pub order_count_info: Option<String>,
+}
+
+impl CommandHeader for PopLiteMessageResponseHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("popTime".into(), self.pop_time.to_string());
+        fields.insert("invisibleTime".into(), self.invisible_time.to_string());
+        fields.insert("reviveQid".into(), self.revive_queue_id.to_string());
+        put_optional(fields, "startOffsetInfo", self.start_offset_info.as_deref());
+        put_optional(fields, "msgOffsetInfo", self.msg_offset_info.as_deref());
+        put_optional(fields, "orderCountInfo", self.order_count_info.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            pop_time: required_i64(fields, "popTime")?,
+            invisible_time: required_i64(fields, "invisibleTime")?,
+            revive_queue_id: required_i32(fields, "reviveQid")?,
+            start_offset_info: optional_string(fields, "startOffsetInfo"),
+            msg_offset_info: optional_string(fields, "msgOffsetInfo"),
+            order_count_info: optional_string(fields, "orderCountInfo"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AckMessageRequestHeader {
     pub consumer_group: String,
     pub topic: String,

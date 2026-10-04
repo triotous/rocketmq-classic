@@ -1,9 +1,10 @@
 use rocketmq_classic_protocol::{
     body::{
         BatchAckMessageRequestBody, ConsumeMessageDirectlyResult, ConsumeMessageResult,
-        GetConsumerStatusBody, LiteSubscriptionAction, LiteSubscriptionCtlRequestBody,
+        ConsumerListByGroupResponseBody, GetConsumerStatusBody, LiteSubscriptionAction,
+        LiteSubscriptionCtlRequestBody, LockBatchRequestBody, LockBatchResponseBody,
         MessageRequestMode, QueryAssignmentRequestBody, ResetOffsetBody,
-        SetMessageRequestModeRequestBody,
+        SetMessageRequestModeRequestBody, UnlockBatchRequestBody,
     },
     header::{
         AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader,
@@ -14,11 +15,12 @@ use rocketmq_classic_protocol::{
         GetRouteInfoRequestHeader, HeaderMap, LiteSubscriptionCtlRequestHeader,
         LockBatchMqRequestHeader, NotificationRequestHeader, NotificationResponseHeader,
         NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader, PollingInfoResponseHeader,
-        PopLiteMessageRequestHeader, PopMessageRequestHeader, PopMessageResponseHeader,
-        PullMessageRequestHeader, PullMessageResponseHeader, QueryConsumerOffsetRequestHeader,
-        QueryConsumerOffsetResponseHeader, ReplyMessageRequestHeader, ResetOffsetRequestHeader,
-        SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
-        UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
+        PopLiteMessageRequestHeader, PopLiteMessageResponseHeader, PopMessageRequestHeader,
+        PopMessageResponseHeader, PullMessageRequestHeader, PullMessageResponseHeader,
+        QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
+        ReplyMessageRequestHeader, ResetOffsetRequestHeader, SendMessageRequestHeaderV1,
+        SendMessageRequestHeaderV2, SendMessageResponseHeader, UnlockBatchMqRequestHeader,
+        UnregisterClientRequestHeader, UnregisterClientResponseHeader,
         UpdateConsumerOffsetRequestHeader,
     },
 };
@@ -57,6 +59,16 @@ fn java_request_and_response_header_fixtures_decode() {
     let route =
         GetRouteInfoRequestHeader::decode_fields(&java_ext_fields("header-route-request")).unwrap();
     assert_eq!(route.topic, "orders");
+
+    let lite_pop =
+        PopLiteMessageResponseHeader::decode_fields(&java_ext_fields("header-pop-lite-response"))
+            .unwrap();
+    assert_eq!(lite_pop.pop_time, 10);
+    assert_eq!(lite_pop.invisible_time, 20);
+    assert_eq!(lite_pop.revive_queue_id, 1);
+    assert_eq!(lite_pop.start_offset_info.as_deref(), Some("orders@0:100"));
+    assert_eq!(lite_pop.msg_offset_info.as_deref(), Some("orders@0:101"));
+    assert_eq!(lite_pop.order_count_info.as_deref(), Some("0"));
 
     let query = QueryConsumerOffsetRequestHeader::decode_fields(&java_ext_fields(
         "header-query-offset-request",
@@ -231,6 +243,22 @@ fn java_request_and_response_header_fixtures_decode() {
     ))
     .unwrap();
     assert_eq!(consumers.consumer_group, "workers");
+
+    let mut pop_fields = java_ext_fields("header-pop-lite-response");
+    assert_eq!(
+        PopLiteMessageResponseHeader::decode_fields(&pop_fields)
+            .unwrap()
+            .pop_time,
+        10
+    );
+    for missing in ["popTime", "invisibleTime", "reviveQid"] {
+        pop_fields = java_ext_fields("header-pop-lite-response");
+        pop_fields.remove(missing);
+        assert!(matches!(
+            PopLiteMessageResponseHeader::decode_fields(&pop_fields),
+            Err(rocketmq_classic_protocol::header::ProtocolError::MissingField(field)) if field == missing
+        ));
+    }
 }
 
 #[test]
@@ -392,6 +420,43 @@ fn java_json_body_fixtures_decode_to_typed_assignment_lite_and_batch_models() {
     );
 }
 
+#[test]
+fn java_consumer_list_and_lock_bodies_preserve_optional_and_collection_semantics() {
+    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
+    let read_body = |stem: &str| {
+        let frame = std::fs::read(format!("{root}/fixtures/remoting/{stem}.bin")).unwrap();
+        let marked = u32::from_be_bytes(frame[4..8].try_into().unwrap());
+        let end = 8 + (marked & 0x00ff_ffff) as usize;
+        frame[end..].to_vec()
+    };
+    let absent: ConsumerListByGroupResponseBody =
+        serde_json::from_slice(&read_body("body-consumer-list-absent")).unwrap();
+    let empty: ConsumerListByGroupResponseBody =
+        serde_json::from_slice(&read_body("body-consumer-list-empty")).unwrap();
+    let populated: ConsumerListByGroupResponseBody =
+        serde_json::from_slice(&read_body("body-consumer-list-populated")).unwrap();
+    assert_eq!(absent.consumer_id_list, None);
+    assert_eq!(empty.consumer_id_list, Some(vec![]));
+    assert_eq!(
+        populated.consumer_id_list,
+        Some(vec!["client-a".into(), "client-b".into()])
+    );
+
+    let lock: LockBatchRequestBody =
+        serde_json::from_slice(&read_body("body-lock-request")).unwrap();
+    let unlock: UnlockBatchRequestBody =
+        serde_json::from_slice(&read_body("body-unlock-request")).unwrap();
+    assert_eq!(lock.mq_set[0].broker_name(), "broker-a");
+    assert!(!lock.only_this_broker);
+    assert!(unlock.only_this_broker);
+    let response: LockBatchResponseBody =
+        serde_json::from_slice(&read_body("body-lock-response")).unwrap();
+    assert_eq!(response.lock_okmq_set[0].queue_id(), 1);
+    let unlock_response: LockBatchResponseBody =
+        serde_json::from_slice(&read_body("body-unlock-response")).unwrap();
+    assert_eq!(unlock_response.lock_okmq_set[0].topic(), "orders");
+}
+
 fn decode_java_queue_offset_body(raw: &[u8], field: &str) -> ResetOffsetBody {
     let text = std::str::from_utf8(raw).unwrap();
     let marker = format!("\"{field}\":{{{{");
@@ -440,6 +505,32 @@ fn java_frames_match_typed_header_semantics() {
     let response =
         SendMessageResponseHeader::decode_fields(&json_header_map("header-send-response")).unwrap();
     assert_eq!(response.queue_offset, 99);
+}
+
+#[test]
+fn typed_header_update_preserves_unknown_fields_and_lite_requireds_fail() {
+    let mut raw = java_ext_fields("header-notify-unsubscribe-lite-request");
+    raw.insert("futureField".into(), "opaque-value".into());
+    let mut typed = NotifyUnsubscribeLiteRequestHeader::decode_fields(&raw).unwrap();
+    typed.lite_topic = "lite-orders-v2".into();
+    typed.encode_fields(&mut raw);
+    assert_eq!(
+        raw.get("futureField").map(String::as_str),
+        Some("opaque-value")
+    );
+    assert_eq!(
+        raw.get("liteTopic").map(String::as_str),
+        Some("lite-orders-v2")
+    );
+
+    for missing in ["liteTopic", "consumerGroup", "clientId"] {
+        let mut fields = java_ext_fields("header-notify-unsubscribe-lite-request");
+        fields.remove(missing);
+        let error = NotifyUnsubscribeLiteRequestHeader::decode_fields(&fields)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains(missing), "{error}");
+    }
 }
 
 #[test]
@@ -535,4 +626,609 @@ fn required_header_fields_reject_absence_at_protocol_boundary() {
             .unit_mode,
         Some(false)
     );
+}
+
+#[test]
+fn header_validation_matrix() {
+    use rocketmq_classic_protocol::header::ProtocolError;
+    use std::collections::BTreeSet;
+
+    struct Case {
+        model: &'static str,
+        fixture: &'static str,
+        decode: fn(&HeaderMap) -> Result<HeaderMap, ProtocolError>,
+        update: fn(&mut HeaderMap) -> Result<(), ProtocolError>,
+        required: &'static str,
+        i32_fields: &'static str,
+        i64_fields: &'static str,
+        optional: &'static str,
+        booleans: &'static str,
+    }
+    macro_rules! row {
+        ($model:ty, $fixture:literal, $required:literal, $i32:literal, $i64:literal, $optional:literal, $bools:literal) => {
+            Case {
+                model: stringify!($model),
+                fixture: $fixture,
+                decode: |map| {
+                    let decoded = <$model>::decode_fields(map)?;
+                    let mut encoded = HeaderMap::new();
+                    decoded.encode_fields(&mut encoded);
+                    Ok(encoded)
+                },
+                update: |map| {
+                    let decoded = <$model>::decode_fields(map)?;
+                    decoded.encode_fields(map);
+                    Ok(())
+                },
+                required: $required,
+                i32_fields: $i32,
+                i64_fields: $i64,
+                optional: $optional,
+                booleans: $bools,
+            }
+        };
+    }
+    let cases = [
+        row!(
+            GetRouteInfoRequestHeader,
+            "route-request",
+            "topic",
+            "",
+            "",
+            "acceptStandardJsonOnly",
+            "acceptStandardJsonOnly"
+        ),
+        row!(
+            SendMessageRequestHeaderV1,
+            "send-v1",
+            "producerGroup topic defaultTopic defaultTopicQueueNums queueId sysFlag bornTimestamp flag",
+            "defaultTopicQueueNums queueId sysFlag flag reconsumeTimes maxReconsumeTimes",
+            "bornTimestamp",
+            "properties reconsumeTimes unitMode maxReconsumeTimes batch",
+            "unitMode batch"
+        ),
+        row!(
+            SendMessageRequestHeaderV2,
+            "send-v2",
+            "a b c d e f g h",
+            "d e f h j l",
+            "g",
+            "i j k l m",
+            "k m"
+        ),
+        row!(
+            PullMessageRequestHeader,
+            "pull-request",
+            "consumerGroup topic queueId queueOffset maxMsgNums sysFlag commitOffset suspendTimeoutMillis subVersion",
+            "queueId maxMsgNums sysFlag maxMsgBytes requestSource",
+            "queueOffset commitOffset suspendTimeoutMillis subVersion",
+            "liteTopic subscription expressionType maxMsgBytes requestSource proxyFrowardClientId",
+            ""
+        ),
+        row!(
+            PullMessageResponseHeader,
+            "pull-response",
+            "suggestWhichBrokerId nextBeginOffset minOffset maxOffset",
+            "topicSysFlag groupSysFlag forbiddenType",
+            "suggestWhichBrokerId nextBeginOffset minOffset maxOffset offsetDelta",
+            "offsetDelta topicSysFlag groupSysFlag forbiddenType",
+            ""
+        ),
+        row!(
+            QueryConsumerOffsetRequestHeader,
+            "query-offset-request",
+            "consumerGroup topic queueId",
+            "queueId",
+            "",
+            "setZeroIfNotFound",
+            "setZeroIfNotFound"
+        ),
+        row!(
+            QueryConsumerOffsetResponseHeader,
+            "query-offset-response",
+            "offset",
+            "",
+            "offset",
+            "",
+            ""
+        ),
+        row!(
+            UpdateConsumerOffsetRequestHeader,
+            "update-offset-request",
+            "consumerGroup topic queueId commitOffset",
+            "queueId",
+            "commitOffset",
+            "",
+            ""
+        ),
+        row!(
+            SendMessageResponseHeader,
+            "send-response",
+            "msgId queueId queueOffset",
+            "queueId",
+            "queueOffset",
+            "transactionId batchUniqId recallHandle",
+            ""
+        ),
+        row!(
+            UnregisterClientRequestHeader,
+            "unregister-request",
+            "clientID",
+            "",
+            "",
+            "producerGroup consumerGroup",
+            ""
+        ),
+        row!(
+            UnregisterClientResponseHeader,
+            "unregister-response",
+            "",
+            "",
+            "",
+            "",
+            ""
+        ),
+        row!(
+            ConsumerSendMsgBackRequestHeader,
+            "send-back-request",
+            "group originTopic offset delayLevel",
+            "delayLevel maxReconsumeTimes",
+            "offset",
+            "originMsgId maxReconsumeTimes",
+            "unitMode"
+        ),
+        row!(
+            EndTransactionRequestHeader,
+            "end-transaction-request",
+            "producerGroup tranStateTableOffset commitLogOffset commitOrRollback msgId",
+            "commitOrRollback",
+            "tranStateTableOffset commitLogOffset",
+            "topic fromTransactionCheck transactionId",
+            "fromTransactionCheck"
+        ),
+        row!(
+            EndTransactionResponseHeader,
+            "end-transaction-response",
+            "",
+            "",
+            "",
+            "",
+            ""
+        ),
+        row!(
+            CheckTransactionStateRequestHeader,
+            "check-transaction-request",
+            "tranStateTableOffset commitLogOffset",
+            "",
+            "tranStateTableOffset commitLogOffset",
+            "topic msgId transactionId offsetMsgId",
+            ""
+        ),
+        row!(
+            CheckTransactionStateResponseHeader,
+            "check-transaction-response",
+            "producerGroup tranStateTableOffset commitLogOffset commitOrRollback",
+            "commitOrRollback",
+            "tranStateTableOffset commitLogOffset",
+            "",
+            ""
+        ),
+        row!(
+            ReplyMessageRequestHeader,
+            "reply-request",
+            "producerGroup topic defaultTopic defaultTopicQueueNums queueId sysFlag bornTimestamp flag bornHost storeHost storeTimestamp",
+            "defaultTopicQueueNums queueId sysFlag flag reconsumeTimes",
+            "bornTimestamp storeTimestamp",
+            "properties reconsumeTimes",
+            "unitMode"
+        ),
+        row!(
+            NotificationRequestHeader,
+            "notification-request",
+            "consumerGroup topic queueId pollTime bornTime",
+            "queueId",
+            "pollTime bornTime",
+            "order attemptId clientId expType exp",
+            "order isLiteConsumer"
+        ),
+        row!(
+            NotificationResponseHeader,
+            "notification-response",
+            "",
+            "",
+            "",
+            "",
+            "hasMsg pollingFull"
+        ),
+        row!(
+            ResetOffsetRequestHeader,
+            "reset-offset-request",
+            "group topic timestamp",
+            "queueId",
+            "offset timestamp",
+            "queueId offset",
+            "isForce"
+        ),
+        row!(
+            GetConsumerStatusRequestHeader,
+            "consumer-status-request",
+            "topic group",
+            "",
+            "",
+            "clientAddr",
+            ""
+        ),
+        row!(
+            GetConsumerListByGroupRequestHeader,
+            "consumer-list-request",
+            "consumerGroup",
+            "",
+            "",
+            "",
+            ""
+        ),
+        row!(
+            LockBatchMqRequestHeader,
+            "lock-batch-request",
+            "",
+            "",
+            "",
+            "ns nsd bname oway",
+            "nsd oway"
+        ),
+        row!(
+            UnlockBatchMqRequestHeader,
+            "unlock-batch-request",
+            "",
+            "",
+            "",
+            "ns nsd bname oway",
+            "nsd oway"
+        ),
+        row!(
+            PopMessageRequestHeader,
+            "pop-request",
+            "consumerGroup topic queueId maxMsgNums invisibleTime pollTime bornTime initMode",
+            "queueId maxMsgNums initMode",
+            "invisibleTime pollTime bornTime",
+            "expType exp order attemptId",
+            "order"
+        ),
+        row!(
+            PopMessageResponseHeader,
+            "pop-response",
+            "popTime invisibleTime reviveQid restNum",
+            "reviveQid",
+            "popTime invisibleTime restNum",
+            "startOffsetInfo msgOffsetInfo orderCountInfo",
+            ""
+        ),
+        row!(
+            PopLiteMessageRequestHeader,
+            "pop-lite-request",
+            "clientId consumerGroup topic maxMsgNum invisibleTime pollTime bornTime",
+            "maxMsgNum",
+            "invisibleTime pollTime bornTime",
+            "attemptId",
+            ""
+        ),
+        row!(
+            PopLiteMessageResponseHeader,
+            "pop-lite-response",
+            "popTime invisibleTime reviveQid",
+            "reviveQid",
+            "popTime invisibleTime",
+            "startOffsetInfo msgOffsetInfo orderCountInfo",
+            ""
+        ),
+        row!(
+            AckMessageRequestHeader,
+            "ack-request",
+            "consumerGroup topic queueId extraInfo offset",
+            "queueId",
+            "offset",
+            "liteTopic",
+            ""
+        ),
+        row!(
+            ChangeInvisibleTimeRequestHeader,
+            "change-invisible-request",
+            "consumerGroup topic queueId extraInfo offset invisibleTime",
+            "queueId",
+            "offset invisibleTime",
+            "liteTopic",
+            "suspend"
+        ),
+        row!(
+            PollingInfoRequestHeader,
+            "polling-request",
+            "consumerGroup topic queueId",
+            "queueId",
+            "",
+            "",
+            ""
+        ),
+        row!(
+            PollingInfoResponseHeader,
+            "polling-response",
+            "pollingNum",
+            "pollingNum",
+            "",
+            "",
+            ""
+        ),
+        row!(
+            LiteSubscriptionCtlRequestHeader,
+            "lite-subscription-request",
+            "",
+            "",
+            "",
+            "",
+            ""
+        ),
+        row!(
+            NotifyUnsubscribeLiteRequestHeader,
+            "notify-unsubscribe-lite-request",
+            "liteTopic consumerGroup clientId",
+            "",
+            "",
+            "",
+            ""
+        ),
+        row!(
+            ConsumeMessageDirectlyResultRequestHeader,
+            "consume-directly-request",
+            "consumerGroup",
+            "topicSysFlag groupSysFlag",
+            "",
+            "clientId msgId brokerName topic topicSysFlag groupSysFlag",
+            ""
+        ),
+    ];
+    // Keep the matrix tied to the public implementations, not just to fixture names.
+    let source = include_str!("../src/header/basic.rs");
+    let implementations: BTreeSet<_> = source
+        .lines()
+        .filter_map(|line| {
+            line.trim()
+                .strip_prefix("impl CommandHeader for ")
+                .and_then(|name| name.strip_suffix(" {"))
+        })
+        .collect();
+    let matrix: BTreeSet<_> = cases.iter().map(|case| case.model).collect();
+    assert_eq!(matrix.len(), cases.len(), "duplicate validation row");
+    let mut expected = implementations;
+    assert!(source.contains("pub type UnlockBatchMqRequestHeader = LockBatchMqRequestHeader;"));
+    expected.insert("UnlockBatchMqRequestHeader");
+    assert_eq!(
+        matrix, expected,
+        "update the matrix for every public header"
+    );
+
+    for case in cases {
+        let baseline = java_ext_fields(&format!("header-{}", case.fixture));
+        (case.decode)(&baseline).unwrap_or_else(|e| panic!("{}: {e}", case.fixture));
+        let required: BTreeSet<_> = case.required.split_whitespace().collect();
+        let i32_fields: BTreeSet<_> = case.i32_fields.split_whitespace().collect();
+        let i64_fields: BTreeSet<_> = case.i64_fields.split_whitespace().collect();
+        let optional: BTreeSet<_> = case.optional.split_whitespace().collect();
+        let booleans: BTreeSet<_> = case.booleans.split_whitespace().collect();
+        assert!(
+            i32_fields.is_disjoint(&i64_fields),
+            "{} numeric width overlap",
+            case.model
+        );
+        assert!(
+            required.is_disjoint(&optional),
+            "{} required/optional overlap",
+            case.model
+        );
+        let mut modeled = required.clone();
+        modeled.extend(optional.iter().copied());
+        modeled.extend(booleans.iter().copied());
+        modeled.extend(i32_fields.iter().copied());
+        modeled.extend(i64_fields.iter().copied());
+        let implementation = if case.model == "UnlockBatchMqRequestHeader" {
+            "LockBatchMqRequestHeader"
+        } else {
+            case.model
+        };
+        let encode_source = source
+            .split_once(&format!("impl CommandHeader for {implementation} {{"))
+            .unwrap()
+            .1
+            .split_once("fn decode_fields")
+            .unwrap()
+            .0;
+        let encoded_keys: BTreeSet<_> = ["fields.insert(", "put_optional("]
+            .into_iter()
+            .flat_map(|call| encode_source.match_indices(call))
+            .map(|(index, call)| {
+                let rest = &encode_source[index + call.len()..];
+                rest.split_once('"').unwrap().1.split_once('"').unwrap().0
+            })
+            .collect();
+        assert_eq!(
+            modeled, encoded_keys,
+            "{} matrix must classify every modeled wire field",
+            case.model
+        );
+        let mut raw = baseline.clone();
+        for &name in &optional {
+            let value = if i32_fields.contains(name) || i64_fields.contains(name) {
+                "0"
+            } else if booleans.contains(name) {
+                "false"
+            } else {
+                ""
+            };
+            raw.insert(name.into(), value.into());
+        }
+        raw.insert("futureField".into(), "opaque-value".into());
+        let encoded = (case.decode)(&raw).unwrap();
+        assert_eq!(
+            encoded.keys().map(String::as_str).collect::<BTreeSet<_>>(),
+            modeled,
+            "{} incomplete modeled field coverage",
+            case.model
+        );
+        (case.update)(&mut raw).unwrap();
+        assert_eq!(
+            raw.get("futureField").map(String::as_str),
+            Some("opaque-value")
+        );
+        for name in &modeled {
+            assert_eq!(
+                raw.get(*name),
+                encoded.get(*name),
+                "{} updated {name}",
+                case.model
+            );
+        }
+        for name in case.required.split_whitespace() {
+            let mut fields = baseline.clone();
+            fields.remove(name);
+            assert_eq!(
+                (case.decode)(&fields),
+                Err(ProtocolError::MissingField(name)),
+                "{} {name}",
+                case.fixture
+            );
+            fields.insert(name.into(), "".into());
+            assert_eq!(
+                (case.decode)(&fields).is_ok(),
+                !(i32_fields.contains(name) || i64_fields.contains(name)),
+                "{} empty required {name}",
+                case.fixture
+            );
+        }
+        for (width, names) in [(32, case.i32_fields), (64, case.i64_fields)] {
+            for name in names.split_whitespace() {
+                for value in [
+                    "",
+                    "not-a-number",
+                    if width == 32 {
+                        "2147483648"
+                    } else {
+                        "9223372036854775808"
+                    },
+                    if width == 32 {
+                        "-2147483649"
+                    } else {
+                        "-9223372036854775809"
+                    },
+                ] {
+                    let mut fields = baseline.clone();
+                    fields.insert(name.into(), value.into());
+                    assert!(
+                        matches!((case.decode)(&fields), Err(ProtocolError::InvalidField { field, .. }) if field == name),
+                        "{} {name}={value}",
+                        case.fixture
+                    );
+                }
+                for value in if width == 32 {
+                    ["2147483647", "-2147483648"]
+                } else {
+                    ["9223372036854775807", "-9223372036854775808"]
+                } {
+                    let mut fields = baseline.clone();
+                    fields.insert(name.into(), value.into());
+                    let decoded = (case.decode)(&fields)
+                        .unwrap_or_else(|e| panic!("{} {name}={value}: {e}", case.fixture));
+                    assert_eq!(
+                        decoded.get(name).map(String::as_str),
+                        Some(value),
+                        "{} {name}={value}",
+                        case.fixture
+                    );
+                }
+                let mut fields = baseline.clone();
+                fields.insert(name.into(), "0".into());
+                assert_eq!(
+                    (case.decode)(&fields)
+                        .unwrap()
+                        .get(name)
+                        .map(String::as_str),
+                    Some("0"),
+                    "{} {name}=0",
+                    case.fixture
+                );
+            }
+        }
+        for name in case.optional.split_whitespace() {
+            let mut fields = baseline.clone();
+            fields.remove(name);
+            assert!(
+                (case.decode)(&fields).is_ok(),
+                "{} absent {name}",
+                case.fixture
+            );
+            let absent = (case.decode)(&fields).unwrap();
+            let values: &[&str] = if i32_fields.contains(name) || i64_fields.contains(name) {
+                &["0"]
+            } else if booleans.contains(name) {
+                &["false", "true", ""]
+            } else {
+                &[""]
+            };
+            for &value in values {
+                let mut present = fields.clone();
+                present.insert(name.into(), value.into());
+                let decoded = (case.decode)(&present)
+                    .unwrap_or_else(|e| panic!("{} {name}={value}: {e}", case.fixture));
+                assert_ne!(decoded, absent, "{} absent vs {name}={value}", case.fixture);
+                assert_eq!(
+                    decoded.get(name).map(String::as_str),
+                    Some(if booleans.contains(name) && value.is_empty() {
+                        "false"
+                    } else {
+                        value
+                    }),
+                    "{} {name}={value}",
+                    case.fixture
+                );
+            }
+        }
+        for name in case.booleans.split_whitespace() {
+            let mut absent = baseline.clone();
+            absent.remove(name);
+            let mut explicit_false = absent.clone();
+            explicit_false.insert(name.into(), "false".into());
+            let absent_decoded = (case.decode)(&absent).unwrap();
+            let false_decoded = (case.decode)(&explicit_false).unwrap();
+            if optional.contains(name) {
+                assert_ne!(
+                    absent_decoded, false_decoded,
+                    "{} {name}: None vs Some(false)",
+                    case.fixture
+                );
+            } else {
+                assert_eq!(
+                    absent_decoded, false_decoded,
+                    "{} {name}: absent defaults to false",
+                    case.fixture
+                );
+            }
+            for (value, expected) in [
+                ("TRUE", "true"),
+                ("TrUe", "true"),
+                ("false", "false"),
+                ("yes", "false"),
+                ("1", "false"),
+                (" true ", "false"),
+                ("", "false"),
+            ] {
+                let mut fields = baseline.clone();
+                fields.insert(name.into(), value.into());
+                let mut canonical = baseline.clone();
+                canonical.insert(name.into(), expected.into());
+                assert_eq!(
+                    (case.decode)(&fields),
+                    (case.decode)(&canonical),
+                    "{} {name}={value}",
+                    case.fixture
+                );
+            }
+        }
+    }
 }

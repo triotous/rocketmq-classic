@@ -51,12 +51,58 @@
           <execution>
             <id>verify-rust-generated-typed-header-fixtures</id>
             <phase>verify</phase>
+            <goals><goal>exec</goal></goals>
+            <configuration>
+              <executable>cargo</executable>
+              <workingDirectory>${project.basedir}/../..</workingDirectory>
+              <arguments>
+                <argument>run</argument><argument>--locked</argument><argument>-p</argument>
+                <argument>rocketmq-classic-remoting</argument><argument>--example</argument>
+                <argument>generate_fixtures</argument><argument>--</argument>
+                <argument>p4-headers</argument><argument>${project.build.directory}/p4-rust-header-fixtures</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>generate-java-typed-header-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <arguments><argument>header-fixtures</argument><argument>--output</argument><argument>${project.basedir}/../../fixtures/remoting</argument></arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>generate-java-typed-body-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <arguments><argument>body-fixtures</argument><argument>--output</argument><argument>${project.basedir}/../../fixtures/remoting</argument></arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>verify-rust-generated-typed-header-fixtures-java</id>
+            <phase>verify</phase>
             <goals><goal>java</goal></goals>
             <configuration>
               <arguments>
                 <argument>verify-rust-fixtures</argument>
                 <argument>--dir</argument>
                 <argument>${project.build.directory}/p4-rust-header-fixtures</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>generate-rust-typed-body-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>exec</goal></goals>
+            <configuration>
+              <executable>cargo</executable>
+              <workingDirectory>${project.basedir}/../..</workingDirectory>
+              <arguments>
+                <argument>run</argument><argument>--locked</argument><argument>-p</argument>
+                <argument>rocketmq-classic-remoting</argument><argument>--example</argument>
+                <argument>generate_fixtures</argument><argument>--</argument>
+                <argument>p4-bodies</argument><argument>${project.build.directory}/p4-rust-body-fixtures</argument>
               </arguments>
             </configuration>
           </execution>

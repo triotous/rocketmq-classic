@@ -228,7 +228,7 @@ pub struct UnlockBatchRequestBody {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct LockBatchResponseBody {
-    #[serde(default)]
+    #[serde(default, rename = "lockOKMQSet")]
     pub lock_okmq_set: Vec<MessageQueue>,
 }
 

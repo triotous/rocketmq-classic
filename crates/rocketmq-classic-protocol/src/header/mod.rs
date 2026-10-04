@@ -12,12 +12,13 @@ pub use basic::{
     GetConsumerListByGroupRequestHeader, GetConsumerStatusRequestHeader, GetRouteInfoRequestHeader,
     LiteSubscriptionCtlRequestHeader, LockBatchMqRequestHeader, NotificationRequestHeader,
     NotificationResponseHeader, NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader,
-    PollingInfoResponseHeader, PopLiteMessageRequestHeader, PopMessageRequestHeader,
-    PopMessageResponseHeader, PullMessageRequestHeader, PullMessageResponseHeader,
-    QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader, ReplyMessageRequestHeader,
-    ResetOffsetRequestHeader, SendMessageRequestHeaderV1, SendMessageRequestHeaderV2,
-    SendMessageResponseHeader, UnlockBatchMqRequestHeader, UnregisterClientRequestHeader,
-    UnregisterClientResponseHeader, UpdateConsumerOffsetRequestHeader,
+    PollingInfoResponseHeader, PopLiteMessageRequestHeader, PopLiteMessageResponseHeader,
+    PopMessageRequestHeader, PopMessageResponseHeader, PullMessageRequestHeader,
+    PullMessageResponseHeader, QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
+    ReplyMessageRequestHeader, ResetOffsetRequestHeader, SendMessageRequestHeaderV1,
+    SendMessageRequestHeaderV2, SendMessageResponseHeader, UnlockBatchMqRequestHeader,
+    UnregisterClientRequestHeader, UnregisterClientResponseHeader,
+    UpdateConsumerOffsetRequestHeader,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
