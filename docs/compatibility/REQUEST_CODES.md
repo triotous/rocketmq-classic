@@ -4,26 +4,52 @@ The numeric source of truth is the pinned Java tag `rocketmq-all-5.5.1`, especia
 
 | Code | Java name | Client operation | Typed model status | RPC status |
 |---:|---|---|---|---|
-| 10/310 | SEND_MESSAGE / SEND_MESSAGE_V2 | Producer send V1/V2 headers | Implemented; Java fixtures and V1/V2 normalized mapping tested | Phase 5 |
+| 10/310/320 | SEND_MESSAGE / SEND_MESSAGE_V2 / SEND_BATCH_MESSAGE | Producer single/batch send headers | V1/V2 headers implemented; batch uses V2 header; Java request fixtures generated and Rust V1/V2 assertions cover normalized fields | Phase 5 |
 | 11 | PULL_MESSAGE | Consumer pull request/response headers | Implemented; Java request/response fixtures tested | Phase 5 |
 | 14 | QUERY_CONSUMER_OFFSET | Query offset request/response headers | Implemented; Java request/response fixtures tested | Phase 5 |
 | 15 | UPDATE_CONSUMER_OFFSET | Update offset header | Implemented; Java request fixture tested | Phase 5 |
 | 34 | HEART_BEAT | Heartbeat body | Implemented in Phase 1; wire integration in Phase 5 | Phase 5 |
-| 35 | UNREGISTER_CLIENT | Lifecycle request fields | Request header, empty response header, and body model implemented; Java fixture pending regeneration below | Phase 5 |
-| 37/39 | END_TRANSACTION / CHECK_TRANSACTION_STATE | Transaction request/response headers | Transaction and check-state typed headers implemented; fixture coverage pending | Phase 4 |
-| 324/325/326 | SEND_REPLY_MESSAGE / V2 / PUSH_REPLY_MESSAGE_TO_CLIENT | Reply send and push | Reply request header implemented; body/property models covered separately | Phase 4 |
-| 41/42 | LOCK_BATCH_MQ / UNLOCK_BATCH_MQ | Orderly lock/unlock bodies | Request body models implemented; typed headers represented by inherited RPC fields | Phase 5 |
+| 35 | UNREGISTER_CLIENT | Lifecycle request fields | Request header and empty response header implemented; Java request/response fixtures tested | Phase 5 |
+| 37/39 | END_TRANSACTION / CHECK_TRANSACTION_STATE | Transaction request/response headers | Request/response models and Java fixtures implemented; Rust assertions cover primary fields; exhaustive negative cases pending | Phase 4 |
+| 324/325/326 | SEND_REPLY_MESSAGE / V2 / PUSH_REPLY_MESSAGE_TO_CLIENT | Reply send and push | Reply request header and reply property constants implemented; V1 request fixture tested; V2/push variants and body semantics remain partial | Phase 4 |
+| 41/42 | LOCK_BATCH_MQ / UNLOCK_BATCH_MQ | Orderly lock/unlock bodies | JSON request/response body models and inherited-header fixtures implemented; per-field oracle assertions pending | Phase 5 |
 | 105 | GET_ROUTEINFO_BY_TOPIC | NameServer route header/body | Request header and route body implemented; Java header fixture tested | Phase 5 |
-| 38 | GET_CONSUMER_LIST_BY_GROUP | Consumer list header/body | Request header and response body implemented; Java request fixture tested | Phase 5 |
-| 36 | CONSUMER_SEND_MSG_BACK | Consumer retry/send-back | Request header model implemented; Java fixture pending regeneration below | Phase 4 |
+| 38 | GET_CONSUMER_LIST_BY_GROUP | Consumer list header/body | Request header and nullable response-body model implemented; Java request fixture tested, body response fixture pending | Phase 5 |
+| 36 | CONSUMER_SEND_MSG_BACK | Consumer retry/send-back | Request header implemented; Java fixture tested | Phase 4 |
 | 200050 | POP_MESSAGE | POP consumer | Request/response headers implemented; request fixture tested | Phase 4 |
 | 200051 | ACK_MESSAGE | POP ack | Header implemented; Java fixture tested | Phase 4 |
 | 200053 | CHANGE_MESSAGE_INVISIBLETIME | POP visibility | Header implemented; Java fixture tested | Phase 4 |
 | 200054/55 | NOTIFICATION / POLLING_INFO | POP notification/polling | Request/response headers implemented; fixtures tested | Phase 4 |
-| 200070–73 | POP_LITE / LITE_SUBSCRIPTION_CTL / ACK_LITE / NOTIFY_UNSUBSCRIBE_LITE | Lite consumer | POP Lite header and subscription body models implemented | Phase 4 |
-| 200151 | BATCH_ACK_MESSAGE | Batch POP ack | BatchAck request/body model implemented; Java call site verified | Phase 4 |
-| 400/401 | QUERY_ASSIGNMENT / SET_MESSAGE_REQUEST_MODE | Assignment and POP request mode | Request/response body models implemented; Java call sites verified | Phase 4 |
+| 200070–73 | POP_LITE / LITE_SUBSCRIPTION_CTL / ACK_LITE / NOTIFY_UNSUBSCRIBE_LITE | Lite consumer | POP Lite and Lite subscription-control header/body models implemented; ACK Lite and unsubscribe header models remain unimplemented | Phase 4 |
+| 200151 | BATCH_ACK_MESSAGE | Batch POP ack | BatchAck compact-name/Base64 body model and Rust JSON tests implemented; Java call site verified, Java body fixture assertion pending | Phase 4 |
+| 400/401 | QUERY_ASSIGNMENT / SET_MESSAGE_REQUEST_MODE | Assignment and POP request mode | Request/response assignment and request-mode body models with Java client call sites and Rust JSON tests; Java body fixture comparison remains partial | Phase 4 |
 
-“Typed model status” is intentionally independent from “RPC status”: Phase 4 adds protocol models only and performs no network calls. Request/response fixture coverage for the first wave lives in `crates/rocketmq-classic-protocol/tests/headers.rs` and `fixtures/remoting/header-*.{bin,json}`. Rust-to-Java decoding fixtures are generated by `cargo run -p rocketmq-classic-remoting --example generate_fixtures -- p4-headers <dir>` and verified by Maven `verify`.
+## Phase 4 operation/header/body inventory
+
+This table is the implementation-level companion to the code checklist above. Requiredness follows the pinned 5.5.1 header annotations plus encode/decode call paths. Command ext fields, JSON bodies, and message binary bodies are distinct wire components.
+
+| Code / operation | Request header | Response header | Body codec/model | Oneway | Java fixture / status |
+|---|---|---|---|---|---|
+| 105 GET_ROUTEINFO_BY_TOPIC | `GetRouteInfoRequestHeader`: topic required, `acceptStandardJsonOnly` optional | None (route is JSON body) | `TopicRouteData` JSON | No | `header-route-request`; route body fixture from Phase 0; model tested |
+| 10/310 SEND_MESSAGE[_V2] | V1 named fields; V2 `a`–`n` source mapping (the Java `n` brokerName is not an ext field in V1 conversion) | `SendMessageResponseHeader`: msgId/queueId/queueOffset required, transactionId/batchUniqId/recallHandle optional | Properties in header; message bytes remain binary body | Supported by command flag; no transport call here | `header-send-v1/v2/response`; tested and normalized |
+| 11 PULL_MESSAGE | consumerGroup/topic/queueId/queueOffset/maxMsgNums/sysFlag/commitOffset/suspendTimeoutMillis/subVersion required; remaining source fields optional | next/min/max/suggested broker required; offsetDelta/topic/group flags/forbiddenType optional | Response message data remains binary | No | `header-pull-request/response`; tested |
+| 14 QUERY_CONSUMER_OFFSET | consumerGroup/topic/queueId required; setZeroIfNotFound optional | offset required | None | No | `header-query-offset-request/response`; tested |
+| 15 UPDATE_CONSUMER_OFFSET | consumerGroup/topic/queueId/commitOffset required | None | None | Supported in client mode but no network work in Phase 4 | `header-update-offset-request`; tested |
+| 35 UNREGISTER_CLIENT | clientID required; producerGroup/consumerGroup optional | Empty | Optional `UnregisterClientBody` JSON, distinct from header | No | `header-unregister-request`; tested |
+| 36 CONSUMER_SEND_MSG_BACK | group/offset/delayLevel required; originMsgId/originTopic/maxReconsumeTimes optional; primitive unitMode defaults false | None | None | No | `header-send-back-request`; tested |
+| 38 GET_CONSUMER_LIST_BY_GROUP | consumerGroup required | Empty header | `ConsumerListByGroupResponseBody` with nullable consumerIdList JSON | No | `header-consumer-list-request`; body model tested, response fixture pending |
+| 37 END_TRANSACTION / 39 CHECK_TRANSACTION_STATE | End required: producerGroup/tranStateTableOffset/commitLogOffset/commitOrRollback/msgId; topic/fromTransactionCheck/transactionId optional. Check requires offsets; other fields optional | End response empty; check response requires producerGroup/offsets/commitOrRollback | Transaction message payload is not this ext header | No | Transaction request/response fixtures generated; Java→Rust assertion pending |
+| 324/325 SEND_REPLY_MESSAGE[_V2] / 326 PUSH_REPLY_MESSAGE_TO_CLIENT | Reply request header has required send fields plus bornHost/storeHost/storeTimestamp; nullable properties/reconsumeTimes and primitive unitMode | Send response shape | Reply body is message binary data; correlation/reply property names are common constants | Supported in client paths; no network here | `header-reply-request`; body fixture pending |
+| 41/42 LOCK_BATCH_MQ / UNLOCK_BATCH_MQ | Inherited `RpcRequestHeader`: ns/nsd/bname/oway optional | None | Request/response JSON carries consumerGroup/clientId/onlyThisBroker/mqSet | No | `order-001-lock-unlock` command fixture does not cover typed body; JSON shape unit-tested |
+| 200050 POP_MESSAGE / 200051 ACK_MESSAGE / 200053 CHANGE_MESSAGE_INVISIBLETIME | POP required consumerGroup/topic/queueId/maxMsgNums/invisibleTime/pollTime/bornTime/initMode; ACK/change required group/topic/queueId/extraInfo/offset; change also invisibleTime; other fields optional | POP required popTime/invisibleTime/reviveQid/restNum; remaining info strings optional | POP messages use binary response body | No | Java request fixtures for POP/ACK/change and response model round-trip; tested |
+| 200054 NOTIFICATION / 200055 POLLING_INFO | Notification required group/topic/queueId/pollTime/bornTime; polling required group/topic/queueId | Notification hasMsg required, pollingFull optional primitive; pollingNum required | None | No | Request/response Java fixtures generated and decoded |
+| 200070 POP_LITE / 200071 LITE_SUBSCRIPTION_CTL | POP Lite requires clientId/group/topic/maxMsgNum/invisibleTime/pollTime/bornTime; Lite control header empty | POP Lite response header/body family not fully modeled | Lite control body has optional subscriptionSet DTOs | No | POP Lite and empty control header fixtures; DTO body JSON tested, Java fixture assertion pending |
+| 200151 BATCH_ACK_MESSAGE | No custom header | None | brokerName plus ack list; BatchAck uses Java short JSON keys and Base64 BitSet bytes | Client callback API is async; wire model only | Java call site confirmed; compact-key/Base64 Rust tests; Oracle body fixture pending |
+| 400 QUERY_ASSIGNMENT / 401 SET_MESSAGE_REQUEST_MODE | No custom header | Assignment returns nullable assignment set | Query fields include topic/group/clientId/strategyName/messageModel; set-mode includes topic/group/mode/popShareQueueNum | No | Client call sites confirmed; body defaults/JSON names tested; Oracle body fixture pending |
+| 211/212 reset offset, 221/223 consumer status/direct consume | Reset header requires group/topic/timestamp/isForce, queueId defaults -1, offset optional; status/direct-consume header fields follow source annotations | None | Offset/consumer tables and direct-consume result are JSON bodies | No | Models and omission/default tests exist; source fixtures pending |
+
+Rows marked pending/partial are remaining Phase 4 evidence or model gaps, not approved exclusions. BatchAck is included because the pinned 5.5.1 client contains a call site. `ResetOffsetBody` and `GetConsumerStatusBody` use explicit `encode_java_json()` adapters to reproduce Fastjson's non-standard `MessageQueue` object-key syntax; ordinary Serde serialization remains standards-compliant and is not substituted for the Java body wire encoding.
+
+“Typed model status” is intentionally independent from “RPC status”: Phase 4 adds protocol models only and performs no network calls. Implemented Java→Rust header fixture coverage lives in `crates/rocketmq-classic-protocol/tests/headers.rs` and `fixtures/remoting/header-*.{bin,json}`. Rust-to-Java header and body frames are generated by `cargo run -p rocketmq-classic-remoting --example generate_fixtures -- p4-headers <dir>` and `... -- p4-bodies <dir>`, then decoded by Maven `verify`. Current Maven checks prove Rust wire framing and selected body fields; they do not yet compare every Java body fixture field-by-field.
 
 The table above is a selected checklist; `crates/rocketmq-classic-protocol/src/codes/request.rs` contains all 166 public Java RequestCode constants, and `response.rs` contains the 5 RemotingSysResponseCode plus 63 ResponseCode constants. Each file is generated/audited against the pinned Java source. Registry presence does not imply RPC implementation. See `JAVA_5_5_1_COMPATIBILITY.md` for status semantics.
