@@ -46,24 +46,43 @@ impl RouteSnapshot {
         only_this_broker: bool,
     ) -> Option<BrokerAddress> {
         let addresses = self.broker_addresses.get(broker)?;
-        let selected = addresses
-            .get_key_value(&id)
-            .or_else(|| {
-                (id != 0)
-                    .then(|| addresses.get_key_value(&id.wrapping_add(1)))
-                    .flatten()
-            })
-            .or_else(|| {
-                (!only_this_broker)
-                    .then(|| addresses.first_key_value())
-                    .flatten()
-            })?;
+        let exact_or_adjacent = addresses.get_key_value(&id).or_else(|| {
+            (id != 0)
+                .then(|| addresses.get_key_value(&id.wrapping_add(1)))
+                .flatten()
+        });
+        let selected = exact_or_adjacent.or_else(|| {
+            (!only_this_broker)
+                .then(|| addresses.first_key_value())
+                .flatten()
+        })?;
         Some(BrokerAddress {
             address: selected.1.clone(),
-            slave: *selected.0 != 0,
+            // Java changes the slave flag only for the arbitrary-entry fallback,
+            // not for brokerId + 1 (including signed overflow/negative IDs).
+            slave: if exact_or_adjacent.is_some() {
+                id != 0
+            } else {
+                *selected.0 != 0
+            },
             version: self
                 .broker_versions
                 .get(&(broker.to_owned(), selected.1.clone()))
+                .copied()
+                .unwrap_or(0),
+        })
+    }
+
+    pub fn admin_address(&self, broker: &str) -> Option<BrokerAddress> {
+        // Java iterates HashMap entries until it finds an address. String values
+        // in this typed snapshot are non-null; entry order is not a contract.
+        let (id, address) = self.broker_addresses.get(broker)?.first_key_value()?;
+        Some(BrokerAddress {
+            address: address.clone(),
+            slave: *id != 0,
+            version: self
+                .broker_versions
+                .get(&(broker.to_owned(), address.clone()))
                 .copied()
                 .unwrap_or(0),
         })
@@ -361,6 +380,47 @@ mod tests {
             }],
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn admin_resolution_reports_selected_peer_version_and_subscription_preserves_adjacent_slave_flag()
+     {
+        let mut snapshot = RouteSnapshot::default();
+        assert!(snapshot.admin_address("missing").is_none());
+        snapshot
+            .broker_addresses
+            .insert("empty".into(), BTreeMap::new());
+        assert!(snapshot.admin_address("empty").is_none());
+        snapshot
+            .broker_addresses
+            .insert("broker".into(), BTreeMap::from([(2, "slave".into())]));
+        assert_eq!(
+            snapshot.admin_address("broker"),
+            Some(BrokerAddress {
+                address: "slave".into(),
+                slave: true,
+                version: 0
+            })
+        );
+        snapshot
+            .broker_versions
+            .insert(("broker".into(), "slave".into()), 551);
+        assert_eq!(snapshot.admin_address("broker").unwrap().version, 551);
+        snapshot
+            .broker_addresses
+            .get_mut("broker")
+            .unwrap()
+            .insert(0, "master".into());
+        // Java's admin method chooses an available map entry, not a portable
+        // master-first contract. Assert metadata for the actually selected peer.
+        let admin = snapshot.admin_address("broker").unwrap();
+        assert_eq!(admin.slave, admin.address != "master");
+        assert_eq!(admin.version, if admin.slave { 551 } else { 0 });
+        let adjacent = snapshot.subscribe_address("broker", -1, true).unwrap();
+        assert_eq!(adjacent.address, "master");
+        assert!(adjacent.slave); // Java keeps the originally requested nonzero-ID flag.
+        assert!(!snapshot.subscribe_address("broker", 0, true).unwrap().slave);
+        assert!(snapshot.subscribe_address("broker", 7, true).is_none());
     }
 
     #[test]
