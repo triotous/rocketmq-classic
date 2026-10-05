@@ -98,31 +98,6 @@ macro_rules! broker_attempt {
 #[tokio::test]
 async fn broker_methods_use_one_attempt_and_honor_deadline() {
     broker_attempt!(
-        "request",
-        request::QUERY_CONSUMER_OFFSET,
-        false,
-        |api, addr, deadline| api.request(
-            addr,
-            request::QUERY_CONSUMER_OFFSET,
-            &QueryConsumerOffsetRequestHeader::default(),
-            None,
-            deadline
-        )
-    );
-    broker_attempt!(
-        "oneway",
-        request::UPDATE_CONSUMER_OFFSET,
-        true,
-        |api, addr, deadline| api.oneway(
-            addr,
-            request::UPDATE_CONSUMER_OFFSET,
-            &UpdateConsumerOffsetRequestHeader::default(),
-            None,
-            deadline
-        )
-    );
-
-    broker_attempt!(
         "pull_message",
         request::PULL_MESSAGE,
         false,
@@ -610,14 +585,6 @@ async fn expired_oneway_variants_emit_no_request() {
     let api = MQClientApi::new(client.clone());
     let expired = Instant::now() - Duration::from_millis(1);
     let results = [
-        api.oneway(
-            &addr,
-            request::UPDATE_CONSUMER_OFFSET,
-            &UpdateConsumerOffsetRequestHeader::default(),
-            None,
-            expired,
-        )
-        .await,
         api.update_consumer_offset(
             &addr,
             &UpdateConsumerOffsetRequestHeader::default(),

@@ -21,7 +21,7 @@ impl MQClientApi {
         Self { remoting }
     }
 
-    pub async fn request<H: CommandHeader>(
+    async fn request<H: CommandHeader>(
         &self,
         addr: &str,
         code: i32,
@@ -72,7 +72,7 @@ impl MQClientApi {
         })
     }
 
-    pub async fn oneway<H: CommandHeader>(
+    async fn oneway<H: CommandHeader>(
         &self,
         addr: &str,
         code: i32,
@@ -98,11 +98,7 @@ impl MQClientApi {
     }
 }
 
-pub fn classify(
-    reply: RemotingCommand,
-    code: i32,
-    peer: &str,
-) -> Result<RemotingCommand, RpcError> {
+fn classify(reply: RemotingCommand, code: i32, peer: &str) -> Result<RemotingCommand, RpcError> {
     if reply.code != response::SUCCESS {
         return Err(RpcError::Response {
             request_code: code,
@@ -114,7 +110,7 @@ pub fn classify(
     Ok(reply)
 }
 
-pub fn decode_header<T: CommandHeader>(
+fn decode_header<T: CommandHeader>(
     reply: &RemotingCommand,
     code: i32,
     peer: &str,
@@ -136,7 +132,7 @@ pub fn decode_header<T: CommandHeader>(
     })
 }
 
-pub fn decode_body<T: DeserializeOwned>(
+fn decode_body<T: DeserializeOwned>(
     reply: &RemotingCommand,
     code: i32,
     peer: &str,
