@@ -81,6 +81,15 @@ impl Default for ClientConfig {
 }
 
 impl ClientConfig {
+    pub const SEND_MESSAGE_WITH_VIP_CHANNEL_PROPERTY: &'static str =
+        "com.rocketmq.sendMessageWithVIPChannel";
+    pub const SOCKS_PROXY_CONFIG: &'static str = "com.rocketmq.socks.proxy.config";
+    pub const DECODE_READ_BODY: &'static str = "com.rocketmq.read.body";
+    pub const DECODE_DECOMPRESS_BODY: &'static str = "com.rocketmq.decompress.body";
+    pub const SEND_LATENCY_ENABLE: &'static str = "com.rocketmq.sendLatencyEnable";
+    pub const START_DETECTOR_ENABLE: &'static str = "com.rocketmq.startDetectorEnable";
+    pub const HEART_BEAT_V2: &'static str = "com.rocketmq.heartbeat.v2";
+
     /// Automatic IP initialization corresponding to Java's no-argument constructor.
     pub fn new_auto() -> Result<Self, ConfigError> {
         Ok(Self::new(local_address::get().map_err(|error| {
@@ -121,23 +130,22 @@ impl ClientConfig {
             trace_msg_batch_num: 10,
             unit_mode: false,
             unit_name: None,
-            decode_read_body: boolean("com.rocketmq.read.body", true),
-            decode_decompress_body: boolean("com.rocketmq.decompress.body", true),
-            vip_channel_enabled: boolean("com.rocketmq.sendMessageWithVIPChannel", false),
-            use_heartbeat_v2: boolean("com.rocketmq.heartbeat.v2", false),
+            decode_read_body: boolean(Self::DECODE_READ_BODY, true),
+            decode_decompress_body: boolean(Self::DECODE_DECOMPRESS_BODY, true),
+            vip_channel_enabled: boolean(Self::SEND_MESSAGE_WITH_VIP_CHANNEL_PROPERTY, false),
+            use_heartbeat_v2: boolean(Self::HEART_BEAT_V2, false),
             use_tls: boolean(
                 "tls.enable",
                 property("tls.server.mode").as_deref() == Some("enforcing"),
             ),
-            socks_proxy_config: property("com.rocketmq.socks.proxy.config")
-                .unwrap_or_else(|| "{}".into()),
+            socks_proxy_config: property(Self::SOCKS_PROXY_CONFIG).unwrap_or_else(|| "{}".into()),
             mq_client_api_timeout: 3_000,
             detect_timeout: 200,
             detect_interval: 2_000,
             language: LanguageCode::Java,
             enable_stream_request_type: false,
-            send_latency_enable: boolean("com.rocketmq.sendLatencyEnable", false),
-            start_detector_enable: boolean("com.rocketmq.startDetectorEnable", false),
+            send_latency_enable: boolean(Self::SEND_LATENCY_ENABLE, false),
+            start_detector_enable: boolean(Self::START_DETECTOR_ENABLE, false),
             enable_heartbeat_channel_event_listener: true,
             enable_concurrent_heartbeat: false,
             concurrent_heartbeat_thread_pool_size: processors,
@@ -307,6 +315,50 @@ pub(crate) fn java_whitespace(value: char) -> bool {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    #[test]
+    fn every_constructor_field_matches_pinned_client_config_defaults() {
+        let processors = std::thread::available_parallelism().unwrap().get() as i32;
+        assert_eq!(
+            ClientConfig::with_properties("explicit-ip".into(), |_| None),
+            ClientConfig {
+                namesrv_addr: None,
+                client_ip: Some("explicit-ip".into()),
+                instance_name: Some("DEFAULT".into()),
+                client_callback_executor_threads: processors,
+                namespace: None,
+                namespace_initialized: false,
+                namespace_v2: None,
+                access_channel: AccessChannel::Local,
+                poll_name_server_interval: 30_000,
+                heartbeat_broker_interval: 30_000,
+                persist_consumer_offset_interval: 5_000,
+                pull_time_delay_millis_when_exception: 1_000,
+                trace_msg_batch_num: 10,
+                unit_mode: false,
+                unit_name: None,
+                decode_read_body: true,
+                decode_decompress_body: true,
+                vip_channel_enabled: false,
+                use_heartbeat_v2: false,
+                use_tls: false,
+                socks_proxy_config: "{}".into(),
+                mq_client_api_timeout: 3_000,
+                detect_timeout: 200,
+                detect_interval: 2_000,
+                language: LanguageCode::Java,
+                enable_stream_request_type: false,
+                send_latency_enable: false,
+                start_detector_enable: false,
+                enable_heartbeat_channel_event_listener: true,
+                enable_concurrent_heartbeat: false,
+                concurrent_heartbeat_thread_pool_size: processors,
+                enable_trace: false,
+                trace_topic: None,
+                max_page_size_in_get_metadata: 2_000,
+            }
+        );
+    }
 
     #[test]
     fn namespace_cache_setter_clone_reset_and_empty_collection_state_matches_java() {

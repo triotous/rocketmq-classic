@@ -164,3 +164,92 @@ fn centralized_defaults_and_java_clone_copy_exact_fields() {
     assert_eq!(reset.access_channel, AccessChannel::Cloud);
     assert_eq!(reset.build_client_id(), config.build_client_id());
 }
+
+#[test]
+fn public_property_names_match_pinned_client_config_constants() {
+    assert_eq!(
+        ClientConfig::SEND_MESSAGE_WITH_VIP_CHANNEL_PROPERTY,
+        "com.rocketmq.sendMessageWithVIPChannel"
+    );
+    assert_eq!(
+        ClientConfig::SOCKS_PROXY_CONFIG,
+        "com.rocketmq.socks.proxy.config"
+    );
+    assert_eq!(ClientConfig::DECODE_READ_BODY, "com.rocketmq.read.body");
+    assert_eq!(
+        ClientConfig::DECODE_DECOMPRESS_BODY,
+        "com.rocketmq.decompress.body"
+    );
+    assert_eq!(
+        ClientConfig::SEND_LATENCY_ENABLE,
+        "com.rocketmq.sendLatencyEnable"
+    );
+    assert_eq!(
+        ClientConfig::START_DETECTOR_ENABLE,
+        "com.rocketmq.startDetectorEnable"
+    );
+    assert_eq!(ClientConfig::HEART_BEAT_V2, "com.rocketmq.heartbeat.v2");
+}
+
+#[test]
+fn clone_and_reset_copy_every_public_setting_except_java_omissions() {
+    use rocketmq_classic_protocol::codes::LanguageCode;
+
+    // Distinct from every constructor default, including signed-width limits.
+    let mut source = ClientConfig::new("changed-ip");
+    source.namesrv_addr = Some("changed-nameserver".into());
+    source.client_ip = None;
+    source.instance_name = None;
+    source.client_callback_executor_threads = i32::MIN;
+    source.set_namespace(Some("changed-namespace".into()));
+    source.namespace_v2 = Some("changed-v2".into());
+    source.access_channel = AccessChannel::Cloud;
+    source.poll_name_server_interval = i32::MIN;
+    source.heartbeat_broker_interval = i32::MAX;
+    source.persist_consumer_offset_interval = -1;
+    source.pull_time_delay_millis_when_exception = i64::MIN;
+    source.trace_msg_batch_num = -10;
+    source.unit_mode = true;
+    source.unit_name = Some("changed-unit".into());
+    source.decode_read_body = false;
+    source.decode_decompress_body = false;
+    source.vip_channel_enabled = true;
+    source.use_heartbeat_v2 = true;
+    source.use_tls = true;
+    source.socks_proxy_config = "changed-proxy".into();
+    source.mq_client_api_timeout = i32::MIN;
+    source.detect_timeout = -200;
+    source.detect_interval = i32::MAX;
+    source.language = LanguageCode::Cpp;
+    source.enable_stream_request_type = true;
+    source.send_latency_enable = true;
+    source.start_detector_enable = true;
+    source.enable_heartbeat_channel_event_listener = false;
+    source.enable_concurrent_heartbeat = true;
+    source.concurrent_heartbeat_thread_pool_size = -7;
+    source.enable_trace = true;
+    source.trace_topic = Some("changed-trace".into());
+    source.max_page_size_in_get_metadata = -2000;
+
+    let mut expected_clone = source.clone();
+    // reset of the source namespace state is part of clone construction, not
+    // a plain Rust Clone operation (covered independently by the private test).
+    expected_clone.set_namesrv_addr(source.namesrv_addr.clone());
+    expected_clone.access_channel = AccessChannel::Local;
+    expected_clone.trace_msg_batch_num = 10;
+    expected_clone.max_page_size_in_get_metadata = 2000;
+    assert_eq!(source.clone_client_config(), expected_clone);
+
+    let mut receiver = ClientConfig::new("receiver");
+    receiver.set_namespace(None);
+    receiver.access_channel = AccessChannel::Cloud;
+    receiver.trace_msg_batch_num = 42;
+    receiver.max_page_size_in_get_metadata = 43;
+    let mut expected_reset = source.clone();
+    expected_reset.access_channel = receiver.access_channel;
+    expected_reset.trace_msg_batch_num = receiver.trace_msg_batch_num;
+    expected_reset.max_page_size_in_get_metadata = receiver.max_page_size_in_get_metadata;
+    receiver.reset_client_config(&source);
+    assert_eq!(receiver, expected_reset);
+    assert_eq!(source.pull_time_delay_millis_when_exception, i64::MIN);
+}
