@@ -201,6 +201,7 @@ async fn run(
 ) {
     let mut inner_producer: Option<Arc<dyn ProducerRuntime>> = None;
     let mut inner_lease: Option<GroupLease> = None;
+    let mut periodic: Option<super::tasks::OwnedTasks> = None;
     while let Some(command) = receiver.recv().await {
         let Some(runtime) = runtime.upgrade() else {
             return;
@@ -283,15 +284,29 @@ async fn run(
                     runtime.control.checkpoint(1)?;
                     runtime.remoting().start()?;
                     runtime.control.checkpoint(2)?;
+                    let specs = super::tasks::schedules(runtime.config())?;
+                    periodic = Some(super::tasks::OwnedTasks::new(Arc::downgrade(&runtime)));
+                    for (index, schedule) in specs.into_iter().enumerate() {
+                        if let Some(tasks) = periodic.as_mut() {
+                            tasks.register(schedule)?;
+                        }
+                        runtime.control.checkpoint(3 + index as u8)?;
+                    }
                     Ok(())
                 })();
                 match result {
                     Ok(()) => {
                         inner_producer = Some(producer);
                         runtime.control.set_state(RuntimeState::Running);
+                        if let Some(tasks) = periodic.as_ref() {
+                            tasks.activate();
+                        }
                         let _ = reply.send(Ok(()));
                     }
                     Err(error) => {
+                        if let Some(tasks) = periodic.as_mut() {
+                            tasks.stop().await;
+                        }
                         runtime.remoting().shutdown().await;
                         let _ = runtime.groups.clear();
                         runtime.control.set_state(RuntimeState::Failed);
@@ -312,6 +327,9 @@ async fn run(
                     continue;
                 }
                 runtime.control.set_state(RuntimeState::ShuttingDown);
+                if let Some(tasks) = periodic.as_mut() {
+                    tasks.stop().await;
+                }
                 if let Some(lease) = inner_lease.take() {
                     let deadline = Instant::now() + runtime.rpc_timeout();
                     let _ = runtime
@@ -352,8 +370,31 @@ mod tests {
     use crate::{config::ClientConfig, runtime::ClientRuntimeManager};
 
     #[tokio::test]
+    async fn concurrent_starters_own_exactly_one_periodic_worker_and_join_it() {
+        let manager = ClientRuntimeManager::new();
+        let runtime = manager
+            .get_or_create(&ClientConfig::new("one-task-set"))
+            .await
+            .unwrap();
+        let mut calls = Vec::new();
+        for _ in 0..64 {
+            let runtime = runtime.clone();
+            calls.push(tokio::spawn(async move {
+                runtime.start().await.unwrap();
+            }));
+        }
+        for call in calls {
+            call.await.unwrap();
+        }
+        assert_eq!(runtime.periodic_probe.created.load(Ordering::SeqCst), 1);
+        assert_eq!(runtime.periodic_probe.live.load(Ordering::SeqCst), 1);
+        assert!(runtime.shutdown().await.unwrap());
+        assert_eq!(runtime.periodic_probe.live.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
     async fn every_initial_startup_failure_cleans_transport_groups_control_and_manager_identity() {
-        for point in [1, 2] {
+        for point in [1, 2, 3, 4, 5, 6] {
             let manager = ClientRuntimeManager::new();
             let config = ClientConfig::new(format!("failure-{point}"));
             let runtime = manager.get_or_create(&config).await.unwrap();
@@ -369,6 +410,7 @@ mod tests {
             ));
             assert_eq!(runtime.state(), RuntimeState::Failed);
             assert!(runtime.control.task.lock().unwrap().is_none());
+            assert_eq!(runtime.periodic_probe.live.load(Ordering::SeqCst), 0);
             assert!(
                 runtime
                     .prepare_heartbeat_data(false)

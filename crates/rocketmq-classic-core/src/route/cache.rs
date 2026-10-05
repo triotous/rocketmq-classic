@@ -84,6 +84,44 @@ pub(crate) struct RouteCache {
 }
 
 impl RouteCache {
+    pub(crate) fn record_version(
+        &self,
+        broker: &str,
+        address: &str,
+        version: i32,
+    ) -> Result<(), RuntimeError> {
+        let mut current = self
+            .snapshot
+            .write()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?;
+        let mut next = current.as_ref().clone();
+        next.broker_versions
+            .insert((broker.to_owned(), address.to_owned()), version);
+        *current = Arc::new(next);
+        Ok(())
+    }
+
+    pub(crate) fn clean_offline(&self) -> Result<(), RuntimeError> {
+        let mut current = self
+            .snapshot
+            .write()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?;
+        let live = current
+            .topics
+            .values()
+            .flat_map(|topic| topic.route.broker_datas.iter())
+            .filter_map(|broker| broker.broker_addrs.as_ref())
+            .flat_map(|addresses| addresses.values())
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        let mut next = current.as_ref().clone();
+        next.broker_addresses.retain(|_, addresses| {
+            addresses.retain(|_, address| live.contains(address));
+            !addresses.is_empty()
+        });
+        *current = Arc::new(next);
+        Ok(())
+    }
     pub(crate) fn snapshot(&self) -> Result<Arc<RouteSnapshot>, RuntimeError> {
         self.snapshot
             .read()
@@ -276,6 +314,35 @@ mod tests {
             }],
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn heartbeat_versions_are_coherent_and_offline_cleanup_checks_all_topics() {
+        let cache = RouteCache::default();
+        cache.replace("first", route(1)).unwrap();
+        cache
+            .record_version("broker", "master-1:10911", 551)
+            .unwrap();
+        let old = cache.snapshot().unwrap();
+        assert_eq!(
+            old.subscribe_address("broker", 0, true).unwrap().version,
+            551
+        );
+        cache.replace("second", route(2)).unwrap();
+        cache.replace("second", TopicRouteData::default()).unwrap();
+        cache.clean_offline().unwrap();
+        let next = cache.snapshot().unwrap();
+        assert!(next.publish_address("broker").is_none());
+        assert!(next.subscribe_address("broker", 2, true).is_some()); // first topic still references this slave
+        assert_eq!(
+            next.broker_versions
+                .get(&("broker".into(), "master-1:10911".into())),
+            Some(&551)
+        );
+        assert_eq!(old.publish_address("broker"), Some("master-1:10911"));
+        cache.replace("first", TopicRouteData::default()).unwrap();
+        cache.clean_offline().unwrap();
+        assert!(cache.snapshot().unwrap().broker_addresses.is_empty());
     }
 
     #[test]

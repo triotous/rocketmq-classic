@@ -17,6 +17,7 @@ import org.apache.rocketmq.remoting.protocol.heartbeat.ConsumeType;
 import org.apache.rocketmq.common.consumer.ConsumeFromWhere;
 import org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel;
 import org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData;
+import org.apache.rocketmq.remoting.protocol.heartbeat.HeartbeatData;
 
 /** Invokes actual runtime registration and private heartbeat preparation.
  * The transport is never started; finally releases all constructed resources. */
@@ -29,8 +30,10 @@ public final class RuntimeHeartbeatFixtures {
         prepare.setAccessible(true);
         Map<String, Object> item = new TreeMap<>();
         item.put("case", name);
+        HeartbeatData data = (HeartbeatData) prepare.invoke(runtime, withoutSub);
         item.put("body", com.alibaba.fastjson2.JSON.parseObject(
-            com.alibaba.fastjson2.JSON.toJSONString(prepare.invoke(runtime, withoutSub))));
+            com.alibaba.fastjson2.JSON.toJSONString(data)));
+        item.put("fingerprint", data.computeHeartbeatFingerprint());
         cases.add(item);
     }
 
@@ -87,7 +90,7 @@ public final class RuntimeHeartbeatFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "MQClientInstance.registerProducer/registerConsumer/prepareHeartbeatData/unregisterProducer/unregisterConsumer");
+        fixture.put("entrypoint", "MQClientInstance.registerProducer/registerConsumer/prepareHeartbeatData/unregisterProducer/unregisterConsumer; HeartbeatData.computeHeartbeatFingerprint");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture) + "\n";

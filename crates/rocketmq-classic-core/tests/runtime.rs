@@ -4,7 +4,10 @@ use rocketmq_classic_remoting::{
     RemotingCommand,
     codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
 };
-use std::sync::Arc;
+use std::sync::{
+    Arc, Weak,
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpListener,
@@ -13,8 +16,57 @@ use tokio::{
 
 use rocketmq_classic_core::{
     config::ClientConfig,
-    runtime::{ClientRuntimeManager, RuntimeError},
+    runtime::{
+        ClientRuntime, ClientRuntimeManager, ConsumerRuntime, ProducerRuntime, RuntimeError,
+    },
 };
+
+struct RouteObserver {
+    runtime: Weak<ClientRuntime>,
+    updates: AtomicUsize,
+    needed: AtomicBool,
+}
+
+impl ProducerRuntime for RouteObserver {
+    fn update_topic_publish_info(
+        &self,
+        topic: &str,
+        info: Arc<rocketmq_classic_core::route::TopicSnapshot>,
+    ) {
+        let runtime = self.runtime.upgrade().unwrap();
+        assert!(runtime.select_producer("producer").unwrap().is_some());
+        assert_eq!(
+            runtime.route_snapshot().unwrap().topics[topic].publish_queues,
+            info.publish_queues
+        );
+        self.updates.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+impl ConsumerRuntime for RouteObserver {
+    fn heartbeat_data(&self) -> rocketmq_classic_protocol::heartbeat::ConsumerData {
+        rocketmq_classic_protocol::heartbeat::ConsumerData {
+            group_name: "consumer".into(),
+            ..Default::default()
+        }
+    }
+    fn is_subscribe_topic_need_update(&self, _: &str) -> bool {
+        self.needed.load(Ordering::SeqCst)
+    }
+    fn update_topic_subscribe_info(
+        &self,
+        topic: &str,
+        queues: std::collections::BTreeSet<rocketmq_classic_common::message::MessageQueue>,
+    ) {
+        let runtime = self.runtime.upgrade().unwrap();
+        assert!(runtime.select_consumer("consumer").unwrap().is_some());
+        assert_eq!(
+            runtime.route_snapshot().unwrap().topics[topic].subscribe_queues,
+            queues
+        );
+        self.updates.fetch_add(1, Ordering::SeqCst);
+    }
+}
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn p6_v01_many_first_lookups_share_one_unstarted_runtime_and_transport_owner() {
@@ -89,7 +141,7 @@ async fn route_refresh_failure_preserves_last_coherent_snapshot() {
     let body = serde_json::to_vec(&fixture["cases"][0]["input"]).unwrap();
     let peer = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
-        for code in [0, 987654] {
+        for code in [0, 0, 0, 987654] {
             let mut length = [0; 4];
             stream.read_exact(&mut length).await.unwrap();
             let mut bytes = BytesMut::from(&length[..]);
@@ -114,7 +166,25 @@ async fn route_refresh_failure_preserves_last_coherent_snapshot() {
     });
     let manager = ClientRuntimeManager::new();
     let runtime = manager.get_or_create(&config).await.unwrap();
-    // Construction is separate from lifecycle; start is owned by the next step.
+    let producer = Arc::new(RouteObserver {
+        runtime: Arc::downgrade(&runtime),
+        updates: AtomicUsize::new(0),
+        needed: AtomicBool::new(false),
+    });
+    let consumer = Arc::new(RouteObserver {
+        runtime: Arc::downgrade(&runtime),
+        updates: AtomicUsize::new(0),
+        needed: AtomicBool::new(false),
+    });
+    runtime
+        .register_producer("producer", producer.clone())
+        .await
+        .unwrap();
+    runtime
+        .register_consumer("consumer", consumer.clone())
+        .await
+        .unwrap();
+    // Exercise route refresh in isolation, without scheduled refresh races.
     runtime.remoting().start().unwrap();
     assert!(
         runtime
@@ -122,6 +192,24 @@ async fn route_refresh_failure_preserves_last_coherent_snapshot() {
             .await
             .unwrap()
     );
+    assert_eq!(producer.updates.load(Ordering::SeqCst), 1);
+    assert_eq!(consumer.updates.load(Ordering::SeqCst), 1);
+    assert!(
+        !runtime
+            .update_topic_route("topic", Instant::now() + Duration::from_secs(2))
+            .await
+            .unwrap()
+    );
+    assert_eq!(producer.updates.load(Ordering::SeqCst), 1);
+    consumer.needed.store(true, Ordering::SeqCst);
+    assert!(
+        runtime
+            .update_topic_route("topic", Instant::now() + Duration::from_secs(2))
+            .await
+            .unwrap()
+    );
+    assert_eq!(producer.updates.load(Ordering::SeqCst), 2);
+    assert_eq!(consumer.updates.load(Ordering::SeqCst), 2);
     let before = runtime.route_snapshot().unwrap();
     assert!(
         runtime

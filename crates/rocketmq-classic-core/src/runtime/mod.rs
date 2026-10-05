@@ -3,6 +3,7 @@ mod control;
 mod instance;
 mod manager;
 mod registry;
+mod tasks;
 
 pub use control::RuntimeState;
 pub use instance::ClientRuntime;
@@ -11,6 +12,12 @@ pub use registry::{ConsumerRuntime, GroupLease, ProducerRuntime};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RuntimeError {
+    #[error("heartbeat encoding failed: {0}")]
+    HeartbeatEncoding(serde_json::Error),
+    #[error("periodic interval must be positive")]
+    InvalidSchedule,
+    #[error("periodic callback panicked")]
+    TaskCallbackFailed,
     #[error("runtime operation is invalid in state {0:?}")]
     InvalidState(RuntimeState),
     #[error("owned runtime control task failed")]

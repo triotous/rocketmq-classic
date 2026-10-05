@@ -25,6 +25,9 @@ pub struct ClientRuntime {
     pub(super) groups: GroupRegistry,
     pub(super) control: ControlPlane,
     manager: OnceLock<ManagerLink>,
+    pub(crate) heartbeat: crate::heartbeat::HeartbeatState,
+    #[cfg(test)]
+    pub(super) periodic_probe: Arc<super::tasks::TaskProbe>,
 }
 
 impl ClientRuntime {
@@ -33,6 +36,14 @@ impl ClientRuntime {
         properties: &HashMap<String, String>,
         hook: Option<Arc<dyn RpcHook>>,
     ) -> Result<Self, RuntimeError> {
+        if config.enable_concurrent_heartbeat && config.concurrent_heartbeat_thread_pool_size <= 0 {
+            return Err(
+                rocketmq_classic_remoting::TransportError::InvalidConfiguration(
+                    "concurrent heartbeat thread count must be positive".into(),
+                )
+                .into(),
+            );
+        }
         let callback_executor_threads = usize::try_from(config.client_callback_executor_threads)
             .map_err(|_| {
                 rocketmq_classic_remoting::TransportError::InvalidConfiguration(
@@ -69,6 +80,9 @@ impl ClientRuntime {
             groups: GroupRegistry::default(),
             control: ControlPlane::default(),
             manager: OnceLock::new(),
+            heartbeat: crate::heartbeat::HeartbeatState::default(),
+            #[cfg(test)]
+            periodic_probe: Arc::default(),
         })
     }
 
@@ -98,7 +112,85 @@ impl ClientRuntime {
         deadline: tokio::time::Instant,
     ) -> Result<bool, RuntimeError> {
         let route = self.api.get_topic_route(topic, deadline).await?;
-        self.routes.replace(topic, route)
+        let groups = self.groups.snapshot()?;
+        let needed = groups
+            .producers
+            .iter()
+            .any(|(_, producer)| producer.is_publish_topic_need_update(topic))
+            || groups
+                .consumers
+                .iter()
+                .any(|consumer| consumer.is_subscribe_topic_need_update(topic));
+        let changed = self.routes.replace(topic, route)?;
+        if changed || needed {
+            if let Some(info) = self.routes.snapshot()?.topics.get(topic).cloned() {
+                for (_, producer) in groups.producers {
+                    producer.update_topic_publish_info(topic, info.clone());
+                }
+                for consumer in groups.consumers {
+                    consumer.update_topic_subscribe_info(topic, info.subscribe_queues.clone());
+                }
+            }
+        }
+        Ok(changed || needed)
+    }
+
+    pub(crate) fn record_broker_version(
+        &self,
+        broker: &str,
+        address: &str,
+        version: i32,
+    ) -> Result<(), RuntimeError> {
+        self.routes.record_version(broker, address, version)
+    }
+
+    pub(super) async fn run_periodic(
+        &self,
+        kind: super::tasks::TaskKind,
+    ) -> Result<(), RuntimeError> {
+        use super::tasks::TaskKind;
+        match kind {
+            TaskKind::Route => {
+                let groups = self.groups.snapshot()?;
+                let mut topics = std::collections::BTreeSet::new();
+                for (_, producer) in groups.producers {
+                    topics.extend(producer.publish_topics());
+                }
+                for consumer in groups.consumers {
+                    topics.extend(
+                        consumer
+                            .heartbeat_data()
+                            .subscription_data_set
+                            .into_iter()
+                            .map(|sub| sub.topic),
+                    );
+                }
+                for topic in topics {
+                    let _ = self
+                        .update_topic_route(
+                            &topic,
+                            tokio::time::Instant::now() + self.rpc_timeout(),
+                        )
+                        .await;
+                }
+            }
+            TaskKind::Heartbeat => {
+                self.routes.clean_offline()?;
+                self.send_heartbeat_to_all_brokers().await?;
+            }
+            TaskKind::Persist | TaskKind::Adjust => {
+                for consumer in self.groups.snapshot()?.consumers {
+                    let operation = match kind {
+                        TaskKind::Persist => consumer.persist_consumer_offset(),
+                        _ => consumer.adjust_thread_pool(),
+                    };
+                    if let Some(operation) = operation {
+                        operation.await;
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     pub async fn register_producer(
@@ -317,7 +409,7 @@ impl ClientRuntime {
         }
     }
 
-    pub(super) fn rpc_timeout(&self) -> tokio::time::Duration {
+    pub(crate) fn rpc_timeout(&self) -> tokio::time::Duration {
         tokio::time::Duration::from_millis(self.config.mq_client_api_timeout.max(0) as u64)
     }
 
