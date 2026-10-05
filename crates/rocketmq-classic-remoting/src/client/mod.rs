@@ -480,6 +480,16 @@ pub trait ChannelEventListener: Send + Sync + 'static {
     fn on_exception(&self, _remote_addr: &str) {}
     fn on_idle(&self, _remote_addr: &str) {}
     fn on_active(&self, _remote_addr: &str) {}
+    /// Borrowed async work stays in the owned event worker; existing sync
+    /// listeners use the default adapter without spawning detached tasks.
+    fn on_active_async<'a>(
+        &'a self,
+        remote_addr: &'a str,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        Box::pin(async move {
+            self.on_active(remote_addr);
+        })
+    }
 }
 
 /// Deadline-based RocketMQ remoting client. Call [`start`](Self::start) before using transport operations.
@@ -1975,6 +1985,24 @@ fn start_channel_event_worker(
                 return;
             };
             let Some(listener) = &listener else { continue };
+            if matches!(event, ChannelEvent::Active) {
+                let operation = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    listener.on_active_async(&address)
+                }));
+                if let Ok(mut operation) = operation {
+                    let caught = std::future::poll_fn(|context| {
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            operation.as_mut().poll(context)
+                        }))
+                        .unwrap_or(Poll::Ready(()))
+                    });
+                    tokio::select! { biased;
+                        _ = shutdown.changed() => return,
+                        _ = caught => {},
+                    }
+                }
+                continue;
+            }
             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match event {
                 ChannelEvent::Connect => listener.on_connect(&address),
                 ChannelEvent::Close => listener.on_close(&address),
@@ -2171,6 +2199,59 @@ async fn timeout_scheduler(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::sync::Notify;
+
+    #[tokio::test]
+    async fn async_active_listener_is_owned_panic_isolated_and_cancelled_on_shutdown() {
+        struct Listener {
+            calls: std::sync::atomic::AtomicUsize,
+            live: Arc<std::sync::atomic::AtomicUsize>,
+            entered: Notify,
+        }
+        struct Live(Arc<std::sync::atomic::AtomicUsize>);
+        impl Drop for Live {
+            fn drop(&mut self) {
+                self.0.fetch_sub(1, Ordering::SeqCst);
+            }
+        }
+        impl ChannelEventListener for Listener {
+            fn on_active_async<'a>(
+                &'a self,
+                _: &'a str,
+            ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+                Box::pin(async move {
+                    let call = self.calls.fetch_add(1, Ordering::SeqCst);
+                    assert_ne!(call, 0, "scripted active listener panic");
+                    self.live.fetch_add(1, Ordering::SeqCst);
+                    let _live = Live(self.live.clone());
+                    self.entered.notify_one();
+                    std::future::pending::<()>().await;
+                })
+            }
+        }
+        let listener = Arc::new(Listener {
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            live: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            entered: Notify::new(),
+        });
+        let (sender, receiver) = mpsc::channel(2);
+        let (stop, shutdown) = tokio::sync::watch::channel(false);
+        let worker = start_channel_event_worker(Some(listener.clone()), receiver, shutdown);
+        sender
+            .send(("broker".into(), ChannelEvent::Active))
+            .await
+            .unwrap();
+        sender
+            .send(("broker".into(), ChannelEvent::Active))
+            .await
+            .unwrap();
+        listener.entered.notified().await;
+        assert_eq!(listener.calls.load(Ordering::SeqCst), 2);
+        assert_eq!(listener.live.load(Ordering::SeqCst), 1);
+        stop.send_replace(true);
+        worker.await.unwrap();
+        assert_eq!(listener.live.load(Ordering::SeqCst), 0);
+    }
 
     #[test]
     fn owned_processor_cleanup_preserves_replacement_even_for_same_handle() {
