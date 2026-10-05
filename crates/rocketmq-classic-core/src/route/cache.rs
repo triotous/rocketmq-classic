@@ -157,7 +157,9 @@ impl RouteCache {
             }
             conversion_route.order_topic_conf = Some(normalized.join(";"));
         }
-        validate_conversion_size(topic, &conversion_route)?;
+        // Raw order presence controls branch selection, even when a separator-
+        // only Java split normalizes to an empty conversion string.
+        validate_conversion_size(topic, &route)?;
         let mut topic_snapshot =
             TopicSnapshot {
                 publish_queues: if route.order_topic_conf.as_deref().is_some_and(|value| {
@@ -223,15 +225,15 @@ fn validate_conversion_size(topic: &str, route: &TopicRouteData) -> Result<(), R
             ))?;
         Ok(())
     };
-    for queue in &route.queue_datas {
-        add(queue.read_queue_nums, &queue.broker_name)?;
-        add(queue.write_queue_nums, &queue.broker_name)?;
-    }
-    if let Some(ordered) = route
+    let ordered = route
         .order_topic_conf
         .as_deref()
-        .filter(|value| !value.is_empty())
-    {
+        .filter(|value| !value.is_empty());
+    let mappings = route
+        .topic_queue_mapping_by_broker
+        .as_ref()
+        .filter(|value| !value.is_empty());
+    if let Some(ordered) = ordered {
         for item in ordered.split(';') {
             let mut parts = item.split(':');
             let broker = parts.next().unwrap_or_default();
@@ -242,10 +244,55 @@ fn validate_conversion_size(topic: &str, route: &TopicRouteData) -> Result<(), R
             add(count, broker)?;
         }
     }
-    if let Some(mappings) = &route.topic_queue_mapping_by_broker {
+    // Static metadata suppresses ordinary subscription conversion; it also
+    // suppresses ordinary publish conversion only for null orderTopicConf.
+    if let Some(mappings) = mappings {
+        let mut totals = BTreeMap::<String, i32>::new();
         for mapping in mappings.values() {
-            add(mapping.total_queues, &mapping.bname)?;
+            if let Some(scope) = mapping.scope.as_deref().filter(|_| mapping.epoch >= -1) {
+                let broker = format!(
+                    "__syslo__{}",
+                    if scope == "__global__" {
+                        &scope[2..]
+                    } else {
+                        scope
+                    }
+                );
+                let total = totals.entry(broker).or_default();
+                *total = (*total).max(mapping.total_queues);
+            }
         }
+        for (broker, total) in totals {
+            add(total, &broker)?; // subscribe queues
+            add(total, &broker)?; // endpoints
+            if route.order_topic_conf.is_none() {
+                add(total, &broker)?;
+            } // publish queues
+        }
+    }
+    let mut read_counts = BTreeMap::<&str, i32>::new();
+    for queue in &route.queue_datas {
+        if mappings.is_none() && queue.perm & 4 != 0 {
+            let count = read_counts.entry(&queue.broker_name).or_default();
+            *count = (*count).max(queue.read_queue_nums);
+        }
+        if ordered.is_none()
+            && !(route.order_topic_conf.is_none() && mappings.is_some())
+            && queue.perm & 2 != 0
+        {
+            let master = route
+                .broker_datas
+                .iter()
+                .find(|broker| broker.broker_name == queue.broker_name)
+                .and_then(|broker| broker.broker_addrs.as_ref())
+                .is_some_and(|addresses| addresses.contains_key(&0));
+            if master {
+                add(queue.write_queue_nums, &queue.broker_name)?;
+            }
+        }
+    }
+    for (broker, count) in read_counts {
+        add(count, broker)?;
     }
     Ok(())
 }
@@ -441,6 +488,59 @@ mod tests {
     }
 
     #[test]
+    fn budget_counts_effective_static_space_and_separator_only_order_not_unused_metadata() {
+        use rocketmq_classic_protocol::route::TopicQueueMappingInfo;
+        let cache = RouteCache::default();
+        let mut ordered = route(0);
+        ordered.queue_datas[0].write_queue_nums = i32::MAX;
+        ordered.order_topic_conf = Some(";;".into());
+        cache.replace("topic", ordered).unwrap();
+        assert!(
+            cache.snapshot().unwrap().topics["topic"]
+                .publish_queues
+                .is_empty()
+        );
+        let mut repeated = route(i32::MAX);
+        repeated.topic_queue_mapping_by_broker = Some(
+            (0..1_000)
+                .map(|index| {
+                    (
+                        index.to_string(),
+                        TopicQueueMappingInfo {
+                            total_queues: 1_000,
+                            epoch: 0,
+                            scope: Some("__global__".into()),
+                            curr_id_map: Some(BTreeMap::new()),
+                            ..Default::default()
+                        },
+                    )
+                })
+                .collect(),
+        );
+        cache.replace("topic", repeated.clone()).unwrap();
+        assert_eq!(
+            cache.snapshot().unwrap().topics["topic"]
+                .publish_queues
+                .len(),
+            1_000
+        );
+        assert_eq!(
+            cache.snapshot().unwrap().topics["topic"].endpoints.len(),
+            1_000
+        );
+        repeated
+            .topic_queue_mapping_by_broker
+            .as_mut()
+            .unwrap()
+            .get_mut("0")
+            .unwrap()
+            .total_queues = i32::MAX;
+        let before = cache.snapshot().unwrap();
+        assert!(cache.replace("topic", repeated).is_err());
+        assert!(Arc::ptr_eq(&before, &cache.snapshot().unwrap()));
+    }
+
+    #[test]
     fn vip_transformation_checks_ports_and_preserves_ipv6() {
         for (input, expected) in [
             ("broker:10911", "broker:10909"),
@@ -482,6 +582,19 @@ mod tests {
                     case["subscribe"]
                 );
                 assert_eq!(topic.order_topic, case["ordered"].as_bool().unwrap());
+                assert_eq!(
+                    serde_json::to_value(
+                        topic
+                            .endpoints
+                            .iter()
+                            .map(
+                                |(queue, broker)| serde_json::json!({"queue":queue,"broker":broker})
+                            )
+                            .collect::<Vec<_>>()
+                    )
+                    .unwrap(),
+                    case["endpoints"]
+                );
             } else {
                 assert!(cache.replace("topic", route).is_err());
                 assert!(cache.snapshot().unwrap().topics.is_empty());
