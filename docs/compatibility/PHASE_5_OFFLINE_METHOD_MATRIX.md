@@ -2,7 +2,9 @@
 
 Phase scope: one-attempt typed client RPCs, independent of public Producer/Consumer runtimes. Source baseline is Java client 5.5.1, tag `rocketmq-all-5.5.1`, commit `efa1be59d6fc747ad220f036c86030f05f0419f9` in the read-only reference repository. Server 5.3.4 is not contacted by these tests. P5-V02 remains PENDING_PHASE_19.
 
-There are 22 public domain methods, one constructor and no new core configuration settings. `request`, `oneway`, mode selection and response decoders are private implementation helpers. Java ASYNC completion is represented by Rust futures, as permitted by the Rust-native implementation contract; request mode, response interpretation, timeout behavior and pending ownership remain mapped. Phase 7 owns producer selection/retry policy; Phase 8 owns binary message decoding; Phase 13 owns public POP/Lite consumer logic. No missing Phase 5 RPC is deferred to those phases.
+At Phase 5 acceptance there were 22 public domain methods, one constructor and no new core configuration settings. `request`, `oneway`, mode selection and response decoders are private implementation helpers. Java ASYNC completion is represented by Rust futures, as permitted by the Rust-native implementation contract; request mode, response interpretation, timeout behavior and pending ownership remain mapped. Phase 7 owns producer selection/retry policy; Phase 8 owns binary message decoding; Phase 13 owns public POP/Lite consumer logic. No missing Phase 5 RPC is deferred to those phases.
+
+Later source-owned runtime RPC additions are tracked in the [Phase 6 inventory](PHASE_6_RUNTIME_INVENTORY.md), including default-topic route lookup and `MQClientApi::check_client_in_broker` (request 46). The latter uses the existing one-attempt request/classification pipeline and actual Java runtime/API fixtures; it is not included in the historical 22-method count or 148-case Phase 5 corpus below.
 
 ## Bidirectional method and branch inventory
 
