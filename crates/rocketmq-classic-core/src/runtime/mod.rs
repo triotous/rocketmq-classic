@@ -3,6 +3,7 @@ mod inbound;
 #[path = "runtime.rs"]
 mod instance;
 mod manager;
+mod rebalance;
 mod registry;
 mod tasks;
 

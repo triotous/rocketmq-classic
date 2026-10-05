@@ -18,7 +18,7 @@ pub(super) struct TaskProbe {
 }
 
 #[cfg(test)]
-struct LiveTask(Arc<TaskProbe>);
+pub(super) struct LiveTask(pub(super) Arc<TaskProbe>);
 
 #[cfg(test)]
 impl Drop for LiveTask {
@@ -105,6 +105,9 @@ impl OwnedTasks {
         let task = tokio::spawn(async move {
             #[cfg(test)]
             let _live = live;
+            let Some(rebalance) = runtime.upgrade().map(|runtime| runtime.rebalance.clone()) else {
+                return;
+            };
             tokio::select! { biased;
                 _ = cancellation.changed() => return,
                 _ = activation.changed() => {},
@@ -121,9 +124,16 @@ impl OwnedTasks {
                     .map(|(index, _)| index)
                     .unwrap_or(0);
                 let (schedule, due) = jobs[index];
+                let wake_due = rebalance.next_due().filter(|wake| *wake < due);
+                let next = wake_due.unwrap_or(due);
                 tokio::select! { biased;
                     _ = cancellation.changed() => return,
-                    _ = tokio::time::sleep_until(due) => {},
+                    _ = rebalance.scheduled.notified() => continue,
+                    _ = tokio::time::sleep_until(next) => {},
+                }
+                if wake_due.is_some() {
+                    rebalance.fire_due();
+                    continue;
                 }
                 let Some(runtime) = runtime.upgrade() else {
                     return;
@@ -365,6 +375,29 @@ mod tests {
         assert_eq!(runtime.periodic_probe.live.load(Ordering::SeqCst), 0);
         advance(120_000).await;
         assert_eq!(consumer.persistence.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn delayed_rebalance_wakeup_waits_behind_the_single_scheduled_callback() {
+        let runtime = runtime();
+        let consumer = Arc::new(Consumer::default());
+        consumer.block.store(true, Ordering::SeqCst);
+        runtime
+            .groups
+            .register_consumer("consumer", consumer.clone())
+            .unwrap();
+        let mut tasks = tasks(&runtime);
+        settle().await;
+        advance(10_000).await;
+        assert_eq!(consumer.active.load(Ordering::SeqCst), 1);
+        runtime.rebalance_later(1_000).unwrap();
+        advance(1_000).await;
+        assert!(runtime.rebalance.next_due().is_some());
+        consumer.block.store(false, Ordering::SeqCst);
+        consumer.release.notify_one();
+        settle().await;
+        assert!(runtime.rebalance.next_due().is_none());
+        tasks.stop().await;
     }
 
     #[tokio::test(start_paused = true)]

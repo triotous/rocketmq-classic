@@ -25,12 +25,15 @@ pub struct ClientRuntime {
     pub(super) groups: GroupRegistry,
     pub(super) control: ControlPlane,
     pub(super) inbound: Arc<super::inbound::RuntimeProcessor>,
+    pub(super) rebalance: Arc<super::rebalance::RebalanceSignal>,
     manager: OnceLock<ManagerLink>,
     pub(crate) heartbeat: crate::heartbeat::HeartbeatState,
     addressing: Arc<dyn crate::namesrv::TopAddressing>,
     discovery: Arc<crate::namesrv::DiscoveryState>,
     #[cfg(test)]
     pub(super) periodic_probe: Arc<super::tasks::TaskProbe>,
+    #[cfg(test)]
+    pub(super) rebalance_probe: Arc<super::tasks::TaskProbe>,
 }
 
 impl ClientRuntime {
@@ -49,6 +52,9 @@ impl ClientRuntime {
         hook: Option<Arc<dyn RpcHook>>,
         provider: Option<Arc<dyn crate::namesrv::TopAddressing>>,
     ) -> Result<Self, RuntimeError> {
+        let rebalance = Arc::new(super::rebalance::RebalanceSignal::from_properties(
+            properties,
+        )?);
         if config.enable_concurrent_heartbeat && config.concurrent_heartbeat_thread_pool_size <= 0 {
             return Err(
                 rocketmq_classic_remoting::TransportError::InvalidConfiguration(
@@ -105,17 +111,62 @@ impl ClientRuntime {
             groups: GroupRegistry::default(),
             control: ControlPlane::default(),
             inbound: Arc::default(),
+            rebalance,
             manager: OnceLock::new(),
             heartbeat: crate::heartbeat::HeartbeatState::default(),
             addressing,
             discovery,
             #[cfg(test)]
             periodic_probe: Arc::default(),
+            #[cfg(test)]
+            rebalance_probe: Arc::default(),
         })
     }
 
     pub fn client_id(&self) -> &str {
         &self.client_id
+    }
+
+    pub fn rebalance_immediately(&self) {
+        self.rebalance.wakeup();
+    }
+
+    pub fn rebalance_later(&self, delay_millis: i64) -> Result<(), RuntimeError> {
+        if delay_millis <= 0 {
+            self.rebalance_immediately();
+            return Ok(());
+        }
+        let state = self.state();
+        if matches!(
+            state,
+            RuntimeState::ShuttingDown | RuntimeState::Stopped | RuntimeState::Failed
+        ) {
+            return Err(RuntimeError::InvalidState(state));
+        }
+        self.rebalance
+            .schedule(tokio::time::Duration::from_millis(delay_millis as u64))
+    }
+
+    pub async fn do_rebalance(&self) -> Result<bool, RuntimeError> {
+        use std::task::Poll;
+        let mut balanced = true;
+        for consumer in self.groups.snapshot()?.consumers {
+            // Java contains each owner's Throwable independently. Catch both
+            // capability construction and asynchronous polling outside locks.
+            let operation =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| consumer.try_rebalance()));
+            if let Ok(Some(mut operation)) = operation {
+                let result = std::future::poll_fn(|context| {
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        operation.as_mut().poll(context)
+                    }))
+                    .unwrap_or(Poll::Ready(true))
+                })
+                .await;
+                balanced &= result;
+            }
+        }
+        Ok(balanced)
     }
 
     pub fn config(&self) -> &ClientConfig {

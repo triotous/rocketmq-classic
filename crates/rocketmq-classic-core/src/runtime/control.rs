@@ -203,6 +203,7 @@ async fn run(
     let mut inner_lease: Option<GroupLease> = None;
     let mut periodic: Option<super::tasks::OwnedTasks> = None;
     let mut inbound = Vec::new();
+    let mut rebalance: Option<super::rebalance::OwnedRebalance> = None;
     while let Some(command) = receiver.recv().await {
         let Some(runtime) = runtime.upgrade() else {
             return;
@@ -304,6 +305,11 @@ async fn run(
                         }
                         runtime.control.checkpoint(3 + index as u8)?;
                     }
+                    rebalance = Some(super::rebalance::OwnedRebalance::new(
+                        Arc::downgrade(&runtime),
+                        runtime.rebalance.clone(),
+                    ));
+                    runtime.control.checkpoint(20)?;
                     Ok(())
                 }
                 .await;
@@ -314,9 +320,16 @@ async fn run(
                         if let Some(tasks) = periodic.as_ref() {
                             tasks.activate();
                         }
+                        if let Some(worker) = rebalance.as_ref() {
+                            worker.activate();
+                        }
                         let _ = reply.send(Ok(()));
                     }
                     Err(error) => {
+                        runtime.rebalance.close_delayed();
+                        if let Some(worker) = rebalance.as_mut() {
+                            worker.stop().await;
+                        }
                         if let Some(tasks) = periodic.as_mut() {
                             tasks.stop().await;
                         }
@@ -341,6 +354,10 @@ async fn run(
                     continue;
                 }
                 runtime.control.set_state(RuntimeState::ShuttingDown);
+                runtime.rebalance.close_delayed();
+                if let Some(worker) = rebalance.as_mut() {
+                    worker.stop().await;
+                }
                 if let Some(tasks) = periodic.as_mut() {
                     tasks.stop().await;
                 }
@@ -396,10 +413,11 @@ mod tests {
 
     #[tokio::test]
     async fn discovery_schedule_failure_joins_all_owned_work() {
-        for point in [1, 2, 3, 4, 5, 6, 7, 10, 11, 12, 13, 14, 15, 16, 17] {
+        for point in [1, 2, 3, 4, 5, 6, 7, 10, 11, 12, 13, 14, 15, 16, 17, 20] {
             let manager = ClientRuntimeManager::with_top_addressing(Arc::new(BlankAddressing));
             let config = ClientConfig::new("discovery-failure");
             let runtime = manager.get_or_create(&config).await.unwrap();
+            runtime.rebalance_later(60_000).unwrap();
             runtime.control.fault.store(point, Ordering::SeqCst);
             assert!(matches!(
                 runtime.start().await,
@@ -407,6 +425,8 @@ mod tests {
             ));
             assert_eq!(runtime.state(), RuntimeState::Failed);
             assert_eq!(runtime.periodic_probe.live.load(Ordering::SeqCst), 0);
+            assert_eq!(runtime.rebalance_probe.live.load(Ordering::SeqCst), 0);
+            assert!(runtime.rebalance.next_due().is_none());
             assert!(runtime.control.task.lock().unwrap().is_none());
             assert_eq!(
                 runtime.remoting().with_processor_table(|table| table.len()),
@@ -442,13 +462,16 @@ mod tests {
         }
         assert_eq!(runtime.periodic_probe.created.load(Ordering::SeqCst), 1);
         assert_eq!(runtime.periodic_probe.live.load(Ordering::SeqCst), 1);
+        assert_eq!(runtime.rebalance_probe.created.load(Ordering::SeqCst), 1);
+        assert_eq!(runtime.rebalance_probe.live.load(Ordering::SeqCst), 1);
         assert!(runtime.shutdown().await.unwrap());
         assert_eq!(runtime.periodic_probe.live.load(Ordering::SeqCst), 0);
+        assert_eq!(runtime.rebalance_probe.live.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]
     async fn every_initial_startup_failure_cleans_transport_groups_control_and_manager_identity() {
-        for point in [1, 2, 3, 4, 5, 6, 10, 11, 12, 13, 14, 15, 16, 17] {
+        for point in [1, 2, 3, 4, 5, 6, 10, 11, 12, 13, 14, 15, 16, 17, 20] {
             let manager = ClientRuntimeManager::new();
             let mut config = ClientConfig::new(format!("failure-{point}"));
             config.namesrv_addr = Some(String::new());
@@ -459,6 +482,7 @@ mod tests {
                 .await
                 .unwrap();
             runtime.control.fault.store(point, Ordering::Release);
+            runtime.rebalance_later(60_000).unwrap();
             assert!(matches!(
                 runtime.start().await,
                 Err(RuntimeError::StartupFailure)
@@ -466,6 +490,8 @@ mod tests {
             assert_eq!(runtime.state(), RuntimeState::Failed);
             assert!(runtime.control.task.lock().unwrap().is_none());
             assert_eq!(runtime.periodic_probe.live.load(Ordering::SeqCst), 0);
+            assert_eq!(runtime.rebalance_probe.live.load(Ordering::SeqCst), 0);
+            assert!(runtime.rebalance.next_due().is_none());
             assert_eq!(
                 runtime.remoting().with_processor_table(|table| table.len()),
                 0

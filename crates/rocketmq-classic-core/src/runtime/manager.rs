@@ -99,6 +99,8 @@ impl ClientRuntimeManager {
                 key.starts_with("tls.")
                     || key == "rocketmq.namesrv.domain"
                     || key == "rocketmq.namesrv.domain.subgroup"
+                    || key == super::rebalance::WAIT_PROPERTY
+                    || key == super::rebalance::MIN_PROPERTY
             })
             .collect();
         loop {
