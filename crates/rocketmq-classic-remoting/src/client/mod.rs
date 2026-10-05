@@ -75,6 +75,8 @@ struct PendingEntry {
     address: String,
     request_code: i32,
     response: oneshot::Sender<Result<RemotingCommand, TransportError>>,
+    // Sync wait expiry detaches the caller while the response table retains admission ownership.
+    retained_admission: Option<tokio::sync::OwnedSemaphorePermit>,
 }
 
 struct Startup {
@@ -1450,7 +1452,17 @@ impl RemotingClient {
                 }
             }
             Err(_) => {
-                self.inner.cancel_pending(opaque, connection.generation);
+                if options.close_socket_on_timeout {
+                    let mut entries = self.inner.pending.lock().unwrap();
+                    if let Some(entry) = entries
+                        .get_mut(&opaque)
+                        .filter(|entry| entry.generation == connection.generation)
+                    {
+                        entry.retained_admission = admission.take();
+                    }
+                } else {
+                    self.inner.cancel_pending(opaque, connection.generation);
+                }
                 if options.close_socket_on_timeout
                     && self.inner.config.close_socket_if_timeout
                     && (timeout_budget > std::time::Duration::from_millis(100)
@@ -1695,6 +1707,7 @@ impl ClientInner {
                     address,
                     request_code,
                     response: sender,
+                    retained_admission: None,
                 });
                 return Ok((opaque, receiver));
             }
@@ -2127,6 +2140,77 @@ mod tests {
 
     fn test_command() -> RemotingCommand {
         RemotingCommand::default()
+    }
+
+    #[tokio::test]
+    async fn sync_wait_timeout_retains_pending_admission_until_terminal_cleanup() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        for late_reply in [false, true] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap().to_string();
+            let (seen_tx, seen_rx) = oneshot::channel();
+            let (release_tx, release_rx) = oneshot::channel();
+            let peer = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut len = [0; 4];
+                stream.read_exact(&mut len).await.unwrap();
+                let mut buffer = bytes::BytesMut::from(&len[..]);
+                buffer.resize(u32::from_be_bytes(len) as usize + 4, 0);
+                stream.read_exact(&mut buffer[4..]).await.unwrap();
+                let request = crate::codec::frame::decode_next(&mut buffer, DEFAULT_MAX_FRAME_SIZE)
+                    .unwrap()
+                    .unwrap();
+                seen_tx.send(request.opaque).unwrap();
+                release_rx.await.unwrap();
+                if late_reply {
+                    let mut reply = test_command();
+                    reply.opaque = request.opaque;
+                    reply.mark_response();
+                    stream
+                        .write_all(
+                            &crate::codec::frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap(),
+                        )
+                        .await
+                        .unwrap();
+                }
+            });
+            let client = RemotingClient::with_config(ClientConfig {
+                close_socket_if_timeout: false,
+                async_semaphore_value: 1,
+                ..Default::default()
+            })
+            .unwrap();
+            client.start().unwrap();
+            let result = client
+                .invoke_sync(&addr, test_command(), std::time::Duration::from_millis(100))
+                .await;
+            assert!(result.unwrap_err().is_timeout());
+            let opaque = seen_rx.await.unwrap();
+            let generation = {
+                let pending = client.inner.pending.lock().unwrap();
+                let entry = pending
+                    .get(&opaque)
+                    .expect("sync timeout must retain pending entry");
+                assert!(entry.deadline > Instant::now());
+                entry.generation
+            };
+            assert_eq!(client.inner.async_admission.available_permits(), 0);
+            if !late_reply {
+                client.inner.expire_pending(opaque, generation);
+            }
+            release_tx.send(()).unwrap();
+            peer.await.unwrap();
+            time::timeout(std::time::Duration::from_secs(1), async {
+                while !client.inner.pending.lock().unwrap().is_empty() {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            assert_eq!(client.inner.async_admission.available_permits(), 1);
+            client.shutdown().await;
+            assert!(client.inner.pending.lock().unwrap().is_empty());
+        }
     }
 
     #[tokio::test]
