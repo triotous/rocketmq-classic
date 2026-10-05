@@ -4,7 +4,10 @@ use rocketmq_classic_remoting::client::{
     ClientConfig as TransportConfig, RemotingClient, RpcHook, TransportMode,
 };
 
-use super::RuntimeError;
+use super::{
+    ConsumerRuntime, GroupLease, ProducerRuntime, RuntimeError,
+    registry::{GroupKind, GroupRegistry},
+};
 use crate::{api::MQClientApi, config::ClientConfig};
 
 /// A manager-owned transport and typed API. Construction does not start tasks.
@@ -14,6 +17,7 @@ pub struct ClientRuntime {
     remoting: RemotingClient,
     api: MQClientApi,
     routes: crate::route::RouteCache,
+    groups: GroupRegistry,
 }
 
 impl ClientRuntime {
@@ -55,6 +59,7 @@ impl ClientRuntime {
             api: MQClientApi::new(remoting.clone()),
             remoting,
             routes: crate::route::RouteCache::default(),
+            groups: GroupRegistry::default(),
         })
     }
 
@@ -85,5 +90,112 @@ impl ClientRuntime {
     ) -> Result<bool, RuntimeError> {
         let route = self.api.get_topic_route(topic, deadline).await?;
         self.routes.replace(topic, route)
+    }
+
+    pub fn register_producer(
+        &self,
+        group: &str,
+        handle: Arc<dyn ProducerRuntime>,
+    ) -> Result<GroupLease, RuntimeError> {
+        self.groups.register_producer(group, handle)
+    }
+
+    pub fn register_consumer(
+        &self,
+        group: &str,
+        handle: Arc<dyn ConsumerRuntime>,
+    ) -> Result<GroupLease, RuntimeError> {
+        self.groups.register_consumer(group, handle)
+    }
+
+    pub fn register_admin(&self, group: &str) -> Result<GroupLease, RuntimeError> {
+        self.groups.register_admin(group)
+    }
+
+    pub fn select_producer(
+        &self,
+        group: &str,
+    ) -> Result<Option<Arc<dyn ProducerRuntime>>, RuntimeError> {
+        self.groups.select_producer(group)
+    }
+
+    pub fn select_consumer(
+        &self,
+        group: &str,
+    ) -> Result<Option<Arc<dyn ConsumerRuntime>>, RuntimeError> {
+        self.groups.select_consumer(group)
+    }
+
+    pub fn prepare_heartbeat_data(
+        &self,
+        without_sub: bool,
+    ) -> Result<rocketmq_classic_protocol::heartbeat::HeartbeatData, RuntimeError> {
+        use rocketmq_classic_protocol::heartbeat::{HeartbeatData, ProducerData};
+        let snapshot = self.groups.snapshot()?;
+        let mut heartbeat = HeartbeatData {
+            client_id: Some(self.client_id.clone()),
+            is_without_sub: without_sub,
+            ..Default::default()
+        };
+        for (group, _) in snapshot.producers {
+            heartbeat
+                .producer_data_set
+                .insert(ProducerData { group_name: group });
+        }
+        for consumer in snapshot.consumers {
+            let mut data = consumer.heartbeat_data();
+            if without_sub {
+                data.subscription_data_set.clear();
+            }
+            heartbeat.consumer_data_set.insert(data);
+        }
+        Ok(heartbeat)
+    }
+
+    pub async fn unregister_producer(
+        &self,
+        lease: &GroupLease,
+        deadline: tokio::time::Instant,
+    ) -> Result<bool, RuntimeError> {
+        self.unregister_group(lease, GroupKind::Producer, deadline)
+            .await
+    }
+
+    pub async fn unregister_consumer(
+        &self,
+        lease: &GroupLease,
+        deadline: tokio::time::Instant,
+    ) -> Result<bool, RuntimeError> {
+        self.unregister_group(lease, GroupKind::Consumer, deadline)
+            .await
+    }
+
+    pub fn unregister_admin(&self, lease: &GroupLease) -> Result<bool, RuntimeError> {
+        self.groups.unregister(lease, GroupKind::Admin)
+    }
+
+    async fn unregister_group(
+        &self,
+        lease: &GroupLease,
+        kind: GroupKind,
+        deadline: tokio::time::Instant,
+    ) -> Result<bool, RuntimeError> {
+        if !self.groups.unregister(lease, kind)? {
+            return Ok(false);
+        }
+        let header = rocketmq_classic_protocol::header::UnregisterClientRequestHeader {
+            client_id: self.client_id.clone(),
+            producer_group: (kind == GroupKind::Producer).then(|| lease.group.clone()),
+            consumer_group: (kind == GroupKind::Consumer).then(|| lease.group.clone()),
+        };
+        let snapshot = self.routes.snapshot()?;
+        for brokers in snapshot.broker_addresses.values() {
+            for address in brokers.values() {
+                // Java best effort: one failed peer must not prevent cleanup of
+                // other peers. The phase contract bounds all attempts together.
+                let _ = self.api.unregister_client(address, &header, deadline).await;
+            }
+        }
+        Ok(true)
     }
 }

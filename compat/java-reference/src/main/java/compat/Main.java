@@ -77,6 +77,10 @@ public final class Main {
     }
 
     public static void main(String[] args) throws Exception {
+        if (args.length > 0 && "runtime-heartbeat-fixtures".equals(args[0])) {
+            RuntimeHeartbeatFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "runtime-route-fixtures".equals(args[0])) {
             RuntimeRouteFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;
