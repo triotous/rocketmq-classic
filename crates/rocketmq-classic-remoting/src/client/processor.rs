@@ -163,18 +163,17 @@ pub(super) fn process_one(inner: &Weak<ClientInner>, request: InboundRequest) {
 
 fn process_registered(
     inner: &Weak<ClientInner>,
-    request: InboundRequest,
+    mut request: InboundRequest,
     registration: ProcessorRegistration,
 ) {
-    let request_command = request.command.clone();
     let mut response = None;
     let mut run_after_hooks = false;
-    let request_for_hooks = request_command.clone();
+    let mut request_for_hooks = request.command.clone();
     if let Some(client) = inner.upgrade() {
         let hooks = client.rpc_hooks.lock().unwrap().clone();
         let before_result = hooks.iter().try_for_each(|hook| {
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                hook.before_request_result(&request.remote_addr, &request_for_hooks)
+                hook.before_request_mut_result(&request.remote_addr, &mut request_for_hooks)
             }))
             .unwrap_or_else(|payload| Err(super::RpcHookError::Failed(panic_message(payload))))
         });
@@ -228,7 +227,7 @@ fn process_registered(
                     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         registration
                             .processor
-                            .process_with_context(&request.remote_addr, request_command.clone())
+                            .process_with_context(&request.remote_addr, request_for_hooks.clone())
                     }));
                     match result {
                         Ok(Ok(processed_response)) => {
@@ -255,7 +254,7 @@ fn process_registered(
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     hook.after_response_optional_result(
                         &request.remote_addr,
-                        &request_command,
+                        &request_for_hooks,
                         response.as_ref(),
                     )
                 }))
@@ -280,6 +279,7 @@ fn process_registered(
             }
         }
     }
+    request.command = request_for_hooks;
     if let Some(response) = response {
         send_response(inner, request, response);
     }

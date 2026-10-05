@@ -37,6 +37,186 @@ async fn read_command<S: AsyncRead + Unpin>(stream: &mut S) -> RemotingCommand {
         .unwrap()
 }
 
+#[tokio::test]
+async fn mutable_rpc_hook_fields_reach_sync_async_oneway_and_callback_snapshots() {
+    struct Mutator;
+    impl RpcHook for Mutator {
+        fn before_request_mut_result(
+            &self,
+            _: &str,
+            request: &mut RemotingCommand,
+        ) -> Result<(), RpcHookError> {
+            request
+                .ext_fields
+                .get_or_insert_with(Default::default)
+                .insert("signed".into(), "yes".into());
+            Ok(())
+        }
+        fn after_response(&self, _: &str, request: &RemotingCommand, _: &RemotingCommand) {
+            assert_eq!(request.ext_fields.as_ref().unwrap()["signed"], "yes");
+        }
+    }
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        for code in [1, 2, 3] {
+            let command = read_command(&mut stream).await;
+            assert_eq!(command.code, code);
+            assert_eq!(command.ext_fields.as_ref().unwrap()["signed"], "yes");
+            if code != 3 {
+                let mut reply = RemotingCommand {
+                    opaque: command.opaque,
+                    ..Default::default()
+                };
+                reply.mark_response();
+                stream
+                    .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                    .await
+                    .unwrap();
+            } else {
+                assert!(command.is_oneway());
+            }
+        }
+    });
+    let client = RemotingClient::new(TransportMode::Plain);
+    client.add_rpc_hook(Arc::new(Mutator));
+    client.start().unwrap();
+    client
+        .invoke_sync_with_deadline(
+            &address,
+            RemotingCommand {
+                code: 1,
+                ..Default::default()
+            },
+            Instant::now() + Duration::from_secs(3),
+        )
+        .await
+        .unwrap();
+    let (sender, mut receive) = tokio::sync::mpsc::unbounded_channel();
+    client
+        .invoke_async(
+            &address,
+            RemotingCommand {
+                code: 2,
+                ..Default::default()
+            },
+            Instant::now() + Duration::from_secs(3),
+            Arc::new(ContextCallback {
+                sender,
+                events: Arc::default(),
+            }),
+        )
+        .unwrap();
+    let context = tokio::time::timeout(Duration::from_secs(3), receive.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(context.error.is_none());
+    assert_eq!(
+        context.request.ext_fields.as_ref().unwrap()["signed"],
+        "yes"
+    );
+    client
+        .invoke_oneway(
+            &address,
+            RemotingCommand {
+                code: 3,
+                ..Default::default()
+            },
+            Instant::now() + Duration::from_secs(3),
+        )
+        .unwrap()
+        .await
+        .unwrap();
+    peer.await.unwrap();
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn mutable_inbound_hooks_reach_pipeline_processor_after_hook_and_response_identity() {
+    struct Mutator;
+    impl RpcHook for Mutator {
+        fn before_request_mut_result(
+            &self,
+            _: &str,
+            request: &mut RemotingCommand,
+        ) -> Result<(), RpcHookError> {
+            if request.code == 601 {
+                request
+                    .ext_fields
+                    .get_or_insert_with(Default::default)
+                    .insert("inbound".into(), "yes".into());
+                request.opaque = 999;
+            }
+            Ok(())
+        }
+        fn after_response(&self, _: &str, request: &RemotingCommand, _: &RemotingCommand) {
+            if request.code == 601 {
+                assert_eq!(request.opaque, 999);
+                assert_eq!(request.ext_fields.as_ref().unwrap()["inbound"], "yes");
+            }
+        }
+    }
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let initial = read_command(&mut stream).await;
+        let mut reply = RemotingCommand {
+            opaque: initial.opaque,
+            ..Default::default()
+        };
+        reply.mark_response();
+        write_command(&mut stream, &reply).await;
+        write_command(
+            &mut stream,
+            &RemotingCommand {
+                code: 601,
+                opaque: 401,
+                ..Default::default()
+            },
+        )
+        .await;
+        let response = read_command(&mut stream).await;
+        assert_eq!(response.opaque, 999);
+        assert!(response.is_response());
+        assert_eq!(response.code, 0);
+    });
+    let client = RemotingClient::new(TransportMode::Plain);
+    client.add_rpc_hook(Arc::new(Mutator));
+    client.set_request_pipeline(Some(Arc::new(|request: &RemotingCommand| {
+        assert_eq!(request.ext_fields.as_ref().unwrap()["inbound"], "yes");
+        assert_eq!(request.opaque, 999);
+        Ok(())
+    })));
+    client.register_processor(
+        601,
+        Arc::new(|request: RemotingCommand| {
+            assert_eq!(request.ext_fields.as_ref().unwrap()["inbound"], "yes");
+            assert_eq!(request.opaque, 999);
+            Ok(Some(RemotingCommand::default()))
+        }),
+    );
+    client.start().unwrap();
+    client
+        .invoke_sync_with_deadline(
+            &address,
+            RemotingCommand {
+                code: 600,
+                ..Default::default()
+            },
+            Instant::now() + Duration::from_secs(3),
+        )
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(3), peer)
+        .await
+        .unwrap()
+        .unwrap();
+    client.shutdown().await;
+}
+
 async fn write_command<S: AsyncWriteExt + Unpin>(stream: &mut S, command: &RemotingCommand) {
     stream
         .write_all(&frame::encode(command, DEFAULT_MAX_FRAME_SIZE).unwrap())

@@ -223,10 +223,10 @@ fn classify_write_error(remote_addr: &str, error: TransportError) -> TransportEr
 fn run_before_rpc_hooks(
     hooks: &[Arc<dyn RpcHook>],
     remote_addr: &str,
-    request: &RemotingCommand,
+    request: &mut RemotingCommand,
 ) -> Result<(), RpcHookError> {
     for hook in hooks {
-        hook.before_request_result(remote_addr, request)?;
+        hook.before_request_mut_result(remote_addr, request)?;
     }
     Ok(())
 }
@@ -324,6 +324,16 @@ impl RequestPipeline for PipedRequestPipeline {
 /// RPC interception hooks. Hook errors are propagated through the request path. Outbound hook
 /// panics propagate from the invoking task; inbound hook panics map to SYSTEM_ERROR.
 pub trait RpcHook: Send + Sync + 'static {
+    /// Java RPCHook may mutate the command before encoding/signing. Existing
+    /// read-only hooks adapt through their original result method by default.
+    fn before_request_mut_result(
+        &self,
+        remote_addr: &str,
+        request: &mut RemotingCommand,
+    ) -> Result<(), RpcHookError> {
+        self.before_request_result(remote_addr, request)
+    }
+
     /// Optional equality key used to reproduce Java `List.contains` deduplication.
     fn equality_key(&self) -> Option<String> {
         None
@@ -1056,7 +1066,7 @@ impl RemotingClient {
     pub fn invoke_async(
         &self,
         addr: impl Into<String>,
-        command: RemotingCommand,
+        mut command: RemotingCommand,
         deadline: Instant,
         callback: Arc<dyn InvokeCallback>,
     ) -> Result<(), TransportError> {
@@ -1098,7 +1108,9 @@ impl RemotingClient {
                 Ok(_) => {
                     channel_established.store(true, Ordering::Release);
                     let hooks = client.inner.rpc_hooks.lock().unwrap().clone();
-                    if let Err(error) = run_before_rpc_hooks(&hooks, &addr, &command) {
+                    let hook_result = run_before_rpc_hooks(&hooks, &addr, &mut command);
+                    *callback_request_state.lock().unwrap() = command.clone();
+                    if let Err(error) = hook_result {
                         let context = InvokeCallbackResult::from_result(
                             callback_request_state.lock().unwrap().clone(),
                             Err(rpc_hook_transport_error(error)),
@@ -1336,7 +1348,6 @@ impl RemotingClient {
                 timeout,
             });
         }
-        let request_for_hooks = command.clone();
         let connection = self
             .inner
             .connection(addr, deadline)
@@ -1363,8 +1374,9 @@ impl RemotingClient {
         }
         if options.run_rpc_hooks && !options.retried_go_away && !options.admitted {
             let hooks = self.inner.rpc_hooks.lock().unwrap().clone();
-            run_before_rpc_hooks(&hooks, addr, &command).map_err(rpc_hook_transport_error)?;
+            run_before_rpc_hooks(&hooks, addr, &mut command).map_err(rpc_hook_transport_error)?;
         }
+        let request_for_hooks = command.clone();
         if !options.admitted {
             match self
                 .inner
@@ -1595,7 +1607,8 @@ impl RemotingClient {
                     .map_err(|_| TransportError::Closed)?
                     .map_err(|error| classify_connection_error(&addr, error))?;
                 let hooks = client.inner.rpc_hooks.lock().unwrap().clone();
-                run_before_rpc_hooks(&hooks, &addr, &command).map_err(rpc_hook_transport_error)?;
+                run_before_rpc_hooks(&hooks, &addr, &mut command)
+                    .map_err(rpc_hook_transport_error)?;
                 command.mark_oneway();
                 let _admission = client
                     .inner
@@ -2199,6 +2212,36 @@ async fn timeout_scheduler(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mutable_hooks_are_ordered_and_legacy_hooks_observe_prior_mutation() {
+        struct Mutator;
+        impl RpcHook for Mutator {
+            fn before_request_mut_result(
+                &self,
+                _: &str,
+                request: &mut RemotingCommand,
+            ) -> Result<(), RpcHookError> {
+                request
+                    .ext_fields
+                    .get_or_insert_with(Default::default)
+                    .insert("mutated".into(), "yes".into());
+                Ok(())
+            }
+        }
+        let observed = Arc::new(AtomicBool::new(false));
+        let flag = observed.clone();
+        let hooks: Vec<Arc<dyn RpcHook>> = vec![
+            Arc::new(Mutator),
+            Arc::new(move |_: &str, command: &RemotingCommand| {
+                assert_eq!(command.ext_fields.as_ref().unwrap()["mutated"], "yes");
+                flag.store(true, Ordering::Release);
+            }),
+        ];
+        let mut command = RemotingCommand::default();
+        run_before_rpc_hooks(&hooks, "peer", &mut command).unwrap();
+        assert!(observed.load(Ordering::Acquire));
+    }
     use tokio::sync::Notify;
 
     #[tokio::test]
