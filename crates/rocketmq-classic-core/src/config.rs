@@ -7,10 +7,13 @@ use rocketmq_classic_common::message::MessageQueue;
 use rocketmq_classic_protocol::codes::LanguageCode;
 use std::collections::BTreeSet;
 
+mod local_address;
 mod namespace;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ConfigError {
+    #[error("local client address selection failed: {0}")]
+    LocalAddress(String),
     #[error("instance endpoint path precedes its instance boundary")]
     InvalidInstanceEndpoint,
     #[error("instance name is null")]
@@ -71,7 +74,19 @@ impl std::fmt::Debug for ClientConfig {
     }
 }
 
+impl Default for ClientConfig {
+    fn default() -> Self {
+        Self::new_auto().expect("automatic client-IP initialization failed")
+    }
+}
+
 impl ClientConfig {
+    /// Automatic IP initialization corresponding to Java's no-argument constructor.
+    pub fn new_auto() -> Result<Self, ConfigError> {
+        Ok(Self::new(local_address::get().map_err(|error| {
+            ConfigError::LocalAddress(error.to_string())
+        })?))
+    }
     /// Explicit client-IP selection, corresponding to Java `setClientIP`.
     /// Known Java system-property keys are read from the process environment;
     /// ROCKETMQ_NAMESRV_ADDR remains the Java environment fallback.

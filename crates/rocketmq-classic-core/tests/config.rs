@@ -6,6 +6,26 @@ fn optional(value: &Value) -> Option<String> {
 }
 
 #[test]
+fn default_constructor_selects_a_local_ip_before_identity_construction() {
+    let config = ClientConfig::default();
+    let address = config.client_ip.as_deref().unwrap();
+    assert!(!address.is_empty());
+    if address.starts_with('[') {
+        address
+            .trim_start_matches('[')
+            .trim_end_matches(']')
+            .split('%')
+            .next()
+            .unwrap()
+            .parse::<std::net::Ipv6Addr>()
+            .unwrap();
+    } else {
+        address.parse::<std::net::Ipv4Addr>().unwrap();
+    }
+    assert!(config.build_client_id().starts_with(address));
+}
+
+#[test]
 fn endpoint_namespace_and_resource_helpers_match_invoked_java() {
     let fixture: Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
