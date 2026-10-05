@@ -4,9 +4,54 @@ use std::{
     collections::{HashMap, HashSet},
     future::Future,
     pin::Pin,
-    sync::Mutex,
+    sync::{Arc, Mutex, OnceLock, Weak},
     task::Poll,
 };
+
+#[derive(Default)]
+pub(crate) struct HeartbeatChannelListener(OnceLock<Weak<ClientRuntime>>);
+impl HeartbeatChannelListener {
+    pub fn bind(&self, runtime: &Arc<ClientRuntime>) {
+        let _ = self.0.set(Arc::downgrade(runtime));
+    }
+}
+impl rocketmq_classic_remoting::client::ChannelEventListener for HeartbeatChannelListener {
+    fn on_active_async<'a>(
+        &'a self,
+        address: &'a str,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        Box::pin(async move {
+            let Some(runtime) = self.0.get().and_then(Weak::upgrade) else {
+                return;
+            };
+            if matches!(
+                runtime.state(),
+                crate::runtime::RuntimeState::ShuttingDown
+                    | crate::runtime::RuntimeState::Stopped
+                    | crate::runtime::RuntimeState::Failed
+            ) {
+                return;
+            }
+            let Ok(routes) = runtime.route_snapshot() else {
+                return;
+            };
+            for (broker, addresses) in &routes.broker_addresses {
+                if let Some((id, _)) = addresses
+                    .iter()
+                    .find(|(_, value)| value.as_str() == address)
+                {
+                    if runtime
+                        .send_heartbeat_to_broker_with_lock_mode(*id, broker, address, false)
+                        .await
+                        .unwrap_or(false)
+                    {
+                        runtime.rebalance_immediately();
+                    }
+                }
+            }
+        })
+    }
+}
 
 #[derive(Default)]
 pub(crate) struct HeartbeatState {
@@ -20,7 +65,7 @@ struct PeerState {
     fingerprints: HashMap<String, i32>,
 }
 
-type PeerFuture<'a> = Pin<Box<dyn Future<Output = Result<(), RuntimeError>> + Send + 'a>>;
+type PeerFuture<'a> = Pin<Box<dyn Future<Output = Result<bool, RuntimeError>> + Send + 'a>>;
 
 /// The fingerprint is client-local change detection, not a server-computed
 /// checksum. Canonical set order is Rust-native; Java HashSet iteration is not
@@ -62,6 +107,49 @@ fn fingerprint(data: &HeartbeatData) -> Result<i32, RuntimeError> {
 }
 
 impl ClientRuntime {
+    pub async fn send_heartbeat_to_broker(
+        &self,
+        id: i64,
+        broker: &str,
+        address: &str,
+    ) -> Result<bool, RuntimeError> {
+        self.send_heartbeat_to_broker_with_lock_mode(id, broker, address, true)
+            .await
+    }
+
+    pub async fn send_heartbeat_to_broker_with_lock_mode(
+        &self,
+        _id: i64,
+        broker: &str,
+        address: &str,
+        _strict_lock_mode: bool,
+    ) -> Result<bool, RuntimeError> {
+        let Ok(_guard) = self.heartbeat.gate.try_lock() else {
+            return Ok(false);
+        };
+        let mut full = self.prepare_heartbeat_data(false)?;
+        if full.producer_data_set.is_empty() && full.consumer_data_set.is_empty() {
+            return Ok(false);
+        }
+        let v2 = self.config().use_heartbeat_v2;
+        if v2 {
+            full.heartbeat_fingerprint = fingerprint(&full)?;
+        }
+        let mut simple = full.clone();
+        simple.is_without_sub = true;
+        simple.consumer_data_set = simple
+            .consumer_data_set
+            .into_iter()
+            .map(|mut consumer| {
+                consumer.subscription_data_set.clear();
+                consumer
+            })
+            .collect();
+        // Unlike the all-Broker round, the explicit single-peer method does not
+        // skip a slave when only producers are registered (Java 5.5.1).
+        self.send_heartbeat_peer(broker, address, &full, &simple, v2)
+            .await
+    }
     pub async fn send_heartbeat_to_all_brokers(&self) -> Result<bool, RuntimeError> {
         self.send_heartbeat_to_all_brokers_with_rebalance(false)
             .await
@@ -161,7 +249,7 @@ impl ClientRuntime {
         full: &HeartbeatData,
         simple: &HeartbeatData,
         v2: bool,
-    ) -> Result<(), RuntimeError> {
+    ) -> Result<bool, RuntimeError> {
         let deadline = tokio::time::Instant::now() + self.rpc_timeout();
         let version = if v2 {
             let reduced = {
@@ -178,7 +266,7 @@ impl ClientRuntime {
                 .send_heartbeat_v2(address, if reduced { simple } else { full }, deadline)
                 .await
             else {
-                return Ok(());
+                return Ok(false);
             };
             let mut peers = self
                 .heartbeat
@@ -202,11 +290,12 @@ impl ClientRuntime {
             result.version
         } else {
             let Ok(version) = self.api().send_heartbeat(address, full, deadline).await else {
-                return Ok(());
+                return Ok(false);
             };
             version
         };
         self.record_broker_version(broker, address, version)
+            .map(|_| true)
     }
 }
 

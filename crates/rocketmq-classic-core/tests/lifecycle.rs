@@ -135,6 +135,22 @@ async fn respond(stream: &mut TcpStream, command: &RemotingCommand, body: Option
         .unwrap();
 }
 
+async fn read_unregister(stream: &mut TcpStream) -> RemotingCommand {
+    loop {
+        let command = read_command(stream).await;
+        if command.code != request::HEART_BEAT {
+            return command;
+        }
+        let heartbeat: rocketmq_classic_protocol::heartbeat::HeartbeatData =
+            serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
+        assert_eq!(heartbeat.client_id.as_deref(), Some("192.0.2.6@DEFAULT"));
+        assert!(heartbeat.consumer_data_set.is_empty());
+        // A newly established unregister channel now emits Java's optional
+        // active heartbeat. Acknowledge it without weakening unregister order.
+        respond(stream, &command, None).await;
+    }
+}
+
 #[tokio::test]
 async fn cancelled_unregister_finishes_before_replacement_registration_and_last_shutdown_closes_after_unregister()
  {
@@ -149,7 +165,7 @@ async fn cancelled_unregister_finishes_before_replacement_registration_and_last_
     let (last_release, last_reply_allowed) = tokio::sync::oneshot::channel();
     let peer = tokio::spawn(async move {
         let (mut stream, _) = broker.accept().await.unwrap();
-        let command = read_command(&mut stream).await;
+        let command = read_unregister(&mut stream).await;
         assert_eq!(command.code, request::UNREGISTER_CLIENT);
         assert_eq!(
             command.ext_fields.as_ref().unwrap()["producerGroup"],
@@ -169,14 +185,14 @@ async fn cancelled_unregister_finishes_before_replacement_registration_and_last_
         observed.send(()).unwrap();
         reply_allowed.await.unwrap();
         respond(&mut stream, &command, None).await;
-        let command = read_command(&mut stream).await;
+        let command = read_unregister(&mut stream).await;
         assert_eq!(command.code, request::UNREGISTER_CLIENT);
         assert_eq!(
             command.ext_fields.as_ref().unwrap()["producerGroup"],
             "producer"
         );
         respond(&mut stream, &command, None).await;
-        let command = read_command(&mut stream).await;
+        let command = read_unregister(&mut stream).await;
         assert_eq!(command.code, request::UNREGISTER_CLIENT);
         assert_eq!(
             command.ext_fields.as_ref().unwrap()["producerGroup"],

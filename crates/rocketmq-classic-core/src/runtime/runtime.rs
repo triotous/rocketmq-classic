@@ -29,6 +29,7 @@ pub struct ClientRuntime {
     pub(super) pull: Arc<super::pull::PullService>,
     manager: OnceLock<ManagerLink>,
     pub(crate) heartbeat: crate::heartbeat::HeartbeatState,
+    heartbeat_listener: Option<Arc<crate::heartbeat::HeartbeatChannelListener>>,
     addressing: Arc<dyn crate::namesrv::TopAddressing>,
     discovery: Arc<crate::namesrv::DiscoveryState>,
     #[cfg(test)]
@@ -79,13 +80,21 @@ impl ClientRuntime {
         } else {
             TransportMode::Plain
         };
-        let remoting = RemotingClient::with_config(TransportConfig {
-            transport,
-            callback_executor_threads,
-            socks_proxy_config: config.socks_proxy_config.clone(),
-            scan_available_nameserver: false,
-            ..TransportConfig::default()
-        })?;
+        let heartbeat_listener = config
+            .enable_heartbeat_channel_event_listener
+            .then(|| Arc::new(crate::heartbeat::HeartbeatChannelListener::default()));
+        let remoting = RemotingClient::with_config_and_channel_event_listener(
+            TransportConfig {
+                transport,
+                callback_executor_threads,
+                socks_proxy_config: config.socks_proxy_config.clone(),
+                scan_available_nameserver: false,
+                ..TransportConfig::default()
+            },
+            heartbeat_listener.clone().map(|listener| {
+                listener as Arc<dyn rocketmq_classic_remoting::client::ChannelEventListener>
+            }),
+        )?;
         if let Some(addresses) = &config.namesrv_addr {
             remoting.update_name_server_address_list(crate::namesrv::split_addresses(addresses));
         }
@@ -118,6 +127,7 @@ impl ClientRuntime {
             pull: Arc::default(),
             manager: OnceLock::new(),
             heartbeat: crate::heartbeat::HeartbeatState::default(),
+            heartbeat_listener,
             addressing,
             discovery,
             #[cfg(test)]
@@ -576,6 +586,9 @@ impl ClientRuntime {
     pub(super) fn attach_manager(self: &Arc<Self>, link: ManagerLink) {
         let _ = self.manager.set(link);
         self.inbound.bind(self);
+        if let Some(listener) = &self.heartbeat_listener {
+            listener.bind(self);
+        }
     }
 
     pub(super) fn remove_from_manager(self: &Arc<Self>) -> Result<bool, RuntimeError> {
