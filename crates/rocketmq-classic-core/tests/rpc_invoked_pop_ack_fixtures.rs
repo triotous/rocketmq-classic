@@ -1,0 +1,258 @@
+use std::{fs, path::PathBuf, time::Duration};
+
+use bytes::BytesMut;
+use rocketmq_classic_core::{
+    api::{MQClientApi, extensions::AckStatus},
+    error::RpcError,
+};
+use rocketmq_classic_protocol::{
+    body::BatchAckMessageRequestBody,
+    header::{
+        AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader, PopLiteMessageRequestHeader,
+        PopMessageRequestHeader,
+    },
+};
+use rocketmq_classic_remoting::{
+    RemotingCommand,
+    client::{RemotingClient, TransportMode},
+    codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
+};
+use serde_json::Value;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpListener,
+    time::Instant,
+};
+
+fn bytes(value: &Value) -> Option<Vec<u8>> {
+    value.as_str().map(|encoded| {
+        let alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let (mut result, mut bits, mut count) = (Vec::new(), 0u32, 0);
+        for byte in encoded.bytes().take_while(|byte| *byte != b'=') {
+            bits = (bits << 6) | alphabet.iter().position(|item| *item == byte).unwrap() as u32;
+            count += 6;
+            if count >= 8 {
+                count -= 8;
+                result.push((bits >> count) as u8);
+                bits &= (1 << count) - 1;
+            }
+        }
+        result
+    })
+}
+
+fn ack_outcome(result: Result<AckStatus, RpcError>) -> String {
+    match result.unwrap() {
+        AckStatus::Ok => "status=OK",
+        AckStatus::NoExist => "status=NO_EXIST",
+    }
+    .into()
+}
+
+#[tokio::test]
+async fn invoked_pop_ack_callbacks_match_rust_domain_outcomes() {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/rpc-invoked-pop-ack");
+    let mut files: Vec<_> = fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    files.sort();
+    assert_eq!(files.len(), 29);
+    for file in files {
+        let fixture: Value = serde_json::from_slice(&fs::read(file).unwrap()).unwrap();
+        assert_eq!(fixture["mode"], "ASYNC");
+        assert_eq!(
+            fixture["provenance"]["client"],
+            "org.apache.rocketmq:rocketmq-client:5.5.1"
+        );
+        assert_eq!(fixture["provenance"]["serverBaselineContacted"], false);
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        let expected = fixture.clone();
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut len = [0; 4];
+            stream.read_exact(&mut len).await.unwrap();
+            let mut buffer = BytesMut::from(&len[..]);
+            buffer.resize(u32::from_be_bytes(len) as usize + 4, 0);
+            stream.read_exact(&mut buffer[4..]).await.unwrap();
+            let incoming = frame::decode_next(&mut buffer, DEFAULT_MAX_FRAME_SIZE)
+                .unwrap()
+                .unwrap();
+            assert!(!incoming.is_oneway());
+            assert_eq!(
+                incoming.code,
+                expected["request"]["code"].as_i64().unwrap() as i32
+            );
+            assert_eq!(
+                incoming.ext_fields,
+                Some(serde_json::from_value(expected["request"]["ext"].clone()).unwrap())
+            );
+            match (incoming.body, bytes(&expected["request"]["bodyBase64"])) {
+                (Some(actual), Some(reference)) => assert_eq!(
+                    serde_json::from_slice::<Value>(&actual).unwrap(),
+                    serde_json::from_slice::<Value>(&reference).unwrap()
+                ),
+                (None, None) => (),
+                other => panic!("body presence {other:?}"),
+            }
+            let mut reply = RemotingCommand {
+                code: expected["response"]["code"].as_i64().unwrap() as i32,
+                opaque: incoming.opaque,
+                ext_fields: Some(
+                    serde_json::from_value(expected["response"]["ext"].clone()).unwrap(),
+                ),
+                body: bytes(&expected["response"]["bodyBase64"]),
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .await
+                .unwrap();
+        });
+        let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
+        let api = MQClientApi::new(client.clone());
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let result = match fixture["family"].as_str().unwrap() {
+            "pop" | "pop-lite" => {
+                let status = if fixture["family"] == "pop" {
+                    api.pop_message(
+                        &addr,
+                        &PopMessageRequestHeader {
+                            consumer_group: "consumer".into(),
+                            topic: "oracle-topic".into(),
+                            queue_id: 2,
+                            max_msg_nums: 1,
+                            invisible_time: 456,
+                            born_time: 123,
+                            order: Some(false),
+                            ..Default::default()
+                        },
+                        deadline,
+                    )
+                    .await
+                    .map(|reply| {
+                        assert_eq!(
+                            reply.raw_messages,
+                            bytes(&fixture["response"]["bodyBase64"])
+                        );
+                        let header = reply.header.unwrap();
+                        let defaults = fixture["case"]
+                            .as_str()
+                            .unwrap()
+                            .ends_with("header-default");
+                        assert_eq!(header.pop_time, if defaults { 0 } else { 123 });
+                        assert_eq!(header.invisible_time, if defaults { 0 } else { 456 });
+                        assert_eq!(header.revive_queue_id, if defaults { 0 } else { 2 });
+                        assert_eq!(header.rest_num, if defaults { 0 } else { 7 });
+                        reply.status
+                    })
+                } else {
+                    api.pop_lite_message(
+                        &addr,
+                        &PopLiteMessageRequestHeader {
+                            client_id: "client".into(),
+                            consumer_group: "consumer".into(),
+                            topic: "oracle-topic".into(),
+                            max_msg_num: 1,
+                            invisible_time: 456,
+                            born_time: 123,
+                            ..Default::default()
+                        },
+                        deadline,
+                    )
+                    .await
+                    .map(|reply| {
+                        assert_eq!(
+                            reply.raw_messages,
+                            bytes(&fixture["response"]["bodyBase64"])
+                        );
+                        let header = reply.header.unwrap();
+                        let defaults = fixture["case"]
+                            .as_str()
+                            .unwrap()
+                            .ends_with("header-default");
+                        assert_eq!(header.pop_time, if defaults { 0 } else { 123 });
+                        assert_eq!(header.invisible_time, if defaults { 0 } else { 456 });
+                        assert_eq!(header.revive_queue_id, if defaults { 0 } else { 2 });
+                        reply.status
+                    })
+                };
+                match status {
+                    Ok(rocketmq_classic_core::api::extensions::PopStatus::Found) => {
+                        "status=FOUND".into()
+                    }
+                    Ok(rocketmq_classic_core::api::extensions::PopStatus::PollingFull) => {
+                        "status=POLLING_FULL".into()
+                    }
+                    Ok(rocketmq_classic_core::api::extensions::PopStatus::PollingNotFound) => {
+                        "status=POLLING_NOT_FOUND".into()
+                    }
+                    Err(RpcError::Response { code, .. }) => format!("error={code}"),
+                    Err(RpcError::MalformedResponse { .. }) => "malformed".into(),
+                    other => panic!("pop {other:?}"),
+                }
+            }
+            "ack" | "ack-lite" => ack_outcome(
+                api.ack_message(
+                    &addr,
+                    &AckMessageRequestHeader {
+                        consumer_group: "consumer".into(),
+                        topic: "oracle-topic".into(),
+                        queue_id: 2,
+                        offset: 17,
+                        extra_info: "checkpoint".into(),
+                        ..Default::default()
+                    },
+                    deadline,
+                )
+                .await,
+            ),
+            "batch-ack" => ack_outcome(
+                api.batch_ack_message(
+                    &addr,
+                    &BatchAckMessageRequestBody {
+                        broker_name: Some("broker".into()),
+                        acks: Some(vec![]),
+                    },
+                    deadline,
+                )
+                .await,
+            ),
+            "change" => {
+                match api
+                    .change_invisible_time(
+                        &addr,
+                        &ChangeInvisibleTimeRequestHeader {
+                            consumer_group: "consumer".into(),
+                            topic: "oracle-topic".into(),
+                            queue_id: 2,
+                            offset: 17,
+                            extra_info: "checkpoint".into(),
+                            invisible_time: 456,
+                            ..Default::default()
+                        },
+                        deadline,
+                    )
+                    .await
+                {
+                    Ok(result) if result.status == AckStatus::Ok => format!(
+                        "status=OK;extra=17 {} {} {} 0 broker 2 17",
+                        result.pop_time.unwrap(),
+                        result.invisible_time.unwrap(),
+                        result.revive_qid.unwrap()
+                    ),
+                    Ok(_) => "status=NO_EXIST".into(),
+                    Err(RpcError::MalformedResponse { .. }) => "malformed".into(),
+                    other => panic!("change {other:?}"),
+                }
+            }
+            other => panic!("family {other}"),
+        };
+        assert_eq!(result, fixture["outcome"], "{}", fixture["case"]);
+        peer.await.unwrap();
+        client.shutdown().await;
+    }
+}

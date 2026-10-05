@@ -421,6 +421,7 @@ async fn async_extension_status_and_malformed_matrix() {
                 Some([("popTime".into(), "invalid".into())].into()),
             ),
         ] {
+            let missing_body = body.is_none();
             let (api, client, addr, task) = peer(code, status, body, fields).await;
             let result = if code == request::POP_MESSAGE {
                 api.pop_message(&addr, &Default::default(), deadline())
@@ -431,9 +432,13 @@ async fn async_extension_status_and_malformed_matrix() {
                     .await
                     .map(|_| ())
             };
-            assert!(
-                matches!(result, Err(RpcError::MalformedResponse { request_code, .. }) if request_code == code)
-            );
+            if status == response::SUCCESS && missing_body {
+                assert!(
+                    matches!(result, Err(RpcError::MalformedResponse { request_code, .. }) if request_code == code)
+                );
+            } else {
+                result.unwrap();
+            }
             task.await.unwrap();
             client.shutdown().await;
         }
@@ -492,18 +497,17 @@ async fn async_extension_status_and_malformed_matrix() {
             let result = api
                 .change_invisible_time(&addr, &Default::default(), deadline())
                 .await;
-            if value.is_none() {
-                let result = result.unwrap();
-                assert_eq!(result.status, AckStatus::Ok);
-            } else {
-                assert!(matches!(
-                    result,
-                    Err(RpcError::MalformedResponse {
-                        request_code: request::CHANGE_MESSAGE_INVISIBLETIME,
-                        ..
-                    })
-                ));
-            }
+            let result = result.unwrap();
+            assert_eq!(result.status, AckStatus::Ok);
+            assert_eq!(result.pop_time, Some(if key == "popTime" { 0 } else { 12 }));
+            assert_eq!(
+                result.invisible_time,
+                Some(if key == "invisibleTime" { 0 } else { 30 })
+            );
+            assert_eq!(
+                result.revive_qid,
+                Some(if key == "reviveQid" { 0 } else { 2 })
+            );
             task.await.unwrap();
             client.shutdown().await;
         }
@@ -739,7 +743,7 @@ async fn heartbeat_and_ack_success_have_no_malformed_payload() {
 }
 
 #[tokio::test]
-async fn pop_header_fields_reject_missing_invalid_and_out_of_range_values() {
+async fn pop_header_fields_default_missing_invalid_and_out_of_range_values() {
     for code in [request::POP_MESSAGE, request::POP_LITE_MESSAGE] {
         let keys: &[&str] = if code == request::POP_MESSAGE {
             &["popTime", "invisibleTime", "reviveQid", "restNum"]
@@ -771,11 +775,7 @@ async fn pop_header_fields_reject_missing_invalid_and_out_of_range_values() {
                         .await
                         .map(|_| ())
                 };
-                assert!(
-                    matches!(result, Err(RpcError::MalformedResponse { request_code, peer, .. })
-                    if request_code == code && peer == addr),
-                    "{code} {key} {value:?}"
-                );
+                result.unwrap();
                 task.await.unwrap();
                 client.shutdown().await;
             }
@@ -784,7 +784,7 @@ async fn pop_header_fields_reject_missing_invalid_and_out_of_range_values() {
 }
 
 #[tokio::test]
-async fn change_invisibility_rejects_revive_queue_id_outside_i32() {
+async fn change_invisibility_defaults_revive_queue_id_outside_i32() {
     for revive_qid in ["2147483648", "-2147483649"] {
         let fields = Some(
             [
@@ -804,27 +804,24 @@ async fn change_invisibility_rejects_revive_queue_id_outside_i32() {
         let result = api
             .change_invisible_time(&addr, &Default::default(), deadline())
             .await;
-        assert!(
-            matches!(result, Err(RpcError::MalformedResponse { request_code: request::CHANGE_MESSAGE_INVISIBLETIME, peer, reason })
-            if peer == addr && reason.contains("reviveQid"))
-        );
+        let result = result.unwrap();
+        assert_eq!(result.status, AckStatus::Ok);
+        assert_eq!(result.revive_qid, Some(0));
+        assert_eq!(result.pop_time, Some(12));
         task.await.unwrap();
         client.shutdown().await;
     }
 }
 
 #[tokio::test]
-async fn change_invisibility_non_success_still_decodes_header() {
+async fn change_invisibility_non_success_ignores_invalid_primitive_header() {
     let fields = Some([("popTime".into(), "bad".into())].into());
     let (api, client, addr, task) =
         peer(request::CHANGE_MESSAGE_INVISIBLETIME, 999, None, fields).await;
     let result = api
         .change_invisible_time(&addr, &Default::default(), deadline())
         .await;
-    assert!(
-        matches!(result, Err(RpcError::MalformedResponse { request_code: request::CHANGE_MESSAGE_INVISIBLETIME, peer, .. })
-        if peer == addr)
-    );
+    assert_eq!(result.unwrap().status, AckStatus::NoExist);
     task.await.unwrap();
     client.shutdown().await;
 }

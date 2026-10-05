@@ -16,7 +16,7 @@ use rocketmq_classic_protocol::{
 use rocketmq_classic_remoting::RemotingCommand;
 use tokio::time::Instant;
 
-use super::{MQClientApi, classify, decode_body, decode_header};
+use super::{MQClientApi, classify, decode_body};
 use crate::error::RpcError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,6 +73,24 @@ fn pop_status(reply: &RemotingCommand, code: i32, addr: &str) -> Result<PopStatu
             remark: reply.remark.clone(),
         }),
     }
+}
+
+// Reflectively decoded Java primitive response fields retain zero after a missing/invalid value.
+fn primitive<T: std::str::FromStr + Default>(reply: &RemotingCommand, key: &str) -> T {
+    reply
+        .ext_fields
+        .as_ref()
+        .and_then(|fields| fields.get(key))
+        .and_then(|value| value.parse().ok())
+        .unwrap_or_default()
+}
+
+fn optional_field(reply: &RemotingCommand, key: &str) -> Option<String> {
+    reply
+        .ext_fields
+        .as_ref()
+        .and_then(|fields| fields.get(key))
+        .cloned()
 }
 
 impl MQClientApi {
@@ -219,7 +237,15 @@ impl MQClientApi {
                 reason: "missing pop message body".into(),
             });
         }
-        let parsed = Some(decode_header(&reply, request::POP_MESSAGE, addr)?);
+        let parsed = Some(PopMessageResponseHeader {
+            pop_time: primitive(&reply, "popTime"),
+            invisible_time: primitive(&reply, "invisibleTime"),
+            revive_queue_id: primitive(&reply, "reviveQid"),
+            rest_num: primitive(&reply, "restNum"),
+            start_offset_info: optional_field(&reply, "startOffsetInfo"),
+            msg_offset_info: optional_field(&reply, "msgOffsetInfo"),
+            order_count_info: optional_field(&reply, "orderCountInfo"),
+        });
         Ok(PopReply {
             status,
             header: parsed,
@@ -244,7 +270,14 @@ impl MQClientApi {
                 reason: "missing pop lite message body".into(),
             });
         }
-        let parsed = Some(decode_header(&reply, request::POP_LITE_MESSAGE, addr)?);
+        let parsed = Some(PopLiteMessageResponseHeader {
+            pop_time: primitive(&reply, "popTime"),
+            invisible_time: primitive(&reply, "invisibleTime"),
+            revive_queue_id: primitive(&reply, "reviveQid"),
+            start_offset_info: optional_field(&reply, "startOffsetInfo"),
+            msg_offset_info: optional_field(&reply, "msgOffsetInfo"),
+            order_count_info: optional_field(&reply, "orderCountInfo"),
+        });
         Ok(PopReply {
             status,
             header: parsed,
@@ -305,22 +338,10 @@ impl MQClientApi {
                 deadline,
             )
             .await?;
-        let fields = reply.ext_fields.as_ref();
-        let malformed = |key: &str| RpcError::MalformedResponse {
-            request_code: request::CHANGE_MESSAGE_INVISIBLETIME,
-            peer: addr.to_owned(),
-            reason: format!("missing or invalid {key}"),
-        };
-        let parse = |key: &str| -> Result<i64, RpcError> {
-            fields
-                .and_then(|f| f.get(key))
-                .map(|value| value.parse().map_err(|_| malformed(key)))
-                .unwrap_or(Ok(0))
-        };
-        // Java decodes the header before inspecting the status, with absent primitive fields defaulting to zero.
-        let pop_time = parse("popTime")?;
-        let invisible_time = parse("invisibleTime")?;
-        let revive_qid = i32::try_from(parse("reviveQid")?).map_err(|_| malformed("reviveQid"))?;
+        // Java's reflective decoder catches field conversion failures and retains primitive defaults.
+        let pop_time = primitive(&reply, "popTime");
+        let invisible_time = primitive(&reply, "invisibleTime");
+        let revive_qid = primitive(&reply, "reviveQid");
         if reply.code != response::SUCCESS {
             return Ok(ChangeInvisibleTimeResult {
                 status: AckStatus::NoExist,

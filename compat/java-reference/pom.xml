@@ -31,6 +31,18 @@
         <configuration><mainClass>compat.Main</mainClass></configuration>
         <executions>
           <execution>
+            <id>verify-java-invoked-pop-ack-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.PopAckInvokedFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/rpc-invoked-pop-ack</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>java-oracle-self-test</id>
             <phase>test</phase>
             <goals><goal>java</goal></goals>
