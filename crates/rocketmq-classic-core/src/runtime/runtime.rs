@@ -274,6 +274,111 @@ impl ClientRuntime {
         self.routes.snapshot()
     }
 
+    pub fn find_broker_address_by_topic(
+        &self,
+        topic: &str,
+    ) -> Result<Option<String>, RuntimeError> {
+        Ok(self
+            .route_snapshot()?
+            .broker_address_by_topic(topic)?
+            .map(str::to_owned))
+    }
+
+    pub fn get_existing_topic_route(
+        &self,
+        topic: &str,
+    ) -> Result<Option<Arc<rocketmq_classic_protocol::route::TopicRouteData>>, RuntimeError> {
+        Ok(self
+            .route_snapshot()?
+            .topics
+            .get(topic)
+            .map(|cached| cached.route.clone()))
+    }
+
+    pub async fn query_topic_route(
+        &self,
+        topic: &str,
+    ) -> Result<Option<Arc<rocketmq_classic_protocol::route::TopicRouteData>>, RuntimeError> {
+        if let Some(route) = self.get_existing_topic_route(topic)? {
+            return Ok(Some(route));
+        }
+        self.update_topic_route(topic, tokio::time::Instant::now() + self.rpc_timeout())
+            .await?;
+        self.get_existing_topic_route(topic)
+    }
+
+    async fn lookup_broker_with_route_refresh(
+        &self,
+        topic: &str,
+    ) -> Result<Option<String>, RuntimeError> {
+        if let Some(address) = self.find_broker_address_by_topic(topic)? {
+            return Ok(Some(address));
+        }
+        self.update_topic_route(topic, tokio::time::Instant::now() + self.rpc_timeout())
+            .await?;
+        self.find_broker_address_by_topic(topic)
+    }
+
+    /// Runtime lookup follows Java's best-effort consumer-list RPC: route
+    /// lookup/refresh errors remain errors, but Broker RPC errors return None.
+    pub async fn find_consumer_id_list(
+        &self,
+        topic: &str,
+        group: &str,
+    ) -> Result<Option<Vec<String>>, RuntimeError> {
+        let Some(address) = self.lookup_broker_with_route_refresh(topic).await? else {
+            return Ok(None);
+        };
+        let Ok(address) =
+            crate::route::broker_vip_channel(self.config.vip_channel_enabled, &address)
+        else {
+            return Ok(None);
+        };
+        Ok(self
+            .api
+            .get_consumer_list_by_group(
+                &address,
+                group,
+                tokio::time::Instant::now() + self.rpc_timeout(),
+            )
+            .await
+            .unwrap_or(None))
+    }
+
+    /// Assignment keeps Java's explicit signed millisecond timeout and
+    /// propagates Broker/transport errors, unlike consumer-list lookup.
+    pub async fn query_assignment(
+        &self,
+        topic: &str,
+        consumer_group: &str,
+        strategy_name: &str,
+        message_model: rocketmq_classic_protocol::heartbeat::MessageModel,
+        timeout_millis: i32,
+    ) -> Result<
+        Option<std::collections::HashSet<rocketmq_classic_protocol::body::MessageQueueAssignment>>,
+        RuntimeError,
+    > {
+        let Some(address) = self.lookup_broker_with_route_refresh(topic).await? else {
+            return Ok(None);
+        };
+        let address = crate::route::broker_vip_channel(self.config.vip_channel_enabled, &address)?;
+        let body = rocketmq_classic_protocol::body::QueryAssignmentRequestBody {
+            topic: Some(topic.into()),
+            consumer_group: Some(consumer_group.into()),
+            client_id: Some(self.client_id.clone()),
+            strategy_name: Some(strategy_name.into()),
+            message_model: Some(message_model),
+        };
+        let deadline = tokio::time::Instant::now()
+            + tokio::time::Duration::from_millis(timeout_millis.max(0) as u64);
+        Ok(self
+            .api
+            .query_assignment(&address, &body, deadline)
+            .await?
+            .message_queue_assignments
+            .map(|assignments| assignments.into_iter().collect()))
+    }
+
     pub async fn update_topic_route(
         &self,
         topic: &str,

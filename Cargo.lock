@@ -910,6 +910,7 @@ dependencies = [
  "bytes",
  "hostname",
  "libc",
+ "rand",
  "reqwest",
  "rocketmq-classic-common",
  "rocketmq-classic-protocol",

@@ -1,7 +1,7 @@
 use rocketmq_classic_common::message::MessageQueue;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum MessageRequestMode {
     #[default]
@@ -88,7 +88,7 @@ pub struct QueryAssignmentRequestBody {
     pub message_model: Option<super::heartbeat::MessageModel>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageQueueAssignment {
     #[serde(skip_serializing_if = "Option::is_none")]

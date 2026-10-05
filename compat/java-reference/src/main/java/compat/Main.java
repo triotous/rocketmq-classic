@@ -105,6 +105,10 @@ public final class Main {
             RuntimeAddressFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;
         }
+        if (args.length > 0 && "runtime-lookup-fixtures".equals(args[0])) {
+            RuntimeLookupFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "rpc-invoked-ext-fixtures".equals(args[0])) {
             InvokedExtFixtures.run(option(args, "--output"), java.util.Arrays.asList(args).contains("--verify"));
             return;

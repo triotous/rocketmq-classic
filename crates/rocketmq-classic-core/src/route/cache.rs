@@ -32,6 +32,46 @@ pub struct BrokerAddress {
 }
 
 impl RouteSnapshot {
+    /// Java selects a random BrokerData from this topic's raw cached route,
+    /// then its master or a random available slave. Global broker metadata may
+    /// have since been overwritten by another topic and must not be used here.
+    pub fn broker_address_by_topic(&self, topic: &str) -> Result<Option<&str>, RuntimeError> {
+        self.select_topic_broker(topic, |length| rand::random_range(0..length))
+    }
+
+    fn select_topic_broker(
+        &self,
+        topic: &str,
+        mut select: impl FnMut(usize) -> usize,
+    ) -> Result<Option<&str>, RuntimeError> {
+        let Some(route) = self.topics.get(topic) else {
+            return Ok(None);
+        };
+        let brokers = &route.route.broker_datas;
+        if brokers.is_empty() {
+            return Ok(None);
+        }
+        let broker = &brokers[select(brokers.len())];
+        let addresses = broker
+            .broker_addrs
+            .as_ref()
+            .ok_or(RuntimeError::InvalidRoute(
+                "selected broker has null address map",
+            ))?;
+        if let Some(master) = addresses.get(&0) {
+            return Ok(Some(master));
+        }
+        if addresses.is_empty() {
+            return Err(RuntimeError::InvalidRoute(
+                "selected broker has no addresses",
+            ));
+        }
+        Ok(addresses
+            .values()
+            .nth(select(addresses.len()))
+            .map(String::as_str))
+    }
+
     pub fn publish_address(&self, broker: &str) -> Option<&str> {
         self.broker_addresses
             .get(broker)?
@@ -381,6 +421,84 @@ pub fn broker_vip_channel(enabled: bool, address: &str) -> Result<String, Runtim
 mod tests {
     use super::*;
     use rocketmq_classic_protocol::route::{BrokerData, QueueData};
+
+    #[test]
+    fn topic_selection_uses_raw_route_and_selected_empty_broker_is_not_skipped() {
+        let cache = RouteCache::default();
+        let mut original = route(1);
+        original.broker_datas[0].broker_addrs = Some(BTreeMap::from([
+            (2, "slave-a:10911".into()),
+            (3, "slave-b:10911".into()),
+        ]));
+        original.broker_datas.push(route(2).broker_datas.remove(0));
+        cache.replace("original", original.clone()).unwrap();
+        cache.replace("overwriter", route(9)).unwrap();
+        let snapshot = cache.snapshot().unwrap();
+        assert_eq!(snapshot.publish_address("broker"), Some("master-9:10911"));
+        let mut choices = [0, 1].into_iter();
+        assert_eq!(
+            snapshot
+                .select_topic_broker("original", |length| {
+                    assert_eq!(length, 2);
+                    choices.next().unwrap()
+                })
+                .unwrap(),
+            Some("slave-b:10911")
+        );
+        assert_eq!(
+            snapshot.select_topic_broker("original", |_| 1).unwrap(),
+            Some("master-2:10911")
+        );
+        original.broker_datas[0].broker_addrs = Some(BTreeMap::new());
+        cache.replace("original", original).unwrap();
+        assert!(matches!(
+            cache
+                .snapshot()
+                .unwrap()
+                .select_topic_broker("original", |_| 0),
+            Err(RuntimeError::InvalidRoute(_))
+        ));
+    }
+
+    #[test]
+    fn topic_broker_lookup_matches_invoked_java_candidates_and_failures() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/lookup.json")).unwrap();
+        for case in fixture["cases"].as_array().unwrap() {
+            let cache = RouteCache::default();
+            if !case["input"].is_null() {
+                cache
+                    .replace(
+                        "topic",
+                        serde_json::from_value(case["input"].clone()).unwrap(),
+                    )
+                    .unwrap();
+            }
+            let snapshot = cache.snapshot().unwrap();
+            for _ in 0..128 {
+                match case["outcome"].as_str().unwrap() {
+                    "NULL" => assert_eq!(snapshot.broker_address_by_topic("topic").unwrap(), None),
+                    "OK" => {
+                        let selected = snapshot.broker_address_by_topic("topic").unwrap().unwrap();
+                        assert!(
+                            case["candidates"]
+                                .as_array()
+                                .unwrap()
+                                .iter()
+                                .any(|value| value == selected)
+                        );
+                    }
+                    "IllegalArgumentException" | "NullPointerException" => {
+                        assert!(matches!(
+                            snapshot.broker_address_by_topic("topic"),
+                            Err(RuntimeError::InvalidRoute(_))
+                        ));
+                    }
+                    outcome => panic!("unexpected Java outcome {outcome}"),
+                }
+            }
+        }
+    }
 
     fn route(count: i32) -> TopicRouteData {
         TopicRouteData {
