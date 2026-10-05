@@ -525,6 +525,367 @@ mod tests {
         assert_eq!(runtime.pull_probe.live.load(Ordering::SeqCst), 0);
     }
 
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn p6_v01_running_first_lookups_share_identity_task_set_and_actual_socket() {
+        use bytes::BytesMut;
+        use rocketmq_classic_remoting::{
+            RemotingCommand,
+            codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
+        };
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+        };
+
+        const CALLS: usize = 64;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let peer = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut identities = std::collections::HashSet::new();
+            for _ in 0..CALLS {
+                let mut length = [0; 4];
+                tokio::select! {
+                    result = socket.read_exact(&mut length) => { result.unwrap(); }
+                    result = listener.accept() => panic!("duplicate pooled socket: {result:?}"),
+                }
+                let mut bytes = BytesMut::from(&length[..]);
+                bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
+                socket.read_exact(&mut bytes[4..]).await.unwrap();
+                let command = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(command.code, 999_999);
+                assert!(identities.insert(command.opaque));
+                let mut reply = RemotingCommand {
+                    opaque: command.opaque,
+                    ..Default::default()
+                };
+                reply.mark_response();
+                socket
+                    .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                    .await
+                    .unwrap();
+            }
+            let mut byte = [0];
+            tokio::select! {
+                result = socket.read(&mut byte) => assert_eq!(result.unwrap(), 0),
+                result = listener.accept() => panic!("late duplicate pooled socket: {result:?}"),
+            }
+        });
+        let manager = ClientRuntimeManager::new();
+        let mut config = ClientConfig::new("p6-v01-running");
+        config.namesrv_addr = Some(String::new());
+        let barrier = Arc::new(tokio::sync::Barrier::new(CALLS));
+        let mut calls = Vec::new();
+        for _ in 0..CALLS {
+            let manager = manager.clone();
+            let config = config.clone();
+            let address = address.clone();
+            let barrier = barrier.clone();
+            calls.push(tokio::spawn(async move {
+                barrier.wait().await;
+                let runtime = manager.get_or_create(&config).await.unwrap();
+                runtime.start().await.unwrap();
+                let reply = runtime
+                    .remoting()
+                    .invoke_sync(
+                        &address,
+                        RemotingCommand {
+                            code: 999_999,
+                            ..Default::default()
+                        },
+                        Duration::from_secs(5),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(reply.code, 0);
+                runtime
+            }));
+        }
+        let runtime = calls.remove(0).await.unwrap();
+        for call in calls {
+            assert!(Arc::ptr_eq(&runtime, &call.await.unwrap()));
+        }
+        assert_eq!(runtime.state(), RuntimeState::Running);
+        assert_eq!(runtime.periodic_probe.created.load(Ordering::SeqCst), 1);
+        assert_eq!(runtime.periodic_probe.live.load(Ordering::SeqCst), 1);
+        assert_eq!(runtime.rebalance_probe.created.load(Ordering::SeqCst), 1);
+        assert_eq!(runtime.rebalance_probe.live.load(Ordering::SeqCst), 1);
+        assert_eq!(runtime.pull_probe.created.load(Ordering::SeqCst), 2);
+        assert_eq!(runtime.pull_probe.live.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            runtime.remoting().with_processor_table(|table| table.len()),
+            8
+        );
+        assert!(runtime.shutdown().await.unwrap());
+        assert_eq!(runtime.periodic_probe.live.load(Ordering::SeqCst), 0);
+        assert_eq!(runtime.rebalance_probe.live.load(Ordering::SeqCst), 0);
+        assert_eq!(runtime.pull_probe.live.load(Ordering::SeqCst), 0);
+        tokio::time::timeout(Duration::from_secs(5), peer)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    // Keep an executor runnable while waiting on real loopback I/O so paused
+    // Tokio time advances only at the test's explicit clock boundaries.
+    async fn frozen_io<F: std::future::Future>(future: F) -> F::Output {
+        let started = std::time::Instant::now();
+        tokio::pin!(future);
+        loop {
+            tokio::select! {
+                biased;
+                result = &mut future => return result,
+                _ = tokio::task::yield_now() => {
+                    assert!(started.elapsed() < Duration::from_secs(5), "scripted I/O stalled");
+                }
+            }
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn p6_u01_periodic_subscription_wire_and_unregister_keep_shared_user_running() {
+        use bytes::BytesMut;
+        use rocketmq_classic_protocol::{
+            codes::{LanguageCode, request},
+            heartbeat::{ConsumerData, HeartbeatData, ProducerData, SubscriptionData},
+        };
+        use rocketmq_classic_remoting::{
+            RemotingCommand,
+            codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
+        };
+        use std::collections::{BTreeMap, HashSet};
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::{TcpListener, TcpStream},
+        };
+
+        struct Consumer(Mutex<SubscriptionData>);
+        impl ConsumerRuntime for Consumer {
+            fn heartbeat_data(&self) -> ConsumerData {
+                ConsumerData {
+                    group_name: "consumer".into(),
+                    subscription_data_set: HashSet::from([self.0.lock().unwrap().clone()]),
+                    unit_mode: true,
+                    ..Default::default()
+                }
+            }
+        }
+        async fn read(socket: &mut TcpStream) -> Option<RemotingCommand> {
+            let mut length = [0; 4];
+            match socket.read_exact(&mut length).await {
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return None,
+                Err(error) => panic!("scripted peer read: {error}"),
+            }
+            let mut bytes = BytesMut::from(&length[..]);
+            bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            socket.read_exact(&mut bytes[4..]).await.unwrap();
+            frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE).unwrap()
+        }
+        async fn respond(
+            socket: &mut TcpStream,
+            command: &RemotingCommand,
+            version: i32,
+            body: Option<Vec<u8>>,
+        ) {
+            let mut reply = RemotingCommand {
+                opaque: command.opaque,
+                version,
+                body,
+                ..Default::default()
+            };
+            reply.mark_response();
+            socket
+                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .await
+                .unwrap();
+        }
+        fn assert_heartbeat(command: &RemotingCommand, consumer: &Consumer, producers: &[&str]) {
+            assert_eq!(command.code, request::HEART_BEAT);
+            assert_eq!(command.language, LanguageCode::Java);
+            let heartbeat: HeartbeatData =
+                serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
+            assert_eq!(
+                heartbeat,
+                HeartbeatData {
+                    client_id: Some("p6-u01@DEFAULT".into()),
+                    producer_data_set: producers
+                        .iter()
+                        .map(|group| ProducerData {
+                            group_name: (*group).into()
+                        })
+                        .collect(),
+                    consumer_data_set: HashSet::from([consumer.heartbeat_data()]),
+                    ..Default::default()
+                }
+            );
+            let json: serde_json::Value =
+                serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
+            assert_eq!(json["clientID"], "p6-u01@DEFAULT");
+            assert_eq!(json["withoutSub"], false);
+            assert!(json.get("clientId").is_none());
+        }
+        fn assert_unregister(command: &RemotingCommand, field: &str, group: &str) {
+            assert_eq!(command.code, request::UNREGISTER_CLIENT);
+            assert_eq!(command.language, LanguageCode::Java);
+            assert!(command.body.is_none());
+            assert_eq!(
+                command.ext_fields,
+                Some(BTreeMap::from([
+                    ("clientID".into(), "p6-u01@DEFAULT".into()),
+                    (field.into(), group.into()),
+                ]))
+            );
+        }
+
+        let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let broker_address = broker.local_addr().unwrap().to_string();
+        let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let nameserver_address = nameserver.local_addr().unwrap().to_string();
+        let route = serde_json::to_vec(&serde_json::json!({
+            "queueDatas": [], "brokerDatas": [{"cluster":"cluster","brokerName":"broker","brokerAddrs":{"0":broker_address}}], "filterServerTable":{}
+        })).unwrap();
+        let name_peer = tokio::spawn(async move {
+            let (mut socket, _) = nameserver.accept().await.unwrap();
+            while let Some(command) = read(&mut socket).await {
+                assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
+                respond(&mut socket, &command, 0, Some(route.clone())).await;
+            }
+        });
+        let (observed, mut events) = mpsc::unbounded_channel();
+        let peer = tokio::spawn(async move {
+            let (mut socket, _) = broker.accept().await.unwrap();
+            let mut heartbeats = 0;
+            loop {
+                let command = tokio::select! {
+                    command = read(&mut socket) => command,
+                    result = broker.accept() => panic!("shared user opened another socket: {result:?}"),
+                };
+                let Some(command) = command else {
+                    break;
+                };
+                assert!(matches!(
+                    command.code,
+                    request::HEART_BEAT | request::UNREGISTER_CLIENT
+                ));
+                heartbeats += usize::from(command.code == request::HEART_BEAT);
+                respond(&mut socket, &command, 550 + heartbeats as i32, None).await;
+                observed.send(command).unwrap();
+            }
+        });
+        let manager = ClientRuntimeManager::new();
+        let mut config = ClientConfig::new("p6-u01");
+        config.namesrv_addr = Some(nameserver_address);
+        // Channel-active behavior has its own wire gate; isolate scheduled ticks.
+        config.enable_heartbeat_channel_event_listener = false;
+        let runtime = frozen_io(manager.get_or_create(&config)).await.unwrap();
+        let producer = Arc::new(InnerProducer);
+        let consumer = Arc::new(Consumer(Mutex::new(SubscriptionData {
+            topic: "topic".into(),
+            sub_string: "A".into(),
+            sub_version: 41,
+            tags_set: HashSet::from(["A".into()]),
+            code_set: HashSet::from([65]),
+            ..Default::default()
+        })));
+        let producer_lease = frozen_io(runtime.register_producer("producer", producer.clone()))
+            .await
+            .unwrap();
+        let consumer_lease = frozen_io(runtime.register_consumer("consumer", consumer.clone()))
+            .await
+            .unwrap();
+        let other_user = frozen_io(manager.get_or_create(&config)).await.unwrap();
+        assert!(Arc::ptr_eq(&runtime, &other_user));
+        frozen_io(runtime.start()).await.unwrap();
+        frozen_io(runtime.update_topic_route("topic", Instant::now() + Duration::from_secs(3)))
+            .await
+            .unwrap();
+        tokio::time::advance(Duration::from_millis(999)).await;
+        for _ in 0..20 {
+            tokio::task::yield_now().await;
+        }
+        assert!(events.try_recv().is_err());
+        tokio::time::advance(Duration::from_millis(1)).await;
+        let command = frozen_io(events.recv()).await.unwrap();
+        assert_heartbeat(&command, &consumer, &["producer", INNER_PRODUCER]);
+        frozen_io(async {
+            while runtime
+                .route_snapshot()
+                .unwrap()
+                .broker_versions
+                .get(&("broker".into(), broker_address.clone()))
+                != Some(&551)
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await;
+        frozen_io(
+            runtime.unregister_producer(&producer_lease, Instant::now() + Duration::from_secs(3)),
+        )
+        .await
+        .unwrap();
+        assert_unregister(
+            &frozen_io(events.recv()).await.unwrap(),
+            "producerGroup",
+            "producer",
+        );
+        assert!(!frozen_io(runtime.shutdown()).await.unwrap());
+        assert_eq!(other_user.state(), RuntimeState::Running);
+        assert_eq!(runtime.periodic_probe.created.load(Ordering::SeqCst), 1);
+        assert_eq!(runtime.periodic_probe.live.load(Ordering::SeqCst), 1);
+        assert_eq!(runtime.rebalance_probe.live.load(Ordering::SeqCst), 1);
+        assert_eq!(runtime.pull_probe.live.load(Ordering::SeqCst), 2);
+        *consumer.0.lock().unwrap() = SubscriptionData {
+            topic: "topic".into(),
+            sub_string: "B".into(),
+            sub_version: 42,
+            tags_set: HashSet::from(["B".into()]),
+            code_set: HashSet::from([66]),
+            ..Default::default()
+        };
+        tokio::time::advance(Duration::from_millis(29_999)).await;
+        for _ in 0..20 {
+            tokio::task::yield_now().await;
+        }
+        assert!(events.try_recv().is_err());
+        tokio::time::advance(Duration::from_millis(1)).await;
+        assert_heartbeat(
+            &frozen_io(events.recv()).await.unwrap(),
+            &consumer,
+            &[INNER_PRODUCER],
+        );
+        frozen_io(
+            runtime.unregister_consumer(&consumer_lease, Instant::now() + Duration::from_secs(3)),
+        )
+        .await
+        .unwrap();
+        assert_unregister(
+            &frozen_io(events.recv()).await.unwrap(),
+            "consumerGroup",
+            "consumer",
+        );
+        assert!(frozen_io(other_user.shutdown()).await.unwrap());
+        assert_unregister(
+            &frozen_io(events.recv()).await.unwrap(),
+            "producerGroup",
+            INNER_PRODUCER,
+        );
+        frozen_io(peer).await.unwrap();
+        frozen_io(name_peer).await.unwrap();
+        assert_eq!(runtime.state(), RuntimeState::Stopped);
+        assert_eq!(runtime.periodic_probe.live.load(Ordering::SeqCst), 0);
+        assert_eq!(runtime.rebalance_probe.live.load(Ordering::SeqCst), 0);
+        assert_eq!(runtime.pull_probe.live.load(Ordering::SeqCst), 0);
+        tokio::time::advance(Duration::from_secs(120)).await;
+        for _ in 0..20 {
+            tokio::task::yield_now().await;
+        }
+        assert!(events.try_recv().is_err());
+    }
+
     #[tokio::test]
     async fn every_initial_startup_failure_cleans_transport_groups_control_and_manager_identity() {
         for point in [1, 2, 3, 4, 5, 6, 10, 11, 12, 13, 14, 15, 16, 17, 20, 21, 22] {
