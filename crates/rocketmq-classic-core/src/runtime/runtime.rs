@@ -96,8 +96,8 @@ impl ClientRuntime {
                 listener as Arc<dyn rocketmq_classic_remoting::client::ChannelEventListener>
             }),
         )?;
-        if let Some(addresses) = &config.namesrv_addr {
-            remoting.update_name_server_address_list(crate::namesrv::split_addresses(addresses));
+        if let Some(addresses) = config.get_namesrv_addr() {
+            remoting.update_name_server_address_list(crate::namesrv::split_addresses(&addresses));
         }
         if let Some(hook) = hook {
             remoting.add_rpc_hook(hook);

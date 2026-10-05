@@ -74,14 +74,45 @@ public final class RuntimeConfigFixtures {
         clone.put("namespaceV2", copy.getNamespaceV2());
         clone.put("enableConcurrentHeartbeat", copy.isEnableConcurrentHeartbeat());
         clone.put("concurrentHeartbeatThreadPoolSize", copy.getConcurrentHeartbeatThreadPoolSize());
+        List<Object> endpoints = new ArrayList<>();
+        for (String endpoint : new String[] {null, "", "broker:9876", "http://broker:9876", " http://broker:9876 ",
+            "https://MQ_INST_a_b.example:80", "MQ_INST_a_b.example:80", "http://MQ_INST_a_b.example:80",
+            "http://MQ_INST_a_b.example/path", "http://MQ_INST_a_b.example\n", "http://MQ_INST_a_b.example\u2028", "MQ_INST_é_b.example"}) {
+            ClientConfig c = new ClientConfig();
+            c.setNamesrvAddr(endpoint);
+            Map<String, Object> item = new TreeMap<>();
+            item.put("endpoint", endpoint); item.put("address", c.getNamesrvAddr());
+            try { item.put("namespace", c.getNamespace()); item.put("outcome", "OK"); }
+            catch (RuntimeException error) { item.put("outcome", error.getClass().getSimpleName()); }
+            endpoints.add(item);
+        }
+        List<Object> resources = new ArrayList<>();
+        for (String namespace : new String[] {null, "", "ns"}) {
+            for (String resource : new String[] {null, "", "topic", "ns%topic", "other%topic", "%topic", "%RETRY%group", "%DLQ%group",
+                "%RETRY%ns%group", "%DLQ%other%group", "TBW102", "SCHEDULE_TOPIC_XXXX", "BenchmarkTest", "rmq_sys_custom", "CID_RMQ_SYS_custom", "RMQ_SYS_ROCKSDB_TRANS_HALF_TOPIC", " ", "ns%"}) {
+                ClientConfig c = new ClientConfig(); c.setNamespace(namespace);
+                Map<String, Object> item = new TreeMap<>(); item.put("namespace", namespace); item.put("resource", resource);
+                item.put("with", c.withNamespace(resource)); item.put("without", c.withoutNamespace(resource));
+                resources.add(item);
+            }
+        }
+        Map<String, Object> pid = new TreeMap<>();
+        for (String instance : new String[] {"DEFAULT", "custom", "default", ""}) {
+            ClientConfig c = new ClientConfig(); c.setInstanceName(instance); c.changeInstanceNameToPID();
+            String changed = c.getInstanceName(); c.changeInstanceNameToPID();
+            pid.put(instance, instance.equals("DEFAULT") ? changed.matches(org.apache.rocketmq.common.UtilAll.getPid() + "#-?\\d+") && changed.equals(c.getInstanceName()) : instance.equals(changed));
+        }
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "ClientConfig.buildMQClientId/cloneClientConfig");
+        fixture.put("entrypoint", "ClientConfig.buildMQClientId/cloneClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/changeInstanceNameToPID");
         fixture.put("serverBaselineContacted", false);
         fixture.put("identities", identities);
         fixture.put("defaults", defaults);
         fixture.put("clone", clone);
+        fixture.put("endpoints", endpoints);
+        fixture.put("resources", resources);
+        fixture.put("pid", pid);
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
             com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);

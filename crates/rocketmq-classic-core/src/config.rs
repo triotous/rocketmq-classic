@@ -1,8 +1,21 @@
 //! Settings of pinned Java 5.5.1 `org.apache.rocketmq.client.ClientConfig`.
 //! Durations retain Java signed widths and milliseconds. Validation happens
 //! when the owning runtime/service uses a setting, not in Java's plain setters.
+//! Use namespace/NameServer setters to preserve Java's lazy-cache transitions.
 
+use rocketmq_classic_common::message::MessageQueue;
 use rocketmq_classic_protocol::codes::LanguageCode;
+use std::collections::BTreeSet;
+
+mod namespace;
+
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum ConfigError {
+    #[error("instance endpoint path precedes its instance boundary")]
+    InvalidInstanceEndpoint,
+    #[error("instance name is null")]
+    NullInstanceName,
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum AccessChannel {
@@ -18,6 +31,7 @@ pub struct ClientConfig {
     pub instance_name: Option<String>,
     pub client_callback_executor_threads: i32,
     pub namespace: Option<String>,
+    namespace_initialized: bool,
     pub namespace_v2: Option<String>,
     pub access_channel: AccessChannel,
     pub poll_name_server_interval: i32,
@@ -82,6 +96,7 @@ impl ClientConfig {
             ),
             client_callback_executor_threads: processors,
             namespace: None,
+            namespace_initialized: false,
             namespace_v2: None,
             access_channel: AccessChannel::Local,
             poll_name_server_interval: 30_000,
@@ -135,6 +150,113 @@ impl ClientConfig {
         id
     }
 
+    pub fn set_namesrv_addr(&mut self, address: Option<String>) {
+        self.namesrv_addr = address;
+        self.namespace_initialized = false;
+    }
+
+    pub fn get_namesrv_addr(&self) -> Option<String> {
+        self.namesrv_addr.as_deref().map(namespace::address)
+    }
+
+    pub fn set_namespace(&mut self, namespace: Option<String>) {
+        self.namespace = namespace;
+        self.namespace_initialized = true;
+    }
+
+    /// Mutable getter represents Java's lazy cached endpoint namespace.
+    pub fn get_namespace(&mut self) -> Result<Option<&str>, ConfigError> {
+        if !self.namespace_initialized && self.namespace.as_deref().is_none_or(str::is_empty) {
+            if let Some(raw) = self
+                .namesrv_addr
+                .as_deref()
+                .filter(|raw| namespace::instance_endpoint(raw))
+            {
+                self.namespace = Some(namespace::instance(raw)?.into());
+            }
+            self.namespace_initialized = true;
+        }
+        Ok(self.namespace.as_deref())
+    }
+
+    pub fn with_namespace(
+        &mut self,
+        resource: Option<&str>,
+    ) -> Result<Option<String>, ConfigError> {
+        Ok(namespace::wrap(self.get_namespace()?, resource))
+    }
+
+    pub fn without_namespace(
+        &mut self,
+        resource: Option<&str>,
+    ) -> Result<Option<String>, ConfigError> {
+        Ok(namespace::unwrap(self.get_namespace()?, resource))
+    }
+
+    pub fn with_namespace_set(
+        &mut self,
+        resources: &BTreeSet<Option<String>>,
+    ) -> Result<BTreeSet<Option<String>>, ConfigError> {
+        resources
+            .iter()
+            .map(|resource| self.with_namespace(resource.as_deref()))
+            .collect()
+    }
+
+    pub fn without_namespace_set(
+        &mut self,
+        resources: &BTreeSet<Option<String>>,
+    ) -> Result<BTreeSet<Option<String>>, ConfigError> {
+        resources
+            .iter()
+            .map(|resource| self.without_namespace(resource.as_deref()))
+            .collect()
+    }
+
+    pub fn queue_with_namespace(
+        &mut self,
+        queue: &MessageQueue,
+    ) -> Result<MessageQueue, ConfigError> {
+        let topic = self
+            .with_namespace(Some(queue.topic()))?
+            .expect("non-null queue topic");
+        Ok(MessageQueue::new(
+            topic,
+            queue.broker_name(),
+            queue.queue_id(),
+        ))
+    }
+
+    /// Java mutates the supplied collection's queues; Rust mutates values in place.
+    pub fn queues_with_namespace(
+        &mut self,
+        queues: &mut [MessageQueue],
+    ) -> Result<(), ConfigError> {
+        let namespace = self.get_namespace()?;
+        for queue in queues {
+            let topic =
+                namespace::wrap(namespace, Some(queue.topic())).expect("non-null queue topic");
+            *queue = MessageQueue::new(topic, queue.broker_name(), queue.queue_id());
+        }
+        Ok(())
+    }
+
+    pub fn change_instance_name_to_pid(&mut self) -> Result<(), ConfigError> {
+        let name = self
+            .instance_name
+            .as_deref()
+            .ok_or(ConfigError::NullInstanceName)?;
+        if name == "DEFAULT" {
+            static ORIGIN: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+            let nanos = ORIGIN
+                .get_or_init(std::time::Instant::now)
+                .elapsed()
+                .as_nanos() as i64;
+            self.instance_name = Some(format!("{}#{nanos}", std::process::id() as i32));
+        }
+        Ok(())
+    }
+
     /// Unlike Rust `Clone`, Java's cloneClientConfig omits three settings.
     pub fn clone_client_config(&self) -> Self {
         let mut copy = Self::new(self.client_ip.clone().unwrap_or_default());
@@ -144,15 +266,17 @@ impl ClientConfig {
 
     /// Preserve the receiver's fields omitted by Java resetClientConfig.
     pub fn reset_client_config(&mut self, source: &Self) {
-        let (trace_batch, page_size, channel) = (
+        let (trace_batch, page_size, channel, namespace_initialized) = (
             self.trace_msg_batch_num,
             self.max_page_size_in_get_metadata,
             self.access_channel,
+            self.namespace_initialized,
         );
         *self = source.clone();
         self.trace_msg_batch_num = trace_batch;
         self.max_page_size_in_get_metadata = page_size;
         self.access_channel = channel;
+        self.namespace_initialized = namespace_initialized;
     }
 }
 
@@ -168,6 +292,94 @@ pub(crate) fn java_whitespace(value: char) -> bool {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    #[test]
+    fn namespace_cache_setter_clone_reset_and_empty_collection_state_matches_java() {
+        let mut config = ClientConfig::new("ip");
+        config.set_namesrv_addr(Some("MQ_INST_a_b.example".into()));
+        assert_eq!(config.get_namespace().unwrap(), Some("MQ_INST_a_b"));
+        config.set_namesrv_addr(Some("MQ_INST_c_d.example".into()));
+        assert_eq!(config.get_namespace().unwrap(), Some("MQ_INST_a_b"));
+        config.set_namespace(None);
+        assert_eq!(config.get_namespace().unwrap(), None);
+        let mut copy = config.clone_client_config();
+        assert_eq!(copy.get_namespace().unwrap(), Some("MQ_INST_c_d"));
+        let mut initialized = ClientConfig::new("ip");
+        initialized.set_namespace(None);
+        initialized.reset_client_config(&config);
+        assert_eq!(initialized.get_namespace().unwrap(), None);
+        config.set_namesrv_addr(Some("MQ_INST_c_d.example".into()));
+        assert_eq!(config.get_namespace().unwrap(), Some("MQ_INST_c_d"));
+        let mut invalid = ClientConfig::new("ip");
+        invalid.set_namesrv_addr(Some("http://MQ_INST_a_b.example/path".into()));
+        assert!(
+            invalid
+                .with_namespace_set(&BTreeSet::new())
+                .unwrap()
+                .is_empty()
+        );
+        assert!(!invalid.namespace_initialized);
+        assert!(invalid.queues_with_namespace(&mut []).is_err());
+    }
+
+    #[test]
+    fn resource_sets_deduplicate_and_queue_collection_is_updated_in_place() {
+        let mut config = ClientConfig::new("ip");
+        config.set_namespace(Some("ns".into()));
+        let resources = BTreeSet::from([
+            None,
+            Some("topic".into()),
+            Some("ns%topic".into()),
+            Some("%RETRY%group".into()),
+        ]);
+        let wrapped = config.with_namespace_set(&resources).unwrap();
+        assert_eq!(
+            wrapped,
+            BTreeSet::from([
+                None,
+                Some("ns%topic".into()),
+                Some("%RETRY%ns%group".into())
+            ])
+        );
+        assert_eq!(
+            config.without_namespace_set(&wrapped).unwrap(),
+            BTreeSet::from([None, Some("topic".into()), Some("%RETRY%group".into())])
+        );
+        let queue = MessageQueue::new("topic", "broker", -1);
+        assert_eq!(
+            config.queue_with_namespace(&queue).unwrap(),
+            MessageQueue::new("ns%topic", "broker", -1)
+        );
+        assert_eq!(queue.topic(), "topic");
+        let mut queues = [queue, MessageQueue::new("%DLQ%group", "broker", 2)];
+        config.queues_with_namespace(&mut queues).unwrap();
+        assert_eq!(queues[1], MessageQueue::new("%DLQ%ns%group", "broker", 2));
+        config.queues_with_namespace(&mut queues).unwrap();
+        assert_eq!(queues[0].topic(), "ns%topic");
+    }
+
+    #[test]
+    fn pid_rename_only_changes_default_once_and_null_is_a_typed_error() {
+        let mut config = ClientConfig::new("ip");
+        config.instance_name = Some("DEFAULT".into());
+        config.change_instance_name_to_pid().unwrap();
+        let name = config.instance_name.clone().unwrap();
+        let (pid, nanos) = name.split_once('#').unwrap();
+        assert_eq!(pid, (std::process::id() as i32).to_string());
+        nanos.parse::<i64>().unwrap();
+        config.change_instance_name_to_pid().unwrap();
+        assert_eq!(config.instance_name.as_deref(), Some(name.as_str()));
+        for custom in ["custom", "default", ""] {
+            config.instance_name = Some(custom.into());
+            config.change_instance_name_to_pid().unwrap();
+            assert_eq!(config.instance_name.as_deref(), Some(custom));
+        }
+        config.instance_name = None;
+        assert_eq!(
+            config.change_instance_name_to_pid(),
+            Err(ConfigError::NullInstanceName)
+        );
+    }
 
     #[test]
     fn java_properties_have_exact_precedence_and_parse_boolean_rules() {

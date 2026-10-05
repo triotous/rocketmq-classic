@@ -6,6 +6,54 @@ fn optional(value: &Value) -> Option<String> {
 }
 
 #[test]
+fn endpoint_namespace_and_resource_helpers_match_invoked_java() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    for case in fixture["endpoints"].as_array().unwrap() {
+        let mut config = ClientConfig::new("ip");
+        config.set_namesrv_addr(optional(&case["endpoint"]));
+        assert_eq!(config.get_namesrv_addr(), optional(&case["address"]));
+        match config.get_namespace() {
+            Ok(namespace) => {
+                assert_eq!(case["outcome"], "OK");
+                assert_eq!(namespace, case["namespace"].as_str());
+            }
+            Err(_) => assert_eq!(case["outcome"], "StringIndexOutOfBoundsException"),
+        }
+    }
+    for case in fixture["resources"].as_array().unwrap() {
+        let mut config = ClientConfig::new("ip");
+        config.set_namespace(optional(&case["namespace"]));
+        assert_eq!(
+            config.with_namespace(case["resource"].as_str()).unwrap(),
+            optional(&case["with"])
+        );
+        assert_eq!(
+            config.without_namespace(case["resource"].as_str()).unwrap(),
+            optional(&case["without"])
+        );
+    }
+    for outcome in fixture["pid"].as_object().unwrap().values() {
+        assert_eq!(outcome, true);
+    }
+}
+
+#[tokio::test]
+async fn runtime_uses_endpoint_address_getter_without_rewriting_raw_configuration() {
+    let mut config = ClientConfig::new("192.0.2.6");
+    config.set_namesrv_addr(Some("http://MQ_INST_a_b.example:9876".into()));
+    let runtime = rocketmq_classic_core::runtime::ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+    assert_eq!(
+        runtime.remoting().get_name_server_address_list().unwrap(),
+        ["MQ_INST_a_b.example:9876"]
+    );
+    assert_eq!(runtime.config().namesrv_addr, config.namesrv_addr);
+}
+
+#[test]
 fn client_identity_matches_invoked_java_including_unicode_blanks_and_nulls() {
     let fixture: Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
