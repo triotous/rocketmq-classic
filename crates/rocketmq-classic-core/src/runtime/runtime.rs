@@ -22,6 +22,7 @@ pub struct ClientRuntime {
     remoting: RemotingClient,
     api: MQClientApi,
     routes: crate::route::RouteCache,
+    namesrv_gate: tokio::sync::Mutex<()>,
     pub(super) groups: GroupRegistry,
     pub(super) control: ControlPlane,
     pub(super) inbound: Arc<super::inbound::RuntimeProcessor>,
@@ -120,6 +121,7 @@ impl ClientRuntime {
             api: MQClientApi::new(remoting.clone()),
             remoting,
             routes: crate::route::RouteCache::default(),
+            namesrv_gate: tokio::sync::Mutex::new(()),
             groups: GroupRegistry::default(),
             control: ControlPlane::default(),
             inbound: Arc::default(),
@@ -278,6 +280,14 @@ impl ClientRuntime {
         topic: &str,
         deadline: tokio::time::Instant,
     ) -> Result<bool, RuntimeError> {
+        let Ok(_gate) = tokio::time::timeout(
+            tokio::time::Duration::from_millis(3000),
+            self.namesrv_gate.lock(),
+        )
+        .await
+        else {
+            return Ok(false);
+        };
         let route = self.api.get_topic_route(topic, deadline).await?;
         let groups = self.groups.snapshot()?;
         let needed = groups
@@ -300,6 +310,18 @@ impl ClientRuntime {
             }
         }
         Ok(changed || needed)
+    }
+
+    async fn clean_offline_brokers(&self) -> Result<(), RuntimeError> {
+        let Ok(_gate) = tokio::time::timeout(
+            tokio::time::Duration::from_millis(3000),
+            self.namesrv_gate.lock(),
+        )
+        .await
+        else {
+            return Ok(());
+        };
+        self.routes.clean_offline()
     }
 
     pub(crate) fn record_broker_version(
@@ -345,7 +367,7 @@ impl ClientRuntime {
                 }
             }
             TaskKind::Heartbeat => {
-                self.routes.clean_offline()?;
+                self.clean_offline_brokers().await?;
                 self.send_heartbeat_to_all_brokers().await?;
             }
             TaskKind::Persist | TaskKind::Adjust => {
@@ -595,5 +617,58 @@ impl ClientRuntime {
         self.manager
             .get()
             .map_or(Ok(false), |link| link.remove(self))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::time::{Duration, Instant};
+
+    #[tokio::test(start_paused = true)]
+    async fn route_refresh_and_offline_cleanup_share_three_second_gate_without_blocking_readers() {
+        let config = ClientConfig::new("192.0.2.6");
+        let runtime =
+            Arc::new(ClientRuntime::construct(config.clone(), &HashMap::new(), None).unwrap());
+        let other = ClientRuntime::construct(config, &HashMap::new(), None).unwrap();
+        let held = runtime.namesrv_gate.lock().await;
+        let before = runtime.route_snapshot().unwrap();
+        let update = {
+            let runtime = runtime.clone();
+            tokio::spawn(async move {
+                runtime
+                    .update_topic_route("topic", Instant::now() + Duration::from_secs(30))
+                    .await
+            })
+        };
+        let cleanup = {
+            let runtime = runtime.clone();
+            tokio::spawn(async move { runtime.clean_offline_brokers().await })
+        };
+        tokio::task::yield_now().await;
+        assert!(other.namesrv_gate.try_lock().is_ok());
+        assert!(Arc::ptr_eq(&before, &runtime.route_snapshot().unwrap()));
+        tokio::time::advance(Duration::from_millis(2999)).await;
+        assert!(!update.is_finished());
+        assert!(!cleanup.is_finished());
+        tokio::time::advance(Duration::from_millis(1)).await;
+        assert!(!update.await.unwrap().unwrap()); // No transport started/fetch attempted.
+        cleanup.await.unwrap().unwrap();
+        assert!(Arc::ptr_eq(&before, &runtime.route_snapshot().unwrap()));
+        drop(held);
+        let acquired = runtime.namesrv_gate.lock().await;
+        let cancelled = {
+            let runtime = runtime.clone();
+            tokio::spawn(async move {
+                runtime
+                    .update_topic_route("cancelled", Instant::now() + Duration::from_secs(30))
+                    .await
+            })
+        };
+        tokio::task::yield_now().await;
+        cancelled.abort();
+        assert!(cancelled.await.unwrap_err().is_cancelled());
+        drop(acquired);
+        assert!(runtime.namesrv_gate.try_lock().is_ok());
     }
 }

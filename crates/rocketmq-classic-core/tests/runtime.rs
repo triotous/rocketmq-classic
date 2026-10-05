@@ -222,3 +222,90 @@ async fn route_refresh_failure_preserves_last_coherent_snapshot() {
     peer.await.unwrap();
     runtime.remoting().shutdown().await;
 }
+
+#[tokio::test]
+async fn different_topic_refreshes_serialize_wire_fetches_without_blocking_snapshot_readers() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut config = ClientConfig::new("192.0.2.6");
+    config.namesrv_addr = Some(listener.local_addr().unwrap().to_string());
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+    runtime.remoting().start().unwrap();
+    let (seen, first_seen) = tokio::sync::oneshot::channel();
+    let (release, released) = tokio::sync::oneshot::channel();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut seen = Some(seen);
+        let mut released = Some(released);
+        for topic in ["first", "second"] {
+            let mut length = [0; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut bytes = BytesMut::from(&length[..]);
+            bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut bytes[4..]).await.unwrap();
+            let command = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
+                .unwrap()
+                .unwrap();
+            assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
+            assert_eq!(command.ext_fields.as_ref().unwrap()["topic"], topic);
+            if topic == "first" {
+                seen.take().unwrap().send(()).unwrap();
+                // An ungated second refresh would put its frame on this socket
+                // before the first reply. read_exact is cancellation-safe here
+                // because no bytes are expected on the correct path.
+                let mut unexpected = [0; 1];
+                assert!(
+                    tokio::time::timeout(
+                        Duration::from_millis(30),
+                        stream.read_exact(&mut unexpected)
+                    )
+                    .await
+                    .is_err()
+                );
+                released.take().unwrap().await.unwrap();
+            }
+            let mut reply = RemotingCommand {
+                opaque: command.opaque,
+                body: Some(
+                    br#"{"queueDatas":[],"brokerDatas":[],"filterServerTable":{}}"#.to_vec(),
+                ),
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .await
+                .unwrap();
+        }
+    });
+    let first = {
+        let runtime = runtime.clone();
+        tokio::spawn(async move {
+            runtime
+                .update_topic_route("first", Instant::now() + Duration::from_secs(5))
+                .await
+        })
+    };
+    first_seen.await.unwrap();
+    let before = runtime.route_snapshot().unwrap();
+    let second = {
+        let runtime = runtime.clone();
+        tokio::spawn(async move {
+            runtime
+                .update_topic_route("second", Instant::now() + Duration::from_secs(5))
+                .await
+        })
+    };
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert!(!first.is_finished());
+    assert!(!second.is_finished());
+    assert!(Arc::ptr_eq(&before, &runtime.route_snapshot().unwrap()));
+    release.send(()).unwrap();
+    assert!(first.await.unwrap().unwrap());
+    assert!(second.await.unwrap().unwrap());
+    assert_eq!(runtime.route_snapshot().unwrap().topics.len(), 2);
+    peer.await.unwrap();
+    runtime.remoting().shutdown().await;
+}
