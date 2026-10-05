@@ -74,6 +74,33 @@ public final class RuntimeConfigFixtures {
         clone.put("namespaceV2", copy.getNamespaceV2());
         clone.put("enableConcurrentHeartbeat", copy.isEnableConcurrentHeartbeat());
         clone.put("concurrentHeartbeatThreadPoolSize", copy.getConcurrentHeartbeatThreadPoolSize());
+        config.setClientIP("manager-copy");
+        config.setNamesrvAddr("MQ_INST_a_b.example:9876");
+        config.setNamespace(null); // Caller initialized; manager clone must reset its flag.
+        org.apache.rocketmq.client.impl.MQClientManager manager = org.apache.rocketmq.client.impl.MQClientManager.getInstance();
+        org.apache.rocketmq.client.impl.factory.MQClientInstance runtime = manager.getOrCreateMQClientInstance(config);
+        Map<String, Object> managed = new TreeMap<>();
+        try {
+            ClientConfig actual = runtime.getClientConfig();
+            managed.put("traceMsgBatchNum", actual.getTraceMsgBatchNum());
+            managed.put("maxPageSizeInGetMetadata", actual.getMaxPageSizeInGetMetadata());
+            managed.put("accessChannel", actual.getAccessChannel().toString());
+            managed.put("namespaceV2", actual.getNamespaceV2());
+            managed.put("namespace", actual.getNamespace());
+            managed.put("inputNamespaceStillNull", config.getNamespace() == null);
+            managed.put("enableConcurrentHeartbeat", actual.isEnableConcurrentHeartbeat());
+            managed.put("concurrentHeartbeatThreadPoolSize", actual.getConcurrentHeartbeatThreadPoolSize());
+            managed.put("sharedIdentity", runtime == manager.getOrCreateMQClientInstance(config));
+        } finally {
+            try {
+                java.lang.reflect.Method cleanup = runtime.getClass().getDeclaredMethod("cleanupAfterConstructionFailure",
+                    org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
+                cleanup.setAccessible(true);
+                cleanup.invoke(runtime, runtime.getMQClientAPIImpl(), new IllegalStateException("manager fixture teardown"));
+            } finally {
+                manager.removeClientFactory(runtime.getClientId(), runtime);
+            }
+        }
         List<Object> endpoints = new ArrayList<>();
         for (String endpoint : new String[] {null, "", "broker:9876", "http://broker:9876", " http://broker:9876 ",
             "https://MQ_INST_a_b.example:80", "MQ_INST_a_b.example:80", "http://MQ_INST_a_b.example:80",
@@ -105,11 +132,12 @@ public final class RuntimeConfigFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "ClientConfig.buildMQClientId/cloneClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/changeInstanceNameToPID");
+        fixture.put("entrypoint", "ClientConfig.buildMQClientId/cloneClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/changeInstanceNameToPID; MQClientManager.getOrCreateMQClientInstance; MQClientInstance.getClientConfig");
         fixture.put("serverBaselineContacted", false);
         fixture.put("identities", identities);
         fixture.put("defaults", defaults);
         fixture.put("clone", clone);
+        fixture.put("managed", managed);
         fixture.put("endpoints", endpoints);
         fixture.put("resources", resources);
         fixture.put("pid", pid);

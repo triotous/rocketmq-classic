@@ -88,6 +88,68 @@ fn client_identity_matches_invoked_java_including_unicode_blanks_and_nulls() {
     }
 }
 
+#[tokio::test]
+async fn manager_configuration_copy_matches_invoked_java_without_mutating_caller() {
+    use rocketmq_classic_core::runtime::ClientRuntimeManager;
+    use std::sync::Arc;
+
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = &fixture["managed"];
+    let mut config = ClientConfig::new("manager-copy");
+    config.trace_msg_batch_num = 99;
+    config.max_page_size_in_get_metadata = 77;
+    config.access_channel = AccessChannel::Cloud;
+    config.namespace_v2 = Some("v2".into());
+    config.enable_concurrent_heartbeat = true;
+    config.concurrent_heartbeat_thread_pool_size = 7;
+    config.set_namesrv_addr(Some("MQ_INST_a_b.example:9876".into()));
+    config.set_namespace(None);
+    let manager = ClientRuntimeManager::new();
+    let runtime = manager.get_or_create(&config).await.unwrap();
+    // Full Rust Clone preserves the observed lazy state; another Java-style
+    // clone here would reset it again and hide a construction-path mismatch.
+    let mut actual = runtime.config().clone();
+    assert_eq!(
+        i64::from(actual.trace_msg_batch_num),
+        java["traceMsgBatchNum"]
+    );
+    assert_eq!(
+        i64::from(actual.max_page_size_in_get_metadata),
+        java["maxPageSizeInGetMetadata"]
+    );
+    assert_eq!(actual.access_channel, AccessChannel::Local);
+    assert_eq!(java["accessChannel"], "LOCAL");
+    assert_eq!(actual.namespace_v2.as_deref(), java["namespaceV2"].as_str());
+    assert_eq!(
+        actual.enable_concurrent_heartbeat,
+        java["enableConcurrentHeartbeat"]
+    );
+    assert_eq!(
+        i64::from(actual.concurrent_heartbeat_thread_pool_size),
+        java["concurrentHeartbeatThreadPoolSize"]
+    );
+    assert_eq!(actual.get_namespace().unwrap(), java["namespace"].as_str());
+    assert_eq!(
+        config.get_namespace().unwrap().is_none(),
+        java["inputNamespaceStillNull"]
+    );
+    assert_eq!(config.trace_msg_batch_num, 99);
+    assert_eq!(config.max_page_size_in_get_metadata, 77);
+    assert_eq!(config.access_channel, AccessChannel::Cloud);
+    assert_eq!(
+        Arc::ptr_eq(&runtime, &manager.get_or_create(&config).await.unwrap()),
+        java["sharedIdentity"]
+    );
+    config.trace_msg_batch_num = 123;
+    config.max_page_size_in_get_metadata = 456;
+    config.access_channel = AccessChannel::Local;
+    assert!(Arc::ptr_eq(
+        &runtime,
+        &manager.get_or_create(&config).await.unwrap()
+    ));
+}
+
 #[test]
 fn centralized_defaults_and_java_clone_copy_exact_fields() {
     let fixture: Value =
