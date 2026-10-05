@@ -1145,10 +1145,10 @@ async fn p3_default_processor_handles_unknown_codes_but_exact_registration_wins(
     client.with_processor_table(|processors| {
         processors.insert(
             900_002,
-            rocketmq_classic_remoting::client::ProcessorRegistration {
-                processor: Arc::new(|_: RemotingCommand| Ok(Some(command(902)))),
-                executor: None,
-            },
+            rocketmq_classic_remoting::client::ProcessorRegistration::new(
+                Arc::new(|_: RemotingCommand| Ok(Some(command(902)))),
+                None,
+            ),
         );
     });
     client.register_default_processor(Some(Arc::new(|_: RemotingCommand| Ok(Some(command(901))))));

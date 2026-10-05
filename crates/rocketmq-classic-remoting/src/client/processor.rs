@@ -9,6 +9,15 @@ use super::{ClientInner, ProcessorRegistration};
 pub trait RequestProcessor: Send + Sync + 'static {
     fn process(&self, request: RemotingCommand) -> Result<Option<RemotingCommand>, String>;
 
+    /// Channel identity needed by transaction checks and other broker callbacks.
+    fn process_with_context(
+        &self,
+        _remote_addr: &str,
+        request: RemotingCommand,
+    ) -> Result<Option<RemotingCommand>, String> {
+        self.process(request)
+    }
+
     fn reject_request(&self) -> bool {
         false
     }
@@ -217,7 +226,9 @@ fn process_registered(
                 }
                 Ok(()) => {
                     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        registration.processor.process(request_command.clone())
+                        registration
+                            .processor
+                            .process_with_context(&request.remote_addr, request_command.clone())
                     }));
                     match result {
                         Ok(Ok(processed_response)) => {

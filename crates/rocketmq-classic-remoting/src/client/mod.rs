@@ -42,6 +42,42 @@ const SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(90)
 pub struct ProcessorRegistration {
     pub processor: Arc<dyn RequestProcessor>,
     pub executor: Option<Arc<dyn RequestExecutor>>,
+    identity: Arc<()>,
+}
+
+impl ProcessorRegistration {
+    pub fn new(
+        processor: Arc<dyn RequestProcessor>,
+        executor: Option<Arc<dyn RequestExecutor>>,
+    ) -> Self {
+        Self {
+            processor,
+            executor,
+            identity: Arc::new(()),
+        }
+    }
+}
+
+/// An internal ownership boundary for a registered inbound slot. Dropping an
+/// old owner cannot remove a replacement, even with the same processor handle.
+pub struct ProcessorLease {
+    inner: Weak<ClientInner>,
+    code: i32,
+    identity: Arc<()>,
+}
+
+impl Drop for ProcessorLease {
+    fn drop(&mut self) {
+        if let Some(inner) = self.inner.upgrade() {
+            let mut processors = inner.processors.lock().unwrap();
+            if processors
+                .get(&self.code)
+                .is_some_and(|entry| Arc::ptr_eq(&entry.identity, &self.identity))
+            {
+                processors.remove(&self.code);
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -1140,6 +1176,27 @@ impl RemotingClient {
         self.register_processor_with_executor(code, processor, None);
     }
 
+    pub fn register_owned_processor(
+        &self,
+        code: i32,
+        processor: Arc<dyn RequestProcessor>,
+    ) -> ProcessorLease {
+        let identity = Arc::new(());
+        self.inner.processors.lock().unwrap().insert(
+            code,
+            ProcessorRegistration {
+                processor,
+                executor: None,
+                identity: identity.clone(),
+            },
+        );
+        ProcessorLease {
+            inner: Arc::downgrade(&self.inner),
+            code,
+            identity,
+        }
+    }
+
     pub fn register_processor_with_executor(
         &self,
         code: i32,
@@ -1151,6 +1208,7 @@ impl RemotingClient {
             ProcessorRegistration {
                 processor,
                 executor,
+                identity: Arc::new(()),
             },
         );
     }
@@ -1169,6 +1227,7 @@ impl RemotingClient {
             processor.map(|processor| ProcessorRegistration {
                 processor,
                 executor,
+                identity: Arc::new(()),
             });
     }
 
@@ -2112,6 +2171,22 @@ async fn timeout_scheduler(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn owned_processor_cleanup_preserves_replacement_even_for_same_handle() {
+        let client = RemotingClient::new(TransportMode::Plain);
+        let processor: Arc<dyn RequestProcessor> = Arc::new(|_: RemotingCommand| Ok(None));
+        let old = client.register_owned_processor(39, processor.clone());
+        let replacement = client.register_owned_processor(39, processor.clone());
+        drop(old);
+        assert!(client.with_processor_table(|table| table.contains_key(&39)));
+        drop(replacement);
+        assert!(!client.with_processor_table(|table| table.contains_key(&39)));
+        let lease = client.register_owned_processor(39, processor.clone());
+        client.register_processor(39, processor);
+        drop(lease);
+        assert!(client.with_processor_table(|table| table.contains_key(&39)));
+    }
 
     #[test]
     fn name_server_scan_batch_bounds_work_and_rotates_fairly() {
