@@ -91,3 +91,9 @@ Rejected replies and SUCCESS without body retain Java's runtime false/unchanged 
 ## Mutable RPC interception support
 
 Java runtime hooks mutate command metadata before user signing. Lower remoting therefore exposes a default-compatible mutable-before hook capability instead of pre-applying fields outside the actual hook chain. Old read-only/result hooks adapt automatically. Owned command mutation is visible to subsequent hooks and encoding, with modified async request snapshots and after/retry copies. Inbound pipeline/processor/after hooks and response identity share the modified command. Existing hook error/panic containment and task ownership are retained; no new worker or public configuration is introduced. Runtime namespace/stream/dynamic activation and source-specific heartbeat language still require their own implementation/verification.
+
+## Runtime RPC hook activation
+
+Runtime construction now registers namespace, optional stream, user, then dynamic zone hooks. Namespace/stream precede user signing; dynamic zone fields follow it. NamespaceV2 and stream enablement participate in manager compatibility, including client-ID string collisions. Dynamic zone property/environment inputs are reevaluated per invocation and therefore are not frozen as per-runtime compatibility snapshots. Exact Java precedence/blank semantics are retained through a private property-reader seam, not a new public setting.
+
+The typed API explicitly creates Java-default commands while configured language applies only to heartbeat V1/V2. Lower remoting retains its independent Rust command default. Thirty-six actual Java hook cases, live-read/conflict unit checks and actual NameServer/heartbeat/oneway wire checks validate these boundaries. Activation adds no tasks, startup checkpoints or strong runtime links. Automatic IP and final source/cumulative phase acceptance audits remain open.
