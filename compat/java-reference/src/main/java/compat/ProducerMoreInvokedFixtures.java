@@ -16,6 +16,10 @@ import org.apache.rocketmq.client.impl.CommunicationMode;
 import org.apache.rocketmq.client.impl.MQClientAPIImpl;
 import org.apache.rocketmq.client.producer.SendResult;
 import org.apache.rocketmq.client.producer.SendStatus;
+import org.apache.rocketmq.client.producer.SendCallback;
+import org.apache.rocketmq.client.producer.DefaultMQProducer;
+import org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl;
+import org.apache.rocketmq.remoting.InvokeCallback;
 import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.common.message.Message;
 import org.apache.rocketmq.common.message.MessageAccessor;
@@ -38,6 +42,7 @@ public final class ProducerMoreInvokedFixtures {
         RemotingCommand request;
         RemotingCommand response;
         String mode;
+        InvokeCallback asyncCallback;
 
         RemotingClient proxy() {
             return (RemotingClient) Proxy.newProxyInstance(RemotingClient.class.getClassLoader(),
@@ -45,6 +50,7 @@ public final class ProducerMoreInvokedFixtures {
                     if (method.getName().startsWith("invoke")) {
                         mode = method.getName();
                         request = (RemotingCommand) args[1];
+                        if ("invokeAsync".equals(mode)) asyncCallback = (InvokeCallback) args[3];
                         return "invokeSync".equals(mode) ? response : null;
                     }
                     return method.getReturnType() == boolean.class ? false : null;
@@ -70,7 +76,8 @@ public final class ProducerMoreInvokedFixtures {
     private static void record(Path output, boolean verify, Capture capture, String name,
         int code, String outcome) throws Exception {
         check(capture.request != null && capture.request.getCode() == code, name + " request code");
-        check("invokeSync".equals(capture.mode) || "invokeOneway".equals(capture.mode), name + " mode");
+        check("invokeSync".equals(capture.mode) || "invokeOneway".equals(capture.mode)
+            || "invokeAsync".equals(capture.mode), name + " mode");
         Map<String, Object> provenance = new TreeMap<>();
         provenance.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         provenance.put("entrypoint", "MQClientAPIImpl");
@@ -79,9 +86,10 @@ public final class ProducerMoreInvokedFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("provenance", provenance);
         fixture.put("case", name);
-        fixture.put("mode", "invokeSync".equals(capture.mode) ? "SYNC" : "ONEWAY");
+        fixture.put("mode", "invokeSync".equals(capture.mode) ? "SYNC"
+            : "invokeAsync".equals(capture.mode) ? "ASYNC" : "ONEWAY");
         fixture.put("request", command(capture.request));
-        fixture.put("response", "invokeSync".equals(capture.mode) ? command(capture.response) : null);
+        fixture.put("response", "invokeOneway".equals(capture.mode) ? null : command(capture.response));
         fixture.put("outcome", outcome);
         String json = JSON.toJSONString(fixture) + "\n";
         Path path = output.resolve(name + ".json");
@@ -95,6 +103,25 @@ public final class ProducerMoreInvokedFixtures {
 
     public static void main(String[] args) throws Exception {
         run(Path.of(args[0]), Arrays.asList(args).contains("--verify"));
+    }
+
+    private static SendResult send(Capture capture, MQClientAPIImpl api, Message message,
+        SendMessageRequestHeader header, CommunicationMode mode) throws Exception {
+        if (mode != CommunicationMode.ASYNC)
+            return api.sendMessage("broker:10911", "broker", message, header, 10000, mode, null, null);
+        SendResult[] result = new SendResult[1];
+        Throwable[] error = new Throwable[1];
+        SendCallback callback = new SendCallback() {
+            public void onSuccess(SendResult value) { result[0] = value; }
+            public void onException(Throwable value) { error[0] = value; }
+        };
+        DefaultMQProducerImpl producer = new DefaultMQProducerImpl(new DefaultMQProducer("oracle-producer"));
+        check(api.sendMessage("broker:10911", "broker", message, header, 10000, mode,
+            callback, null, null, 0, null, producer) == null, "async dispatch result");
+        capture.asyncCallback.operationSucceed(capture.response);
+        if (error[0] instanceof Exception) throw (Exception) error[0];
+        check(error[0] == null && result[0] != null, "async terminal result");
+        return result[0];
     }
 
     public static void run(Path output, boolean verify) throws Exception {
@@ -132,11 +159,10 @@ public final class ProducerMoreInvokedFixtures {
                     if (reply) MessageAccessor.putProperty(current, MessageConst.PROPERTY_MESSAGE_TYPE,
                         MixAll.REPLY_MESSAGE_FLAG);
                     for (CommunicationMode mode : new CommunicationMode[] {
-                        CommunicationMode.SYNC, CommunicationMode.ONEWAY}) {
+                        CommunicationMode.SYNC, CommunicationMode.ASYNC, CommunicationMode.ONEWAY}) {
                         capture.response = RemotingCommand.createResponseCommandWithHeader(ResponseCode.SUCCESS, sent);
                         capture.response.makeCustomHeaderToNet();
-                        SendResult result = api.sendMessage("broker:10911", "broker", current, header,
-                            10000, mode, null, null);
+                        SendResult result = send(capture, api, current, header, mode);
                         check(mode != CommunicationMode.ONEWAY || result == null, "oneway result");
                         String outcome = mode == CommunicationMode.ONEWAY ? "ok"
                             : result.getSendStatus().name() + ";queueOffset=" + result.getQueueOffset()
@@ -151,11 +177,10 @@ public final class ProducerMoreInvokedFixtures {
                 MessageBatch batch = MessageBatch.generateFromList(Collections.singletonList(message));
                 batch.setBody(batch.encode());
                 for (CommunicationMode mode : new CommunicationMode[] {
-                    CommunicationMode.SYNC, CommunicationMode.ONEWAY}) {
+                    CommunicationMode.SYNC, CommunicationMode.ASYNC, CommunicationMode.ONEWAY}) {
                     capture.response = RemotingCommand.createResponseCommandWithHeader(ResponseCode.SUCCESS, sent);
                     capture.response.makeCustomHeaderToNet();
-                    SendResult result = api.sendMessage("broker:10911", "broker", batch, header,
-                        10000, mode, null, null);
+                    SendResult result = send(capture, api, batch, header, mode);
                     check(mode != CommunicationMode.ONEWAY || result == null, "batch oneway result");
                     record(output, verify, capture, "send-batch-" + variant + "-" + mode.name().toLowerCase(),
                         RequestCode.SEND_BATCH_MESSAGE, mode == CommunicationMode.ONEWAY ? "ok"
@@ -167,12 +192,12 @@ public final class ProducerMoreInvokedFixtures {
             smart.setBoolean(null, true);
             capture.response = RemotingCommand.createResponseCommandWithHeader(ResponseCode.SUCCESS,
                 new SendMessageResponseHeader());
+            for (CommunicationMode mode : new CommunicationMode[] {CommunicationMode.SYNC, CommunicationMode.ASYNC}) {
             for (int code : new int[] {ResponseCode.SUCCESS, 999}) {
                 capture.response.setCode(code);
                 String outcome;
                 try {
-                    api.sendMessage("broker:10911", "broker", message, header, 10000,
-                        CommunicationMode.SYNC, null, null);
+                    send(capture, api, message, header, mode);
                     throw new IllegalStateException("malformed response accepted");
                 } catch (MQBrokerException expected) {
                     outcome = "MQBrokerException;code=" + expected.getResponseCode();
@@ -181,8 +206,10 @@ public final class ProducerMoreInvokedFixtures {
                 } catch (NullPointerException expected) {
                     outcome = "NullPointerException";
                 }
-                record(output, verify, capture, code == 999 ? "send-v2-unknown" : "send-v2-malformed",
+                record(output, verify, capture, (code == 999 ? "send-v2-unknown" : "send-v2-malformed")
+                    + (mode == CommunicationMode.ASYNC ? "-async" : ""),
                     RequestCode.SEND_MESSAGE_V2, outcome);
+            }
             }
         } finally {
             smart.setBoolean(null, original);

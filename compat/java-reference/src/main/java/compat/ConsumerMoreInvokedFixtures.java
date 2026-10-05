@@ -11,11 +11,13 @@ import java.util.Set;
 import java.util.TreeMap;
 import org.apache.rocketmq.client.ClientConfig;
 import org.apache.rocketmq.client.consumer.PullResult;
+import org.apache.rocketmq.client.consumer.PullCallback;
 import org.apache.rocketmq.client.exception.MQBrokerException;
 import org.apache.rocketmq.client.impl.CommunicationMode;
 import org.apache.rocketmq.client.impl.MQClientAPIImpl;
 import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.remoting.RemotingClient;
+import org.apache.rocketmq.remoting.InvokeCallback;
 import org.apache.rocketmq.remoting.netty.NettyClientConfig;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.remoting.protocol.RequestCode;
@@ -34,6 +36,7 @@ public final class ConsumerMoreInvokedFixtures {
         RemotingCommand request;
         RemotingCommand response;
         String mode;
+        InvokeCallback asyncCallback;
 
         RemotingClient proxy() {
             return (RemotingClient) Proxy.newProxyInstance(RemotingClient.class.getClassLoader(),
@@ -41,6 +44,7 @@ public final class ConsumerMoreInvokedFixtures {
                     if (method.getName().startsWith("invoke")) {
                         mode = method.getName();
                         request = (RemotingCommand) args[1];
+                        if ("invokeAsync".equals(mode)) asyncCallback = (InvokeCallback) args[3];
                         return "invokeSync".equals(mode) ? response : null;
                     }
                     return method.getReturnType() == boolean.class ? false : null;
@@ -89,6 +93,23 @@ public final class ConsumerMoreInvokedFixtures {
         }
     }
 
+    private static PullResult pull(Capture capture, MQClientAPIImpl api, PullMessageRequestHeader header,
+        CommunicationMode mode) throws Exception {
+        if (mode == CommunicationMode.SYNC)
+            return api.pullMessage("broker:10911", header, 10000, mode, null);
+        PullResult[] result = new PullResult[1];
+        Throwable[] error = new Throwable[1];
+        PullCallback callback = new PullCallback() {
+            public void onSuccess(PullResult value) { result[0] = value; }
+            public void onException(Throwable value) { error[0] = value; }
+        };
+        check(api.pullMessage("broker:10911", header, 10000, mode, callback) == null, "async pull dispatch");
+        capture.asyncCallback.operationSucceed(capture.response);
+        if (error[0] instanceof Exception) throw (Exception) error[0];
+        check(error[0] == null && result[0] != null, "async pull completion");
+        return result[0];
+    }
+
     public static void main(String[] args) throws Exception {
         check(args.length >= 1, "expected output directory");
         Path output = Path.of(args[0]);
@@ -114,6 +135,9 @@ public final class ConsumerMoreInvokedFixtures {
         pullReply.setMinOffset(0L);
         pullReply.setMaxOffset(20L);
         pullReply.setSuggestWhichBrokerId(0L);
+        for (CommunicationMode mode : new CommunicationMode[] {CommunicationMode.SYNC, CommunicationMode.ASYNC}) {
+        String suffix = mode == CommunicationMode.ASYNC ? "-async" : "";
+        String dispatch = mode == CommunicationMode.ASYNC ? "Async" : "Sync";
         for (int code : new int[] {ResponseCode.SUCCESS, ResponseCode.PULL_NOT_FOUND,
             ResponseCode.PULL_RETRY_IMMEDIATELY, ResponseCode.PULL_OFFSET_MOVED}) {
             String name = code == ResponseCode.SUCCESS ? "pull-found" : code == ResponseCode.PULL_NOT_FOUND
@@ -122,7 +146,7 @@ public final class ConsumerMoreInvokedFixtures {
             capture.response = RemotingCommand.createResponseCommandWithHeader(code, pullReply);
             capture.response.makeCustomHeaderToNet();
             if (code == ResponseCode.SUCCESS) capture.response.setBody(new byte[] {0, (byte) 255, 42});
-            PullResult result = api.pullMessage("broker:10911", pull, 10000, CommunicationMode.SYNC, null);
+            PullResult result = pull(capture, api, pull, mode);
             check(result.getNextBeginOffset() == 11L && result.getMinOffset() == 0L
                 && result.getMaxOffset() == 20L, name + " offsets");
             String status = code == ResponseCode.SUCCESS ? "Found" : code == ResponseCode.PULL_NOT_FOUND
@@ -131,19 +155,19 @@ public final class ConsumerMoreInvokedFixtures {
             check(result.getPullStatus().name().equals(code == ResponseCode.SUCCESS ? "FOUND"
                 : code == ResponseCode.PULL_NOT_FOUND ? "NO_NEW_MSG"
                 : code == ResponseCode.PULL_RETRY_IMMEDIATELY ? "NO_MATCHED_MSG" : "OFFSET_ILLEGAL"), name);
-            record(output, verify, capture, name, RequestCode.PULL_MESSAGE, "Sync", "status=" + status
+            record(output, verify, capture, name + suffix, RequestCode.PULL_MESSAGE, dispatch, "status=" + status
                 + ";next=11;min=0;max=20;broker=0;raw=" + (code == ResponseCode.SUCCESS ? "AP8q" : "null"));
         }
         for (int code : new int[] {ResponseCode.SYSTEM_ERROR, 987654}) {
             capture.response = RemotingCommand.createResponseCommand(code, "offline");
             try {
-                api.pullMessage("broker:10911", pull, 10000, CommunicationMode.SYNC, null);
+                pull(capture, api, pull, mode);
                 throw new IllegalStateException("pull error accepted");
             } catch (MQBrokerException expected) {
                 check(expected.getResponseCode() == code, "pull exception code");
             }
-            record(output, verify, capture, code == ResponseCode.SYSTEM_ERROR ? "pull-error" : "pull-unknown",
-                RequestCode.PULL_MESSAGE, "Sync", "MQBrokerException;code=" + code);
+            record(output, verify, capture, (code == ResponseCode.SYSTEM_ERROR ? "pull-error" : "pull-unknown") + suffix,
+                RequestCode.PULL_MESSAGE, dispatch, "MQBrokerException;code=" + code);
         }
 
         for (String shape : new String[] {"no-header", "invalid-header"}) {
@@ -155,12 +179,13 @@ public final class ConsumerMoreInvokedFixtures {
                 capture.response.addExtField("suggestWhichBrokerId", "0");
             }
             try {
-                api.pullMessage("broker:10911", pull, 10000, CommunicationMode.SYNC, null);
+                pull(capture, api, pull, mode);
                 throw new IllegalStateException("malformed pull accepted");
             } catch (NullPointerException | NumberFormatException expected) {
-                record(output, verify, capture, "pull-" + shape, RequestCode.PULL_MESSAGE,
-                    "Sync", "malformed");
+                record(output, verify, capture, "pull-" + shape + suffix, RequestCode.PULL_MESSAGE,
+                    dispatch, "malformed");
             }
+        }
         }
 
         MessageQueue queue = new MessageQueue("oracle-topic", "broker", 2);

@@ -44,19 +44,27 @@ async fn java_invoked_producer_more_requests_and_outcomes_match() {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/rpc-invoked-producer-more");
     let names = [
         "send-v1-sync",
+        "send-v1-async",
         "send-v1-oneway",
         "send-reply-v1-sync",
+        "send-reply-v1-async",
         "send-reply-v1-oneway",
         "send-v2-sync",
+        "send-v2-async",
         "send-v2-oneway",
         "send-reply-v2-sync",
+        "send-reply-v2-async",
         "send-reply-v2-oneway",
         "send-batch-v1-sync",
+        "send-batch-v1-async",
         "send-batch-v1-oneway",
         "send-batch-v2-sync",
+        "send-batch-v2-async",
         "send-batch-v2-oneway",
         "send-v2-malformed",
         "send-v2-unknown",
+        "send-v2-malformed-async",
+        "send-v2-unknown-async",
     ];
     assert_eq!(fs::read_dir(&dir).unwrap().count(), names.len());
     for name in names {
@@ -99,7 +107,7 @@ async fn java_invoked_producer_more_requests_and_outcomes_match() {
                 assert!(expected["response"].is_null());
                 return;
             }
-            assert_eq!(expected["mode"], "SYNC");
+            assert!(expected["mode"] == "SYNC" || expected["mode"] == "ASYNC");
             let response = &expected["response"];
             let mut reply = RemotingCommand {
                 code: response["code"].as_i64().unwrap() as i32,
@@ -154,6 +162,8 @@ async fn java_invoked_producer_more_requests_and_outcomes_match() {
             };
             let mode = if fixture["mode"] == "ONEWAY" {
                 SendMode::Oneway
+            } else if fixture["mode"] == "ASYNC" {
+                SendMode::Future
             } else {
                 SendMode::Sync
             };
@@ -178,7 +188,7 @@ async fn java_invoked_producer_more_requests_and_outcomes_match() {
                 }
                 Err(RpcError::Response { code, .. }) => format!("MQBrokerException;code={code}"),
                 Err(RpcError::MalformedResponse { request_code, .. })
-                    if name == "send-v2-malformed" =>
+                    if name.starts_with("send-v2-malformed") =>
                 {
                     // Java dereferences the absent queueId; Rust rejects the malformed header.
                     assert_eq!(request_code, 310);

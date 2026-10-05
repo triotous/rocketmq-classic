@@ -55,6 +55,14 @@ async fn java_invoked_consumer_more_requests_and_outcomes_match() {
         "pull-unknown",
         "pull-no-header",
         "pull-invalid-header",
+        "pull-found-async",
+        "pull-no-new-async",
+        "pull-no-matched-async",
+        "pull-offset-illegal-async",
+        "pull-error-async",
+        "pull-unknown-async",
+        "pull-no-header-async",
+        "pull-invalid-header-async",
         "lock-success",
         "lock-error",
         "lock-unknown",
@@ -74,6 +82,8 @@ async fn java_invoked_consumer_more_requests_and_outcomes_match() {
             fixture["mode"],
             if name == "unlock-oneway" {
                 "ONEWAY"
+            } else if name.ends_with("-async") {
+                "ASYNC"
             } else {
                 "SYNC"
             }
@@ -153,7 +163,12 @@ async fn java_invoked_consumer_more_requests_and_outcomes_match() {
                 sub_version: 1,
                 ..Default::default()
             };
-            match api.pull_message(&addr, &header, deadline).await {
+            let result = if fixture["mode"] == "ASYNC" {
+                api.pull_message_future(&addr, &header, deadline).await
+            } else {
+                api.pull_message(&addr, &header, deadline).await
+            };
+            match result {
                 Ok(result) => {
                     let status = match result.status {
                         PullStatus::Found => "Found",
