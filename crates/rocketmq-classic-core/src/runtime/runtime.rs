@@ -280,6 +280,27 @@ impl ClientRuntime {
         topic: &str,
         deadline: tokio::time::Instant,
     ) -> Result<bool, RuntimeError> {
+        self.update_route(topic, None, deadline).await
+    }
+
+    /// Runtime branch for producer default-route fallback. The queue setting
+    /// stays producer-owned rather than becoming runtime configuration.
+    pub async fn update_topic_route_from_default(
+        &self,
+        topic: &str,
+        default_topic_queue_nums: i32,
+        deadline: tokio::time::Instant,
+    ) -> Result<bool, RuntimeError> {
+        self.update_route(topic, Some(default_topic_queue_nums), deadline)
+            .await
+    }
+
+    async fn update_route(
+        &self,
+        topic: &str,
+        default_topic_queue_nums: Option<i32>,
+        deadline: tokio::time::Instant,
+    ) -> Result<bool, RuntimeError> {
         let Ok(_gate) = tokio::time::timeout(
             tokio::time::Duration::from_millis(3000),
             self.namesrv_gate.lock(),
@@ -288,17 +309,41 @@ impl ClientRuntime {
         else {
             return Ok(false);
         };
-        let route = self.api.get_topic_route(topic, deadline).await?;
+        let fetched = if default_topic_queue_nums.is_some() {
+            self.api.get_default_topic_route(deadline).await
+        } else {
+            self.api.get_topic_route(topic, deadline).await
+        };
+        let mut route = match fetched {
+            Ok(route) => route,
+            // Java catches MQClientException and returns false, but propagates
+            // transport failure. Rejection must not discard an existing route.
+            Err(error) if MQClientApi::route_error_is_client_exception(&error) => return Ok(false),
+            Err(error) => return Err(error.into()),
+        };
+        if let Some(limit) = default_topic_queue_nums {
+            for data in &mut route.queue_datas {
+                let count = limit.min(data.read_queue_nums);
+                data.read_queue_nums = count;
+                data.write_queue_nums = count;
+            }
+        }
         let groups = self.groups.snapshot()?;
-        let needed = groups
-            .producers
-            .iter()
-            .any(|(_, producer)| producer.is_publish_topic_need_update(topic))
-            || groups
-                .consumers
+        let changed = self.routes.route_changed(topic, &route)?;
+        let needed = !changed
+            && (groups
+                .producers
                 .iter()
-                .any(|consumer| consumer.is_subscribe_topic_need_update(topic));
-        let changed = self.routes.replace(topic, route)?;
+                .any(|(_, producer)| producer.is_publish_topic_need_update(topic))
+                || groups
+                    .consumers
+                    .iter()
+                    .any(|consumer| consumer.is_subscribe_topic_need_update(topic)));
+        let changed = if needed {
+            self.routes.replace_for_owner_update(topic, route, true)?
+        } else {
+            self.routes.replace(topic, route)?
+        };
         if changed || needed {
             if let Some(info) = self.routes.snapshot()?.topics.get(topic).cloned() {
                 for (_, producer) in groups.producers {

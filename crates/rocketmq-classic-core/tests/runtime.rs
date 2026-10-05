@@ -25,6 +25,7 @@ struct RouteObserver {
     runtime: Weak<ClientRuntime>,
     updates: AtomicUsize,
     needed: AtomicBool,
+    need_checks: AtomicUsize,
 }
 
 impl ProducerRuntime for RouteObserver {
@@ -51,6 +52,7 @@ impl ConsumerRuntime for RouteObserver {
         }
     }
     fn is_subscribe_topic_need_update(&self, _: &str) -> bool {
+        self.need_checks.fetch_add(1, Ordering::SeqCst);
         self.needed.load(Ordering::SeqCst)
     }
     fn update_topic_subscribe_info(
@@ -170,11 +172,13 @@ async fn route_refresh_failure_preserves_last_coherent_snapshot() {
         runtime: Arc::downgrade(&runtime),
         updates: AtomicUsize::new(0),
         needed: AtomicBool::new(false),
+        need_checks: AtomicUsize::new(0),
     });
     let consumer = Arc::new(RouteObserver {
         runtime: Arc::downgrade(&runtime),
         updates: AtomicUsize::new(0),
         needed: AtomicBool::new(false),
+        need_checks: AtomicUsize::new(0),
     });
     runtime
         .register_producer("producer", producer.clone())
@@ -194,6 +198,7 @@ async fn route_refresh_failure_preserves_last_coherent_snapshot() {
     );
     assert_eq!(producer.updates.load(Ordering::SeqCst), 1);
     assert_eq!(consumer.updates.load(Ordering::SeqCst), 1);
+    assert_eq!(consumer.need_checks.load(Ordering::SeqCst), 0);
     assert!(
         !runtime
             .update_topic_route("topic", Instant::now() + Duration::from_secs(2))
@@ -202,6 +207,7 @@ async fn route_refresh_failure_preserves_last_coherent_snapshot() {
     );
     assert_eq!(producer.updates.load(Ordering::SeqCst), 1);
     consumer.needed.store(true, Ordering::SeqCst);
+    assert_eq!(consumer.need_checks.load(Ordering::SeqCst), 1);
     assert!(
         runtime
             .update_topic_route("topic", Instant::now() + Duration::from_secs(2))
@@ -210,15 +216,17 @@ async fn route_refresh_failure_preserves_last_coherent_snapshot() {
     );
     assert_eq!(producer.updates.load(Ordering::SeqCst), 2);
     assert_eq!(consumer.updates.load(Ordering::SeqCst), 2);
+    assert_eq!(consumer.need_checks.load(Ordering::SeqCst), 2);
     let before = runtime.route_snapshot().unwrap();
     assert!(
         runtime
             .update_topic_route("topic", Instant::now() + Duration::from_secs(2))
             .await
-            .is_err()
+            .is_ok_and(|changed| !changed)
     );
     assert!(Arc::ptr_eq(&before, &runtime.route_snapshot().unwrap()));
     assert_eq!(before.topics["topic"].publish_queues.len(), 2);
+    assert_eq!(consumer.need_checks.load(Ordering::SeqCst), 2);
     peer.await.unwrap();
     runtime.remoting().shutdown().await;
 }
@@ -308,4 +316,134 @@ async fn different_topic_refreshes_serialize_wire_fetches_without_blocking_snaps
     assert_eq!(runtime.route_snapshot().unwrap().topics.len(), 2);
     peer.await.unwrap();
     runtime.remoting().shutdown().await;
+}
+
+#[tokio::test]
+async fn default_route_fetch_uses_auto_create_topic_and_clamps_both_counts_from_read_count() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut config = ClientConfig::new("192.0.2.6");
+    config.namesrv_addr = Some(listener.local_addr().unwrap().to_string());
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+    runtime.remoting().start().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        for (topic, code) in [
+            ("TBW102", 0),
+            ("TBW102", 0),
+            ("TBW102", 17),
+            ("missing", 17),
+            ("missing-body", 0),
+            ("invalid-json", 0),
+        ] {
+            let mut length = [0; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut bytes = BytesMut::from(&length[..]);
+            bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut bytes[4..]).await.unwrap();
+            let command = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
+                .unwrap()
+                .unwrap();
+            assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
+            assert_eq!(command.ext_fields.as_ref().unwrap()["topic"], topic);
+            let mut reply = RemotingCommand {
+                code,
+                opaque: command.opaque,
+                body: Some(br#"{"queueDatas":[{"brokerName":"a","readQueueNums":8,"writeQueueNums":1,"perm":6,"topicSysFlag":0},{"brokerName":"b","readQueueNums":2,"writeQueueNums":9,"perm":6,"topicSysFlag":0}],"brokerDatas":[{"cluster":"cluster","brokerName":"a","brokerAddrs":{"0":"a:10911"}},{"cluster":"cluster","brokerName":"b","brokerAddrs":{"0":"b:10911"}}],"filterServerTable":{}}"#.to_vec()),
+                ..Default::default()
+            };
+            if topic == "missing-body" {
+                reply.body = None;
+            } else if topic == "invalid-json" {
+                reply.body = Some(b"{".to_vec());
+            }
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .await
+                .unwrap();
+        }
+    });
+    assert!(
+        runtime
+            .update_topic_route_from_default("created", 4, Instant::now() + Duration::from_secs(5))
+            .await
+            .unwrap()
+    );
+    let before = runtime.route_snapshot().unwrap();
+    let info = &before.topics["created"];
+    assert_eq!(
+        info.route
+            .queue_datas
+            .iter()
+            .map(|data| (data.read_queue_nums, data.write_queue_nums))
+            .collect::<Vec<_>>(),
+        [(4, 4), (2, 2)]
+    );
+    assert_eq!(info.publish_queues.len(), 6);
+    assert_eq!(info.subscribe_queues.len(), 6);
+    assert!(
+        info.publish_queues
+            .iter()
+            .all(|queue| queue.topic() == "created")
+    );
+    assert!(!before.topics.contains_key("TBW102"));
+    assert!(
+        runtime
+            .update_topic_route_from_default(
+                "negative",
+                -2,
+                Instant::now() + Duration::from_secs(5)
+            )
+            .await
+            .unwrap()
+    );
+    let negative = runtime.route_snapshot().unwrap();
+    assert!(negative.topics["negative"].publish_queues.is_empty());
+    assert!(
+        negative.topics["negative"]
+            .route
+            .queue_datas
+            .iter()
+            .all(|data| data.read_queue_nums == -2 && data.write_queue_nums == -2)
+    );
+    assert!(
+        !runtime
+            .update_topic_route_from_default("created", 4, Instant::now() + Duration::from_secs(5))
+            .await
+            .unwrap()
+    );
+    assert!(Arc::ptr_eq(&negative, &runtime.route_snapshot().unwrap()));
+    assert!(
+        !runtime
+            .update_topic_route("missing", Instant::now() + Duration::from_secs(5))
+            .await
+            .unwrap()
+    );
+    assert!(Arc::ptr_eq(&negative, &runtime.route_snapshot().unwrap()));
+    assert!(
+        !runtime
+            .update_topic_route("missing-body", Instant::now() + Duration::from_secs(5))
+            .await
+            .unwrap()
+    );
+    assert!(Arc::ptr_eq(&negative, &runtime.route_snapshot().unwrap()));
+    assert!(
+        runtime
+            .update_topic_route("invalid-json", Instant::now() + Duration::from_secs(5))
+            .await
+            .is_err()
+    );
+    assert!(Arc::ptr_eq(&negative, &runtime.route_snapshot().unwrap()));
+    peer.await.unwrap();
+    runtime.remoting().shutdown().await;
+    assert!(
+        runtime
+            .update_topic_route_from_default("created", 4, Instant::now() + Duration::from_secs(1))
+            .await
+            .is_err()
+    );
+    assert!(Arc::ptr_eq(&negative, &runtime.route_snapshot().unwrap()));
 }

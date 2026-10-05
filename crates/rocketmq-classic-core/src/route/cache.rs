@@ -149,6 +149,27 @@ impl RouteCache {
     }
 
     pub(crate) fn replace(&self, topic: &str, route: TopicRouteData) -> Result<bool, RuntimeError> {
+        self.replace_for_owner_update(topic, route, false)
+    }
+
+    pub(crate) fn route_changed(
+        &self,
+        topic: &str,
+        route: &TopicRouteData,
+    ) -> Result<bool, RuntimeError> {
+        Ok(!self
+            .snapshot()?
+            .topics
+            .get(topic)
+            .is_some_and(|old| routes_equal(&old.route, route)))
+    }
+
+    pub(crate) fn replace_for_owner_update(
+        &self,
+        topic: &str,
+        route: TopicRouteData,
+        force: bool,
+    ) -> Result<bool, RuntimeError> {
         // All conversion occurs before the writer lock. Invalid ordered data
         // must not make Phase 1's tolerant helper publish a partial snapshot.
         let mut conversion_route = route.clone();
@@ -204,7 +225,7 @@ impl RouteCache {
             .topics
             .get(topic)
             .is_some_and(|old| routes_equal(&old.route, &topic_snapshot.route));
-        if unchanged {
+        if unchanged && !force {
             return Ok(false);
         }
         // Java retains existing endpoints when a new conversion is empty.
@@ -223,7 +244,7 @@ impl RouteCache {
         next.topics
             .insert(topic.to_owned(), Arc::new(topic_snapshot));
         *current = Arc::new(next);
-        Ok(true)
+        Ok(!unchanged)
     }
 }
 
@@ -450,6 +471,26 @@ mod tests {
         cache.replace("first", TopicRouteData::default()).unwrap();
         cache.clean_offline().unwrap();
         assert!(cache.snapshot().unwrap().broker_addresses.is_empty());
+    }
+
+    #[test]
+    fn unchanged_route_requested_by_owner_republishes_its_broker_table() {
+        let cache = RouteCache::default();
+        cache.replace("first", route(1)).unwrap();
+        cache.replace("second", route(2)).unwrap();
+        let before = cache.snapshot().unwrap();
+        assert_eq!(before.publish_address("broker"), Some("master-2:10911"));
+        assert!(!cache.replace("first", route(1)).unwrap());
+        assert!(Arc::ptr_eq(&before, &cache.snapshot().unwrap()));
+        assert!(
+            !cache
+                .replace_for_owner_update("first", route(1), true)
+                .unwrap()
+        );
+        let after = cache.snapshot().unwrap();
+        assert_eq!(after.publish_address("broker"), Some("master-1:10911"));
+        assert_eq!(before.publish_address("broker"), Some("master-2:10911"));
+        assert!(after.topics.contains_key("second"));
     }
 
     #[test]
