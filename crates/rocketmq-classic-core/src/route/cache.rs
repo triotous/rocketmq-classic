@@ -224,10 +224,7 @@ impl RouteCache {
                 .split(';')
                 .filter(|_| !ordered.trim_end_matches(';').is_empty())
             {
-                let count = entry
-                    .split(':')
-                    .nth(1)
-                    .and_then(|value| value.parse::<i32>().ok());
+                let count = entry.split(':').nth(1).and_then(java_integer);
                 let count =
                     count.ok_or(RuntimeError::InvalidRoute("invalid ordered queue count"))?;
                 normalized.push(format!(
@@ -317,10 +314,7 @@ fn validate_conversion_size(topic: &str, route: &TopicRouteData) -> Result<(), R
         for item in ordered.split(';') {
             let mut parts = item.split(':');
             let broker = parts.next().unwrap_or_default();
-            let count = parts
-                .next()
-                .and_then(|value| value.parse::<i32>().ok())
-                .unwrap_or(0);
+            let count = parts.next().and_then(java_integer).unwrap_or(0);
             add(count, broker)?;
         }
     }
@@ -377,6 +371,49 @@ fn validate_conversion_size(topic: &str, route: &TopicRouteData) -> Result<(), R
     Ok(())
 }
 
+// Integer.parseInt iterates Java char/UTF-16 units and Character.digit(10),
+// accepting BMP decimal scripts but not supplementary mathematical digits.
+// Accumulate negatively so i32::MIN is representable without widening/range loss.
+fn java_integer(value: &str) -> Option<i32> {
+    let mut units = value.encode_utf16().peekable();
+    let negative = match units.peek().copied()? {
+        0x2d => {
+            units.next();
+            true
+        }
+        0x2b => {
+            units.next();
+            false
+        }
+        _ => false,
+    };
+    units.peek()?;
+    let mut result = 0i32;
+    for unit in units {
+        let digit = java_decimal_digit(unit)?;
+        result = result.checked_mul(10)?.checked_sub(i32::from(digit))?;
+    }
+    if negative {
+        Some(result)
+    } else {
+        result.checked_neg()
+    }
+}
+
+fn java_decimal_digit(unit: u16) -> Option<u16> {
+    // Audited exhaustively against actual Character.digit(char, 10) zero
+    // ranges in the pinned Java harness, not char::is_numeric or to_digit.
+    const ZEROS: &[u16] = &[
+        0x0030, 0x0660, 0x06f0, 0x07c0, 0x0966, 0x09e6, 0x0a66, 0x0ae6, 0x0b66, 0x0be6, 0x0c66,
+        0x0ce6, 0x0d66, 0x0de6, 0x0e50, 0x0ed0, 0x0f20, 0x1040, 0x1090, 0x17e0, 0x1810, 0x1946,
+        0x19d0, 0x1a80, 0x1a90, 0x1b50, 0x1bb0, 0x1c40, 0x1c50, 0xa620, 0xa8d0, 0xa900, 0xa9d0,
+        0xa9f0, 0xaa50, 0xabf0, 0xff10,
+    ];
+    ZEROS
+        .iter()
+        .find_map(|zero| unit.checked_sub(*zero).filter(|digit| *digit < 10))
+}
+
 fn routes_equal(left: &TopicRouteData, right: &TopicRouteData) -> bool {
     let (mut left, mut right) = (left.clone(), right.clone());
     for route in [&mut left, &mut right] {
@@ -420,6 +457,32 @@ pub fn broker_vip_channel(enabled: bool, address: &str) -> Result<String, Runtim
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ordered_integer_parser_matches_invoked_java_digits_and_signed_boundaries() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        let zeros = fixture["integerDigitZeroCodeUnits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_u64().unwrap() as u16)
+            .collect::<Vec<_>>();
+        for unit in 0..=u16::MAX {
+            let expected = zeros
+                .iter()
+                .find_map(|zero| unit.checked_sub(*zero).filter(|digit| *digit < 10));
+            assert_eq!(java_decimal_digit(unit), expected, "UTF-16 unit {unit:x}");
+        }
+        for case in fixture["integers"].as_array().unwrap() {
+            let expected = case["value"].as_i64().map(|value| value as i32);
+            assert_eq!(
+                java_integer(case["input"].as_str().unwrap()),
+                expected,
+                "{case}"
+            );
+        }
+    }
     use rocketmq_classic_protocol::route::{BrokerData, QueueData};
 
     #[test]

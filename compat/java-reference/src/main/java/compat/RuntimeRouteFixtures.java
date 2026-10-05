@@ -21,7 +21,9 @@ public final class RuntimeRouteFixtures {
             + "\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master:10911\",\"2\":\"slave:10911\"}}],\"filterServerTable\":{}}";
         List<Object> cases = new ArrayList<>();
         List<Map<String, Object>> inputs = new ArrayList<>();
-        for (String order : new String[] {null, "", "broker:2", "broker:2:ignored;", ";;", "broker:invalid"}) {
+        for (String order : new String[] {null, "", "broker:2", "broker:2:ignored;", ";;", "broker:invalid",
+            "broker:٢", "broker:+２", "broker:1٢", "broker:२", "broker:߂", "broker:²",
+            "broker:𝟚", "broker: 2", "broker:", "broker:-２１４７４８３６４８", "broker:２１４７４８３６４８"}) {
             Map<String, Object> input = new TreeMap<>(com.alibaba.fastjson2.JSON.parseObject(ordinary));
             input.put("orderTopicConf", order);
             inputs.add(input);
@@ -85,6 +87,36 @@ public final class RuntimeRouteFixtures {
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
         fixture.put("vip", vip);
+        List<Integer> digitZeros = new ArrayList<>();
+        for (int codeUnit = 0; codeUnit <= Character.MAX_VALUE; codeUnit++) {
+            if (Character.digit((char) codeUnit, 10) == 0) digitZeros.add(codeUnit);
+        }
+        for (int zero : digitZeros) {
+            for (int digit = 0; digit < 10; digit++) {
+                if (Character.digit((char) (zero + digit), 10) != digit)
+                    throw new IllegalStateException("noncontiguous decimal digits");
+            }
+        }
+        for (int codeUnit = 0; codeUnit <= Character.MAX_VALUE; codeUnit++) {
+            int digit = Character.digit((char) codeUnit, 10);
+            if (digit >= 0 && !digitZeros.contains(codeUnit - digit))
+                throw new IllegalStateException("unrecorded decimal digit");
+        }
+        fixture.put("integerDigitZeroCodeUnits", digitZeros);
+        List<Object> integerCases = new ArrayList<>();
+        for (String text : new String[] {"+2147483647", "2147483648", "-2147483648", "-2147483649",
+            "٠٠", "--2", "", "+", "-２１４７４８３６４８", "2\n", "𝟚"}) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("input", text);
+            try {
+                item.put("value", Integer.parseInt(text));
+                item.put("outcome", "OK");
+            } catch (NumberFormatException error) {
+                item.put("outcome", "NumberFormatException");
+            }
+            integerCases.add(item);
+        }
+        fixture.put("integers", integerCases);
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
             com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
