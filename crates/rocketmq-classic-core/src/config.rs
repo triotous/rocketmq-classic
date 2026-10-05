@@ -8,7 +8,7 @@ use rocketmq_classic_protocol::codes::LanguageCode;
 use std::collections::BTreeSet;
 
 mod local_address;
-mod namespace;
+pub(crate) mod namespace;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ConfigError {

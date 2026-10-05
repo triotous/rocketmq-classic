@@ -174,6 +174,36 @@ impl ClientRuntime {
         self.boot_timestamp
     }
 
+    /// Consumes source keys and rebuilds them using the explicit namespace,
+    /// representing Java's mutable queue-key operation with Rust value ownership.
+    pub fn parse_offset_table_from_broker(
+        &self,
+        offset_table: std::collections::BTreeMap<
+            rocketmq_classic_common::message::MessageQueue,
+            i64,
+        >,
+        namespace: Option<&str>,
+    ) -> std::collections::BTreeMap<rocketmq_classic_common::message::MessageQueue, i64> {
+        let Some(namespace) = namespace.filter(|value| !value.is_empty()) else {
+            return offset_table;
+        };
+        offset_table
+            .into_iter()
+            .map(|(queue, offset)| {
+                let topic = crate::config::namespace::unwrap(Some(namespace), Some(queue.topic()))
+                    .expect("typed queue topic cannot be null");
+                (
+                    rocketmq_classic_common::message::MessageQueue::new(
+                        topic,
+                        queue.broker_name(),
+                        queue.queue_id(),
+                    ),
+                    offset,
+                )
+            })
+            .collect()
+    }
+
     pub fn execute_pull_request_immediately(
         &self,
         request: Arc<dyn super::MessageRequest>,

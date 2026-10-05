@@ -113,6 +113,10 @@ public final class Main {
             RuntimeClientCheckFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;
         }
+        if (args.length > 0 && "runtime-offset-fixtures".equals(args[0])) {
+            RuntimeOffsetFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "rpc-invoked-ext-fixtures".equals(args[0])) {
             InvokedExtFixtures.run(option(args, "--output"), java.util.Arrays.asList(args).contains("--verify"));
             return;

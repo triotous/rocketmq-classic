@@ -51,3 +51,44 @@ async fn boot_timestamp_is_constructor_wall_clock_and_stable_across_shared_lifec
     assert!(!Arc::ptr_eq(&runtime, &replacement));
     assert!((before..=after).contains(&replacement.boot_timestamp()));
 }
+
+#[tokio::test]
+async fn explicit_offset_namespace_conversion_matches_invoked_java() {
+    use rocketmq_classic_common::message::MessageQueue;
+    use std::collections::BTreeMap;
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/offsets.json")).unwrap();
+    let mut config = ClientConfig::new("offset-client");
+    config.set_namespace(Some("ignored-config-namespace".into()));
+    config.namesrv_addr = Some(String::new());
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+    for case in fixture["cases"].as_array().unwrap() {
+        let rows = |name: &str| {
+            case[name]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| {
+                    (
+                        MessageQueue::new(
+                            row["topic"].as_str().unwrap(),
+                            row["brokerName"].as_str().unwrap(),
+                            row["queueId"].as_i64().unwrap() as i32,
+                        ),
+                        row["offset"].as_i64().unwrap(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>()
+        };
+        let output =
+            runtime.parse_offset_table_from_broker(rows("input"), case["namespace"].as_str());
+        assert_eq!(output, rows("output"));
+        assert_eq!(
+            runtime.config().namespace.as_deref(),
+            Some("ignored-config-namespace")
+        );
+    }
+}

@@ -45,7 +45,7 @@ pub(super) fn wrap(namespace: Option<&str>, resource: Option<&str>) -> Option<St
     )
 }
 
-pub(super) fn unwrap(namespace: Option<&str>, resource: Option<&str>) -> Option<String> {
+pub(crate) fn unwrap(namespace: Option<&str>, resource: Option<&str>) -> Option<String> {
     let resource = resource?;
     let Some(namespace) = namespace.filter(|value| !value.is_empty()) else {
         return Some(resource.into());
