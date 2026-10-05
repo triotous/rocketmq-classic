@@ -66,6 +66,47 @@ public final class RuntimeRouteFixtures {
         return item;
     }
 
+    private static Map<String, Object> runtimeEmptyEndpointTransition(
+        Map<String, Object> initial, Map<String, Object> ordinary) throws Exception {
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("route-endpoint-transition");
+        MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+        org.apache.rocketmq.client.impl.MQClientAPIImpl original = runtime.getMQClientAPIImpl();
+        RouteApi api = new RouteApi(config);
+        Map<String, Object> item = new TreeMap<>();
+        try {
+            java.lang.reflect.Field field = MQClientInstance.class.getDeclaredField("mQClientAPIImpl");
+            field.setAccessible(true); field.set(runtime, api);
+            item.put("initialInput", initial); item.put("input", ordinary);
+            api.route = com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(initial), TopicRouteData.class);
+            item.put("initialChanged", runtime.updateTopicRouteInfoFromNameServer("topic"));
+            List<MessageQueue> queues = new ArrayList<>(org.apache.rocketmq.remoting.rpc.ClientMetadata
+                .topicRouteData2EndpointsForStaticTopic("topic", api.route).keySet());
+            queues.sort(Comparator.naturalOrder());
+            if (queues.isEmpty()) throw new IllegalStateException("transition requires static endpoints");
+            List<Object> before = new ArrayList<>();
+            for (MessageQueue queue : queues) before.add(new TreeMap<>(Map.of(
+                "queue", queue, "broker", runtime.getBrokerNameFromMessageQueue(queue))));
+            item.put("before", before);
+            api.route = com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(ordinary), TopicRouteData.class);
+            item.put("changed", runtime.updateTopicRouteInfoFromNameServer("topic"));
+            List<Object> after = new ArrayList<>();
+            for (MessageQueue queue : queues) after.add(new TreeMap<>(Map.of(
+                "queue", queue, "broker", runtime.getBrokerNameFromMessageQueue(queue))));
+            item.put("after", after);
+            item.put("retained", before.equals(after));
+            item.put("rawRouteHasStaticMappings", runtime.getAnExistTopicRouteData("topic").getTopicQueueMappingByBroker() != null
+                && !runtime.getAnExistTopicRouteData("topic").getTopicQueueMappingByBroker().isEmpty());
+        } finally {
+            java.lang.reflect.Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
+                org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
+            cleanup.setAccessible(true);
+            cleanup.invoke(runtime, original, new IllegalStateException("endpoint fixture teardown"));
+            api.shutdown();
+        }
+        return item;
+    }
+
     public static void main(String[] args) throws Exception {
         String ordinary = "{\"queueDatas\":[{\"brokerName\":\"broker\",\"readQueueNums\":3,\"writeQueueNums\":2,\"perm\":6,\"topicSysFlag\":0}],"
             + "\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master:10911\",\"2\":\"slave:10911\"}}],\"filterServerTable\":{}}";
@@ -88,6 +129,7 @@ public final class RuntimeRouteFixtures {
             input.putAll(com.alibaba.fastjson2.JSON.parseObject(extra));
             inputs.add(input);
         }
+        List<Map<String, Object>> staticInputs = new ArrayList<>();
         for (String scope : new String[] {"__global__", "__custom", "__", null}) {
             Map<String, Object> input = new TreeMap<>(com.alibaba.fastjson2.JSON.parseObject(ordinary));
             input.put("queueDatas", com.alibaba.fastjson2.JSON.parseArray("[{\"brokerName\":\"broker\",\"readQueueNums\":2147483647,\"writeQueueNums\":2147483647,\"perm\":6,\"topicSysFlag\":0}]"));
@@ -98,6 +140,7 @@ public final class RuntimeRouteFixtures {
             newMapping.put("bname", "new-broker"); newMapping.put("epoch", 2); newMapping.put("totalQueues", scope == null ? Integer.MAX_VALUE : 2);
             input.put("topicQueueMappingByBroker", new TreeMap<>(Map.of("old",oldMapping,"new",newMapping)));
             inputs.add(input);
+            staticInputs.add(input);
         }
         for (Map<String, Object> input : inputs) {
             TopicRouteData route = com.alibaba.fastjson2.JSON.parseObject(
@@ -168,6 +211,7 @@ public final class RuntimeRouteFixtures {
         }
         fixture.put("integers", integerCases);
         fixture.put("runtimeNullBrokerMap", runtimeNullBrokerMap());
+        fixture.put("runtimeEmptyEndpointTransition", runtimeEmptyEndpointTransition(staticInputs.get(0), inputs.get(0)));
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
             com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);

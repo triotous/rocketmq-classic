@@ -521,6 +521,59 @@ mod tests {
         empty.broker_datas[0].broker_addrs = Some(BTreeMap::new());
         assert!(cache.replace("topic", empty).unwrap());
     }
+
+    #[test]
+    fn static_to_ordinary_refresh_retains_endpoints_like_invoked_java_runtime() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        let case = &fixture["runtimeEmptyEndpointTransition"];
+        assert_eq!(case["initialChanged"], true);
+        assert_eq!(case["changed"], true);
+        assert_eq!(case["retained"], true);
+        assert_eq!(case["rawRouteHasStaticMappings"], false);
+        let cache = RouteCache::default();
+        cache
+            .replace(
+                "topic",
+                serde_json::from_value(case["initialInput"].clone()).unwrap(),
+            )
+            .unwrap();
+        let before = cache.snapshot().unwrap();
+        assert!(!before.topics["topic"].endpoints.is_empty());
+        let ordinary: TopicRouteData = serde_json::from_value(case["input"].clone()).unwrap();
+        assert!(cache.replace("topic", ordinary.clone()).unwrap());
+        let after = cache.snapshot().unwrap();
+        assert!(!Arc::ptr_eq(&before, &after));
+        assert_eq!(after.topics["topic"].route.as_ref(), &ordinary);
+        assert_eq!(
+            after.topics["topic"].endpoints,
+            before.topics["topic"].endpoints
+        );
+        assert_eq!(after.topics["topic"].publish_queues.len(), 2);
+        assert_eq!(after.topics["topic"].subscribe_queues.len(), 3);
+        for (snapshot, rows) in [(&before, &case["before"]), (&after, &case["after"])] {
+            assert_eq!(
+                snapshot.topics["topic"].endpoints.len(),
+                rows.as_array().unwrap().len()
+            );
+            for row in rows.as_array().unwrap() {
+                let queue: MessageQueue = serde_json::from_value(row["queue"].clone()).unwrap();
+                assert_eq!(snapshot.broker_name(&queue), row["broker"].as_str());
+            }
+        }
+        assert!(
+            before.topics["topic"]
+                .route
+                .topic_queue_mapping_by_broker
+                .is_some()
+        );
+        assert!(
+            after.topics["topic"]
+                .route
+                .topic_queue_mapping_by_broker
+                .is_none()
+        );
+    }
     use rocketmq_classic_protocol::route::{BrokerData, QueueData};
 
     #[test]
