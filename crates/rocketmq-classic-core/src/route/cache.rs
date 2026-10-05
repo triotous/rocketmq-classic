@@ -210,6 +210,16 @@ impl RouteCache {
         route: TopicRouteData,
         force: bool,
     ) -> Result<bool, RuntimeError> {
+        // Java's brokerAddrTable is a ConcurrentHashMap: publishing a null
+        // address map fails, it is not a valid empty Broker. Validate before
+        // any conversion/publication to preserve the coherent native snapshot.
+        if route
+            .broker_datas
+            .iter()
+            .any(|broker| broker.broker_addrs.is_none())
+        {
+            return Err(RuntimeError::InvalidRoute("null broker address map"));
+        }
         // All conversion occurs before the writer lock. Invalid ordered data
         // must not make Phase 1's tolerant helper publish a partial snapshot.
         let mut conversion_route = route.clone();
@@ -483,6 +493,34 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn null_broker_address_map_fails_refresh_without_replacing_coherent_cache() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        let case = &fixture["runtimeNullBrokerMap"];
+        assert_eq!(case["outcome"], "NullPointerException");
+        assert_eq!(case["initialChanged"], true);
+        assert_eq!(case["cachedRouteUnchanged"], true);
+        let cache = RouteCache::default();
+        cache
+            .replace(
+                "topic",
+                serde_json::from_value(case["initialInput"].clone()).unwrap(),
+            )
+            .unwrap();
+        let before = cache.snapshot().unwrap();
+        let route: TopicRouteData = serde_json::from_value(case["input"].clone()).unwrap();
+        assert!(matches!(
+            cache.replace("topic", route.clone()),
+            Err(RuntimeError::InvalidRoute(_))
+        ));
+        assert!(Arc::ptr_eq(&before, &cache.snapshot().unwrap()));
+        // A legitimate empty map remains distinct from null and is accepted.
+        let mut empty = route;
+        empty.broker_datas[0].broker_addrs = Some(BTreeMap::new());
+        assert!(cache.replace("topic", empty).unwrap());
+    }
     use rocketmq_classic_protocol::route::{BrokerData, QueueData};
 
     #[test]
@@ -528,16 +566,22 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/lookup.json")).unwrap();
         for case in fixture["cases"].as_array().unwrap() {
-            let cache = RouteCache::default();
+            let mut snapshot = RouteSnapshot::default();
             if !case["input"].is_null() {
-                cache
-                    .replace(
-                        "topic",
-                        serde_json::from_value(case["input"].clone()).unwrap(),
-                    )
-                    .unwrap();
+                // The Java lookup oracle reflects directly into its raw route
+                // table, including states normal refresh cannot publish. Match
+                // that test setup without bypassing production cache validation.
+                snapshot.topics.insert(
+                    "topic".into(),
+                    Arc::new(TopicSnapshot {
+                        route: Arc::new(serde_json::from_value(case["input"].clone()).unwrap()),
+                        publish_queues: Vec::new(),
+                        subscribe_queues: BTreeSet::new(),
+                        endpoints: BTreeMap::new(),
+                        order_topic: false,
+                    }),
+                );
             }
-            let snapshot = cache.snapshot().unwrap();
             for _ in 0..128 {
                 match case["outcome"].as_str().unwrap() {
                     "NULL" => assert_eq!(snapshot.broker_address_by_topic("topic").unwrap(), None),
