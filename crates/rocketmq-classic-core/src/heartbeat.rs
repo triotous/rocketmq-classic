@@ -107,6 +107,16 @@ fn fingerprint(data: &HeartbeatData) -> Result<i32, RuntimeError> {
 }
 
 impl ClientRuntime {
+    fn prepare_heartbeat_for_send(&self) -> Result<Option<HeartbeatData>, RuntimeError> {
+        // Java's public heartbeat wrappers contain an owner's exception from
+        // prepareHeartbeatData and return false. Keep the directly exposed
+        // preparation capability unchanged; contain failure at the send entry.
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.prepare_heartbeat_data(false)
+        }))
+        .map_or(Ok(None), |result| result.map(Some))
+    }
+
     pub async fn send_heartbeat_to_broker(
         &self,
         id: i64,
@@ -127,7 +137,9 @@ impl ClientRuntime {
         let Ok(_guard) = self.heartbeat.gate.try_lock() else {
             return Ok(false);
         };
-        let mut full = self.prepare_heartbeat_data(false)?;
+        let Some(mut full) = self.prepare_heartbeat_for_send()? else {
+            return Ok(false);
+        };
         if full.producer_data_set.is_empty() && full.consumer_data_set.is_empty() {
             return Ok(false);
         }
@@ -171,7 +183,9 @@ impl ClientRuntime {
         let Ok(_guard) = self.heartbeat.gate.try_lock() else {
             return Ok(false);
         };
-        let mut full = self.prepare_heartbeat_data(false)?;
+        let Some(mut full) = self.prepare_heartbeat_for_send()? else {
+            return Ok(false);
+        };
         if full.producer_data_set.is_empty() && full.consumer_data_set.is_empty() {
             return Ok(false);
         }

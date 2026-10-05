@@ -672,3 +672,73 @@ async fn rebalance_wrapper_uses_serial_v1_even_when_concurrent_heartbeat_is_enab
         runtime.remoting().shutdown().await;
     }
 }
+
+#[tokio::test]
+async fn preparation_failure_returns_false_without_socket_and_releases_heartbeat_gate() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    struct Failing(AtomicBool);
+    impl ConsumerRuntime for Failing {
+        fn heartbeat_data(&self) -> ConsumerData {
+            assert!(
+                !self.0.load(Ordering::SeqCst),
+                "consumer preparation failure"
+            );
+            ConsumerData {
+                group_name: "consumer".into(),
+                ..Default::default()
+            }
+        }
+    }
+    for v2 in [false, true] {
+        let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = broker.local_addr().unwrap().to_string();
+        let mut config = ClientConfig::new(format!("failed-preparation-{v2}"));
+        config.use_heartbeat_v2 = v2;
+        config.enable_heartbeat_channel_event_listener = false;
+        let runtime = runtime(config, std::slice::from_ref(&address)).await;
+        let consumer = Arc::new(Failing(AtomicBool::new(true)));
+        runtime
+            .register_consumer("consumer", consumer.clone())
+            .await
+            .unwrap();
+        assert!(!runtime.send_heartbeat_to_all_brokers().await.unwrap());
+        for rebalance in [false, true] {
+            assert!(
+                !runtime
+                    .send_heartbeat_to_all_brokers_with_rebalance(rebalance)
+                    .await
+                    .unwrap()
+            );
+        }
+        assert!(
+            !runtime
+                .send_heartbeat_to_broker(0, "broker", &address)
+                .await
+                .unwrap()
+        );
+        assert!(
+            !runtime
+                .send_heartbeat_to_broker_with_lock_mode(0, "broker", &address, false)
+                .await
+                .unwrap()
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), broker.accept())
+                .await
+                .is_err()
+        );
+        consumer.0.store(false, Ordering::SeqCst);
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = broker.accept().await.unwrap();
+            let command = read(&mut stream).await;
+            let body: HeartbeatData =
+                serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
+            assert_eq!(body.consumer_data_set.len(), 1);
+            assert!(!body.is_without_sub);
+            respond(&mut stream, &command, None, v2, false).await;
+        });
+        assert!(runtime.send_heartbeat_to_all_brokers().await.unwrap());
+        peer.await.unwrap();
+        runtime.remoting().shutdown().await;
+    }
+}
