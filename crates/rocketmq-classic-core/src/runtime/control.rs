@@ -938,6 +938,190 @@ mod tests {
         }
     }
 
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn p6_v03_every_failure_closes_pending_socket_and_drops_owned_work() {
+        use bytes::BytesMut;
+        use rocketmq_classic_remoting::{
+            RemotingCommand, TransportError,
+            codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
+        };
+        use std::sync::atomic::{AtomicBool, AtomicUsize};
+        use tokio::{io::AsyncReadExt, net::TcpListener};
+
+        struct Consumer;
+        impl ConsumerRuntime for Consumer {
+            fn heartbeat_data(&self) -> rocketmq_classic_protocol::heartbeat::ConsumerData {
+                Default::default()
+            }
+        }
+        struct Deferred(Arc<AtomicUsize>);
+        impl Drop for Deferred {
+            fn drop(&mut self) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+        // Source-owned effects: group, eight inbound slots, transport,
+        // four/five schedules, two pull workers and rebalance worker.
+        for discovery in [false, true] {
+            let mut points = vec![1, 2, 3, 4, 5, 6, 10, 11, 12, 13, 14, 15, 16, 17, 20, 21, 22];
+            if discovery {
+                points.push(7);
+            }
+            // Also exercise real scheduling failures, rather than only the
+            // private injected error: zero/negative for each public period.
+            points.extend(30..36);
+            for point in points {
+                let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let address = listener.local_addr().unwrap().to_string();
+                let (seen, received) = oneshot::channel();
+                let peer = tokio::spawn(async move {
+                    let (mut socket, _) = listener.accept().await.unwrap();
+                    let mut length = [0; 4];
+                    socket.read_exact(&mut length).await.unwrap();
+                    let mut bytes = BytesMut::from(&length[..]);
+                    bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
+                    socket.read_exact(&mut bytes[4..]).await.unwrap();
+                    let command = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
+                        .unwrap()
+                        .unwrap();
+                    assert_eq!(command.code, 999_999);
+                    seen.send(()).unwrap(); // Deliberately never answer this RPC.
+                    let mut byte = [0];
+                    tokio::select! {
+                        result = socket.read(&mut byte) => assert_eq!(result.unwrap(), 0),
+                        result = listener.accept() => panic!("rollback opened an extra socket: {result:?}"),
+                    }
+                });
+                let manager = ClientRuntimeManager::with_top_addressing(Arc::new(BlankAddressing));
+                let mut config = ClientConfig::new(format!("p6-v03-{discovery}-{point}"));
+                config.namesrv_addr = (!discovery).then(String::new);
+                config.enable_heartbeat_channel_event_listener = false;
+                if point >= 30 {
+                    let invalid = if point % 2 == 0 { 0 } else { -1 };
+                    match (point - 30) / 2 {
+                        0 => config.poll_name_server_interval = invalid,
+                        1 => config.heartbeat_broker_interval = invalid,
+                        _ => config.persist_consumer_offset_interval = invalid,
+                    }
+                }
+                let runtime = manager.get_or_create(&config).await.unwrap();
+                let producer: Arc<dyn ProducerRuntime> = Arc::new(InnerProducer);
+                let consumer: Arc<dyn ConsumerRuntime> = Arc::new(Consumer);
+                let producer_lease = runtime
+                    .register_producer("producer", producer.clone())
+                    .await
+                    .unwrap();
+                let consumer_lease = runtime
+                    .register_consumer("consumer", consumer.clone())
+                    .await
+                    .unwrap();
+                let admin_lease = runtime.register_admin("admin").await.unwrap();
+                let dropped = Arc::new(AtomicUsize::new(0));
+                let executed = Arc::new(AtomicBool::new(false));
+                let marker = Deferred(dropped.clone());
+                let execution = executed.clone();
+                runtime
+                    .execute_task_later(
+                        async move {
+                            let _marker = marker;
+                            execution.store(true, Ordering::SeqCst);
+                        },
+                        60_000,
+                    )
+                    .unwrap();
+                runtime.rebalance_later(60_000).unwrap();
+                let snapshot = runtime.route_snapshot().unwrap();
+                // Exercise rollback of an already active lower socket/request,
+                // not only bookkeeping on a transport with no connections.
+                runtime.remoting().start().unwrap();
+                let request_runtime = runtime.clone();
+                let pending = tokio::spawn(async move {
+                    request_runtime
+                        .remoting()
+                        .invoke_sync(
+                            &address,
+                            RemotingCommand {
+                                code: 999_999,
+                                ..Default::default()
+                            },
+                            Duration::from_secs(60),
+                        )
+                        .await
+                });
+                tokio::time::timeout(Duration::from_secs(5), received)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                runtime
+                    .control
+                    .fault
+                    .store(if point >= 30 { 0 } else { point }, Ordering::Release);
+                let result = tokio::time::timeout(Duration::from_secs(5), runtime.start())
+                    .await
+                    .unwrap();
+                if point >= 30 {
+                    assert!(matches!(result, Err(RuntimeError::InvalidSchedule)));
+                } else {
+                    assert!(matches!(result, Err(RuntimeError::StartupFailure)));
+                }
+                assert_eq!(
+                    tokio::time::timeout(Duration::from_secs(5), pending)
+                        .await
+                        .unwrap()
+                        .unwrap(),
+                    Err(TransportError::Shutdown)
+                );
+                tokio::time::timeout(Duration::from_secs(5), peer)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(runtime.state(), RuntimeState::Failed);
+                assert!(runtime.control.task.lock().unwrap().is_none());
+                assert_eq!(runtime.periodic_probe.live.load(Ordering::SeqCst), 0);
+                assert_eq!(runtime.rebalance_probe.live.load(Ordering::SeqCst), 0);
+                assert_eq!(runtime.pull_probe.live.load(Ordering::SeqCst), 0);
+                assert_eq!(dropped.load(Ordering::SeqCst), 1);
+                assert!(!executed.load(Ordering::SeqCst));
+                assert!(runtime.pull.is_empty());
+                assert!(runtime.rebalance.next_due().is_none());
+                assert_eq!(
+                    runtime.remoting().with_processor_table(|table| table.len()),
+                    0
+                );
+                assert!(Arc::ptr_eq(&snapshot, &runtime.route_snapshot().unwrap()));
+                assert!(runtime.select_producer("producer").unwrap().is_none());
+                assert!(runtime.select_consumer("consumer").unwrap().is_none());
+                assert!(!runtime.groups.has_active_users(INNER_PRODUCER).unwrap());
+                assert!(
+                    !runtime
+                        .unregister_producer(&producer_lease, Instant::now())
+                        .await
+                        .unwrap()
+                );
+                assert!(
+                    !runtime
+                        .unregister_consumer(&consumer_lease, Instant::now())
+                        .await
+                        .unwrap()
+                );
+                assert!(!runtime.unregister_admin(&admin_lease).await.unwrap());
+                assert_eq!(runtime.remoting().start(), Err(TransportError::Shutdown));
+                let replacement = manager.get_or_create(&config).await.unwrap();
+                assert!(!Arc::ptr_eq(&runtime, &replacement));
+                // Old failure/removal identity cannot evict that replacement.
+                assert!(
+                    !manager
+                        .remove_client_factory(runtime.client_id(), &runtime)
+                        .unwrap()
+                );
+                assert!(Arc::ptr_eq(
+                    &replacement,
+                    &manager.get_or_create(&config).await.unwrap()
+                ));
+            }
+        }
+    }
+
     #[tokio::test]
     async fn abandoned_registration_delivery_rolls_back_through_the_owned_worker() {
         let manager = ClientRuntimeManager::new();
