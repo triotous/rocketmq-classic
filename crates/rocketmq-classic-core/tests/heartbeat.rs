@@ -605,3 +605,70 @@ async fn concurrent_v1_uses_parallel_peers_and_busy_heartbeat_gate_skips_a_round
     );
     runtime.remoting().shutdown().await;
 }
+
+#[tokio::test]
+async fn rebalance_wrapper_uses_serial_v1_even_when_concurrent_heartbeat_is_enabled() {
+    for is_rebalance in [false, true] {
+        let master = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let slave = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addresses = [
+            master.local_addr().unwrap().to_string(),
+            slave.local_addr().unwrap().to_string(),
+        ];
+        let (ready, received) = tokio::sync::oneshot::channel();
+        let (release, released) = tokio::sync::oneshot::channel();
+        let first = tokio::spawn(async move {
+            let (mut stream, _) = master.accept().await.unwrap();
+            let command = read(&mut stream).await;
+            ready.send(()).unwrap();
+            released.await.unwrap();
+            respond(&mut stream, &command, None, false, false).await;
+        });
+        let mut config = ClientConfig::new(format!("serial-v1-wrapper-{is_rebalance}"));
+        config.enable_concurrent_heartbeat = true;
+        config.concurrent_heartbeat_thread_pool_size = 2;
+        let runtime = runtime(config, &addresses).await;
+        let consumer = Arc::new(Consumer(Mutex::new(SubscriptionData::default())));
+        runtime
+            .register_consumer("consumer", consumer.clone())
+            .await
+            .unwrap();
+        let sending = {
+            let runtime = runtime.clone();
+            tokio::spawn(async move {
+                runtime
+                    .send_heartbeat_to_all_brokers_with_rebalance(is_rebalance)
+                    .await
+            })
+        };
+        tokio::time::timeout(Duration::from_secs(2), received)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), slave.accept())
+                .await
+                .is_err(),
+            "V2 wrapper's V1 fallback must not execute concurrently"
+        );
+        release.send(()).unwrap();
+        let (mut stream, _) = tokio::time::timeout(Duration::from_secs(2), slave.accept())
+            .await
+            .unwrap()
+            .unwrap();
+        let command = read(&mut stream).await;
+        let body: HeartbeatData = serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
+        assert_eq!(body.heartbeat_fingerprint, 0);
+        assert!(!body.is_without_sub);
+        respond(&mut stream, &command, None, false, false).await;
+        assert!(
+            tokio::time::timeout(Duration::from_secs(2), sending)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap()
+        );
+        first.await.unwrap();
+        runtime.remoting().shutdown().await;
+    }
+}

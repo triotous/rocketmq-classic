@@ -151,13 +151,22 @@ impl ClientRuntime {
             .await
     }
     pub async fn send_heartbeat_to_all_brokers(&self) -> Result<bool, RuntimeError> {
-        self.send_heartbeat_to_all_brokers_with_rebalance(false)
-            .await
+        self.send_heartbeat_round(false, true).await
     }
 
     pub async fn send_heartbeat_to_all_brokers_with_rebalance(
         &self,
         is_rebalance: bool,
+    ) -> Result<bool, RuntimeError> {
+        // Java WithLockV2 uses serial V1 as its fallback, even when the
+        // ordinary WithLock entry has concurrent V1 configured.
+        self.send_heartbeat_round(is_rebalance, false).await
+    }
+
+    async fn send_heartbeat_round(
+        &self,
+        is_rebalance: bool,
+        allow_concurrent_v1: bool,
     ) -> Result<bool, RuntimeError> {
         let Ok(_guard) = self.heartbeat.gate.try_lock() else {
             return Ok(false);
@@ -202,7 +211,7 @@ impl ClientRuntime {
                     .map(|(_, address)| (broker.as_str(), address.as_str()))
             })
             .collect::<Vec<_>>();
-        if !v2 && self.config().enable_concurrent_heartbeat {
+        if !v2 && allow_concurrent_v1 && self.config().enable_concurrent_heartbeat {
             if peers.is_empty() {
                 return Ok(false);
             }
