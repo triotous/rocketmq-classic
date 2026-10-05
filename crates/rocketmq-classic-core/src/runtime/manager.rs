@@ -26,6 +26,7 @@ struct Entry {
 #[derive(Clone, Default)]
 pub struct ClientRuntimeManager {
     entries: Arc<Mutex<Entries>>,
+    top_addressing: Option<Arc<dyn crate::namesrv::TopAddressing>>,
 }
 
 pub(super) struct ManagerLink(Weak<Mutex<Entries>>);
@@ -35,13 +36,24 @@ impl ManagerLink {
         let Some(entries) = self.0.upgrade() else {
             return Ok(false);
         };
-        ClientRuntimeManager { entries }.remove_client_factory(runtime.client_id(), runtime)
+        ClientRuntimeManager {
+            entries,
+            top_addressing: None,
+        }
+        .remove_client_factory(runtime.client_id(), runtime)
     }
 }
 
 impl ClientRuntimeManager {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn with_top_addressing(provider: Arc<dyn crate::namesrv::TopAddressing>) -> Self {
+        Self {
+            entries: Arc::default(),
+            top_addressing: Some(provider),
+        }
     }
 
     pub async fn get_or_create(
@@ -56,12 +68,17 @@ impl ClientRuntimeManager {
         config: &ClientConfig,
         hook: Option<Arc<dyn RpcHook>>,
     ) -> Result<Arc<ClientRuntime>, RuntimeError> {
-        self.get_or_create_inner(config, hook, |entry| async move {
-            ClientRuntime::construct(
-                entry.config.clone_client_config(),
-                &entry.properties,
-                entry.hook.clone(),
-            )
+        let provider = self.top_addressing.clone();
+        self.get_or_create_inner(config, hook, move |entry| {
+            let provider = provider.clone();
+            async move {
+                ClientRuntime::construct_with_top_addressing(
+                    entry.config.clone_client_config(),
+                    &entry.properties,
+                    entry.hook.clone(),
+                    provider,
+                )
+            }
         })
         .await
     }
@@ -78,7 +95,11 @@ impl ClientRuntimeManager {
     {
         let client_id = config.build_client_id();
         let properties: HashMap<_, _> = std::env::vars()
-            .filter(|(key, _)| key.starts_with("tls."))
+            .filter(|(key, _)| {
+                key.starts_with("tls.")
+                    || key == "rocketmq.namesrv.domain"
+                    || key == "rocketmq.namesrv.domain.subgroup"
+            })
             .collect();
         loop {
             let entry = {

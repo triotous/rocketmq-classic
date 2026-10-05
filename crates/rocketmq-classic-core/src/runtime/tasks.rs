@@ -31,6 +31,7 @@ impl Drop for LiveTask {
 
 #[derive(Clone, Copy, Debug)]
 pub(super) enum TaskKind {
+    Discovery,
     Route,
     Heartbeat,
     Persist,
@@ -48,6 +49,13 @@ pub(super) fn schedules(
     config: &crate::config::ClientConfig,
 ) -> Result<Vec<Schedule>, RuntimeError> {
     let mut result = Vec::new();
+    if config.namesrv_addr.is_none() {
+        result.push(Schedule {
+            kind: TaskKind::Discovery,
+            delay: Duration::from_secs(10),
+            period: Duration::from_secs(120),
+        });
+    }
     for (kind, delay, period) in [
         (TaskKind::Route, 10, config.poll_name_server_interval),
         (TaskKind::Heartbeat, 1_000, config.heartbeat_broker_interval),
@@ -247,9 +255,9 @@ mod tests {
     }
 
     fn runtime() -> Arc<ClientRuntime> {
-        Arc::new(
-            ClientRuntime::construct(ClientConfig::new("timer"), &HashMap::new(), None).unwrap(),
-        )
+        let mut config = ClientConfig::new("timer");
+        config.namesrv_addr = Some(String::new());
+        Arc::new(ClientRuntime::construct(config, &HashMap::new(), None).unwrap())
     }
 
     async fn settle() {

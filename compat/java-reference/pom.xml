@@ -31,6 +31,18 @@
         <configuration><mainClass>compat.Main</mainClass></configuration>
         <executions>
           <execution>
+            <id>verify-runtime-discovery-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.RuntimeDiscoveryFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/runtime/discovery.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-runtime-heartbeat-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

@@ -12,6 +12,8 @@ pub use registry::{ConsumerRuntime, GroupLease, ProducerRuntime};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RuntimeError {
+    #[error("NameServer addressing callback registration panicked")]
+    AddressingCallbackFailed,
     #[error("heartbeat encoding failed: {0}")]
     HeartbeatEncoding(serde_json::Error),
     #[error("periodic interval must be positive")]

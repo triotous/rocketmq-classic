@@ -26,15 +26,27 @@ pub struct ClientRuntime {
     pub(super) control: ControlPlane,
     manager: OnceLock<ManagerLink>,
     pub(crate) heartbeat: crate::heartbeat::HeartbeatState,
+    addressing: Arc<dyn crate::namesrv::TopAddressing>,
+    discovery: Arc<crate::namesrv::DiscoveryState>,
     #[cfg(test)]
     pub(super) periodic_probe: Arc<super::tasks::TaskProbe>,
 }
 
 impl ClientRuntime {
+    #[cfg(test)]
     pub(super) fn construct(
         config: ClientConfig,
         properties: &HashMap<String, String>,
         hook: Option<Arc<dyn RpcHook>>,
+    ) -> Result<Self, RuntimeError> {
+        Self::construct_with_top_addressing(config, properties, hook, None)
+    }
+
+    pub(super) fn construct_with_top_addressing(
+        config: ClientConfig,
+        properties: &HashMap<String, String>,
+        hook: Option<Arc<dyn RpcHook>>,
+        provider: Option<Arc<dyn crate::namesrv::TopAddressing>>,
     ) -> Result<Self, RuntimeError> {
         if config.enable_concurrent_heartbeat && config.concurrent_heartbeat_thread_pool_size <= 0 {
             return Err(
@@ -65,12 +77,24 @@ impl ClientRuntime {
             ..TransportConfig::default()
         })?;
         if let Some(addresses) = &config.namesrv_addr {
-            remoting
-                .update_name_server_address_list(addresses.split(';').map(str::to_owned).collect());
+            remoting.update_name_server_address_list(crate::namesrv::split_addresses(addresses));
         }
         if let Some(hook) = hook {
             remoting.add_rpc_hook(hook);
         }
+        let mut addressing = crate::namesrv::DefaultTopAddressing::new(
+            crate::namesrv::ws_addr(properties),
+            config.unit_name.clone(),
+        );
+        if let Some(provider) = provider {
+            addressing = addressing.with_provider(provider);
+        }
+        let addressing: Arc<dyn crate::namesrv::TopAddressing> = Arc::new(addressing);
+        let discovery = crate::namesrv::DiscoveryState::new(remoting.clone());
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            addressing.register_change_callback(discovery.callback());
+        }))
+        .map_err(|_| RuntimeError::AddressingCallbackFailed)?;
         Ok(Self {
             client_id: config.build_client_id(),
             config,
@@ -81,6 +105,8 @@ impl ClientRuntime {
             control: ControlPlane::default(),
             manager: OnceLock::new(),
             heartbeat: crate::heartbeat::HeartbeatState::default(),
+            addressing,
+            discovery,
             #[cfg(test)]
             periodic_probe: Arc::default(),
         })
@@ -100,6 +126,23 @@ impl ClientRuntime {
 
     pub fn remoting(&self) -> &RemotingClient {
         &self.remoting
+    }
+
+    pub async fn fetch_name_server_addr(&self) -> Option<String> {
+        use std::{future::Future, task::Poll};
+        let mut fetch = Box::pin(async { self.addressing.fetch_ns_addr().await });
+        let addresses = std::future::poll_fn(|context| {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                fetch.as_mut().poll(context)
+            }))
+            .unwrap_or(Poll::Ready(None))
+        })
+        .await;
+        self.discovery.fetched(addresses)
+    }
+
+    pub fn name_server_addr(&self) -> Option<String> {
+        self.discovery.current()
     }
 
     pub fn route_snapshot(&self) -> Result<Arc<crate::route::RouteSnapshot>, RuntimeError> {
@@ -150,6 +193,9 @@ impl ClientRuntime {
     ) -> Result<(), RuntimeError> {
         use super::tasks::TaskKind;
         match kind {
+            TaskKind::Discovery => {
+                self.fetch_name_server_addr().await;
+            }
             TaskKind::Route => {
                 let groups = self.groups.snapshot()?;
                 let mut topics = std::collections::BTreeSet::new();

@@ -158,7 +158,7 @@ impl ClientConfig {
 
 // Character.isWhitespace, used by Apache StringUtils.isBlank. Rust Unicode
 // White_Space also includes NBSP/NEL; Java deliberately excludes those.
-fn java_whitespace(value: char) -> bool {
+pub(crate) fn java_whitespace(value: char) -> bool {
     matches!(value, '\u{0009}'..='\u{000d}' | '\u{001c}'..='\u{0020}'
         | '\u{1680}' | '\u{2000}'..='\u{2006}' | '\u{2008}'..='\u{200a}'
         | '\u{2028}' | '\u{2029}' | '\u{205f}' | '\u{3000}')

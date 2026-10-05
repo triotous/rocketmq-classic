@@ -18,11 +18,17 @@ use tokio::{
 struct Producer;
 impl ProducerRuntime for Producer {}
 
+fn explicit_config(ip: &str) -> ClientConfig {
+    let mut config = ClientConfig::new(ip);
+    config.namesrv_addr = Some(String::new());
+    config
+}
+
 #[tokio::test]
 async fn shared_shutdown_uses_registration_identity_not_runtime_arc_counts() {
     let manager = ClientRuntimeManager::new();
     let runtime = manager
-        .get_or_create(&ClientConfig::new("192.0.2.6"))
+        .get_or_create(&explicit_config("192.0.2.6"))
         .await
         .unwrap();
     let producer = Arc::new(Producer);
@@ -55,7 +61,7 @@ async fn shared_shutdown_uses_registration_identity_not_runtime_arc_counts() {
         Err(RuntimeError::InvalidState(RuntimeState::Stopped))
     ));
     let replacement = manager
-        .get_or_create(&ClientConfig::new("192.0.2.6"))
+        .get_or_create(&explicit_config("192.0.2.6"))
         .await
         .unwrap();
     assert!(!Arc::ptr_eq(&runtime, &replacement));
@@ -65,7 +71,7 @@ async fn shared_shutdown_uses_registration_identity_not_runtime_arc_counts() {
 async fn many_concurrent_start_calls_observe_one_serialized_transition() {
     let manager = ClientRuntimeManager::new();
     let runtime = manager
-        .get_or_create(&ClientConfig::new("192.0.2.6"))
+        .get_or_create(&explicit_config("192.0.2.6"))
         .await
         .unwrap();
     let mut calls = Vec::new();
@@ -86,7 +92,7 @@ async fn many_concurrent_start_calls_observe_one_serialized_transition() {
 async fn concurrent_shutdown_callers_join_the_same_terminal_control_task() {
     let manager = ClientRuntimeManager::new();
     let runtime = manager
-        .get_or_create(&ClientConfig::new("shutdown-race"))
+        .get_or_create(&explicit_config("shutdown-race"))
         .await
         .unwrap();
     runtime.start().await.unwrap();

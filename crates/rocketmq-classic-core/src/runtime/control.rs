@@ -275,13 +275,16 @@ async fn run(
                 }
                 runtime.control.set_state(RuntimeState::Starting);
                 let producer: Arc<dyn ProducerRuntime> = Arc::new(InnerProducer);
-                let result = (|| {
+                let result = async {
                     inner_lease = Some(
                         runtime
                             .groups
                             .register_producer(INNER_PRODUCER, producer.clone())?,
                     );
                     runtime.control.checkpoint(1)?;
+                    if runtime.config().namesrv_addr.is_none() {
+                        runtime.fetch_name_server_addr().await;
+                    }
                     runtime.remoting().start()?;
                     runtime.control.checkpoint(2)?;
                     let specs = super::tasks::schedules(runtime.config())?;
@@ -293,7 +296,8 @@ async fn run(
                         runtime.control.checkpoint(3 + index as u8)?;
                     }
                     Ok(())
-                })();
+                }
+                .await;
                 match result {
                     Ok(()) => {
                         inner_producer = Some(producer);
@@ -369,13 +373,48 @@ mod tests {
     use super::*;
     use crate::{config::ClientConfig, runtime::ClientRuntimeManager};
 
+    struct BlankAddressing;
+    impl crate::namesrv::TopAddressing for BlankAddressing {
+        fn fetch_ns_addr(
+            &self,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<String>> + Send + '_>>
+        {
+            Box::pin(async { Some(" ".into()) })
+        }
+    }
+
+    #[tokio::test]
+    async fn discovery_schedule_failure_joins_all_owned_work() {
+        for point in 1..=7 {
+            let manager = ClientRuntimeManager::with_top_addressing(Arc::new(BlankAddressing));
+            let config = ClientConfig::new("discovery-failure");
+            let runtime = manager.get_or_create(&config).await.unwrap();
+            runtime.control.fault.store(point, Ordering::SeqCst);
+            assert!(matches!(
+                runtime.start().await,
+                Err(RuntimeError::StartupFailure)
+            ));
+            assert_eq!(runtime.state(), RuntimeState::Failed);
+            assert_eq!(runtime.periodic_probe.live.load(Ordering::SeqCst), 0);
+            assert!(runtime.control.task.lock().unwrap().is_none());
+            assert!(
+                runtime
+                    .prepare_heartbeat_data(false)
+                    .unwrap()
+                    .producer_data_set
+                    .is_empty()
+            );
+            let replacement = manager.get_or_create(&config).await.unwrap();
+            assert!(!Arc::ptr_eq(&runtime, &replacement));
+        }
+    }
+
     #[tokio::test]
     async fn concurrent_starters_own_exactly_one_periodic_worker_and_join_it() {
         let manager = ClientRuntimeManager::new();
-        let runtime = manager
-            .get_or_create(&ClientConfig::new("one-task-set"))
-            .await
-            .unwrap();
+        let mut config = ClientConfig::new("one-task-set");
+        config.namesrv_addr = Some(String::new());
+        let runtime = manager.get_or_create(&config).await.unwrap();
         let mut calls = Vec::new();
         for _ in 0..64 {
             let runtime = runtime.clone();
@@ -396,7 +435,8 @@ mod tests {
     async fn every_initial_startup_failure_cleans_transport_groups_control_and_manager_identity() {
         for point in [1, 2, 3, 4, 5, 6] {
             let manager = ClientRuntimeManager::new();
-            let config = ClientConfig::new(format!("failure-{point}"));
+            let mut config = ClientConfig::new(format!("failure-{point}"));
+            config.namesrv_addr = Some(String::new());
             let runtime = manager.get_or_create(&config).await.unwrap();
             let producer: Arc<dyn ProducerRuntime> = Arc::new(InnerProducer);
             let lease = runtime
@@ -436,7 +476,8 @@ mod tests {
     #[tokio::test]
     async fn abandoned_registration_delivery_rolls_back_through_the_owned_worker() {
         let manager = ClientRuntimeManager::new();
-        let config = ClientConfig::new("delivery-cancellation");
+        let mut config = ClientConfig::new("delivery-cancellation");
+        config.namesrv_addr = Some(String::new());
         let runtime = manager.get_or_create(&config).await.unwrap();
         let sender = runtime.control.sender(&runtime).unwrap();
         let producer: Arc<dyn ProducerRuntime> = Arc::new(InnerProducer);
