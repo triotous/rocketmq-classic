@@ -77,6 +77,10 @@ public final class Main {
     }
 
     public static void main(String[] args) throws Exception {
+        if (args.length > 0 && "runtime-hook-fixtures".equals(args[0])) {
+            RuntimeHookFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "runtime-discovery-fixtures".equals(args[0])) {
             RuntimeDiscoveryFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;

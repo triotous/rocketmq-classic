@@ -1,4 +1,5 @@
 mod control;
+mod hooks;
 mod inbound;
 #[path = "runtime.rs"]
 mod instance;

@@ -207,6 +207,8 @@ fn same_hook(left: &Option<Arc<dyn RpcHook>>, right: &Option<Arc<dyn RpcHook>>) 
 
 fn compatible(left: &ClientConfig, right: &ClientConfig) -> bool {
     left.namesrv_addr == right.namesrv_addr
+        && left.namespace_v2 == right.namespace_v2
+        && left.enable_stream_request_type == right.enable_stream_request_type
         && left.use_tls == right.use_tls
         && left.socks_proxy_config == right.socks_proxy_config
         && left.client_callback_executor_threads == right.client_callback_executor_threads

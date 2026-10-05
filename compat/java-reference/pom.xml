@@ -91,6 +91,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-runtime-hook-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.RuntimeHookFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/runtime/hooks.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-java-invoked-pop-ack-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

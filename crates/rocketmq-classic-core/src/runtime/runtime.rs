@@ -99,9 +99,7 @@ impl ClientRuntime {
         if let Some(addresses) = config.get_namesrv_addr() {
             remoting.update_name_server_address_list(crate::namesrv::split_addresses(&addresses));
         }
-        if let Some(hook) = hook {
-            remoting.add_rpc_hook(hook);
-        }
+        super::hooks::register(&remoting, &config, hook);
         let mut addressing = crate::namesrv::DefaultTopAddressing::new(
             crate::namesrv::ws_addr(properties),
             config.unit_name.clone(),
@@ -115,10 +113,11 @@ impl ClientRuntime {
             addressing.register_change_callback(discovery.callback());
         }))
         .map_err(|_| RuntimeError::AddressingCallbackFailed)?;
+        let language = config.language;
         Ok(Self {
             client_id: config.build_client_id(),
             config,
-            api: MQClientApi::new(remoting.clone()),
+            api: MQClientApi::with_language(remoting.clone(), language),
             remoting,
             routes: crate::route::RouteCache::default(),
             namesrv_gate: tokio::sync::Mutex::new(()),
