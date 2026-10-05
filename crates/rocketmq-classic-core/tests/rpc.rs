@@ -133,6 +133,16 @@ async fn broker_methods_use_one_attempt_and_honor_deadline() {
         )
     );
     broker_attempt!(
+        "pull_message_future",
+        request::PULL_MESSAGE,
+        false,
+        |api, addr, deadline| api.pull_message_future(
+            addr,
+            &PullMessageRequestHeader::default(),
+            deadline
+        )
+    );
+    broker_attempt!(
         "query_consumer_offset",
         request::QUERY_CONSUMER_OFFSET,
         false,

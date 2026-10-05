@@ -29,22 +29,47 @@ impl MQClientApi {
         body: Option<Vec<u8>>,
         deadline: Instant,
     ) -> Result<RemotingCommand, RpcError> {
+        self.request_with_mode(addr, code, header, body, deadline, true)
+            .await
+    }
+
+    async fn request_future<H: CommandHeader>(
+        &self,
+        addr: &str,
+        code: i32,
+        header: &H,
+        body: Option<Vec<u8>>,
+        deadline: Instant,
+    ) -> Result<RemotingCommand, RpcError> {
+        self.request_with_mode(addr, code, header, body, deadline, false)
+            .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn request_with_mode<H: CommandHeader>(
+        &self,
+        addr: &str,
+        code: i32,
+        header: &H,
+        body: Option<Vec<u8>>,
+        deadline: Instant,
+        sync: bool,
+    ) -> Result<RemotingCommand, RpcError> {
         let mut fields = HeaderMap::new();
         header.encode_fields(&mut fields);
-        let reply = self
-            .remoting
-            .invoke(
-                addr,
-                RemotingCommand {
-                    code,
-                    ext_fields: Some(fields),
-                    body,
-                    ..RemotingCommand::default()
-                },
-                deadline,
-            )
-            .await?;
-        Ok(reply)
+        let command = RemotingCommand {
+            code,
+            ext_fields: Some(fields),
+            body,
+            ..Default::default()
+        };
+        Ok(if sync {
+            self.remoting
+                .invoke_sync_with_deadline(addr, command, deadline)
+                .await?
+        } else {
+            self.remoting.invoke(addr, command, deadline).await?
+        })
     }
 
     pub async fn oneway<H: CommandHeader>(

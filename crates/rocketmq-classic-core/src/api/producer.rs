@@ -99,16 +99,24 @@ impl MQClientApi {
         }
         let reply = match kind {
             SendKind::V1 | SendKind::ReplyV1 => {
-                self.request(addr, code, header, Some(body), deadline)
-                    .await?
+                self.request_with_mode(
+                    addr,
+                    code,
+                    header,
+                    Some(body),
+                    deadline,
+                    mode == SendMode::Sync,
+                )
+                .await?
             }
             _ => {
-                self.request(
+                self.request_with_mode(
                     addr,
                     code,
                     &SendMessageRequestHeaderV2::from_v1(header),
                     Some(body),
                     deadline,
+                    mode == SendMode::Sync,
                 )
                 .await?
             }

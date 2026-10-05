@@ -23,7 +23,7 @@ impl MQClientApi {
         .encode_fields(&mut fields);
         let (reply, peer) = self
             .remoting
-            .invoke_name_server_with_peer(
+            .invoke_name_server_sync_with_peer(
                 RemotingCommand {
                     code: request::GET_ROUTEINFO_BY_TOPIC,
                     ext_fields: Some(fields),

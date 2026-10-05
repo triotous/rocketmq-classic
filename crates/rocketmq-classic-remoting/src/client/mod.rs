@@ -726,6 +726,24 @@ impl RemotingClient {
         command: RemotingCommand,
         deadline: Instant,
     ) -> Result<(RemotingCommand, String), TransportError> {
+        self.invoke_name_server_mode(command, deadline, false).await
+    }
+
+    /// Java invokeSync(NameServer): retain the original absolute wait deadline.
+    pub async fn invoke_name_server_sync_with_peer(
+        &self,
+        command: RemotingCommand,
+        deadline: Instant,
+    ) -> Result<(RemotingCommand, String), TransportError> {
+        self.invoke_name_server_mode(command, deadline, true).await
+    }
+
+    async fn invoke_name_server_mode(
+        &self,
+        command: RemotingCommand,
+        deadline: Instant,
+        sync: bool,
+    ) -> Result<(RemotingCommand, String), TransportError> {
         if !self.inner.started.load(Ordering::Acquire) {
             return Err(TransportError::NotStarted);
         }
@@ -801,7 +819,13 @@ impl RemotingClient {
             if !selected {
                 continue;
             }
-            match self.invoke(address, command, deadline).await {
+            let result = if sync {
+                self.invoke_sync_with_deadline(address, command, deadline)
+                    .await
+            } else {
+                self.invoke(address, command, deadline).await
+            };
+            match result {
                 Ok(response) => {
                     let nameservers = self.inner.nameservers.lock().unwrap();
                     let connection_is_current =
@@ -1177,11 +1201,34 @@ impl RemotingClient {
         command: RemotingCommand,
         timeout: std::time::Duration,
     ) -> Result<RemotingCommand, TransportError> {
+        self.invoke_sync_deadline_inner(addr, command, Instant::now() + timeout, timeout)
+            .await
+    }
+
+    /// Absolute-deadline form of Java synchronous invocation for typed RPCs.
+    pub async fn invoke_sync_with_deadline(
+        &self,
+        addr: &str,
+        command: RemotingCommand,
+        deadline: Instant,
+    ) -> Result<RemotingCommand, TransportError> {
+        let timeout = deadline.saturating_duration_since(Instant::now());
+        self.invoke_sync_deadline_inner(addr, command, deadline, timeout)
+            .await
+    }
+
+    async fn invoke_sync_deadline_inner(
+        &self,
+        addr: &str,
+        command: RemotingCommand,
+        deadline: Instant,
+        timeout: std::time::Duration,
+    ) -> Result<RemotingCommand, TransportError> {
         let mut admission = None;
         self.invoke_inner(
             addr,
             command,
-            Instant::now() + timeout,
+            deadline,
             InvokeOptions {
                 admitted: false,
                 retried_go_away: false,

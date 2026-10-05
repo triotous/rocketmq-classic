@@ -206,7 +206,7 @@ impl MQClientApi {
         deadline: Instant,
     ) -> Result<(), RpcError> {
         classify(
-            self.request(
+            self.request_future(
                 addr,
                 request::LITE_SUBSCRIPTION_CTL,
                 &LiteSubscriptionCtlRequestHeader,
@@ -227,7 +227,7 @@ impl MQClientApi {
         deadline: Instant,
     ) -> Result<PopReply<PopMessageResponseHeader>, RpcError> {
         let reply = self
-            .request(addr, request::POP_MESSAGE, header, None, deadline)
+            .request_future(addr, request::POP_MESSAGE, header, None, deadline)
             .await?;
         let status = pop_status(&reply, request::POP_MESSAGE, addr)?;
         if status == PopStatus::Found && reply.body.is_none() {
@@ -260,7 +260,7 @@ impl MQClientApi {
         deadline: Instant,
     ) -> Result<PopReply<PopLiteMessageResponseHeader>, RpcError> {
         let reply = self
-            .request(addr, request::POP_LITE_MESSAGE, header, None, deadline)
+            .request_future(addr, request::POP_LITE_MESSAGE, header, None, deadline)
             .await?;
         let status = pop_status(&reply, request::POP_LITE_MESSAGE, addr)?;
         if status == PopStatus::Found && reply.body.is_none() {
@@ -292,7 +292,7 @@ impl MQClientApi {
         deadline: Instant,
     ) -> Result<AckStatus, RpcError> {
         let reply = self
-            .request(addr, request::ACK_MESSAGE, header, None, deadline)
+            .request_future(addr, request::ACK_MESSAGE, header, None, deadline)
             .await?;
         Ok(if reply.code == response::SUCCESS {
             AckStatus::Ok
@@ -308,7 +308,7 @@ impl MQClientApi {
         deadline: Instant,
     ) -> Result<AckStatus, RpcError> {
         let reply = self
-            .request(
+            .request_future(
                 addr,
                 request::BATCH_ACK_MESSAGE,
                 &LiteSubscriptionCtlRequestHeader,
@@ -330,7 +330,7 @@ impl MQClientApi {
         deadline: Instant,
     ) -> Result<ChangeInvisibleTimeResult, RpcError> {
         let reply = self
-            .request(
+            .request_future(
                 addr,
                 request::CHANGE_MESSAGE_INVISIBLETIME,
                 header,

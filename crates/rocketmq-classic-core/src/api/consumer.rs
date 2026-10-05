@@ -45,6 +45,28 @@ impl MQClientApi {
     ) -> Result<PullResultExt, RpcError> {
         let code = request::PULL_MESSAGE;
         let reply = self.request(addr, code, header, None, deadline).await?;
+        self.process_pull_response(addr, reply)
+    }
+
+    /// Java ASYNC pull represented as an awaited Rust future with transport cleanup grace.
+    pub async fn pull_message_future(
+        &self,
+        addr: &str,
+        header: &PullMessageRequestHeader,
+        deadline: Instant,
+    ) -> Result<PullResultExt, RpcError> {
+        let reply = self
+            .request_future(addr, request::PULL_MESSAGE, header, None, deadline)
+            .await?;
+        self.process_pull_response(addr, reply)
+    }
+
+    fn process_pull_response(
+        &self,
+        addr: &str,
+        reply: rocketmq_classic_remoting::RemotingCommand,
+    ) -> Result<PullResultExt, RpcError> {
+        let code = request::PULL_MESSAGE;
         let status = match reply.code {
             response::SUCCESS => PullStatus::Found,
             response::PULL_NOT_FOUND => PullStatus::NoNewMessage,

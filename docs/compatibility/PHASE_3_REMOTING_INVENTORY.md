@@ -1,5 +1,7 @@
 # Phase 3 Remoting API and Configuration Inventory
 
+Phase 5 adds `invoke_sync_with_deadline` and `invoke_name_server_sync_with_peer` as absolute-deadline representations of Java `invokeSync` overloads (ADR-0003). Existing duration and future adapters retain their behavior. Core mode regression tests distinguish synchronous wait expiry from future response-table cleanup grace; NameServer sync selection preserves one original deadline and returns the invocation's peer metadata.
+
 Java source baseline: `rocketmq-all-5.5.1`, commit `efa1be59d6fc747ad220f036c86030f05f0419f9`. Rust paths are relative to the repository root. Tests refer to `crates/rocketmq-classic-remoting/tests/transport.rs` unless noted otherwise. This ledger is for the client-side remoting scope only; Netty implementation details that have no Tokio semantic equivalent are recorded as differences, not parity.
 
 Status meanings: `MAPPED` means a Rust API or internal behavior and named local test exists; `PARTIAL` means behavior differs or not all Java branches are covered; `NOT MAPPED` means no Rust equivalent. No row claims live Broker validation.
