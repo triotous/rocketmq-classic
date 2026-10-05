@@ -270,6 +270,55 @@ mod tests {
         Arc::new(ClientRuntime::construct(config, &HashMap::new(), None).unwrap())
     }
 
+    #[tokio::test]
+    async fn public_and_periodic_adjustment_isolate_each_owner_failure() {
+        struct FailingConsumer(bool);
+        impl ConsumerRuntime for FailingConsumer {
+            fn heartbeat_data(&self) -> ConsumerData {
+                ConsumerData::default()
+            }
+            fn adjust_thread_pool(&self) -> Option<Pin<Box<dyn Future<Output = ()> + Send + '_>>> {
+                assert!(!self.0, "capability construction failure");
+                Some(Box::pin(async {
+                    tokio::task::yield_now().await;
+                    panic!("capability polling failure");
+                }))
+            }
+        }
+        struct NoAdjustment;
+        impl ConsumerRuntime for NoAdjustment {
+            fn heartbeat_data(&self) -> ConsumerData {
+                ConsumerData::default()
+            }
+        }
+        let runtime = runtime();
+        let construct_failure = Arc::new(FailingConsumer(true));
+        let poll_failure = Arc::new(FailingConsumer(false));
+        let unsupported = Arc::new(NoAdjustment);
+        let healthy = Arc::new(Consumer::default());
+        runtime
+            .groups
+            .register_consumer("a", construct_failure.clone())
+            .unwrap();
+        runtime
+            .groups
+            .register_consumer("b", poll_failure.clone())
+            .unwrap();
+        runtime
+            .groups
+            .register_consumer("c", unsupported.clone())
+            .unwrap();
+        runtime
+            .groups
+            .register_consumer("z", healthy.clone())
+            .unwrap();
+        runtime.adjust_thread_pool().await.unwrap();
+        assert_eq!(healthy.adjustment.load(Ordering::SeqCst), 1);
+        runtime.run_periodic(TaskKind::Adjust).await.unwrap();
+        assert_eq!(healthy.adjustment.load(Ordering::SeqCst), 2);
+        assert_eq!(runtime.periodic_probe.created.load(Ordering::SeqCst), 0);
+    }
+
     async fn settle() {
         for _ in 0..20 {
             tokio::task::yield_now().await;

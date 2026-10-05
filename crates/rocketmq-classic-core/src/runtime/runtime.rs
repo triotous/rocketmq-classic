@@ -301,6 +301,27 @@ impl ClientRuntime {
         Ok(balanced)
     }
 
+    /// Java `adjustThreadPool`: only owners exposing the push adjustment
+    /// capability participate; one owner's failure does not end the round.
+    pub async fn adjust_thread_pool(&self) -> Result<(), RuntimeError> {
+        use std::task::Poll;
+        for consumer in self.groups.snapshot()?.consumers {
+            let operation = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                consumer.adjust_thread_pool()
+            }));
+            if let Ok(Some(mut operation)) = operation {
+                std::future::poll_fn(|context| {
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        operation.as_mut().poll(context)
+                    }))
+                    .unwrap_or(Poll::Ready(()))
+                })
+                .await;
+            }
+        }
+        Ok(())
+    }
+
     pub fn config(&self) -> &ClientConfig {
         &self.config
     }
@@ -579,17 +600,14 @@ impl ClientRuntime {
                 self.clean_offline_brokers().await?;
                 self.send_heartbeat_to_all_brokers().await?;
             }
-            TaskKind::Persist | TaskKind::Adjust => {
+            TaskKind::Persist => {
                 for consumer in self.groups.snapshot()?.consumers {
-                    let operation = match kind {
-                        TaskKind::Persist => consumer.persist_consumer_offset(),
-                        _ => consumer.adjust_thread_pool(),
-                    };
-                    if let Some(operation) = operation {
+                    if let Some(operation) = consumer.persist_consumer_offset() {
                         operation.await;
                     }
                 }
             }
+            TaskKind::Adjust => self.adjust_thread_pool().await?,
         }
         Ok(())
     }
