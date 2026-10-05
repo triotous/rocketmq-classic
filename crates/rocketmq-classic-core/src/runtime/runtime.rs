@@ -468,6 +468,32 @@ impl ClientRuntime {
         self.update_route(topic, None, deadline).await
     }
 
+    /// Refresh the union of current consumer subscriptions and producer
+    /// publish topics. Each topic gets Java's fresh configured RPC budget;
+    /// an individual refresh failure does not prevent the remaining topics.
+    pub async fn update_all_topic_routes(&self) -> Result<(), RuntimeError> {
+        let groups = self.groups.snapshot()?;
+        let mut topics = std::collections::BTreeSet::new();
+        for consumer in groups.consumers {
+            topics.extend(
+                consumer
+                    .heartbeat_data()
+                    .subscription_data_set
+                    .into_iter()
+                    .map(|sub| sub.topic),
+            );
+        }
+        for (_, producer) in groups.producers {
+            topics.extend(producer.publish_topics());
+        }
+        for topic in topics {
+            let _ = self
+                .update_topic_route(&topic, tokio::time::Instant::now() + self.rpc_timeout())
+                .await;
+        }
+        Ok(())
+    }
+
     /// Runtime branch for producer default-route fallback. The queue setting
     /// stays producer-owned rather than becoming runtime configuration.
     pub async fn update_topic_route_from_default(
@@ -572,30 +598,7 @@ impl ClientRuntime {
             TaskKind::Discovery => {
                 self.fetch_name_server_addr().await;
             }
-            TaskKind::Route => {
-                let groups = self.groups.snapshot()?;
-                let mut topics = std::collections::BTreeSet::new();
-                for (_, producer) in groups.producers {
-                    topics.extend(producer.publish_topics());
-                }
-                for consumer in groups.consumers {
-                    topics.extend(
-                        consumer
-                            .heartbeat_data()
-                            .subscription_data_set
-                            .into_iter()
-                            .map(|sub| sub.topic),
-                    );
-                }
-                for topic in topics {
-                    let _ = self
-                        .update_topic_route(
-                            &topic,
-                            tokio::time::Instant::now() + self.rpc_timeout(),
-                        )
-                        .await;
-                }
-            }
+            TaskKind::Route => self.update_all_topic_routes().await?,
             TaskKind::Heartbeat => {
                 self.clean_offline_brokers().await?;
                 self.send_heartbeat_to_all_brokers().await?;

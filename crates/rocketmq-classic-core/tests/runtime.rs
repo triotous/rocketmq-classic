@@ -70,6 +70,121 @@ impl ConsumerRuntime for RouteObserver {
     }
 }
 
+#[tokio::test]
+async fn all_topic_refresh_unions_registered_topics_and_continues_after_rejection() {
+    use rocketmq_classic_protocol::heartbeat::{ConsumerData, SubscriptionData};
+    use std::collections::BTreeSet;
+    struct Topics(Weak<ClientRuntime>);
+    impl ProducerRuntime for Topics {
+        fn publish_topics(&self) -> BTreeSet<String> {
+            assert!(
+                self.0
+                    .upgrade()
+                    .unwrap()
+                    .select_producer("producer")
+                    .unwrap()
+                    .is_some()
+            );
+            BTreeSet::from(["common".into(), "producer-only".into()])
+        }
+    }
+    impl ConsumerRuntime for Topics {
+        fn heartbeat_data(&self) -> ConsumerData {
+            assert!(
+                self.0
+                    .upgrade()
+                    .unwrap()
+                    .select_consumer("consumer")
+                    .unwrap()
+                    .is_some()
+            );
+            ConsumerData {
+                subscription_data_set: ["common", "consumer-only"]
+                    .into_iter()
+                    .map(|topic| SubscriptionData {
+                        topic: topic.into(),
+                        ..Default::default()
+                    })
+                    .collect(),
+                ..Default::default()
+            }
+        }
+    }
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut config = ClientConfig::new("all-topic-refresh");
+    config.namesrv_addr = Some(listener.local_addr().unwrap().to_string());
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+    runtime.remoting().start().unwrap();
+    // Empty registration round opens no NameServer connection.
+    runtime.update_all_topic_routes().await.unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(20), listener.accept())
+            .await
+            .is_err()
+    );
+    let owners = Arc::new(Topics(Arc::downgrade(&runtime)));
+    runtime
+        .register_producer("producer", owners.clone())
+        .await
+        .unwrap();
+    runtime
+        .register_consumer("consumer", owners.clone())
+        .await
+        .unwrap();
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/route.json")).unwrap();
+    let body = serde_json::to_vec(&fixture["cases"][0]["input"]).unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut seen = BTreeSet::new();
+        for _ in 0..3 {
+            let mut length = [0; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut bytes = BytesMut::from(&length[..]);
+            bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut bytes[4..]).await.unwrap();
+            let command = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
+                .unwrap()
+                .unwrap();
+            assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
+            let topic = command.ext_fields.as_ref().unwrap()["topic"].clone();
+            assert!(seen.insert(topic.clone()), "duplicate route request");
+            let mut reply = RemotingCommand {
+                code: if topic == "common" { 987654 } else { 0 },
+                opaque: command.opaque,
+                body: Some(body.clone()),
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .await
+                .unwrap();
+        }
+        assert_eq!(
+            seen,
+            BTreeSet::from([
+                "common".into(),
+                "consumer-only".into(),
+                "producer-only".into()
+            ])
+        );
+    });
+    tokio::time::timeout(Duration::from_secs(5), runtime.update_all_topic_routes())
+        .await
+        .unwrap()
+        .unwrap();
+    peer.await.unwrap();
+    let snapshot = runtime.route_snapshot().unwrap();
+    assert!(!snapshot.topics.contains_key("common"));
+    assert!(snapshot.topics.contains_key("consumer-only"));
+    assert!(snapshot.topics.contains_key("producer-only"));
+    runtime.remoting().shutdown().await;
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn p6_v01_many_first_lookups_share_one_unstarted_runtime_and_transport_owner() {
     let manager = ClientRuntimeManager::new();
