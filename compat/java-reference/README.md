@@ -1,5 +1,7 @@
 # Java 5.5.1 offline compatibility oracle
 
+Phase 5 now persists 111 invoked cases across eight fixture families. The latest 29 cases in `fixtures/rpc-invoked-pop-ack/` execute POP/POP Lite, ACK/ACK Lite, batch ACK and change-invisibility callbacks; Java encodes an actual message for FOUND, while Rust retains and compares the raw bytes for Phase 8. Missing/invalid primitive POP and change-invisibility response fields retain zero under Java reflective decoding. `rpc_invoked_pop_ack_fixtures.rs` checks request fields, bodies, typed outcomes and response metadata. Maven verify regenerates every family in drift-check mode. SHA-256 verification: `shasum -a 256 -c docs/compatibility/P5_POP_ACK_SHA256SUMS.txt`. Older coverage counts below describe the historical subset; the method matrix is the current gate inventory.
+
 This standalone Maven project pins `org.apache.rocketmq:rocketmq-client:5.5.1`. The local source checkout was inspected read-only at tag `rocketmq-all-5.5.1`, commit `efa1be59d6fc747ad220f036c86030f05f0419f9` (2026-08-20); the active Java checkout remains unchanged at 5.3.3.
 
 ## Verified local artifacts and tools
