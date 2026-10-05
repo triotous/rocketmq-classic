@@ -15,8 +15,30 @@ use super::{
 };
 use crate::{api::MQClientApi, config::ClientConfig};
 
+fn epoch_millis(time: std::time::SystemTime) -> i64 {
+    match time.duration_since(std::time::UNIX_EPOCH) {
+        Ok(duration) => duration.as_millis() as i64,
+        // Java's epoch millisecond clock floors a fractional negative instant.
+        Err(error) => (-(error.duration().as_nanos().div_ceil(1_000_000) as i128)) as i64,
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn constructor_clock_uses_signed_epoch_milliseconds() {
+    use std::time::{Duration, UNIX_EPOCH};
+    assert_eq!(epoch_millis(UNIX_EPOCH), 0);
+    assert_eq!(epoch_millis(UNIX_EPOCH + Duration::from_millis(1234)), 1234);
+    assert_eq!(
+        epoch_millis(UNIX_EPOCH - Duration::from_millis(1234)),
+        -1234
+    );
+    assert_eq!(epoch_millis(UNIX_EPOCH - Duration::from_nanos(1)), -1);
+}
+
 /// A manager-owned transport and typed API. Construction does not start tasks.
 pub struct ClientRuntime {
+    boot_timestamp: i64,
     config: ClientConfig,
     client_id: String,
     remoting: RemotingClient,
@@ -57,6 +79,7 @@ impl ClientRuntime {
         hook: Option<Arc<dyn RpcHook>>,
         provider: Option<Arc<dyn crate::namesrv::TopAddressing>>,
     ) -> Result<Self, RuntimeError> {
+        let boot_timestamp = epoch_millis(std::time::SystemTime::now());
         let rebalance = Arc::new(super::rebalance::RebalanceSignal::from_properties(
             properties,
         )?);
@@ -115,6 +138,7 @@ impl ClientRuntime {
         .map_err(|_| RuntimeError::AddressingCallbackFailed)?;
         let language = config.language;
         Ok(Self {
+            boot_timestamp,
             client_id: config.build_client_id(),
             config,
             api: MQClientApi::with_language(remoting.clone(), language),
@@ -142,6 +166,12 @@ impl ClientRuntime {
 
     pub fn client_id(&self) -> &str {
         &self.client_id
+    }
+
+    /// Constructor wall-clock milliseconds, corresponding to getBootTimestamp.
+    /// It is independent of Tokio's monotonic timer clock and never resets.
+    pub fn boot_timestamp(&self) -> i64 {
+        self.boot_timestamp
     }
 
     pub fn execute_pull_request_immediately(
