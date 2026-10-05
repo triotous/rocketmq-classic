@@ -1,0 +1,26 @@
+# Phase 6 inbound routing matrix
+
+Java client baseline: 5.5.1, source commit `efa1be59d6fc747ad220f036c86030f05f0419f9`. Sources: `MQClientAPIImpl` constructor, `ClientRemotingProcessor.processRequest` and its handler methods. This matrix verifies registration/routing boundaries only. No optional handler below is marked COMPATIBLE.
+
+| Request code | Java owner/dispatch semantics | Rust routing boundary | Activation/status |
+| --- | --- | --- | --- |
+| 39 CHECK_TRANSACTION_STATE | Decode message; select producer by body property PGROUP; pass channel address; normally no response | Checked stored-message property offsets; matching registered producer's optional processor receives original command/address | SLOT_UNIT_VERIFIED; actual decoding/transaction behavior Phase 14 |
+| 40 NOTIFY_CONSUMER_IDS_CHANGED | Decode consumerGroup, then wake runtime-wide rebalance, not only that group | Registered consumer's ConsumerIdsChanged capability; explicit error until activated | SLOT_UNIT_VERIFIED; runtime-wide wakeup Phase 9 |
+| 220 RESET_CONSUMER_CLIENT_OFFSET | Header group/topic/timestamp; optional offset table; reset runtime consumer | Group-keyed ResetOffset capability | SLOT_UNIT_VERIFIED; offset/reset behavior Phase 17 |
+| 221 GET_CONSUMER_STATUS_FROM_CLIENT | Header group/topic/clientAddr; return consumer status body | Group-keyed ConsumerStatus capability | SLOT_UNIT_VERIFIED; status body/error behavior Phase 17 |
+| 307 GET_CONSUMER_RUNNING_INFO | Header consumerGroup; clientId does not filter the selected physical runtime; optional jstack | Consumer-group-keyed RunningInfo capability | SLOT_UNIT_VERIFIED; running-info/jstack behavior Phase 17 |
+| 309 CONSUME_MESSAGE_DIRECTLY | Decode message; select consumerGroup, pass brokerName; return typed result | Consumer-group-keyed ConsumeDirectly capability | SLOT_UNIT_VERIFIED; direct-consume behavior Phase 17 |
+| 326 PUSH_REPLY_MESSAGE_TO_CLIENT | Reply header producerGroup is responder, not requester; global RequestFutureHolder correlation removal; acknowledge unknown/late replies successfully | CORRELATION_ID selects an optional producer/runtime correlation dispatcher, never responder producerGroup | SLOT_UNIT_VERIFIED; Phase 15 must supply atomic correlation completion and unknown/late SUCCESS path |
+| 200073 NOTIFY_UNSUBSCRIBE_LITE | Registered by MQClientAPIImpl, but absent from ClientRemotingProcessor's switch | Explicit unsupported response; no fabricated lite consumer operation | SOURCE_REGISTERED_NO_DISPATCH; Phase 13 source audit before activation |
+
+Inactive slots return REQUEST_CODE_NOT_SUPPORTED (3) with their activation phase. This intentional Phase 6 boundary is not claimed as the final Java handler's response semantics. One-way commands produce no wire response. Non-running runtimes return SYSTEM_ERROR. Active owner callbacks run outside registry/cache locks, and the lower transport supplies response opaque/response flags. Full header validation, response bodies, bounded owner execution, message decoding/decompression and feature-specific errors belong to the activation phases.
+
+## Executable evidence
+
+`runtime/inbound.rs` private tests cover actual body PGROUP versus a forged header, correlation versus responder group, all five consumer operations, callback registry/cache reentry, missing/unregistered owners and different client runtime isolation. `tests/inbound.rs` scripted loopback tests cover all eight inactive slots, one-way silence, channel-address propagation, an activated mock owner response and transport cleanup. Mock success proves routing only.
+
+The lower remoting unit test `owned_processor_cleanup_preserves_replacement_even_for_same_handle` proves old leases cannot delete replacements, including the same processor Arc. Startup fault tests exercise 14 checkpoints with explicit NameServer configuration and 15 with discovery, including all eight inbound registrations. Each failure leaves no owned processor registrations, periodic/control workers or active groups; manager replacement uses a new identity. Wakeup service resources are not yet implemented, so these are all current checkpoints, not complete P6-V03 acceptance.
+
+`fixtures/runtime/inbound-routing.json` contains eight pinned Java MessageDecoder.decodeProperties results for V1/V2 × born-host IPv4/IPv6 × store-host IPv4/IPv6. MessageDecoder.encode emits V1; V2 input changes only version magic/topic-length width/total-size before calling actual Java decodeProperties. SHA-256: `69910e6182e2d0e46301fc044bec1be9abb514f407fbf52e8739a39a13affbbf`. Rust metadata extraction checks every truncated prefix and hostile lengths without copying the payload. This is not full MessageDecoder compatibility evidence.
+
+Validation: core library (31) and inbound integration (2) tests, full workspace regression with loopback permission (`/tmp/p6-inbound-final-workspace.log`), all-target/all-feature Clippy, formatter/diff checks and Maven verify (`/tmp/p6-inbound-java-verify.log`) passed. No live Broker/Docker was used. P6-V04 remains PENDING_PHASE_19 against server 5.3.4.
