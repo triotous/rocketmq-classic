@@ -1,3 +1,4 @@
+mod client_check;
 mod control;
 mod hooks;
 mod inbound;
@@ -17,6 +18,14 @@ pub use registry::{ConsumerOperation, ConsumerRuntime, GroupLease, ProducerRunti
 
 #[derive(Debug, thiserror::Error)]
 pub enum RuntimeError {
+    #[error(
+        "Check client in broker error, maybe because you use {expression_type} to filter message, but server has not been upgraded to support!This error would not affect the launch of consumer, but may has impact on message receiving if you have use the new features which are not supported by server, please check the log!"
+    )]
+    ClientCheck {
+        expression_type: String,
+        #[source]
+        source: Box<RuntimeError>,
+    },
     #[error("NameServer addressing callback registration panicked")]
     AddressingCallbackFailed,
     #[error("heartbeat encoding failed: {0}")]

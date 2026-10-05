@@ -129,6 +129,8 @@ pub(super) struct RegistrySnapshot {
     pub consumers: Vec<Arc<dyn ConsumerRuntime>>,
 }
 
+pub(super) type ConsumerEntries = Vec<(String, Arc<dyn ConsumerRuntime>)>;
+
 impl GroupRegistry {
     pub fn has_active_users(&self, inner_producer: &str) -> Result<bool, RuntimeError> {
         let entries = self
@@ -282,6 +284,20 @@ impl GroupRegistry {
                 .filter_map(|entry| entry.handle.upgrade())
                 .collect(),
         })
+    }
+
+    pub(super) fn consumer_entries(&self) -> Result<ConsumerEntries, RuntimeError> {
+        let entries = self
+            .entries
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?;
+        Ok(entries
+            .consumers
+            .iter()
+            .filter_map(|(group, entry)| {
+                entry.handle.upgrade().map(|handle| (group.clone(), handle))
+            })
+            .collect())
     }
 
     pub fn select_producer(

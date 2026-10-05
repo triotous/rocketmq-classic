@@ -1,0 +1,241 @@
+use bytes::BytesMut;
+use rocketmq_classic_core::{
+    config::ClientConfig,
+    error::RpcError,
+    runtime::{ClientRuntimeManager, ConsumerRuntime, RuntimeError},
+};
+use rocketmq_classic_protocol::{
+    body::CheckClientRequestBody,
+    codes::request,
+    heartbeat::{ConsumerData, SubscriptionData},
+};
+use rocketmq_classic_remoting::{
+    RemotingCommand,
+    codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
+};
+use std::{collections::HashSet, sync::Arc};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, TcpStream},
+    time::{Duration, Instant},
+};
+
+struct Consumer(Vec<SubscriptionData>);
+impl ConsumerRuntime for Consumer {
+    fn heartbeat_data(&self) -> ConsumerData {
+        ConsumerData {
+            group_name: "different-callback-group".into(),
+            subscription_data_set: self.0.iter().cloned().collect(),
+            ..Default::default()
+        }
+    }
+}
+fn subscription(expression: &str) -> SubscriptionData {
+    SubscriptionData {
+        topic: "topic".into(),
+        sub_string: "a > 1".into(),
+        sub_version: 42,
+        expression_type: expression.into(),
+        ..Default::default()
+    }
+}
+async fn read(socket: &mut TcpStream) -> RemotingCommand {
+    let mut length = [0; 4];
+    socket.read_exact(&mut length).await.unwrap();
+    let mut bytes = BytesMut::from(&length[..]);
+    bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
+    socket.read_exact(&mut bytes[4..]).await.unwrap();
+    frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
+        .unwrap()
+        .unwrap()
+}
+async fn reply(
+    socket: &mut TcpStream,
+    command: &RemotingCommand,
+    code: i32,
+    body: Option<Vec<u8>>,
+) {
+    let mut response = RemotingCommand {
+        opaque: command.opaque,
+        code,
+        body,
+        remark: Some("rejected".into()),
+        ..Default::default()
+    };
+    response.mark_response();
+    socket
+        .write_all(&frame::encode(&response, DEFAULT_MAX_FRAME_SIZE).unwrap())
+        .await
+        .unwrap();
+}
+
+#[test]
+fn check_client_body_matches_actual_java_api_payload() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-check.json")).unwrap();
+    for case in fixture["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|case| case["invocations"] == 1)
+    {
+        let body = CheckClientRequestBody {
+            client_id: Some("check-client@DEFAULT".into()),
+            group: Some("registered-group".into()),
+            subscription_data: Some(subscription(case["expression"].as_str().unwrap())),
+            namespace: None,
+        };
+        assert_eq!(serde_json::to_value(body).unwrap(), case["body"]);
+        assert_eq!(case["requestCode"], request::CHECK_CLIENT_CONFIG);
+        assert_eq!(case["language"], "JAVA");
+        assert_eq!(case["address"], "192.0.2.6:10909");
+        assert_eq!(case["timeout"], 1234);
+    }
+}
+
+#[tokio::test]
+async fn tags_empty_subscriptions_and_missing_route_do_not_fetch_or_send() {
+    let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut config = ClientConfig::new("check-client");
+    config.namesrv_addr = Some(nameserver.local_addr().unwrap().to_string());
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+    runtime.remoting().start().unwrap();
+    let consumer = Arc::new(Consumer(vec![
+        subscription("TAG"),
+        subscription(""),
+        subscription("SQL92"),
+    ]));
+    let lease = runtime
+        .register_consumer("registered-group", consumer.clone())
+        .await
+        .unwrap();
+    runtime.check_client_in_broker().await.unwrap();
+    runtime
+        .unregister_consumer(&lease, Instant::now())
+        .await
+        .unwrap();
+    let empty = Arc::new(Consumer(vec![]));
+    runtime
+        .register_consumer("empty", empty.clone())
+        .await
+        .unwrap();
+    runtime.check_client_in_broker().await.unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(30), nameserver.accept())
+            .await
+            .is_err()
+    );
+    runtime.remoting().shutdown().await;
+}
+
+#[tokio::test]
+async fn non_tag_check_uses_registered_key_vip_and_source_error_boundaries() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-check.json")).unwrap();
+    for case in fixture["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|case| case["invocations"] == 1 && case["expression"] == "SQL92")
+    {
+        let broker = loop {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            if listener.local_addr().unwrap().port() <= u16::MAX - 2 {
+                break listener;
+            }
+        };
+        let broker_address = broker.local_addr().unwrap();
+        let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mut config = ClientConfig::new("check-client");
+        config.namesrv_addr = Some(nameserver.local_addr().unwrap().to_string());
+        config.vip_channel_enabled = true;
+        config.enable_heartbeat_channel_event_listener = false;
+        config.mq_client_api_timeout = 1234;
+        let route = serde_json::to_vec(&serde_json::json!({"queueDatas":[],"brokerDatas":[{"cluster":"cluster","brokerName":"broker","brokerAddrs":{"0":format!("127.0.0.1:{}", u32::from(broker_address.port()) + 2)}}],"filterServerTable":{}})).unwrap();
+        let name_peer = tokio::spawn(async move {
+            let (mut socket, _) = nameserver.accept().await.unwrap();
+            let command = read(&mut socket).await;
+            assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
+            reply(&mut socket, &command, 0, Some(route)).await;
+            let mut byte = [0];
+            assert_eq!(
+                socket.read(&mut byte).await.unwrap(),
+                0,
+                "check must not refresh the route"
+            );
+        });
+        let expected_body = case["body"].clone();
+        let transport_failure = case["transportFailure"].as_bool().unwrap();
+        let code = case["responseCode"].as_i64().unwrap() as i32;
+        let peer = tokio::spawn(async move {
+            let (mut socket, _) = broker.accept().await.unwrap();
+            let command = read(&mut socket).await;
+            assert_eq!(command.code, request::CHECK_CLIENT_CONFIG);
+            assert_eq!(
+                serde_json::from_slice::<serde_json::Value>(command.body.as_ref().unwrap())
+                    .unwrap(),
+                expected_body
+            );
+            if !transport_failure {
+                // Java ignores the response body entirely, even invalid JSON.
+                reply(&mut socket, &command, code, Some(b"invalid".to_vec())).await;
+                let mut byte = [0];
+                assert_eq!(socket.read(&mut byte).await.unwrap(), 0);
+            }
+        });
+        let runtime = ClientRuntimeManager::new()
+            .get_or_create(&config)
+            .await
+            .unwrap();
+        runtime.remoting().start().unwrap();
+        let consumer = Arc::new(Consumer(vec![subscription("TAG"), subscription("SQL92")]));
+        runtime
+            .register_consumer("registered-group", consumer.clone())
+            .await
+            .unwrap();
+        runtime
+            .update_topic_route("topic", Instant::now() + Duration::from_secs(3))
+            .await
+            .unwrap();
+        let result = runtime.check_client_in_broker().await;
+        if transport_failure {
+            assert!(
+                matches!(result, Err(RuntimeError::ClientCheck { ref expression_type, .. }) if expression_type == "SQL92")
+            );
+        } else if code != 0 {
+            assert!(
+                matches!(result, Err(RuntimeError::Rpc(RpcError::Response { code: 44, remark: Some(ref remark), .. })) if remark == "rejected")
+            );
+        } else {
+            result.unwrap();
+            let empty = Arc::new(Consumer(vec![]));
+            runtime
+                .register_consumer("a-empty", empty.clone())
+                .await
+                .unwrap();
+            // The native registry traverses a-empty first. An empty consumer
+            // ends the whole round, even though the SQL consumer remains.
+            runtime.check_client_in_broker().await.unwrap();
+        }
+        runtime.remoting().shutdown().await;
+        peer.await.unwrap();
+        name_peer.await.unwrap();
+    }
+    // Ensure the test's source oracle actually includes all three outcomes.
+    let outcomes: HashSet<_> = fixture["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|case| case["invocations"] == 1 && case["expression"] == "SQL92")
+        .map(|case| {
+            (
+                case["responseCode"].as_i64().unwrap(),
+                case["transportFailure"].as_bool().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(outcomes.len(), 3);
+}

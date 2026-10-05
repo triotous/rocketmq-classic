@@ -1,0 +1,104 @@
+package compat;
+
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+import org.apache.rocketmq.client.ClientConfig;
+import org.apache.rocketmq.client.exception.MQClientException;
+import org.apache.rocketmq.client.impl.MQClientAPIImpl;
+import org.apache.rocketmq.client.impl.consumer.MQConsumerInner;
+import org.apache.rocketmq.client.impl.factory.MQClientInstance;
+import org.apache.rocketmq.common.filter.ExpressionType;
+import org.apache.rocketmq.remoting.RemotingClient;
+import org.apache.rocketmq.remoting.exception.RemotingConnectException;
+import org.apache.rocketmq.remoting.netty.NettyClientConfig;
+import org.apache.rocketmq.remoting.protocol.RemotingCommand;
+import org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData;
+import org.apache.rocketmq.remoting.protocol.route.TopicRouteData;
+
+/** Real runtime/API check-client flow; only RemotingClient is mocked. */
+public final class RuntimeClientCheckFixtures {
+    private RuntimeClientCheckFixtures() { }
+
+    public static void main(String[] args) throws Exception {
+        List<Object> cases = new ArrayList<>();
+        for (String expression : new String[] {null, "", "TAG", "tag", "SQL92", " "}) {
+            record(cases, expression, false, true, 0, false);
+            record(cases, expression, true, true, 0, false);
+        }
+        record(cases, "SQL92", true, false, 0, false);
+        record(cases, "SQL92", true, true, 44, false);
+        record(cases, "SQL92", true, true, 0, true);
+        Map<String, Object> fixture = new TreeMap<>();
+        fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
+        fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
+        fixture.put("entrypoint", "MQClientInstance.checkClientInBroker/MQClientAPIImpl.checkClientInBroker/ExpressionType.isTagType");
+        fixture.put("transport", "mock RemotingClient; constructed runtime never started");
+        fixture.put("serverBaselineContacted", false); fixture.put("cases", cases);
+        String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
+            com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
+        Path file = Path.of(args[0]);
+        if (args.length > 1 && "--verify".equals(args[1])) {
+            if (!json.equals(Files.readString(file))) throw new IllegalStateException("fixture drift: " + file);
+        } else { Files.createDirectories(file.getParent()); Files.writeString(file, json); }
+        System.out.println("Runtime client check verified: " + cases.size());
+    }
+
+    private static void record(List<Object> cases, String expression, boolean route, boolean subscriptions, int code, boolean transportFailure) throws Exception {
+        ClientConfig config = new ClientConfig(); config.setClientIP("check-client");
+        config.setVipChannelEnabled(true); config.setMqClientApiTimeout(1234);
+        MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+        MQClientAPIImpl original = runtime.getMQClientAPIImpl();
+        Map<String, Object> item = new TreeMap<>();
+        item.put("expression", expression); item.put("isTag", ExpressionType.isTagType(expression));
+        item.put("route", route); item.put("subscriptions", subscriptions);
+        item.put("responseCode", code); item.put("transportFailure", transportFailure);
+        item.put("invocations", 0);
+        RemotingClient transport = (RemotingClient) Proxy.newProxyInstance(RemotingClient.class.getClassLoader(),
+            new Class<?>[] {RemotingClient.class}, (proxy, method, values) -> {
+                if (method.getName().equals("invokeSync")) {
+                    item.put("invocations", ((Integer) item.get("invocations")) + 1);
+                    RemotingCommand request = (RemotingCommand) values[1];
+                    item.put("address", values[0]); item.put("timeout", values[2]);
+                    item.put("requestCode", request.getCode()); item.put("language", request.getLanguage().name());
+                    item.put("body", com.alibaba.fastjson2.JSON.parseObject(request.getBody()));
+                    if (transportFailure) throw new RemotingConnectException("peer");
+                    return RemotingCommand.createResponseCommand(code, "rejected");
+                }
+                return method.getReturnType() == boolean.class ? false : null;
+            });
+        MQClientAPIImpl api = new MQClientAPIImpl(new NettyClientConfig(), null, null, config, null, ignored -> transport);
+        Field field = MQClientInstance.class.getDeclaredField("mQClientAPIImpl");
+        field.setAccessible(true); field.set(runtime, api);
+        try {
+            SubscriptionData subscription = new SubscriptionData(); subscription.setTopic("topic");
+            subscription.setSubString("a > 1"); subscription.setSubVersion(42); subscription.setExpressionType(expression);
+            MQConsumerInner consumer = (MQConsumerInner) Proxy.newProxyInstance(MQConsumerInner.class.getClassLoader(),
+                new Class<?>[] {MQConsumerInner.class}, (proxy, method, values) -> {
+                    if (method.getName().equals("subscriptions")) return subscriptions ? Collections.singleton(subscription) : Collections.emptySet();
+                    if (method.getName().equals("groupName")) return "different-callback-group";
+                    return method.getReturnType() == boolean.class ? false : null;
+                });
+            runtime.registerConsumer("registered-group", consumer);
+            if (route) runtime.getTopicRouteTable().put("topic", com.alibaba.fastjson2.JSON.parseObject(
+                "{\"queueDatas\":[],\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"192.0.2.6:10911\"}}],\"filterServerTable\":{}}", TopicRouteData.class));
+            try { runtime.checkClientInBroker(); item.put("outcome", "OK"); }
+            catch (MQClientException error) {
+                item.put("outcome", "MQClientException"); item.put("errorCode", error.getResponseCode());
+                item.put("cause", error.getCause() == null ? null : error.getCause().getClass().getSimpleName());
+            }
+        } finally {
+            Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure", MQClientAPIImpl.class, Throwable.class);
+            cleanup.setAccessible(true); cleanup.invoke(runtime, original, new IllegalStateException("fixture teardown"));
+            api.shutdown();
+        }
+        cases.add(item);
+    }
+}

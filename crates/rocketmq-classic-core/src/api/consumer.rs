@@ -45,6 +45,28 @@ fn pull_request_code(header: &PullMessageRequestHeader) -> i32 {
 }
 
 impl MQClientApi {
+    pub async fn check_client_in_broker(
+        &self,
+        addr: &str,
+        body: &rocketmq_classic_protocol::body::CheckClientRequestBody,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        let code = request::CHECK_CLIENT_CONFIG;
+        let reply = self
+            .request(
+                addr,
+                code,
+                &rocketmq_classic_protocol::header::LiteSubscriptionCtlRequestHeader,
+                Some(
+                    serde_json::to_vec(body).expect("check-client body serialization cannot fail"),
+                ),
+                deadline,
+            )
+            .await?;
+        classify(reply, code, addr)?;
+        Ok(())
+    }
+
     pub async fn pull_message(
         &self,
         addr: &str,
