@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use rocketmq_classic_common::message::MessageQueue;
 use serde::{Deserialize, Serialize};
@@ -74,33 +74,26 @@ impl TopicRouteData {
                 .collect();
         }
         if self.order_topic_conf.is_none() {
-            if let Some(queues) = self.static_topic_queues(topic) {
+            if let Some(endpoints) = self.static_queue_endpoints(topic) {
+                let mut queues = endpoints.into_keys().collect::<Vec<_>>();
+                queues.sort_by_key(MessageQueue::queue_id);
                 return queues;
             }
         }
 
-        let masters: BTreeMap<&str, bool> = self
-            .broker_datas
-            .iter()
-            .map(|broker| {
-                (
-                    broker.broker_name.as_str(),
+        let mut masters = BTreeMap::new();
+        for broker in &self.broker_datas {
+            masters
+                .entry(broker.broker_name.as_str())
+                .or_insert_with(|| {
                     broker
                         .broker_addrs
                         .as_ref()
-                        .is_some_and(|addresses| addresses.contains_key(&0)),
-                )
-            })
-            .collect();
+                        .is_some_and(|addresses| addresses.contains_key(&0))
+                });
+        }
         let mut queue_data = self.queue_datas.iter().collect::<Vec<_>>();
-        queue_data.sort_by(|left, right| {
-            left.broker_name
-                .cmp(&right.broker_name)
-                .then_with(|| left.read_queue_nums.cmp(&right.read_queue_nums))
-                .then_with(|| left.write_queue_nums.cmp(&right.write_queue_nums))
-                .then_with(|| left.perm.cmp(&right.perm))
-                .then_with(|| left.topic_sys_flag.cmp(&right.topic_sys_flag))
-        });
+        queue_data.sort_by(|left, right| left.broker_name.cmp(&right.broker_name));
         queue_data
             .into_iter()
             .filter(|data| {
@@ -119,15 +112,22 @@ impl TopicRouteData {
     }
 
     pub fn subscribe_queues(&self, topic: &str) -> Vec<MessageQueue> {
-        if let Some(queues) = self.static_topic_queues(topic) {
-            return queues;
+        if let Some(endpoints) = self.static_queue_endpoints(topic) {
+            return endpoints.into_keys().collect();
         }
-        self.queue_datas
+        let mut counts = BTreeMap::<&str, i32>::new();
+        for data in self
+            .queue_datas
             .iter()
             .filter(|data| data.read_queue_nums > 0 && data.perm & 0x4 != 0)
-            .flat_map(|data| {
-                (0..data.read_queue_nums)
-                    .map(|queue_id| MessageQueue::new(topic, &data.broker_name, queue_id))
+        {
+            let count = counts.entry(&data.broker_name).or_default();
+            *count = (*count).max(data.read_queue_nums);
+        }
+        counts
+            .into_iter()
+            .flat_map(|(broker, count)| {
+                (0..count).map(move |queue_id| MessageQueue::new(topic, broker, queue_id))
             })
             .collect()
     }
@@ -140,28 +140,24 @@ impl TopicRouteData {
         {
             return None;
         }
+        let mut owners = BTreeMap::<(String, i32), &TopicQueueMappingInfo>::new();
+        for mapping in self.topic_queue_mapping_by_broker.as_ref()?.values() {
+            if let (Some(scope), Some(ids)) = (&mapping.scope, &mapping.curr_id_map) {
+                for id in ids.keys() {
+                    let key = (logical_broker(scope), *id);
+                    if owners
+                        .get(&key)
+                        .is_none_or(|old| old.epoch <= mapping.epoch)
+                    {
+                        owners.insert(key, mapping);
+                    }
+                }
+            }
+        }
         let mut endpoints = BTreeMap::new();
         for queue in self.static_topic_queues(topic)? {
-            let broker = self
-                .topic_queue_mapping_by_broker
-                .as_ref()?
-                .values()
-                .filter(|mapping| {
-                    mapping.scope.as_ref().is_some_and(|scope| {
-                        let logical_broker = scope.strip_prefix("__").map_or_else(
-                            || format!("__syslo__{scope}"),
-                            |suffix| format!("__syslo__{suffix}"),
-                        );
-                        logical_broker == queue.broker_name()
-                    })
-                })
-                .filter(|mapping| {
-                    mapping
-                        .curr_id_map
-                        .as_ref()
-                        .is_some_and(|id_map| id_map.contains_key(&queue.queue_id()))
-                })
-                .max_by_key(|mapping| mapping.epoch)
+            let broker = owners
+                .get(&(queue.broker_name().to_owned(), queue.queue_id()))
                 .map(|mapping| mapping.bname.clone())
                 .unwrap_or_else(|| "__syslo__none__".to_owned());
             endpoints.insert(queue, broker);
@@ -177,51 +173,144 @@ impl TopicRouteData {
         {
             return None;
         }
-        let mappings = self.topic_queue_mapping_by_broker.as_ref()?.values();
-        let mut mappings_by_scope = HashMap::<String, Vec<&TopicQueueMappingInfo>>::new();
-        for mapping in mappings {
-            if let Some(scope) = &mapping.scope {
-                mappings_by_scope
-                    .entry(scope.clone())
-                    .or_default()
-                    .push(mapping);
+        let mut totals = BTreeMap::<String, i32>::new();
+        for mapping in self.topic_queue_mapping_by_broker.as_ref()?.values() {
+            if let Some(scope) = mapping.scope.as_deref().filter(|_| mapping.epoch >= -1) {
+                // Java never updates its -1 threshold. Its endpoint map also
+                // deduplicates logical names that different scope strings alias.
+                let total = totals.entry(logical_broker(scope)).or_default();
+                *total = (*total).max(mapping.total_queues);
             }
         }
-
-        let mut scopes = mappings_by_scope.keys().cloned().collect::<Vec<_>>();
-        scopes.sort();
-        let mut queues = Vec::new();
-        for scope in scopes {
-            let mut mappings = mappings_by_scope
-                .remove(&scope)
-                .expect("scope was collected from the map");
-            mappings.sort_by(|left, right| right.epoch.cmp(&left.epoch));
-            let mut max_total_queues = 0;
-            let mut max_total_epoch = -1;
-            for mapping in mappings {
-                if mapping.epoch >= max_total_epoch && mapping.total_queues > max_total_queues {
-                    max_total_queues = mapping.total_queues;
-                    max_total_epoch = mapping.epoch;
-                }
-            }
-
-            let logical_broker = match scope.strip_prefix("__") {
-                Some("") => return Some(Vec::new()),
-                Some(suffix) => format!("__syslo__{suffix}"),
-                None => format!("__syslo__{scope}"),
-            };
-            queues.extend(
-                (0..max_total_queues)
-                    .map(|queue_id| MessageQueue::new(topic, &logical_broker, queue_id)),
-            );
-        }
-        Some(queues)
+        Some(
+            totals
+                .into_iter()
+                .flat_map(|(broker, count)| {
+                    (0..count).map(move |queue_id| MessageQueue::new(topic, &broker, queue_id))
+                })
+                .collect(),
+        )
     }
+}
+
+fn logical_broker(scope: &str) -> String {
+    // TopicQueueMappingUtils only strips the prefix for the exact global scope.
+    format!(
+        "__syslo__{}",
+        if scope == "__global__" {
+            &scope[2..]
+        } else {
+            scope
+        }
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn static_conversion_matches_pinned_java_epoch_scope_and_endpoint_oracle() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        let mut checked = 0;
+        for case in fixture["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|case| case["input"]["topicQueueMappingByBroker"].is_object())
+        {
+            let route: TopicRouteData = serde_json::from_value(case["input"].clone()).unwrap();
+            assert_eq!(
+                serde_json::to_value(route.publish_queues("topic")).unwrap(),
+                case["publish"]
+            );
+            assert_eq!(
+                serde_json::to_value(route.subscribe_queues("topic")).unwrap(),
+                case["subscribe"]
+            );
+            let endpoints = route.static_queue_endpoints("topic").unwrap();
+            assert_eq!(
+                serde_json::to_value(
+                    endpoints
+                        .iter()
+                        .map(|(queue, broker)| serde_json::json!({"queue":queue,"broker":broker}))
+                        .collect::<Vec<_>>()
+                )
+                .unwrap(),
+                case["endpoints"]
+            );
+            checked += 1;
+        }
+        assert_eq!(checked, 4);
+    }
+
+    #[test]
+    fn ordinary_publish_uses_first_matching_broker_and_static_publish_orders_ids_across_scopes() {
+        let mut route = route();
+        let mut duplicate = route.broker_datas[0].clone();
+        duplicate.broker_addrs = Some(BTreeMap::from([(0, "other-master".into())]));
+        route.broker_datas[0].broker_addrs = Some(BTreeMap::from([(1, "slave".into())]));
+        route.broker_datas.push(duplicate);
+        assert!(route.publish_queues("topic").is_empty());
+        route.topic_queue_mapping_by_broker = Some(BTreeMap::from([
+            (
+                "a".into(),
+                TopicQueueMappingInfo {
+                    total_queues: 2,
+                    epoch: 0,
+                    scope: Some("a".into()),
+                    curr_id_map: Some(BTreeMap::new()),
+                    ..Default::default()
+                },
+            ),
+            (
+                "b".into(),
+                TopicQueueMappingInfo {
+                    total_queues: 2,
+                    epoch: 0,
+                    scope: Some("b".into()),
+                    curr_id_map: Some(BTreeMap::new()),
+                    ..Default::default()
+                },
+            ),
+        ]));
+        assert_eq!(
+            route
+                .publish_queues("topic")
+                .iter()
+                .map(MessageQueue::queue_id)
+                .collect::<Vec<_>>(),
+            [0, 0, 1, 1]
+        );
+    }
+
+    #[test]
+    fn duplicate_queue_data_retains_java_stable_publish_order_and_set_subscription() {
+        let mut route = route();
+        route.broker_datas[0].broker_addrs = Some(BTreeMap::from([(0, "master".into())]));
+        route.queue_datas.retain(|queue| queue.broker_name == "b1");
+        let mut second = route.queue_datas[0].clone();
+        second.read_queue_nums = 1;
+        second.write_queue_nums = 1;
+        route.queue_datas.push(second);
+        assert_eq!(
+            route
+                .publish_queues("topic")
+                .iter()
+                .map(MessageQueue::queue_id)
+                .collect::<Vec<_>>(),
+            [0, 1, 2, 0]
+        );
+        assert_eq!(
+            route
+                .subscribe_queues("topic")
+                .iter()
+                .map(MessageQueue::queue_id)
+                .collect::<Vec<_>>(),
+            [0, 1]
+        );
+    }
 
     fn route() -> TopicRouteData {
         TopicRouteData {
