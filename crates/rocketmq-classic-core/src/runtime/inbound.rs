@@ -1,0 +1,511 @@
+use super::{ClientRuntime, ConsumerOperation, RuntimeState};
+use rocketmq_classic_common::message::{
+    constants::{PROPERTY_CORRELATION_ID, PROPERTY_PRODUCER_GROUP},
+    decode_properties,
+};
+use rocketmq_classic_protocol::codes::{request, response};
+use rocketmq_classic_remoting::{RemotingCommand, client::RequestProcessor};
+use std::sync::{Arc, OnceLock, Weak};
+
+pub(super) const CODES: [i32; 8] = [
+    request::CHECK_TRANSACTION_STATE,
+    request::NOTIFY_CONSUMER_IDS_CHANGED,
+    request::RESET_CONSUMER_CLIENT_OFFSET,
+    request::GET_CONSUMER_STATUS_FROM_CLIENT,
+    request::GET_CONSUMER_RUNNING_INFO,
+    request::CONSUME_MESSAGE_DIRECTLY,
+    request::PUSH_REPLY_MESSAGE_TO_CLIENT,
+    request::NOTIFY_UNSUBSCRIBE_LITE,
+];
+
+#[derive(Default)]
+pub(super) struct RuntimeProcessor {
+    runtime: OnceLock<Weak<ClientRuntime>>,
+}
+
+impl RuntimeProcessor {
+    pub fn bind(&self, runtime: &Arc<ClientRuntime>) {
+        let _ = self.runtime.set(Arc::downgrade(runtime));
+    }
+
+    fn dispatch(
+        &self,
+        remote: &str,
+        command: RemotingCommand,
+    ) -> Result<Option<RemotingCommand>, String> {
+        let Some(runtime) = self.runtime.get().and_then(Weak::upgrade) else {
+            return Ok(Some(error(
+                response::SYSTEM_ERROR,
+                "client runtime is unavailable",
+            )));
+        };
+        if runtime.state() != RuntimeState::Running {
+            return Ok(Some(error(
+                response::SYSTEM_ERROR,
+                "client runtime is not running",
+            )));
+        }
+        let groups = runtime
+            .groups
+            .snapshot()
+            .map_err(|error| error.to_string())?;
+        let fields = command.ext_fields.as_ref();
+        let field = |key: &str| {
+            fields
+                .and_then(|fields| fields.get(key))
+                .map(String::as_str)
+        };
+        let selected = match command.code {
+            request::CHECK_TRANSACTION_STATE => {
+                let producers = groups
+                    .producers
+                    .into_iter()
+                    .filter_map(|(group, producer)| {
+                        producer
+                            .transaction_processor()
+                            .map(|processor| (group, processor))
+                    })
+                    .collect::<Vec<_>>();
+                if producers.is_empty() {
+                    return Ok(Some(unsupported(command.code, "Phase 14")));
+                }
+                let properties = stored_properties(command.body.as_deref().unwrap_or_default())?;
+                producers
+                    .into_iter()
+                    .find(|(group, _)| properties.get(PROPERTY_PRODUCER_GROUP) == Some(group))
+                    .map(|(_, processor)| processor)
+            }
+            request::PUSH_REPLY_MESSAGE_TO_CLIENT => {
+                let properties = decode_properties(field("properties").unwrap_or_default());
+                let Some(correlation) = properties.get(PROPERTY_CORRELATION_ID) else {
+                    return Ok(Some(unsupported(command.code, "Phase 15")));
+                };
+                groups
+                    .producers
+                    .into_iter()
+                    .find_map(|(_, producer)| producer.reply_processor(correlation))
+            }
+            request::NOTIFY_UNSUBSCRIBE_LITE => {
+                // Registered by MQClientAPIImpl 5.5.1 but no Java processor switch branch.
+                return Ok(Some(unsupported(
+                    command.code,
+                    "Phase 13 source audit: no Java dispatch branch",
+                )));
+            }
+            code => {
+                let (operation, key, phase) = match code {
+                    request::NOTIFY_CONSUMER_IDS_CHANGED => (
+                        ConsumerOperation::ConsumerIdsChanged,
+                        "consumerGroup",
+                        "Phase 9",
+                    ),
+                    request::RESET_CONSUMER_CLIENT_OFFSET => {
+                        (ConsumerOperation::ResetOffset, "group", "Phase 17")
+                    }
+                    request::GET_CONSUMER_STATUS_FROM_CLIENT => {
+                        (ConsumerOperation::ConsumerStatus, "group", "Phase 17")
+                    }
+                    request::GET_CONSUMER_RUNNING_INFO => {
+                        (ConsumerOperation::RunningInfo, "consumerGroup", "Phase 17")
+                    }
+                    request::CONSUME_MESSAGE_DIRECTLY => (
+                        ConsumerOperation::ConsumeDirectly,
+                        "consumerGroup",
+                        "Phase 17",
+                    ),
+                    _ => return Ok(Some(unsupported(code, "no Java client owner"))),
+                };
+                let Some(group) = field(key) else {
+                    return Ok(Some(unsupported(code, phase)));
+                };
+                let Some(consumer) = runtime
+                    .select_consumer(group)
+                    .map_err(|error| error.to_string())?
+                else {
+                    return Ok(Some(unsupported(code, phase)));
+                };
+                consumer.inbound_processor(operation)
+            }
+        };
+        match selected {
+            Some(processor) => processor.process_with_context(remote, command),
+            None => Ok(Some(unsupported(
+                command.code,
+                match command.code {
+                    request::CHECK_TRANSACTION_STATE => "Phase 14",
+                    request::PUSH_REPLY_MESSAGE_TO_CLIENT => "Phase 15",
+                    request::NOTIFY_CONSUMER_IDS_CHANGED => "Phase 9",
+                    _ => "Phase 17",
+                },
+            ))),
+        }
+    }
+}
+
+impl RequestProcessor for RuntimeProcessor {
+    fn process(&self, command: RemotingCommand) -> Result<Option<RemotingCommand>, String> {
+        self.dispatch("", command)
+    }
+    fn process_with_context(
+        &self,
+        remote: &str,
+        command: RemotingCommand,
+    ) -> Result<Option<RemotingCommand>, String> {
+        self.dispatch(remote, command)
+    }
+}
+
+fn error(code: i32, remark: &str) -> RemotingCommand {
+    RemotingCommand {
+        code,
+        remark: Some(remark.into()),
+        ..Default::default()
+    }
+}
+fn unsupported(code: i32, phase: &str) -> RemotingCommand {
+    error(
+        response::REQUEST_CODE_NOT_SUPPORTED,
+        &format!("client request {code} has no active handler ({phase})"),
+    )
+}
+
+/// Routing-only metadata extraction from MessageDecoder's V1/V2 layout. Full
+/// message decoding/decompression belongs to Phase 8/14; no payload is copied.
+fn stored_properties(
+    body: &[u8],
+) -> Result<rocketmq_classic_common::message::MessageProperties, String> {
+    fn bytes(body: &[u8], offset: usize, length: usize) -> Result<&[u8], String> {
+        offset
+            .checked_add(length)
+            .and_then(|end| body.get(offset..end))
+            .ok_or_else(|| "malformed stored message metadata".into())
+    }
+    fn int(body: &[u8], offset: usize) -> Result<i32, String> {
+        Ok(i32::from_be_bytes(
+            bytes(body, offset, 4)?.try_into().unwrap(),
+        ))
+    }
+    let magic = int(body, 4)?;
+    let flag = int(body, 36)?;
+    let body_position =
+        84 + if flag & (1 << 4) != 0 { 12 } else { 0 } + if flag & (1 << 5) != 0 { 12 } else { 0 };
+    let length =
+        usize::try_from(int(body, body_position)?).map_err(|_| "negative stored body length")?;
+    let topic_position = body_position
+        .checked_add(4)
+        .and_then(|offset| offset.checked_add(length))
+        .ok_or("stored body length overflow")?;
+    let (topic_length, width) = match magic {
+        -626843481 => (
+            usize::try_from(bytes(body, topic_position, 1)?[0] as i8)
+                .map_err(|_| "negative V1 topic length")?,
+            1,
+        ),
+        -626843477 => (
+            usize::try_from(i16::from_be_bytes(
+                bytes(body, topic_position, 2)?.try_into().unwrap(),
+            ))
+            .map_err(|_| "negative V2 topic length")?,
+            2,
+        ),
+        _ => return Err("invalid stored message magic code".into()),
+    };
+    let properties_position = topic_position
+        .checked_add(width)
+        .and_then(|offset| offset.checked_add(topic_length))
+        .ok_or("stored topic length overflow")?;
+    let length = i16::from_be_bytes(bytes(body, properties_position, 2)?.try_into().unwrap()).max(0)
+        as usize;
+    Ok(decode_properties(&String::from_utf8_lossy(bytes(
+        body,
+        properties_position + 2,
+        length,
+    )?)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        config::ClientConfig,
+        runtime::{ClientRuntimeManager, ConsumerRuntime, GroupLease, ProducerRuntime},
+    };
+    use base64::Engine;
+    use rocketmq_classic_protocol::heartbeat::ConsumerData;
+    use std::sync::Mutex;
+
+    fn fixtures() -> serde_json::Value {
+        serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/inbound-routing.json"
+        ))
+        .unwrap()
+    }
+    fn body(case: &serde_json::Value) -> Vec<u8> {
+        base64::engine::general_purpose::STANDARD
+            .decode(case["body"].as_str().unwrap())
+            .unwrap()
+    }
+
+    #[test]
+    fn routing_properties_match_java_v1_v2_and_all_ipv4_ipv6_layouts() {
+        for case in fixtures()["cases"].as_array().unwrap() {
+            let body = body(case);
+            assert_eq!(
+                serde_json::to_value(stored_properties(&body).unwrap()).unwrap(),
+                case["properties"],
+                "{}",
+                case["case"]
+            );
+            for length in 0..body.len() {
+                assert!(
+                    stored_properties(&body[..length]).is_err(),
+                    "{} prefix {length}",
+                    case["case"]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn hostile_metadata_lengths_and_magic_are_rejected_without_payload_allocation() {
+        let mut body = body(&fixtures()["cases"][0]);
+        body[84..88].copy_from_slice(&i32::MAX.to_be_bytes());
+        assert!(stored_properties(&body).is_err());
+        body[84..88].copy_from_slice(&(-1i32).to_be_bytes());
+        assert!(stored_properties(&body).is_err());
+        body[4..8].copy_from_slice(&0i32.to_be_bytes());
+        assert!(stored_properties(&body).is_err());
+    }
+
+    struct Handler {
+        owner: String,
+        runtime: Weak<ClientRuntime>,
+        calls: Mutex<Vec<(String, i32)>>,
+    }
+    impl RequestProcessor for Handler {
+        fn process(&self, _: RemotingCommand) -> Result<Option<RemotingCommand>, String> {
+            panic!("channel context must be passed");
+        }
+        fn process_with_context(
+            &self,
+            remote: &str,
+            command: RemotingCommand,
+        ) -> Result<Option<RemotingCommand>, String> {
+            let runtime = self.runtime.upgrade().unwrap();
+            runtime.route_snapshot().unwrap(); // Callback may reenter cache and group registry.
+            if self.owner.starts_with("producer") {
+                assert!(runtime.select_producer(&self.owner).unwrap().is_some());
+            } else {
+                assert!(runtime.select_consumer(&self.owner).unwrap().is_some());
+            }
+            self.calls
+                .lock()
+                .unwrap()
+                .push((remote.to_owned(), command.code));
+            Ok(Some(RemotingCommand {
+                code: 0,
+                remark: Some(self.owner.clone()),
+                ..Default::default()
+            }))
+        }
+    }
+    struct Producer {
+        handler: Arc<Handler>,
+        correlation: &'static str,
+    }
+    impl ProducerRuntime for Producer {
+        fn transaction_processor(&self) -> Option<Arc<dyn RequestProcessor>> {
+            Some(self.handler.clone())
+        }
+        fn reply_processor(&self, correlation: &str) -> Option<Arc<dyn RequestProcessor>> {
+            (correlation == self.correlation)
+                .then(|| self.handler.clone() as Arc<dyn RequestProcessor>)
+        }
+    }
+    struct Consumer {
+        handler: Arc<Handler>,
+    }
+    impl ConsumerRuntime for Consumer {
+        fn heartbeat_data(&self) -> ConsumerData {
+            ConsumerData {
+                group_name: self.handler.owner.clone(),
+                ..Default::default()
+            }
+        }
+        fn inbound_processor(&self, _: ConsumerOperation) -> Option<Arc<dyn RequestProcessor>> {
+            Some(self.handler.clone())
+        }
+    }
+    fn handler(runtime: &Arc<ClientRuntime>, owner: &str) -> Arc<Handler> {
+        Arc::new(Handler {
+            owner: owner.into(),
+            runtime: Arc::downgrade(runtime),
+            calls: Mutex::default(),
+        })
+    }
+    async fn runtime(id: &str) -> Arc<ClientRuntime> {
+        let mut config = ClientConfig::new(id);
+        config.namesrv_addr = Some(String::new());
+        let runtime = ClientRuntimeManager::new()
+            .get_or_create(&config)
+            .await
+            .unwrap();
+        runtime.start().await.unwrap();
+        runtime
+    }
+    fn dispatch(
+        runtime: &Arc<ClientRuntime>,
+        code: i32,
+        fields: &[(&str, &str)],
+        body: Option<Vec<u8>>,
+    ) -> RemotingCommand {
+        runtime
+            .inbound
+            .process_with_context(
+                "broker:10911",
+                RemotingCommand {
+                    code,
+                    ext_fields: Some(
+                        fields
+                            .iter()
+                            .map(|(key, value)| (key.to_string(), value.to_string()))
+                            .collect(),
+                    ),
+                    body,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .unwrap()
+    }
+    async fn unregister(runtime: &Arc<ClientRuntime>, lease: &GroupLease, producer: bool) {
+        if producer {
+            runtime
+                .unregister_producer(lease, tokio::time::Instant::now())
+                .await
+                .unwrap();
+        } else {
+            runtime
+                .unregister_consumer(lease, tokio::time::Instant::now())
+                .await
+                .unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn transaction_routes_actual_body_group_not_header_and_reply_uses_correlation_not_responder()
+     {
+        let runtime = runtime("transaction-slots").await;
+        let first = Arc::new(Producer {
+            handler: handler(&runtime, "producer-a"),
+            correlation: "first",
+        });
+        let second = Arc::new(Producer {
+            handler: handler(&runtime, "producer-b"),
+            correlation: "second",
+        });
+        let first_lease = runtime
+            .register_producer("producer-a", first.clone())
+            .await
+            .unwrap();
+        let second_lease = runtime
+            .register_producer("producer-b", second.clone())
+            .await
+            .unwrap();
+        for case in fixtures()["cases"].as_array().unwrap() {
+            let result = dispatch(
+                &runtime,
+                request::CHECK_TRANSACTION_STATE,
+                &[("producerGroup", "forged-header-group")],
+                Some(body(case)),
+            );
+            assert_eq!(result.remark.as_deref(), case["group"].as_str());
+        }
+        let reply = dispatch(
+            &runtime,
+            request::PUSH_REPLY_MESSAGE_TO_CLIENT,
+            &[
+                ("producerGroup", "producer-b"),
+                ("properties", "CORRELATION_ID\u{1}first\u{2}"),
+            ],
+            Some(vec![0, 255]),
+        );
+        assert_eq!(reply.remark.as_deref(), Some("producer-a"));
+        assert!(
+            first
+                .handler
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|(remote, _)| remote == "broker:10911")
+        );
+        unregister(&runtime, &first_lease, true).await;
+        assert_eq!(
+            dispatch(
+                &runtime,
+                request::PUSH_REPLY_MESSAGE_TO_CLIENT,
+                &[("properties", "CORRELATION_ID\u{1}first\u{2}")],
+                None
+            )
+            .code,
+            response::REQUEST_CODE_NOT_SUPPORTED
+        );
+        unregister(&runtime, &second_lease, true).await;
+        assert!(runtime.shutdown().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn consumer_slots_route_group_with_registry_reentry_and_do_not_cross_runtime_identity() {
+        let runtime = runtime("consumer-slots").await;
+        let other = self::runtime("other-client").await;
+        let first = Arc::new(Consumer {
+            handler: handler(&runtime, "consumer-a"),
+        });
+        let second = Arc::new(Consumer {
+            handler: handler(&other, "consumer-a"),
+        });
+        let first_lease = runtime
+            .register_consumer("consumer-a", first.clone())
+            .await
+            .unwrap();
+        let second_lease = other
+            .register_consumer("consumer-a", second.clone())
+            .await
+            .unwrap();
+        for (code, key) in [
+            (request::NOTIFY_CONSUMER_IDS_CHANGED, "consumerGroup"),
+            (request::RESET_CONSUMER_CLIENT_OFFSET, "group"),
+            (request::GET_CONSUMER_STATUS_FROM_CLIENT, "group"),
+            (request::GET_CONSUMER_RUNNING_INFO, "consumerGroup"),
+            (request::CONSUME_MESSAGE_DIRECTLY, "consumerGroup"),
+        ] {
+            assert_eq!(
+                dispatch(&runtime, code, &[(key, "consumer-a")], None)
+                    .remark
+                    .as_deref(),
+                Some("consumer-a")
+            );
+            assert_eq!(
+                dispatch(&runtime, code, &[(key, "missing")], None).code,
+                response::REQUEST_CODE_NOT_SUPPORTED
+            );
+        }
+        assert_eq!(first.handler.calls.lock().unwrap().len(), 5);
+        assert!(second.handler.calls.lock().unwrap().is_empty());
+        unregister(&runtime, &first_lease, false).await;
+        assert_eq!(
+            dispatch(
+                &runtime,
+                request::CONSUME_MESSAGE_DIRECTLY,
+                &[("consumerGroup", "consumer-a")],
+                None
+            )
+            .code,
+            response::REQUEST_CODE_NOT_SUPPORTED
+        );
+        unregister(&other, &second_lease, false).await;
+        assert!(runtime.shutdown().await.unwrap());
+        assert!(other.shutdown().await.unwrap());
+    }
+}

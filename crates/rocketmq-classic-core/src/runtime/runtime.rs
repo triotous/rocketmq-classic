@@ -24,6 +24,7 @@ pub struct ClientRuntime {
     routes: crate::route::RouteCache,
     pub(super) groups: GroupRegistry,
     pub(super) control: ControlPlane,
+    pub(super) inbound: Arc<super::inbound::RuntimeProcessor>,
     manager: OnceLock<ManagerLink>,
     pub(crate) heartbeat: crate::heartbeat::HeartbeatState,
     addressing: Arc<dyn crate::namesrv::TopAddressing>,
@@ -103,6 +104,7 @@ impl ClientRuntime {
             routes: crate::route::RouteCache::default(),
             groups: GroupRegistry::default(),
             control: ControlPlane::default(),
+            inbound: Arc::default(),
             manager: OnceLock::new(),
             heartbeat: crate::heartbeat::HeartbeatState::default(),
             addressing,
@@ -459,8 +461,9 @@ impl ClientRuntime {
         tokio::time::Duration::from_millis(self.config.mq_client_api_timeout.max(0) as u64)
     }
 
-    pub(super) fn attach_manager(&self, link: ManagerLink) {
+    pub(super) fn attach_manager(self: &Arc<Self>, link: ManagerLink) {
         let _ = self.manager.set(link);
+        self.inbound.bind(self);
     }
 
     pub(super) fn remove_from_manager(self: &Arc<Self>) -> Result<bool, RuntimeError> {

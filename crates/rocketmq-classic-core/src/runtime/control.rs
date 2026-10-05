@@ -202,6 +202,7 @@ async fn run(
     let mut inner_producer: Option<Arc<dyn ProducerRuntime>> = None;
     let mut inner_lease: Option<GroupLease> = None;
     let mut periodic: Option<super::tasks::OwnedTasks> = None;
+    let mut inbound = Vec::new();
     while let Some(command) = receiver.recv().await {
         let Some(runtime) = runtime.upgrade() else {
             return;
@@ -282,6 +283,14 @@ async fn run(
                             .register_producer(INNER_PRODUCER, producer.clone())?,
                     );
                     runtime.control.checkpoint(1)?;
+                    for (index, code) in super::inbound::CODES.into_iter().enumerate() {
+                        inbound.push(
+                            runtime
+                                .remoting()
+                                .register_owned_processor(code, runtime.inbound.clone()),
+                        );
+                        runtime.control.checkpoint(10 + index as u8)?;
+                    }
                     if runtime.config().namesrv_addr.is_none() {
                         runtime.fetch_name_server_addr().await;
                     }
@@ -312,6 +321,7 @@ async fn run(
                             tasks.stop().await;
                         }
                         runtime.remoting().shutdown().await;
+                        inbound.clear();
                         let _ = runtime.groups.clear();
                         runtime.control.set_state(RuntimeState::Failed);
                         let _ = runtime.remove_from_manager();
@@ -342,6 +352,7 @@ async fn run(
                 }
                 inner_producer.take();
                 runtime.remoting().shutdown().await;
+                inbound.clear();
                 runtime.control.set_state(RuntimeState::Stopped);
                 let result = runtime.remove_from_manager().map(|_| true);
                 let _ = reply.send(result);
@@ -385,7 +396,7 @@ mod tests {
 
     #[tokio::test]
     async fn discovery_schedule_failure_joins_all_owned_work() {
-        for point in 1..=7 {
+        for point in [1, 2, 3, 4, 5, 6, 7, 10, 11, 12, 13, 14, 15, 16, 17] {
             let manager = ClientRuntimeManager::with_top_addressing(Arc::new(BlankAddressing));
             let config = ClientConfig::new("discovery-failure");
             let runtime = manager.get_or_create(&config).await.unwrap();
@@ -397,6 +408,10 @@ mod tests {
             assert_eq!(runtime.state(), RuntimeState::Failed);
             assert_eq!(runtime.periodic_probe.live.load(Ordering::SeqCst), 0);
             assert!(runtime.control.task.lock().unwrap().is_none());
+            assert_eq!(
+                runtime.remoting().with_processor_table(|table| table.len()),
+                0
+            );
             assert!(
                 runtime
                     .prepare_heartbeat_data(false)
@@ -433,7 +448,7 @@ mod tests {
 
     #[tokio::test]
     async fn every_initial_startup_failure_cleans_transport_groups_control_and_manager_identity() {
-        for point in [1, 2, 3, 4, 5, 6] {
+        for point in [1, 2, 3, 4, 5, 6, 10, 11, 12, 13, 14, 15, 16, 17] {
             let manager = ClientRuntimeManager::new();
             let mut config = ClientConfig::new(format!("failure-{point}"));
             config.namesrv_addr = Some(String::new());
@@ -451,6 +466,10 @@ mod tests {
             assert_eq!(runtime.state(), RuntimeState::Failed);
             assert!(runtime.control.task.lock().unwrap().is_none());
             assert_eq!(runtime.periodic_probe.live.load(Ordering::SeqCst), 0);
+            assert_eq!(
+                runtime.remoting().with_processor_table(|table| table.len()),
+                0
+            );
             assert!(
                 runtime
                     .prepare_heartbeat_data(false)

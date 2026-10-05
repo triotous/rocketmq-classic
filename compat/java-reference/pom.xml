@@ -31,6 +31,18 @@
         <configuration><mainClass>compat.Main</mainClass></configuration>
         <executions>
           <execution>
+            <id>verify-runtime-inbound-routing-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.RuntimeInboundRoutingFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/runtime/inbound-routing.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-runtime-discovery-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

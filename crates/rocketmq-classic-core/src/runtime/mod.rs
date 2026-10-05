@@ -1,4 +1,5 @@
 mod control;
+mod inbound;
 #[path = "runtime.rs"]
 mod instance;
 mod manager;
@@ -8,7 +9,7 @@ mod tasks;
 pub use control::RuntimeState;
 pub use instance::ClientRuntime;
 pub use manager::ClientRuntimeManager;
-pub use registry::{ConsumerRuntime, GroupLease, ProducerRuntime};
+pub use registry::{ConsumerOperation, ConsumerRuntime, GroupLease, ProducerRuntime};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RuntimeError {

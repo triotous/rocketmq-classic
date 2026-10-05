@@ -81,6 +81,10 @@ public final class Main {
             RuntimeDiscoveryFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;
         }
+        if (args.length > 0 && "runtime-inbound-routing-fixtures".equals(args[0])) {
+            RuntimeInboundRoutingFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "runtime-heartbeat-fixtures".equals(args[0])) {
             RuntimeHeartbeatFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;

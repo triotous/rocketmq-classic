@@ -11,6 +11,20 @@ use std::{
 /// Narrow MQProducerInner contract consumed by the shared runtime. Actual send
 /// and transaction behavior belongs to the producer's owning implementation.
 pub trait ProducerRuntime: Send + Sync + 'static {
+    fn transaction_processor(
+        &self,
+    ) -> Option<Arc<dyn rocketmq_classic_remoting::client::RequestProcessor>> {
+        None
+    }
+    /// Phase 15 supplies the runtime's correlation dispatcher, including its
+    /// unknown/late-reply acknowledgement path. The responder's producerGroup
+    /// is never a requester-routing key.
+    fn reply_processor(
+        &self,
+        _correlation_id: &str,
+    ) -> Option<Arc<dyn rocketmq_classic_remoting::client::RequestProcessor>> {
+        None
+    }
     fn publish_topics(&self) -> BTreeSet<String> {
         BTreeSet::new()
     }
@@ -23,6 +37,12 @@ pub trait ProducerRuntime: Send + Sync + 'static {
 /// MQConsumerInner capabilities; optional futures are absent until an owning
 /// consumer phase implements the operation. Absence is not reported as success.
 pub trait ConsumerRuntime: Send + Sync + 'static {
+    fn inbound_processor(
+        &self,
+        _operation: ConsumerOperation,
+    ) -> Option<Arc<dyn rocketmq_classic_remoting::client::RequestProcessor>> {
+        None
+    }
     fn heartbeat_data(&self) -> ConsumerData;
     fn is_subscribe_topic_need_update(&self, _topic: &str) -> bool {
         false
@@ -37,6 +57,16 @@ pub trait ConsumerRuntime: Send + Sync + 'static {
     fn try_rebalance(&self) -> Option<Pin<Box<dyn Future<Output = bool> + Send + '_>>> {
         None
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConsumerOperation {
+    /// Phase 9 must wake the runtime-wide rebalance service, not just this group.
+    ConsumerIdsChanged,
+    ResetOffset,
+    ConsumerStatus,
+    RunningInfo,
+    ConsumeDirectly,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

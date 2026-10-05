@@ -18,5 +18,6 @@ reqwest.workspace = true
 tokio-rustls.workspace = true
 
 [dev-dependencies]
+base64.workspace = true
 bytes.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
