@@ -37,6 +37,18 @@ pub trait ProducerRuntime: Send + Sync + 'static {
 /// MQConsumerInner capabilities; optional futures are absent until an owning
 /// consumer phase implements the operation. Absence is not reported as success.
 pub trait ConsumerRuntime: Send + Sync + 'static {
+    fn pull_message(
+        &self,
+        _request: Arc<dyn super::MessageRequest>,
+    ) -> Option<Pin<Box<dyn Future<Output = ()> + Send + '_>>> {
+        None
+    }
+    fn pop_message(
+        &self,
+        _request: Arc<dyn super::MessageRequest>,
+    ) -> Option<Pin<Box<dyn Future<Output = ()> + Send + '_>>> {
+        None
+    }
     fn inbound_processor(
         &self,
         _operation: ConsumerOperation,

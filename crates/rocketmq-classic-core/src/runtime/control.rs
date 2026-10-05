@@ -48,6 +48,7 @@ pub(super) enum Command {
     Start {
         reply: oneshot::Sender<Result<(), RuntimeError>>,
     },
+    StartPullScheduler,
     Shutdown {
         reply: oneshot::Sender<Result<bool, RuntimeError>>,
     },
@@ -204,6 +205,8 @@ async fn run(
     let mut periodic: Option<super::tasks::OwnedTasks> = None;
     let mut inbound = Vec::new();
     let mut rebalance: Option<super::rebalance::OwnedRebalance> = None;
+    let mut pull_workers: [Option<super::pull::OwnedPullWorker>; 2] = [None, None];
+    let mut pull_order = Vec::new();
     while let Some(command) = receiver.recv().await {
         let Some(runtime) = runtime.upgrade() else {
             return;
@@ -211,6 +214,18 @@ async fn run(
         let state = runtime.control.state();
         let allowed = matches!(state, RuntimeState::Created | RuntimeState::Running);
         match command {
+            Command::StartPullScheduler => {
+                if allowed && pull_workers[1].is_none() {
+                    let worker = super::pull::OwnedPullWorker::new(
+                        Arc::downgrade(&runtime),
+                        runtime.pull.clone(),
+                        true,
+                    );
+                    worker.activate();
+                    pull_workers[1] = Some(worker);
+                    pull_order.push(1);
+                }
+            }
             Command::RegisterProducer {
                 group,
                 handle,
@@ -305,6 +320,18 @@ async fn run(
                         }
                         runtime.control.checkpoint(3 + index as u8)?;
                     }
+                    for (scheduled, checkpoint) in [(false, 21), (true, 22)] {
+                        let slot = &mut pull_workers[usize::from(scheduled)];
+                        if slot.is_none() {
+                            *slot = Some(super::pull::OwnedPullWorker::new(
+                                Arc::downgrade(&runtime),
+                                runtime.pull.clone(),
+                                scheduled,
+                            ));
+                            pull_order.push(usize::from(scheduled));
+                        }
+                        runtime.control.checkpoint(checkpoint)?;
+                    }
                     rebalance = Some(super::rebalance::OwnedRebalance::new(
                         Arc::downgrade(&runtime),
                         runtime.rebalance.clone(),
@@ -323,12 +350,21 @@ async fn run(
                         if let Some(worker) = rebalance.as_ref() {
                             worker.activate();
                         }
+                        for worker in pull_workers.iter().flatten() {
+                            worker.activate();
+                        }
                         let _ = reply.send(Ok(()));
                     }
                     Err(error) => {
+                        runtime.pull.close();
                         runtime.rebalance.close_delayed();
                         if let Some(worker) = rebalance.as_mut() {
                             worker.stop().await;
+                        }
+                        for index in pull_order.iter().rev() {
+                            if let Some(worker) = pull_workers[*index].as_mut() {
+                                worker.stop().await;
+                            }
                         }
                         if let Some(tasks) = periodic.as_mut() {
                             tasks.stop().await;
@@ -355,9 +391,21 @@ async fn run(
                 }
                 runtime.control.set_state(RuntimeState::ShuttingDown);
                 runtime.rebalance.close_delayed();
+                runtime.pull.stop_accepting();
                 if let Some(worker) = rebalance.as_mut() {
                     worker.stop().await;
                 }
+                for (index, worker) in pull_workers.iter_mut().enumerate() {
+                    let Some(worker) = worker else {
+                        continue;
+                    };
+                    if index == 0 {
+                        worker.stop().await;
+                    } else {
+                        worker.finish_gracefully().await;
+                    }
+                }
+                runtime.pull.close();
                 if let Some(tasks) = periodic.as_mut() {
                     tasks.stop().await;
                 }
@@ -413,11 +461,14 @@ mod tests {
 
     #[tokio::test]
     async fn discovery_schedule_failure_joins_all_owned_work() {
-        for point in [1, 2, 3, 4, 5, 6, 7, 10, 11, 12, 13, 14, 15, 16, 17, 20] {
+        for point in [
+            1, 2, 3, 4, 5, 6, 7, 10, 11, 12, 13, 14, 15, 16, 17, 20, 21, 22,
+        ] {
             let manager = ClientRuntimeManager::with_top_addressing(Arc::new(BlankAddressing));
             let config = ClientConfig::new("discovery-failure");
             let runtime = manager.get_or_create(&config).await.unwrap();
             runtime.rebalance_later(60_000).unwrap();
+            runtime.execute_task_later(async {}, 60_000).unwrap();
             runtime.control.fault.store(point, Ordering::SeqCst);
             assert!(matches!(
                 runtime.start().await,
@@ -426,6 +477,8 @@ mod tests {
             assert_eq!(runtime.state(), RuntimeState::Failed);
             assert_eq!(runtime.periodic_probe.live.load(Ordering::SeqCst), 0);
             assert_eq!(runtime.rebalance_probe.live.load(Ordering::SeqCst), 0);
+            assert_eq!(runtime.pull_probe.live.load(Ordering::SeqCst), 0);
+            assert!(runtime.pull.is_empty());
             assert!(runtime.rebalance.next_due().is_none());
             assert!(runtime.control.task.lock().unwrap().is_none());
             assert_eq!(
@@ -464,14 +517,17 @@ mod tests {
         assert_eq!(runtime.periodic_probe.live.load(Ordering::SeqCst), 1);
         assert_eq!(runtime.rebalance_probe.created.load(Ordering::SeqCst), 1);
         assert_eq!(runtime.rebalance_probe.live.load(Ordering::SeqCst), 1);
+        assert_eq!(runtime.pull_probe.created.load(Ordering::SeqCst), 2);
+        assert_eq!(runtime.pull_probe.live.load(Ordering::SeqCst), 2);
         assert!(runtime.shutdown().await.unwrap());
         assert_eq!(runtime.periodic_probe.live.load(Ordering::SeqCst), 0);
         assert_eq!(runtime.rebalance_probe.live.load(Ordering::SeqCst), 0);
+        assert_eq!(runtime.pull_probe.live.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]
     async fn every_initial_startup_failure_cleans_transport_groups_control_and_manager_identity() {
-        for point in [1, 2, 3, 4, 5, 6, 10, 11, 12, 13, 14, 15, 16, 17, 20] {
+        for point in [1, 2, 3, 4, 5, 6, 10, 11, 12, 13, 14, 15, 16, 17, 20, 21, 22] {
             let manager = ClientRuntimeManager::new();
             let mut config = ClientConfig::new(format!("failure-{point}"));
             config.namesrv_addr = Some(String::new());
@@ -483,6 +539,7 @@ mod tests {
                 .unwrap();
             runtime.control.fault.store(point, Ordering::Release);
             runtime.rebalance_later(60_000).unwrap();
+            runtime.execute_task_later(async {}, 60_000).unwrap();
             assert!(matches!(
                 runtime.start().await,
                 Err(RuntimeError::StartupFailure)
@@ -491,6 +548,8 @@ mod tests {
             assert!(runtime.control.task.lock().unwrap().is_none());
             assert_eq!(runtime.periodic_probe.live.load(Ordering::SeqCst), 0);
             assert_eq!(runtime.rebalance_probe.live.load(Ordering::SeqCst), 0);
+            assert_eq!(runtime.pull_probe.live.load(Ordering::SeqCst), 0);
+            assert!(runtime.pull.is_empty());
             assert!(runtime.rebalance.next_due().is_none());
             assert_eq!(
                 runtime.remoting().with_processor_table(|table| table.len()),

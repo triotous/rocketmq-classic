@@ -26,6 +26,7 @@ pub struct ClientRuntime {
     pub(super) control: ControlPlane,
     pub(super) inbound: Arc<super::inbound::RuntimeProcessor>,
     pub(super) rebalance: Arc<super::rebalance::RebalanceSignal>,
+    pub(super) pull: Arc<super::pull::PullService>,
     manager: OnceLock<ManagerLink>,
     pub(crate) heartbeat: crate::heartbeat::HeartbeatState,
     addressing: Arc<dyn crate::namesrv::TopAddressing>,
@@ -34,6 +35,8 @@ pub struct ClientRuntime {
     pub(super) periodic_probe: Arc<super::tasks::TaskProbe>,
     #[cfg(test)]
     pub(super) rebalance_probe: Arc<super::tasks::TaskProbe>,
+    #[cfg(test)]
+    pub(super) pull_probe: Arc<super::tasks::TaskProbe>,
 }
 
 impl ClientRuntime {
@@ -112,6 +115,7 @@ impl ClientRuntime {
             control: ControlPlane::default(),
             inbound: Arc::default(),
             rebalance,
+            pull: Arc::default(),
             manager: OnceLock::new(),
             heartbeat: crate::heartbeat::HeartbeatState::default(),
             addressing,
@@ -120,11 +124,68 @@ impl ClientRuntime {
             periodic_probe: Arc::default(),
             #[cfg(test)]
             rebalance_probe: Arc::default(),
+            #[cfg(test)]
+            pull_probe: Arc::default(),
         })
     }
 
     pub fn client_id(&self) -> &str {
         &self.client_id
+    }
+
+    pub fn execute_pull_request_immediately(
+        &self,
+        request: Arc<dyn super::MessageRequest>,
+    ) -> Result<(), RuntimeError> {
+        self.pull.enqueue(request)
+    }
+    pub fn execute_pop_pull_request_immediately(
+        &self,
+        request: Arc<dyn super::MessageRequest>,
+    ) -> Result<(), RuntimeError> {
+        self.pull.enqueue(request)
+    }
+    pub fn execute_pull_request_later(
+        self: &Arc<Self>,
+        request: Arc<dyn super::MessageRequest>,
+        delay: i64,
+    ) -> Result<(), RuntimeError> {
+        self.ensure_pull_scheduler()?;
+        self.pull.request_later(request, delay)
+    }
+    pub fn execute_pop_pull_request_later(
+        self: &Arc<Self>,
+        request: Arc<dyn super::MessageRequest>,
+        delay: i64,
+    ) -> Result<(), RuntimeError> {
+        self.ensure_pull_scheduler()?;
+        self.pull.request_later(request, delay)
+    }
+    pub fn execute_task(
+        self: &Arc<Self>,
+        task: impl std::future::Future<Output = ()> + Send + 'static,
+    ) -> Result<(), RuntimeError> {
+        self.ensure_pull_scheduler()?;
+        self.pull.task_later(Box::pin(task), 0)
+    }
+    pub fn execute_task_later(
+        self: &Arc<Self>,
+        task: impl std::future::Future<Output = ()> + Send + 'static,
+        delay: i64,
+    ) -> Result<(), RuntimeError> {
+        self.ensure_pull_scheduler()?;
+        self.pull.task_later(Box::pin(task), delay)
+    }
+
+    fn ensure_pull_scheduler(self: &Arc<Self>) -> Result<(), RuntimeError> {
+        let state = self.state();
+        if !matches!(state, RuntimeState::Created | RuntimeState::Running) {
+            return Err(RuntimeError::InvalidState(state));
+        }
+        self.control
+            .sender(self)?
+            .send(Command::StartPullScheduler)
+            .map_err(|_| RuntimeError::ControlTaskFailed)
     }
 
     pub fn rebalance_immediately(&self) {

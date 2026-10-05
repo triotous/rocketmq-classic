@@ -3,6 +3,7 @@ mod inbound;
 #[path = "runtime.rs"]
 mod instance;
 mod manager;
+mod pull;
 mod rebalance;
 mod registry;
 mod tasks;
@@ -10,6 +11,7 @@ mod tasks;
 pub use control::RuntimeState;
 pub use instance::ClientRuntime;
 pub use manager::ClientRuntimeManager;
+pub use pull::MessageRequest;
 pub use registry::{ConsumerOperation, ConsumerRuntime, GroupLease, ProducerRuntime};
 
 #[derive(Debug, thiserror::Error)]
