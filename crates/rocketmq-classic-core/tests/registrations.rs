@@ -42,15 +42,17 @@ async fn duplicate_groups_and_stale_identity_tokens_cannot_remove_replacements()
     let producer = Arc::new(Producer);
     let old = runtime
         .register_producer("group", producer.clone())
+        .await
         .unwrap();
     assert!(matches!(
-        runtime.register_producer("group", producer.clone()),
+        runtime.register_producer("group", producer.clone()).await,
         Err(RuntimeError::DuplicateGroup { .. })
     ));
     let deadline = Instant::now() + Duration::from_secs(1);
     assert!(runtime.unregister_producer(&old, deadline).await.unwrap());
     let replacement = runtime
         .register_producer("group", producer.clone())
+        .await
         .unwrap();
     assert!(!runtime.unregister_producer(&old, deadline).await.unwrap());
     assert_eq!(
@@ -97,6 +99,7 @@ async fn heartbeat_snapshots_follow_consumer_versions_and_without_subscription_f
     })));
     let producer_lease = runtime
         .register_producer("producer", producer.clone())
+        .await
         .unwrap();
     compare_java(
         "producer-only",
@@ -104,6 +107,7 @@ async fn heartbeat_snapshots_follow_consumer_versions_and_without_subscription_f
     );
     let consumer_lease = runtime
         .register_consumer("consumer", consumer.clone())
+        .await
         .unwrap();
     let first = runtime.prepare_heartbeat_data(false).unwrap();
     compare_java("both", &first);
@@ -192,12 +196,12 @@ async fn admin_leases_are_separate_from_heartbeat_groups_and_runtime_identity() 
         .get_or_create(&ClientConfig::new("other"))
         .await
         .unwrap();
-    let lease = runtime.register_admin("admin").unwrap();
+    let lease = runtime.register_admin("admin").await.unwrap();
     assert!(matches!(
-        runtime.register_admin("admin"),
+        runtime.register_admin("admin").await,
         Err(RuntimeError::DuplicateGroup { .. })
     ));
-    assert!(!other.unregister_admin(&lease).unwrap());
+    assert!(!other.unregister_admin(&lease).await.unwrap());
     assert!(
         runtime
             .prepare_heartbeat_data(false)
@@ -205,8 +209,8 @@ async fn admin_leases_are_separate_from_heartbeat_groups_and_runtime_identity() 
             .producer_data_set
             .is_empty()
     );
-    assert!(runtime.unregister_admin(&lease).unwrap());
-    assert!(!runtime.unregister_admin(&lease).unwrap());
+    assert!(runtime.unregister_admin(&lease).await.unwrap());
+    assert!(!runtime.unregister_admin(&lease).await.unwrap());
 }
 
 #[tokio::test]
@@ -241,9 +245,11 @@ async fn heartbeat_callbacks_can_reenter_registry_and_registries_do_not_create_o
     let consumer = Arc::new(ReentrantConsumer(weak.clone()));
     let _producer_lease = runtime
         .register_producer("producer", producer.clone())
+        .await
         .unwrap();
     let _consumer_lease = runtime
         .register_consumer("consumer", consumer.clone())
+        .await
         .unwrap();
     let (done, result) = std::sync::mpsc::channel();
     let runner = runtime.clone();

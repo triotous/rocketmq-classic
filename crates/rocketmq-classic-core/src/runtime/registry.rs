@@ -88,6 +88,26 @@ pub(super) struct RegistrySnapshot {
 }
 
 impl GroupRegistry {
+    pub fn has_active_users(&self, inner_producer: &str) -> Result<bool, RuntimeError> {
+        let entries = self
+            .entries
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?;
+        Ok(!entries.consumers.is_empty()
+            || !entries.admins.is_empty()
+            || entries
+                .producers
+                .keys()
+                .any(|group| group != inner_producer))
+    }
+
+    pub fn clear(&self) -> Result<(), RuntimeError> {
+        *self
+            .entries
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)? = Entries::default();
+        Ok(())
+    }
     pub fn register_producer(
         &self,
         group: &str,

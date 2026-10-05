@@ -1,14 +1,23 @@
+mod control;
 #[path = "runtime.rs"]
 mod instance;
 mod manager;
 mod registry;
 
+pub use control::RuntimeState;
 pub use instance::ClientRuntime;
 pub use manager::ClientRuntimeManager;
 pub use registry::{ConsumerRuntime, GroupLease, ProducerRuntime};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RuntimeError {
+    #[error("runtime operation is invalid in state {0:?}")]
+    InvalidState(RuntimeState),
+    #[error("owned runtime control task failed")]
+    ControlTaskFailed,
+    #[error("runtime startup failed")]
+    #[cfg(test)]
+    StartupFailure,
     #[error("client group already registered: {group}")]
     DuplicateGroup { group: String },
     #[error("invalid topic route: {0}")]

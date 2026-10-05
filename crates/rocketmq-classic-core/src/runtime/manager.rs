@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     future::Future,
-    sync::{Arc, Mutex, OnceLock},
+    sync::{Arc, Mutex, OnceLock, Weak},
 };
 
 use rocketmq_classic_remoting::client::RpcHook;
@@ -26,6 +26,17 @@ struct Entry {
 #[derive(Clone, Default)]
 pub struct ClientRuntimeManager {
     entries: Arc<Mutex<Entries>>,
+}
+
+pub(super) struct ManagerLink(Weak<Mutex<Entries>>);
+
+impl ManagerLink {
+    pub fn remove(&self, runtime: &Arc<ClientRuntime>) -> Result<bool, RuntimeError> {
+        let Some(entries) = self.0.upgrade() else {
+            return Ok(false);
+        };
+        ClientRuntimeManager { entries }.remove_client_factory(runtime.client_id(), runtime)
+    }
 }
 
 impl ClientRuntimeManager {
@@ -110,6 +121,7 @@ impl ClientRuntimeManager {
             match construct(entry.clone()).await {
                 Ok(created) => {
                     let created = Arc::new(created);
+                    created.attach_manager(ManagerLink(Arc::downgrade(&self.entries)));
                     // The key lock guarantees a sole publisher. Removal reads
                     // this immutable cell without contending with lookup locks.
                     let _ = entry.runtime.set(created.clone());

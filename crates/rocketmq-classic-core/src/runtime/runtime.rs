@@ -1,11 +1,16 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, OnceLock},
+};
 
 use rocketmq_classic_remoting::client::{
     ClientConfig as TransportConfig, RemotingClient, RpcHook, TransportMode,
 };
 
 use super::{
-    ConsumerRuntime, GroupLease, ProducerRuntime, RuntimeError,
+    ConsumerRuntime, GroupLease, ProducerRuntime, RuntimeError, RuntimeState,
+    control::{Command, ControlPlane},
+    manager::ManagerLink,
     registry::{GroupKind, GroupRegistry},
 };
 use crate::{api::MQClientApi, config::ClientConfig};
@@ -17,7 +22,9 @@ pub struct ClientRuntime {
     remoting: RemotingClient,
     api: MQClientApi,
     routes: crate::route::RouteCache,
-    groups: GroupRegistry,
+    pub(super) groups: GroupRegistry,
+    pub(super) control: ControlPlane,
+    manager: OnceLock<ManagerLink>,
 }
 
 impl ClientRuntime {
@@ -60,6 +67,8 @@ impl ClientRuntime {
             remoting,
             routes: crate::route::RouteCache::default(),
             groups: GroupRegistry::default(),
+            control: ControlPlane::default(),
+            manager: OnceLock::new(),
         })
     }
 
@@ -92,24 +101,50 @@ impl ClientRuntime {
         self.routes.replace(topic, route)
     }
 
-    pub fn register_producer(
-        &self,
+    pub async fn register_producer(
+        self: &Arc<Self>,
         group: &str,
         handle: Arc<dyn ProducerRuntime>,
     ) -> Result<GroupLease, RuntimeError> {
-        self.groups.register_producer(group, handle)
+        let (reply, receive) = tokio::sync::oneshot::channel();
+        self.control
+            .sender(self)?
+            .send(Command::RegisterProducer {
+                group: group.into(),
+                handle,
+                reply,
+            })
+            .map_err(|_| self.control_error())?;
+        receive.await.map_err(|_| self.control_error())??.accept()
     }
 
-    pub fn register_consumer(
-        &self,
+    pub async fn register_consumer(
+        self: &Arc<Self>,
         group: &str,
         handle: Arc<dyn ConsumerRuntime>,
     ) -> Result<GroupLease, RuntimeError> {
-        self.groups.register_consumer(group, handle)
+        let (reply, receive) = tokio::sync::oneshot::channel();
+        self.control
+            .sender(self)?
+            .send(Command::RegisterConsumer {
+                group: group.into(),
+                handle,
+                reply,
+            })
+            .map_err(|_| self.control_error())?;
+        receive.await.map_err(|_| self.control_error())??.accept()
     }
 
-    pub fn register_admin(&self, group: &str) -> Result<GroupLease, RuntimeError> {
-        self.groups.register_admin(group)
+    pub async fn register_admin(self: &Arc<Self>, group: &str) -> Result<GroupLease, RuntimeError> {
+        let (reply, receive) = tokio::sync::oneshot::channel();
+        self.control
+            .sender(self)?
+            .send(Command::RegisterAdmin {
+                group: group.into(),
+                reply,
+            })
+            .map_err(|_| self.control_error())?;
+        receive.await.map_err(|_| self.control_error())??.accept()
     }
 
     pub fn select_producer(
@@ -153,28 +188,32 @@ impl ClientRuntime {
     }
 
     pub async fn unregister_producer(
-        &self,
+        self: &Arc<Self>,
         lease: &GroupLease,
         deadline: tokio::time::Instant,
     ) -> Result<bool, RuntimeError> {
-        self.unregister_group(lease, GroupKind::Producer, deadline)
+        self.request_unregister(lease, GroupKind::Producer, deadline)
             .await
     }
 
     pub async fn unregister_consumer(
-        &self,
+        self: &Arc<Self>,
         lease: &GroupLease,
         deadline: tokio::time::Instant,
     ) -> Result<bool, RuntimeError> {
-        self.unregister_group(lease, GroupKind::Consumer, deadline)
+        self.request_unregister(lease, GroupKind::Consumer, deadline)
             .await
     }
 
-    pub fn unregister_admin(&self, lease: &GroupLease) -> Result<bool, RuntimeError> {
-        self.groups.unregister(lease, GroupKind::Admin)
+    pub async fn unregister_admin(
+        self: &Arc<Self>,
+        lease: &GroupLease,
+    ) -> Result<bool, RuntimeError> {
+        self.request_unregister(lease, GroupKind::Admin, tokio::time::Instant::now())
+            .await
     }
 
-    async fn unregister_group(
+    pub(super) async fn unregister_group(
         &self,
         lease: &GroupLease,
         kind: GroupKind,
@@ -182,6 +221,9 @@ impl ClientRuntime {
     ) -> Result<bool, RuntimeError> {
         if !self.groups.unregister(lease, kind)? {
             return Ok(false);
+        }
+        if kind == GroupKind::Admin {
+            return Ok(true);
         }
         let header = rocketmq_classic_protocol::header::UnregisterClientRequestHeader {
             client_id: self.client_id.clone(),
@@ -197,5 +239,95 @@ impl ClientRuntime {
             }
         }
         Ok(true)
+    }
+
+    pub fn state(&self) -> RuntimeState {
+        self.control.state()
+    }
+
+    pub async fn start(self: &Arc<Self>) -> Result<(), RuntimeError> {
+        if matches!(self.state(), RuntimeState::Failed | RuntimeState::Stopped) {
+            return Err(RuntimeError::InvalidState(self.state()));
+        }
+        let (reply, receive) = tokio::sync::oneshot::channel();
+        self.control
+            .sender(self)?
+            .send(Command::Start { reply })
+            .map_err(|_| self.control_error())?;
+        let result = receive.await.map_err(|_| self.control_error())?;
+        self.control.join_terminal().await?;
+        result
+    }
+
+    pub async fn shutdown(self: &Arc<Self>) -> Result<bool, RuntimeError> {
+        if matches!(self.state(), RuntimeState::Stopped | RuntimeState::Failed) {
+            self.control.join_terminal().await?;
+            return Ok(false);
+        }
+        let (reply, receive) = tokio::sync::oneshot::channel();
+        if self
+            .control
+            .sender(self)?
+            .send(Command::Shutdown { reply })
+            .is_err()
+        {
+            if matches!(self.state(), RuntimeState::Stopped | RuntimeState::Failed) {
+                self.control.join_terminal().await?;
+                return Ok(false);
+            }
+            return Err(self.control_error());
+        }
+        let result = match receive.await {
+            Ok(result) => result,
+            Err(_) if self.state() == RuntimeState::Stopped => Ok(false),
+            Err(_) => Err(self.control_error()),
+        };
+        self.control.join_terminal().await?;
+        result
+    }
+
+    async fn request_unregister(
+        self: &Arc<Self>,
+        lease: &GroupLease,
+        kind: GroupKind,
+        deadline: tokio::time::Instant,
+    ) -> Result<bool, RuntimeError> {
+        if matches!(self.state(), RuntimeState::Stopped | RuntimeState::Failed) {
+            return Ok(false);
+        }
+        let (reply, receive) = tokio::sync::oneshot::channel();
+        self.control
+            .sender(self)?
+            .send(Command::Unregister {
+                lease: lease.clone(),
+                kind,
+                deadline,
+                reply: Some(reply),
+            })
+            .map_err(|_| self.control_error())?;
+        receive.await.map_err(|_| self.control_error())?
+    }
+
+    fn control_error(&self) -> RuntimeError {
+        match self.state() {
+            RuntimeState::Failed | RuntimeState::Stopped => {
+                RuntimeError::InvalidState(self.state())
+            }
+            _ => RuntimeError::ControlTaskFailed,
+        }
+    }
+
+    pub(super) fn rpc_timeout(&self) -> tokio::time::Duration {
+        tokio::time::Duration::from_millis(self.config.mq_client_api_timeout.max(0) as u64)
+    }
+
+    pub(super) fn attach_manager(&self, link: ManagerLink) {
+        let _ = self.manager.set(link);
+    }
+
+    pub(super) fn remove_from_manager(self: &Arc<Self>) -> Result<bool, RuntimeError> {
+        self.manager
+            .get()
+            .map_or(Ok(false), |link| link.remove(self))
     }
 }
