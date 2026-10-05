@@ -118,6 +118,32 @@ async fn broker_methods_use_one_attempt_and_honor_deadline() {
         )
     );
     broker_attempt!(
+        "lite_pull_message",
+        request::LITE_PULL_MESSAGE,
+        false,
+        |api, addr, deadline| api.pull_message(
+            addr,
+            &PullMessageRequestHeader {
+                sys_flag: rocketmq_classic_common::sysflag::pull::FLAG_LITE_PULL_MESSAGE,
+                ..Default::default()
+            },
+            deadline
+        )
+    );
+    broker_attempt!(
+        "lite_pull_message_future",
+        request::LITE_PULL_MESSAGE,
+        false,
+        |api, addr, deadline| api.pull_message_future(
+            addr,
+            &PullMessageRequestHeader {
+                sys_flag: rocketmq_classic_common::sysflag::pull::FLAG_LITE_PULL_MESSAGE,
+                ..Default::default()
+            },
+            deadline
+        )
+    );
+    broker_attempt!(
         "query_consumer_offset",
         request::QUERY_CONSUMER_OFFSET,
         false,

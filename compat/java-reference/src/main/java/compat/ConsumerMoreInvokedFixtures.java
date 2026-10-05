@@ -135,6 +135,10 @@ public final class ConsumerMoreInvokedFixtures {
         pullReply.setMinOffset(0L);
         pullReply.setMaxOffset(20L);
         pullReply.setSuggestWhichBrokerId(0L);
+        for (boolean isLite : new boolean[] {false, true}) {
+        pull.setSysFlag(isLite ? 16 : 0);
+        String prefix = isLite ? "lite-" : "";
+        int requestCode = isLite ? RequestCode.LITE_PULL_MESSAGE : RequestCode.PULL_MESSAGE;
         for (CommunicationMode mode : new CommunicationMode[] {CommunicationMode.SYNC, CommunicationMode.ASYNC}) {
         String suffix = mode == CommunicationMode.ASYNC ? "-async" : "";
         String dispatch = mode == CommunicationMode.ASYNC ? "Async" : "Sync";
@@ -155,7 +159,7 @@ public final class ConsumerMoreInvokedFixtures {
             check(result.getPullStatus().name().equals(code == ResponseCode.SUCCESS ? "FOUND"
                 : code == ResponseCode.PULL_NOT_FOUND ? "NO_NEW_MSG"
                 : code == ResponseCode.PULL_RETRY_IMMEDIATELY ? "NO_MATCHED_MSG" : "OFFSET_ILLEGAL"), name);
-            record(output, verify, capture, name + suffix, RequestCode.PULL_MESSAGE, dispatch, "status=" + status
+            record(output, verify, capture, prefix + name + suffix, requestCode, dispatch, "status=" + status
                 + ";next=11;min=0;max=20;broker=0;raw=" + (code == ResponseCode.SUCCESS ? "AP8q" : "null"));
         }
         for (int code : new int[] {ResponseCode.SYSTEM_ERROR, 987654}) {
@@ -166,8 +170,8 @@ public final class ConsumerMoreInvokedFixtures {
             } catch (MQBrokerException expected) {
                 check(expected.getResponseCode() == code, "pull exception code");
             }
-            record(output, verify, capture, (code == ResponseCode.SYSTEM_ERROR ? "pull-error" : "pull-unknown") + suffix,
-                RequestCode.PULL_MESSAGE, dispatch, "MQBrokerException;code=" + code);
+            record(output, verify, capture, prefix + (code == ResponseCode.SYSTEM_ERROR ? "pull-error" : "pull-unknown") + suffix,
+                requestCode, dispatch, "MQBrokerException;code=" + code);
         }
 
         for (String shape : new String[] {"no-header", "invalid-header"}) {
@@ -182,12 +186,13 @@ public final class ConsumerMoreInvokedFixtures {
                 pull(capture, api, pull, mode);
                 throw new IllegalStateException("malformed pull accepted");
             } catch (NullPointerException | NumberFormatException expected) {
-                record(output, verify, capture, "pull-" + shape + suffix, RequestCode.PULL_MESSAGE,
+                record(output, verify, capture, prefix + "pull-" + shape + suffix, requestCode,
                     dispatch, "malformed");
             }
         }
         }
 
+        }
         MessageQueue queue = new MessageQueue("oracle-topic", "broker", 2);
         LockBatchRequestBody lock = new LockBatchRequestBody();
         lock.setConsumerGroup("consumer");

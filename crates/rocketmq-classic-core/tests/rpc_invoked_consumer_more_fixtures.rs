@@ -63,6 +63,22 @@ async fn java_invoked_consumer_more_requests_and_outcomes_match() {
         "pull-unknown-async",
         "pull-no-header-async",
         "pull-invalid-header-async",
+        "lite-pull-found",
+        "lite-pull-no-new",
+        "lite-pull-no-matched",
+        "lite-pull-offset-illegal",
+        "lite-pull-error",
+        "lite-pull-unknown",
+        "lite-pull-no-header",
+        "lite-pull-invalid-header",
+        "lite-pull-found-async",
+        "lite-pull-no-new-async",
+        "lite-pull-no-matched-async",
+        "lite-pull-offset-illegal-async",
+        "lite-pull-error-async",
+        "lite-pull-unknown-async",
+        "lite-pull-no-header-async",
+        "lite-pull-invalid-header-async",
         "lock-success",
         "lock-error",
         "lock-unknown",
@@ -150,14 +166,18 @@ async fn java_invoked_consumer_more_requests_and_outcomes_match() {
         let api = MQClientApi::new(client.clone());
         let deadline = Instant::now() + Duration::from_secs(3);
         let queue = MessageQueue::new("oracle-topic", "broker", 2);
-        let outcome = if name.starts_with("pull-") {
+        let outcome = if name.starts_with("pull-") || name.starts_with("lite-pull-") {
             let header = PullMessageRequestHeader {
                 consumer_group: "consumer".into(),
                 topic: "oracle-topic".into(),
                 queue_id: 2,
                 queue_offset: 10,
                 max_msg_nums: 1,
-                sys_flag: 0,
+                sys_flag: if name.starts_with("lite-pull-") {
+                    16
+                } else {
+                    0
+                },
                 commit_offset: 0,
                 suspend_timeout_millis: 0,
                 sub_version: 1,
@@ -192,8 +212,22 @@ async fn java_invoked_consumer_more_requests_and_outcomes_match() {
                         result.suggest_which_broker_id
                     )
                 }
-                Err(RpcError::Response { code, .. }) => format!("MQBrokerException;code={code}"),
-                Err(RpcError::MalformedResponse { .. }) => "malformed".into(),
+                Err(RpcError::Response {
+                    code, request_code, ..
+                }) => {
+                    assert_eq!(
+                        request_code,
+                        fixture["request"]["code"].as_i64().unwrap() as i32
+                    );
+                    format!("MQBrokerException;code={code}")
+                }
+                Err(RpcError::MalformedResponse { request_code, .. }) => {
+                    assert_eq!(
+                        request_code,
+                        fixture["request"]["code"].as_i64().unwrap() as i32
+                    );
+                    "malformed".into()
+                }
                 other => panic!("unexpected pull result: {other:?}"),
             }
         } else if name.starts_with("lock-") {

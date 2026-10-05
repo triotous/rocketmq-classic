@@ -1,4 +1,4 @@
-use rocketmq_classic_common::message::MessageQueue;
+use rocketmq_classic_common::{message::MessageQueue, sysflag::pull::has_lite_pull_flag};
 use rocketmq_classic_protocol::{
     body::{
         ConsumerListByGroupResponseBody, LockBatchRequestBody, LockBatchResponseBody,
@@ -36,6 +36,14 @@ pub struct PullResultExt {
     pub raw_messages: Option<Vec<u8>>,
 }
 
+fn pull_request_code(header: &PullMessageRequestHeader) -> i32 {
+    if has_lite_pull_flag(header.sys_flag) {
+        request::LITE_PULL_MESSAGE
+    } else {
+        request::PULL_MESSAGE
+    }
+}
+
 impl MQClientApi {
     pub async fn pull_message(
         &self,
@@ -43,9 +51,9 @@ impl MQClientApi {
         header: &PullMessageRequestHeader,
         deadline: Instant,
     ) -> Result<PullResultExt, RpcError> {
-        let code = request::PULL_MESSAGE;
+        let code = pull_request_code(header);
         let reply = self.request(addr, code, header, None, deadline).await?;
-        self.process_pull_response(addr, reply)
+        self.process_pull_response(addr, code, reply)
     }
 
     /// Java ASYNC pull represented as an awaited Rust future with transport cleanup grace.
@@ -55,18 +63,19 @@ impl MQClientApi {
         header: &PullMessageRequestHeader,
         deadline: Instant,
     ) -> Result<PullResultExt, RpcError> {
+        let code = pull_request_code(header);
         let reply = self
-            .request_future(addr, request::PULL_MESSAGE, header, None, deadline)
+            .request_future(addr, code, header, None, deadline)
             .await?;
-        self.process_pull_response(addr, reply)
+        self.process_pull_response(addr, code, reply)
     }
 
     fn process_pull_response(
         &self,
         addr: &str,
+        code: i32,
         reply: rocketmq_classic_remoting::RemotingCommand,
     ) -> Result<PullResultExt, RpcError> {
-        let code = request::PULL_MESSAGE;
         let status = match reply.code {
             response::SUCCESS => PullStatus::Found,
             response::PULL_NOT_FOUND => PullStatus::NoNewMessage,
