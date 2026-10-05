@@ -13,6 +13,7 @@ pub struct ClientRuntime {
     client_id: String,
     remoting: RemotingClient,
     api: MQClientApi,
+    routes: crate::route::RouteCache,
 }
 
 impl ClientRuntime {
@@ -53,6 +54,7 @@ impl ClientRuntime {
             config,
             api: MQClientApi::new(remoting.clone()),
             remoting,
+            routes: crate::route::RouteCache::default(),
         })
     }
 
@@ -70,5 +72,18 @@ impl ClientRuntime {
 
     pub fn remoting(&self) -> &RemotingClient {
         &self.remoting
+    }
+
+    pub fn route_snapshot(&self) -> Result<Arc<crate::route::RouteSnapshot>, RuntimeError> {
+        self.routes.snapshot()
+    }
+
+    pub async fn update_topic_route(
+        &self,
+        topic: &str,
+        deadline: tokio::time::Instant,
+    ) -> Result<bool, RuntimeError> {
+        let route = self.api.get_topic_route(topic, deadline).await?;
+        self.routes.replace(topic, route)
     }
 }
