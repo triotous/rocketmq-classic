@@ -59,6 +59,7 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
         "assignment-error",
         "assignment-unknown",
         "assignment-no-body",
+        "assignment-invalid-json",
         "request-mode-success",
         "request-mode-error",
         "request-mode-unknown",
@@ -184,7 +185,12 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
                     }
                 }
                 Err(RpcError::Response { code, .. }) => format!("MQBrokerException;code={code}"),
-                Err(RpcError::MalformedResponse { .. }) => "NullPointerException;malformed".into(),
+                Err(RpcError::MalformedResponse { .. }) => if name == "assignment-invalid-json" {
+                    "JSONException;malformed"
+                } else {
+                    "NullPointerException;malformed"
+                }
+                .into(),
                 other => panic!("unexpected assignment result: {other:?}"),
             }
         } else {

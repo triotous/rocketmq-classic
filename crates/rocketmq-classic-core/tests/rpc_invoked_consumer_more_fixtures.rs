@@ -53,9 +53,13 @@ async fn java_invoked_consumer_more_requests_and_outcomes_match() {
         "pull-offset-illegal",
         "pull-error",
         "pull-unknown",
+        "pull-no-header",
+        "pull-invalid-header",
         "lock-success",
         "lock-error",
         "lock-unknown",
+        "lock-no-body",
+        "lock-invalid-json",
         "unlock-sync-success",
         "unlock-sync-error",
         "unlock-sync-unknown",
@@ -174,6 +178,7 @@ async fn java_invoked_consumer_more_requests_and_outcomes_match() {
                     )
                 }
                 Err(RpcError::Response { code, .. }) => format!("MQBrokerException;code={code}"),
+                Err(RpcError::MalformedResponse { .. }) => "malformed".into(),
                 other => panic!("unexpected pull result: {other:?}"),
             }
         } else if name.starts_with("lock-") {
@@ -194,6 +199,7 @@ async fn java_invoked_consumer_more_requests_and_outcomes_match() {
                     )
                 }
                 Err(RpcError::Response { code, .. }) => format!("MQBrokerException;code={code}"),
+                Err(RpcError::MalformedResponse { .. }) => "malformed".into(),
                 other => panic!("unexpected lock result: {other:?}"),
             }
         } else {

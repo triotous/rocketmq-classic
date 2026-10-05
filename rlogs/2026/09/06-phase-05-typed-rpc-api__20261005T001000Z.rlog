@@ -1,0 +1,4 @@
+Session continuation; plan: plan/2026/09/06-phase-05-typed-rpc-api.md
+Previous turn classified progress: committed response-default parity, 29 invoked cases and passing workspace gates. Current worktree clean on phase branch. No subagents used.
+Audit found malformed pull/lock/assignment fixture gaps and shared request using future transport for Java sync RPCs. Next actions: executable malformed consumer/assignment cases, then source-backed invocation-mode correction and per-method deadline/pending verification.
+Added five invoked malformed cases: pull absent and invalid numeric header, lock absent body/invalid JSON, assignment invalid JSON. Java invalid pull numeric parsing throws NumberFormatException on FastCodesHeader decoding, distinct from reflective POP primitive defaults. Both enhanced Rust fixture suites passed; family SHA-256 manifest added. Total persisted invoked cases now 116.

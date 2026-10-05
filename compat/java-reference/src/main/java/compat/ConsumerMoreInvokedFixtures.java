@@ -146,6 +146,23 @@ public final class ConsumerMoreInvokedFixtures {
                 RequestCode.PULL_MESSAGE, "Sync", "MQBrokerException;code=" + code);
         }
 
+        for (String shape : new String[] {"no-header", "invalid-header"}) {
+            capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, "offline");
+            if (shape.equals("invalid-header")) {
+                capture.response.addExtField("nextBeginOffset", "bad");
+                capture.response.addExtField("minOffset", "0");
+                capture.response.addExtField("maxOffset", "20");
+                capture.response.addExtField("suggestWhichBrokerId", "0");
+            }
+            try {
+                api.pullMessage("broker:10911", pull, 10000, CommunicationMode.SYNC, null);
+                throw new IllegalStateException("malformed pull accepted");
+            } catch (NullPointerException | NumberFormatException expected) {
+                record(output, verify, capture, "pull-" + shape, RequestCode.PULL_MESSAGE,
+                    "Sync", "malformed");
+            }
+        }
+
         MessageQueue queue = new MessageQueue("oracle-topic", "broker", 2);
         LockBatchRequestBody lock = new LockBatchRequestBody();
         lock.setConsumerGroup("consumer");
@@ -167,6 +184,18 @@ public final class ConsumerMoreInvokedFixtures {
             }
             record(output, verify, capture, code == ResponseCode.SYSTEM_ERROR ? "lock-error" : "lock-unknown",
                 RequestCode.LOCK_BATCH_MQ, "Sync", "MQBrokerException;code=" + code);
+        }
+
+        for (String shape : new String[] {"no-body", "invalid-json"}) {
+            capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, "offline");
+            if (shape.equals("invalid-json")) capture.response.setBody(new byte[] {'{'});
+            try {
+                api.lockBatchMQ("broker:10911", lock, 10000);
+                throw new IllegalStateException("malformed lock accepted");
+            } catch (NullPointerException | com.alibaba.fastjson2.JSONException expected) {
+                record(output, verify, capture, "lock-" + shape, RequestCode.LOCK_BATCH_MQ,
+                    "Sync", "malformed");
+            }
         }
 
         UnlockBatchRequestBody unlock = new UnlockBatchRequestBody();

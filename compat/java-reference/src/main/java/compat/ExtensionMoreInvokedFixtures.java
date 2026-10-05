@@ -190,6 +190,16 @@ public final class ExtensionMoreInvokedFixtures {
             record(dir, verify, c, "assignment-no-body", RequestCode.QUERY_ASSIGNMENT,
                 "NullPointerException;malformed");
         }
+        c.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, "invalid JSON");
+        c.response.setBody(new byte[] {'{'});
+        try {
+            api.queryAssignment("broker:10911", "oracle-topic", "consumer", "client", "AVG",
+                MessageModel.CLUSTERING, 10000);
+            throw new IllegalStateException("assignment accepted invalid JSON");
+        } catch (com.alibaba.fastjson2.JSONException expected) {
+            record(dir, verify, c, "assignment-invalid-json", RequestCode.QUERY_ASSIGNMENT,
+                "JSONException;malformed");
+        }
         for (int code : new int[] {0, 1, 987654}) {
             c.response = RemotingCommand.createResponseCommand(code, "offline");
             if (code == 0) api.setMessageRequestMode("broker:10911", "oracle-topic", "consumer",
