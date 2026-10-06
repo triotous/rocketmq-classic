@@ -55,7 +55,7 @@ pub struct ClientRuntime {
     api: MQClientApi,
     routes: crate::route::RouteCache,
     namesrv_gate: tokio::sync::Mutex<()>,
-    pub(super) groups: GroupRegistry,
+    pub(super) groups: Arc<GroupRegistry>,
     pub(super) control: ControlPlane,
     pub(super) inbound: Arc<super::inbound::RuntimeProcessor>,
     pub(super) rebalance: Arc<super::rebalance::RebalanceSignal>,
@@ -162,7 +162,7 @@ impl ClientRuntime {
             remoting,
             routes: crate::route::RouteCache::default(),
             namesrv_gate: tokio::sync::Mutex::new(()),
-            groups: GroupRegistry::default(),
+            groups: Arc::new(GroupRegistry::default()),
             control: ControlPlane::default(),
             inbound: Arc::default(),
             rebalance,
@@ -191,6 +191,40 @@ impl ClientRuntime {
     /// It is independent of Tokio's monotonic timer clock and never resets.
     pub fn boot_timestamp(&self) -> i64 {
         self.boot_timestamp
+    }
+
+    pub fn producer_table(self: &Arc<Self>) -> super::ProducerTable {
+        super::ProducerTable::new(self)
+    }
+    pub fn consumer_table(self: &Arc<Self>) -> super::ConsumerTable {
+        super::ConsumerTable::new(self)
+    }
+
+    pub(super) async fn mutate_registry_table(
+        self: &Arc<Self>,
+        kind: super::tables::TableKind,
+        mutation: super::tables::TableMutation,
+    ) -> Result<super::tables::TableChange, RuntimeError> {
+        let (reply, receive) = tokio::sync::oneshot::channel();
+        let Some(sender) = self.control.existing_sender()? else {
+            return self.groups.mutate_table(kind, &mutation);
+        };
+        if sender
+            .send(Command::MutateTable {
+                kind,
+                mutation: mutation.clone(),
+                reply,
+            })
+            .is_err()
+        {
+            return self.groups.mutate_table(kind, &mutation);
+        }
+        match receive.await {
+            Ok(result) => result,
+            // A terminal actor can close with queued raw map operations. Its
+            // unregister/transport work has ended; retained maps still work.
+            Err(_) => self.groups.mutate_table(kind, &mutation),
+        }
     }
 
     /// Consumes source keys and rebuilds them using the explicit namespace,

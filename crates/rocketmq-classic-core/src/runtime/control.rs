@@ -25,6 +25,11 @@ pub enum RuntimeState {
 }
 
 pub(super) enum Command {
+    MutateTable {
+        kind: super::tables::TableKind,
+        mutation: super::tables::TableMutation,
+        reply: oneshot::Sender<Result<super::tables::TableChange, RuntimeError>>,
+    },
     RegisterProducer {
         group: String,
         handle: Arc<dyn ProducerRuntime>,
@@ -156,6 +161,16 @@ impl ControlPlane {
         Ok(tx)
     }
 
+    pub(super) fn existing_sender(
+        &self,
+    ) -> Result<Option<mpsc::UnboundedSender<Command>>, RuntimeError> {
+        Ok(self
+            .sender
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?
+            .clone())
+    }
+
     pub async fn join_terminal(&self) -> Result<(), RuntimeError> {
         if !matches!(self.state(), RuntimeState::Stopped | RuntimeState::Failed) {
             return Ok(());
@@ -214,6 +229,15 @@ async fn run(
         let state = runtime.control.state();
         let allowed = matches!(state, RuntimeState::Created | RuntimeState::Running);
         match command {
+            Command::MutateTable {
+                kind,
+                mutation,
+                reply,
+            } => {
+                if !reply.is_closed() {
+                    let _ = reply.send(runtime.groups.mutate_table(kind, &mutation));
+                }
+            }
             Command::StartPullScheduler => {
                 if allowed && pull_workers[1].is_none() {
                     let worker = super::pull::OwnedPullWorker::new(

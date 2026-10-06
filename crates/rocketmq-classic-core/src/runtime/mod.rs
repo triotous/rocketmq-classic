@@ -8,6 +8,7 @@ mod manager;
 mod pull;
 mod rebalance;
 mod registry;
+mod tables;
 mod tasks;
 
 pub use control::RuntimeState;
@@ -15,6 +16,7 @@ pub use instance::ClientRuntime;
 pub use manager::{ClientRuntimeManager, FactoryTable};
 pub use pull::MessageRequest;
 pub use registry::{ConsumerOperation, ConsumerRuntime, GroupLease, ProducerRuntime};
+pub use tables::{ConsumerTable, ProducerTable};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RuntimeError {

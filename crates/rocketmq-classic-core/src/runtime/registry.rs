@@ -103,14 +103,12 @@ impl GroupLease {
     }
 }
 
-struct ProducerEntry {
+struct TableEntry<T: ?Sized> {
     identity: Arc<()>,
-    handle: Weak<dyn ProducerRuntime>,
+    handle: Weak<T>,
 }
-struct ConsumerEntry {
-    identity: Arc<()>,
-    handle: Weak<dyn ConsumerRuntime>,
-}
+type ProducerEntry = TableEntry<dyn ProducerRuntime>;
+type ConsumerEntry = TableEntry<dyn ConsumerRuntime>;
 
 #[derive(Default)]
 struct Entries {
@@ -132,6 +130,96 @@ pub(super) struct RegistrySnapshot {
 pub(super) type ConsumerEntries = Vec<(String, Arc<dyn ConsumerRuntime>)>;
 
 impl GroupRegistry {
+    pub(super) fn table_len(&self, kind: super::tables::TableKind) -> Result<usize, RuntimeError> {
+        let entries = self
+            .entries
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?;
+        Ok(match kind {
+            super::tables::TableKind::Producer => entries.producers.len(),
+            super::tables::TableKind::Consumer => entries.consumers.len(),
+        })
+    }
+    pub(super) fn table_contains_key(
+        &self,
+        kind: super::tables::TableKind,
+        key: &str,
+    ) -> Result<bool, RuntimeError> {
+        let entries = self
+            .entries
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?;
+        Ok(match kind {
+            super::tables::TableKind::Producer => entries.producers.contains_key(key),
+            super::tables::TableKind::Consumer => entries.consumers.contains_key(key),
+        })
+    }
+    pub(super) fn table_snapshot(
+        &self,
+        kind: super::tables::TableKind,
+    ) -> Result<BTreeMap<String, super::tables::TableValue>, RuntimeError> {
+        use super::tables::{TableKind, TableValue};
+        let entries = self
+            .entries
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?;
+        Ok(match kind {
+            TableKind::Producer => entries
+                .producers
+                .iter()
+                .filter_map(|(key, entry)| {
+                    entry
+                        .handle
+                        .upgrade()
+                        .map(|value| (key.clone(), TableValue::Producer(value)))
+                })
+                .collect(),
+            TableKind::Consumer => entries
+                .consumers
+                .iter()
+                .filter_map(|(key, entry)| {
+                    entry
+                        .handle
+                        .upgrade()
+                        .map(|value| (key.clone(), TableValue::Consumer(value)))
+                })
+                .collect(),
+        })
+    }
+    pub(super) fn mutate_table(
+        &self,
+        kind: super::tables::TableKind,
+        mutation: &super::tables::TableMutation,
+    ) -> Result<super::tables::TableChange, RuntimeError> {
+        use super::tables::{TableKind, TableValue};
+        {
+            let mut entries = self
+                .entries
+                .lock()
+                .map_err(|_| RuntimeError::RegistryPoisoned)?;
+            match kind {
+                TableKind::Producer => mutate_map(
+                    &mut entries.producers,
+                    mutation,
+                    |value| match value {
+                        TableValue::Producer(owner) => Some(owner),
+                        _ => None,
+                    },
+                    TableValue::Producer,
+                ),
+                TableKind::Consumer => mutate_map(
+                    &mut entries.consumers,
+                    mutation,
+                    |value| match value {
+                        TableValue::Consumer(owner) => Some(owner),
+                        _ => None,
+                    },
+                    TableValue::Consumer,
+                ),
+            }
+        }
+    }
+
     pub fn has_active_users(&self, inner_producer: &str) -> Result<bool, RuntimeError> {
         let entries = self
             .entries
@@ -327,4 +415,64 @@ impl GroupRegistry {
             .get(group)
             .and_then(|entry| entry.handle.upgrade()))
     }
+}
+
+fn mutate_map<T: ?Sized>(
+    map: &mut BTreeMap<String, TableEntry<T>>,
+    mutation: &super::tables::TableMutation,
+    extract: impl for<'a> Fn(&'a super::tables::TableValue) -> Option<&'a Arc<T>>,
+    wrap: impl Fn(Arc<T>) -> super::tables::TableValue,
+) -> Result<super::tables::TableChange, RuntimeError> {
+    use super::tables::{TableChange, TableMutation};
+    let key = match mutation {
+        TableMutation::Put { key, .. }
+        | TableMutation::Replace { key, .. }
+        | TableMutation::Remove { key, .. } => key,
+        TableMutation::Clear => {
+            map.clear();
+            return Ok(TableChange {
+                previous: None,
+                matched: true,
+            });
+        }
+    };
+    let present = map.contains_key(key);
+    let previous = map.get(key).and_then(|entry| entry.handle.upgrade());
+    let matches = |expected: &Option<super::tables::TableValue>| {
+        expected.as_ref().is_none_or(|expected| {
+            previous
+                .as_ref()
+                .zip(extract(expected))
+                .is_some_and(|(current, expected)| Arc::ptr_eq(current, expected))
+        })
+    };
+    let matched = match mutation {
+        TableMutation::Put { only_absent, .. } => !only_absent || !present,
+        TableMutation::Replace { expected, .. } | TableMutation::Remove { expected, .. } => {
+            present && matches(expected)
+        }
+        TableMutation::Clear => false,
+    };
+    if matched {
+        match mutation {
+            TableMutation::Put { value, .. } | TableMutation::Replace { value, .. } => {
+                let value = extract(value).ok_or(RuntimeError::RegistryPoisoned)?;
+                map.insert(
+                    key.clone(),
+                    TableEntry {
+                        identity: Arc::new(()),
+                        handle: Arc::downgrade(value),
+                    },
+                );
+            }
+            TableMutation::Remove { .. } => {
+                map.remove(key);
+            }
+            TableMutation::Clear => {}
+        }
+    }
+    Ok(TableChange {
+        previous: previous.map(wrap),
+        matched,
+    })
 }
