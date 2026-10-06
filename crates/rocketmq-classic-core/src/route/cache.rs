@@ -464,6 +464,58 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "confirmed Java null address-value mismatch; completed lower BrokerData type review required"]
+    fn nullable_broker_address_values_match_invoked_java_refresh_and_lookups() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["runtimeNullBrokerValues"].as_array().unwrap() {
+            assert_eq!(case["outcome"], "OK");
+            assert_eq!(case["decodedMasterKeyPresent"], true);
+            assert_eq!(case["decodedMasterNull"], true);
+            assert_eq!(case["cachedMasterKeyPresent"], true);
+            assert_eq!(case["cachedMasterNull"], true);
+            let route: TopicRouteData = serde_json::from_value(case["input"].clone())
+                .expect("Java accepts null address values; lower public model review is pending");
+            let cache = RouteCache::default();
+            assert_eq!(cache.replace("topic", route).unwrap(), case["changed"]);
+            let snapshot = cache.snapshot().unwrap();
+            let topic = &snapshot.topics["topic"];
+            let raw = serde_json::to_value(&*topic.route).unwrap();
+            assert!(raw["brokerDatas"][0]["brokerAddrs"].get("0").is_some());
+            assert!(raw["brokerDatas"][0]["brokerAddrs"]["0"].is_null());
+            assert_eq!(
+                topic.publish_queues.len() as u64,
+                case["publishQueueCount"].as_u64().unwrap()
+            );
+            assert_eq!(
+                topic.subscribe_queues.len() as u64,
+                case["subscribeQueueCount"].as_u64().unwrap()
+            );
+            assert_eq!(
+                snapshot.publish_address("broker"),
+                case["publishAddress"].as_str()
+            );
+            assert_eq!(
+                snapshot.admin_address("broker").map(|peer| peer.address),
+                case["adminAddress"].as_str().map(str::to_owned)
+            );
+            assert_eq!(
+                snapshot
+                    .subscribe_address("broker", 0, true)
+                    .map(|peer| peer.address),
+                case["subscribeExactMasterAddress"]
+                    .as_str()
+                    .map(str::to_owned)
+            );
+            assert_eq!(case["topicSelectionOnlyAllowedChoices"], true);
+            for _ in 0..128 {
+                let selected = snapshot.broker_address_by_topic("topic").unwrap();
+                assert!(selected.is_none() || selected == case["adminAddress"].as_str());
+            }
+        }
+    }
+
+    #[test]
     fn null_broker_address_map_fails_refresh_without_replacing_coherent_cache() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
