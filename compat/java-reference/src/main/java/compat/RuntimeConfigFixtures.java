@@ -153,6 +153,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("managerRemoval", managerRemoval(config));
         fixture.put("managerTable", managerTable(config));
         fixture.put("nullableSettings", nullableSettings());
+        fixture.put("socksConstruction", socksConstruction());
         fixture.put("endpoints", endpoints);
         fixture.put("resources", resources);
         fixture.put("pid", pid);
@@ -242,6 +243,31 @@ public final class RuntimeConfigFixtures {
             try { cleanupRuntime(first); } finally { cleanupRuntime(second); }
         }
         return result;
+    }
+
+    private static List<Object> socksConstruction() throws Exception {
+        List<Object> cases = new ArrayList<>();
+        String[] inputs = {null, "", " ", "\t\r\n", "\f", "\b", "\u000b", "\u00a0", "\u2003", "null", "{}", "invalid"};
+        for (int i = 0; i < inputs.length; i++) {
+            ClientConfig config = new ClientConfig();
+            config.setClientIP("socks-construction-" + i);
+            config.setNamesrvAddr("");
+            config.setSocksProxyConfig(inputs[i]);
+            Map<String, Object> item = new TreeMap<>();
+            item.put("input", inputs[i]);
+            org.apache.rocketmq.client.impl.factory.MQClientInstance runtime = null;
+            try {
+                runtime = new org.apache.rocketmq.client.impl.factory.MQClientInstance(config, 0, config.buildMQClientId());
+                item.put("outcome", "OK");
+                item.put("rawPreserved", java.util.Objects.equals(inputs[i], runtime.getNettyClientConfig().getSocksProxyConfig()));
+            } catch (RuntimeException error) {
+                item.put("outcome", error.getClass().getSimpleName());
+            } finally {
+                if (runtime != null) cleanupRuntime(runtime);
+            }
+            cases.add(item);
+        }
+        return cases;
     }
 
     private static Map<String, Object> nullableSettings() throws Exception {

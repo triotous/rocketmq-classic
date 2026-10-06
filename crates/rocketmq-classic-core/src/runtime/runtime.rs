@@ -113,12 +113,15 @@ impl ClientRuntime {
             TransportConfig {
                 transport,
                 callback_executor_threads,
-                // Java Fastjson parsing of a null String yields no proxy map.
-                // The accepted lower parser already represents this as "null".
+                // Java Fastjson accepts null and exactly empty Strings as no
+                // proxy map, but rejects whitespace-only Strings. Keep the raw
+                // core setting and bridge only those two cases to lower "null".
                 socks_proxy_config: config
                     .socks_proxy_config
-                    .clone()
-                    .unwrap_or_else(|| "null".into()),
+                    .as_deref()
+                    .filter(|json| !json.is_empty())
+                    .unwrap_or("null")
+                    .into(),
                 scan_available_nameserver: false,
                 ..TransportConfig::default()
             },

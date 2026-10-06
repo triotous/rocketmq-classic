@@ -96,6 +96,33 @@ async fn nullable_access_and_socks_settings_match_invoked_java_copy_and_construc
 }
 
 #[tokio::test]
+async fn socks_construction_matches_invoked_java_empty_and_whitespace_boundaries() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    for (index, java) in fixture["socksConstruction"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+    {
+        let mut config = ClientConfig::new(format!("socks-construction-{index}"));
+        config.namesrv_addr = Some(String::new());
+        config.socks_proxy_config = optional(&java["input"]);
+        let result = rocketmq_classic_core::runtime::ClientRuntimeManager::new()
+            .get_or_create(&config)
+            .await;
+        assert_eq!(result.is_ok(), java["outcome"] == "OK", "{java}");
+        if let Ok(runtime) = result {
+            assert_eq!(java["rawPreserved"], true);
+            assert_eq!(
+                runtime.config().socks_proxy_config,
+                config.socks_proxy_config
+            );
+        }
+    }
+}
+
+#[tokio::test]
 async fn runtime_uses_endpoint_address_getter_without_rewriting_raw_configuration() {
     let mut config = ClientConfig::new("192.0.2.6");
     config.set_namesrv_addr(Some("http://MQ_INST_a_b.example:9876".into()));
