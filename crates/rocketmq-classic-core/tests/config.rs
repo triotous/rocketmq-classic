@@ -96,6 +96,26 @@ async fn nullable_access_and_socks_settings_match_invoked_java_copy_and_construc
 }
 
 #[tokio::test]
+async fn callback_thread_constructor_acceptance_and_raw_values_match_invoked_java() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    for java in fixture["callbackThreadsConstruction"].as_array().unwrap() {
+        let threads = i32::try_from(java["input"].as_i64().unwrap()).unwrap();
+        let mut config = ClientConfig::new(format!("callback-threads-{threads}"));
+        config.namesrv_addr = Some(String::new());
+        config.client_callback_executor_threads = threads;
+        let result = rocketmq_classic_core::runtime::ClientRuntimeManager::new()
+            .get_or_create(&config)
+            .await;
+        assert_eq!(result.is_ok(), java["outcome"] == "OK", "{java}");
+        assert_eq!(
+            i64::from(result.unwrap().config().client_callback_executor_threads),
+            java["raw"].as_i64().unwrap()
+        );
+    }
+}
+
+#[tokio::test]
 async fn socks_construction_matches_invoked_java_empty_and_whitespace_boundaries() {
     let fixture: Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();

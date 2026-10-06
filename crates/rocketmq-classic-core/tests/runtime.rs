@@ -226,9 +226,10 @@ async fn p6_v02_incompatible_transport_configuration_is_not_silently_shared() {
 async fn p6_v02_failed_construction_can_retry_and_stale_removal_preserves_replacement() {
     let manager = ClientRuntimeManager::new();
     let mut config = ClientConfig::new("192.0.2.6");
-    config.client_callback_executor_threads = -1;
+    config.enable_concurrent_heartbeat = true;
+    config.concurrent_heartbeat_thread_pool_size = 0;
     assert!(manager.get_or_create(&config).await.is_err());
-    config.client_callback_executor_threads = 1;
+    config.concurrent_heartbeat_thread_pool_size = 1;
     let first = manager.get_or_create(&config).await.unwrap();
     assert!(
         manager

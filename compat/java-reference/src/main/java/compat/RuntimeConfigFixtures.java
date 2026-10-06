@@ -144,7 +144,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("rebalanceLongs", rebalanceLongs);
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "ClientConfig.buildMQClientId/cloneClientConfig/resetClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/changeInstanceNameToPID; MQClientManager.getOrCreateMQClientInstance/removeClientFactory/getFactoryTable; MQClientInstance.constructor/getClientConfig/getNettyClientConfig; RemotingCommand.encode (null language JSON/ROCKETMQ); Long.parseLong (RebalanceService property parser)");
+        fixture.put("entrypoint", "ClientConfig.buildMQClientId/cloneClientConfig/resetClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/changeInstanceNameToPID; MQClientManager.getOrCreateMQClientInstance/removeClientFactory/getFactoryTable; MQClientInstance.constructor/getClientConfig/getNettyClientConfig; MQClientAPIImpl.getRemotingClient/NettyRemotingClient.publicExecutor (reflective capacity observation); RemotingCommand.encode (null language JSON/ROCKETMQ); Long.parseLong (RebalanceService property parser)");
         fixture.put("serverBaselineContacted", false);
         fixture.put("identities", identities);
         fixture.put("defaults", defaults);
@@ -154,6 +154,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("managerTable", managerTable(config));
         fixture.put("nullableSettings", nullableSettings());
         fixture.put("socksConstruction", socksConstruction());
+        fixture.put("callbackThreadsConstruction", callbackThreadsConstruction());
         fixture.put("endpoints", endpoints);
         fixture.put("resources", resources);
         fixture.put("pid", pid);
@@ -243,6 +244,36 @@ public final class RuntimeConfigFixtures {
             try { cleanupRuntime(first); } finally { cleanupRuntime(second); }
         }
         return result;
+    }
+
+    private static List<Object> callbackThreadsConstruction() throws Exception {
+        List<Object> cases = new ArrayList<>();
+        for (int threads : new int[] {Integer.MIN_VALUE, -1, 0, 1, 4, Integer.MAX_VALUE}) {
+            ClientConfig config = new ClientConfig();
+            config.setClientIP("callback-threads-" + threads);
+            config.setNamesrvAddr("");
+            config.setClientCallbackExecutorThreads(threads);
+            Map<String, Object> item = new TreeMap<>();
+            item.put("input", threads);
+            org.apache.rocketmq.client.impl.factory.MQClientInstance runtime = null;
+            try {
+                runtime = new org.apache.rocketmq.client.impl.factory.MQClientInstance(config, 0, config.buildMQClientId());
+                item.put("outcome", "OK");
+                item.put("raw", runtime.getNettyClientConfig().getClientCallbackExecutorThreads());
+                org.apache.rocketmq.remoting.netty.NettyRemotingClient remoting =
+                    (org.apache.rocketmq.remoting.netty.NettyRemotingClient) runtime.getMQClientAPIImpl().getRemotingClient();
+                java.lang.reflect.Field field = remoting.getClass().getDeclaredField("publicExecutor");
+                field.setAccessible(true);
+                java.util.concurrent.ThreadPoolExecutor executor = (java.util.concurrent.ThreadPoolExecutor) field.get(remoting);
+                item.put("effective", executor.getCorePoolSize());
+            } catch (RuntimeException error) {
+                item.put("outcome", error.getClass().getSimpleName());
+            } finally {
+                if (runtime != null) cleanupRuntime(runtime);
+            }
+            cases.add(item);
+        }
+        return cases;
     }
 
     private static List<Object> socksConstruction() throws Exception {

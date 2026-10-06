@@ -15,6 +15,16 @@ use super::{
 };
 use crate::{api::MQClientApi, config::ClientConfig};
 
+fn callback_executor_threads(configured: i32) -> usize {
+    // NettyRemotingClient uses four public executor threads for any nonpositive
+    // value; ClientConfig and sharing metadata still retain the signed input.
+    if configured <= 0 {
+        4
+    } else {
+        configured as usize
+    }
+}
+
 fn epoch_millis(time: std::time::SystemTime) -> i64 {
     match time.duration_since(std::time::UNIX_EPOCH) {
         Ok(duration) => duration.as_millis() as i64,
@@ -93,12 +103,8 @@ impl ClientRuntime {
                 .into(),
             );
         }
-        let callback_executor_threads = usize::try_from(config.client_callback_executor_threads)
-            .map_err(|_| {
-                rocketmq_classic_remoting::TransportError::InvalidConfiguration(
-                    "client callback executor thread count must be nonnegative".into(),
-                )
-            })?;
+        let callback_executor_threads =
+            callback_executor_threads(config.client_callback_executor_threads);
         let transport = if config.use_tls {
             let mut properties = properties.clone();
             properties.insert("tls.enable".into(), "true".into());
@@ -883,6 +889,22 @@ impl ClientRuntime {
 mod tests {
     use super::*;
     use tokio::time::{Duration, Instant};
+
+    #[test]
+    fn callback_thread_effective_capacity_matches_invoked_java_executor() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/client-config.json"
+        ))
+        .unwrap();
+        for java in fixture["callbackThreadsConstruction"].as_array().unwrap() {
+            let configured = i32::try_from(java["input"].as_i64().unwrap()).unwrap();
+            assert_eq!(
+                callback_executor_threads(configured),
+                usize::try_from(java["effective"].as_u64().unwrap()).unwrap(),
+                "{java}"
+            );
+        }
+    }
 
     #[tokio::test(start_paused = true)]
     async fn route_refresh_and_offline_cleanup_share_three_second_gate_without_blocking_readers() {
