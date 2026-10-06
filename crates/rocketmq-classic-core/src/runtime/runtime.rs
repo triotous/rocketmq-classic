@@ -408,6 +408,11 @@ impl ClientRuntime {
         self.routes.snapshot()
     }
 
+    /// Retained live raw map. Primitive writes do not convert/publish routes.
+    pub fn topic_route_table(&self) -> crate::route::TopicRouteTable {
+        crate::route::TopicRouteTable::new(self.routes.clone())
+    }
+
     pub fn find_broker_address_by_topic(
         &self,
         topic: &str,
@@ -422,11 +427,7 @@ impl ClientRuntime {
         &self,
         topic: &str,
     ) -> Result<Option<Arc<rocketmq_classic_protocol::route::TopicRouteData>>, RuntimeError> {
-        Ok(self
-            .route_snapshot()?
-            .topics
-            .get(topic)
-            .map(|cached| cached.route.clone()))
+        Ok(self.route_snapshot()?.raw_routes.get(topic).cloned())
     }
 
     pub async fn query_topic_route(

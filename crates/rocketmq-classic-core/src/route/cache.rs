@@ -19,6 +19,9 @@ pub struct TopicSnapshot {
 
 #[derive(Clone, Debug, Default)]
 pub struct RouteSnapshot {
+    /// Source raw topic table; explicit map writes do not rebuild `topics`.
+    pub raw_routes: BTreeMap<String, Arc<TopicRouteData>>,
+    /// Last converted publication, independent of later raw map mutations.
     pub topics: BTreeMap<String, Arc<TopicSnapshot>>,
     pub broker_addresses: BTreeMap<String, BTreeMap<i64, String>>,
     pub(crate) broker_versions: BTreeMap<(String, String), i32>,
@@ -44,10 +47,10 @@ impl RouteSnapshot {
         topic: &str,
         mut select: impl FnMut(usize) -> usize,
     ) -> Result<Option<&str>, RuntimeError> {
-        let Some(route) = self.topics.get(topic) else {
+        let Some(route) = self.raw_routes.get(topic) else {
             return Ok(None);
         };
-        let brokers = &route.route.broker_datas;
+        let brokers = &route.broker_datas;
         if brokers.is_empty() {
             return Ok(None);
         }
@@ -137,12 +140,28 @@ impl RouteSnapshot {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct RouteCache {
-    snapshot: RwLock<Arc<RouteSnapshot>>,
+    snapshot: Arc<RwLock<Arc<RouteSnapshot>>>,
 }
 
 impl RouteCache {
+    pub(super) fn update_raw<R>(
+        &self,
+        update: impl FnOnce(&mut BTreeMap<String, Arc<TopicRouteData>>) -> (bool, R),
+    ) -> Result<R, RuntimeError> {
+        let mut current = self
+            .snapshot
+            .write()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?;
+        let mut next = current.as_ref().clone();
+        let (changed, result) = update(&mut next.raw_routes);
+        if changed {
+            *current = Arc::new(next);
+        }
+        Ok(result)
+    }
+
     pub(crate) fn record_version(
         &self,
         broker: &str,
@@ -166,9 +185,9 @@ impl RouteCache {
             .write()
             .map_err(|_| RuntimeError::RegistryPoisoned)?;
         let live = current
-            .topics
+            .raw_routes
             .values()
-            .flat_map(|topic| topic.route.broker_datas.iter())
+            .flat_map(|route| route.broker_datas.iter())
             .filter_map(|broker| broker.broker_addrs.as_ref())
             .flat_map(|addresses| addresses.values())
             .cloned()
@@ -199,9 +218,9 @@ impl RouteCache {
     ) -> Result<bool, RuntimeError> {
         Ok(!self
             .snapshot()?
-            .topics
+            .raw_routes
             .get(topic)
-            .is_some_and(|old| routes_equal(&old.route, route)))
+            .is_some_and(|old| routes_equal(old, route)))
     }
 
     pub(crate) fn replace_for_owner_update(
@@ -210,6 +229,11 @@ impl RouteCache {
         route: TopicRouteData,
         force: bool,
     ) -> Result<bool, RuntimeError> {
+        // A raw map write can insert data that normal refresh cannot convert.
+        // Java compares cached raw data before entering conversion/publication.
+        if !force && !self.route_changed(topic, &route)? {
+            return Ok(false);
+        }
         // Java's brokerAddrTable is a ConcurrentHashMap: publishing a null
         // address map fails, it is not a valid empty Broker. Validate before
         // any conversion/publication to preserve the coherent native snapshot.
@@ -269,9 +293,9 @@ impl RouteCache {
             .write()
             .map_err(|_| RuntimeError::RegistryPoisoned)?;
         let unchanged = current
-            .topics
+            .raw_routes
             .get(topic)
-            .is_some_and(|old| routes_equal(&old.route, &topic_snapshot.route));
+            .is_some_and(|old| routes_equal(old, &topic_snapshot.route));
         if unchanged && !force {
             return Ok(false);
         }
@@ -282,6 +306,8 @@ impl RouteCache {
             }
         }
         let mut next = current.as_ref().clone();
+        next.raw_routes
+            .insert(topic.to_owned(), topic_snapshot.route.clone());
         for broker in &topic_snapshot.route.broker_datas {
             next.broker_addresses.insert(
                 broker.broker_name.clone(),
@@ -408,7 +434,7 @@ fn routes_equal(left: &TopicRouteData, right: &TopicRouteData) -> bool {
 
 // TopicRouteData.equals delegates BrokerData.equals, which compares only name
 // and addresses. Do not use the completed lower DTO's broader Rust value Eq.
-fn route_values_equal(left: &TopicRouteData, right: &TopicRouteData) -> bool {
+pub(super) fn route_values_equal(left: &TopicRouteData, right: &TopicRouteData) -> bool {
     left.order_topic_conf == right.order_topic_conf
         && left.queue_datas == right.queue_datas
         && left.filter_server_table == right.filter_server_table
@@ -453,6 +479,84 @@ pub fn broker_vip_channel(enabled: bool, address: &str) -> Result<String, Runtim
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn raw_map_mutations_keep_derived_publication_and_offline_cleanup_matches_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        let case = &fixture["runtimeTopicRouteTable"];
+        let first: TopicRouteData = serde_json::from_value(case["initialInput"].clone()).unwrap();
+        let second = Arc::new(serde_json::from_value(case["replacementInput"].clone()).unwrap());
+        let cache = RouteCache::default();
+        let table = super::super::TopicRouteTable::new(cache.clone());
+        assert_eq!(
+            cache.replace("topic", first.clone()).unwrap(),
+            case["refreshChanged"]
+        );
+        let before = cache.snapshot().unwrap();
+        assert!(Arc::ptr_eq(
+            &table.get("topic").unwrap().unwrap(),
+            &before.raw_routes["topic"]
+        ));
+        assert_eq!(
+            before.publish_address("broker"),
+            case["initialPublishAddress"].as_str()
+        );
+        assert!(Arc::ptr_eq(
+            &table.put("topic", second).unwrap().unwrap(),
+            &before.raw_routes["topic"]
+        ));
+        let direct = cache.snapshot().unwrap();
+        assert_eq!(
+            direct.broker_address_by_topic("topic").unwrap(),
+            case["topicAddressAfterDirectPut"].as_str()
+        );
+        assert_eq!(
+            direct.publish_address("broker"),
+            case["publishAddressAfterDirectPut"].as_str()
+        );
+        assert!(Arc::ptr_eq(
+            &direct.topics["topic"],
+            &before.topics["topic"]
+        ));
+        assert_eq!(
+            before.broker_address_by_topic("topic").unwrap(),
+            Some("master:10911")
+        );
+        table.clear().unwrap();
+        let cleared = cache.snapshot().unwrap();
+        assert!(table.get("topic").unwrap().is_none());
+        assert_eq!(
+            cleared.broker_address_by_topic("topic").unwrap(),
+            case["topicAddressAfterClear"].as_str()
+        );
+        assert_eq!(
+            cleared.publish_address("broker"),
+            case["publishAddressAfterClear"].as_str()
+        );
+        cache.clean_offline().unwrap();
+        assert_eq!(
+            cache.snapshot().unwrap().publish_address("broker"),
+            case["publishAddressAfterOfflineClean"].as_str()
+        );
+        // Raw absence must force publication even when converted data is equal.
+        assert!(cache.route_changed("topic", &first).unwrap());
+        assert!(cache.replace("topic", first).unwrap());
+        assert!(table.contains_key("topic").unwrap());
+        assert_eq!(before.publish_address("broker"), Some("master:10911"));
+        let mut invalid = before.raw_routes["topic"].as_ref().clone();
+        invalid.broker_datas[0].broker_addrs = None;
+        let invalid = Arc::new(invalid);
+        table.put("invalid", invalid.clone()).unwrap();
+        assert_eq!(
+            cache.replace("invalid", invalid.as_ref().clone()).unwrap(),
+            case["unchangedInvalidRawRefreshChanged"]
+        );
+        assert_eq!(
+            Arc::ptr_eq(&table.get("invalid").unwrap().unwrap(), &invalid),
+            case["unchangedInvalidRawRefreshKeepsCachedObject"]
+        );
+    }
 
     #[test]
     fn metadata_only_broker_changes_match_invoked_java_route_equality_and_refresh() {
@@ -694,15 +798,9 @@ mod tests {
                 // The Java lookup oracle reflects directly into its raw route
                 // table, including states normal refresh cannot publish. Match
                 // that test setup without bypassing production cache validation.
-                snapshot.topics.insert(
+                snapshot.raw_routes.insert(
                     "topic".into(),
-                    Arc::new(TopicSnapshot {
-                        route: Arc::new(serde_json::from_value(case["input"].clone()).unwrap()),
-                        publish_queues: Vec::new(),
-                        subscribe_queues: BTreeSet::new(),
-                        endpoints: BTreeMap::new(),
-                        order_topic: false,
-                    }),
+                    Arc::new(serde_json::from_value(case["input"].clone()).unwrap()),
                 );
             }
             for _ in 0..128 {
