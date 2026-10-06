@@ -237,7 +237,11 @@ public final class RuntimeRouteFixtures {
             TopicRouteData invalid = com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(initial), TopicRouteData.class);
             invalid.getBrokerDatas().get(0).setBrokerAddrs(null);
             result.put("rawPutAcceptsNullBrokerMap", table.put("invalid", invalid) == null && runtime.getAnExistTopicRouteData("invalid") == invalid);
-            result.put("queryReturnsInvalidRawValueWithoutValidation", runtime.queryTopicRouteData("invalid") == invalid && api.requests == beforeQuery + 1);
+            int beforeInvalidQuery = api.requests;
+            result.put("queryReturnsInvalidRawValueWithoutValidation", runtime.queryTopicRouteData("invalid") == invalid && api.requests == beforeInvalidQuery);
+            api.route = invalid;
+            result.put("unchangedInvalidRawRefreshChanged", runtime.updateTopicRouteInfoFromNameServer("invalid"));
+            result.put("unchangedInvalidRawRefreshKeepsCachedObject", table.get("invalid") == invalid);
             table.clear();
         } finally {
             java.lang.reflect.Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
