@@ -29,7 +29,7 @@ impl RebalanceSignal {
             default: i64,
         ) -> Result<Duration, RuntimeError> {
             let value = match properties.get(key) {
-                Some(value) => value.parse::<i64>().map_err(|_| {
+                Some(value) => crate::java_number::parse_long(value).ok_or_else(|| {
                     rocketmq_classic_remoting::TransportError::InvalidConfiguration(format!(
                         "invalid Java long property {key}"
                     ))
@@ -219,6 +219,36 @@ mod tests {
         assert_eq!(consumer.0.load(Ordering::SeqCst), 2);
         worker.stop().await;
         assert_eq!(runtime.rebalance_probe.live.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn rebalance_property_signed_longs_match_invoked_java() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/client-config.json"
+        ))
+        .unwrap();
+        for case in fixture["rebalanceLongs"].as_array().unwrap() {
+            for key in [WAIT_PROPERTY, MIN_PROPERTY] {
+                let properties =
+                    HashMap::from([(key.into(), case["input"].as_str().unwrap().into())]);
+                match RebalanceSignal::from_properties(&properties) {
+                    Ok(signal) => {
+                        assert_eq!(case["outcome"], "OK", "{case}");
+                        let actual = if key == WAIT_PROPERTY {
+                            signal.wait
+                        } else {
+                            signal.minimum
+                        };
+                        assert_eq!(
+                            actual,
+                            Duration::from_millis(case["value"].as_i64().unwrap().max(0) as u64),
+                            "{case}"
+                        );
+                    }
+                    Err(_) => assert_eq!(case["outcome"], "NumberFormatException", "{case}"),
+                }
+            }
+        }
     }
 
     #[test]

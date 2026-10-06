@@ -130,9 +130,21 @@ public final class RuntimeConfigFixtures {
             pid.put(instance, instance.equals("DEFAULT") ? changed.matches(org.apache.rocketmq.common.UtilAll.getPid() + "#-?\\d+") && changed.equals(c.getInstanceName()) : instance.equals(changed));
         }
         Map<String, Object> fixture = new TreeMap<>();
+        List<Object> rebalanceLongs = new ArrayList<>();
+        for (String input : new String[] {"٢٠٠٠٠", "+１２３４", "-١", "1٢3", "०", "9223372036854775807",
+            "-9223372036854775808", "９２２３３７２０３６８５４７７５８０７", "-９２２３３７２０３６８５４７７５８０８",
+            "9223372036854775808", "-9223372036854775809", "９２２３３７２０３６８５４７７５８０８",
+            "", "+", "-", " 1", "1 ", "²", "𝟚", "NaN"}) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("input", input);
+            try { item.put("value", Long.parseLong(input)); item.put("outcome", "OK"); }
+            catch (NumberFormatException error) { item.put("outcome", "NumberFormatException"); }
+            rebalanceLongs.add(item);
+        }
+        fixture.put("rebalanceLongs", rebalanceLongs);
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "ClientConfig.buildMQClientId/cloneClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/changeInstanceNameToPID; MQClientManager.getOrCreateMQClientInstance; MQClientInstance.getClientConfig");
+        fixture.put("entrypoint", "ClientConfig.buildMQClientId/cloneClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/changeInstanceNameToPID; MQClientManager.getOrCreateMQClientInstance; MQClientInstance.getClientConfig; Long.parseLong (RebalanceService property parser)");
         fixture.put("serverBaselineContacted", false);
         fixture.put("identities", identities);
         fixture.put("defaults", defaults);

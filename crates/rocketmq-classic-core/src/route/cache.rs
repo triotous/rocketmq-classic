@@ -385,43 +385,12 @@ fn validate_conversion_size(topic: &str, route: &TopicRouteData) -> Result<(), R
 // accepting BMP decimal scripts but not supplementary mathematical digits.
 // Accumulate negatively so i32::MIN is representable without widening/range loss.
 fn java_integer(value: &str) -> Option<i32> {
-    let mut units = value.encode_utf16().peekable();
-    let negative = match units.peek().copied()? {
-        0x2d => {
-            units.next();
-            true
-        }
-        0x2b => {
-            units.next();
-            false
-        }
-        _ => false,
-    };
-    units.peek()?;
-    let mut result = 0i32;
-    for unit in units {
-        let digit = java_decimal_digit(unit)?;
-        result = result.checked_mul(10)?.checked_sub(i32::from(digit))?;
-    }
-    if negative {
-        Some(result)
-    } else {
-        result.checked_neg()
-    }
+    crate::java_number::parse_long(value)?.try_into().ok()
 }
 
+#[cfg(test)]
 fn java_decimal_digit(unit: u16) -> Option<u16> {
-    // Audited exhaustively against actual Character.digit(char, 10) zero
-    // ranges in the pinned Java harness, not char::is_numeric or to_digit.
-    const ZEROS: &[u16] = &[
-        0x0030, 0x0660, 0x06f0, 0x07c0, 0x0966, 0x09e6, 0x0a66, 0x0ae6, 0x0b66, 0x0be6, 0x0c66,
-        0x0ce6, 0x0d66, 0x0de6, 0x0e50, 0x0ed0, 0x0f20, 0x1040, 0x1090, 0x17e0, 0x1810, 0x1946,
-        0x19d0, 0x1a80, 0x1a90, 0x1b50, 0x1bb0, 0x1c40, 0x1c50, 0xa620, 0xa8d0, 0xa900, 0xa9d0,
-        0xa9f0, 0xaa50, 0xabf0, 0xff10,
-    ];
-    ZEROS
-        .iter()
-        .find_map(|zero| unit.checked_sub(*zero).filter(|digit| *digit < 10))
+    crate::java_number::decimal_digit(unit)
 }
 
 fn routes_equal(left: &TopicRouteData, right: &TopicRouteData) -> bool {
