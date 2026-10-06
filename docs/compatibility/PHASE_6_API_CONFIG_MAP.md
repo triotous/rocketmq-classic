@@ -86,7 +86,7 @@ Methods implemented on `ClientRuntime` unless another owner is specified. Eviden
 | Java public method / overload | Rust counterpart | Evidence / owner |
 | --- | --- | --- |
 | MQClientInstance(config,index,id[,hook]) | private owned construction through manager `get_or_create[/with_hook]`; native index is not new user tuning | R/C, hook wire tests, boot M |
-| topicRouteData2TopicPublishInfo / topicRouteData2TopicSubscribeInfo | common conversion + coherent `TopicSnapshot` conversion | Q,25 actual Java converter cases plus two runtime cases; producer TopicPublishInfo selection Phase7 |
+| topicRouteData2TopicPublishInfo / topicRouteData2TopicSubscribeInfo | common conversion + coherent `TopicSnapshot` conversion | Q,25 actual Java converter/four runtime cases; two null-value Java successes blocked by native DTO decode (proposed ADR0008); producer TopicPublishInfo selection Phase7 |
 | start / shutdown | `start/shutdown`, serialized owned control task | C: 17 explicit / 18 discovery rollback points, cancellation, running identity/shared-user wire gates |
 | getClientId / getBootTimestamp / getClientConfig | `client_id/boot_timestamp/config` | R/M/config tests |
 | updateTopicRouteInfoFromNameServer() | `update_all_topic_routes`; periodic route tick reuses public entry | R empty-round/no-socket, union/dedup, rejection continuation and callback registry reentry; T existing schedule checks |
