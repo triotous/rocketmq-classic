@@ -18,6 +18,7 @@ public final class RuntimeRouteFixtures {
 
     private static final class RouteApi extends org.apache.rocketmq.client.impl.MQClientAPIImpl {
         TopicRouteData route;
+        int requests;
         RouteApi(org.apache.rocketmq.client.ClientConfig config) {
             super(new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null, config, null,
                 ignored -> (org.apache.rocketmq.remoting.RemotingClient) java.lang.reflect.Proxy.newProxyInstance(
@@ -27,6 +28,7 @@ public final class RuntimeRouteFixtures {
         }
         @Override
         public TopicRouteData getTopicRouteInfoFromNameServer(String topic, long timeout) {
+            requests++;
             return route;
         }
     }
@@ -156,6 +158,97 @@ public final class RuntimeRouteFixtures {
         return item;
     }
 
+    private static Map<String, Object> runtimeTopicRouteTable(Map<String, Object> initial) throws Exception {
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("route-live-table");
+        MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+        org.apache.rocketmq.client.impl.MQClientAPIImpl original = runtime.getMQClientAPIImpl();
+        RouteApi api = new RouteApi(config);
+        Map<String, Object> result = new TreeMap<>();
+        try {
+            java.lang.reflect.Field field = MQClientInstance.class.getDeclaredField("mQClientAPIImpl");
+            field.setAccessible(true); field.set(runtime, api);
+            TopicRouteData first = com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(initial), TopicRouteData.class);
+            TopicRouteData second = com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(initial), TopicRouteData.class);
+            second.getBrokerDatas().get(0).getBrokerAddrs().put(0L, "replacement:10911");
+            TopicRouteData equalSecond = com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(second), TopicRouteData.class);
+            result.put("initialInput", initial);
+            result.put("replacementInput", com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(second,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringKeyAsString)));
+            java.util.concurrent.ConcurrentMap<String, TopicRouteData> table = runtime.getTopicRouteTable();
+            Map<String, Object> primitives = new TreeMap<>();
+            primitives.put("initialEmpty", table.isEmpty());
+            primitives.put("firstPutAbsent", table.put("topic", first) == null);
+            primitives.put("getterSeesFirst", runtime.getAnExistTopicRouteData("topic") == first);
+            primitives.put("putReturnsFirst", table.put("topic", second) == first);
+            primitives.put("retainedGetterSeesReplacement", runtime.getTopicRouteTable() == table && runtime.getAnExistTopicRouteData("topic") == second);
+            primitives.put("putIfAbsentKeepsSecond", table.putIfAbsent("topic", first) == second);
+            primitives.put("unequalReplaceRejected", !table.replace("topic", first, second));
+            primitives.put("equalCopyReplaceAccepted", equalSecond != second && table.replace("topic", equalSecond, first));
+            primitives.put("replaceReturnsFirst", table.replace("topic", second) == first);
+            primitives.put("unequalRemoveRejected", !table.remove("topic", first));
+            primitives.put("equalCopyRemoveAccepted", table.remove("topic", equalSecond));
+            primitives.put("absentReplaceNull", table.replace("topic", first) == null);
+            primitives.put("absentRemoveNull", table.remove("topic") == null);
+            primitives.put("putIfAbsentAbsentNull", table.putIfAbsent("topic", first) == null);
+            primitives.put("emptyKeyAccepted", table.put("", second) == null);
+            primitives.put("sizeTwo", table.size() == 2 && table.containsKey(""));
+            table.clear();
+            primitives.put("retainedViewSeesClear", table.isEmpty());
+            primitives.put("getterSeesClear", runtime.getAnExistTopicRouteData("topic") == null);
+            primitives.put("putAfterClearAccepted", table.put("topic", second) == null && runtime.getAnExistTopicRouteData("topic") == second);
+            table.clear();
+            result.put("primitives", primitives);
+
+            api.route = first;
+            result.put("refreshChanged", runtime.updateTopicRouteInfoFromNameServer("topic"));
+            result.put("retainedViewSeesRefresh", table.get("topic") == runtime.getAnExistTopicRouteData("topic"));
+            result.put("initialPublishAddress", runtime.findBrokerAddressInPublish("broker"));
+            TopicRouteData cached = table.get("topic");
+            result.put("directPutReturnsCached", table.put("topic", second) == cached);
+            result.put("topicAddressAfterDirectPut", runtime.findBrokerAddrByTopic("topic"));
+            result.put("publishAddressAfterDirectPut", runtime.findBrokerAddressInPublish("broker"));
+            int beforeQuery = api.requests;
+            result.put("queryReturnsDirectValueWithoutFetch", runtime.queryTopicRouteData("topic") == second && api.requests == beforeQuery);
+            table.clear();
+            result.put("getterAbsentAfterClear", runtime.getAnExistTopicRouteData("topic") == null);
+            result.put("topicAddressAfterClear", runtime.findBrokerAddrByTopic("topic"));
+            result.put("publishAddressAfterClear", runtime.findBrokerAddressInPublish("broker"));
+            java.lang.reflect.Method clean = MQClientInstance.class.getDeclaredMethod("cleanOfflineBroker");
+            clean.setAccessible(true); clean.invoke(runtime);
+            result.put("publishAddressAfterOfflineClean", runtime.findBrokerAddressInPublish("broker"));
+            result.put("queryAfterClearRefetches", runtime.queryTopicRouteData("topic") != null && api.requests == beforeQuery + 1);
+            result.put("retainedViewSeesQueryRefresh", table.containsKey("topic"));
+
+            TopicRouteData metadataOnly = com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(first), TopicRouteData.class);
+            metadataOnly.getBrokerDatas().get(0).setCluster("other-cluster");
+            metadataOnly.getBrokerDatas().get(0).setZoneName("other-zone");
+            metadataOnly.getBrokerDatas().get(0).setEnableActingMaster(true);
+            result.put("metadataOnlyInput", com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(metadataOnly,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringKeyAsString)));
+            result.put("brokerMetadataIgnoredByRouteEquals", first.equals(metadataOnly));
+            table.put("metadata", first);
+            result.put("metadataEqualConditionalRemoveAccepted", table.remove("metadata", metadataOnly));
+            TopicRouteData beforeMetadataRefresh = table.get("topic");
+            api.route = metadataOnly;
+            result.put("metadataOnlyRefreshChanged", runtime.updateTopicRouteInfoFromNameServer("topic"));
+            result.put("metadataOnlyRefreshKeepsCachedObject", table.get("topic") == beforeMetadataRefresh);
+
+            TopicRouteData invalid = com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(initial), TopicRouteData.class);
+            invalid.getBrokerDatas().get(0).setBrokerAddrs(null);
+            result.put("rawPutAcceptsNullBrokerMap", table.put("invalid", invalid) == null && runtime.getAnExistTopicRouteData("invalid") == invalid);
+            result.put("queryReturnsInvalidRawValueWithoutValidation", runtime.queryTopicRouteData("invalid") == invalid && api.requests == beforeQuery + 1);
+            table.clear();
+        } finally {
+            java.lang.reflect.Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
+                org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
+            cleanup.setAccessible(true);
+            try { cleanup.invoke(runtime, original, new IllegalStateException("live route-table fixture teardown")); }
+            finally { api.shutdown(); }
+        }
+        return result;
+    }
+
     public static void main(String[] args) throws Exception {
         String ordinary = "{\"queueDatas\":[{\"brokerName\":\"broker\",\"readQueueNums\":3,\"writeQueueNums\":2,\"perm\":6,\"topicSysFlag\":0}],"
             + "\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master:10911\",\"2\":\"slave:10911\"}}],\"filterServerTable\":{}}";
@@ -225,7 +318,7 @@ public final class RuntimeRouteFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "MQClientInstance.topicRouteData2TopicPublishInfo/topicRouteData2TopicSubscribeInfo/updateTopicRouteInfoFromNameServer/getAnExistTopicRouteData/findBrokerAddressInPublish/findBrokerAddressInAdmin/findBrokerAddressInSubscribe/findBrokerAddrByTopic; TopicRouteData JSON decode; ClientMetadata.topicRouteData2EndpointsForStaticTopic; MixAll.brokerVIPChannel; Integer.parseInt/Character.digit");
+        fixture.put("entrypoint", "MQClientInstance.topicRouteData2TopicPublishInfo/topicRouteData2TopicSubscribeInfo/updateTopicRouteInfoFromNameServer/getTopicRouteTable/getAnExistTopicRouteData/queryTopicRouteData/cleanOfflineBroker/findBrokerAddressInPublish/findBrokerAddressInAdmin/findBrokerAddressInSubscribe/findBrokerAddrByTopic; ConcurrentMap put/putIfAbsent/replace/remove/clear; TopicRouteData JSON decode/equals; ClientMetadata.topicRouteData2EndpointsForStaticTopic; MixAll.brokerVIPChannel; Integer.parseInt/Character.digit");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
         fixture.put("vip", vip);
@@ -262,6 +355,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("runtimeNullBrokerMap", runtimeNullBrokerMap());
         fixture.put("runtimeNullBrokerValues", runtimeNullBrokerValues());
         fixture.put("runtimeEmptyEndpointTransition", runtimeEmptyEndpointTransition(staticInputs.get(0), inputs.get(0)));
+        fixture.put("runtimeTopicRouteTable", runtimeTopicRouteTable(inputs.get(0)));
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
             com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
