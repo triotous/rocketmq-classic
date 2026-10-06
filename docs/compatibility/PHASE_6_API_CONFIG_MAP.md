@@ -53,7 +53,9 @@ Manager construction-path evidence: `cbc25b5` invokes real, unstarted Java `MQCl
 
 The rebalance parser fixture at `8822d4a` had SHA-256 `b6b429a61adfb8ef944ba79495e32c84dc45438c03b2e8f14b740a00a7ad3414`. It adds twenty actual Long.parseLong cases used by the two source RebalanceService interval properties. Arabic/fullwidth/mixed/Devanagari decimal input and ASCII/fullwidth signed i64 bounds are accepted; sign-only/space/superscript/supplementary/overflow inputs are rejected. `rebalance_property_signed_longs_match_invoked_java` checks each case for both properties, including existing nonpositive immediate semantics. Shared private `java_number` also supplies the existing checked-i32 route parser without widening its public boundary. Full workspace, Clippy, Maven drift check, formatter/diff and comparator self-test passed (`/tmp/p6-rebalance-long-*.log`); core library64. This is parser/source-call-site evidence, not twenty isolated executions of Java's static property initializer.
 
-Latest config fixture SHA-256: `099ee99aec511e165bf45cc3b1cb512e029223ae02b07abac7e0a09de0a9d299`. Actual `managerRemoval` retains the Java live factory map and verifies first/removal/replacement/stale-removal/absent behavior. The new native unconditional-removal test matches these identity outcomes; controlled initializer tests prove per-key waiting, unrelated-key progress and cancellation preserving publication. Both source overloads remove mappings without shutting down the removed runtime. Retained-live-map observations are authoritative Java evidence for the still-missing native table API, not a claim that native private-map assertions implement it.
+The removal fixture at `cbd643d` had SHA-256 `099ee99aec511e165bf45cc3b1cb512e029223ae02b07abac7e0a09de0a9d299`. Actual `managerRemoval` retains the Java live factory map and verifies first/removal/replacement/stale-removal/absent behavior. The native unconditional-removal test matches these identity outcomes; controlled initializer tests prove per-key waiting, unrelated-key progress and cancellation preserving publication. Both source overloads remove mappings without shutting down the removed runtime.
+
+Latest config fixture SHA-256: `9e1f92f7b622d7509e93b5c143641a2b0a8b13cd60316bf468ea293872ab273e`. `b31a7d9` adds actual `managerTable` map mutation outcomes and the live native `FactoryTable` counterpart. Retained handles observe later changes, primitive writes are atomic per key, conditional comparisons use runtime identity, and snapshot is explicitly a detached iteration copy. [ADR-0006](../architecture/ADR-0006-live-client-factory-table.md) records initialization, sharing metadata and cross-manager cleanup ownership. Three integration checks plus private reservation/property tests verify the golden,64-way put-if-absent, owning-value release, config/hook conflicts, logical-ID versus alias cleanup and mutation wait/cancel behavior. Core library68, full workspace, reviewed Clippy, Maven drift check, exact runtime/table gate, comparator/fmt/diff passed (`/tmp/p6-manager-table-*.log`).
 
 ## ClientConfig methods and constants
 
@@ -78,7 +80,7 @@ Methods implemented on `ClientRuntime` unless another owner is specified. Eviden
 | Java public method / overload | Rust counterpart | Evidence / owner |
 | --- | --- | --- |
 | MQClientInstance(config,index,id[,hook]) | private owned construction through manager `get_or_create[/with_hook]`; native index is not new user tuning | R/C, hook wire tests, boot M |
-| topicRouteData2TopicPublishInfo / topicRouteData2TopicSubscribeInfo | common conversion + coherent `TopicSnapshot` conversion | Q, 14 actual Java route cases; producer TopicPublishInfo selection Phase 7 |
+| topicRouteData2TopicPublishInfo / topicRouteData2TopicSubscribeInfo | common conversion + coherent `TopicSnapshot` conversion | Q,25 actual Java converter cases plus two runtime cases; producer TopicPublishInfo selection Phase7 |
 | start / shutdown | `start/shutdown`, serialized owned control task | C: 17 explicit / 18 discovery rollback points, cancellation, running identity/shared-user wire gates |
 | getClientId / getBootTimestamp / getClientConfig | `client_id/boot_timestamp/config` | R/M/config tests |
 | updateTopicRouteInfoFromNameServer() | `update_all_topic_routes`; periodic route tick reuses public entry | R empty-round/no-socket, union/dedup, rejection continuation and callback registry reentry; T existing schedule checks |
@@ -113,7 +115,7 @@ Methods implemented on `ClientRuntime` unless another owner is specified. Eviden
 
 ## Other runtime exports, reverse inventory
 
-`ClientRuntimeManager::{new,get_or_create,get_or_create_with_hook,remove_client_factory,remove_client_factory_by_id}` represent MQClientManager creation/both removal overloads with the plan-required explicit resettable owner. The former reverse listing of `ClientRuntimeManager::remove` was incorrect: `remove` belongs to private ManagerLink, not the exported manager. The source's remaining public surface is explicitly reconciled below. `with_top_addressing`, `TopAddressing`, and its update callback map the Java addressing SPI. `state`, `RuntimeState`, `RuntimeError`, and `GroupLease` expose native lifecycle/identity/error results, not additional client settings. `MessageRequest` maps pull/pop dispatch inputs; producer/consumer traits expose only source registration, subscription, route, persistence, adjustment, rebalance and owned inactive inbound capabilities. `ConsumerOperation` names the inactive request-code slots in the [inbound matrix](PHASE_6_INBOUND_MATRIX.md).
+`ClientRuntimeManager::{new,get_or_create,get_or_create_with_hook,remove_client_factory,remove_client_factory_by_id,factory_table}` represent MQClientManager creation/both removal overloads/live table with the plan-required explicit resettable owner. `FactoryTable` represents source ConcurrentMap access through native owned reads and per-key mutation primitives, not an additional client setting. The former reverse listing of `ClientRuntimeManager::remove` was incorrect: `remove` belongs to private ManagerLink, not the exported manager. The source's public surface is explicitly reconciled below. `with_top_addressing`, `TopAddressing`, and its update callback map the Java addressing SPI. `state`, `RuntimeState`, `RuntimeError`, and `GroupLease` expose native lifecycle/identity/error results, not additional client settings. `MessageRequest` maps pull/pop dispatch inputs; producer/consumer traits expose only source registration, subscription, route, persistence, adjustment, rebalance and owned inactive inbound capabilities. `ConsumerOperation` names the inactive request-code slots in the [inbound matrix](PHASE_6_INBOUND_MATRIX.md).
 
 | MQClientManager public API | Native counterpart / current status |
 | --- | --- |
@@ -121,8 +123,17 @@ Methods implemented on `ClientRuntime` unless another owner is specified. Eviden
 | getOrCreateMQClientInstance(config[,hook]) | `get_or_create/get_or_create_with_hook`; identity/config/oracle/concurrency/cancellation evidence |
 | removeClientFactory(id,instance) | `remove_client_factory`; exact identity-safe removal, stale-replacement checks |
 | removeClientFactory(id) | async `remove_client_factory_by_id`; source removal/replacement oracle, per-key initializer wait/cancel tests; does not replace identity-safe lifecycle cleanup |
-| getFactoryTable | MISSING public table counterpart; source returns live ConcurrentMap, not a detached diagnostic snapshot; native ownership design and verification still required |
+| getFactoryTable | `factory_table` returns live clonable FactoryTable; actual retained-view/mutation oracle and concurrent/ownership/property tests; published reads exclude private initializer reservations |
 | getOrCreateProduceAccumulator | producer batching owner Phase7; no fake accumulator in Phase6 |
+
+| Source returned ConcurrentMap capability | Native FactoryTable API |
+| --- | --- |
+| get/containsKey/size/isEmpty | `get/contains_key/len/is_empty`, owned published values |
+| put/putIfAbsent | async `put/put_if_absent`, return preceding identity or None |
+| replace(key,value)/replace(key,expected,value) | async `replace/replace_if_same`, atomic previous-value or identity-match result |
+| remove(key)/remove(key,value) | async `remove/remove_if_same`; map changes only, no runtime shutdown |
+| clear | async `clear`, not a transaction against concurrent insertion |
+| copy/traverse map entries | explicit `snapshot` owned copy; retained FactoryTable itself stays live, no JVM iterator/order identity claim |
 
 `fetch_name_server_addr/name_server_addr` map MQClientAPIImpl discovery state, not a new resolver feature. `route_snapshot`, `TopicSnapshot`, `RouteSnapshot`, `BrokerAddress`, and `broker_vip_channel` map Java route/broker/publish/subscribe/static/version tables and MixAll VIP logic with immutable native ownership. `prepare_heartbeat_data` exposes the Java heartbeat preparation capability for owners/tests; it does not add another periodic task. Failure-injection seams, queue probes, property readers and deterministic selection indices are private/test-only.
 
