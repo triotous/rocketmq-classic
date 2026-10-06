@@ -52,7 +52,7 @@ One additional owned worker represents Java RebalanceService, not a task per con
 
 Delayed wakeups are deadlines in the existing periodic worker, not detached timer tasks. They serialize behind scheduled callbacks as Java's shared single scheduled executor does. The control worker closes/clears their queue and cancels/joins rebalance before shutting periodic work and transport. Private liveness probes and startup failure checkpoints now include this worker (16 with discovery, 15 with explicit addresses). A pending callback is dropped on cancellation and no post-stop round runs.
 
-Property keys are the exact Java rebalance wait/minimum keys and participate in shared-runtime compatibility checks; no new ClientConfig fields or public tuning settings are introduced. Rust-native optional capabilities expose the wakeup/round boundary while actual consumer queue allocation remains Phase 9. Pull request dispatch ownership remains open.
+Property keys are the exact Java rebalance wait/minimum keys and participate in shared-runtime compatibility checks; no new ClientConfig fields or public tuning settings are introduced. Rust-native optional capabilities expose the wakeup/round boundary while actual consumer queue allocation remains Phase 11. Pull request dispatch ownership remains open.
 
 ## Pull request/task ownership extension
 
