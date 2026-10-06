@@ -144,7 +144,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("rebalanceLongs", rebalanceLongs);
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "ClientConfig.buildMQClientId/cloneClientConfig/resetClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/changeInstanceNameToPID; MQClientManager.getOrCreateMQClientInstance/removeClientFactory/getFactoryTable; MQClientInstance.constructor/getClientConfig/getNettyClientConfig; MQClientAPIImpl.getRemotingClient/NettyRemotingClient.publicExecutor (reflective capacity observation); RemotingCommand.encode (null language JSON/ROCKETMQ); Long.parseLong (RebalanceService property parser)");
+        fixture.put("entrypoint", "ClientConfig.buildMQClientId/cloneClientConfig/resetClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/changeInstanceNameToPID; MQClientManager.getOrCreateMQClientInstance/removeClientFactory/getFactoryTable; MQClientInstance.constructor/getClientConfig/getNettyClientConfig/getProducerTable/getConsumerTable/selectProducer/selectConsumer/registerConsumer/unregisterConsumer; MQClientAPIImpl.getRemotingClient/NettyRemotingClient.publicExecutor (reflective capacity observation); RemotingCommand.encode (null language JSON/ROCKETMQ); Long.parseLong (RebalanceService property parser)");
         fixture.put("serverBaselineContacted", false);
         fixture.put("identities", identities);
         fixture.put("defaults", defaults);
@@ -155,6 +155,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("nullableSettings", nullableSettings());
         fixture.put("socksConstruction", socksConstruction());
         fixture.put("callbackThreadsConstruction", callbackThreadsConstruction());
+        fixture.put("registryTables", registryTables());
         fixture.put("endpoints", endpoints);
         fixture.put("resources", resources);
         fixture.put("pid", pid);
@@ -243,6 +244,66 @@ public final class RuntimeConfigFixtures {
             live.remove("");
             try { cleanupRuntime(first); } finally { cleanupRuntime(second); }
         }
+        return result;
+    }
+
+    private static <T> T tableOwner(Class<T> type) {
+        return type.cast(java.lang.reflect.Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[] {type},
+            (proxy, method, args) -> {
+                if ("equals".equals(method.getName())) return proxy == args[0];
+                if ("hashCode".equals(method.getName())) return System.identityHashCode(proxy);
+                throw new IllegalStateException("map fixture must not invoke owner callback: " + method.getName());
+            }));
+    }
+
+    private static <T> Map<String, Object> tableMutations(java.util.concurrent.ConcurrentMap<String, T> table,
+        T first, T second, java.util.function.Function<String, T> select) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("initialEmpty", table.isEmpty());
+        result.put("firstPutAbsent", table.put("group", first) == null);
+        result.put("selectorSeesFirst", select.apply("group") == first);
+        result.put("putReturnsFirst", table.put("group", second) == first);
+        result.put("selectorSeesReplacement", select.apply("group") == second);
+        result.put("putIfAbsentKeepsSecond", table.putIfAbsent("group", first) == second);
+        result.put("staleReplaceRejected", !table.replace("group", first, second));
+        result.put("conditionalReplaceAccepted", table.replace("group", second, first));
+        result.put("replaceReturnsFirst", table.replace("group", second) == first);
+        result.put("staleRemoveRejected", !table.remove("group", first));
+        result.put("conditionalRemoveAccepted", table.remove("group", second));
+        result.put("absentReplaceNull", table.replace("group", first) == null);
+        result.put("absentRemoveNull", table.remove("group") == null);
+        result.put("putIfAbsentAbsentNull", table.putIfAbsent("group", first) == null);
+        result.put("emptyKeyAccepted", table.put("", second) == null);
+        result.put("sizeTwo", table.size() == 2);
+        table.clear();
+        result.put("retainedViewSeesClear", table.isEmpty());
+        result.put("selectorSeesClear", select.apply("group") == null);
+        result.put("putAfterClearAccepted", table.put("group", second) == null && select.apply("group") == second);
+        table.clear();
+        return result;
+    }
+
+    private static Map<String, Object> registryTables() throws Exception {
+        ClientConfig config = new ClientConfig();
+        config.setClientIP("registry-tables");
+        config.setNamesrvAddr("");
+        org.apache.rocketmq.client.impl.factory.MQClientInstance runtime =
+            new org.apache.rocketmq.client.impl.factory.MQClientInstance(config, 0, config.buildMQClientId());
+        Map<String, Object> result = new TreeMap<>();
+        try {
+            org.apache.rocketmq.client.impl.producer.MQProducerInner producerA = tableOwner(org.apache.rocketmq.client.impl.producer.MQProducerInner.class);
+            org.apache.rocketmq.client.impl.producer.MQProducerInner producerB = tableOwner(org.apache.rocketmq.client.impl.producer.MQProducerInner.class);
+            org.apache.rocketmq.client.impl.consumer.MQConsumerInner consumerA = tableOwner(org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class);
+            org.apache.rocketmq.client.impl.consumer.MQConsumerInner consumerB = tableOwner(org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class);
+            result.put("producer", tableMutations(runtime.getProducerTable(), producerA, producerB, runtime::selectProducer));
+            result.put("consumer", tableMutations(runtime.getConsumerTable(), consumerA, consumerB, runtime::selectConsumer));
+            java.util.concurrent.ConcurrentMap<String, org.apache.rocketmq.client.impl.consumer.MQConsumerInner> retained = runtime.getConsumerTable();
+            result.put("consumerRegisterAccepted", runtime.registerConsumer("registered", consumerA));
+            result.put("consumerDirectPutReturnsRegistered", retained.put("registered", consumerB) == consumerA);
+            result.put("consumerRegisterAfterDirectPutRejected", !runtime.registerConsumer("registered", consumerA));
+            runtime.unregisterConsumer("registered"); // Empty Broker table: no outbound RPC.
+            result.put("consumerUnregisterRemovesCurrentMapping", !retained.containsKey("registered"));
+        } finally { cleanupRuntime(runtime); }
         return result;
     }
 
