@@ -481,6 +481,54 @@ mod tests {
     use super::*;
 
     #[test]
+    fn offline_cleanup_skips_null_raw_broker_maps_like_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["runtimeRawOfflineCleanup"].as_array().unwrap() {
+            let cache = RouteCache::default();
+            if case["priorBroker"].as_bool().unwrap() {
+                cache
+                    .replace(
+                        "topic",
+                        serde_json::from_value(case["initialInput"].clone()).unwrap(),
+                    )
+                    .unwrap();
+            }
+            assert_eq!(
+                cache.snapshot().unwrap().publish_address("broker"),
+                case["publishAddressBefore"].as_str()
+            );
+            let table = super::super::TopicRouteTable::new(cache.clone());
+            table.clear().unwrap();
+            let raw: Arc<TopicRouteData> =
+                Arc::new(serde_json::from_value(case["rawInput"].clone()).unwrap());
+            table.put("raw", raw.clone()).unwrap();
+            let before = cache.snapshot().unwrap();
+            assert_eq!(case["outcome"], "OK");
+            cache.clean_offline().unwrap();
+            let after = cache.snapshot().unwrap();
+            assert_eq!(
+                after.publish_address("broker"),
+                case["publishAddressAfter"].as_str()
+            );
+            assert_eq!(
+                Arc::ptr_eq(&after.raw_routes["raw"], &raw),
+                case["rawObjectRetained"]
+            );
+            assert_eq!(
+                after.raw_routes["raw"].broker_datas[0]
+                    .broker_addrs
+                    .is_none(),
+                case["rawNullMapRetained"]
+            );
+            assert_eq!(
+                before.publish_address("broker"),
+                case["publishAddressBefore"].as_str()
+            );
+        }
+    }
+
+    #[test]
     fn raw_map_mutations_keep_derived_publication_and_offline_cleanup_matches_java() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();

@@ -158,6 +158,53 @@ public final class RuntimeRouteFixtures {
         return item;
     }
 
+    private static List<Object> runtimeRawOfflineCleanup(Map<String, Object> initial) throws Exception {
+        List<Object> cases = new ArrayList<>();
+        for (boolean priorBroker : new boolean[] {false, true}) {
+            org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+            config.setClientIP("raw-offline-cleanup-" + priorBroker);
+            MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+            org.apache.rocketmq.client.impl.MQClientAPIImpl original = runtime.getMQClientAPIImpl();
+            RouteApi api = new RouteApi(config);
+            Map<String, Object> item = new TreeMap<>();
+            try {
+                java.lang.reflect.Field field = MQClientInstance.class.getDeclaredField("mQClientAPIImpl");
+                field.setAccessible(true); field.set(runtime, api);
+                api.route = com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(initial), TopicRouteData.class);
+                item.put("priorBroker", priorBroker);
+                item.put("initialInput", initial);
+                if (priorBroker) runtime.updateTopicRouteInfoFromNameServer("topic");
+                item.put("publishAddressBefore", runtime.findBrokerAddressInPublish("broker"));
+                TopicRouteData raw = com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(initial), TopicRouteData.class);
+                raw.getBrokerDatas().get(0).setBrokerAddrs(null);
+                runtime.getTopicRouteTable().clear();
+                runtime.getTopicRouteTable().put("raw", raw);
+                item.put("rawInput", com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(raw,
+                    com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue, com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringKeyAsString)));
+                java.lang.reflect.Method clean = MQClientInstance.class.getDeclaredMethod("cleanOfflineBroker");
+                clean.setAccessible(true);
+                try {
+                    clean.invoke(runtime);
+                    item.put("outcome", "OK");
+                } catch (java.lang.reflect.InvocationTargetException error) {
+                    item.put("outcome", error.getCause().getClass().getSimpleName());
+                }
+                item.put("publishAddressAfter", runtime.findBrokerAddressInPublish("broker"));
+                item.put("rawObjectRetained", runtime.getAnExistTopicRouteData("raw") == raw);
+                item.put("rawNullMapRetained", runtime.getAnExistTopicRouteData("raw").getBrokerDatas().get(0).getBrokerAddrs() == null);
+                item.put("fetchCount", api.requests);
+            } finally {
+                java.lang.reflect.Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
+                    org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
+                cleanup.setAccessible(true);
+                try { cleanup.invoke(runtime, original, new IllegalStateException("raw offline cleanup fixture teardown")); }
+                finally { api.shutdown(); }
+            }
+            cases.add(item);
+        }
+        return cases;
+    }
+
     private static Map<String, Object> runtimeTopicRouteTable(Map<String, Object> initial) throws Exception {
         org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
         config.setClientIP("route-live-table");
@@ -360,6 +407,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("runtimeNullBrokerValues", runtimeNullBrokerValues());
         fixture.put("runtimeEmptyEndpointTransition", runtimeEmptyEndpointTransition(staticInputs.get(0), inputs.get(0)));
         fixture.put("runtimeTopicRouteTable", runtimeTopicRouteTable(inputs.get(0)));
+        fixture.put("runtimeRawOfflineCleanup", runtimeRawOfflineCleanup(inputs.get(0)));
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
             com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
