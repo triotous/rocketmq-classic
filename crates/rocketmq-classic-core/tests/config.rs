@@ -59,6 +59,43 @@ fn endpoint_namespace_and_resource_helpers_match_invoked_java() {
 }
 
 #[tokio::test]
+async fn nullable_access_and_socks_settings_match_invoked_java_copy_and_construction() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = &fixture["nullableSettings"];
+    let mut source = ClientConfig::new("nullable-settings");
+    source.namesrv_addr = Some(String::new());
+    source.access_channel = None;
+    source.socks_proxy_config = None;
+    assert_eq!(source.access_channel.is_none(), java["inputAccessNull"]);
+    assert_eq!(source.socks_proxy_config.is_none(), java["inputSocksNull"]);
+    let copy = source.clone_client_config();
+    assert_eq!(copy.access_channel, Some(AccessChannel::Local));
+    assert_eq!(java["cloneAccess"], "LOCAL");
+    assert_eq!(copy.socks_proxy_config.is_none(), java["cloneSocksNull"]);
+    let mut receiver = ClientConfig::new("receiver");
+    receiver.access_channel = Some(AccessChannel::Cloud);
+    receiver.reset_client_config(&source);
+    assert_eq!(receiver.access_channel, Some(AccessChannel::Cloud));
+    assert_eq!(java["resetAccess"], "CLOUD");
+    assert_eq!(
+        receiver.socks_proxy_config.is_none(),
+        java["resetSocksNull"]
+    );
+    receiver.access_channel = None;
+    receiver.reset_client_config(&source);
+    assert!(receiver.access_channel.is_none());
+    let runtime = rocketmq_classic_core::runtime::ClientRuntimeManager::new()
+        .get_or_create(&source)
+        .await;
+    assert_eq!(runtime.is_ok(), java["runtimeConstructed"]);
+    assert_eq!(
+        runtime.unwrap().config().socks_proxy_config.is_none(),
+        java["runtimeSocksNull"]
+    );
+}
+
+#[tokio::test]
 async fn runtime_uses_endpoint_address_getter_without_rewriting_raw_configuration() {
     let mut config = ClientConfig::new("192.0.2.6");
     config.set_namesrv_addr(Some("http://MQ_INST_a_b.example:9876".into()));
@@ -99,7 +136,7 @@ async fn manager_configuration_copy_matches_invoked_java_without_mutating_caller
     let mut config = ClientConfig::new("manager-copy");
     config.trace_msg_batch_num = 99;
     config.max_page_size_in_get_metadata = 77;
-    config.access_channel = AccessChannel::Cloud;
+    config.access_channel = Some(AccessChannel::Cloud);
     config.namespace_v2 = Some("v2".into());
     config.enable_concurrent_heartbeat = true;
     config.concurrent_heartbeat_thread_pool_size = 7;
@@ -118,7 +155,7 @@ async fn manager_configuration_copy_matches_invoked_java_without_mutating_caller
         i64::from(actual.max_page_size_in_get_metadata),
         java["maxPageSizeInGetMetadata"]
     );
-    assert_eq!(actual.access_channel, AccessChannel::Local);
+    assert_eq!(actual.access_channel, Some(AccessChannel::Local));
     assert_eq!(java["accessChannel"], "LOCAL");
     assert_eq!(actual.namespace_v2.as_deref(), java["namespaceV2"].as_str());
     assert_eq!(
@@ -136,14 +173,14 @@ async fn manager_configuration_copy_matches_invoked_java_without_mutating_caller
     );
     assert_eq!(config.trace_msg_batch_num, 99);
     assert_eq!(config.max_page_size_in_get_metadata, 77);
-    assert_eq!(config.access_channel, AccessChannel::Cloud);
+    assert_eq!(config.access_channel, Some(AccessChannel::Cloud));
     assert_eq!(
         Arc::ptr_eq(&runtime, &manager.get_or_create(&config).await.unwrap()),
         java["sharedIdentity"]
     );
     config.trace_msg_batch_num = 123;
     config.max_page_size_in_get_metadata = 456;
-    config.access_channel = AccessChannel::Local;
+    config.access_channel = Some(AccessChannel::Local);
     assert!(Arc::ptr_eq(
         &runtime,
         &manager.get_or_create(&config).await.unwrap()
@@ -187,12 +224,12 @@ fn centralized_defaults_and_java_clone_copy_exact_fields() {
     ] {
         assert_eq!(actual, defaults[key].as_i64().unwrap(), "{key}");
     }
-    assert_eq!(config.access_channel, AccessChannel::Local);
+    assert_eq!(config.access_channel, Some(AccessChannel::Local));
     assert!(!config.enable_concurrent_heartbeat);
     assert!(config.enable_heartbeat_channel_event_listener);
     config.trace_msg_batch_num = 99;
     config.max_page_size_in_get_metadata = 77;
-    config.access_channel = AccessChannel::Cloud;
+    config.access_channel = Some(AccessChannel::Cloud);
     config.namespace_v2 = Some("v2".into());
     config.enable_concurrent_heartbeat = true;
     config.concurrent_heartbeat_thread_pool_size = 7;
@@ -206,7 +243,7 @@ fn centralized_defaults_and_java_clone_copy_exact_fields() {
         i64::from(copy.max_page_size_in_get_metadata),
         java["maxPageSizeInGetMetadata"].as_i64().unwrap()
     );
-    assert_eq!(copy.access_channel, AccessChannel::Local);
+    assert_eq!(copy.access_channel, Some(AccessChannel::Local));
     assert_eq!(copy.namespace_v2.as_deref(), java["namespaceV2"].as_str());
     assert_eq!(
         copy.enable_concurrent_heartbeat,
@@ -219,11 +256,11 @@ fn centralized_defaults_and_java_clone_copy_exact_fields() {
     let mut reset = ClientConfig::new("other");
     reset.trace_msg_batch_num = 42;
     reset.max_page_size_in_get_metadata = 43;
-    reset.access_channel = AccessChannel::Cloud;
+    reset.access_channel = Some(AccessChannel::Cloud);
     reset.reset_client_config(&config);
     assert_eq!(reset.trace_msg_batch_num, 42);
     assert_eq!(reset.max_page_size_in_get_metadata, 43);
-    assert_eq!(reset.access_channel, AccessChannel::Cloud);
+    assert_eq!(reset.access_channel, Some(AccessChannel::Cloud));
     assert_eq!(reset.build_client_id(), config.build_client_id());
 }
 
@@ -265,7 +302,7 @@ fn clone_and_reset_copy_every_public_setting_except_java_omissions() {
     source.client_callback_executor_threads = i32::MIN;
     source.set_namespace(Some("changed-namespace".into()));
     source.namespace_v2 = Some("changed-v2".into());
-    source.access_channel = AccessChannel::Cloud;
+    source.access_channel = Some(AccessChannel::Cloud);
     source.poll_name_server_interval = i32::MIN;
     source.heartbeat_broker_interval = i32::MAX;
     source.persist_consumer_offset_interval = -1;
@@ -278,7 +315,7 @@ fn clone_and_reset_copy_every_public_setting_except_java_omissions() {
     source.vip_channel_enabled = true;
     source.use_heartbeat_v2 = true;
     source.use_tls = true;
-    source.socks_proxy_config = "changed-proxy".into();
+    source.socks_proxy_config = Some("changed-proxy".into());
     source.mq_client_api_timeout = i32::MIN;
     source.detect_timeout = -200;
     source.detect_interval = i32::MAX;
@@ -297,14 +334,14 @@ fn clone_and_reset_copy_every_public_setting_except_java_omissions() {
     // reset of the source namespace state is part of clone construction, not
     // a plain Rust Clone operation (covered independently by the private test).
     expected_clone.set_namesrv_addr(source.namesrv_addr.clone());
-    expected_clone.access_channel = AccessChannel::Local;
+    expected_clone.access_channel = Some(AccessChannel::Local);
     expected_clone.trace_msg_batch_num = 10;
     expected_clone.max_page_size_in_get_metadata = 2000;
     assert_eq!(source.clone_client_config(), expected_clone);
 
     let mut receiver = ClientConfig::new("receiver");
     receiver.set_namespace(None);
-    receiver.access_channel = AccessChannel::Cloud;
+    receiver.access_channel = Some(AccessChannel::Cloud);
     receiver.trace_msg_batch_num = 42;
     receiver.max_page_size_in_get_metadata = 43;
     let mut expected_reset = source.clone();

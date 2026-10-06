@@ -144,7 +144,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("rebalanceLongs", rebalanceLongs);
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "ClientConfig.buildMQClientId/cloneClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/changeInstanceNameToPID; MQClientManager.getOrCreateMQClientInstance/removeClientFactory/getFactoryTable; MQClientInstance.getClientConfig; Long.parseLong (RebalanceService property parser)");
+        fixture.put("entrypoint", "ClientConfig.buildMQClientId/cloneClientConfig/resetClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/changeInstanceNameToPID; MQClientManager.getOrCreateMQClientInstance/removeClientFactory/getFactoryTable; MQClientInstance.constructor/getClientConfig/getNettyClientConfig; RemotingCommand.encode (null language JSON/ROCKETMQ); Long.parseLong (RebalanceService property parser)");
         fixture.put("serverBaselineContacted", false);
         fixture.put("identities", identities);
         fixture.put("defaults", defaults);
@@ -152,6 +152,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("managed", managed);
         fixture.put("managerRemoval", managerRemoval(config));
         fixture.put("managerTable", managerTable(config));
+        fixture.put("nullableSettings", nullableSettings());
         fixture.put("endpoints", endpoints);
         fixture.put("resources", resources);
         fixture.put("pid", pid);
@@ -239,6 +240,58 @@ public final class RuntimeConfigFixtures {
             live.remove(id);
             live.remove("");
             try { cleanupRuntime(first); } finally { cleanupRuntime(second); }
+        }
+        return result;
+    }
+
+    private static Map<String, Object> nullableSettings() throws Exception {
+        ClientConfig input = new ClientConfig();
+        input.setClientIP("nullable-settings");
+        input.setNamesrvAddr("");
+        input.setAccessChannel(null);
+        input.setSocksProxyConfig(null);
+        input.setLanguage(null);
+        Map<String, Object> result = new TreeMap<>();
+        result.put("inputAccessNull", input.getAccessChannel() == null);
+        result.put("inputSocksNull", input.getSocksProxyConfig() == null);
+        result.put("inputLanguageNull", input.getLanguage() == null);
+        ClientConfig copy = input.cloneClientConfig();
+        result.put("cloneAccess", copy.getAccessChannel().toString());
+        result.put("cloneSocksNull", copy.getSocksProxyConfig() == null);
+        result.put("cloneLanguageNull", copy.getLanguage() == null);
+        ClientConfig receiver = new ClientConfig();
+        receiver.setAccessChannel(org.apache.rocketmq.client.AccessChannel.CLOUD);
+        receiver.resetClientConfig(input);
+        result.put("resetAccess", receiver.getAccessChannel().toString());
+        result.put("resetSocksNull", receiver.getSocksProxyConfig() == null);
+        result.put("resetLanguageNull", receiver.getLanguage() == null);
+        org.apache.rocketmq.client.impl.factory.MQClientInstance runtime =
+            new org.apache.rocketmq.client.impl.factory.MQClientInstance(copy, 0, copy.buildMQClientId());
+        try {
+            result.put("runtimeConstructed", true);
+            result.put("runtimeSocksNull", runtime.getNettyClientConfig().getSocksProxyConfig() == null);
+            result.put("runtimeLanguageNull", runtime.getClientConfig().getLanguage() == null);
+        } finally { cleanupRuntime(runtime); }
+        for (org.apache.rocketmq.remoting.protocol.SerializeType type : org.apache.rocketmq.remoting.protocol.SerializeType.values()) {
+            org.apache.rocketmq.remoting.protocol.RemotingCommand command =
+                org.apache.rocketmq.remoting.protocol.RemotingCommand.createRequestCommand(34, null);
+            command.setLanguage(null);
+            command.setSerializeTypeCurrentRPC(type);
+            Map<String, Object> outcome = new TreeMap<>();
+            try {
+                java.nio.ByteBuffer bytes = command.encode();
+                outcome.put("outcome", "OK");
+                bytes.getInt();
+                int headerLength = bytes.getInt() & 0x00ffffff;
+                byte[] header = new byte[headerLength]; bytes.get(header);
+                if (type == org.apache.rocketmq.remoting.protocol.SerializeType.JSON) {
+                    com.alibaba.fastjson2.JSONObject json = com.alibaba.fastjson2.JSON.parseObject(new String(header, java.nio.charset.StandardCharsets.UTF_8));
+                    outcome.put("languageKeyPresent", json.containsKey("language"));
+                    outcome.put("decodedLanguage", org.apache.rocketmq.remoting.protocol.RemotingSerializable.decode(header,
+                        org.apache.rocketmq.remoting.protocol.RemotingCommand.class).getLanguage().toString());
+                }
+            } catch (RuntimeException error) { outcome.put("outcome", error.getClass().getSimpleName()); }
+            result.put(type.name(), outcome);
         }
         return result;
     }

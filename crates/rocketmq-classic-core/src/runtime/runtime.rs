@@ -113,7 +113,12 @@ impl ClientRuntime {
             TransportConfig {
                 transport,
                 callback_executor_threads,
-                socks_proxy_config: config.socks_proxy_config.clone(),
+                // Java Fastjson parsing of a null String yields no proxy map.
+                // The accepted lower parser already represents this as "null".
+                socks_proxy_config: config
+                    .socks_proxy_config
+                    .clone()
+                    .unwrap_or_else(|| "null".into()),
                 scan_available_nameserver: false,
                 ..TransportConfig::default()
             },
