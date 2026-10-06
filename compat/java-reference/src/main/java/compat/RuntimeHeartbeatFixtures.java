@@ -43,6 +43,7 @@ public final class RuntimeHeartbeatFixtures {
         config.setInstanceName("DEFAULT");
         MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
         List<Object> cases = new ArrayList<>();
+        List<Object> multiplicityCases = new ArrayList<>();
         try {
             record(cases, runtime, "empty", false);
             DefaultMQProducer producer = new DefaultMQProducer("producer");
@@ -81,6 +82,33 @@ public final class RuntimeHeartbeatFixtures {
             record(cases, runtime, "consumer-only", false);
             runtime.unregisterConsumer("consumer");
             record(cases, runtime, "after-unregister", false);
+            // ConsumerData inherits Object equality: distinct registration keys
+            // must remain distinct even when their returned metadata is equal.
+            if (!runtime.registerConsumer("registered-a", consumer)
+                || !runtime.registerConsumer("registered-b", consumer))
+                throw new IllegalStateException("distinct keys rejected");
+            recordMultiplicity(multiplicityCases, runtime, "equal-full", false);
+            recordMultiplicity(multiplicityCases, runtime, "equal-simple", true);
+            runtime.unregisterConsumer("registered-b");
+            MQConsumerInner otherConsumer = (MQConsumerInner) Proxy.newProxyInstance(
+                MQConsumerInner.class.getClassLoader(), new Class<?>[] {MQConsumerInner.class},
+                (proxy, method, values) -> {
+                    if ("subscriptions".equals(method.getName())) {
+                        SubscriptionData other = new SubscriptionData();
+                        other.setTopic("second");
+                        other.setSubString("*");
+                        other.setSubVersion(14L);
+                        return Collections.singleton(other);
+                    }
+                    return method.invoke(consumer, values);
+                });
+            if (!runtime.registerConsumer("registered-b", otherConsumer))
+                throw new IllegalStateException("replacement registration rejected");
+            recordMultiplicity(multiplicityCases, runtime, "different-full", false);
+            recordMultiplicity(multiplicityCases, runtime, "different-simple", true);
+            runtime.unregisterConsumer("registered-a");
+            recordMultiplicity(multiplicityCases, runtime, "one-after-unregister", false);
+            runtime.unregisterConsumer("registered-b");
         } finally {
             Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
                 org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
@@ -93,6 +121,7 @@ public final class RuntimeHeartbeatFixtures {
         fixture.put("entrypoint", "MQClientInstance.registerProducer/registerConsumer/prepareHeartbeatData/unregisterProducer/unregisterConsumer; HeartbeatData.computeHeartbeatFingerprint");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
+        fixture.put("multiplicityCases", multiplicityCases);
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture) + "\n";
         Path file = Path.of(args[0]);
         if (args.length > 1 && "--verify".equals(args[1])) {
@@ -101,6 +130,22 @@ public final class RuntimeHeartbeatFixtures {
             Files.createDirectories(file.getParent());
             Files.writeString(file, json);
         }
-        System.out.println("Runtime heartbeat invoked cases verified: " + cases.size());
+        System.out.println("Runtime heartbeat invoked cases verified: " + cases.size()
+            + "; multiplicity cases: " + multiplicityCases.size());
+    }
+
+    private static void recordMultiplicity(List<Object> cases, MQClientInstance runtime,
+        String name, boolean withoutSub) throws Exception {
+        record(cases, runtime, name, withoutSub);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> item = (Map<String, Object>) cases.get(cases.size() - 1);
+        // Arbitrary JVM object-set iteration is not a fingerprint oracle.
+        item.remove("fingerprint");
+        com.alibaba.fastjson2.JSONObject body = (com.alibaba.fastjson2.JSONObject) item.get("body");
+        int expectedCount = "one-after-unregister".equals(name) ? 1 : 2;
+        if (body.getJSONArray("consumerDataSet").size() != expectedCount)
+            throw new IllegalStateException("unexpected Java multiplicity: " + name);
+        body.getJSONArray("consumerDataSet").sort(java.util.Comparator.comparing(
+            com.alibaba.fastjson2.JSON::toJSONString)); // Preserve every duplicate.
     }
 }

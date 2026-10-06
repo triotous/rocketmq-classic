@@ -22,6 +22,69 @@ use tokio::{
 };
 
 struct Producer;
+
+#[tokio::test]
+async fn v2_full_and_simple_wire_preserve_duplicate_consumer_metadata() {
+    let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = broker.local_addr().unwrap().to_string();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = broker.accept().await.unwrap();
+        for round in 0..4 {
+            let command = read(&mut stream).await;
+            assert_eq!(command.code, request::HEART_BEAT);
+            let json: serde_json::Value =
+                serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
+            let rows = json["consumerDataSet"].as_array().unwrap();
+            assert_eq!(rows.len(), 2, "round {round}: actual wire multiplicity");
+            let simple = round == 1 || round == 3;
+            assert_eq!(json["withoutSub"], simple);
+            if round == 2 {
+                assert_ne!(rows[0], rows[1]);
+            } else {
+                assert_eq!(rows[0], rows[1]);
+            }
+            if simple {
+                assert!(
+                    rows.iter()
+                        .all(|row| row["subscriptionDataSet"].as_array().unwrap().is_empty())
+                );
+            }
+            respond(&mut stream, &command, None, true, false).await;
+        }
+    });
+    let mut config = ClientConfig::new("duplicate-wire");
+    config.use_heartbeat_v2 = true;
+    config.vip_channel_enabled = false;
+    config.enable_heartbeat_channel_event_listener = false;
+    let runtime = runtime(config, &[address]).await;
+    let first = Arc::new(Consumer(Mutex::new(SubscriptionData {
+        topic: "topic".into(),
+        sub_string: "*".into(),
+        sub_version: 12,
+        ..Default::default()
+    })));
+    let second = Arc::new(Consumer(Mutex::new(first.0.lock().unwrap().clone())));
+    let _a = runtime
+        .register_consumer("registered-a", first.clone())
+        .await
+        .unwrap();
+    let _b = runtime
+        .register_consumer("registered-b", second.clone())
+        .await
+        .unwrap();
+    for round in 0..4 {
+        if round == 2 {
+            second.0.lock().unwrap().topic = "second".into();
+        }
+        assert!(runtime.send_heartbeat_to_all_brokers().await.unwrap());
+    }
+    tokio::time::timeout(Duration::from_secs(2), peer)
+        .await
+        .unwrap()
+        .unwrap();
+    runtime.remoting().shutdown().await;
+}
+
 impl ProducerRuntime for Producer {}
 struct Consumer(Mutex<SubscriptionData>);
 impl ConsumerRuntime for Consumer {
@@ -355,7 +418,7 @@ async fn v2_negotiates_full_simple_subscription_change_version_and_rebalance() {
             assert_eq!(body.client_id.as_deref(), Some("heartbeat@DEFAULT"));
             assert_eq!(body.is_without_sub, simple, "round {index}");
             assert_eq!(body.producer_data_set.len(), 1);
-            let consumer = body.consumer_data_set.iter().next().unwrap();
+            let consumer = body.consumer_data_set.first().unwrap();
             assert_eq!(consumer.subscription_data_set.is_empty(), simple);
             if !simple {
                 assert_eq!(

@@ -33,6 +33,100 @@ fn compare_java(name: &str, actual: &HeartbeatData) {
 }
 
 #[tokio::test]
+async fn distinct_registered_keys_preserve_equal_and_simple_consumer_metadata() {
+    let manager = ClientRuntimeManager::new();
+    let runtime = manager
+        .get_or_create(&ClientConfig::new("192.0.2.6"))
+        .await
+        .unwrap();
+    let first = Arc::new(Consumer(Mutex::new(ConsumerData {
+        group_name: "consumer".into(),
+        subscription_data_set: HashSet::from([SubscriptionData {
+            topic: "other".into(),
+            sub_string: "tag".into(),
+            sub_version: 13,
+            ..Default::default()
+        }]),
+        ..Default::default()
+    })));
+    let a = runtime
+        .register_consumer("registered-a", first.clone())
+        .await
+        .unwrap();
+    let mut b = runtime
+        .register_consumer("registered-b", first.clone())
+        .await
+        .unwrap();
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/heartbeat.json")).unwrap();
+    let check = |name: &str, without_sub| {
+        let case = fixture["multiplicityCases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|case| case["case"] == name)
+            .unwrap();
+        let actual = runtime.prepare_heartbeat_data(without_sub).unwrap();
+        let expected: HeartbeatData = serde_json::from_value(case["body"].clone()).unwrap();
+        assert_eq!(
+            actual.consumer_data_set.len(),
+            case["body"]["consumerDataSet"].as_array().unwrap().len(),
+            "{name}"
+        );
+        let mut actual_rows: Vec<_> = actual
+            .consumer_data_set
+            .iter()
+            .map(|row| serde_json::to_string(row).unwrap())
+            .collect();
+        let mut expected_rows: Vec<_> = expected
+            .consumer_data_set
+            .iter()
+            .map(|row| serde_json::to_string(row).unwrap())
+            .collect();
+        actual_rows.sort();
+        expected_rows.sort();
+        assert_eq!(actual_rows, expected_rows, "{name}");
+    };
+    check("equal-full", false);
+    check("equal-simple", true);
+    runtime
+        .unregister_consumer(&b, Instant::now() + Duration::from_secs(1))
+        .await
+        .unwrap();
+    let second = Arc::new(Consumer(Mutex::new(ConsumerData {
+        subscription_data_set: HashSet::from([SubscriptionData {
+            topic: "second".into(),
+            sub_string: "*".into(),
+            sub_version: 14,
+            ..Default::default()
+        }]),
+        ..first.0.lock().unwrap().clone()
+    })));
+    b = runtime
+        .register_consumer("registered-b", second.clone())
+        .await
+        .unwrap();
+    check("different-full", false);
+    check("different-simple", true);
+    runtime
+        .unregister_consumer(&a, Instant::now() + Duration::from_secs(1))
+        .await
+        .unwrap();
+    check("one-after-unregister", false);
+    runtime
+        .unregister_consumer(&b, Instant::now() + Duration::from_secs(1))
+        .await
+        .unwrap();
+    assert!(
+        runtime
+            .prepare_heartbeat_data(false)
+            .unwrap()
+            .consumer_data_set
+            .is_empty()
+    );
+}
+
+#[tokio::test]
 async fn duplicate_groups_and_stale_identity_tokens_cannot_remove_replacements() {
     let manager = ClientRuntimeManager::new();
     let runtime = manager
@@ -116,8 +210,7 @@ async fn heartbeat_snapshots_follow_consumer_versions_and_without_subscription_f
     assert_eq!(
         first
             .consumer_data_set
-            .iter()
-            .next()
+            .first()
             .unwrap()
             .subscription_data_set
             .iter()
@@ -141,8 +234,7 @@ async fn heartbeat_snapshots_follow_consumer_versions_and_without_subscription_f
     assert!(
         without
             .consumer_data_set
-            .iter()
-            .next()
+            .first()
             .unwrap()
             .subscription_data_set
             .is_empty()

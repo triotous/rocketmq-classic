@@ -717,7 +717,7 @@ mod tests {
                             group_name: (*group).into()
                         })
                         .collect(),
-                    consumer_data_set: HashSet::from([consumer.heartbeat_data()]),
+                    consumer_data_set: vec![consumer.heartbeat_data()],
                     ..Default::default()
                 }
             );

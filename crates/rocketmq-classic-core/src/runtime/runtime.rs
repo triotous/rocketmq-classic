@@ -696,7 +696,7 @@ impl ClientRuntime {
             if without_sub {
                 data.subscription_data_set.clear();
             }
-            heartbeat.consumer_data_set.insert(data);
+            heartbeat.consumer_data_set.push(data);
         }
         Ok(heartbeat)
     }

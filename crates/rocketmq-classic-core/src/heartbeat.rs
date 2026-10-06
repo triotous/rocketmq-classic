@@ -345,7 +345,7 @@ mod tests {
     #[test]
     fn fingerprint_ignores_identity_subscription_version_and_simple_flag() {
         let mut data = HeartbeatData::default();
-        data.consumer_data_set.insert(ConsumerData {
+        data.consumer_data_set.push(ConsumerData {
             group_name: "consumer".into(),
             subscription_data_set: std::collections::HashSet::from([SubscriptionData {
                 topic: "topic".into(),
@@ -359,17 +359,42 @@ mod tests {
         data.client_id = Some("another".into());
         data.heartbeat_fingerprint = 42;
         data.is_without_sub = true;
-        let mut consumer = data.consumer_data_set.drain().next().unwrap();
+        let mut consumer = data.consumer_data_set.drain(..).next().unwrap();
         let mut sub = consumer.subscription_data_set.drain().next().unwrap();
         sub.sub_version = 99;
         consumer.subscription_data_set.insert(sub.clone());
-        data.consumer_data_set.insert(consumer.clone());
+        data.consumer_data_set.push(consumer.clone());
         assert_eq!(fingerprint(&data).unwrap(), expected);
         consumer.subscription_data_set.clear();
         sub.sub_string = "changed".into();
         consumer.subscription_data_set.insert(sub);
         data.consumer_data_set.clear();
-        data.consumer_data_set.insert(consumer);
+        data.consumer_data_set.push(consumer);
         assert_ne!(fingerprint(&data).unwrap(), expected);
+    }
+
+    #[test]
+    fn fingerprint_preserves_duplicate_multiplicity_without_registration_order() {
+        let a = ConsumerData {
+            group_name: "a".into(),
+            ..Default::default()
+        };
+        let b = ConsumerData {
+            group_name: "b".into(),
+            ..Default::default()
+        };
+        let mut data = HeartbeatData {
+            consumer_data_set: vec![a.clone(), b.clone()],
+            ..Default::default()
+        };
+        let expected = fingerprint(&data).unwrap();
+        data.consumer_data_set.reverse();
+        assert_eq!(fingerprint(&data).unwrap(), expected);
+        data.consumer_data_set.push(a);
+        assert_ne!(fingerprint(&data).unwrap(), expected);
+        data.consumer_data_set.push(b);
+        let duplicated = fingerprint(&data).unwrap();
+        data.consumer_data_set.reverse();
+        assert_eq!(fingerprint(&data).unwrap(), duplicated);
     }
 }

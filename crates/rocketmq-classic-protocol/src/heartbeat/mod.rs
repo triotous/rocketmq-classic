@@ -140,7 +140,9 @@ pub struct HeartbeatData {
     #[serde(default)]
     pub producer_data_set: HashSet<ProducerData>,
     #[serde(default)]
-    pub consumer_data_set: HashSet<ConsumerData>,
+    /// Java ConsumerData has object identity equality. Preserve its wire
+    /// multiplicity rather than deduplicating structurally equal metadata.
+    pub consumer_data_set: Vec<ConsumerData>,
     #[serde(default)]
     pub heartbeat_fingerprint: i32,
     #[serde(default, rename = "withoutSub", alias = "isWithoutSub")]
@@ -152,12 +154,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn consumer_metadata_multiplicity_matches_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
+                .unwrap();
+        for case in fixture["multiplicityCases"].as_array().unwrap() {
+            let expected = case["body"]["consumerDataSet"].as_array().unwrap();
+            let data: HeartbeatData = serde_json::from_value(case["body"].clone()).unwrap();
+            assert_eq!(
+                data.consumer_data_set.len(),
+                expected.len(),
+                "{}",
+                case["case"]
+            );
+            let encoded = serde_json::to_value(data).unwrap();
+            assert_eq!(
+                encoded["consumerDataSet"].as_array().unwrap().len(),
+                expected.len()
+            );
+        }
+    }
+
+    #[test]
     fn heartbeat_json_uses_java_field_names_and_preserves_subscription_data() {
         let mut heartbeat = HeartbeatData {
             client_id: Some("client".into()),
             ..HeartbeatData::default()
         };
-        heartbeat.consumer_data_set.insert(ConsumerData {
+        heartbeat.consumer_data_set.push(ConsumerData {
             group_name: "group".into(),
             consume_from_where: ConsumeFromWhere::ConsumeFromLastOffset,
             subscription_data_set: HashSet::from([SubscriptionData {
