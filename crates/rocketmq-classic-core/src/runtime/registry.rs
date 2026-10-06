@@ -353,6 +353,22 @@ impl GroupRegistry {
         Ok(true)
     }
 
+    pub(super) fn remove_by_group(
+        &self,
+        group: &str,
+        kind: GroupKind,
+    ) -> Result<bool, RuntimeError> {
+        let mut entries = self
+            .entries
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?;
+        Ok(match kind {
+            GroupKind::Producer => entries.producers.remove(group).is_some(),
+            GroupKind::Consumer => entries.consumers.remove(group).is_some(),
+            GroupKind::Admin => entries.admins.remove(group).is_some(),
+        })
+    }
+
     pub fn snapshot(&self) -> Result<RegistrySnapshot, RuntimeError> {
         let entries = self
             .entries

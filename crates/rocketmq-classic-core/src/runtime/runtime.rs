@@ -772,6 +772,29 @@ impl ClientRuntime {
             .await
     }
 
+    /// Remove the current producer mapping, irrespective of its registration
+    /// identity, and attempt Broker unregister even if the mapping was absent.
+    /// Returns whether a binding was removed; lifecycle cleanup uses leases.
+    pub async fn unregister_producer_by_group(
+        self: &Arc<Self>,
+        group: &str,
+        deadline: tokio::time::Instant,
+    ) -> Result<bool, RuntimeError> {
+        self.request_unregister_by_group(group, GroupKind::Producer, deadline)
+            .await
+    }
+
+    /// Consumer counterpart of unregister_producer_by_group. This explicit
+    /// source capability does not replace identity-safe owner cleanup.
+    pub async fn unregister_consumer_by_group(
+        self: &Arc<Self>,
+        group: &str,
+        deadline: tokio::time::Instant,
+    ) -> Result<bool, RuntimeError> {
+        self.request_unregister_by_group(group, GroupKind::Consumer, deadline)
+            .await
+    }
+
     pub async fn unregister_admin(
         self: &Arc<Self>,
         lease: &GroupLease,
@@ -792,10 +815,32 @@ impl ClientRuntime {
         if kind == GroupKind::Admin {
             return Ok(true);
         }
+        self.unregister_brokers(&lease.group, kind, deadline)
+            .await?;
+        Ok(true)
+    }
+
+    pub(super) async fn unregister_current_group(
+        &self,
+        group: &str,
+        kind: GroupKind,
+        deadline: tokio::time::Instant,
+    ) -> Result<bool, RuntimeError> {
+        let removed = self.groups.remove_by_group(group, kind)?;
+        self.unregister_brokers(group, kind, deadline).await?;
+        Ok(removed)
+    }
+
+    async fn unregister_brokers(
+        &self,
+        group: &str,
+        kind: GroupKind,
+        deadline: tokio::time::Instant,
+    ) -> Result<(), RuntimeError> {
         let header = rocketmq_classic_protocol::header::UnregisterClientRequestHeader {
             client_id: self.client_id.clone(),
-            producer_group: (kind == GroupKind::Producer).then(|| lease.group.clone()),
-            consumer_group: (kind == GroupKind::Consumer).then(|| lease.group.clone()),
+            producer_group: (kind == GroupKind::Producer).then(|| group.to_owned()),
+            consumer_group: (kind == GroupKind::Consumer).then(|| group.to_owned()),
         };
         let snapshot = self.routes.snapshot()?;
         for brokers in snapshot.broker_addresses.values() {
@@ -805,7 +850,7 @@ impl ClientRuntime {
                 let _ = self.api.unregister_client(address, &header, deadline).await;
             }
         }
-        Ok(true)
+        Ok(())
     }
 
     pub fn state(&self) -> RuntimeState {
@@ -851,6 +896,43 @@ impl ClientRuntime {
         };
         self.control.join_terminal().await?;
         result
+    }
+
+    async fn request_unregister_by_group(
+        self: &Arc<Self>,
+        group: &str,
+        kind: GroupKind,
+        deadline: tokio::time::Instant,
+    ) -> Result<bool, RuntimeError> {
+        if matches!(self.state(), RuntimeState::Stopped | RuntimeState::Failed) {
+            // Retained maps can still be mutated, but terminal transport must
+            // not be restarted for best-effort source unregister attempts.
+            return self.groups.remove_by_group(group, kind);
+        }
+        let (reply, receive) = tokio::sync::oneshot::channel();
+        if self
+            .control
+            .sender(self)?
+            .send(Command::UnregisterByGroup {
+                group: group.to_owned(),
+                kind,
+                deadline,
+                reply,
+            })
+            .is_err()
+        {
+            if matches!(self.state(), RuntimeState::Stopped | RuntimeState::Failed) {
+                return self.groups.remove_by_group(group, kind);
+            }
+            return Err(self.control_error());
+        }
+        match receive.await {
+            Ok(result) => result,
+            Err(_) if matches!(self.state(), RuntimeState::Stopped | RuntimeState::Failed) => {
+                self.groups.remove_by_group(group, kind)
+            }
+            Err(_) => Err(self.control_error()),
+        }
     }
 
     async fn request_unregister(

@@ -44,6 +44,12 @@ pub(super) enum Command {
         group: String,
         reply: oneshot::Sender<Result<PendingLease, RuntimeError>>,
     },
+    UnregisterByGroup {
+        group: String,
+        kind: GroupKind,
+        deadline: Instant,
+        reply: oneshot::Sender<Result<bool, RuntimeError>>,
+    },
     Unregister {
         lease: GroupLease,
         kind: GroupKind,
@@ -290,6 +296,19 @@ async fn run(
                     Err(RuntimeError::InvalidState(state))
                 };
                 deliver(result, reply, &sender, &runtime);
+            }
+            Command::UnregisterByGroup {
+                group,
+                kind,
+                deadline,
+                reply,
+            } => {
+                if !reply.is_closed() {
+                    let result = runtime
+                        .unregister_current_group(&group, kind, deadline)
+                        .await;
+                    let _ = reply.send(result);
+                }
             }
             Command::Unregister {
                 lease,

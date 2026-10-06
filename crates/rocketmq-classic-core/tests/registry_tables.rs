@@ -159,6 +159,83 @@ async fn retained_registry_tables_match_every_invoked_java_primitive_outcome() {
 }
 
 #[tokio::test]
+async fn group_unregister_matches_invoked_java_consumer_methods_and_removes_current_binding() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&ClientConfig::new("group-unregister"))
+        .await
+        .unwrap();
+    let table = runtime.consumer_table();
+    let first: Arc<dyn ConsumerRuntime> = Arc::new(Consumer);
+    let second: Arc<dyn ConsumerRuntime> = Arc::new(Consumer);
+    let lease = runtime
+        .register_consumer("group", first.clone())
+        .await
+        .unwrap();
+    let mut outcomes = BTreeMap::new();
+    outcomes.insert("consumerRegisterAccepted", true);
+    outcomes.insert(
+        "consumerDirectPutReturnsRegistered",
+        same(table.put("group", second.clone()).await.unwrap(), &first),
+    );
+    outcomes.insert(
+        "consumerRegisterAfterDirectPutRejected",
+        matches!(
+            runtime.register_consumer("group", first).await,
+            Err(RuntimeError::DuplicateGroup { .. })
+        ),
+    );
+    assert!(
+        !runtime
+            .unregister_consumer(&lease, tokio::time::Instant::now())
+            .await
+            .unwrap()
+    );
+    assert!(
+        runtime
+            .unregister_consumer_by_group("group", tokio::time::Instant::now())
+            .await
+            .unwrap()
+    );
+    outcomes.insert(
+        "consumerUnregisterRemovesCurrentMapping",
+        table.get("group").unwrap().is_none(),
+    );
+    for (name, outcome) in outcomes {
+        assert_eq!(
+            serde_json::json!(outcome),
+            fixture["registryTables"][name],
+            "{name}"
+        );
+    }
+    assert!(
+        !runtime
+            .unregister_consumer_by_group("group", tokio::time::Instant::now())
+            .await
+            .unwrap()
+    );
+    let producer: Arc<dyn ProducerRuntime> = Arc::new(Producer);
+    runtime
+        .producer_table()
+        .put("", producer.clone())
+        .await
+        .unwrap();
+    assert!(
+        runtime
+            .unregister_producer_by_group("", tokio::time::Instant::now())
+            .await
+            .unwrap()
+    );
+    assert!(
+        !runtime
+            .unregister_producer_by_group("", tokio::time::Instant::now())
+            .await
+            .unwrap()
+    );
+}
+
+#[tokio::test]
 async fn live_table_replacement_invalidates_old_lease_without_retaining_runtime_or_owners() {
     let manager = ClientRuntimeManager::new();
     let mut config = ClientConfig::new("registry-lease");
@@ -265,6 +342,37 @@ async fn running_table_writes_wait_for_unregister_and_cancelled_queue_writes_do_
         seen.send(()).unwrap();
         proceed.await.unwrap();
         reply(&mut socket, &request, None).await;
+        for (field, group) in [
+            ("consumerGroup", "absent"),
+            ("producerGroup", "producer"),
+            ("consumerGroup", "registered"),
+        ] {
+            let request = read(&mut socket).await;
+            assert_eq!(request.code, 35);
+            let fields = request.ext_fields.as_ref().unwrap();
+            assert_eq!(fields[field], group);
+            assert_eq!(fields["clientID"], "registry-rpc-order@DEFAULT");
+            let other = if field == "consumerGroup" {
+                "producerGroup"
+            } else {
+                "consumerGroup"
+            };
+            assert!(!fields.contains_key(other));
+            if group == "absent" {
+                let mut response = RemotingCommand {
+                    code: 1,
+                    opaque: request.opaque,
+                    ..Default::default()
+                };
+                response.mark_response();
+                socket
+                    .write_all(&frame::encode(&response, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                    .await
+                    .unwrap();
+            } else {
+                reply(&mut socket, &request, None).await;
+            }
+        }
         let internal = read(&mut socket).await;
         assert_eq!(internal.code, 35);
         assert_eq!(
@@ -294,12 +402,15 @@ async fn running_table_writes_wait_for_unregister_and_cancelled_queue_writes_do_
         .register_consumer("registered", first.clone())
         .await
         .unwrap();
+    table
+        .put("cancelled-unregister", second.clone())
+        .await
+        .unwrap();
     let unregister = {
         let runtime = runtime.clone();
-        let lease = lease.clone();
         tokio::spawn(async move {
             runtime
-                .unregister_consumer(&lease, Instant::now() + Duration::from_secs(3))
+                .unregister_consumer_by_group("registered", Instant::now() + Duration::from_secs(3))
                 .await
         })
     };
@@ -317,25 +428,80 @@ async fn running_table_writes_wait_for_unregister_and_cancelled_queue_writes_do_
         let second = second.clone();
         tokio::spawn(async move { table.put("cancelled", second).await })
     };
+    let cancelled_unregister = {
+        let runtime = runtime.clone();
+        tokio::spawn(async move {
+            runtime
+                .unregister_consumer_by_group(
+                    "cancelled-unregister",
+                    Instant::now() + Duration::from_secs(3),
+                )
+                .await
+        })
+    };
     tokio::time::sleep(Duration::from_millis(20)).await;
     assert!(!write.is_finished());
     assert!(!cancelled.is_finished());
+    assert!(!cancelled_unregister.is_finished());
     assert!(table.get("registered").unwrap().is_none()); // Reads are not blocked by the actor's RPC.
     cancelled.abort();
     assert!(matches!(cancelled.await, Err(error) if error.is_cancelled()));
+    cancelled_unregister.abort();
+    assert!(matches!(cancelled_unregister.await, Err(error) if error.is_cancelled()));
     release.send(()).unwrap();
     assert!(unregister.await.unwrap().unwrap());
     assert!(write.await.unwrap().unwrap().is_none());
     assert!(same(table.get("registered").unwrap(), &second));
     assert!(!table.contains_key("cancelled").unwrap());
+    assert!(same(table.get("cancelled-unregister").unwrap(), &second));
     assert!(
         !runtime
             .unregister_consumer(&lease, Instant::now())
             .await
             .unwrap()
     );
+    // Absent keys still issue RPCs and Broker rejection remains best-effort.
+    assert!(
+        !runtime
+            .unregister_consumer_by_group("absent", Instant::now() + Duration::from_secs(3))
+            .await
+            .unwrap()
+    );
+    let producer: Arc<dyn ProducerRuntime> = Arc::new(Producer);
+    runtime
+        .producer_table()
+        .put("producer", producer)
+        .await
+        .unwrap();
+    // Weak-owner expiry does not make the binding absent.
+    assert!(
+        runtime
+            .unregister_producer_by_group("producer", Instant::now() + Duration::from_secs(3))
+            .await
+            .unwrap()
+    );
+    assert!(
+        runtime
+            .unregister_consumer_by_group("registered", Instant::now() + Duration::from_secs(3))
+            .await
+            .unwrap()
+    );
     table.clear().await.unwrap();
     assert!(runtime.shutdown().await.unwrap());
+    // Terminal maps can change without reviving transport or its control worker.
+    table.put("after-stop", second.clone()).await.unwrap();
+    assert!(
+        runtime
+            .unregister_consumer_by_group("after-stop", Instant::now())
+            .await
+            .unwrap()
+    );
+    assert!(
+        !runtime
+            .unregister_consumer_by_group("after-stop", Instant::now())
+            .await
+            .unwrap()
+    );
     tokio::time::timeout(Duration::from_secs(5), broker_peer)
         .await
         .unwrap()
