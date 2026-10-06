@@ -403,7 +403,24 @@ fn routes_equal(left: &TopicRouteData, right: &TopicRouteData) -> bool {
             .broker_datas
             .sort_by(|a, b| a.broker_name.cmp(&b.broker_name));
     }
-    left == right
+    route_values_equal(&left, &right)
+}
+
+// TopicRouteData.equals delegates BrokerData.equals, which compares only name
+// and addresses. Do not use the completed lower DTO's broader Rust value Eq.
+fn route_values_equal(left: &TopicRouteData, right: &TopicRouteData) -> bool {
+    left.order_topic_conf == right.order_topic_conf
+        && left.queue_datas == right.queue_datas
+        && left.filter_server_table == right.filter_server_table
+        && left.topic_queue_mapping_by_broker == right.topic_queue_mapping_by_broker
+        && left.broker_datas.len() == right.broker_datas.len()
+        && left
+            .broker_datas
+            .iter()
+            .zip(&right.broker_datas)
+            .all(|(left, right)| {
+                left.broker_name == right.broker_name && left.broker_addrs == right.broker_addrs
+            })
 }
 
 /// Java MixAll.brokerVIPChannel, with checked socket ports and bracketed IPv6.
@@ -436,6 +453,38 @@ pub fn broker_vip_channel(enabled: bool, address: &str) -> Result<String, Runtim
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn metadata_only_broker_changes_match_invoked_java_route_equality_and_refresh() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        let case = &fixture["runtimeTopicRouteTable"];
+        let initial: TopicRouteData = serde_json::from_value(case["initialInput"].clone()).unwrap();
+        let metadata: TopicRouteData =
+            serde_json::from_value(case["metadataOnlyInput"].clone()).unwrap();
+        assert_ne!(initial, metadata); // Public DTO value equality is unchanged.
+        assert_eq!(
+            routes_equal(&initial, &metadata),
+            case["brokerMetadataIgnoredByRouteEquals"]
+        );
+        let cache = RouteCache::default();
+        assert!(cache.replace("topic", initial.clone()).unwrap());
+        let before = cache.snapshot().unwrap();
+        assert_eq!(
+            cache.route_changed("topic", &metadata).unwrap(),
+            case["metadataOnlyRefreshChanged"]
+        );
+        assert_eq!(
+            cache.replace("topic", metadata).unwrap(),
+            case["metadataOnlyRefreshChanged"]
+        );
+        let after = cache.snapshot().unwrap();
+        assert_eq!(
+            Arc::ptr_eq(&before, &after),
+            case["metadataOnlyRefreshKeepsCachedObject"]
+        );
+        assert_eq!(after.topics["topic"].route.as_ref(), &initial);
+    }
 
     #[test]
     fn ordered_integer_parser_matches_invoked_java_digits_and_signed_boundaries() {
