@@ -195,6 +195,42 @@ impl ClientRuntimeManager {
         }
         Ok(matches)
     }
+
+    /// Unconditional removal corresponding to Java removeClientFactory(id).
+    /// Does not shut down the removed runtime. Lifecycle cleanup must continue
+    /// to use the identity-aware overload to avoid removing replacements.
+    /// Await only this key's initializer, as ConcurrentHashMap removal does for
+    /// an in-progress mapping; unrelated keys remain independently available.
+    pub async fn remove_client_factory_by_id(&self, client_id: &str) -> Result<bool, RuntimeError> {
+        loop {
+            let entry = {
+                let entries = self
+                    .entries
+                    .lock()
+                    .map_err(|_| RuntimeError::RegistryPoisoned)?;
+                let Some(entry) = entries.get(client_id) else {
+                    return Ok(false);
+                };
+                entry.clone()
+            };
+            let _initialization = entry.initialization.lock().await;
+            let mut entries = self
+                .entries
+                .lock()
+                .map_err(|_| RuntimeError::RegistryPoisoned)?;
+            match entries.get(client_id) {
+                None => return Ok(false),
+                Some(current) if Arc::ptr_eq(current, &entry) => {
+                    let published = entry.runtime.get().is_some();
+                    entries.remove(client_id);
+                    return Ok(published);
+                }
+                // A concurrent identity-safe cleanup/replacement overtook our
+                // wait: unconditional removal targets the current mapping.
+                Some(_) => continue,
+            }
+        }
+    }
 }
 
 fn same_hook(left: &Option<Arc<dyn RpcHook>>, right: &Option<Arc<dyn RpcHook>>) -> bool {
@@ -229,6 +265,124 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tokio::sync::Barrier;
+
+    #[tokio::test]
+    async fn unconditional_removal_matches_java_without_stale_identity_cleanup_regression() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/client-config.json"
+        ))
+        .unwrap();
+        let java = &fixture["managerRemoval"];
+        let manager = ClientRuntimeManager::new();
+        let config = ClientConfig::new("unconditional-remove");
+        let id = config.build_client_id();
+        assert!(!manager.remove_client_factory_by_id(&id).await.unwrap());
+        let first = manager.get_or_create(&config).await.unwrap();
+        assert_eq!(
+            manager.entries.lock().unwrap()[&id]
+                .runtime
+                .get()
+                .is_some_and(|value| Arc::ptr_eq(value, &first)),
+            java["liveSeesFirst"]
+        );
+        assert!(manager.remove_client_factory_by_id(&id).await.unwrap());
+        assert_eq!(
+            !manager.entries.lock().unwrap().contains_key(&id),
+            java["absentAfterUnconditional"]
+        );
+        assert_eq!(first.state(), super::super::RuntimeState::Created);
+        let replacement = manager.get_or_create(&config).await.unwrap();
+        assert_eq!(
+            !Arc::ptr_eq(&first, &replacement),
+            java["replacementIdentity"]
+        );
+        assert!(!manager.remove_client_factory(&id, &first).unwrap());
+        assert_eq!(
+            Arc::ptr_eq(&replacement, &manager.get_or_create(&config).await.unwrap()),
+            java["staleIdentityKeepsReplacement"]
+        );
+        assert!(manager.remove_client_factory_by_id(&id).await.unwrap());
+        assert_eq!(
+            !manager.entries.lock().unwrap().contains_key(&id),
+            java["unconditionalRemovesReplacement"]
+        );
+        assert!(!manager.remove_client_factory_by_id(&id).await.unwrap());
+        assert_eq!(
+            !manager.entries.lock().unwrap().contains_key(&id),
+            java["absentRemovalStaysAbsent"]
+        );
+    }
+
+    #[tokio::test]
+    async fn unconditional_removal_waits_only_for_its_key_and_cancellation_preserves_mapping() {
+        use tokio::time::{Duration, timeout};
+        for cancel in [false, true] {
+            let manager = ClientRuntimeManager::new();
+            let config = ClientConfig::new("in-progress-removal");
+            let ready = Arc::new(tokio::sync::Notify::new());
+            let release = Arc::new(tokio::sync::Notify::new());
+            let task_manager = manager.clone();
+            let task_config = config.clone();
+            let task_ready = ready.clone();
+            let task_release = release.clone();
+            let creation = tokio::spawn(async move {
+                task_manager
+                    .get_or_create_inner(&task_config, None, |entry| {
+                        let ready = task_ready.clone();
+                        let release = task_release.clone();
+                        async move {
+                            ready.notify_one();
+                            release.notified().await;
+                            ClientRuntime::construct(entry.config.clone(), &entry.properties, None)
+                        }
+                    })
+                    .await
+            });
+            ready.notified().await;
+            let task_manager = manager.clone();
+            let id = config.build_client_id();
+            let mut removal =
+                tokio::spawn(async move { task_manager.remove_client_factory_by_id(&id).await });
+            assert!(
+                timeout(Duration::from_millis(20), &mut removal)
+                    .await
+                    .is_err()
+            );
+            let other = timeout(
+                Duration::from_secs(1),
+                manager.get_or_create(&ClientConfig::new("other-key")),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(other.client_id(), "other-key@DEFAULT");
+            if cancel {
+                removal.abort();
+                assert!((&mut removal).await.unwrap_err().is_cancelled());
+            } else {
+                // Still waiting after unrelated construction, not serializing
+                // the whole table or prematurely removing a reserved entry.
+                assert!(!removal.is_finished());
+            }
+            release.notify_one();
+            let first = creation.await.unwrap().unwrap();
+            if cancel {
+                assert!(Arc::ptr_eq(
+                    &first,
+                    &manager.get_or_create(&config).await.unwrap()
+                ));
+            } else {
+                assert!(removal.await.unwrap().unwrap());
+                let replacement = manager.get_or_create(&config).await.unwrap();
+                assert!(!Arc::ptr_eq(&first, &replacement));
+                assert!(
+                    !manager
+                        .remove_client_factory(first.client_id(), &first)
+                        .unwrap()
+                );
+            }
+        }
+    }
 
     #[tokio::test]
     async fn unrelated_keys_construct_concurrently_and_same_key_constructs_once() {

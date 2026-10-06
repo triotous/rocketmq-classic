@@ -144,12 +144,13 @@ public final class RuntimeConfigFixtures {
         fixture.put("rebalanceLongs", rebalanceLongs);
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "ClientConfig.buildMQClientId/cloneClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/changeInstanceNameToPID; MQClientManager.getOrCreateMQClientInstance; MQClientInstance.getClientConfig; Long.parseLong (RebalanceService property parser)");
+        fixture.put("entrypoint", "ClientConfig.buildMQClientId/cloneClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/changeInstanceNameToPID; MQClientManager.getOrCreateMQClientInstance/removeClientFactory/getFactoryTable; MQClientInstance.getClientConfig; Long.parseLong (RebalanceService property parser)");
         fixture.put("serverBaselineContacted", false);
         fixture.put("identities", identities);
         fixture.put("defaults", defaults);
         fixture.put("clone", clone);
         fixture.put("managed", managed);
+        fixture.put("managerRemoval", managerRemoval(config));
         fixture.put("endpoints", endpoints);
         fixture.put("resources", resources);
         fixture.put("pid", pid);
@@ -163,5 +164,47 @@ public final class RuntimeConfigFixtures {
             Files.writeString(file, json);
         }
         System.out.println("ClientConfig identities/defaults/clone verified: " + identities.size());
+    }
+
+    private static Map<String, Object> managerRemoval(ClientConfig config) throws Exception {
+        org.apache.rocketmq.client.impl.MQClientManager manager = org.apache.rocketmq.client.impl.MQClientManager.getInstance();
+        java.util.concurrent.ConcurrentMap<String, org.apache.rocketmq.client.impl.factory.MQClientInstance> live = manager.getFactoryTable();
+        org.apache.rocketmq.client.impl.factory.MQClientInstance first = manager.getOrCreateMQClientInstance(config);
+        org.apache.rocketmq.client.impl.factory.MQClientInstance replacement = null;
+        Map<String, Object> result = new TreeMap<>();
+        String id = first.getClientId();
+        try {
+            result.put("liveSeesFirst", live.get(id) == first);
+            manager.removeClientFactory(id);
+            result.put("absentAfterUnconditional", !live.containsKey(id));
+            replacement = manager.getOrCreateMQClientInstance(config);
+            result.put("replacementIdentity", replacement != first);
+            result.put("liveSeesReplacement", live.get(id) == replacement);
+            manager.removeClientFactory(id, first);
+            result.put("staleIdentityKeepsReplacement", live.get(id) == replacement);
+            manager.removeClientFactory(id);
+            result.put("unconditionalRemovesReplacement", !live.containsKey(id));
+            manager.removeClientFactory(id); // Absent key is a no-op.
+            result.put("absentRemovalStaysAbsent", !live.containsKey(id));
+        } finally {
+            try {
+                cleanupRuntime(first);
+            } finally {
+                try {
+                    if (replacement != null) cleanupRuntime(replacement);
+                } finally {
+                    manager.removeClientFactory(id, first);
+                    if (replacement != null) manager.removeClientFactory(id, replacement);
+                }
+            }
+        }
+        return result;
+    }
+
+    private static void cleanupRuntime(org.apache.rocketmq.client.impl.factory.MQClientInstance runtime) throws Exception {
+        java.lang.reflect.Method cleanup = runtime.getClass().getDeclaredMethod("cleanupAfterConstructionFailure",
+            org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
+        cleanup.setAccessible(true);
+        cleanup.invoke(runtime, runtime.getMQClientAPIImpl(), new IllegalStateException("manager removal fixture teardown"));
     }
 }
