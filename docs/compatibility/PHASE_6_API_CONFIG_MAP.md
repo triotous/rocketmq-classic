@@ -4,7 +4,7 @@ Pinned client source: `rocketmq-all-5.5.1`, commit `efa1be59d6fc747ad220f036c860
 
 ## ClientConfig: forward and reverse field inventory
 
-Every row maps the Java getter/setter pair to a Rust field. Java plain setters do not validate; Rust retains signed widths and validates at the owning operation. Strings are nullable `Option<String>` except the currently non-null typed SOCKS configuration. Enum null values and null SOCKS input are not represented by this typed boundary; malformed Java null behavior is not claimed equivalent. Namespace and NameServer transitions require the named Rust methods, not direct field assignment. `namespaceInitialized` remains private.
+Every row maps the Java getter/setter pair to a Rust field. Java plain setters do not validate; Rust retains signed widths and validates at the owning operation. Strings, including SOCKS, are nullable `Option<String>`; AccessChannel is also nullable. Language remains a confirmed missing nullable setting, requiring review of the completed lower command/codec contract; this is not a typed-difference waiver. Namespace and NameServer transitions require the named Rust methods, not direct field assignment. `namespaceInitialized` remains private.
 
 Copy column: **C** means both `cloneClientConfig` and `resetClientConfig` copy the field; **O** means Java omits it (clone constructor default, reset receiver retained). Manager column: **K** means shared-runtime conflict comparison; **ID** means client-ID component; **owner** means retained but not promoted to a runtime transport key. Callback/hook identity and rebalance properties are additional Java-derived sharing inputs, not new ClientConfig fields.
 
@@ -17,7 +17,7 @@ Copy column: **C** means both `cloneClientConfig` and `resetClientConfig` copy t
 | namespace | namespace | nullable String; null | C | owner | lazy endpoint/resource/queue helpers; facade and decoded-message use owning phases/16 |
 | namespaceInitialized | private namespace_initialized | bool; false | O | private | setter/getter cache; clone resets, reset preserves receiver |
 | namespaceV2 | namespace_v2 | nullable String; null | C | K | NamespaceRpcHook `nsd`/`ns` |
-| accessChannel | access_channel | LOCAL / Local | O | owner | trace/hook context Phase 16 |
+| accessChannel | access_channel | nullable Option; Some(Local), Java LOCAL | O | owner | clone resets toSome(Local), reset retains nullable receiver; trace/hook context Phase16 |
 | pollNameServerInterval | poll_name_server_interval | i32 milliseconds; 30000 | C | K | route periodic task; positive period required |
 | heartbeatBrokerInterval | heartbeat_broker_interval | i32 milliseconds; 30000 | C | K | heartbeat periodic task; positive period required (Java comment says microseconds, actual scheduler uses milliseconds) |
 | persistConsumerOffsetInterval | persist_consumer_offset_interval | i32 milliseconds; 5000 | C | K | optional consumer persistence; actual offset stores Phase 9 |
@@ -30,11 +30,11 @@ Copy column: **C** means both `cloneClientConfig` and `resetClientConfig` copy t
 | vipChannelEnabled | vip_channel_enabled | bool; `com.rocketmq.sendMessageWithVIPChannel`, false | C | owner | source-selected Broker RPC VIP conversion; not heartbeat/global transport rewriting |
 | useHeartbeatV2 | use_heartbeat_v2 | bool; `com.rocketmq.heartbeat.v2`, false | C | K | V2 negotiation/full/simple/fingerprint behavior |
 | useTLS | use_tls | bool; `tls.enable`, otherwise `tls.server.mode == enforcing` | C | K | remoting TLS; provisioning/live acceptance Phase 19 |
-| socksProxyConfig | socks_proxy_config | String; `com.rocketmq.socks.proxy.config`, `{}` | C | K | existing remoting SOCKS transport parsing/connect |
+| socksProxyConfig | socks_proxy_config | nullable String; `com.rocketmq.socks.proxy.config`, Some(`{}`) | C | K | null retained in core and maps to accepted lower null/no-proxy parsing; SOCKS transport parsing/connect |
 | mqClientApiTimeout | mq_client_api_timeout | i32 milliseconds; 3000 | C | K | fresh per-runtime RPC budget; nonpositive expires |
 | detectTimeout | detect_timeout | i32 milliseconds; 200 | C | owner | producer fault detector Phase 7 |
 | detectInterval | detect_interval | i32 milliseconds; 2000 | C | owner | producer fault detector Phase 7 |
-| language | language | JAVA / Java | C | K | only heartbeat V1/V2 configured language; typed RPC default Java; CPP admin reset override owning admin phase |
+| language | language | JAVA / Java; null missing pending lower contract review | C | K | only heartbeat V1/V2 configured language; actual Java null JSON success/omission versus binary failure; proposed ADR0007; CPP admin reset override owning admin phase |
 | enableStreamRequestType | enable_stream_request_type | bool; false | C | ID + K | STREAM suffix and pre-user `ReqT=0` hook |
 | sendLatencyEnable | send_latency_enable | bool; `com.rocketmq.sendLatencyEnable`, false | C | owner | producer fault-tolerance selection Phase 7 |
 | startDetectorEnable | start_detector_enable | bool; `com.rocketmq.startDetectorEnable`, false | C | owner | producer fault detector Phase 7 |
@@ -55,7 +55,9 @@ The rebalance parser fixture at `8822d4a` had SHA-256 `b6b429a61adfb8ef944ba7949
 
 The removal fixture at `cbd643d` had SHA-256 `099ee99aec511e165bf45cc3b1cb512e029223ae02b07abac7e0a09de0a9d299`. Actual `managerRemoval` retains the Java live factory map and verifies first/removal/replacement/stale-removal/absent behavior. The native unconditional-removal test matches these identity outcomes; controlled initializer tests prove per-key waiting, unrelated-key progress and cancellation preserving publication. Both source overloads remove mappings without shutting down the removed runtime.
 
-Latest config fixture SHA-256: `9e1f92f7b622d7509e93b5c143641a2b0a8b13cd60316bf468ea293872ab273e`. `b31a7d9` adds actual `managerTable` map mutation outcomes and the live native `FactoryTable` counterpart. Retained handles observe later changes, primitive writes are atomic per key, conditional comparisons use runtime identity, and snapshot is explicitly a detached iteration copy. [ADR-0006](../architecture/ADR-0006-live-client-factory-table.md) records initialization, sharing metadata and cross-manager cleanup ownership. Three integration checks plus private reservation/property tests verify the golden,64-way put-if-absent, owning-value release, config/hook conflicts, logical-ID versus alias cleanup and mutation wait/cancel behavior. Core library68, full workspace, reviewed Clippy, Maven drift check, exact runtime/table gate, comparator/fmt/diff passed (`/tmp/p6-manager-table-*.log`).
+The live-table fixture at `b31a7d9` had SHA-256 `9e1f92f7b622d7509e93b5c143641a2b0a8b13cd60316bf468ea293872ab273e`. It adds actual `managerTable` map mutation outcomes and the live native `FactoryTable` counterpart. Retained handles observe later changes, primitive writes are atomic per key, conditional comparisons use runtime identity, and snapshot is explicitly a detached iteration copy. [ADR-0006](../architecture/ADR-0006-live-client-factory-table.md) records initialization, sharing metadata and cross-manager cleanup ownership. Three integration checks plus private reservation/property tests verify the golden,64-way put-if-absent, owning-value release, config/hook conflicts, logical-ID versus alias cleanup and mutation wait/cancel behavior. Core library68, full workspace, reviewed Clippy, Maven drift check, exact runtime/table gate, comparator/fmt/diff passed (`/tmp/p6-manager-table-*.log`).
+
+Latest config fixture SHA-256: `fecd6c40f585c4076f6bbf5dcae33041e3a46a742b20e527176764b358cd842a`. Actual nullableSettings invokes setters/clone/reset and constructs a real unstarted runtime, plus both command encoding modes. Native `nullable_access_and_socks_settings_match_invoked_java_copy_and_construction` now covers nullable access omission/receiver retention, null SOCKS copy and successful no-proxy construction; config integration9, workspace, Clippy, Maven/comparator/fmt/diff pass (`/tmp/p6-null-socks-access-*.log`, `/tmp/p6-null-config-java-verify.log`). The same Java oracle proves null language JSON omits the field and decodes defaultJAVA, while binary throws NullPointerException. Native language cannot represent this yet. [Proposed ADR-0007](../architecture/ADR-0007-nullable-command-language.md) records the lower public Option migration requiring owner review; these green gates do not close that mismatch.
 
 ## ClientConfig methods and constants
 
