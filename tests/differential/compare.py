@@ -62,6 +62,14 @@ def self_test():
         raise AssertionError("pending scenario incorrectly accepted as PASS")
     except ValueError:
         pass
+    checked_in = json.loads(Path("tests/differential/scenarios.yaml").read_text())
+    validate_manifest(checked_in)
+    phase6 = [case for case in checked_in["scenarios"] if case["id"] == "P6-V04"]
+    assert len(phase6) == 1, "Phase 6 live handoff case must retain its original ID"
+    assert phase6[0]["phase"] == 6 and phase6[0]["execution_phase"] == 19
+    assert phase6[0]["live_status"] == "PENDING_PHASE_19"
+    assert phase6[0]["inputs"]["checks"] == [
+        "heartbeat-subscription-change", "unregister", "remaining-shared-user-functional"]
     print("Differential comparator and manifest self-test passed")
 
 
