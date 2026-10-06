@@ -12,7 +12,7 @@ mod tasks;
 
 pub use control::RuntimeState;
 pub use instance::ClientRuntime;
-pub use manager::ClientRuntimeManager;
+pub use manager::{ClientRuntimeManager, FactoryTable};
 pub use pull::MessageRequest;
 pub use registry::{ConsumerOperation, ConsumerRuntime, GroupLease, ProducerRuntime};
 

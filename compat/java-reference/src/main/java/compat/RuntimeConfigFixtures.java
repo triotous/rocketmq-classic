@@ -151,6 +151,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("clone", clone);
         fixture.put("managed", managed);
         fixture.put("managerRemoval", managerRemoval(config));
+        fixture.put("managerTable", managerTable(config));
         fixture.put("endpoints", endpoints);
         fixture.put("resources", resources);
         fixture.put("pid", pid);
@@ -206,5 +207,39 @@ public final class RuntimeConfigFixtures {
             org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
         cleanup.setAccessible(true);
         cleanup.invoke(runtime, runtime.getMQClientAPIImpl(), new IllegalStateException("manager removal fixture teardown"));
+    }
+
+    private static Map<String, Object> managerTable(ClientConfig config) throws Exception {
+        org.apache.rocketmq.client.impl.MQClientManager manager = org.apache.rocketmq.client.impl.MQClientManager.getInstance();
+        java.util.concurrent.ConcurrentMap<String, org.apache.rocketmq.client.impl.factory.MQClientInstance> live = manager.getFactoryTable();
+        org.apache.rocketmq.client.impl.factory.MQClientInstance first = manager.getOrCreateMQClientInstance(config);
+        manager.removeClientFactory(first.getClientId());
+        org.apache.rocketmq.client.impl.factory.MQClientInstance second = manager.getOrCreateMQClientInstance(config);
+        String id = first.getClientId();
+        Map<String, Object> result = new TreeMap<>();
+        try {
+            result.put("retainedViewSeesSecond", live.get(id) == second);
+            result.put("putReturnsPrevious", live.put(id, first) == second);
+            result.put("managerSeesPut", manager.getOrCreateMQClientInstance(config) == first);
+            result.put("putIfAbsentKeepsCurrent", live.putIfAbsent(id, second) == first && live.get(id) == first);
+            result.put("staleReplaceFails", !live.replace(id, second, first));
+            result.put("matchingReplaceSucceeds", live.replace(id, first, second));
+            result.put("replaceReturnsPrevious", live.replace(id, first) == second);
+            result.put("staleRemoveFails", !live.remove(id, second));
+            result.put("matchingRemoveSucceeds", live.remove(id, first));
+            result.put("absentReplaceReturnsNull", live.replace(id, second) == null);
+            result.put("absentRemoveReturnsNull", live.remove(id) == null);
+            result.put("absentPutIfAbsentReturnsNull", live.putIfAbsent(id, first) == null);
+            live.put("", second); // Empty and arbitrary alias keys are allowed.
+            result.put("sizeWithAlias", live.size());
+            result.put("aliasHasSecond", live.get("") == second);
+            live.clear();
+            result.put("retainedViewEmptyAfterClear", live.isEmpty());
+        } finally {
+            live.remove(id);
+            live.remove("");
+            try { cleanupRuntime(first); } finally { cleanupRuntime(second); }
+        }
+        return result;
     }
 }

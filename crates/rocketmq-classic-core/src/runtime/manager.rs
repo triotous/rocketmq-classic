@@ -29,9 +29,13 @@ pub struct ClientRuntimeManager {
     top_addressing: Option<Arc<dyn crate::namesrv::TopAddressing>>,
 }
 
+#[derive(Clone)]
 pub(super) struct ManagerLink(Weak<Mutex<Entries>>);
 
 impl ManagerLink {
+    pub fn same_table(&self, other: &Self) -> bool {
+        Weak::ptr_eq(&self.0, &other.0)
+    }
     pub fn remove(&self, runtime: &Arc<ClientRuntime>) -> Result<bool, RuntimeError> {
         let Some(entries) = self.0.upgrade() else {
             return Ok(false);
@@ -45,6 +49,16 @@ impl ManagerLink {
 }
 
 impl ClientRuntimeManager {
+    /// A retained live view, corresponding to MQClientManager.getFactoryTable.
+    /// Read methods observe published runtimes; mutations await only their key.
+    pub fn factory_table(&self) -> FactoryTable {
+        FactoryTable {
+            manager: Self {
+                entries: self.entries.clone(),
+                top_addressing: None,
+            },
+        }
+    }
     pub fn new() -> Self {
         Self::default()
     }
@@ -144,7 +158,7 @@ impl ClientRuntimeManager {
             match construct(entry.clone()).await {
                 Ok(created) => {
                     let created = Arc::new(created);
-                    created.attach_manager(ManagerLink(Arc::downgrade(&self.entries)));
+                    created.attach_manager(ManagerLink(Arc::downgrade(&self.entries)))?;
                     // The key lock guarantees a sole publisher. Removal reads
                     // this immutable cell without contending with lookup locks.
                     let _ = entry.runtime.set(created.clone());
@@ -238,6 +252,222 @@ fn same_hook(left: &Option<Arc<dyn RpcHook>>, right: &Option<Arc<dyn RpcHook>>) 
         (None, None) => true,
         (Some(left), Some(right)) => Arc::ptr_eq(left, right),
         _ => false,
+    }
+}
+
+/// Live factory-map access with owned reads and atomic per-key mutations.
+/// Removing/replacing mappings does not shut down their runtime. Key aliases
+/// are permitted, as in the Java map; lifecycle cleanup uses the runtime's ID.
+#[derive(Clone)]
+pub struct FactoryTable {
+    manager: ClientRuntimeManager,
+}
+
+enum TableMutation {
+    Put(Arc<ClientRuntime>),
+    PutIfAbsent(Arc<ClientRuntime>),
+    Replace(Arc<ClientRuntime>),
+    ReplaceIfSame(Arc<ClientRuntime>, Arc<ClientRuntime>),
+    Remove,
+    RemoveIfSame(Arc<ClientRuntime>),
+}
+
+impl FactoryTable {
+    pub fn get(&self, key: &str) -> Result<Option<Arc<ClientRuntime>>, RuntimeError> {
+        let entries = self
+            .manager
+            .entries
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?;
+        Ok(entries
+            .get(key)
+            .and_then(|entry| entry.runtime.get())
+            .cloned())
+    }
+
+    pub fn contains_key(&self, key: &str) -> Result<bool, RuntimeError> {
+        self.get(key).map(|value| value.is_some())
+    }
+
+    pub fn len(&self) -> Result<usize, RuntimeError> {
+        let entries = self
+            .manager
+            .entries
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?;
+        Ok(entries
+            .values()
+            .filter(|entry| entry.runtime.get().is_some())
+            .count())
+    }
+
+    pub fn is_empty(&self) -> Result<bool, RuntimeError> {
+        self.len().map(|len| len == 0)
+    }
+
+    /// An explicitly detached copy for iteration. The FactoryTable handle
+    /// itself stays live and every subsequent read sees the current mapping.
+    pub fn snapshot(&self) -> Result<HashMap<String, Arc<ClientRuntime>>, RuntimeError> {
+        let entries = self
+            .manager
+            .entries
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?;
+        Ok(entries
+            .iter()
+            .filter_map(|(key, entry)| {
+                entry
+                    .runtime
+                    .get()
+                    .map(|runtime| (key.clone(), runtime.clone()))
+            })
+            .collect())
+    }
+
+    pub async fn put(
+        &self,
+        key: &str,
+        value: Arc<ClientRuntime>,
+    ) -> Result<Option<Arc<ClientRuntime>>, RuntimeError> {
+        self.mutate(key, TableMutation::Put(value))
+            .await
+            .map(|(previous, _)| previous)
+    }
+
+    pub async fn put_if_absent(
+        &self,
+        key: &str,
+        value: Arc<ClientRuntime>,
+    ) -> Result<Option<Arc<ClientRuntime>>, RuntimeError> {
+        self.mutate(key, TableMutation::PutIfAbsent(value))
+            .await
+            .map(|(previous, _)| previous)
+    }
+
+    pub async fn replace(
+        &self,
+        key: &str,
+        value: Arc<ClientRuntime>,
+    ) -> Result<Option<Arc<ClientRuntime>>, RuntimeError> {
+        self.mutate(key, TableMutation::Replace(value))
+            .await
+            .map(|(previous, _)| previous)
+    }
+
+    pub async fn replace_if_same(
+        &self,
+        key: &str,
+        expected: &Arc<ClientRuntime>,
+        value: Arc<ClientRuntime>,
+    ) -> Result<bool, RuntimeError> {
+        self.mutate(key, TableMutation::ReplaceIfSame(expected.clone(), value))
+            .await
+            .map(|(_, changed)| changed)
+    }
+
+    pub async fn remove(&self, key: &str) -> Result<Option<Arc<ClientRuntime>>, RuntimeError> {
+        self.mutate(key, TableMutation::Remove)
+            .await
+            .map(|(previous, _)| previous)
+    }
+
+    pub async fn remove_if_same(
+        &self,
+        key: &str,
+        expected: &Arc<ClientRuntime>,
+    ) -> Result<bool, RuntimeError> {
+        self.mutate(key, TableMutation::RemoveIfSame(expected.clone()))
+            .await
+            .map(|(_, changed)| changed)
+    }
+
+    /// Like ConcurrentMap.clear, not a transaction against concurrent inserts.
+    pub async fn clear(&self) -> Result<(), RuntimeError> {
+        let keys: Vec<_> = self
+            .manager
+            .entries
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?
+            .keys()
+            .cloned()
+            .collect();
+        for key in keys {
+            self.remove(&key).await?;
+        }
+        Ok(())
+    }
+
+    async fn mutate(
+        &self,
+        key: &str,
+        operation: TableMutation,
+    ) -> Result<(Option<Arc<ClientRuntime>>, bool), RuntimeError> {
+        loop {
+            let observed = self
+                .manager
+                .entries
+                .lock()
+                .map_err(|_| RuntimeError::RegistryPoisoned)?
+                .get(key)
+                .cloned();
+            // No registry guard crosses await, and no user callback runs while
+            // either lock is held. Await initialization only for this key.
+            let _initialization = match &observed {
+                Some(entry) => Some(entry.initialization.lock().await),
+                None => None,
+            };
+            let mut entries = self
+                .manager
+                .entries
+                .lock()
+                .map_err(|_| RuntimeError::RegistryPoisoned)?;
+            let current = entries.get(key);
+            let unchanged = match (&observed, current) {
+                (None, None) => true,
+                (Some(old), Some(current)) => Arc::ptr_eq(old, current),
+                _ => false,
+            };
+            if !unchanged {
+                continue;
+            }
+            let previous = current.and_then(|entry| entry.runtime.get()).cloned();
+            let same = |expected: &Arc<ClientRuntime>| {
+                previous
+                    .as_ref()
+                    .is_some_and(|current| Arc::ptr_eq(current, expected))
+            };
+            let replacement = match &operation {
+                TableMutation::Put(value) => Some(value),
+                TableMutation::PutIfAbsent(value) if previous.is_none() => Some(value),
+                TableMutation::Replace(value) if previous.is_some() => Some(value),
+                TableMutation::ReplaceIfSame(expected, value) if same(expected) => Some(value),
+                TableMutation::Remove => {
+                    entries.remove(key);
+                    return Ok((previous.clone(), previous.is_some()));
+                }
+                TableMutation::RemoveIfSame(expected) if same(expected) => {
+                    entries.remove(key);
+                    return Ok((previous, true));
+                }
+                _ => return Ok((previous, false)),
+            };
+            if let Some(value) = replacement {
+                // Retain the actual transport's sharing inputs, not today's
+                // process properties or a fabricated fresh hook identity.
+                let entry = Entry {
+                    config: value.config().clone(),
+                    properties: value.sharing_properties.clone(),
+                    hook: value.sharing_hook.clone(),
+                    initialization: AsyncMutex::new(()),
+                    runtime: OnceLock::from(value.clone()),
+                };
+                if key == value.client_id() {
+                    value.attach_manager(ManagerLink(Arc::downgrade(&self.manager.entries)))?;
+                }
+                entries.insert(key.into(), Arc::new(entry));
+                return Ok((previous, true));
+            }
+        }
     }
 }
 
@@ -382,6 +612,106 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[tokio::test]
+    async fn live_table_waits_for_publication_and_cancelled_mutation_has_no_effect() {
+        use tokio::time::{Duration, timeout};
+        for action in ["put", "remove", "clear", "cancel"] {
+            let manager = ClientRuntimeManager::new();
+            let live = manager.factory_table();
+            let mut config = ClientConfig::new("reserved-table-key");
+            config.namesrv_addr = Some(String::new());
+            let source = ClientRuntimeManager::new();
+            let replacement = source.get_or_create(&config).await.unwrap();
+            let id = config.build_client_id();
+            let ready = Arc::new(tokio::sync::Notify::new());
+            let release = Arc::new(tokio::sync::Notify::new());
+            let task_manager = manager.clone();
+            let task_config = config.clone();
+            let task_ready = ready.clone();
+            let task_release = release.clone();
+            let creation = tokio::spawn(async move {
+                task_manager
+                    .get_or_create_inner(&task_config, None, |entry| {
+                        let ready = task_ready.clone();
+                        let release = task_release.clone();
+                        async move {
+                            ready.notify_one();
+                            release.notified().await;
+                            ClientRuntime::construct(entry.config.clone(), &entry.properties, None)
+                        }
+                    })
+                    .await
+            });
+            ready.notified().await;
+            assert!(live.get(&id).unwrap().is_none());
+            assert_eq!(live.len().unwrap(), 0);
+            assert!(live.snapshot().unwrap().is_empty());
+            let task_live = live.clone();
+            let task_id = id.clone();
+            let task_value = replacement.clone();
+            let mut mutation = tokio::spawn(async move {
+                match action {
+                    "put" | "cancel" => task_live.put(&task_id, task_value).await,
+                    "remove" => task_live.remove(&task_id).await,
+                    _ => task_live.clear().await.map(|()| None),
+                }
+            });
+            assert!(
+                timeout(Duration::from_millis(20), &mut mutation)
+                    .await
+                    .is_err()
+            );
+            let mut unrelated = ClientConfig::new("unrelated-table-key");
+            unrelated.namesrv_addr = Some(String::new());
+            timeout(Duration::from_secs(1), manager.get_or_create(&unrelated))
+                .await
+                .unwrap()
+                .unwrap();
+            if action == "cancel" {
+                mutation.abort();
+                assert!(matches!((&mut mutation).await, Err(error) if error.is_cancelled()));
+            }
+            release.notify_one();
+            let created = creation.await.unwrap().unwrap();
+            if action == "cancel" {
+                assert!(Arc::ptr_eq(&live.get(&id).unwrap().unwrap(), &created));
+            } else {
+                let previous = mutation.await.unwrap().unwrap();
+                if action == "put" || action == "remove" {
+                    assert!(Arc::ptr_eq(&previous.unwrap(), &created));
+                }
+                if action == "put" {
+                    assert!(Arc::ptr_eq(&live.get(&id).unwrap().unwrap(), &replacement));
+                } else {
+                    assert!(live.get(&id).unwrap().is_none());
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn table_insertion_retains_original_property_snapshot_not_current_environment() {
+        let mut config = ClientConfig::new("property-table-key");
+        config.namesrv_addr = Some(String::new());
+        let properties = HashMap::from([(
+            "rocketmq.namesrv.domain".into(),
+            "captured-table-fixture.invalid".into(),
+        )]);
+        let runtime =
+            Arc::new(ClientRuntime::construct(config.clone(), &properties, None).unwrap());
+        let manager = ClientRuntimeManager::new();
+        manager
+            .factory_table()
+            .put(runtime.client_id(), runtime.clone())
+            .await
+            .unwrap();
+        assert_eq!(
+            manager.entries.lock().unwrap()[runtime.client_id()].properties,
+            properties
+        );
+        manager.factory_table().clear().await.unwrap();
     }
 
     #[tokio::test]

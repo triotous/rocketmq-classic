@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, OnceLock},
+    sync::{Arc, Mutex},
 };
 
 use rocketmq_classic_remoting::client::{
@@ -50,7 +50,9 @@ pub struct ClientRuntime {
     pub(super) inbound: Arc<super::inbound::RuntimeProcessor>,
     pub(super) rebalance: Arc<super::rebalance::RebalanceSignal>,
     pub(super) pull: Arc<super::pull::PullService>,
-    manager: OnceLock<ManagerLink>,
+    manager: Mutex<Vec<ManagerLink>>,
+    pub(super) sharing_properties: HashMap<String, String>,
+    pub(super) sharing_hook: Option<Arc<dyn RpcHook>>,
     pub(crate) heartbeat: crate::heartbeat::HeartbeatState,
     heartbeat_listener: Option<Arc<crate::heartbeat::HeartbeatChannelListener>>,
     addressing: Arc<dyn crate::namesrv::TopAddressing>,
@@ -122,6 +124,7 @@ impl ClientRuntime {
         if let Some(addresses) = config.get_namesrv_addr() {
             remoting.update_name_server_address_list(crate::namesrv::split_addresses(&addresses));
         }
+        let sharing_hook = hook.clone();
         super::hooks::register(&remoting, &config, hook);
         let mut addressing = crate::namesrv::DefaultTopAddressing::new(
             crate::namesrv::ws_addr(properties),
@@ -150,7 +153,9 @@ impl ClientRuntime {
             inbound: Arc::default(),
             rebalance,
             pull: Arc::default(),
-            manager: OnceLock::new(),
+            manager: Mutex::new(Vec::new()),
+            sharing_properties: properties.clone(),
+            sharing_hook,
             heartbeat: crate::heartbeat::HeartbeatState::default(),
             heartbeat_listener,
             addressing,
@@ -835,18 +840,34 @@ impl ClientRuntime {
         tokio::time::Duration::from_millis(self.config.mq_client_api_timeout.max(0) as u64)
     }
 
-    pub(super) fn attach_manager(self: &Arc<Self>, link: ManagerLink) {
-        let _ = self.manager.set(link);
+    pub(super) fn attach_manager(self: &Arc<Self>, link: ManagerLink) -> Result<(), RuntimeError> {
+        {
+            let mut links = self
+                .manager
+                .lock()
+                .map_err(|_| RuntimeError::RegistryPoisoned)?;
+            if !links.iter().any(|existing| existing.same_table(&link)) {
+                links.push(link);
+            }
+        }
         self.inbound.bind(self);
         if let Some(listener) = &self.heartbeat_listener {
             listener.bind(self);
         }
+        Ok(())
     }
 
     pub(super) fn remove_from_manager(self: &Arc<Self>) -> Result<bool, RuntimeError> {
-        self.manager
-            .get()
-            .map_or(Ok(false), |link| link.remove(self))
+        let links = self
+            .manager
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?
+            .clone();
+        let mut removed = false;
+        for link in links {
+            removed |= link.remove(self)?;
+        }
+        Ok(removed)
     }
 }
 
