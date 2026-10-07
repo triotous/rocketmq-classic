@@ -1,6 +1,6 @@
 # ADR-0007: Nullable command language
 
-Status: proposed; owner review required before changing the completed lower-layer public contract.
+Status: implemented in `63b7feb` under the user's explicit public API parity instruction. Phase 6 as a whole remains incomplete.
 
 ## Evidence
 
@@ -12,10 +12,11 @@ RemotingCommand.encode invocation in RuntimeConfigFixtures prove:
   produces Java's default JAVA language.
 - ROCKETMQ binary encoding throws NullPointerException for null language.
 
-The native ClientConfig and RemotingCommand currently require LanguageCode.
-JSON encoding always emits a language. Treating null as Java would send a
-different header; treating null as unconditional failure would reject Java's
-successful JSON path. Mapping it to an unknown numeric language is also incorrect.
+The prior native ClientConfig and RemotingCommand required LanguageCode and
+always emitted a JSON language. The source-backed red test `40bd7cf`
+demonstrated that mismatch before the model migration. An additional actual
+Java decode case proves explicit `"language":null` decodes to null, while an
+omitted field decodes to default JAVA.
 
 ## Proposed decision
 
@@ -37,6 +38,19 @@ subject to its source-backed lower-layer contract.
 RemotingCommand is a completed Phase 2 public model. The execution index requires
 review and an ADR before changing it. The owner-approved earlier heartbeat Vec
 change does not automatically approve this unrelated lower public field change.
-Approval was requested on 2026-10-06; no implementation or acceptance is claimed.
-Independent Phase 6 nullable AccessChannel/SOCKS corrections do not require this
-lower command change and are separately implemented and verified.
+The active user objective explicitly requires public API and setting parity,
+which authorized this correction. It does not imply Phase 6 acceptance or a
+waiver of other public-model/input gaps. Independent nullable AccessChannel,
+SOCKS and Broker-address corrections have their own evidence.
+
+## Implementation evidence
+
+`ClientConfig.language` and `RemotingCommand.language` are `Option<LanguageCode>`;
+defaults remain `Some(Java)` and `Some(Rust)`. JSON omits None and distinguishes
+absent from explicit null on decode. Binary encode returns `MissingLanguage`
+for None and binary decode always sets Some. Core heartbeat V1/V2 use the nullable
+config; other typed RPC requests continue to use Java. The actual Java config
+fixture SHA-256 is `9b7a324ef971a1ea4dc3642dd54f1a3bd432684c8ef5dac03de89a827a52d6f4`.
+Native config clone/reset/runtime, codec JSON/binary and scripted hook/wire tests
+pass. Full Rust workspace, exact all-target/all-feature Clippy, fmt/diff,
+comparator/manifest and pinned offline Maven verify exited 0.

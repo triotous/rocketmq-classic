@@ -1,5 +1,7 @@
 # Phase 6 API and configuration map
 
+Nullable command language is now implemented (`40bd7cf`/`63b7feb`): public `ClientConfig.language` and `RemotingCommand.language` retain None; JSON omission decodes as JAVA while explicit null decodes as null, binary null encode returns a typed error, and heartbeat V1/V2 use the configured value. Config copy/reset/runtime and scripted before/after hook/wire checks pass. Current config fixture SHA-256 is `9b7a324ef971a1ea4dc3642dd54f1a3bd432684c8ef5dac03de89a827a52d6f4`; full workspace/exact Clippy/Maven/fmt/diff/comparator gates passed. Historical missing/review-required language statements below are superseded; full API/source/input audit remains open.
+
 Nullable Broker values are now represented in public `BrokerData.broker_addrs` and `RouteSnapshot.broker_addresses` by `Option<String>` map values (`8fb1ec8`). The actual Java null-value route golden is enabled and passes, with source-backed publish/admin/subscribe/topic/cleanup/heartbeat behavior and full workspace/exact Clippy/Maven gates. Older nullable-Broker ignored/missing statements below are historical; nullable command language and other input surfaces remain incomplete.
 
 SOCKS grammar extension `0c61f34`/`7899cea` invokes actual `NettyRemotingClient.loadSocksProxyJson` constructor outcomes. Current config fixture SHA-256 is `27caa16b8d8701c5a10153f2592ca3ffffaef72482957b80e433a424e10be7e2`: single quotes, trailing comma, comment, unknown proxy field, missing address and null proxy entry succeed; unquoted CIDR key fails. Native JSON5 parsing now matches these 19 constructor cases. Private route state treats a null value as direct and defers missing-address failure until selection, without a sentinel or public `SocksProxyConfig` change. Full workspace, exact all-feature Clippy, fmt/diff, comparator/manifest and pinned Maven verify exit0. Remaining Fastjson inputs and connection failures still require audit; older config hashes below are historical.
@@ -8,7 +10,7 @@ Pinned client source: `rocketmq-all-5.5.1`, commit `efa1be59d6fc747ad220f036c860
 
 ## ClientConfig: forward and reverse field inventory
 
-Every row maps the Java getter/setter pair to a Rust field. Java plain setters do not validate; Rust retains signed widths and validates at the owning operation. Strings, including SOCKS, are nullable `Option<String>`; AccessChannel is also nullable. Language remains a confirmed missing nullable setting, requiring review of the completed lower command/codec contract; this is not a typed-difference waiver. Namespace and NameServer transitions require the named Rust methods, not direct field assignment. `namespaceInitialized` remains private.
+Every row maps the Java getter/setter pair to a Rust field. Java plain setters do not validate; Rust retains signed widths and validates at the owning operation. Strings, including SOCKS, are nullable `Option<String>`; AccessChannel and LanguageCode are also nullable. Namespace and NameServer transitions require the named Rust methods, not direct field assignment. `namespaceInitialized` remains private.
 
 Copy column: **C** means both `cloneClientConfig` and `resetClientConfig` copy the field; **O** means Java omits it (clone constructor default, reset receiver retained). Manager column: **K** means shared-runtime conflict comparison; **ID** means client-ID component; **owner** means retained but not promoted to a runtime transport key. Callback/hook identity and rebalance properties are additional Java-derived sharing inputs, not new ClientConfig fields.
 
@@ -38,7 +40,7 @@ Copy column: **C** means both `cloneClientConfig` and `resetClientConfig` copy t
 | mqClientApiTimeout | mq_client_api_timeout | i32 milliseconds; 3000 | C | K | fresh per-runtime RPC budget; nonpositive expires |
 | detectTimeout | detect_timeout | i32 milliseconds; 200 | C | owner | producer fault detector Phase 7 |
 | detectInterval | detect_interval | i32 milliseconds; 2000 | C | owner | producer fault detector Phase 7 |
-| language | language | JAVA / Java; null missing pending lower contract review | C | K | only heartbeat V1/V2 configured language; actual Java null JSON success/omission versus binary failure; proposed ADR0007; CPP admin reset override owning admin phase |
+| language | language | nullable LanguageCode; default JAVA | C | K | heartbeat V1/V2 use config; null JSON omits key and binary encode errors; ADR0007 implemented; CPP admin reset override owning admin phase |
 | enableStreamRequestType | enable_stream_request_type | bool; false | C | ID + K | STREAM suffix and pre-user `ReqT=0` hook |
 | sendLatencyEnable | send_latency_enable | bool; `com.rocketmq.sendLatencyEnable`, false | C | owner | producer fault-tolerance selection Phase 7 |
 | startDetectorEnable | start_detector_enable | bool; `com.rocketmq.startDetectorEnable`, false | C | owner | producer fault detector Phase 7 |
