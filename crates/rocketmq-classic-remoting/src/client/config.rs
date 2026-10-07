@@ -16,6 +16,28 @@ pub struct SocksProxyConfig {
     pub password: Option<String>,
 }
 
+// Java keeps malformed proxy entries until a matching route is connected.
+// Keep those cases private so the public, address-bearing config stays honest.
+#[derive(Clone, Debug)]
+pub(super) enum ParsedProxyRoute {
+    Direct,
+    Proxy(SocksProxyConfig),
+    MissingAddress,
+}
+
+impl From<SocksProxyConfig> for ParsedProxyRoute {
+    fn from(value: SocksProxyConfig) -> Self {
+        Self::Proxy(value)
+    }
+}
+
+#[derive(Deserialize)]
+struct RawProxyRoute {
+    addr: Option<String>,
+    username: Option<String>,
+    password: Option<String>,
+}
+
 impl SocksProxyConfig {
     pub fn new(address: impl Into<String>) -> Self {
         Self {
@@ -166,21 +188,46 @@ impl ClientConfig {
 
     pub(super) fn parse_socks_proxy_config(
         &self,
-    ) -> Result<HashMap<String, SocksProxyConfig>, TransportError> {
-        if self.socks_proxy_config.trim() == "null" {
+    ) -> Result<HashMap<String, ParsedProxyRoute>, TransportError> {
+        if self.socks_proxy_config.is_empty() || self.socks_proxy_config.trim() == "null" {
             return Ok(HashMap::new());
         }
-        serde_json::from_str(&self.socks_proxy_config)
-            .map_err(|error| TransportError::InvalidConfiguration(error.to_string()))
+        let parsed: Option<HashMap<String, Option<RawProxyRoute>>> =
+            json5::from_str(&self.socks_proxy_config)
+                .map_err(|error| TransportError::InvalidConfiguration(error.to_string()))?;
+        Ok(parsed
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(cidr, entry)| {
+                let route = match entry {
+                    None => ParsedProxyRoute::Direct,
+                    Some(raw) => match raw.addr {
+                        Some(address) => ParsedProxyRoute::Proxy(SocksProxyConfig {
+                            address,
+                            username: raw.username,
+                            password: raw.password,
+                        }),
+                        None => ParsedProxyRoute::MissingAddress,
+                    },
+                };
+                (cidr, route)
+            })
+            .collect())
     }
 
-    pub(super) fn proxy_for(
-        routes: &HashMap<String, SocksProxyConfig>,
+    pub(super) fn proxy_for<T: Clone + Into<ParsedProxyRoute>>(
+        routes: &HashMap<String, T>,
         host: &str,
     ) -> Result<Option<SocksProxyConfig>, TransportError> {
-        for (cidr, proxy) in routes {
+        for (cidr, route) in routes {
             if cidr == "0.0.0.0/0" || ipv4_in_cidr(host, cidr)? {
-                return Ok(Some(proxy.clone()));
+                return match route.clone().into() {
+                    ParsedProxyRoute::Direct => Ok(None),
+                    ParsedProxyRoute::Proxy(proxy) => Ok(Some(proxy)),
+                    ParsedProxyRoute::MissingAddress => Err(TransportError::InvalidConfiguration(
+                        "matched SOCKS proxy has no address".into(),
+                    )),
+                };
             }
         }
         Ok(None)
@@ -300,10 +347,11 @@ mod tests {
         let json = r#"{"10.1.0.0/16":{"addr":"proxy.internal:1080","username":"user","password":"secret"}}"#;
         config.set_socks_proxy_config(json);
         assert_eq!(config.get_socks_proxy_config(), json);
-        assert_eq!(
-            config.parse_socks_proxy_config().unwrap()["10.1.0.0/16"],
-            SocksProxyConfig::with_credentials("proxy.internal:1080", "user", "secret")
-        );
+        assert!(matches!(
+            &config.parse_socks_proxy_config().unwrap()["10.1.0.0/16"],
+            super::ParsedProxyRoute::Proxy(proxy)
+                if proxy == &SocksProxyConfig::with_credentials("proxy.internal:1080", "user", "secret")
+        ));
         let malformed = ClientConfig {
             socks_proxy_config: r#"{"broken":{]"#.into(),
             ..ClientConfig::default()
@@ -315,6 +363,28 @@ mod tests {
             ..ClientConfig::default()
         };
         assert!(null_map.parse_socks_proxy_config().unwrap().is_empty());
+    }
+
+    #[test]
+    fn fastjson_constructor_inputs_preserve_matched_route_behavior() {
+        let mut config = ClientConfig::default();
+        config.set_socks_proxy_config(
+            "{'10.1.0.0/16':{'addr':'proxy:1080'},'10.2.0.0/16':null,'10.3.0.0/16':{}}",
+        );
+        let routes = config.parse_socks_proxy_config().unwrap();
+        assert_eq!(
+            ClientConfig::proxy_for(&routes, "10.1.2.3")
+                .unwrap()
+                .unwrap()
+                .address,
+            "proxy:1080"
+        );
+        assert!(
+            ClientConfig::proxy_for(&routes, "10.2.2.3")
+                .unwrap()
+                .is_none()
+        );
+        assert!(ClientConfig::proxy_for(&routes, "10.3.2.3").is_err());
     }
 
     #[test]

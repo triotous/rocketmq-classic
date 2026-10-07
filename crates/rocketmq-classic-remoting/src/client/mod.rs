@@ -141,7 +141,7 @@ struct ClientInner {
     security: TransportMode,
     max_frame_size: usize,
     config: ClientConfig,
-    socks_proxy_routes: HashMap<String, config::SocksProxyConfig>,
+    socks_proxy_routes: HashMap<String, config::ParsedProxyRoute>,
     async_admission: Arc<tokio::sync::Semaphore>,
     oneway_admission: Arc<tokio::sync::Semaphore>,
     callback_sender: mpsc::UnboundedSender<CallbackTask>,
