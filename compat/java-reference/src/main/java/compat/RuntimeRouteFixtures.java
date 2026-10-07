@@ -97,6 +97,10 @@ public final class RuntimeRouteFixtures {
             item.put("decodedQueueNull", route.getQueueDatas() == null);
             item.put("decodedBrokerNull", route.getBrokerDatas() == null);
             item.put("decodedFilterNull", route.getFilterServerTable() == null);
+            com.alibaba.fastjson2.JSONObject encoded = com.alibaba.fastjson2.JSON.parseObject(route.toJson());
+            item.put("encodedHasQueue", encoded.containsKey("queueDatas"));
+            item.put("encodedHasBroker", encoded.containsKey("brokerDatas"));
+            item.put("encodedHasFilter", encoded.containsKey("filterServerTable"));
             item.put("copyQueueEmpty", copy.getQueueDatas().isEmpty());
             item.put("copyBrokerEmpty", copy.getBrokerDatas().isEmpty());
             item.put("copyFilterEmpty", copy.getFilterServerTable().isEmpty());

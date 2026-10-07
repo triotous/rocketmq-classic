@@ -65,12 +65,13 @@ mod nullable_route_collection_tests {
             let route: TopicRouteData = serde_json::from_value(case["input"].clone())
                 .expect("Java decodes explicit null route collections");
             let encoded = serde_json::to_value(route).unwrap();
-            for (field, key) in [
-                ("queueDatas", "decodedQueueNull"),
-                ("brokerDatas", "decodedBrokerNull"),
-                ("filterServerTable", "decodedFilterNull"),
+            for (field, decoded_key, encoded_key) in [
+                ("queueDatas", "decodedQueueNull", "encodedHasQueue"),
+                ("brokerDatas", "decodedBrokerNull", "encodedHasBroker"),
+                ("filterServerTable", "decodedFilterNull", "encodedHasFilter"),
             ] {
-                assert_eq!(encoded[field].is_null(), case[key]);
+                assert_eq!(encoded.get(field).is_none(), case[decoded_key]);
+                assert_eq!(encoded.get(field).is_some(), case[encoded_key]);
             }
         }
     }
