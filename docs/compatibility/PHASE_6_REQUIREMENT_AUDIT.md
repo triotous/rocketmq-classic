@@ -1,5 +1,7 @@
 # Phase 6 requirement and handoff audit
 
+Nullable route collection update `0d8daec`/`86af455`: pinned Java Fastjson and copy-constructor cases establish explicit null versus empty for three public route collections. Native DTO, route comparison and cache publication now preserve those observed distinctions; protocol/core fixture tests, full workspace and strict Clippy pass. This closes the demonstrated DTO mismatch. The static-mapping/consumer-free null queue branch and broader API/source/input audit remain open, so Phase 6 is still incomplete.
+
 Status: **INCOMPLETE — not Phase 6 acceptance or Phase 7 handoff**. Current nullable Broker correction is `8fb1ec8`; the earlier `dd7a569` red/ignored oracle status is historical. Inspected production baseline: `a2779c3`; live handoff registration is `5b3212b`; blank-serve ownership mapping is `c3eb2f8`. Client oracle is `rocketmq-all-5.5.1`, commit `efa1be59d6fc747ad220f036c86030f05f0419f9`, artifact `org.apache.rocketmq:rocketmq-client:5.5.1`. Java repository is read-only. Server 5.3.4 is a Phase 19 execution baseline, not a Phase 6 prerequisite.
 
 Requirements come from the entire [Phase 6 child plan](../../plan/2026/09/07-phase-06-runtime-routing-heartbeat.md), [execution index](../../plan/2026/09/README.md) and the master Phase 6 tasks/Definition of Done. This audit distinguishes a demonstrated unit gate from complete public API/settings/source parity. Green suite output does not waive a missing input, method or branch.

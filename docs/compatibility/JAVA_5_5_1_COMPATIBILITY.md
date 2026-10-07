@@ -1,5 +1,7 @@
 # Java 5.5.1 compatibility evidence
 
+Nullable route collections `0d8daec`/`86af455`: the public `TopicRouteData` preserves explicit null queue, broker and filter collections on decode/serialize, and route comparison/cache publication use the Java copy constructor's empty normalization. The Java fixture, native focused checks, full workspace and strict Clippy pass. Static-mapping/consumer-free null queue behavior and the broader source/input audit are still open; Phase 6 remains PARTIAL.
+
 Nullable command language `40bd7cf`/`63b7feb` supersedes the historical missing-language clause in the Phase 6 row. Public config and command models now retain null, JSON omission versus explicit null decoding follows the invoked Java fixture, binary null encode errors, and heartbeat hook/wire tests pass. Both confirmed nullable lower-model mismatches are corrected. Phase 6 remains PARTIAL for the remaining API/source/input audit; P6-V04 remains pending Phase 19.
 
 Phase 6 nullable Broker address correction `8fb1ec8` supersedes the historical missing/ignored Broker DTO clause in the Phase 6 row below. The public protocol DTO and route snapshot now preserve null values; the actual Java route golden, lookup/cleanup and scripted heartbeat tests pass without ignore. Phase 6 remains PARTIAL because nullable command language and full source/input reconciliation are unfinished; P6-V04 remains pending Phase 19.
