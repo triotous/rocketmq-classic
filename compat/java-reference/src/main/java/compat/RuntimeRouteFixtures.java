@@ -110,6 +110,33 @@ public final class RuntimeRouteFixtures {
         return cases;
     }
 
+    private static List<Object> nullableStaticMappingFields() {
+        List<Object> cases = new ArrayList<>();
+        for (String input : new String[] {
+            "{}",
+            "{\"topic\":null,\"bname\":null,\"scope\":null,\"currIdMap\":null}",
+            "{\"topic\":\"T\",\"bname\":\"B\",\"scope\":\"S\",\"currIdMap\":{\"0\":1}}"
+        }) {
+            org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo mapping =
+                com.alibaba.fastjson2.JSON.parseObject(input,
+                    org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo.class);
+            com.alibaba.fastjson2.JSONObject encoded = com.alibaba.fastjson2.JSON.parseObject(mapping.toJson());
+            Map<String, Object> item = new TreeMap<>();
+            item.put("input", com.alibaba.fastjson2.JSON.parseObject(input));
+            item.put("topicNull", mapping.getTopic() == null);
+            item.put("bnameNull", mapping.getBname() == null);
+            item.put("scopeNull", mapping.getScope() == null);
+            item.put("currIdMapNull", mapping.getCurrIdMap() == null);
+            item.put("currIdMapEmpty", mapping.getCurrIdMap() != null && mapping.getCurrIdMap().isEmpty());
+            item.put("encodedHasTopic", encoded.containsKey("topic"));
+            item.put("encodedHasBname", encoded.containsKey("bname"));
+            item.put("encodedHasScope", encoded.containsKey("scope"));
+            item.put("encodedHasCurrIdMap", encoded.containsKey("currIdMap"));
+            cases.add(item);
+        }
+        return cases;
+    }
+
     private static Map<String, Object> runtimeNullBrokerMap() throws Exception {
         org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
         config.setClientIP("route-null-map");
@@ -434,6 +461,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("runtimeNullBrokerMap", runtimeNullBrokerMap());
         fixture.put("runtimeNullBrokerValues", runtimeNullBrokerValues());
         fixture.put("nullableRouteCollections", nullableRouteCollections());
+        fixture.put("nullableStaticMappingFields", nullableStaticMappingFields());
         fixture.put("runtimeEmptyEndpointTransition", runtimeEmptyEndpointTransition(staticInputs.get(0), inputs.get(0)));
         fixture.put("runtimeTopicRouteTable", runtimeTopicRouteTable(inputs.get(0)));
         fixture.put("runtimeRawOfflineCleanup", runtimeRawOfflineCleanup(inputs.get(0)));

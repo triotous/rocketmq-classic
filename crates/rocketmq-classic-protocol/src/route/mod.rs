@@ -81,6 +81,32 @@ mod nullable_route_collection_tests {
     }
 }
 
+#[cfg(test)]
+mod nullable_static_mapping_tests {
+    use super::TopicQueueMappingInfo;
+
+    #[test]
+    fn static_mapping_optional_fields_match_invoked_java_decode_and_json() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["nullableStaticMappingFields"].as_array().unwrap() {
+            let mapping: TopicQueueMappingInfo = serde_json::from_value(case["input"].clone())
+                .expect("pinned Java accepts this mapping input");
+            let encoded = serde_json::to_value(&mapping).unwrap();
+            for (field, null_key, encoded_key) in [
+                ("topic", "topicNull", "encodedHasTopic"),
+                ("bname", "bnameNull", "encodedHasBname"),
+                ("scope", "scopeNull", "encodedHasScope"),
+                ("currIdMap", "currIdMapNull", "encodedHasCurrIdMap"),
+            ] {
+                assert_eq!(encoded.get(field).is_none(), case[null_key]);
+                assert_eq!(encoded.get(field).is_some(), case[encoded_key]);
+            }
+            assert_eq!(mapping.curr_id_map.as_ref().is_some_and(|map| map.is_empty()), case["currIdMapEmpty"]);
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct TopicQueueMappingInfo {
