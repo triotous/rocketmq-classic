@@ -665,7 +665,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "confirmed Java null address-value mismatch; completed lower BrokerData type review required"]
     fn nullable_broker_address_values_match_invoked_java_refresh_and_lookups() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
@@ -676,7 +675,7 @@ mod tests {
             assert_eq!(case["cachedMasterKeyPresent"], true);
             assert_eq!(case["cachedMasterNull"], true);
             let route: TopicRouteData = serde_json::from_value(case["input"].clone())
-                .expect("Java accepts null address values; lower public model review is pending");
+                .expect("Java accepts null address values");
             let cache = RouteCache::default();
             assert_eq!(cache.replace("topic", route).unwrap(), case["changed"]);
             let snapshot = cache.snapshot().unwrap();
