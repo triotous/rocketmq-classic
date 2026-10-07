@@ -1,5 +1,7 @@
 # Phase 6 requirement and handoff audit
 
+Nullable route refresh branches `2b0d6f0`/`65eb745`: five actual Java unstarted runtime cases distinguish ordinary null queue/broker failures from ordered/static null queue and null filter success; successful cached copies normalize collections. Native focused red/green, full workspace, Maven and strict Clippy pass. Consumer-bearing null queue is source-guarded but not separately invoked; full Phase 6 input/source audit remains incomplete.
+
 Static mapping DTO/input correction `f1f53f4`/`9285a7a` follows actual Java missing/null field and converter cases. Public topic/broker-name nullability, absent/default ID map and scope, JSON omission, and four endpoint outcomes now have native red/green evidence. Full workspace, pinned Maven and strict Clippy pass. Overlapping malformed mapping owners and the broader API/source/input audit remain open; Phase 6 is incomplete.
 
 Nullable mapping wire correction `680798f`/`044de86`: pinned Java omits absent topic queue mapping from route JSON. The native public DTO now matches, with a red/green fixture regression and passing full workspace, Maven and strict Clippy gates. Other API/input/default-map cases remain in the open Phase 6 audit.
