@@ -102,24 +102,58 @@ mod nullable_static_mapping_tests {
                 assert_eq!(encoded.get(field).is_none(), case[null_key]);
                 assert_eq!(encoded.get(field).is_some(), case[encoded_key]);
             }
-            assert_eq!(mapping.curr_id_map.as_ref().is_some_and(|map| map.is_empty()), case["currIdMapEmpty"]);
+            assert_eq!(
+                mapping
+                    .curr_id_map
+                    .as_ref()
+                    .is_some_and(|map| map.is_empty()),
+                case["currIdMapEmpty"]
+            );
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TopicQueueMappingInfo {
-    pub topic: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub topic: Option<String>,
+    #[serde(default)]
     pub total_queues: i32,
-    pub bname: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bname: Option<String>,
+    #[serde(default)]
     pub epoch: i64,
     #[serde(default)]
     pub dirty: bool,
-    #[serde(default = "default_mapping_scope")]
+    #[serde(
+        default = "default_mapping_scope",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub scope: Option<String>,
-    #[serde(default)]
+    #[serde(
+        default = "default_mapping_ids",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub curr_id_map: Option<BTreeMap<i32, i32>>,
+}
+
+fn default_mapping_ids() -> Option<BTreeMap<i32, i32>> {
+    Some(BTreeMap::new())
+}
+
+impl Default for TopicQueueMappingInfo {
+    fn default() -> Self {
+        Self {
+            topic: None,
+            total_queues: 0,
+            bname: None,
+            epoch: 0,
+            dirty: false,
+            scope: default_mapping_scope(),
+            curr_id_map: default_mapping_ids(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -273,7 +307,7 @@ impl TopicRouteData {
         for queue in self.static_topic_queues(topic)? {
             let broker = owners
                 .get(&(queue.broker_name().to_owned(), queue.queue_id()))
-                .map(|mapping| mapping.bname.clone())
+                .and_then(|mapping| mapping.bname.clone())
                 .unwrap_or_else(|| "__syslo__none__".to_owned());
             endpoints.insert(queue, broker);
         }
@@ -497,9 +531,9 @@ mod tests {
         route.topic_queue_mapping_by_broker = Some(BTreeMap::from([(
             "b1".into(),
             TopicQueueMappingInfo {
-                topic: "t".into(),
+                topic: Some("t".into()),
                 total_queues: 8,
-                bname: "b1".into(),
+                bname: Some("b1".into()),
                 epoch: 0,
                 dirty: false,
                 scope: Some("__global__".into()),
@@ -521,9 +555,9 @@ mod tests {
         route.topic_queue_mapping_by_broker = Some(BTreeMap::from([(
             "b1".into(),
             TopicQueueMappingInfo {
-                topic: "t".into(),
+                topic: Some("t".into()),
                 total_queues: 8,
-                bname: "b1".into(),
+                bname: Some("b1".into()),
                 epoch: i64::MAX,
                 dirty: true,
                 scope: Some("global".into()),

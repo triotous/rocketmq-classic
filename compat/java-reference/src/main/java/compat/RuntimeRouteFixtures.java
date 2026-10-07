@@ -137,6 +137,31 @@ public final class RuntimeRouteFixtures {
         return cases;
     }
 
+    private static List<Object> nullStaticMappingConversion() {
+        List<Object> cases = new ArrayList<>();
+        for (String mapping : new String[] {
+            "{\"scope\":\"__global__\",\"totalQueues\":1,\"bname\":\"broker\",\"currIdMap\":null}",
+            "{\"scope\":\"__global__\",\"totalQueues\":1,\"bname\":null,\"currIdMap\":{\"0\":0}}",
+            "{\"scope\":\"__global__\",\"totalQueues\":1,\"bname\":null,\"currIdMap\":{}}",
+            "{\"scope\":\"__global__\",\"totalQueues\":1,\"bname\":\"broker\"}"
+        }) {
+            String input = "{\"queueDatas\":[],\"brokerDatas\":[],\"topicQueueMappingByBroker\":{\"broker\":" + mapping + "}}";
+            TopicRouteData route = com.alibaba.fastjson2.JSON.parseObject(input, TopicRouteData.class);
+            Map<String, Object> item = new TreeMap<>();
+            item.put("input", com.alibaba.fastjson2.JSON.parseObject(input));
+            try {
+                Map<MessageQueue, String> endpoints =
+                    org.apache.rocketmq.remoting.rpc.ClientMetadata.topicRouteData2EndpointsForStaticTopic("topic", route);
+                item.put("outcome", "OK");
+                item.put("endpoints", endpoints.toString());
+            } catch (RuntimeException error) {
+                item.put("outcome", error.getClass().getSimpleName());
+            }
+            cases.add(item);
+        }
+        return cases;
+    }
+
     private static Map<String, Object> runtimeNullBrokerMap() throws Exception {
         org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
         config.setClientIP("route-null-map");
@@ -462,6 +487,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("runtimeNullBrokerValues", runtimeNullBrokerValues());
         fixture.put("nullableRouteCollections", nullableRouteCollections());
         fixture.put("nullableStaticMappingFields", nullableStaticMappingFields());
+        fixture.put("nullStaticMappingConversion", nullStaticMappingConversion());
         fixture.put("runtimeEmptyEndpointTransition", runtimeEmptyEndpointTransition(staticInputs.get(0), inputs.get(0)));
         fixture.put("runtimeTopicRouteTable", runtimeTopicRouteTable(inputs.get(0)));
         fixture.put("runtimeRawOfflineCleanup", runtimeRawOfflineCleanup(inputs.get(0)));

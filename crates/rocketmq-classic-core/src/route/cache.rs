@@ -252,6 +252,21 @@ impl RouteCache {
         if route.queue_datas.is_none() {
             return Err(RuntimeError::InvalidRoute("null queue data list"));
         }
+        if let Some(mappings) = &route.topic_queue_mapping_by_broker {
+            for mapping in mappings.values().filter(|mapping| mapping.scope.is_some()) {
+                let ids = mapping
+                    .curr_id_map
+                    .as_ref()
+                    .ok_or(RuntimeError::InvalidRoute("null static mapping id map"))?;
+                if mapping.bname.is_none()
+                    && ids.keys().any(|id| *id >= 0 && *id < mapping.total_queues)
+                {
+                    return Err(RuntimeError::InvalidRoute(
+                        "null static mapping broker name",
+                    ));
+                }
+            }
+        }
         if route
             .broker_datas
             .as_deref()
@@ -510,6 +525,17 @@ pub fn broker_vip_channel(enabled: bool, address: &str) -> Result<String, Runtim
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nullable_static_mapping_conversion_matches_invoked_java_failures() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["nullStaticMappingConversion"].as_array().unwrap() {
+            let route: TopicRouteData = serde_json::from_value(case["input"].clone()).unwrap();
+            let result = RouteCache::default().replace("topic", route);
+            assert_eq!(result.is_err(), case["outcome"] == "NullPointerException");
+        }
+    }
 
     #[test]
     fn nullable_route_collections_preserve_raw_values_and_copy_comparison() {
