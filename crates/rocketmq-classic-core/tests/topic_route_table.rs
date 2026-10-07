@@ -88,7 +88,7 @@ async fn raw_clear_query_refetches_once_and_retained_table_observes_wire_refresh
     ));
     assert_eq!(
         refreshed.broker_datas[0].broker_addrs.as_ref().unwrap()[&0],
-        "master:10911"
+        Some("master:10911".to_owned())
     );
     assert!(Arc::ptr_eq(
         &runtime.query_topic_route("topic").await.unwrap().unwrap(),

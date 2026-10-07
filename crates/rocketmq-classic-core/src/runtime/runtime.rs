@@ -846,6 +846,9 @@ impl ClientRuntime {
         let snapshot = self.routes.snapshot()?;
         for brokers in snapshot.broker_addresses.values() {
             for address in brokers.values() {
+                let Some(address) = address.as_deref() else {
+                    continue;
+                };
                 // Java best effort: one failed peer must not prevent cleanup of
                 // other peers. The phase contract bounds all attempts together.
                 let _ = self.api.unregister_client(address, &header, deadline).await;

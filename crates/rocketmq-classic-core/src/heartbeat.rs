@@ -38,7 +38,7 @@ impl rocketmq_classic_remoting::client::ChannelEventListener for HeartbeatChanne
             for (broker, addresses) in &routes.broker_addresses {
                 if let Some((id, _)) = addresses
                     .iter()
-                    .find(|(_, value)| value.as_str() == address)
+                    .find(|(_, value)| value.as_deref() == Some(address))
                 {
                     if runtime
                         .send_heartbeat_to_broker_with_lock_mode(*id, broker, address, false)
@@ -222,7 +222,9 @@ impl ClientRuntime {
                 addresses
                     .iter()
                     .filter(|(id, _)| !full.consumer_data_set.is_empty() || **id == 0)
-                    .map(|(_, address)| (broker.as_str(), address.as_str()))
+                    .filter_map(|(_, address)| {
+                        address.as_deref().map(|address| (broker.as_str(), address))
+                    })
             })
             .collect::<Vec<_>>();
         if !v2 && allow_concurrent_v1 && self.config().enable_concurrent_heartbeat {

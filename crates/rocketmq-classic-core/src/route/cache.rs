@@ -23,7 +23,7 @@ pub struct RouteSnapshot {
     pub raw_routes: BTreeMap<String, Arc<TopicRouteData>>,
     /// Last converted publication, independent of later raw map mutations.
     pub topics: BTreeMap<String, Arc<TopicSnapshot>>,
-    pub broker_addresses: BTreeMap<String, BTreeMap<i64, String>>,
+    pub broker_addresses: BTreeMap<String, BTreeMap<i64, Option<String>>>,
     pub(crate) broker_versions: BTreeMap<(String, String), i32>,
 }
 
@@ -61,7 +61,7 @@ impl RouteSnapshot {
             .ok_or(RuntimeError::InvalidRoute(
                 "selected broker has null address map",
             ))?;
-        if let Some(master) = addresses.get(&0) {
+        if let Some(master) = addresses.get(&0).and_then(Option::as_deref) {
             return Ok(Some(master));
         }
         if addresses.is_empty() {
@@ -72,14 +72,14 @@ impl RouteSnapshot {
         Ok(addresses
             .values()
             .nth(select(addresses.len()))
-            .map(String::as_str))
+            .and_then(Option::as_deref))
     }
 
     pub fn publish_address(&self, broker: &str) -> Option<&str> {
         self.broker_addresses
             .get(broker)?
             .get(&0)
-            .map(String::as_str)
+            .and_then(Option::as_deref)
     }
 
     pub fn subscribe_address(
@@ -89,18 +89,23 @@ impl RouteSnapshot {
         only_this_broker: bool,
     ) -> Option<BrokerAddress> {
         let addresses = self.broker_addresses.get(broker)?;
-        let exact_or_adjacent = addresses.get_key_value(&id).or_else(|| {
-            (id != 0)
-                .then(|| addresses.get_key_value(&id.wrapping_add(1)))
-                .flatten()
-        });
+        let exact_or_adjacent = addresses
+            .get_key_value(&id)
+            .filter(|(_, address)| address.is_some())
+            .or_else(|| {
+                (id != 0)
+                    .then(|| addresses.get_key_value(&id.wrapping_add(1)))
+                    .flatten()
+                    .filter(|(_, address)| address.is_some())
+            });
         let selected = exact_or_adjacent.or_else(|| {
             (!only_this_broker)
                 .then(|| addresses.first_key_value())
                 .flatten()
         })?;
+        let address = selected.1.as_ref()?;
         Some(BrokerAddress {
-            address: selected.1.clone(),
+            address: address.clone(),
             // Java changes the slave flag only for the arbitrary-entry fallback,
             // not for brokerId + 1 (including signed overflow/negative IDs).
             slave: if exact_or_adjacent.is_some() {
@@ -110,16 +115,20 @@ impl RouteSnapshot {
             },
             version: self
                 .broker_versions
-                .get(&(broker.to_owned(), selected.1.clone()))
+                .get(&(broker.to_owned(), address.clone()))
                 .copied()
                 .unwrap_or(0),
         })
     }
 
     pub fn admin_address(&self, broker: &str) -> Option<BrokerAddress> {
-        // Java iterates HashMap entries until it finds an address. String values
-        // in this typed snapshot are non-null; entry order is not a contract.
-        let (id, address) = self.broker_addresses.get(broker)?.first_key_value()?;
+        // Java iterates until it finds a nonnull value. HashMap order is not
+        // observable when several valid entries exist.
+        let (id, address) = self
+            .broker_addresses
+            .get(broker)?
+            .iter()
+            .find_map(|(id, address)| address.as_ref().map(|address| (id, address)))?;
         Some(BrokerAddress {
             address: address.clone(),
             slave: *id != 0,
@@ -708,11 +717,72 @@ mod tests {
                     .map(str::to_owned)
             );
             assert_eq!(case["topicSelectionOnlyAllowedChoices"], true);
+            assert_eq!(snapshot.select_topic_broker("topic", |_| 0).unwrap(), None);
+            if case["adminAddress"].is_string() {
+                assert_eq!(
+                    snapshot
+                        .select_topic_broker("topic", |length| usize::from(length > 1))
+                        .unwrap(),
+                    case["adminAddress"].as_str()
+                );
+            }
             for _ in 0..128 {
                 let selected = snapshot.broker_address_by_topic("topic").unwrap();
                 assert!(selected.is_none() || selected == case["adminAddress"].as_str());
             }
         }
+    }
+
+    #[test]
+    fn null_exact_subscribe_address_tries_adjacent_then_first_entry() {
+        let mut snapshot = RouteSnapshot::default();
+        snapshot.broker_addresses.insert(
+            "broker".into(),
+            BTreeMap::from([
+                (0, Some("master:10911".into())),
+                (1, None),
+                (2, Some("slave:10911".into())),
+            ]),
+        );
+        assert_eq!(
+            snapshot
+                .subscribe_address("broker", 1, true)
+                .unwrap()
+                .address,
+            "slave:10911"
+        );
+        snapshot
+            .broker_addresses
+            .get_mut("broker")
+            .unwrap()
+            .remove(&2);
+        assert!(snapshot.subscribe_address("broker", 1, true).is_none());
+        let fallback = snapshot.subscribe_address("broker", 1, false).unwrap();
+        assert_eq!(fallback.address, "master:10911");
+        assert!(!fallback.slave);
+        snapshot
+            .broker_addresses
+            .get_mut("broker")
+            .unwrap()
+            .insert(0, None);
+        assert!(snapshot.subscribe_address("broker", 1, false).is_none());
+        assert!(snapshot.admin_address("broker").is_none());
+    }
+
+    #[test]
+    fn offline_cleanup_preserves_live_null_values_but_removes_stale_ones() {
+        let cache = RouteCache::default();
+        let mut route = route(1);
+        route.broker_datas[0].broker_addrs = Some(BTreeMap::from([(0, None)]));
+        cache.replace("topic", route).unwrap();
+        cache.clean_offline().unwrap();
+        assert_eq!(
+            cache.snapshot().unwrap().broker_addresses["broker"][&0],
+            None
+        );
+        cache.update_raw(|raw| (true, raw.clear())).unwrap();
+        cache.clean_offline().unwrap();
+        assert!(cache.snapshot().unwrap().broker_addresses.is_empty());
     }
 
     #[test]
@@ -802,8 +872,8 @@ mod tests {
         let cache = RouteCache::default();
         let mut original = route(1);
         original.broker_datas[0].broker_addrs = Some(BTreeMap::from([
-            (2, "slave-a:10911".into()),
-            (3, "slave-b:10911".into()),
+            (2, Some("slave-a:10911".into())),
+            (3, Some("slave-b:10911".into())),
         ]));
         original.broker_datas.push(route(2).broker_datas.remove(0));
         cache.replace("original", original.clone()).unwrap();
@@ -887,8 +957,8 @@ mod tests {
             broker_datas: vec![BrokerData {
                 broker_name: "broker".into(),
                 broker_addrs: Some(BTreeMap::from([
-                    (0, format!("master-{count}:10911")),
-                    (2, "slave:10911".into()),
+                    (0, Some(format!("master-{count}:10911"))),
+                    (2, Some("slave:10911".into())),
                 ])),
                 ..Default::default()
             }],
@@ -907,7 +977,7 @@ mod tests {
         assert!(snapshot.admin_address("empty").is_none());
         snapshot
             .broker_addresses
-            .insert("broker".into(), BTreeMap::from([(2, "slave".into())]));
+            .insert("broker".into(), BTreeMap::from([(2, Some("slave".into()))]));
         assert_eq!(
             snapshot.admin_address("broker"),
             Some(BrokerAddress {
@@ -924,7 +994,7 @@ mod tests {
             .broker_addresses
             .get_mut("broker")
             .unwrap()
-            .insert(0, "master".into());
+            .insert(0, Some("master".into()));
         // Java's admin method chooses an available map entry, not a portable
         // master-first contract. Assert metadata for the actually selected peer.
         let admin = snapshot.admin_address("broker").unwrap();

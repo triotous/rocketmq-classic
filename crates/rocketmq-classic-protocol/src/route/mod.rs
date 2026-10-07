@@ -19,11 +19,38 @@ pub struct BrokerData {
     pub cluster: String,
     pub broker_name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub broker_addrs: Option<BTreeMap<i64, String>>,
+    pub broker_addrs: Option<BTreeMap<i64, Option<String>>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub zone_name: Option<String>,
     #[serde(default)]
     pub enable_acting_master: bool,
+}
+
+#[cfg(test)]
+mod nullable_broker_address_tests {
+    use super::BrokerData;
+
+    #[test]
+    fn null_map_value_is_distinct_from_missing_key_and_null_map() {
+        let value = serde_json::json!({"cluster":"c","brokerName":"b","brokerAddrs":{"0":null,"1":"slave:10911"}});
+        let broker: BrokerData = serde_json::from_value(value.clone()).unwrap();
+        let addresses = broker.broker_addrs.as_ref().unwrap();
+        assert_eq!(addresses.get(&0), Some(&None));
+        assert!(!addresses.contains_key(&2));
+        assert_eq!(
+            addresses.get(&1).and_then(Option::as_deref),
+            Some("slave:10911")
+        );
+        assert_eq!(
+            serde_json::to_value(&broker).unwrap()["brokerAddrs"],
+            value["brokerAddrs"]
+        );
+        let null_map: BrokerData = serde_json::from_value(
+            serde_json::json!({"cluster":"c","brokerName":"b","brokerAddrs":null}),
+        )
+        .unwrap();
+        assert!(null_map.broker_addrs.is_none());
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -249,8 +276,8 @@ mod tests {
     fn ordinary_publish_uses_first_matching_broker_and_static_publish_orders_ids_across_scopes() {
         let mut route = route();
         let mut duplicate = route.broker_datas[0].clone();
-        duplicate.broker_addrs = Some(BTreeMap::from([(0, "other-master".into())]));
-        route.broker_datas[0].broker_addrs = Some(BTreeMap::from([(1, "slave".into())]));
+        duplicate.broker_addrs = Some(BTreeMap::from([(0, Some("other-master".into()))]));
+        route.broker_datas[0].broker_addrs = Some(BTreeMap::from([(1, Some("slave".into()))]));
         route.broker_datas.push(duplicate);
         assert!(route.publish_queues("topic").is_empty());
         route.topic_queue_mapping_by_broker = Some(BTreeMap::from([
@@ -288,7 +315,7 @@ mod tests {
     #[test]
     fn duplicate_queue_data_retains_java_stable_publish_order_and_set_subscription() {
         let mut route = route();
-        route.broker_datas[0].broker_addrs = Some(BTreeMap::from([(0, "master".into())]));
+        route.broker_datas[0].broker_addrs = Some(BTreeMap::from([(0, Some("master".into()))]));
         route.queue_datas.retain(|queue| queue.broker_name == "b1");
         let mut second = route.queue_datas[0].clone();
         second.read_queue_nums = 1;
@@ -354,7 +381,7 @@ mod tests {
     #[test]
     fn converts_writable_and_readable_queues_without_absent_masters() {
         let mut route = route();
-        route.broker_datas[0].broker_addrs = Some(BTreeMap::from([(0, "b1-master".into())]));
+        route.broker_datas[0].broker_addrs = Some(BTreeMap::from([(0, Some("b1-master".into()))]));
         assert_eq!(route.publish_queues("t").len(), 3);
         assert_eq!(route.subscribe_queues("t").len(), 15);
     }

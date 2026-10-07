@@ -132,14 +132,21 @@ async fn respond(
         .unwrap();
 }
 
-async fn runtime(mut config: ClientConfig, addresses: &[String]) -> Arc<ClientRuntime> {
-    let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    config.namesrv_addr = Some(nameserver.local_addr().unwrap().to_string());
+async fn runtime(config: ClientConfig, addresses: &[String]) -> Arc<ClientRuntime> {
     let broker_addrs = addresses
         .iter()
         .enumerate()
         .map(|(id, address)| (id.to_string(), address))
         .collect::<HashMap<_, _>>();
+    runtime_with_broker_addrs(config, serde_json::json!(broker_addrs)).await
+}
+
+async fn runtime_with_broker_addrs(
+    mut config: ClientConfig,
+    broker_addrs: serde_json::Value,
+) -> Arc<ClientRuntime> {
+    let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    config.namesrv_addr = Some(nameserver.local_addr().unwrap().to_string());
     let route = serde_json::to_vec(&serde_json::json!({
         "queueDatas": [{"brokerName":"broker", "readQueueNums":1,"writeQueueNums":1,"perm":6,"topicSysFlag":0}],
         "brokerDatas": [{"cluster":"cluster", "brokerName":"broker", "brokerAddrs":broker_addrs}], "filterServerTable":{}
@@ -159,6 +166,37 @@ async fn runtime(mut config: ClientConfig, addresses: &[String]) -> Arc<ClientRu
         .unwrap();
     server.await.unwrap();
     runtime
+}
+
+#[tokio::test]
+async fn null_broker_value_is_cached_but_never_dialed_for_heartbeat() {
+    let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = broker.local_addr().unwrap().to_string();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = broker.accept().await.unwrap();
+        let command = read(&mut stream).await;
+        assert_eq!(command.code, request::HEART_BEAT);
+        respond(&mut stream, &command, None, false, false).await;
+    });
+    let mut config = ClientConfig::new("null-heartbeat-peer");
+    config.enable_heartbeat_channel_event_listener = false;
+    let runtime =
+        runtime_with_broker_addrs(config, serde_json::json!({"0":null,"1":address})).await;
+    let consumer = Arc::new(Consumer(Mutex::new(SubscriptionData::default())));
+    let _lease = runtime
+        .register_consumer("consumer", consumer.clone())
+        .await
+        .unwrap();
+    assert_eq!(
+        runtime.route_snapshot().unwrap().broker_addresses["broker"][&0],
+        None
+    );
+    assert!(runtime.send_heartbeat_to_all_brokers().await.unwrap());
+    tokio::time::timeout(Duration::from_secs(2), peer)
+        .await
+        .unwrap()
+        .unwrap();
+    runtime.remoting().shutdown().await;
 }
 
 #[tokio::test]

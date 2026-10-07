@@ -399,7 +399,7 @@ async fn route_success_unknown_status_and_malformed_success() {
         }],
         broker_datas: vec![rocketmq_classic_protocol::route::BrokerData {
             broker_name: "broker-a".into(),
-            broker_addrs: Some([(0, "broker:10911".into())].into()),
+            broker_addrs: Some([(0, Some("broker:10911".into()))].into()),
             ..Default::default()
         }],
         ..Default::default()
