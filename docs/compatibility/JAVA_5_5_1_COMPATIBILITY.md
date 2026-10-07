@@ -1,5 +1,7 @@
 # Java 5.5.1 compatibility evidence
 
+Route mapping JSON omission `680798f`/`044de86` matches actual Java `TopicRouteData.toJson()` for an absent `topicQueueMappingByBroker` field. Fixture SHA-256 `9268caad9acde84decaeb6eee29afea3c77a1867cc3cb6fc54e4e757ff18cfb0`; native red/green, workspace, Maven and strict Clippy pass. Phase 6 remains PARTIAL.
+
 Null route JSON correction `d6a44ad`/`09af643` supersedes the earlier wording below: explicit null stays null in the decoded public DTO, and Java/default Rust JSON output **omits** that field. Re-reading the omitted field initializes an empty collection. Java fixture SHA-256 `dd857cbf868945eecc96f05b8d041c5191aec430594e15daca69edce8a875ab0`; native red/green golden, full workspace, Maven and strict Clippy pass.
 
 Nullable route collections `0d8daec`/`86af455`: the public `TopicRouteData` preserves explicit null queue, broker and filter collections on decode/serialize, and route comparison/cache publication use the Java copy constructor's empty normalization. The Java fixture, native focused checks, full workspace and strict Clippy pass. Static-mapping/consumer-free null queue behavior and the broader source/input audit are still open; Phase 6 remains PARTIAL.

@@ -1,5 +1,7 @@
 # Phase 6 requirement and handoff audit
 
+Nullable mapping wire correction `680798f`/`044de86`: pinned Java omits absent topic queue mapping from route JSON. The native public DTO now matches, with a red/green fixture regression and passing full workspace, Maven and strict Clippy gates. Other API/input/default-map cases remain in the open Phase 6 audit.
+
 Null route wire correction `d6a44ad`/`09af643` adds actual Java `toJson()` evidence: null collections are omitted from JSON, decoded null remains distinct in memory, and omitted fields reinitialize empty. The native regression was red before serializer correction and passes now; full workspace, pinned Maven and strict Clippy pass. This narrows only the demonstrated DTO/wire case, leaving the broader source/input audit open.
 
 Nullable route collection update `0d8daec`/`86af455`: pinned Java Fastjson and copy-constructor cases establish explicit null versus empty for three public route collections. Native DTO, route comparison and cache publication now preserve those observed distinctions; protocol/core fixture tests, full workspace and strict Clippy pass. This closes the demonstrated DTO mismatch. The static-mapping/consumer-free null queue branch and broader API/source/input audit remain open, so Phase 6 is still incomplete.
