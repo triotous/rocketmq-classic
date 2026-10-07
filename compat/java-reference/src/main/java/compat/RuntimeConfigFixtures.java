@@ -339,7 +339,13 @@ public final class RuntimeConfigFixtures {
 
     private static List<Object> socksConstruction() throws Exception {
         List<Object> cases = new ArrayList<>();
-        String[] inputs = {null, "", " ", "\t\r\n", "\f", "\b", "\u000b", "\u00a0", "\u2003", "null", "{}", "invalid"};
+        String[] inputs = {null, "", " ", "\t\r\n", "\f", "\b", "\u000b", "\u00a0", "\u2003", "null", "{}", "invalid",
+            "{'10.0.0.0/8':{'addr':'proxy:1080'}}",
+            "{10.0.0.0/8:{addr:'proxy:1080'}}",
+            "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\",}}",
+            "{/* comment */\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}}",
+            "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\",\"extra\":7}}",
+            "{\"10.0.0.0/8\":{}}", "{\"10.0.0.0/8\":null}"};
         for (int i = 0; i < inputs.length; i++) {
             ClientConfig config = new ClientConfig();
             config.setClientIP("socks-construction-" + i);
