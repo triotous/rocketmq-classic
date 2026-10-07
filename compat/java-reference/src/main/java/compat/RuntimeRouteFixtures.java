@@ -144,6 +144,28 @@ public final class RuntimeRouteFixtures {
         return cases;
     }
 
+    private static List<Object> nullableMessageQueueFields() {
+        List<Object> cases = new ArrayList<>();
+        for (String input : new String[] {
+            "{}",
+            "{\"topic\":null,\"brokerName\":null,\"queueId\":0}",
+            "{\"topic\":\"topic\",\"brokerName\":\"broker\",\"queueId\":-2}"
+        }) {
+            MessageQueue queue = com.alibaba.fastjson2.JSON.parseObject(input, MessageQueue.class);
+            com.alibaba.fastjson2.JSONObject encoded =
+                com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(queue));
+            Map<String, Object> item = new TreeMap<>();
+            item.put("input", com.alibaba.fastjson2.JSON.parseObject(input));
+            item.put("topicNull", queue.getTopic() == null);
+            item.put("brokerNull", queue.getBrokerName() == null);
+            item.put("queueId", queue.getQueueId());
+            item.put("encodedHasTopic", encoded.containsKey("topic"));
+            item.put("encodedHasBroker", encoded.containsKey("brokerName"));
+            cases.add(item);
+        }
+        return cases;
+    }
+
     private static List<Object> nullableStaticMappingFields() {
         List<Object> cases = new ArrayList<>();
         for (String input : new String[] {
@@ -581,6 +603,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("runtimeNullBrokerValues", runtimeNullBrokerValues());
         fixture.put("nullableRouteCollections", nullableRouteCollections());
         fixture.put("nullableNestedRouteFields", nullableNestedRouteFields());
+        fixture.put("nullableMessageQueueFields", nullableMessageQueueFields());
         fixture.put("nullableStaticMappingFields", nullableStaticMappingFields());
         fixture.put("nullStaticMappingConversion", nullStaticMappingConversion());
         fixture.put("runtimeNullableCollections", runtimeNullableCollections());

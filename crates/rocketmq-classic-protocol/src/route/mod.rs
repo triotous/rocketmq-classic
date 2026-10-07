@@ -124,6 +124,27 @@ mod nullable_nested_route_tests {
 }
 
 #[cfg(test)]
+mod nullable_message_queue_tests {
+    use rocketmq_classic_common::message::MessageQueue;
+
+    #[test]
+    fn nullable_message_queue_fields_match_invoked_java_defaults_and_json() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["nullableMessageQueueFields"].as_array().unwrap() {
+            let queue: MessageQueue = serde_json::from_value(case["input"].clone())
+                .expect("pinned Java decodes this MessageQueue");
+            let encoded = serde_json::to_value(&queue).unwrap();
+            assert_eq!(encoded.get("topic").is_none(), case["topicNull"]);
+            assert_eq!(encoded.get("brokerName").is_none(), case["brokerNull"]);
+            assert_eq!(encoded.get("topic").is_some(), case["encodedHasTopic"]);
+            assert_eq!(encoded.get("brokerName").is_some(), case["encodedHasBroker"]);
+            assert_eq!(queue.queue_id(), case["queueId"].as_i64().unwrap() as i32);
+        }
+    }
+}
+
+#[cfg(test)]
 mod nullable_route_collection_tests {
     use super::TopicRouteData;
 
