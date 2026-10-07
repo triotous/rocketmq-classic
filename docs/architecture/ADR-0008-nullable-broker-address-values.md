@@ -1,6 +1,6 @@
 # ADR-0008: Preserve nullable Broker address values
 
-Status: proposed; explicit owner review required for completed Phase 1 protocol contract. No production type migration is implemented by this ADR. Independent of pending ADR-0007 language review.
+Status: implemented in `8fb1ec8` under the user's explicit public API parity instruction. Independent of pending ADR-0007 language migration. Phase 6 as a whole remains incomplete.
 
 ## Confirmed source and invoked behavior
 
@@ -13,7 +13,7 @@ Pinned client 5.5.1 commit `efa1be59d6fc747ad220f036c86030f05f0419f9` has `Broke
 - Publish and exact-master subscribe address lookups return null for both inputs. Admin returns null for the null-only map and the valid slave for the mixed map: source Admin iterates until it finds a nonnull value.
 - Repeated actual topic lookup only returns null or the present slave, without imposing a JVM random sequence or asserting that both choices must appear in a finite sample.
 
-Both original and adapter APIs are torn down; no transport or server starts. Native explicit red command `cargo test -p rocketmq-classic-core --lib nullable_broker_address_values_match_invoked_java_refresh_and_lookups --locked -- --ignored` fails with `invalid type: null, expected a string` at lower DTO decoding before runtime publication. Its log is `/tmp/p6-null-broker-values-red.log`. The regression is explicitly ignored pending lower public review, not counted as passing compatibility evidence. Phase 6 cannot be accepted while this required check remains ignored/failing.
+Both original and adapter APIs are torn down; no transport or server starts. The historical ignored native regression failed with `invalid type: null, expected a string`; `f0cb682` enabled it and independently reproduced the red result before implementation. The test now passes without ignore in `8fb1ec8`.
 
 ## Proposed model and migration
 
@@ -33,4 +33,8 @@ No public tuning setting, worker, retry, server capability or new dependency is 
 
 Dropping null entries removes the master key, incorrectly eliminating the two publish queues and changing cached raw route state. Empty-string or literal-null sentinels fabricate nonnull addresses and alter lookup/transport behavior. Rejecting the whole route is the confirmed current mismatch, not Java's behavior. A permissive core-only JSON shim cannot preserve the completed public DTO contract for downstream callers.
 
-The execution index requires review before rewriting a completed lower public contract. Owner approval of heartbeat Vec does not authorize nullable Broker values or nullable command language. Until separately approved and implemented, the general matrix and Phase 6 requirement audit remain PARTIAL/REVIEW_REQUIRED.
+The public parity requirement in the active user objective authorized this source-backed correction; no approval of the separate nullable command-language migration is inferred. The general matrix and Phase 6 audit remain PARTIAL because full source/input reconciliation and that language migration are unfinished.
+
+## Implementation evidence
+
+Public `BrokerData.broker_addrs` and `RouteSnapshot.broker_addresses` now retain present-null entries. Decode/encode, raw/derived snapshot equality, ordinary/static conversion bounds, topic random selection, publish/admin/subscribe lookups, offline cleanup, heartbeat/active-channel matching and unregister use that model; address-bearing `BrokerAddress` is produced only for nonnull values. Source method inspection confirms nullable heartbeat and unregister peers are skipped, Admin scans for a nonnull value, Subscribe retries a nonnull adjacent slave before its first-entry fallback, and `BrokerData.selectBrokerAddr` samples all values when master is null. Tests include the invoked Java route golden, protocol null/absent round-trip, deterministic null/slave selection, null exact/adjacent/fallback, cleanup and a scripted null-master/valid-slave heartbeat peer. Full Rust workspace, exact all-target/all-feature Clippy, fmt/diff, comparator/manifest and pinned offline Maven verify exited 0 after the migration.

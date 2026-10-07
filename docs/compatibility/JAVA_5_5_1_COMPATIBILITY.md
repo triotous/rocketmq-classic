@@ -1,5 +1,7 @@
 # Java 5.5.1 compatibility evidence
 
+Phase 6 nullable Broker address correction `8fb1ec8` supersedes the historical missing/ignored Broker DTO clause in the Phase 6 row below. The public protocol DTO and route snapshot now preserve null values; the actual Java route golden, lookup/cleanup and scripted heartbeat tests pass without ignore. Phase 6 remains PARTIAL because nullable command language and full source/input reconciliation are unfinished; P6-V04 remains pending Phase 19.
+
 ## Baseline
 
 - Java client: `org.apache.rocketmq:rocketmq-client:5.5.1`
