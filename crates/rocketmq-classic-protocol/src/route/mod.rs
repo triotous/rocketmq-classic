@@ -54,6 +54,33 @@ mod nullable_broker_address_tests {
 }
 
 #[cfg(test)]
+mod nullable_nested_route_tests {
+    use super::TopicRouteData;
+
+    #[test]
+    fn nested_broker_and_queue_names_follow_invoked_java_defaults_and_json() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["nullableNestedRouteFields"].as_array().unwrap() {
+            let route: TopicRouteData = serde_json::from_value(case["input"].clone())
+                .expect("pinned Java accepts this nested route input");
+            let queue = &route.queue_datas.as_ref().unwrap()[0];
+            let encoded = serde_json::to_value(&route).unwrap();
+            assert_eq!(encoded["queueDatas"][0].get("brokerName").is_none(), case["queueNameNull"]);
+            assert_eq!(encoded["brokerDatas"][0].get("brokerName").is_none(), case["brokerNameNull"]);
+            assert_eq!(encoded["brokerDatas"][0].get("cluster").is_none(), case["clusterNull"]);
+            assert_eq!(encoded["queueDatas"][0].get("brokerName").is_some(), case["encodedHasQueueName"]);
+            assert_eq!(encoded["brokerDatas"][0].get("brokerName").is_some(), case["encodedHasBrokerName"]);
+            assert_eq!(encoded["brokerDatas"][0].get("cluster").is_some(), case["encodedHasCluster"]);
+            assert_eq!(queue.read_queue_nums, case["queueRead"]);
+            assert_eq!(queue.write_queue_nums, case["queueWrite"]);
+            assert_eq!(queue.perm, case["queuePerm"]);
+            assert_eq!(queue.topic_sys_flag, case["queueFlag"]);
+        }
+    }
+}
+
+#[cfg(test)]
 mod nullable_route_collection_tests {
     use super::TopicRouteData;
 

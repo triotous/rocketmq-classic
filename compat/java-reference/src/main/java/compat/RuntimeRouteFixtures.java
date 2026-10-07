@@ -110,6 +110,34 @@ public final class RuntimeRouteFixtures {
         return cases;
     }
 
+    private static List<Object> nullableNestedRouteFields() {
+        List<Object> cases = new ArrayList<>();
+        for (String input : new String[] {
+            "{\"queueDatas\":[{}],\"brokerDatas\":[{}]}",
+            "{\"queueDatas\":[{\"brokerName\":null}],\"brokerDatas\":[{\"cluster\":null,\"brokerName\":null}]}",
+            "{\"queueDatas\":[{\"brokerName\":\"broker\",\"perm\":6}],\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\"}]}"
+        }) {
+            TopicRouteData route = com.alibaba.fastjson2.JSON.parseObject(input, TopicRouteData.class);
+            com.alibaba.fastjson2.JSONObject encoded = com.alibaba.fastjson2.JSON.parseObject(route.toJson());
+            com.alibaba.fastjson2.JSONObject queue = encoded.getJSONArray("queueDatas").getJSONObject(0);
+            com.alibaba.fastjson2.JSONObject broker = encoded.getJSONArray("brokerDatas").getJSONObject(0);
+            Map<String, Object> item = new TreeMap<>();
+            item.put("input", com.alibaba.fastjson2.JSON.parseObject(input));
+            item.put("queueNameNull", route.getQueueDatas().get(0).getBrokerName() == null);
+            item.put("brokerNameNull", route.getBrokerDatas().get(0).getBrokerName() == null);
+            item.put("clusterNull", route.getBrokerDatas().get(0).getCluster() == null);
+            item.put("queueRead", route.getQueueDatas().get(0).getReadQueueNums());
+            item.put("queueWrite", route.getQueueDatas().get(0).getWriteQueueNums());
+            item.put("queuePerm", route.getQueueDatas().get(0).getPerm());
+            item.put("queueFlag", route.getQueueDatas().get(0).getTopicSysFlag());
+            item.put("encodedHasQueueName", queue.containsKey("brokerName"));
+            item.put("encodedHasBrokerName", broker.containsKey("brokerName"));
+            item.put("encodedHasCluster", broker.containsKey("cluster"));
+            cases.add(item);
+        }
+        return cases;
+    }
+
     private static List<Object> nullableStaticMappingFields() {
         List<Object> cases = new ArrayList<>();
         for (String input : new String[] {
@@ -542,6 +570,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("runtimeNullBrokerMap", runtimeNullBrokerMap());
         fixture.put("runtimeNullBrokerValues", runtimeNullBrokerValues());
         fixture.put("nullableRouteCollections", nullableRouteCollections());
+        fixture.put("nullableNestedRouteFields", nullableNestedRouteFields());
         fixture.put("nullableStaticMappingFields", nullableStaticMappingFields());
         fixture.put("nullStaticMappingConversion", nullStaticMappingConversion());
         fixture.put("runtimeNullableCollections", runtimeNullableCollections());
