@@ -169,7 +169,8 @@ public final class RuntimeRouteFixtures {
             "{\"queueDatas\":null,\"brokerDatas\":[],\"filterServerTable\":{},\"orderTopicConf\":\"broker:1\"}",
             "{\"queueDatas\":null,\"brokerDatas\":[],\"filterServerTable\":{},\"topicQueueMappingByBroker\":{\"broker\":{\"scope\":\"__global__\",\"totalQueues\":1,\"bname\":\"broker\"}}}",
             "{\"queueDatas\":[],\"brokerDatas\":null,\"filterServerTable\":{}}",
-            "{\"queueDatas\":[],\"brokerDatas\":[],\"filterServerTable\":null}"
+            "{\"queueDatas\":[],\"brokerDatas\":[],\"filterServerTable\":null}",
+            "{\"queueDatas\":null,\"brokerDatas\":[],\"filterServerTable\":{},\"orderTopicConf\":\"broker:1\"}"
         }) {
             org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
             config.setClientIP("route-null-collections-" + cases.size());
@@ -182,6 +183,16 @@ public final class RuntimeRouteFixtures {
                 java.lang.reflect.Field field = MQClientInstance.class.getDeclaredField("mQClientAPIImpl");
                 field.setAccessible(true); field.set(runtime, api);
                 api.route = com.alibaba.fastjson2.JSON.parseObject(input, TopicRouteData.class);
+                boolean registeredConsumer = cases.size() == 5;
+                item.put("registeredConsumer", registeredConsumer);
+                if (registeredConsumer) {
+                    org.apache.rocketmq.client.impl.consumer.MQConsumerInner consumer =
+                        (org.apache.rocketmq.client.impl.consumer.MQConsumerInner) java.lang.reflect.Proxy.newProxyInstance(
+                            org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class.getClassLoader(),
+                            new Class<?>[] {org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class},
+                            (proxy, method, values) -> method.getReturnType() == boolean.class ? false : null);
+                    runtime.getConsumerTable().put("consumer", consumer);
+                }
                 try {
                     item.put("changed", runtime.updateTopicRouteInfoFromNameServer("topic"));
                     item.put("outcome", "OK");

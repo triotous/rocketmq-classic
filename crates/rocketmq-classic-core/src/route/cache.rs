@@ -542,6 +542,9 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
         for case in fixture["runtimeNullableCollections"].as_array().unwrap() {
+            if case["registeredConsumer"] == true {
+                continue; // The registered-consumer branch is exercised through ClientRuntime.
+            }
             let cache = RouteCache::default();
             let route: TopicRouteData = serde_json::from_value(case["input"].clone()).unwrap();
             let result = cache.replace("topic", route);
