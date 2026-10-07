@@ -372,8 +372,10 @@ async fn scheduled_executor_can_run_before_transport_start_without_starting_requ
             sent.send(()).unwrap();
         })
         .unwrap();
-    settle().await;
-    assert_eq!(received.try_recv(), Ok(()));
+    tokio::time::timeout(tokio::time::Duration::from_secs(1), &mut received)
+        .await
+        .expect("pre-start scheduled executor should run the task")
+        .unwrap();
     assert_eq!(
         runtime.state(),
         rocketmq_classic_core::runtime::RuntimeState::Created
