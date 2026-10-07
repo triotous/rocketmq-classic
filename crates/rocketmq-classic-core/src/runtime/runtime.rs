@@ -608,6 +608,9 @@ impl ClientRuntime {
                     .consumers
                     .iter()
                     .any(|consumer| consumer.is_subscribe_topic_need_update(topic)));
+        if (changed || needed) && !groups.consumers.is_empty() && route.queue_datas.is_none() {
+            return Err(RuntimeError::InvalidRoute("null queue data list"));
+        }
         let changed = if needed {
             self.routes.replace_for_owner_update(topic, route, true)?
         } else {

@@ -249,7 +249,16 @@ impl RouteCache {
         if route.broker_datas.is_none() {
             return Err(RuntimeError::InvalidRoute("null broker data list"));
         }
-        if route.queue_datas.is_none() {
+        let ordered = route
+            .order_topic_conf
+            .as_deref()
+            .is_some_and(|value| !value.is_empty());
+        let static_route = route.order_topic_conf.is_none()
+            && route
+                .topic_queue_mapping_by_broker
+                .as_ref()
+                .is_some_and(|mappings| !mappings.is_empty());
+        if route.queue_datas.is_none() && !ordered && !static_route {
             return Err(RuntimeError::InvalidRoute("null queue data list"));
         }
         if let Some(mappings) = &route.topic_queue_mapping_by_broker {
@@ -322,6 +331,8 @@ impl RouteCache {
             // Java publishes a TopicRouteData copy whose constructor
             // normalizes null collections to empty containers.
             route: Arc::new(TopicRouteData {
+                queue_datas: Some(route.queue_datas.clone().unwrap_or_default()),
+                broker_datas: Some(route.broker_datas.clone().unwrap_or_default()),
                 filter_server_table: Some(route.filter_server_table.clone().unwrap_or_default()),
                 ..route
             }),
@@ -540,7 +551,10 @@ mod tests {
             if let Some(cached) = snapshot.raw_routes.get("topic") {
                 assert_eq!(cached.queue_datas.is_none(), case["cachedQueueNull"]);
                 assert_eq!(cached.broker_datas.is_none(), case["cachedBrokerNull"]);
-                assert_eq!(cached.filter_server_table.is_none(), case["cachedFilterNull"]);
+                assert_eq!(
+                    cached.filter_server_table.is_none(),
+                    case["cachedFilterNull"]
+                );
             }
         }
     }
