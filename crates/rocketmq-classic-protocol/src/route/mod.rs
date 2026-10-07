@@ -97,11 +97,14 @@ pub struct TopicQueueMappingInfo {
 pub struct TopicRouteData {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_topic_conf: Option<String>,
-    #[serde(default = "default_route_vec")]
+    #[serde(default = "default_route_vec", skip_serializing_if = "Option::is_none")]
     pub queue_datas: Option<Vec<QueueData>>,
-    #[serde(default = "default_route_vec")]
+    #[serde(default = "default_route_vec", skip_serializing_if = "Option::is_none")]
     pub broker_datas: Option<Vec<BrokerData>>,
-    #[serde(default = "default_filter_table")]
+    #[serde(
+        default = "default_filter_table",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub filter_server_table: Option<BTreeMap<String, Vec<String>>>,
     pub topic_queue_mapping_by_broker: Option<BTreeMap<String, TopicQueueMappingInfo>>,
 }
