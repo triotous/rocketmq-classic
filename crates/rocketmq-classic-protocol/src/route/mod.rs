@@ -73,6 +73,10 @@ mod nullable_route_collection_tests {
                 assert_eq!(encoded.get(field).is_none(), case[decoded_key]);
                 assert_eq!(encoded.get(field).is_some(), case[encoded_key]);
             }
+            assert_eq!(
+                encoded.get("topicQueueMappingByBroker").is_some(),
+                case["encodedHasMapping"]
+            );
         }
     }
 }

@@ -101,6 +101,7 @@ public final class RuntimeRouteFixtures {
             item.put("encodedHasQueue", encoded.containsKey("queueDatas"));
             item.put("encodedHasBroker", encoded.containsKey("brokerDatas"));
             item.put("encodedHasFilter", encoded.containsKey("filterServerTable"));
+            item.put("encodedHasMapping", encoded.containsKey("topicQueueMappingByBroker"));
             item.put("copyQueueEmpty", copy.getQueueDatas().isEmpty());
             item.put("copyBrokerEmpty", copy.getBrokerDatas().isEmpty());
             item.put("copyFilterEmpty", copy.getFilterServerTable().isEmpty());
