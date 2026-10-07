@@ -87,7 +87,10 @@ async fn raw_clear_query_refetches_once_and_retained_table_observes_wire_refresh
         &refreshed
     ));
     assert_eq!(
-        refreshed.broker_datas[0].broker_addrs.as_ref().unwrap()[&0],
+        refreshed.broker_datas.as_ref().unwrap()[0]
+            .broker_addrs
+            .as_ref()
+            .unwrap()[&0],
         Some("master:10911".to_owned())
     );
     assert!(Arc::ptr_eq(
@@ -266,7 +269,7 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
         case["metadataEqualConditionalRemoveAccepted"]
     );
     let mut invalid = first.as_ref().clone();
-    invalid.broker_datas[0].broker_addrs = None;
+    invalid.broker_datas.as_mut().unwrap()[0].broker_addrs = None;
     let invalid = Arc::new(invalid);
     table.put("invalid", invalid.clone()).unwrap();
     assert!(same(

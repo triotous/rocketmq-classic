@@ -587,7 +587,11 @@ impl ClientRuntime {
             Err(error) => return Err(error.into()),
         };
         if let Some(limit) = default_topic_queue_nums {
-            for data in &mut route.queue_datas {
+            for data in route
+                .queue_datas
+                .as_mut()
+                .ok_or(RuntimeError::InvalidRoute("null queue data list"))?
+            {
                 let count = limit.min(data.read_queue_nums);
                 data.read_queue_nums = count;
                 data.write_queue_nums = count;

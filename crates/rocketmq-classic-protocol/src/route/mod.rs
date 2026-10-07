@@ -91,15 +91,38 @@ pub struct TopicQueueMappingInfo {
     pub curr_id_map: Option<BTreeMap<i32, i32>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TopicRouteData {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_topic_conf: Option<String>,
-    pub queue_datas: Vec<QueueData>,
-    pub broker_datas: Vec<BrokerData>,
-    pub filter_server_table: BTreeMap<String, Vec<String>>,
+    #[serde(default = "default_route_vec")]
+    pub queue_datas: Option<Vec<QueueData>>,
+    #[serde(default = "default_route_vec")]
+    pub broker_datas: Option<Vec<BrokerData>>,
+    #[serde(default = "default_filter_table")]
+    pub filter_server_table: Option<BTreeMap<String, Vec<String>>>,
     pub topic_queue_mapping_by_broker: Option<BTreeMap<String, TopicQueueMappingInfo>>,
+}
+
+fn default_route_vec<T>() -> Option<Vec<T>> {
+    Some(Vec::new())
+}
+
+fn default_filter_table() -> Option<BTreeMap<String, Vec<String>>> {
+    Some(BTreeMap::new())
+}
+
+impl Default for TopicRouteData {
+    fn default() -> Self {
+        Self {
+            order_topic_conf: None,
+            queue_datas: default_route_vec(),
+            broker_datas: default_route_vec(),
+            filter_server_table: default_filter_table(),
+            topic_queue_mapping_by_broker: None,
+        }
+    }
 }
 
 fn default_mapping_scope() -> Option<String> {
@@ -132,7 +155,7 @@ impl TopicRouteData {
         }
 
         let mut masters = BTreeMap::new();
-        for broker in &self.broker_datas {
+        for broker in self.broker_datas.as_deref().unwrap_or(&[]) {
             masters
                 .entry(broker.broker_name.as_str())
                 .or_insert_with(|| {
@@ -142,7 +165,12 @@ impl TopicRouteData {
                         .is_some_and(|addresses| addresses.contains_key(&0))
                 });
         }
-        let mut queue_data = self.queue_datas.iter().collect::<Vec<_>>();
+        let mut queue_data = self
+            .queue_datas
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .collect::<Vec<_>>();
         queue_data.sort_by(|left, right| left.broker_name.cmp(&right.broker_name));
         queue_data
             .into_iter()
@@ -168,6 +196,8 @@ impl TopicRouteData {
         let mut counts = BTreeMap::<&str, i32>::new();
         for data in self
             .queue_datas
+            .as_deref()
+            .unwrap_or(&[])
             .iter()
             .filter(|data| data.read_queue_nums > 0 && data.perm & 0x4 != 0)
         {
@@ -298,10 +328,11 @@ mod tests {
     #[test]
     fn ordinary_publish_uses_first_matching_broker_and_static_publish_orders_ids_across_scopes() {
         let mut route = route();
-        let mut duplicate = route.broker_datas[0].clone();
+        let mut duplicate = route.broker_datas.as_ref().unwrap()[0].clone();
         duplicate.broker_addrs = Some(BTreeMap::from([(0, Some("other-master".into()))]));
-        route.broker_datas[0].broker_addrs = Some(BTreeMap::from([(1, Some("slave".into()))]));
-        route.broker_datas.push(duplicate);
+        route.broker_datas.as_mut().unwrap()[0].broker_addrs =
+            Some(BTreeMap::from([(1, Some("slave".into()))]));
+        route.broker_datas.as_mut().unwrap().push(duplicate);
         assert!(route.publish_queues("topic").is_empty());
         route.topic_queue_mapping_by_broker = Some(BTreeMap::from([
             (
@@ -338,12 +369,17 @@ mod tests {
     #[test]
     fn duplicate_queue_data_retains_java_stable_publish_order_and_set_subscription() {
         let mut route = route();
-        route.broker_datas[0].broker_addrs = Some(BTreeMap::from([(0, Some("master".into()))]));
-        route.queue_datas.retain(|queue| queue.broker_name == "b1");
-        let mut second = route.queue_datas[0].clone();
+        route.broker_datas.as_mut().unwrap()[0].broker_addrs =
+            Some(BTreeMap::from([(0, Some("master".into()))]));
+        route
+            .queue_datas
+            .as_mut()
+            .unwrap()
+            .retain(|queue| queue.broker_name == "b1");
+        let mut second = route.queue_datas.as_ref().unwrap()[0].clone();
         second.read_queue_nums = 1;
         second.write_queue_nums = 1;
-        route.queue_datas.push(second);
+        route.queue_datas.as_mut().unwrap().push(second);
         assert_eq!(
             route
                 .publish_queues("topic")
@@ -364,7 +400,7 @@ mod tests {
 
     fn route() -> TopicRouteData {
         TopicRouteData {
-            queue_datas: vec![
+            queue_datas: Some(vec![
                 QueueData {
                     broker_name: "b1".into(),
                     read_queue_nums: 2,
@@ -386,8 +422,8 @@ mod tests {
                     perm: 6,
                     topic_sys_flag: 0,
                 },
-            ],
-            broker_datas: vec![
+            ]),
+            broker_datas: Some(vec![
                 BrokerData {
                     broker_name: "b1".into(),
                     ..BrokerData::default()
@@ -396,7 +432,7 @@ mod tests {
                     broker_name: "b2".into(),
                     ..BrokerData::default()
                 },
-            ],
+            ]),
             ..TopicRouteData::default()
         }
     }
@@ -404,7 +440,8 @@ mod tests {
     #[test]
     fn converts_writable_and_readable_queues_without_absent_masters() {
         let mut route = route();
-        route.broker_datas[0].broker_addrs = Some(BTreeMap::from([(0, Some("b1-master".into()))]));
+        route.broker_datas.as_mut().unwrap()[0].broker_addrs =
+            Some(BTreeMap::from([(0, Some("b1-master".into()))]));
         assert_eq!(route.publish_queues("t").len(), 3);
         assert_eq!(route.subscribe_queues("t").len(), 15);
     }

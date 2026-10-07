@@ -50,7 +50,7 @@ impl RouteSnapshot {
         let Some(route) = self.raw_routes.get(topic) else {
             return Ok(None);
         };
-        let brokers = &route.broker_datas;
+        let brokers = route.broker_datas.as_deref().unwrap_or(&[]);
         if brokers.is_empty() {
             return Ok(None);
         }
@@ -196,7 +196,7 @@ impl RouteCache {
         let live = current
             .raw_routes
             .values()
-            .flat_map(|route| route.broker_datas.iter())
+            .flat_map(|route| route.broker_datas.as_deref().unwrap_or(&[]).iter())
             .filter_map(|broker| broker.broker_addrs.as_ref())
             .flat_map(|addresses| addresses.values())
             .cloned()
@@ -246,8 +246,16 @@ impl RouteCache {
         // Java's brokerAddrTable is a ConcurrentHashMap: publishing a null
         // address map fails, it is not a valid empty Broker. Validate before
         // any conversion/publication to preserve the coherent native snapshot.
+        if route.broker_datas.is_none() {
+            return Err(RuntimeError::InvalidRoute("null broker data list"));
+        }
+        if route.queue_datas.is_none() {
+            return Err(RuntimeError::InvalidRoute("null queue data list"));
+        }
         if route
             .broker_datas
+            .as_deref()
+            .unwrap_or(&[])
             .iter()
             .any(|broker| broker.broker_addrs.is_none())
         {
@@ -280,23 +288,29 @@ impl RouteCache {
         // Raw order presence controls branch selection, even when a separator-
         // only Java split normalizes to an empty conversion string.
         validate_conversion_size(topic, &route)?;
-        let mut topic_snapshot =
-            TopicSnapshot {
-                publish_queues: if route.order_topic_conf.as_deref().is_some_and(|value| {
-                    !value.is_empty() && value.trim_end_matches(';').is_empty()
-                }) {
-                    Vec::new()
-                } else {
-                    conversion_route.publish_queues(topic)
-                },
-                subscribe_queues: route.subscribe_queues(topic).into_iter().collect(),
-                endpoints: route.static_queue_endpoints(topic).unwrap_or_default(),
-                order_topic: route
-                    .order_topic_conf
-                    .as_ref()
-                    .is_some_and(|value| !value.is_empty()),
-                route: Arc::new(route),
-            };
+        let mut topic_snapshot = TopicSnapshot {
+            publish_queues: if route
+                .order_topic_conf
+                .as_deref()
+                .is_some_and(|value| !value.is_empty() && value.trim_end_matches(';').is_empty())
+            {
+                Vec::new()
+            } else {
+                conversion_route.publish_queues(topic)
+            },
+            subscribe_queues: route.subscribe_queues(topic).into_iter().collect(),
+            endpoints: route.static_queue_endpoints(topic).unwrap_or_default(),
+            order_topic: route
+                .order_topic_conf
+                .as_ref()
+                .is_some_and(|value| !value.is_empty()),
+            // Java publishes a TopicRouteData copy whose constructor
+            // normalizes null collections to empty containers.
+            route: Arc::new(TopicRouteData {
+                filter_server_table: Some(route.filter_server_table.clone().unwrap_or_default()),
+                ..route
+            }),
+        };
         let mut current = self
             .snapshot
             .write()
@@ -317,7 +331,7 @@ impl RouteCache {
         let mut next = current.as_ref().clone();
         next.raw_routes
             .insert(topic.to_owned(), topic_snapshot.route.clone());
-        for broker in &topic_snapshot.route.broker_datas {
+        for broker in topic_snapshot.route.broker_datas.as_deref().unwrap_or(&[]) {
             next.broker_addresses.insert(
                 broker.broker_name.clone(),
                 broker.broker_addrs.clone().unwrap_or_default(),
@@ -390,7 +404,7 @@ fn validate_conversion_size(topic: &str, route: &TopicRouteData) -> Result<(), R
         }
     }
     let mut read_counts = BTreeMap::<&str, i32>::new();
-    for queue in &route.queue_datas {
+    for queue in route.queue_datas.as_deref().unwrap_or(&[]) {
         if mappings.is_none() && queue.perm & 4 != 0 {
             let count = read_counts.entry(&queue.broker_name).or_default();
             *count = (*count).max(queue.read_queue_nums);
@@ -401,6 +415,8 @@ fn validate_conversion_size(topic: &str, route: &TopicRouteData) -> Result<(), R
         {
             let master = route
                 .broker_datas
+                .as_deref()
+                .unwrap_or(&[])
                 .iter()
                 .find(|broker| broker.broker_name == queue.broker_name)
                 .and_then(|broker| broker.broker_addrs.as_ref())
@@ -433,10 +449,13 @@ fn routes_equal(left: &TopicRouteData, right: &TopicRouteData) -> bool {
     for route in [&mut left, &mut right] {
         route
             .queue_datas
+            .get_or_insert_with(Vec::new)
             .sort_by(|a, b| a.broker_name.cmp(&b.broker_name));
         route
             .broker_datas
+            .get_or_insert_with(Vec::new)
             .sort_by(|a, b| a.broker_name.cmp(&b.broker_name));
+        route.filter_server_table.get_or_insert_with(BTreeMap::new);
     }
     route_values_equal(&left, &right)
 }
@@ -448,14 +467,17 @@ pub(super) fn route_values_equal(left: &TopicRouteData, right: &TopicRouteData) 
         && left.queue_datas == right.queue_datas
         && left.filter_server_table == right.filter_server_table
         && left.topic_queue_mapping_by_broker == right.topic_queue_mapping_by_broker
-        && left.broker_datas.len() == right.broker_datas.len()
-        && left
-            .broker_datas
-            .iter()
-            .zip(&right.broker_datas)
-            .all(|(left, right)| {
-                left.broker_name == right.broker_name && left.broker_addrs == right.broker_addrs
-            })
+        && match (&left.broker_datas, &right.broker_datas) {
+            (None, None) => true,
+            (Some(left), Some(right)) => {
+                left.len() == right.len()
+                    && left.iter().zip(right).all(|(left, right)| {
+                        left.broker_name == right.broker_name
+                            && left.broker_addrs == right.broker_addrs
+                    })
+            }
+            _ => false,
+        }
 }
 
 /// Java MixAll.brokerVIPChannel, with checked socket ports and bracketed IPv6.
@@ -488,6 +510,49 @@ pub fn broker_vip_channel(enabled: bool, address: &str) -> Result<String, Runtim
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nullable_route_collections_preserve_raw_values_and_copy_comparison() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["nullableRouteCollections"].as_array().unwrap() {
+            let route: TopicRouteData = serde_json::from_value(case["input"].clone()).unwrap();
+            let mut copy = route.clone();
+            copy.queue_datas.get_or_insert_with(Vec::new);
+            copy.broker_datas.get_or_insert_with(Vec::new);
+            copy.filter_server_table.get_or_insert_with(BTreeMap::new);
+            assert_eq!(
+                copy.queue_datas.as_ref().unwrap().is_empty(),
+                case["copyQueueEmpty"]
+            );
+            assert_eq!(
+                copy.broker_datas.as_ref().unwrap().is_empty(),
+                case["copyBrokerEmpty"]
+            );
+            assert_eq!(
+                copy.filter_server_table.as_ref().unwrap().is_empty(),
+                case["copyFilterEmpty"]
+            );
+            assert!(routes_equal(&route, &copy));
+            if route != copy {
+                assert!(!route_values_equal(&route, &copy));
+            }
+            let cache = RouteCache::default();
+            if route.queue_datas.is_none() || route.broker_datas.is_none() {
+                assert!(matches!(
+                    cache.replace("topic", route),
+                    Err(RuntimeError::InvalidRoute(_))
+                ));
+            } else {
+                assert!(cache.replace("topic", route.clone()).unwrap());
+                assert!(!cache.route_changed("topic", &copy).unwrap());
+                assert_eq!(
+                    cache.snapshot().unwrap().raw_routes["topic"].as_ref(),
+                    &copy
+                );
+            }
+        }
+    }
 
     #[test]
     fn offline_cleanup_skips_null_raw_broker_maps_like_invoked_java() {
@@ -525,7 +590,7 @@ mod tests {
                 case["rawObjectRetained"]
             );
             assert_eq!(
-                after.raw_routes["raw"].broker_datas[0]
+                after.raw_routes["raw"].broker_datas.as_ref().unwrap()[0]
                     .broker_addrs
                     .is_none(),
                 case["rawNullMapRetained"]
@@ -602,7 +667,7 @@ mod tests {
         assert!(table.contains_key("topic").unwrap());
         assert_eq!(before.publish_address("broker"), Some("master:10911"));
         let mut invalid = before.raw_routes["topic"].as_ref().clone();
-        invalid.broker_datas[0].broker_addrs = None;
+        invalid.broker_datas.as_mut().unwrap()[0].broker_addrs = None;
         let invalid = Arc::new(invalid);
         table.put("invalid", invalid.clone()).unwrap();
         assert_eq!(
@@ -773,7 +838,7 @@ mod tests {
     fn offline_cleanup_preserves_live_null_values_but_removes_stale_ones() {
         let cache = RouteCache::default();
         let mut route = route(1);
-        route.broker_datas[0].broker_addrs = Some(BTreeMap::from([(0, None)]));
+        route.broker_datas.as_mut().unwrap()[0].broker_addrs = Some(BTreeMap::from([(0, None)]));
         cache.replace("topic", route).unwrap();
         cache.clean_offline().unwrap();
         assert_eq!(
@@ -809,7 +874,7 @@ mod tests {
         assert!(Arc::ptr_eq(&before, &cache.snapshot().unwrap()));
         // A legitimate empty map remains distinct from null and is accepted.
         let mut empty = route;
-        empty.broker_datas[0].broker_addrs = Some(BTreeMap::new());
+        empty.broker_datas.as_mut().unwrap()[0].broker_addrs = Some(BTreeMap::new());
         assert!(cache.replace("topic", empty).unwrap());
     }
 
@@ -871,11 +936,15 @@ mod tests {
     fn topic_selection_uses_raw_route_and_selected_empty_broker_is_not_skipped() {
         let cache = RouteCache::default();
         let mut original = route(1);
-        original.broker_datas[0].broker_addrs = Some(BTreeMap::from([
+        original.broker_datas.as_mut().unwrap()[0].broker_addrs = Some(BTreeMap::from([
             (2, Some("slave-a:10911".into())),
             (3, Some("slave-b:10911".into())),
         ]));
-        original.broker_datas.push(route(2).broker_datas.remove(0));
+        original
+            .broker_datas
+            .as_mut()
+            .unwrap()
+            .push(route(2).broker_datas.unwrap().remove(0));
         cache.replace("original", original.clone()).unwrap();
         cache.replace("overwriter", route(9)).unwrap();
         let snapshot = cache.snapshot().unwrap();
@@ -894,7 +963,7 @@ mod tests {
             snapshot.select_topic_broker("original", |_| 1).unwrap(),
             Some("master-2:10911")
         );
-        original.broker_datas[0].broker_addrs = Some(BTreeMap::new());
+        original.broker_datas.as_mut().unwrap()[0].broker_addrs = Some(BTreeMap::new());
         cache.replace("original", original).unwrap();
         assert!(matches!(
             cache
@@ -947,21 +1016,21 @@ mod tests {
 
     fn route(count: i32) -> TopicRouteData {
         TopicRouteData {
-            queue_datas: vec![QueueData {
+            queue_datas: Some(vec![QueueData {
                 broker_name: "broker".into(),
                 read_queue_nums: count,
                 write_queue_nums: count,
                 perm: 6,
                 ..Default::default()
-            }],
-            broker_datas: vec![BrokerData {
+            }]),
+            broker_datas: Some(vec![BrokerData {
                 broker_name: "broker".into(),
                 broker_addrs: Some(BTreeMap::from([
                     (0, Some(format!("master-{count}:10911"))),
                     (2, Some("slave:10911".into())),
                 ])),
                 ..Default::default()
-            }],
+            }]),
             ..Default::default()
         }
     }
@@ -1068,7 +1137,8 @@ mod tests {
                     for _ in 0..1000 {
                         let snapshot = cache.snapshot().unwrap();
                         let topic = &snapshot.topics["topic"];
-                        let count = topic.route.queue_datas[0].read_queue_nums as usize;
+                        let count =
+                            topic.route.queue_datas.as_ref().unwrap()[0].read_queue_nums as usize;
                         assert_eq!(topic.publish_queues.len(), count);
                         assert_eq!(topic.subscribe_queues.len(), count);
                         assert_eq!(
@@ -1156,7 +1226,7 @@ mod tests {
         use rocketmq_classic_protocol::route::TopicQueueMappingInfo;
         let cache = RouteCache::default();
         let mut ordered = route(0);
-        ordered.queue_datas[0].write_queue_nums = i32::MAX;
+        ordered.queue_datas.as_mut().unwrap()[0].write_queue_nums = i32::MAX;
         ordered.order_topic_conf = Some(";;".into());
         cache.replace("topic", ordered).unwrap();
         assert!(

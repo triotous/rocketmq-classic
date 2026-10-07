@@ -493,6 +493,8 @@ async fn default_route_fetch_uses_auto_create_topic_and_clamps_both_counts_from_
     assert_eq!(
         info.route
             .queue_datas
+            .as_ref()
+            .unwrap()
             .iter()
             .map(|data| (data.read_queue_nums, data.write_queue_nums))
             .collect::<Vec<_>>(),
@@ -522,6 +524,8 @@ async fn default_route_fetch_uses_auto_create_topic_and_clamps_both_counts_from_
         negative.topics["negative"]
             .route
             .queue_datas
+            .as_ref()
+            .unwrap()
             .iter()
             .all(|data| data.read_queue_nums == -2 && data.write_queue_nums == -2)
     );

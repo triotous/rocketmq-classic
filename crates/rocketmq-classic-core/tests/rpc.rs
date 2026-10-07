@@ -391,17 +391,17 @@ async fn route_reply(code: i32, body: Option<Vec<u8>>) -> (MQClientApi, Remoting
 #[tokio::test]
 async fn route_success_unknown_status_and_malformed_success() {
     let nonempty = serde_json::to_vec(&rocketmq_classic_protocol::route::TopicRouteData {
-        queue_datas: vec![rocketmq_classic_protocol::route::QueueData {
+        queue_datas: Some(vec![rocketmq_classic_protocol::route::QueueData {
             broker_name: "broker-a".into(),
             write_queue_nums: 2,
             perm: 6,
             ..Default::default()
-        }],
-        broker_datas: vec![rocketmq_classic_protocol::route::BrokerData {
+        }]),
+        broker_datas: Some(vec![rocketmq_classic_protocol::route::BrokerData {
             broker_name: "broker-a".into(),
             broker_addrs: Some([(0, Some("broker:10911".into()))].into()),
             ..Default::default()
-        }],
+        }]),
         ..Default::default()
     })
     .unwrap();
