@@ -413,6 +413,11 @@ public final class RuntimeConfigFixtures {
                     outcome.put("languageKeyPresent", json.containsKey("language"));
                     outcome.put("decodedLanguage", org.apache.rocketmq.remoting.protocol.RemotingSerializable.decode(header,
                         org.apache.rocketmq.remoting.protocol.RemotingCommand.class).getLanguage().toString());
+                    byte[] explicitNull = "{\"code\":34,\"language\":null}"
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                    outcome.put("explicitNullDecodedLanguageNull",
+                        org.apache.rocketmq.remoting.protocol.RemotingSerializable.decode(explicitNull,
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand.class).getLanguage() == null);
                 }
             } catch (RuntimeException error) { outcome.put("outcome", error.getClass().getSimpleName()); }
             result.put(type.name(), outcome);

@@ -4,9 +4,45 @@ use bytes::BytesMut;
 use rocketmq_classic_protocol::{codes::SerializeType, header::CommandHeader};
 use rocketmq_classic_remoting::{
     CodecError,
-    codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
+    codec::{
+        frame::{self, DEFAULT_MAX_FRAME_SIZE},
+        json_header, rocketmq_header,
+    },
     command::RemotingCommand,
 };
+
+#[test]
+fn nullable_language_matches_invoked_java_json_and_binary_boundaries() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = &fixture["nullableSettings"];
+    let command = RemotingCommand {
+        code: 34,
+        language: None,
+        ..Default::default()
+    };
+    let json = json_header::encode(&command, DEFAULT_MAX_FRAME_SIZE).unwrap();
+    let fields: serde_json::Value = serde_json::from_slice(&json).unwrap();
+    assert_eq!(
+        fields.get("language").is_some(),
+        java["JSON"]["languageKeyPresent"]
+    );
+    assert_eq!(
+        json_header::decode(&json).unwrap().language,
+        Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+    );
+    assert_eq!(java["JSON"]["decodedLanguage"], "JAVA");
+    let explicit_null = br#"{"code":34,"language":null}"#;
+    assert_eq!(
+        json_header::decode(explicit_null)
+            .unwrap()
+            .language
+            .is_none(),
+        java["JSON"]["explicitNullDecodedLanguageNull"]
+    );
+    assert!(rocketmq_header::encode(&command, DEFAULT_MAX_FRAME_SIZE).is_err());
+    assert_eq!(java["ROCKETMQ"]["outcome"], "NullPointerException");
+}
 
 fn fixture_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/remoting")
