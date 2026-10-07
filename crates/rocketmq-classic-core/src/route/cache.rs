@@ -527,6 +527,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn nullable_route_collection_refresh_matches_invoked_unstarted_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["runtimeNullableCollections"].as_array().unwrap() {
+            let cache = RouteCache::default();
+            let route: TopicRouteData = serde_json::from_value(case["input"].clone()).unwrap();
+            let result = cache.replace("topic", route);
+            assert_eq!(result.is_ok(), case["outcome"] == "OK");
+            let snapshot = cache.snapshot().unwrap();
+            assert_eq!(snapshot.raw_routes.contains_key("topic"), case["cached"]);
+            if let Some(cached) = snapshot.raw_routes.get("topic") {
+                assert_eq!(cached.queue_datas.is_none(), case["cachedQueueNull"]);
+                assert_eq!(cached.broker_datas.is_none(), case["cachedBrokerNull"]);
+                assert_eq!(cached.filter_server_table.is_none(), case["cachedFilterNull"]);
+            }
+        }
+    }
+
+    #[test]
     fn nullable_static_mapping_conversion_matches_invoked_java_failures() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
