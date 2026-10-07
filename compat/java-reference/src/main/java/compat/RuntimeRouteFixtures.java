@@ -82,6 +82,29 @@ public final class RuntimeRouteFixtures {
         return cases;
     }
 
+    private static List<Object> nullableRouteCollections() {
+        List<Object> cases = new ArrayList<>();
+        for (String input : new String[] {
+            "{\"queueDatas\":null,\"brokerDatas\":[],\"filterServerTable\":{}}",
+            "{\"queueDatas\":[],\"brokerDatas\":null,\"filterServerTable\":{}}",
+            "{\"queueDatas\":[],\"brokerDatas\":[],\"filterServerTable\":null}",
+            "{\"queueDatas\":[],\"brokerDatas\":[],\"filterServerTable\":{}}"
+        }) {
+            TopicRouteData route = com.alibaba.fastjson2.JSON.parseObject(input, TopicRouteData.class);
+            TopicRouteData copy = new TopicRouteData(route);
+            Map<String, Object> item = new TreeMap<>();
+            item.put("input", com.alibaba.fastjson2.JSON.parseObject(input));
+            item.put("decodedQueueNull", route.getQueueDatas() == null);
+            item.put("decodedBrokerNull", route.getBrokerDatas() == null);
+            item.put("decodedFilterNull", route.getFilterServerTable() == null);
+            item.put("copyQueueEmpty", copy.getQueueDatas().isEmpty());
+            item.put("copyBrokerEmpty", copy.getBrokerDatas().isEmpty());
+            item.put("copyFilterEmpty", copy.getFilterServerTable().isEmpty());
+            cases.add(item);
+        }
+        return cases;
+    }
+
     private static Map<String, Object> runtimeNullBrokerMap() throws Exception {
         org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
         config.setClientIP("route-null-map");
@@ -405,6 +428,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("integers", integerCases);
         fixture.put("runtimeNullBrokerMap", runtimeNullBrokerMap());
         fixture.put("runtimeNullBrokerValues", runtimeNullBrokerValues());
+        fixture.put("nullableRouteCollections", nullableRouteCollections());
         fixture.put("runtimeEmptyEndpointTransition", runtimeEmptyEndpointTransition(staticInputs.get(0), inputs.get(0)));
         fixture.put("runtimeTopicRouteTable", runtimeTopicRouteTable(inputs.get(0)));
         fixture.put("runtimeRawOfflineCleanup", runtimeRawOfflineCleanup(inputs.get(0)));

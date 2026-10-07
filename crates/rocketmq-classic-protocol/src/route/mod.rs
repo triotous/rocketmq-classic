@@ -53,6 +53,29 @@ mod nullable_broker_address_tests {
     }
 }
 
+#[cfg(test)]
+mod nullable_route_collection_tests {
+    use super::TopicRouteData;
+
+    #[test]
+    fn source_explicit_null_route_collections_decode_without_becoming_empty() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["nullableRouteCollections"].as_array().unwrap() {
+            let route: TopicRouteData = serde_json::from_value(case["input"].clone())
+                .expect("Java decodes explicit null route collections");
+            let encoded = serde_json::to_value(route).unwrap();
+            for (field, key) in [
+                ("queueDatas", "decodedQueueNull"),
+                ("brokerDatas", "decodedBrokerNull"),
+                ("filterServerTable", "decodedFilterNull"),
+            ] {
+                assert_eq!(encoded[field].is_null(), case[key]);
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct TopicQueueMappingInfo {
