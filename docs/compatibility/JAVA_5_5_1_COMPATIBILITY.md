@@ -1,5 +1,7 @@
 # Java 5.5.1 compatibility evidence
 
+Null route JSON correction `d6a44ad`/`09af643` supersedes the earlier wording below: explicit null stays null in the decoded public DTO, and Java/default Rust JSON output **omits** that field. Re-reading the omitted field initializes an empty collection. Java fixture SHA-256 `dd857cbf868945eecc96f05b8d041c5191aec430594e15daca69edce8a875ab0`; native red/green golden, full workspace, Maven and strict Clippy pass.
+
 Nullable route collections `0d8daec`/`86af455`: the public `TopicRouteData` preserves explicit null queue, broker and filter collections on decode/serialize, and route comparison/cache publication use the Java copy constructor's empty normalization. The Java fixture, native focused checks, full workspace and strict Clippy pass. Static-mapping/consumer-free null queue behavior and the broader source/input audit are still open; Phase 6 remains PARTIAL.
 
 Nullable command language `40bd7cf`/`63b7feb` supersedes the historical missing-language clause in the Phase 6 row. Public config and command models now retain null, JSON omission versus explicit null decoding follows the invoked Java fixture, binary null encode errors, and heartbeat hook/wire tests pass. Both confirmed nullable lower-model mismatches are corrected. Phase 6 remains PARTIAL for the remaining API/source/input audit; P6-V04 remains pending Phase 19.

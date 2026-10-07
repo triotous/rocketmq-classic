@@ -1,5 +1,7 @@
 # Phase 6 requirement and handoff audit
 
+Null route wire correction `d6a44ad`/`09af643` adds actual Java `toJson()` evidence: null collections are omitted from JSON, decoded null remains distinct in memory, and omitted fields reinitialize empty. The native regression was red before serializer correction and passes now; full workspace, pinned Maven and strict Clippy pass. This narrows only the demonstrated DTO/wire case, leaving the broader source/input audit open.
+
 Nullable route collection update `0d8daec`/`86af455`: pinned Java Fastjson and copy-constructor cases establish explicit null versus empty for three public route collections. Native DTO, route comparison and cache publication now preserve those observed distinctions; protocol/core fixture tests, full workspace and strict Clippy pass. This closes the demonstrated DTO mismatch. The static-mapping/consumer-free null queue branch and broader API/source/input audit remain open, so Phase 6 is still incomplete.
 
 Status: **INCOMPLETE — not Phase 6 acceptance or Phase 7 handoff**. Current nullable Broker correction is `8fb1ec8`; the earlier `dd7a569` red/ignored oracle status is historical. Inspected production baseline: `a2779c3`; live handoff registration is `5b3212b`; blank-serve ownership mapping is `c3eb2f8`. Client oracle is `rocketmq-all-5.5.1`, commit `efa1be59d6fc747ad220f036c86030f05f0419f9`, artifact `org.apache.rocketmq:rocketmq-client:5.5.1`. Java repository is read-only. Server 5.3.4 is a Phase 19 execution baseline, not a Phase 6 prerequisite.
