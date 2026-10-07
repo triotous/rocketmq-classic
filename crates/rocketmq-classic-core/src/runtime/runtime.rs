@@ -243,10 +243,9 @@ impl ClientRuntime {
         offset_table
             .into_iter()
             .map(|(queue, offset)| {
-                let topic = crate::config::namespace::unwrap(Some(namespace), Some(queue.topic()))
-                    .expect("typed queue topic cannot be null");
+                let topic = crate::config::namespace::unwrap(Some(namespace), queue.topic());
                 (
-                    rocketmq_classic_common::message::MessageQueue::new_nullable_broker(
+                    rocketmq_classic_common::message::MessageQueue::new_nullable(
                         topic,
                         queue.broker_name().map(str::to_owned),
                         queue.queue_id(),

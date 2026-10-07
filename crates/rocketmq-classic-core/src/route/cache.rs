@@ -141,7 +141,10 @@ impl RouteSnapshot {
     }
 
     pub fn broker_name<'a>(&'a self, queue: &'a MessageQueue) -> Option<&'a str> {
-        let endpoints = self.topics.get(queue.topic()).map(|topic| &topic.endpoints);
+        let endpoints = queue
+            .topic()
+            .and_then(|name| self.topics.get(name))
+            .map(|topic| &topic.endpoints);
         match endpoints.filter(|endpoints| !endpoints.is_empty()) {
             Some(endpoints) => endpoints.get(queue).map(String::as_str),
             None => queue.broker_name(),

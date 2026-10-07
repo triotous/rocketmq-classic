@@ -138,7 +138,10 @@ mod nullable_message_queue_tests {
             assert_eq!(encoded.get("topic").is_none(), case["topicNull"]);
             assert_eq!(encoded.get("brokerName").is_none(), case["brokerNull"]);
             assert_eq!(encoded.get("topic").is_some(), case["encodedHasTopic"]);
-            assert_eq!(encoded.get("brokerName").is_some(), case["encodedHasBroker"]);
+            assert_eq!(
+                encoded.get("brokerName").is_some(),
+                case["encodedHasBroker"]
+            );
             assert_eq!(queue.queue_id(), case["queueId"].as_i64().unwrap() as i32);
         }
     }

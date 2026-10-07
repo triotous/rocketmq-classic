@@ -281,21 +281,22 @@ impl MessageExt {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct MessageQueue {
-    topic: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    topic: Option<String>,
     #[serde(
         rename = "brokerName",
         default,
         skip_serializing_if = "Option::is_none"
     )]
     broker_name: Option<String>,
-    #[serde(rename = "queueId")]
+    #[serde(rename = "queueId", default)]
     queue_id: i32,
 }
 
 impl MessageQueue {
     pub fn new(topic: impl Into<String>, broker_name: impl Into<String>, queue_id: i32) -> Self {
         Self {
-            topic: topic.into(),
+            topic: Some(topic.into()),
             broker_name: Some(broker_name.into()),
             queue_id,
         }
@@ -306,13 +307,20 @@ impl MessageQueue {
         queue_id: i32,
     ) -> Self {
         Self {
-            topic: topic.into(),
+            topic: Some(topic.into()),
             broker_name,
             queue_id,
         }
     }
-    pub fn topic(&self) -> &str {
-        &self.topic
+    pub fn new_nullable(topic: Option<String>, broker_name: Option<String>, queue_id: i32) -> Self {
+        Self {
+            topic,
+            broker_name,
+            queue_id,
+        }
+    }
+    pub fn topic(&self) -> Option<&str> {
+        self.topic.as_deref()
     }
     pub fn broker_name(&self) -> Option<&str> {
         self.broker_name.as_deref()
@@ -324,7 +332,7 @@ impl MessageQueue {
 
 impl Ord for MessageQueue {
     fn cmp(&self, other: &Self) -> Ordering {
-        java_string_cmp(&self.topic, &other.topic)
+        java_optional_string_cmp(&self.topic, &other.topic)
             .then_with(|| match (&self.broker_name, &other.broker_name) {
                 (Some(left), Some(right)) => java_string_cmp(left, right),
                 (None, None) => Ordering::Equal,
@@ -343,6 +351,15 @@ impl PartialOrd for MessageQueue {
 
 fn java_string_cmp(left: &str, right: &str) -> Ordering {
     left.encode_utf16().cmp(right.encode_utf16())
+}
+
+fn java_optional_string_cmp(left: &Option<String>, right: &Option<String>) -> Ordering {
+    match (left, right) {
+        (Some(left), Some(right)) => java_string_cmp(left, right),
+        (None, None) => Ordering::Equal,
+        (None, Some(_)) => Ordering::Less,
+        (Some(_), None) => Ordering::Greater,
+    }
 }
 
 fn validate_property(key: &str, value: &str) -> Result<(), MessagePropertyError> {

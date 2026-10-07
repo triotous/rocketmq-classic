@@ -242,10 +242,8 @@ impl ClientConfig {
         &mut self,
         queue: &MessageQueue,
     ) -> Result<MessageQueue, ConfigError> {
-        let topic = self
-            .with_namespace(Some(queue.topic()))?
-            .expect("non-null queue topic");
-        Ok(MessageQueue::new_nullable_broker(
+        let topic = self.with_namespace(queue.topic())?;
+        Ok(MessageQueue::new_nullable(
             topic,
             queue.broker_name().map(str::to_owned),
             queue.queue_id(),
@@ -259,9 +257,8 @@ impl ClientConfig {
     ) -> Result<(), ConfigError> {
         let namespace = self.get_namespace()?;
         for queue in queues {
-            let topic =
-                namespace::wrap(namespace, Some(queue.topic())).expect("non-null queue topic");
-            *queue = MessageQueue::new_nullable_broker(
+            let topic = namespace::wrap(namespace, queue.topic());
+            *queue = MessageQueue::new_nullable(
                 topic,
                 queue.broker_name().map(str::to_owned),
                 queue.queue_id(),
@@ -423,12 +420,12 @@ mod tests {
             config.queue_with_namespace(&queue).unwrap(),
             MessageQueue::new("ns%topic", "broker", -1)
         );
-        assert_eq!(queue.topic(), "topic");
+        assert_eq!(queue.topic(), Some("topic"));
         let mut queues = [queue, MessageQueue::new("%DLQ%group", "broker", 2)];
         config.queues_with_namespace(&mut queues).unwrap();
         assert_eq!(queues[1], MessageQueue::new("%DLQ%ns%group", "broker", 2));
         config.queues_with_namespace(&mut queues).unwrap();
-        assert_eq!(queues[0].topic(), "ns%topic");
+        assert_eq!(queues[0].topic(), Some("ns%topic"));
     }
 
     #[test]

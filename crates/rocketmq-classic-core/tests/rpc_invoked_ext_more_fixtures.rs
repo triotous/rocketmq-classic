@@ -175,7 +175,7 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
                         format!(
                             "assignments={};topic={};broker={};queue={};mode=POP;source={}",
                             assignments.len(),
-                            queue.topic(),
+                            queue.topic().unwrap_or_default(),
                             queue.broker_name().unwrap_or_default(),
                             queue.queue_id(),
                             item.attachments.as_ref().unwrap()["source"]

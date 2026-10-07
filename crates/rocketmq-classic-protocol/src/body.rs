@@ -315,7 +315,7 @@ fn encode_java_queue_table_text(
             "{{\"brokerName\":{},\"queueId\":{},\"topic\":{}}}",
             serde_json::to_string(&queue.broker_name())?,
             serde_json::to_string(&queue.queue_id())?,
-            serde_json::to_string(queue.topic())?
+            serde_json::to_string(&queue.topic())?
         );
         parts.push(format!("{queue_key}:{}", serde_json::to_string(offset)?));
     }

@@ -566,7 +566,7 @@ async fn default_route_fetch_uses_auto_create_topic_and_clamps_both_counts_from_
     assert!(
         info.publish_queues
             .iter()
-            .all(|queue| queue.topic() == "created")
+            .all(|queue| queue.topic() == Some("created"))
     );
     assert!(!before.topics.contains_key("TBW102"));
     assert!(

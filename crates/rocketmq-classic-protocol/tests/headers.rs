@@ -383,7 +383,7 @@ fn java_json_body_fixtures_decode_to_typed_assignment_lite_and_batch_models() {
                 9
             );
             let (queue, offset) = &typed.offset_table.as_ref().unwrap()[0];
-            assert_eq!(queue.topic(), "orders");
+            assert_eq!(queue.topic(), Some("orders"));
             assert_eq!(queue.broker_name(), Some("broker-a"));
             assert_eq!(*offset, 9);
             assert_eq!(typed.encode_java_json().unwrap(), raw);
@@ -404,7 +404,7 @@ fn java_json_body_fixtures_decode_to_typed_assignment_lite_and_batch_models() {
                 9
             );
             let (queue, offset) = &typed.message_queue_table[0];
-            assert_eq!(queue.topic(), "orders");
+            assert_eq!(queue.topic(), Some("orders"));
             assert_eq!(queue.broker_name(), Some("broker-a"));
             assert_eq!(*offset, 9);
             assert_eq!(typed.encode_java_json().unwrap(), raw);
@@ -454,7 +454,7 @@ fn java_consumer_list_and_lock_bodies_preserve_optional_and_collection_semantics
     assert_eq!(response.lock_okmq_set[0].queue_id(), 1);
     let unlock_response: LockBatchResponseBody =
         serde_json::from_slice(&read_body("body-unlock-response")).unwrap();
-    assert_eq!(unlock_response.lock_okmq_set[0].topic(), "orders");
+    assert_eq!(unlock_response.lock_okmq_set[0].topic(), Some("orders"));
 }
 
 fn decode_java_queue_offset_body(raw: &[u8], field: &str) -> ResetOffsetBody {

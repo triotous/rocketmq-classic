@@ -249,7 +249,7 @@ async fn list_send_back_lock_and_unlock() {
         .await
         .unwrap();
     assert_eq!(locked.len(), 1);
-    assert_eq!(locked[0].topic(), "orders");
+    assert_eq!(locked[0].topic(), Some("orders"));
     assert_eq!(locked[0].broker_name(), Some("broker"));
     assert_eq!(locked[0].queue_id(), 2);
     client.shutdown().await;
