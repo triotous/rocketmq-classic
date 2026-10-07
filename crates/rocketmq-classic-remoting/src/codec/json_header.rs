@@ -11,11 +11,13 @@ use crate::{command::RemotingCommand, error::CodecError};
 pub fn encode(command: &RemotingCommand, max_length: usize) -> Result<Vec<u8>, CodecError> {
     let mut fields = Map::new();
     fields.insert("code".into(), command.code.into());
-    let language = match command.language {
-        LanguageCode::Unknown(code) => return Err(CodecError::UnsupportedLanguage(code)),
-        language => language_name(language),
-    };
-    fields.insert("language".into(), language.into());
+    if let Some(language) = command.language {
+        let language = match language {
+            LanguageCode::Unknown(code) => return Err(CodecError::UnsupportedLanguage(code)),
+            language => language_name(language),
+        };
+        fields.insert("language".into(), language.into());
+    }
     fields.insert("version".into(), command.version.into());
     fields.insert("opaque".into(), command.opaque.into());
     fields.insert("flag".into(), command.flag.into());
@@ -58,9 +60,12 @@ pub fn decode(bytes: &[u8]) -> Result<RemotingCommand, CodecError> {
         .ok_or_else(|| CodecError::Json("header must be a JSON object".into()))?;
     let code = integer(object.get("code"), "code")?.unwrap_or_default();
     let language = match object.get("language") {
-        None | Some(Value::Null) => LanguageCode::Java,
-        Some(Value::String(name)) => language_code(name)
-            .ok_or_else(|| CodecError::Json(format!("unknown LanguageCode `{name}`")))?,
+        None => Some(LanguageCode::Java),
+        Some(Value::Null) => None,
+        Some(Value::String(name)) => Some(
+            language_code(name)
+                .ok_or_else(|| CodecError::Json(format!("unknown LanguageCode `{name}`")))?,
+        ),
         _ => return Err(CodecError::Json("language must be a string".into())),
     };
     let version = integer(object.get("version"), "version")?.unwrap_or_default();

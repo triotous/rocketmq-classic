@@ -67,12 +67,15 @@ async fn nullable_access_and_socks_settings_match_invoked_java_copy_and_construc
     source.namesrv_addr = Some(String::new());
     source.access_channel = None;
     source.socks_proxy_config = None;
+    source.language = None;
     assert_eq!(source.access_channel.is_none(), java["inputAccessNull"]);
     assert_eq!(source.socks_proxy_config.is_none(), java["inputSocksNull"]);
+    assert_eq!(source.language.is_none(), java["inputLanguageNull"]);
     let copy = source.clone_client_config();
     assert_eq!(copy.access_channel, Some(AccessChannel::Local));
     assert_eq!(java["cloneAccess"], "LOCAL");
     assert_eq!(copy.socks_proxy_config.is_none(), java["cloneSocksNull"]);
+    assert_eq!(copy.language.is_none(), java["cloneLanguageNull"]);
     let mut receiver = ClientConfig::new("receiver");
     receiver.access_channel = Some(AccessChannel::Cloud);
     receiver.reset_client_config(&source);
@@ -82,6 +85,7 @@ async fn nullable_access_and_socks_settings_match_invoked_java_copy_and_construc
         receiver.socks_proxy_config.is_none(),
         java["resetSocksNull"]
     );
+    assert_eq!(receiver.language.is_none(), java["resetLanguageNull"]);
     receiver.access_channel = None;
     receiver.reset_client_config(&source);
     assert!(receiver.access_channel.is_none());
@@ -89,9 +93,14 @@ async fn nullable_access_and_socks_settings_match_invoked_java_copy_and_construc
         .get_or_create(&source)
         .await;
     assert_eq!(runtime.is_ok(), java["runtimeConstructed"]);
+    let runtime = runtime.unwrap();
     assert_eq!(
-        runtime.unwrap().config().socks_proxy_config.is_none(),
+        runtime.config().socks_proxy_config.is_none(),
         java["runtimeSocksNull"]
+    );
+    assert_eq!(
+        runtime.config().language.is_none(),
+        java["runtimeLanguageNull"]
     );
 }
 
@@ -366,7 +375,7 @@ fn clone_and_reset_copy_every_public_setting_except_java_omissions() {
     source.mq_client_api_timeout = i32::MIN;
     source.detect_timeout = -200;
     source.detect_interval = i32::MAX;
-    source.language = LanguageCode::Cpp;
+    source.language = Some(LanguageCode::Cpp);
     source.enable_stream_request_type = true;
     source.send_latency_enable = true;
     source.start_detector_enable = true;

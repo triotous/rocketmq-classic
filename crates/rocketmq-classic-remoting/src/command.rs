@@ -5,7 +5,7 @@ use rocketmq_classic_protocol::codes::{LanguageCode, SerializeType};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemotingCommand {
     pub code: i32,
-    pub language: LanguageCode,
+    pub language: Option<LanguageCode>,
     pub version: i32,
     pub opaque: i32,
     pub flag: i32,
@@ -19,7 +19,7 @@ impl Default for RemotingCommand {
     fn default() -> Self {
         Self {
             code: 0,
-            language: LanguageCode::Rust,
+            language: Some(LanguageCode::Rust),
             version: 0,
             opaque: 0,
             flag: 0,
@@ -59,7 +59,7 @@ mod tests {
     #[test]
     fn defaults_and_flag_helpers_match_java_bits() {
         let mut command = RemotingCommand::default();
-        assert_eq!(command.language, LanguageCode::Rust);
+        assert_eq!(command.language, Some(LanguageCode::Rust));
         assert!(!command.is_response());
         assert!(!command.is_oneway());
         command.flag = 1 << 8;

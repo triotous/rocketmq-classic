@@ -14,6 +14,8 @@ pub enum CodecError {
     UnsupportedSerialization(u8),
     #[error("unsupported language code {0}")]
     UnsupportedLanguage(u8),
+    #[error("ROCKETMQ binary header requires a language")]
+    MissingLanguage,
     #[error("malformed {0} header: {1}")]
     MalformedHeader(&'static str, String),
     #[error("field `{0}` does not fit Java wire width")]

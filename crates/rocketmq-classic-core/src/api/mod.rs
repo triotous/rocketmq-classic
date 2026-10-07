@@ -14,20 +14,20 @@ use tokio::time::Instant;
 #[derive(Clone)]
 pub struct MQClientApi {
     remoting: RemotingClient,
-    language: rocketmq_classic_protocol::codes::LanguageCode,
+    language: Option<rocketmq_classic_protocol::codes::LanguageCode>,
 }
 
 impl MQClientApi {
     pub fn new(remoting: RemotingClient) -> Self {
         Self::with_language(
             remoting,
-            rocketmq_classic_protocol::codes::LanguageCode::Java,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
         )
     }
 
     pub(crate) fn with_language(
         remoting: RemotingClient,
-        language: rocketmq_classic_protocol::codes::LanguageCode,
+        language: Option<rocketmq_classic_protocol::codes::LanguageCode>,
     ) -> Self {
         Self { remoting, language }
     }
@@ -74,7 +74,7 @@ impl MQClientApi {
             language: if code == rocketmq_classic_protocol::codes::request::HEART_BEAT {
                 self.language
             } else {
-                rocketmq_classic_protocol::codes::LanguageCode::Java
+                Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
             },
             ext_fields: Some(fields),
             body,
@@ -104,7 +104,7 @@ impl MQClientApi {
                 addr,
                 RemotingCommand {
                     code,
-                    language: rocketmq_classic_protocol::codes::LanguageCode::Java,
+                    language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
                     ext_fields: Some(fields),
                     body,
                     ..RemotingCommand::default()

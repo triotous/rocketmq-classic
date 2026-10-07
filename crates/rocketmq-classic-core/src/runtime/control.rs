@@ -747,7 +747,7 @@ mod tests {
         }
         fn assert_heartbeat(command: &RemotingCommand, consumer: &Consumer, producers: &[&str]) {
             assert_eq!(command.code, request::HEART_BEAT);
-            assert_eq!(command.language, LanguageCode::Java);
+            assert_eq!(command.language, Some(LanguageCode::Java));
             let heartbeat: HeartbeatData =
                 serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
             assert_eq!(
@@ -772,7 +772,7 @@ mod tests {
         }
         fn assert_unregister(command: &RemotingCommand, field: &str, group: &str) {
             assert_eq!(command.code, request::UNREGISTER_CLIENT);
-            assert_eq!(command.language, LanguageCode::Java);
+            assert_eq!(command.language, Some(LanguageCode::Java));
             assert!(command.body.is_none());
             assert_eq!(
                 command.ext_fields,

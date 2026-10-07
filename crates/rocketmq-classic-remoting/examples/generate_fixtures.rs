@@ -50,7 +50,7 @@ fn main() {
     ] {
         let command = RemotingCommand {
             code,
-            language: LanguageCode::Rust,
+            language: Some(LanguageCode::Rust),
             version: 0,
             opaque: 7,
             remark: Some(name.into()),
@@ -545,7 +545,7 @@ fn write_typed_body(
     header.encode_fields(&mut ext_fields);
     let command = RemotingCommand {
         code,
-        language: LanguageCode::Rust,
+        language: Some(LanguageCode::Rust),
         opaque: 101,
         ext_fields: Some(ext_fields),
         body: if body.is_empty() { None } else { Some(body) },
@@ -570,7 +570,7 @@ fn write_body(output: &std::path::Path, name: &str, code: i32, body: &impl serde
 fn write_body_bytes(output: &std::path::Path, name: &str, code: i32, body: Vec<u8>) {
     let command = RemotingCommand {
         code,
-        language: LanguageCode::Rust,
+        language: Some(LanguageCode::Rust),
         opaque: 102,
         body: Some(body),
         ..RemotingCommand::default()

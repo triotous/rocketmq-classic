@@ -58,7 +58,7 @@ pub fn encode(command: &RemotingCommand, max_header_length: usize) -> Result<Vec
     }
     let mut output = Vec::with_capacity(capacity);
     output.extend_from_slice(&code.to_be_bytes());
-    output.push(command.language.code());
+    output.push(command.language.ok_or(CodecError::MissingLanguage)?.code());
     output.extend_from_slice(&version.to_be_bytes());
     output.extend_from_slice(&command.opaque.to_be_bytes());
     output.extend_from_slice(&command.flag.to_be_bytes());
@@ -75,7 +75,7 @@ pub fn decode(bytes: &[u8]) -> Result<RemotingCommand, CodecError> {
     }
     let mut cursor = Cursor { bytes, offset: 0 };
     let code = cursor.i16()? as i32;
-    let language = LanguageCode::from_code(cursor.u8()?);
+    let language = Some(LanguageCode::from_code(cursor.u8()?));
     let version = cursor.i16()? as i32;
     let opaque = cursor.i32()?;
     let flag = cursor.i32()?;

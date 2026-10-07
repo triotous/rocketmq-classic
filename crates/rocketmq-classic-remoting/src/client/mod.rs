@@ -1459,7 +1459,7 @@ impl RemotingClient {
                     {
                         let retry_request = RemotingCommand {
                             code: request_for_hooks.code,
-                            language: rocketmq_classic_protocol::codes::LanguageCode::Java,
+                            language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
                             ext_fields: request_for_hooks.ext_fields.clone(),
                             body: request_for_hooks.body.clone(),
                             ..RemotingCommand::default()

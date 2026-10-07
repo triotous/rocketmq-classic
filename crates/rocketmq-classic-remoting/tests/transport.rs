@@ -3133,7 +3133,7 @@ async fn p3_async_go_away_retry_callback_reports_reconstructed_request() {
     assert_eq!(context.response.unwrap().code, 42);
     assert_eq!(
         context.request.language,
-        rocketmq_classic_protocol::codes::LanguageCode::Java
+        Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
     );
     assert_eq!(context.request.flag, 0);
     assert_eq!(context.request.remark, None);
@@ -3206,7 +3206,7 @@ async fn p3_go_away_retries_once_on_a_new_connection() {
     assert_eq!(retry.code, 1);
     assert_eq!(
         retry.language,
-        rocketmq_classic_protocol::codes::LanguageCode::Java
+        Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
     );
     assert_eq!(retry.flag, 0);
     assert_eq!(retry.remark, None);
