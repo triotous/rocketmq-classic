@@ -1,5 +1,7 @@
 # Phase 6 requirement and handoff audit
 
+Static mapping DTO/input correction `f1f53f4`/`9285a7a` follows actual Java missing/null field and converter cases. Public topic/broker-name nullability, absent/default ID map and scope, JSON omission, and four endpoint outcomes now have native red/green evidence. Full workspace, pinned Maven and strict Clippy pass. Overlapping malformed mapping owners and the broader API/source/input audit remain open; Phase 6 is incomplete.
+
 Nullable mapping wire correction `680798f`/`044de86`: pinned Java omits absent topic queue mapping from route JSON. The native public DTO now matches, with a red/green fixture regression and passing full workspace, Maven and strict Clippy gates. Other API/input/default-map cases remain in the open Phase 6 audit.
 
 Null route wire correction `d6a44ad`/`09af643` adds actual Java `toJson()` evidence: null collections are omitted from JSON, decoded null remains distinct in memory, and omitted fields reinitialize empty. The native regression was red before serializer correction and passes now; full workspace, pinned Maven and strict Clippy pass. This narrows only the demonstrated DTO/wire case, leaving the broader source/input audit open.
