@@ -1,5 +1,7 @@
 # Phase 6 requirement and handoff audit
 
+Registered-consumer nullable route branch `c4b6e17` supersedes the source-only consumer caveat below: actual Java throws on ordered null queue with a consumer, and the scripted native runtime returns an error without publishing or notifying. Fixture SHA-256 `e9303fc3ceac0fc13ddf6181163847c3b85c1d2c684f9a3fd4c71ab1968f82d5`; full workspace, Maven and strict Clippy pass. Other malformed DTO/input and whole-phase API checks remain open.
+
 Nullable route refresh branches `2b0d6f0`/`65eb745`: five actual Java unstarted runtime cases distinguish ordinary null queue/broker failures from ordered/static null queue and null filter success; successful cached copies normalize collections. Native focused red/green, full workspace, Maven and strict Clippy pass. Consumer-bearing null queue is source-guarded but not separately invoked; full Phase 6 input/source audit remains incomplete.
 
 Static mapping DTO/input correction `f1f53f4`/`9285a7a` follows actual Java missing/null field and converter cases. Public topic/broker-name nullability, absent/default ID map and scope, JSON omission, and four endpoint outcomes now have native red/green evidence. Full workspace, pinned Maven and strict Clippy pass. Overlapping malformed mapping owners and the broader API/source/input audit remain open; Phase 6 is incomplete.

@@ -1,5 +1,7 @@
 # Java 5.5.1 compatibility evidence
 
+Registered-consumer null route case `c4b6e17` adds actual Java failure/no-cache evidence and a matching scripted native runtime check for ordered null queue with a consumer. Route fixture SHA-256 `e9303fc3ceac0fc13ddf6181163847c3b85c1d2c684f9a3fd4c71ab1968f82d5`; full workspace, pinned Maven and strict Clippy pass. Phase 6 remains PARTIAL for broader API/source/input reconciliation.
+
 Nullable route refresh correction `2b0d6f0`/`65eb745` follows five invoked unstarted Java runtime outcomes, including ordered/static null queue success and normalized cached collections. Fixture SHA-256 `d612e9b9a06c83fec863ce543b04ffa06f7b48b6a61238d75fe2c96c7a23af1a`; focused red/green, full workspace, Maven and strict Clippy pass. Consumer-bearing null queue and broader malformed route cases remain open; Phase 6 is PARTIAL.
 
 Static mapping DTO correction `f1f53f4`/`9285a7a` covers Java missing/null fields, constructor defaults, JSON omission, and four invoked endpoint conversion cases. Route fixture SHA-256 `de6dc6fee9b076f1f213a8f999dc9a6476d459d3fa24c484be17bc35b33440fb`; focused red/green, full Rust workspace, pinned Maven and strict Clippy pass. Complex overlapping malformed routes and full Phase 6 source/input reconciliation remain open.
