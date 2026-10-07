@@ -144,7 +144,7 @@ impl RouteSnapshot {
         let endpoints = self.topics.get(queue.topic()).map(|topic| &topic.endpoints);
         match endpoints.filter(|endpoints| !endpoints.is_empty()) {
             Some(endpoints) => endpoints.get(queue).map(String::as_str),
-            None => Some(queue.broker_name()),
+            None => queue.broker_name(),
         }
     }
 }
@@ -249,6 +249,15 @@ impl RouteCache {
         if route.broker_datas.is_none() {
             return Err(RuntimeError::InvalidRoute("null broker data list"));
         }
+        if route
+            .broker_datas
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .any(|broker| broker.broker_name.is_none())
+        {
+            return Err(RuntimeError::InvalidRoute("null broker name"));
+        }
         let ordered = route
             .order_topic_conf
             .as_deref()
@@ -260,6 +269,20 @@ impl RouteCache {
                 .is_some_and(|mappings| !mappings.is_empty());
         if route.queue_datas.is_none() && !ordered && !static_route {
             return Err(RuntimeError::InvalidRoute("null queue data list"));
+        }
+        if !ordered
+            && !static_route
+            && route.queue_datas.as_deref().unwrap_or(&[]).len() > 1
+            && route
+                .queue_datas
+                .as_deref()
+                .unwrap_or(&[])
+                .iter()
+                .any(|queue| queue.broker_name.is_none())
+        {
+            return Err(RuntimeError::InvalidRoute(
+                "null queue broker name during sort",
+            ));
         }
         if let Some(mappings) = &route.topic_queue_mapping_by_broker {
             for mapping in mappings.values().filter(|mapping| mapping.scope.is_some()) {
@@ -358,10 +381,11 @@ impl RouteCache {
         next.raw_routes
             .insert(topic.to_owned(), topic_snapshot.route.clone());
         for broker in topic_snapshot.route.broker_datas.as_deref().unwrap_or(&[]) {
-            next.broker_addresses.insert(
-                broker.broker_name.clone(),
-                broker.broker_addrs.clone().unwrap_or_default(),
-            );
+            let Some(name) = broker.broker_name.clone() else {
+                continue;
+            };
+            next.broker_addresses
+                .insert(name, broker.broker_addrs.clone().unwrap_or_default());
         }
         next.topics
             .insert(topic.to_owned(), Arc::new(topic_snapshot));
@@ -429,10 +453,10 @@ fn validate_conversion_size(topic: &str, route: &TopicRouteData) -> Result<(), R
             } // publish queues
         }
     }
-    let mut read_counts = BTreeMap::<&str, i32>::new();
+    let mut read_counts = BTreeMap::<Option<&str>, i32>::new();
     for queue in route.queue_datas.as_deref().unwrap_or(&[]) {
         if mappings.is_none() && queue.perm & 4 != 0 {
-            let count = read_counts.entry(&queue.broker_name).or_default();
+            let count = read_counts.entry(queue.broker_name.as_deref()).or_default();
             *count = (*count).max(queue.read_queue_nums);
         }
         if ordered.is_none()
@@ -448,12 +472,15 @@ fn validate_conversion_size(topic: &str, route: &TopicRouteData) -> Result<(), R
                 .and_then(|broker| broker.broker_addrs.as_ref())
                 .is_some_and(|addresses| addresses.contains_key(&0));
             if master {
-                add(queue.write_queue_nums, &queue.broker_name)?;
+                add(
+                    queue.write_queue_nums,
+                    queue.broker_name.as_deref().unwrap_or_default(),
+                )?;
             }
         }
     }
     for (broker, count) in read_counts {
-        add(count, broker)?;
+        add(count, broker.unwrap_or_default())?;
     }
     Ok(())
 }
@@ -1079,14 +1106,14 @@ mod tests {
     fn route(count: i32) -> TopicRouteData {
         TopicRouteData {
             queue_datas: Some(vec![QueueData {
-                broker_name: "broker".into(),
+                broker_name: Some("broker".into()),
                 read_queue_nums: count,
                 write_queue_nums: count,
                 perm: 6,
                 ..Default::default()
             }]),
             broker_datas: Some(vec![BrokerData {
-                broker_name: "broker".into(),
+                broker_name: Some("broker".into()),
                 broker_addrs: Some(BTreeMap::from([
                     (0, Some(format!("master-{count}:10911"))),
                     (2, Some("slave:10911".into())),

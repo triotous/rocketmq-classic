@@ -245,9 +245,9 @@ impl ClientConfig {
         let topic = self
             .with_namespace(Some(queue.topic()))?
             .expect("non-null queue topic");
-        Ok(MessageQueue::new(
+        Ok(MessageQueue::new_nullable_broker(
             topic,
-            queue.broker_name(),
+            queue.broker_name().map(str::to_owned),
             queue.queue_id(),
         ))
     }
@@ -261,7 +261,11 @@ impl ClientConfig {
         for queue in queues {
             let topic =
                 namespace::wrap(namespace, Some(queue.topic())).expect("non-null queue topic");
-            *queue = MessageQueue::new(topic, queue.broker_name(), queue.queue_id());
+            *queue = MessageQueue::new_nullable_broker(
+                topic,
+                queue.broker_name().map(str::to_owned),
+                queue.queue_id(),
+            );
         }
         Ok(())
     }

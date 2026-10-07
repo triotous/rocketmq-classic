@@ -243,7 +243,7 @@ async fn java_invoked_consumer_more_requests_and_outcomes_match() {
                     format!(
                         "queues={}:{}:{}",
                         queues[0].topic(),
-                        queues[0].broker_name(),
+                        queues[0].broker_name().unwrap_or_default(),
                         queues[0].queue_id()
                     )
                 }

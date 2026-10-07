@@ -115,7 +115,8 @@ public final class RuntimeRouteFixtures {
         for (String input : new String[] {
             "{\"queueDatas\":[{}],\"brokerDatas\":[{}]}",
             "{\"queueDatas\":[{\"brokerName\":null}],\"brokerDatas\":[{\"cluster\":null,\"brokerName\":null}]}",
-            "{\"queueDatas\":[{\"brokerName\":\"broker\",\"perm\":6}],\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\"}]}"
+            "{\"queueDatas\":[{\"brokerName\":\"broker\",\"perm\":6}],\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\"}]}",
+            "{\"queueDatas\":[{\"brokerName\":null,\"readQueueNums\":1,\"perm\":4}],\"brokerDatas\":[{\"brokerName\":\"other\"}]}"
         }) {
             TopicRouteData route = com.alibaba.fastjson2.JSON.parseObject(input, TopicRouteData.class);
             com.alibaba.fastjson2.JSONObject encoded = com.alibaba.fastjson2.JSON.parseObject(route.toJson());
@@ -133,6 +134,11 @@ public final class RuntimeRouteFixtures {
             item.put("encodedHasQueueName", queue.containsKey("brokerName"));
             item.put("encodedHasBrokerName", broker.containsKey("brokerName"));
             item.put("encodedHasCluster", broker.containsKey("cluster"));
+            java.util.Set<MessageQueue> subscriptions = MQClientInstance.topicRouteData2TopicSubscribeInfo("topic", route);
+            item.put("subscribeQueueCount", subscriptions.size());
+            item.put("subscribeQueueBrokerNull", subscriptions.stream().anyMatch(queueValue -> queueValue.getBrokerName() == null));
+            item.put("subscribeJsonBrokerOmitted", subscriptions.stream().anyMatch(queueValue ->
+                !com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(queueValue)).containsKey("brokerName")));
             cases.add(item);
         }
         return cases;
@@ -198,7 +204,11 @@ public final class RuntimeRouteFixtures {
             "{\"queueDatas\":null,\"brokerDatas\":[],\"filterServerTable\":{},\"topicQueueMappingByBroker\":{\"broker\":{\"scope\":\"__global__\",\"totalQueues\":1,\"bname\":\"broker\"}}}",
             "{\"queueDatas\":[],\"brokerDatas\":null,\"filterServerTable\":{}}",
             "{\"queueDatas\":[],\"brokerDatas\":[],\"filterServerTable\":null}",
-            "{\"queueDatas\":null,\"brokerDatas\":[],\"filterServerTable\":{},\"orderTopicConf\":\"broker:1\"}"
+            "{\"queueDatas\":null,\"brokerDatas\":[],\"filterServerTable\":{},\"orderTopicConf\":\"broker:1\"}",
+            "{\"queueDatas\":[],\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":null,\"brokerAddrs\":{}}]}",
+            "{\"queueDatas\":[],\"brokerDatas\":[{\"cluster\":null,\"brokerName\":\"broker\",\"brokerAddrs\":{}}]}",
+            "{\"queueDatas\":[{\"brokerName\":null,\"readQueueNums\":1,\"perm\":4}],\"brokerDatas\":[]}",
+            "{\"queueDatas\":[{\"brokerName\":null},{\"brokerName\":\"broker\"}],\"brokerDatas\":[]}"
         }) {
             org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
             config.setClientIP("route-null-collections-" + cases.size());

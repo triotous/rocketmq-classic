@@ -246,9 +246,9 @@ impl ClientRuntime {
                 let topic = crate::config::namespace::unwrap(Some(namespace), Some(queue.topic()))
                     .expect("typed queue topic cannot be null");
                 (
-                    rocketmq_classic_common::message::MessageQueue::new(
+                    rocketmq_classic_common::message::MessageQueue::new_nullable_broker(
                         topic,
-                        queue.broker_name(),
+                        queue.broker_name().map(str::to_owned),
                         queue.queue_id(),
                     ),
                     offset,

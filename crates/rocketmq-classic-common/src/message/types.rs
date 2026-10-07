@@ -282,8 +282,12 @@ impl MessageExt {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct MessageQueue {
     topic: String,
-    #[serde(rename = "brokerName")]
-    broker_name: String,
+    #[serde(
+        rename = "brokerName",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    broker_name: Option<String>,
     #[serde(rename = "queueId")]
     queue_id: i32,
 }
@@ -292,15 +296,26 @@ impl MessageQueue {
     pub fn new(topic: impl Into<String>, broker_name: impl Into<String>, queue_id: i32) -> Self {
         Self {
             topic: topic.into(),
-            broker_name: broker_name.into(),
+            broker_name: Some(broker_name.into()),
+            queue_id,
+        }
+    }
+    pub fn new_nullable_broker(
+        topic: impl Into<String>,
+        broker_name: Option<String>,
+        queue_id: i32,
+    ) -> Self {
+        Self {
+            topic: topic.into(),
+            broker_name,
             queue_id,
         }
     }
     pub fn topic(&self) -> &str {
         &self.topic
     }
-    pub fn broker_name(&self) -> &str {
-        &self.broker_name
+    pub fn broker_name(&self) -> Option<&str> {
+        self.broker_name.as_deref()
     }
     pub fn queue_id(&self) -> i32 {
         self.queue_id
@@ -310,7 +325,12 @@ impl MessageQueue {
 impl Ord for MessageQueue {
     fn cmp(&self, other: &Self) -> Ordering {
         java_string_cmp(&self.topic, &other.topic)
-            .then_with(|| java_string_cmp(&self.broker_name, &other.broker_name))
+            .then_with(|| match (&self.broker_name, &other.broker_name) {
+                (Some(left), Some(right)) => java_string_cmp(left, right),
+                (None, None) => Ordering::Equal,
+                (None, Some(_)) => Ordering::Less,
+                (Some(_), None) => Ordering::Greater,
+            })
             .then_with(|| self.queue_id.cmp(&other.queue_id))
     }
 }

@@ -572,7 +572,7 @@ async fn populated_assignment_and_pop_replies_preserve_domain_data() {
     let queue = assignments[0].message_queue.as_ref().unwrap();
     assert_eq!(
         (queue.topic(), queue.broker_name(), queue.queue_id()),
-        ("orders", "broker", 2)
+        ("orders", Some("broker"), 2)
     );
     assert_eq!(assignments[0].attachments.as_ref().unwrap()["key"], "value");
     task.await.unwrap();

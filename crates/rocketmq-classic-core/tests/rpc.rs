@@ -392,13 +392,13 @@ async fn route_reply(code: i32, body: Option<Vec<u8>>) -> (MQClientApi, Remoting
 async fn route_success_unknown_status_and_malformed_success() {
     let nonempty = serde_json::to_vec(&rocketmq_classic_protocol::route::TopicRouteData {
         queue_datas: Some(vec![rocketmq_classic_protocol::route::QueueData {
-            broker_name: "broker-a".into(),
+            broker_name: Some("broker-a".into()),
             write_queue_nums: 2,
             perm: 6,
             ..Default::default()
         }]),
         broker_datas: Some(vec![rocketmq_classic_protocol::route::BrokerData {
-            broker_name: "broker-a".into(),
+            broker_name: Some("broker-a".into()),
             broker_addrs: Some([(0, Some("broker:10911".into()))].into()),
             ..Default::default()
         }]),
@@ -412,7 +412,7 @@ async fn route_success_unknown_status_and_malformed_success() {
         .unwrap()
         .publish_queues("test-topic");
     assert_eq!(queues.len(), 2);
-    assert_eq!(queues[0].broker_name(), "broker-a");
+    assert_eq!(queues[0].broker_name(), Some("broker-a"));
     assert_eq!(queues[0].queue_id(), 0);
     assert_eq!(queues[1].queue_id(), 1);
     client.shutdown().await;

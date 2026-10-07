@@ -6,18 +6,25 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct QueueData {
-    pub broker_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub broker_name: Option<String>,
+    #[serde(default)]
     pub read_queue_nums: i32,
+    #[serde(default)]
     pub write_queue_nums: i32,
+    #[serde(default)]
     pub perm: i32,
+    #[serde(default)]
     pub topic_sys_flag: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct BrokerData {
-    pub cluster: String,
-    pub broker_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cluster: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub broker_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub broker_addrs: Option<BTreeMap<i64, Option<String>>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -66,16 +73,52 @@ mod nullable_nested_route_tests {
                 .expect("pinned Java accepts this nested route input");
             let queue = &route.queue_datas.as_ref().unwrap()[0];
             let encoded = serde_json::to_value(&route).unwrap();
-            assert_eq!(encoded["queueDatas"][0].get("brokerName").is_none(), case["queueNameNull"]);
-            assert_eq!(encoded["brokerDatas"][0].get("brokerName").is_none(), case["brokerNameNull"]);
-            assert_eq!(encoded["brokerDatas"][0].get("cluster").is_none(), case["clusterNull"]);
-            assert_eq!(encoded["queueDatas"][0].get("brokerName").is_some(), case["encodedHasQueueName"]);
-            assert_eq!(encoded["brokerDatas"][0].get("brokerName").is_some(), case["encodedHasBrokerName"]);
-            assert_eq!(encoded["brokerDatas"][0].get("cluster").is_some(), case["encodedHasCluster"]);
+            assert_eq!(
+                encoded["queueDatas"][0].get("brokerName").is_none(),
+                case["queueNameNull"]
+            );
+            assert_eq!(
+                encoded["brokerDatas"][0].get("brokerName").is_none(),
+                case["brokerNameNull"]
+            );
+            assert_eq!(
+                encoded["brokerDatas"][0].get("cluster").is_none(),
+                case["clusterNull"]
+            );
+            assert_eq!(
+                encoded["queueDatas"][0].get("brokerName").is_some(),
+                case["encodedHasQueueName"]
+            );
+            assert_eq!(
+                encoded["brokerDatas"][0].get("brokerName").is_some(),
+                case["encodedHasBrokerName"]
+            );
+            assert_eq!(
+                encoded["brokerDatas"][0].get("cluster").is_some(),
+                case["encodedHasCluster"]
+            );
             assert_eq!(queue.read_queue_nums, case["queueRead"]);
             assert_eq!(queue.write_queue_nums, case["queueWrite"]);
             assert_eq!(queue.perm, case["queuePerm"]);
             assert_eq!(queue.topic_sys_flag, case["queueFlag"]);
+            let subscriptions = route.subscribe_queues("topic");
+            assert_eq!(
+                subscriptions.len(),
+                case["subscribeQueueCount"].as_u64().unwrap() as usize
+            );
+            assert_eq!(
+                subscriptions
+                    .iter()
+                    .any(|queue| queue.broker_name().is_none()),
+                case["subscribeQueueBrokerNull"]
+            );
+            assert_eq!(
+                subscriptions.iter().any(|queue| serde_json::to_value(queue)
+                    .unwrap()
+                    .get("brokerName")
+                    .is_none()),
+                case["subscribeJsonBrokerOmitted"]
+            );
         }
     }
 }
@@ -253,7 +296,7 @@ impl TopicRouteData {
         let mut masters = BTreeMap::new();
         for broker in self.broker_datas.as_deref().unwrap_or(&[]) {
             masters
-                .entry(broker.broker_name.as_str())
+                .entry(broker.broker_name.as_deref())
                 .or_insert_with(|| {
                     broker
                         .broker_addrs
@@ -274,13 +317,14 @@ impl TopicRouteData {
                 data.write_queue_nums > 0
                     && data.perm & 0x2 != 0
                     && masters
-                        .get(data.broker_name.as_str())
+                        .get(&data.broker_name.as_deref())
                         .copied()
                         .unwrap_or(false)
             })
             .flat_map(|data| {
-                (0..data.write_queue_nums)
-                    .map(|queue_id| MessageQueue::new(topic, &data.broker_name, queue_id))
+                (0..data.write_queue_nums).map(|queue_id| {
+                    MessageQueue::new_nullable_broker(topic, data.broker_name.clone(), queue_id)
+                })
             })
             .collect()
     }
@@ -289,7 +333,7 @@ impl TopicRouteData {
         if let Some(endpoints) = self.static_queue_endpoints(topic) {
             return endpoints.into_keys().collect();
         }
-        let mut counts = BTreeMap::<&str, i32>::new();
+        let mut counts = BTreeMap::<Option<&str>, i32>::new();
         for data in self
             .queue_datas
             .as_deref()
@@ -297,13 +341,15 @@ impl TopicRouteData {
             .iter()
             .filter(|data| data.read_queue_nums > 0 && data.perm & 0x4 != 0)
         {
-            let count = counts.entry(&data.broker_name).or_default();
+            let count = counts.entry(data.broker_name.as_deref()).or_default();
             *count = (*count).max(data.read_queue_nums);
         }
         counts
             .into_iter()
             .flat_map(|(broker, count)| {
-                (0..count).map(move |queue_id| MessageQueue::new(topic, broker, queue_id))
+                (0..count).map(move |queue_id| {
+                    MessageQueue::new_nullable_broker(topic, broker.map(str::to_owned), queue_id)
+                })
             })
             .collect()
     }
@@ -333,7 +379,10 @@ impl TopicRouteData {
         let mut endpoints = BTreeMap::new();
         for queue in self.static_topic_queues(topic)? {
             let broker = owners
-                .get(&(queue.broker_name().to_owned(), queue.queue_id()))
+                .get(&(
+                    queue.broker_name().unwrap_or_default().to_owned(),
+                    queue.queue_id(),
+                ))
                 .and_then(|mapping| mapping.bname.clone())
                 .unwrap_or_else(|| "__syslo__none__".to_owned());
             endpoints.insert(queue, broker);
@@ -471,7 +520,7 @@ mod tests {
             .queue_datas
             .as_mut()
             .unwrap()
-            .retain(|queue| queue.broker_name == "b1");
+            .retain(|queue| queue.broker_name.as_deref() == Some("b1"));
         let mut second = route.queue_datas.as_ref().unwrap()[0].clone();
         second.read_queue_nums = 1;
         second.write_queue_nums = 1;
@@ -498,21 +547,21 @@ mod tests {
         TopicRouteData {
             queue_datas: Some(vec![
                 QueueData {
-                    broker_name: "b1".into(),
+                    broker_name: Some("b1".into()),
                     read_queue_nums: 2,
                     write_queue_nums: 3,
                     perm: 6,
                     topic_sys_flag: 0,
                 },
                 QueueData {
-                    broker_name: "b2".into(),
+                    broker_name: Some("b2".into()),
                     read_queue_nums: 4,
                     write_queue_nums: 4,
                     perm: 4,
                     topic_sys_flag: 0,
                 },
                 QueueData {
-                    broker_name: "missing".into(),
+                    broker_name: Some("missing".into()),
                     read_queue_nums: 9,
                     write_queue_nums: 9,
                     perm: 6,
@@ -521,11 +570,11 @@ mod tests {
             ]),
             broker_datas: Some(vec![
                 BrokerData {
-                    broker_name: "b1".into(),
+                    broker_name: Some("b1".into()),
                     ..BrokerData::default()
                 },
                 BrokerData {
-                    broker_name: "b2".into(),
+                    broker_name: Some("b2".into()),
                     ..BrokerData::default()
                 },
             ]),
@@ -548,7 +597,7 @@ mod tests {
         route.order_topic_conf = Some("ordered:2;other:1".into());
         let queues = route.publish_queues("t");
         assert_eq!(queues.len(), 3);
-        assert_eq!(queues[0].broker_name(), "ordered");
+        assert_eq!(queues[0].broker_name(), Some("ordered"));
         assert_eq!(queues[2].queue_id(), 0);
     }
 
@@ -569,8 +618,8 @@ mod tests {
         )]));
         let queues = route.publish_queues("t");
         assert_eq!(queues.len(), 8);
-        assert_eq!(queues[0].broker_name(), "__syslo__global__");
-        assert_eq!(queues[1].broker_name(), "__syslo__global__");
+        assert_eq!(queues[0].broker_name(), Some("__syslo__global__"));
+        assert_eq!(queues[1].broker_name(), Some("__syslo__global__"));
         let endpoints = route.static_queue_endpoints("t").unwrap();
         assert_eq!(endpoints.get(&queues[0]).unwrap(), "b1");
         assert_eq!(endpoints.get(&queues[1]).unwrap(), "__syslo__none__");
