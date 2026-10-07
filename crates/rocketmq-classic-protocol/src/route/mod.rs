@@ -110,6 +110,7 @@ pub struct TopicRouteData {
         skip_serializing_if = "Option::is_none"
     )]
     pub filter_server_table: Option<BTreeMap<String, Vec<String>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub topic_queue_mapping_by_broker: Option<BTreeMap<String, TopicQueueMappingInfo>>,
 }
 
