@@ -186,6 +186,7 @@ async fn conditional_registry_mutations_match_java_custom_value_equality() {
     let producer_a: Arc<dyn ProducerRuntime> = Arc::new(EqualProducer("producer-equal"));
     let producer_b: Arc<dyn ProducerRuntime> = Arc::new(EqualProducer("producer-equal"));
     let producer_c: Arc<dyn ProducerRuntime> = Arc::new(EqualProducer("producer-replacement"));
+    let producer_other: Arc<dyn ProducerRuntime> = Arc::new(EqualProducer("producer-other"));
     producers.put("replace", producer_a.clone()).await.unwrap();
     assert!(producers.contains_value(&producer_b).unwrap());
     assert!(
@@ -218,11 +219,57 @@ async fn conditional_registry_mutations_match_java_custom_value_equality() {
         .remove("entry-remove", &producer_b)
         .await
         .unwrap();
+    producers
+        .put("values-remove-all", producer_a.clone())
+        .await
+        .unwrap();
+    let producer_values_remove_all = producers
+        .values_view()
+        .remove_all(&[producer_b.clone()])
+        .await
+        .unwrap()
+        == 1;
+    producers
+        .put("values-retain-all", producer_a.clone())
+        .await
+        .unwrap();
+    producers
+        .put("other-values-retain-all", producer_other.clone())
+        .await
+        .unwrap();
+    let producer_values_retain_all = producers
+        .values_view()
+        .retain_all(&[producer_b.clone()])
+        .await
+        .unwrap()
+        > 0
+        && same(producers.get("values-retain-all").unwrap(), &producer_a)
+        && !producers.contains_key("other-values-retain-all").unwrap();
+    producers
+        .put("entry-retain-all", producer_a.clone())
+        .await
+        .unwrap();
+    producers
+        .put("other-entry-retain-all", producer_other.clone())
+        .await
+        .unwrap();
+    let producer_entry_retain_all = producers
+        .entry_set_view()
+        .retain_all(&BTreeMap::from([(
+            "entry-retain-all".to_owned(),
+            producer_b.clone(),
+        )]))
+        .await
+        .unwrap()
+        > 0
+        && same(producers.get("entry-retain-all").unwrap(), &producer_a)
+        && !producers.contains_key("other-entry-retain-all").unwrap();
 
     let consumers = runtime.consumer_table();
     let consumer_a: Arc<dyn ConsumerRuntime> = Arc::new(EqualConsumer("consumer-equal"));
     let consumer_b: Arc<dyn ConsumerRuntime> = Arc::new(EqualConsumer("consumer-equal"));
     let consumer_c: Arc<dyn ConsumerRuntime> = Arc::new(EqualConsumer("consumer-replacement"));
+    let consumer_other: Arc<dyn ConsumerRuntime> = Arc::new(EqualConsumer("consumer-other"));
     consumers.put("replace", consumer_a.clone()).await.unwrap();
     assert!(consumers.contains_value(&consumer_b).unwrap());
     assert!(
@@ -243,7 +290,10 @@ async fn conditional_registry_mutations_match_java_custom_value_equality() {
         .await
         .unwrap();
     let consumer_values_remove = consumers.values_view().remove(&consumer_b).await.unwrap();
-    consumers.put("entry-remove", consumer_a).await.unwrap();
+    consumers
+        .put("entry-remove", consumer_a.clone())
+        .await
+        .unwrap();
     let consumer_entries = consumers.entry_set_view();
     let consumer_entry_contains = consumer_entries
         .contains("entry-remove", &consumer_b)
@@ -252,16 +302,67 @@ async fn conditional_registry_mutations_match_java_custom_value_equality() {
         .remove("entry-remove", &consumer_b)
         .await
         .unwrap();
+    consumers
+        .put("values-remove-all", consumer_a.clone())
+        .await
+        .unwrap();
+    let consumer_values_remove_all = consumers
+        .values_view()
+        .remove_all(&[consumer_b.clone()])
+        .await
+        .unwrap()
+        == 1;
+    consumers
+        .put("values-retain-all", consumer_a.clone())
+        .await
+        .unwrap();
+    consumers
+        .put("other-values-retain-all", consumer_other.clone())
+        .await
+        .unwrap();
+    let consumer_values_retain_all = consumers
+        .values_view()
+        .retain_all(&[consumer_b.clone()])
+        .await
+        .unwrap()
+        > 0
+        && same(consumers.get("values-retain-all").unwrap(), &consumer_a)
+        && !consumers.contains_key("other-values-retain-all").unwrap();
+    consumers
+        .put("entry-retain-all", consumer_a.clone())
+        .await
+        .unwrap();
+    consumers
+        .put("other-entry-retain-all", consumer_other.clone())
+        .await
+        .unwrap();
+    let consumer_entry_retain_all = consumers
+        .entry_set_view()
+        .retain_all(&BTreeMap::from([(
+            "entry-retain-all".to_owned(),
+            consumer_b.clone(),
+        )]))
+        .await
+        .unwrap()
+        > 0
+        && same(consumers.get("entry-retain-all").unwrap(), &consumer_a)
+        && !consumers.contains_key("other-entry-retain-all").unwrap();
     assert_eq!(
         serde_json::json!({
             "producerContainsEqualValue": true,
             "producerValuesRemoveByEqualValue": producer_values_remove,
             "producerEntryContainsEqualValue": producer_entry_contains,
             "producerEntryRemoveByEqualValue": producer_entry_remove,
+            "producerValuesRemoveAllByEqualValue": producer_values_remove_all,
+            "producerValuesRetainAllByEqualValue": producer_values_retain_all,
+            "producerEntryRetainAllByEqualValue": producer_entry_retain_all,
             "consumerContainsEqualValue": true,
             "consumerValuesRemoveByEqualValue": consumer_values_remove,
             "consumerEntryContainsEqualValue": consumer_entry_contains,
             "consumerEntryRemoveByEqualValue": consumer_entry_remove,
+            "consumerValuesRemoveAllByEqualValue": consumer_values_remove_all,
+            "consumerValuesRetainAllByEqualValue": consumer_values_retain_all,
+            "consumerEntryRetainAllByEqualValue": consumer_entry_retain_all,
             "producerReplaceByEqualValue": true,
             "producerRemoveByEqualValue": true,
             "consumerReplaceByEqualValue": true,
