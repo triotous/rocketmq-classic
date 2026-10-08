@@ -565,6 +565,29 @@ mod tests {
     }
 
     #[test]
+    fn socks_proxy_selection_matches_invoked_java_remoting_client() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/client-config.json"
+        ))
+        .unwrap();
+        for case in fixture["socksProxySelection"].as_array().unwrap() {
+            let mut config = ClientConfig::default();
+            config.set_socks_proxy_config(case["config"].as_str().unwrap());
+            let routes = config.parse_socks_proxy_config().unwrap();
+            let selected = ClientConfig::proxy_for(&routes, case["host"].as_str().unwrap());
+            assert_eq!(selected.is_ok(), case["outcome"] == "OK", "{case}");
+            if case["outcome"] != "OK" {
+                continue;
+            }
+            assert_eq!(
+                selected.unwrap().map(|proxy| proxy.address).as_deref(),
+                case["proxyAddress"].as_str(),
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
     fn socks_proxy_routes_match_java_ipv4_cidr_and_error_behavior() {
         let private_route = std::collections::HashMap::from([(
             "10.20.0.0/16".into(),
