@@ -478,6 +478,32 @@ macro_rules! table_views {
                     .await
                     .map(|change| change.matched)
             }
+            /// Removes keys accepted by the predicate, visiting a detached key copy.
+            pub async fn remove_if(
+                &self,
+                mut predicate: impl FnMut(&str) -> bool,
+            ) -> Result<usize, RuntimeError> {
+                let mut removed = 0;
+                for key in self.snapshot()? {
+                    if predicate(&key) && self.remove(key).await? {
+                        removed += 1;
+                    }
+                }
+                Ok(removed)
+            }
+            /// Removes keys rejected by the predicate, visiting a detached key copy.
+            pub async fn retain(
+                &self,
+                mut predicate: impl FnMut(&str) -> bool,
+            ) -> Result<usize, RuntimeError> {
+                let mut removed = 0;
+                for key in self.snapshot()? {
+                    if !predicate(&key) && self.remove(key).await? {
+                        removed += 1;
+                    }
+                }
+                Ok(removed)
+            }
             pub async fn clear(&self) -> Result<(), RuntimeError> {
                 self.0.mutate(TableMutation::Clear).await.map(|_| ())
             }
@@ -509,6 +535,34 @@ macro_rules! table_views {
                     }
                 }
                 Ok(false)
+            }
+            /// Removes values accepted by the predicate from a detached entry copy.
+            pub async fn remove_if(
+                &self,
+                mut predicate: impl FnMut(&Arc<dyn $owner>) -> bool,
+            ) -> Result<usize, RuntimeError> {
+                let table = self.table();
+                let mut removed = 0;
+                for (key, value) in table.snapshot()? {
+                    if predicate(&value) && table.remove_if_equal(key, &value).await? {
+                        removed += 1;
+                    }
+                }
+                Ok(removed)
+            }
+            /// Removes values rejected by the predicate from a detached entry copy.
+            pub async fn retain(
+                &self,
+                mut predicate: impl FnMut(&Arc<dyn $owner>) -> bool,
+            ) -> Result<usize, RuntimeError> {
+                let table = self.table();
+                let mut removed = 0;
+                for (key, value) in table.snapshot()? {
+                    if !predicate(&value) && table.remove_if_equal(key, &value).await? {
+                        removed += 1;
+                    }
+                }
+                Ok(removed)
             }
             pub async fn clear(&self) -> Result<(), RuntimeError> {
                 self.0.mutate(TableMutation::Clear).await.map(|_| ())
@@ -550,6 +604,34 @@ macro_rules! table_views {
                 value: &Arc<dyn $owner>,
             ) -> Result<bool, RuntimeError> {
                 self.table().remove_if_equal(key, value).await
+            }
+            /// Removes entries accepted by the predicate from a detached entry copy.
+            pub async fn remove_if(
+                &self,
+                mut predicate: impl FnMut(&str, &Arc<dyn $owner>) -> bool,
+            ) -> Result<usize, RuntimeError> {
+                let table = self.table();
+                let mut removed = 0;
+                for (key, value) in table.snapshot()? {
+                    if predicate(&key, &value) && table.remove_if_equal(key, &value).await? {
+                        removed += 1;
+                    }
+                }
+                Ok(removed)
+            }
+            /// Removes entries rejected by the predicate from a detached entry copy.
+            pub async fn retain(
+                &self,
+                mut predicate: impl FnMut(&str, &Arc<dyn $owner>) -> bool,
+            ) -> Result<usize, RuntimeError> {
+                let table = self.table();
+                let mut removed = 0;
+                for (key, value) in table.snapshot()? {
+                    if !predicate(&key, &value) && table.remove_if_equal(key, &value).await? {
+                        removed += 1;
+                    }
+                }
+                Ok(removed)
             }
             pub async fn clear(&self) -> Result<(), RuntimeError> {
                 self.0.mutate(TableMutation::Clear).await.map(|_| ())
