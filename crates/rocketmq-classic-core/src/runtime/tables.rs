@@ -89,6 +89,14 @@ macro_rules! table {
             pub fn get(&self, key: &str) -> Result<Option<Arc<dyn $owner>>, RuntimeError> {
                 self.0.groups.$select(key)
             }
+            /// Map.getOrDefault counterpart; the default is used only when the key is absent.
+            pub fn get_or_default(
+                &self,
+                key: &str,
+                default: Arc<dyn $owner>,
+            ) -> Result<Arc<dyn $owner>, RuntimeError> {
+                Ok(self.get(key)?.unwrap_or(default))
+            }
             pub fn contains_key(&self, key: &str) -> Result<bool, RuntimeError> {
                 self.0.groups.table_contains_key(self.0.kind, key)
             }
@@ -177,6 +185,16 @@ macro_rules! table {
                     only_absent: true,
                 })
                 .await
+            }
+            /// Inserts each entry independently, matching Map.putAll's per-entry writes.
+            pub async fn put_all(
+                &self,
+                entries: BTreeMap<String, Arc<dyn $owner>>,
+            ) -> Result<(), RuntimeError> {
+                for (key, value) in entries {
+                    self.put(key, value).await?;
+                }
+                Ok(())
             }
             pub async fn replace(
                 &self,
