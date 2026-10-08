@@ -328,6 +328,37 @@ public final class RuntimeConfigFixtures {
         return result;
     }
 
+    private static <T> Map<String, Object> tableLiveViews(
+        java.util.concurrent.ConcurrentMap<String, T> table, T first, T second) {
+        Map<String, Object> result = new TreeMap<>();
+        table.clear();
+        java.util.Set<String> keys = table.keySet();
+        java.util.Collection<T> values = table.values();
+        java.util.Set<Map.Entry<String, T>> entries = table.entrySet();
+        table.put("a", first);
+        result.put("retainedViewsSeeInitialPut", keys.contains("a") && values.contains(first)
+            && entries.contains(new java.util.AbstractMap.SimpleImmutableEntry<>("a", first)));
+        table.put("b", second);
+        result.put("retainedViewsSeeLaterPut", keys.size() == 2 && values.size() == 2 && entries.size() == 2);
+        result.put("keyViewRemove", keys.remove("a") && !table.containsKey("a"));
+        result.put("valueViewRemove", values.remove(second) && !table.containsKey("b"));
+        table.put("c", first);
+        result.put("entryViewRemove", entries.remove(new java.util.AbstractMap.SimpleImmutableEntry<>("c", first))
+            && !table.containsKey("c"));
+        table.put("d", second);
+        result.put("retainedViewsSeeRepopulation", keys.contains("d") && values.contains(second)
+            && entries.contains(new java.util.AbstractMap.SimpleImmutableEntry<>("d", second)));
+        keys.clear();
+        result.put("keyViewClear", table.isEmpty());
+        table.put("e", first);
+        values.clear();
+        result.put("valueViewClear", table.isEmpty());
+        table.put("f", second);
+        entries.clear();
+        result.put("entryViewClear", table.isEmpty());
+        return result;
+    }
+
     private static Map<String, Object> registryTables() throws Exception {
         ClientConfig config = new ClientConfig();
         config.setClientIP("registry-tables");
@@ -346,6 +377,8 @@ public final class RuntimeConfigFixtures {
                 tableDefaultOperations(runtime.getProducerTable(), producerA, producerB));
             result.put("consumerDefaultOperations",
                 tableDefaultOperations(runtime.getConsumerTable(), consumerA, consumerB));
+            result.put("producerLiveViews", tableLiveViews(runtime.getProducerTable(), producerA, producerB));
+            result.put("consumerLiveViews", tableLiveViews(runtime.getConsumerTable(), consumerA, consumerB));
             Map<String, Object> equalValues = new TreeMap<>();
             org.apache.rocketmq.client.impl.producer.MQProducerInner producerEqualA =
                 tableOwner(org.apache.rocketmq.client.impl.producer.MQProducerInner.class, "producer-equal");
