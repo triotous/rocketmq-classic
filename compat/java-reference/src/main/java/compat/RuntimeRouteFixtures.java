@@ -482,12 +482,16 @@ public final class RuntimeRouteFixtures {
             "{\"queueId\":2147483647}"));
         cases.add(routeDtoInputCase("message-queue-id-fraction", "messageQueue",
             "{\"queueId\":-1.9}"));
+        cases.add(routeDtoInputCase("message-queue-unicode-decimal-id", "messageQueue",
+            "{\"queueId\":\"１２\"}"));
         cases.add(routeDtoInputCase("message-queue-id-overflow", "messageQueue",
             "{\"queueId\":2147483648}"));
         cases.add(routeDtoInputCase("broker-scalars", "brokerData",
             "{\"cluster\":true,\"brokerName\":7,\"zoneName\":1.5,\"brokerAddrs\":{\"+1\":true,\"2\":3,\"3\":null},\"enableActingMaster\":\"TRUE\"}"));
         cases.add(routeDtoInputCase("broker-address-decimal-key", "brokerData",
             "{\"brokerAddrs\":{\"1.0\":0}}"));
+        cases.add(routeDtoInputCase("broker-unicode-decimal-address-key", "brokerData",
+            "{\"brokerAddrs\":{\"١٢\":\"master\"}}"));
         cases.add(routeDtoInputCase("broker-boolean-minus-one", "brokerData",
             "{\"enableActingMaster\":-1}"));
         cases.add(routeDtoInputCase("broker-boolean-other-number", "brokerData",
@@ -504,6 +508,8 @@ public final class RuntimeRouteFixtures {
             "{\"epoch\":\"1e2\"}"));
         cases.add(routeDtoInputCase("mapping-long-minimum", "mapping",
             "{\"epoch\":\"-9223372036854775808\"}"));
+        cases.add(routeDtoInputCase("mapping-unicode-decimal-id-key", "mapping",
+            "{\"currIdMap\":{\"１２\":1}}"));
         cases.add(routeDtoInputCase("queue-unicode-decimal-string", "queueData",
             "{\"readQueueNums\":\"１２\",\"writeQueueNums\":\"-١٢\"}"));
         cases.add(routeDtoInputCase("mapping-unicode-decimal-strings", "mapping",
