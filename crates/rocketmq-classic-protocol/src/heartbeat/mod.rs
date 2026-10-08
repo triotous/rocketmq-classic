@@ -1,8 +1,52 @@
 use std::collections::HashSet;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
+use crate::codes::JavaEnumLookupError;
 use rocketmq_classic_common::serde_fastjson;
 use serde::{Deserialize, Deserializer, Serialize};
+
+macro_rules! impl_java_enum_api {
+    ($enum_type:ident, $java_class:literal, $count:literal, $($variant:ident => $name:literal = $ordinal:literal),+ $(,)?) => {
+        impl $enum_type {
+            pub const fn values() -> [Self; $count] {
+                [$(Self::$variant),+]
+            }
+
+            pub fn value_of_name(name: Option<&str>) -> Result<Self, JavaEnumLookupError> {
+                match name {
+                    None => Err(JavaEnumLookupError::NullName),
+                    $(Some($name) => Ok(Self::$variant),)+
+                    Some(other) => Err(JavaEnumLookupError::UnknownName {
+                        enum_class: $java_class,
+                        name: other.to_owned(),
+                    }),
+                }
+            }
+
+            pub const fn name(&self) -> &'static str {
+                match self {
+                    $(Self::$variant => $name,)+
+                }
+            }
+
+            pub const fn ordinal(&self) -> i32 {
+                match self {
+                    $(Self::$variant => $ordinal,)+
+                }
+            }
+
+            pub const fn java_compare_to(&self, other: &Self) -> i32 {
+                self.ordinal() - other.ordinal()
+            }
+        }
+
+        impl std::fmt::Display for $enum_type {
+            fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str(self.name())
+            }
+        }
+    };
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -394,6 +438,15 @@ pub enum ConsumeType {
     ConsumePop,
 }
 
+impl_java_enum_api!(
+    ConsumeType,
+    "org.apache.rocketmq.remoting.protocol.heartbeat.ConsumeType",
+    3,
+    ConsumeActively => "CONSUME_ACTIVELY" = 0,
+    ConsumePassively => "CONSUME_PASSIVELY" = 1,
+    ConsumePop => "CONSUME_POP" = 2,
+);
+
 impl ConsumeType {
     pub const fn type_cn(self) -> &'static str {
         match self {
@@ -415,15 +468,34 @@ impl JavaOrdinalEnum for ConsumeType {
     }
 }
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum MessageModel {
     #[default]
     Clustering,
     Broadcasting,
     LiteSelective,
+}
+
+impl_java_enum_api!(
+    MessageModel,
+    "org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel",
+    3,
+    Broadcasting => "BROADCASTING" = 0,
+    Clustering => "CLUSTERING" = 1,
+    LiteSelective => "LITE_SELECTIVE" = 2,
+);
+
+impl PartialOrd for MessageModel {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for MessageModel {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.ordinal().cmp(&other.ordinal())
+    }
 }
 
 impl MessageModel {
@@ -461,6 +533,18 @@ pub enum ConsumeFromWhere {
     ConsumeFromFirstOffset,
     ConsumeFromTimestamp,
 }
+
+impl_java_enum_api!(
+    ConsumeFromWhere,
+    "org.apache.rocketmq.common.consumer.ConsumeFromWhere",
+    6,
+    ConsumeFromLastOffset => "CONSUME_FROM_LAST_OFFSET" = 0,
+    ConsumeFromLastOffsetAndFromMinWhenBootFirst => "CONSUME_FROM_LAST_OFFSET_AND_FROM_MIN_WHEN_BOOT_FIRST" = 1,
+    ConsumeFromMinOffset => "CONSUME_FROM_MIN_OFFSET" = 2,
+    ConsumeFromMaxOffset => "CONSUME_FROM_MAX_OFFSET" = 3,
+    ConsumeFromFirstOffset => "CONSUME_FROM_FIRST_OFFSET" = 4,
+    ConsumeFromTimestamp => "CONSUME_FROM_TIMESTAMP" = 5,
+);
 
 impl JavaOrdinalEnum for ConsumeFromWhere {
     fn from_java_ordinal(ordinal: i64) -> Option<Self> {

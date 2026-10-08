@@ -2,6 +2,17 @@ pub mod request;
 pub mod response;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum JavaEnumLookupError {
+    #[error("Name is null")]
+    NullName,
+    #[error("No enum constant {enum_class}.{name}")]
+    UnknownName {
+        enum_class: &'static str,
+        name: String,
+    },
+}
+
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum LanguageCodeLookupError {
     #[error("Name is null")]
     NullName,

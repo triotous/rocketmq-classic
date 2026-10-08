@@ -170,6 +170,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("serializeTypeMethodCases", serializeTypeMethodCases());
         fixture.put("compressionTypeMethodCases", compressionTypeMethodCases());
         fixture.put("clientStatusEnumMethodCases", clientStatusEnumMethodCases());
+        fixture.put("protocolEnumMethodCases", protocolEnumMethodCases());
         fixture.put("socksConstruction", socksConstruction());
         fixture.put("socksConnection", socksConnection(true));
         fixture.put("socksConnectionNoAuth", socksConnection(false));
@@ -1710,6 +1711,39 @@ public final class RuntimeConfigFixtures {
             org.apache.rocketmq.client.producer.SendStatus::values,
             org.apache.rocketmq.client.producer.SendStatus::valueOf,
             new String[] {null, "", "SEND_OK", "send_ok", "FLUSH_DISK_TIMEOUT", "SLAVE_NOT_AVAILABLE", "UNKNOWN"}));
+        return cases;
+    }
+
+    private static Map<String, Object> protocolEnumMethodCases() {
+        Map<String, Object> cases = new TreeMap<>();
+        cases.put("MessageRequestMode", enumMethodCases(
+            org.apache.rocketmq.common.message.MessageRequestMode::values,
+            org.apache.rocketmq.common.message.MessageRequestMode::valueOf,
+            new String[] {null, "", "PULL", "pull", "UNKNOWN"}));
+        cases.put("LiteSubscriptionAction", enumMethodCases(
+            org.apache.rocketmq.common.lite.LiteSubscriptionAction::values,
+            org.apache.rocketmq.common.lite.LiteSubscriptionAction::valueOf,
+            new String[] {null, "", "PARTIAL_ADD", "partial_add", "UNKNOWN"}));
+        cases.put("OffsetOptionType", enumMethodCases(
+            org.apache.rocketmq.common.lite.OffsetOption.Type::values,
+            org.apache.rocketmq.common.lite.OffsetOption.Type::valueOf,
+            new String[] {null, "", "POLICY", "policy", "TAIL_N", "UNKNOWN"}));
+        cases.put("ConsumeMessageResult", enumMethodCases(
+            org.apache.rocketmq.remoting.protocol.body.CMResult::values,
+            org.apache.rocketmq.remoting.protocol.body.CMResult::valueOf,
+            new String[] {null, "", "CR_SUCCESS", "cr_success", "CR_RETURN_NULL", "UNKNOWN"}));
+        cases.put("ConsumeType", enumMethodCases(
+            org.apache.rocketmq.remoting.protocol.heartbeat.ConsumeType::values,
+            org.apache.rocketmq.remoting.protocol.heartbeat.ConsumeType::valueOf,
+            new String[] {null, "", "CONSUME_ACTIVELY", "consume_actively", "UNKNOWN"}));
+        cases.put("MessageModel", enumMethodCases(
+            org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel::values,
+            org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel::valueOf,
+            new String[] {null, "", "BROADCASTING", "broadcasting", "UNKNOWN"}));
+        cases.put("ConsumeFromWhere", enumMethodCases(
+            org.apache.rocketmq.common.consumer.ConsumeFromWhere::values,
+            org.apache.rocketmq.common.consumer.ConsumeFromWhere::valueOf,
+            new String[] {null, "", "CONSUME_FROM_LAST_OFFSET", "consume_from_last_offset", "UNKNOWN"}));
         return cases;
     }
 

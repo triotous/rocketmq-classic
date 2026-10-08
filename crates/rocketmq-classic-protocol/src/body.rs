@@ -1,6 +1,50 @@
+use crate::codes::JavaEnumLookupError;
 use rocketmq_classic_common::{message::MessageQueue, serde_fastjson};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use serde_json::Value;
+
+macro_rules! impl_java_enum_api {
+    ($enum_type:ident, $java_class:literal, $count:literal, $($variant:ident => $name:literal = $ordinal:literal),+ $(,)?) => {
+        impl $enum_type {
+            pub const fn values() -> [Self; $count] {
+                [$(Self::$variant),+]
+            }
+
+            pub fn value_of_name(name: Option<&str>) -> Result<Self, JavaEnumLookupError> {
+                match name {
+                    None => Err(JavaEnumLookupError::NullName),
+                    $(Some($name) => Ok(Self::$variant),)+
+                    Some(other) => Err(JavaEnumLookupError::UnknownName {
+                        enum_class: $java_class,
+                        name: other.to_owned(),
+                    }),
+                }
+            }
+
+            pub const fn name(&self) -> &'static str {
+                match self {
+                    $(Self::$variant => $name,)+
+                }
+            }
+
+            pub const fn ordinal(&self) -> i32 {
+                match self {
+                    $(Self::$variant => $ordinal,)+
+                }
+            }
+
+            pub const fn java_compare_to(&self, other: &Self) -> i32 {
+                self.ordinal() - other.ordinal()
+            }
+        }
+
+        impl std::fmt::Display for $enum_type {
+            fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str(self.name())
+            }
+        }
+    };
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -23,14 +67,13 @@ pub enum MessageRequestMode {
     Pop,
 }
 
-impl MessageRequestMode {
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Pull => "PULL",
-            Self::Pop => "POP",
-        }
-    }
-}
+impl_java_enum_api!(
+    MessageRequestMode,
+    "org.apache.rocketmq.common.message.MessageRequestMode",
+    2,
+    Pull => "PULL" = 0,
+    Pop => "POP" = 1,
+);
 
 fn default_assignment_mode() -> Option<MessageRequestMode> {
     Some(MessageRequestMode::Pull)
@@ -168,6 +211,16 @@ pub enum LiteSubscriptionAction {
     CompleteRemove,
 }
 
+impl_java_enum_api!(
+    LiteSubscriptionAction,
+    "org.apache.rocketmq.common.lite.LiteSubscriptionAction",
+    4,
+    PartialAdd => "PARTIAL_ADD" = 0,
+    PartialRemove => "PARTIAL_REMOVE" = 1,
+    CompleteAdd => "COMPLETE_ADD" = 2,
+    CompleteRemove => "COMPLETE_REMOVE" = 3,
+);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum OffsetOptionType {
@@ -176,6 +229,16 @@ pub enum OffsetOptionType {
     TailN,
     Timestamp,
 }
+
+impl_java_enum_api!(
+    OffsetOptionType,
+    "org.apache.rocketmq.common.lite.OffsetOption.Type",
+    4,
+    Policy => "POLICY" = 0,
+    Offset => "OFFSET" = 1,
+    TailN => "TAIL_N" = 2,
+    Timestamp => "TIMESTAMP" = 3,
+);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -717,6 +780,18 @@ pub enum ConsumeMessageResult {
     CrThrowException,
     CrReturnNull,
 }
+
+impl_java_enum_api!(
+    ConsumeMessageResult,
+    "org.apache.rocketmq.remoting.protocol.body.CMResult",
+    6,
+    CrSuccess => "CR_SUCCESS" = 0,
+    CrLater => "CR_LATER" = 1,
+    CrRollback => "CR_ROLLBACK" = 2,
+    CrCommit => "CR_COMMIT" = 3,
+    CrThrowException => "CR_THROW_EXCEPTION" = 4,
+    CrReturnNull => "CR_RETURN_NULL" = 5,
+);
 
 fn default_auto_commit() -> bool {
     true
