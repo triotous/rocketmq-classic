@@ -263,6 +263,25 @@ public final class RuntimeHeartbeatFixtures {
         return cases;
     }
 
+    private static List<Object> consumerEnumMethodCases() {
+        List<Object> cases = new ArrayList<>();
+        for (ConsumeType value : ConsumeType.values()) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("enum", "consumeType");
+            item.put("constant", value.name());
+            item.put("methodValue", value.getTypeCN());
+            cases.add(item);
+        }
+        for (MessageModel value : MessageModel.values()) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("enum", "messageModel");
+            item.put("constant", value.name());
+            item.put("methodValue", value.getModeCN());
+            cases.add(item);
+        }
+        return cases;
+    }
+
     private static void recordConsumerEnumProbe(List<Object> cases, String field, String jsonValue) {
         String rawInput = "{\"" + field + "\":" + jsonValue + "}";
         Map<String, Object> item = new TreeMap<>();
@@ -665,7 +684,7 @@ public final class RuntimeHeartbeatFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "MQClientInstance.registerProducer/registerConsumer/prepareHeartbeatData/unregisterProducer/unregisterConsumer; HeartbeatData/ConsumerData/ProducerData/SubscriptionData Fastjson scalar inputs; HeartbeatData.computeHeartbeatFingerprint/toString/duplicate-ProducerData decode/nullable producer-consumer-subscription set elements; ProducerData.toString; ConsumerData enum JSON names/toString; SubscriptionData.SUB_ALL/constructors/equals/hashCode/compareTo/toString");
+        fixture.put("entrypoint", "MQClientInstance.registerProducer/registerConsumer/prepareHeartbeatData/unregisterProducer/unregisterConsumer; HeartbeatData/ConsumerData/ProducerData/SubscriptionData Fastjson scalar inputs; HeartbeatData.computeHeartbeatFingerprint/toString/duplicate-ProducerData decode/nullable producer-consumer-subscription set elements; ProducerData.toString; ConsumerData enum JSON names/toString; ConsumeType.getTypeCN/MessageModel.getModeCN; SubscriptionData.SUB_ALL/constructors/equals/hashCode/compareTo/toString");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
         fixture.put("multiplicityCases", multiplicityCases);
@@ -674,6 +693,7 @@ public final class RuntimeHeartbeatFixtures {
         fixture.put("subscriptionMethods", subscriptionMethods());
         fixture.put("ownerFieldCases", ownerFieldCases());
         fixture.put("consumerEnumCases", consumerEnumCases());
+        fixture.put("consumerEnumMethodCases", consumerEnumMethodCases());
         fixture.put("heartbeatFieldCases", heartbeatFieldCases());
         List<Object> nullElementCases = heartbeatNullElementCases();
         fixture.put("heartbeatNullElementCases", nullElementCases);

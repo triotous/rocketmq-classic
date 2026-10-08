@@ -394,6 +394,16 @@ pub enum ConsumeType {
     ConsumePop,
 }
 
+impl ConsumeType {
+    pub const fn type_cn(self) -> &'static str {
+        match self {
+            Self::ConsumeActively => "PULL",
+            Self::ConsumePassively => "PUSH",
+            Self::ConsumePop => "POP",
+        }
+    }
+}
+
 impl JavaOrdinalEnum for ConsumeType {
     fn from_java_ordinal(ordinal: i64) -> Option<Self> {
         match ordinal {
@@ -414,6 +424,16 @@ pub enum MessageModel {
     Clustering,
     Broadcasting,
     LiteSelective,
+}
+
+impl MessageModel {
+    pub const fn mode_cn(self) -> &'static str {
+        match self {
+            Self::Broadcasting => "BROADCASTING",
+            Self::Clustering => "CLUSTERING",
+            Self::LiteSelective => "LITE_SELECTIVE",
+        }
+    }
 }
 
 impl JavaOrdinalEnum for MessageModel {
@@ -1058,6 +1078,29 @@ mod tests {
                 ),
                 outcome => panic!("unknown Java enum outcome: {outcome}"),
             }
+        }
+    }
+
+    #[test]
+    fn consumer_enum_public_methods_match_invoked_java_values() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
+                .unwrap();
+        for case in fixture["consumerEnumMethodCases"].as_array().unwrap() {
+            let actual = match case["enum"].as_str().unwrap() {
+                "consumeType" => {
+                    let value: ConsumeType =
+                        serde_json::from_value(case["constant"].clone()).unwrap();
+                    value.type_cn()
+                }
+                "messageModel" => {
+                    let value: MessageModel =
+                        serde_json::from_value(case["constant"].clone()).unwrap();
+                    value.mode_cn()
+                }
+                kind => panic!("unknown enum kind: {kind}"),
+            };
+            assert_eq!(actual, case["methodValue"].as_str().unwrap(), "{case}");
         }
     }
 
