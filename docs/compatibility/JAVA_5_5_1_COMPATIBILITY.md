@@ -1,5 +1,7 @@
 # Java 5.5.1 compatibility evidence
 
+Public `HeartbeatData.computeHeartbeatFingerprint()` is represented by `HeartbeatData::compute_heartbeat_fingerprint()` (`91702a2`/`3c4f444`). Its protocol regression matches seven invoked Java 5.5.1 runtime values, including the JSON round-trip defaults used for null collections. Runtime fingerprinting delegates to this method. Heartbeat fixture SHA-256 `118b49612461931280cf65e7912ecceb7deb1d30869a82e7e2d27b71b8afc53c`; full workspace, pinned Maven and strict Clippy pass. Broader Phase 6 API audit remains open.
+
 Null subscription route refresh `b57594c`/`98556c1` invokes the actual unstarted 5.5.1 runtime with null and named subscriptions. It issues both lookups, omits the null topic ext field, continues after rejected route, and fails before cache publication on a successful null-topic route. Route fixture SHA-256 `a8c6be7d5fb98f4a660f15835dfea6c74c03464c63d958c48f0d5c8c227a4b1d`; socket red/green, workspace, pinned Maven and strict Clippy pass. Broader Phase 6 API audit remains open.
 
 Null fingerprint and primitive decoding `4cbd803`/`5fe4045` match four actual Java 5.5.1 fingerprint calls and five explicit-null primitive inputs. Java's JSON clone restores null collections to empty before hashing; explicit-null primitive values become zero/false while absent SubscriptionData subVersion still starts at wall time. Fixture SHA-256 `118b49612461931280cf65e7912ecceb7deb1d30869a82e7e2d27b71b8afc53c`; full workspace, pinned Maven and strict Clippy pass. Null-topic runtime routing and broader Phase 6 audit remain open.
