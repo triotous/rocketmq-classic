@@ -610,6 +610,24 @@ mod topic_queue_mapping_method_tests {
     }
 }
 
+#[cfg(test)]
+mod topic_route_data_method_tests {
+    use super::TopicRouteData;
+
+    #[test]
+    fn topic_route_data_methods_match_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["topicRouteDataMethods"].as_array().unwrap() {
+            let left: TopicRouteData = serde_json::from_value(case["left"].clone()).unwrap();
+            let right: TopicRouteData = serde_json::from_value(case["right"].clone()).unwrap();
+            assert_eq!(left == right, case["equals"]);
+            assert_eq!(left.java_hash_code(), case["leftHashCode"].as_i64().unwrap() as i32);
+            assert_eq!(right.java_hash_code(), case["rightHashCode"].as_i64().unwrap() as i32);
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TopicRouteData {
