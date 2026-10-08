@@ -206,6 +206,44 @@ impl GroupRegistry {
             _ => false,
         })
     }
+    pub(super) fn table_contains_entry(
+        &self,
+        kind: super::tables::TableKind,
+        key: &str,
+        expected: &super::tables::TableValue,
+        equality_key: Option<&str>,
+    ) -> Result<bool, RuntimeError> {
+        use super::tables::{TableKind, TableValue};
+        let entries = self
+            .entries
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?;
+        Ok(match (kind, expected) {
+            (TableKind::Producer, TableValue::Producer(expected)) => {
+                entries.producers.get(key).is_some_and(|entry| {
+                    entry
+                        .handle
+                        .upgrade()
+                        .is_some_and(|current| Arc::ptr_eq(expected, &current))
+                        || equality_key
+                            .zip(entry.equality_key.as_deref())
+                            .is_some_and(|(expected, current)| expected == current)
+                })
+            }
+            (TableKind::Consumer, TableValue::Consumer(expected)) => {
+                entries.consumers.get(key).is_some_and(|entry| {
+                    entry
+                        .handle
+                        .upgrade()
+                        .is_some_and(|current| Arc::ptr_eq(expected, &current))
+                        || equality_key
+                            .zip(entry.equality_key.as_deref())
+                            .is_some_and(|(expected, current)| expected == current)
+                })
+            }
+            _ => false,
+        })
+    }
     pub(super) fn table_snapshot(
         &self,
         kind: super::tables::TableKind,

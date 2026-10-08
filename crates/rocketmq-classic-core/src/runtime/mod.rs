@@ -16,7 +16,10 @@ pub use instance::ClientRuntime;
 pub use manager::{ClientRuntimeManager, FactoryTable};
 pub use pull::MessageRequest;
 pub use registry::{ConsumerOperation, ConsumerRuntime, GroupLease, ProducerRuntime};
-pub use tables::{ConsumerTable, ProducerTable};
+pub use tables::{
+    ConsumerEntrySetView, ConsumerKeySetView, ConsumerTable, ConsumerValuesView,
+    ProducerEntrySetView, ProducerKeySetView, ProducerTable, ProducerValuesView,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RuntimeError {

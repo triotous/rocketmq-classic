@@ -72,7 +72,7 @@ impl TableHandle {
 }
 
 macro_rules! table {
-    ($name:ident, $owner:ident, $kind:ident, $select:ident) => {
+    ($name:ident, $owner:ident, $kind:ident, $select:ident, $key_set:ident, $values_view:ident, $entry_set:ident) => {
         /// Live registry mapping using the runtime's weak-owner contract.
         /// Callers retain owner Arcs; owner drop does not remove its key.
         /// Primitive writes neither unregister from Brokers nor stop owners.
@@ -108,6 +108,18 @@ macro_rules! table {
             }
             pub fn is_empty(&self) -> Result<bool, RuntimeError> {
                 Ok(self.len()? == 0)
+            }
+            /// Live handle for the backing map's key-set view.
+            pub fn key_set_view(&self) -> $key_set {
+                $key_set(self.0.clone())
+            }
+            /// Live handle for the backing map's values collection view.
+            pub fn values_view(&self) -> $values_view {
+                $values_view(self.0.clone())
+            }
+            /// Live handle for the backing map's entry-set view.
+            pub fn entry_set_view(&self) -> $entry_set {
+                $entry_set(self.0.clone())
             }
             /// Detached owned iteration copy; this handle itself remains live.
             pub fn snapshot(&self) -> Result<BTreeMap<String, Arc<dyn $owner>>, RuntimeError> {
@@ -415,8 +427,152 @@ macro_rules! table {
         }
     };
 }
-table!(ProducerTable, ProducerRuntime, Producer, select_producer);
-table!(ConsumerTable, ConsumerRuntime, Consumer, select_consumer);
+macro_rules! table_views {
+    ($table:ident, $owner:ident, $kind:ident, $key_set:ident, $values_view:ident, $entry_set:ident) => {
+        #[derive(Clone)]
+        pub struct $key_set(TableHandle);
+        impl $key_set {
+            pub fn contains(&self, key: &str) -> Result<bool, RuntimeError> {
+                self.0.groups.table_contains_key(self.0.kind, key)
+            }
+            pub fn len(&self) -> Result<usize, RuntimeError> {
+                self.0.groups.table_len(self.0.kind)
+            }
+            pub fn is_empty(&self) -> Result<bool, RuntimeError> {
+                Ok(self.len()? == 0)
+            }
+            /// Detached iteration copy from this live view.
+            pub fn snapshot(&self) -> Result<BTreeSet<String>, RuntimeError> {
+                Ok(self
+                    .0
+                    .groups
+                    .table_snapshot(self.0.kind)?
+                    .into_keys()
+                    .collect())
+            }
+            pub async fn remove(&self, key: impl Into<String>) -> Result<bool, RuntimeError> {
+                self.0
+                    .mutate(TableMutation::Remove {
+                        key: key.into(),
+                        expected: None,
+                        comparison: None,
+                    })
+                    .await
+                    .map(|change| change.matched)
+            }
+            pub async fn clear(&self) -> Result<(), RuntimeError> {
+                self.0.mutate(TableMutation::Clear).await.map(|_| ())
+            }
+        }
+
+        #[derive(Clone)]
+        pub struct $values_view(TableHandle);
+        impl $values_view {
+            fn table(&self) -> $table {
+                $table(self.0.clone())
+            }
+            pub fn contains(&self, value: &Arc<dyn $owner>) -> Result<bool, RuntimeError> {
+                self.table().contains_value(value)
+            }
+            pub fn len(&self) -> Result<usize, RuntimeError> {
+                self.0.groups.table_len(self.0.kind)
+            }
+            pub fn is_empty(&self) -> Result<bool, RuntimeError> {
+                Ok(self.len()? == 0)
+            }
+            /// Detached iteration copy from this live view.
+            pub fn snapshot(&self) -> Result<Vec<Arc<dyn $owner>>, RuntimeError> {
+                self.table().values()
+            }
+            pub async fn remove(&self, value: &Arc<dyn $owner>) -> Result<bool, RuntimeError> {
+                for key in self.table().keys()? {
+                    if self.table().remove_if_equal(key, value).await? {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+            pub async fn clear(&self) -> Result<(), RuntimeError> {
+                self.0.mutate(TableMutation::Clear).await.map(|_| ())
+            }
+        }
+
+        #[derive(Clone)]
+        pub struct $entry_set(TableHandle);
+        impl $entry_set {
+            fn table(&self) -> $table {
+                $table(self.0.clone())
+            }
+            pub fn contains(
+                &self,
+                key: &str,
+                value: &Arc<dyn $owner>,
+            ) -> Result<bool, RuntimeError> {
+                let equality_key = value.map_value_equality_key();
+                self.0.groups.table_contains_entry(
+                    self.0.kind,
+                    key,
+                    &TableValue::$kind(value.clone()),
+                    equality_key.as_deref(),
+                )
+            }
+            pub fn len(&self) -> Result<usize, RuntimeError> {
+                self.0.groups.table_len(self.0.kind)
+            }
+            pub fn is_empty(&self) -> Result<bool, RuntimeError> {
+                Ok(self.len()? == 0)
+            }
+            /// Detached iteration copy from this live view.
+            pub fn snapshot(&self) -> Result<BTreeMap<String, Arc<dyn $owner>>, RuntimeError> {
+                self.table().snapshot()
+            }
+            pub async fn remove(
+                &self,
+                key: impl Into<String>,
+                value: &Arc<dyn $owner>,
+            ) -> Result<bool, RuntimeError> {
+                self.table().remove_if_equal(key, value).await
+            }
+            pub async fn clear(&self) -> Result<(), RuntimeError> {
+                self.0.mutate(TableMutation::Clear).await.map(|_| ())
+            }
+        }
+    };
+}
+table!(
+    ProducerTable,
+    ProducerRuntime,
+    Producer,
+    select_producer,
+    ProducerKeySetView,
+    ProducerValuesView,
+    ProducerEntrySetView
+);
+table!(
+    ConsumerTable,
+    ConsumerRuntime,
+    Consumer,
+    select_consumer,
+    ConsumerKeySetView,
+    ConsumerValuesView,
+    ConsumerEntrySetView
+);
+table_views!(
+    ProducerTable,
+    ProducerRuntime,
+    Producer,
+    ProducerKeySetView,
+    ProducerValuesView,
+    ProducerEntrySetView
+);
+table_views!(
+    ConsumerTable,
+    ConsumerRuntime,
+    Consumer,
+    ConsumerKeySetView,
+    ConsumerValuesView,
+    ConsumerEntrySetView
+);
 
 #[cfg(test)]
 mod tests {
