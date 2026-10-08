@@ -235,6 +235,57 @@ impl Default for HeartbeatData {
     }
 }
 
+impl HeartbeatData {
+    /// Computes the client-local heartbeat fingerprint using Java 5.5.1's
+    /// JSON-copy defaults, normalized fields and Java UTF-16 string hash.
+    pub fn compute_heartbeat_fingerprint(&self) -> Result<i32, serde_json::Error> {
+        let mut value = serde_json::to_value(self)?;
+        // Java serializes and reparses a copy first. Omitted nullable
+        // collections regain their constructor-empty values during parsing.
+        if !value["producerDataSet"].is_array() {
+            value["producerDataSet"] = serde_json::json!([]);
+        }
+        if !value["consumerDataSet"].is_array() {
+            value["consumerDataSet"] = serde_json::json!([]);
+        }
+        value["clientID"] = "".into();
+        value["heartbeatFingerprint"] = 0.into();
+        value["withoutSub"] = false.into();
+        if let Some(consumers) = value["consumerDataSet"].as_array_mut() {
+            for consumer in consumers {
+                if !consumer["subscriptionDataSet"].is_array() {
+                    consumer["subscriptionDataSet"] = serde_json::json!([]);
+                }
+                if let Some(subscriptions) = consumer["subscriptionDataSet"].as_array_mut() {
+                    for subscription in subscriptions {
+                        subscription["subVersion"] = 0.into();
+                    }
+                }
+            }
+        }
+        fn canonicalize(value: &mut serde_json::Value) {
+            match value {
+                serde_json::Value::Array(values) => {
+                    for value in values.iter_mut() {
+                        canonicalize(value);
+                    }
+                    values.sort_unstable_by_key(serde_json::Value::to_string);
+                }
+                serde_json::Value::Object(values) => {
+                    for value in values.values_mut() {
+                        canonicalize(value);
+                    }
+                }
+                _ => {}
+            }
+        }
+        canonicalize(&mut value);
+        Ok(value.to_string().encode_utf16().fold(0i32, |hash, unit| {
+            hash.wrapping_mul(31).wrapping_add(i32::from(unit))
+        }))
+    }
+}
+
 fn empty_producers() -> Option<HashSet<ProducerData>> {
     Some(HashSet::new())
 }

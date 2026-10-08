@@ -71,50 +71,8 @@ type PeerFuture<'a> = Pin<Box<dyn Future<Output = Result<bool, RuntimeError>> + 
 /// checksum. Canonical set order is Rust-native; Java HashSet iteration is not
 /// part of the wire contract. Preserve Java's reset fields and UTF-16 hash.
 fn fingerprint(data: &HeartbeatData) -> Result<i32, RuntimeError> {
-    let mut value = serde_json::to_value(data).map_err(RuntimeError::HeartbeatEncoding)?;
-    // Java fingerprints a JSON round-trip copy. Omitted null collections on
-    // that copy regain their constructor-empty values before hashing.
-    if !value["producerDataSet"].is_array() {
-        value["producerDataSet"] = serde_json::json!([]);
-    }
-    if !value["consumerDataSet"].is_array() {
-        value["consumerDataSet"] = serde_json::json!([]);
-    }
-    value["clientID"] = "".into();
-    value["heartbeatFingerprint"] = 0.into();
-    value["withoutSub"] = false.into();
-    if let Some(consumers) = value["consumerDataSet"].as_array_mut() {
-        for consumer in consumers {
-            if !consumer["subscriptionDataSet"].is_array() {
-                consumer["subscriptionDataSet"] = serde_json::json!([]);
-            }
-            if let Some(subscriptions) = consumer["subscriptionDataSet"].as_array_mut() {
-                for sub in subscriptions {
-                    sub["subVersion"] = 0.into();
-                }
-            }
-        }
-    }
-    fn canonicalize(value: &mut serde_json::Value) {
-        match value {
-            serde_json::Value::Array(values) => {
-                for value in values.iter_mut() {
-                    canonicalize(value);
-                }
-                values.sort_unstable_by_key(serde_json::Value::to_string);
-            }
-            serde_json::Value::Object(values) => {
-                for value in values.values_mut() {
-                    canonicalize(value);
-                }
-            }
-            _ => {}
-        }
-    }
-    canonicalize(&mut value);
-    Ok(value.to_string().encode_utf16().fold(0i32, |hash, unit| {
-        hash.wrapping_mul(31).wrapping_add(i32::from(unit))
-    }))
+    data.compute_heartbeat_fingerprint()
+        .map_err(RuntimeError::HeartbeatEncoding)
 }
 
 impl ClientRuntime {
