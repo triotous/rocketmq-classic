@@ -1534,3 +1534,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "cache_nullable_elements.rs"]
+mod nullable_element_tests;
