@@ -10,7 +10,9 @@ The Java 5.5.1 client decodes route responses into `QueueData`, `BrokerData`, `T
 
 Add narrow JSON deserializers in `rocketmq-classic-common::serde_fastjson` and attach them to the affected DTO fields. The tested behavior includes scalar-to-string conversion, Java primitive defaults for null, integer strings and fractions, boolean inputs, normalized numeric map keys, nullable Broker addresses, and scalar members of route filter lists. Invalid integer ranges, invalid boolean strings, and null static-mapping values remain rejected.
 
-The helpers keep Rust DTO field types and serialization unchanged. Java exception classes are not reproduced; Rust exposes Serde errors at the decode boundary. HashMap/ConcurrentHashMap iteration order and untested Fastjson grammar are not asserted equivalent.
+The input helpers keep Rust DTO field types and ordinary Serde encoding unchanged. Java exception classes are not reproduced; Rust exposes Serde errors at the decode boundary. HashMap/ConcurrentHashMap iteration order and untested Fastjson grammar are not asserted equivalent.
+
+For inherited `RemotingSerializable` methods, `TopicRouteData` and `TopicQueueMappingInfo` expose Java-compatible `java_to_json`, `java_encode`, `java_decode`, `java_decode_list`, and `java_from_json` adapters. These adapters sort object properties, reproduce Fastjson2's unquoted numeric keys for `brokerAddrs` and `currIdMap`, and match the tested pretty-print form. The route API uses `TopicRouteData::java_decode` for response bodies. Numeric object keys are normalized before Serde parsing; other unquoted keys remain invalid. Native map output is deterministic, while Java HashMap/ConcurrentHashMap iteration order is unspecified.
 
 ## Evidence
 
@@ -20,4 +22,6 @@ The helpers keep Rust DTO field types and serialization unchanged. Java exceptio
 
 Route fixture SHA-256: `ce2afec05859a761ce2fd82a9034ef147b333f077a999b03d17209a305254fb0`.
 
-Focused differential, full workspace tests, strict all-feature Clippy, pinned offline Maven verification, comparator/manifest, formatting, and diff checks pass. This closes the recorded scalar cases only; broader DTO input, Fastjson grammar, and whole-Phase 6 reconciliation remain open.
+The inherited serialization oracle adds six direct cases: default, explicit-null, and populated `TopicRouteData` and `TopicQueueMappingInfo` values. Each invokes compact/pretty instance and static JSON, instance/static encoding including the empty `JSONWriter.Feature[]` overload, decoding, list decoding, and fromJson; compact output bytes match the pinned Java fixture. The current combined route fixture SHA-256 is `935426217262daeb92860ef9b90cc61b5cde8aa71d3042ca6f4713582568e2b3`. The earlier hash above records the route input-only update and remains historical.
+
+Focused differential, full workspace tests, strict all-feature Clippy, pinned offline Maven verification, comparator/manifest, formatting, and diff checks pass. These records close only the invoked input and inherited-serialization cases; broader DTO input, Fastjson grammar, and whole-Phase 6 reconciliation remain open.
