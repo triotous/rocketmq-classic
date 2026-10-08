@@ -273,7 +273,8 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
             && same(table.get("bulk-b").unwrap(), &second)
             && table.len().unwrap() == 3,
     );
-    table.clear().unwrap();
+    table.remove("bulk-a").unwrap();
+    table.remove("bulk-b").unwrap();
     assert_eq!(serde_json::to_value(outcomes).unwrap(), case["primitives"]);
     assert_eq!(detached.len(), 2);
     assert!(same(
