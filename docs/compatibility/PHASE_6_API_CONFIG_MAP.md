@@ -1,6 +1,8 @@
 # Phase 6 API and configuration map
 
-Assignment attachment input update: six actual Java 5.5.1 cases cover missing/null maps, scalar and nested values, null entries, and invalid top-level shapes. Native decoding preserves nullable strings and coerces non-null scalar values; re-encoding omits null map entries as Java does. Current lookup fixture SHA-256 `878cb07da0256c4aa54ae17a0c2d142f3072d4812d589b6a9fb14bf65d3900e3`; [ADR-0017](../architecture/ADR-0017-assignment-attachment-fastjson-input.md) records the boundary.
+Consumer-list response input update: 12 actual Java 5.5.1 cases cover missing/null/empty lists, duplicates and order, nullable/scalar/nested elements, and string/object/number/fraction/Boolean top-level values. Native DTO, API, and runtime types preserve Java's nullable list members; Fastjson scalar-to-string conversions and response encoding match the fixture. Current lookup fixture SHA-256 `3df9a9a042a21863b43153207aa5a245cdad2d2aacf71b85da46ec29614aafba`; [ADR-0018](../architecture/ADR-0018-consumer-list-fastjson-input.md) records the boundary.
+
+Assignment attachment input update: six actual Java 5.5.1 cases cover missing/null maps, scalar and nested values, null entries, and invalid top-level shapes. Native decoding preserves nullable strings and coerces non-null scalar values; re-encoding omits null map entries as Java does. Current lookup fixture SHA-256 `3df9a9a042a21863b43153207aa5a245cdad2d2aacf71b85da46ec29614aafba`; [ADR-0017](../architecture/ADR-0017-assignment-attachment-fastjson-input.md) records the boundary.
 
 Assignment response enum input update: 17 actual Java 5.5.1 `QueryAssignmentResponseBody.decode` cases cover `MessageQueueAssignment.mode` defaults, nulls, names, ordinals, integer numeric strings, numeric fractions, and rejection boundaries. Native `MessageQueueAssignment.mode` is nullable and defaults to `Some(Pull)`; decode and re-encode match the fixture. Lookup fixture SHA-256 `ef5ca72024a2556f5027998d3e18f1d82dfaa36d8961c2628389e9b2b69711ea`; [ADR-0016](../architecture/ADR-0016-assignment-mode-fastjson-input.md) records the boundary.
 
@@ -162,7 +164,7 @@ Methods implemented on `ClientRuntime` unless another owner is specified. Eviden
 | selectProducer / selectConsumer | `select_producer/select_consumer`, upgraded weak owners | registry tests; no strong ownership cycle |
 | getBrokerNameFromMessageQueue | `RouteSnapshot::broker_name` | Q static endpoint mapping |
 | findBrokerAddressInAdmin / InPublish / InSubscribe | `RouteSnapshot::admin_address/publish_address/subscribe_address` | Q exact/adjacent/fallback/version/slave cases |
-| findConsumerIdList / queryAssignment | `find_consumer_id_list/query_assignment` | L exact requests, fresh budgets, VIP/error/Set checks; 17 actual assignment response enum inputs and re-encoding cases ([ADR-0016](../architecture/ADR-0016-assignment-mode-fastjson-input.md)) |
+| findConsumerIdList / queryAssignment | `find_consumer_id_list/query_assignment` | L exact requests, fresh budgets, VIP/error/Set checks; 12 consumer-list DTO inputs and 17 assignment response enum inputs plus six attachment inputs ([ADR-0018](../architecture/ADR-0018-consumer-list-fastjson-input.md), [ADR-0016](../architecture/ADR-0016-assignment-mode-fastjson-input.md), [ADR-0017](../architecture/ADR-0017-assignment-attachment-fastjson-input.md)) |
 | findBrokerAddrByTopic | `find_broker_address_by_topic`, raw topic BrokerData selection | Q/L, 8 invoked candidate/error cases |
 | resetOffset / getConsumerStatus | owned inactive inbound capabilities, no direct public owner implementation yet | reset/status matrix; process queues/offset stores and admin flow Phase 9/10/17 |
 | getAnExistTopicRouteData / queryTopicRouteData | `get_existing_topic_route/query_topic_route` | L cached-empty/absent refresh |
@@ -180,6 +182,8 @@ Methods implemented on `ClientRuntime` unless another owner is specified. Eviden
 ## Assignment response DTO input
 
 The runtime's Java `QueryAssignmentResponseBody.decode` returns a set of `MessageQueueAssignment` rows. Rust uses `QueryAssignmentResponseBody.message_queue_assignments: Option<Vec<MessageQueueAssignment>>`; duplicate assignment rows remain a separately audited Set/equality behavior.
+
+The runtime's Java `GetConsumerListByGroupResponseBody.decode` returns a nullable `List<String>`. Rust represents it as `Option<Vec<Option<String>>>` through the protocol DTO, API, and runtime lookup, preserving order, duplicates, null members, and the recorded Fastjson conversions. Twelve actual Java input/re-encode cases are covered by [ADR-0018](../architecture/ADR-0018-consumer-list-fastjson-input.md); other consumer-list DTO combinations remain open.
 
 | Java field/API | Rust counterpart | Evidence / disposition |
 | --- | --- | --- |

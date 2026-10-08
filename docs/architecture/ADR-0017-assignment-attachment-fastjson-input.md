@@ -14,6 +14,6 @@ Represent attachments as `Option<BTreeMap<String, Option<String>>>` and decode n
 
 `RuntimeLookupFixtures.assignmentAttachmentCases` invokes six actual Java 5.5.1 `QueryAssignmentResponseBody.decode` inputs. It covers missing/null maps, numeric/Boolean/null values, nested arrays/objects, and invalid top-level shapes. `assignment_attachment_inputs_match_invoked_java_fastjson` compares decoded values and response re-encoding.
 
-Current combined lookup fixture SHA-256: `878cb07da0256c4aa54ae17a0c2d142f3072d4812d589b6a9fb14bf65d3900e3`.
+Combined lookup fixture SHA-256 at this update: `878cb07da0256c4aa54ae17a0c2d142f3072d4812d589b6a9fb14bf65d3900e3`.
 
 Full workspace tests, strict all-target/all-feature Clippy, pinned offline Maven verification, comparator/manifest, formatting, and diff checks pass. Rust parse errors do not reproduce Fastjson exception classes, and map iteration order is not asserted equivalent. This closes the recorded attachment inputs only; other assignment DTO combinations and whole-Phase 6 reconciliation remain open.
