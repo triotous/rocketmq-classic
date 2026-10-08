@@ -1541,6 +1541,10 @@ public final class RuntimeRouteFixtures {
             org.apache.rocketmq.remoting.protocol.RemotingSerializable.decodeList(null, TopicRouteData.class) == null);
         item.put("decodeListJsonNullReturnsNull",
             org.apache.rocketmq.remoting.protocol.RemotingSerializable.decodeList(jsonNull, TopicRouteData.class) == null);
+        List<TopicRouteData> nullMemberList = org.apache.rocketmq.remoting.protocol.RemotingSerializable.decodeList(
+            "[null]".getBytes(java.nio.charset.StandardCharsets.UTF_8), TopicRouteData.class);
+        item.put("decodeListNullMemberCount", nullMemberList.size());
+        item.put("decodeListHasNullMember", nullMemberList.get(0) == null);
         return item;
     }
 
