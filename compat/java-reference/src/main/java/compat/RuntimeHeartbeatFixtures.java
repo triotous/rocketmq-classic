@@ -207,6 +207,82 @@ public final class RuntimeHeartbeatFixtures {
         return result;
     }
 
+    private static List<Object> consumerEnumCases() {
+        List<Object> cases = new ArrayList<>();
+        for (ConsumeType value : ConsumeType.values())
+            recordConsumerEnum(cases, "consumeType", value.name());
+        for (MessageModel value : MessageModel.values())
+            recordConsumerEnum(cases, "messageModel", value.name());
+        for (ConsumeFromWhere value : ConsumeFromWhere.values())
+            recordConsumerEnum(cases, "consumeFromWhere", value.name());
+
+        for (String[] input : new String[][] {
+            {"consumeType", "\"NOT_A_CONSUME_TYPE\""},
+            {"consumeType", "\"consume_pop\""},
+            {"consumeType", "99"},
+            {"consumeType", "-1"},
+            {"consumeType", "1.0"},
+            {"consumeType", "1.9"},
+            {"consumeType", "-0.5"},
+            {"consumeType", "3.0"},
+            {"messageModel", "\"NOT_A_MESSAGE_MODEL\""},
+            {"messageModel", "99"},
+            {"consumeFromWhere", "\"NOT_A_CONSUME_FROM_WHERE\""},
+            {"consumeFromWhere", "99"}
+        }) {
+            recordConsumerEnumProbe(cases, input[0], input[1]);
+        }
+        for (int ordinal = 0; ordinal <= ConsumeType.values().length; ordinal++)
+            recordConsumerEnumProbe(cases, "consumeType", Integer.toString(ordinal));
+        for (int ordinal = 0; ordinal <= MessageModel.values().length; ordinal++)
+            recordConsumerEnumProbe(cases, "messageModel", Integer.toString(ordinal));
+        for (int ordinal = 0; ordinal <= ConsumeFromWhere.values().length; ordinal++)
+            recordConsumerEnumProbe(cases, "consumeFromWhere", Integer.toString(ordinal));
+        return cases;
+    }
+
+    private static void recordConsumerEnumProbe(List<Object> cases, String field, String jsonValue) {
+        String rawInput = "{\"" + field + "\":" + jsonValue + "}";
+        Map<String, Object> item = new TreeMap<>();
+        item.put("field", field);
+        item.put("rawInput", rawInput);
+        try {
+            ConsumerData value = com.alibaba.fastjson2.JSON.parseObject(rawInput, ConsumerData.class);
+            Object decoded = consumerEnumName(value, field);
+            item.put("outcome", decoded == null ? "null" : "accepted");
+            item.put("decodedName", decoded);
+            item.put("encodedName", com.alibaba.fastjson2.JSON.parseObject(
+                com.alibaba.fastjson2.JSON.toJSONString(value)).getString(field));
+        } catch (Throwable error) {
+            item.put("outcome", "rejected");
+            item.put("error", error.getClass().getName());
+        }
+        cases.add(item);
+    }
+
+    private static void recordConsumerEnum(List<Object> cases, String field, String enumName) {
+        String rawInput = "{\"" + field + "\":\"" + enumName + "\"}";
+        ConsumerData value = com.alibaba.fastjson2.JSON.parseObject(rawInput, ConsumerData.class);
+        Map<String, Object> item = new TreeMap<>();
+        item.put("field", field);
+        item.put("rawInput", rawInput);
+        item.put("decodedName", consumerEnumName(value, field));
+        item.put("encodedName", com.alibaba.fastjson2.JSON.parseObject(
+            com.alibaba.fastjson2.JSON.toJSONString(value)).getString(field));
+        item.put("outcome", "accepted");
+        cases.add(item);
+    }
+
+    private static String consumerEnumName(ConsumerData value, String field) {
+        switch (field) {
+            case "consumeType": return value.getConsumeType() == null ? null : value.getConsumeType().name();
+            case "messageModel": return value.getMessageModel() == null ? null : value.getMessageModel().name();
+            case "consumeFromWhere": return value.getConsumeFromWhere() == null
+                ? null : value.getConsumeFromWhere().name();
+            default: throw new IllegalArgumentException("unknown consumer enum field: " + field);
+        }
+    }
+
     private static List<Object> heartbeatFieldCases() {
         List<Object> cases = new ArrayList<>();
         for (String input : new String[] {
@@ -434,7 +510,7 @@ public final class RuntimeHeartbeatFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "MQClientInstance.registerProducer/registerConsumer/prepareHeartbeatData/unregisterProducer/unregisterConsumer; HeartbeatData.computeHeartbeatFingerprint/toString; ProducerData.toString; ConsumerData.toString; SubscriptionData.SUB_ALL/constructors/equals/hashCode/compareTo/toString");
+        fixture.put("entrypoint", "MQClientInstance.registerProducer/registerConsumer/prepareHeartbeatData/unregisterProducer/unregisterConsumer; HeartbeatData.computeHeartbeatFingerprint/toString; ProducerData.toString; ConsumerData enum JSON names/toString; SubscriptionData.SUB_ALL/constructors/equals/hashCode/compareTo/toString");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
         fixture.put("multiplicityCases", multiplicityCases);
@@ -442,6 +518,7 @@ public final class RuntimeHeartbeatFixtures {
         fixture.put("subscriptionConstructorCases", subscriptionConstructorCases());
         fixture.put("subscriptionMethods", subscriptionMethods());
         fixture.put("ownerFieldCases", ownerFieldCases());
+        fixture.put("consumerEnumCases", consumerEnumCases());
         fixture.put("heartbeatFieldCases", heartbeatFieldCases());
         fixture.put("fingerprintNullCases", fingerprintNullCases());
         fixture.put("primitiveNullCases", primitiveNullCases());

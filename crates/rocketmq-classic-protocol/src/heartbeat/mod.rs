@@ -292,6 +292,38 @@ where
     Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
 }
 
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum FastjsonEnumInput {
+    Name(String),
+    Ordinal(i64),
+    Decimal(f64),
+}
+
+trait JavaOrdinalEnum: Sized {
+    fn from_java_ordinal(ordinal: i64) -> Option<Self>;
+}
+
+fn deserialize_fastjson_optional_enum<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de> + JavaOrdinalEnum,
+{
+    match Option::<FastjsonEnumInput>::deserialize(deserializer)? {
+        None => Ok(None),
+        Some(FastjsonEnumInput::Name(name)) => Ok(T::deserialize(
+            serde::de::value::StringDeserializer::<D::Error>::new(name.to_ascii_uppercase()),
+        )
+        .ok()),
+        Some(FastjsonEnumInput::Ordinal(ordinal)) => T::from_java_ordinal(ordinal)
+            .map(Some)
+            .ok_or_else(|| <D::Error as serde::de::Error>::custom("enum ordinal out of range")),
+        Some(FastjsonEnumInput::Decimal(ordinal)) => T::from_java_ordinal(ordinal.trunc() as i64)
+            .map(Some)
+            .ok_or_else(|| <D::Error as serde::de::Error>::custom("enum ordinal out of range")),
+    }
+}
+
 fn default_expression_type() -> Option<String> {
     Some("TAG".to_owned())
 }
@@ -307,6 +339,17 @@ pub enum ConsumeType {
     ConsumePop,
 }
 
+impl JavaOrdinalEnum for ConsumeType {
+    fn from_java_ordinal(ordinal: i64) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::ConsumeActively),
+            1 => Some(Self::ConsumePassively),
+            2 => Some(Self::ConsumePop),
+            _ => None,
+        }
+    }
+}
+
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
 )]
@@ -316,6 +359,17 @@ pub enum MessageModel {
     Clustering,
     Broadcasting,
     LiteSelective,
+}
+
+impl JavaOrdinalEnum for MessageModel {
+    fn from_java_ordinal(ordinal: i64) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::Broadcasting),
+            1 => Some(Self::Clustering),
+            2 => Some(Self::LiteSelective),
+            _ => None,
+        }
+    }
 }
 
 #[derive(
@@ -331,6 +385,20 @@ pub enum ConsumeFromWhere {
     ConsumeFromMaxOffset,
     ConsumeFromFirstOffset,
     ConsumeFromTimestamp,
+}
+
+impl JavaOrdinalEnum for ConsumeFromWhere {
+    fn from_java_ordinal(ordinal: i64) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::ConsumeFromLastOffset),
+            1 => Some(Self::ConsumeFromLastOffsetAndFromMinWhenBootFirst),
+            2 => Some(Self::ConsumeFromMinOffset),
+            3 => Some(Self::ConsumeFromMaxOffset),
+            4 => Some(Self::ConsumeFromFirstOffset),
+            5 => Some(Self::ConsumeFromTimestamp),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
@@ -354,11 +422,23 @@ impl ProducerData {
 pub struct ConsumerData {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_fastjson_optional_enum",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub consume_type: Option<ConsumeType>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_fastjson_optional_enum",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub message_model: Option<MessageModel>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_fastjson_optional_enum",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub consume_from_where: Option<ConsumeFromWhere>,
     #[serde(
         default = "empty_subscriptions",
@@ -705,6 +785,39 @@ mod tests {
                 "{} compareTo",
                 case["case"]
             );
+        }
+    }
+
+    #[test]
+    fn consumer_enum_inputs_match_invoked_java_names_and_rejections() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
+                .unwrap();
+        for case in fixture["consumerEnumCases"].as_array().unwrap() {
+            let input = case["rawInput"].as_str().unwrap();
+            match case["outcome"].as_str().unwrap() {
+                "accepted" | "null" => {
+                    let value: ConsumerData = serde_json::from_str(input)
+                        .unwrap_or_else(|error| panic!("{}: {error}", case["rawInput"]));
+                    let encoded = serde_json::to_value(value).unwrap();
+                    assert_eq!(
+                        encoded
+                            .get(case["field"].as_str().unwrap())
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Null),
+                        case["encodedName"],
+                        "{} encode",
+                        case["rawInput"]
+                    );
+                }
+                "rejected" => assert!(
+                    serde_json::from_str::<ConsumerData>(input).is_err(),
+                    "{} should reject like Java ({})",
+                    case["rawInput"],
+                    case["error"]
+                ),
+                outcome => panic!("unknown Java enum outcome: {outcome}"),
+            }
         }
     }
 
