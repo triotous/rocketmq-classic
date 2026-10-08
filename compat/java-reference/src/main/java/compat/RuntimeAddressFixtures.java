@@ -36,15 +36,36 @@ public final class RuntimeAddressFixtures {
         AddressProbe addressProbe = new AddressProbe();
         try {
             for (String address : new String[] {"127.0.0.1:10911", "broker.example:10911",
-                    "2001:db8::1:10911", "::1:10911", "[2001:db8::1]:10911"}) {
+                    "2001:db8::1:10911", "::1:10911", "[2001:db8::1]:10911",
+                    "127.0.0.1:0", "127.0.0.1:65535", "127.0.0.1:65536", "127.0.0.1:-1",
+                    "fe80::1%7:10911", "[fe80::1%7]:10911"}) {
                 String[] hostAndPort = addressProbe.splitAddress(address);
                 if (hostAndPort.length != 2) {
                     throw new IllegalStateException("Java client did not split address: " + address);
+                }
+                boolean socketAddressAccepted;
+                try {
+                    java.net.InetSocketAddress.createUnresolved(
+                        hostAndPort[0], Integer.parseInt(hostAndPort[1]));
+                    socketAddressAccepted = true;
+                } catch (RuntimeException rejected) {
+                    socketAddressAccepted = false;
                 }
                 Map<String, Object> item = new TreeMap<>();
                 item.put("address", address);
                 item.put("host", hostAndPort[0]);
                 item.put("port", hostAndPort[1]);
+                item.put("socketAddressAccepted", socketAddressAccepted);
+                if (hostAndPort[0].contains("%")) {
+                    boolean scopedHostResolved;
+                    try {
+                        InetAddress.getByName(hostAndPort[0]);
+                        scopedHostResolved = true;
+                    } catch (java.net.UnknownHostException rejected) {
+                        scopedHostResolved = false;
+                    }
+                    item.put("scopedHostResolved", scopedHostResolved);
+                }
                 clientAddressCases.add(item);
             }
         } finally {

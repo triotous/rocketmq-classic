@@ -16,9 +16,7 @@ impl Address {
                 .strip_prefix('[')
                 .and_then(|value| value.split_once("]:"))
                 .ok_or_else(|| TransportError::Connect("invalid bracketed IPv6 address".into()))?;
-            let parsed_host = host
-                .parse::<std::net::Ipv6Addr>()
-                .map_err(|error| TransportError::Connect(error.to_string()))?;
+            let parsed_host = normalize_ipv6_host(host)?;
             if port.parse::<u16>().is_err() {
                 return Err(TransportError::Connect("invalid address port".into()));
             }
@@ -34,23 +32,40 @@ impl Address {
                 return Err(TransportError::Connect("host must not be empty".into()));
             }
             if host.contains(':') {
-                let parsed_host = host
-                    .parse::<std::net::Ipv6Addr>()
-                    .map_err(|error| TransportError::Connect(error.to_string()))?;
+                let parsed_host = normalize_ipv6_host(host)?;
                 format!("[{}]:{}", parsed_host, parsed_port)
             } else {
                 format!("{}:{}", host.to_ascii_lowercase(), parsed_port)
             }
         };
-        let (_, port) = connection::split_address(&normalized)?;
-        if port == 0 {
-            return Err(TransportError::Connect("port must be nonzero".into()));
-        }
         Ok(Self(normalized))
     }
 
     pub(super) fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+fn normalize_ipv6_host(host: &str) -> Result<String, TransportError> {
+    let (address, scope) = host
+        .split_once('%')
+        .map_or((host, None), |(address, scope)| (address, Some(scope)));
+    let parsed_host = address
+        .parse::<std::net::Ipv6Addr>()
+        .map_err(|error| TransportError::Connect(error.to_string()))?;
+    let Some(scope) = scope else {
+        return Ok(parsed_host.to_string());
+    };
+    if scope.is_empty() || scope.contains('%') {
+        return Err(TransportError::Connect("invalid IPv6 scope id".into()));
+    }
+    let scope = scope
+        .parse::<u32>()
+        .map_err(|_| TransportError::Connect("invalid IPv6 scope id".into()))?;
+    if scope == 0 {
+        Ok(parsed_host.to_string())
+    } else {
+        Ok(format!("{parsed_host}%{scope}"))
     }
 }
 
@@ -282,13 +297,23 @@ mod tests {
         for case in fixture["clientAddressCases"].as_array().unwrap() {
             let input = case["address"].as_str().unwrap();
             let java_host = case["host"].as_str().unwrap();
+            let java_accepts = case["socketAddressAccepted"].as_bool().unwrap();
+            let parsed = Address::parse(input);
+            assert_eq!(
+                parsed.is_ok(),
+                java_accepts,
+                "port/address acceptance for {case}"
+            );
+            if !java_accepts {
+                continue;
+            }
             let java_port = case["port"].as_str().unwrap().parse::<u16>().unwrap();
             let expected_host = java_host
                 .strip_prefix('[')
                 .and_then(|host| host.strip_suffix(']'))
                 .unwrap_or(java_host);
 
-            let parsed = Address::parse(input).unwrap_or_else(|error| {
+            let parsed = parsed.unwrap_or_else(|error| {
                 panic!("native parser rejected Java address {input:?}: {error}")
             });
             assert_eq!(
