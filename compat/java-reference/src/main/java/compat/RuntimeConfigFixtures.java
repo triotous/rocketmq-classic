@@ -223,6 +223,8 @@ public final class RuntimeConfigFixtures {
         Map<String, Object> result = new TreeMap<>();
         try {
             result.put("retainedViewSeesSecond", live.get(id) == second);
+            result.put("containsValueSecond", live.containsValue(second));
+            result.put("containsValueAbsent", !live.containsValue(first));
             result.put("getOrDefaultPresent", live.getOrDefault(id, first) == second);
             result.put("getOrDefaultAbsent", live.getOrDefault("missing", first) == first);
             result.put("putReturnsPrevious", live.put(id, first) == second);
