@@ -827,6 +827,49 @@ public final class RuntimeRouteFixtures {
         cases.add(item);
     }
 
+    private static org.apache.rocketmq.remoting.protocol.route.QueueData queueData(
+        String brokerName, int read, int write, int perm, int flag) {
+        org.apache.rocketmq.remoting.protocol.route.QueueData data =
+            new org.apache.rocketmq.remoting.protocol.route.QueueData();
+        data.setBrokerName(brokerName);
+        data.setReadQueueNums(read);
+        data.setWriteQueueNums(write);
+        data.setPerm(perm);
+        data.setTopicSysFlag(flag);
+        return data;
+    }
+
+    private static List<Object> queueDataMethodCases() {
+        org.apache.rocketmq.remoting.protocol.route.QueueData[][] pairs = new org.apache.rocketmq.remoting.protocol.route.QueueData[][] {
+            {queueData(null, 0, 0, 0, 0), queueData(null, 0, 0, 0, 0)},
+            {queueData("a", 1, 2, 4, 8), queueData("c", 1, 2, 4, 8)},
+            {queueData("a", 1, 2, 4, 8), queueData("abcd", 1, 2, 4, 8)},
+            {queueData("\uD800\uDC00", 1, 2, 4, 8), queueData("\uE000", 1, 2, 4, 8)},
+            {queueData("same", 1, 2, 4, 8), queueData("same", 9, 8, 7, 6)}
+        };
+        List<Object> cases = new ArrayList<>();
+        for (org.apache.rocketmq.remoting.protocol.route.QueueData[] pair : pairs) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("left", com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(pair[0],
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue)));
+            item.put("right", com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(pair[1],
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue)));
+            item.put("equals", pair[0].equals(pair[1]));
+            item.put("leftHashCode", pair[0].hashCode());
+            item.put("rightHashCode", pair[1].hashCode());
+            item.put("leftToString", pair[0].toString());
+            item.put("rightToString", pair[1].toString());
+            try {
+                item.put("result", pair[0].compareTo(pair[1]));
+                item.put("outcome", "OK");
+            } catch (NullPointerException error) {
+                item.put("outcome", "NullPointerException");
+            }
+            cases.add(item);
+        }
+        return cases;
+    }
+
     private static List<Object> brokerDataCompareToCases() {
         List<Object> cases = new ArrayList<>();
         String[][] pairs = new String[][] {
@@ -1013,6 +1056,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("runtimeRawOfflineCleanup", runtimeRawOfflineCleanup(inputs.get(0)));
         fixture.put("brokerDataEquality", brokerDataEqualityCases());
         fixture.put("brokerDataHashCode", brokerDataHashCodeCases());
+        fixture.put("queueDataMethods", queueDataMethodCases());
         fixture.put("brokerDataCompareTo", brokerDataCompareToCases());
         fixture.put("topicRouteDataChanged", topicRouteDataChangedCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
