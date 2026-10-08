@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use serde::Deserialize;
+use serde::de::{MapAccess, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer};
 
 use super::TransportMode;
 use crate::error::TransportError;
@@ -31,19 +32,179 @@ impl From<SocksProxyConfig> for ParsedProxyRoute {
     }
 }
 
+#[derive(Clone, Debug)]
+enum FastjsonValue {
+    Null,
+    Bool(bool),
+    Number(serde_json::Number),
+    String(String),
+    Array(Vec<Self>),
+    Object(Vec<(String, Self)>),
+}
+
+impl FastjsonValue {
+    fn java_string(&self) -> String {
+        match self {
+            Self::String(value) => value.clone(),
+            Self::Null => "null".into(),
+            Self::Bool(value) => value.to_string(),
+            Self::Number(value) => value.to_string(),
+            Self::Array(_) | Self::Object(_) => {
+                let mut output = String::new();
+                self.write_compact_json(&mut output);
+                output
+            }
+        }
+    }
+
+    fn write_compact_json(&self, output: &mut String) {
+        match self {
+            Self::Null => output.push_str("null"),
+            Self::Bool(value) => output.push_str(if *value { "true" } else { "false" }),
+            Self::Number(value) => output.push_str(&value.to_string()),
+            Self::String(value) => write_json_string(value, output),
+            Self::Array(values) => {
+                output.push('[');
+                for (index, value) in values.iter().enumerate() {
+                    if index > 0 {
+                        output.push(',');
+                    }
+                    value.write_compact_json(output);
+                }
+                output.push(']');
+            }
+            Self::Object(fields) => {
+                output.push('{');
+                for (index, (key, value)) in fields.iter().enumerate() {
+                    if index > 0 {
+                        output.push(',');
+                    }
+                    write_json_string(key, output);
+                    output.push(':');
+                    value.write_compact_json(output);
+                }
+                output.push('}');
+            }
+        }
+    }
+}
+
+fn write_json_string(value: &str, output: &mut String) {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    output.push('"');
+    for character in value.chars() {
+        match character {
+            '"' => output.push_str("\\\""),
+            '\\' => output.push_str("\\\\"),
+            '\u{0008}' => output.push_str("\\b"),
+            '\u{000c}' => output.push_str("\\f"),
+            '\n' => output.push_str("\\n"),
+            '\r' => output.push_str("\\r"),
+            '\t' => output.push_str("\\t"),
+            '\u{0000}'..='\u{001f}' => {
+                let byte = character as u8;
+                output.push_str("\\u00");
+                output.push(HEX[(byte >> 4) as usize] as char);
+                output.push(HEX[(byte & 0x0f) as usize] as char);
+            }
+            other => output.push(other),
+        }
+    }
+    output.push('"');
+}
+
+impl<'de> Deserialize<'de> for FastjsonValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct FastjsonValueVisitor;
+
+        impl<'de> Visitor<'de> for FastjsonValueVisitor {
+            type Value = FastjsonValue;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a JSON value")
+            }
+
+            fn visit_unit<E>(self) -> Result<Self::Value, E> {
+                Ok(FastjsonValue::Null)
+            }
+
+            fn visit_none<E>(self) -> Result<Self::Value, E> {
+                Ok(FastjsonValue::Null)
+            }
+
+            fn visit_bool<E>(self, value: bool) -> Result<Self::Value, E> {
+                Ok(FastjsonValue::Bool(value))
+            }
+
+            fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E> {
+                Ok(FastjsonValue::Number(value.into()))
+            }
+
+            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E> {
+                Ok(FastjsonValue::Number(value.into()))
+            }
+
+            fn visit_f64<E>(self, value: f64) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                serde_json::Number::from_f64(value)
+                    .map(FastjsonValue::Number)
+                    .ok_or_else(|| E::custom("non-finite JSON number"))
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E> {
+                Ok(FastjsonValue::String(value.to_owned()))
+            }
+
+            fn visit_string<E>(self, value: String) -> Result<Self::Value, E> {
+                Ok(FastjsonValue::String(value))
+            }
+
+            fn visit_seq<A>(self, mut sequence: A) -> Result<Self::Value, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let mut values = Vec::new();
+                while let Some(value) = sequence.next_element()? {
+                    values.push(value);
+                }
+                Ok(FastjsonValue::Array(values))
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut fields: Vec<(String, FastjsonValue)> = Vec::new();
+                while let Some((key, value)) = map.next_entry::<String, FastjsonValue>()? {
+                    if let Some((_, existing)) = fields.iter_mut().find(|(name, _)| *name == key) {
+                        *existing = value;
+                    } else {
+                        fields.push((key, value));
+                    }
+                }
+                Ok(FastjsonValue::Object(fields))
+            }
+        }
+
+        deserializer.deserialize_any(FastjsonValueVisitor)
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(transparent)]
-struct RawProxyRoute(HashMap<String, Option<serde_json::Value>>);
+struct RawProxyRoute(HashMap<String, Option<FastjsonValue>>);
 
 impl RawProxyRoute {
     fn java_string_field(&self, name: &str) -> Option<String> {
         self.0
             .get(name)
             .and_then(Option::as_ref)
-            .map(|value| match value {
-                serde_json::Value::String(value) => value.clone(),
-                other => other.to_string(),
-            })
+            .map(FastjsonValue::java_string)
     }
 }
 
