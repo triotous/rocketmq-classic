@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     future::Future,
     sync::{Arc, Mutex, OnceLock, Weak},
 };
@@ -360,6 +360,18 @@ impl FactoryTable {
         Ok(())
     }
 
+    pub fn key_set_view(&self) -> FactoryKeySetView {
+        FactoryKeySetView(self.clone())
+    }
+
+    pub fn values_view(&self) -> FactoryValuesView {
+        FactoryValuesView(self.clone())
+    }
+
+    pub fn entry_set_view(&self) -> FactoryEntrySetView {
+        FactoryEntrySetView(self.clone())
+    }
+
     pub async fn put(
         &self,
         key: &str,
@@ -515,6 +527,112 @@ impl FactoryTable {
                 return Ok((previous, true));
             }
         }
+    }
+}
+
+/// Retained live key-set view of a `FactoryTable`.
+#[derive(Clone)]
+pub struct FactoryKeySetView(FactoryTable);
+
+impl FactoryKeySetView {
+    pub fn contains(&self, key: &str) -> Result<bool, RuntimeError> {
+        self.0.contains_key(key)
+    }
+
+    pub fn len(&self) -> Result<usize, RuntimeError> {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> Result<bool, RuntimeError> {
+        self.0.is_empty()
+    }
+
+    /// Returns a detached key copy from the live view.
+    pub fn snapshot(&self) -> Result<BTreeSet<String>, RuntimeError> {
+        Ok(self.0.snapshot()?.into_keys().collect())
+    }
+
+    pub async fn remove(&self, key: &str) -> Result<bool, RuntimeError> {
+        self.0.remove(key).await.map(|value| value.is_some())
+    }
+
+    pub async fn clear(&self) -> Result<(), RuntimeError> {
+        self.0.clear().await
+    }
+}
+
+/// Retained live values collection view of a `FactoryTable`.
+#[derive(Clone)]
+pub struct FactoryValuesView(FactoryTable);
+
+impl FactoryValuesView {
+    pub fn contains(&self, value: &Arc<ClientRuntime>) -> Result<bool, RuntimeError> {
+        self.0.contains_value(value)
+    }
+
+    pub fn len(&self) -> Result<usize, RuntimeError> {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> Result<bool, RuntimeError> {
+        self.0.is_empty()
+    }
+
+    /// Returns a detached values copy from the live view.
+    pub fn snapshot(&self) -> Result<Vec<Arc<ClientRuntime>>, RuntimeError> {
+        Ok(self.0.snapshot()?.into_values().collect())
+    }
+
+    /// Removes one matching runtime mapping without shutting the runtime down.
+    pub async fn remove(&self, value: &Arc<ClientRuntime>) -> Result<bool, RuntimeError> {
+        for (key, current) in self.0.snapshot()? {
+            if Arc::ptr_eq(&current, value) && self.0.remove_if_same(&key, value).await? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    pub async fn clear(&self) -> Result<(), RuntimeError> {
+        self.0.clear().await
+    }
+}
+
+/// Retained live entry-set view of a `FactoryTable`.
+#[derive(Clone)]
+pub struct FactoryEntrySetView(FactoryTable);
+
+impl FactoryEntrySetView {
+    pub fn contains(&self, key: &str, value: &Arc<ClientRuntime>) -> Result<bool, RuntimeError> {
+        Ok(self
+            .0
+            .get(key)?
+            .is_some_and(|current| Arc::ptr_eq(&current, value)))
+    }
+
+    pub fn len(&self) -> Result<usize, RuntimeError> {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> Result<bool, RuntimeError> {
+        self.0.is_empty()
+    }
+
+    /// Returns a detached entry copy from the live view.
+    pub fn snapshot(&self) -> Result<BTreeMap<String, Arc<ClientRuntime>>, RuntimeError> {
+        Ok(self.0.snapshot()?.into_iter().collect())
+    }
+
+    pub async fn remove(
+        &self,
+        key: &str,
+        value: &Arc<ClientRuntime>,
+    ) -> Result<bool, RuntimeError> {
+        self.0.remove_if_same(key, value).await
+    }
+
+    pub async fn clear(&self) -> Result<(), RuntimeError> {
+        self.0.clear().await
     }
 }
 
