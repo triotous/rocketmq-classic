@@ -1120,6 +1120,19 @@ public final class RuntimeConfigFixtures {
             String input = "{\"10.0.0.0/8\":{\"addr\":\"A" + ((char) 92) + ((char) escaped) + "Z\"}}";
             allInputs.add(input);
         }
+        String slash = String.valueOf((char) 92);
+        String[] unicodeEscapeInputs = {
+            "{\"10.0.0.0/8\":{\"addr\":\"A" + slash + "u1" + ((char) 0x03bb) + "34Z\"}}",
+            "{\"10.0.0.0/8\":{\"addr\":\"A" + slash + "u12" + ((char) 0x03bb) + "4Z\"}}",
+            "{\"10.0.0.0/8\":{\"addr\":\"A" + slash + "u12" + ((char) 0x0661) + "4Z\"}}",
+            "{\"10.0.0.0/8\":{\"addr\":\"A" + slash + "u12" + ((char) 0xff11) + "4Z\"}}",
+            "{\"10.0.0.0/8\":{\"addr\":\"A" + slash + "u1" + new String(Character.toChars(0x1d7da)) + "34Z\"}}",
+            "{\"10.0.0.0/8\":{\"addr\":\"A" + slash + "x" + ((char) 0x03bb) + "0Z\"}}",
+            "{\"10.0.0.0/8\":{\"addr\":\"A" + slash + "x0" + ((char) 0x0661) + "Z\"}}",
+            "{\"10.0.0.0/8\":{\"addr\":\"A" + slash + "u12\t4Z\"}}",
+            "{\"10.0.0.0/8\":{\"addr\":\"A" + slash + "u12\n4Z\"}}"
+        };
+        allInputs.addAll(java.util.Arrays.asList(unicodeEscapeInputs));
         for (int i = 0; i < allInputs.size(); i++) {
             String input = allInputs.get(i);
             ClientConfig config = new ClientConfig();
