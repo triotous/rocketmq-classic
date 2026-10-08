@@ -141,6 +141,9 @@ async fn retained_factory_table_and_atomic_mutations_match_invoked_java() {
     let manager = ClientRuntimeManager::new();
     let live = manager.factory_table();
     let second_view = live.clone();
+    let key_view = live.key_set_view();
+    let values_view = live.values_view();
+    let entry_view = live.entry_set_view();
     let config = ClientConfig::new("table-oracle");
     let id = config.build_client_id();
     assert!(live.is_empty().unwrap());
@@ -279,11 +282,43 @@ async fn retained_factory_table_and_atomic_mutations_match_invoked_java() {
         visited.len() == expected.len() && visited.values().all(|matches| *matches),
         java["forEachVisitsCurrentMappings"]
     );
+    assert_eq!(
+        key_view.contains("bulk-a").unwrap() && key_view.len().unwrap() == 4,
+        java["keyViewSeesBulk"]
+    );
+    assert_eq!(
+        values_view.contains(&first).unwrap()
+            && values_view.contains(&second).unwrap()
+            && values_view.len().unwrap() == 4,
+        java["valuesViewSeesBulk"]
+    );
+    assert_eq!(
+        entry_view.contains("bulk-a", &first).unwrap() && entry_view.len().unwrap() == 4,
+        java["entryViewSeesBulk"]
+    );
+    assert_eq!(
+        key_view.remove("bulk-b").await.unwrap(),
+        java["keyViewRemovesBulk"]
+    );
+    assert_eq!(
+        entry_view.remove("bulk-a", &first).await.unwrap(),
+        java["entryViewRemovesBulk"]
+    );
+    assert_eq!(
+        !key_view.contains("bulk-b").unwrap()
+            && !entry_view.contains("bulk-a", &first).unwrap()
+            && values_view.len().unwrap() == 2,
+        java["viewsSeeRemovals"]
+    );
     assert!(Arc::ptr_eq(&second_view.snapshot().unwrap()[""], &second));
     live.clear().await.unwrap();
     assert_eq!(
         second_view.is_empty().unwrap(),
         java["retainedViewEmptyAfterClear"]
+    );
+    assert_eq!(
+        key_view.is_empty().unwrap() && values_view.is_empty().unwrap() && entry_view.is_empty().unwrap(),
+        java["collectionViewsEmptyAfterClear"]
     );
     assert_eq!(
         first.state(),
