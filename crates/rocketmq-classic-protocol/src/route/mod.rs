@@ -41,6 +41,43 @@ impl PartialEq for BrokerData {
 
 impl Eq for BrokerData {}
 
+/// Failure cases from the pinned Java `BrokerData.compareTo` method.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum BrokerDataCompareError {
+    #[error("BrokerData broker name is null")]
+    NullBrokerName,
+}
+
+impl BrokerData {
+    /// Returns the pinned Java 5.5.1 `BrokerData.compareTo` result.
+    ///
+    /// Java compares broker names as UTF-16 strings and returns the raw code
+    /// unit difference. Its implementation throws `NullPointerException` if
+    /// either broker name is null; this method represents that as an error.
+    pub fn java_compare_to(&self, other: &Self) -> Result<i32, BrokerDataCompareError> {
+        let name = self
+            .broker_name
+            .as_deref()
+            .ok_or(BrokerDataCompareError::NullBrokerName)?;
+        let other_name = other
+            .broker_name
+            .as_deref()
+            .ok_or(BrokerDataCompareError::NullBrokerName)?;
+        Ok(java_string_compare_to(name, other_name))
+    }
+}
+
+fn java_string_compare_to(left: &str, right: &str) -> i32 {
+    let left_units: Vec<u16> = left.encode_utf16().collect();
+    let right_units: Vec<u16> = right.encode_utf16().collect();
+    for (&left, &right) in left_units.iter().zip(&right_units) {
+        if left != right {
+            return i32::from(left) - i32::from(right);
+        }
+    }
+    left_units.len() as i32 - right_units.len() as i32
+}
+
 #[cfg(test)]
 mod broker_data_equality_tests {
     use super::BrokerData;
