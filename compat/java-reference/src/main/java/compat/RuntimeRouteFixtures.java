@@ -1473,6 +1473,59 @@ public final class RuntimeRouteFixtures {
             com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringKeyAsString)));
     }
 
+    private static <T extends org.apache.rocketmq.remoting.protocol.RemotingSerializable>
+        Map<String, Object> inheritedSerializationCase(String id, String rawInput, Class<T> type) {
+        T value = com.alibaba.fastjson2.JSON.parseObject(rawInput, type);
+        String instanceJson = value.toJson();
+        String prettyJson = value.toJson(true);
+        byte[] instanceBytes = value.encode();
+        byte[] staticBytes = org.apache.rocketmq.remoting.protocol.RemotingSerializable.encode(value);
+        byte[] featureBytes = value.encode(new com.alibaba.fastjson2.JSONWriter.Feature[0]);
+        T decoded = org.apache.rocketmq.remoting.protocol.RemotingSerializable.decode(instanceBytes, type);
+        T fromJson = org.apache.rocketmq.remoting.protocol.RemotingSerializable.fromJson(instanceJson, type);
+        List<T> decodedList = org.apache.rocketmq.remoting.protocol.RemotingSerializable.decodeList(
+            com.alibaba.fastjson2.JSON.toJSONBytes(java.util.Collections.singletonList(value)), type);
+
+        Map<String, Object> item = new TreeMap<>();
+        item.put("id", id);
+        item.put("rawInput", rawInput);
+        item.put("input", com.alibaba.fastjson2.JSON.parseObject(rawInput));
+        item.put("instanceJson", instanceJson);
+        item.put("instancePrettyJson", prettyJson);
+        item.put("staticJson", org.apache.rocketmq.remoting.protocol.RemotingSerializable.toJson(value, false));
+        item.put("staticPrettyJson", org.apache.rocketmq.remoting.protocol.RemotingSerializable.toJson(value, true));
+        item.put("instanceEncodedJson", new String(instanceBytes, java.nio.charset.StandardCharsets.UTF_8));
+        item.put("staticEncodedJson", new String(staticBytes, java.nio.charset.StandardCharsets.UTF_8));
+        item.put("featureEncodedJson", new String(featureBytes, java.nio.charset.StandardCharsets.UTF_8));
+        item.put("decodedJson", decoded.toJson());
+        item.put("fromJsonJson", fromJson.toJson());
+        item.put("decodedListJson", decodedList.get(0).toJson());
+        item.put("decodedListCount", decodedList.size());
+        return item;
+    }
+
+    private static List<Object> inheritedSerializationCases() {
+        List<Object> cases = new ArrayList<>();
+        String[][] routeInputs = new String[][] {
+            {"route-default", "{}"},
+            {"route-null", "{\"orderTopicConf\":null,\"queueDatas\":null,\"brokerDatas\":null,\"filterServerTable\":null,\"topicQueueMappingByBroker\":null}"},
+            {"route-populated", "{\"orderTopicConf\":\"broker:2\",\"queueDatas\":[{\"brokerName\":\"broker\",\"readQueueNums\":2,\"writeQueueNums\":2,\"perm\":6,\"topicSysFlag\":1}],\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master:10911\",\"2\":\"slave:10911\"}}],\"filterServerTable\":{\"broker\":[\"filter-a\",\"filter-b\"]},\"topicQueueMappingByBroker\":{\"broker\":{\"topic\":\"topic\",\"totalQueues\":2,\"bname\":\"broker\",\"epoch\":1,\"dirty\":false,\"scope\":\"__global__\",\"currIdMap\":{\"0\":0,\"1\":1}}}}"}
+        };
+        for (String[] entry : routeInputs) {
+            cases.add(inheritedSerializationCase(entry[0], entry[1], TopicRouteData.class));
+        }
+        String[][] mappingInputs = new String[][] {
+            {"mapping-default", "{}"},
+            {"mapping-null", "{\"topic\":null,\"totalQueues\":0,\"bname\":null,\"epoch\":0,\"dirty\":false,\"scope\":null,\"currIdMap\":null}"},
+            {"mapping-populated", "{\"topic\":\"topic\",\"totalQueues\":2,\"bname\":\"broker\",\"epoch\":1,\"dirty\":false,\"scope\":\"__global__\",\"currIdMap\":{\"0\":0,\"1\":1}}"}
+        };
+        for (String[] entry : mappingInputs) {
+            cases.add(inheritedSerializationCase(entry[0], entry[1],
+                org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo.class));
+        }
+        return cases;
+    }
+
     public static void main(String[] args) throws Exception {
         String ordinary = "{\"queueDatas\":[{\"brokerName\":\"broker\",\"readQueueNums\":3,\"writeQueueNums\":2,\"perm\":6,\"topicSysFlag\":0}],"
             + "\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master:10911\",\"2\":\"slave:10911\"}}],\"filterServerTable\":{}}";
@@ -1558,7 +1611,7 @@ public final class RuntimeRouteFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "MessageQueue.equals/hashCode/toString/compareTo; BrokerData.equals/hashCode; MQClientInstance.topicRouteData2TopicPublishInfo/topicRouteData2TopicSubscribeInfo/updateTopicRouteInfoFromNameServer/getTopicRouteTable/getAnExistTopicRouteData/queryTopicRouteData/cleanOfflineBroker/findBrokerAddressInPublish/findBrokerAddressInAdmin/findBrokerAddressInSubscribe/findBrokerAddrByTopic; ConcurrentMap put/putIfAbsent/replace/remove/clear; TopicRouteData JSON decode/equals; ClientMetadata.topicRouteData2EndpointsForStaticTopic; MixAll.brokerVIPChannel; Integer.parseInt/Character.digit");
+        fixture.put("entrypoint", "MessageQueue.equals/hashCode/toString/compareTo; BrokerData.equals/hashCode; MQClientInstance.topicRouteData2TopicPublishInfo/topicRouteData2TopicSubscribeInfo/updateTopicRouteInfoFromNameServer/getTopicRouteTable/getAnExistTopicRouteData/queryTopicRouteData/cleanOfflineBroker/findBrokerAddressInPublish/findBrokerAddressInAdmin/findBrokerAddressInSubscribe/findBrokerAddrByTopic; ConcurrentMap put/putIfAbsent/replace/remove/clear; TopicRouteData inherited RemotingSerializable encode/toJson/decode/decodeList/fromJson; ClientMetadata.topicRouteData2EndpointsForStaticTopic; MixAll.brokerVIPChannel; Integer.parseInt/Character.digit");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
         fixture.put("vip", vip);
@@ -1619,6 +1672,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("topicQueueMappingMethods", topicQueueMappingMethodsCases());
         fixture.put("topicRouteDataMethods", topicRouteDataMethodCases());
         fixture.put("topicRouteDataToString", topicRouteDataToStringCases());
+        fixture.put("inheritedSerializationCases", inheritedSerializationCases());
         fixture.put("brokerDataCompareTo", brokerDataCompareToCases());
         fixture.put("topicRouteDataChanged", topicRouteDataChangedCases());
         fixture.put("topicRouteDataClone", topicRouteDataCloneCases());
