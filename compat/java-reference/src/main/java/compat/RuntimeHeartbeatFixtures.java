@@ -194,6 +194,48 @@ public final class RuntimeHeartbeatFixtures {
         return cases;
     }
 
+    private static Map<String, Object> nullOwnerSubscriptionPreparation() throws Exception {
+        ClientConfig config = new ClientConfig();
+        config.setClientIP("heartbeat-null-owner-subscriptions");
+        MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+        Map<String, Object> item = new TreeMap<>();
+        try {
+            MQConsumerInner consumer = (MQConsumerInner) Proxy.newProxyInstance(
+                MQConsumerInner.class.getClassLoader(), new Class<?>[] {MQConsumerInner.class},
+                (proxy, method, values) -> {
+                    switch (method.getName()) {
+                        case "groupName": return "null-subscriptions";
+                        case "consumeType": return ConsumeType.CONSUME_ACTIVELY;
+                        case "messageModel": return MessageModel.CLUSTERING;
+                        case "consumeFromWhere": return ConsumeFromWhere.CONSUME_FROM_LAST_OFFSET;
+                        case "isUnitMode": return false;
+                        case "subscriptions": return null;
+                        default: return method.getReturnType() == boolean.class ? false : null;
+                    }
+                });
+            if (!runtime.registerConsumer("null-subscriptions", consumer))
+                throw new IllegalStateException("consumer registration");
+            Method prepare = MQClientInstance.class.getDeclaredMethod("prepareHeartbeatData", boolean.class);
+            prepare.setAccessible(true);
+            try {
+                prepare.invoke(runtime, false);
+                item.put("fullOutcome", "OK");
+            } catch (java.lang.reflect.InvocationTargetException error) {
+                item.put("fullOutcome", error.getCause().getClass().getSimpleName());
+            }
+            HeartbeatData simple = (HeartbeatData) prepare.invoke(runtime, true);
+            ConsumerData owner = simple.getConsumerDataSet().stream()
+                .filter(value -> "null-subscriptions".equals(value.getGroupName())).findFirst().orElseThrow();
+            item.put("simpleSubscriptionCount", owner.getSubscriptionDataSet().size());
+        } finally {
+            Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
+                org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
+            cleanup.setAccessible(true);
+            cleanup.invoke(runtime, runtime.getMQClientAPIImpl(), new IllegalStateException("fixture teardown"));
+        }
+        return item;
+    }
+
     private static void record(List<Object> cases, MQClientInstance runtime, String name,
         boolean withoutSub) throws Exception {
         Method prepare = MQClientInstance.class.getDeclaredMethod("prepareHeartbeatData", boolean.class);
@@ -297,6 +339,7 @@ public final class RuntimeHeartbeatFixtures {
         fixture.put("heartbeatFieldCases", heartbeatFieldCases());
         fixture.put("fingerprintNullCases", fingerprintNullCases());
         fixture.put("primitiveNullCases", primitiveNullCases());
+        fixture.put("nullOwnerSubscriptionPreparation", nullOwnerSubscriptionPreparation());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture) + "\n";
         Path file = Path.of(args[0]);
         if (args.length > 1 && "--verify".equals(args[1])) {

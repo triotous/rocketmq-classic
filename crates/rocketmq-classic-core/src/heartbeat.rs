@@ -317,6 +317,16 @@ mod tests {
 
     #[tokio::test]
     async fn null_owner_subscription_set_matches_java_prepare_branch() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/heartbeat.json")).unwrap();
+        assert_eq!(
+            fixture["nullOwnerSubscriptionPreparation"]["fullOutcome"],
+            "NullPointerException"
+        );
+        assert_eq!(
+            fixture["nullOwnerSubscriptionPreparation"]["simpleSubscriptionCount"],
+            0
+        );
         struct NullSubscriptions;
         impl ConsumerRuntime for NullSubscriptions {
             fn heartbeat_data(&self) -> ConsumerData {
