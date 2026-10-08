@@ -58,6 +58,27 @@ mod broker_data_equality_tests {
 }
 
 #[cfg(test)]
+mod broker_data_compare_to_tests {
+    use super::{BrokerData, BrokerDataCompareError};
+
+    #[test]
+    fn broker_data_compare_to_matches_invoked_java_comparable() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["brokerDataCompareTo"].as_array().unwrap() {
+            let left: BrokerData = serde_json::from_value(case["left"].clone()).unwrap();
+            let right: BrokerData = serde_json::from_value(case["right"].clone()).unwrap();
+            let result = left.java_compare_to(&right);
+            if case["outcome"] == "OK" {
+                assert_eq!(result.unwrap(), case["result"].as_i64().unwrap() as i32);
+            } else {
+                assert_eq!(result.unwrap_err(), BrokerDataCompareError::NullBrokerName);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
 mod nullable_broker_address_tests {
     use super::BrokerData;
 
