@@ -1,12 +1,16 @@
 # Phase 6 API and configuration map
 
-Protocol enum API update (2026-10-08): `MessageRequestMode`, `LiteSubscriptionAction`, `OffsetOptionType`, `ConsumeMessageResult`/Java `CMResult`, `ConsumeType`, `MessageModel`, and `ConsumeFromWhere` now map Java enum values, order, names, text, comparisons, and lookup errors. `MessageModel`'s Rust ordering follows Java declaration ordinals. Direct Java enum cases cover 65 outcomes. Current `client-config.json` SHA-256: `6de87735e30feb4fdca7c041d207326dd4718f0fe76b749c9c96b5e59214c747`. See [ADR-0030](../architecture/ADR-0030-protocol-enum-java-api.md). Full Phase 6 reconciliation remains open.
+Remoting command API update (2026-10-08): Rust now exposes `RemotingCommandType`, `RequestType`, and `RemotingCommand::get_type()` with Java declaration order, exact names, byte lookup behavior, and flag-derived type selection. The stream request hook obtains `ReqT` from `RequestType::Stream.get_code()`. Direct Java cases cover 22 enum, byte, and command-type outcomes. Current `client-config.json` SHA-256: `6d02747d6a267631d2bf98d064967bead5a4a168411a28cb15f34bfa46d0c764`. See [ADR-0032](../architecture/ADR-0032-remoting-command-enum-java-api.md). Full Phase 6 reconciliation remains open.
 
-Client status enum API update (2026-10-08): Rust `PullStatus`, `PopStatus`, `AckStatus`, and `SendStatus` now expose Java's declaration order, `name`/`ordinal`/text/comparison methods, `values()` and `valueOf(String)` counterparts, and typed lookup errors. `PopStatus.values()` explicitly follows Java's `POLLING_FULL` before `POLLING_NOT_FOUND` order. Forty direct Java method cases pass. Current `client-config.json` SHA-256: `de88ee1ad2ce408aee43b6614feecc3c9cf1c7f25426b89ddb13feff03a09f0e`. See [ADR-0029](../architecture/ADR-0029-client-status-java-enum-api.md). Full Phase 6 reconciliation remains open.
+TLS enum API update (2026-10-08): Java `TlsMode` values/order, generated/inherited methods, `getName()`, and exact fallback `parse(String)` are mapped to the public Rust enum and transport-selection path. Its fixture SHA-256 at that update was `948fcc7ca474d0ea48b39b1f60e075fa2213ff40290d51ec801c14af0e8fbad9`; see [ADR-0031](../architecture/ADR-0031-tls-mode-java-enum-api.md). TLS provisioning remains Phase 19 work.
+
+Protocol enum API update (2026-10-08): `MessageRequestMode`, `LiteSubscriptionAction`, `OffsetOptionType`, `ConsumeMessageResult`/Java `CMResult`, `ConsumeType`, `MessageModel`, and `ConsumeFromWhere` now map Java enum values, order, names, text, comparisons, and lookup errors. `MessageModel`'s Rust ordering follows Java declaration ordinals. Direct Java enum cases cover 65 outcomes. Fixture SHA-256 at that update: `6de87735e30feb4fdca7c041d207326dd4718f0fe76b749c9c96b5e59214c747`. See [ADR-0030](../architecture/ADR-0030-protocol-enum-java-api.md). Full Phase 6 reconciliation remains open.
+
+Client status enum API update (2026-10-08): Rust `PullStatus`, `PopStatus`, `AckStatus`, and `SendStatus` now expose Java's declaration order, `name`/`ordinal`/text/comparison methods, `values()` and `valueOf(String)` counterparts, and typed lookup errors. `PopStatus.values()` explicitly follows Java's `POLLING_FULL` before `POLLING_NOT_FOUND` order. Forty direct Java method cases pass. Fixture SHA-256 at that update: `de88ee1ad2ce408aee43b6614feecc3c9cf1c7f25426b89ddb13feff03a09f0e`. See [ADR-0029](../architecture/ADR-0029-client-status-java-enum-api.md). Full Phase 6 reconciliation remains open.
 
 CompressionType public-surface correction (2026-10-08): Rust now exposes exactly Java's `LZ4`, `ZSTD`, and `ZLIB` enum values, with matching value/name/order/text/comparison methods and `getValue`/`getCompressionFlag`/`of`/`findByValue` counterparts. The flag helper maps code 0 to `ZLIB`, like Java, and returns a typed error for unsupported values 4–7. The direct Java fixture covers enum methods, Java trim boundaries, lookup errors, and `MessageSysFlag.getCompressionType`. Client-config fixture SHA-256: `ab635ab3ac993723c769fa19264fe63e593990da3655b9d1f26e0cad48dac3bf`. See [ADR-0028](../architecture/ADR-0028-compression-type-java-enum-api.md). Full Phase 6 reconciliation remains open.
 
-SerializeType public-surface correction (2026-10-08): Rust now exposes only Java's `JSON` and `ROCKETMQ` variants. `SerializeType::from_java_byte(i8) -> Option<SerializeType>` maps Java's nullable `valueOf(byte)`; raw-code constructors and `Unknown(u8)` are removed. The frame decoder retains a typed unsupported-tag error when Java's lookup yields null. Direct Java enum method cases and native tests cover the remaining public enum surface. Full workspace, strict Clippy, offline Maven, formatter and diff checks pass. Current `client-config.json` SHA-256: `6008a989876a0541a2d1ed8a036ca0dc37663a3ef0551400b76e5e5a480e95ae`. See [ADR-0027](../architecture/ADR-0027-serialize-type-java-enum-api.md).
+SerializeType public-surface correction (2026-10-08): Rust now exposes only Java's `JSON` and `ROCKETMQ` variants. `SerializeType::from_java_byte(i8) -> Option<SerializeType>` maps Java's nullable `valueOf(byte)`; raw-code constructors and `Unknown(u8)` are removed. The frame decoder retains a typed unsupported-tag error when Java's lookup yields null. Direct Java enum method cases and native tests cover the remaining public enum surface. Full workspace, strict Clippy, offline Maven, formatter and diff checks pass. Fixture SHA-256 at that update: `6008a989876a0541a2d1ed8a036ca0dc37663a3ef0551400b76e5e5a480e95ae`. See [ADR-0027](../architecture/ADR-0027-serialize-type-java-enum-api.md).
 
 LanguageCode public-surface correction (2026-10-08): the native enum now has exactly Java's 14 constants. `from_java_byte(i8) -> Option<LanguageCode>` represents Java's nullable `valueOf(byte)` result; the extra `Unknown` variant, `LanguageCode::from_code`/`java_byte` helpers, and duplicate `java_value_of_byte` method are removed. JSON and binary decoders keep mapping unknown input to `None`. The pinned fixture exercises all constants and signed unknown-byte cases. [ADR-0023](../architecture/ADR-0023-language-code-java-methods.md) records the API mapping. Full Phase 6 source/API reconciliation remains open.
 
@@ -121,7 +125,7 @@ Copy column: **C** means both `cloneClientConfig` and `resetClientConfig` copy t
 | detectTimeout | detect_timeout | i32 milliseconds; 200 | C | owner | producer fault detector Phase 7 |
 | detectInterval | detect_interval | i32 milliseconds; 2000 | C | owner | producer fault detector Phase 7 |
 | language | language | nullable LanguageCode; default JAVA | C | K | heartbeat V1/V2 use config; null JSON omits key and binary encode errors; ADR0007 implemented; CPP admin reset override owning admin phase |
-| enableStreamRequestType | enable_stream_request_type | bool; false | C | ID + K | STREAM suffix and pre-user `ReqT=0` hook |
+| enableStreamRequestType | enable_stream_request_type | bool; false | C | ID + K | STREAM suffix and pre-user `ReqT` hook from `RequestType::Stream.get_code()` (`0`) |
 | sendLatencyEnable | send_latency_enable | bool; `com.rocketmq.sendLatencyEnable`, false | C | owner | producer fault-tolerance selection Phase 7 |
 | startDetectorEnable | start_detector_enable | bool; `com.rocketmq.startDetectorEnable`, false | C | owner | producer fault detector Phase 7 |
 | enableHeartbeatChannelEventListener | enable_heartbeat_channel_event_listener | bool; true | C | K | weak active-channel listener; successful heartbeat wakes all consumers |
@@ -359,6 +363,17 @@ Java enum `hashCode()` is identity-based with no stable cross-run numeric value;
 | TLS selection from `tls.server.mode` | `TransportMode` uses `TlsMode::parse`; absent `tls.enable` enables TLS only for `Enforcing`, while an explicit `tls.enable` boolean takes precedence |
 
 The pinned Java fixture invokes all enum methods and parse boundary cases; the native differential checks direct outcomes. TLS credential provisioning and end-to-end acceptance remain Phase 19 work. See [ADR-0031](../architecture/ADR-0031-tls-mode-java-enum-api.md).
+
+## Remoting command enum and type API
+
+| Pinned Java API | Rust counterpart / current behavior |
+| --- | --- |
+| `RemotingCommandType.values()` / `valueOf(String)` / inherited enum methods | `RemotingCommandType::values()`, `value_of_name`, `name`, `ordinal`, `Display`, and `java_compare_to()` match `REQUEST_COMMAND` and `RESPONSE_COMMAND` order and lookup failures |
+| `RemotingCommand.getType()` | `RemotingCommand::get_type()` returns the type selected by the response flag and remains consistent with `is_response()` |
+| `RequestType.values()` / `valueOf(String)` / inherited enum methods | `RequestType::values()`, `value_of_name`, `name`, `ordinal`, `Display`, and `java_compare_to()` map the single `STREAM` value |
+| `RequestType.valueOf(byte)` / `getCode()` | `RequestType::from_java_byte(i8) -> Option<RequestType>` returns `None` for unknown signed bytes; `get_code() -> i8` returns Java code `0` |
+
+The pinned fixture directly calls both enum APIs, unknown byte lookups, `RemotingCommand.getType()`, and response marking. The Rust stream hook uses the mapped code instead of a duplicated literal. See [ADR-0032](../architecture/ADR-0032-remoting-command-enum-java-api.md).
 
 ## Runtime worker and inherited ServiceThread methods
 
