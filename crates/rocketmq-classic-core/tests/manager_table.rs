@@ -1,5 +1,5 @@
 use rocketmq_classic_core::{config::ClientConfig, runtime::ClientRuntimeManager};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 #[tokio::test]
@@ -322,6 +322,29 @@ async fn retained_factory_table_and_atomic_mutations_match_invoked_java() {
             && !key_view.contains(&id).unwrap()
             && values_view.len().unwrap() == 1,
         java["viewsSeeRemovals"]
+    );
+    live.put("bulk-c", first.clone()).await.unwrap();
+    live.put("bulk-d", second.clone()).await.unwrap();
+    assert_eq!(
+        key_view
+            .remove_all(&BTreeSet::from(["bulk-c".to_owned()]))
+            .await
+            .unwrap()
+            > 0,
+        java["keyViewRemoveAll"]
+    );
+    assert_eq!(
+        values_view.remove_all(&[second.clone()]).await.unwrap() > 0 && live.is_empty().unwrap(),
+        java["valuesViewRemoveAll"]
+    );
+    live.put("keep", first.clone()).await.unwrap();
+    live.put("drop", second.clone()).await.unwrap();
+    let retained_entry = BTreeMap::from([("keep".to_owned(), first.clone())]);
+    assert_eq!(
+        entry_view.retain_all(&retained_entry).await.unwrap() > 0
+            && entry_view.len().unwrap() == 1
+            && entry_view.contains("keep", &first).unwrap(),
+        java["entryViewRetainAll"]
     );
     assert!(Arc::ptr_eq(&second_view.snapshot().unwrap()[""], &second));
     live.clear().await.unwrap();
