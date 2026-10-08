@@ -619,7 +619,7 @@ pub(super) fn route_values_equal(left: &TopicRouteData, right: &TopicRouteData) 
         && left.broker_datas == right.broker_datas
 }
 
-/// Java MixAll.brokerVIPChannel, with checked socket ports and bracketed IPv6.
+/// Java MixAll.brokerVIPChannel's last-colon split and signed-int port offset.
 pub fn broker_vip_channel(enabled: bool, address: &str) -> Result<String, RuntimeError> {
     if !enabled {
         return Ok(address.to_owned());
@@ -627,23 +627,10 @@ pub fn broker_vip_channel(enabled: bool, address: &str) -> Result<String, Runtim
     let (host, port) = address
         .rsplit_once(':')
         .ok_or(RuntimeError::InvalidBrokerAddress)?;
-    let port = port
-        .parse::<u16>()
-        .ok()
-        .and_then(|port| port.checked_sub(2))
-        .filter(|port| *port > 0)
+    let port = crate::java_number::parse_long(port)
+        .and_then(|port| i32::try_from(port).ok())
         .ok_or(RuntimeError::InvalidBrokerAddress)?;
-    if host.is_empty()
-        || (host.contains(':')
-            && host
-                .trim_start_matches('[')
-                .trim_end_matches(']')
-                .parse::<std::net::Ipv6Addr>()
-                .is_err())
-    {
-        return Err(RuntimeError::InvalidBrokerAddress);
-    }
-    Ok(format!("{host}:{port}"))
+    Ok(format!("{host}:{}", port.wrapping_sub(2)))
 }
 
 #[cfg(test)]
@@ -1513,7 +1500,7 @@ mod tests {
     }
 
     #[test]
-    fn vip_transformation_checks_ports_and_preserves_ipv6() {
+    fn vip_transformation_preserves_valid_ipv6_and_rejects_java_parse_failures() {
         for (input, expected) in [
             ("broker:10911", "broker:10909"),
             ("[2001:db8::1]:10911", "[2001:db8::1]:10909"),
@@ -1522,14 +1509,7 @@ mod tests {
             assert_eq!(broker_vip_channel(true, input).unwrap(), expected);
             assert_eq!(broker_vip_channel(false, input).unwrap(), input);
         }
-        for input in [
-            "missing",
-            ":10911",
-            "broker:2",
-            "broker:-1",
-            "broker:65536",
-            "not:ipv6:10911",
-        ] {
+        for input in ["missing", "broker: 2", "broker:", "broker:999999999999"] {
             assert!(broker_vip_channel(true, input).is_err(), "{input}");
         }
     }
