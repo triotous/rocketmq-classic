@@ -506,12 +506,14 @@ fn contains_fastjson_rejected_literal(input: &str) -> bool {
                         match escaped {
                             b'"' | b'\'' | b'\\' | b'/' | b'b' | b'f' | b'n' | b'r' | b't'
                             | b'v' | b'0' => index += 2,
-                            b'x' if fastjson_escape_digits(bytes, index, quote, 2).is_some() => {
-                                index += 4;
-                            }
-                            b'u' if fastjson_escape_digits(bytes, index, quote, 4).is_some() => {
-                                index += 6;
-                            }
+                            b'x' => match fastjson_escape_digits(bytes, index, quote, 2) {
+                                Some(end) => index = end,
+                                None => return true,
+                            },
+                            b'u' => match fastjson_escape_digits(bytes, index, quote, 4) {
+                                Some(end) => index = end,
+                                None => return true,
+                            },
                             escaped if fastjson_additional_escape_code_unit(escaped).is_some() => {
                                 index += 2;
                             }
@@ -744,13 +746,28 @@ fn normalize_fastjson_source(input: &str) -> String {
 }
 
 fn fastjson_escape_digits(bytes: &[u8], start: usize, quote: u8, count: usize) -> Option<usize> {
-    let digits_start = start.checked_add(2)?;
-    let end = digits_start.checked_add(count)?;
-    let digits = bytes.get(digits_start..end)?;
-    (!digits
-        .iter()
-        .any(|byte| matches!(*byte, b'\n' | b'\r') || *byte == quote))
-    .then_some(end)
+    let marker = *bytes.get(start.checked_add(1)?)?;
+    let mut index = start.checked_add(2)?;
+    let mut consumed = 0;
+    while consumed < count {
+        let tail = std::str::from_utf8(bytes.get(index..)?).ok()?;
+        let escaped = tail.chars().next()?;
+        if escaped == char::from(quote) {
+            return None;
+        }
+        if marker == b'x' && u32::from(escaped) > 0x66 {
+            // Fastjson 2.0.63 indexes its x-escape lookup table directly with
+            // each UTF-16 code unit; values above ASCII 'f' throw.
+            return None;
+        }
+        let units = escaped.len_utf16();
+        if consumed + units > count {
+            return None;
+        }
+        consumed += units;
+        index += escaped.len_utf8();
+    }
+    Some(index)
 }
 
 fn fastjson_escape_code_unit(
@@ -764,23 +781,36 @@ fn fastjson_escape_code_unit(
     }
     let count = if marker == b'u' { 4 } else { 2 };
     let end = fastjson_escape_digits(bytes, start, quote, count)?;
-    let digits = &bytes[start + 2..end];
+    let digits = std::str::from_utf8(&bytes[start + 2..end]).ok()?;
     let mut value = 0u16;
-    for digit in digits {
-        value = value
-            .wrapping_shl(4)
-            .wrapping_add(u16::from(fastjson_hex_digit_or_zero(*digit)));
+    let marker = bytes[start + 1];
+    for digit in digits.encode_utf16() {
+        let nibble = if marker == b'x' {
+            fastjson_x_escape_digit(digit)?
+        } else {
+            fastjson_hex_digit_or_zero(digit)
+        };
+        value = value.wrapping_shl(4).wrapping_add(u16::from(nibble));
     }
     Some((value, end))
 }
 
-fn fastjson_hex_digit_or_zero(byte: u8) -> u8 {
-    match byte {
-        b'0'..=b'9' => byte - b'0',
-        b'a'..=b'f' => byte - b'a' + 10,
-        b'A'..=b'F' => byte - b'A' + 10,
-        _ => 0,
+fn fastjson_hex_digit_or_zero(code_unit: u16) -> u8 {
+    // Fastjson 2.0.63's packed UTF-16 hex decoder folds each char's low byte
+    // into a nibble. This reproduces its results for non-ASCII code units too.
+    ((code_unit & 0x0f) + if code_unit & 0x40 != 0 { 9 } else { 0 }) as u8 & 0x0f
+}
+
+fn fastjson_x_escape_digit(code_unit: u16) -> Option<u8> {
+    if code_unit > u16::from(b'f') {
+        return None;
     }
+    Some(match code_unit as u8 {
+        b'0'..=b'9' => code_unit as u8 - b'0',
+        b'a'..=b'f' => code_unit as u8 - b'a' + 10,
+        b'A'..=b'F' => code_unit as u8 - b'A' + 10,
+        _ => 0,
+    })
 }
 
 fn fastjson_additional_escape_code_unit(escaped: u8) -> Option<u16> {
