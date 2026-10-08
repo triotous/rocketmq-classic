@@ -143,7 +143,7 @@ Initial live-table fixture (`b31a7d9`) SHA-256 `9e1f92f7b622d7509e93b5c143641a2b
 
 | Java public API | Rust counterpart / evidence |
 | --- | --- |
-| no-argument construction | `Default`, fallible `new_auto`; native-IP tests and classification fixture |
+| `ClientConfig()` no-argument construction | `Default`, fallible `new_auto`; native-IP tests and classification fixture |
 | buildMQClientId | `build_client_id`; 73 invoked identity cases |
 | changeInstanceNameToPID | `change_instance_name_to_pid`; normalized Java PID outcomes and private once/null test |
 | getNamesrvAddr/setNamesrvAddr | `get_namesrv_addr/set_namesrv_addr`; endpoint golden and runtime getter wire-boundary check |
@@ -151,9 +151,49 @@ Initial live-table fixture (`b31a7d9`) SHA-256 `9e1f92f7b622d7509e93b5c143641a2b
 | withNamespace(String/Set), withoutNamespace(String/Set) (deprecated) | `with_namespace/with_namespace_set`, `without_namespace/without_namespace_set`; resource golden and private set-dedup test |
 | queueWithNamespace/queuesWithNamespace (deprecated) | `queue_with_namespace/queues_with_namespace`; six actual collection cases match returned identity, null/empty short-circuiting, failure points, partial mutation and field preservation; [ADR-0011](../architecture/ADR-0011-message-queue-namespace-mutation.md) |
 | cloneClientConfig/resetClientConfig | `clone_client_config/reset_client_config`; `clone_and_reset_copy_every_public_setting_except_java_omissions` differentially checks Java source/clone/reset snapshots for all 33 non-internal fields, plus the private namespace flag test; Rust `Clone` separately copies all fields |
-| remaining field getters/setters | idiomatic `field()`/`set_field()` methods for every Java setting; Java getter/setter oracle and all 33 field copy snapshots pass; `namesrvAddr` and `namespace` use their cache-aware methods; public fields remain available |
+| remaining field getters/setters | exact Java method names and idiomatic Rust accessors are listed in the complete 33-pair table below; `namesrvAddr` and `namespace` use their cache-aware methods; public fields remain available |
 | `toString` | Rust `Display` / `ToString`; 16 actual Java cases match null and populated text, namespace-cache state, unescaped strings, signed values, and all 14 Java `LanguageCode` constants. Java includes raw `socksProxyConfig` and omits `traceMsgBatchNum`/`maxPageSizeInGetMetadata`; Rust `Debug` remains redacted. The protocol-only `LanguageCode::Unknown` variant has no Java `ClientConfig` enum value. |
 | SEND_MESSAGE_WITH_VIP_CHANNEL_PROPERTY, SOCKS_PROXY_CONFIG, DECODE_READ_BODY, DECODE_DECOMPRESS_BODY, SEND_LATENCY_ENABLE, START_DETECTOR_ENABLE, HEART_BEAT_V2 | same-named `ClientConfig` associated constants; `public_property_names_match_pinned_client_config_constants` checks exact strings |
+
+### Complete Java setting accessor pairs
+
+The pinned 5.5.1 declaration list contains 33 non-internal getter/setter pairs. This table maps all 66 exact Java `get`/`is`/`set` names to Rust accessors. Each Java getter below is invoked for source, clone, and reset objects by `clientConfigGetters`; native accessors and all three returned snapshots are compared by `clone_and_reset_copy_every_public_setting_except_java_omissions`. `namesrvAddr` and `namespace` retain their cache-aware Rust methods. `namespaceInitialized` is private Java state, not a public accessor pair.
+
+| Java getter / setter | Rust getter / setter | Java setting / Rust field |
+| --- | --- | --- |
+| `getNamesrvAddr` / `setNamesrvAddr` | `get_namesrv_addr` / `set_namesrv_addr` | `namesrvAddr` / `namesrv_addr` |
+| `getClientIP` / `setClientIP` | `client_ip` / `set_client_ip` | `clientIP` / `client_ip` |
+| `getInstanceName` / `setInstanceName` | `instance_name` / `set_instance_name` | `instanceName` / `instance_name` |
+| `getClientCallbackExecutorThreads` / `setClientCallbackExecutorThreads` | `client_callback_executor_threads` / `set_client_callback_executor_threads` | `clientCallbackExecutorThreads` / `client_callback_executor_threads` |
+| `getNamespace` / `setNamespace` | `get_namespace` / `set_namespace` | `namespace` / `namespace` |
+| `getNamespaceV2` / `setNamespaceV2` | `namespace_v2` / `set_namespace_v2` | `namespaceV2` / `namespace_v2` |
+| `getAccessChannel` / `setAccessChannel` | `access_channel` / `set_access_channel` | `accessChannel` / `access_channel` |
+| `getPollNameServerInterval` / `setPollNameServerInterval` | `poll_name_server_interval` / `set_poll_name_server_interval` | `pollNameServerInterval` / `poll_name_server_interval` |
+| `getHeartbeatBrokerInterval` / `setHeartbeatBrokerInterval` | `heartbeat_broker_interval` / `set_heartbeat_broker_interval` | `heartbeatBrokerInterval` / `heartbeat_broker_interval` |
+| `getPersistConsumerOffsetInterval` / `setPersistConsumerOffsetInterval` | `persist_consumer_offset_interval` / `set_persist_consumer_offset_interval` | `persistConsumerOffsetInterval` / `persist_consumer_offset_interval` |
+| `getPullTimeDelayMillsWhenException` / `setPullTimeDelayMillsWhenException` | `pull_time_delay_millis_when_exception` / `set_pull_time_delay_millis_when_exception` | `pullTimeDelayMillsWhenException` / `pull_time_delay_millis_when_exception` |
+| `getTraceMsgBatchNum` / `setTraceMsgBatchNum` | `trace_msg_batch_num` / `set_trace_msg_batch_num` | `traceMsgBatchNum` / `trace_msg_batch_num` |
+| `isUnitMode` / `setUnitMode` | `unit_mode` / `set_unit_mode` | `unitMode` / `unit_mode` |
+| `getUnitName` / `setUnitName` | `unit_name` / `set_unit_name` | `unitName` / `unit_name` |
+| `isDecodeReadBody` / `setDecodeReadBody` | `decode_read_body` / `set_decode_read_body` | `decodeReadBody` / `decode_read_body` |
+| `isDecodeDecompressBody` / `setDecodeDecompressBody` | `decode_decompress_body` / `set_decode_decompress_body` | `decodeDecompressBody` / `decode_decompress_body` |
+| `isVipChannelEnabled` / `setVipChannelEnabled` | `vip_channel_enabled` / `set_vip_channel_enabled` | `vipChannelEnabled` / `vip_channel_enabled` |
+| `isUseHeartbeatV2` / `setUseHeartbeatV2` | `use_heartbeat_v2` / `set_use_heartbeat_v2` | `useHeartbeatV2` / `use_heartbeat_v2` |
+| `isUseTLS` / `setUseTLS` | `use_tls` / `set_use_tls` | `useTLS` / `use_tls` |
+| `getSocksProxyConfig` / `setSocksProxyConfig` | `socks_proxy_config` / `set_socks_proxy_config` | `socksProxyConfig` / `socks_proxy_config` |
+| `getMqClientApiTimeout` / `setMqClientApiTimeout` | `mq_client_api_timeout` / `set_mq_client_api_timeout` | `mqClientApiTimeout` / `mq_client_api_timeout` |
+| `getDetectTimeout` / `setDetectTimeout` | `detect_timeout` / `set_detect_timeout` | `detectTimeout` / `detect_timeout` |
+| `getDetectInterval` / `setDetectInterval` | `detect_interval` / `set_detect_interval` | `detectInterval` / `detect_interval` |
+| `getLanguage` / `setLanguage` | `language` / `set_language` | `language` / `language` |
+| `isEnableStreamRequestType` / `setEnableStreamRequestType` | `enable_stream_request_type` / `set_enable_stream_request_type` | `enableStreamRequestType` / `enable_stream_request_type` |
+| `isSendLatencyEnable` / `setSendLatencyEnable` | `send_latency_enable` / `set_send_latency_enable` | `sendLatencyEnable` / `send_latency_enable` |
+| `isStartDetectorEnable` / `setStartDetectorEnable` | `start_detector_enable` / `set_start_detector_enable` | `startDetectorEnable` / `start_detector_enable` |
+| `isEnableHeartbeatChannelEventListener` / `setEnableHeartbeatChannelEventListener` | `enable_heartbeat_channel_event_listener` / `set_enable_heartbeat_channel_event_listener` | `enableHeartbeatChannelEventListener` / `enable_heartbeat_channel_event_listener` |
+| `isEnableTrace` / `setEnableTrace` | `enable_trace` / `set_enable_trace` | `enableTrace` / `enable_trace` |
+| `getTraceTopic` / `setTraceTopic` | `trace_topic` / `set_trace_topic` | `traceTopic` / `trace_topic` |
+| `getMaxPageSizeInGetMetadata` / `setMaxPageSizeInGetMetadata` | `max_page_size_in_get_metadata` / `set_max_page_size_in_get_metadata` | `maxPageSizeInGetMetadata` / `max_page_size_in_get_metadata` |
+| `isEnableConcurrentHeartbeat` / `setEnableConcurrentHeartbeat` | `enable_concurrent_heartbeat` / `set_enable_concurrent_heartbeat` | `enableConcurrentHeartbeat` / `enable_concurrent_heartbeat` |
+| `getConcurrentHeartbeatThreadPoolSize` / `setConcurrentHeartbeatThreadPoolSize` | `concurrent_heartbeat_thread_pool_size` / `set_concurrent_heartbeat_thread_pool_size` | `concurrentHeartbeatThreadPoolSize` / `concurrent_heartbeat_thread_pool_size` |
 
 ## MQClientInstance public methods
 
