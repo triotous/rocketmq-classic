@@ -517,6 +517,72 @@ impl Default for TopicQueueMappingInfo {
     }
 }
 
+impl TopicQueueMappingInfo {
+    /// Returns the pinned Java 5.5.1 `TopicQueueMappingInfo.hashCode` result.
+    pub fn java_hash_code(&self) -> i32 {
+        let mut result = self
+            .topic
+            .as_deref()
+            .map(java_string_hash_code)
+            .unwrap_or(0);
+        result = result.wrapping_mul(31).wrapping_add(
+            self.scope
+                .as_deref()
+                .map(java_string_hash_code)
+                .unwrap_or(0),
+        );
+        result = result.wrapping_mul(31).wrapping_add(self.total_queues);
+        result = result.wrapping_mul(31).wrapping_add(
+            self.bname
+                .as_deref()
+                .map(java_string_hash_code)
+                .unwrap_or(0),
+        );
+        result = result
+            .wrapping_mul(31)
+            .wrapping_add(java_long_hash_code(self.epoch));
+        result = result.wrapping_mul(31).wrapping_add(i32::from(self.dirty));
+        result.wrapping_mul(31).wrapping_add(
+            self.curr_id_map
+                .as_ref()
+                .map(|ids| {
+                    ids.iter().fold(0i32, |hash, (logical, physical)| {
+                        hash.wrapping_add(*logical ^ *physical)
+                    })
+                })
+                .unwrap_or(0),
+        )
+    }
+
+    /// Returns the pinned Java 5.5.1 `TopicQueueMappingInfo.toString` text.
+    ///
+    /// The ID map is emitted in its deterministic Rust key order. Java stores
+    /// this map in a `ConcurrentHashMap`, whose iteration order is unspecified.
+    pub fn java_to_string(&self) -> String {
+        let curr_id_map = self.curr_id_map.as_ref().map_or_else(
+            || "null".to_owned(),
+            |ids| {
+                let entries = ids
+                    .iter()
+                    .map(|(logical, physical)| format!("{logical}={physical}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{{{entries}}}")
+            },
+        );
+        format!(
+            "TopicQueueMappingInfo{{topic='{}', scope='{}', totalQueues={}, bname='{}', epoch={}, dirty={}, currIdMap={}}}",
+            self.topic.as_deref().unwrap_or("null"),
+            self.scope.as_deref().unwrap_or("null"),
+            self.total_queues,
+            self.bname.as_deref().unwrap_or("null"),
+            self.epoch,
+            self.dirty,
+            curr_id_map
+        )
+    }
+}
+
 #[cfg(test)]
 mod topic_queue_mapping_method_tests {
     use super::TopicQueueMappingInfo;
@@ -527,10 +593,17 @@ mod topic_queue_mapping_method_tests {
             serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
         for case in fixture["topicQueueMappingMethods"].as_array().unwrap() {
             let left: TopicQueueMappingInfo = serde_json::from_value(case["left"].clone()).unwrap();
-            let right: TopicQueueMappingInfo = serde_json::from_value(case["right"].clone()).unwrap();
+            let right: TopicQueueMappingInfo =
+                serde_json::from_value(case["right"].clone()).unwrap();
             assert_eq!(left == right, case["equals"]);
-            assert_eq!(left.java_hash_code(), case["leftHashCode"].as_i64().unwrap() as i32);
-            assert_eq!(right.java_hash_code(), case["rightHashCode"].as_i64().unwrap() as i32);
+            assert_eq!(
+                left.java_hash_code(),
+                case["leftHashCode"].as_i64().unwrap() as i32
+            );
+            assert_eq!(
+                right.java_hash_code(),
+                case["rightHashCode"].as_i64().unwrap() as i32
+            );
             assert_eq!(left.java_to_string(), case["leftToString"]);
             assert_eq!(right.java_to_string(), case["rightToString"]);
         }
