@@ -155,6 +155,12 @@ fn java_string_hash_code(value: &str) -> i32 {
     })
 }
 
+fn java_list_hash_code<T>(values: &[T], mut value_hash: impl FnMut(&T) -> i32) -> i32 {
+    values.iter().fold(1i32, |hash, value| {
+        hash.wrapping_mul(31).wrapping_add(value_hash(value))
+    })
+}
+
 fn java_string_compare_to(left: &str, right: &str) -> i32 {
     let left_units: Vec<u16> = left.encode_utf16().collect();
     let right_units: Vec<u16> = right.encode_utf16().collect();
@@ -622,8 +628,14 @@ mod topic_route_data_method_tests {
             let left: TopicRouteData = serde_json::from_value(case["left"].clone()).unwrap();
             let right: TopicRouteData = serde_json::from_value(case["right"].clone()).unwrap();
             assert_eq!(left == right, case["equals"]);
-            assert_eq!(left.java_hash_code(), case["leftHashCode"].as_i64().unwrap() as i32);
-            assert_eq!(right.java_hash_code(), case["rightHashCode"].as_i64().unwrap() as i32);
+            assert_eq!(
+                left.java_hash_code(),
+                case["leftHashCode"].as_i64().unwrap() as i32
+            );
+            assert_eq!(
+                right.java_hash_code(),
+                case["rightHashCode"].as_i64().unwrap() as i32
+            );
         }
     }
 }
@@ -671,6 +683,56 @@ fn default_mapping_scope() -> Option<String> {
 }
 
 impl TopicRouteData {
+    /// Returns the pinned Java 5.5.1 `TopicRouteData.hashCode` result.
+    pub fn java_hash_code(&self) -> i32 {
+        let broker_hash = self
+            .broker_datas
+            .as_deref()
+            .map(|brokers| java_list_hash_code(brokers, BrokerData::java_hash_code))
+            .unwrap_or(0);
+        let order_hash = self
+            .order_topic_conf
+            .as_deref()
+            .map(java_string_hash_code)
+            .unwrap_or(0);
+        let queue_hash = self
+            .queue_datas
+            .as_deref()
+            .map(|queues| java_list_hash_code(queues, QueueData::java_hash_code))
+            .unwrap_or(0);
+        let filter_hash = self
+            .filter_server_table
+            .as_ref()
+            .map(|filters| {
+                filters.iter().fold(0i32, |hash, (broker, servers)| {
+                    let servers_hash =
+                        java_list_hash_code(servers, |server| java_string_hash_code(server));
+                    hash.wrapping_add(java_string_hash_code(broker) ^ servers_hash)
+                })
+            })
+            .unwrap_or(0);
+        let mapping_hash = self
+            .topic_queue_mapping_by_broker
+            .as_ref()
+            .map(|mappings| {
+                mappings.iter().fold(0i32, |hash, (broker, mapping)| {
+                    hash.wrapping_add(java_string_hash_code(broker) ^ mapping.java_hash_code())
+                })
+            })
+            .unwrap_or(0);
+        [
+            broker_hash,
+            order_hash,
+            queue_hash,
+            filter_hash,
+            mapping_hash,
+        ]
+        .into_iter()
+        .fold(1i32, |hash, value| {
+            hash.wrapping_mul(31).wrapping_add(value)
+        })
+    }
+
     pub fn publish_queues(&self, topic: &str) -> Vec<MessageQueue> {
         if let Some(order_conf) = self
             .order_topic_conf
