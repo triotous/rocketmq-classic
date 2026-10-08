@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::collections::{HashMap, VecDeque};
 
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -36,7 +37,7 @@ impl From<SocksProxyConfig> for ParsedProxyRoute {
 enum FastjsonValue {
     Null,
     Bool(bool),
-    Number(serde_json::Number),
+    Number(String),
     String(String),
     Array(Vec<Self>),
     Object(Vec<(String, Self)>),
@@ -48,7 +49,7 @@ impl FastjsonValue {
             Self::String(value) => value.clone(),
             Self::Null => "null".into(),
             Self::Bool(value) => value.to_string(),
-            Self::Number(value) => value.to_string(),
+            Self::Number(value) => java_number_string(value),
             Self::Array(_) | Self::Object(_) => {
                 let mut output = String::new();
                 self.write_compact_json(&mut output);
@@ -61,7 +62,7 @@ impl FastjsonValue {
         match self {
             Self::Null => output.push_str("null"),
             Self::Bool(value) => output.push_str(if *value { "true" } else { "false" }),
-            Self::Number(value) => output.push_str(&value.to_string()),
+            Self::Number(value) => output.push_str(&java_number_string(value)),
             Self::String(value) => write_json_string(value, output),
             Self::Array(values) => {
                 output.push('[');
@@ -87,6 +88,83 @@ impl FastjsonValue {
             }
         }
     }
+}
+
+thread_local! {
+    static FASTJSON_NUMBER_TOKENS: RefCell<VecDeque<String>> = const { RefCell::new(VecDeque::new()) };
+}
+
+struct FastjsonNumberTokenScope(VecDeque<String>);
+
+impl FastjsonNumberTokenScope {
+    fn install(tokens: VecDeque<String>) -> Self {
+        let previous = FASTJSON_NUMBER_TOKENS
+            .with(|current| std::mem::replace(&mut *current.borrow_mut(), tokens));
+        Self(previous)
+    }
+}
+
+impl Drop for FastjsonNumberTokenScope {
+    fn drop(&mut self) {
+        FASTJSON_NUMBER_TOKENS.with(|current| {
+            *current.borrow_mut() = std::mem::take(&mut self.0);
+        });
+    }
+}
+
+fn take_fastjson_number_token<E: serde::de::Error>() -> Result<String, E> {
+    FASTJSON_NUMBER_TOKENS.with(|tokens| {
+        tokens
+            .borrow_mut()
+            .pop_front()
+            .ok_or_else(|| E::custom("missing Fastjson numeric token"))
+    })
+}
+
+fn java_number_string(token: &str) -> String {
+    if token.contains(['e', 'E']) {
+        let value = token.parse::<f64>().unwrap_or(f64::NAN);
+        if value.is_nan() {
+            return token.to_owned();
+        }
+        if value.is_infinite() {
+            return if value.is_sign_negative() {
+                "-Infinity".into()
+            } else {
+                "Infinity".into()
+            };
+        }
+        if value == 0.0 {
+            return "0.0".into();
+        }
+        return serde_json::Number::from_f64(value)
+            .expect("finite float is a JSON number")
+            .to_string();
+    }
+
+    let (negative, unsigned) = match token.as_bytes().first() {
+        Some(b'-') => (true, &token[1..]),
+        Some(b'+') => (false, &token[1..]),
+        _ => (false, token),
+    };
+    let (integer, fraction) = unsigned.split_once('.').unwrap_or((unsigned, ""));
+    let integer = integer.trim_start_matches('0');
+    let integer = if integer.is_empty() { "0" } else { integer };
+    let is_zero = integer == "0" && fraction.bytes().all(|digit| digit == b'0');
+    let mut output = String::new();
+    if negative && !is_zero {
+        output.push('-');
+    }
+    output.push_str(integer);
+    if token.contains('.') {
+        output.push('.');
+        if fraction.is_empty() {
+            output.push('0');
+        } else {
+            output.push_str(fraction);
+        }
+    }
+    output
 }
 
 fn write_json_string(value: &str, output: &mut String) {
@@ -139,21 +217,25 @@ impl<'de> Deserialize<'de> for FastjsonValue {
                 Ok(FastjsonValue::Bool(value))
             }
 
-            fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E> {
-                Ok(FastjsonValue::Number(value.into()))
-            }
-
-            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E> {
-                Ok(FastjsonValue::Number(value.into()))
-            }
-
-            fn visit_f64<E>(self, value: f64) -> Result<Self::Value, E>
+            fn visit_i64<E>(self, _value: i64) -> Result<Self::Value, E>
             where
                 E: serde::de::Error,
             {
-                serde_json::Number::from_f64(value)
-                    .map(FastjsonValue::Number)
-                    .ok_or_else(|| E::custom("non-finite JSON number"))
+                Ok(FastjsonValue::Number(take_fastjson_number_token()?))
+            }
+
+            fn visit_u64<E>(self, _value: u64) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(FastjsonValue::Number(take_fastjson_number_token()?))
+            }
+
+            fn visit_f64<E>(self, _value: f64) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(FastjsonValue::Number(take_fastjson_number_token()?))
             }
 
             fn visit_str<E>(self, value: &str) -> Result<Self::Value, E> {
@@ -315,9 +397,10 @@ fn skip_json5_trivia(bytes: &[u8], mut index: usize) -> usize {
     }
 }
 
-fn normalize_fastjson_leading_zero_numbers(input: &str) -> String {
+fn normalize_fastjson_numbers(input: &str) -> (String, VecDeque<String>) {
     let bytes = input.as_bytes();
     let mut output = Vec::with_capacity(bytes.len());
+    let mut tokens = VecDeque::new();
     let mut copied_through = 0;
     let mut index = 0;
     while index < bytes.len() {
@@ -350,34 +433,94 @@ fn normalize_fastjson_leading_zero_numbers(input: &str) -> String {
                 }
                 index = (index + 2).min(bytes.len());
             }
-            b'0'..=b'9' if index == 0 || !is_number_token_byte(bytes[index - 1]) => {
-                let mut end = index;
-                while bytes.get(end).is_some_and(u8::is_ascii_digit) {
-                    end += 1;
+            _ => {
+                let Some(end) = decimal_number_end(bytes, index) else {
+                    index += 1;
+                    continue;
+                };
+                if index > 0 && is_number_token_byte(bytes[index - 1]) {
+                    index = end;
+                    continue;
                 }
-                if end - index > 1 && bytes[index] == b'0' {
-                    let next = skip_json5_trivia(bytes, end);
-                    let is_field_name = bytes.get(next) == Some(&b':');
-                    let valid_number_end = bytes.get(end).is_none_or(|byte| {
-                        byte.is_ascii_whitespace()
-                            || matches!(byte, b',' | b'}' | b']' | b'.' | b'e' | b'E')
-                    });
-                    if !is_field_name && valid_number_end {
-                        output.extend_from_slice(&bytes[copied_through..index]);
-                        let first_significant = (index..end)
-                            .find(|position| bytes[*position] != b'0')
-                            .unwrap_or(end - 1);
-                        output.extend_from_slice(&bytes[first_significant..end]);
-                        copied_through = end;
-                    }
+                let next = skip_json5_trivia(bytes, end);
+                if bytes.get(next) == Some(&b':') {
+                    index = end;
+                    continue;
                 }
+                tokens.push_back(String::from_utf8_lossy(&bytes[index..end]).into_owned());
+                output.extend_from_slice(&bytes[copied_through..index]);
+                output.push(b'0');
+                copied_through = end;
                 index = end;
             }
-            _ => index += 1,
         }
     }
     output.extend_from_slice(&bytes[copied_through..]);
-    String::from_utf8(output).expect("normalization preserves valid UTF-8")
+    (
+        String::from_utf8(output).expect("normalization preserves valid UTF-8"),
+        tokens,
+    )
+}
+
+fn decimal_number_end(bytes: &[u8], start: usize) -> Option<usize> {
+    let mut index = start;
+    if matches!(bytes.get(index), Some(b'+' | b'-')) {
+        if index > 0 && is_number_token_byte(bytes[index - 1]) {
+            return None;
+        }
+        index += 1;
+    } else if index > 0 && is_number_token_byte(bytes[index - 1]) {
+        return None;
+    }
+
+    if !matches!(bytes.get(index), Some(b'0'..=b'9' | b'.')) {
+        return None;
+    }
+    if bytes.get(index) == Some(&b'0')
+        && matches!(
+            bytes.get(index + 1),
+            Some(b'x' | b'X' | b'b' | b'B' | b'o' | b'O')
+        )
+    {
+        return None;
+    }
+
+    let mut digits = 0;
+    while bytes.get(index).is_some_and(u8::is_ascii_digit) {
+        digits += 1;
+        index += 1;
+    }
+    if bytes.get(index) == Some(&b'.') {
+        index += 1;
+        while bytes.get(index).is_some_and(u8::is_ascii_digit) {
+            digits += 1;
+            index += 1;
+        }
+    }
+    if digits == 0 {
+        return None;
+    }
+    if matches!(bytes.get(index), Some(b'e' | b'E')) {
+        let exponent = index;
+        index += 1;
+        if matches!(bytes.get(index), Some(b'+' | b'-')) {
+            index += 1;
+        }
+        let exponent_start = index;
+        while bytes.get(index).is_some_and(u8::is_ascii_digit) {
+            index += 1;
+        }
+        if exponent_start == index {
+            return Some(exponent);
+        }
+    }
+    if bytes
+        .get(index)
+        .is_some_and(|byte| is_number_token_byte(*byte))
+    {
+        return None;
+    }
+    Some(index)
 }
 
 impl SocksProxyConfig {
@@ -539,7 +682,8 @@ impl ClientConfig {
                 "Fastjson SOCKS parser rejects this JSON5 literal".into(),
             ));
         }
-        let normalized = normalize_fastjson_leading_zero_numbers(&self.socks_proxy_config);
+        let (normalized, number_tokens) = normalize_fastjson_numbers(&self.socks_proxy_config);
+        let _number_scope = FastjsonNumberTokenScope::install(number_tokens);
         let parsed: Option<HashMap<String, Option<RawProxyRoute>>> =
             json5::from_str(&normalized)
                 .map_err(|error| TransportError::InvalidConfiguration(error.to_string()))?;
