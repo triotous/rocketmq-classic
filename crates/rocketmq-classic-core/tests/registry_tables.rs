@@ -429,7 +429,7 @@ async fn retained_registry_collection_views_match_invoked_java() {
             table.put("keep-key", first.clone()).await.unwrap();
             table.put("drop-key", second.clone()).await.unwrap();
             let key_view_retain_all = keys
-                .retain(|key| key == "keep-key")
+                .retain_all(&std::collections::BTreeSet::from(["keep-key".to_owned()]))
                 .await
                 .unwrap()
                 == 1
@@ -449,7 +449,7 @@ async fn retained_registry_collection_views_match_invoked_java() {
             table.put("keep-value", second.clone()).await.unwrap();
             table.put("drop-value", first.clone()).await.unwrap();
             let value_view_retain_all = values
-                .retain(|value| Arc::ptr_eq(value, &second))
+                .retain_all(&[second.clone()])
                 .await
                 .unwrap()
                 == 1
@@ -469,12 +469,40 @@ async fn retained_registry_collection_views_match_invoked_java() {
             table.put("keep-entry", second.clone()).await.unwrap();
             table.put("drop-entry", first.clone()).await.unwrap();
             let entry_view_retain_all = entries
-                .retain(|key, _| key == "keep-entry")
+                .retain_all(&BTreeMap::from([("keep-entry".to_owned(), second.clone())]))
                 .await
                 .unwrap()
                 == 1
                 && table.len().unwrap() == 1
                 && table.contains_key("keep-entry").unwrap();
+
+            table.clear().await.unwrap();
+            table.put("remove-all-key", first.clone()).await.unwrap();
+            table.put("keep-all-key", second.clone()).await.unwrap();
+            let key_view_remove_all = keys
+                .remove_all(&std::collections::BTreeSet::from(["remove-all-key".to_owned()]))
+                .await
+                .unwrap()
+                == 1
+                && !table.contains_key("remove-all-key").unwrap();
+            table.clear().await.unwrap();
+            table.put("remove-all-value", first.clone()).await.unwrap();
+            table.put("keep-all-value", second.clone()).await.unwrap();
+            let value_view_remove_all = values
+                .remove_all(&[first.clone()])
+                .await
+                .unwrap()
+                == 1
+                && !table.contains_key("remove-all-value").unwrap();
+            table.clear().await.unwrap();
+            table.put("remove-all-entry", first.clone()).await.unwrap();
+            table.put("keep-all-entry", second.clone()).await.unwrap();
+            let entry_view_remove_all = entries
+                .remove_all(&BTreeMap::from([("remove-all-entry".to_owned(), first.clone())]))
+                .await
+                .unwrap()
+                == 1
+                && !table.contains_key("remove-all-entry").unwrap();
             assert_eq!(
                 serde_json::json!({
                     "retainedViewsSeeInitialPut": retained_views_see_initial_put,
@@ -492,6 +520,9 @@ async fn retained_registry_collection_views_match_invoked_java() {
                     "valueViewRetainAll": value_view_retain_all,
                     "entryViewRemoveIf": entry_view_remove_if,
                     "entryViewRetainAll": entry_view_retain_all,
+                    "keyViewRemoveAll": key_view_remove_all,
+                    "valueViewRemoveAll": value_view_remove_all,
+                    "entryViewRemoveAll": entry_view_remove_all,
                 }),
                 $expected
             );
