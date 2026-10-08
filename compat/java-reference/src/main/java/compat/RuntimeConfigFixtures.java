@@ -245,6 +245,16 @@ public final class RuntimeConfigFixtures {
             live.putAll(bulk);
             result.put("putAllAdds", live.get("bulk-a") == first && live.get("bulk-b") == second
                 && live.size() == 4);
+            Map<String, org.apache.rocketmq.client.impl.factory.MQClientInstance> expected = new TreeMap<>();
+            expected.put(id, first);
+            expected.put("", second);
+            expected.put("bulk-a", first);
+            expected.put("bulk-b", second);
+            Map<String, Boolean> visited = new TreeMap<>();
+            live.forEach((key, value) -> visited.put(key, expected.get(key) == value));
+            result.put("forEachVisitsCurrentMappings", visited.size() == expected.size()
+                && visited.entrySet().stream().allMatch(entry -> Boolean.TRUE.equals(entry.getValue()))
+                && expected.keySet().containsAll(visited.keySet()));
             live.clear();
             result.put("retainedViewEmptyAfterClear", live.isEmpty());
         } finally {
