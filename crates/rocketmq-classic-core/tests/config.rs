@@ -50,6 +50,74 @@ fn client_config_snapshot(config: &ClientConfig) -> Value {
     })
 }
 
+fn client_config_from_java_text_fields(fields: &Value) -> ClientConfig {
+    let string = |name: &str| fields[name].as_str().map(str::to_owned);
+    let i32_value = |name: &str| i32::try_from(fields[name].as_i64().unwrap()).unwrap();
+    let mut config = ClientConfig::new("fixture-ip");
+    config.namesrv_addr = string("namesrvAddr");
+    config.client_ip = string("clientIP");
+    config.instance_name = string("instanceName");
+    config.client_callback_executor_threads = i32_value("clientCallbackExecutorThreads");
+    config.namespace = string("namespace");
+    config.namespace_v2 = string("namespaceV2");
+    config.access_channel = match fields["accessChannel"].as_str() {
+        Some("LOCAL") => Some(AccessChannel::Local),
+        Some("CLOUD") => Some(AccessChannel::Cloud),
+        Some(other) => panic!("unknown Java AccessChannel {other}"),
+        None => None,
+    };
+    config.poll_name_server_interval = i32_value("pollNameServerInterval");
+    config.heartbeat_broker_interval = i32_value("heartbeatBrokerInterval");
+    config.persist_consumer_offset_interval = i32_value("persistConsumerOffsetInterval");
+    config.pull_time_delay_millis_when_exception =
+        fields["pullTimeDelayMillsWhenException"].as_i64().unwrap();
+    config.trace_msg_batch_num = i32_value("traceMsgBatchNum");
+    config.unit_mode = fields["unitMode"].as_bool().unwrap();
+    config.unit_name = string("unitName");
+    config.decode_read_body = fields["decodeReadBody"].as_bool().unwrap();
+    config.decode_decompress_body = fields["decodeDecompressBody"].as_bool().unwrap();
+    config.vip_channel_enabled = fields["vipChannelEnabled"].as_bool().unwrap();
+    config.use_heartbeat_v2 = fields["useHeartbeatV2"].as_bool().unwrap();
+    config.use_tls = fields["useTLS"].as_bool().unwrap();
+    config.socks_proxy_config = string("socksProxyConfig");
+    config.mq_client_api_timeout = i32_value("mqClientApiTimeout");
+    config.detect_timeout = i32_value("detectTimeout");
+    config.detect_interval = i32_value("detectInterval");
+    config.language = match fields["language"].as_str() {
+        Some("JAVA") => Some(LanguageCode::Java),
+        Some("CPP") => Some(LanguageCode::Cpp),
+        Some("DOTNET") => Some(LanguageCode::Dotnet),
+        Some("PYTHON") => Some(LanguageCode::Python),
+        Some("DELPHI") => Some(LanguageCode::Delphi),
+        Some("ERLANG") => Some(LanguageCode::Erlang),
+        Some("RUBY") => Some(LanguageCode::Ruby),
+        Some("OTHER") => Some(LanguageCode::Other),
+        Some("HTTP") => Some(LanguageCode::Http),
+        Some("GO") => Some(LanguageCode::Go),
+        Some("PHP") => Some(LanguageCode::Php),
+        Some("OMS") => Some(LanguageCode::Oms),
+        Some("RUST") => Some(LanguageCode::Rust),
+        Some("NODE_JS") => Some(LanguageCode::NodeJs),
+        Some(other) => panic!("unknown Java LanguageCode {other}"),
+        None => None,
+    };
+    config.enable_stream_request_type = fields["enableStreamRequestType"].as_bool().unwrap();
+    config.send_latency_enable = fields["sendLatencyEnable"].as_bool().unwrap();
+    config.start_detector_enable = fields["startDetectorEnable"].as_bool().unwrap();
+    config.enable_heartbeat_channel_event_listener = fields["enableHeartbeatChannelEventListener"]
+        .as_bool()
+        .unwrap();
+    config.enable_concurrent_heartbeat = fields["enableConcurrentHeartbeat"].as_bool().unwrap();
+    config.concurrent_heartbeat_thread_pool_size = i32_value("concurrentHeartbeatThreadPoolSize");
+    config.enable_trace = fields["enableTrace"].as_bool().unwrap();
+    config.trace_topic = string("traceTopic");
+    config.max_page_size_in_get_metadata = i32_value("maxPageSizeInGetMetadata");
+    if fields["namespaceInitialized"].as_bool().unwrap() {
+        config.set_namespace(string("namespace"));
+    }
+    config
+}
+
 #[test]
 fn default_constructor_selects_a_local_ip_before_identity_construction() {
     let config = ClientConfig::default();
@@ -389,6 +457,21 @@ fn public_property_names_match_pinned_client_config_constants() {
         "com.rocketmq.startDetectorEnable"
     );
     assert_eq!(ClientConfig::HEART_BEAT_V2, "com.rocketmq.heartbeat.v2");
+}
+
+#[test]
+fn client_config_to_string_matches_invoked_java() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    for case in fixture["clientConfigToString"].as_array().unwrap() {
+        let config = client_config_from_java_text_fields(&case["input"]);
+        assert_eq!(
+            config.to_string(),
+            case["toString"].as_str().unwrap(),
+            "{}",
+            case["case"]
+        );
+    }
 }
 
 #[test]

@@ -74,6 +74,72 @@ impl std::fmt::Debug for ClientConfig {
     }
 }
 
+impl std::fmt::Display for ClientConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let access_channel = match self.access_channel {
+            Some(AccessChannel::Local) => "LOCAL",
+            Some(AccessChannel::Cloud) => "CLOUD",
+            None => "null",
+        };
+        let language = self
+            .language
+            .map(|language| match language {
+                LanguageCode::Java => "JAVA".to_owned(),
+                LanguageCode::Cpp => "CPP".to_owned(),
+                LanguageCode::Dotnet => "DOTNET".to_owned(),
+                LanguageCode::Python => "PYTHON".to_owned(),
+                LanguageCode::Delphi => "DELPHI".to_owned(),
+                LanguageCode::Erlang => "ERLANG".to_owned(),
+                LanguageCode::Ruby => "RUBY".to_owned(),
+                LanguageCode::Other => "OTHER".to_owned(),
+                LanguageCode::Http => "HTTP".to_owned(),
+                LanguageCode::Go => "GO".to_owned(),
+                LanguageCode::Php => "PHP".to_owned(),
+                LanguageCode::Oms => "OMS".to_owned(),
+                LanguageCode::Rust => "RUST".to_owned(),
+                LanguageCode::NodeJs => "NODE_JS".to_owned(),
+                LanguageCode::Unknown(code) => format!("Unknown({code})"),
+            })
+            .unwrap_or_else(|| "null".to_owned());
+        write!(
+            f,
+            "ClientConfig{{namesrvAddr='{}', clientIP='{}', instanceName='{}', clientCallbackExecutorThreads={}, namespace='{}', namespaceInitialized={}, namespaceV2='{}', accessChannel={}, pollNameServerInterval={}, heartbeatBrokerInterval={}, persistConsumerOffsetInterval={}, pullTimeDelayMillsWhenException={}, unitMode={}, unitName='{}', decodeReadBody={}, decodeDecompressBody={}, vipChannelEnabled={}, useHeartbeatV2={}, useTLS={}, socksProxyConfig='{}', mqClientApiTimeout={}, detectTimeout={}, detectInterval={}, language={}, enableStreamRequestType={}, sendLatencyEnable={}, startDetectorEnable={}, enableHeartbeatChannelEventListener={}, enableTrace={}, traceTopic='{}', enableConcurrentHeartbeat={}, concurrentHeartbeatThreadPoolSize={}}}",
+            self.namesrv_addr.as_deref().unwrap_or("null"),
+            self.client_ip.as_deref().unwrap_or("null"),
+            self.instance_name.as_deref().unwrap_or("null"),
+            self.client_callback_executor_threads,
+            self.namespace.as_deref().unwrap_or("null"),
+            self.namespace_initialized,
+            self.namespace_v2.as_deref().unwrap_or("null"),
+            access_channel,
+            self.poll_name_server_interval,
+            self.heartbeat_broker_interval,
+            self.persist_consumer_offset_interval,
+            self.pull_time_delay_millis_when_exception,
+            self.unit_mode,
+            self.unit_name.as_deref().unwrap_or("null"),
+            self.decode_read_body,
+            self.decode_decompress_body,
+            self.vip_channel_enabled,
+            self.use_heartbeat_v2,
+            self.use_tls,
+            self.socks_proxy_config.as_deref().unwrap_or("null"),
+            self.mq_client_api_timeout,
+            self.detect_timeout,
+            self.detect_interval,
+            language,
+            self.enable_stream_request_type,
+            self.send_latency_enable,
+            self.start_detector_enable,
+            self.enable_heartbeat_channel_event_listener,
+            self.enable_trace,
+            self.trace_topic.as_deref().unwrap_or("null"),
+            self.enable_concurrent_heartbeat,
+            self.concurrent_heartbeat_thread_pool_size,
+        )
+    }
+}
+
 impl Default for ClientConfig {
     fn default() -> Self {
         Self::new_auto().expect("automatic client-IP initialization failed")

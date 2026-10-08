@@ -144,12 +144,13 @@ public final class RuntimeConfigFixtures {
         fixture.put("rebalanceLongs", rebalanceLongs);
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "ClientConfig.buildMQClientId/cloneClientConfig/resetClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/changeInstanceNameToPID; MQClientManager.getOrCreateMQClientInstance/removeClientFactory/getFactoryTable; MQClientInstance.constructor/getClientConfig/getNettyClientConfig/getProducerTable/getConsumerTable/selectProducer/selectConsumer/registerConsumer/unregisterConsumer; MQClientAPIImpl.getRemotingClient/NettyRemotingClient.publicExecutor (reflective capacity observation); NettyRemotingClient.start/invokeSync (local authenticated and no-auth SOCKS5 round trips); RemotingCommand.encode (null language JSON/ROCKETMQ); Long.parseLong (RebalanceService property parser)");
+        fixture.put("entrypoint", "ClientConfig.buildMQClientId/toString/cloneClientConfig/resetClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/changeInstanceNameToPID; MQClientManager.getOrCreateMQClientInstance/removeClientFactory/getFactoryTable; MQClientInstance.constructor/getClientConfig/getNettyClientConfig/getProducerTable/getConsumerTable/selectProducer/selectConsumer/registerConsumer/unregisterConsumer; MQClientAPIImpl.getRemotingClient/NettyRemotingClient.publicExecutor (reflective capacity observation); NettyRemotingClient.start/invokeSync (local authenticated and no-auth SOCKS5 round trips); RemotingCommand.encode (null language JSON/ROCKETMQ); Long.parseLong (RebalanceService property parser)");
         fixture.put("serverBaselineContacted", false);
         fixture.put("identities", identities);
         fixture.put("defaults", defaults);
         fixture.put("clone", clone);
         fixture.put("copyFields", clientConfigCopies());
+        fixture.put("clientConfigToString", clientConfigToString());
         fixture.put("managed", managed);
         fixture.put("managerRemoval", managerRemoval(config));
         fixture.put("managerTable", managerTable(config));
@@ -273,6 +274,107 @@ public final class RuntimeConfigFixtures {
             Object value = field.get(config);
             fields.put(field.getName(), value instanceof Enum<?> ? value.toString() : value);
         }
+        return fields;
+    }
+
+    private static List<Object> clientConfigToString() throws Exception {
+        List<Object> cases = new ArrayList<>();
+        ClientConfig nullable = new ClientConfig();
+        nullable.setNamesrvAddr(null);
+        nullable.setClientIP(null);
+        nullable.setInstanceName(null);
+        nullable.setClientCallbackExecutorThreads(-17);
+        nullable.setNamespaceV2(null);
+        nullable.setAccessChannel(null);
+        nullable.setPollNameServerInterval(-1);
+        nullable.setHeartbeatBrokerInterval(Integer.MIN_VALUE);
+        nullable.setPersistConsumerOffsetInterval(Integer.MAX_VALUE);
+        nullable.setPullTimeDelayMillsWhenException(Long.MIN_VALUE);
+        nullable.setUnitMode(true);
+        nullable.setUnitName("unit'quoted");
+        nullable.setDecodeReadBody(false);
+        nullable.setDecodeDecompressBody(true);
+        nullable.setVipChannelEnabled(true);
+        nullable.setUseHeartbeatV2(false);
+        nullable.setUseTLS(true);
+        nullable.setSocksProxyConfig("proxy-secret");
+        nullable.setMqClientApiTimeout(-3);
+        nullable.setDetectTimeout(4);
+        nullable.setDetectInterval(-5);
+        nullable.setLanguage(null);
+        nullable.setEnableStreamRequestType(true);
+        nullable.setSendLatencyEnable(false);
+        nullable.setStartDetectorEnable(true);
+        nullable.setEnableHeartbeatChannelEventListener(false);
+        nullable.setEnableTrace(true);
+        nullable.setTraceTopic("trace'quoted");
+        nullable.setEnableConcurrentHeartbeat(true);
+        nullable.setConcurrentHeartbeatThreadPoolSize(7);
+        nullable.setTraceMsgBatchNum(81);
+        nullable.setMaxPageSizeInGetMetadata(82);
+        Map<String, Object> nullCase = new TreeMap<>();
+        nullCase.put("case", "null-fields-uninitialized-namespace");
+        nullCase.put("input", clientConfigToStringInput(nullable));
+        nullCase.put("toString", nullable.toString());
+        cases.add(nullCase);
+
+        ClientConfig populated = new ClientConfig();
+        populated.setNamesrvAddr("ns.example:9876");
+        populated.setClientIP("198.51.100.7");
+        populated.setInstanceName("instance");
+        populated.setClientCallbackExecutorThreads(4);
+        populated.setNamespace("tenant");
+        populated.setNamespaceV2("tenant-v2");
+        populated.setAccessChannel(org.apache.rocketmq.client.AccessChannel.CLOUD);
+        populated.setPollNameServerInterval(30_000);
+        populated.setHeartbeatBrokerInterval(30_001);
+        populated.setPersistConsumerOffsetInterval(5_000);
+        populated.setPullTimeDelayMillsWhenException(1_000L);
+        populated.setUnitMode(false);
+        populated.setUnitName("unit");
+        populated.setDecodeReadBody(true);
+        populated.setDecodeDecompressBody(false);
+        populated.setVipChannelEnabled(false);
+        populated.setUseHeartbeatV2(true);
+        populated.setUseTLS(false);
+        populated.setSocksProxyConfig("{\"user\":\"fixture-secret\"}");
+        populated.setMqClientApiTimeout(3_000);
+        populated.setDetectTimeout(200);
+        populated.setDetectInterval(2_000);
+        populated.setLanguage(org.apache.rocketmq.remoting.protocol.LanguageCode.CPP);
+        populated.setEnableStreamRequestType(false);
+        populated.setSendLatencyEnable(true);
+        populated.setStartDetectorEnable(false);
+        populated.setEnableHeartbeatChannelEventListener(true);
+        populated.setEnableTrace(false);
+        populated.setTraceTopic("trace-topic");
+        populated.setEnableConcurrentHeartbeat(false);
+        populated.setConcurrentHeartbeatThreadPoolSize(8);
+        populated.setTraceMsgBatchNum(83);
+        populated.setMaxPageSizeInGetMetadata(84);
+        Map<String, Object> populatedCase = new TreeMap<>();
+        populatedCase.put("case", "populated-fields-initialized-namespace");
+        populatedCase.put("input", clientConfigToStringInput(populated));
+        populatedCase.put("toString", populated.toString());
+        cases.add(populatedCase);
+        for (org.apache.rocketmq.remoting.protocol.LanguageCode language
+            : org.apache.rocketmq.remoting.protocol.LanguageCode.values()) {
+            ClientConfig languageCase = populated.cloneClientConfig();
+            languageCase.setLanguage(language);
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", "language-" + language.name());
+            item.put("input", clientConfigToStringInput(languageCase));
+            item.put("toString", languageCase.toString());
+            cases.add(item);
+        }
+        return cases;
+    }
+
+    private static Map<String, Object> clientConfigToStringInput(ClientConfig config) throws Exception {
+        Map<String, Object> fields = clientConfigFields(config);
+        java.lang.reflect.Field namespaceInitialized = ClientConfig.class.getDeclaredField("namespaceInitialized");
+        namespaceInitialized.setAccessible(true);
+        fields.put("namespaceInitialized", namespaceInitialized.getBoolean(config));
         return fields;
     }
 
