@@ -36,6 +36,7 @@ public final class RuntimeClientCheckFixtures {
         record(cases, "SQL92", true, false, 0, false);
         record(cases, "SQL92", true, true, 44, false);
         record(cases, "SQL92", true, true, 0, true);
+        record(cases, "SQL92", true, true, 0, false, null);
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
@@ -52,6 +53,11 @@ public final class RuntimeClientCheckFixtures {
     }
 
     private static void record(List<Object> cases, String expression, boolean route, boolean subscriptions, int code, boolean transportFailure) throws Exception {
+        record(cases, expression, route, subscriptions, code, transportFailure, "topic");
+    }
+
+    private static void record(List<Object> cases, String expression, boolean route, boolean subscriptions,
+        int code, boolean transportFailure, String topic) throws Exception {
         ClientConfig config = new ClientConfig(); config.setClientIP("check-client");
         config.setVipChannelEnabled(true); config.setMqClientApiTimeout(1234);
         MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
@@ -60,6 +66,7 @@ public final class RuntimeClientCheckFixtures {
         item.put("expression", expression); item.put("isTag", ExpressionType.isTagType(expression));
         item.put("route", route); item.put("subscriptions", subscriptions);
         item.put("responseCode", code); item.put("transportFailure", transportFailure);
+        if (topic == null) item.put("topicNull", true);
         item.put("invocations", 0);
         RemotingClient transport = (RemotingClient) Proxy.newProxyInstance(RemotingClient.class.getClassLoader(),
             new Class<?>[] {RemotingClient.class}, (proxy, method, values) -> {
@@ -78,7 +85,7 @@ public final class RuntimeClientCheckFixtures {
         Field field = MQClientInstance.class.getDeclaredField("mQClientAPIImpl");
         field.setAccessible(true); field.set(runtime, api);
         try {
-            SubscriptionData subscription = new SubscriptionData(); subscription.setTopic("topic");
+            SubscriptionData subscription = new SubscriptionData(); subscription.setTopic(topic);
             subscription.setSubString("a > 1"); subscription.setSubVersion(42); subscription.setExpressionType(expression);
             MQConsumerInner consumer = (MQConsumerInner) Proxy.newProxyInstance(MQConsumerInner.class.getClassLoader(),
                 new Class<?>[] {MQConsumerInner.class}, (proxy, method, values) -> {
@@ -87,9 +94,10 @@ public final class RuntimeClientCheckFixtures {
                     return method.getReturnType() == boolean.class ? false : null;
                 });
             runtime.registerConsumer("registered-group", consumer);
-            if (route) runtime.getTopicRouteTable().put("topic", com.alibaba.fastjson2.JSON.parseObject(
+            if (route && topic != null) runtime.getTopicRouteTable().put(topic, com.alibaba.fastjson2.JSON.parseObject(
                 "{\"queueDatas\":[],\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"192.0.2.6:10911\"}}],\"filterServerTable\":{}}", TopicRouteData.class));
             try { runtime.checkClientInBroker(); item.put("outcome", "OK"); }
+            catch (NullPointerException error) { item.put("outcome", "NullPointerException"); }
             catch (MQClientException error) {
                 item.put("outcome", "MQClientException"); item.put("errorCode", error.getResponseCode());
                 item.put("cause", error.getCause() == null ? null : error.getCause().getClass().getSimpleName());

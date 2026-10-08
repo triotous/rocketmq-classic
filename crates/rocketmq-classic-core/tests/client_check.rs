@@ -239,3 +239,34 @@ async fn non_tag_check_uses_registered_key_vip_and_source_error_boundaries() {
         .collect();
     assert_eq!(outcomes.len(), 3);
 }
+
+#[tokio::test]
+async fn non_tag_null_topic_matches_invoked_java_failure_without_rpc() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-check.json")).unwrap();
+    let case = fixture["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["topicNull"] == true)
+        .unwrap();
+    assert_eq!(case["outcome"], "NullPointerException");
+    assert_eq!(case["invocations"], 0);
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&ClientConfig::new("null-check-topic"))
+        .await
+        .unwrap();
+    let owner = Arc::new(Consumer(vec![SubscriptionData {
+        topic: None,
+        expression_type: Some("SQL92".into()),
+        ..Default::default()
+    }]));
+    let _lease = runtime
+        .register_consumer("registered-group", owner.clone())
+        .await
+        .unwrap();
+    assert!(matches!(
+        runtime.check_client_in_broker().await,
+        Err(RuntimeError::InvalidRoute("null subscription topic"))
+    ));
+}
