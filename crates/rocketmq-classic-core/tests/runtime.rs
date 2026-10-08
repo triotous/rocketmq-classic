@@ -476,6 +476,66 @@ async fn p6_v02_failed_construction_can_retry_and_stale_removal_preserves_replac
 }
 
 #[tokio::test]
+async fn json_null_route_response_returns_false_and_preserves_cached_snapshot() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut config = ClientConfig::new("192.0.2.6");
+    config.namesrv_addr = Some(listener.local_addr().unwrap().to_string());
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        for body in [
+            br#"{"queueDatas":[],"brokerDatas":[],"filterServerTable":{}}"#.to_vec(),
+            b"null".to_vec(),
+        ] {
+            let mut length = [0; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut bytes = BytesMut::from(&length[..]);
+            bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut bytes[4..]).await.unwrap();
+            let command = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
+                .unwrap()
+                .unwrap();
+            assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
+            let mut reply = RemotingCommand {
+                code: 0,
+                opaque: command.opaque,
+                body: Some(body),
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .await
+                .unwrap();
+        }
+    });
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+    runtime.remoting().start().unwrap();
+    assert!(
+        runtime
+            .update_topic_route("topic", Instant::now() + Duration::from_secs(2))
+            .await
+            .unwrap()
+    );
+    let before_null = runtime.route_snapshot().unwrap();
+    assert!(before_null.topics.contains_key("topic"));
+    assert!(
+        !runtime
+            .update_topic_route("topic", Instant::now() + Duration::from_secs(2))
+            .await
+            .unwrap()
+    );
+    assert!(Arc::ptr_eq(
+        &before_null,
+        &runtime.route_snapshot().unwrap()
+    ));
+    peer.await.unwrap();
+    runtime.remoting().shutdown().await;
+}
+
+#[tokio::test]
 async fn route_refresh_failure_preserves_last_coherent_snapshot() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut config = ClientConfig::new("192.0.2.6");
