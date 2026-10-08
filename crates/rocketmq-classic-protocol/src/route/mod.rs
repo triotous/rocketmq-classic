@@ -2300,6 +2300,14 @@ mod tests {
         assert_eq!(java["decodeListJsonNullReturnsNull"], true);
         assert_eq!(java["decodeListNullMemberCount"], 1);
         assert_eq!(java["decodeListHasNullMember"], true);
+        assert_eq!(java["mappingDecodeNullBytesReturnsNull"], true);
+        assert_eq!(java["mappingDecodeJsonNullReturnsNull"], true);
+        assert_eq!(java["mappingFromJsonNullInputReturnsNull"], true);
+        assert_eq!(java["mappingFromJsonJsonNullReturnsNull"], true);
+        assert_eq!(java["mappingDecodeListNullBytesReturnsNull"], true);
+        assert_eq!(java["mappingDecodeListJsonNullReturnsNull"], true);
+        assert_eq!(java["mappingDecodeListNullMemberCount"], 1);
+        assert_eq!(java["mappingDecodeListHasNullMember"], true);
 
         assert!(
             TopicRouteData::java_decode_nullable(None)
@@ -2332,6 +2340,42 @@ mod tests {
                 .is_none()
         );
         let decoded = TopicRouteData::java_decode_list_nullable(Some(b"[null]"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(decoded.len(), 1);
+        assert!(decoded[0].is_none());
+
+        assert!(
+            TopicQueueMappingInfo::java_decode_nullable(None)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            TopicQueueMappingInfo::java_decode_nullable(Some(b"null"))
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            TopicQueueMappingInfo::java_from_json_nullable(None)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            TopicQueueMappingInfo::java_from_json_nullable(Some("null"))
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            TopicQueueMappingInfo::java_decode_list_nullable(None)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            TopicQueueMappingInfo::java_decode_list_nullable(Some(b"null"))
+                .unwrap()
+                .is_none()
+        );
+        let decoded = TopicQueueMappingInfo::java_decode_list_nullable(Some(b"[null]"))
             .unwrap()
             .unwrap();
         assert_eq!(decoded.len(), 1);
