@@ -300,6 +300,27 @@ mod tests {
         }
     }
 
+    #[test]
+    fn heartbeat_collections_match_invoked_java_nulls_and_defaults() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
+                .unwrap();
+        for case in fixture["heartbeatFieldCases"].as_array().unwrap() {
+            let value: HeartbeatData = serde_json::from_str(case["rawInput"].as_str().unwrap()).unwrap();
+            let encoded = serde_json::to_value(&value).unwrap();
+            assert_eq!(value.client_id.is_none(), case["clientNull"]);
+            assert_eq!(value.producer_data_set.is_none(), case["producersNull"]);
+            assert_eq!(value.consumer_data_set.is_none(), case["consumersNull"]);
+            assert_eq!(value.producer_data_set.as_ref().map_or(-1, |set| set.len() as i64), case["producerCount"]);
+            assert_eq!(value.consumer_data_set.as_ref().map_or(-1, |set| set.len() as i64), case["consumerCount"]);
+            assert_eq!(value.heartbeat_fingerprint, case["fingerprint"]);
+            assert_eq!(value.is_without_sub, case["withoutSub"]);
+            assert_eq!(encoded.get("clientID").is_some(), case["encodedHasClient"]);
+            assert_eq!(encoded.get("producerDataSet").is_some(), case["encodedHasProducers"]);
+            assert_eq!(encoded.get("consumerDataSet").is_some(), case["encodedHasConsumers"]);
+        }
+    }
+
     fn current_millis() -> i64 {
         use std::time::{SystemTime, UNIX_EPOCH};
         SystemTime::now()

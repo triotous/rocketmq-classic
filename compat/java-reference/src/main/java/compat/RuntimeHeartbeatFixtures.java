@@ -104,6 +104,33 @@ public final class RuntimeHeartbeatFixtures {
         return result;
     }
 
+    private static List<Object> heartbeatFieldCases() {
+        List<Object> cases = new ArrayList<>();
+        for (String input : new String[] {
+            "{}",
+            "{\"clientID\":null,\"producerDataSet\":null,\"consumerDataSet\":null,\"heartbeatFingerprint\":0,\"withoutSub\":false}",
+            "{\"clientID\":\"client\",\"producerDataSet\":[{\"groupName\":\"p\"}],\"consumerDataSet\":[{\"groupName\":\"c\"}],\"heartbeatFingerprint\":7,\"withoutSub\":true}"
+        }) {
+            HeartbeatData value = com.alibaba.fastjson2.JSON.parseObject(input, HeartbeatData.class);
+            com.alibaba.fastjson2.JSONObject encoded = com.alibaba.fastjson2.JSON.parseObject(
+                com.alibaba.fastjson2.JSON.toJSONString(value));
+            Map<String, Object> item = new TreeMap<>();
+            item.put("rawInput", input);
+            item.put("clientNull", value.getClientID() == null);
+            item.put("producersNull", value.getProducerDataSet() == null);
+            item.put("consumersNull", value.getConsumerDataSet() == null);
+            item.put("producerCount", value.getProducerDataSet() == null ? -1 : value.getProducerDataSet().size());
+            item.put("consumerCount", value.getConsumerDataSet() == null ? -1 : value.getConsumerDataSet().size());
+            item.put("fingerprint", value.getHeartbeatFingerprint());
+            item.put("withoutSub", value.isWithoutSub());
+            item.put("encodedHasClient", encoded.containsKey("clientID"));
+            item.put("encodedHasProducers", encoded.containsKey("producerDataSet"));
+            item.put("encodedHasConsumers", encoded.containsKey("consumerDataSet"));
+            cases.add(item);
+        }
+        return cases;
+    }
+
     private static void record(List<Object> cases, MQClientInstance runtime, String name,
         boolean withoutSub) throws Exception {
         Method prepare = MQClientInstance.class.getDeclaredMethod("prepareHeartbeatData", boolean.class);
@@ -204,6 +231,7 @@ public final class RuntimeHeartbeatFixtures {
         fixture.put("multiplicityCases", multiplicityCases);
         fixture.put("subscriptionFieldCases", subscriptionFieldCases());
         fixture.put("ownerFieldCases", ownerFieldCases());
+        fixture.put("heartbeatFieldCases", heartbeatFieldCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture) + "\n";
         Path file = Path.of(args[0]);
         if (args.length > 1 && "--verify".equals(args[1])) {
