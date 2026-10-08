@@ -59,8 +59,10 @@ pub enum RuntimeError {
     DuplicateGroup { group: String },
     #[error("invalid topic route: {0}")]
     InvalidRoute(&'static str),
-    #[error("invalid broker socket address")]
+    #[error("VIP broker address has no port separator")]
     InvalidBrokerAddress,
+    #[error("VIP broker port is not a Java signed integer")]
+    InvalidBrokerPort,
     #[error("runtime RPC failed: {0}")]
     Rpc(#[from] crate::error::RpcError),
     #[error("shared runtime configuration conflicts for client {client_id}")]

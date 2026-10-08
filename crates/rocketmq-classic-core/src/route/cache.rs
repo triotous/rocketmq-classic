@@ -629,7 +629,7 @@ pub fn broker_vip_channel(enabled: bool, address: &str) -> Result<String, Runtim
         .ok_or(RuntimeError::InvalidBrokerAddress)?;
     let port = crate::java_number::parse_long(port)
         .and_then(|port| i32::try_from(port).ok())
-        .ok_or(RuntimeError::InvalidBrokerAddress)?;
+        .ok_or(RuntimeError::InvalidBrokerPort)?;
     Ok(format!("{host}:{}", port.wrapping_sub(2)))
 }
 
@@ -1523,8 +1523,19 @@ mod tests {
             let actual = broker_vip_channel(true, address);
             let java_accepts = case["enabledOutcome"] == "OK";
             assert_eq!(actual.is_ok(), java_accepts, "{address}: {actual:?}");
-            if let Ok(actual) = actual {
-                assert_eq!(actual, case["enabledValue"].as_str().unwrap(), "{address}");
+            match actual {
+                Ok(actual) => {
+                    assert_eq!(actual, case["enabledValue"].as_str().unwrap(), "{address}");
+                }
+                Err(actual) => match case["enabledOutcome"].as_str().unwrap() {
+                    "StringIndexOutOfBoundsException" => {
+                        assert!(matches!(actual, RuntimeError::InvalidBrokerAddress));
+                    }
+                    "NumberFormatException" => {
+                        assert!(matches!(actual, RuntimeError::InvalidBrokerPort));
+                    }
+                    other => panic!("unmapped Java VIP exception {other} for {address}"),
+                },
             }
             assert_eq!(
                 broker_vip_channel(false, address).unwrap(),
