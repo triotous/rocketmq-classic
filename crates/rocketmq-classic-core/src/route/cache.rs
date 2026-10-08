@@ -604,12 +604,12 @@ fn routes_equal(left: &TopicRouteData, right: &TopicRouteData) -> Result<bool, R
         .map_err(|error| {
             use rocketmq_classic_protocol::route::TopicRouteDataChangedError;
             RuntimeError::InvalidRoute(match error {
-                TopicRouteDataChangedError::NullQueueData
-                | TopicRouteDataChangedError::NullQueueBrokerName => {
+                TopicRouteDataChangedError::NullQueueData => "null queue data during sort",
+                TopicRouteDataChangedError::NullQueueBrokerName => {
                     "null queue broker name during sort"
                 }
-                TopicRouteDataChangedError::NullBrokerData
-                | TopicRouteDataChangedError::NullBrokerName => "null broker name during sort",
+                TopicRouteDataChangedError::NullBrokerData => "null broker data during sort",
+                TopicRouteDataChangedError::NullBrokerName => "null broker name during sort",
             })
         })?;
     Ok(!changed)
