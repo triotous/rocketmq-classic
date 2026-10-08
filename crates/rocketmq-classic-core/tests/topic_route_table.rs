@@ -328,6 +328,14 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
         ),
     );
     outcomes.insert(
+        "computeIfAbsentNullLeavesAbsent",
+        table
+            .compute_if_absent("compute-null", |_| None)
+            .unwrap()
+            .is_none()
+            && !table.contains_key("compute-null").unwrap(),
+    );
+    outcomes.insert(
         "computeIfPresentReplaces",
         same(
             table
@@ -335,6 +343,14 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
                 .unwrap(),
             &second,
         ) && same(table.get("compute-a").unwrap(), &second),
+    );
+    outcomes.insert(
+        "computeIfPresentNullRemoves",
+        table
+            .compute_if_present("compute-a", |_, _| None)
+            .unwrap()
+            .is_none()
+            && !table.contains_key("compute-a").unwrap(),
     );
     outcomes.insert(
         "computeReplaces",
@@ -360,6 +376,14 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
             && !table.contains_key("compute-b").unwrap(),
     );
     outcomes.insert(
+        "computeAbsentNullLeavesAbsent",
+        table
+            .compute("compute-null-absent", |_, _| None)
+            .unwrap()
+            .is_none()
+            && !table.contains_key("compute-null-absent").unwrap(),
+    );
+    outcomes.insert(
         "mergeCombines",
         same(
             table
@@ -367,6 +391,15 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
                 .unwrap(),
             &second,
         ),
+    );
+    table.put("merge-remove", second.clone()).unwrap();
+    outcomes.insert(
+        "mergeNullRemoves",
+        table
+            .merge("merge-remove", first.clone(), |_, _| None)
+            .unwrap()
+            .is_none()
+            && !table.contains_key("merge-remove").unwrap(),
     );
     outcomes.insert(
         "mergeAbsentInserts",
@@ -520,6 +553,15 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
             && table.len().unwrap() == 1
             && table.contains_key("entry-retain-keep").unwrap(),
     );
+    table.put("key-view-clear", first.clone()).unwrap();
+    key_view.clear().unwrap();
+    outcomes.insert("keyViewClear", table.is_empty().unwrap());
+    table.put("values-view-clear", first.clone()).unwrap();
+    values_view.clear().unwrap();
+    outcomes.insert("valuesViewClear", table.is_empty().unwrap());
+    table.put("entry-view-clear", first.clone()).unwrap();
+    entry_view.clear().unwrap();
+    outcomes.insert("entryViewClear", table.is_empty().unwrap());
 
     table.clear().unwrap();
     table.put("iterator-key", first.clone()).unwrap();
