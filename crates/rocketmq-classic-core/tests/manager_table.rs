@@ -248,6 +248,29 @@ async fn retained_factory_table_and_atomic_mutations_match_invoked_java() {
             && live.len().unwrap() == 4,
         java["putAllAdds"]
     );
+    let expected = BTreeMap::from([
+        (id.clone(), first.clone()),
+        (String::new(), second.clone()),
+        ("bulk-a".to_owned(), first.clone()),
+        ("bulk-b".to_owned(), second.clone()),
+    ]);
+    let mut visited = BTreeMap::new();
+    second_view
+        .for_each(|key, value| {
+            // A callback can reenter the table because traversal holds no manager lock.
+            let _ = second_view.len().unwrap();
+            visited.insert(
+                key.to_owned(),
+                expected
+                    .get(key)
+                    .is_some_and(|expected| Arc::ptr_eq(value, expected)),
+            );
+        })
+        .unwrap();
+    assert_eq!(
+        visited.len() == expected.len() && visited.values().all(|matches| *matches),
+        java["forEachVisitsCurrentMappings"]
+    );
     assert!(Arc::ptr_eq(&second_view.snapshot().unwrap()[""], &second));
     live.clear().await.unwrap();
     assert_eq!(
