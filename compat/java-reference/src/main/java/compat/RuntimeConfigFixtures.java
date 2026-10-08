@@ -282,6 +282,20 @@ public final class RuntimeConfigFixtures {
             result.put("entryViewRetainAll", entryView.retainAll(java.util.Collections.singleton(
                 new java.util.AbstractMap.SimpleImmutableEntry<>("keep", first)))
                 && live.size() == 1 && live.get("keep") == first);
+            result.put("computeIfAbsentMaps", live.computeIfAbsent("compute-a", key -> first) == first);
+            result.put("computeIfAbsentKeepsCurrent", live.computeIfAbsent("compute-a", key -> second) == first);
+            result.put("computeIfPresentReplaces", live.computeIfPresent("compute-a", (key, value) -> second) == second
+                && live.get("compute-a") == second);
+            result.put("computeReplaces", live.compute("compute-a", (key, value) -> first) == first
+                && live.get("compute-a") == first);
+            result.put("computeAbsentInserts", live.compute("compute-b", (key, value) -> second) == second);
+            result.put("computeNullRemoves", live.compute("compute-b", (key, value) -> null) == null
+                && !live.containsKey("compute-b"));
+            result.put("mergeCombines", live.merge("compute-a", second, (oldValue, newValue) -> newValue) == second);
+            result.put("mergeAbsentInserts", live.merge("merge-new", first, (oldValue, newValue) -> null) == first);
+            live.replaceAll((key, value) -> second);
+            result.put("replaceAllUpdatesMappings", live.size() == 3
+                && live.values().stream().allMatch(value -> value == second));
             live.clear();
             result.put("retainedViewEmptyAfterClear", live.isEmpty());
             result.put("collectionViewsEmptyAfterClear", keyView.isEmpty() && valuesView.isEmpty() && entryView.isEmpty());
