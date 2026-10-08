@@ -416,7 +416,7 @@ impl ClientRuntime {
         &self,
         topic: &str,
     ) -> Result<Option<String>, RuntimeError> {
-        Ok(self.route_snapshot()?.broker_address_by_topic(topic)?)
+        self.route_snapshot()?.broker_address_by_topic(topic)
     }
 
     pub fn get_existing_topic_route(
