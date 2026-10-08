@@ -1451,6 +1451,10 @@ mod route_dto_input_cases_tests {
             "mapping-unicode-decimal-id-key",
             "queue-fastjson-leading-plus-number",
             "queue-fastjson-leading-zero-number",
+            "queue-fastjson-leading-plus-fraction",
+            "queue-fastjson-leading-zero-fraction",
+            "mapping-fastjson-leading-plus-exponent",
+            "mapping-fastjson-leading-zero-exponent",
         ] {
             assert!(
                 cases.iter().any(|case| case["id"] == required),
