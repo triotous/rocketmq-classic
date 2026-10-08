@@ -49,6 +49,31 @@ pub enum BrokerDataCompareError {
 }
 
 impl BrokerData {
+    /// Returns the pinned Java 5.5.1 `BrokerData.hashCode` result.
+    ///
+    /// Java hashes only the broker address map and broker name, using the
+    /// Java `Map`, `Long`, and UTF-16 `String` hash rules.
+    pub fn java_hash_code(&self) -> i32 {
+        let addresses_hash = self
+            .broker_addrs
+            .as_ref()
+            .map(|addresses| {
+                addresses.iter().fold(0i32, |hash, (broker_id, address)| {
+                    let address_hash = address.as_deref().map(java_string_hash_code).unwrap_or(0);
+                    hash.wrapping_add(java_long_hash_code(*broker_id) ^ address_hash)
+                })
+            })
+            .unwrap_or(0);
+        let broker_name_hash = self
+            .broker_name
+            .as_deref()
+            .map(java_string_hash_code)
+            .unwrap_or(0);
+        31i32
+            .wrapping_mul(31i32.wrapping_add(addresses_hash))
+            .wrapping_add(broker_name_hash)
+    }
+
     /// Returns the pinned Java 5.5.1 `BrokerData.compareTo` result.
     ///
     /// Java compares broker names as UTF-16 strings and returns the raw code
@@ -65,6 +90,17 @@ impl BrokerData {
             .ok_or(BrokerDataCompareError::NullBrokerName)?;
         Ok(java_string_compare_to(name, other_name))
     }
+}
+
+fn java_long_hash_code(value: i64) -> i32 {
+    let bits = value as u64;
+    (bits ^ (bits >> 32)) as u32 as i32
+}
+
+fn java_string_hash_code(value: &str) -> i32 {
+    value.encode_utf16().fold(0i32, |hash, unit| {
+        hash.wrapping_mul(31).wrapping_add(i32::from(unit))
+    })
 }
 
 fn java_string_compare_to(left: &str, right: &str) -> i32 {
@@ -104,7 +140,12 @@ mod broker_data_hash_code_tests {
             serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
         for case in fixture["brokerDataHashCode"].as_array().unwrap() {
             let broker: BrokerData = serde_json::from_value(case["input"].clone()).unwrap();
-            assert_eq!(broker.java_hash_code(), case["hashCode"].as_i64().unwrap() as i32, "{}", case["id"]);
+            assert_eq!(
+                broker.java_hash_code(),
+                case["hashCode"].as_i64().unwrap() as i32,
+                "{}",
+                case["id"]
+            );
         }
     }
 }
