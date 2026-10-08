@@ -284,15 +284,24 @@ public final class RuntimeConfigFixtures {
                 && live.size() == 1 && live.get("keep") == first);
             result.put("computeIfAbsentMaps", live.computeIfAbsent("compute-a", key -> first) == first);
             result.put("computeIfAbsentKeepsCurrent", live.computeIfAbsent("compute-a", key -> second) == first);
+            result.put("computeIfAbsentNullLeavesAbsent", live.computeIfAbsent("compute-null", key -> null) == null
+                && !live.containsKey("compute-null"));
             result.put("computeIfPresentReplaces", live.computeIfPresent("compute-a", (key, value) -> second) == second
                 && live.get("compute-a") == second);
+            result.put("computeIfPresentNullRemoves", live.computeIfPresent("compute-a", (key, value) -> null) == null
+                && !live.containsKey("compute-a"));
             result.put("computeReplaces", live.compute("compute-a", (key, value) -> first) == first
                 && live.get("compute-a") == first);
             result.put("computeAbsentInserts", live.compute("compute-b", (key, value) -> second) == second);
             result.put("computeNullRemoves", live.compute("compute-b", (key, value) -> null) == null
                 && !live.containsKey("compute-b"));
+            result.put("computeAbsentNullLeavesAbsent", live.compute("compute-null-absent", (key, value) -> null) == null
+                && !live.containsKey("compute-null-absent"));
             result.put("mergeCombines", live.merge("compute-a", second, (oldValue, newValue) -> newValue) == second);
             result.put("mergeAbsentInserts", live.merge("merge-new", first, (oldValue, newValue) -> null) == first);
+            live.put("merge-remove", second);
+            result.put("mergeNullRemoves", live.merge("merge-remove", first, (oldValue, newValue) -> null) == null
+                && !live.containsKey("merge-remove"));
             live.replaceAll((key, value) -> second);
             result.put("replaceAllUpdatesMappings", live.size() == 3
                 && live.values().stream().allMatch(value -> value == second));
