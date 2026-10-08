@@ -1825,6 +1825,10 @@ public final class RuntimeConfigFixtures {
             name -> org.apache.rocketmq.remoting.protocol.RequestType.valueOf(name),
             new String[] {null, "", "STREAM", "stream", "UNKNOWN"}));
         result.put("RequestSource", requestSourceMethodCases());
+        result.put("MessageQueueRouteState", enumMethodCases(
+            org.apache.rocketmq.remoting.protocol.route.MessageQueueRouteState::values,
+            org.apache.rocketmq.remoting.protocol.route.MessageQueueRouteState::valueOf,
+            new String[] {null, "", "Expired", "ReadOnly", "Normal", "WriteOnly", "expired", "UNKNOWN"}));
 
         List<Object> requestTypeBytes = new ArrayList<>();
         for (byte input : new byte[] {Byte.MIN_VALUE, -1, 0, 1, Byte.MAX_VALUE}) {
