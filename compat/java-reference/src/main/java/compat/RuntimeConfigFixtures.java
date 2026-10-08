@@ -341,6 +341,12 @@ public final class RuntimeConfigFixtures {
     private static final class TableOwnerHandler implements java.lang.reflect.InvocationHandler {
         private final Object equalityKey;
         TableOwnerHandler(Object equalityKey) { this.equalityKey = equalityKey; }
+        private static Object equalityValue(Object key) {
+            if (key instanceof java.util.concurrent.atomic.AtomicReference<?>) {
+                return ((java.util.concurrent.atomic.AtomicReference<?>) key).get();
+            }
+            return key;
+        }
         @Override public Object invoke(Object proxy, java.lang.reflect.Method method, Object[] args) {
             if ("equals".equals(method.getName())) {
                 Object other = args[0];
@@ -348,9 +354,10 @@ public final class RuntimeConfigFixtures {
                 if (other == null || !java.lang.reflect.Proxy.isProxyClass(other.getClass())) return false;
                 java.lang.reflect.InvocationHandler otherHandler = java.lang.reflect.Proxy.getInvocationHandler(other);
                 return otherHandler instanceof TableOwnerHandler
-                    && java.util.Objects.equals(equalityKey, ((TableOwnerHandler) otherHandler).equalityKey);
+                    && java.util.Objects.equals(equalityValue(equalityKey),
+                        equalityValue(((TableOwnerHandler) otherHandler).equalityKey));
             }
-            if ("hashCode".equals(method.getName())) return equalityKey.hashCode();
+            if ("hashCode".equals(method.getName())) return equalityValue(equalityKey).hashCode();
             throw new IllegalStateException("map fixture must not invoke owner callback: " + method.getName());
         }
     }
@@ -602,6 +609,39 @@ public final class RuntimeConfigFixtures {
                     new java.util.AbstractMap.SimpleImmutableEntry<>("equal-entry-retain-all", consumerEqualB)))
                     && runtime.getConsumerTable().containsKey("equal-entry-retain-all")
                     && !runtime.getConsumerTable().containsKey("other-entry-retain-all"));
+            java.util.concurrent.atomic.AtomicReference<Object> storedKey =
+                new java.util.concurrent.atomic.AtomicReference<>("dynamic-before");
+            java.util.concurrent.atomic.AtomicReference<Object> probeKey =
+                new java.util.concurrent.atomic.AtomicReference<>("dynamic-before");
+            org.apache.rocketmq.client.impl.consumer.MQConsumerInner dynamicStored =
+                tableOwner(org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class, storedKey);
+            org.apache.rocketmq.client.impl.consumer.MQConsumerInner dynamicProbe =
+                tableOwner(org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class, probeKey);
+            runtime.getConsumerTable().put("dynamic-equality", dynamicStored);
+            equalValues.put("dynamicContainsBeforeMutation",
+                runtime.getConsumerTable().containsValue(dynamicProbe));
+            storedKey.set("dynamic-after");
+            equalValues.put("dynamicContainsAfterStoredMutation",
+                !runtime.getConsumerTable().containsValue(dynamicProbe));
+            probeKey.set("dynamic-after");
+            equalValues.put("dynamicContainsAfterBothMutations",
+                runtime.getConsumerTable().containsValue(dynamicProbe));
+            java.util.concurrent.atomic.AtomicReference<Object> replaceStoredKey =
+                new java.util.concurrent.atomic.AtomicReference<>("replace-before");
+            java.util.concurrent.atomic.AtomicReference<Object> replaceExpectedKey =
+                new java.util.concurrent.atomic.AtomicReference<>("replace-before");
+            org.apache.rocketmq.client.impl.consumer.MQConsumerInner replaceStored =
+                tableOwner(org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class, replaceStoredKey);
+            org.apache.rocketmq.client.impl.consumer.MQConsumerInner replaceExpected =
+                tableOwner(org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class, replaceExpectedKey);
+            runtime.getConsumerTable().put("dynamic-replace", replaceStored);
+            replaceExpectedKey.set("stale");
+            equalValues.put("dynamicReplaceRejectsChangedExpected",
+                !runtime.getConsumerTable().replace("dynamic-replace", replaceExpected, consumerReplacement));
+            replaceStoredKey.set("replace-after");
+            replaceExpectedKey.set("replace-after");
+            equalValues.put("dynamicReplaceMatchesCurrentEquality",
+                runtime.getConsumerTable().replace("dynamic-replace", replaceExpected, consumerReplacement));
             result.put("customEquality", equalValues);
             java.util.concurrent.ConcurrentMap<String, org.apache.rocketmq.client.impl.consumer.MQConsumerInner> retained = runtime.getConsumerTable();
             result.put("consumerRegisterAccepted", runtime.registerConsumer("registered", consumerA));
