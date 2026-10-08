@@ -34,6 +34,22 @@ pub struct BrokerData {
 }
 
 #[cfg(test)]
+mod broker_data_equality_tests {
+    use super::BrokerData;
+
+    #[test]
+    fn broker_data_equality_matches_invoked_java_equals() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["brokerDataEquality"].as_array().unwrap() {
+            let left: BrokerData = serde_json::from_value(case["left"].clone()).unwrap();
+            let right: BrokerData = serde_json::from_value(case["right"].clone()).unwrap();
+            assert_eq!(left == right, case["equals"], "{}", case["id"]);
+        }
+    }
+}
+
+#[cfg(test)]
 mod nullable_broker_address_tests {
     use super::BrokerData;
 
