@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 use super::TransportMode;
 use crate::error::TransportError;
@@ -33,9 +33,23 @@ impl From<SocksProxyConfig> for ParsedProxyRoute {
 
 #[derive(Deserialize)]
 struct RawProxyRoute {
+    #[serde(default, deserialize_with = "java_string_field")]
     addr: Option<String>,
+    #[serde(default, deserialize_with = "java_string_field")]
     username: Option<String>,
+    #[serde(default, deserialize_with = "java_string_field")]
     password: Option<String>,
+}
+
+fn java_string_field<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(value.map(|value| match value {
+        serde_json::Value::String(value) => value,
+        other => other.to_string(),
+    }))
 }
 
 impl SocksProxyConfig {
@@ -385,6 +399,35 @@ mod tests {
                 .is_none()
         );
         assert!(ClientConfig::proxy_for(&routes, "10.3.2.3").is_err());
+    }
+
+    #[test]
+    fn scalar_socks_fields_match_invoked_java_parsed_proxy_values() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/client-config.json"
+        ))
+        .unwrap();
+        for case in fixture["socksConstruction"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .skip(19)
+        {
+            let mut config = ClientConfig::default();
+            config.set_socks_proxy_config(case["input"].as_str().unwrap());
+            let routes = config.parse_socks_proxy_config().unwrap();
+            match &routes["10.0.0.0/8"] {
+                super::ParsedProxyRoute::Proxy(proxy) => {
+                    assert_eq!(Some(proxy.address.as_str()), case["parsedAddr"].as_str());
+                    assert_eq!(proxy.username.as_deref(), case["parsedUsername"].as_str());
+                    assert_eq!(proxy.password.as_deref(), case["parsedPassword"].as_str());
+                }
+                super::ParsedProxyRoute::MissingAddress => {
+                    assert!(case["parsedAddr"].is_null());
+                }
+                super::ParsedProxyRoute::Direct => panic!("Java decoded a nonnull route object"),
+            }
+        }
     }
 
     #[test]
