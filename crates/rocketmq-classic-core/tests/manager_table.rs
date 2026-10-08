@@ -305,9 +305,14 @@ async fn retained_factory_table_and_atomic_mutations_match_invoked_java() {
         java["entryViewRemovesBulk"]
     );
     assert_eq!(
+        values_view.remove(&first).await.unwrap(),
+        java["valuesViewRemovesCurrent"]
+    );
+    assert_eq!(
         !key_view.contains("bulk-b").unwrap()
             && !entry_view.contains("bulk-a", &first).unwrap()
-            && values_view.len().unwrap() == 2,
+            && !key_view.contains(&id).unwrap()
+            && values_view.len().unwrap() == 1,
         java["viewsSeeRemovals"]
     );
     assert!(Arc::ptr_eq(&second_view.snapshot().unwrap()[""], &second));
@@ -317,7 +322,9 @@ async fn retained_factory_table_and_atomic_mutations_match_invoked_java() {
         java["retainedViewEmptyAfterClear"]
     );
     assert_eq!(
-        key_view.is_empty().unwrap() && values_view.is_empty().unwrap() && entry_view.is_empty().unwrap(),
+        key_view.is_empty().unwrap()
+            && values_view.is_empty().unwrap()
+            && entry_view.is_empty().unwrap(),
         java["collectionViewsEmptyAfterClear"]
     );
     assert_eq!(
