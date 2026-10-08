@@ -12,7 +12,7 @@ import org.apache.rocketmq.client.ClientConfig;
 import org.apache.rocketmq.client.impl.factory.MQClientInstance;
 import org.apache.rocketmq.remoting.protocol.route.TopicRouteData;
 
-/** Invokes actual topic broker selection without starting a transport. */
+/** Invokes actual topic broker selection and assignment decoding without a transport. */
 public final class RuntimeLookupFixtures {
     private RuntimeLookupFixtures() { }
 
@@ -48,6 +48,7 @@ public final class RuntimeLookupFixtures {
                 ("{\"messageQueueAssignments\":[" + assignment + "," + assignment + "]}").getBytes(java.nio.charset.StandardCharsets.UTF_8),
                 org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody.class);
         fixture.put("assignmentDuplicateCount", response.getMessageQueueAssignments().size());
+        fixture.put("assignmentModeCases", assignmentModeCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
             com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
@@ -57,6 +58,54 @@ public final class RuntimeLookupFixtures {
             Files.createDirectories(file.getParent()); Files.writeString(file, json);
         }
         System.out.println("Runtime broker lookup verified: " + cases.size());
+    }
+
+    private static List<Object> assignmentModeCases() {
+        List<Object> cases = new ArrayList<>();
+        cases.add(assignmentModeCase("missing", null));
+        cases.add(assignmentModeCase("explicit-null", "null"));
+        cases.add(assignmentModeCase("pull-name", "\"PULL\""));
+        cases.add(assignmentModeCase("pop-name", "\"POP\""));
+        cases.add(assignmentModeCase("lowercase-pop", "\"pop\""));
+        cases.add(assignmentModeCase("mixed-case-pull", "\"Pull\""));
+        cases.add(assignmentModeCase("ordinal-pull", "0"));
+        cases.add(assignmentModeCase("ordinal-pop", "1"));
+        cases.add(assignmentModeCase("numeric-string", "\"1\""));
+        cases.add(assignmentModeCase("numeric-string-fraction", "\"1.9\""));
+        cases.add(assignmentModeCase("fractional-ordinal", "1.9"));
+        cases.add(assignmentModeCase("negative-fractional-ordinal", "-0.9"));
+        cases.add(assignmentModeCase("negative-ordinal", "-1"));
+        cases.add(assignmentModeCase("ordinal-out-of-range", "2"));
+        cases.add(assignmentModeCase("long-overflow-ordinal", "9223372036854775808"));
+        cases.add(assignmentModeCase("invalid-name", "\"NOT_A_MODE\""));
+        cases.add(assignmentModeCase("boolean", "true"));
+        return cases;
+    }
+
+    private static Map<String, Object> assignmentModeCase(String name, String modeValue) {
+        String assignment = "{\"messageQueue\":{\"topic\":\"topic\",\"brokerName\":\"broker\",\"queueId\":2}"
+            + (modeValue == null ? "" : ",\"mode\":" + modeValue) + "}";
+        String body = "{\"messageQueueAssignments\":[" + assignment + "]}";
+        Map<String, Object> item = new TreeMap<>();
+        item.put("name", name);
+        item.put("input", com.alibaba.fastjson2.JSON.parseObject(body));
+        try {
+            org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody decoded =
+                org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody.decode(
+                    body.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody.class);
+            org.apache.rocketmq.common.message.MessageQueueAssignment value =
+                decoded.getMessageQueueAssignments().iterator().next();
+            item.put("outcome", "ACCEPTED");
+            item.put("mode", value.getMode() == null ? null : value.getMode().name());
+            byte[] encoded = decoded.encode();
+            item.put("encoded", com.alibaba.fastjson2.JSON.parseObject(
+                new String(encoded, java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (RuntimeException error) {
+            item.put("outcome", "REJECTED");
+            item.put("error", error.getClass().getSimpleName());
+        }
+        return item;
     }
 
     private static void add(List<Object> cases, MQClientInstance runtime, String name, String brokers, String[] candidates) {

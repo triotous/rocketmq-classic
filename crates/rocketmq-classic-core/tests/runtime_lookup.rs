@@ -4,7 +4,9 @@ use rocketmq_classic_core::{
     runtime::{ClientRuntime, ClientRuntimeManager, RuntimeError},
 };
 use rocketmq_classic_protocol::{
-    body::QueryAssignmentRequestBody, codes::request, heartbeat::MessageModel,
+    body::{MessageRequestMode, QueryAssignmentRequestBody},
+    codes::request,
+    heartbeat::MessageModel,
 };
 use rocketmq_classic_remoting::{
     RemotingCommand,
@@ -161,6 +163,7 @@ async fn uncached_consumer_lookup_refreshes_once_and_assignment_reuses_raw_topic
         fixture["assignmentDuplicateCount"].as_u64().unwrap() as usize
     );
     let assignment = assignments.iter().next().unwrap();
+    assert_eq!(assignment.mode, Some(MessageRequestMode::Pop));
     assert_eq!(assignment.message_queue.as_ref().unwrap().queue_id(), 2);
     assert_eq!(assignment.attachments.as_ref().unwrap()["key"], "value");
     runtime.remoting().shutdown().await;

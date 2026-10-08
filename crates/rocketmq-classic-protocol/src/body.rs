@@ -1,5 +1,6 @@
 use rocketmq_classic_common::message::MessageQueue;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de};
+use serde_json::Value;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -20,6 +21,79 @@ pub enum MessageRequestMode {
     #[default]
     Pull,
     Pop,
+}
+
+fn default_assignment_mode() -> Option<MessageRequestMode> {
+    Some(MessageRequestMode::Pull)
+}
+
+fn deserialize_assignment_mode<'de, D>(
+    deserializer: D,
+) -> Result<Option<MessageRequestMode>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    fn from_ordinal<E: de::Error>(ordinal: i64) -> Result<Option<MessageRequestMode>, E> {
+        match ordinal {
+            0 => Ok(Some(MessageRequestMode::Pull)),
+            1 => Ok(Some(MessageRequestMode::Pop)),
+            _ => Err(E::custom(format!(
+                "Fastjson MessageRequestMode ordinal {ordinal} is out of range"
+            ))),
+        }
+    }
+
+    fn from_number<E: de::Error>(number: f64) -> Result<Option<MessageRequestMode>, E> {
+        if !number.is_finite() {
+            return Err(E::custom("Fastjson MessageRequestMode must be finite"));
+        }
+        let ordinal = number.trunc();
+        if !(0.0..=1.0).contains(&ordinal) {
+            return Err(E::custom(format!(
+                "Fastjson MessageRequestMode ordinal {ordinal} is out of range"
+            )));
+        }
+        Ok(Some(if ordinal == 0.0 {
+            MessageRequestMode::Pull
+        } else {
+            MessageRequestMode::Pop
+        }))
+    }
+
+    let value = Value::deserialize(deserializer)?;
+    match value {
+        Value::Null => Ok(None),
+        Value::String(value) if value.eq_ignore_ascii_case("PULL") => {
+            Ok(Some(MessageRequestMode::Pull))
+        }
+        Value::String(value) if value.eq_ignore_ascii_case("POP") => {
+            Ok(Some(MessageRequestMode::Pop))
+        }
+        Value::String(value) => match value.parse::<i64>() {
+            Ok(ordinal) => from_ordinal::<D::Error>(ordinal),
+            Err(_) => Ok(None),
+        },
+        Value::Number(value) => {
+            if let Some(ordinal) = value.as_i64() {
+                from_ordinal::<D::Error>(ordinal)
+            } else if let Some(ordinal) = value.as_u64() {
+                match ordinal {
+                    0 => Ok(Some(MessageRequestMode::Pull)),
+                    1 => Ok(Some(MessageRequestMode::Pop)),
+                    _ => Err(de::Error::custom(format!(
+                        "Fastjson MessageRequestMode ordinal {ordinal} is out of range"
+                    ))),
+                }
+            } else if let Some(number) = value.as_f64() {
+                from_number::<D::Error>(number)
+            } else {
+                Err(de::Error::custom("invalid Fastjson MessageRequestMode"))
+            }
+        }
+        _ => Err(de::Error::custom(
+            "Fastjson cannot coerce this value to MessageRequestMode",
+        )),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -101,14 +175,30 @@ pub struct QueryAssignmentRequestBody {
     pub message_model: Option<super::heartbeat::MessageModel>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageQueueAssignment {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message_queue: Option<MessageQueue>,
-    pub mode: MessageRequestMode,
+    /// Java defaults this field to PULL but Fastjson may set it to null.
+    #[serde(
+        default = "default_assignment_mode",
+        deserialize_with = "deserialize_assignment_mode",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub mode: Option<MessageRequestMode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attachments: Option<std::collections::BTreeMap<String, String>>,
+}
+
+impl Default for MessageQueueAssignment {
+    fn default() -> Self {
+        Self {
+            message_queue: None,
+            mode: default_assignment_mode(),
+            attachments: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -589,7 +679,7 @@ mod tests {
     fn assignment_request_mode_lite_and_batch_ack_match_java_json_shapes() {
         let assignment = MessageQueueAssignment {
             message_queue: Some(MessageQueue::new("orders", "broker-a", 1)),
-            mode: MessageRequestMode::Pop,
+            mode: Some(MessageRequestMode::Pop),
             attachments: Some(std::collections::BTreeMap::from([(
                 "zone".into(),
                 "z1".into(),
@@ -636,6 +726,64 @@ mod tests {
         assert_eq!(ack["b"], "BQ==");
         let round_trip: BatchAckMessageRequestBody = serde_json::from_value(value).unwrap();
         assert_eq!(round_trip.acks.unwrap()[0].bit_set, Some(vec![0b0000_0101]));
+    }
+
+    #[test]
+    fn assignment_mode_inputs_match_invoked_java_fastjson() {
+        fn normalize(value: &mut serde_json::Value) {
+            match value {
+                serde_json::Value::Array(values) => {
+                    for value in values.iter_mut() {
+                        normalize(value);
+                    }
+                    values.sort_by_key(|value| serde_json::to_string(value).unwrap());
+                }
+                serde_json::Value::Object(fields) => {
+                    for value in fields.values_mut() {
+                        normalize(value);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        for case in fixture["assignmentModeCases"].as_array().unwrap() {
+            let decoded =
+                serde_json::from_value::<QueryAssignmentResponseBody>(case["input"].clone());
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            assert_eq!(
+                decoded.is_ok(),
+                java_accepts,
+                "{}: {decoded:?}",
+                case["name"]
+            );
+            if let Ok(decoded) = decoded {
+                let assignment = decoded
+                    .message_queue_assignments
+                    .as_ref()
+                    .and_then(|assignments| assignments.first())
+                    .unwrap();
+                let mode = assignment
+                    .mode
+                    .map(serde_json::to_value)
+                    .transpose()
+                    .unwrap()
+                    .unwrap_or(serde_json::Value::Null);
+                assert_eq!(mode, case["mode"], "{}", case["name"]);
+
+                let mut actual = serde_json::to_value(decoded).unwrap();
+                let mut expected = case["encoded"].clone();
+                normalize(&mut actual);
+                normalize(&mut expected);
+                assert_eq!(actual, expected, "{}", case["name"]);
+            }
+        }
+        assert_eq!(
+            MessageQueueAssignment::default().mode,
+            Some(MessageRequestMode::Pull)
+        );
     }
 
     #[test]
