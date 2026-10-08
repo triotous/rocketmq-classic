@@ -23,10 +23,6 @@ impl Address {
                 return Err(TransportError::Connect("invalid address port".into()));
             }
             format!("[{}]:{}", parsed_host, port)
-        } else if value.matches(':').count() > 1 {
-            return Err(TransportError::Connect(
-                "IPv6 addresses must be enclosed in brackets".into(),
-            ));
         } else {
             let (host, port) = value
                 .rsplit_once(':')
@@ -37,7 +33,14 @@ impl Address {
             if host.is_empty() {
                 return Err(TransportError::Connect("host must not be empty".into()));
             }
-            format!("{}:{}", host.to_ascii_lowercase(), parsed_port)
+            if host.contains(':') {
+                let parsed_host = host
+                    .parse::<std::net::Ipv6Addr>()
+                    .map_err(|error| TransportError::Connect(error.to_string()))?;
+                format!("[{}]:{}", parsed_host, parsed_port)
+            } else {
+                format!("{}:{}", host.to_ascii_lowercase(), parsed_port)
+            }
         };
         let (_, port) = connection::split_address(&normalized)?;
         if port == 0 {
@@ -263,5 +266,41 @@ impl ClientInner {
             connection.close();
         }
         self.fail_generation(generation, failure.unwrap_or(TransportError::Closed));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Address;
+    use crate::client::connection;
+
+    #[test]
+    fn address_splitting_matches_pinned_java_last_colon_oracle() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/address.json"))
+                .unwrap();
+        for case in fixture["clientAddressCases"].as_array().unwrap() {
+            let input = case["address"].as_str().unwrap();
+            let java_host = case["host"].as_str().unwrap();
+            let java_port = case["port"].as_str().unwrap().parse::<u16>().unwrap();
+            let expected_host = java_host
+                .strip_prefix('[')
+                .and_then(|host| host.strip_suffix(']'))
+                .unwrap_or(java_host);
+
+            let parsed = Address::parse(input).unwrap_or_else(|error| {
+                panic!("native parser rejected Java address {input:?}: {error}")
+            });
+            assert_eq!(
+                connection::split_address(input).unwrap(),
+                (expected_host.to_owned(), java_port),
+                "{case}"
+            );
+            assert_eq!(
+                connection::split_address(parsed.as_str()).unwrap(),
+                (expected_host.to_owned(), java_port),
+                "normalized {case}"
+            );
+        }
     }
 }
