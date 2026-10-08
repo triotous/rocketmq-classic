@@ -561,6 +561,10 @@ public final class RuntimeRouteFixtures {
             String.valueOf((char) 0x0c) + "{\"readQueueNums\":2}"));
         cases.add(routeDtoInputCase("queue-fastjson-form-feed-before-number", "queueData",
             "{\"readQueueNums\":" + String.valueOf((char) 0x0c) + "2}"));
+        cases.add(routeDtoInputCase("queue-fastjson-form-feed-around-punctuation", "queueData",
+            "{" + String.valueOf((char) 0x0c) + "\"readQueueNums\""
+                + String.valueOf((char) 0x0c) + ":" + String.valueOf((char) 0x0c) + "2"
+                + String.valueOf((char) 0x0c) + "}"));
         cases.add(routeDtoInputCase("queue-fastjson-vertical-tab-before-number", "queueData",
             "{\"readQueueNums\":" + String.valueOf((char) 0x0b) + "2}"));
         cases.add(routeDtoInputCase("queue-fastjson-nbsp-prefix", "queueData",
