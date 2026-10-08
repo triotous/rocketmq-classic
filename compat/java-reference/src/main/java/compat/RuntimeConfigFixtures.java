@@ -745,7 +745,12 @@ public final class RuntimeConfigFixtures {
             "{\"10.0.0.0/8\":{\"addr\":1.e3}}",
             "{\"10.0.0.0/8\":{\"addr\":+.5e3}}",
             "{\"10.0.0.0/8\":{\"addr\":-1e309}}",
-            "{\"10.0.0.0/8\":{\"addr\":.5e-3}}"};
+            "{\"10.0.0.0/8\":{\"addr\":.5e-3}}",
+            "{\"10.0.0.0/8\":{\"addr\":\"proxy\\v:1080\"}}",
+            "{\"10.0.0.0/8\":{\"addr\":\"proxy\\0:1080\"}}",
+            "\uFEFF{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}}",
+            "{\f\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}}",
+            "{\u2028\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}}"};
         for (int i = 0; i < inputs.length; i++) {
             ClientConfig config = new ClientConfig();
             config.setClientIP("socks-construction-" + i);
