@@ -1,5 +1,7 @@
 # Phase 6 heartbeat branch audit
 
+Public `SubscriptionData` correction `1dce870`/`40f6f65` follows three actual Java 5.5.1 missing/null/populated decode and JSON cases. Native topic, subString, expressionType and tag/code sets now represent explicit null, while missing collections/expression retain constructor defaults and missing subVersion uses current wall milliseconds. Fixture SHA-256 `b257ae6b52a097a871279df308e985849db0844b20fd78182e59c8f1fb488ace`; focused red/green, full workspace, pinned Maven and strict Clippy pass. Null subscription topic routing, explicit-null primitive version and other heartbeat DTO fields remain open in the wider Phase 6 input audit.
+
 Source baseline: client 5.5.1, commit `efa1be59d6fc747ad220f036c86030f05f0419f9`. Source paths: `client/.../impl/factory/MQClientInstance.java` heartbeat/preparation/channel-active methods, `client/.../impl/MQClientAPIImpl.java` heartbeat RPCs, `remoting/.../protocol/heartbeat/{HeartbeatData,ConsumerData}.java`. Rust owners: `core/src/heartbeat.rs`, runtime preparation and coherent route/version snapshot. This is source/unit evidence, not final acceptance.
 
 | Source branch | Rust implementation / executable evidence | Status |
