@@ -1,6 +1,6 @@
 # ADR-0009: Live producer and consumer registry tables
 
-Status: implemented for the tested Phase 6 map primitives; whole-phase acceptance remains open.
+Status: implemented for the tested Phase 6 map operations; whole-phase acceptance remains open.
 
 ## Source and native ownership
 
@@ -10,7 +10,9 @@ Handles share the registry but hold a weak runtime reference. Entries follow exi
 
 ## Mutations and lifecycle
 
-Provide put, put_if_absent, replace, identity-conditional replace/remove, Java-equality-conditional replace/remove and clear. The Rust owner traits expose an optional stable `map_value_equality_key`; `replace_if_equal/remove_if_equal` compare the expected key with the key captured when the current value entered the table. Owners without a key use Object identity, matching RocketMQ's concrete implementations. Keys are captured before registry locks, so no owner code runs under the registry mutex. The Java 5.5.1 custom-equality oracle covers equal producer and consumer proxies. Mutable equality policies and additional ConcurrentMap default operations still require reconciliation.
+Provide put, put_if_absent, replace, identity-conditional replace/remove, Java-equality-conditional replace/remove, computeIfAbsent/Present, compute, merge, replaceAll, forEach and clear. The Rust owner traits expose an optional stable `map_value_equality_key`; `replace_if_equal/remove_if_equal` compare the expected key with the key captured when the current value entered the table. Owners without a key use Object identity, matching RocketMQ's concrete implementations. Keys are captured before registry locks, so no owner code runs under the registry mutex. The Java 5.5.1 custom-equality oracle covers equal producer and consumer proxies. Remapping closures run outside the mutex and retries use conditional updates; a closure may run again after a concurrent write.
+
+`keys`, `values`, `snapshot` and `for_each` return/visit detached snapshots, matching read iteration with Rust ownership. They do not expose Java's live mutable `keySet/values/entrySet` view objects. Mutations use explicit table methods; complete live-view behavior and mutable equality policies remain under reconciliation.
 
 Every successful put/replacement creates a fresh private lease identity, even for the same owner. Old unregister/rollback leases cannot remove that binding. Map writes neither issue Broker unregister RPCs nor stop owners.
 
@@ -26,6 +28,8 @@ Observed exit0 gates: full workspace tests (core71 passed/1 lower-review ignored
 
 No live Broker/Docker, lower nullable migration, new setting/dependency/worker or plan change. ADR-0007/0008 and the ignored failing nullable-Broker regression remain open; bounded map tests do not close them.
 
-Custom equality update `4616808`/`b9f5bb6`: actual Java 5.5.1 proxy owners with equal keys allow conditional replace/remove for both producer and consumer tables. Rust exposes the optional stable key and matching `_if_equal` operations; direct `_if_same` and lifecycle lease cleanup remain pointer-identity operations. Client-config fixture SHA-256 `daeb2fde29ccf911064c779a40a5907645c61764f2d0de6960f13e9333a676fe`; full workspace, exact all-feature Clippy, Maven, comparator and manifest checks pass. Arbitrary mutable equality and other ConcurrentMap default operations remain open.
+Custom equality update `4616808`/`b9f5bb6`: actual Java 5.5.1 proxy owners with equal keys allow conditional replace/remove for both producer and consumer tables. Rust exposes the optional stable key and matching `_if_equal` operations; direct `_if_same` and lifecycle lease cleanup remain pointer-identity operations. Client-config fixture SHA-256 `daeb2fde29ccf911064c779a40a5907645c61764f2d0de6960f13e9333a676fe`; full workspace, exact all-feature Clippy, Maven, comparator and manifest checks pass. Arbitrary mutable equality and live collection views remain open.
 
-Subsequent group-unregister gates: `/tmp/p6-group-unregister-workspace-final.log`, `/tmp/p6-group-unregister-clippy-final.log` and `/tmp/p6-group-unregister-java-verify.log` all exit0; core71pass/1lower-review-ignored, registry4/runtime7. New integration matches all four invoked Java consumer method outcomes in addition to38 map outcomes. Scripted peers verify both group fields, absent-key RPC, best-effort rejection, replacement ordering, cancelled queued unregister, expired owner binding removal and stopped-map removal/EOF. Producer unregister is verified against pinned source plus wire frames, not a claim of Java proxy producer registration. Full source/input/default-map reconciliation remains open.
+Default map operation update `5881829`/`73f1329`: Java fixture and native tests cover computeIfAbsent/Present, compute, merge, replaceAll, forEach, keys and values for both table types. Rust operations use retrying conditional writes and detached read snapshots; closures run outside the registry mutex. Client-config fixture SHA-256 `ca02053ee3d488fa6b907fff28557ae39da53ae4681829a0b6c4bc81e966bddd`; full workspace, exact Clippy, Maven and comparator/manifest gates pass. Java live mutable keySet/values/entrySet view objects and arbitrary mutable equals remain open.
+
+Subsequent group-unregister gates: `/tmp/p6-group-unregister-workspace-final.log`, `/tmp/p6-group-unregister-clippy-final.log` and `/tmp/p6-group-unregister-java-verify.log` all exit0; core71pass/1lower-review-ignored, registry4/runtime7. New integration matches all four invoked Java consumer method outcomes in addition to38 map outcomes. Scripted peers verify both group fields, absent-key RPC, best-effort rejection, replacement ordering, cancelled queued unregister, expired owner binding removal and stopped-map removal/EOF. Producer unregister is verified against pinned source plus wire frames, not a claim of Java proxy producer registration. Full source/input/live-view reconciliation remains open.
