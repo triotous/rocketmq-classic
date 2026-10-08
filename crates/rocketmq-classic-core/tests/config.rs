@@ -1,3 +1,4 @@
+use rocketmq_classic_common::message::MessageQueue;
 use rocketmq_classic_core::config::{AccessChannel, ClientConfig};
 use rocketmq_classic_protocol::codes::LanguageCode;
 use serde_json::Value;
@@ -471,6 +472,94 @@ fn client_config_to_string_matches_invoked_java() {
             "{}",
             case["case"]
         );
+    }
+}
+
+fn message_queue_value(queue: &MessageQueue) -> Value {
+    serde_json::json!({
+        "topic": queue.topic(),
+        "brokerName": queue.broker_name(),
+        "queueId": queue.queue_id(),
+    })
+}
+
+fn message_queue_rows(queues: Option<&[Option<MessageQueue>]>) -> Value {
+    match queues {
+        None => Value::Null,
+        Some(queues) => Value::Array(
+            queues
+                .iter()
+                .map(|queue| {
+                    queue
+                        .as_ref()
+                        .map(message_queue_value)
+                        .unwrap_or(Value::Null)
+                })
+                .collect(),
+        ),
+    }
+}
+
+#[test]
+fn message_queue_setters_match_invoked_java() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = &fixture["messageQueueSetters"];
+    let mut queue = MessageQueue::new_nullable(None, None, 0);
+    assert_eq!(message_queue_value(&queue), java["defaults"]);
+    queue.set_topic(Some("topic".into()));
+    queue.set_broker_name(Some("broker".into()));
+    queue.set_queue_id(-17);
+    assert_eq!(message_queue_value(&queue), java["populated"]);
+    queue.set_topic(None);
+    queue.set_broker_name(None);
+    queue.set_queue_id(i32::MIN);
+    assert_eq!(message_queue_value(&queue), java["nullable"]);
+}
+
+#[test]
+fn queues_with_namespace_matches_invoked_java_collection_and_null_behavior() {
+    use rocketmq_classic_core::config::ConfigError;
+
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    for case in fixture["queuesWithNamespace"].as_array().unwrap() {
+        let mut config = ClientConfig::new("fixture-ip");
+        config.set_namespace(optional(&case["namespace"]));
+        let mut queues: Option<Vec<Option<MessageQueue>>> =
+            serde_json::from_value(case["inputQueues"].clone()).unwrap();
+        let input = message_queue_rows(queues.as_deref());
+        assert_eq!(input, case["inputQueues"], "{} input", case["case"]);
+        let input_address = queues.as_mut().map(|rows| rows.as_mut_ptr() as usize);
+        let (outcome, same_collection, output) =
+            match config.queues_with_namespace(queues.as_deref_mut()) {
+                Ok(returned) => {
+                    let returned_address = returned.as_ref().map(|rows| rows.as_ptr() as usize);
+                    (
+                        "OK",
+                        returned_address == input_address,
+                        message_queue_rows(returned.as_deref()),
+                    )
+                }
+                Err(ConfigError::NullQueueCollection | ConfigError::NullMessageQueue) => (
+                    "NullPointerException",
+                    false,
+                    message_queue_rows(queues.as_deref()),
+                ),
+                Err(error) => panic!("{} returned unexpected error: {error}", case["case"]),
+            };
+        assert_eq!(
+            outcome,
+            case["outcome"].as_str().unwrap(),
+            "{}",
+            case["case"]
+        );
+        assert_eq!(
+            same_collection, case["returnedSameCollection"],
+            "{}",
+            case["case"]
+        );
+        assert_eq!(output, case["outputQueues"], "{}", case["case"]);
     }
 }
 

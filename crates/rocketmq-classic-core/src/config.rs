@@ -18,6 +18,10 @@ pub enum ConfigError {
     InvalidInstanceEndpoint,
     #[error("instance name is null")]
     NullInstanceName,
+    #[error("queue collection is null")]
+    NullQueueCollection,
+    #[error("message queue is null")]
+    NullMessageQueue,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -316,21 +320,25 @@ impl ClientConfig {
         ))
     }
 
-    /// Java mutates the supplied collection's queues; Rust mutates values in place.
-    pub fn queues_with_namespace(
+    /// Mutates the supplied queues and returns the same borrowed collection.
+    /// A null collection or element follows the Java failure point only when a
+    /// non-empty namespace requires iteration.
+    pub fn queues_with_namespace<'a>(
         &mut self,
-        queues: &mut [MessageQueue],
-    ) -> Result<(), ConfigError> {
-        let namespace = self.get_namespace()?;
-        for queue in queues {
-            let topic = namespace::wrap(namespace, queue.topic());
-            *queue = MessageQueue::new_nullable(
-                topic,
-                queue.broker_name().map(str::to_owned),
-                queue.queue_id(),
-            );
+        queues: Option<&'a mut [Option<MessageQueue>]>,
+    ) -> Result<Option<&'a mut [Option<MessageQueue>]>, ConfigError> {
+        let namespace = self.get_namespace()?.map(str::to_owned);
+        let Some(namespace) = namespace.filter(|value| !value.is_empty()) else {
+            return Ok(queues);
+        };
+        let Some(queues) = queues else {
+            return Err(ConfigError::NullQueueCollection);
+        };
+        for item in queues.iter_mut() {
+            let queue = item.as_mut().ok_or(ConfigError::NullMessageQueue)?;
+            queue.set_topic(namespace::wrap(Some(&namespace), queue.topic()));
         }
-        Ok(())
+        Ok(Some(queues))
     }
 
     pub fn change_instance_name_to_pid(&mut self) -> Result<(), ConfigError> {
@@ -455,7 +463,7 @@ mod tests {
                 .is_empty()
         );
         assert!(!invalid.namespace_initialized);
-        assert!(invalid.queues_with_namespace(&mut []).is_err());
+        assert!(invalid.queues_with_namespace(Some(&mut [])).is_err());
     }
 
     #[test]
@@ -487,11 +495,19 @@ mod tests {
             MessageQueue::new("ns%topic", "broker", -1)
         );
         assert_eq!(queue.topic(), Some("topic"));
-        let mut queues = [queue, MessageQueue::new("%DLQ%group", "broker", 2)];
-        config.queues_with_namespace(&mut queues).unwrap();
-        assert_eq!(queues[1], MessageQueue::new("%DLQ%ns%group", "broker", 2));
-        config.queues_with_namespace(&mut queues).unwrap();
-        assert_eq!(queues[0].topic(), Some("ns%topic"));
+        let mut queues = [
+            Some(queue),
+            Some(MessageQueue::new("%DLQ%group", "broker", 2)),
+        ];
+        let address = queues.as_mut_ptr();
+        let returned = config.queues_with_namespace(Some(&mut queues)).unwrap();
+        assert_eq!(returned.unwrap().as_mut_ptr(), address);
+        assert_eq!(
+            queues[1].as_ref().unwrap(),
+            &MessageQueue::new("%DLQ%ns%group", "broker", 2)
+        );
+        config.queues_with_namespace(Some(&mut queues)).unwrap();
+        assert_eq!(queues[0].as_ref().unwrap().topic(), Some("ns%topic"));
     }
 
     #[test]

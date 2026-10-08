@@ -337,6 +337,16 @@ impl MessageQueue {
         self.queue_id
     }
 
+    pub fn set_topic(&mut self, topic: Option<String>) {
+        self.topic = topic;
+    }
+    pub fn set_broker_name(&mut self, broker_name: Option<String>) {
+        self.broker_name = broker_name;
+    }
+    pub fn set_queue_id(&mut self, queue_id: i32) {
+        self.queue_id = queue_id;
+    }
+
     /// Returns the exact pinned Java 5.5.1 `MessageQueue.compareTo` result.
     pub fn java_compare_to(&self, other: &Self) -> Result<i32, MessageQueueCompareError> {
         let topic = self
@@ -437,6 +447,23 @@ mod tests {
         assert_eq!(a, b);
         assert_eq!(a.queue_id(), i32::MIN);
         assert_ne!(a, MessageQueue::new("t", "b", i32::MAX));
+    }
+
+    #[test]
+    fn message_queue_setters_preserve_nullable_java_fields() {
+        let mut queue = MessageQueue::new("topic", "broker", 1);
+        queue.set_topic(None);
+        queue.set_broker_name(None);
+        queue.set_queue_id(i32::MIN);
+        assert_eq!(queue.topic(), None);
+        assert_eq!(queue.broker_name(), None);
+        assert_eq!(queue.queue_id(), i32::MIN);
+        queue.set_topic(Some("next".into()));
+        queue.set_broker_name(Some("new-broker".into()));
+        queue.set_queue_id(-17);
+        assert_eq!(queue.topic(), Some("next"));
+        assert_eq!(queue.broker_name(), Some("new-broker"));
+        assert_eq!(queue.queue_id(), -17);
     }
 
     #[test]

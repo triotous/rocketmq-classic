@@ -3,6 +3,7 @@ package compat;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -144,13 +145,15 @@ public final class RuntimeConfigFixtures {
         fixture.put("rebalanceLongs", rebalanceLongs);
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "ClientConfig.buildMQClientId/toString/cloneClientConfig/resetClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/changeInstanceNameToPID; MQClientManager.getOrCreateMQClientInstance/removeClientFactory/getFactoryTable; MQClientInstance.constructor/getClientConfig/getNettyClientConfig/getProducerTable/getConsumerTable/selectProducer/selectConsumer/registerConsumer/unregisterConsumer; MQClientAPIImpl.getRemotingClient/NettyRemotingClient.publicExecutor (reflective capacity observation); NettyRemotingClient.start/invokeSync (local authenticated and no-auth SOCKS5 round trips); RemotingCommand.encode (null language JSON/ROCKETMQ); Long.parseLong (RebalanceService property parser)");
+        fixture.put("entrypoint", "ClientConfig.buildMQClientId/toString/cloneClientConfig/resetClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/queuesWithNamespace/changeInstanceNameToPID; MessageQueue.setTopic/setBrokerName/setQueueId; MQClientManager.getOrCreateMQClientInstance/removeClientFactory/getFactoryTable; MQClientInstance.constructor/getClientConfig/getNettyClientConfig/getProducerTable/getConsumerTable/selectProducer/selectConsumer/registerConsumer/unregisterConsumer; MQClientAPIImpl.getRemotingClient/NettyRemotingClient.publicExecutor (reflective capacity observation); NettyRemotingClient.start/invokeSync (local authenticated and no-auth SOCKS5 round trips); RemotingCommand.encode (null language JSON/ROCKETMQ); Long.parseLong (RebalanceService property parser)");
         fixture.put("serverBaselineContacted", false);
         fixture.put("identities", identities);
         fixture.put("defaults", defaults);
         fixture.put("clone", clone);
         fixture.put("copyFields", clientConfigCopies());
         fixture.put("clientConfigToString", clientConfigToString());
+        fixture.put("messageQueueSetters", messageQueueSetters());
+        fixture.put("queuesWithNamespace", queuesWithNamespace());
         fixture.put("managed", managed);
         fixture.put("managerRemoval", managerRemoval(config));
         fixture.put("managerTable", managerTable(config));
@@ -376,6 +379,86 @@ public final class RuntimeConfigFixtures {
         namespaceInitialized.setAccessible(true);
         fields.put("namespaceInitialized", namespaceInitialized.getBoolean(config));
         return fields;
+    }
+
+    private static Map<String, Object> messageQueueSetters() {
+        org.apache.rocketmq.common.message.MessageQueue queue =
+            new org.apache.rocketmq.common.message.MessageQueue();
+        Map<String, Object> result = new TreeMap<>();
+        result.put("defaults", queueRow(queue));
+        queue.setTopic("topic");
+        queue.setBrokerName("broker");
+        queue.setQueueId(-17);
+        result.put("populated", queueRow(queue));
+        queue.setTopic(null);
+        queue.setBrokerName(null);
+        queue.setQueueId(Integer.MIN_VALUE);
+        result.put("nullable", queueRow(queue));
+        return result;
+    }
+
+    private static List<Object> queuesWithNamespace() {
+        List<Object> cases = new ArrayList<>();
+        cases.add(queueNamespaceCase("null-collection-null-namespace", null, null));
+        cases.add(queueNamespaceCase("null-collection-empty-namespace", "", null));
+        cases.add(queueNamespaceCase("null-collection-populated-namespace", "tenant", null));
+
+        List<org.apache.rocketmq.common.message.MessageQueue> emptyNamespace = new ArrayList<>();
+        emptyNamespace.add(new org.apache.rocketmq.common.message.MessageQueue("topic", "broker", 1));
+        emptyNamespace.add(null);
+        cases.add(queueNamespaceCase("null-element-empty-namespace", "", emptyNamespace));
+
+        List<org.apache.rocketmq.common.message.MessageQueue> partial = new ArrayList<>();
+        partial.add(new org.apache.rocketmq.common.message.MessageQueue("topic", "broker", 1));
+        partial.add(null);
+        partial.add(new org.apache.rocketmq.common.message.MessageQueue("after", "broker", 2));
+        cases.add(queueNamespaceCase("null-element-after-mutation", "tenant", partial));
+
+        List<org.apache.rocketmq.common.message.MessageQueue> populated = new ArrayList<>();
+        populated.add(new org.apache.rocketmq.common.message.MessageQueue("topic", "broker", 1));
+        populated.add(new org.apache.rocketmq.common.message.MessageQueue("tenant%existing", "broker", 2));
+        populated.add(new org.apache.rocketmq.common.message.MessageQueue(null, "broker", 3));
+        cases.add(queueNamespaceCase("populated-collection", "tenant", populated));
+        return cases;
+    }
+
+    private static Map<String, Object> queueNamespaceCase(
+        String name, String namespace, Collection<org.apache.rocketmq.common.message.MessageQueue> queues) {
+        ClientConfig config = new ClientConfig();
+        config.setNamespace(namespace);
+        Map<String, Object> item = new TreeMap<>();
+        item.put("case", name);
+        item.put("namespace", namespace);
+        item.put("inputQueues", queueRows(queues));
+        try {
+            Collection<org.apache.rocketmq.common.message.MessageQueue> returned =
+                config.queuesWithNamespace(queues);
+            item.put("outcome", "OK");
+            item.put("returnedSameCollection", returned == queues);
+        } catch (Throwable error) {
+            item.put("outcome", error.getClass().getSimpleName());
+            item.put("returnedSameCollection", false);
+        }
+        item.put("outputQueues", queueRows(queues));
+        return item;
+    }
+
+    private static List<Object> queueRows(
+        Collection<org.apache.rocketmq.common.message.MessageQueue> queues) {
+        if (queues == null) return null;
+        List<Object> result = new ArrayList<>();
+        for (org.apache.rocketmq.common.message.MessageQueue queue : queues) {
+            result.add(queue == null ? null : queueRow(queue));
+        }
+        return result;
+    }
+
+    private static Map<String, Object> queueRow(org.apache.rocketmq.common.message.MessageQueue queue) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("topic", queue.getTopic());
+        result.put("brokerName", queue.getBrokerName());
+        result.put("queueId", queue.getQueueId());
+        return result;
     }
 
     private static void cleanupRuntime(org.apache.rocketmq.client.impl.factory.MQClientInstance runtime) throws Exception {
