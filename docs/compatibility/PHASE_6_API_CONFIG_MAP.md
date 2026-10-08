@@ -1,6 +1,8 @@
 # Phase 6 API and configuration map
 
-Assignment response enum input update: 17 actual Java 5.5.1 `QueryAssignmentResponseBody.decode` cases cover `MessageQueueAssignment.mode` defaults, nulls, names, ordinals, numeric strings/fractions, and rejection boundaries. Native `MessageQueueAssignment.mode` is nullable and defaults to `Some(Pull)`; decode and re-encode match the fixture. Lookup fixture SHA-256 `ef5ca72024a2556f5027998d3e18f1d82dfaa36d8961c2628389e9b2b69711ea`; [ADR-0016](../architecture/ADR-0016-assignment-mode-fastjson-input.md) records the boundary.
+Assignment attachment input update: six actual Java 5.5.1 cases cover missing/null maps, scalar and nested values, null entries, and invalid top-level shapes. Native decoding preserves nullable strings and coerces non-null scalar values; re-encoding omits null map entries as Java does. Current lookup fixture SHA-256 `878cb07da0256c4aa54ae17a0c2d142f3072d4812d589b6a9fb14bf65d3900e3`; [ADR-0017](../architecture/ADR-0017-assignment-attachment-fastjson-input.md) records the boundary.
+
+Assignment response enum input update: 17 actual Java 5.5.1 `QueryAssignmentResponseBody.decode` cases cover `MessageQueueAssignment.mode` defaults, nulls, names, ordinals, integer numeric strings, numeric fractions, and rejection boundaries. Native `MessageQueueAssignment.mode` is nullable and defaults to `Some(Pull)`; decode and re-encode match the fixture. Lookup fixture SHA-256 `ef5ca72024a2556f5027998d3e18f1d82dfaa36d8961c2628389e9b2b69711ea`; [ADR-0016](../architecture/ADR-0016-assignment-mode-fastjson-input.md) records the boundary.
 
 Route DTO input update: 20 actual Java 5.5.1 Fastjson cases cover scalar coercions for `QueueData`, `MessageQueue`, `BrokerData`, `TopicQueueMappingInfo`, and nested `TopicRouteData`. Native decoding now matches the recorded fields and accept/reject outcomes, including null primitive defaults, numeric strings/fractions, boolean coercion, numeric map keys, address values, and filter-list elements. Fixture SHA-256 `6feb59b050e97e820c28d55de493555679b598e8358d2c13f521887f9d55340c`; [ADR-0014](../architecture/ADR-0014-route-dto-fastjson-input.md) records the boundary and remaining limits. Other DTO inputs and full Phase 6 reconciliation remain open.
 
@@ -182,6 +184,7 @@ The runtime's Java `QueryAssignmentResponseBody.decode` returns a set of `Messag
 | Java field/API | Rust counterpart | Evidence / disposition |
 | --- | --- | --- |
 | `MessageQueueAssignment.mode` | `Option<MessageRequestMode>`; `Default` uses `Some(Pull)` | Seventeen actual Java cases cover missing/default, explicit null, case-insensitive enum names, numeric ordinals, integer numeric strings, numeric fractions, invalid names, and rejection bounds. Native decode and re-encode match; [ADR-0016](../architecture/ADR-0016-assignment-mode-fastjson-input.md) records the tested limits. |
+| `MessageQueueAssignment.attachments` | `Option<BTreeMap<String, Option<String>>>` | Six actual Java cases cover scalar-to-string conversion, array/object text, null map entries, and invalid top-level shapes. Null entries survive decode and are omitted during Java-compatible re-encoding; map iteration order is not compared. |
 
 ## Route DTO public methods
 
