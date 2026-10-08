@@ -599,55 +599,20 @@ fn java_decimal_digit(unit: u16) -> Option<u16> {
 }
 
 fn routes_equal(left: &TopicRouteData, right: &TopicRouteData) -> Result<bool, RuntimeError> {
-    let (mut left, mut right) = (left.clone(), right.clone());
-    for route in [&mut left, &mut right] {
-        let queues = route.queue_datas.get_or_insert_with(Vec::new);
-        if queues.len() > 1
-            && queues.iter().any(|queue| {
-                queue
-                    .as_ref()
-                    .is_none_or(|queue| queue.broker_name.is_none())
+    let changed = left
+        .java_topic_route_data_changed(Some(right))
+        .map_err(|error| {
+            use rocketmq_classic_protocol::route::TopicRouteDataChangedError;
+            RuntimeError::InvalidRoute(match error {
+                TopicRouteDataChangedError::NullQueueData
+                | TopicRouteDataChangedError::NullQueueBrokerName => {
+                    "null queue broker name during sort"
+                }
+                TopicRouteDataChangedError::NullBrokerData
+                | TopicRouteDataChangedError::NullBrokerName => "null broker name during sort",
             })
-        {
-            return Err(RuntimeError::InvalidRoute(
-                "null queue broker name during sort",
-            ));
-        }
-        queues.sort_by(|left, right| {
-            left.as_ref()
-                .expect("null route queue rejected before sort")
-                .java_compare_to(
-                    right
-                        .as_ref()
-                        .expect("null route queue rejected before sort"),
-                )
-                .map(|result| result.cmp(&0))
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        let brokers = route.broker_datas.get_or_insert_with(Vec::new);
-        if brokers.len() > 1
-            && brokers.iter().any(|broker| {
-                broker
-                    .as_ref()
-                    .is_none_or(|broker| broker.broker_name.is_none())
-            })
-        {
-            return Err(RuntimeError::InvalidRoute("null broker name during sort"));
-        }
-        brokers.sort_by(|left, right| {
-            left.as_ref()
-                .expect("null route broker rejected before sort")
-                .java_compare_to(
-                    right
-                        .as_ref()
-                        .expect("null route broker rejected before sort"),
-                )
-                .map(|result| result.cmp(&0))
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        route.filter_server_table.get_or_insert_with(BTreeMap::new);
-    }
-    Ok(route_values_equal(&left, &right))
+        })?;
+    Ok(!changed)
 }
 
 // TopicRouteData.equals delegates BrokerData.equals, which compares only name
@@ -957,11 +922,13 @@ mod tests {
             serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
         for case in fixture["topicRouteDataChanged"].as_array().unwrap() {
             let current: TopicRouteData = serde_json::from_value(case["current"].clone()).unwrap();
-            let old: TopicRouteData = serde_json::from_value(case["old"].clone()).unwrap();
             let cache = RouteCache::default();
-            super::super::TopicRouteTable::new(cache.clone())
-                .put("topic", TopicRouteDataHandle::new(old))
-                .unwrap();
+            if !case["old"].is_null() {
+                let old: TopicRouteData = serde_json::from_value(case["old"].clone()).unwrap();
+                super::super::TopicRouteTable::new(cache.clone())
+                    .put("topic", TopicRouteDataHandle::new(old))
+                    .unwrap();
+            }
             let result = cache.route_changed("topic", &current);
             if case["outcome"] == "OK" {
                 assert_eq!(result.unwrap(), case["changed"]);

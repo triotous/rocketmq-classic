@@ -734,8 +734,12 @@ mod topic_route_data_changed_method_tests {
             serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
         for case in fixture["topicRouteDataChanged"].as_array().unwrap() {
             let current: TopicRouteData = serde_json::from_value(case["current"].clone()).unwrap();
-            let old: TopicRouteData = serde_json::from_value(case["old"].clone()).unwrap();
-            let result = current.java_topic_route_data_changed(Some(&old));
+            let old: Option<TopicRouteData> = if case["old"].is_null() {
+                None
+            } else {
+                Some(serde_json::from_value(case["old"].clone()).unwrap())
+            };
+            let result = current.java_topic_route_data_changed(old.as_ref());
             if case["outcome"] == "OK" {
                 assert_eq!(result.unwrap(), case["changed"]);
             } else {
@@ -785,6 +789,20 @@ impl Default for TopicRouteData {
             topic_queue_mapping_by_broker: None,
         }
     }
+}
+
+/// Null-value failures produced when Java `TopicRouteData.topicRouteDataChanged`
+/// sorts its nested DTO lists.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum TopicRouteDataChangedError {
+    #[error("null QueueData entry during sort")]
+    NullQueueData,
+    #[error("null QueueData broker name during sort")]
+    NullQueueBrokerName,
+    #[error("null BrokerData entry during sort")]
+    NullBrokerData,
+    #[error("null BrokerData broker name during sort")]
+    NullBrokerName,
 }
 
 fn default_mapping_scope() -> Option<String> {
@@ -948,6 +966,75 @@ impl TopicRouteData {
             filter_server_table,
             mapping_table
         )
+    }
+
+    /// Matches pinned Java 5.5.1 `TopicRouteData.topicRouteDataChanged`.
+    ///
+    /// Java first copy-constructs both routes, normalizing null queue/broker/
+    /// filter collections to empty, then sorts QueueData and BrokerData using
+    /// their `compareTo` methods. A null list element or broker name fails
+    /// only when sorting compares more than one element.
+    pub fn java_topic_route_data_changed(
+        &self,
+        old: Option<&Self>,
+    ) -> Result<bool, TopicRouteDataChangedError> {
+        let Some(old) = old else {
+            return Ok(true);
+        };
+        let (mut current, mut old) = (self.clone(), old.clone());
+        for route in [&mut current, &mut old] {
+            let queues = route.queue_datas.get_or_insert_with(Vec::new);
+            if queues.len() > 1 {
+                if queues.iter().any(Option::is_none) {
+                    return Err(TopicRouteDataChangedError::NullQueueData);
+                }
+                if queues
+                    .iter()
+                    .flatten()
+                    .any(|queue| queue.broker_name.is_none())
+                {
+                    return Err(TopicRouteDataChangedError::NullQueueBrokerName);
+                }
+            }
+            queues.sort_by(|left, right| {
+                left.as_ref()
+                    .expect("null QueueData entries were rejected before sorting")
+                    .java_compare_to(
+                        right
+                            .as_ref()
+                            .expect("null QueueData entries were rejected before sorting"),
+                    )
+                    .expect("null QueueData names were rejected before sorting")
+                    .cmp(&0)
+            });
+
+            let brokers = route.broker_datas.get_or_insert_with(Vec::new);
+            if brokers.len() > 1 {
+                if brokers.iter().any(Option::is_none) {
+                    return Err(TopicRouteDataChangedError::NullBrokerData);
+                }
+                if brokers
+                    .iter()
+                    .flatten()
+                    .any(|broker| broker.broker_name.is_none())
+                {
+                    return Err(TopicRouteDataChangedError::NullBrokerName);
+                }
+            }
+            brokers.sort_by(|left, right| {
+                left.as_ref()
+                    .expect("null BrokerData entries were rejected before sorting")
+                    .java_compare_to(
+                        right
+                            .as_ref()
+                            .expect("null BrokerData entries were rejected before sorting"),
+                    )
+                    .expect("null BrokerData names were rejected before sorting")
+                    .cmp(&0)
+            });
+            route.filter_server_table.get_or_insert_with(BTreeMap::new);
+        }
+        Ok(current != old)
     }
 
     pub fn publish_queues(&self, topic: &str) -> Vec<MessageQueue> {
