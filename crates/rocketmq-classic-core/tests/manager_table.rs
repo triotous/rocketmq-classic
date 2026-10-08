@@ -151,7 +151,10 @@ async fn retained_factory_table_and_atomic_mutations_match_invoked_java() {
         Arc::ptr_eq(&live.get(&id).unwrap().unwrap(), &second),
         java["retainedViewSeesSecond"]
     );
-    assert_eq!(live.contains_value(&second).unwrap(), java["containsValueSecond"]);
+    assert_eq!(
+        live.contains_value(&second).unwrap(),
+        java["containsValueSecond"]
+    );
     assert_eq!(
         !live.contains_value(&first).unwrap(),
         java["containsValueAbsent"]

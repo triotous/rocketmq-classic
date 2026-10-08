@@ -289,6 +289,19 @@ impl FactoryTable {
         self.get(key).map(|value| value.is_some())
     }
 
+    /// Uses MQClientInstance's inherited Java Object identity equality.
+    pub fn contains_value(&self, value: &Arc<ClientRuntime>) -> Result<bool, RuntimeError> {
+        let entries = self
+            .manager
+            .entries
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?;
+        Ok(entries
+            .values()
+            .filter_map(|entry| entry.runtime.get())
+            .any(|current| Arc::ptr_eq(current, value)))
+    }
+
     /// Returns the mapped runtime, or the supplied value when the key is absent.
     pub fn get_or_default(
         &self,
