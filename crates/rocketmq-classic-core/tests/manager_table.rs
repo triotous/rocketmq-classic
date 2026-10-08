@@ -346,7 +346,10 @@ async fn retained_factory_table_and_atomic_mutations_match_invoked_java() {
             && entry_view.contains("keep", &first).unwrap(),
         java["entryViewRetainAll"]
     );
-    assert!(Arc::ptr_eq(&second_view.snapshot().unwrap()[""], &second));
+    assert!(Arc::ptr_eq(
+        &second_view.snapshot().unwrap()["keep"],
+        &first
+    ));
     live.clear().await.unwrap();
     assert_eq!(
         second_view.is_empty().unwrap(),
