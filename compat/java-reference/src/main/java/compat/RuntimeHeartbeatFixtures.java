@@ -395,6 +395,67 @@ public final class RuntimeHeartbeatFixtures {
         return cases;
     }
 
+    private static Map<String, Object> heartbeatSerializationMethodCases() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Object> cases = new ArrayList<>();
+        Method featureEncode = null;
+        for (Method method : HeartbeatData.class.getMethods()) {
+            if ("encode".equals(method.getName()) && method.getParameterCount() == 1
+                && method.getParameterTypes()[0].isArray()) {
+                featureEncode = method;
+                break;
+            }
+        }
+        if (featureEncode == null) throw new IllegalStateException("inherited feature encode overload missing");
+        result.put("featureEncodeParameterType", featureEncode.getParameterTypes()[0].getComponentType().getName());
+        for (String[] testCase : new String[][] {
+            {"default", "{}"},
+            {"explicit-nulls", "{\"clientID\":null,\"producerDataSet\":null,"
+                + "\"consumerDataSet\":null,\"heartbeatFingerprint\":0,\"withoutSub\":false}"},
+            {"populated", "{\"clientID\":\"client\",\"producerDataSet\":[{\"groupName\":\"p\"}],"
+                + "\"consumerDataSet\":[{\"groupName\":\"c\",\"consumeType\":\"CONSUME_ACTIVELY\","
+                + "\"messageModel\":\"CLUSTERING\",\"consumeFromWhere\":\"CONSUME_FROM_LAST_OFFSET\","
+                + "\"subscriptionDataSet\":[{\"topic\":\"topic\",\"subString\":\"tag\","
+                + "\"tagsSet\":[\"tag\"],\"codeSet\":[7],\"subVersion\":42,"
+                + "\"expressionType\":\"SQL92\"}],\"unitMode\":true}],"
+                + "\"heartbeatFingerprint\":7,\"withoutSub\":true}"}
+        }) {
+            HeartbeatData value = com.alibaba.fastjson2.JSON.parseObject(testCase[1], HeartbeatData.class);
+            byte[] instanceBytes = value.encode();
+            String instanceJson = new String(instanceBytes, java.nio.charset.StandardCharsets.UTF_8);
+            Object emptyFeatures = java.lang.reflect.Array.newInstance(
+                featureEncode.getParameterTypes()[0].getComponentType(), 0);
+            String featureJson = new String((byte[]) featureEncode.invoke(value, emptyFeatures),
+                java.nio.charset.StandardCharsets.UTF_8);
+            byte[] arrayBytes = com.alibaba.fastjson2.JSON.toJSONString(Collections.singletonList(value))
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            List<HeartbeatData> decodedList = HeartbeatData.decodeList(arrayBytes, HeartbeatData.class);
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", testCase[0]);
+            item.put("rawInput", testCase[1]);
+            item.put("instanceJson", instanceJson);
+            item.put("instancePrettyJson", value.toJson(true));
+            item.put("staticJson", HeartbeatData.toJson(value, false));
+            item.put("staticPrettyJson", HeartbeatData.toJson(value, true));
+            item.put("instanceEncodedJson", instanceJson);
+            item.put("staticEncodedJson", new String(HeartbeatData.encode(value),
+                java.nio.charset.StandardCharsets.UTF_8));
+            item.put("featureEncodedJson", featureJson);
+            item.put("decodedJson", HeartbeatData.decode(instanceBytes, HeartbeatData.class).toJson());
+            item.put("fromJsonJson", HeartbeatData.fromJson(instanceJson, HeartbeatData.class).toJson());
+            item.put("decodedListCount", decodedList.size());
+            item.put("decodedListJson", decodedList.get(0).toJson());
+            cases.add(item);
+        }
+        result.put("cases", cases);
+        result.put("staticEncodeNullIsNull", HeartbeatData.encode((Object) null) == null);
+        result.put("staticToJsonNull", HeartbeatData.toJson(null, false));
+        result.put("decodeNullIsNull", HeartbeatData.decode(null, HeartbeatData.class) == null);
+        result.put("decodeListNullIsNull", HeartbeatData.decodeList(null, HeartbeatData.class) == null);
+        result.put("fromJsonNullIsNull", HeartbeatData.fromJson(null, HeartbeatData.class) == null);
+        return result;
+    }
+
     private static List<Object> heartbeatNullElementCases() {
         List<Object> cases = new ArrayList<>();
         for (String[] testCase : new String[][] {
@@ -725,7 +786,7 @@ public final class RuntimeHeartbeatFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "MQClientInstance.registerProducer/registerConsumer/prepareHeartbeatData/unregisterProducer/unregisterConsumer; HeartbeatData/ConsumerData/ProducerData/SubscriptionData Fastjson scalar inputs; HeartbeatData.computeHeartbeatFingerprint/toString/duplicate-ProducerData decode/nullable producer-consumer-subscription set elements; ProducerData.toString; ConsumerData enum JSON names/toString; ConsumeType.getTypeCN/MessageModel.getModeCN; SubscriptionData.SUB_ALL/constructors/equals/hashCode/compareTo/toString; ProducerData/ConsumerData/HeartbeatData inherited Object equals/hashCode");
+        fixture.put("entrypoint", "MQClientInstance.registerProducer/registerConsumer/prepareHeartbeatData/unregisterProducer/unregisterConsumer; HeartbeatData/ConsumerData/ProducerData/SubscriptionData Fastjson scalar inputs; HeartbeatData.computeHeartbeatFingerprint/toString/duplicate-ProducerData decode/nullable producer-consumer-subscription set elements; ProducerData.toString; ConsumerData enum JSON names/toString; ConsumeType.getTypeCN/MessageModel.getModeCN; SubscriptionData.SUB_ALL/constructors/equals/hashCode/compareTo/toString; ProducerData/ConsumerData/HeartbeatData inherited Object equals/hashCode; HeartbeatData inherited RemotingSerializable encode/toJson/decode/decodeList/fromJson methods");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
         fixture.put("multiplicityCases", multiplicityCases);
@@ -737,6 +798,7 @@ public final class RuntimeHeartbeatFixtures {
         fixture.put("consumerEnumCases", consumerEnumCases());
         fixture.put("consumerEnumMethodCases", consumerEnumMethodCases());
         fixture.put("heartbeatFieldCases", heartbeatFieldCases());
+        fixture.put("heartbeatSerializationMethodCases", heartbeatSerializationMethodCases());
         List<Object> nullElementCases = heartbeatNullElementCases();
         fixture.put("heartbeatNullElementCases", nullElementCases);
         fixture.put("heartbeatAliasCases", heartbeatAliasCases());
