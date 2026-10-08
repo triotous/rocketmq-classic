@@ -112,7 +112,6 @@ fn p2_v01_java_fixtures_cross_decode_for_both_wire_serializations() {
         match command.serialization {
             SerializeType::Json => seen_json = true,
             SerializeType::RocketMq => seen_rocketmq = true,
-            SerializeType::Unknown(code) => panic!("unknown serialization {code}"),
         }
     }
     assert!(seen_json && seen_rocketmq);

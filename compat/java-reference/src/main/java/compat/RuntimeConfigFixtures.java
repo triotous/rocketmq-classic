@@ -149,7 +149,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("rebalanceLongs", rebalanceLongs);
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "ClientConfig.buildMQClientId/toString/cloneClientConfig/resetClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/queuesWithNamespace/changeInstanceNameToPID; MessageQueue.setTopic/setBrokerName/setQueueId; MQClientManager.getOrCreateMQClientInstance/removeClientFactory/getFactoryTable; MQClientInstance.constructor/getClientConfig/getNettyClientConfig/getProducerTable/getConsumerTable/selectProducer/selectConsumer/registerConsumer/unregisterConsumer; MQClientAPIImpl.getRemotingClient/NettyRemotingClient.publicExecutor (reflective capacity observation); NettyRemotingClient.start/invokeSync (local authenticated and no-auth SOCKS5 round trips); RemotingCommand.encode (null language JSON/ROCKETMQ); Long.parseLong (RebalanceService property parser)");
+        fixture.put("entrypoint", "ClientConfig.buildMQClientId/toString/cloneClientConfig/resetClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/queuesWithNamespace/changeInstanceNameToPID; MessageQueue.setTopic/setBrokerName/setQueueId; MQClientManager.getOrCreateMQClientInstance/removeClientFactory/getFactoryTable; MQClientInstance.constructor/getClientConfig/getNettyClientConfig/getProducerTable/getConsumerTable/selectProducer/selectConsumer/registerConsumer/unregisterConsumer; MQClientAPIImpl.getRemotingClient/NettyRemotingClient.publicExecutor (reflective capacity observation); NettyRemotingClient.start/invokeSync (local authenticated and no-auth SOCKS5 round trips); RemotingCommand.encode (null language JSON/ROCKETMQ); LanguageCode/SerializeType generated enum and custom value lookups; Long.parseLong (RebalanceService property parser)");
         fixture.put("serverBaselineContacted", false);
         fixture.put("identities", identities);
         fixture.put("defaults", defaults);
@@ -167,6 +167,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("serviceThreadCases", serviceThreadCases());
         fixture.put("serviceLifecycleCases", serviceLifecycleCases());
         fixture.put("languageCodeMethodCases", languageCodeMethodCases());
+        fixture.put("serializeTypeMethodCases", serializeTypeMethodCases());
         fixture.put("socksConstruction", socksConstruction());
         fixture.put("socksConnection", socksConnection(true));
         fixture.put("socksConnectionNoAuth", socksConnection(false));
@@ -1538,6 +1539,62 @@ public final class RuntimeConfigFixtures {
                 item.put("outcome", "OK");
                 item.put("decoded",
                     org.apache.rocketmq.remoting.protocol.LanguageCode.valueOf(input).name());
+            } catch (RuntimeException error) {
+                item.put("outcome", error.getClass().getSimpleName());
+                item.put("message", error.getMessage());
+            }
+            cases.add(item);
+        }
+        return cases;
+    }
+
+    private static List<Object> serializeTypeMethodCases() {
+        List<Object> cases = new ArrayList<>();
+        org.apache.rocketmq.remoting.protocol.SerializeType[] values =
+            org.apache.rocketmq.remoting.protocol.SerializeType.values();
+        List<String> names = new ArrayList<>();
+        for (org.apache.rocketmq.remoting.protocol.SerializeType value : values) {
+            names.add(value.name());
+        }
+        for (org.apache.rocketmq.remoting.protocol.SerializeType value : values) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", "constant");
+            item.put("name", value.name());
+            item.put("code", value.getCode());
+            item.put("ordinal", value.ordinal());
+            item.put("text", value.toString());
+            item.put("values", names);
+            item.put("valueOfName",
+                org.apache.rocketmq.remoting.protocol.SerializeType.valueOf(value.name()).name());
+            org.apache.rocketmq.remoting.protocol.SerializeType fromByte =
+                org.apache.rocketmq.remoting.protocol.SerializeType.valueOf(value.getCode());
+            item.put("valueOfByte", fromByte == null ? null : fromByte.name());
+            item.put("compareNext", value.compareTo(values[(value.ordinal() + 1) % values.length]));
+            org.apache.rocketmq.remoting.protocol.SerializeType[] mutated =
+                org.apache.rocketmq.remoting.protocol.SerializeType.values();
+            mutated[0] = org.apache.rocketmq.remoting.protocol.SerializeType.ROCKETMQ;
+            item.put("valuesDefensiveCopy",
+                org.apache.rocketmq.remoting.protocol.SerializeType.values()[0]
+                    == org.apache.rocketmq.remoting.protocol.SerializeType.JSON);
+            cases.add(item);
+        }
+        for (byte input : new byte[] {0, 1, 2, 127, -1, -128}) {
+            org.apache.rocketmq.remoting.protocol.SerializeType decoded =
+                org.apache.rocketmq.remoting.protocol.SerializeType.valueOf(input);
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", "byte");
+            item.put("input", input);
+            item.put("decoded", decoded == null ? null : decoded.name());
+            cases.add(item);
+        }
+        for (String input : new String[] {null, "", "JSON", "json", "ROCKETMQ", "UNKNOWN"}) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", "enumNameLookup");
+            item.put("input", input);
+            try {
+                item.put("outcome", "OK");
+                item.put("decoded",
+                    org.apache.rocketmq.remoting.protocol.SerializeType.valueOf(input).name());
             } catch (RuntimeException error) {
                 item.put("outcome", error.getClass().getSimpleName());
                 item.put("message", error.getMessage());

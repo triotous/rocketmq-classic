@@ -27,7 +27,6 @@ pub fn encode_into(
     let header = match command.serialization {
         SerializeType::Json => json_header::encode(command, max_header_length)?,
         SerializeType::RocketMq => rocketmq_header::encode(command, max_header_length)?,
-        SerializeType::Unknown(code) => return Err(CodecError::UnsupportedSerialization(code)),
     };
     if header.len() > max_header_length || header.len() > 0x00ff_ffff {
         return Err(CodecError::FieldTooWide("header length"));
@@ -86,10 +85,9 @@ pub fn decode_next(
         return Ok(None);
     }
     let marked_header = u32::from_be_bytes(input[4..8].try_into().unwrap());
-    let serialization = SerializeType::from_code((marked_header >> 24) as u8);
-    if let SerializeType::Unknown(code) = serialization {
-        return Err(CodecError::UnsupportedSerialization(code));
-    }
+    let protocol_code = (marked_header >> 24) as u8;
+    let serialization = SerializeType::from_java_byte(protocol_code as i8)
+        .ok_or(CodecError::UnsupportedSerialization(protocol_code))?;
     let header_length = (marked_header & 0x00ff_ffff) as usize;
     let payload_length = declared_length - 4;
     if header_length > payload_length {
@@ -105,7 +103,6 @@ pub fn decode_next(
     let decoded = match serialization {
         SerializeType::Json => json_header::decode(&input[8..header_end])?,
         SerializeType::RocketMq => rocketmq_header::decode(&input[8..header_end])?,
-        SerializeType::Unknown(_) => unreachable!(),
     };
     let mut command = decoded;
     command.serialization = serialization;

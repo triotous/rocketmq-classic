@@ -41,6 +41,5 @@ fn serialization_name(value: SerializeType) -> &'static str {
     match value {
         SerializeType::Json => "JSON",
         SerializeType::RocketMq => "ROCKETMQ",
-        SerializeType::Unknown(_) => unreachable!("the test only uses known serialization tags"),
     }
 }

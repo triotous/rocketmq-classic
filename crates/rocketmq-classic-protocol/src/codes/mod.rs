@@ -27,6 +27,14 @@ pub enum LanguageCode {
     NodeJs,
 }
 
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum SerializeTypeLookupError {
+    #[error("Name is null")]
+    NullName,
+    #[error("No enum constant org.apache.rocketmq.remoting.protocol.SerializeType.{0}")]
+    UnknownName(String),
+}
+
 impl LanguageCode {
     pub const fn values() -> [Self; 14] {
         [
@@ -164,29 +172,56 @@ impl std::fmt::Display for LanguageCode {
 pub enum SerializeType {
     Json,
     RocketMq,
-    Unknown(u8),
 }
 
 impl SerializeType {
-    pub const fn from_code(code: u8) -> Self {
-        match code {
-            0 => Self::Json,
-            1 => Self::RocketMq,
-            value => Self::Unknown(value),
+    pub const fn values() -> [Self; 2] {
+        [Self::Json, Self::RocketMq]
+    }
+
+    pub fn value_of_name(name: Option<&str>) -> Result<Self, SerializeTypeLookupError> {
+        match name {
+            None => Err(SerializeTypeLookupError::NullName),
+            Some("JSON") => Ok(Self::Json),
+            Some("ROCKETMQ") => Ok(Self::RocketMq),
+            Some(other) => Err(SerializeTypeLookupError::UnknownName(other.to_owned())),
         }
     }
-    pub const fn from_java_byte(code: i8) -> Self {
-        Self::from_code(code as u8)
+
+    pub const fn from_java_byte(code: i8) -> Option<Self> {
+        match code {
+            0 => Some(Self::Json),
+            1 => Some(Self::RocketMq),
+            _ => None,
+        }
     }
-    pub const fn java_byte(self) -> i8 {
-        self.code() as i8
-    }
+
     pub const fn code(self) -> u8 {
         match self {
             Self::Json => 0,
             Self::RocketMq => 1,
-            Self::Unknown(value) => value,
         }
+    }
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Json => "JSON",
+            Self::RocketMq => "ROCKETMQ",
+        }
+    }
+
+    pub const fn ordinal(self) -> i32 {
+        self.code() as i32
+    }
+
+    pub const fn java_compare_to(self, other: Self) -> i32 {
+        self.ordinal() - other.ordinal()
+    }
+}
+
+impl std::fmt::Display for SerializeType {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.name())
     }
 }
 
@@ -300,10 +335,92 @@ mod tests {
     }
 
     #[test]
-    fn serialization_codes_preserve_unknown_tags() {
-        assert_eq!(SerializeType::from_code(0), SerializeType::Json);
-        assert_eq!(SerializeType::from_code(1), SerializeType::RocketMq);
-        assert_eq!(SerializeType::from_code(200).code(), 200);
+    fn serialization_type_byte_lookup_matches_java_null_for_unknown_values() {
+        assert_eq!(SerializeType::from_java_byte(0), Some(SerializeType::Json));
+        assert_eq!(
+            SerializeType::from_java_byte(1),
+            Some(SerializeType::RocketMq)
+        );
+        for code in [2, 127, -1, i8::MIN] {
+            assert_eq!(SerializeType::from_java_byte(code), None);
+        }
+    }
+
+    #[test]
+    fn serialize_type_enum_methods_match_invoked_java_values() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/client-config.json"
+        ))
+        .unwrap();
+        let mut mutated_values = SerializeType::values();
+        mutated_values[0] = SerializeType::RocketMq;
+        assert_eq!(SerializeType::values()[0], SerializeType::Json);
+
+        for case in fixture["serializeTypeMethodCases"].as_array().unwrap() {
+            match case["case"].as_str().unwrap() {
+                "constant" => {
+                    let name = case["name"].as_str().unwrap();
+                    let value = SerializeType::value_of_name(Some(name)).unwrap();
+                    let values = SerializeType::values();
+                    let expected_names = case["values"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|name| name.as_str().unwrap())
+                        .collect::<Vec<_>>();
+                    assert_eq!(value.name(), name, "{case}");
+                    assert_eq!(value.to_string(), case["text"].as_str().unwrap(), "{case}");
+                    assert_eq!(value.code(), case["code"].as_i64().unwrap() as u8, "{case}");
+                    assert_eq!(
+                        value.ordinal(),
+                        case["ordinal"].as_i64().unwrap() as i32,
+                        "{case}"
+                    );
+                    assert_eq!(
+                        values.iter().map(|value| value.name()).collect::<Vec<_>>(),
+                        expected_names,
+                        "{case}"
+                    );
+                    assert_eq!(case["valueOfName"], name, "{case}");
+                    assert_eq!(case["valueOfByte"], name, "{case}");
+                    assert_eq!(case["valuesDefensiveCopy"], true, "{case}");
+                    let next = values[(value.ordinal() as usize + 1) % values.len()];
+                    assert_eq!(
+                        value.java_compare_to(next),
+                        case["compareNext"].as_i64().unwrap() as i32,
+                        "{case}"
+                    );
+                }
+                "byte" => {
+                    let input = case["input"].as_i64().unwrap() as i8;
+                    assert_eq!(
+                        SerializeType::from_java_byte(input).map(SerializeType::name),
+                        case["decoded"].as_str(),
+                        "{case}"
+                    );
+                }
+                "enumNameLookup" => {
+                    let result = SerializeType::value_of_name(case["input"].as_str());
+                    match result {
+                        Ok(value) => {
+                            assert_eq!(case["outcome"], "OK", "{case}");
+                            assert_eq!(case["decoded"], value.name(), "{case}");
+                        }
+                        Err(error) => {
+                            let outcome = match &error {
+                                SerializeTypeLookupError::NullName => "NullPointerException",
+                                SerializeTypeLookupError::UnknownName(_) => {
+                                    "IllegalArgumentException"
+                                }
+                            };
+                            assert_eq!(case["outcome"], outcome, "{case}");
+                            assert_eq!(case["message"], error.to_string(), "{case}");
+                        }
+                    }
+                }
+                kind => panic!("unknown Java SerializeType case: {kind}"),
+            }
+        }
     }
 
     #[test]

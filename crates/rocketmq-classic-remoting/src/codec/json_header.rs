@@ -28,12 +28,7 @@ pub fn encode(command: &RemotingCommand, max_length: usize) -> Result<Vec<u8>, C
     }
     fields.insert(
         "serializeTypeCurrentRPC".into(),
-        match command.serialization {
-            SerializeType::Json => "JSON",
-            SerializeType::RocketMq => "ROCKETMQ",
-            SerializeType::Unknown(code) => return Err(CodecError::UnsupportedSerialization(code)),
-        }
-        .into(),
+        command.serialization.name().into(),
     );
     let value = Value::Object(fields);
     let mut counter = CountingWriter {
