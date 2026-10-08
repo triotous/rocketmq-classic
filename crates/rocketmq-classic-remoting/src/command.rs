@@ -101,6 +101,87 @@ impl std::fmt::Display for RequestType {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum RequestSource {
+    Sdk,
+    ProxyForOrder,
+    ProxyForBroadcast,
+    ProxyForStream,
+}
+
+impl RequestSource {
+    pub const SYSTEM_PROPERTY_KEY: &'static str = "rocketmq.requestSource";
+
+    pub const fn values() -> [Self; 4] {
+        [
+            Self::Sdk,
+            Self::ProxyForOrder,
+            Self::ProxyForBroadcast,
+            Self::ProxyForStream,
+        ]
+    }
+
+    pub fn value_of_name(name: Option<&str>) -> Result<Self, JavaEnumLookupError> {
+        match name {
+            None => Err(JavaEnumLookupError::NullName),
+            Some("SDK") => Ok(Self::Sdk),
+            Some("PROXY_FOR_ORDER") => Ok(Self::ProxyForOrder),
+            Some("PROXY_FOR_BROADCAST") => Ok(Self::ProxyForBroadcast),
+            Some("PROXY_FOR_STREAM") => Ok(Self::ProxyForStream),
+            Some(other) => Err(JavaEnumLookupError::UnknownName {
+                enum_class: "org.apache.rocketmq.remoting.protocol.RequestSource",
+                name: other.to_owned(),
+            }),
+        }
+    }
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Sdk => "SDK",
+            Self::ProxyForOrder => "PROXY_FOR_ORDER",
+            Self::ProxyForBroadcast => "PROXY_FOR_BROADCAST",
+            Self::ProxyForStream => "PROXY_FOR_STREAM",
+        }
+    }
+
+    pub const fn ordinal(self) -> i32 {
+        match self {
+            Self::Sdk => 0,
+            Self::ProxyForOrder => 1,
+            Self::ProxyForBroadcast => 2,
+            Self::ProxyForStream => 3,
+        }
+    }
+
+    pub const fn get_value(self) -> i32 {
+        self.ordinal() - 1
+    }
+
+    pub const fn is_valid(value: Option<i32>) -> bool {
+        matches!(value, Some(-1..=2))
+    }
+
+    pub const fn parse_integer(value: Option<i32>) -> Self {
+        match value {
+            Some(-1) => Self::Sdk,
+            Some(0) => Self::ProxyForOrder,
+            Some(1) => Self::ProxyForBroadcast,
+            Some(2) => Self::ProxyForStream,
+            _ => Self::Sdk,
+        }
+    }
+
+    pub const fn java_compare_to(self, other: Self) -> i32 {
+        self.ordinal() - other.ordinal()
+    }
+}
+
+impl std::fmt::Display for RequestSource {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.name())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemotingCommand {
     pub code: i32,
@@ -236,6 +317,27 @@ mod tests {
 
         check_enum_cases!(RemotingCommandType, &cases["RemotingCommandType"]);
         check_enum_cases!(RequestType, &cases["RequestType"]);
+        let request_source = &cases["RequestSource"];
+        check_enum_cases!(RequestSource, &request_source["enum"]);
+        assert_eq!(
+            RequestSource::SYSTEM_PROPERTY_KEY,
+            request_source["systemPropertyKey"].as_str().unwrap()
+        );
+        for case in request_source["values"].as_array().unwrap() {
+            let source = RequestSource::value_of_name(case["name"].as_str()).unwrap();
+            assert_eq!(source.get_value(), case["value"].as_i64().unwrap() as i32);
+        }
+        for case in request_source["integers"].as_array().unwrap() {
+            let value = case["input"].as_i64().map(|input| input as i32);
+            assert_eq!(
+                RequestSource::is_valid(value),
+                case["valid"].as_bool().unwrap()
+            );
+            assert_eq!(
+                RequestSource::parse_integer(value).name(),
+                case["parsed"].as_str().unwrap()
+            );
+        }
 
         for case in cases["requestTypeBytes"].as_array().unwrap() {
             let input = case["input"].as_i64().unwrap() as i8;

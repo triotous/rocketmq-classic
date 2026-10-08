@@ -1824,6 +1824,7 @@ public final class RuntimeConfigFixtures {
             org.apache.rocketmq.remoting.protocol.RequestType::values,
             name -> org.apache.rocketmq.remoting.protocol.RequestType.valueOf(name),
             new String[] {null, "", "STREAM", "stream", "UNKNOWN"}));
+        result.put("RequestSource", requestSourceMethodCases());
 
         List<Object> requestTypeBytes = new ArrayList<>();
         for (byte input : new byte[] {Byte.MIN_VALUE, -1, 0, 1, Byte.MAX_VALUE}) {
@@ -1849,6 +1850,41 @@ public final class RuntimeConfigFixtures {
         request.markResponseType();
         addCommandTypeCase(commandTypes, "markedRequest", request);
         result.put("commandGetType", commandTypes);
+        return result;
+    }
+
+    private static Map<String, Object> requestSourceMethodCases() {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("enum", enumMethodCases(
+            org.apache.rocketmq.remoting.protocol.RequestSource::values,
+            org.apache.rocketmq.remoting.protocol.RequestSource::valueOf,
+            new String[] {null, "", "SDK", "PROXY_FOR_ORDER", "proxy_for_order", "UNKNOWN"}));
+        result.put("systemPropertyKey",
+            org.apache.rocketmq.remoting.protocol.RequestSource.SYSTEM_PROPERTY_KEY);
+
+        List<Object> values = new ArrayList<>();
+        for (org.apache.rocketmq.remoting.protocol.RequestSource source :
+            org.apache.rocketmq.remoting.protocol.RequestSource.values()) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", "value");
+            item.put("name", source.name());
+            item.put("value", source.getValue());
+            values.add(item);
+        }
+        result.put("values", values);
+
+        List<Object> integers = new ArrayList<>();
+        for (Integer input : new Integer[] {
+            null, Integer.MIN_VALUE, -2, -1, 0, 1, 2, 3, Integer.MAX_VALUE
+        }) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("input", input);
+            item.put("valid", org.apache.rocketmq.remoting.protocol.RequestSource.isValid(input));
+            item.put("parsed",
+                org.apache.rocketmq.remoting.protocol.RequestSource.parseInteger(input).name());
+            integers.add(item);
+        }
+        result.put("integers", integers);
         return result;
     }
 
