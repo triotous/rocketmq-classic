@@ -122,6 +122,37 @@ fn take_fastjson_number_token<E: serde::de::Error>() -> Result<String, E> {
 }
 
 fn java_number_string(token: &str) -> String {
+    if let Some((number, suffix)) = token.split_at_checked(token.len().saturating_sub(1)) {
+        match suffix.as_bytes().first().copied() {
+            Some(b'd' | b'D') => {
+                if let Some(value) = parse_fastjson_float(number) {
+                    return if value.is_nan() {
+                        "NaN".into()
+                    } else if value.is_infinite() {
+                        if value.is_sign_negative() {
+                            "-Infinity".into()
+                        } else {
+                            "Infinity".into()
+                        }
+                    } else if value == 0.0 {
+                        "0.0".into()
+                    } else {
+                        java_double_string(value)
+                    };
+                }
+            }
+            Some(b'f' | b'F') => {
+                if let Some(value) = parse_fastjson_float(number).map(|value| value as f32) {
+                    return java_float_string(value);
+                }
+            }
+            Some(b'l' | b'L') => {
+                return canonical_integer_string(number);
+            }
+            _ => {}
+        }
+    }
+
     if token.contains(['e', 'E']) {
         let value = parse_fastjson_float(token).unwrap_or(f64::NAN);
         if value.is_nan() {
@@ -161,6 +192,94 @@ fn java_number_string(token: &str) -> String {
         } else {
             output.push_str(fraction);
         }
+    }
+    output
+}
+
+fn canonical_integer_string(token: &str) -> String {
+    let (negative, digits) = match token.as_bytes().first() {
+        Some(b'-') => (true, &token[1..]),
+        Some(b'+') => (false, &token[1..]),
+        _ => (false, token),
+    };
+    let digits = digits.trim_start_matches('0');
+    if digits.is_empty() {
+        "0".into()
+    } else if negative {
+        format!("-{digits}")
+    } else {
+        digits.to_owned()
+    }
+}
+
+fn java_float_string(value: f32) -> String {
+    if value.is_nan() {
+        return "NaN".into();
+    }
+    if value.is_infinite() {
+        return if value.is_sign_negative() {
+            "-Infinity".into()
+        } else {
+            "Infinity".into()
+        };
+    }
+    if value == 0.0 {
+        return "0.0".into();
+    }
+
+    let rendered = value.abs().to_string();
+    let (mantissa, exponent) = rendered
+        .split_once('e')
+        .or_else(|| rendered.split_once('E'))
+        .map_or((rendered.as_str(), 0), |(mantissa, exponent)| {
+            (mantissa, exponent.parse::<i32>().unwrap_or(0))
+        });
+    let decimal_position = mantissa.find('.').unwrap_or(mantissa.len()) as i32;
+    let mut digits: String = mantissa.chars().filter(char::is_ascii_digit).collect();
+    let first_significant = digits
+        .bytes()
+        .position(|digit| digit != b'0')
+        .expect("nonzero float has a significant digit");
+    let decimal_exponent = decimal_position + exponent - first_significant as i32 - 1;
+    digits.drain(..first_significant);
+    while digits.ends_with('0') {
+        digits.pop();
+    }
+
+    let mut output = String::new();
+    if value.is_sign_negative() {
+        output.push('-');
+    }
+    if !(-3..7).contains(&decimal_exponent) {
+        output.push(digits.as_bytes()[0] as char);
+        output.push('.');
+        if digits.len() == 1 {
+            output.push('0');
+        } else {
+            output.push_str(&digits[1..]);
+        }
+        output.push('E');
+        output.push_str(&decimal_exponent.to_string());
+        return output;
+    }
+
+    let decimal_position = decimal_exponent + 1;
+    if decimal_position <= 0 {
+        output.push_str("0.");
+        output.extend(std::iter::repeat_n('0', (-decimal_position) as usize));
+        output.push_str(&digits);
+    } else if decimal_position as usize >= digits.len() {
+        output.push_str(&digits);
+        output.extend(std::iter::repeat_n(
+            '0',
+            decimal_position as usize - digits.len(),
+        ));
+        output.push_str(".0");
+    } else {
+        let decimal_position = decimal_position as usize;
+        output.push_str(&digits[..decimal_position]);
+        output.push('.');
+        output.push_str(&digits[decimal_position..]);
     }
     output
 }
@@ -381,7 +500,25 @@ fn contains_fastjson_rejected_literal(input: &str) -> bool {
                 index += 1;
                 while index < bytes.len() {
                     if bytes[index] == b'\\' {
-                        index = (index + 2).min(bytes.len());
+                        let Some(&escaped) = bytes.get(index + 1) else {
+                            return true;
+                        };
+                        match escaped {
+                            b'"' | b'\'' | b'\\' | b'/' | b'b' | b'f' | b'n' | b'r' | b't'
+                            | b'v' | b'0' => index += 2,
+                            b'x' if bytes.get(index + 2).is_some_and(u8::is_ascii_hexdigit)
+                                && bytes.get(index + 3).is_some_and(u8::is_ascii_hexdigit) =>
+                            {
+                                index += 4;
+                            }
+                            b'u' if bytes
+                                .get(index + 2..index + 6)
+                                .is_some_and(|digits| digits.iter().all(u8::is_ascii_hexdigit)) =>
+                            {
+                                index += 6;
+                            }
+                            _ => return true,
+                        }
                     } else if bytes[index] == quote {
                         index += 1;
                         break;
@@ -391,12 +528,26 @@ fn contains_fastjson_rejected_literal(input: &str) -> bool {
                 }
             }
             b'/' if bytes.get(index + 1) == Some(&b'/') => {
+                let mut previous = index;
+                while previous > 0 && bytes[previous - 1].is_ascii_whitespace() {
+                    previous -= 1;
+                }
+                if previous > 0 && bytes[previous - 1] == b':' {
+                    return true;
+                }
                 index += 2;
                 while index < bytes.len() && bytes[index] != b'\n' {
                     index += 1;
                 }
             }
             b'/' if bytes.get(index + 1) == Some(&b'*') => {
+                let mut previous = index;
+                while previous > 0 && bytes[previous - 1].is_ascii_whitespace() {
+                    previous -= 1;
+                }
+                if previous > 0 && bytes[previous - 1] == b':' {
+                    return true;
+                }
                 index += 2;
                 while index + 1 < bytes.len() && !(bytes[index] == b'*' && bytes[index + 1] == b'/')
                 {
@@ -404,6 +555,7 @@ fn contains_fastjson_rejected_literal(input: &str) -> bool {
                 }
                 index = (index + 2).min(bytes.len());
             }
+            b'\x0b' => return true,
             b'.' if bytes.get(index + 1).is_some_and(u8::is_ascii_digit) => {
                 let signed = index > 0
                     && matches!(bytes[index - 1], b'+' | b'-')
@@ -485,6 +637,137 @@ fn skip_json5_trivia(bytes: &[u8], mut index: usize) -> usize {
             return index;
         }
     }
+}
+
+fn normalize_fastjson_line_separators(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut output = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes.get(index..index + 2) == Some(b"//") {
+            output.extend_from_slice(b"//");
+            index += 2;
+            while index < bytes.len() && bytes[index] != b'\n' {
+                if bytes[index] == b'\r'
+                    || bytes[index..].starts_with(&[0xe2, 0x80, 0xa8])
+                    || bytes[index..].starts_with(&[0xe2, 0x80, 0xa9])
+                {
+                    index += if bytes[index] == b'\r' { 1 } else { 3 };
+                } else {
+                    output.push(bytes[index]);
+                    index += 1;
+                }
+            }
+            continue;
+        }
+        if bytes.get(index..index + 2) == Some(b"/*") {
+            let start = index;
+            index += 2;
+            while index + 1 < bytes.len() && !(bytes[index] == b'*' && bytes[index + 1] == b'/') {
+                index += 1;
+            }
+            if index + 1 < bytes.len() {
+                index += 2;
+            } else {
+                index = bytes.len();
+            }
+            output.extend_from_slice(&bytes[start..index]);
+            continue;
+        }
+        if !matches!(bytes[index], b'"' | b'\'') {
+            output.push(bytes[index]);
+            index += 1;
+            continue;
+        }
+        let quote = bytes[index];
+        output.push(quote);
+        index += 1;
+        while index < bytes.len() {
+            if bytes[index] == b'\\' {
+                let end = (index + 2).min(bytes.len());
+                output.extend_from_slice(&bytes[index..end]);
+                index = end;
+            } else if bytes[index..].starts_with(&[0xe2, 0x80, 0xa8]) {
+                output.extend_from_slice(b"\\u2028");
+                index += 3;
+            } else {
+                let byte = bytes[index];
+                output.push(byte);
+                index += 1;
+                if byte == quote {
+                    break;
+                }
+            }
+        }
+    }
+    String::from_utf8(output).expect("line separator escaping preserves valid UTF-8")
+}
+
+fn recover_fastjson_eof_line_comment(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut index = 0;
+    let mut closing = Vec::new();
+    while index < bytes.len() {
+        match bytes[index] {
+            b'"' | b'\'' => {
+                let quote = bytes[index];
+                index += 1;
+                while index < bytes.len() {
+                    if bytes[index] == b'\\' {
+                        index = (index + 2).min(bytes.len());
+                    } else if bytes[index] == quote {
+                        index += 1;
+                        break;
+                    } else {
+                        index += 1;
+                    }
+                }
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'/') => {
+                let comment_start = index;
+                index += 2;
+                while index < bytes.len() && bytes[index] != b'\n' {
+                    index += 1;
+                }
+                if index == bytes.len() {
+                    if closing.len() > 1 {
+                        // Fastjson tolerates an unfinished root object here, but not a nested proxy object.
+                        return input.to_owned();
+                    }
+                    let mut output =
+                        String::from_utf8(bytes[..comment_start].to_vec()).expect("valid UTF-8");
+                    for delimiter in closing.iter().rev() {
+                        output.push(*delimiter as char);
+                    }
+                    return output;
+                }
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'*') => {
+                index += 2;
+                while index + 1 < bytes.len() && !(bytes[index] == b'*' && bytes[index + 1] == b'/')
+                {
+                    index += 1;
+                }
+                index = (index + 2).min(bytes.len());
+            }
+            b'{' => {
+                closing.push(b'}');
+                index += 1;
+            }
+            b'[' => {
+                closing.push(b']');
+                index += 1;
+            }
+            b'}' | b']' => {
+                if closing.pop() != Some(bytes[index]) {
+                    return input.to_owned();
+                }
+                index += 1;
+            }
+            _ => index += 1,
+        }
+    }
+    input.to_owned()
 }
 
 fn normalize_fastjson_numbers(input: &str) -> (String, VecDeque<String>) {
@@ -603,6 +886,22 @@ fn decimal_number_end(bytes: &[u8], start: usize) -> Option<usize> {
         if exponent_start == index {
             return Some(exponent);
         }
+    }
+    if matches!(
+        bytes.get(index),
+        Some(b'd' | b'D' | b'f' | b'F' | b'l' | b'L')
+    ) && !bytes
+        .get(index + 1)
+        .is_some_and(|byte| is_number_token_byte(*byte))
+    {
+        if matches!(bytes[index], b'l' | b'L')
+            && bytes[start..index]
+                .iter()
+                .any(|byte| matches!(byte, b'.' | b'e' | b'E'))
+        {
+            return None;
+        }
+        return Some(index + 1);
     }
     if bytes
         .get(index)
@@ -772,7 +1071,9 @@ impl ClientConfig {
                 "Fastjson SOCKS parser rejects this JSON5 literal".into(),
             ));
         }
-        let (normalized, number_tokens) = normalize_fastjson_numbers(&self.socks_proxy_config);
+        let string_normalized = normalize_fastjson_line_separators(&self.socks_proxy_config);
+        let recovered = recover_fastjson_eof_line_comment(&string_normalized);
+        let (normalized, number_tokens) = normalize_fastjson_numbers(&recovered);
         let _number_scope = FastjsonNumberTokenScope::install(number_tokens);
         let parsed: Option<HashMap<String, Option<RawProxyRoute>>> =
             json5::from_str(&normalized)
@@ -977,6 +1278,12 @@ mod tests {
         assert!(!super::contains_fastjson_rejected_literal(
             "{\"10.0.0.0/8\":{\"addr\":\"line\u{2028}separator\"}}"
         ));
+        assert!(super::contains_fastjson_rejected_literal(
+            "{\u{000b}\"10.0.0.0/8\":{\"addr\":\"proxy\"}}"
+        ));
+        assert!(!super::contains_fastjson_rejected_literal(
+            "{\"10.0.0.0/8\":{\"addr\":\"line\u{000b}separator\"}}"
+        ));
         assert!(!super::contains_fastjson_rejected_literal(
             r#"{0x2a:{"addr":"proxy"}}"#
         ));
@@ -1024,7 +1331,12 @@ mod tests {
                 continue;
             }
             let routes = parsed.unwrap();
-            match &routes["10.0.0.0/8"] {
+            let Some(route) = routes.get("10.0.0.0/8") else {
+                assert_eq!(case["routePresent"], false, "{}", case["input"]);
+                continue;
+            };
+            assert_eq!(case["routePresent"], true, "{}", case["input"]);
+            match route {
                 super::ParsedProxyRoute::Proxy(proxy) => {
                     assert_eq!(Some(proxy.address.as_str()), case["parsedAddr"].as_str());
                     assert_eq!(proxy.username.as_deref(), case["parsedUsername"].as_str());

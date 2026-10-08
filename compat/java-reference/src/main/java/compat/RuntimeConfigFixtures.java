@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import org.apache.rocketmq.client.ClientConfig;
 
-/** Executes pinned ClientConfig methods without starting a transport. */
+/** Executes pinned ClientConfig methods and local SOCKS transport paths without a Broker. */
 public final class RuntimeConfigFixtures {
     private RuntimeConfigFixtures() { }
 
@@ -144,16 +144,19 @@ public final class RuntimeConfigFixtures {
         fixture.put("rebalanceLongs", rebalanceLongs);
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "ClientConfig.buildMQClientId/cloneClientConfig/resetClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/changeInstanceNameToPID; MQClientManager.getOrCreateMQClientInstance/removeClientFactory/getFactoryTable; MQClientInstance.constructor/getClientConfig/getNettyClientConfig/getProducerTable/getConsumerTable/selectProducer/selectConsumer/registerConsumer/unregisterConsumer; MQClientAPIImpl.getRemotingClient/NettyRemotingClient.publicExecutor (reflective capacity observation); RemotingCommand.encode (null language JSON/ROCKETMQ); Long.parseLong (RebalanceService property parser)");
+        fixture.put("entrypoint", "ClientConfig.buildMQClientId/cloneClientConfig/resetClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/changeInstanceNameToPID; MQClientManager.getOrCreateMQClientInstance/removeClientFactory/getFactoryTable; MQClientInstance.constructor/getClientConfig/getNettyClientConfig/getProducerTable/getConsumerTable/selectProducer/selectConsumer/registerConsumer/unregisterConsumer; MQClientAPIImpl.getRemotingClient/NettyRemotingClient.publicExecutor (reflective capacity observation); NettyRemotingClient.start/invokeSync (local authenticated and no-auth SOCKS5 round trips); RemotingCommand.encode (null language JSON/ROCKETMQ); Long.parseLong (RebalanceService property parser)");
         fixture.put("serverBaselineContacted", false);
         fixture.put("identities", identities);
         fixture.put("defaults", defaults);
         fixture.put("clone", clone);
+        fixture.put("copyFields", clientConfigCopies());
         fixture.put("managed", managed);
         fixture.put("managerRemoval", managerRemoval(config));
         fixture.put("managerTable", managerTable(config));
         fixture.put("nullableSettings", nullableSettings());
         fixture.put("socksConstruction", socksConstruction());
+        fixture.put("socksConnection", socksConnection(true));
+        fixture.put("socksConnectionNoAuth", socksConnection(false));
         fixture.put("socksCidr", socksCidr());
         fixture.put("socksProxySelection", socksProxySelection());
         fixture.put("callbackThreadsConstruction", callbackThreadsConstruction());
@@ -206,6 +209,71 @@ public final class RuntimeConfigFixtures {
             }
         }
         return result;
+    }
+
+    private static Map<String, Object> clientConfigCopies() throws Exception {
+        ClientConfig source = new ClientConfig();
+        source.setNamesrvAddr("changed-nameserver");
+        source.setClientIP(null);
+        source.setInstanceName(null);
+        source.setClientCallbackExecutorThreads(Integer.MIN_VALUE);
+        source.setNamespace("changed-namespace");
+        source.setNamespaceV2("changed-v2");
+        source.setAccessChannel(org.apache.rocketmq.client.AccessChannel.CLOUD);
+        source.setPollNameServerInterval(Integer.MIN_VALUE);
+        source.setHeartbeatBrokerInterval(Integer.MAX_VALUE);
+        source.setPersistConsumerOffsetInterval(-1);
+        source.setPullTimeDelayMillsWhenException(Long.MIN_VALUE);
+        source.setTraceMsgBatchNum(-10);
+        source.setUnitMode(true);
+        source.setUnitName("changed-unit");
+        source.setDecodeReadBody(false);
+        source.setDecodeDecompressBody(false);
+        source.setVipChannelEnabled(true);
+        source.setUseHeartbeatV2(true);
+        source.setUseTLS(true);
+        source.setSocksProxyConfig("changed-proxy");
+        source.setMqClientApiTimeout(Integer.MIN_VALUE);
+        source.setDetectTimeout(-200);
+        source.setDetectInterval(Integer.MAX_VALUE);
+        source.setLanguage(org.apache.rocketmq.remoting.protocol.LanguageCode.CPP);
+        source.setEnableStreamRequestType(true);
+        source.setSendLatencyEnable(true);
+        source.setStartDetectorEnable(true);
+        source.setEnableHeartbeatChannelEventListener(false);
+        source.setEnableConcurrentHeartbeat(true);
+        source.setConcurrentHeartbeatThreadPoolSize(-7);
+        source.setEnableTrace(true);
+        source.setTraceTopic("changed-trace");
+        source.setMaxPageSizeInGetMetadata(-2000);
+
+        ClientConfig copy = source.cloneClientConfig();
+        ClientConfig reset = new ClientConfig();
+        reset.setNamespace(null);
+        reset.setAccessChannel(org.apache.rocketmq.client.AccessChannel.CLOUD);
+        reset.setTraceMsgBatchNum(42);
+        reset.setMaxPageSizeInGetMetadata(43);
+        reset.resetClientConfig(source);
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("source", clientConfigFields(source));
+        result.put("clone", clientConfigFields(copy));
+        result.put("reset", clientConfigFields(reset));
+        return result;
+    }
+
+    private static Map<String, Object> clientConfigFields(ClientConfig config) throws Exception {
+        Map<String, Object> fields = new TreeMap<>();
+        for (java.lang.reflect.Field field : ClientConfig.class.getDeclaredFields()) {
+            if (java.lang.reflect.Modifier.isStatic(field.getModifiers())
+                || "namespaceInitialized".equals(field.getName())) {
+                continue;
+            }
+            field.setAccessible(true);
+            Object value = field.get(config);
+            fields.put(field.getName(), value instanceof Enum<?> ? value.toString() : value);
+        }
+        return fields;
     }
 
     private static void cleanupRuntime(org.apache.rocketmq.client.impl.factory.MQClientInstance runtime) throws Exception {
@@ -750,7 +818,38 @@ public final class RuntimeConfigFixtures {
             "{\"10.0.0.0/8\":{\"addr\":\"proxy\\0:1080\"}}",
             "\uFEFF{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}}",
             "{\f\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}}",
-            "{\u2028\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}}"};
+            "{\u2028\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}}",
+            "// leading comment\n{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}}",
+            "{\"10.0.0.0/8\":/* value comment */{\"addr\":\"proxy:1080\"}}",
+            "{\u000b\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}}",
+            "{\"10.0.0.0/8\":{\"addr\":\"proxy\\q:1080\"}}",
+            "{\"10.0.0.0/8\":{\"addr\":\"raw\u0001control\"}}",
+            "{} trailing",
+            "{}/* trailing comment */",
+            "{\"10.0.0.0/8\":{\"addr\":\"line\u2028separator\"}}",
+            "/* \"\u2028 */{\"10.0.0.0/8\":{\"addr\":\"inside\u2028string\"}}",
+            "{\"10.0.0.0/8\":// value comment\n{\"addr\":\"proxy:1080\"}}",
+            "{\"10.0.0.0/8\":{\"addr\":\"http://proxy:1080\"}}",
+            "{\"10.0.0.0/8\":{\"addr\":\"proxy/*literal*/:1080\"}}",
+            "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}// trailing line comment\n}",
+            "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}/* between route and root close */}",
+            "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\",/* field separator */\"username\":\"u\"}}",
+            "{// comment with digits 123\r\"10.0.0.0/8\":{\"addr\":1e-4}}",
+            "{// comment with digits 123\u2028\"10.0.0.0/8\":{\"addr\":1e-4}}",
+            "{// comment with digits 123\u2029\"10.0.0.0/8\":{\"addr\":1e-4}}",
+            "{\"10.0.0.0/8\":{\"username\":\"u\"// field comment\r,\"addr\":1e3}}",
+            "{\"10.0.0.0/8\":{\"addr\":1D}}",
+            "{\"10.0.0.0/8\":{\"addr\":1.25F}}",
+            "{\"10.0.0.0/8\":{\"addr\":123L}}",
+            "{\"10.0.0.0/8\":{\"addr\":1e7F}}",
+            "{\"10.0.0.0/8\":{\"addr\":1e-4F}}",
+            "{\"10.0.0.0/8\":{\"addr\":-0.0F}}",
+            "{\"10.0.0.0/8\":{\"addr\":1e7D}}",
+            "{\"10.0.0.0/8\":{\"addr\":-0.0D}}",
+            "{\"10.0.0.0/8\":{\"addr\":-123L}}",
+            "{\"10.0.0.0/8\":{\"addr\":9223372036854775807L}}",
+            "{\"10.0.0.0/8\":{\"addr\":-9223372036854775808L}}",
+            "{\"10.0.0.0/8\":{\"addr\":9223372036854775808L}}"};
         for (int i = 0; i < inputs.length; i++) {
             ClientConfig config = new ClientConfig();
             config.setClientIP("socks-construction-" + i);
@@ -773,6 +872,7 @@ public final class RuntimeConfigFixtures {
                     Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig> routes =
                         (Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig>) proxyField.get(remoting);
                     org.apache.rocketmq.remoting.proxy.SocksProxyConfig route = routes.get("10.0.0.0/8");
+                    item.put("routePresent", route != null);
                     item.put("parsedAddr", route == null ? null : route.getAddr());
                     item.put("parsedUsername", route == null ? null : route.getUsername());
                     item.put("parsedPassword", route == null ? null : route.getPassword());
@@ -810,6 +910,225 @@ public final class RuntimeConfigFixtures {
             cases.add(item);
         }
         return cases;
+    }
+
+    private static Map<String, Object> socksConnection(boolean usePasswordAuth) throws Exception {
+        final String username = "oracle-user";
+        final String password = "oracle-pass";
+        Map<String, Object> result = new TreeMap<>();
+        try (java.net.ServerSocket brokerListener =
+                 new java.net.ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1"));
+             java.net.ServerSocket proxyListener =
+                 new java.net.ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1"))) {
+            brokerListener.setSoTimeout(8000);
+            proxyListener.setSoTimeout(8000);
+            java.util.concurrent.ExecutorService workers =
+                java.util.concurrent.Executors.newCachedThreadPool();
+            try {
+            final int brokerPort = brokerListener.getLocalPort();
+            final int proxyPort = proxyListener.getLocalPort();
+            java.util.concurrent.Future<Map<String, Object>> brokerOutcome = workers.submit(() -> {
+                try (java.net.Socket broker = brokerListener.accept()) {
+                    broker.setSoTimeout(8000);
+                    byte[] frame = readFrame(broker.getInputStream());
+                    org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                        org.apache.rocketmq.remoting.protocol.RemotingCommand.decode(
+                            java.util.Arrays.copyOfRange(frame, 4, frame.length));
+                    if (request.getCode() != 1234 || !java.util.Arrays.equals(request.getBody(),
+                        "socks-oracle-request".getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
+                        throw new IllegalStateException("unexpected Java SOCKS remoting request");
+                    }
+                    org.apache.rocketmq.remoting.protocol.RemotingCommand response =
+                        org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(0, "socks-oracle-ok");
+                    response.setOpaque(request.getOpaque());
+                    response.setSerializeTypeCurrentRPC(request.getSerializeTypeCurrentRPC());
+                    java.nio.ByteBuffer encoded = response.encode();
+                    byte[] bytes = new byte[encoded.remaining()];
+                    encoded.get(bytes);
+                    broker.getOutputStream().write(bytes);
+                    broker.getOutputStream().flush();
+                    Map<String, Object> observed = new TreeMap<>();
+                    observed.put("requestCode", request.getCode());
+                    observed.put("requestBodyBytes", request.getBody() == null ? 0 : request.getBody().length);
+                    observed.put("opaqueMatched", request.getOpaque() == response.getOpaque());
+                    return observed;
+                }
+            });
+            java.util.concurrent.Future<Map<String, Object>> proxyOutcome = workers.submit(() -> {
+                try (java.net.Socket client = proxyListener.accept()) {
+                    client.setSoTimeout(8000);
+                    java.io.InputStream clientInput = client.getInputStream();
+                    java.io.OutputStream clientOutput = client.getOutputStream();
+                    int version = clientInput.read();
+                    int methodCount = clientInput.read();
+                    byte[] methods = readExactly(clientInput, methodCount);
+                    boolean offeredPasswordAuth = false;
+                    boolean offeredNoAuth = false;
+                    for (byte method : methods) {
+                        offeredPasswordAuth |= method == 2;
+                        offeredNoAuth |= method == 0;
+                    }
+                    if (version != 5 || (usePasswordAuth && !offeredPasswordAuth)
+                        || (!usePasswordAuth && !offeredNoAuth)) {
+                        throw new java.io.IOException("required SOCKS5 authentication method was not offered");
+                    }
+                    int authVersion = -1;
+                    String receivedUsername = null;
+                    String receivedPassword = null;
+                    if (usePasswordAuth) {
+                        clientOutput.write(new byte[] {5, 2});
+                        clientOutput.flush();
+                        authVersion = clientInput.read();
+                        int usernameLength = clientInput.read();
+                        receivedUsername = new String(readExactly(clientInput, usernameLength),
+                            java.nio.charset.StandardCharsets.UTF_8);
+                        int passwordLength = clientInput.read();
+                        receivedPassword = new String(readExactly(clientInput, passwordLength),
+                            java.nio.charset.StandardCharsets.UTF_8);
+                        if (authVersion != 1 || !username.equals(receivedUsername)
+                            || !password.equals(receivedPassword)) {
+                            throw new java.io.IOException("SOCKS5 username/password did not match");
+                        }
+                        clientOutput.write(new byte[] {1, 0});
+                    } else {
+                        clientOutput.write(new byte[] {5, 0});
+                    }
+                    clientOutput.flush();
+
+                    byte[] requestPrefix = readExactly(clientInput, 4);
+                    int addressType = requestPrefix[3] & 0xff;
+                    String targetHost;
+                    if (addressType == 1) {
+                        targetHost = java.net.InetAddress.getByAddress(readExactly(clientInput, 4)).getHostAddress();
+                    } else if (addressType == 3) {
+                        targetHost = new String(readExactly(clientInput, clientInput.read()),
+                            java.nio.charset.StandardCharsets.UTF_8);
+                    } else if (addressType == 4) {
+                        targetHost = java.net.InetAddress.getByAddress(readExactly(clientInput, 16)).getHostAddress();
+                    } else {
+                        throw new java.io.IOException("unsupported SOCKS5 address type " + addressType);
+                    }
+                    int targetPort = (clientInput.read() << 8) | clientInput.read();
+                    if ((requestPrefix[0] & 0xff) != 5 || (requestPrefix[1] & 0xff) != 1) {
+                        throw new java.io.IOException("unexpected SOCKS5 connect request");
+                    }
+                    if (!"127.0.0.1".equals(targetHost) || targetPort != brokerPort) {
+                        throw new java.io.IOException("SOCKS5 connect target did not match local Broker");
+                    }
+
+                    try (java.net.Socket upstream = new java.net.Socket(
+                        "127.0.0.1", brokerPort)) {
+                        upstream.setSoTimeout(8000);
+                        clientOutput.write(new byte[] {5, 0, 0, 1, 127, 0, 0, 1, 0, 0});
+                        clientOutput.flush();
+                        java.util.concurrent.Future<Long> upload = workers.submit(() ->
+                            transfer(clientInput, upstream.getOutputStream()));
+                        long downloaded = transfer(upstream.getInputStream(), clientOutput);
+                        long uploaded = upload.get(5, java.util.concurrent.TimeUnit.SECONDS);
+                        Map<String, Object> observed = new TreeMap<>();
+                        observed.put("authAccepted", usePasswordAuth
+                            ? authVersion == 1 && username.equals(receivedUsername)
+                                && password.equals(receivedPassword)
+                            : offeredNoAuth);
+                        observed.put("authenticationMode", usePasswordAuth ? "USERNAME_PASSWORD" : "NO_AUTH");
+                        observed.put("connectTargetHost", targetHost);
+                        observed.put("connectTargetMatched", "127.0.0.1".equals(targetHost)
+                            && targetPort == brokerPort);
+                        observed.put("requestBytesForwarded", uploaded > 0);
+                        observed.put("responseBytesForwarded", downloaded > 0);
+                        if (uploaded == 0 || downloaded == 0) {
+                            throw new java.io.IOException("SOCKS5 tunnel did not forward both directions");
+                        }
+                        return observed;
+                    }
+                }
+            });
+
+            org.apache.rocketmq.remoting.netty.NettyClientConfig config =
+                new org.apache.rocketmq.remoting.netty.NettyClientConfig();
+            config.setUseTLS(false);
+            config.setClientSocketSndBufSize(64 * 1024);
+            config.setClientSocketRcvBufSize(64 * 1024);
+            String proxy = "{\"addr\":\"127.0.0.1:" + proxyPort + "\""
+                + (usePasswordAuth ? ",\"username\":\"" + username + "\",\"password\":\""
+                    + password + "\"" : "") + "}";
+            config.setSocksProxyConfig("{\"127.0.0.0/8\":" + proxy + "}");
+            org.apache.rocketmq.remoting.netty.NettyRemotingClient client =
+                new org.apache.rocketmq.remoting.netty.NettyRemotingClient(config);
+            try {
+                client.start();
+                org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                    org.apache.rocketmq.remoting.protocol.RemotingCommand.createRequestCommand(1234, null);
+                request.setBody("socks-oracle-request".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                org.apache.rocketmq.remoting.protocol.RemotingCommand response =
+                    client.invokeSync("127.0.0.1:" + brokerPort, request, 7000);
+                if (response == null || response.getCode() != 0
+                    || !"socks-oracle-ok".equals(response.getRemark())) {
+                    throw new IllegalStateException("Java SOCKS remoting response did not match");
+                }
+                if (response.getOpaque() != request.getOpaque()) {
+                    throw new IllegalStateException("Java SOCKS remoting response opaque did not match request");
+                }
+                result.put("outcome", "OK");
+                result.put("responseCode", response.getCode());
+                result.put("responseRemark", response.getRemark());
+                result.put("responseOpaqueMatched", true);
+            } catch (Exception error) {
+                result.put("clientError", error.getClass().getSimpleName() + ": " + error.getMessage());
+                try {
+                    result.put("proxyDiagnostic", proxyOutcome.get(1, java.util.concurrent.TimeUnit.SECONDS));
+                } catch (Exception proxyError) {
+                    result.put("proxyDiagnostic", proxyError.getClass().getSimpleName() + ": " + proxyError.getMessage());
+                }
+                try {
+                    result.put("brokerDiagnostic", brokerOutcome.get(1, java.util.concurrent.TimeUnit.SECONDS));
+                } catch (Exception brokerError) {
+                    result.put("brokerDiagnostic", brokerError.getClass().getSimpleName() + ": " + brokerError.getMessage());
+                }
+                System.err.println("SOCKS connection fixture diagnostics: " + result);
+                throw error;
+            } finally {
+                client.shutdown();
+            }
+            result.putAll(proxyOutcome.get(8, java.util.concurrent.TimeUnit.SECONDS));
+            result.putAll(brokerOutcome.get(8, java.util.concurrent.TimeUnit.SECONDS));
+            } finally {
+                workers.shutdownNow();
+                workers.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS);
+            }
+        }
+        return result;
+    }
+
+    private static byte[] readFrame(java.io.InputStream input) throws java.io.IOException {
+        byte[] lengthBytes = readExactly(input, 4);
+        int length = java.nio.ByteBuffer.wrap(lengthBytes).getInt();
+        if (length < 4 || length > 1024 * 1024) {
+            throw new java.io.IOException("invalid remoting frame length " + length);
+        }
+        byte[] frame = new byte[4 + length];
+        System.arraycopy(lengthBytes, 0, frame, 0, 4);
+        System.arraycopy(readExactly(input, length), 0, frame, 4, length);
+        return frame;
+    }
+
+    private static byte[] readExactly(java.io.InputStream input, int length) throws java.io.IOException {
+        if (length < 0 || length > 65535) throw new java.io.IOException("invalid read length " + length);
+        byte[] bytes = input.readNBytes(length);
+        if (bytes.length != length) throw new java.io.EOFException("truncated stream input");
+        return bytes;
+    }
+
+    private static long transfer(java.io.InputStream input, java.io.OutputStream output) throws java.io.IOException {
+        byte[] buffer = new byte[8192];
+        long count = 0;
+        int read;
+        while ((read = input.read(buffer)) >= 0) {
+            output.write(buffer, 0, read);
+            count += read;
+        }
+        output.flush();
+        return count;
     }
 
     private static List<Object> socksProxySelection() throws Exception {

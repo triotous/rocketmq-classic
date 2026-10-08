@@ -1,8 +1,53 @@
 use rocketmq_classic_core::config::{AccessChannel, ClientConfig};
+use rocketmq_classic_protocol::codes::LanguageCode;
 use serde_json::Value;
 
 fn optional(value: &Value) -> Option<String> {
     value.as_str().map(str::to_owned)
+}
+
+fn client_config_snapshot(config: &ClientConfig) -> Value {
+    serde_json::json!({
+        "namesrvAddr": config.namesrv_addr,
+        "clientIP": config.client_ip,
+        "instanceName": config.instance_name,
+        "clientCallbackExecutorThreads": config.client_callback_executor_threads,
+        "namespace": config.namespace,
+        "namespaceV2": config.namespace_v2,
+        "accessChannel": config.access_channel.map(|channel| match channel {
+            AccessChannel::Local => "LOCAL",
+            AccessChannel::Cloud => "CLOUD",
+        }),
+        "pollNameServerInterval": config.poll_name_server_interval,
+        "heartbeatBrokerInterval": config.heartbeat_broker_interval,
+        "persistConsumerOffsetInterval": config.persist_consumer_offset_interval,
+        "pullTimeDelayMillsWhenException": config.pull_time_delay_millis_when_exception,
+        "traceMsgBatchNum": config.trace_msg_batch_num,
+        "unitMode": config.unit_mode,
+        "unitName": config.unit_name,
+        "decodeReadBody": config.decode_read_body,
+        "decodeDecompressBody": config.decode_decompress_body,
+        "vipChannelEnabled": config.vip_channel_enabled,
+        "useHeartbeatV2": config.use_heartbeat_v2,
+        "useTLS": config.use_tls,
+        "socksProxyConfig": config.socks_proxy_config,
+        "mqClientApiTimeout": config.mq_client_api_timeout,
+        "detectTimeout": config.detect_timeout,
+        "detectInterval": config.detect_interval,
+        "language": config.language.map(|language| match language {
+            LanguageCode::Cpp => "CPP",
+            _ => "OTHER",
+        }),
+        "enableStreamRequestType": config.enable_stream_request_type,
+        "sendLatencyEnable": config.send_latency_enable,
+        "startDetectorEnable": config.start_detector_enable,
+        "enableHeartbeatChannelEventListener": config.enable_heartbeat_channel_event_listener,
+        "enableConcurrentHeartbeat": config.enable_concurrent_heartbeat,
+        "concurrentHeartbeatThreadPoolSize": config.concurrent_heartbeat_thread_pool_size,
+        "enableTrace": config.enable_trace,
+        "traceTopic": config.trace_topic,
+        "maxPageSizeInGetMetadata": config.max_page_size_in_get_metadata,
+    })
 }
 
 #[test]
@@ -350,6 +395,9 @@ fn public_property_names_match_pinned_client_config_constants() {
 fn clone_and_reset_copy_every_public_setting_except_java_omissions() {
     use rocketmq_classic_protocol::codes::LanguageCode;
 
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = &fixture["copyFields"];
     // Distinct from every constructor default, including signed-width limits.
     let mut source = ClientConfig::new("changed-ip");
     source.namesrv_addr = Some("changed-nameserver".into());
@@ -385,6 +433,7 @@ fn clone_and_reset_copy_every_public_setting_except_java_omissions() {
     source.enable_trace = true;
     source.trace_topic = Some("changed-trace".into());
     source.max_page_size_in_get_metadata = -2000;
+    assert_eq!(client_config_snapshot(&source), java["source"]);
 
     let mut expected_clone = source.clone();
     // reset of the source namespace state is part of clone construction, not
@@ -393,7 +442,9 @@ fn clone_and_reset_copy_every_public_setting_except_java_omissions() {
     expected_clone.access_channel = Some(AccessChannel::Local);
     expected_clone.trace_msg_batch_num = 10;
     expected_clone.max_page_size_in_get_metadata = 2000;
-    assert_eq!(source.clone_client_config(), expected_clone);
+    let copy = source.clone_client_config();
+    assert_eq!(copy, expected_clone);
+    assert_eq!(client_config_snapshot(&copy), java["clone"]);
 
     let mut receiver = ClientConfig::new("receiver");
     receiver.set_namespace(None);
@@ -406,5 +457,6 @@ fn clone_and_reset_copy_every_public_setting_except_java_omissions() {
     expected_reset.max_page_size_in_get_metadata = receiver.max_page_size_in_get_metadata;
     receiver.reset_client_config(&source);
     assert_eq!(receiver, expected_reset);
+    assert_eq!(client_config_snapshot(&receiver), java["reset"]);
     assert_eq!(source.pull_time_delay_millis_when_exception, i64::MIN);
 }

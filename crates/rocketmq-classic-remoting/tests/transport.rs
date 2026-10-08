@@ -4353,6 +4353,15 @@ impl RequestProcessor for RejectingProcessor {
 
 #[tokio::test]
 async fn p3_u01_socks5_proxy_tunnels_a_remoting_request() {
+    socks5_proxy_tunnels_a_remoting_request(true).await;
+}
+
+#[tokio::test]
+async fn p3_u01_socks5_no_auth_proxy_tunnels_a_remoting_request() {
+    socks5_proxy_tunnels_a_remoting_request(false).await;
+}
+
+async fn socks5_proxy_tunnels_a_remoting_request(username_password: bool) {
     let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let broker_address = broker.local_addr().unwrap();
     let broker_peer = tokio::spawn(async move {
@@ -4367,23 +4376,31 @@ async fn p3_u01_socks5_proxy_tunnels_a_remoting_request() {
     let proxy_address = proxy.local_addr().unwrap();
     let proxy_peer = tokio::spawn(async move {
         let (mut client, _) = proxy.accept().await.unwrap();
-        let mut greeting = [0; 4];
-        client.read_exact(&mut greeting).await.unwrap();
-        assert_eq!(&greeting, &[5, 2, 0, 2]);
-        client.write_all(&[5, 2]).await.unwrap();
-        let mut auth_header = [0; 2];
-        client.read_exact(&mut auth_header).await.unwrap();
-        assert_eq!(&auth_header, &[1, 6]);
-        let mut username = [0; 6];
-        client.read_exact(&mut username).await.unwrap();
-        assert_eq!(&username, b"rocket");
-        let mut password_length = [0; 1];
-        client.read_exact(&mut password_length).await.unwrap();
-        assert_eq!(password_length[0], 6);
-        let mut password = [0; 6];
-        client.read_exact(&mut password).await.unwrap();
-        assert_eq!(&password, b"secret");
-        client.write_all(&[1, 0]).await.unwrap();
+        let mut greeting_header = [0; 2];
+        client.read_exact(&mut greeting_header).await.unwrap();
+        assert_eq!(greeting_header[0], 5);
+        let mut methods = vec![0; usize::from(greeting_header[1])];
+        client.read_exact(&mut methods).await.unwrap();
+        if username_password {
+            assert_eq!(methods, [0, 2]);
+            client.write_all(&[5, 2]).await.unwrap();
+            let mut auth_header = [0; 2];
+            client.read_exact(&mut auth_header).await.unwrap();
+            assert_eq!(&auth_header, &[1, 6]);
+            let mut username = [0; 6];
+            client.read_exact(&mut username).await.unwrap();
+            assert_eq!(&username, b"rocket");
+            let mut password_length = [0; 1];
+            client.read_exact(&mut password_length).await.unwrap();
+            assert_eq!(password_length[0], 6);
+            let mut password = [0; 6];
+            client.read_exact(&mut password).await.unwrap();
+            assert_eq!(&password, b"secret");
+            client.write_all(&[1, 0]).await.unwrap();
+        } else {
+            assert_eq!(methods, [0]);
+            client.write_all(&[5, 0]).await.unwrap();
+        }
         let mut request = [0; 10];
         client.read_exact(&mut request[..4]).await.unwrap();
         assert_eq!(&request[..4], &[5, 1, 0, 1]);
@@ -4392,6 +4409,7 @@ async fn p3_u01_socks5_proxy_tunnels_a_remoting_request() {
             std::net::Ipv4Addr::new(request[4], request[5], request[6], request[7]).into(),
             u16::from_be_bytes([request[8], request[9]]),
         );
+        assert_eq!(target, broker_address);
         let upstream = tokio::net::TcpStream::connect(target).await.unwrap();
         client
             .write_all(&[5, 0, 0, 1, 127, 0, 0, 1, 0, 1])
@@ -4403,11 +4421,16 @@ async fn p3_u01_socks5_proxy_tunnels_a_remoting_request() {
         let b = tokio::io::copy(&mut upstream_read, &mut client_write);
         let _ = tokio::join!(a, b);
     });
-    let config = ClientConfig {
-        socks_proxy_config: format!(
+    let proxy_config = if username_password {
+        format!(
             r#"{{"127.0.0.0/8":{{"addr":"{}","username":"rocket","password":"secret"}}}}"#,
             proxy_address
-        ),
+        )
+    } else {
+        format!(r#"{{"127.0.0.0/8":{{"addr":"{}"}}}}"#, proxy_address)
+    };
+    let config = ClientConfig {
+        socks_proxy_config: proxy_config,
         ..ClientConfig::default()
     };
     let client = RemotingClient::with_config(config).unwrap();
