@@ -1185,6 +1185,64 @@ public final class RuntimeRouteFixtures {
         return cases;
     }
 
+    private static List<Object> topicRouteDataCloneCases() {
+        String[] inputs = new String[] {
+            "{}",
+            "{\"queueDatas\":null,\"brokerDatas\":null,\"filterServerTable\":null}",
+            "{\"queueDatas\":[null],\"brokerDatas\":[null],\"filterServerTable\":{\"broker\":null}}",
+            "{\"queueDatas\":[],\"brokerDatas\":[],\"filterServerTable\":{},\"topicQueueMappingByBroker\":{\"broker\":null}}",
+            "{\"queueDatas\":[{\"brokerName\":\"broker\"}],\"brokerDatas\":[{\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master\"}}],"
+                + "\"filterServerTable\":{\"broker\":[\"filter\"]},\"topicQueueMappingByBroker\":{\"broker\":{\"topic\":\"topic\","
+                + "\"scope\":\"__global__\",\"totalQueues\":1,\"bname\":\"broker\",\"epoch\":1,\"dirty\":false,\"currIdMap\":{\"0\":0}}}}"
+        };
+        List<Object> cases = new ArrayList<>();
+        for (int index = 0; index < inputs.length; index++) {
+            org.apache.rocketmq.remoting.protocol.route.TopicRouteData source =
+                com.alibaba.fastjson2.JSON.parseObject(inputs[index],
+                    org.apache.rocketmq.remoting.protocol.route.TopicRouteData.class);
+            Map<String, Object> item = new TreeMap<>();
+            item.put("id", "clone-" + index);
+            item.put("input", com.alibaba.fastjson2.JSON.parseObject(inputs[index]));
+            org.apache.rocketmq.remoting.protocol.route.TopicRouteData copy =
+                new org.apache.rocketmq.remoting.protocol.route.TopicRouteData(source);
+            item.put("copyConstructor", routeJson(copy));
+            item.put("copyQueueElementShared", source.getQueueDatas() != null && !source.getQueueDatas().isEmpty()
+                && source.getQueueDatas().get(0) == copy.getQueueDatas().get(0));
+            try {
+                org.apache.rocketmq.remoting.protocol.route.TopicRouteData clone =
+                    source.cloneTopicRouteData();
+                item.put("cloneOutcome", "OK");
+                item.put("clone", routeJson(clone));
+                item.put("cloneQueueElementShared", source.getQueueDatas() != null && !source.getQueueDatas().isEmpty()
+                    && source.getQueueDatas().get(0) == clone.getQueueDatas().get(0));
+            } catch (NullPointerException error) {
+                item.put("cloneOutcome", "NullPointerException");
+                item.put("clone", null);
+                item.put("cloneQueueElementShared", false);
+            }
+            try {
+                org.apache.rocketmq.remoting.protocol.route.TopicRouteData clone =
+                    source.deepCloneTopicRouteData();
+                item.put("deepCloneOutcome", "OK");
+                item.put("deepClone", routeJson(clone));
+                item.put("deepCloneQueueElementShared", source.getQueueDatas() != null && !source.getQueueDatas().isEmpty()
+                    && source.getQueueDatas().get(0) == clone.getQueueDatas().get(0));
+            } catch (NullPointerException error) {
+                item.put("deepCloneOutcome", "NullPointerException");
+                item.put("deepClone", null);
+                item.put("deepCloneQueueElementShared", false);
+            }
+            cases.add(item);
+        }
+        return cases;
+    }
+
+    private static Object routeJson(org.apache.rocketmq.remoting.protocol.route.TopicRouteData route) {
+        return com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(route,
+            com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue,
+            com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringKeyAsString));
+    }
+
     public static void main(String[] args) throws Exception {
         String ordinary = "{\"queueDatas\":[{\"brokerName\":\"broker\",\"readQueueNums\":3,\"writeQueueNums\":2,\"perm\":6,\"topicSysFlag\":0}],"
             + "\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master:10911\",\"2\":\"slave:10911\"}}],\"filterServerTable\":{}}";
@@ -1313,6 +1371,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("topicRouteDataToString", topicRouteDataToStringCases());
         fixture.put("brokerDataCompareTo", brokerDataCompareToCases());
         fixture.put("topicRouteDataChanged", topicRouteDataChangedCases());
+        fixture.put("topicRouteDataClone", topicRouteDataCloneCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
             com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
