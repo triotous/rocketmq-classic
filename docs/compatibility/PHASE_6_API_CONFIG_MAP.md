@@ -1,8 +1,10 @@
 # Phase 6 API and configuration map
 
-AccessChannel public-enum update (2026-10-08): the pinned Java 5.5.1 enum cases invoke generated `values()` and `valueOf(String)` plus inherited `name()`, `ordinal()`, `toString()`, and `compareTo()`. Rust now exposes declaration-order `values()`, names, ordinals, display text, ordinal comparison, and typed null/unknown lookup errors. The actual oracle covers both constants, defensive array copying, null, empty, lowercase, and unknown names. [ADR-0024](../architecture/ADR-0024-access-channel-enum-api.md) records the boundary. Client-config fixture SHA-256 at that update: `aa8e0e0e60096bdc7ffa9f7312331ef226e8254f9bd7aeccf9f9a85be1bd3d2f`.
+ServiceThread inherited API update (2026-10-08): actual Java 5.5.1 cases invoke `getJoinTime`, daemon/stopped accessors, `wakeup`, `makeStop`, and shutdown on both service classes. Unstarted instances record the 90,000ms join value, default flags, setter effect, no-op pre-start stopped state, and PullMessageService's executor shutdown. Controlled subclasses with a blocked no-op `run` also show that `start()` is idempotent, `makeStop()` sets stopped without joining, and `shutdown(true)` joins; they do not run the RocketMQ worker loops. Rust routes worker lifetime through `ClientRuntime` and owned Tokio tasks, so Java thread daemon/join flags and `makeStop` have no direct counterpart. [ADR-0026](../architecture/ADR-0026-service-thread-api-boundary.md) records the mapping and limits. Current client-config fixture SHA-256: `631b1b9537c13cf1f5943b0e958b214a6bf4099b4edc6cd8643a02f4c207d4c0`.
 
-Runtime service-name update (2026-10-08): actual Java 5.5.1 calls to `RebalanceService.getServiceName()` and `PullMessageService.getServiceName()` return `RebalanceService` and `PullMessageService`. Rust exports matching `REBALANCE_SERVICE_NAME` and `PULL_MESSAGE_SERVICE_NAME` constants. Client-config fixture SHA-256 `57114f6198944de08fa6801207525abbbfd9e1532efe93fa02d2c8c64ab98fa4`; [ADR-0025](../architecture/ADR-0025-runtime-service-name-methods.md) records the boundary. This maps only the name methods; worker execution is audited separately below.
+Runtime service-name update (2026-10-08): actual Java 5.5.1 calls to `RebalanceService.getServiceName()` and `PullMessageService.getServiceName()` return `RebalanceService` and `PullMessageService`. Rust exports matching `REBALANCE_SERVICE_NAME` and `PULL_MESSAGE_SERVICE_NAME` constants. Client-config fixture SHA-256 at that update: `57114f6198944de08fa6801207525abbbfd9e1532efe93fa02d2c8c64ab98fa4`; [ADR-0025](../architecture/ADR-0025-runtime-service-name-methods.md) records the boundary. This maps only the name methods; worker execution is audited separately below.
+
+AccessChannel public-enum update (2026-10-08): the pinned Java 5.5.1 enum cases invoke generated `values()` and `valueOf(String)` plus inherited `name()`, `ordinal()`, `toString()`, and `compareTo()`. Rust now exposes declaration-order `values()`, names, ordinals, display text, ordinal comparison, and typed null/unknown lookup errors. The actual oracle covers both constants, defensive array copying, null, empty, lowercase, and unknown names. [ADR-0024](../architecture/ADR-0024-access-channel-enum-api.md) records the boundary. Client-config fixture SHA-256 at that update: `aa8e0e0e60096bdc7ffa9f7312331ef226e8254f9bd7aeccf9f9a85be1bd3d2f`.
 
 LanguageCode public-method update (2026-10-08): actual Java 5.5.1 calls cover `getCode()`, exact-name `getCode(String)`, custom `valueOf(byte)`, all 14 constants, unknown/negative byte values, null and case-mismatched names, plus `RemotingSerializable.decode` of an unknown JSON name. Rust adds Java-shaped `name()`, `from_java_name()` and `java_value_of_byte()` helpers while preserving the preexisting raw `from_java_byte(i8) -> LanguageCode` signature. JSON and private-header unknown values now decode as `None`; the Rust-only `Unknown` variant remains a raw-code extension. [ADR-0023](../architecture/ADR-0023-language-code-java-methods.md) records the boundary. Client-config fixture SHA-256 at that update: `33441a65926214a006702b46369bfab8f44b35fc1951c1ab17a45166f0408fdf`.
 
@@ -278,14 +280,21 @@ Java enum `hashCode()` is identity-based with no stable numeric oracle; Rust doe
 
 See [ADR-0023](../architecture/ADR-0023-language-code-java-methods.md) for fixture provenance, byte boundaries, and validation.
 
-## Runtime worker service-name methods
+## Runtime worker and inherited ServiceThread methods
 
-| Pinned Java public method | Rust counterpart | Evidence / disposition |
-| --- | --- | --- |
-| `RebalanceService.getServiceName()` | `runtime::REBALANCE_SERVICE_NAME` | Actual Java fixture invokes the method on an unstarted service and records `RebalanceService`; native comparison passes. |
-| `PullMessageService.getServiceName()` | `runtime::PULL_MESSAGE_SERVICE_NAME` | Actual Java fixture invokes the method on an unstarted service and records `PullMessageService`; native comparison passes. |
+| Pinned Java public method | Rust counterpart / disposition |
+| --- | --- |
+| `RebalanceService.getServiceName()` | `runtime::REBALANCE_SERVICE_NAME`; direct Java call and native comparison pass. |
+| `PullMessageService.getServiceName()` | `runtime::PULL_MESSAGE_SERVICE_NAME`; direct Java call and native comparison pass. |
+| inherited `start()` / `shutdown()` | `ClientRuntime::start/shutdown` owns all workers; a Java fixture with a controlled `run` body verifies idempotent start and joined shutdown, while Rust activates and joins owned async tasks. The fixture does not invoke either RocketMQ worker loop, and the JDK thread interface is not exposed. |
+| inherited `wakeup()` | `rebalance_immediately` maps to the sticky/coalescing rebalance signal; pull/pop immediate methods enqueue work. Tokio notification/queue behavior does not expose `LockSupport.unpark`. |
+| inherited `isStopped()` | `ClientRuntime::state()` exposes the richer runtime enum; it is not a direct per-service stopped flag. |
+| inherited `shutdown(boolean)` | A controlled Java fixture verifies `shutdown(true)` joins each test worker; managed shutdown stops and joins owned tasks, and PullMessageService's one-second scheduled-work grace maps to `OwnedPullWorker::finish_gracefully`. The Java thread-interrupt boolean has no counterpart. |
+| inherited `getJoinTime()` | Java returns 90,000ms; Rust has no per-worker join-time getter or fixed Java `Thread.join` window. |
+| inherited `makeStop()` | Java pre-start no-op and started-but-not-joined behavior are invoked in fixtures. Its stop-flag-only operation has no separate public Rust counterpart; `ClientRuntime::shutdown` performs managed cleanup and joins. |
+| inherited `isDaemon()` / `setDaemon(boolean)` | Java defaults to false and the setter changes the per-thread flag; Tokio tasks have no Java daemon setting. |
 
-The Java methods return each class's `getSimpleName()`. The fixture does not start either worker or submit work to the pull service's scheduled executor. See [ADR-0025](../architecture/ADR-0025-runtime-service-name-methods.md); worker dispatch and shutdown behavior remain mapped in the runtime inventory.
+The `serviceThreadCases` fixture invokes inherited state/configuration methods on unstarted workers. `serviceLifecycleCases` uses subclasses with controlled `run()` methods to test inherited start/stop mechanics without invoking RocketMQ worker loops or contacting a Broker; PullMessageService shutdown also closes its scheduled executor. `ServiceThread.waitForRunning(long)` and `onWaitEnd()` are protected and are not public API rows; concrete worker `run()` behavior is mapped separately. See [ADR-0025](../architecture/ADR-0025-runtime-service-name-methods.md) for names and [ADR-0026](../architecture/ADR-0026-service-thread-api-boundary.md) for the inherited boundary. The Rust task model intentionally does not claim JDK thread controls or timing parity.
 
 ## Other runtime exports, reverse inventory
 

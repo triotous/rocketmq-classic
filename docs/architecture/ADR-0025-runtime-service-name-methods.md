@@ -24,7 +24,7 @@ native integration test compares both values. The `PullMessageService`
 constructor creates a scheduled executor, but the fixture submits no task, so
 its thread factory is not invoked.
 
-The generated `fixtures/runtime/client-config.json` SHA-256 is
+The `fixtures/runtime/client-config.json` SHA-256 at this update was
 `57114f6198944de08fa6801207525abbbfd9e1532efe93fa02d2c8c64ab98fa4`.
 Workspace tests, strict Clippy, pinned offline Maven verification, comparator
 self-test, 22-scenario manifest validation, formatter, and diff checks pass.
