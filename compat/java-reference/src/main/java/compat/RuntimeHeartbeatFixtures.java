@@ -669,6 +669,14 @@ public final class RuntimeHeartbeatFixtures {
             String.valueOf((char) 0x0b) + "{\"unitMode\":true}"));
         cases.add(heartbeatDtoInputCase("heartbeat-embedded-bom", "heartbeat",
             "{\"heartbeatFingerprint\":" + String.valueOf((char) 0xfeff) + "2}"));
+        cases.add(heartbeatDtoInputCase("subscription-object-to-string", "subscription",
+            "{\"subVersion\":0,\"topic\":{\"z\":1,\"a\":2}}"));
+        cases.add(heartbeatDtoInputCase("subscription-array-to-string", "subscription",
+            "{\"subVersion\":0,\"subString\":[true,null,\"x\",{\"z\":1,\"a\":2}]}"));
+        cases.add(heartbeatDtoInputCase("producer-object-to-string", "producer",
+            "{\"groupName\":{\"z\":1,\"a\":2}}"));
+        cases.add(heartbeatDtoInputCase("heartbeat-object-to-string", "heartbeat",
+            "{\"clientID\":{\"z\":1,\"a\":2}}"));
         return cases;
     }
 
