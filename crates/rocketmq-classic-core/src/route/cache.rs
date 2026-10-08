@@ -245,7 +245,7 @@ impl RouteCache {
     ) -> Result<bool, RuntimeError> {
         let old = self.snapshot()?.raw_routes.get(topic).cloned();
         match old {
-            Some(old) => Ok(!routes_equal(&old.snapshot()?, route)),
+            Some(old) => Ok(!routes_equal(&old.snapshot()?, route)?),
             None => Ok(true),
         }
     }
@@ -381,7 +381,7 @@ impl RouteCache {
         loop {
             let observed = self.snapshot()?.raw_routes.get(topic).cloned();
             let unchanged = match &observed {
-                Some(old) => routes_equal(&old.snapshot()?, &topic_snapshot.route),
+                Some(old) => routes_equal(&old.snapshot()?, &topic_snapshot.route)?,
                 None => false,
             };
             if unchanged && !force {
@@ -558,20 +558,25 @@ fn java_decimal_digit(unit: u16) -> Option<u16> {
     crate::java_number::decimal_digit(unit)
 }
 
-fn routes_equal(left: &TopicRouteData, right: &TopicRouteData) -> bool {
+fn routes_equal(left: &TopicRouteData, right: &TopicRouteData) -> Result<bool, RuntimeError> {
     let (mut left, mut right) = (left.clone(), right.clone());
     for route in [&mut left, &mut right] {
         route
             .queue_datas
             .get_or_insert_with(Vec::new)
             .sort_by(|a, b| a.broker_name.cmp(&b.broker_name));
-        route
-            .broker_datas
-            .get_or_insert_with(Vec::new)
-            .sort_by(|a, b| a.broker_name.cmp(&b.broker_name));
+        let brokers = route.broker_datas.get_or_insert_with(Vec::new);
+        if brokers.len() > 1 && brokers.iter().any(|broker| broker.broker_name.is_none()) {
+            return Err(RuntimeError::InvalidRoute("null broker name during sort"));
+        }
+        brokers.sort_by(|left, right| {
+            left.java_compare_to(right)
+                .map(|result| result.cmp(&0))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         route.filter_server_table.get_or_insert_with(BTreeMap::new);
     }
-    route_values_equal(&left, &right)
+    Ok(route_values_equal(&left, &right))
 }
 
 // TopicRouteData.equals delegates BrokerData.equals, which compares only name
@@ -674,7 +679,7 @@ mod tests {
                 copy.filter_server_table.as_ref().unwrap().is_empty(),
                 case["copyFilterEmpty"]
             );
-            assert!(routes_equal(&route, &copy));
+            assert!(routes_equal(&route, &copy).unwrap());
             if route != copy {
                 assert!(!route_values_equal(&route, &copy));
             }
@@ -848,7 +853,7 @@ mod tests {
             serde_json::from_value(case["metadataOnlyInput"].clone()).unwrap();
         assert_eq!(initial, metadata); // TopicRouteData delegates to Java BrokerData.equals.
         assert_eq!(
-            routes_equal(&initial, &metadata),
+            routes_equal(&initial, &metadata).unwrap(),
             case["brokerMetadataIgnoredByRouteEquals"]
         );
         let cache = RouteCache::default();
