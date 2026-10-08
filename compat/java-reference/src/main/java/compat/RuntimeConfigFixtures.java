@@ -155,6 +155,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("nullableSettings", nullableSettings());
         fixture.put("socksConstruction", socksConstruction());
         fixture.put("socksCidr", socksCidr());
+        fixture.put("socksProxySelection", socksProxySelection());
         fixture.put("callbackThreadsConstruction", callbackThreadsConstruction());
         fixture.put("registryTables", registryTables());
         fixture.put("endpoints", endpoints);
@@ -720,6 +721,56 @@ public final class RuntimeConfigFixtures {
                 item.put("match", org.apache.rocketmq.remoting.common.RemotingHelper.ipInCIDR(input[0], input[1]));
             } catch (RuntimeException error) {
                 item.put("outcome", error.getClass().getSimpleName());
+            }
+            cases.add(item);
+        }
+        return cases;
+    }
+
+    private static List<Object> socksProxySelection() throws Exception {
+        List<Object> cases = new ArrayList<>();
+        String[][] inputs = {
+            {"{\"10.0.0.0/8\":{\"addr\":\"proxy-a:1080\"}}", "10.20.1.2:9876", "10.20.1.2"},
+            {"{\"10.0.0.0/8\":{\"addr\":\"proxy-a:1080\"}}", "192.0.2.3:9876", "192.0.2.3"},
+            {"{\"0.0.0.0/0\":{\"addr\":\"proxy-default:1080\"}}", "broker.example:9876", "broker.example"},
+            {"{\"0.0.0.0/0\":{\"addr\":\"proxy-default:1080\"}}", "[2001:db8::1]:9876", "[2001:db8::1]"},
+            {"{\"10.20.0.0/33\":{\"addr\":\"proxy-shift:1080\"}}", "10.20.4.5:9876", "10.20.4.5"},
+            {"{\"10.0.0.0/8\":null}", "10.20.1.2:9876", "10.20.1.2"},
+            {"{\"not-a-cidr\":{\"addr\":\"proxy-invalid:1080\"}}", "10.20.1.2:9876", "10.20.1.2"},
+            {"{}", "192.0.2.3:9876", "192.0.2.3"}
+        };
+        for (int i = 0; i < inputs.length; i++) {
+            ClientConfig config = new ClientConfig();
+            config.setClientIP("socks-selection-" + i);
+            config.setNamesrvAddr("");
+            config.setSocksProxyConfig(inputs[i][0]);
+            Map<String, Object> item = new TreeMap<>();
+            item.put("config", inputs[i][0]);
+            item.put("address", inputs[i][1]);
+            item.put("host", inputs[i][2]);
+            org.apache.rocketmq.client.impl.factory.MQClientInstance runtime = null;
+            try {
+                runtime = new org.apache.rocketmq.client.impl.factory.MQClientInstance(
+                    config, 0, config.buildMQClientId());
+                java.lang.reflect.Field remotingField =
+                    org.apache.rocketmq.client.impl.MQClientAPIImpl.class.getDeclaredField("remotingClient");
+                remotingField.setAccessible(true);
+                Object remoting = remotingField.get(runtime.getMQClientAPIImpl());
+                java.lang.reflect.Method select = remoting.getClass().getDeclaredMethod("getProxy", String.class);
+                select.setAccessible(true);
+                @SuppressWarnings("unchecked")
+                Map.Entry<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig> selected =
+                    (Map.Entry<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig>) select.invoke(remoting, inputs[i][1]);
+                item.put("outcome", "OK");
+                item.put("proxyCidr", selected == null ? null : selected.getKey());
+                item.put("proxyAddress", selected == null || selected.getValue() == null
+                    ? null : selected.getValue().getAddr());
+            } catch (java.lang.reflect.InvocationTargetException error) {
+                item.put("outcome", error.getCause().getClass().getSimpleName());
+            } catch (RuntimeException error) {
+                item.put("outcome", error.getClass().getSimpleName());
+            } finally {
+                if (runtime != null) cleanupRuntime(runtime);
             }
             cases.add(item);
         }
