@@ -18,6 +18,6 @@ The helpers keep Rust DTO field types and serialization unchanged. Java exceptio
 
 `route_dto_inputs_match_invoked_java_fastjson` compares accepted fields and rejected outcomes against the same Java inputs.
 
-Route fixture SHA-256: `6de3936438f326e57114da010a1363ae730c7a17de2913293472c7c91547c6bf`.
+Route fixture SHA-256: `ce2afec05859a761ce2fd82a9034ef147b333f077a999b03d17209a305254fb0`.
 
 Focused differential, full workspace tests, strict all-feature Clippy, pinned offline Maven verification, comparator/manifest, formatting, and diff checks pass. This closes the recorded scalar cases only; broader DTO input, Fastjson grammar, and whole-Phase 6 reconciliation remain open.
