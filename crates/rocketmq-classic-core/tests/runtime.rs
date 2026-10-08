@@ -70,6 +70,36 @@ fn inherited_service_thread_oracle_records_java_thread_controls() {
     );
 }
 
+#[test]
+fn inherited_service_thread_oracle_records_java_start_stop_contract() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    assert_eq!(
+        fixture["serviceLifecycleCases"],
+        serde_json::json!([
+            {
+                "class": "RebalanceService",
+                "runsAfterTwoStarts": 1,
+                "stoppedAfterStart": false,
+                "stoppedAfterMakeStop": true,
+                "threadAliveAfterMakeStop": true,
+                "stoppedAfterShutdown": true,
+                "threadAliveAfterShutdown": false
+            },
+            {
+                "class": "PullMessageService",
+                "runsAfterTwoStarts": 1,
+                "stoppedAfterStart": false,
+                "stoppedAfterMakeStop": true,
+                "threadAliveAfterMakeStop": true,
+                "stoppedAfterShutdown": true,
+                "threadAliveAfterShutdown": false,
+                "scheduledExecutorShutdown": true
+            }
+        ])
+    );
+}
+
 struct RouteObserver {
     runtime: Weak<ClientRuntime>,
     updates: AtomicUsize,

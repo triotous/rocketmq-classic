@@ -7,6 +7,10 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.apache.rocketmq.client.ClientConfig;
 
 /** Executes pinned ClientConfig methods and local SOCKS transport paths without a Broker. */
@@ -161,6 +165,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("accessChannelMethodCases", accessChannelMethodCases());
         fixture.put("serviceNameCases", serviceNameCases());
         fixture.put("serviceThreadCases", serviceThreadCases());
+        fixture.put("serviceLifecycleCases", serviceLifecycleCases());
         fixture.put("languageCodeMethodCases", languageCodeMethodCases());
         fixture.put("socksConstruction", socksConstruction());
         fixture.put("socksConnection", socksConnection(true));
@@ -1597,5 +1602,80 @@ public final class RuntimeConfigFixtures {
             cases.add(row);
         }
         return cases;
+    }
+
+    private static List<Object> serviceLifecycleCases() throws InterruptedException {
+        List<Object> cases = new ArrayList<>();
+        WorkerRunProbe rebalanceProbe = new WorkerRunProbe();
+        org.apache.rocketmq.client.impl.consumer.RebalanceService rebalance =
+            new org.apache.rocketmq.client.impl.consumer.RebalanceService(null) {
+                @Override
+                public void run() {
+                    rebalanceProbe.run();
+                }
+            };
+        cases.add(serviceLifecycleCase(rebalance, rebalanceProbe));
+
+        WorkerRunProbe pullProbe = new WorkerRunProbe();
+        org.apache.rocketmq.client.impl.consumer.PullMessageService pull =
+            new org.apache.rocketmq.client.impl.consumer.PullMessageService(null) {
+                @Override
+                public void run() {
+                    pullProbe.run();
+                }
+            };
+        cases.add(serviceLifecycleCase(pull, pullProbe));
+        return cases;
+    }
+
+    private static Map<String, Object> serviceLifecycleCase(
+        org.apache.rocketmq.common.ServiceThread service, WorkerRunProbe probe
+    ) throws InterruptedException {
+        service.start();
+        if (!probe.started.await(5, TimeUnit.SECONDS)) {
+            probe.release.countDown();
+            service.shutdown(true);
+            throw new IllegalStateException("ServiceThread probe did not start: " + service.getServiceName());
+        }
+        service.start();
+        boolean stoppedAfterStart = service.isStopped();
+        service.makeStop();
+        boolean stoppedAfterMakeStop = service.isStopped();
+        boolean threadAliveAfterMakeStop = probe.thread.get().isAlive();
+        probe.release.countDown();
+        service.shutdown(true);
+
+        Map<String, Object> row = new TreeMap<>();
+        row.put("class", service.getServiceName());
+        row.put("runsAfterTwoStarts", probe.runs.get());
+        row.put("stoppedAfterStart", stoppedAfterStart);
+        row.put("stoppedAfterMakeStop", stoppedAfterMakeStop);
+        row.put("threadAliveAfterMakeStop", threadAliveAfterMakeStop);
+        row.put("stoppedAfterShutdown", service.isStopped());
+        row.put("threadAliveAfterShutdown", probe.thread.get().isAlive());
+        if (service instanceof org.apache.rocketmq.client.impl.consumer.PullMessageService) {
+            org.apache.rocketmq.client.impl.consumer.PullMessageService pull =
+                (org.apache.rocketmq.client.impl.consumer.PullMessageService) service;
+            row.put("scheduledExecutorShutdown", pull.getScheduledExecutorService().isShutdown());
+        }
+        return row;
+    }
+
+    private static final class WorkerRunProbe {
+        private final CountDownLatch started = new CountDownLatch(1);
+        private final CountDownLatch release = new CountDownLatch(1);
+        private final AtomicReference<Thread> thread = new AtomicReference<>();
+        private final AtomicInteger runs = new AtomicInteger();
+
+        private void run() {
+            thread.set(Thread.currentThread());
+            runs.incrementAndGet();
+            started.countDown();
+            try {
+                release.await();
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 }
