@@ -233,8 +233,7 @@ async fn conditional_registry_mutations_match_java_custom_value_equality() {
 #[tokio::test]
 async fn registry_default_map_operations_match_invoked_java() {
     let fixture: serde_json::Value =
-        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json"))
-            .unwrap();
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&ClientConfig::new("registry-default-operations"))
         .await

@@ -3,7 +3,7 @@ use super::{
     registry::GroupRegistry,
 };
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     sync::{Arc, Weak},
 };
 
@@ -110,6 +110,22 @@ macro_rules! table {
                         _ => None,
                     })
                     .collect())
+            }
+            /// Detached key view corresponding to Java's keySet iteration;
+            /// mutations require explicit table methods.
+            pub fn keys(&self) -> Result<BTreeSet<String>, RuntimeError> {
+                Ok(self.snapshot()?.into_keys().collect())
+            }
+            /// Detached value view corresponding to Java's values iteration.
+            pub fn values(&self) -> Result<Vec<Arc<dyn $owner>>, RuntimeError> {
+                Ok(self.snapshot()?.into_values().collect())
+            }
+            /// Visits a detached snapshot. Entry order is unspecified by this API.
+            pub fn for_each(&self, mut action: impl FnMut(&str, &Arc<dyn $owner>)) -> Result<(), RuntimeError> {
+                for (key, value) in self.snapshot()? {
+                    action(&key, &value);
+                }
+                Ok(())
             }
             pub async fn put(
                 &self,
@@ -245,6 +261,130 @@ macro_rules! table {
                     })
                     .await?
                     .matched)
+            }
+            /// ConcurrentMap-style remapping operations use conditional table
+            /// mutations and may call the closure again after a concurrent write.
+            pub async fn compute_if_absent(
+                &self,
+                key: impl Into<String>,
+                mut mapping: impl FnMut(&str) -> Option<Arc<dyn $owner>>,
+            ) -> Result<Option<Arc<dyn $owner>>, RuntimeError> {
+                let key = key.into();
+                if let Some(current) = self.get(&key)? {
+                    return Ok(Some(current));
+                }
+                let Some(value) = mapping(&key) else {
+                    return Ok(None);
+                };
+                Ok(Some(
+                    self.put_if_absent(key, value.clone())
+                        .await?
+                        .unwrap_or(value),
+                ))
+            }
+            pub async fn compute_if_present(
+                &self,
+                key: impl Into<String>,
+                mut remapping: impl FnMut(&str, &Arc<dyn $owner>) -> Option<Arc<dyn $owner>>,
+            ) -> Result<Option<Arc<dyn $owner>>, RuntimeError> {
+                let key = key.into();
+                loop {
+                    let Some(current) = self.get(&key)? else {
+                        return Ok(None);
+                    };
+                    match remapping(&key, &current) {
+                        Some(value) => {
+                            if self.replace_if_equal(&key, &current, value.clone()).await? {
+                                return Ok(Some(value));
+                            }
+                        }
+                        None => {
+                            if self.remove_if_equal(&key, &current).await? {
+                                return Ok(None);
+                            }
+                        }
+                    }
+                }
+            }
+            pub async fn compute(
+                &self,
+                key: impl Into<String>,
+                mut remapping: impl FnMut(
+                    &str,
+                    Option<&Arc<dyn $owner>>,
+                ) -> Option<Arc<dyn $owner>>,
+            ) -> Result<Option<Arc<dyn $owner>>, RuntimeError> {
+                let key = key.into();
+                loop {
+                    let current = self.get(&key)?;
+                    let value = remapping(&key, current.as_ref());
+                    match (current.as_ref(), value) {
+                        (None, None) => return Ok(None),
+                        (None, Some(value)) => {
+                            if self.put_if_absent(&key, value.clone()).await?.is_none() {
+                                return Ok(Some(value));
+                            }
+                        }
+                        (Some(current), Some(value)) => {
+                            if self.replace_if_equal(&key, current, value.clone()).await? {
+                                return Ok(Some(value));
+                            }
+                        }
+                        (Some(current), None) => {
+                            if self.remove_if_equal(&key, current).await? {
+                                return Ok(None);
+                            }
+                        }
+                    }
+                }
+            }
+            pub async fn merge(
+                &self,
+                key: impl Into<String>,
+                value: Arc<dyn $owner>,
+                mut remapping: impl FnMut(
+                    &Arc<dyn $owner>,
+                    &Arc<dyn $owner>,
+                ) -> Option<Arc<dyn $owner>>,
+            ) -> Result<Option<Arc<dyn $owner>>, RuntimeError> {
+                let key = key.into();
+                loop {
+                    let Some(current) = self.get(&key)? else {
+                        if self.put_if_absent(&key, value.clone()).await?.is_none() {
+                            return Ok(Some(value));
+                        }
+                        continue;
+                    };
+                    match remapping(&current, &value) {
+                        Some(next) => {
+                            if self.replace_if_equal(&key, &current, next.clone()).await? {
+                                return Ok(Some(next));
+                            }
+                        }
+                        None => {
+                            if self.remove_if_equal(&key, &current).await? {
+                                return Ok(None);
+                            }
+                        }
+                    }
+                }
+            }
+            pub async fn replace_all(
+                &self,
+                mut remapping: impl FnMut(&str, &Arc<dyn $owner>) -> Arc<dyn $owner>,
+            ) -> Result<(), RuntimeError> {
+                for key in self.keys()? {
+                    loop {
+                        let Some(current) = self.get(&key)? else {
+                            break;
+                        };
+                        let value = remapping(&key, &current);
+                        if self.replace_if_equal(&key, &current, value).await? {
+                            break;
+                        }
+                    }
+                }
+                Ok(())
             }
             pub async fn clear(&self) -> Result<(), RuntimeError> {
                 self.0.mutate(TableMutation::Clear).await.map(|_| ())
