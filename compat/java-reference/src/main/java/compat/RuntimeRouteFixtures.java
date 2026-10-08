@@ -1545,6 +1545,26 @@ public final class RuntimeRouteFixtures {
             "[null]".getBytes(java.nio.charset.StandardCharsets.UTF_8), TopicRouteData.class);
         item.put("decodeListNullMemberCount", nullMemberList.size());
         item.put("decodeListHasNullMember", nullMemberList.get(0) == null);
+
+        Class<org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo> mappingType =
+            org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo.class;
+        item.put("mappingDecodeNullBytesReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.decode(null, mappingType) == null);
+        item.put("mappingDecodeJsonNullReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.decode(jsonNull, mappingType) == null);
+        item.put("mappingFromJsonNullInputReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.fromJson(null, mappingType) == null);
+        item.put("mappingFromJsonJsonNullReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.fromJson("null", mappingType) == null);
+        item.put("mappingDecodeListNullBytesReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.decodeList(null, mappingType) == null);
+        item.put("mappingDecodeListJsonNullReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.decodeList(jsonNull, mappingType) == null);
+        List<org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo> nullMappingMemberList =
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.decodeList(
+                "[null]".getBytes(java.nio.charset.StandardCharsets.UTF_8), mappingType);
+        item.put("mappingDecodeListNullMemberCount", nullMappingMemberList.size());
+        item.put("mappingDecodeListHasNullMember", nullMappingMemberList.get(0) == null);
         return item;
     }
 
