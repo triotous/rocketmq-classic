@@ -645,6 +645,22 @@ public final class RuntimeHeartbeatFixtures {
             "{\"subVersion\":9223372036854775808}"));
         cases.add(heartbeatDtoInputCase("subscription-long-object-to-zero", "subscription",
             "{\"subVersion\":{\"x\":1}}"));
+        cases.add(heartbeatDtoInputCase("subscription-long-empty-object-to-zero", "subscription",
+            "{\"subVersion\":{}}"));
+        cases.add(heartbeatDtoInputCase("subscription-long-empty-array", "subscription",
+            "{\"subVersion\":[]}"));
+        cases.add(heartbeatDtoInputCase("subscription-code-set-boundaries", "subscription",
+            "{\"subVersion\":0,\"codeSet\":[-2147483648,2147483647]}"));
+        cases.add(heartbeatDtoInputCase("subscription-code-set-overflow-positive", "subscription",
+            "{\"subVersion\":0,\"codeSet\":[2147483648]}"));
+        cases.add(heartbeatDtoInputCase("subscription-code-set-overflow-negative", "subscription",
+            "{\"subVersion\":0,\"codeSet\":[-2147483649]}"));
+        cases.add(heartbeatDtoInputCase("subscription-code-set-numeric-string-exponent", "subscription",
+            "{\"subVersion\":0,\"codeSet\":[\"1e2\"]}"));
+        cases.add(heartbeatDtoInputCase("subscription-code-set-wide-decimal", "subscription",
+            "{\"subVersion\":0,\"codeSet\":[2147483648.9]}"));
+        cases.add(heartbeatDtoInputCase("subscription-tags-coercion-deduplicates", "subscription",
+            "{\"subVersion\":0,\"tagsSet\":[\"tag\",\"tag\",7,\"7\",null,null]}"));
         cases.add(heartbeatDtoInputCase("subscription-invalid-code", "subscription",
             "{\"codeSet\":[\"not-an-integer\"],\"subVersion\":0}"));
         cases.add(heartbeatDtoInputCase("consumer-scalars", "consumer",
