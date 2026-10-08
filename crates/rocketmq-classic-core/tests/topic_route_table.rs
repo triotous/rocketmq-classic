@@ -173,6 +173,20 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
         table.put("topic", first.clone()).unwrap().is_none(),
     );
     outcomes.insert(
+        "getOrDefaultPresent",
+        Arc::ptr_eq(
+            &table.get_or_default("topic", second.clone()).unwrap(),
+            &first,
+        ),
+    );
+    outcomes.insert(
+        "getOrDefaultAbsent",
+        Arc::ptr_eq(
+            &table.get_or_default("missing", second.clone()).unwrap(),
+            &second,
+        ),
+    );
+    outcomes.insert(
         "getterSeesFirst",
         same(runtime.get_existing_topic_route("topic").unwrap(), &first),
     );
@@ -248,6 +262,18 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
         table.put("topic", second.clone()).unwrap().is_none()
             && same(runtime.get_existing_topic_route("topic").unwrap(), &second),
     );
+    let bulk_values = BTreeMap::from([
+        ("bulk-a".to_owned(), first.clone()),
+        ("bulk-b".to_owned(), second.clone()),
+    ]);
+    table.put_all(bulk_values).unwrap();
+    outcomes.insert(
+        "putAllAdds",
+        same(table.get("bulk-a").unwrap(), &first)
+            && same(table.get("bulk-b").unwrap(), &second)
+            && table.len().unwrap() == 3,
+    );
+    table.clear().unwrap();
     assert_eq!(serde_json::to_value(outcomes).unwrap(), case["primitives"]);
     assert_eq!(detached.len(), 2);
     assert!(same(
