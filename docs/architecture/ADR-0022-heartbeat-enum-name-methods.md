@@ -14,6 +14,6 @@ Add `ConsumeType::type_cn() -> &'static str` and `MessageModel::mode_cn() -> &'s
 
 `RuntimeHeartbeatFixtures.consumerEnumMethodCases` invokes both Java methods on every actual enum constant. `consumer_enum_public_methods_match_invoked_java_values` compares all six returned strings.
 
-Current heartbeat fixture SHA-256: `7e9521037d5c7b9904ea25ae18ec9923bf6c42d3f9aa65ecf7abb80dd4388589`.
+Heartbeat fixture SHA-256 at the enum-method update: `7e9521037d5c7b9904ea25ae18ec9923bf6c42d3f9aa65ecf7abb80dd4388589`.
 
 This maps the two enum display-name methods only; the broader Phase 6 DTO/API audit remains open.
