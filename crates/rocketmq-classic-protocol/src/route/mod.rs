@@ -241,6 +241,21 @@ mod broker_data_hash_code_tests {
 }
 
 #[cfg(test)]
+mod broker_data_to_string_tests {
+    use super::BrokerData;
+
+    #[test]
+    fn broker_data_to_string_matches_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["brokerDataToString"].as_array().unwrap() {
+            let broker: BrokerData = serde_json::from_value(case["input"].clone()).unwrap();
+            assert_eq!(broker.java_to_string(), case["toString"]);
+        }
+    }
+}
+
+#[cfg(test)]
 mod broker_data_compare_to_tests {
     use super::{BrokerData, BrokerDataCompareError};
 
@@ -636,6 +651,21 @@ mod topic_route_data_method_tests {
                 right.java_hash_code(),
                 case["rightHashCode"].as_i64().unwrap() as i32
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod topic_route_data_to_string_tests {
+    use super::TopicRouteData;
+
+    #[test]
+    fn topic_route_data_to_string_matches_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["topicRouteDataToString"].as_array().unwrap() {
+            let route: TopicRouteData = serde_json::from_value(case["input"].clone()).unwrap();
+            assert_eq!(route.java_to_string(), case["toString"]);
         }
     }
 }
