@@ -1,32 +1,55 @@
 use std::collections::HashSet;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
+use rocketmq_classic_common::serde_fastjson;
 use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SubscriptionData {
-    #[serde(default, deserialize_with = "deserialize_null_default")]
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_bool")]
     pub class_filter_mode: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub topic: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub sub_string: Option<String>,
-    #[serde(default = "empty_tags", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default = "empty_tags",
+        deserialize_with = "serde_fastjson::deserialize_optional_nullable_string_set",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub tags_set: Option<HashSet<Option<String>>>,
-    #[serde(default = "empty_codes", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default = "empty_codes",
+        deserialize_with = "serde_fastjson::deserialize_optional_nullable_int_set",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub code_set: Option<HashSet<Option<i32>>>,
     #[serde(
         default = "current_subscription_version",
-        deserialize_with = "deserialize_null_default"
+        deserialize_with = "serde_fastjson::deserialize_i64"
     )]
     pub sub_version: i64,
     #[serde(
         default = "default_expression_type",
+        deserialize_with = "serde_fastjson::deserialize_nullable_string",
         skip_serializing_if = "Option::is_none"
     )]
     pub expression_type: Option<String>,
-    #[serde(rename = "filterClassSource", skip_serializing)]
+    #[serde(
+        rename = "filterClassSource",
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string",
+        skip_serializing
+    )]
     pub filter_class_source: Option<String>,
 }
 
@@ -324,14 +347,6 @@ fn current_subscription_version() -> i64 {
         .unwrap_or_default()
 }
 
-fn deserialize_null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    T: Deserialize<'de> + Default,
-{
-    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
-}
-
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum FastjsonEnumInput {
@@ -444,7 +459,11 @@ impl JavaOrdinalEnum for ConsumeFromWhere {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ProducerData {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub group_name: Option<String>,
 }
 
@@ -460,7 +479,11 @@ impl ProducerData {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsumerData {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub group_name: Option<String>,
     #[serde(
         default,
@@ -485,7 +508,7 @@ pub struct ConsumerData {
         skip_serializing_if = "Option::is_none"
     )]
     pub subscription_data_set: Option<HashSet<Option<SubscriptionData>>>,
-    #[serde(default, deserialize_with = "deserialize_null_default")]
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_bool")]
     pub unit_mode: bool,
 }
 
@@ -571,7 +594,12 @@ fn empty_subscriptions() -> Option<HashSet<Option<SubscriptionData>>> {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HeartbeatData {
-    #[serde(rename = "clientID", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "clientID",
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub client_id: Option<String>,
     #[serde(default = "empty_producers", skip_serializing_if = "Option::is_none")]
     /// Java ProducerData inherits identity equality, so repeated equal wire
@@ -583,14 +611,67 @@ pub struct HeartbeatData {
     /// multiplicity rather than deduplicating structurally equal metadata.
     #[serde(deserialize_with = "deserialize_identity_set_with_null")]
     pub consumer_data_set: Option<Vec<Option<ConsumerData>>>,
-    #[serde(default, deserialize_with = "deserialize_null_default")]
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_i32")]
     pub heartbeat_fingerprint: i32,
     #[serde(
         default,
         rename = "withoutSub",
-        deserialize_with = "deserialize_null_default"
+        deserialize_with = "serde_fastjson::deserialize_bool"
     )]
     pub is_without_sub: bool,
+}
+
+#[cfg(test)]
+mod fastjson_dto_input_tests {
+    use super::{ConsumerData, HeartbeatData, ProducerData, SubscriptionData};
+
+    fn normalize_json(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Array(values) => {
+                for value in values.iter_mut() {
+                    normalize_json(value);
+                }
+                values.sort_by_key(|value| serde_json::to_string(value).unwrap());
+            }
+            serde_json::Value::Object(fields) => {
+                fields.retain(|_, value| !value.is_null());
+                for value in fields.values_mut() {
+                    normalize_json(value);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn heartbeat_dto_inputs_match_invoked_java_fastjson() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
+                .unwrap();
+        for case in fixture["heartbeatDtoInputCases"].as_array().unwrap() {
+            let raw_input = case["rawInput"].as_str().unwrap();
+            let decoded =
+                match case["type"].as_str().unwrap() {
+                    "subscription" => serde_json::from_str::<SubscriptionData>(raw_input)
+                        .and_then(serde_json::to_value),
+                    "producer" => serde_json::from_str::<ProducerData>(raw_input)
+                        .and_then(serde_json::to_value),
+                    "consumer" => serde_json::from_str::<ConsumerData>(raw_input)
+                        .and_then(serde_json::to_value),
+                    "heartbeat" => serde_json::from_str::<HeartbeatData>(raw_input)
+                        .and_then(serde_json::to_value),
+                    other => panic!("unknown heartbeat DTO case type {other}"),
+                };
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            assert_eq!(decoded.is_ok(), java_accepts, "{}: {decoded:?}", case["id"]);
+            if let Ok(mut decoded) = decoded {
+                let mut expected = case["fields"].clone();
+                normalize_json(&mut decoded);
+                normalize_json(&mut expected);
+                assert_eq!(decoded, expected, "{}", case["id"]);
+            }
+        }
+    }
 }
 
 impl Default for HeartbeatData {

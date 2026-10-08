@@ -5,6 +5,7 @@ import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -457,6 +458,77 @@ public final class RuntimeHeartbeatFixtures {
         return cases;
     }
 
+    private static Object normalizeHeartbeatJson(Object value) {
+        if (value instanceof Map) {
+            Map<?, ?> map = (Map<?, ?>) value;
+            Map<String, Object> normalized = new TreeMap<>();
+            map.forEach((key, item) -> normalized.put(String.valueOf(key), normalizeHeartbeatJson(item)));
+            return normalized;
+        }
+        if (value instanceof List) {
+            List<?> list = (List<?>) value;
+            List<Object> normalized = new ArrayList<>();
+            for (Object item : list) normalized.add(normalizeHeartbeatJson(item));
+            normalized.sort(Comparator.comparing(com.alibaba.fastjson2.JSON::toJSONString));
+            return normalized;
+        }
+        return value;
+    }
+
+    private static Map<String, Object> heartbeatDtoInputCase(String id, String type, String rawInput) {
+        Map<String, Object> item = new TreeMap<>();
+        item.put("id", id);
+        item.put("type", type);
+        item.put("rawInput", rawInput);
+        try {
+            Object value;
+            if ("subscription".equals(type)) {
+                value = com.alibaba.fastjson2.JSON.parseObject(rawInput, SubscriptionData.class);
+            } else if ("producer".equals(type)) {
+                value = com.alibaba.fastjson2.JSON.parseObject(rawInput, ProducerData.class);
+            } else if ("consumer".equals(type)) {
+                value = com.alibaba.fastjson2.JSON.parseObject(rawInput, ConsumerData.class);
+            } else if ("heartbeat".equals(type)) {
+                value = com.alibaba.fastjson2.JSON.parseObject(rawInput, HeartbeatData.class);
+            } else {
+                throw new IllegalArgumentException("unknown DTO: " + type);
+            }
+            String encoded = com.alibaba.fastjson2.JSON.toJSONString(value,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue);
+            item.put("outcome", "ACCEPTED");
+            item.put("fields", normalizeHeartbeatJson(com.alibaba.fastjson2.JSON.parseObject(encoded)));
+        } catch (RuntimeException error) {
+            item.put("outcome", "REJECTED");
+            item.put("error", error.getClass().getSimpleName());
+        }
+        return item;
+    }
+
+    private static List<Object> heartbeatDtoInputCases() {
+        List<Object> cases = new ArrayList<>();
+        cases.add(heartbeatDtoInputCase("subscription-scalars", "subscription",
+            "{\"classFilterMode\":-1,\"topic\":42,\"subString\":true,\"tagsSet\":[1,true,[],{},null],\"codeSet\":[\"2\",1.9,true,null],\"subVersion\":\"1e2\",\"expressionType\":3,\"filterClassSource\":false}"));
+        cases.add(heartbeatDtoInputCase("subscription-decimal-primitives", "subscription",
+            "{\"classFilterMode\":1.0,\"subVersion\":1.9}"));
+        cases.add(heartbeatDtoInputCase("subscription-long-maximum", "subscription",
+            "{\"subVersion\":9223372036854775807}"));
+        cases.add(heartbeatDtoInputCase("subscription-long-overflow", "subscription",
+            "{\"subVersion\":9223372036854775808}"));
+        cases.add(heartbeatDtoInputCase("subscription-invalid-code", "subscription",
+            "{\"codeSet\":[\"not-an-integer\"],\"subVersion\":0}"));
+        cases.add(heartbeatDtoInputCase("consumer-scalars", "consumer",
+            "{\"groupName\":123,\"unitMode\":-1,\"subscriptionDataSet\":[{\"topic\":42,\"subVersion\":\"4\",\"classFilterMode\":1}]}"));
+        cases.add(heartbeatDtoInputCase("consumer-unit-mode-other-number", "consumer",
+            "{\"unitMode\":2}"));
+        cases.add(heartbeatDtoInputCase("consumer-invalid-boolean", "consumer",
+            "{\"unitMode\":\"yes\"}"));
+        cases.add(heartbeatDtoInputCase("heartbeat-scalars", "heartbeat",
+            "{\"clientID\":123,\"heartbeatFingerprint\":\"2\",\"withoutSub\":\"1\",\"producerDataSet\":[{\"groupName\":7}]}"));
+        cases.add(heartbeatDtoInputCase("producer-string", "producer",
+            "{\"groupName\":123}"));
+        return cases;
+    }
+
     private static Map<String, Object> nullOwnerSubscriptionPreparation() throws Exception {
         ClientConfig config = new ClientConfig();
         config.setClientIP("heartbeat-null-owner-subscriptions");
@@ -593,7 +665,7 @@ public final class RuntimeHeartbeatFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "MQClientInstance.registerProducer/registerConsumer/prepareHeartbeatData/unregisterProducer/unregisterConsumer; HeartbeatData.computeHeartbeatFingerprint/toString/duplicate-ProducerData decode/nullable producer-consumer-subscription set elements; ProducerData.toString; ConsumerData enum JSON names/toString; SubscriptionData.SUB_ALL/constructors/equals/hashCode/compareTo/toString");
+        fixture.put("entrypoint", "MQClientInstance.registerProducer/registerConsumer/prepareHeartbeatData/unregisterProducer/unregisterConsumer; HeartbeatData/ConsumerData/ProducerData/SubscriptionData Fastjson scalar inputs; HeartbeatData.computeHeartbeatFingerprint/toString/duplicate-ProducerData decode/nullable producer-consumer-subscription set elements; ProducerData.toString; ConsumerData enum JSON names/toString; SubscriptionData.SUB_ALL/constructors/equals/hashCode/compareTo/toString");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
         fixture.put("multiplicityCases", multiplicityCases);
@@ -608,6 +680,7 @@ public final class RuntimeHeartbeatFixtures {
         fixture.put("heartbeatAliasCases", heartbeatAliasCases());
         fixture.put("fingerprintNullCases", fingerprintNullCases());
         fixture.put("primitiveNullCases", primitiveNullCases());
+        fixture.put("heartbeatDtoInputCases", heartbeatDtoInputCases());
         fixture.put("nullOwnerSubscriptionPreparation", nullOwnerSubscriptionPreparation());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture) + "\n";
         Path file = Path.of(args[0]);

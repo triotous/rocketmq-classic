@@ -3,6 +3,7 @@
 //! the pinned Java input conversions for scalar JSON values.
 
 use std::collections::BTreeMap;
+use std::collections::HashSet;
 
 use serde::{Deserialize, Deserializer, de};
 use serde_json::Value;
@@ -149,6 +150,56 @@ where
         result.insert(key, value);
     }
     Ok(Some(result))
+}
+
+pub fn deserialize_optional_nullable_string_set<'de, D>(
+    deserializer: D,
+) -> Result<Option<HashSet<Option<String>>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    let Value::Array(values) = value else {
+        return if value.is_null() {
+            Ok(None)
+        } else {
+            Err(de::Error::custom("expected a JSON array or null"))
+        };
+    };
+    Ok(Some(
+        values
+            .iter()
+            .map(|value| (!value.is_null()).then(|| java_string(value)))
+            .collect(),
+    ))
+}
+
+pub fn deserialize_optional_nullable_int_set<'de, D>(
+    deserializer: D,
+) -> Result<Option<HashSet<Option<i32>>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    let Value::Array(values) = value else {
+        return if value.is_null() {
+            Ok(None)
+        } else {
+            Err(de::Error::custom("expected a JSON array or null"))
+        };
+    };
+    values
+        .iter()
+        .map(|value| {
+            if value.is_null() {
+                Ok(None)
+            } else {
+                fastjson_integer::<D::Error>(value, i32::MIN as i128, i32::MAX as i128)
+                    .map(|value| Some(value as i32))
+            }
+        })
+        .collect::<Result<HashSet<_>, _>>()
+        .map(Some)
 }
 
 fn java_string(value: &Value) -> String {
