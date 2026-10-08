@@ -396,6 +396,23 @@ public final class RuntimeConfigFixtures {
         result.put("entryViewRetainAll", entries.retainAll(java.util.Collections.singleton(
             new java.util.AbstractMap.SimpleImmutableEntry<>("keep-entry", second)))
             && table.size() == 1 && table.containsKey("keep-entry"));
+
+        table.clear();
+        table.put("remove-all-key", first);
+        table.put("keep-all-key", second);
+        result.put("keyViewRemoveAll", keys.removeAll(java.util.Collections.singleton("remove-all-key"))
+            && !table.containsKey("remove-all-key"));
+        table.clear();
+        table.put("remove-all-value", first);
+        table.put("keep-all-value", second);
+        result.put("valueViewRemoveAll", values.removeAll(java.util.Collections.singleton(first))
+            && !table.containsKey("remove-all-value"));
+        table.clear();
+        table.put("remove-all-entry", first);
+        table.put("keep-all-entry", second);
+        result.put("entryViewRemoveAll", entries.removeAll(java.util.Collections.singleton(
+            new java.util.AbstractMap.SimpleImmutableEntry<>("remove-all-entry", first)))
+            && !table.containsKey("remove-all-entry"));
         return result;
     }
 
