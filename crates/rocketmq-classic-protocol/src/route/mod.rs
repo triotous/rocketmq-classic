@@ -1314,7 +1314,17 @@ mod route_dto_input_cases_tests {
     fn route_dto_inputs_match_invoked_java_fastjson() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
-        for case in fixture["routeDtoInputCases"].as_array().unwrap() {
+        let cases = fixture["routeDtoInputCases"].as_array().unwrap();
+        for required in [
+            "queue-unicode-decimal-string",
+            "mapping-unicode-decimal-strings",
+        ] {
+            assert!(
+                cases.iter().any(|case| case["id"] == required),
+                "missing {required}"
+            );
+        }
+        for case in cases {
             let raw_input = case["rawInput"].as_str().unwrap();
             let decoded =
                 match case["type"].as_str().unwrap() {
