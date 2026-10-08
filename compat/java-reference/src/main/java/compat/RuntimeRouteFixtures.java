@@ -569,15 +569,24 @@ public final class RuntimeRouteFixtures {
                 && visitedRoutes.values().stream().allMatch(Boolean::booleanValue));
             primitives.put("computeIfAbsentMaps", table.computeIfAbsent("compute-a", key -> first) == first);
             primitives.put("computeIfAbsentKeepsCurrent", table.computeIfAbsent("compute-a", key -> second) == first);
+            primitives.put("computeIfAbsentNullLeavesAbsent", table.computeIfAbsent("compute-null", key -> null) == null
+                && !table.containsKey("compute-null"));
             primitives.put("computeIfPresentReplaces", table.computeIfPresent("compute-a", (key, value) -> second) == second
                 && table.get("compute-a") == second);
+            primitives.put("computeIfPresentNullRemoves", table.computeIfPresent("compute-a", (key, value) -> null) == null
+                && !table.containsKey("compute-a"));
             primitives.put("computeReplaces", table.compute("compute-a", (key, value) -> first) == first
                 && table.get("compute-a") == first);
             primitives.put("computeAbsentInserts", table.compute("compute-b", (key, value) -> second) == second);
             primitives.put("computeNullRemoves", table.compute("compute-b", (key, value) -> null) == null
                 && !table.containsKey("compute-b"));
+            primitives.put("computeAbsentNullLeavesAbsent", table.compute("compute-null-absent", (key, value) -> null) == null
+                && !table.containsKey("compute-null-absent"));
             primitives.put("mergeCombines", table.merge("compute-a", second, (oldValue, newValue) -> newValue) == second);
             primitives.put("mergeAbsentInserts", table.merge("merge-new", first, (oldValue, newValue) -> null) == first);
+            table.put("merge-remove", second);
+            primitives.put("mergeNullRemoves", table.merge("merge-remove", first, (oldValue, newValue) -> null) == null
+                && !table.containsKey("merge-remove"));
             table.replaceAll((key, value) -> key.equals("topic") ? second : first);
             primitives.put("replaceAllUpdatesMappings", table.size() == 5 && table.get("topic") == second
                 && table.get("bulk-a") == first && table.get("compute-a") == first && table.get("merge-new") == first);
@@ -640,6 +649,16 @@ public final class RuntimeRouteFixtures {
             primitives.put("entryViewRetainAllEqual", table.entrySet().retainAll(java.util.Set.of(
                 new java.util.AbstractMap.SimpleImmutableEntry<>("entry-retain-keep", first)))
                 && table.size() == 1 && table.containsKey("entry-retain-keep"));
+
+            table.put("key-view-clear", first);
+            table.keySet().clear();
+            primitives.put("keyViewClear", table.isEmpty());
+            table.put("values-view-clear", first);
+            table.values().clear();
+            primitives.put("valuesViewClear", table.isEmpty());
+            table.put("entry-view-clear", first);
+            table.entrySet().clear();
+            primitives.put("entryViewClear", table.isEmpty());
 
             table.clear();
             table.put("iterator-key", first);
