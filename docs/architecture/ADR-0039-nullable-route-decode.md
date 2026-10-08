@@ -20,7 +20,7 @@ Callers of the route RPC API handle the successful nullable result explicitly. N
 
 ## Evidence
 
-The pinned Java fixture directly invokes decode/fromJson with null input and JSON `null`, decodeList with null input and `[null]`, on both `TopicRouteData` and `TopicQueueMappingInfo`, and records the corresponding null roots/list members. Route fixture SHA-256: `3131483ba91c260b0ffbd3ae5fb9a1301a447b21986e5bb00c48e3b081b4d1f2`.
+The pinned Java fixture directly invokes decode/fromJson with null input and JSON `null`, decodeList with null input and `[null]`, on both `TopicRouteData` and `TopicQueueMappingInfo`, and records the corresponding null roots/list members. Route fixture SHA-256: `0f4dbd7dece83869b6c93ce47dae26e297db93f421d122468c721c1365aef59c`.
 
 Oracle commits: `5eaccba`, `f007a4a`, `c00e1a8`. Regression commits: `ffc5c8c`, `722b5bd`, `8420373`. Implementation commit: `bdfa5cb`. Test coverage follow-up: `95cda6c` makes the null-topic request in `all_topic_refresh_unions_registered_topics_and_continues_after_rejection` receive JSON `null`; it verifies the union continues and the nullable result is a no-op. Full workspace/all-target tests, strict Clippy, pinned offline Maven verify (manifest22), comparator self-test, formatting, and diff checks pass. The per-topic loopback runtime test verifies that a JSON-null refresh returns false and retains the same cached snapshot allocation.
 
