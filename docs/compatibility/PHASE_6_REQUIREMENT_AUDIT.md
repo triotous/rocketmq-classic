@@ -1,5 +1,7 @@
 # Phase 6 requirement and handoff audit
 
+Public MessageQueue DTO correction `3577198`/`e242764` closes the demonstrated null topic/default queueId mismatch. Native topic/broker getters and JSON now preserve Java nullable states, and namespace/offset queue copies retain them. Route fixture SHA-256 `e5520a19c71483fce328312f9d4263c6af7a0bfff4c712e40660ca90626c3453`; focused red/green, full workspace, Maven and strict Clippy pass. Java null compareTo and full API/source/input audit remain open.
+
 Nested nullable route DTO update `132f838`/`02e95f2` follows invoked Java missing/null BrokerData and QueueData fields, zero primitive defaults, subscribe queue null broker identity, and four runtime refresh branches. Native public DTO/MessageQueue now represent nullable broker names; focused red/green, full workspace, Maven and exact Clippy pass. MessageQueue topic null/default and other public input surfaces still prevent Phase 6 acceptance.
 
 Registered-consumer nullable route branch `c4b6e17` supersedes the source-only consumer caveat below: actual Java throws on ordered null queue with a consumer, and the scripted native runtime returns an error without publishing or notifying. Fixture SHA-256 `e9303fc3ceac0fc13ddf6181163847c3b85c1d2c684f9a3fd4c71ab1968f82d5`; full workspace, Maven and strict Clippy pass. Other malformed DTO/input and whole-phase API checks remain open.

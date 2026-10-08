@@ -1,5 +1,7 @@
 # Java 5.5.1 compatibility evidence
 
+MessageQueue public DTO correction `3577198`/`e242764` represents Java nullable topic/brokerName, JSON omission, and absent queueId zero. Fixture SHA-256 `e5520a19c71483fce328312f9d4263c6af7a0bfff4c712e40660ca90626c3453`; native red/green, full workspace, pinned Maven and strict Clippy pass. Null compareTo and broader API/input reconciliation remain open; Phase 6 is PARTIAL.
+
 Nested route DTO correction `132f838`/`02e95f2` covers nullable BrokerData/QueueData names, queue primitive defaults, nullable MessageQueue broker name in subscription conversion, and Java refresh failure/success branches. Route fixture SHA-256 `20f8e96c893ccfad3fc66e1b5057d4123fb3a70f1d856c652429a088f697793e`; Rust workspace, pinned Maven and strict Clippy pass. Other public DTO/input reconciliation remains; Phase 6 is PARTIAL.
 
 Registered-consumer null route case `c4b6e17` adds actual Java failure/no-cache evidence and a matching scripted native runtime check for ordered null queue with a consumer. Route fixture SHA-256 `e9303fc3ceac0fc13ddf6181163847c3b85c1d2c684f9a3fd4c71ab1968f82d5`; full workspace, pinned Maven and strict Clippy pass. Phase 6 remains PARTIAL for broader API/source/input reconciliation.
