@@ -874,12 +874,23 @@ mod topic_route_data_clone_method_tests {
             let source: TopicRouteData = serde_json::from_value(case["input"].clone()).unwrap();
             let expected_copy: TopicRouteData =
                 serde_json::from_value(case["copyConstructor"].clone()).unwrap();
-            assert_eq!(source.java_copy_constructed(), expected_copy, "{}", case["id"]);
+            assert_eq!(
+                source.java_copy_constructed(),
+                expected_copy,
+                "{}",
+                case["id"]
+            );
 
             let clone = source.clone_topic_route_data();
-            assert_eq!(clone.is_ok(), case["cloneOutcome"] == "OK", "{}", case["id"]);
+            assert_eq!(
+                clone.is_ok(),
+                case["cloneOutcome"] == "OK",
+                "{}",
+                case["id"]
+            );
             if let Ok(clone) = clone {
-                let expected: TopicRouteData = serde_json::from_value(case["clone"].clone()).unwrap();
+                let expected: TopicRouteData =
+                    serde_json::from_value(case["clone"].clone()).unwrap();
                 assert_eq!(clone, expected, "{}", case["id"]);
             }
 
@@ -955,6 +966,27 @@ pub enum TopicRouteDataChangedError {
     NullBrokerName,
 }
 
+/// Null-field failures from the pinned Java route copy/clone helpers.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum TopicRouteDataCloneError {
+    #[error("null queue data list (Java NullPointerException)")]
+    NullQueueDataList,
+    #[error("null broker data list (Java NullPointerException)")]
+    NullBrokerDataList,
+    #[error("null filter server table (Java NullPointerException)")]
+    NullFilterServerTable,
+    #[error("null QueueData entry during deep clone (Java NullPointerException)")]
+    NullQueueData,
+    #[error("null BrokerData entry during deep clone (Java NullPointerException)")]
+    NullBrokerData,
+    #[error("null filter server list during deep clone (Java NullPointerException)")]
+    NullFilterServerList,
+    #[error("null TopicQueueMappingInfo during deep clone (Java NullPointerException)")]
+    NullTopicQueueMappingInfo,
+    #[error("null mapping ID map during deep clone (Java NullPointerException)")]
+    NullMappingIdMap,
+}
+
 fn default_mapping_scope() -> Option<String> {
     Some("__global__".to_owned())
 }
@@ -972,6 +1004,108 @@ impl TopicRouteData {
         copy.broker_datas.get_or_insert_with(Vec::new);
         copy.filter_server_table.get_or_insert_with(BTreeMap::new);
         copy
+    }
+
+    /// Copies the route using Java's `cloneTopicRouteData` container checks.
+    ///
+    /// Java shallow-clones the outer containers and shares mutable nested DTOs.
+    /// Rust owns those nested DTO values, so this returns a structural value
+    /// copy. The runtime's raw table separately preserves aliases with
+    /// `TopicRouteDataHandle`.
+    pub fn clone_topic_route_data(&self) -> Result<Self, TopicRouteDataCloneError> {
+        let queue_datas = self
+            .queue_datas
+            .as_ref()
+            .ok_or(TopicRouteDataCloneError::NullQueueDataList)?;
+        let broker_datas = self
+            .broker_datas
+            .as_ref()
+            .ok_or(TopicRouteDataCloneError::NullBrokerDataList)?;
+        let filter_server_table = self
+            .filter_server_table
+            .as_ref()
+            .ok_or(TopicRouteDataCloneError::NullFilterServerTable)?;
+        Ok(Self {
+            order_topic_conf: self.order_topic_conf.clone(),
+            queue_datas: Some(queue_datas.clone()),
+            broker_datas: Some(broker_datas.clone()),
+            filter_server_table: Some(filter_server_table.clone()),
+            topic_queue_mapping_by_broker: self.topic_queue_mapping_by_broker.clone(),
+        })
+    }
+
+    /// Performs Java `deepCloneTopicRouteData` validation and returns an
+    /// owned structural copy of every route DTO and nested collection.
+    pub fn deep_clone_topic_route_data(&self) -> Result<Self, TopicRouteDataCloneError> {
+        let queue_datas = self
+            .queue_datas
+            .as_ref()
+            .ok_or(TopicRouteDataCloneError::NullQueueDataList)?
+            .iter()
+            .map(|queue| {
+                queue
+                    .as_ref()
+                    .cloned()
+                    .ok_or(TopicRouteDataCloneError::NullQueueData)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let broker_datas = self
+            .broker_datas
+            .as_ref()
+            .ok_or(TopicRouteDataCloneError::NullBrokerDataList)?
+            .iter()
+            .map(|broker| {
+                broker
+                    .as_ref()
+                    .cloned()
+                    .ok_or(TopicRouteDataCloneError::NullBrokerData)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let filter_server_table = self
+            .filter_server_table
+            .as_ref()
+            .ok_or(TopicRouteDataCloneError::NullFilterServerTable)?
+            .iter()
+            .map(|(broker, servers)| {
+                Ok((
+                    broker.clone(),
+                    Some(
+                        servers
+                            .as_ref()
+                            .ok_or(TopicRouteDataCloneError::NullFilterServerList)?
+                            .clone(),
+                    ),
+                ))
+            })
+            .collect::<Result<BTreeMap<_, _>, TopicRouteDataCloneError>>()?;
+        let topic_queue_mapping_by_broker = self
+            .topic_queue_mapping_by_broker
+            .as_ref()
+            .map(|mappings| {
+                mappings
+                    .iter()
+                    .map(|(broker, mapping)| {
+                        let mapping = mapping
+                            .as_ref()
+                            .ok_or(TopicRouteDataCloneError::NullTopicQueueMappingInfo)?;
+                        let curr_id_map = mapping
+                            .curr_id_map
+                            .as_ref()
+                            .ok_or(TopicRouteDataCloneError::NullMappingIdMap)?;
+                        let mut copy = mapping.clone();
+                        copy.curr_id_map = Some(curr_id_map.clone());
+                        Ok((broker.clone(), Some(copy)))
+                    })
+                    .collect::<Result<BTreeMap<_, _>, TopicRouteDataCloneError>>()
+            })
+            .transpose()?;
+        Ok(Self {
+            order_topic_conf: self.order_topic_conf.clone(),
+            queue_datas: Some(queue_datas.into_iter().map(Some).collect()),
+            broker_datas: Some(broker_datas.into_iter().map(Some).collect()),
+            filter_server_table: Some(filter_server_table),
+            topic_queue_mapping_by_broker,
+        })
     }
 
     /// Returns the pinned Java 5.5.1 `TopicRouteData.hashCode` result.
