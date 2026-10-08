@@ -1481,11 +1481,28 @@ public final class RuntimeConfigFixtures {
 
     private static List<Object> languageCodeMethodCases() {
         List<Object> cases = new ArrayList<>();
-        for (org.apache.rocketmq.remoting.protocol.LanguageCode value :
-            org.apache.rocketmq.remoting.protocol.LanguageCode.values()) {
+        org.apache.rocketmq.remoting.protocol.LanguageCode[] values =
+            org.apache.rocketmq.remoting.protocol.LanguageCode.values();
+        List<String> names = new ArrayList<>();
+        for (org.apache.rocketmq.remoting.protocol.LanguageCode value : values) {
+            names.add(value.name());
+        }
+        for (org.apache.rocketmq.remoting.protocol.LanguageCode value : values) {
             Map<String, Object> item = new TreeMap<>();
             item.put("case", "constant");
             item.put("name", value.name());
+            item.put("ordinal", value.ordinal());
+            item.put("text", value.toString());
+            item.put("values", names);
+            item.put("valueOfName",
+                org.apache.rocketmq.remoting.protocol.LanguageCode.valueOf(value.name()).name());
+            item.put("compareNext", value.compareTo(values[(value.ordinal() + 1) % values.length]));
+            org.apache.rocketmq.remoting.protocol.LanguageCode[] mutated =
+                org.apache.rocketmq.remoting.protocol.LanguageCode.values();
+            mutated[0] = org.apache.rocketmq.remoting.protocol.LanguageCode.NODE_JS;
+            item.put("valuesDefensiveCopy",
+                org.apache.rocketmq.remoting.protocol.LanguageCode.values()[0]
+                    == org.apache.rocketmq.remoting.protocol.LanguageCode.JAVA);
             item.put("code", value.getCode());
             org.apache.rocketmq.remoting.protocol.LanguageCode fromByte =
                 org.apache.rocketmq.remoting.protocol.LanguageCode.valueOf(value.getCode());
@@ -1511,6 +1528,20 @@ public final class RuntimeConfigFixtures {
             item.put("case", "name");
             item.put("input", input);
             item.put("decoded", decoded == null ? null : decoded.name());
+            cases.add(item);
+        }
+        for (String input : new String[] {null, "", "JAVA", "java", "NODE_JS", "UNKNOWN"}) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", "enumNameLookup");
+            item.put("input", input);
+            try {
+                item.put("outcome", "OK");
+                item.put("decoded",
+                    org.apache.rocketmq.remoting.protocol.LanguageCode.valueOf(input).name());
+            } catch (RuntimeException error) {
+                item.put("outcome", error.getClass().getSimpleName());
+                item.put("message", error.getMessage());
+            }
             cases.add(item);
         }
         return cases;

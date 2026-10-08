@@ -2,7 +2,9 @@
 
 LanguageCode public-surface correction (2026-10-08): the native enum now has exactly Java's 14 constants. `from_java_byte(i8) -> Option<LanguageCode>` represents Java's nullable `valueOf(byte)` result; the extra `Unknown` variant, `LanguageCode::from_code`/`java_byte` helpers, and duplicate `java_value_of_byte` method are removed. JSON and binary decoders keep mapping unknown input to `None`. The pinned fixture exercises all constants and signed unknown-byte cases. [ADR-0023](../architecture/ADR-0023-language-code-java-methods.md) records the API mapping. Full Phase 6 source/API reconciliation remains open.
 
-ServiceThread inherited API update (2026-10-08): actual Java 5.5.1 cases invoke `getJoinTime`, daemon/stopped accessors, `wakeup`, `makeStop`, and shutdown on both service classes. Unstarted instances record the 90,000ms join value, default flags, setter effect, no-op pre-start stopped state, and PullMessageService's executor shutdown. Controlled subclasses with a blocked no-op `run` also show that `start()` is idempotent, `makeStop()` sets stopped without joining, and `shutdown(true)` joins; they do not run the RocketMQ worker loops. Rust routes worker lifetime through `ClientRuntime` and owned Tokio tasks, so Java thread daemon/join flags and `makeStop` have no direct counterpart. [ADR-0026](../architecture/ADR-0026-service-thread-api-boundary.md) records the mapping and limits. Current client-config fixture SHA-256: `631b1b9537c13cf1f5943b0e958b214a6bf4099b4edc6cd8643a02f4c207d4c0`.
+LanguageCode generated enum method update (2026-10-08): the Java fixture now directly captures `values()`, `valueOf(String)`, `name()`, `ordinal()`, `toString()`, and `compareTo()` alongside the custom code lookups. Rust exposes counterparts for those Java methods: `values`, `value_of_name`, `name`, `ordinal`, `Display`, and `java_compare_to`. The custom Java `getCode(String)` lookup is named `get_code_by_name` and keeps its nullable result. Focused Rust tests and pinned offline Maven fixture verification pass. Current `client-config.json` SHA-256: `00deca75109f3fa4b7a97314bdb9b567453e3ed14fe298201f7caca62411ef4d`. [ADR-0023](../architecture/ADR-0023-language-code-java-methods.md) records the complete enum surface and limits.
+
+ServiceThread inherited API update (2026-10-08): actual Java 5.5.1 cases invoke `getJoinTime`, daemon/stopped accessors, `wakeup`, `makeStop`, and shutdown on both service classes. Unstarted instances record the 90,000ms join value, default flags, setter effect, no-op pre-start stopped state, and PullMessageService's executor shutdown. Controlled subclasses with a blocked no-op `run` also show that `start()` is idempotent, `makeStop()` sets stopped without joining, and `shutdown(true)` joins; they do not run the RocketMQ worker loops. Rust routes worker lifetime through `ClientRuntime` and owned Tokio tasks, so Java thread daemon/join flags and `makeStop` have no direct counterpart. [ADR-0026](../architecture/ADR-0026-service-thread-api-boundary.md) records the mapping and limits. Current client-config fixture SHA-256: `00deca75109f3fa4b7a97314bdb9b567453e3ed14fe298201f7caca62411ef4d`.
 
 Runtime service-name update (2026-10-08): actual Java 5.5.1 calls to `RebalanceService.getServiceName()` and `PullMessageService.getServiceName()` return `RebalanceService` and `PullMessageService`. Rust exports matching `REBALANCE_SERVICE_NAME` and `PULL_MESSAGE_SERVICE_NAME` constants. Client-config fixture SHA-256 at that update: `57114f6198944de08fa6801207525abbbfd9e1532efe93fa02d2c8c64ab98fa4`; [ADR-0025](../architecture/ADR-0025-runtime-service-name-methods.md) records the boundary. This maps only the name methods; worker execution is audited separately below.
 
@@ -315,12 +317,15 @@ Java enum `hashCode()` is identity-based with no stable numeric oracle; Rust doe
 
 | Pinned Java API | Rust counterpart / current behavior |
 | --- | --- |
-| `getCode()`; `Enum.name()` | `code() -> u8` and `name() -> &'static str`; all 14 Rust enum variants have Java code/name values |
-| `getCode(String)` | `from_java_name(Option<&str>)`; exact case-sensitive enum names, null or unknown names return `None` |
+| `values()` | `LanguageCode::values() -> [LanguageCode; 14]` returns values in Java declaration order |
+| `valueOf(String)` | `value_of_name(Option<&str>) -> Result<LanguageCode, LanguageCodeLookupError>` matches exact names and distinguishes Java null/unknown-name failures |
+| `getCode()`; `Enum.name()`; `ordinal()`; `toString()` | `code()`, `name()`, `ordinal()`, and `Display` match all Java values |
+| `compareTo(LanguageCode)` | `java_compare_to()` returns Java's ordinal difference; Rust equality matches enum singleton equality |
+| `getCode(String)` | `get_code_by_name(Option<&str>)`; exact case-sensitive enum names, null or unknown names return `None` |
 | `valueOf(byte)` | `from_java_byte(i8) -> Option<LanguageCode>`; known enum bytes return `Some`, other signed byte values return `None` |
 | JSON/private-header decode | Unknown string and byte values decode to `None`, matching Java's nullable result; enum encoding accepts only Java-defined language values |
 
-See [ADR-0023](../architecture/ADR-0023-language-code-java-methods.md) for fixture provenance, byte boundaries, and validation.
+Java enum `hashCode()` is identity-based with no stable cross-run numeric value; Rust does not claim a matching numeric enum hash. See [ADR-0023](../architecture/ADR-0023-language-code-java-methods.md) for fixture provenance, byte boundaries, and validation.
 
 ## Runtime worker and inherited ServiceThread methods
 

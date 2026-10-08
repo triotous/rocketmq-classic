@@ -58,7 +58,7 @@ pub fn decode(bytes: &[u8]) -> Result<RemotingCommand, CodecError> {
     let language = match object.get("language") {
         None => Some(LanguageCode::Java),
         Some(Value::Null) => None,
-        Some(Value::String(name)) => LanguageCode::from_java_name(Some(name)),
+        Some(Value::String(name)) => LanguageCode::get_code_by_name(Some(name)),
         _ => return Err(CodecError::Json("language must be a string".into())),
     };
     let version = integer(object.get("version"), "version")?.unwrap_or_default();

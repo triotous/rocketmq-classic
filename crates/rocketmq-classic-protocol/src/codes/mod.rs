@@ -1,6 +1,14 @@
 pub mod request;
 pub mod response;
 
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum LanguageCodeLookupError {
+    #[error("Name is null")]
+    NullName,
+    #[error("No enum constant org.apache.rocketmq.remoting.protocol.LanguageCode.{0}")]
+    UnknownName(String),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LanguageCode {
     Java,
@@ -20,6 +28,46 @@ pub enum LanguageCode {
 }
 
 impl LanguageCode {
+    pub const fn values() -> [Self; 14] {
+        [
+            Self::Java,
+            Self::Cpp,
+            Self::Dotnet,
+            Self::Python,
+            Self::Delphi,
+            Self::Erlang,
+            Self::Ruby,
+            Self::Other,
+            Self::Http,
+            Self::Go,
+            Self::Php,
+            Self::Oms,
+            Self::Rust,
+            Self::NodeJs,
+        ]
+    }
+
+    pub fn value_of_name(name: Option<&str>) -> Result<Self, LanguageCodeLookupError> {
+        match name {
+            None => Err(LanguageCodeLookupError::NullName),
+            Some("JAVA") => Ok(Self::Java),
+            Some("CPP") => Ok(Self::Cpp),
+            Some("DOTNET") => Ok(Self::Dotnet),
+            Some("PYTHON") => Ok(Self::Python),
+            Some("DELPHI") => Ok(Self::Delphi),
+            Some("ERLANG") => Ok(Self::Erlang),
+            Some("RUBY") => Ok(Self::Ruby),
+            Some("OTHER") => Ok(Self::Other),
+            Some("HTTP") => Ok(Self::Http),
+            Some("GO") => Ok(Self::Go),
+            Some("PHP") => Ok(Self::Php),
+            Some("OMS") => Ok(Self::Oms),
+            Some("RUST") => Ok(Self::Rust),
+            Some("NODE_JS") => Ok(Self::NodeJs),
+            Some(other) => Err(LanguageCodeLookupError::UnknownName(other.to_owned())),
+        }
+    }
+
     pub const fn from_java_byte(code: i8) -> Option<Self> {
         match code {
             0 => Some(Self::Java),
@@ -77,7 +125,15 @@ impl LanguageCode {
         }
     }
 
-    pub fn from_java_name(name: Option<&str>) -> Option<Self> {
+    pub const fn ordinal(self) -> i32 {
+        self.code() as i32
+    }
+
+    pub const fn java_compare_to(self, other: Self) -> i32 {
+        self.ordinal() - other.ordinal()
+    }
+
+    pub fn get_code_by_name(name: Option<&str>) -> Option<Self> {
         match name {
             Some("JAVA") => Some(Self::Java),
             Some("CPP") => Some(Self::Cpp),
@@ -95,6 +151,12 @@ impl LanguageCode {
             Some("NODE_JS") => Some(Self::NodeJs),
             _ => None,
         }
+    }
+}
+
+impl std::fmt::Display for LanguageCode {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.name())
     }
 }
 
@@ -150,14 +212,43 @@ mod tests {
             "../../../../fixtures/runtime/client-config.json"
         ))
         .unwrap();
+        let mut mutated_values = LanguageCode::values();
+        mutated_values[0] = LanguageCode::NodeJs;
+        assert_eq!(LanguageCode::values()[0], LanguageCode::Java);
         for case in fixture["languageCodeMethodCases"].as_array().unwrap() {
             match case["case"].as_str().unwrap() {
                 "constant" => {
                     let name = case["name"].as_str().unwrap();
                     let code = case["code"].as_i64().unwrap() as u8;
-                    let value = LanguageCode::from_java_name(Some(name)).unwrap();
+                    let value = LanguageCode::get_code_by_name(Some(name)).unwrap();
+                    let values = LanguageCode::values();
+                    let expected_names = case["values"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|name| name.as_str().unwrap())
+                        .collect::<Vec<_>>();
                     assert_eq!(value.code(), code, "{case}");
                     assert_eq!(value.name(), name, "{case}");
+                    assert_eq!(
+                        value.ordinal(),
+                        case["ordinal"].as_i64().unwrap() as i32,
+                        "{case}"
+                    );
+                    assert_eq!(value.to_string(), case["text"].as_str().unwrap(), "{case}");
+                    assert_eq!(
+                        values.iter().map(|value| value.name()).collect::<Vec<_>>(),
+                        expected_names,
+                        "{case}"
+                    );
+                    let next = values[(value.ordinal() as usize + 1) % values.len()];
+                    assert_eq!(
+                        value.java_compare_to(next),
+                        case["compareNext"].as_i64().unwrap() as i32,
+                        "{case}"
+                    );
+                    assert_eq!(case["valueOfName"], name, "{case}");
+                    assert_eq!(case["valuesDefensiveCopy"], true, "{case}");
                     assert_eq!(
                         LanguageCode::from_java_byte(code as i8),
                         Some(value),
@@ -177,12 +268,31 @@ mod tests {
                 }
                 "name" => {
                     let input = case["input"].as_str();
-                    let decoded = LanguageCode::from_java_name(input);
+                    let decoded = LanguageCode::get_code_by_name(input);
                     assert_eq!(
                         decoded.map(LanguageCode::name),
                         case["decoded"].as_str(),
                         "{case}"
                     );
+                }
+                "enumNameLookup" => {
+                    let result = LanguageCode::value_of_name(case["input"].as_str());
+                    match result {
+                        Ok(value) => {
+                            assert_eq!(case["outcome"], "OK", "{case}");
+                            assert_eq!(case["decoded"], value.name(), "{case}");
+                        }
+                        Err(error) => {
+                            let outcome = match &error {
+                                LanguageCodeLookupError::NullName => "NullPointerException",
+                                LanguageCodeLookupError::UnknownName(_) => {
+                                    "IllegalArgumentException"
+                                }
+                            };
+                            assert_eq!(case["outcome"], outcome, "{case}");
+                            assert_eq!(case["message"], error.to_string(), "{case}");
+                        }
+                    }
                 }
                 kind => panic!("unknown Java LanguageCode case: {kind}"),
             }
