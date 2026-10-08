@@ -1,9 +1,12 @@
 use std::collections::HashSet;
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::marker::PhantomData;
 
 use crate::codes::JavaEnumLookupError;
 use rocketmq_classic_common::serde_fastjson;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::de::{MapAccess, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize, de};
+use std::fmt;
 
 macro_rules! impl_java_enum_api {
     ($enum_type:ident, $java_class:literal, $count:literal, $($variant:ident => $name:literal = $ordinal:literal),+ $(,)?) => {
@@ -625,6 +628,7 @@ pub struct ConsumerData {
     pub consume_from_where: Option<ConsumeFromWhere>,
     #[serde(
         default = "empty_subscriptions",
+        deserialize_with = "deserialize_nullable_hash_set_with_null",
         skip_serializing_if = "Option::is_none"
     )]
     pub subscription_data_set: Option<HashSet<Option<SubscriptionData>>>,
@@ -971,6 +975,67 @@ pub enum HeartbeatFingerprintError {
     NullSubscriptionData,
 }
 
+struct IdentitySetVisitor<T>(PhantomData<T>);
+
+impl<'de, T> Visitor<'de> for IdentitySetVisitor<T>
+where
+    T: Deserialize<'de>,
+{
+    type Value = Option<Vec<Option<T>>>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a JSON array, object, or null for a Java Set field")
+    }
+
+    fn visit_unit<E>(self) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(None)
+    }
+
+    fn visit_none<E>(self) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(None)
+    }
+
+    fn visit_seq<A>(self, mut sequence: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        let mut values = Vec::new();
+        while let Some(value) = sequence.next_element::<Option<T>>()? {
+            values.push(value);
+        }
+        Ok(Some(deduplicate_null_set_member(values)))
+    }
+
+    fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        let value = T::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
+        Ok(Some(vec![Some(value)]))
+    }
+}
+
+fn deduplicate_null_set_member<T>(mut values: Vec<Option<T>>) -> Vec<Option<T>> {
+    let mut retained_null = false;
+    values.retain(|value| {
+        if value.is_some() {
+            true
+        } else if retained_null {
+            false
+        } else {
+            retained_null = true;
+            true
+        }
+    });
+    values
+}
+
 fn deserialize_identity_set_with_null<'de, T, D>(
     deserializer: D,
 ) -> Result<Option<Vec<Option<T>>>, D::Error>
@@ -978,21 +1043,18 @@ where
     T: Deserialize<'de>,
     D: Deserializer<'de>,
 {
-    let mut values = Option::<Vec<Option<T>>>::deserialize(deserializer)?;
-    if let Some(values) = values.as_mut() {
-        let mut retained_null = false;
-        values.retain(|value| {
-            if value.is_some() {
-                true
-            } else if retained_null {
-                false
-            } else {
-                retained_null = true;
-                true
-            }
-        });
-    }
-    Ok(values)
+    deserializer.deserialize_any(IdentitySetVisitor(PhantomData))
+}
+
+fn deserialize_nullable_hash_set_with_null<'de, T, D>(
+    deserializer: D,
+) -> Result<Option<HashSet<Option<T>>>, D::Error>
+where
+    T: Deserialize<'de> + Eq + std::hash::Hash,
+    D: Deserializer<'de>,
+{
+    deserialize_identity_set_with_null(deserializer)
+        .map(|values| values.map(|values| values.into_iter().collect()))
 }
 
 fn empty_producers() -> Option<Vec<Option<ProducerData>>> {

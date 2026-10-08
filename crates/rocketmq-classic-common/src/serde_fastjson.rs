@@ -23,6 +23,18 @@ enum FastjsonStringValue {
     Object(Vec<(String, Self)>),
 }
 
+impl FastjsonStringValue {
+    fn java_string(self) -> Result<String, serde_json::Error> {
+        match self {
+            Self::Null => Ok("null".to_owned()),
+            Self::Bool(value) => Ok(value.to_string()),
+            Self::Number(value) => Ok(value.to_string()),
+            Self::String(value) => Ok(value),
+            Self::Array(_) | Self::Object(_) => serde_json::to_string(&self),
+        }
+    }
+}
+
 impl<'de> Deserialize<'de> for FastjsonStringValue {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -546,20 +558,26 @@ pub fn deserialize_optional_nullable_string_set<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    let value = Value::deserialize(deserializer)?;
-    let Value::Array(values) = value else {
-        return if value.is_null() {
-            Ok(None)
-        } else {
-            Err(de::Error::custom("expected a JSON array or null"))
-        };
-    };
-    Ok(Some(
-        values
-            .iter()
-            .map(|value| (!value.is_null()).then(|| java_string(value)))
-            .collect(),
-    ))
+    let value = FastjsonStringValue::deserialize(deserializer)?;
+    match value {
+        FastjsonStringValue::Null => Ok(None),
+        FastjsonStringValue::String(value) => Ok(Some(HashSet::from([Some(value)]))),
+        value @ FastjsonStringValue::Object(_) => value
+            .java_string()
+            .map(|value| Some(HashSet::from([Some(value)])))
+            .map_err(de::Error::custom),
+        FastjsonStringValue::Array(values) => values
+            .into_iter()
+            .map(|value| match value {
+                FastjsonStringValue::Null => Ok(None),
+                value => value.java_string().map(Some).map_err(de::Error::custom),
+            })
+            .collect::<Result<HashSet<_>, _>>()
+            .map(Some),
+        _ => Err(de::Error::custom(
+            "expected a JSON array, string, object, or null",
+        )),
+    }
 }
 
 pub fn deserialize_optional_nullable_int_set<'de, D>(
@@ -569,18 +587,20 @@ where
     D: Deserializer<'de>,
 {
     let value = Value::deserialize(deserializer)?;
-    let Value::Array(values) = value else {
-        return if value.is_null() {
-            Ok(None)
-        } else {
-            Err(de::Error::custom("expected a JSON array or null"))
-        };
+    let values = match value {
+        Value::Null => return Ok(None),
+        Value::Array(values) => values,
+        scalar @ (Value::Number(_) | Value::String(_) | Value::Bool(_) | Value::Object(_)) => {
+            vec![scalar]
+        }
     };
     values
         .iter()
         .map(|value| {
             if value.is_null() {
                 Ok(None)
+            } else if value.is_object() {
+                Ok(Some(0))
             } else {
                 fastjson_integer::<D::Error>(value, i32::MIN as i128, i32::MAX as i128)
                     .map(|value| Some(value as i32))
