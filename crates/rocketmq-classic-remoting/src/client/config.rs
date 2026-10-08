@@ -506,15 +506,10 @@ fn contains_fastjson_rejected_literal(input: &str) -> bool {
                         match escaped {
                             b'"' | b'\'' | b'\\' | b'/' | b'b' | b'f' | b'n' | b'r' | b't'
                             | b'v' | b'0' => index += 2,
-                            b'x' if bytes.get(index + 2).is_some_and(u8::is_ascii_hexdigit)
-                                && bytes.get(index + 3).is_some_and(u8::is_ascii_hexdigit) =>
-                            {
+                            b'x' if fastjson_escape_digits(bytes, index, quote, 2).is_some() => {
                                 index += 4;
                             }
-                            b'u' if bytes
-                                .get(index + 2..index + 6)
-                                .is_some_and(|digits| digits.iter().all(u8::is_ascii_hexdigit)) =>
-                            {
+                            b'u' if fastjson_escape_digits(bytes, index, quote, 4).is_some() => {
                                 index += 6;
                             }
                             _ => return true,
@@ -686,11 +681,13 @@ fn normalize_fastjson_source(input: &str) -> String {
         index += 1;
         while index < bytes.len() {
             if bytes[index] == b'\\' {
-                if let Some((code_unit, end)) = fastjson_unicode_escape(bytes, index) {
+                if let Some((code_unit, end)) = fastjson_escape_code_unit(bytes, index, quote, b'u')
+                {
                     if (0xd800..=0xdbff).contains(&code_unit) {
-                        match fastjson_unicode_escape(bytes, end) {
+                        match fastjson_escape_code_unit(bytes, end, quote, b'u') {
                             Some((low, paired_end)) if (0xdc00..=0xdfff).contains(&low) => {
-                                output.extend_from_slice(&bytes[index..paired_end]);
+                                push_json_unicode_escape(&mut output, code_unit);
+                                push_json_unicode_escape(&mut output, low);
                                 index = paired_end;
                             }
                             _ => {
@@ -702,9 +699,14 @@ fn normalize_fastjson_source(input: &str) -> String {
                         output.extend_from_slice(b"\\uFFFD");
                         index = end;
                     } else {
-                        output.extend_from_slice(&bytes[index..end]);
+                        push_json_unicode_escape(&mut output, code_unit);
                         index = end;
                     }
+                } else if let Some((code_unit, end)) =
+                    fastjson_escape_code_unit(bytes, index, quote, b'x')
+                {
+                    push_json_unicode_escape(&mut output, code_unit);
+                    index = end;
                 } else {
                     let end = (index + 2).min(bytes.len());
                     output.extend_from_slice(&bytes[index..end]);
@@ -726,16 +728,53 @@ fn normalize_fastjson_source(input: &str) -> String {
     String::from_utf8(output).expect("source normalization preserves valid UTF-8")
 }
 
-fn fastjson_unicode_escape(bytes: &[u8], start: usize) -> Option<(u16, usize)> {
-    if bytes.get(start..start + 2) != Some(b"\\u") {
+fn fastjson_escape_digits(bytes: &[u8], start: usize, quote: u8, count: usize) -> Option<usize> {
+    let digits_start = start.checked_add(2)?;
+    let end = digits_start.checked_add(count)?;
+    let digits = bytes.get(digits_start..end)?;
+    (!digits
+        .iter()
+        .any(|byte| matches!(*byte, b'\n' | b'\r') || *byte == quote))
+    .then_some(end)
+}
+
+fn fastjson_escape_code_unit(
+    bytes: &[u8],
+    start: usize,
+    quote: u8,
+    marker: u8,
+) -> Option<(u16, usize)> {
+    if bytes.get(start) != Some(&b'\\') || bytes.get(start + 1) != Some(&marker) {
         return None;
     }
-    let digits = bytes.get(start + 2..start + 6)?;
-    if !digits.iter().all(u8::is_ascii_hexdigit) {
-        return None;
+    let count = if marker == b'u' { 4 } else { 2 };
+    let end = fastjson_escape_digits(bytes, start, quote, count)?;
+    let digits = &bytes[start + 2..end];
+    let mut value = 0u16;
+    for digit in digits {
+        value = value
+            .wrapping_shl(4)
+            .wrapping_add(u16::from(fastjson_hex_digit_or_zero(*digit)));
     }
-    let digits = std::str::from_utf8(digits).ok()?;
-    Some((u16::from_str_radix(digits, 16).ok()?, start + 6))
+    Some((value, end))
+}
+
+fn fastjson_hex_digit_or_zero(byte: u8) -> u8 {
+    match byte {
+        b'0'..=b'9' => byte - b'0',
+        b'a'..=b'f' => byte - b'a' + 10,
+        b'A'..=b'F' => byte - b'A' + 10,
+        _ => 0,
+    }
+}
+
+fn push_json_unicode_escape(output: &mut Vec<u8>, value: u16) {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    output.extend_from_slice(b"\\u");
+    output.push(HEX[((value >> 12) & 0x0f) as usize]);
+    output.push(HEX[((value >> 8) & 0x0f) as usize]);
+    output.push(HEX[((value >> 4) & 0x0f) as usize]);
+    output.push(HEX[(value & 0x0f) as usize]);
 }
 
 fn recover_fastjson_eof_line_comment(input: &str) -> String {
