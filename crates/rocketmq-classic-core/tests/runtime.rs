@@ -642,7 +642,10 @@ async fn default_route_fetch_uses_auto_create_topic_and_clamps_both_counts_from_
             .as_ref()
             .unwrap()
             .iter()
-            .map(|data| (data.read_queue_nums, data.write_queue_nums))
+            .map(|data| {
+                let data = data.as_ref().unwrap();
+                (data.read_queue_nums, data.write_queue_nums)
+            })
             .collect::<Vec<_>>(),
         [(4, 4), (2, 2)]
     );
@@ -673,7 +676,10 @@ async fn default_route_fetch_uses_auto_create_topic_and_clamps_both_counts_from_
             .as_ref()
             .unwrap()
             .iter()
-            .all(|data| data.read_queue_nums == -2 && data.write_queue_nums == -2)
+            .all(|data| {
+                data.as_ref()
+                    .is_some_and(|data| data.read_queue_nums == -2 && data.write_queue_nums == -2)
+            })
     );
     assert!(
         !runtime

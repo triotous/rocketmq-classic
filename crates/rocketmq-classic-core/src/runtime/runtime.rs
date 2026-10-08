@@ -598,6 +598,9 @@ impl ClientRuntime {
                 .as_mut()
                 .ok_or(RuntimeError::InvalidRoute("null queue data list"))?
             {
+                let data = data
+                    .as_mut()
+                    .ok_or(RuntimeError::InvalidRoute("null queue data"))?;
                 let count = limit.min(data.read_queue_nums);
                 data.read_queue_nums = count;
                 data.write_queue_nums = count;

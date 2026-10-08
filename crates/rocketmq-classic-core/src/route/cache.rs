@@ -57,7 +57,9 @@ impl RouteSnapshot {
         if brokers.is_empty() {
             return Ok(None);
         }
-        let broker = &brokers[select(brokers.len())];
+        let broker = brokers[select(brokers.len())]
+            .as_ref()
+            .ok_or(RuntimeError::InvalidRoute("selected broker is null"))?;
         let addresses = broker
             .broker_addrs
             .as_ref()
@@ -210,6 +212,7 @@ impl RouteCache {
                     .as_deref()
                     .unwrap_or(&[])
                     .iter()
+                    .flatten()
                     .filter_map(|broker| broker.broker_addrs.as_ref())
                     .flat_map(|addresses| addresses.values())
                     .cloned(),
@@ -272,6 +275,16 @@ impl RouteCache {
             .as_deref()
             .unwrap_or(&[])
             .iter()
+            .any(Option::is_none)
+        {
+            return Err(RuntimeError::InvalidRoute("null broker data"));
+        }
+        if route
+            .broker_datas
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .flatten()
             .any(|broker| broker.broker_name.is_none())
         {
             return Err(RuntimeError::InvalidRoute("null broker name"));
@@ -288,6 +301,16 @@ impl RouteCache {
         if route.queue_datas.is_none() && !ordered && !static_route {
             return Err(RuntimeError::InvalidRoute("null queue data list"));
         }
+        if !static_route
+            && route
+                .queue_datas
+                .as_deref()
+                .unwrap_or(&[])
+                .iter()
+                .any(Option::is_none)
+        {
+            return Err(RuntimeError::InvalidRoute("null queue data"));
+        }
         if !ordered
             && !static_route
             && route.queue_datas.as_deref().unwrap_or(&[]).len() > 1
@@ -296,6 +319,7 @@ impl RouteCache {
                 .as_deref()
                 .unwrap_or(&[])
                 .iter()
+                .flatten()
                 .any(|queue| queue.broker_name.is_none())
         {
             return Err(RuntimeError::InvalidRoute(
@@ -303,7 +327,14 @@ impl RouteCache {
             ));
         }
         if let Some(mappings) = &route.topic_queue_mapping_by_broker {
-            for mapping in mappings.values().filter(|mapping| mapping.scope.is_some()) {
+            if mappings.values().any(Option::is_none) {
+                return Err(RuntimeError::InvalidRoute("null static mapping"));
+            }
+            for mapping in mappings
+                .values()
+                .flatten()
+                .filter(|mapping| mapping.scope.is_some())
+            {
                 let ids = mapping
                     .curr_id_map
                     .as_ref()
@@ -322,6 +353,7 @@ impl RouteCache {
             .as_deref()
             .unwrap_or(&[])
             .iter()
+            .flatten()
             .any(|broker| broker.broker_addrs.is_none())
         {
             return Err(RuntimeError::InvalidRoute("null broker address map"));
@@ -411,7 +443,14 @@ impl RouteCache {
                 topic.to_owned(),
                 TopicRouteDataHandle::new((*topic_snapshot.route).clone()),
             );
-            for broker in topic_snapshot.route.broker_datas.as_deref().unwrap_or(&[]) {
+            for broker in topic_snapshot
+                .route
+                .broker_datas
+                .as_deref()
+                .unwrap_or(&[])
+                .iter()
+                .flatten()
+            {
                 let Some(name) = broker.broker_name.clone() else {
                     continue;
                 };
@@ -492,7 +531,7 @@ fn validate_conversion_size(topic: &str, route: &TopicRouteData) -> Result<(), R
     // suppresses ordinary publish conversion only for null orderTopicConf.
     if let Some(mappings) = mappings {
         let mut totals = BTreeMap::<String, i32>::new();
-        for mapping in mappings.values() {
+        for mapping in mappings.values().flatten() {
             if let Some(scope) = mapping.scope.as_deref().filter(|_| mapping.epoch >= -1) {
                 let broker = format!(
                     "__syslo__{}",
@@ -515,7 +554,7 @@ fn validate_conversion_size(topic: &str, route: &TopicRouteData) -> Result<(), R
         }
     }
     let mut read_counts = BTreeMap::<Option<&str>, i32>::new();
-    for queue in route.queue_datas.as_deref().unwrap_or(&[]) {
+    for queue in route.queue_datas.as_deref().unwrap_or(&[]).iter().flatten() {
         if mappings.is_none() && queue.perm & 4 != 0 {
             let count = read_counts.entry(queue.broker_name.as_deref()).or_default();
             *count = (*count).max(queue.read_queue_nums);
@@ -529,6 +568,7 @@ fn validate_conversion_size(topic: &str, route: &TopicRouteData) -> Result<(), R
                 .as_deref()
                 .unwrap_or(&[])
                 .iter()
+                .flatten()
                 .find(|broker| broker.broker_name == queue.broker_name)
                 .and_then(|broker| broker.broker_addrs.as_ref())
                 .is_some_and(|addresses| addresses.contains_key(&0));
@@ -562,22 +602,46 @@ fn routes_equal(left: &TopicRouteData, right: &TopicRouteData) -> Result<bool, R
     let (mut left, mut right) = (left.clone(), right.clone());
     for route in [&mut left, &mut right] {
         let queues = route.queue_datas.get_or_insert_with(Vec::new);
-        if queues.len() > 1 && queues.iter().any(|queue| queue.broker_name.is_none()) {
+        if queues.len() > 1
+            && queues.iter().any(|queue| {
+                queue
+                    .as_ref()
+                    .is_none_or(|queue| queue.broker_name.is_none())
+            })
+        {
             return Err(RuntimeError::InvalidRoute(
                 "null queue broker name during sort",
             ));
         }
         queues.sort_by(|left, right| {
-            left.java_compare_to(right)
+            left.as_ref()
+                .expect("null route queue rejected before sort")
+                .java_compare_to(
+                    right
+                        .as_ref()
+                        .expect("null route queue rejected before sort"),
+                )
                 .map(|result| result.cmp(&0))
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         let brokers = route.broker_datas.get_or_insert_with(Vec::new);
-        if brokers.len() > 1 && brokers.iter().any(|broker| broker.broker_name.is_none()) {
+        if brokers.len() > 1
+            && brokers.iter().any(|broker| {
+                broker
+                    .as_ref()
+                    .is_none_or(|broker| broker.broker_name.is_none())
+            })
+        {
             return Err(RuntimeError::InvalidRoute("null broker name during sort"));
         }
         brokers.sort_by(|left, right| {
-            left.java_compare_to(right)
+            left.as_ref()
+                .expect("null route broker rejected before sort")
+                .java_compare_to(
+                    right
+                        .as_ref()
+                        .expect("null route broker rejected before sort"),
+                )
                 .map(|result| result.cmp(&0))
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
@@ -751,6 +815,8 @@ mod tests {
                     .unwrap()
                     .broker_datas
                     .unwrap()[0]
+                    .as_ref()
+                    .unwrap()
                     .broker_addrs
                     .is_none(),
                 case["rawNullMapRetained"]
@@ -835,7 +901,10 @@ mod tests {
         assert!(table.contains_key("topic").unwrap());
         assert_eq!(before.publish_address("broker"), Some("master:10911"));
         let mut invalid = before.raw_routes["topic"].snapshot().unwrap();
-        invalid.broker_datas.as_mut().unwrap()[0].broker_addrs = None;
+        invalid.broker_datas.as_mut().unwrap()[0]
+            .as_mut()
+            .unwrap()
+            .broker_addrs = None;
         let invalid = TopicRouteDataHandle::new(invalid);
         table.put("invalid", invalid.clone()).unwrap();
         assert_eq!(
@@ -1028,7 +1097,10 @@ mod tests {
     fn offline_cleanup_preserves_live_null_values_but_removes_stale_ones() {
         let cache = RouteCache::default();
         let mut route = route(1);
-        route.broker_datas.as_mut().unwrap()[0].broker_addrs = Some(BTreeMap::from([(0, None)]));
+        route.broker_datas.as_mut().unwrap()[0]
+            .as_mut()
+            .unwrap()
+            .broker_addrs = Some(BTreeMap::from([(0, None)]));
         cache.replace("topic", route).unwrap();
         cache.clean_offline().unwrap();
         assert_eq!(
@@ -1064,7 +1136,10 @@ mod tests {
         assert!(Arc::ptr_eq(&before, &cache.snapshot().unwrap()));
         // A legitimate empty map remains distinct from null and is accepted.
         let mut empty = route;
-        empty.broker_datas.as_mut().unwrap()[0].broker_addrs = Some(BTreeMap::new());
+        empty.broker_datas.as_mut().unwrap()[0]
+            .as_mut()
+            .unwrap()
+            .broker_addrs = Some(BTreeMap::new());
         assert!(cache.replace("topic", empty).unwrap());
     }
 
@@ -1126,7 +1201,10 @@ mod tests {
     fn topic_selection_uses_raw_route_and_selected_empty_broker_is_not_skipped() {
         let cache = RouteCache::default();
         let mut original = route(1);
-        original.broker_datas.as_mut().unwrap()[0].broker_addrs = Some(BTreeMap::from([
+        original.broker_datas.as_mut().unwrap()[0]
+            .as_mut()
+            .unwrap()
+            .broker_addrs = Some(BTreeMap::from([
             (2, Some("slave-a:10911".into())),
             (3, Some("slave-b:10911".into())),
         ]));
@@ -1153,7 +1231,10 @@ mod tests {
             snapshot.select_topic_broker("original", |_| 1).unwrap(),
             Some("master-2:10911".to_owned())
         );
-        original.broker_datas.as_mut().unwrap()[0].broker_addrs = Some(BTreeMap::new());
+        original.broker_datas.as_mut().unwrap()[0]
+            .as_mut()
+            .unwrap()
+            .broker_addrs = Some(BTreeMap::new());
         cache.replace("original", original).unwrap();
         assert!(matches!(
             cache
@@ -1208,21 +1289,21 @@ mod tests {
 
     fn route(count: i32) -> TopicRouteData {
         TopicRouteData {
-            queue_datas: Some(vec![QueueData {
+            queue_datas: Some(vec![Some(QueueData {
                 broker_name: Some("broker".into()),
                 read_queue_nums: count,
                 write_queue_nums: count,
                 perm: 6,
                 ..Default::default()
-            }]),
-            broker_datas: Some(vec![BrokerData {
+            })]),
+            broker_datas: Some(vec![Some(BrokerData {
                 broker_name: Some("broker".into()),
                 broker_addrs: Some(BTreeMap::from([
                     (0, Some(format!("master-{count}:10911"))),
                     (2, Some("slave:10911".into())),
                 ])),
                 ..Default::default()
-            }]),
+            })]),
             ..Default::default()
         }
     }
@@ -1329,8 +1410,10 @@ mod tests {
                     for _ in 0..1000 {
                         let snapshot = cache.snapshot().unwrap();
                         let topic = &snapshot.topics["topic"];
-                        let count =
-                            topic.route.queue_datas.as_ref().unwrap()[0].read_queue_nums as usize;
+                        let count = topic.route.queue_datas.as_ref().unwrap()[0]
+                            .as_ref()
+                            .unwrap()
+                            .read_queue_nums as usize;
                         assert_eq!(topic.publish_queues.len(), count);
                         assert_eq!(topic.subscribe_queues.len(), count);
                         assert_eq!(
@@ -1418,7 +1501,10 @@ mod tests {
         use rocketmq_classic_protocol::route::TopicQueueMappingInfo;
         let cache = RouteCache::default();
         let mut ordered = route(0);
-        ordered.queue_datas.as_mut().unwrap()[0].write_queue_nums = i32::MAX;
+        ordered.queue_datas.as_mut().unwrap()[0]
+            .as_mut()
+            .unwrap()
+            .write_queue_nums = i32::MAX;
         ordered.order_topic_conf = Some(";;".into());
         cache.replace("topic", ordered).unwrap();
         assert!(
@@ -1432,13 +1518,13 @@ mod tests {
                 .map(|index| {
                     (
                         index.to_string(),
-                        TopicQueueMappingInfo {
+                        Some(TopicQueueMappingInfo {
                             total_queues: 1_000,
                             epoch: 0,
                             scope: Some("__global__".into()),
                             curr_id_map: Some(BTreeMap::new()),
                             ..Default::default()
-                        },
+                        }),
                     )
                 })
                 .collect(),
@@ -1459,6 +1545,8 @@ mod tests {
             .as_mut()
             .unwrap()
             .get_mut("0")
+            .unwrap()
+            .as_mut()
             .unwrap()
             .total_queues = i32::MAX;
         let before = cache.snapshot().unwrap();

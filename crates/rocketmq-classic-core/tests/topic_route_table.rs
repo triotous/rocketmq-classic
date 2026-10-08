@@ -94,6 +94,8 @@ async fn raw_clear_query_refetches_once_and_retained_table_observes_wire_refresh
     assert!(table.get("topic").unwrap().unwrap().ptr_eq(&refreshed));
     assert_eq!(
         refreshed.snapshot().unwrap().broker_datas.unwrap()[0]
+            .as_ref()
+            .unwrap()
             .broker_addrs
             .as_ref()
             .unwrap()[&0],
@@ -295,7 +297,10 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
             .unwrap(),
     );
     let mut absent_route = second.snapshot().unwrap();
-    absent_route.broker_datas.as_mut().unwrap()[0].broker_name = Some("absent-broker".into());
+    absent_route.broker_datas.as_mut().unwrap()[0]
+        .as_mut()
+        .unwrap()
+        .broker_name = Some("absent-broker".into());
     outcomes.insert(
         "containsValueAbsent",
         !table.contains_value(&absent_route).unwrap(),
@@ -643,7 +648,10 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
         case["metadataEqualConditionalRemoveAccepted"]
     );
     let mut invalid = first.snapshot().unwrap();
-    invalid.broker_datas.as_mut().unwrap()[0].broker_addrs = None;
+    invalid.broker_datas.as_mut().unwrap()[0]
+        .as_mut()
+        .unwrap()
+        .broker_addrs = None;
     let invalid = TopicRouteDataHandle::new(invalid);
     table.put("invalid", invalid.clone()).unwrap();
     assert!(same(
