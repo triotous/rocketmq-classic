@@ -679,6 +679,30 @@ mod topic_route_data_method_tests {
             );
         }
     }
+
+    #[test]
+    fn topic_route_data_nullable_nested_values_match_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        let method_case = &fixture["topicRouteDataMethods"][4];
+        let left: TopicRouteData = serde_json::from_value(method_case["left"].clone())
+            .expect("pinned Java accepts null nested route values");
+        let right: TopicRouteData = serde_json::from_value(method_case["right"].clone())
+            .expect("pinned Java accepts null nested route values");
+        assert_eq!(left == right, method_case["equals"]);
+        assert_eq!(
+            left.java_hash_code(),
+            method_case["leftHashCode"].as_i64().unwrap() as i32
+        );
+        assert_eq!(
+            right.java_hash_code(),
+            method_case["rightHashCode"].as_i64().unwrap() as i32
+        );
+        let string_case = fixture["topicRouteDataToString"].as_array().unwrap().last().unwrap();
+        let route: TopicRouteData = serde_json::from_value(string_case["input"].clone())
+            .expect("pinned Java accepts null nested route values");
+        assert_eq!(route.java_to_string(), string_case["toString"]);
+    }
 }
 
 #[cfg(test)]
