@@ -5,11 +5,210 @@
 use std::collections::BTreeMap;
 use std::collections::HashSet;
 
-use serde::{Deserialize, Deserializer, de};
+use serde::{Deserialize, Deserializer, de, de::DeserializeOwned};
 use serde_json::Value;
 
 pub type NullableStringListTable = BTreeMap<String, Option<Vec<Option<String>>>>;
 pub type NullableStringMap = BTreeMap<String, Option<String>>;
+
+/// Normalizes Fastjson's invoked nonstandard document whitespace and numeric
+/// tokens before Serde parsing. Quoted text and numeric object keys are kept.
+pub fn normalize_json_input(input: &str) -> String {
+    let input = input.strip_prefix('\u{feff}').unwrap_or(input);
+    let whitespace_normalized = normalize_fastjson_whitespace(input);
+    normalize_fastjson_number_tokens(&whitespace_normalized)
+}
+
+/// Parses a JSON document with the Fastjson syntax cases recorded by the Java
+/// compatibility oracle, then applies this module's field coercions.
+pub fn from_fastjson_str<T: DeserializeOwned>(input: &str) -> Result<T, serde_json::Error> {
+    let normalized = normalize_json_input(input);
+    serde_json::from_str(&normalized)
+}
+
+pub fn from_fastjson_slice<T: DeserializeOwned>(input: &[u8]) -> Result<T, serde_json::Error> {
+    let input = String::from_utf8_lossy(input);
+    from_fastjson_str(&input)
+}
+
+pub fn from_fastjson_str_nullable<T: DeserializeOwned>(
+    input: Option<&str>,
+) -> Result<Option<T>, serde_json::Error> {
+    let Some(input) = input else {
+        return Ok(None);
+    };
+    let normalized = normalize_json_input(input);
+    serde_json::from_str(&normalized)
+}
+
+pub fn from_fastjson_slice_nullable<T: DeserializeOwned>(
+    input: Option<&[u8]>,
+) -> Result<Option<T>, serde_json::Error> {
+    let Some(input) = input else {
+        return Ok(None);
+    };
+    let input = String::from_utf8_lossy(input);
+    from_fastjson_str_nullable(Some(&input))
+}
+
+pub fn from_fastjson_list_nullable<T: DeserializeOwned>(
+    input: Option<&[u8]>,
+) -> Result<Option<Vec<Option<T>>>, serde_json::Error> {
+    let Some(input) = input else {
+        return Ok(None);
+    };
+    let input = String::from_utf8_lossy(input);
+    let normalized = normalize_json_input(&input);
+    serde_json::from_str(&normalized)
+}
+
+fn normalize_fastjson_whitespace(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for character in input.chars() {
+        if in_string {
+            output.push(character);
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                in_string = false;
+            }
+        } else if character == '"' {
+            in_string = true;
+            output.push(character);
+        } else if character == '\u{000c}' {
+            output.push(' ');
+        } else {
+            output.push(character);
+        }
+    }
+    output
+}
+
+fn normalize_fastjson_number_tokens(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut output = String::with_capacity(input.len());
+    let mut index = 0;
+    let mut in_string = false;
+    let mut escaped = false;
+
+    while index < input.len() {
+        let Some(character) = input[index..].chars().next() else {
+            break;
+        };
+        if in_string {
+            output.push(character);
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                in_string = false;
+            }
+            index += character.len_utf8();
+            continue;
+        }
+        if character == '"' {
+            in_string = true;
+            output.push(character);
+            index += character.len_utf8();
+            continue;
+        }
+
+        if matches!(bytes[index], b'+' | b'-' | b'0'..=b'9') {
+            let token_start = index;
+            while bytes.get(index).is_some_and(|byte| {
+                !byte.is_ascii_whitespace()
+                    && !matches!(*byte, b',' | b']' | b'}' | b'{' | b'[' | b':')
+            }) {
+                index += 1;
+            }
+            let token = &input[token_start..index];
+            let mut next = index;
+            while bytes.get(next).is_some_and(u8::is_ascii_whitespace) {
+                next += 1;
+            }
+            if bytes.get(next) != Some(&b':') {
+                if let Some(normalized) = normalize_fastjson_number_token(token) {
+                    output.push_str(&normalized);
+                    continue;
+                }
+            }
+            output.push_str(token);
+            continue;
+        }
+
+        output.push(character);
+        index += character.len_utf8();
+    }
+    output
+}
+
+fn normalize_fastjson_number_token(token: &str) -> Option<String> {
+    let bytes = token.as_bytes();
+    let mut index = 0;
+    let negative = bytes.first() == Some(&b'-');
+    let positive = bytes.first() == Some(&b'+');
+    if negative || positive {
+        index += 1;
+    }
+    let integer_start = index;
+    while bytes.get(index).is_some_and(u8::is_ascii_digit) {
+        index += 1;
+    }
+    if index == integer_start {
+        return None;
+    }
+    let integer_end = index;
+
+    if bytes.get(index) == Some(&b'.') {
+        index += 1;
+        let fraction_start = index;
+        while bytes.get(index).is_some_and(u8::is_ascii_digit) {
+            index += 1;
+        }
+        if index == fraction_start {
+            return None;
+        }
+    }
+    if matches!(bytes.get(index), Some(b'e' | b'E')) {
+        index += 1;
+        if matches!(bytes.get(index), Some(b'+' | b'-')) {
+            index += 1;
+        }
+        let exponent_start = index;
+        while bytes.get(index).is_some_and(u8::is_ascii_digit) {
+            index += 1;
+        }
+        if index == exponent_start {
+            return None;
+        }
+    }
+    if index != bytes.len() {
+        return None;
+    }
+
+    let leading_zeroes = integer_end - integer_start > 1 && bytes[integer_start] == b'0';
+    if !positive && !leading_zeroes {
+        return None;
+    }
+
+    let mut significant_start = integer_start;
+    while significant_start + 1 < integer_end && bytes[significant_start] == b'0' {
+        significant_start += 1;
+    }
+    let mut normalized = String::with_capacity(token.len());
+    if negative {
+        normalized.push('-');
+    }
+    normalized.push_str(&token[significant_start..integer_end]);
+    normalized.push_str(&token[integer_end..]);
+    Some(normalized)
+}
 
 pub fn deserialize_nullable_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where

@@ -741,6 +741,7 @@ pub struct HeartbeatData {
 #[cfg(test)]
 mod fastjson_dto_input_tests {
     use super::{ConsumerData, HeartbeatData, ProducerData, SubscriptionData};
+    use rocketmq_classic_common::serde_fastjson;
 
     fn normalize_json(value: &mut serde_json::Value) {
         match value {
@@ -782,18 +783,18 @@ mod fastjson_dto_input_tests {
         }
         for case in cases {
             let raw_input = case["rawInput"].as_str().unwrap();
-            let decoded =
-                match case["type"].as_str().unwrap() {
-                    "subscription" => serde_json::from_str::<SubscriptionData>(raw_input)
-                        .and_then(serde_json::to_value),
-                    "producer" => serde_json::from_str::<ProducerData>(raw_input)
-                        .and_then(serde_json::to_value),
-                    "consumer" => serde_json::from_str::<ConsumerData>(raw_input)
-                        .and_then(serde_json::to_value),
-                    "heartbeat" => serde_json::from_str::<HeartbeatData>(raw_input)
-                        .and_then(serde_json::to_value),
-                    other => panic!("unknown heartbeat DTO case type {other}"),
-                };
+            let decoded = match case["type"].as_str().unwrap() {
+                "subscription" => serde_fastjson::from_fastjson_str::<SubscriptionData>(raw_input)
+                    .and_then(serde_json::to_value),
+                "producer" => serde_fastjson::from_fastjson_str::<ProducerData>(raw_input)
+                    .and_then(serde_json::to_value),
+                "consumer" => serde_fastjson::from_fastjson_str::<ConsumerData>(raw_input)
+                    .and_then(serde_json::to_value),
+                "heartbeat" => {
+                    HeartbeatData::java_from_json(raw_input).and_then(serde_json::to_value)
+                }
+                other => panic!("unknown heartbeat DTO case type {other}"),
+            };
             let java_accepts = case["outcome"] == "ACCEPTED";
             assert_eq!(decoded.is_ok(), java_accepts, "{}: {decoded:?}", case["id"]);
             if let Ok(mut decoded) = decoded {
@@ -819,6 +820,39 @@ impl Default for HeartbeatData {
 }
 
 impl HeartbeatData {
+    /// Decodes the inherited Java `RemotingSerializable.decode` form.
+    pub fn java_decode(data: &[u8]) -> Result<Self, serde_json::Error> {
+        serde_fastjson::from_fastjson_slice(data)
+    }
+
+    /// Decodes the nullable inherited Java utility, including null bytes and
+    /// a JSON `null` root.
+    pub fn java_decode_nullable(data: Option<&[u8]>) -> Result<Option<Self>, serde_json::Error> {
+        serde_fastjson::from_fastjson_slice_nullable(data)
+    }
+
+    /// Decodes the inherited Java `RemotingSerializable.decodeList` form.
+    pub fn java_decode_list(data: &[u8]) -> Result<Vec<Self>, serde_json::Error> {
+        serde_fastjson::from_fastjson_slice(data)
+    }
+
+    /// Decodes a nullable Java list, preserving null roots and members.
+    pub fn java_decode_list_nullable(
+        data: Option<&[u8]>,
+    ) -> Result<Option<Vec<Option<Self>>>, serde_json::Error> {
+        serde_fastjson::from_fastjson_list_nullable(data)
+    }
+
+    /// Decodes the inherited Java `RemotingSerializable.fromJson` form.
+    pub fn java_from_json(json: &str) -> Result<Self, serde_json::Error> {
+        serde_fastjson::from_fastjson_str(json)
+    }
+
+    /// Decodes the nullable Java `fromJson` utility, including JSON `null`.
+    pub fn java_from_json_nullable(json: Option<&str>) -> Result<Option<Self>, serde_json::Error> {
+        serde_fastjson::from_fastjson_str_nullable(json)
+    }
+
     /// Java `RemotingSerializable.toJson(Object, prettyFormat)` and the
     /// inherited instance `toJson(boolean)` serialize Fastjson's sorted bean
     /// fields. `serde_json::Value` supplies the same deterministic key order.
@@ -1261,6 +1295,10 @@ mod tests {
         assert_eq!(methods["decodeNullIsNull"], true);
         assert_eq!(methods["decodeListNullIsNull"], true);
         assert_eq!(methods["fromJsonNullIsNull"], true);
+        assert_eq!(methods["decodeJsonNullIsNull"], true);
+        assert_eq!(methods["decodeListJsonNullIsNull"], true);
+        assert_eq!(methods["fromJsonJsonNullIsNull"], true);
+        assert_eq!(methods["decodeListPreservesNullMember"], true);
         assert_eq!(
             methods["featureEncodeParameterType"],
             "com.alibaba.fastjson2.JSONWriter$Feature"
@@ -1268,7 +1306,7 @@ mod tests {
 
         for case in methods["cases"].as_array().unwrap() {
             let raw_input = case["rawInput"].as_str().unwrap();
-            let value: HeartbeatData = serde_json::from_str(raw_input).unwrap();
+            let value = HeartbeatData::java_from_json(raw_input).unwrap();
             let native_json = value.java_to_json(false).unwrap();
             assert_eq!(
                 native_json, case["instanceJson"],
@@ -1310,11 +1348,10 @@ mod tests {
                 assert_eq!(actual_pretty, expected, "{} {field}", case["case"]);
             }
 
-            let decoded_from_bytes: HeartbeatData =
-                serde_json::from_slice(native_json.as_bytes()).unwrap();
-            let decoded_from_text: HeartbeatData = serde_json::from_str(&native_json).unwrap();
-            let decoded_list: Vec<HeartbeatData> =
-                serde_json::from_str(&format!("[{native_json}]")).unwrap();
+            let decoded_from_bytes = HeartbeatData::java_decode(native_json.as_bytes()).unwrap();
+            let decoded_from_text = HeartbeatData::java_from_json(&native_json).unwrap();
+            let decoded_list =
+                HeartbeatData::java_decode_list(format!("[{native_json}]").as_bytes()).unwrap();
             for decoded in [
                 decoded_from_bytes,
                 decoded_from_text,
@@ -1339,6 +1376,38 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+        assert!(HeartbeatData::java_decode_nullable(None).unwrap().is_none());
+        assert!(
+            HeartbeatData::java_decode_nullable(Some(b"null"))
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            HeartbeatData::java_decode_list_nullable(None)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            HeartbeatData::java_decode_list_nullable(Some(b"null"))
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            HeartbeatData::java_from_json_nullable(None)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            HeartbeatData::java_from_json_nullable(Some("null"))
+                .unwrap()
+                .is_none()
+        );
+        let decoded_null_members = HeartbeatData::java_decode_list_nullable(Some(b"[null,{}]"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(decoded_null_members.len(), 2);
+        assert!(decoded_null_members[0].is_none());
+        assert!(decoded_null_members[1].is_some());
     }
 
     #[test]
