@@ -165,7 +165,10 @@ async fn uncached_consumer_lookup_refreshes_once_and_assignment_reuses_raw_topic
     let assignment = assignments.iter().next().unwrap();
     assert_eq!(assignment.mode, Some(MessageRequestMode::Pop));
     assert_eq!(assignment.message_queue.as_ref().unwrap().queue_id(), 2);
-    assert_eq!(assignment.attachments.as_ref().unwrap()["key"], "value");
+    assert_eq!(
+        assignment.attachments.as_ref().unwrap()["key"],
+        Some("value".into())
+    );
     runtime.remoting().shutdown().await;
     peer.await.unwrap();
     name_peer.await.unwrap();

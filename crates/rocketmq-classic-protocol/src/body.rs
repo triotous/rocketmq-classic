@@ -1,5 +1,5 @@
-use rocketmq_classic_common::message::MessageQueue;
-use serde::{Deserialize, Deserializer, Serialize, de};
+use rocketmq_classic_common::{message::MessageQueue, serde_fastjson};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use serde_json::Value;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -25,6 +25,29 @@ pub enum MessageRequestMode {
 
 fn default_assignment_mode() -> Option<MessageRequestMode> {
     Some(MessageRequestMode::Pull)
+}
+
+/// Java's default JSON writer omits null-valued entries in this map.
+fn serialize_assignment_attachments<S>(
+    attachments: &Option<std::collections::BTreeMap<String, Option<String>>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    use serde::ser::SerializeMap;
+
+    let Some(attachments) = attachments else {
+        return serializer.serialize_none();
+    };
+    let non_null_count = attachments.values().filter(|value| value.is_some()).count();
+    let mut map = serializer.serialize_map(Some(non_null_count))?;
+    for (key, value) in attachments {
+        if let Some(value) = value {
+            map.serialize_entry(key, value)?;
+        }
+    }
+    map.end()
 }
 
 fn deserialize_assignment_mode<'de, D>(
@@ -187,8 +210,14 @@ pub struct MessageQueueAssignment {
         skip_serializing_if = "Option::is_none"
     )]
     pub mode: Option<MessageRequestMode>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub attachments: Option<std::collections::BTreeMap<String, String>>,
+    /// Java retains null values on decode and omits them during default JSON encoding.
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_optional_nullable_string_map",
+        serialize_with = "serialize_assignment_attachments",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub attachments: Option<std::collections::BTreeMap<String, Option<String>>>,
 }
 
 impl Default for MessageQueueAssignment {
@@ -682,7 +711,7 @@ mod tests {
             mode: Some(MessageRequestMode::Pop),
             attachments: Some(std::collections::BTreeMap::from([(
                 "zone".into(),
-                "z1".into(),
+                Some("z1".into()),
             )])),
         };
         let value = serde_json::to_value(assignment).unwrap();
@@ -784,6 +813,59 @@ mod tests {
             MessageQueueAssignment::default().mode,
             Some(MessageRequestMode::Pull)
         );
+    }
+
+    #[test]
+    fn assignment_attachment_inputs_match_invoked_java_fastjson() {
+        fn normalize(value: &mut serde_json::Value) {
+            match value {
+                serde_json::Value::Array(values) => {
+                    for value in values.iter_mut() {
+                        normalize(value);
+                    }
+                    values.sort_by_key(|value| serde_json::to_string(value).unwrap());
+                }
+                serde_json::Value::Object(fields) => {
+                    for value in fields.values_mut() {
+                        normalize(value);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        for case in fixture["assignmentAttachmentCases"].as_array().unwrap() {
+            let decoded =
+                serde_json::from_value::<QueryAssignmentResponseBody>(case["input"].clone());
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            assert_eq!(
+                decoded.is_ok(),
+                java_accepts,
+                "{}: {decoded:?}",
+                case["name"]
+            );
+            if let Ok(decoded) = decoded {
+                let assignment = decoded
+                    .message_queue_assignments
+                    .as_ref()
+                    .and_then(|assignments| assignments.first())
+                    .unwrap();
+                assert_eq!(
+                    serde_json::to_value(&assignment.attachments).unwrap(),
+                    case["attachments"],
+                    "{}",
+                    case["name"]
+                );
+
+                let mut actual = serde_json::to_value(decoded).unwrap();
+                let mut expected = case["encoded"].clone();
+                normalize(&mut actual);
+                normalize(&mut expected);
+                assert_eq!(actual, expected, "{}", case["name"]);
+            }
+        }
     }
 
     #[test]

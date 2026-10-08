@@ -574,7 +574,10 @@ async fn populated_assignment_and_pop_replies_preserve_domain_data() {
         (queue.topic(), queue.broker_name(), queue.queue_id()),
         (Some("orders"), Some("broker"), 2)
     );
-    assert_eq!(assignments[0].attachments.as_ref().unwrap()["key"], "value");
+    assert_eq!(
+        assignments[0].attachments.as_ref().unwrap()["key"],
+        Some("value".into())
+    );
     task.await.unwrap();
     client.shutdown().await;
 

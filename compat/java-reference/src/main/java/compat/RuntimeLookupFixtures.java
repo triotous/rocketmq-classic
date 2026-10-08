@@ -49,6 +49,7 @@ public final class RuntimeLookupFixtures {
                 org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody.class);
         fixture.put("assignmentDuplicateCount", response.getMessageQueueAssignments().size());
         fixture.put("assignmentModeCases", assignmentModeCases());
+        fixture.put("assignmentAttachmentCases", assignmentAttachmentCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
             com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
@@ -98,6 +99,45 @@ public final class RuntimeLookupFixtures {
                 decoded.getMessageQueueAssignments().iterator().next();
             item.put("outcome", "ACCEPTED");
             item.put("mode", value.getMode() == null ? null : value.getMode().name());
+            byte[] encoded = decoded.encode();
+            item.put("encoded", com.alibaba.fastjson2.JSON.parseObject(
+                new String(encoded, java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (RuntimeException error) {
+            item.put("outcome", "REJECTED");
+            item.put("error", error.getClass().getSimpleName());
+        }
+        return item;
+    }
+
+    private static List<Object> assignmentAttachmentCases() {
+        List<Object> cases = new ArrayList<>();
+        cases.add(assignmentAttachmentCase("missing", null));
+        cases.add(assignmentAttachmentCase("explicit-null", "null"));
+        cases.add(assignmentAttachmentCase("scalar-values",
+            "{\"number\":1,\"fraction\":1.9,\"boolean\":true,\"nullValue\":null}"));
+        cases.add(assignmentAttachmentCase("nested-values",
+            "{\"array\":[1,\"x\"],\"object\":{\"key\":\"value\"}}"));
+        cases.add(assignmentAttachmentCase("array-map", "[]"));
+        cases.add(assignmentAttachmentCase("scalar-map", "\"not-a-map\""));
+        return cases;
+    }
+
+    private static Map<String, Object> assignmentAttachmentCase(String name, String attachmentsValue) {
+        String assignment = "{\"messageQueue\":{\"topic\":\"topic\",\"brokerName\":\"broker\",\"queueId\":2},\"mode\":\"POP\""
+            + (attachmentsValue == null ? "" : ",\"attachments\":" + attachmentsValue) + "}";
+        String body = "{\"messageQueueAssignments\":[" + assignment + "]}";
+        Map<String, Object> item = new TreeMap<>();
+        item.put("name", name);
+        item.put("input", com.alibaba.fastjson2.JSON.parseObject(body));
+        try {
+            org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody decoded =
+                org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody.decode(
+                    body.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody.class);
+            org.apache.rocketmq.common.message.MessageQueueAssignment value =
+                decoded.getMessageQueueAssignments().iterator().next();
+            item.put("outcome", "ACCEPTED");
+            item.put("attachments", value.getAttachments());
             byte[] encoded = decoded.encode();
             item.put("encoded", com.alibaba.fastjson2.JSON.parseObject(
                 new String(encoded, java.nio.charset.StandardCharsets.UTF_8)));

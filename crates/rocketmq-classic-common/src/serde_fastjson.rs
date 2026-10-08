@@ -9,6 +9,7 @@ use serde::{Deserialize, Deserializer, de};
 use serde_json::Value;
 
 pub type NullableStringListTable = BTreeMap<String, Option<Vec<Option<String>>>>;
+pub type NullableStringMap = BTreeMap<String, Option<String>>;
 
 pub fn deserialize_nullable_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
@@ -150,6 +151,28 @@ where
         result.insert(key, value);
     }
     Ok(Some(result))
+}
+
+pub fn deserialize_optional_nullable_string_map<'de, D>(
+    deserializer: D,
+) -> Result<Option<NullableStringMap>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    let Value::Object(entries) = value else {
+        return if value.is_null() {
+            Ok(None)
+        } else {
+            Err(de::Error::custom("expected a JSON object or null"))
+        };
+    };
+    Ok(Some(
+        entries
+            .iter()
+            .map(|(key, value)| (key.clone(), (!value.is_null()).then(|| java_string(value))))
+            .collect(),
+    ))
 }
 
 pub fn deserialize_optional_nullable_string_set<'de, D>(
