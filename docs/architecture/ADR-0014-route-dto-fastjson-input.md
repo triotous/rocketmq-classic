@@ -14,8 +14,8 @@ The helpers keep Rust DTO field types and serialization unchanged. Java exceptio
 
 ## Evidence
 
-`RuntimeRouteFixtures.routeDtoInputCases` invokes 20 actual inputs for `QueueData`, `MessageQueue`, `BrokerData`, `TopicQueueMappingInfo`, and nested `TopicRouteData`. It checks accepted fields and rejected inputs, including integer overflow, a null static-mapping value, and an invalid boolean. `route_dto_scalar_inputs_match_invoked_java_fastjson` compares the same inputs and normalized decoded fields.
+`RuntimeRouteFixtures.routeDtoInputCases` invokes 25 actual inputs for `QueueData`, `MessageQueue`, `BrokerData`, `TopicQueueMappingInfo`, and nested `TopicRouteData`. The five added `MessageQueue.queueId` cases cover explicit null to zero, signed integer boundaries, fractional truncation, and overflow rejection. `route_dto_scalar_inputs_match_invoked_java_fastjson` compares accepted fields and rejected outcomes against the same Java inputs.
 
-Route fixture SHA-256: `6feb59b050e97e820c28d55de493555679b598e8358d2c13f521887f9d55340c`.
+Route fixture SHA-256: `5cc8ace8e2a4622f7aa849270b77ff6b3adf2f04cd99dd6d6563566744c8a104`.
 
 Focused differential, full workspace tests, strict all-feature Clippy, pinned offline Maven verification, comparator/manifest, formatting, and diff checks pass. This closes the recorded scalar cases only; broader DTO input, Fastjson grammar, and whole-Phase 6 reconciliation remain open.
