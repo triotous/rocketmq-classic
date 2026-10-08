@@ -50,6 +50,7 @@ public final class RuntimeLookupFixtures {
         fixture.put("assignmentDuplicateCount", response.getMessageQueueAssignments().size());
         fixture.put("assignmentModeCases", assignmentModeCases());
         fixture.put("assignmentAttachmentCases", assignmentAttachmentCases());
+        fixture.put("assignmentBodyCases", assignmentBodyCases());
         fixture.put("consumerListCases", consumerListCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
             com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
@@ -139,6 +140,45 @@ public final class RuntimeLookupFixtures {
                 decoded.getMessageQueueAssignments().iterator().next();
             item.put("outcome", "ACCEPTED");
             item.put("attachments", value.getAttachments());
+            byte[] encoded = decoded.encode();
+            item.put("encoded", com.alibaba.fastjson2.JSON.parseObject(
+                new String(encoded, java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (RuntimeException error) {
+            item.put("outcome", "REJECTED");
+            item.put("error", error.getClass().getSimpleName());
+        }
+        return item;
+    }
+
+    private static List<Object> assignmentBodyCases() {
+        String queue = "\"messageQueue\":{\"topic\":\"topic\",\"brokerName\":\"broker\",\"queueId\":2}";
+        List<Object> cases = new ArrayList<>();
+        cases.add(assignmentBodyCase("missing", null, false));
+        cases.add(assignmentBodyCase("explicit-null", "null", true));
+        cases.add(assignmentBodyCase("empty", "[]", true));
+        cases.add(assignmentBodyCase("single-default", "[{}]", true));
+        cases.add(assignmentBodyCase("null-element", "[null]", true));
+        cases.add(assignmentBodyCase("duplicate-null-elements", "[null,null]", true));
+        cases.add(assignmentBodyCase("object-field", "{" + queue + "}", true));
+        cases.add(assignmentBodyCase("string-field", "\"assignment\"", true));
+        cases.add(assignmentBodyCase("number-field", "7", true));
+        cases.add(assignmentBodyCase("boolean-field", "true", true));
+        cases.add(assignmentBodyCase("identical-duplicates", "[{" + queue + "},{" + queue + "}]", true));
+        return cases;
+    }
+
+    private static Map<String, Object> assignmentBodyCase(String name, String rawValue, boolean includeField) {
+        String body = includeField ? "{\"messageQueueAssignments\":" + rawValue + "}" : "{}";
+        Map<String, Object> item = new TreeMap<>();
+        item.put("name", name);
+        item.put("input", com.alibaba.fastjson2.JSON.parseObject(body));
+        try {
+            org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody decoded =
+                org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody.decode(
+                    body.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody.class);
+            item.put("outcome", "ACCEPTED");
+            item.put("assignments", decoded.getMessageQueueAssignments());
             byte[] encoded = decoded.encode();
             item.put("encoded", com.alibaba.fastjson2.JSON.parseObject(
                 new String(encoded, java.nio.charset.StandardCharsets.UTF_8)));

@@ -27,6 +27,37 @@ fn default_assignment_mode() -> Option<MessageRequestMode> {
     Some(MessageRequestMode::Pull)
 }
 
+fn deserialize_optional_assignment_set<'de, D>(
+    deserializer: D,
+) -> Result<Option<std::collections::HashSet<Option<MessageQueueAssignment>>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    match value {
+        Value::Null => Ok(None),
+        Value::Array(values) => {
+            let mut assignments = std::collections::HashSet::with_capacity(values.len());
+            for value in values {
+                let assignment = if value.is_null() {
+                    None
+                } else {
+                    Some(serde_json::from_value(value).map_err(de::Error::custom)?)
+                };
+                assignments.insert(assignment);
+            }
+            Ok(Some(assignments))
+        }
+        Value::Object(_) => {
+            let assignment = serde_json::from_value(value).map_err(de::Error::custom)?;
+            Ok(Some(std::collections::HashSet::from([Some(assignment)])))
+        }
+        _ => Err(de::Error::custom(
+            "expected a JSON assignment array, object, or null",
+        )),
+    }
+}
+
 /// Java's default JSON writer omits null-valued entries in this map.
 fn serialize_assignment_attachments<S>(
     attachments: &Option<std::collections::BTreeMap<String, Option<String>>>,
@@ -233,8 +264,13 @@ impl Default for MessageQueueAssignment {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryAssignmentResponseBody {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub message_queue_assignments: Option<Vec<MessageQueueAssignment>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_assignment_set",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub message_queue_assignments:
+        Option<std::collections::HashSet<Option<MessageQueueAssignment>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -796,7 +832,8 @@ mod tests {
                 let assignment = decoded
                     .message_queue_assignments
                     .as_ref()
-                    .and_then(|assignments| assignments.first())
+                    .and_then(|assignments| assignments.iter().next())
+                    .and_then(Option::as_ref)
                     .unwrap();
                 let mode = assignment
                     .mode
@@ -854,7 +891,8 @@ mod tests {
                 let assignment = decoded
                     .message_queue_assignments
                     .as_ref()
-                    .and_then(|assignments| assignments.first())
+                    .and_then(|assignments| assignments.iter().next())
+                    .and_then(Option::as_ref)
                     .unwrap();
                 assert_eq!(
                     serde_json::to_value(&assignment.attachments).unwrap(),
@@ -922,6 +960,66 @@ mod tests {
         let absent: LiteSubscriptionCtlRequestBody =
             serde_json::from_value(serde_json::json!({})).unwrap();
         assert_eq!(serde_json::to_value(absent).unwrap(), serde_json::json!({}));
+    }
+
+    #[test]
+    fn assignment_body_inputs_match_invoked_java_fastjson() {
+        fn normalize(value: &mut serde_json::Value) {
+            match value {
+                serde_json::Value::Array(values) => {
+                    for value in values.iter_mut() {
+                        normalize(value);
+                    }
+                    values.sort_by_key(|value| serde_json::to_string(value).unwrap());
+                }
+                serde_json::Value::Object(fields) => {
+                    for value in fields.values_mut() {
+                        normalize(value);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        for case in fixture["assignmentBodyCases"].as_array().unwrap() {
+            let decoded =
+                serde_json::from_value::<QueryAssignmentResponseBody>(case["input"].clone());
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            assert_eq!(
+                decoded.is_ok(),
+                java_accepts,
+                "{}: {decoded:?}",
+                case["name"]
+            );
+            if let Ok(decoded) = decoded {
+                let actual_assignments = decoded.message_queue_assignments.as_ref().map(|items| {
+                    items
+                        .iter()
+                        .map(|item| match item {
+                            Some(item) => serde_json::json!({
+                                "attachments": &item.attachments,
+                                "messageQueue": &item.message_queue,
+                                "mode": item.mode,
+                            }),
+                            None => serde_json::Value::Null,
+                        })
+                        .collect::<Vec<_>>()
+                });
+                let mut actual_assignments = serde_json::to_value(actual_assignments).unwrap();
+                let mut expected_assignments = case["assignments"].clone();
+                normalize(&mut actual_assignments);
+                normalize(&mut expected_assignments);
+                assert_eq!(actual_assignments, expected_assignments, "{}", case["name"]);
+
+                let mut actual = serde_json::to_value(decoded).unwrap();
+                let mut expected = case["encoded"].clone();
+                normalize(&mut actual);
+                normalize(&mut expected);
+                assert_eq!(actual, expected, "{}", case["name"]);
+            }
+        }
     }
 
     #[test]

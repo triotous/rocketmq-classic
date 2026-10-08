@@ -569,13 +569,14 @@ async fn populated_assignment_and_pop_replies_preserve_domain_data() {
         .unwrap();
     let assignments = result.message_queue_assignments.unwrap();
     assert_eq!(assignments.len(), 1);
-    let queue = assignments[0].message_queue.as_ref().unwrap();
+    let assignment = assignments.iter().next().unwrap().as_ref().unwrap();
+    let queue = assignment.message_queue.as_ref().unwrap();
     assert_eq!(
         (queue.topic(), queue.broker_name(), queue.queue_id()),
         (Some("orders"), Some("broker"), 2)
     );
     assert_eq!(
-        assignments[0].attachments.as_ref().unwrap()["key"],
+        assignment.attachments.as_ref().unwrap()["key"],
         Some("value".into())
     );
     task.await.unwrap();

@@ -170,7 +170,7 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
                 Ok(v) => {
                     let assignments = v.message_queue_assignments.unwrap_or_default();
                     if name == "assignment-populated" {
-                        let item = &assignments[0];
+                        let item = assignments.iter().next().and_then(Option::as_ref).unwrap();
                         let queue = item.message_queue.as_ref().unwrap();
                         format!(
                             "assignments={};topic={};broker={};queue={};mode=POP;source={}",

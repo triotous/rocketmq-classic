@@ -486,7 +486,11 @@ impl ClientRuntime {
         message_model: rocketmq_classic_protocol::heartbeat::MessageModel,
         timeout_millis: i32,
     ) -> Result<
-        Option<std::collections::HashSet<rocketmq_classic_protocol::body::MessageQueueAssignment>>,
+        Option<
+            std::collections::HashSet<
+                Option<rocketmq_classic_protocol::body::MessageQueueAssignment>,
+            >,
+        >,
         RuntimeError,
     > {
         let Some(address) = self.lookup_broker_with_route_refresh(topic).await? else {
@@ -506,8 +510,7 @@ impl ClientRuntime {
             .api
             .query_assignment(&address, &body, deadline)
             .await?
-            .message_queue_assignments
-            .map(|assignments| assignments.into_iter().collect()))
+            .message_queue_assignments)
     }
 
     pub async fn update_topic_route(

@@ -128,7 +128,7 @@ async fn uncached_consumer_lookup_refreshes_once_and_assignment_reuses_raw_topic
             0,
             Some(
                 serde_json::to_vec(&serde_json::json!({
-                    "messageQueueAssignments": [assignment.clone(), assignment]
+                    "messageQueueAssignments": [null, assignment.clone(), assignment]
                 }))
                 .unwrap(),
             ),
@@ -160,9 +160,10 @@ async fn uncached_consumer_lookup_refreshes_once_and_assignment_reuses_raw_topic
         serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
     assert_eq!(
         assignments.len(),
-        fixture["assignmentDuplicateCount"].as_u64().unwrap() as usize
+        fixture["assignmentDuplicateCount"].as_u64().unwrap() as usize + 1
     );
-    let assignment = assignments.iter().next().unwrap();
+    assert!(assignments.contains(&None));
+    let assignment = assignments.iter().find_map(Option::as_ref).unwrap();
     assert_eq!(assignment.mode, Some(MessageRequestMode::Pop));
     assert_eq!(assignment.message_queue.as_ref().unwrap().queue_id(), 2);
     assert_eq!(
