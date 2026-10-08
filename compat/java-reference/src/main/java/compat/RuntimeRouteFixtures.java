@@ -1049,13 +1049,21 @@ public final class RuntimeRouteFixtures {
         String multipleQueuesWithNull = "{\"queueDatas\":[{\"brokerName\":null},{\"brokerName\":\"broker\"}],\"filterServerTable\":{},\"brokerDatas\":[]}";
         String orderedQueues = "{\"queueDatas\":[{\"brokerName\":\"a\"},{\"brokerName\":\"b\"}],\"filterServerTable\":{},\"brokerDatas\":[]}";
         String reversedQueues = "{\"queueDatas\":[{\"brokerName\":\"b\"},{\"brokerName\":\"a\"}],\"filterServerTable\":{},\"brokerDatas\":[]}";
+        String oneNullQueue = "{\"queueDatas\":[null],\"filterServerTable\":{},\"brokerDatas\":[]}";
+        String multipleWithNullQueue = "{\"queueDatas\":[null,{\"brokerName\":\"broker\"}],\"filterServerTable\":{},\"brokerDatas\":[]}";
+        String oneNullBroker = "{\"queueDatas\":[],\"filterServerTable\":{},\"brokerDatas\":[null]}";
+        String multipleWithNullBroker = "{\"queueDatas\":[],\"filterServerTable\":{},\"brokerDatas\":[null,{\"brokerName\":\"broker\",\"brokerAddrs\":{}}]}";
         String[][] pairs = new String[][] {
             {singleNull, singleNull},
             {multipleWithNull, multipleWithNull},
             {reversed, ordered},
             {nullQueue, nullQueue},
             {multipleQueuesWithNull, multipleQueuesWithNull},
-            {reversedQueues, orderedQueues}
+            {reversedQueues, orderedQueues},
+            {oneNullQueue, oneNullQueue},
+            {multipleWithNullQueue, multipleWithNullQueue},
+            {oneNullBroker, oneNullBroker},
+            {multipleWithNullBroker, multipleWithNullBroker}
         };
         List<Object> cases = new ArrayList<>();
         for (String[] pair : pairs) {
