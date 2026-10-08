@@ -297,15 +297,23 @@ async fn retained_factory_table_and_atomic_mutations_match_invoked_java() {
         java["entryViewSeesBulk"]
     );
     assert_eq!(
-        key_view.remove("bulk-b").await.unwrap(),
+        key_view.remove_if(|key| key == "bulk-b").await.unwrap() > 0,
         java["keyViewRemovesBulk"]
     );
     assert_eq!(
-        entry_view.remove("bulk-a", &first).await.unwrap(),
+        entry_view
+            .remove_if(|key, value| key == "bulk-a" && Arc::ptr_eq(value, &first))
+            .await
+            .unwrap()
+            > 0,
         java["entryViewRemovesBulk"]
     );
     assert_eq!(
-        values_view.remove(&first).await.unwrap(),
+        values_view
+            .remove_if(|value| Arc::ptr_eq(value, &first))
+            .await
+            .unwrap()
+            > 0,
         java["valuesViewRemovesCurrent"]
     );
     assert_eq!(
