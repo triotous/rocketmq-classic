@@ -1530,10 +1530,19 @@ mod tests {
                             .iter()
                             .map(|unit| unit.as_u64().unwrap() as u16)
                             .collect::<Vec<_>>();
-                        assert_eq!(code_units.len(), 1);
-                        assert!((0xd800..=0xdfff).contains(&code_units[0]));
-                        // Java String can retain lone surrogates; native String uses U+FFFD.
-                        assert_eq!(proxy.address, "\u{fffd}");
+                        // Java String can retain lone surrogates; native String
+                        // replaces each unpaired code unit with U+FFFD.
+                        let native_expected = code_units
+                            .iter()
+                            .map(|unit| {
+                                if (0xd800..=0xdfff).contains(unit) {
+                                    '\u{fffd}'
+                                } else {
+                                    char::from_u32(u32::from(*unit)).unwrap()
+                                }
+                            })
+                            .collect::<String>();
+                        assert_eq!(proxy.address, native_expected);
                     } else {
                         assert_eq!(Some(proxy.address.as_str()), case["parsedAddr"].as_str());
                     }
