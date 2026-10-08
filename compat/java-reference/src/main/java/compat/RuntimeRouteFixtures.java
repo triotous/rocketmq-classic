@@ -802,6 +802,37 @@ public final class RuntimeRouteFixtures {
         cases.add(item);
     }
 
+    private static List<Object> brokerDataCompareToCases() {
+        List<Object> cases = new ArrayList<>();
+        String[][] pairs = new String[][] {
+            {"alpha", "beta"},
+            {"a", "abcd"},
+            {"\uD800\uDC00", "\uE000"},
+            {"same", "same"},
+            {null, "broker"},
+            {"broker", null}
+        };
+        for (String[] pair : pairs) {
+            org.apache.rocketmq.remoting.protocol.route.BrokerData left = brokerData(
+                "left-cluster", pair[0], null, false, "left-zone");
+            org.apache.rocketmq.remoting.protocol.route.BrokerData right = brokerData(
+                "right-cluster", pair[1], null, true, "right-zone");
+            Map<String, Object> item = new TreeMap<>();
+            item.put("left", com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(left,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue)));
+            item.put("right", com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(right,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue)));
+            try {
+                item.put("result", left.compareTo(right));
+                item.put("outcome", "OK");
+            } catch (NullPointerException error) {
+                item.put("outcome", "NullPointerException");
+            }
+            cases.add(item);
+        }
+        return cases;
+    }
+
     public static void main(String[] args) throws Exception {
         String ordinary = "{\"queueDatas\":[{\"brokerName\":\"broker\",\"readQueueNums\":3,\"writeQueueNums\":2,\"perm\":6,\"topicSysFlag\":0}],"
             + "\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master:10911\",\"2\":\"slave:10911\"}}],\"filterServerTable\":{}}";
@@ -920,6 +951,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("runtimeTopicRouteTable", runtimeTopicRouteTable(inputs.get(0)));
         fixture.put("runtimeRawOfflineCleanup", runtimeRawOfflineCleanup(inputs.get(0)));
         fixture.put("brokerDataEquality", brokerDataEqualityCases());
+        fixture.put("brokerDataCompareTo", brokerDataCompareToCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
             com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
