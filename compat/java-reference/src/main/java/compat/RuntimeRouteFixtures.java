@@ -833,6 +833,42 @@ public final class RuntimeRouteFixtures {
         return cases;
     }
 
+    private static List<Object> topicRouteDataChangedCases() {
+        String emptyPrefix = "{\"queueDatas\":[],\"filterServerTable\":{},\"brokerDatas\":";
+        String singleNull = emptyPrefix + "[{\"brokerName\":null,\"brokerAddrs\":{}}]}";
+        String multipleWithNull = emptyPrefix
+            + "[{\"brokerName\":null,\"brokerAddrs\":{}},{\"brokerName\":\"broker\",\"brokerAddrs\":{}}]}";
+        String ordered = emptyPrefix
+            + "[{\"brokerName\":\"a\",\"brokerAddrs\":{}},{\"brokerName\":\"b\",\"brokerAddrs\":{}}]}";
+        String reversed = emptyPrefix
+            + "[{\"brokerName\":\"b\",\"brokerAddrs\":{}},{\"brokerName\":\"a\",\"brokerAddrs\":{}}]}";
+        String[][] pairs = new String[][] {
+            {singleNull, singleNull},
+            {multipleWithNull, multipleWithNull},
+            {reversed, ordered}
+        };
+        List<Object> cases = new ArrayList<>();
+        for (String[] pair : pairs) {
+            org.apache.rocketmq.remoting.protocol.route.TopicRouteData current =
+                com.alibaba.fastjson2.JSON.parseObject(pair[0],
+                    org.apache.rocketmq.remoting.protocol.route.TopicRouteData.class);
+            org.apache.rocketmq.remoting.protocol.route.TopicRouteData old =
+                com.alibaba.fastjson2.JSON.parseObject(pair[1],
+                    org.apache.rocketmq.remoting.protocol.route.TopicRouteData.class);
+            Map<String, Object> item = new TreeMap<>();
+            item.put("current", com.alibaba.fastjson2.JSON.parseObject(pair[0]));
+            item.put("old", com.alibaba.fastjson2.JSON.parseObject(pair[1]));
+            try {
+                item.put("changed", current.topicRouteDataChanged(old));
+                item.put("outcome", "OK");
+            } catch (NullPointerException error) {
+                item.put("outcome", "NullPointerException");
+            }
+            cases.add(item);
+        }
+        return cases;
+    }
+
     public static void main(String[] args) throws Exception {
         String ordinary = "{\"queueDatas\":[{\"brokerName\":\"broker\",\"readQueueNums\":3,\"writeQueueNums\":2,\"perm\":6,\"topicSysFlag\":0}],"
             + "\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master:10911\",\"2\":\"slave:10911\"}}],\"filterServerTable\":{}}";
@@ -952,6 +988,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("runtimeRawOfflineCleanup", runtimeRawOfflineCleanup(inputs.get(0)));
         fixture.put("brokerDataEquality", brokerDataEqualityCases());
         fixture.put("brokerDataCompareTo", brokerDataCompareToCases());
+        fixture.put("topicRouteDataChanged", topicRouteDataChangedCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
             com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
