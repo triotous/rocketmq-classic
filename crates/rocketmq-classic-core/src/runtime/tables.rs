@@ -504,6 +504,12 @@ macro_rules! table_views {
                 }
                 Ok(removed)
             }
+            pub async fn remove_all(&self, keys: &BTreeSet<String>) -> Result<usize, RuntimeError> {
+                self.remove_if(|key| keys.contains(key)).await
+            }
+            pub async fn retain_all(&self, keys: &BTreeSet<String>) -> Result<usize, RuntimeError> {
+                self.retain(|key| keys.contains(key)).await
+            }
             pub async fn clear(&self) -> Result<(), RuntimeError> {
                 self.0.mutate(TableMutation::Clear).await.map(|_| ())
             }
@@ -559,6 +565,40 @@ macro_rules! table_views {
                 let mut removed = 0;
                 for (key, value) in table.snapshot()? {
                     if !predicate(&value) && table.remove_if_equal(key, &value).await? {
+                        removed += 1;
+                    }
+                }
+                Ok(removed)
+            }
+            pub async fn remove_all(
+                &self,
+                values: &[Arc<dyn $owner>],
+            ) -> Result<usize, RuntimeError> {
+                self.mutate_membership(values, false).await
+            }
+            pub async fn retain_all(
+                &self,
+                values: &[Arc<dyn $owner>],
+            ) -> Result<usize, RuntimeError> {
+                self.mutate_membership(values, true).await
+            }
+            async fn mutate_membership(
+                &self,
+                values: &[Arc<dyn $owner>],
+                retain_matches: bool,
+            ) -> Result<usize, RuntimeError> {
+                let table = self.table();
+                let entry_set = table.entry_set_view();
+                let mut removed = 0;
+                for (key, value) in table.snapshot()? {
+                    let mut matches = false;
+                    for candidate in values {
+                        if entry_set.contains(&key, candidate)? {
+                            matches = true;
+                            break;
+                        }
+                    }
+                    if matches != retain_matches && table.remove_if_equal(&key, &value).await? {
                         removed += 1;
                     }
                 }
@@ -628,6 +668,36 @@ macro_rules! table_views {
                 let mut removed = 0;
                 for (key, value) in table.snapshot()? {
                     if !predicate(&key, &value) && table.remove_if_equal(key, &value).await? {
+                        removed += 1;
+                    }
+                }
+                Ok(removed)
+            }
+            pub async fn remove_all(
+                &self,
+                entries: &BTreeMap<String, Arc<dyn $owner>>,
+            ) -> Result<usize, RuntimeError> {
+                self.mutate_membership(entries, false).await
+            }
+            pub async fn retain_all(
+                &self,
+                entries: &BTreeMap<String, Arc<dyn $owner>>,
+            ) -> Result<usize, RuntimeError> {
+                self.mutate_membership(entries, true).await
+            }
+            async fn mutate_membership(
+                &self,
+                candidates: &BTreeMap<String, Arc<dyn $owner>>,
+                retain_matches: bool,
+            ) -> Result<usize, RuntimeError> {
+                let table = self.table();
+                let mut removed = 0;
+                for (key, value) in table.snapshot()? {
+                    let matches = match candidates.get(&key) {
+                        Some(candidate) => self.contains(&key, candidate)?,
+                        None => false,
+                    };
+                    if matches != retain_matches && table.remove_if_equal(&key, &value).await? {
                         removed += 1;
                     }
                 }
