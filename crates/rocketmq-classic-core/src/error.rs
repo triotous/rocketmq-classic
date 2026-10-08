@@ -10,6 +10,12 @@ pub enum RpcError {
     Header(#[from] ProtocolError),
     #[error("unsupported RPC feature: {0}")]
     Unsupported(&'static str),
+    #[error("failed to serialize RPC request {request_code}: {source}")]
+    RequestSerialization {
+        request_code: i32,
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("invalid response for request {request_code} from {peer}: {reason}")]
     MalformedResponse {
         request_code: i32,

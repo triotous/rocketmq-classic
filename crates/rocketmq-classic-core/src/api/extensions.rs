@@ -160,9 +160,19 @@ pub struct ChangeInvisibleTimeResult {
     pub revive_qid: Option<i32>,
 }
 
-fn json_body<T: serde::Serialize>(value: &T) -> Vec<u8> {
-    // Phase 4 body models are JSON wire representations and serialize infallibly.
-    serde_json::to_vec(value).expect("protocol body serialization")
+fn json_body<T: serde::Serialize>(value: &T, request_code: i32) -> Result<Vec<u8>, RpcError> {
+    serde_json::to_vec(value).map_err(|source| RpcError::RequestSerialization {
+        request_code,
+        source,
+    })
+}
+
+fn heartbeat_json_body(data: &HeartbeatData) -> Result<Vec<u8>, RpcError> {
+    data.java_encode()
+        .map_err(|source| RpcError::RequestSerialization {
+            request_code: request::HEART_BEAT,
+            source,
+        })
 }
 
 fn pop_status(reply: &RemotingCommand, code: i32, addr: &str) -> Result<PopStatus, RpcError> {
@@ -205,12 +215,13 @@ impl MQClientApi {
         data: &HeartbeatData,
         deadline: Instant,
     ) -> Result<i32, RpcError> {
+        let body = heartbeat_json_body(data)?;
         let reply = self
             .request(
                 addr,
                 request::HEART_BEAT,
                 &LiteSubscriptionCtlRequestHeader,
-                Some(data.java_encode().expect("heartbeat body serialization")),
+                Some(body),
                 deadline,
             )
             .await?;
@@ -223,12 +234,13 @@ impl MQClientApi {
         data: &HeartbeatData,
         deadline: Instant,
     ) -> Result<HeartbeatV2Result, RpcError> {
+        let body = heartbeat_json_body(data)?;
         let reply = classify(
             self.request(
                 addr,
                 request::HEART_BEAT,
                 &LiteSubscriptionCtlRequestHeader,
-                Some(data.java_encode().expect("heartbeat body serialization")),
+                Some(body),
                 deadline,
             )
             .await?,
@@ -273,7 +285,7 @@ impl MQClientApi {
                 addr,
                 request::QUERY_ASSIGNMENT,
                 &LiteSubscriptionCtlRequestHeader,
-                Some(json_body(body)),
+                Some(json_body(body, request::QUERY_ASSIGNMENT)?),
                 deadline,
             )
             .await?,
@@ -294,7 +306,7 @@ impl MQClientApi {
                 addr,
                 request::SET_MESSAGE_REQUEST_MODE,
                 &LiteSubscriptionCtlRequestHeader,
-                Some(json_body(body)),
+                Some(json_body(body, request::SET_MESSAGE_REQUEST_MODE)?),
                 deadline,
             )
             .await?,
@@ -315,7 +327,7 @@ impl MQClientApi {
                 addr,
                 request::LITE_SUBSCRIPTION_CTL,
                 &LiteSubscriptionCtlRequestHeader,
-                Some(json_body(body)),
+                Some(json_body(body, request::LITE_SUBSCRIPTION_CTL)?),
                 deadline,
             )
             .await?,
@@ -417,7 +429,7 @@ impl MQClientApi {
                 addr,
                 request::BATCH_ACK_MESSAGE,
                 &LiteSubscriptionCtlRequestHeader,
-                Some(json_body(body)),
+                Some(json_body(body, request::BATCH_ACK_MESSAGE)?),
                 deadline,
             )
             .await?;
@@ -461,5 +473,36 @@ impl MQClientApi {
             invisible_time: Some(invisible_time),
             revive_qid: Some(revive_qid),
         })
+    }
+}
+
+#[cfg(test)]
+mod serialization_tests {
+    use super::*;
+
+    #[test]
+    fn serializer_failure_returns_typed_request_serialization_error() {
+        struct FailingValue;
+
+        impl serde::Serialize for FailingValue {
+            fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                Err(serde::ser::Error::custom("fixture serialization failure"))
+            }
+        }
+
+        let error = json_body(&FailingValue, request::HEART_BEAT).unwrap_err();
+        match error {
+            RpcError::RequestSerialization {
+                request_code,
+                source,
+            } => {
+                assert_eq!(request_code, request::HEART_BEAT);
+                assert!(!source.to_string().is_empty());
+            }
+            other => panic!("unexpected error: {other}"),
+        }
     }
 }
