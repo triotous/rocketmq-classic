@@ -1,5 +1,5 @@
 use rocketmq_classic_common::message::MessageQueue;
-use rocketmq_classic_core::config::{AccessChannel, ClientConfig};
+use rocketmq_classic_core::config::{AccessChannel, AccessChannelLookupError, ClientConfig};
 use rocketmq_classic_protocol::codes::LanguageCode;
 use serde_json::Value;
 
@@ -472,6 +472,66 @@ fn client_config_to_string_matches_invoked_java() {
             "{}",
             case["case"]
         );
+    }
+}
+
+#[test]
+fn access_channel_enum_methods_match_invoked_java() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let cases = fixture["accessChannelMethodCases"].as_array().unwrap();
+    let values = AccessChannel::values();
+    for case in cases {
+        match case["case"].as_str().unwrap() {
+            "constant" => {
+                let name = case["name"].as_str().unwrap();
+                let channel = AccessChannel::from_java_name(Some(name)).unwrap();
+                assert_eq!(channel.name(), name, "{case}");
+                assert_eq!(
+                    channel.ordinal(),
+                    case["ordinal"].as_i64().unwrap() as i32,
+                    "{case}"
+                );
+                assert_eq!(
+                    channel.to_string(),
+                    case["text"].as_str().unwrap(),
+                    "{case}"
+                );
+                assert_eq!(channel.name(), case["valueOf"].as_str().unwrap(), "{case}");
+                assert_eq!(channel, values[channel.ordinal() as usize], "{case}");
+                let next = values[(channel.ordinal() as usize + 1) % values.len()];
+                assert_eq!(
+                    channel.java_compare_to(next),
+                    case["compareNext"].as_i64().unwrap() as i32,
+                    "{case}"
+                );
+                assert_eq!(case["values"], serde_json::json!(["LOCAL", "CLOUD"]));
+                assert_eq!(case["valuesDefensiveCopy"], true);
+            }
+            "lookup" => {
+                let name = case["input"].as_str();
+                match AccessChannel::from_java_name(name) {
+                    Ok(channel) => {
+                        assert_eq!(case["outcome"], "OK", "{case}");
+                        assert_eq!(case["decoded"], channel.name(), "{case}");
+                    }
+                    Err(AccessChannelLookupError::NullName) => {
+                        assert_eq!(case["outcome"], "NullPointerException", "{case}");
+                        assert_eq!(case["message"], "Name is null", "{case}");
+                    }
+                    Err(AccessChannelLookupError::UnknownName(name)) => {
+                        assert_eq!(case["outcome"], "IllegalArgumentException", "{case}");
+                        assert_eq!(
+                            case["message"],
+                            format!(
+                                "No enum constant org.apache.rocketmq.client.AccessChannel.{name}"
+                            )
+                        );
+                    }
+                }
+            }
+            kind => panic!("unknown Java AccessChannel case: {kind}"),
+        }
     }
 }
 

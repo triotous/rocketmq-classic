@@ -158,6 +158,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("managerRemoval", managerRemoval(config));
         fixture.put("managerTable", managerTable(config));
         fixture.put("nullableSettings", nullableSettings());
+        fixture.put("accessChannelMethodCases", accessChannelMethodCases());
         fixture.put("languageCodeMethodCases", languageCodeMethodCases());
         fixture.put("socksConstruction", socksConstruction());
         fixture.put("socksConnection", socksConnection(true));
@@ -1503,6 +1504,47 @@ public final class RuntimeConfigFixtures {
             item.put("case", "name");
             item.put("input", input);
             item.put("decoded", decoded == null ? null : decoded.name());
+            cases.add(item);
+        }
+        return cases;
+    }
+
+    private static List<Object> accessChannelMethodCases() {
+        List<Object> cases = new ArrayList<>();
+        org.apache.rocketmq.client.AccessChannel[] values =
+            org.apache.rocketmq.client.AccessChannel.values();
+        List<String> names = new ArrayList<>();
+        for (org.apache.rocketmq.client.AccessChannel value : values) {
+            names.add(value.name());
+        }
+        for (org.apache.rocketmq.client.AccessChannel value : values) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", "constant");
+            item.put("name", value.name());
+            item.put("ordinal", value.ordinal());
+            item.put("text", value.toString());
+            item.put("values", names);
+            item.put("valueOf", org.apache.rocketmq.client.AccessChannel.valueOf(value.name()).name());
+            item.put("compareNext", value.compareTo(values[(value.ordinal() + 1) % values.length]));
+            org.apache.rocketmq.client.AccessChannel[] mutated =
+                org.apache.rocketmq.client.AccessChannel.values();
+            mutated[0] = org.apache.rocketmq.client.AccessChannel.CLOUD;
+            item.put("valuesDefensiveCopy",
+                org.apache.rocketmq.client.AccessChannel.values()[0]
+                    == org.apache.rocketmq.client.AccessChannel.LOCAL);
+            cases.add(item);
+        }
+        for (String input : new String[] {null, "", "LOCAL", "local", "CLOUD", "UNKNOWN"}) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", "lookup");
+            item.put("input", input);
+            try {
+                item.put("outcome", "OK");
+                item.put("decoded", org.apache.rocketmq.client.AccessChannel.valueOf(input).name());
+            } catch (RuntimeException error) {
+                item.put("outcome", error.getClass().getSimpleName());
+                item.put("message", error.getMessage());
+            }
             cases.add(item);
         }
         return cases;

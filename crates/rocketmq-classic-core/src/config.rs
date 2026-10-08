@@ -31,6 +31,60 @@ pub enum AccessChannel {
     Cloud,
 }
 
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum AccessChannelLookupError {
+    /// Java's generated `valueOf(String)` rejects a null argument.
+    #[error("Name is null")]
+    NullName,
+    /// Java's generated `valueOf(String)` rejects names outside the enum.
+    #[error("No enum constant org.apache.rocketmq.client.AccessChannel.{0}")]
+    UnknownName(String),
+}
+
+impl AccessChannel {
+    /// Returns the Java enum declaration name.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Local => "LOCAL",
+            Self::Cloud => "CLOUD",
+        }
+    }
+
+    /// Returns the Java enum declaration ordinal.
+    pub const fn ordinal(self) -> i32 {
+        match self {
+            Self::Local => 0,
+            Self::Cloud => 1,
+        }
+    }
+
+    /// Returns a fresh value array in Java declaration order.
+    pub const fn values() -> [Self; 2] {
+        [Self::Local, Self::Cloud]
+    }
+
+    /// Applies Java's exact, case-sensitive generated `valueOf(String)` lookup.
+    pub fn from_java_name(name: Option<&str>) -> Result<Self, AccessChannelLookupError> {
+        match name {
+            None => Err(AccessChannelLookupError::NullName),
+            Some("LOCAL") => Ok(Self::Local),
+            Some("CLOUD") => Ok(Self::Cloud),
+            Some(other) => Err(AccessChannelLookupError::UnknownName(other.to_owned())),
+        }
+    }
+
+    /// Returns Java enum `compareTo`'s ordinal difference.
+    pub const fn java_compare_to(self, other: Self) -> i32 {
+        self.ordinal() - other.ordinal()
+    }
+}
+
+impl std::fmt::Display for AccessChannel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct ClientConfig {
     pub namesrv_addr: Option<String>,
