@@ -1318,6 +1318,9 @@ mod route_dto_input_cases_tests {
         for required in [
             "queue-unicode-decimal-string",
             "mapping-unicode-decimal-strings",
+            "message-queue-unicode-decimal-id",
+            "broker-unicode-decimal-address-key",
+            "mapping-unicode-decimal-id-key",
         ] {
             assert!(
                 cases.iter().any(|case| case["id"] == required),
