@@ -19,6 +19,7 @@ public final class RuntimeRouteFixtures {
     private static final class RouteApi extends org.apache.rocketmq.client.impl.MQClientAPIImpl {
         TopicRouteData route;
         int requests;
+        final List<String> requestedTopics = new ArrayList<>();
         RouteApi(org.apache.rocketmq.client.ClientConfig config) {
             super(new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null, config, null,
                 ignored -> (org.apache.rocketmq.remoting.RemotingClient) java.lang.reflect.Proxy.newProxyInstance(
@@ -29,8 +30,49 @@ public final class RuntimeRouteFixtures {
         @Override
         public TopicRouteData getTopicRouteInfoFromNameServer(String topic, long timeout) {
             requests++;
+            requestedTopics.add(topic);
             return route;
         }
+    }
+
+    private static Map<String, Object> nullSubscriptionTopicRefresh() throws Exception {
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("route-null-subscription-topic");
+        MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+        org.apache.rocketmq.client.impl.MQClientAPIImpl original = runtime.getMQClientAPIImpl();
+        RouteApi api = new RouteApi(config);
+        Map<String, Object> item = new TreeMap<>();
+        try {
+            java.lang.reflect.Field field = MQClientInstance.class.getDeclaredField("mQClientAPIImpl");
+            field.setAccessible(true);
+            field.set(runtime, api);
+            org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData nullTopic =
+                new org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData();
+            org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData named =
+                new org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData();
+            named.setTopic("topic");
+            java.util.Set<org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData> subscriptions =
+                new java.util.HashSet<>(java.util.Arrays.asList(nullTopic, named));
+            org.apache.rocketmq.client.impl.consumer.MQConsumerInner consumer =
+                (org.apache.rocketmq.client.impl.consumer.MQConsumerInner) java.lang.reflect.Proxy.newProxyInstance(
+                    org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class},
+                    (proxy, method, values) -> "subscriptions".equals(method.getName())
+                        ? subscriptions : method.getReturnType() == boolean.class ? false : null);
+            if (!runtime.registerConsumer("consumer", consumer))
+                throw new IllegalStateException("consumer registration");
+            runtime.updateTopicRouteInfoFromNameServer();
+            item.put("requests", api.requests);
+            item.put("requestedNull", api.requestedTopics.contains(null));
+            item.put("requestedNamed", api.requestedTopics.contains("topic"));
+        } finally {
+            java.lang.reflect.Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
+                org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
+            cleanup.setAccessible(true);
+            try { cleanup.invoke(runtime, original, new IllegalStateException("null subscription topic fixture teardown")); }
+            finally { api.shutdown(); }
+        }
+        return item;
     }
 
     private static List<Object> runtimeNullBrokerValues() throws Exception {
@@ -658,6 +700,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("integers", integerCases);
         fixture.put("runtimeNullBrokerMap", runtimeNullBrokerMap());
         fixture.put("runtimeNullBrokerValues", runtimeNullBrokerValues());
+        fixture.put("nullSubscriptionTopicRefresh", nullSubscriptionTopicRefresh());
         fixture.put("nullableRouteCollections", nullableRouteCollections());
         fixture.put("nullableNestedRouteFields", nullableNestedRouteFields());
         fixture.put("nullableMessageQueueFields", nullableMessageQueueFields());

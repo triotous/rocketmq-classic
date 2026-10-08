@@ -161,10 +161,10 @@ async fn all_topic_refresh_unions_registered_topics_and_continues_after_rejectio
             );
             ConsumerData {
                 subscription_data_set: Some(
-                    ["common", "consumer-only"]
+                    [Some("common"), Some("consumer-only"), None]
                         .into_iter()
                         .map(|topic| SubscriptionData {
-                            topic: Some(topic.into()),
+                            topic: topic.map(str::to_owned),
                             ..Default::default()
                         })
                         .collect(),
@@ -203,7 +203,7 @@ async fn all_topic_refresh_unions_registered_topics_and_continues_after_rejectio
     let peer = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
         let mut seen = BTreeSet::new();
-        for _ in 0..3 {
+        for _ in 0..4 {
             let mut length = [0; 4];
             stream.read_exact(&mut length).await.unwrap();
             let mut bytes = BytesMut::from(&length[..]);
@@ -213,10 +213,19 @@ async fn all_topic_refresh_unions_registered_topics_and_continues_after_rejectio
                 .unwrap()
                 .unwrap();
             assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
-            let topic = command.ext_fields.as_ref().unwrap()["topic"].clone();
+            let topic = command
+                .ext_fields
+                .as_ref()
+                .unwrap()
+                .get("topic")
+                .cloned();
             assert!(seen.insert(topic.clone()), "duplicate route request");
             let mut reply = RemotingCommand {
-                code: if topic == "common" { 987654 } else { 0 },
+                code: if topic.as_deref() == Some("common") || topic.is_none() {
+                    987654
+                } else {
+                    0
+                },
                 opaque: command.opaque,
                 body: Some(body.clone()),
                 ..Default::default()
@@ -230,9 +239,10 @@ async fn all_topic_refresh_unions_registered_topics_and_continues_after_rejectio
         assert_eq!(
             seen,
             BTreeSet::from([
-                "common".into(),
-                "consumer-only".into(),
-                "producer-only".into()
+                Some("common".into()),
+                Some("consumer-only".into()),
+                Some("producer-only".into()),
+                None
             ])
         );
     });
@@ -240,7 +250,10 @@ async fn all_topic_refresh_unions_registered_topics_and_continues_after_rejectio
         .await
         .unwrap()
         .unwrap();
-    peer.await.unwrap();
+    tokio::time::timeout(Duration::from_secs(5), peer)
+        .await
+        .expect("all route topics, including null, must be requested")
+        .unwrap();
     let snapshot = runtime.route_snapshot().unwrap();
     assert!(!snapshot.topics.contains_key("common"));
     assert!(snapshot.topics.contains_key("consumer-only"));
