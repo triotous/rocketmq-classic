@@ -194,13 +194,30 @@ async fn conditional_registry_mutations_match_java_custom_value_equality() {
             .await
             .unwrap()
     );
-    producers.put("remove", producer_a).await.unwrap();
+    producers.put("remove", producer_a.clone()).await.unwrap();
     assert!(
         producers
             .remove_if_equal("remove", &producer_b)
             .await
             .unwrap()
     );
+    producers
+        .put("values-remove", producer_a.clone())
+        .await
+        .unwrap();
+    let producer_values_remove = producers.values_view().remove(&producer_b).await.unwrap();
+    producers
+        .put("entry-remove", producer_a.clone())
+        .await
+        .unwrap();
+    let producer_entries = producers.entry_set_view();
+    let producer_entry_contains = producer_entries
+        .contains("entry-remove", &producer_b)
+        .unwrap();
+    let producer_entry_remove = producer_entries
+        .remove("entry-remove", &producer_b)
+        .await
+        .unwrap();
 
     let consumers = runtime.consumer_table();
     let consumer_a: Arc<dyn ConsumerRuntime> = Arc::new(EqualConsumer("consumer-equal"));
@@ -214,17 +231,37 @@ async fn conditional_registry_mutations_match_java_custom_value_equality() {
             .await
             .unwrap()
     );
-    consumers.put("remove", consumer_a).await.unwrap();
+    consumers.put("remove", consumer_a.clone()).await.unwrap();
     assert!(
         consumers
             .remove_if_equal("remove", &consumer_b)
             .await
             .unwrap()
     );
+    consumers
+        .put("values-remove", consumer_a.clone())
+        .await
+        .unwrap();
+    let consumer_values_remove = consumers.values_view().remove(&consumer_b).await.unwrap();
+    consumers.put("entry-remove", consumer_a).await.unwrap();
+    let consumer_entries = consumers.entry_set_view();
+    let consumer_entry_contains = consumer_entries
+        .contains("entry-remove", &consumer_b)
+        .unwrap();
+    let consumer_entry_remove = consumer_entries
+        .remove("entry-remove", &consumer_b)
+        .await
+        .unwrap();
     assert_eq!(
         serde_json::json!({
             "producerContainsEqualValue": true,
+            "producerValuesRemoveByEqualValue": producer_values_remove,
+            "producerEntryContainsEqualValue": producer_entry_contains,
+            "producerEntryRemoveByEqualValue": producer_entry_remove,
             "consumerContainsEqualValue": true,
+            "consumerValuesRemoveByEqualValue": consumer_values_remove,
+            "consumerEntryContainsEqualValue": consumer_entry_contains,
+            "consumerEntryRemoveByEqualValue": consumer_entry_remove,
             "producerReplaceByEqualValue": true,
             "producerRemoveByEqualValue": true,
             "consumerReplaceByEqualValue": true,
