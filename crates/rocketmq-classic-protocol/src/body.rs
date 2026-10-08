@@ -1191,6 +1191,22 @@ mod tests {
     }
 
     #[test]
+    fn assignment_set_hash_collision_oracle_records_the_java_boundary() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let collision = &fixture["assignmentHashCollisionCases"];
+
+        // MessageQueueAssignment.equals ignores mode and attachments, while its Java
+        // hash includes both. The fixture constructs an equal-hash pair using each
+        // JVM's enum identity hash; that process-local collision is not portable to
+        // a Rust HashSet with the lawful all-fields Eq/Hash contract.
+        assert_eq!(collision["sameQueueEquals"], true);
+        assert_eq!(collision["equalHash"], true);
+        assert_eq!(collision["setSize"], 1);
+        assert_eq!(collision["collisionDeduplicates"], true);
+    }
+
+    #[test]
     fn assignment_methods_match_invoked_java_public_api() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();

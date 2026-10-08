@@ -5,8 +5,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import org.apache.rocketmq.client.ClientConfig;
 import org.apache.rocketmq.client.impl.factory.MQClientInstance;
@@ -51,6 +55,7 @@ public final class RuntimeLookupFixtures {
         fixture.put("assignmentModeCases", assignmentModeCases());
         fixture.put("assignmentAttachmentCases", assignmentAttachmentCases());
         fixture.put("assignmentBodyCases", assignmentBodyCases());
+        fixture.put("assignmentHashCollisionCases", assignmentHashCollisionCases());
         fixture.put("assignmentMethodCases", assignmentMethodCases());
         fixture.put("messageRequestModeMethodCases", messageRequestModeMethodCases());
         fixture.put("consumerListCases", consumerListCases());
@@ -166,7 +171,55 @@ public final class RuntimeLookupFixtures {
         cases.add(assignmentBodyCase("number-field", "7", true));
         cases.add(assignmentBodyCase("boolean-field", "true", true));
         cases.add(assignmentBodyCase("identical-duplicates", "[{" + queue + "},{" + queue + "}]", true));
+        String pull = "{\"messageQueue\":{\"topic\":\"topic\",\"brokerName\":\"broker\",\"queueId\":2},"
+            + "\"mode\":\"PULL\"}";
+        String pop = "{\"messageQueue\":{\"topic\":\"topic\",\"brokerName\":\"broker\",\"queueId\":2},"
+            + "\"mode\":\"POP\"}";
+        cases.add(assignmentBodyCase("same-queue-different-mode", "[" + pull + "," + pop + "]", true));
         return cases;
+    }
+
+    private static String stringWithHashCode(int target) {
+        long remaining = Integer.toUnsignedLong(target);
+        char[] digits = new char[7];
+        for (int index = digits.length - 1; index >= 0; index--) {
+            digits[index] = (char) (remaining % 31);
+            remaining /= 31;
+        }
+        if (remaining != 0) {
+            throw new IllegalArgumentException("hash does not fit seven base-31 digits");
+        }
+        return new String(digits);
+    }
+
+    private static Map<String, Object> assignmentHashCollisionCases() {
+        org.apache.rocketmq.common.message.MessageQueue queue =
+            new org.apache.rocketmq.common.message.MessageQueue("topic", "broker", 2);
+        org.apache.rocketmq.common.message.MessageQueueAssignment pull =
+            new org.apache.rocketmq.common.message.MessageQueueAssignment();
+        pull.setMessageQueue(queue);
+        org.apache.rocketmq.common.message.MessageQueueAssignment pop =
+            new org.apache.rocketmq.common.message.MessageQueueAssignment();
+        pop.setMessageQueue(new org.apache.rocketmq.common.message.MessageQueue("topic", "broker", 2));
+        pop.setMode(org.apache.rocketmq.common.message.MessageRequestMode.POP);
+
+        // MessageQueueAssignment.hashCode includes enum identity hash and attachments,
+        // but equals compares only the queue. Choose an attachment hash that forces
+        // an equal-hash pair for this JVM, without emitting the process-local hash.
+        int attachmentHash = 31 * (pull.getMode().hashCode() - pop.getMode().hashCode());
+        Map<String, String> attachments = new HashMap<>();
+        attachments.put("", stringWithHashCode(attachmentHash));
+        pop.setAttachments(attachments);
+
+        Set<org.apache.rocketmq.common.message.MessageQueueAssignment> assignments = new HashSet<>();
+        assignments.add(pull);
+        assignments.add(pop);
+        Map<String, Object> result = new TreeMap<>();
+        result.put("sameQueueEquals", pull.equals(pop));
+        result.put("equalHash", pull.hashCode() == pop.hashCode());
+        result.put("setSize", assignments.size());
+        result.put("collisionDeduplicates", assignments.size() == 1);
+        return result;
     }
 
     private static Map<String, Object> assignmentBodyCase(String name, String rawValue, boolean includeField) {
@@ -180,10 +233,28 @@ public final class RuntimeLookupFixtures {
                     body.getBytes(java.nio.charset.StandardCharsets.UTF_8),
                     org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody.class);
             item.put("outcome", "ACCEPTED");
-            item.put("assignments", decoded.getMessageQueueAssignments());
+            Set<org.apache.rocketmq.common.message.MessageQueueAssignment> assignmentSet =
+                decoded.getMessageQueueAssignments();
+            if (assignmentSet == null) {
+                item.put("assignments", null);
+            } else {
+                List<org.apache.rocketmq.common.message.MessageQueueAssignment> assignments =
+                    new ArrayList<>(assignmentSet);
+                assignments.sort(
+                    Comparator.nullsFirst(Comparator.comparing(com.alibaba.fastjson2.JSON::toJSONString)));
+                item.put("assignments", assignments);
+            }
             byte[] encoded = decoded.encode();
-            item.put("encoded", com.alibaba.fastjson2.JSON.parseObject(
-                new String(encoded, java.nio.charset.StandardCharsets.UTF_8)));
+            Map<String, Object> encodedBody = com.alibaba.fastjson2.JSON.parseObject(
+                new String(encoded, java.nio.charset.StandardCharsets.UTF_8));
+            Object encodedAssignments = encodedBody.get("messageQueueAssignments");
+            if (encodedAssignments instanceof List<?>) {
+                @SuppressWarnings("unchecked")
+                List<Object> encodedRows = (List<Object>) encodedAssignments;
+                encodedRows.sort(
+                    Comparator.nullsFirst(Comparator.comparing(com.alibaba.fastjson2.JSON::toJSONString)));
+            }
+            item.put("encoded", encodedBody);
         } catch (RuntimeException error) {
             item.put("outcome", "REJECTED");
             item.put("error", error.getClass().getSimpleName());
