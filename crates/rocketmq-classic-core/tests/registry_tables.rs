@@ -325,6 +325,79 @@ async fn registry_default_map_operations_match_invoked_java() {
 }
 
 #[tokio::test]
+async fn retained_registry_collection_views_match_invoked_java() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&ClientConfig::new("registry-live-views"))
+        .await
+        .unwrap();
+    macro_rules! exercise_live_views {
+        ($table:expr, $first:expr, $second:expr, $expected:expr) => {{
+            let table = $table;
+            let first = $first;
+            let second = $second;
+            let keys = table.key_set_view();
+            let values = table.values_view();
+            let entries = table.entry_set_view();
+            table.put("a", first.clone()).await.unwrap();
+            let retained_views_see_initial_put = keys.contains("a").unwrap()
+                && values.contains(&first).unwrap()
+                && entries.contains("a", &first).unwrap();
+            table.put("b", second.clone()).await.unwrap();
+            let retained_views_see_later_put = keys.len().unwrap() == 2
+                && values.len().unwrap() == 2
+                && entries.len().unwrap() == 2;
+            let key_view_remove = keys.remove("a").await.unwrap()
+                && !table.contains_key("a").unwrap();
+            let value_view_remove = values.remove(&second).await.unwrap()
+                && !table.contains_key("b").unwrap();
+            table.put("c", first.clone()).await.unwrap();
+            let entry_view_remove = entries.remove("c", &first).await.unwrap()
+                && !table.contains_key("c").unwrap();
+            table.put("d", second.clone()).await.unwrap();
+            let retained_views_see_repopulation = keys.contains("d").unwrap()
+                && values.contains(&second).unwrap()
+                && entries.contains("d", &second).unwrap();
+            keys.clear().await.unwrap();
+            let key_view_clear = table.is_empty().unwrap();
+            table.put("e", first.clone()).await.unwrap();
+            values.clear().await.unwrap();
+            let value_view_clear = table.is_empty().unwrap();
+            table.put("f", second.clone()).await.unwrap();
+            entries.clear().await.unwrap();
+            let entry_view_clear = table.is_empty().unwrap();
+            assert_eq!(
+                serde_json::json!({
+                    "retainedViewsSeeInitialPut": retained_views_see_initial_put,
+                    "retainedViewsSeeLaterPut": retained_views_see_later_put,
+                    "keyViewRemove": key_view_remove,
+                    "valueViewRemove": value_view_remove,
+                    "entryViewRemove": entry_view_remove,
+                    "retainedViewsSeeRepopulation": retained_views_see_repopulation,
+                    "keyViewClear": key_view_clear,
+                    "valueViewClear": value_view_clear,
+                    "entryViewClear": entry_view_clear,
+                }),
+                $expected
+            );
+        }};
+    }
+    exercise_live_views!(
+        runtime.producer_table(),
+        Arc::new(Producer) as Arc<dyn ProducerRuntime>,
+        Arc::new(Producer) as Arc<dyn ProducerRuntime>,
+        fixture["registryTables"]["producerLiveViews"].clone()
+    );
+    exercise_live_views!(
+        runtime.consumer_table(),
+        Arc::new(Consumer) as Arc<dyn ConsumerRuntime>,
+        Arc::new(Consumer) as Arc<dyn ConsumerRuntime>,
+        fixture["registryTables"]["consumerLiveViews"].clone()
+    );
+}
+
+#[tokio::test]
 async fn group_unregister_matches_invoked_java_consumer_methods_and_removes_current_binding() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
