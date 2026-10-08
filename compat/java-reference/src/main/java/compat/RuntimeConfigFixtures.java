@@ -96,6 +96,9 @@ public final class RuntimeConfigFixtures {
             managed.put("enableConcurrentHeartbeat", actual.isEnableConcurrentHeartbeat());
             managed.put("concurrentHeartbeatThreadPoolSize", actual.getConcurrentHeartbeatThreadPoolSize());
             managed.put("sharedIdentity", runtime == manager.getOrCreateMQClientInstance(config));
+            managed.put("configGetterSameObject", actual == runtime.getClientConfig());
+            actual.setMqClientApiTimeout(4321);
+            managed.put("configMutationVisible", runtime.getClientConfig().getMqClientApiTimeout() == 4321);
         } finally {
             try {
                 java.lang.reflect.Method cleanup = runtime.getClass().getDeclaredMethod("cleanupAfterConstructionFailure",
