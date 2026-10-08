@@ -223,6 +223,8 @@ public final class RuntimeConfigFixtures {
         Map<String, Object> result = new TreeMap<>();
         try {
             result.put("retainedViewSeesSecond", live.get(id) == second);
+            result.put("getOrDefaultPresent", live.getOrDefault(id, first) == second);
+            result.put("getOrDefaultAbsent", live.getOrDefault("missing", first) == first);
             result.put("putReturnsPrevious", live.put(id, first) == second);
             result.put("managerSeesPut", manager.getOrCreateMQClientInstance(config) == first);
             result.put("putIfAbsentKeepsCurrent", live.putIfAbsent(id, second) == first && live.get(id) == first);
@@ -237,6 +239,12 @@ public final class RuntimeConfigFixtures {
             live.put("", second); // Empty and arbitrary alias keys are allowed.
             result.put("sizeWithAlias", live.size());
             result.put("aliasHasSecond", live.get("") == second);
+            Map<String, org.apache.rocketmq.client.impl.factory.MQClientInstance> bulk = new TreeMap<>();
+            bulk.put("bulk-a", first);
+            bulk.put("bulk-b", second);
+            live.putAll(bulk);
+            result.put("putAllAdds", live.get("bulk-a") == first && live.get("bulk-b") == second
+                && live.size() == 4);
             live.clear();
             result.put("retainedViewEmptyAfterClear", live.isEmpty());
         } finally {
