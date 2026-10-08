@@ -443,6 +443,8 @@ public final class RuntimeConfigFixtures {
                 tableOwner(org.apache.rocketmq.client.impl.producer.MQProducerInner.class, "producer-equal");
             org.apache.rocketmq.client.impl.producer.MQProducerInner producerReplacement =
                 tableOwner(org.apache.rocketmq.client.impl.producer.MQProducerInner.class, "producer-replacement");
+            org.apache.rocketmq.client.impl.producer.MQProducerInner producerOther =
+                tableOwner(org.apache.rocketmq.client.impl.producer.MQProducerInner.class, "producer-other");
             runtime.getProducerTable().put("equal-replace", producerEqualA);
             equalValues.put("producerContainsEqualValue", runtime.getProducerTable().containsValue(producerEqualB));
             equalValues.put("producerReplaceByEqualValue",
@@ -458,12 +460,30 @@ public final class RuntimeConfigFixtures {
                 new java.util.AbstractMap.SimpleImmutableEntry<>("equal-entry-remove", producerEqualB);
             equalValues.put("producerEntryContainsEqualValue", runtime.getProducerTable().entrySet().contains(producerEntry));
             equalValues.put("producerEntryRemoveByEqualValue", runtime.getProducerTable().entrySet().remove(producerEntry));
+            runtime.getProducerTable().put("equal-values-remove-all", producerEqualA);
+            equalValues.put("producerValuesRemoveAllByEqualValue",
+                runtime.getProducerTable().values().removeAll(java.util.Collections.singleton(producerEqualB)));
+            runtime.getProducerTable().put("equal-values-retain-all", producerEqualA);
+            runtime.getProducerTable().put("other-values-retain-all", producerOther);
+            equalValues.put("producerValuesRetainAllByEqualValue",
+                runtime.getProducerTable().values().retainAll(java.util.Collections.singleton(producerEqualB))
+                    && runtime.getProducerTable().containsKey("equal-values-retain-all")
+                    && !runtime.getProducerTable().containsKey("other-values-retain-all"));
+            runtime.getProducerTable().put("equal-entry-retain-all", producerEqualA);
+            runtime.getProducerTable().put("other-entry-retain-all", producerOther);
+            equalValues.put("producerEntryRetainAllByEqualValue",
+                runtime.getProducerTable().entrySet().retainAll(java.util.Collections.singleton(
+                    new java.util.AbstractMap.SimpleImmutableEntry<>("equal-entry-retain-all", producerEqualB)))
+                    && runtime.getProducerTable().containsKey("equal-entry-retain-all")
+                    && !runtime.getProducerTable().containsKey("other-entry-retain-all"));
             org.apache.rocketmq.client.impl.consumer.MQConsumerInner consumerEqualA =
                 tableOwner(org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class, "consumer-equal");
             org.apache.rocketmq.client.impl.consumer.MQConsumerInner consumerEqualB =
                 tableOwner(org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class, "consumer-equal");
             org.apache.rocketmq.client.impl.consumer.MQConsumerInner consumerReplacement =
                 tableOwner(org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class, "consumer-replacement");
+            org.apache.rocketmq.client.impl.consumer.MQConsumerInner consumerOther =
+                tableOwner(org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class, "consumer-other");
             runtime.getConsumerTable().put("equal-replace", consumerEqualA);
             equalValues.put("consumerContainsEqualValue", runtime.getConsumerTable().containsValue(consumerEqualB));
             equalValues.put("consumerReplaceByEqualValue",
@@ -479,6 +499,22 @@ public final class RuntimeConfigFixtures {
                 new java.util.AbstractMap.SimpleImmutableEntry<>("equal-entry-remove", consumerEqualB);
             equalValues.put("consumerEntryContainsEqualValue", runtime.getConsumerTable().entrySet().contains(consumerEntry));
             equalValues.put("consumerEntryRemoveByEqualValue", runtime.getConsumerTable().entrySet().remove(consumerEntry));
+            runtime.getConsumerTable().put("equal-values-remove-all", consumerEqualA);
+            equalValues.put("consumerValuesRemoveAllByEqualValue",
+                runtime.getConsumerTable().values().removeAll(java.util.Collections.singleton(consumerEqualB)));
+            runtime.getConsumerTable().put("equal-values-retain-all", consumerEqualA);
+            runtime.getConsumerTable().put("other-values-retain-all", consumerOther);
+            equalValues.put("consumerValuesRetainAllByEqualValue",
+                runtime.getConsumerTable().values().retainAll(java.util.Collections.singleton(consumerEqualB))
+                    && runtime.getConsumerTable().containsKey("equal-values-retain-all")
+                    && !runtime.getConsumerTable().containsKey("other-values-retain-all"));
+            runtime.getConsumerTable().put("equal-entry-retain-all", consumerEqualA);
+            runtime.getConsumerTable().put("other-entry-retain-all", consumerOther);
+            equalValues.put("consumerEntryRetainAllByEqualValue",
+                runtime.getConsumerTable().entrySet().retainAll(java.util.Collections.singleton(
+                    new java.util.AbstractMap.SimpleImmutableEntry<>("equal-entry-retain-all", consumerEqualB)))
+                    && runtime.getConsumerTable().containsKey("equal-entry-retain-all")
+                    && !runtime.getConsumerTable().containsKey("other-entry-retain-all"));
             result.put("customEquality", equalValues);
             java.util.concurrent.ConcurrentMap<String, org.apache.rocketmq.client.impl.consumer.MQConsumerInner> retained = runtime.getConsumerTable();
             result.put("consumerRegisterAccepted", runtime.registerConsumer("registered", consumerA));
