@@ -16,6 +16,14 @@ impl TopicRouteTable {
     pub fn get(&self, key: &str) -> Result<Option<Arc<TopicRouteData>>, RuntimeError> {
         Ok(self.0.snapshot()?.raw_routes.get(key).cloned())
     }
+    /// Map.getOrDefault counterpart using raw-table presence only.
+    pub fn get_or_default(
+        &self,
+        key: &str,
+        default: Arc<TopicRouteData>,
+    ) -> Result<Arc<TopicRouteData>, RuntimeError> {
+        Ok(self.get(key)?.unwrap_or(default))
+    }
     pub fn contains_key(&self, key: &str) -> Result<bool, RuntimeError> {
         Ok(self.0.snapshot()?.raw_routes.contains_key(key))
     }
@@ -36,6 +44,19 @@ impl TopicRouteTable {
     ) -> Result<Option<Arc<TopicRouteData>>, RuntimeError> {
         let key = key.into();
         self.0.update_raw(|map| (true, map.insert(key, value)))
+    }
+    /// Writes all entries into the raw table without converting route snapshots.
+    pub fn put_all(
+        &self,
+        entries: BTreeMap<String, Arc<TopicRouteData>>,
+    ) -> Result<(), RuntimeError> {
+        if entries.is_empty() {
+            return Ok(());
+        }
+        self.0.update_raw(|map| {
+            map.extend(entries);
+            (true, ())
+        })
     }
     pub fn put_if_absent(
         &self,
