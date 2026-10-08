@@ -303,6 +303,10 @@ async fn registry_default_map_operations_match_invoked_java() {
                 .compute_if_present("a", |_, _| Some(second.clone()))
                 .await
                 .unwrap();
+            let get_or_default_present =
+                Arc::ptr_eq(&table.get_or_default("a", first.clone()).unwrap(), &second);
+            let get_or_default_absent =
+                Arc::ptr_eq(&table.get_or_default("missing", second.clone()).unwrap(), &second);
             let compute_if_present_absent = table
                 .compute_if_present("missing", |_, _| Some(second.clone()))
                 .await
@@ -328,11 +332,17 @@ async fn registry_default_map_operations_match_invoked_java() {
             table
                 .for_each(|_, _| for_each_count += 1)
                 .unwrap();
+            let mut additions = BTreeMap::new();
+            additions.insert("d".to_owned(), second.clone());
+            additions.insert("e".to_owned(), first.clone());
+            table.put_all(additions).await.unwrap();
             let actual = serde_json::json!({
                 "computeIfAbsentInsert": same(compute_if_absent, &first),
                 "computeIfAbsentNoRemap": same(compute_if_absent_again, &first) && calls == 1,
                 "computeIfPresentUpdate": same(compute_if_present, &second),
                 "computeIfPresentAbsent": compute_if_present_absent.is_none(),
+                "getOrDefaultPresent": get_or_default_present,
+                "getOrDefaultAbsent": get_or_default_absent,
                 "computeInsert": same(compute_insert, &first),
                 "computeRemove": compute_remove.is_none() && !table.contains_key("b").unwrap(),
                 "mergeInsert": same(merge_insert, &first),
@@ -340,6 +350,9 @@ async fn registry_default_map_operations_match_invoked_java() {
                 "replaceAll": same(table.get("a").unwrap(), &first)
                     && same(table.get("c").unwrap(), &first),
                 "forEachCount": for_each_count,
+                "putAllAdds": same(table.get("d").unwrap(), &second)
+                    && same(table.get("e").unwrap(), &first)
+                    && table.len().unwrap() == 4,
                 "keys": table.keys().unwrap(),
                 "valuesCount": table.values().unwrap().len()
             });
