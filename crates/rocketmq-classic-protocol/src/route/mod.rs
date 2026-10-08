@@ -724,6 +724,27 @@ mod topic_route_data_to_string_tests {
     }
 }
 
+#[cfg(test)]
+mod topic_route_data_changed_method_tests {
+    use super::TopicRouteData;
+
+    #[test]
+    fn topic_route_data_changed_matches_invoked_java_comparison_and_sort_errors() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["topicRouteDataChanged"].as_array().unwrap() {
+            let current: TopicRouteData = serde_json::from_value(case["current"].clone()).unwrap();
+            let old: TopicRouteData = serde_json::from_value(case["old"].clone()).unwrap();
+            let result = current.java_topic_route_data_changed(Some(&old));
+            if case["outcome"] == "OK" {
+                assert_eq!(result.unwrap(), case["changed"]);
+            } else {
+                assert!(result.is_err());
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TopicRouteData {
