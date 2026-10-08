@@ -517,6 +517,57 @@ mod nullable_message_queue_tests {
             }
         }
     }
+
+    #[test]
+    fn message_queue_hash_equals_and_text_match_invoked_java() {
+        use rocketmq_classic_common::message::MessageQueue;
+
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["messageQueueMethods"].as_array().unwrap() {
+            let queue: MessageQueue = serde_json::from_value(case["queue"].clone()).unwrap();
+            let copy = queue.clone();
+            assert_eq!(
+                queue.java_hash_code(),
+                case["hashCode"].as_i64().unwrap() as i32
+            );
+            assert_eq!(queue.to_string(), case["toString"].as_str().unwrap());
+            assert_eq!(queue == queue, case["equalsSelf"].as_bool().unwrap());
+            assert_eq!(queue == copy, case["equalsCopy"].as_bool().unwrap());
+            assert!(!case["equalsNull"].as_bool().unwrap());
+            assert!(!case["equalsWrongType"].as_bool().unwrap());
+            if case["case"] == "defaults" {
+                assert_eq!(MessageQueue::default(), queue);
+            }
+
+            let mut topic_changed = queue.clone();
+            topic_changed.set_topic(Some(match queue.topic() {
+                Some(topic) => format!("{topic}x"),
+                None => "topic".to_owned(),
+            }));
+            assert_eq!(
+                queue == topic_changed,
+                case["equalsTopicChanged"].as_bool().unwrap()
+            );
+
+            let mut broker_changed = queue.clone();
+            broker_changed.set_broker_name(Some(match queue.broker_name() {
+                Some(broker) => format!("{broker}x"),
+                None => "broker".to_owned(),
+            }));
+            assert_eq!(
+                queue == broker_changed,
+                case["equalsBrokerChanged"].as_bool().unwrap()
+            );
+
+            let mut queue_id_changed = queue.clone();
+            queue_id_changed.set_queue_id(queue.queue_id().wrapping_add(1));
+            assert_eq!(
+                queue == queue_id_changed,
+                case["equalsQueueIdChanged"].as_bool().unwrap()
+            );
+        }
+    }
 }
 
 #[cfg(test)]

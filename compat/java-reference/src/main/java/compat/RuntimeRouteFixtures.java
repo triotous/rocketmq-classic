@@ -291,6 +291,46 @@ public final class RuntimeRouteFixtures {
         return cases;
     }
 
+    private static List<Object> messageQueueMethodCases() {
+        MessageQueue[] queues = new MessageQueue[] {
+            new MessageQueue(),
+            new MessageQueue("topic", "broker", -17),
+            new MessageQueue("\uD834\uDD1E", "Br\u00e9", Integer.MIN_VALUE)
+        };
+        List<Object> cases = new ArrayList<>();
+        for (int index = 0; index < queues.length; index++) {
+            MessageQueue queue = queues[index];
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", new String[] {"defaults", "populated", "unicode-boundary"}[index]);
+            item.put("queue", messageQueueRow(queue));
+            item.put("hashCode", queue.hashCode());
+            item.put("toString", queue.toString());
+            item.put("equalsSelf", queue.equals(queue));
+            item.put("equalsCopy", queue.equals(new MessageQueue(queue)));
+            item.put("equalsNull", queue.equals(null));
+            item.put("equalsWrongType", queue.equals("not a MessageQueue"));
+            item.put("equalsTopicChanged", queue.equals(new MessageQueue(
+                queue.getTopic() == null ? "topic" : queue.getTopic() + "x",
+                queue.getBrokerName(), queue.getQueueId())));
+            item.put("equalsBrokerChanged", queue.equals(new MessageQueue(
+                queue.getTopic(),
+                queue.getBrokerName() == null ? "broker" : queue.getBrokerName() + "x",
+                queue.getQueueId())));
+            item.put("equalsQueueIdChanged", queue.equals(new MessageQueue(
+                queue.getTopic(), queue.getBrokerName(), queue.getQueueId() + 1)));
+            cases.add(item);
+        }
+        return cases;
+    }
+
+    private static Map<String, Object> messageQueueRow(MessageQueue queue) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("topic", queue.getTopic());
+        result.put("brokerName", queue.getBrokerName());
+        result.put("queueId", queue.getQueueId());
+        return result;
+    }
+
     private static List<Object> nullableStaticMappingFields() {
         List<Object> cases = new ArrayList<>();
         for (String input : new String[] {
@@ -1346,7 +1386,7 @@ public final class RuntimeRouteFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "BrokerData.equals/hashCode; MQClientInstance.topicRouteData2TopicPublishInfo/topicRouteData2TopicSubscribeInfo/updateTopicRouteInfoFromNameServer/getTopicRouteTable/getAnExistTopicRouteData/queryTopicRouteData/cleanOfflineBroker/findBrokerAddressInPublish/findBrokerAddressInAdmin/findBrokerAddressInSubscribe/findBrokerAddrByTopic; ConcurrentMap put/putIfAbsent/replace/remove/clear; TopicRouteData JSON decode/equals; ClientMetadata.topicRouteData2EndpointsForStaticTopic; MixAll.brokerVIPChannel; Integer.parseInt/Character.digit");
+        fixture.put("entrypoint", "MessageQueue.equals/hashCode/toString/compareTo; BrokerData.equals/hashCode; MQClientInstance.topicRouteData2TopicPublishInfo/topicRouteData2TopicSubscribeInfo/updateTopicRouteInfoFromNameServer/getTopicRouteTable/getAnExistTopicRouteData/queryTopicRouteData/cleanOfflineBroker/findBrokerAddressInPublish/findBrokerAddressInAdmin/findBrokerAddressInSubscribe/findBrokerAddrByTopic; ConcurrentMap put/putIfAbsent/replace/remove/clear; TopicRouteData JSON decode/equals; ClientMetadata.topicRouteData2EndpointsForStaticTopic; MixAll.brokerVIPChannel; Integer.parseInt/Character.digit");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
         fixture.put("vip", vip);
@@ -1388,6 +1428,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("nullableNestedRouteFields", nullableNestedRouteFields());
         fixture.put("nullableMessageQueueFields", nullableMessageQueueFields());
         fixture.put("messageQueueCompareTo", messageQueueCompareToCases());
+        fixture.put("messageQueueMethods", messageQueueMethodCases());
         fixture.put("nullableStaticMappingFields", nullableStaticMappingFields());
         fixture.put("staticMappingMapEntryCases", staticMappingMapEntryCases());
         fixture.put("nullStaticMappingConversion", nullStaticMappingConversion());

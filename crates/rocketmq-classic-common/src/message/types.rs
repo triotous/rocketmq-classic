@@ -279,7 +279,7 @@ impl MessageExt {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct MessageQueue {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     topic: Option<String>,
@@ -347,6 +347,15 @@ impl MessageQueue {
         self.queue_id = queue_id;
     }
 
+    /// Returns the pinned Java `MessageQueue.hashCode` value.
+    pub fn java_hash_code(&self) -> i32 {
+        let mut result = 31i32.wrapping_add(java_optional_string_hash(&self.broker_name));
+        result = 31i32.wrapping_mul(result).wrapping_add(self.queue_id);
+        31i32
+            .wrapping_mul(result)
+            .wrapping_add(java_optional_string_hash(&self.topic))
+    }
+
     /// Returns the exact pinned Java 5.5.1 `MessageQueue.compareTo` result.
     pub fn java_compare_to(&self, other: &Self) -> Result<i32, MessageQueueCompareError> {
         let topic = self
@@ -381,6 +390,18 @@ impl MessageQueue {
     }
 }
 
+impl std::fmt::Display for MessageQueue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "MessageQueue [topic={}, brokerName={}, queueId={}]",
+            self.topic.as_deref().unwrap_or("null"),
+            self.broker_name.as_deref().unwrap_or("null"),
+            self.queue_id
+        )
+    }
+}
+
 impl Ord for MessageQueue {
     fn cmp(&self, other: &Self) -> Ordering {
         java_optional_string_cmp(&self.topic, &other.topic)
@@ -411,6 +432,16 @@ fn java_string_compare_to(left: &str, right: &str) -> i32 {
         }
     }
     (left.encode_utf16().count() as i32) - (right.encode_utf16().count() as i32)
+}
+
+fn java_optional_string_hash(value: &Option<String>) -> i32 {
+    value.as_deref().map_or(0, java_string_hash_code)
+}
+
+fn java_string_hash_code(value: &str) -> i32 {
+    value.encode_utf16().fold(0i32, |hash, unit| {
+        hash.wrapping_mul(31).wrapping_add(i32::from(unit))
+    })
 }
 
 fn java_optional_string_cmp(left: &Option<String>, right: &Option<String>) -> Ordering {
