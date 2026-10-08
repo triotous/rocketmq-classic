@@ -350,8 +350,8 @@ mod tests {
         data.consumer_data_set.push(ConsumerData {
             group_name: "consumer".into(),
             subscription_data_set: std::collections::HashSet::from([SubscriptionData {
-                topic: "topic".into(),
-                sub_string: "*".into(),
+                topic: Some("topic".into()),
+                sub_string: Some("*".into()),
                 sub_version: 1,
                 ..Default::default()
             }]),
@@ -368,7 +368,7 @@ mod tests {
         data.consumer_data_set.push(consumer.clone());
         assert_eq!(fingerprint(&data).unwrap(), expected);
         consumer.subscription_data_set.clear();
-        sub.sub_string = "changed".into();
+        sub.sub_string = Some("changed".into());
         consumer.subscription_data_set.insert(sub);
         data.consumer_data_set.clear();
         data.consumer_data_set.push(consumer);

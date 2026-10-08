@@ -58,8 +58,8 @@ async fn v2_full_and_simple_wire_preserve_duplicate_consumer_metadata() {
     config.enable_heartbeat_channel_event_listener = false;
     let runtime = runtime(config, &[address]).await;
     let first = Arc::new(Consumer(Mutex::new(SubscriptionData {
-        topic: "topic".into(),
-        sub_string: "*".into(),
+        topic: Some("topic".into()),
+        sub_string: Some("*".into()),
         sub_version: 12,
         ..Default::default()
     })));
@@ -74,7 +74,7 @@ async fn v2_full_and_simple_wire_preserve_duplicate_consumer_metadata() {
         .unwrap();
     for round in 0..4 {
         if round == 2 {
-            second.0.lock().unwrap().topic = "second".into();
+            second.0.lock().unwrap().topic = Some("second".into());
         }
         assert!(runtime.send_heartbeat_to_all_brokers().await.unwrap());
     }
@@ -484,8 +484,8 @@ async fn v2_negotiates_full_simple_subscription_change_version_and_rebalance() {
     let runtime = runtime(config, std::slice::from_ref(&address)).await;
     let producer = Arc::new(Producer);
     let consumer = Arc::new(Consumer(Mutex::new(SubscriptionData {
-        topic: "topic".into(),
-        sub_string: "*".into(),
+        topic: Some("topic".into()),
+        sub_string: Some("*".into()),
         sub_version: 12,
         ..Default::default()
     })));
@@ -517,7 +517,7 @@ async fn v2_negotiates_full_simple_subscription_change_version_and_rebalance() {
             .await
             .unwrap()
     );
-    consumer.0.lock().unwrap().sub_string = "changed".into();
+    consumer.0.lock().unwrap().sub_string = Some("changed".into());
     assert!(runtime.send_heartbeat_to_all_brokers().await.unwrap());
     assert_eq!(
         runtime

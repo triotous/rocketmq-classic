@@ -163,7 +163,7 @@ async fn all_topic_refresh_unions_registered_topics_and_continues_after_rejectio
                 subscription_data_set: ["common", "consumer-only"]
                     .into_iter()
                     .map(|topic| SubscriptionData {
-                        topic: topic.into(),
+                        topic: Some(topic.into()),
                         ..Default::default()
                     })
                     .collect(),

@@ -826,11 +826,11 @@ mod tests {
         let runtime = frozen_io(manager.get_or_create(&config)).await.unwrap();
         let producer = Arc::new(InnerProducer);
         let consumer = Arc::new(Consumer(Mutex::new(SubscriptionData {
-            topic: "topic".into(),
-            sub_string: "A".into(),
+            topic: Some("topic".into()),
+            sub_string: Some("A".into()),
             sub_version: 41,
-            tags_set: HashSet::from(["A".into()]),
-            code_set: HashSet::from([65]),
+            tags_set: Some(HashSet::from(["A".into()])),
+            code_set: Some(HashSet::from([65])),
             ..Default::default()
         })));
         let producer_lease = frozen_io(runtime.register_producer("producer", producer.clone()))
@@ -882,11 +882,11 @@ mod tests {
         assert_eq!(runtime.rebalance_probe.live.load(Ordering::SeqCst), 1);
         assert_eq!(runtime.pull_probe.live.load(Ordering::SeqCst), 2);
         *consumer.0.lock().unwrap() = SubscriptionData {
-            topic: "topic".into(),
-            sub_string: "B".into(),
+            topic: Some("topic".into()),
+            sub_string: Some("B".into()),
             sub_version: 42,
-            tags_set: HashSet::from(["B".into()]),
-            code_set: HashSet::from([66]),
+            tags_set: Some(HashSet::from(["B".into()])),
+            code_set: Some(HashSet::from([66])),
             ..Default::default()
         };
         tokio::time::advance(Duration::from_millis(29_999)).await;

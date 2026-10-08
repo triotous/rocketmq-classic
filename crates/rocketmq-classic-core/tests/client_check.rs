@@ -32,10 +32,10 @@ impl ConsumerRuntime for Consumer {
 }
 fn subscription(expression: &str) -> SubscriptionData {
     SubscriptionData {
-        topic: "topic".into(),
-        sub_string: "a > 1".into(),
+        topic: Some("topic".into()),
+        sub_string: Some("a > 1".into()),
         sub_version: 42,
-        expression_type: expression.into(),
+        expression_type: Some(expression.into()),
         ..Default::default()
     }
 }

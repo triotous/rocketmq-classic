@@ -533,7 +533,7 @@ impl ClientRuntime {
                     .heartbeat_data()
                     .subscription_data_set
                     .into_iter()
-                    .map(|sub| sub.topic),
+                    .filter_map(|sub| sub.topic),
             );
         }
         for (_, producer) in groups.producers {

@@ -16,13 +16,17 @@ impl ClientRuntime {
                 return Ok(()); // Java returns from the entire round, not continue.
             }
             for subscription in subscriptions {
-                if is_tag(Some(&subscription.expression_type)) {
+                if is_tag(subscription.expression_type.as_deref()) {
                     continue;
                 }
-                let Some(address) = self.find_broker_address_by_topic(&subscription.topic)? else {
+                let topic = subscription
+                    .topic
+                    .as_deref()
+                    .ok_or(RuntimeError::InvalidRoute("null subscription topic"))?;
+                let Some(address) = self.find_broker_address_by_topic(topic)? else {
                     continue;
                 };
-                let expression_type = subscription.expression_type.clone();
+                let expression_type = subscription.expression_type.clone().unwrap_or_default();
                 let result = async {
                     let address = crate::route::broker_vip_channel(
                         self.config().vip_channel_enabled,

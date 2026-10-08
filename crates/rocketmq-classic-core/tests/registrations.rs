@@ -42,8 +42,8 @@ async fn distinct_registered_keys_preserve_equal_and_simple_consumer_metadata() 
     let first = Arc::new(Consumer(Mutex::new(ConsumerData {
         group_name: "consumer".into(),
         subscription_data_set: HashSet::from([SubscriptionData {
-            topic: "other".into(),
-            sub_string: "tag".into(),
+            topic: Some("other".into()),
+            sub_string: Some("tag".into()),
             sub_version: 13,
             ..Default::default()
         }]),
@@ -95,8 +95,8 @@ async fn distinct_registered_keys_preserve_equal_and_simple_consumer_metadata() 
         .unwrap();
     let second = Arc::new(Consumer(Mutex::new(ConsumerData {
         subscription_data_set: HashSet::from([SubscriptionData {
-            topic: "second".into(),
-            sub_string: "*".into(),
+            topic: Some("second".into()),
+            sub_string: Some("*".into()),
             sub_version: 14,
             ..Default::default()
         }]),
@@ -184,8 +184,8 @@ async fn heartbeat_snapshots_follow_consumer_versions_and_without_subscription_f
     let consumer = Arc::new(Consumer(Mutex::new(ConsumerData {
         group_name: "consumer".into(),
         subscription_data_set: HashSet::from([SubscriptionData {
-            topic: "topic".into(),
-            sub_string: "*".into(),
+            topic: Some("topic".into()),
+            sub_string: Some("*".into()),
             sub_version: 12,
             ..Default::default()
         }]),
@@ -220,8 +220,8 @@ async fn heartbeat_snapshots_follow_consumer_versions_and_without_subscription_f
         12
     );
     consumer.0.lock().unwrap().subscription_data_set = HashSet::from([SubscriptionData {
-        topic: "other".into(),
-        sub_string: "tag".into(),
+        topic: Some("other".into()),
+        sub_string: Some("tag".into()),
         sub_version: 13,
         ..Default::default()
     }]);

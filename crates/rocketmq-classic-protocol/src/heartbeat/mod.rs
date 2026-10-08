@@ -8,15 +8,21 @@ use serde::{Deserialize, Serialize};
 pub struct SubscriptionData {
     #[serde(default)]
     pub class_filter_mode: bool,
-    pub topic: String,
-    pub sub_string: String,
-    #[serde(default)]
-    pub tags_set: HashSet<String>,
-    #[serde(default)]
-    pub code_set: HashSet<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub topic: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sub_string: Option<String>,
+    #[serde(default = "empty_tags", skip_serializing_if = "Option::is_none")]
+    pub tags_set: Option<HashSet<String>>,
+    #[serde(default = "empty_codes", skip_serializing_if = "Option::is_none")]
+    pub code_set: Option<HashSet<i32>>,
+    #[serde(default = "current_subscription_version")]
     pub sub_version: i64,
-    #[serde(default = "default_expression_type")]
-    pub expression_type: String,
+    #[serde(
+        default = "default_expression_type",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub expression_type: Option<String>,
     #[serde(rename = "filterClassSource", skip_serializing)]
     pub filter_class_source: Option<String>,
 }
@@ -25,11 +31,11 @@ impl Default for SubscriptionData {
     fn default() -> Self {
         Self {
             class_filter_mode: false,
-            topic: String::new(),
-            sub_string: String::new(),
-            tags_set: HashSet::new(),
-            code_set: HashSet::new(),
-            sub_version: 0,
+            topic: None,
+            sub_string: None,
+            tags_set: empty_tags(),
+            code_set: empty_codes(),
+            sub_version: current_subscription_version(),
             expression_type: default_expression_type(),
             filter_class_source: None,
         }
@@ -41,8 +47,8 @@ impl Hash for SubscriptionData {
         self.class_filter_mode.hash(state);
         self.topic.hash(state);
         self.sub_string.hash(state);
-        hash_set(&self.tags_set, state);
-        hash_set(&self.code_set, state);
+        hash_optional_set(&self.tags_set, state);
+        hash_optional_set(&self.code_set, state);
         self.sub_version.hash(state);
         self.expression_type.hash(state);
         self.filter_class_source.hash(state);
@@ -62,8 +68,34 @@ fn hash_set<T: Hash, H: Hasher>(values: &HashSet<T>, state: &mut H) {
     hashes.hash(state);
 }
 
-fn default_expression_type() -> String {
-    "TAG".to_owned()
+fn hash_optional_set<T: Hash, H: Hasher>(values: &Option<HashSet<T>>, state: &mut H) {
+    match values {
+        Some(values) => {
+            true.hash(state);
+            hash_set(values, state);
+        }
+        None => false.hash(state),
+    }
+}
+
+fn empty_tags() -> Option<HashSet<String>> {
+    Some(HashSet::new())
+}
+
+fn empty_codes() -> Option<HashSet<i32>> {
+    Some(HashSet::new())
+}
+
+fn current_subscription_version() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as i64)
+        .unwrap_or_default()
+}
+
+fn default_expression_type() -> Option<String> {
+    Some("TAG".to_owned())
 }
 
 #[derive(
@@ -169,8 +201,14 @@ mod tests {
             assert_eq!(value.tags_set.is_none(), case["tagsNull"]);
             assert_eq!(value.code_set.is_none(), case["codeNull"]);
             assert_eq!(value.expression_type.is_none(), case["expressionNull"]);
-            assert_eq!(value.tags_set.as_ref().is_some_and(HashSet::is_empty), case["tagsEmpty"]);
-            assert_eq!(value.code_set.as_ref().is_some_and(HashSet::is_empty), case["codeEmpty"]);
+            assert_eq!(
+                value.tags_set.as_ref().is_some_and(HashSet::is_empty),
+                case["tagsEmpty"]
+            );
+            assert_eq!(
+                value.code_set.as_ref().is_some_and(HashSet::is_empty),
+                case["codeEmpty"]
+            );
             if case["versionCurrent"] == true {
                 assert!((before..=after).contains(&value.sub_version));
             }
@@ -228,8 +266,8 @@ mod tests {
             group_name: "group".into(),
             consume_from_where: ConsumeFromWhere::ConsumeFromLastOffset,
             subscription_data_set: HashSet::from([SubscriptionData {
-                topic: "topic".into(),
-                sub_string: "*".into(),
+                topic: Some("topic".into()),
+                sub_string: Some("*".into()),
                 sub_version: i64::MAX,
                 ..SubscriptionData::default()
             }]),
