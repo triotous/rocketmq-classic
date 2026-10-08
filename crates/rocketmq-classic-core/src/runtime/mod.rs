@@ -11,6 +11,11 @@ mod registry;
 mod tables;
 mod tasks;
 
+/// Java 5.5.1 `RebalanceService.getServiceName()` result.
+pub const REBALANCE_SERVICE_NAME: &str = "RebalanceService";
+/// Java 5.5.1 `PullMessageService.getServiceName()` result.
+pub const PULL_MESSAGE_SERVICE_NAME: &str = "PullMessageService";
+
 pub use control::RuntimeState;
 pub use instance::ClientRuntime;
 pub use manager::{

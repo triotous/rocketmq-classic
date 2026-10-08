@@ -159,6 +159,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("managerTable", managerTable(config));
         fixture.put("nullableSettings", nullableSettings());
         fixture.put("accessChannelMethodCases", accessChannelMethodCases());
+        fixture.put("serviceNameCases", serviceNameCases());
         fixture.put("languageCodeMethodCases", languageCodeMethodCases());
         fixture.put("socksConstruction", socksConstruction());
         fixture.put("socksConnection", socksConnection(true));
@@ -1547,6 +1548,23 @@ public final class RuntimeConfigFixtures {
             }
             cases.add(item);
         }
+        return cases;
+    }
+
+    private static List<Object> serviceNameCases() {
+        List<Object> cases = new ArrayList<>();
+        org.apache.rocketmq.client.impl.consumer.RebalanceService rebalance =
+            new org.apache.rocketmq.client.impl.consumer.RebalanceService(null);
+        org.apache.rocketmq.client.impl.consumer.PullMessageService pull =
+            new org.apache.rocketmq.client.impl.consumer.PullMessageService(null);
+        Map<String, Object> rebalanceCase = new TreeMap<>();
+        rebalanceCase.put("class", "RebalanceService");
+        rebalanceCase.put("serviceName", rebalance.getServiceName());
+        cases.add(rebalanceCase);
+        Map<String, Object> pullCase = new TreeMap<>();
+        pullCase.put("class", "PullMessageService");
+        pullCase.put("serviceName", pull.getServiceName());
+        cases.add(pullCase);
         return cases;
     }
 }

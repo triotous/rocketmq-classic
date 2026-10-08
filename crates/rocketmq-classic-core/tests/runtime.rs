@@ -17,9 +17,26 @@ use tokio::{
 use rocketmq_classic_core::{
     config::ClientConfig,
     runtime::{
-        ClientRuntime, ClientRuntimeManager, ConsumerRuntime, ProducerRuntime, RuntimeError,
+        ClientRuntime, ClientRuntimeManager, ConsumerRuntime, PULL_MESSAGE_SERVICE_NAME,
+        ProducerRuntime, REBALANCE_SERVICE_NAME, RuntimeError,
     },
 };
+
+#[test]
+fn service_names_match_invoked_java_public_methods() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let cases = fixture["serviceNameCases"].as_array().unwrap();
+    assert_eq!(cases.len(), 2);
+    for case in cases {
+        let expected = match case["class"].as_str().unwrap() {
+            "RebalanceService" => REBALANCE_SERVICE_NAME,
+            "PullMessageService" => PULL_MESSAGE_SERVICE_NAME,
+            name => panic!("unknown Java service name case: {name}"),
+        };
+        assert_eq!(case["serviceName"], expected);
+    }
+}
 
 struct RouteObserver {
     runtime: Weak<ClientRuntime>,
