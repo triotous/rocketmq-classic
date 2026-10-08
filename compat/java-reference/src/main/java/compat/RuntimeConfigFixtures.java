@@ -1115,18 +1115,24 @@ public final class RuntimeConfigFixtures {
             "{\"10.0.0.0/8\":{\"addr\":9223372036854775808L}}",
             "{\"10.0.0.0/8\":{\"addr\":\"" + ((char) 92) + "uD800\"}}",
             "{\"10.0.0.0/8\":{\"addr\":\"" + ((char) 92) + "uDC00\"}}"};
-        for (int i = 0; i < inputs.length; i++) {
+        List<String> allInputs = new ArrayList<>(java.util.Arrays.asList(inputs));
+        for (int escaped = 0; escaped <= 0x7f; escaped++) {
+            String input = "{\"10.0.0.0/8\":{\"addr\":\"A" + ((char) 92) + ((char) escaped) + "Z\"}}";
+            allInputs.add(input);
+        }
+        for (int i = 0; i < allInputs.size(); i++) {
+            String input = allInputs.get(i);
             ClientConfig config = new ClientConfig();
             config.setClientIP("socks-construction-" + i);
             config.setNamesrvAddr("");
-            config.setSocksProxyConfig(inputs[i]);
+            config.setSocksProxyConfig(input);
             Map<String, Object> item = new TreeMap<>();
-            item.put("input", inputs[i]);
+            item.put("input", input);
             org.apache.rocketmq.client.impl.factory.MQClientInstance runtime = null;
             try {
                 runtime = new org.apache.rocketmq.client.impl.factory.MQClientInstance(config, 0, config.buildMQClientId());
                 item.put("outcome", "OK");
-                item.put("rawPreserved", java.util.Objects.equals(inputs[i], runtime.getNettyClientConfig().getSocksProxyConfig()));
+                item.put("rawPreserved", java.util.Objects.equals(input, runtime.getNettyClientConfig().getSocksProxyConfig()));
                 if (i >= 19 && "OK".equals(item.get("outcome"))) {
                     java.lang.reflect.Field remotingField = org.apache.rocketmq.client.impl.MQClientAPIImpl.class.getDeclaredField("remotingClient");
                     remotingField.setAccessible(true);
