@@ -767,6 +767,11 @@ mod fastjson_dto_input_tests {
             serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
                 .unwrap();
         let cases = fixture["heartbeatDtoInputCases"].as_array().unwrap();
+        assert_eq!(
+            cases.len(),
+            21,
+            "Java oracle includes four object/array-to-string probes"
+        );
         for required in [
             "subscription-leading-plus-zero-version",
             "heartbeat-leading-plus-zero-fingerprint",
@@ -775,6 +780,10 @@ mod fastjson_dto_input_tests {
             "subscription-form-feed-before-version",
             "consumer-vertical-tab-prefix",
             "heartbeat-embedded-bom",
+            "subscription-object-to-string",
+            "subscription-array-to-string",
+            "producer-object-to-string",
+            "heartbeat-object-to-string",
         ] {
             assert!(
                 cases.iter().any(|case| case["id"] == required),
