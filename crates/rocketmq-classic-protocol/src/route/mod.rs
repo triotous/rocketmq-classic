@@ -18,7 +18,7 @@ pub struct QueueData {
     pub topic_sys_flag: i32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct BrokerData {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -32,6 +32,14 @@ pub struct BrokerData {
     #[serde(default)]
     pub enable_acting_master: bool,
 }
+
+impl PartialEq for BrokerData {
+    fn eq(&self, other: &Self) -> bool {
+        self.broker_name == other.broker_name && self.broker_addrs == other.broker_addrs
+    }
+}
+
+impl Eq for BrokerData {}
 
 #[cfg(test)]
 mod broker_data_equality_tests {

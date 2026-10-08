@@ -575,23 +575,13 @@ fn routes_equal(left: &TopicRouteData, right: &TopicRouteData) -> bool {
 }
 
 // TopicRouteData.equals delegates BrokerData.equals, which compares only name
-// and addresses. Do not use the completed lower DTO's broader Rust value Eq.
+// and addresses. BrokerData::PartialEq carries that source behavior.
 pub(super) fn route_values_equal(left: &TopicRouteData, right: &TopicRouteData) -> bool {
     left.order_topic_conf == right.order_topic_conf
         && left.queue_datas == right.queue_datas
         && left.filter_server_table == right.filter_server_table
         && left.topic_queue_mapping_by_broker == right.topic_queue_mapping_by_broker
-        && match (&left.broker_datas, &right.broker_datas) {
-            (None, None) => true,
-            (Some(left), Some(right)) => {
-                left.len() == right.len()
-                    && left.iter().zip(right).all(|(left, right)| {
-                        left.broker_name == right.broker_name
-                            && left.broker_addrs == right.broker_addrs
-                    })
-            }
-            _ => false,
-        }
+        && left.broker_datas == right.broker_datas
 }
 
 /// Java MixAll.brokerVIPChannel, with checked socket ports and bracketed IPv6.
@@ -856,7 +846,7 @@ mod tests {
         let initial: TopicRouteData = serde_json::from_value(case["initialInput"].clone()).unwrap();
         let metadata: TopicRouteData =
             serde_json::from_value(case["metadataOnlyInput"].clone()).unwrap();
-        assert_ne!(initial, metadata); // Public DTO value equality is unchanged.
+        assert_eq!(initial, metadata); // TopicRouteData delegates to Java BrokerData.equals.
         assert_eq!(
             routes_equal(&initial, &metadata),
             case["brokerMetadataIgnoredByRouteEquals"]
