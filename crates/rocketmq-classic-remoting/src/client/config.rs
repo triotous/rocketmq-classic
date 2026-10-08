@@ -517,7 +517,10 @@ fn contains_fastjson_rejected_literal(input: &str) -> bool {
                             escaped if fastjson_additional_escape_code_unit(escaped).is_some() => {
                                 index += 2;
                             }
-                            _ => return true,
+                            _ => match fastjson_non_ascii_escape_code_unit(bytes, index) {
+                                Some((_, end, _)) => index = end,
+                                None => return true,
+                            },
                         }
                     } else if bytes[index] == quote {
                         index += 1;
@@ -724,6 +727,16 @@ fn normalize_fastjson_source(input: &str) -> String {
                         push_json_unicode_escape(&mut output, code_unit);
                     }
                     index += 2;
+                } else if let Some((code_unit, end, trailing_surrogate)) =
+                    fastjson_non_ascii_escape_code_unit(bytes, index)
+                {
+                    push_json_unicode_escape(&mut output, code_unit);
+                    if trailing_surrogate {
+                        // Fastjson consumes one UTF-16 unit after the slash;
+                        // the unpaired low surrogate then remains as raw text.
+                        output.extend_from_slice(b"\\uFFFD");
+                    }
+                    index = end;
                 } else {
                     let end = (index + 2).min(bytes.len());
                     output.extend_from_slice(&bytes[index..end]);
@@ -793,6 +806,44 @@ fn fastjson_escape_code_unit(
         value = value.wrapping_shl(4).wrapping_add(u16::from(nibble));
     }
     Some((value, end))
+}
+
+fn fastjson_non_ascii_escape_code_unit(bytes: &[u8], start: usize) -> Option<(u16, usize, bool)> {
+    if bytes.get(start) != Some(&b'\\') {
+        return None;
+    }
+    let follower_start = start.checked_add(1)?;
+    let tail = std::str::from_utf8(bytes.get(follower_start..)?).ok()?;
+    let follower = tail.chars().next()?;
+    if follower.is_ascii() {
+        return None;
+    }
+    let mut encoded = [0; 2];
+    let units = follower.encode_utf16(&mut encoded);
+    let first = *units.first()?;
+    let trailing_surrogate = units.len() == 2;
+    let code_unit = fastjson_char1_escape_code_unit(first)?;
+    Some((
+        code_unit,
+        follower_start + follower.len_utf8(),
+        trailing_surrogate,
+    ))
+}
+
+fn fastjson_char1_escape_code_unit(escaped: u16) -> Option<u16> {
+    let escaped = (escaped & 0x7f) as u8;
+    match escaped {
+        b'0'..=b'7' => Some(u16::from(escaped - b'0')),
+        b'"' | b'\'' | b'/' | b'\\' => Some(u16::from(escaped)),
+        b'b' => Some(0x0008),
+        b'f' | b'F' => Some(0x000c),
+        b'n' => Some(0x000a),
+        b'r' => Some(0x000d),
+        b't' => Some(0x0009),
+        b'v' => Some(0x000b),
+        byte if fastjson_identity_escape(byte) => Some(u16::from(byte)),
+        _ => None,
+    }
 }
 
 fn fastjson_hex_digit_or_zero(code_unit: u16) -> u8 {
@@ -1479,16 +1530,7 @@ mod tests {
             );
         }
         let unicode_escapes = [
-            "u1λ34",
-            "u12λ4",
-            "u12١4",
-            "u12１4",
-            "u1𝟚34",
-            "xλ0",
-            "x0١",
-            "u12\t4",
-            "u12\n4",
-            "𝟚",
+            "u1λ34", "u12λ4", "u12١4", "u12１4", "u1𝟚34", "xλ0", "x0١", "u12\t4", "u12\n4", "𝟚",
         ];
         for (offset, escaped) in unicode_escapes.iter().enumerate() {
             let expected = format!("{{\"10.0.0.0/8\":{{\"addr\":\"A\\{escaped}Z\"}}}}");
