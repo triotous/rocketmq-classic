@@ -1455,6 +1455,13 @@ mod route_dto_input_cases_tests {
             "queue-fastjson-leading-zero-fraction",
             "mapping-fastjson-leading-plus-exponent",
             "mapping-fastjson-leading-zero-exponent",
+            "queue-fastjson-vertical-tab-prefix",
+            "queue-fastjson-form-feed-prefix",
+            "queue-fastjson-form-feed-before-number",
+            "queue-fastjson-vertical-tab-before-number",
+            "queue-fastjson-nbsp-prefix",
+            "queue-fastjson-bom-prefix",
+            "queue-fastjson-bom-before-number",
         ] {
             assert!(
                 cases.iter().any(|case| case["id"] == required),
