@@ -1,4 +1,5 @@
 use rocketmq_classic_core::{config::ClientConfig, runtime::ClientRuntimeManager};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 #[tokio::test]
@@ -152,6 +153,20 @@ async fn retained_factory_table_and_atomic_mutations_match_invoked_java() {
     );
     assert_eq!(
         Arc::ptr_eq(
+            &live.get_or_default(&id, first.clone()).unwrap(),
+            &second
+        ),
+        java["getOrDefaultPresent"]
+    );
+    assert_eq!(
+        Arc::ptr_eq(
+            &live.get_or_default("missing", first.clone()).unwrap(),
+            &first
+        ),
+        java["getOrDefaultAbsent"]
+    );
+    assert_eq!(
+        Arc::ptr_eq(
             &live.put(&id, first.clone()).await.unwrap().unwrap(),
             &second
         ),
@@ -224,6 +239,17 @@ async fn retained_factory_table_and_atomic_mutations_match_invoked_java() {
     assert_eq!(
         Arc::ptr_eq(&live.get("").unwrap().unwrap(), &second),
         java["aliasHasSecond"]
+    );
+    let bulk_values = HashMap::from([
+        ("bulk-a".to_owned(), first.clone()),
+        ("bulk-b".to_owned(), second.clone()),
+    ]);
+    live.put_all(bulk_values).await.unwrap();
+    assert_eq!(
+        Arc::ptr_eq(&live.get("bulk-a").unwrap().unwrap(), &first)
+            && Arc::ptr_eq(&live.get("bulk-b").unwrap().unwrap(), &second)
+            && live.len().unwrap() == 4,
+        java["putAllAdds"]
     );
     assert!(Arc::ptr_eq(&second_view.snapshot().unwrap()[""], &second));
     live.clear().await.unwrap();
