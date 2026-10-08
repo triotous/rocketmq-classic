@@ -273,8 +273,95 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
             && same(table.get("bulk-b").unwrap(), &second)
             && table.len().unwrap() == 3,
     );
+    outcomes.insert(
+        "computeIfAbsentMaps",
+        same(
+            table
+                .compute_if_absent("compute-a", |_| Some(first.clone()))
+                .unwrap(),
+            &first,
+        ),
+    );
+    outcomes.insert(
+        "computeIfAbsentKeepsCurrent",
+        same(
+            table
+                .compute_if_absent("compute-a", |_| Some(second.clone()))
+                .unwrap(),
+            &first,
+        ),
+    );
+    outcomes.insert(
+        "computeIfPresentReplaces",
+        same(
+            table
+                .compute_if_present("compute-a", |_, _| Some(second.clone()))
+                .unwrap(),
+            &second,
+        ) && same(table.get("compute-a").unwrap(), &second),
+    );
+    outcomes.insert(
+        "computeReplaces",
+        same(
+            table
+                .compute("compute-a", |_, _| Some(first.clone()))
+                .unwrap(),
+            &first,
+        ) && same(table.get("compute-a").unwrap(), &first),
+    );
+    outcomes.insert(
+        "computeAbsentInserts",
+        same(
+            table
+                .compute("compute-b", |_, _| Some(second.clone()))
+                .unwrap(),
+            &second,
+        ),
+    );
+    outcomes.insert(
+        "computeNullRemoves",
+        table.compute("compute-b", |_, _| None).unwrap().is_none()
+            && !table.contains_key("compute-b").unwrap(),
+    );
+    outcomes.insert(
+        "mergeCombines",
+        same(
+            table
+                .merge("compute-a", second.clone(), |_, added| Some(added.clone()))
+                .unwrap(),
+            &second,
+        ),
+    );
+    outcomes.insert(
+        "mergeAbsentInserts",
+        same(
+            table
+                .merge("merge-new", first.clone(), |_, _| None)
+                .unwrap(),
+            &first,
+        ),
+    );
+    table
+        .replace_all(|key, _| {
+            if key == "topic" {
+                second.clone()
+            } else {
+                first.clone()
+            }
+        })
+        .unwrap();
+    outcomes.insert(
+        "replaceAllUpdatesMappings",
+        table.len().unwrap() == 5
+            && same(table.get("topic").unwrap(), &second)
+            && same(table.get("bulk-a").unwrap(), &first)
+            && same(table.get("compute-a").unwrap(), &first)
+            && same(table.get("merge-new").unwrap(), &first),
+    );
     table.remove("bulk-a").unwrap();
     table.remove("bulk-b").unwrap();
+    table.remove("compute-a").unwrap();
+    table.remove("merge-new").unwrap();
     assert_eq!(serde_json::to_value(outcomes).unwrap(), case["primitives"]);
     assert_eq!(detached.len(), 2);
     assert!(same(
