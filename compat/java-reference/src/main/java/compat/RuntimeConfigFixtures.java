@@ -263,7 +263,48 @@ public final class RuntimeConfigFixtures {
         result.put("source", clientConfigFields(source));
         result.put("clone", clientConfigFields(copy));
         result.put("reset", clientConfigFields(reset));
+        result.put("sourceGetters", clientConfigGetters(source));
+        result.put("cloneGetters", clientConfigGetters(copy));
+        result.put("resetGetters", clientConfigGetters(reset));
         return result;
+    }
+
+    private static Map<String, Object> clientConfigGetters(ClientConfig config) {
+        Map<String, Object> fields = new TreeMap<>();
+        fields.put("namesrvAddr", config.getNamesrvAddr());
+        fields.put("clientIP", config.getClientIP());
+        fields.put("instanceName", config.getInstanceName());
+        fields.put("clientCallbackExecutorThreads", config.getClientCallbackExecutorThreads());
+        fields.put("namespace", config.getNamespace());
+        fields.put("namespaceV2", config.getNamespaceV2());
+        fields.put("accessChannel", config.getAccessChannel());
+        fields.put("pollNameServerInterval", config.getPollNameServerInterval());
+        fields.put("heartbeatBrokerInterval", config.getHeartbeatBrokerInterval());
+        fields.put("persistConsumerOffsetInterval", config.getPersistConsumerOffsetInterval());
+        fields.put("pullTimeDelayMillsWhenException", config.getPullTimeDelayMillsWhenException());
+        fields.put("traceMsgBatchNum", config.getTraceMsgBatchNum());
+        fields.put("unitMode", config.isUnitMode());
+        fields.put("unitName", config.getUnitName());
+        fields.put("decodeReadBody", config.isDecodeReadBody());
+        fields.put("decodeDecompressBody", config.isDecodeDecompressBody());
+        fields.put("vipChannelEnabled", config.isVipChannelEnabled());
+        fields.put("useHeartbeatV2", config.isUseHeartbeatV2());
+        fields.put("useTLS", config.isUseTLS());
+        fields.put("socksProxyConfig", config.getSocksProxyConfig());
+        fields.put("mqClientApiTimeout", config.getMqClientApiTimeout());
+        fields.put("detectTimeout", config.getDetectTimeout());
+        fields.put("detectInterval", config.getDetectInterval());
+        fields.put("language", config.getLanguage());
+        fields.put("enableStreamRequestType", config.isEnableStreamRequestType());
+        fields.put("sendLatencyEnable", config.isSendLatencyEnable());
+        fields.put("startDetectorEnable", config.isStartDetectorEnable());
+        fields.put("enableHeartbeatChannelEventListener", config.isEnableHeartbeatChannelEventListener());
+        fields.put("enableConcurrentHeartbeat", config.isEnableConcurrentHeartbeat());
+        fields.put("concurrentHeartbeatThreadPoolSize", config.getConcurrentHeartbeatThreadPoolSize());
+        fields.put("enableTrace", config.isEnableTrace());
+        fields.put("traceTopic", config.getTraceTopic());
+        fields.put("maxPageSizeInGetMetadata", config.getMaxPageSizeInGetMetadata());
+        return fields;
     }
 
     private static Map<String, Object> clientConfigFields(ClientConfig config) throws Exception {

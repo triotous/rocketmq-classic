@@ -7,47 +7,47 @@ fn optional(value: &Value) -> Option<String> {
     value.as_str().map(str::to_owned)
 }
 
-fn client_config_snapshot(config: &ClientConfig) -> Value {
+fn client_config_snapshot(config: &mut ClientConfig) -> Value {
     serde_json::json!({
-        "namesrvAddr": config.namesrv_addr,
-        "clientIP": config.client_ip,
-        "instanceName": config.instance_name,
-        "clientCallbackExecutorThreads": config.client_callback_executor_threads,
-        "namespace": config.namespace,
-        "namespaceV2": config.namespace_v2,
-        "accessChannel": config.access_channel.map(|channel| match channel {
+        "namesrvAddr": config.get_namesrv_addr(),
+        "clientIP": config.client_ip().map(str::to_owned),
+        "instanceName": config.instance_name().map(str::to_owned),
+        "clientCallbackExecutorThreads": config.client_callback_executor_threads(),
+        "namespace": config.get_namespace().unwrap().map(str::to_owned),
+        "namespaceV2": config.namespace_v2().map(str::to_owned),
+        "accessChannel": config.access_channel().map(|channel| match channel {
             AccessChannel::Local => "LOCAL",
             AccessChannel::Cloud => "CLOUD",
         }),
-        "pollNameServerInterval": config.poll_name_server_interval,
-        "heartbeatBrokerInterval": config.heartbeat_broker_interval,
-        "persistConsumerOffsetInterval": config.persist_consumer_offset_interval,
-        "pullTimeDelayMillsWhenException": config.pull_time_delay_millis_when_exception,
-        "traceMsgBatchNum": config.trace_msg_batch_num,
-        "unitMode": config.unit_mode,
-        "unitName": config.unit_name,
-        "decodeReadBody": config.decode_read_body,
-        "decodeDecompressBody": config.decode_decompress_body,
-        "vipChannelEnabled": config.vip_channel_enabled,
-        "useHeartbeatV2": config.use_heartbeat_v2,
-        "useTLS": config.use_tls,
-        "socksProxyConfig": config.socks_proxy_config,
-        "mqClientApiTimeout": config.mq_client_api_timeout,
-        "detectTimeout": config.detect_timeout,
-        "detectInterval": config.detect_interval,
-        "language": config.language.map(|language| match language {
+        "pollNameServerInterval": config.poll_name_server_interval(),
+        "heartbeatBrokerInterval": config.heartbeat_broker_interval(),
+        "persistConsumerOffsetInterval": config.persist_consumer_offset_interval(),
+        "pullTimeDelayMillsWhenException": config.pull_time_delay_millis_when_exception(),
+        "traceMsgBatchNum": config.trace_msg_batch_num(),
+        "unitMode": config.unit_mode(),
+        "unitName": config.unit_name().map(str::to_owned),
+        "decodeReadBody": config.decode_read_body(),
+        "decodeDecompressBody": config.decode_decompress_body(),
+        "vipChannelEnabled": config.vip_channel_enabled(),
+        "useHeartbeatV2": config.use_heartbeat_v2(),
+        "useTLS": config.use_tls(),
+        "socksProxyConfig": config.socks_proxy_config(),
+        "mqClientApiTimeout": config.mq_client_api_timeout(),
+        "detectTimeout": config.detect_timeout(),
+        "detectInterval": config.detect_interval(),
+        "language": config.language().map(|language| match language {
             LanguageCode::Cpp => "CPP",
             _ => "OTHER",
         }),
-        "enableStreamRequestType": config.enable_stream_request_type,
-        "sendLatencyEnable": config.send_latency_enable,
-        "startDetectorEnable": config.start_detector_enable,
-        "enableHeartbeatChannelEventListener": config.enable_heartbeat_channel_event_listener,
-        "enableConcurrentHeartbeat": config.enable_concurrent_heartbeat,
-        "concurrentHeartbeatThreadPoolSize": config.concurrent_heartbeat_thread_pool_size,
-        "enableTrace": config.enable_trace,
-        "traceTopic": config.trace_topic,
-        "maxPageSizeInGetMetadata": config.max_page_size_in_get_metadata,
+        "enableStreamRequestType": config.enable_stream_request_type(),
+        "sendLatencyEnable": config.send_latency_enable(),
+        "startDetectorEnable": config.start_detector_enable(),
+        "enableHeartbeatChannelEventListener": config.enable_heartbeat_channel_event_listener(),
+        "enableConcurrentHeartbeat": config.enable_concurrent_heartbeat(),
+        "concurrentHeartbeatThreadPoolSize": config.concurrent_heartbeat_thread_pool_size(),
+        "enableTrace": config.enable_trace(),
+        "traceTopic": config.trace_topic().map(str::to_owned),
+        "maxPageSizeInGetMetadata": config.max_page_size_in_get_metadata(),
     })
 }
 
@@ -572,40 +572,42 @@ fn clone_and_reset_copy_every_public_setting_except_java_omissions() {
     let java = &fixture["copyFields"];
     // Distinct from every constructor default, including signed-width limits.
     let mut source = ClientConfig::new("changed-ip");
-    source.namesrv_addr = Some("changed-nameserver".into());
-    source.client_ip = None;
-    source.instance_name = None;
-    source.client_callback_executor_threads = i32::MIN;
+    source.set_namesrv_addr(Some("changed-nameserver".into()));
+    source.set_client_ip(None);
+    source.set_instance_name(None);
+    source.set_client_callback_executor_threads(i32::MIN);
     source.set_namespace(Some("changed-namespace".into()));
-    source.namespace_v2 = Some("changed-v2".into());
-    source.access_channel = Some(AccessChannel::Cloud);
-    source.poll_name_server_interval = i32::MIN;
-    source.heartbeat_broker_interval = i32::MAX;
-    source.persist_consumer_offset_interval = -1;
-    source.pull_time_delay_millis_when_exception = i64::MIN;
-    source.trace_msg_batch_num = -10;
-    source.unit_mode = true;
-    source.unit_name = Some("changed-unit".into());
-    source.decode_read_body = false;
-    source.decode_decompress_body = false;
-    source.vip_channel_enabled = true;
-    source.use_heartbeat_v2 = true;
-    source.use_tls = true;
-    source.socks_proxy_config = Some("changed-proxy".into());
-    source.mq_client_api_timeout = i32::MIN;
-    source.detect_timeout = -200;
-    source.detect_interval = i32::MAX;
-    source.language = Some(LanguageCode::Cpp);
-    source.enable_stream_request_type = true;
-    source.send_latency_enable = true;
-    source.start_detector_enable = true;
-    source.enable_heartbeat_channel_event_listener = false;
-    source.enable_concurrent_heartbeat = true;
-    source.concurrent_heartbeat_thread_pool_size = -7;
-    source.enable_trace = true;
-    source.trace_topic = Some("changed-trace".into());
-    source.max_page_size_in_get_metadata = -2000;
-    assert_eq!(client_config_snapshot(&source), java["source"]);
+    source.set_namespace_v2(Some("changed-v2".into()));
+    source.set_access_channel(Some(AccessChannel::Cloud));
+    source.set_poll_name_server_interval(i32::MIN);
+    source.set_heartbeat_broker_interval(i32::MAX);
+    source.set_persist_consumer_offset_interval(-1);
+    source.set_pull_time_delay_millis_when_exception(i64::MIN);
+    source.set_trace_msg_batch_num(-10);
+    source.set_unit_mode(true);
+    source.set_unit_name(Some("changed-unit".into()));
+    source.set_decode_read_body(false);
+    source.set_decode_decompress_body(false);
+    source.set_vip_channel_enabled(true);
+    source.set_use_heartbeat_v2(true);
+    source.set_use_tls(true);
+    source.set_socks_proxy_config(Some("changed-proxy".into()));
+    source.set_mq_client_api_timeout(i32::MIN);
+    source.set_detect_timeout(-200);
+    source.set_detect_interval(i32::MAX);
+    source.set_language(Some(LanguageCode::Cpp));
+    source.set_enable_stream_request_type(true);
+    source.set_send_latency_enable(true);
+    source.set_start_detector_enable(true);
+    source.set_enable_heartbeat_channel_event_listener(false);
+    source.set_enable_concurrent_heartbeat(true);
+    source.set_concurrent_heartbeat_thread_pool_size(-7);
+    source.set_enable_trace(true);
+    source.set_trace_topic(Some("changed-trace".into()));
+    source.set_max_page_size_in_get_metadata(-2000);
+    let source_snapshot = client_config_snapshot(&mut source);
+    assert_eq!(source_snapshot, java["source"]);
+    assert_eq!(source_snapshot, java["sourceGetters"]);
 
     let mut expected_clone = source.clone();
     // reset of the source namespace state is part of clone construction, not
@@ -614,21 +616,25 @@ fn clone_and_reset_copy_every_public_setting_except_java_omissions() {
     expected_clone.access_channel = Some(AccessChannel::Local);
     expected_clone.trace_msg_batch_num = 10;
     expected_clone.max_page_size_in_get_metadata = 2000;
-    let copy = source.clone_client_config();
+    let mut copy = source.clone_client_config();
     assert_eq!(copy, expected_clone);
-    assert_eq!(client_config_snapshot(&copy), java["clone"]);
+    let clone_snapshot = client_config_snapshot(&mut copy);
+    assert_eq!(clone_snapshot, java["clone"]);
+    assert_eq!(clone_snapshot, java["cloneGetters"]);
 
     let mut receiver = ClientConfig::new("receiver");
     receiver.set_namespace(None);
-    receiver.access_channel = Some(AccessChannel::Cloud);
-    receiver.trace_msg_batch_num = 42;
-    receiver.max_page_size_in_get_metadata = 43;
+    receiver.set_access_channel(Some(AccessChannel::Cloud));
+    receiver.set_trace_msg_batch_num(42);
+    receiver.set_max_page_size_in_get_metadata(43);
     let mut expected_reset = source.clone();
     expected_reset.access_channel = receiver.access_channel;
     expected_reset.trace_msg_batch_num = receiver.trace_msg_batch_num;
     expected_reset.max_page_size_in_get_metadata = receiver.max_page_size_in_get_metadata;
     receiver.reset_client_config(&source);
     assert_eq!(receiver, expected_reset);
-    assert_eq!(client_config_snapshot(&receiver), java["reset"]);
-    assert_eq!(source.pull_time_delay_millis_when_exception, i64::MIN);
+    let reset_snapshot = client_config_snapshot(&mut receiver);
+    assert_eq!(reset_snapshot, java["reset"]);
+    assert_eq!(reset_snapshot, java["resetGetters"]);
+    assert_eq!(source.pull_time_delay_millis_when_exception(), i64::MIN);
 }

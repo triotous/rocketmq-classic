@@ -245,6 +245,193 @@ impl ClientConfig {
         id
     }
 
+    pub fn trace_msg_batch_num(&self) -> i32 {
+        self.trace_msg_batch_num
+    }
+    pub fn set_trace_msg_batch_num(&mut self, value: i32) {
+        self.trace_msg_batch_num = value;
+    }
+    pub fn client_ip(&self) -> Option<&str> {
+        self.client_ip.as_deref()
+    }
+    pub fn set_client_ip(&mut self, value: Option<String>) {
+        self.client_ip = value;
+    }
+    pub fn instance_name(&self) -> Option<&str> {
+        self.instance_name.as_deref()
+    }
+    pub fn set_instance_name(&mut self, value: Option<String>) {
+        self.instance_name = value;
+    }
+    pub fn client_callback_executor_threads(&self) -> i32 {
+        self.client_callback_executor_threads
+    }
+    pub fn set_client_callback_executor_threads(&mut self, value: i32) {
+        self.client_callback_executor_threads = value;
+    }
+    pub fn poll_name_server_interval(&self) -> i32 {
+        self.poll_name_server_interval
+    }
+    pub fn set_poll_name_server_interval(&mut self, value: i32) {
+        self.poll_name_server_interval = value;
+    }
+    pub fn heartbeat_broker_interval(&self) -> i32 {
+        self.heartbeat_broker_interval
+    }
+    pub fn set_heartbeat_broker_interval(&mut self, value: i32) {
+        self.heartbeat_broker_interval = value;
+    }
+    pub fn persist_consumer_offset_interval(&self) -> i32 {
+        self.persist_consumer_offset_interval
+    }
+    pub fn set_persist_consumer_offset_interval(&mut self, value: i32) {
+        self.persist_consumer_offset_interval = value;
+    }
+    pub fn pull_time_delay_millis_when_exception(&self) -> i64 {
+        self.pull_time_delay_millis_when_exception
+    }
+    pub fn set_pull_time_delay_millis_when_exception(&mut self, value: i64) {
+        self.pull_time_delay_millis_when_exception = value;
+    }
+    pub fn unit_name(&self) -> Option<&str> {
+        self.unit_name.as_deref()
+    }
+    pub fn set_unit_name(&mut self, value: Option<String>) {
+        self.unit_name = value;
+    }
+    pub fn unit_mode(&self) -> bool {
+        self.unit_mode
+    }
+    pub fn set_unit_mode(&mut self, value: bool) {
+        self.unit_mode = value;
+    }
+    pub fn vip_channel_enabled(&self) -> bool {
+        self.vip_channel_enabled
+    }
+    pub fn set_vip_channel_enabled(&mut self, value: bool) {
+        self.vip_channel_enabled = value;
+    }
+    pub fn use_tls(&self) -> bool {
+        self.use_tls
+    }
+    pub fn set_use_tls(&mut self, value: bool) {
+        self.use_tls = value;
+    }
+    pub fn socks_proxy_config(&self) -> Option<&str> {
+        self.socks_proxy_config.as_deref()
+    }
+    pub fn set_socks_proxy_config(&mut self, value: Option<String>) {
+        self.socks_proxy_config = value;
+    }
+    pub fn language(&self) -> Option<LanguageCode> {
+        self.language
+    }
+    pub fn set_language(&mut self, value: Option<LanguageCode>) {
+        self.language = value;
+    }
+    pub fn decode_read_body(&self) -> bool {
+        self.decode_read_body
+    }
+    pub fn set_decode_read_body(&mut self, value: bool) {
+        self.decode_read_body = value;
+    }
+    pub fn decode_decompress_body(&self) -> bool {
+        self.decode_decompress_body
+    }
+    pub fn set_decode_decompress_body(&mut self, value: bool) {
+        self.decode_decompress_body = value;
+    }
+    pub fn namespace_v2(&self) -> Option<&str> {
+        self.namespace_v2.as_deref()
+    }
+    pub fn set_namespace_v2(&mut self, value: Option<String>) {
+        self.namespace_v2 = value;
+    }
+    pub fn access_channel(&self) -> Option<AccessChannel> {
+        self.access_channel
+    }
+    pub fn set_access_channel(&mut self, value: Option<AccessChannel>) {
+        self.access_channel = value;
+    }
+    pub fn mq_client_api_timeout(&self) -> i32 {
+        self.mq_client_api_timeout
+    }
+    pub fn set_mq_client_api_timeout(&mut self, value: i32) {
+        self.mq_client_api_timeout = value;
+    }
+    pub fn enable_stream_request_type(&self) -> bool {
+        self.enable_stream_request_type
+    }
+    pub fn set_enable_stream_request_type(&mut self, value: bool) {
+        self.enable_stream_request_type = value;
+    }
+    pub fn send_latency_enable(&self) -> bool {
+        self.send_latency_enable
+    }
+    pub fn set_send_latency_enable(&mut self, value: bool) {
+        self.send_latency_enable = value;
+    }
+    pub fn start_detector_enable(&self) -> bool {
+        self.start_detector_enable
+    }
+    pub fn set_start_detector_enable(&mut self, value: bool) {
+        self.start_detector_enable = value;
+    }
+    pub fn enable_heartbeat_channel_event_listener(&self) -> bool {
+        self.enable_heartbeat_channel_event_listener
+    }
+    pub fn set_enable_heartbeat_channel_event_listener(&mut self, value: bool) {
+        self.enable_heartbeat_channel_event_listener = value;
+    }
+    pub fn detect_timeout(&self) -> i32 {
+        self.detect_timeout
+    }
+    pub fn set_detect_timeout(&mut self, value: i32) {
+        self.detect_timeout = value;
+    }
+    pub fn detect_interval(&self) -> i32 {
+        self.detect_interval
+    }
+    pub fn set_detect_interval(&mut self, value: i32) {
+        self.detect_interval = value;
+    }
+    pub fn use_heartbeat_v2(&self) -> bool {
+        self.use_heartbeat_v2
+    }
+    pub fn set_use_heartbeat_v2(&mut self, value: bool) {
+        self.use_heartbeat_v2 = value;
+    }
+    pub fn enable_trace(&self) -> bool {
+        self.enable_trace
+    }
+    pub fn set_enable_trace(&mut self, value: bool) {
+        self.enable_trace = value;
+    }
+    pub fn trace_topic(&self) -> Option<&str> {
+        self.trace_topic.as_deref()
+    }
+    pub fn set_trace_topic(&mut self, value: Option<String>) {
+        self.trace_topic = value;
+    }
+    pub fn max_page_size_in_get_metadata(&self) -> i32 {
+        self.max_page_size_in_get_metadata
+    }
+    pub fn set_max_page_size_in_get_metadata(&mut self, value: i32) {
+        self.max_page_size_in_get_metadata = value;
+    }
+    pub fn enable_concurrent_heartbeat(&self) -> bool {
+        self.enable_concurrent_heartbeat
+    }
+    pub fn set_enable_concurrent_heartbeat(&mut self, value: bool) {
+        self.enable_concurrent_heartbeat = value;
+    }
+    pub fn concurrent_heartbeat_thread_pool_size(&self) -> i32 {
+        self.concurrent_heartbeat_thread_pool_size
+    }
+    pub fn set_concurrent_heartbeat_thread_pool_size(&mut self, value: i32) {
+        self.concurrent_heartbeat_thread_pool_size = value;
+    }
+
     pub fn set_namesrv_addr(&mut self, address: Option<String>) {
         self.namesrv_addr = address;
         self.namespace_initialized = false;
