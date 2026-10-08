@@ -1,6 +1,6 @@
 use crate::config::{ClientConfig, java_whitespace};
 use rocketmq_classic_remoting::{
-    RemotingCommand,
+    RemotingCommand, RequestType,
     client::{RemotingClient, RpcHook, RpcHookError},
 };
 use std::sync::Arc;
@@ -31,7 +31,7 @@ impl RpcHook for StreamFields {
         command
             .ext_fields
             .get_or_insert_with(Default::default)
-            .insert("ReqT".into(), "0".into());
+            .insert("ReqT".into(), RequestType::Stream.get_code().to_string());
         Ok(())
     }
 }
