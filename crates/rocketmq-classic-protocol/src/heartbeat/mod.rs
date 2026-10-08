@@ -360,6 +360,30 @@ mod tests {
         }
     }
 
+    #[test]
+    fn primitive_nulls_match_invoked_java_decoder() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
+                .unwrap();
+        for case in fixture["primitiveNullCases"].as_array().unwrap() {
+            let raw = case["rawInput"].as_str().unwrap();
+            let actual = match case["case"].as_str().unwrap() {
+                "subscription-version" => serde_json::from_str::<SubscriptionData>(raw)
+                    .map(|value| serde_json::json!(value.sub_version)),
+                "subscription-class-filter" => serde_json::from_str::<SubscriptionData>(raw)
+                    .map(|value| serde_json::json!(value.class_filter_mode)),
+                "heartbeat-fingerprint" => serde_json::from_str::<HeartbeatData>(raw)
+                    .map(|value| serde_json::json!(value.heartbeat_fingerprint)),
+                "heartbeat-without-sub" => serde_json::from_str::<HeartbeatData>(raw)
+                    .map(|value| serde_json::json!(value.is_without_sub)),
+                "consumer-unit-mode" => serde_json::from_str::<ConsumerData>(raw)
+                    .map(|value| serde_json::json!(value.unit_mode)),
+                name => panic!("unknown primitive case: {name}"),
+            };
+            assert_eq!(actual.unwrap(), case["value"], "{}", case["case"]);
+        }
+    }
+
     fn current_millis() -> i64 {
         use std::time::{SystemTime, UNIX_EPOCH};
         SystemTime::now()

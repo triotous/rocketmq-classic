@@ -131,6 +131,69 @@ public final class RuntimeHeartbeatFixtures {
         return cases;
     }
 
+    private static List<Object> fingerprintNullCases() {
+        List<Object> cases = new ArrayList<>();
+        for (String name : new String[] {
+            "empty", "null-producers", "null-consumers", "null-subscriptions"
+        }) {
+            HeartbeatData data = new HeartbeatData();
+            if ("null-producers".equals(name)) data.setProducerDataSet(null);
+            if ("null-consumers".equals(name)) data.setConsumerDataSet(null);
+            if ("null-subscriptions".equals(name)) {
+                ConsumerData consumer = new ConsumerData();
+                consumer.setSubscriptionDataSet(null);
+                data.getConsumerDataSet().add(consumer);
+            }
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", name);
+            item.put("body", com.alibaba.fastjson2.JSON.parseObject(
+                com.alibaba.fastjson2.JSON.toJSONString(data)));
+            try {
+                item.put("fingerprint", data.computeHeartbeatFingerprint());
+            } catch (Throwable error) {
+                item.put("error", error.getClass().getName());
+            }
+            cases.add(item);
+        }
+        return cases;
+    }
+
+    private static List<Object> primitiveNullCases() {
+        List<Object> cases = new ArrayList<>();
+        for (String[] input : new String[][] {
+            {"subscription-version", "{\"subVersion\":null}", "subscription"},
+            {"subscription-class-filter", "{\"classFilterMode\":null}", "subscription"},
+            {"heartbeat-fingerprint", "{\"heartbeatFingerprint\":null}", "heartbeat"},
+            {"heartbeat-without-sub", "{\"withoutSub\":null}", "heartbeat"},
+            {"consumer-unit-mode", "{\"unitMode\":null}", "consumer"}
+        }) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", input[0]);
+            item.put("rawInput", input[1]);
+            try {
+                switch (input[2]) {
+                    case "subscription":
+                        SubscriptionData subscription = com.alibaba.fastjson2.JSON.parseObject(input[1], SubscriptionData.class);
+                        item.put("value", "subscription-version".equals(input[0])
+                            ? subscription.getSubVersion() : subscription.isClassFilterMode());
+                        break;
+                    case "heartbeat":
+                        HeartbeatData heartbeat = com.alibaba.fastjson2.JSON.parseObject(input[1], HeartbeatData.class);
+                        item.put("value", "heartbeat-fingerprint".equals(input[0])
+                            ? heartbeat.getHeartbeatFingerprint() : heartbeat.isWithoutSub());
+                        break;
+                    default:
+                        ConsumerData consumer = com.alibaba.fastjson2.JSON.parseObject(input[1], ConsumerData.class);
+                        item.put("value", consumer.isUnitMode());
+                }
+            } catch (Throwable error) {
+                item.put("error", error.getClass().getName());
+            }
+            cases.add(item);
+        }
+        return cases;
+    }
+
     private static void record(List<Object> cases, MQClientInstance runtime, String name,
         boolean withoutSub) throws Exception {
         Method prepare = MQClientInstance.class.getDeclaredMethod("prepareHeartbeatData", boolean.class);
@@ -232,6 +295,8 @@ public final class RuntimeHeartbeatFixtures {
         fixture.put("subscriptionFieldCases", subscriptionFieldCases());
         fixture.put("ownerFieldCases", ownerFieldCases());
         fixture.put("heartbeatFieldCases", heartbeatFieldCases());
+        fixture.put("fingerprintNullCases", fingerprintNullCases());
+        fixture.put("primitiveNullCases", primitiveNullCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture) + "\n";
         Path file = Path.of(args[0]);
         if (args.length > 1 && "--verify".equals(args[1])) {

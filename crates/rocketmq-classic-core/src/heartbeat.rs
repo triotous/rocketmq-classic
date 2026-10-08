@@ -402,6 +402,30 @@ mod tests {
     }
 
     #[test]
+    fn null_collection_fingerprints_match_invoked_java_oracle() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/heartbeat.json"))
+                .unwrap();
+        for case in fixture["fingerprintNullCases"].as_array().unwrap() {
+            let mut data: HeartbeatData = serde_json::from_value(case["body"].clone()).unwrap();
+            match case["case"].as_str().unwrap() {
+                "null-producers" => data.producer_data_set = None,
+                "null-consumers" => data.consumer_data_set = None,
+                "null-subscriptions" => {
+                    data.consumer_data_set.as_mut().unwrap()[0].subscription_data_set = None;
+                }
+                _ => {}
+            }
+            assert_eq!(
+                i64::from(fingerprint(&data).unwrap()),
+                case["fingerprint"],
+                "{}",
+                case["case"]
+            );
+        }
+    }
+
+    #[test]
     fn fingerprint_ignores_identity_subscription_version_and_simple_flag() {
         let mut data = HeartbeatData::default();
         data.consumer_data_set.as_mut().unwrap().push(ConsumerData {
