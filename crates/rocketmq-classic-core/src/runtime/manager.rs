@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     future::Future,
     sync::{Arc, Mutex, OnceLock, Weak},
 };
@@ -289,6 +289,15 @@ impl FactoryTable {
         self.get(key).map(|value| value.is_some())
     }
 
+    /// Returns the mapped runtime, or the supplied value when the key is absent.
+    pub fn get_or_default(
+        &self,
+        key: &str,
+        default: Arc<ClientRuntime>,
+    ) -> Result<Arc<ClientRuntime>, RuntimeError> {
+        Ok(self.get(key)?.unwrap_or(default))
+    }
+
     pub fn len(&self) -> Result<usize, RuntimeError> {
         let entries = self
             .manager
@@ -332,6 +341,17 @@ impl FactoryTable {
         self.mutate(key, TableMutation::Put(value))
             .await
             .map(|(previous, _)| previous)
+    }
+
+    /// Applies each mapping independently, matching Map.putAll per-key writes.
+    pub async fn put_all(
+        &self,
+        entries: BTreeMap<String, Arc<ClientRuntime>>,
+    ) -> Result<(), RuntimeError> {
+        for (key, value) in entries {
+            self.put(&key, value).await?;
+        }
+        Ok(())
     }
 
     pub async fn put_if_absent(

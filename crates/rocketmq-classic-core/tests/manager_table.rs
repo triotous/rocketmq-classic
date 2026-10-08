@@ -1,5 +1,5 @@
 use rocketmq_classic_core::{config::ClientConfig, runtime::ClientRuntimeManager};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 #[tokio::test]
@@ -152,10 +152,7 @@ async fn retained_factory_table_and_atomic_mutations_match_invoked_java() {
         java["retainedViewSeesSecond"]
     );
     assert_eq!(
-        Arc::ptr_eq(
-            &live.get_or_default(&id, first.clone()).unwrap(),
-            &second
-        ),
+        Arc::ptr_eq(&live.get_or_default(&id, first.clone()).unwrap(), &second),
         java["getOrDefaultPresent"]
     );
     assert_eq!(
@@ -240,7 +237,7 @@ async fn retained_factory_table_and_atomic_mutations_match_invoked_java() {
         Arc::ptr_eq(&live.get("").unwrap().unwrap(), &second),
         java["aliasHasSecond"]
     );
-    let bulk_values = HashMap::from([
+    let bulk_values = BTreeMap::from([
         ("bulk-a".to_owned(), first.clone()),
         ("bulk-b".to_owned(), second.clone()),
     ]);
