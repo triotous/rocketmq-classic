@@ -512,6 +512,9 @@ fn contains_fastjson_rejected_literal(input: &str) -> bool {
                             b'u' if fastjson_escape_digits(bytes, index, quote, 4).is_some() => {
                                 index += 6;
                             }
+                            escaped if fastjson_additional_escape_code_unit(escaped).is_some() => {
+                                index += 2;
+                            }
                             _ => return true,
                         }
                     } else if bytes[index] == quote {
@@ -707,6 +710,18 @@ fn normalize_fastjson_source(input: &str) -> String {
                 {
                     push_json_unicode_escape(&mut output, code_unit);
                     index = end;
+                } else if let Some((escaped, code_unit)) =
+                    bytes.get(index + 1).copied().and_then(|escaped| {
+                        fastjson_additional_escape_code_unit(escaped)
+                            .map(|code_unit| (escaped, code_unit))
+                    })
+                {
+                    if fastjson_identity_escape(escaped) {
+                        output.push(escaped);
+                    } else {
+                        push_json_unicode_escape(&mut output, code_unit);
+                    }
+                    index += 2;
                 } else {
                     let end = (index + 2).min(bytes.len());
                     output.extend_from_slice(&bytes[index..end]);
@@ -766,6 +781,22 @@ fn fastjson_hex_digit_or_zero(byte: u8) -> u8 {
         b'A'..=b'F' => byte - b'A' + 10,
         _ => 0,
     }
+}
+
+fn fastjson_additional_escape_code_unit(escaped: u8) -> Option<u16> {
+    match escaped {
+        b'1'..=b'7' => Some(u16::from(escaped - b'0')),
+        b'F' => Some(0x000c),
+        byte if fastjson_identity_escape(byte) => Some(u16::from(byte)),
+        _ => None,
+    }
+}
+
+fn fastjson_identity_escape(escaped: u8) -> bool {
+    matches!(
+        escaped,
+        b' ' | b'#' | b'&' | b'(' | b')' | b',' | b'.' | b'@' | b'[' | b']' | b'_' | b'~'
+    )
 }
 
 fn push_json_unicode_escape(output: &mut Vec<u8>, value: u16) {
