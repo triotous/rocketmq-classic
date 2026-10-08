@@ -836,6 +836,20 @@ fn default_mapping_scope() -> Option<String> {
 }
 
 impl TopicRouteData {
+    /// Copies the DTO using the pinned Java `TopicRouteData` copy-constructor
+    /// collection defaults. Explicit null queue, broker and filter collections
+    /// become empty containers; the mapping table remains nullable.
+    ///
+    /// Rust owns nested values, so this copy is structurally independent even
+    /// where Java's copied collection elements retain object identity.
+    pub fn java_copy_constructed(&self) -> Self {
+        let mut copy = self.clone();
+        copy.queue_datas.get_or_insert_with(Vec::new);
+        copy.broker_datas.get_or_insert_with(Vec::new);
+        copy.filter_server_table.get_or_insert_with(BTreeMap::new);
+        copy
+    }
+
     /// Returns the pinned Java 5.5.1 `TopicRouteData.hashCode` result.
     pub fn java_hash_code(&self) -> i32 {
         let broker_hash = self
@@ -1007,7 +1021,7 @@ impl TopicRouteData {
         let Some(old) = old else {
             return Ok(true);
         };
-        let (mut current, mut old) = (self.clone(), old.clone());
+        let (mut current, mut old) = (self.java_copy_constructed(), old.java_copy_constructed());
         for route in [&mut current, &mut old] {
             let queues = route.queue_datas.get_or_insert_with(Vec::new);
             if queues.len() > 1 {

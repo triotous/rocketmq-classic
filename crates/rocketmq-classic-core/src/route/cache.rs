@@ -385,31 +385,25 @@ impl RouteCache {
         // Raw order presence controls branch selection, even when a separator-
         // only Java split normalizes to an empty conversion string.
         validate_conversion_size(topic, &route)?;
-        let mut topic_snapshot = TopicSnapshot {
-            publish_queues: if route
-                .order_topic_conf
-                .as_deref()
-                .is_some_and(|value| !value.is_empty() && value.trim_end_matches(';').is_empty())
-            {
-                Vec::new()
-            } else {
-                conversion_route.publish_queues(topic)
-            },
-            subscribe_queues: route.subscribe_queues(topic).into_iter().collect(),
-            endpoints: route.static_queue_endpoints(topic).unwrap_or_default(),
-            order_topic: route
-                .order_topic_conf
-                .as_ref()
-                .is_some_and(|value| !value.is_empty()),
-            // Java publishes a TopicRouteData copy whose constructor
-            // normalizes null collections to empty containers.
-            route: Arc::new(TopicRouteData {
-                queue_datas: Some(route.queue_datas.clone().unwrap_or_default()),
-                broker_datas: Some(route.broker_datas.clone().unwrap_or_default()),
-                filter_server_table: Some(route.filter_server_table.clone().unwrap_or_default()),
-                ..route
-            }),
-        };
+        let mut topic_snapshot =
+            TopicSnapshot {
+                publish_queues: if route.order_topic_conf.as_deref().is_some_and(|value| {
+                    !value.is_empty() && value.trim_end_matches(';').is_empty()
+                }) {
+                    Vec::new()
+                } else {
+                    conversion_route.publish_queues(topic)
+                },
+                subscribe_queues: route.subscribe_queues(topic).into_iter().collect(),
+                endpoints: route.static_queue_endpoints(topic).unwrap_or_default(),
+                order_topic: route
+                    .order_topic_conf
+                    .as_ref()
+                    .is_some_and(|value| !value.is_empty()),
+                // Java publishes a TopicRouteData copy whose constructor
+                // normalizes null collections to empty containers.
+                route: Arc::new(route.java_copy_constructed()),
+            };
         loop {
             let observed = self.snapshot()?.raw_routes.get(topic).cloned();
             let unchanged = match &observed {
