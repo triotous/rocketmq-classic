@@ -584,6 +584,80 @@ public final class RuntimeRouteFixtures {
             table.remove("compute-a");
             table.remove("merge-new");
             table.clear();
+
+            table.put("key-remove", first);
+            table.put("key-keep", second);
+            table.put("key-retain", first);
+            primitives.put("keyViewContains", table.keySet().contains("key-keep"));
+            primitives.put("keyViewRemove", table.keySet().remove("key-remove") && !table.containsKey("key-remove"));
+            primitives.put("keyViewRemoveIf", table.keySet().removeIf(key -> key.equals("key-keep"))
+                && !table.containsKey("key-keep"));
+            table.put("key-all", second);
+            table.put("key-retain-all", first);
+            primitives.put("keyViewRemoveAll", table.keySet().removeAll(java.util.Set.of("key-all"))
+                && !table.containsKey("key-all"));
+            primitives.put("keyViewRetainAll", table.keySet().retainAll(java.util.Set.of("key-retain-all"))
+                && table.size() == 1 && table.containsKey("key-retain-all"));
+
+            table.clear();
+            table.put("value-a", first);
+            table.put("value-b", second);
+            table.put("value-c", second);
+            primitives.put("valuesViewContainsEqualCopy", table.values().contains(equalSecond));
+            primitives.put("valuesViewRemoveEqualCopy", table.values().remove(equalSecond)
+                && table.values().stream().filter(equalSecond::equals).count() == 1);
+            primitives.put("valuesViewRemoveIf", table.values().removeIf(value -> value.equals(first))
+                && !table.containsKey("value-a"));
+            table.clear();
+            table.put("value-all", second);
+            table.put("value-retain-drop", second);
+            table.put("value-retain-keep", first);
+            primitives.put("valuesViewRemoveAllEqual", table.values().removeAll(java.util.List.of(equalSecond))
+                && !table.containsKey("value-all") && !table.containsKey("value-retain-drop"));
+            table.clear();
+            table.put("value-retain-drop", second);
+            table.put("value-retain-keep", first);
+            primitives.put("valuesViewRetainAllEqual", table.values().retainAll(java.util.List.of(first))
+                && table.size() == 1 && table.containsKey("value-retain-keep"));
+
+            java.util.Map.Entry<String, TopicRouteData> entryKeep =
+                new java.util.AbstractMap.SimpleImmutableEntry<>("entry-keep", equalSecond);
+            table.clear();
+            table.put("entry-remove", first);
+            table.put("entry-keep", second);
+            primitives.put("entryViewContainsEqualCopy", table.entrySet().contains(entryKeep));
+            primitives.put("entryViewRemoveEqualCopy", table.entrySet().remove(
+                new java.util.AbstractMap.SimpleImmutableEntry<>("entry-remove", first))
+                && !table.containsKey("entry-remove"));
+            primitives.put("entryViewRemoveIf", table.entrySet().removeIf(entry -> entry.getKey().equals("entry-keep"))
+                && !table.containsKey("entry-keep"));
+            table.put("entry-all", second);
+            table.put("entry-retain-drop", second);
+            table.put("entry-retain-keep", first);
+            primitives.put("entryViewRemoveAllEqual", table.entrySet().removeAll(java.util.Set.of(
+                new java.util.AbstractMap.SimpleImmutableEntry<>("entry-all", equalSecond)))
+                && !table.containsKey("entry-all"));
+            primitives.put("entryViewRetainAllEqual", table.entrySet().retainAll(java.util.Set.of(
+                new java.util.AbstractMap.SimpleImmutableEntry<>("entry-retain-keep", first)))
+                && table.size() == 1 && table.containsKey("entry-retain-keep"));
+
+            table.clear();
+            table.put("iterator-key", first);
+            java.util.Iterator<String> keyIterator = table.keySet().iterator();
+            keyIterator.next();
+            keyIterator.remove();
+            primitives.put("keyIteratorRemove", table.isEmpty());
+            table.put("iterator-value", first);
+            java.util.Iterator<TopicRouteData> valueIterator = table.values().iterator();
+            valueIterator.next();
+            valueIterator.remove();
+            primitives.put("valuesIteratorRemove", table.isEmpty());
+            table.put("iterator-entry", first);
+            java.util.Iterator<java.util.Map.Entry<String, TopicRouteData>> entryIterator = table.entrySet().iterator();
+            entryIterator.next();
+            entryIterator.remove();
+            primitives.put("entryIteratorRemove", table.isEmpty());
+            table.clear();
             result.put("primitives", primitives);
 
             api.route = first;
