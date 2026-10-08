@@ -73,6 +73,132 @@ impl TopicRouteTable {
             }
         })
     }
+    /// Applies a Java-style ConcurrentMap remapping function. Conditional
+    /// updates use source route-content equality and may retry after a race.
+    pub fn compute_if_absent(
+        &self,
+        key: impl Into<String>,
+        mut mapping: impl FnMut(&str) -> Option<Arc<TopicRouteData>>,
+    ) -> Result<Option<Arc<TopicRouteData>>, RuntimeError> {
+        let key = key.into();
+        if let Some(current) = self.get(&key)? {
+            return Ok(Some(current));
+        }
+        let Some(value) = mapping(&key) else {
+            return Ok(None);
+        };
+        Ok(Some(
+            self.put_if_absent(&key, value.clone())?.unwrap_or(value),
+        ))
+    }
+
+    pub fn compute_if_present(
+        &self,
+        key: impl Into<String>,
+        mut remapping: impl FnMut(&str, &Arc<TopicRouteData>) -> Option<Arc<TopicRouteData>>,
+    ) -> Result<Option<Arc<TopicRouteData>>, RuntimeError> {
+        let key = key.into();
+        loop {
+            let Some(current) = self.get(&key)? else {
+                return Ok(None);
+            };
+            match remapping(&key, &current) {
+                Some(value) => {
+                    if self.replace_if_equal(&key, &current, value.clone())? {
+                        return Ok(Some(value));
+                    }
+                }
+                None => {
+                    if self.remove_if_equal(&key, &current)? {
+                        return Ok(None);
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn compute(
+        &self,
+        key: impl Into<String>,
+        mut remapping: impl FnMut(&str, Option<&Arc<TopicRouteData>>) -> Option<Arc<TopicRouteData>>,
+    ) -> Result<Option<Arc<TopicRouteData>>, RuntimeError> {
+        let key = key.into();
+        loop {
+            let current = self.get(&key)?;
+            let value = remapping(&key, current.as_ref());
+            match (current.as_ref(), value) {
+                (None, None) => return Ok(None),
+                (None, Some(value)) => {
+                    if self.put_if_absent(&key, value.clone())?.is_none() {
+                        return Ok(Some(value));
+                    }
+                }
+                (Some(current), Some(value)) => {
+                    if self.replace_if_equal(&key, current, value.clone())? {
+                        return Ok(Some(value));
+                    }
+                }
+                (Some(current), None) => {
+                    if self.remove_if_equal(&key, current)? {
+                        return Ok(None);
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn merge(
+        &self,
+        key: impl Into<String>,
+        value: Arc<TopicRouteData>,
+        mut remapping: impl FnMut(
+            &Arc<TopicRouteData>,
+            &Arc<TopicRouteData>,
+        ) -> Option<Arc<TopicRouteData>>,
+    ) -> Result<Option<Arc<TopicRouteData>>, RuntimeError> {
+        let key = key.into();
+        loop {
+            let Some(current) = self.get(&key)? else {
+                if self.put_if_absent(&key, value.clone())?.is_none() {
+                    return Ok(Some(value));
+                }
+                continue;
+            };
+            match remapping(&current, &value) {
+                Some(next) => {
+                    if self.replace_if_equal(&key, &current, next.clone())? {
+                        return Ok(Some(next));
+                    }
+                }
+                None => {
+                    if self.remove_if_equal(&key, &current)? {
+                        return Ok(None);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Replaces values for keys in one detached key snapshot. The mapping
+    /// callback runs without a cache lock and may be retried after a race.
+    pub fn replace_all(
+        &self,
+        mut remapping: impl FnMut(&str, &Arc<TopicRouteData>) -> Arc<TopicRouteData>,
+    ) -> Result<(), RuntimeError> {
+        for key in self.snapshot()?.into_keys() {
+            loop {
+                let Some(current) = self.get(&key)? else {
+                    break;
+                };
+                let value = remapping(&key, &current);
+                if self.replace_if_equal(&key, &current, value)? {
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn replace(
         &self,
         key: impl Into<String>,
