@@ -556,6 +556,20 @@ impl FactoryKeySetView {
         self.0.remove(key).await.map(|value| value.is_some())
     }
 
+    /// Removes keys accepted by the predicate from a detached key snapshot.
+    pub async fn remove_if(
+        &self,
+        mut predicate: impl FnMut(&str) -> bool,
+    ) -> Result<usize, RuntimeError> {
+        let mut removed = 0;
+        for key in self.snapshot()? {
+            if predicate(&key) && self.remove(&key).await? {
+                removed += 1;
+            }
+        }
+        Ok(removed)
+    }
+
     pub async fn clear(&self) -> Result<(), RuntimeError> {
         self.0.clear().await
     }
@@ -591,6 +605,20 @@ impl FactoryValuesView {
             }
         }
         Ok(false)
+    }
+
+    /// Removes values accepted by the predicate from a detached entry snapshot.
+    pub async fn remove_if(
+        &self,
+        mut predicate: impl FnMut(&Arc<ClientRuntime>) -> bool,
+    ) -> Result<usize, RuntimeError> {
+        let mut removed = 0;
+        for (key, value) in self.0.snapshot()? {
+            if predicate(&value) && self.0.remove_if_same(&key, &value).await? {
+                removed += 1;
+            }
+        }
+        Ok(removed)
     }
 
     pub async fn clear(&self) -> Result<(), RuntimeError> {
@@ -629,6 +657,20 @@ impl FactoryEntrySetView {
         value: &Arc<ClientRuntime>,
     ) -> Result<bool, RuntimeError> {
         self.0.remove_if_same(key, value).await
+    }
+
+    /// Removes entries accepted by the predicate from a detached entry snapshot.
+    pub async fn remove_if(
+        &self,
+        mut predicate: impl FnMut(&str, &Arc<ClientRuntime>) -> bool,
+    ) -> Result<usize, RuntimeError> {
+        let mut removed = 0;
+        for (key, value) in self.0.snapshot()? {
+            if predicate(&key, &value) && self.0.remove_if_same(&key, &value).await? {
+                removed += 1;
+            }
+        }
+        Ok(removed)
     }
 
     pub async fn clear(&self) -> Result<(), RuntimeError> {
