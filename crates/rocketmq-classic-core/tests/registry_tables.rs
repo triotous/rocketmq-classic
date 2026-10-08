@@ -187,6 +187,7 @@ async fn conditional_registry_mutations_match_java_custom_value_equality() {
     let producer_b: Arc<dyn ProducerRuntime> = Arc::new(EqualProducer("producer-equal"));
     let producer_c: Arc<dyn ProducerRuntime> = Arc::new(EqualProducer("producer-replacement"));
     producers.put("replace", producer_a.clone()).await.unwrap();
+    assert!(producers.contains_value(&producer_b).unwrap());
     assert!(
         producers
             .replace_if_equal("replace", &producer_b, producer_c)
@@ -206,6 +207,7 @@ async fn conditional_registry_mutations_match_java_custom_value_equality() {
     let consumer_b: Arc<dyn ConsumerRuntime> = Arc::new(EqualConsumer("consumer-equal"));
     let consumer_c: Arc<dyn ConsumerRuntime> = Arc::new(EqualConsumer("consumer-replacement"));
     consumers.put("replace", consumer_a.clone()).await.unwrap();
+    assert!(consumers.contains_value(&consumer_b).unwrap());
     assert!(
         consumers
             .replace_if_equal("replace", &consumer_b, consumer_c)
@@ -221,6 +223,8 @@ async fn conditional_registry_mutations_match_java_custom_value_equality() {
     );
     assert_eq!(
         serde_json::json!({
+            "producerContainsEqualValue": true,
+            "consumerContainsEqualValue": true,
             "producerReplaceByEqualValue": true,
             "producerRemoveByEqualValue": true,
             "consumerReplaceByEqualValue": true,

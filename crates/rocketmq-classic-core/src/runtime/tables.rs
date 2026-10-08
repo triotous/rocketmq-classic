@@ -92,6 +92,17 @@ macro_rules! table {
             pub fn contains_key(&self, key: &str) -> Result<bool, RuntimeError> {
                 self.0.groups.table_contains_key(self.0.kind, key)
             }
+            pub fn contains_value(
+                &self,
+                value: &Arc<dyn $owner>,
+            ) -> Result<bool, RuntimeError> {
+                let equality_key = value.map_value_equality_key();
+                self.0.groups.table_contains_value(
+                    self.0.kind,
+                    &TableValue::$kind(value.clone()),
+                    equality_key.as_deref(),
+                )
+            }
             pub fn len(&self) -> Result<usize, RuntimeError> {
                 self.0.groups.table_len(self.0.kind)
             }

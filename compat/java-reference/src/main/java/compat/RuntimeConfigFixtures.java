@@ -354,6 +354,7 @@ public final class RuntimeConfigFixtures {
             org.apache.rocketmq.client.impl.producer.MQProducerInner producerReplacement =
                 tableOwner(org.apache.rocketmq.client.impl.producer.MQProducerInner.class, "producer-replacement");
             runtime.getProducerTable().put("equal-replace", producerEqualA);
+            equalValues.put("producerContainsEqualValue", runtime.getProducerTable().containsValue(producerEqualB));
             equalValues.put("producerReplaceByEqualValue",
                 runtime.getProducerTable().replace("equal-replace", producerEqualB, producerReplacement));
             runtime.getProducerTable().put("equal-remove", producerEqualA);
@@ -366,6 +367,7 @@ public final class RuntimeConfigFixtures {
             org.apache.rocketmq.client.impl.consumer.MQConsumerInner consumerReplacement =
                 tableOwner(org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class, "consumer-replacement");
             runtime.getConsumerTable().put("equal-replace", consumerEqualA);
+            equalValues.put("consumerContainsEqualValue", runtime.getConsumerTable().containsValue(consumerEqualB));
             equalValues.put("consumerReplaceByEqualValue",
                 runtime.getConsumerTable().replace("equal-replace", consumerEqualB, consumerReplacement));
             runtime.getConsumerTable().put("equal-remove", consumerEqualA);
