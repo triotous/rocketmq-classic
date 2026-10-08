@@ -22,6 +22,6 @@ Callers of the route RPC API handle the successful nullable result explicitly. N
 
 The pinned Java fixture invokes decode/fromJson with null input and JSON `null`, decodeList with null input and `[null]`, and records the corresponding null roots/list members. Route fixture SHA-256: `a2b25778290e3f48058f02c8ddbbdef3ceba82f5cef9b8343b519dc955e83db5`.
 
-Oracle commits: `5eaccba`, `f007a4a`. Regression commits: `ffc5c8c`, `722b5bd`. Implementation commit: `bdfa5cb`. Full workspace/all-target tests, strict Clippy, pinned offline Maven verify (manifest22), comparator self-test, formatting, and diff checks pass. The loopback runtime test verifies that a JSON-null refresh returns false and retains the same cached snapshot allocation.
+Oracle commits: `5eaccba`, `f007a4a`. Regression commits: `ffc5c8c`, `722b5bd`. Implementation commit: `bdfa5cb`. Test coverage follow-up: `95cda6c` makes the null-topic request in `all_topic_refresh_unions_registered_topics_and_continues_after_rejection` receive JSON `null`; it verifies the union continues and the nullable result is a no-op. Full workspace/all-target tests, strict Clippy, pinned offline Maven verify (manifest22), comparator self-test, formatting, and diff checks pass. The per-topic loopback runtime test verifies that a JSON-null refresh returns false and retains the same cached snapshot allocation.
 
 This closes the invoked nullable route decode and refresh cases only. Other route DTO/input combinations and the full Phase 6 source/API/field/branch reconciliation remain open; P6-V04 remains PENDING_PHASE_19.
