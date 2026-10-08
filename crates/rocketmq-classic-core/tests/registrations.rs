@@ -40,7 +40,11 @@ fn compare_java(name: &str, actual: &HeartbeatData) {
         .find(|case| case["case"] == name)
         .unwrap();
     let expected: HeartbeatData = serde_json::from_value(case["body"].clone()).unwrap();
-    assert_eq!(actual, &expected, "{name}");
+    assert_eq!(
+        serde_json::to_value(actual).unwrap(),
+        serde_json::to_value(expected).unwrap(),
+        "{name}"
+    );
 }
 
 #[tokio::test]
@@ -257,7 +261,10 @@ async fn heartbeat_snapshots_follow_consumer_versions_and_without_subscription_f
         })]));
     let second = runtime.prepare_heartbeat_data(false).unwrap();
     compare_java("subscription-change", &second);
-    assert_ne!(first, second);
+    assert_ne!(
+        serde_json::to_value(&first).unwrap(),
+        serde_json::to_value(&second).unwrap()
+    );
     let without = runtime.prepare_heartbeat_data(true).unwrap();
     compare_java("without-sub", &without);
     assert!(without.is_without_sub);
