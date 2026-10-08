@@ -318,6 +318,36 @@ public final class RuntimeRouteFixtures {
         return cases;
     }
 
+    private static List<Object> staticMappingMapEntryCases() {
+        List<Object> cases = new ArrayList<>();
+        for (String[] testCase : new String[][] {
+            {"null-value", "{\"currIdMap\":{\"0\":null}}"},
+            {"null-key", "{\"currIdMap\":{\"null\":1}}"},
+            {"invalid-key", "{\"currIdMap\":{\"not-a-number\":1}}"},
+            {"overflow-key", "{\"currIdMap\":{\"2147483648\":1}}"},
+            {"invalid-value", "{\"currIdMap\":{\"0\":\"not-a-number\"}}"},
+            {"integer-limits", "{\"currIdMap\":{\"-2147483648\":-2147483648,\"2147483647\":2147483647}}"}
+        }) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", testCase[0]);
+            item.put("rawInput", testCase[1]);
+            try {
+                org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo mapping =
+                    com.alibaba.fastjson2.JSON.parseObject(testCase[1],
+                        org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo.class);
+                item.put("outcome", "accepted");
+                item.put("mapSize", mapping.getCurrIdMap() == null ? null : mapping.getCurrIdMap().size());
+                item.put("hasKeyZero", mapping.getCurrIdMap() != null && mapping.getCurrIdMap().containsKey(0));
+                item.put("keyZeroValue", mapping.getCurrIdMap() == null ? null : mapping.getCurrIdMap().get(0));
+            } catch (Throwable error) {
+                item.put("outcome", "rejected");
+                item.put("error", error.getClass().getSimpleName());
+            }
+            cases.add(item);
+        }
+        return cases;
+    }
+
     private static List<Object> nullStaticMappingConversion() {
         List<Object> cases = new ArrayList<>();
         for (String mapping : new String[] {
@@ -1359,6 +1389,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("nullableMessageQueueFields", nullableMessageQueueFields());
         fixture.put("messageQueueCompareTo", messageQueueCompareToCases());
         fixture.put("nullableStaticMappingFields", nullableStaticMappingFields());
+        fixture.put("staticMappingMapEntryCases", staticMappingMapEntryCases());
         fixture.put("nullStaticMappingConversion", nullStaticMappingConversion());
         fixture.put("overlappingStaticMappingOwners", overlappingStaticMappingOwners());
         fixture.put("runtimeNullableCollections", runtimeNullableCollections());

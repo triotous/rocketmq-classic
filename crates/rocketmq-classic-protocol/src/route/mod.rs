@@ -603,6 +603,45 @@ mod nullable_static_mapping_tests {
             );
         }
     }
+
+    #[test]
+    fn static_mapping_map_entry_inputs_match_invoked_java_acceptance() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["staticMappingMapEntryCases"].as_array().unwrap() {
+            let mapping: Result<TopicQueueMappingInfo, _> =
+                serde_json::from_str(case["rawInput"].as_str().unwrap());
+            let java_accepts = case["outcome"] == "accepted";
+            assert_eq!(
+                mapping.is_ok(),
+                java_accepts,
+                "{} ({})",
+                case["case"],
+                case["error"]
+            );
+            if let Ok(mapping) = mapping {
+                assert_eq!(
+                    mapping.curr_id_map.as_ref().map(|values| values.len()),
+                    case["mapSize"].as_u64().map(|size| size as usize)
+                );
+                assert_eq!(
+                    mapping
+                        .curr_id_map
+                        .as_ref()
+                        .is_some_and(|values| values.contains_key(&0)),
+                    case["hasKeyZero"]
+                );
+                assert_eq!(
+                    mapping
+                        .curr_id_map
+                        .as_ref()
+                        .and_then(|values| values.get(&0))
+                        .copied(),
+                    case["keyZeroValue"].as_i64().map(|value| value as i32)
+                );
+            }
+        }
+    }
 }
 
 #[cfg(test)]
