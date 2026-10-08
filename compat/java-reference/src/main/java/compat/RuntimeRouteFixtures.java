@@ -1131,6 +1131,17 @@ public final class RuntimeRouteFixtures {
             }
             cases.add(item);
         }
+        org.apache.rocketmq.remoting.protocol.route.TopicRouteData current =
+            com.alibaba.fastjson2.JSON.parseObject("{}",
+                org.apache.rocketmq.remoting.protocol.route.TopicRouteData.class);
+        Map<String, Object> nullOld = new TreeMap<>();
+        nullOld.put("current", com.alibaba.fastjson2.JSON.parseObject(
+            com.alibaba.fastjson2.JSON.toJSONString(current,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue)));
+        nullOld.put("old", null);
+        nullOld.put("changed", current.topicRouteDataChanged(null));
+        nullOld.put("outcome", "OK");
+        cases.add(nullOld);
         return cases;
     }
 
