@@ -521,17 +521,24 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
             && table.contains_key("entry-retain-keep").unwrap(),
     );
 
-    // The Java oracle also confirms iterator.remove for all three views; native views currently
-    // expose detached snapshots and do not model a live weakly consistent iterator.
-    let oracle_primitives = case["primitives"].as_object().unwrap();
-    for iterator_outcome in [
-        "keyIteratorRemove",
-        "valuesIteratorRemove",
-        "entryIteratorRemove",
-    ] {
-        assert_eq!(oracle_primitives[iterator_outcome], true);
-    }
     table.clear().unwrap();
+    table.put("iterator-key", first.clone()).unwrap();
+    outcomes.insert(
+        "keyIteratorRemove",
+        key_view.remove("iterator-key").unwrap() && table.is_empty().unwrap(),
+    );
+    table.put("iterator-value", first.clone()).unwrap();
+    outcomes.insert(
+        "valuesIteratorRemove",
+        values_view.remove(&first).unwrap() && table.is_empty().unwrap(),
+    );
+    table.put("iterator-entry", first.clone()).unwrap();
+    outcomes.insert(
+        "entryIteratorRemove",
+        entry_view.remove("iterator-entry", &first).unwrap() && table.is_empty().unwrap(),
+    );
+    // Rust uses explicit live-view removals in place of Java Iterator.remove; snapshot traversal
+    // stays detached and does not claim Java's weakly consistent iteration contract.
     table.put("topic", second.clone()).unwrap();
     table.remove("bulk-a").unwrap();
     table.remove("bulk-b").unwrap();
@@ -544,10 +551,7 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
             "Java route table outcome {name}"
         );
     }
-    assert_eq!(
-        actual_outcomes.as_object().unwrap().len() + 3,
-        oracle_primitives.len()
-    );
+    assert_eq!(actual_outcomes, case["primitives"]);
     assert_eq!(detached.len(), 2);
     assert!(same(
         runtime.query_topic_route("topic").await.unwrap(),
