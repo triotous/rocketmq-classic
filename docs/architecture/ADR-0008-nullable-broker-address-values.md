@@ -1,6 +1,6 @@
 # ADR-0008: Preserve nullable Broker address values
 
-Status: implemented in `8fb1ec8` under the user's explicit public API parity instruction. Independent of pending ADR-0007 language migration. Phase 6 as a whole remains incomplete.
+Status: implemented in `8fb1ec8` under the user's explicit public API parity instruction. The independent ADR-0007 language migration is also implemented. Phase 6 as a whole remains incomplete.
 
 ## Confirmed source and invoked behavior
 
@@ -33,7 +33,7 @@ No public tuning setting, worker, retry, server capability or new dependency is 
 
 Dropping null entries removes the master key, incorrectly eliminating the two publish queues and changing cached raw route state. Empty-string or literal-null sentinels fabricate nonnull addresses and alter lookup/transport behavior. Rejecting the whole route is the confirmed current mismatch, not Java's behavior. A permissive core-only JSON shim cannot preserve the completed public DTO contract for downstream callers.
 
-The public parity requirement in the active user objective authorized this source-backed correction; no approval of the separate nullable command-language migration is inferred. The general matrix and Phase 6 audit remain PARTIAL because full source/input reconciliation and that language migration are unfinished.
+The public parity requirement in the active user objective authorized this source-backed correction; no approval of the separate nullable command-language migration was inferred. That migration is now independently implemented under ADR-0007. The general matrix and Phase 6 audit remain PARTIAL because the broader source/input reconciliation is unfinished.
 
 ## Implementation evidence
 
