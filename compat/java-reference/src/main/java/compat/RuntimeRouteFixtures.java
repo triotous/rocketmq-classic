@@ -565,9 +565,11 @@ public final class RuntimeRouteFixtures {
                 && !table.containsKey("compute-b"));
             primitives.put("mergeCombines", table.merge("compute-a", second, (oldValue, newValue) -> newValue) == second);
             primitives.put("mergeAbsentInserts", table.merge("merge-new", first, (oldValue, newValue) -> null) == first);
-            table.replaceAll((key, value) -> first);
-            primitives.put("replaceAllUpdatesMappings", table.size() == 5
-                && table.values().stream().allMatch(value -> value == first));
+            table.replaceAll((key, value) -> key.equals("topic") ? second : first);
+            primitives.put("replaceAllUpdatesMappings", table.size() == 5 && table.get("topic") == second
+                && table.get("bulk-a") == first && table.get("compute-a") == first && table.get("merge-new") == first);
+            table.remove("compute-a");
+            table.remove("merge-new");
             table.clear();
             result.put("primitives", primitives);
 
