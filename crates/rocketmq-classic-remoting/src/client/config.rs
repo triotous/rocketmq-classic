@@ -415,7 +415,17 @@ mod tests {
         {
             let mut config = ClientConfig::default();
             config.set_socks_proxy_config(case["input"].as_str().unwrap());
-            let routes = config.parse_socks_proxy_config().unwrap();
+            let parsed = config.parse_socks_proxy_config();
+            assert_eq!(
+                parsed.is_ok(),
+                case["outcome"] == "OK",
+                "{}",
+                case["input"]
+            );
+            if case["outcome"] != "OK" {
+                continue;
+            }
+            let routes = parsed.unwrap();
             match &routes["10.0.0.0/8"] {
                 super::ParsedProxyRoute::Proxy(proxy) => {
                     assert_eq!(Some(proxy.address.as_str()), case["parsedAddr"].as_str());
