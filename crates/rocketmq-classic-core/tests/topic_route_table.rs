@@ -1,6 +1,9 @@
 use rocketmq_classic_core::{config::ClientConfig, runtime::ClientRuntimeManager};
 use rocketmq_classic_protocol::route::TopicRouteData;
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 #[tokio::test]
 async fn raw_clear_query_refetches_once_and_retained_table_observes_wire_refresh() {
@@ -391,11 +394,160 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
             && same(table.get("compute-a").unwrap(), &first)
             && same(table.get("merge-new").unwrap(), &first),
     );
+
+    table.clear().unwrap();
+    let key_view = table.key_set_view();
+    table.put("key-remove", first.clone()).unwrap();
+    table.put("key-keep", second.clone()).unwrap();
+    table.put("key-retain", first.clone()).unwrap();
+    outcomes.insert("keyViewContains", key_view.contains("key-keep").unwrap());
+    outcomes.insert(
+        "keyViewRemove",
+        key_view.remove("key-remove").unwrap() && !table.contains_key("key-remove").unwrap(),
+    );
+    outcomes.insert(
+        "keyViewRemoveIf",
+        key_view.remove_if(|key| key == "key-keep").unwrap() > 0
+            && !table.contains_key("key-keep").unwrap(),
+    );
+    table.put("key-all", second.clone()).unwrap();
+    table.put("key-retain-all", first.clone()).unwrap();
+    outcomes.insert(
+        "keyViewRemoveAll",
+        key_view
+            .remove_all(&BTreeSet::from(["key-all".to_owned()]))
+            .unwrap()
+            > 0
+            && !table.contains_key("key-all").unwrap(),
+    );
+    outcomes.insert(
+        "keyViewRetainAll",
+        key_view
+            .retain_all(&BTreeSet::from(["key-retain-all".to_owned()]))
+            .unwrap()
+            > 0
+            && table.len().unwrap() == 1
+            && table.contains_key("key-retain-all").unwrap(),
+    );
+
+    table.clear().unwrap();
+    let values_view = table.values_view();
+    table.put("value-a", first.clone()).unwrap();
+    table.put("value-b", second.clone()).unwrap();
+    table.put("value-c", second.clone()).unwrap();
+    outcomes.insert(
+        "valuesViewContainsEqualCopy",
+        values_view.contains(&equal_second).unwrap(),
+    );
+    outcomes.insert(
+        "valuesViewRemoveEqualCopy",
+        values_view.remove(&equal_second).unwrap()
+            && table
+                .snapshot()
+                .unwrap()
+                .values()
+                .filter(|value| value.as_ref() == equal_second.as_ref())
+                .count()
+                == 1,
+    );
+    outcomes.insert(
+        "valuesViewRemoveIf",
+        values_view
+            .remove_if(|value| value.as_ref() == first.as_ref())
+            .unwrap()
+            > 0
+            && !table.contains_key("value-a").unwrap(),
+    );
+    table.clear().unwrap();
+    table.put("value-all", second.clone()).unwrap();
+    table.put("value-retain-drop", second.clone()).unwrap();
+    outcomes.insert(
+        "valuesViewRemoveAllEqual",
+        values_view.remove_all(&[equal_second.clone()]).unwrap() > 0
+            && !table.contains_key("value-all").unwrap()
+            && !table.contains_key("value-retain-drop").unwrap(),
+    );
+    table.put("value-retain-drop", second.clone()).unwrap();
+    table.put("value-retain-keep", first.clone()).unwrap();
+    outcomes.insert(
+        "valuesViewRetainAllEqual",
+        values_view.retain_all(&[first.clone()]).unwrap() > 0
+            && table.len().unwrap() == 1
+            && table.contains_key("value-retain-keep").unwrap(),
+    );
+
+    table.clear().unwrap();
+    let entry_view = table.entry_set_view();
+    table.put("entry-remove", first.clone()).unwrap();
+    table.put("entry-keep", second.clone()).unwrap();
+    outcomes.insert(
+        "entryViewContainsEqualCopy",
+        entry_view.contains("entry-keep", &equal_second).unwrap(),
+    );
+    outcomes.insert(
+        "entryViewRemoveEqualCopy",
+        entry_view.remove("entry-remove", &first).unwrap()
+            && !table.contains_key("entry-remove").unwrap(),
+    );
+    outcomes.insert(
+        "entryViewRemoveIf",
+        entry_view.remove_if(|key, _| key == "entry-keep").unwrap() > 0
+            && !table.contains_key("entry-keep").unwrap(),
+    );
+    table.put("entry-all", second.clone()).unwrap();
+    table.put("entry-retain-drop", second.clone()).unwrap();
+    table.put("entry-retain-keep", first.clone()).unwrap();
+    outcomes.insert(
+        "entryViewRemoveAllEqual",
+        entry_view
+            .remove_all(&BTreeMap::from([(
+                "entry-all".to_owned(),
+                equal_second.clone(),
+            )]))
+            .unwrap()
+            > 0
+            && !table.contains_key("entry-all").unwrap(),
+    );
+    outcomes.insert(
+        "entryViewRetainAllEqual",
+        entry_view
+            .retain_all(&BTreeMap::from([(
+                "entry-retain-keep".to_owned(),
+                first.clone(),
+            )]))
+            .unwrap()
+            > 0
+            && table.len().unwrap() == 1
+            && table.contains_key("entry-retain-keep").unwrap(),
+    );
+
+    // The Java oracle also confirms iterator.remove for all three views; native views currently
+    // expose detached snapshots and do not model a live weakly consistent iterator.
+    let oracle_primitives = case["primitives"].as_object().unwrap();
+    for iterator_outcome in [
+        "keyIteratorRemove",
+        "valuesIteratorRemove",
+        "entryIteratorRemove",
+    ] {
+        assert_eq!(oracle_primitives[iterator_outcome], true);
+    }
+    table.clear().unwrap();
+    table.put("topic", second.clone()).unwrap();
     table.remove("bulk-a").unwrap();
     table.remove("bulk-b").unwrap();
     table.remove("compute-a").unwrap();
     table.remove("merge-new").unwrap();
-    assert_eq!(serde_json::to_value(outcomes).unwrap(), case["primitives"]);
+    let actual_outcomes = serde_json::to_value(outcomes).unwrap();
+    for (name, outcome) in actual_outcomes.as_object().unwrap() {
+        assert_eq!(
+            outcome, &case["primitives"][name],
+            "Java route table outcome {name}"
+        );
+    }
+    assert_eq!(
+        actual_outcomes.as_object().unwrap().len() + 3,
+        oracle_primitives.len()
+    );
     assert_eq!(detached.len(), 2);
     assert!(same(
         runtime.query_topic_route("topic").await.unwrap(),
