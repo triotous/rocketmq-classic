@@ -1,5 +1,7 @@
 # Java 5.5.1 compatibility evidence
 
+SOCKS field coercion `34ce95a`/`b3ada16` matches six invoked Java constructor and reflected proxy-map cases for numeric, Boolean, null and empty-array route fields. Config fixture SHA-256 `eefbb3c681864effb187cbabcef7e70750b079876d5e45e138d83f6aa6a5264d`; native red/green, full workspace, pinned Maven and strict Clippy pass. Other Fastjson grammar and connection paths remain open; Phase 6 is PARTIAL.
+
 MessageQueue public DTO correction `3577198`/`e242764` represents Java nullable topic/brokerName, JSON omission, and absent queueId zero. Fixture SHA-256 `e5520a19c71483fce328312f9d4263c6af7a0bfff4c712e40660ca90626c3453`; native red/green, full workspace, pinned Maven and strict Clippy pass. Null compareTo and broader API/input reconciliation remain open; Phase 6 is PARTIAL.
 
 Nested route DTO correction `132f838`/`02e95f2` covers nullable BrokerData/QueueData names, queue primitive defaults, nullable MessageQueue broker name in subscription conversion, and Java refresh failure/success branches. Route fixture SHA-256 `20f8e96c893ccfad3fc66e1b5057d4123fb3a70f1d856c652429a088f697793e`; Rust workspace, pinned Maven and strict Clippy pass. Other public DTO/input reconciliation remains; Phase 6 is PARTIAL.

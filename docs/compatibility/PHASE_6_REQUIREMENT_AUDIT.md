@@ -1,5 +1,7 @@
 # Phase 6 requirement and handoff audit
 
+SOCKS private route-field correction `34ce95a`/`b3ada16` closes the six invoked Java numeric, Boolean, null and empty-array `addr`/credential constructor cases. Reflected Java proxy values and native private parser output match; the previous native construction golden failed before the fix and passes after it. Config fixture SHA-256 `eefbb3c681864effb187cbabcef7e70750b079876d5e45e138d83f6aa6a5264d`; full workspace, strict Clippy, pinned Maven, comparator and manifest gates pass. Other Fastjson input grammar, connection paths and complete API/source/input audit remain open; Phase 6 is incomplete.
+
 Public MessageQueue DTO correction `3577198`/`e242764` closes the demonstrated null topic/default queueId mismatch. Native topic/broker getters and JSON now preserve Java nullable states, and namespace/offset queue copies retain them. Route fixture SHA-256 `e5520a19c71483fce328312f9d4263c6af7a0bfff4c712e40660ca90626c3453`; focused red/green, full workspace, Maven and strict Clippy pass. Java null compareTo and full API/source/input audit remain open.
 
 Nested nullable route DTO update `132f838`/`02e95f2` follows invoked Java missing/null BrokerData and QueueData fields, zero primitive defaults, subscribe queue null broker identity, and four runtime refresh branches. Native public DTO/MessageQueue now represent nullable broker names; focused red/green, full workspace, Maven and exact Clippy pass. MessageQueue topic null/default and other public input surfaces still prevent Phase 6 acceptance.
