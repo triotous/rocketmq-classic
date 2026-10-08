@@ -453,6 +453,14 @@ public final class RuntimeHeartbeatFixtures {
         result.put("decodeNullIsNull", HeartbeatData.decode(null, HeartbeatData.class) == null);
         result.put("decodeListNullIsNull", HeartbeatData.decodeList(null, HeartbeatData.class) == null);
         result.put("fromJsonNullIsNull", HeartbeatData.fromJson(null, HeartbeatData.class) == null);
+        byte[] jsonNull = "null".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        result.put("decodeJsonNullIsNull", HeartbeatData.decode(jsonNull, HeartbeatData.class) == null);
+        result.put("decodeListJsonNullIsNull", HeartbeatData.decodeList(jsonNull, HeartbeatData.class) == null);
+        result.put("fromJsonJsonNullIsNull", HeartbeatData.fromJson("null", HeartbeatData.class) == null);
+        List<HeartbeatData> nullMemberList = HeartbeatData.decodeList(
+            "[null,{}]".getBytes(java.nio.charset.StandardCharsets.UTF_8), HeartbeatData.class);
+        result.put("decodeListPreservesNullMember", nullMemberList.size() == 2
+            && nullMemberList.get(0) == null && nullMemberList.get(1) != null);
         return result;
     }
 
