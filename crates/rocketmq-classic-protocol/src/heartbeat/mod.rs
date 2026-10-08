@@ -765,7 +765,22 @@ mod fastjson_dto_input_tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
                 .unwrap();
-        for case in fixture["heartbeatDtoInputCases"].as_array().unwrap() {
+        let cases = fixture["heartbeatDtoInputCases"].as_array().unwrap();
+        for required in [
+            "subscription-leading-plus-zero-version",
+            "heartbeat-leading-plus-zero-fingerprint",
+            "consumer-form-feed-and-leading-zero",
+            "heartbeat-bom-prefix",
+            "subscription-form-feed-before-version",
+            "consumer-vertical-tab-prefix",
+            "heartbeat-embedded-bom",
+        ] {
+            assert!(
+                cases.iter().any(|case| case["id"] == required),
+                "missing {required}"
+            );
+        }
+        for case in cases {
             let raw_input = case["rawInput"].as_str().unwrap();
             let decoded =
                 match case["type"].as_str().unwrap() {
