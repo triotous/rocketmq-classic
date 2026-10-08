@@ -100,7 +100,44 @@ pub enum BrokerDataCompareError {
     NullBrokerName,
 }
 
+/// Java exception branches from `BrokerData.selectBrokerAddr`.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum BrokerDataSelectAddrError {
+    #[error("BrokerData broker address map is null (Java NullPointerException)")]
+    NullAddressMap,
+    #[error("BrokerData has no address candidates (Java IllegalArgumentException)")]
+    NoAddressCandidates,
+}
+
 impl BrokerData {
+    /// Selects the master address when present; otherwise randomly selects one
+    /// value, matching pinned Java 5.5.1 `BrokerData.selectBrokerAddr`.
+    ///
+    /// A present null master falls through to random selection. Null selected
+    /// values are represented as `Ok(None)`; a null map and an empty map retain
+    /// Java's `NullPointerException` and `IllegalArgumentException` outcomes.
+    pub fn java_select_broker_addr(&self) -> Result<Option<String>, BrokerDataSelectAddrError> {
+        self.java_select_broker_addr_with(|length| rand::random_range(0..length))
+    }
+
+    fn java_select_broker_addr_with(
+        &self,
+        mut select: impl FnMut(usize) -> usize,
+    ) -> Result<Option<String>, BrokerDataSelectAddrError> {
+        let addresses = self
+            .broker_addrs
+            .as_ref()
+            .ok_or(BrokerDataSelectAddrError::NullAddressMap)?;
+        if let Some(Some(master)) = addresses.get(&0) {
+            return Ok(Some(master.clone()));
+        }
+        if addresses.is_empty() {
+            return Err(BrokerDataSelectAddrError::NoAddressCandidates);
+        }
+        let index = select(addresses.len());
+        Ok(addresses.values().nth(index).cloned().flatten())
+    }
+
     /// Returns the pinned Java 5.5.1 `BrokerData.hashCode` result.
     ///
     /// Java hashes only the broker address map and broker name, using the
@@ -283,7 +320,7 @@ mod broker_data_to_string_tests {
 
 #[cfg(test)]
 mod broker_data_select_addr_tests {
-    use super::BrokerData;
+    use super::{BrokerData, BrokerDataSelectAddrError};
 
     #[test]
     fn broker_data_select_addr_matches_invoked_java_outcomes() {
@@ -293,13 +330,34 @@ mod broker_data_select_addr_tests {
             let broker: BrokerData = serde_json::from_value(case["input"].clone()).unwrap();
             if let Some(exception) = case["exception"].as_str() {
                 let error = broker.java_select_broker_addr().unwrap_err();
-                assert_eq!(error.java_exception_name(), exception, "{}", case["id"]);
+                let expected = match exception {
+                    "NullPointerException" => BrokerDataSelectAddrError::NullAddressMap,
+                    "IllegalArgumentException" => BrokerDataSelectAddrError::NoAddressCandidates,
+                    other => panic!("unexpected Java exception {other}"),
+                };
+                assert_eq!(error, expected, "{}", case["id"]);
                 continue;
             }
-            for _ in 0..128 {
-                match broker.java_select_broker_addr().unwrap() {
+            match broker.java_select_broker_addr().unwrap() {
+                Some(address) => assert!(
+                    case["addresses"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|allowed| allowed.as_str() == Some(address.as_str())),
+                    "unexpected random address for {}: {address}",
+                    case["id"]
+                ),
+                None => assert_eq!(case["nullAddress"], true, "{}", case["id"]),
+            }
+            for index in 0..broker.broker_addrs.as_ref().unwrap().len() {
+                match broker.java_select_broker_addr_with(|_| index).unwrap() {
                     Some(address) => assert!(
-                        case["addresses"].as_array().unwrap().contains(&address.into()),
+                        case["addresses"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .any(|allowed| allowed.as_str() == Some(address.as_str())),
                         "unexpected address for {}: {address}",
                         case["id"]
                     ),
