@@ -679,6 +679,23 @@ public final class RuntimeRouteFixtures {
             table.clear();
             result.put("primitives", primitives);
 
+            Map<String, Object> mutableAlias = new TreeMap<>();
+            TopicRouteData aliasValue = new TopicRouteData();
+            aliasValue.setOrderTopicConf("broker:1");
+            mutableAlias.put("putRetainsObjectIdentity",
+                table.put("mutable-alias", aliasValue) == null
+                    && table.get("mutable-alias") == aliasValue
+                    && runtime.getAnExistTopicRouteData("mutable-alias") == aliasValue);
+            TopicRouteData aliasFromTable = table.get("mutable-alias");
+            aliasValue.setOrderTopicConf("broker:2");
+            mutableAlias.put("originalMutationVisibleThroughTable",
+                table.get("mutable-alias").getOrderTopicConf().equals("broker:2"));
+            aliasFromTable.setOrderTopicConf("broker:3");
+            mutableAlias.put("tableValueMutationVisibleThroughOriginal",
+                aliasValue.getOrderTopicConf().equals("broker:3"));
+            result.put("mutableAlias", mutableAlias);
+            table.clear();
+
             api.route = first;
             result.put("refreshChanged", runtime.updateTopicRouteInfoFromNameServer("topic"));
             result.put("retainedViewSeesRefresh", table.get("topic") == runtime.getAnExistTopicRouteData("topic"));
