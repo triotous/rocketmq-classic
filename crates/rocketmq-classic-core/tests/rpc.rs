@@ -390,31 +390,38 @@ async fn route_reply(code: i32, body: Option<Vec<u8>>) -> (MQClientApi, Remoting
 
 #[tokio::test]
 async fn route_success_unknown_status_and_malformed_success() {
-    let nonempty = serde_json::to_vec(&rocketmq_classic_protocol::route::TopicRouteData {
-        queue_datas: Some(vec![Some(rocketmq_classic_protocol::route::QueueData {
-            broker_name: Some("broker-a".into()),
-            write_queue_nums: 2,
-            perm: 6,
-            ..Default::default()
-        })]),
-        broker_datas: Some(vec![Some(rocketmq_classic_protocol::route::BrokerData {
-            broker_name: Some("broker-a".into()),
-            broker_addrs: Some([(0, Some("broker:10911".into()))].into()),
-            ..Default::default()
-        })]),
-        ..Default::default()
-    })
-    .unwrap();
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/route.json")).unwrap();
+    let java_route = fixture["inheritedSerializationCases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["id"] == "route-populated")
+        .unwrap();
+    let nonempty = java_route["instanceEncodedJson"]
+        .as_str()
+        .unwrap()
+        .as_bytes()
+        .to_vec();
     let (api, client) = route_reply(response::SUCCESS, Some(nonempty)).await;
-    let queues = api
+    let route = api
         .get_topic_route("test-topic", Instant::now() + Duration::from_secs(2))
         .await
-        .unwrap()
-        .publish_queues("test-topic");
+        .unwrap();
+    let queues = route.publish_queues("test-topic");
     assert_eq!(queues.len(), 2);
-    assert_eq!(queues[0].broker_name(), Some("broker-a"));
+    assert_eq!(queues[0].broker_name(), Some("broker"));
     assert_eq!(queues[0].queue_id(), 0);
     assert_eq!(queues[1].queue_id(), 1);
+    let broker = route.broker_datas.as_ref().unwrap()[0].as_ref().unwrap();
+    assert_eq!(
+        broker.broker_addrs.as_ref().unwrap()[&0].as_deref(),
+        Some("master:10911")
+    );
+    let mapping = route.topic_queue_mapping_by_broker.as_ref().unwrap()["broker"]
+        .as_ref()
+        .unwrap();
+    assert_eq!(mapping.curr_id_map.as_ref().unwrap().len(), 2);
     client.shutdown().await;
     for (code, body) in [
         (response::SUCCESS, Some(br#"{"queueDatas":[],"brokerDatas":[],"filterServerTable":{},"topicQueueMappingByBroker":null}"#.to_vec())),

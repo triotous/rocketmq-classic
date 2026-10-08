@@ -2,7 +2,177 @@ use std::collections::BTreeMap;
 
 use rocketmq_classic_common::message::MessageQueue;
 use rocketmq_classic_common::serde_fastjson;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+
+fn java_route_json<T: Serialize>(
+    value: &T,
+    pretty_format: bool,
+) -> Result<String, serde_json::Error> {
+    let value = serde_json::to_value(value)?;
+    let mut output = String::new();
+    write_java_route_json(&value, None, 0, pretty_format, &mut output)?;
+    Ok(output)
+}
+
+fn write_java_route_json(
+    value: &serde_json::Value,
+    field_name: Option<&str>,
+    depth: usize,
+    pretty_format: bool,
+    output: &mut String,
+) -> Result<(), serde_json::Error> {
+    match value {
+        serde_json::Value::Object(fields)
+            if fields.is_empty() && (!pretty_format || field_name.is_some()) =>
+        {
+            output.push_str("{}")
+        }
+        serde_json::Value::Object(fields) if fields.is_empty() => {
+            output.push_str("{\n");
+            write_java_indent(output, depth + 1);
+            output.push('\n');
+            write_java_indent(output, depth);
+            output.push('}');
+        }
+        serde_json::Value::Object(fields) => {
+            let numeric_keys = matches!(field_name, Some("brokerAddrs" | "currIdMap"));
+            output.push('{');
+            for (index, (key, value)) in fields.iter().enumerate() {
+                if pretty_format {
+                    output.push('\n');
+                    write_java_indent(output, depth + 1);
+                }
+                if numeric_keys && key.parse::<i64>().is_ok() {
+                    output.push_str(key);
+                } else {
+                    output.push_str(&serde_json::to_string(key)?);
+                }
+                output.push(':');
+                write_java_route_json(value, Some(key), depth + 1, pretty_format, output)?;
+                if index + 1 != fields.len() {
+                    output.push(',');
+                }
+            }
+            if pretty_format {
+                output.push('\n');
+                write_java_indent(output, depth);
+            }
+            output.push('}');
+        }
+        serde_json::Value::Array(values) if values.is_empty() && !pretty_format => {
+            output.push_str("[]")
+        }
+        serde_json::Value::Array(values) if values.is_empty() => {
+            output.push_str("[\n");
+            write_java_indent(output, depth + 1);
+            output.push('\n');
+            write_java_indent(output, depth);
+            output.push(']');
+        }
+        serde_json::Value::Array(values) => {
+            output.push('[');
+            for (index, value) in values.iter().enumerate() {
+                if pretty_format {
+                    output.push('\n');
+                    write_java_indent(output, depth + 1);
+                }
+                write_java_route_json(value, None, depth + 1, pretty_format, output)?;
+                if index + 1 != values.len() {
+                    output.push(',');
+                }
+            }
+            if pretty_format {
+                output.push('\n');
+                write_java_indent(output, depth);
+            }
+            output.push(']');
+        }
+        _ => output.push_str(&serde_json::to_string(value)?),
+    }
+    Ok(())
+}
+
+fn write_java_indent(output: &mut String, depth: usize) {
+    for _ in 0..depth {
+        output.push('\t');
+    }
+}
+
+fn quote_unquoted_integer_object_keys(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut output = String::with_capacity(input.len());
+    let mut index = 0;
+    let mut in_string = false;
+    let mut escaped = false;
+
+    while index < input.len() {
+        let Some(character) = input[index..].chars().next() else {
+            break;
+        };
+        if in_string {
+            output.push(character);
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                in_string = false;
+            }
+            index += character.len_utf8();
+            continue;
+        }
+        if character == '"' {
+            in_string = true;
+            output.push(character);
+            index += character.len_utf8();
+            continue;
+        }
+        if character == '{' || character == ',' {
+            output.push(character);
+            index += character.len_utf8();
+            let whitespace_start = index;
+            while bytes
+                .get(index)
+                .is_some_and(|byte| byte.is_ascii_whitespace())
+            {
+                index += 1;
+            }
+            let key_start = index;
+            if bytes.get(index) == Some(&b'-') {
+                index += 1;
+            }
+            let digits_start = index;
+            while bytes.get(index).is_some_and(u8::is_ascii_digit) {
+                index += 1;
+            }
+            let key_end = index;
+            while bytes
+                .get(index)
+                .is_some_and(|byte| byte.is_ascii_whitespace())
+            {
+                index += 1;
+            }
+            if digits_start != key_end && bytes.get(index) == Some(&b':') {
+                output.push_str(&input[whitespace_start..key_start]);
+                output.push('"');
+                output.push_str(&input[key_start..key_end]);
+                output.push('"');
+                output.push_str(&input[key_end..index]);
+                continue;
+            }
+            output.push_str(&input[whitespace_start..index]);
+            continue;
+        }
+        output.push(character);
+        index += character.len_utf8();
+    }
+    output
+}
+
+fn parse_java_route_json<T: DeserializeOwned>(input: &str) -> Result<T, serde_json::Error> {
+    let normalized = quote_unquoted_integer_object_keys(input);
+    serde_json::from_str(&normalized)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -799,6 +969,33 @@ impl Default for TopicQueueMappingInfo {
 }
 
 impl TopicQueueMappingInfo {
+    /// Encodes the inherited Java `RemotingSerializable.toJson(boolean)` form.
+    /// Bean fields are key-sorted and integer map keys remain unquoted as in Fastjson2.
+    pub fn java_to_json(&self, pretty_format: bool) -> Result<String, serde_json::Error> {
+        java_route_json(self, pretty_format)
+    }
+
+    /// Encodes the inherited Java `RemotingSerializable.encode()` UTF-8 bytes.
+    pub fn java_encode(&self) -> Result<Vec<u8>, serde_json::Error> {
+        Ok(self.java_to_json(false)?.into_bytes())
+    }
+
+    /// Decodes the inherited Java `RemotingSerializable.decode` form, including
+    /// unquoted integer keys emitted for `currIdMap` by Fastjson2.
+    pub fn java_decode(data: &[u8]) -> Result<Self, serde_json::Error> {
+        parse_java_route_json(&String::from_utf8_lossy(data))
+    }
+
+    /// Decodes the inherited Java `RemotingSerializable.decodeList` form.
+    pub fn java_decode_list(data: &[u8]) -> Result<Vec<Self>, serde_json::Error> {
+        parse_java_route_json(&String::from_utf8_lossy(data))
+    }
+
+    /// Decodes the inherited Java `RemotingSerializable.fromJson` form.
+    pub fn java_from_json(json: &str) -> Result<Self, serde_json::Error> {
+        parse_java_route_json(json)
+    }
+
     /// Returns the pinned Java 5.5.1 `TopicQueueMappingInfo.hashCode` result.
     pub fn java_hash_code(&self) -> i32 {
         let mut result = self
@@ -1165,6 +1362,33 @@ fn default_mapping_scope() -> Option<String> {
 }
 
 impl TopicRouteData {
+    /// Encodes the inherited Java `RemotingSerializable.toJson(boolean)` form.
+    /// Bean fields are key-sorted and integer map keys remain unquoted as in Fastjson2.
+    pub fn java_to_json(&self, pretty_format: bool) -> Result<String, serde_json::Error> {
+        java_route_json(self, pretty_format)
+    }
+
+    /// Encodes the inherited Java `RemotingSerializable.encode()` UTF-8 bytes.
+    pub fn java_encode(&self) -> Result<Vec<u8>, serde_json::Error> {
+        Ok(self.java_to_json(false)?.into_bytes())
+    }
+
+    /// Decodes the inherited Java `RemotingSerializable.decode` form, including
+    /// unquoted integer keys emitted for nested broker and static-topic maps.
+    pub fn java_decode(data: &[u8]) -> Result<Self, serde_json::Error> {
+        parse_java_route_json(&String::from_utf8_lossy(data))
+    }
+
+    /// Decodes the inherited Java `RemotingSerializable.decodeList` form.
+    pub fn java_decode_list(data: &[u8]) -> Result<Vec<Self>, serde_json::Error> {
+        parse_java_route_json(&String::from_utf8_lossy(data))
+    }
+
+    /// Decodes the inherited Java `RemotingSerializable.fromJson` form.
+    pub fn java_from_json(json: &str) -> Result<Self, serde_json::Error> {
+        parse_java_route_json(json)
+    }
+
     /// Copies the DTO using the pinned Java `TopicRouteData` copy-constructor
     /// collection defaults. Explicit null queue, broker and filter collections
     /// become empty containers; the mapping table remains nullable.
@@ -1906,5 +2130,91 @@ mod tests {
         let json = serde_json::to_value(&route).unwrap();
         assert_eq!(json["topicQueueMappingByBroker"]["b1"]["totalQueues"], 8);
         assert_eq!(json["topicQueueMappingByBroker"]["b1"]["epoch"], i64::MAX);
+    }
+
+    #[test]
+    fn inherited_remoting_serialization_matches_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+
+        macro_rules! check_case {
+            ($type:ty, $case:expr) => {{
+                let case = $case;
+                let raw_input = case["rawInput"].as_str().unwrap();
+                let value: $type = serde_json::from_str(raw_input).unwrap();
+                let native_json = value.java_to_json(false).unwrap();
+                assert_eq!(native_json, case["instanceJson"], "{} toJson", case["id"]);
+                assert_eq!(
+                    native_json, case["staticJson"],
+                    "{} static toJson",
+                    case["id"]
+                );
+                assert_eq!(
+                    native_json.as_bytes(),
+                    case["instanceEncodedJson"].as_str().unwrap().as_bytes(),
+                    "{} encode",
+                    case["id"]
+                );
+                assert_eq!(
+                    native_json.as_bytes(),
+                    case["staticEncodedJson"].as_str().unwrap().as_bytes(),
+                    "{} static encode",
+                    case["id"]
+                );
+                assert_eq!(
+                    native_json.as_bytes(),
+                    case["featureEncodedJson"].as_str().unwrap().as_bytes(),
+                    "{} feature encode",
+                    case["id"]
+                );
+                assert_eq!(
+                    value.java_to_json(true).unwrap(),
+                    case["instancePrettyJson"],
+                    "{} pretty toJson",
+                    case["id"]
+                );
+                assert_eq!(
+                    value.java_to_json(true).unwrap(),
+                    case["staticPrettyJson"],
+                    "{} static pretty toJson",
+                    case["id"]
+                );
+
+                let decoded_expected: $type =
+                    <$type>::java_from_json(case["decodedJson"].as_str().unwrap()).unwrap();
+                let expected = serde_json::to_value(decoded_expected).unwrap();
+                let decoded = <$type>::java_decode(native_json.as_bytes()).unwrap();
+                assert_eq!(
+                    serde_json::to_value(decoded).unwrap(),
+                    expected,
+                    "{} decode",
+                    case["id"]
+                );
+                let from_json = <$type>::java_from_json(&native_json).unwrap();
+                assert_eq!(
+                    serde_json::to_value(from_json).unwrap(),
+                    expected,
+                    "{} fromJson",
+                    case["id"]
+                );
+                let list_json = format!("[{native_json}]");
+                let decoded_list = <$type>::java_decode_list(list_json.as_bytes()).unwrap();
+                assert_eq!(decoded_list.len(), case["decodedListCount"]);
+                assert_eq!(
+                    serde_json::to_value(&decoded_list[0]).unwrap(),
+                    expected,
+                    "{} decodeList",
+                    case["id"]
+                );
+            }};
+        }
+
+        for case in fixture["inheritedSerializationCases"].as_array().unwrap() {
+            if case["id"].as_str().unwrap().starts_with("route-") {
+                check_case!(TopicRouteData, case);
+            } else {
+                check_case!(TopicQueueMappingInfo, case);
+            }
+        }
     }
 }

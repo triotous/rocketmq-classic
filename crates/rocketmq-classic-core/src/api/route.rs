@@ -72,7 +72,7 @@ impl MQClientApi {
             peer: peer.clone(),
             reason: MISSING_ROUTE_BODY.into(),
         })?;
-        serde_json::from_slice(&body).map_err(|error| RpcError::MalformedResponse {
+        TopicRouteData::java_decode(&body).map_err(|error| RpcError::MalformedResponse {
             request_code: request::GET_ROUTEINFO_BY_TOPIC,
             peer,
             reason: error.to_string(),
