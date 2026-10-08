@@ -1193,7 +1193,11 @@ public final class RuntimeRouteFixtures {
             "{\"queueDatas\":[],\"brokerDatas\":[],\"filterServerTable\":{},\"topicQueueMappingByBroker\":{\"broker\":null}}",
             "{\"queueDatas\":[{\"brokerName\":\"broker\"}],\"brokerDatas\":[{\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master\"}}],"
                 + "\"filterServerTable\":{\"broker\":[\"filter\"]},\"topicQueueMappingByBroker\":{\"broker\":{\"topic\":\"topic\","
-                + "\"scope\":\"__global__\",\"totalQueues\":1,\"bname\":\"broker\",\"epoch\":1,\"dirty\":false,\"currIdMap\":{\"0\":0}}}}"
+                + "\"scope\":\"__global__\",\"totalQueues\":1,\"bname\":\"broker\",\"epoch\":1,\"dirty\":false,\"currIdMap\":{\"0\":0}}}}",
+            "{\"queueDatas\":[],\"brokerDatas\":[null],\"filterServerTable\":{}}",
+            "{\"queueDatas\":[],\"brokerDatas\":[],\"filterServerTable\":{\"broker\":null}}",
+            "{\"queueDatas\":[],\"brokerDatas\":[],\"filterServerTable\":{},\"topicQueueMappingByBroker\":{\"broker\":{\"topic\":\"topic\","
+                + "\"totalQueues\":1,\"bname\":\"broker\",\"epoch\":1,\"currIdMap\":null}}}"
         };
         List<Object> cases = new ArrayList<>();
         for (int index = 0; index < inputs.length; index++) {
