@@ -388,6 +388,128 @@ public final class RuntimeRouteFixtures {
         return cases;
     }
 
+    private static Map<String, Object> routeDtoInputCase(String id, String type, String rawInput) {
+        Map<String, Object> item = new TreeMap<>();
+        item.put("id", id);
+        item.put("type", type);
+        item.put("rawInput", rawInput);
+        try {
+            Map<String, Object> fields = new TreeMap<>();
+            switch (type) {
+                case "queueData": {
+                    org.apache.rocketmq.remoting.protocol.route.QueueData value =
+                        com.alibaba.fastjson2.JSON.parseObject(rawInput,
+                            org.apache.rocketmq.remoting.protocol.route.QueueData.class);
+                    fields.put("brokerName", value.getBrokerName());
+                    fields.put("readQueueNums", value.getReadQueueNums());
+                    fields.put("writeQueueNums", value.getWriteQueueNums());
+                    fields.put("perm", value.getPerm());
+                    fields.put("topicSysFlag", value.getTopicSysFlag());
+                    break;
+                }
+                case "messageQueue": {
+                    MessageQueue value = com.alibaba.fastjson2.JSON.parseObject(rawInput, MessageQueue.class);
+                    fields.put("topic", value.getTopic());
+                    fields.put("brokerName", value.getBrokerName());
+                    fields.put("queueId", value.getQueueId());
+                    break;
+                }
+                case "brokerData": {
+                    org.apache.rocketmq.remoting.protocol.route.BrokerData value =
+                        com.alibaba.fastjson2.JSON.parseObject(rawInput,
+                            org.apache.rocketmq.remoting.protocol.route.BrokerData.class);
+                    fields.put("cluster", value.getCluster());
+                    fields.put("brokerName", value.getBrokerName());
+                    fields.put("zoneName", value.getZoneName());
+                    fields.put("enableActingMaster", value.isEnableActingMaster());
+                    Map<String, Object> addresses = new TreeMap<>();
+                    if (value.getBrokerAddrs() != null) {
+                        value.getBrokerAddrs().forEach((key, address) -> addresses.put(key.toString(), address));
+                    }
+                    fields.put("brokerAddrs", value.getBrokerAddrs() == null ? null : addresses);
+                    break;
+                }
+                case "mapping": {
+                    org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo value =
+                        com.alibaba.fastjson2.JSON.parseObject(rawInput,
+                            org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo.class);
+                    fields.put("topic", value.getTopic());
+                    fields.put("bname", value.getBname());
+                    fields.put("scope", value.getScope());
+                    fields.put("totalQueues", value.getTotalQueues());
+                    fields.put("epoch", value.getEpoch());
+                    fields.put("dirty", value.isDirty());
+                    Map<String, Object> ids = new TreeMap<>();
+                    if (value.getCurrIdMap() != null) {
+                        value.getCurrIdMap().forEach((key, number) -> ids.put(key.toString(), number));
+                    }
+                    fields.put("currIdMap", value.getCurrIdMap() == null ? null : ids);
+                    break;
+                }
+                case "topicRouteData": {
+                    TopicRouteData value = com.alibaba.fastjson2.JSON.parseObject(rawInput, TopicRouteData.class);
+                    fields.putAll(routeJson(value));
+                    break;
+                }
+                default: throw new IllegalArgumentException("unknown DTO: " + type);
+            }
+            item.put("outcome", "ACCEPTED");
+            item.put("fields", fields);
+        } catch (RuntimeException error) {
+            item.put("outcome", "REJECTED");
+            item.put("error", error.getClass().getSimpleName());
+        }
+        return item;
+    }
+
+    private static List<Object> routeDtoInputCases() {
+        List<Object> cases = new ArrayList<>();
+        cases.add(routeDtoInputCase("queue-scalars", "queueData",
+            "{\"brokerName\":123,\"readQueueNums\":\"2\",\"writeQueueNums\":1.9,\"perm\":true,\"topicSysFlag\":null}"));
+        cases.add(routeDtoInputCase("queue-empty-object-number", "queueData",
+            "{\"readQueueNums\":{}}"));
+        cases.add(routeDtoInputCase("queue-decimal-overflow-number", "queueData",
+            "{\"readQueueNums\":2147483648.0}"));
+        cases.add(routeDtoInputCase("message-queue-scalars", "messageQueue",
+            "{\"topic\":123,\"brokerName\":false,\"queueId\":\"2\"}"));
+        cases.add(routeDtoInputCase("message-queue-structured-strings", "messageQueue",
+            "{\"topic\":[],\"brokerName\":{}}"));
+        cases.add(routeDtoInputCase("broker-scalars", "brokerData",
+            "{\"cluster\":true,\"brokerName\":7,\"zoneName\":1.5,\"brokerAddrs\":{\"+1\":true,\"2\":3,\"3\":null},\"enableActingMaster\":\"TRUE\"}"));
+        cases.add(routeDtoInputCase("broker-address-decimal-key", "brokerData",
+            "{\"brokerAddrs\":{\"1.0\":0}}"));
+        cases.add(routeDtoInputCase("broker-boolean-minus-one", "brokerData",
+            "{\"enableActingMaster\":-1}"));
+        cases.add(routeDtoInputCase("broker-boolean-other-number", "brokerData",
+            "{\"enableActingMaster\":2}"));
+        cases.add(routeDtoInputCase("broker-boolean-decimal-number", "brokerData",
+            "{\"enableActingMaster\":1.0}"));
+        cases.add(routeDtoInputCase("broker-boolean-numeric-string", "brokerData",
+            "{\"enableActingMaster\":\"1\"}"));
+        cases.add(routeDtoInputCase("broker-boolean-null", "brokerData",
+            "{\"enableActingMaster\":null}"));
+        cases.add(routeDtoInputCase("mapping-scalars", "mapping",
+            "{\"topic\":42,\"bname\":true,\"scope\":3,\"totalQueues\":\"2\",\"epoch\":1.9,\"dirty\":\"TRUE\",\"currIdMap\":{\"01\":\"2\",\"2\":1.9,\"3\":true}}"));
+        cases.add(routeDtoInputCase("mapping-exponent-string", "mapping",
+            "{\"epoch\":\"1e2\"}"));
+        cases.add(routeDtoInputCase("mapping-long-minimum", "mapping",
+            "{\"epoch\":\"-9223372036854775808\"}"));
+        cases.add(routeDtoInputCase("mapping-long-overflow", "mapping",
+            "{\"epoch\":9223372036854775808}"));
+        cases.add(routeDtoInputCase("topic-route-nested-scalars", "topicRouteData",
+            "{\"orderTopicConf\":7,\"queueDatas\":[{\"brokerName\":123,\"readQueueNums\":\"2\",\"writeQueueNums\":1.9,\"perm\":true,\"topicSysFlag\":null}],"
+                + "\"brokerDatas\":[{\"cluster\":true,\"brokerName\":7,\"zoneName\":1.5,\"brokerAddrs\":{\"1.0\":true},\"enableActingMaster\":1}],"
+                + "\"filterServerTable\":{\"broker\":[1,true,null],\"empty\":[],\"missing\":null},"
+                + "\"topicQueueMappingByBroker\":{\"broker\":{\"topic\":42,\"totalQueues\":\"2\",\"bname\":true,\"epoch\":\"1e2\",\"dirty\":\"TRUE\",\"currIdMap\":{\"01\":\"2\"}}}}"));
+        cases.add(routeDtoInputCase("queue-int-overflow", "queueData",
+            "{\"readQueueNums\":2147483648}"));
+        cases.add(routeDtoInputCase("mapping-null-id", "mapping",
+            "{\"currIdMap\":{\"1\":null}}"));
+        cases.add(routeDtoInputCase("broker-invalid-boolean", "brokerData",
+            "{\"enableActingMaster\":\"yes\"}"));
+        return cases;
+    }
+
     private static List<Object> nullStaticMappingConversion() {
         List<Object> cases = new ArrayList<>();
         for (String mapping : new String[] {
@@ -1311,10 +1433,10 @@ public final class RuntimeRouteFixtures {
         return cases;
     }
 
-    private static Object routeJson(org.apache.rocketmq.remoting.protocol.route.TopicRouteData route) {
-        return com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(route,
+    private static Map<String, Object> routeJson(org.apache.rocketmq.remoting.protocol.route.TopicRouteData route) {
+        return new TreeMap<>(com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(route,
             com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue,
-            com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringKeyAsString));
+            com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringKeyAsString)));
     }
 
     public static void main(String[] args) throws Exception {
@@ -1431,6 +1553,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("messageQueueMethods", messageQueueMethodCases());
         fixture.put("nullableStaticMappingFields", nullableStaticMappingFields());
         fixture.put("staticMappingMapEntryCases", staticMappingMapEntryCases());
+        fixture.put("routeDtoInputCases", routeDtoInputCases());
         fixture.put("nullStaticMappingConversion", nullStaticMappingConversion());
         fixture.put("overlappingStaticMappingOwners", overlappingStaticMappingOwners());
         fixture.put("runtimeNullableCollections", runtimeNullableCollections());

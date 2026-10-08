@@ -281,15 +281,24 @@ impl MessageExt {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct MessageQueue {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_fastjson::deserialize_nullable_string",
+        skip_serializing_if = "Option::is_none"
+    )]
     topic: Option<String>,
     #[serde(
         rename = "brokerName",
         default,
+        deserialize_with = "crate::serde_fastjson::deserialize_nullable_string",
         skip_serializing_if = "Option::is_none"
     )]
     broker_name: Option<String>,
-    #[serde(rename = "queueId", default)]
+    #[serde(
+        rename = "queueId",
+        default,
+        deserialize_with = "crate::serde_fastjson::deserialize_i32"
+    )]
     queue_id: i32,
 }
 

@@ -1,20 +1,25 @@
 use std::collections::BTreeMap;
 
 use rocketmq_classic_common::message::MessageQueue;
+use rocketmq_classic_common::serde_fastjson;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct QueueData {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub broker_name: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_i32")]
     pub read_queue_nums: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_i32")]
     pub write_queue_nums: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_i32")]
     pub perm: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_i32")]
     pub topic_sys_flag: i32,
 }
 
@@ -73,15 +78,31 @@ impl QueueData {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct BrokerData {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub cluster: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub broker_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_optional_long_string_map",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub broker_addrs: Option<BTreeMap<i64, Option<String>>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub zone_name: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_bool")]
     pub enable_acting_master: bool,
 }
 
@@ -727,23 +748,33 @@ mod overlapping_static_mapping_tests {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TopicQueueMappingInfo {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub topic: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_i32")]
     pub total_queues: i32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub bname: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_i64")]
     pub epoch: i64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_bool")]
     pub dirty: bool,
     #[serde(
         default = "default_mapping_scope",
+        deserialize_with = "serde_fastjson::deserialize_nullable_string",
         skip_serializing_if = "Option::is_none"
     )]
     pub scope: Option<String>,
     #[serde(
         default = "default_mapping_ids",
+        deserialize_with = "serde_fastjson::deserialize_optional_int_map",
         skip_serializing_if = "Option::is_none"
     )]
     pub curr_id_map: Option<BTreeMap<i32, i32>>,
@@ -1003,7 +1034,11 @@ mod topic_route_data_clone_method_tests {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TopicRouteData {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub order_topic_conf: Option<String>,
     /// Preserves both a null Java list and null QueueData entries.
     #[serde(default = "default_route_vec", skip_serializing_if = "Option::is_none")]
@@ -1014,12 +1049,60 @@ pub struct TopicRouteData {
     /// Preserves null filter lists and null String entries inside those lists.
     #[serde(
         default = "default_filter_table",
+        deserialize_with = "serde_fastjson::deserialize_optional_string_list_map",
         skip_serializing_if = "Option::is_none"
     )]
     pub filter_server_table: Option<BTreeMap<String, Option<Vec<Option<String>>>>>,
     /// Preserves null mapping values in the Java route map.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub topic_queue_mapping_by_broker: Option<BTreeMap<String, Option<TopicQueueMappingInfo>>>,
+}
+
+#[cfg(test)]
+mod route_dto_input_cases_tests {
+    use super::{BrokerData, QueueData, TopicQueueMappingInfo, TopicRouteData};
+    use rocketmq_classic_common::message::MessageQueue;
+
+    #[test]
+    fn route_dto_scalar_inputs_match_invoked_java_fastjson() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["routeDtoInputCases"].as_array().unwrap() {
+            let raw_input = case["rawInput"].as_str().unwrap();
+            let decoded =
+                match case["type"].as_str().unwrap() {
+                    "queueData" => {
+                        serde_json::from_str::<QueueData>(raw_input).and_then(serde_json::to_value)
+                    }
+                    "messageQueue" => serde_json::from_str::<MessageQueue>(raw_input)
+                        .and_then(serde_json::to_value),
+                    "brokerData" => {
+                        serde_json::from_str::<BrokerData>(raw_input).and_then(serde_json::to_value)
+                    }
+                    "mapping" => serde_json::from_str::<TopicQueueMappingInfo>(raw_input)
+                        .and_then(serde_json::to_value),
+                    "topicRouteData" => serde_json::from_str::<TopicRouteData>(raw_input)
+                        .and_then(serde_json::to_value),
+                    other => panic!("unknown DTO case type {other}"),
+                };
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            assert_eq!(decoded.is_ok(), java_accepts, "{}: {decoded:?}", case["id"]);
+            if let Ok(decoded) = decoded {
+                for (field, expected) in case["fields"].as_object().unwrap() {
+                    let actual = decoded.get(field);
+                    if expected.is_null() {
+                        assert!(
+                            actual.is_none_or(serde_json::Value::is_null),
+                            "{}.{field}: expected null/omitted, got {actual:?}",
+                            case["id"]
+                        );
+                    } else {
+                        assert_eq!(actual, Some(expected), "{}.{field}", case["id"]);
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn default_route_vec<T>() -> Option<Vec<T>> {
