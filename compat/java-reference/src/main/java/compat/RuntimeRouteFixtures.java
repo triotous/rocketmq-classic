@@ -537,6 +537,16 @@ public final class RuntimeRouteFixtures {
             "{readQueueNums:2L,writeQueueNums:3L,perm:4L,topicSysFlag:5L}"));
         cases.add(routeDtoInputCase("queue-fastjson-decimal-suffix", "queueData",
             "{readQueueNums:2.9D,writeQueueNums:3.9F}"));
+        cases.add(routeDtoInputCase("queue-fastjson-leading-plus-number", "queueData",
+            "{\"readQueueNums\":+2}"));
+        cases.add(routeDtoInputCase("queue-fastjson-leading-zero-number", "queueData",
+            "{\"readQueueNums\":02}"));
+        cases.add(routeDtoInputCase("queue-fastjson-nan-number", "queueData",
+            "{\"readQueueNums\":NaN}"));
+        cases.add(routeDtoInputCase("queue-fastjson-infinity-number", "queueData",
+            "{\"readQueueNums\":Infinity}"));
+        cases.add(routeDtoInputCase("queue-fastjson-hex-number", "queueData",
+            "{\"readQueueNums\":0x10}"));
         cases.add(routeDtoInputCase("mapping-fastjson-long-suffix", "mapping",
             "{epoch:9223372036854775807L,totalQueues:2L,currIdMap:{0:1L}}"));
         cases.add(routeDtoInputCase("route-filter-string-as-list", "topicRouteData",
