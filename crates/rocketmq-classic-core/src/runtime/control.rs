@@ -786,7 +786,9 @@ mod tests {
                 .as_mut()
                 .unwrap()
                 .sort_by(by_group);
-            assert_eq!(heartbeat, expected);
+            let actual_json = serde_json::to_value(&heartbeat).unwrap();
+            let expected_json = serde_json::to_value(&expected).unwrap();
+            assert_eq!(actual_json, expected_json);
             let json: serde_json::Value =
                 serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
             assert_eq!(json["clientID"], "p6-u01@DEFAULT");

@@ -560,7 +560,15 @@ impl JavaOrdinalEnum for ConsumeFromWhere {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+/// Java inherits identity based `Object.equals`/`hashCode` for this DTO, so
+/// the native type intentionally has no structural equality or hash traits.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::heartbeat::ProducerData;
+/// fn require_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
+/// fn main() { require_java_identity::<ProducerData>(); }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ProducerData {
     #[serde(
@@ -580,7 +588,15 @@ impl ProducerData {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Java inherits identity based `Object.equals`/`hashCode` for this DTO, so
+/// the native type intentionally has no structural equality or hash traits.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::heartbeat::ConsumerData;
+/// fn require_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
+/// fn main() { require_java_identity::<ConsumerData>(); }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsumerData {
     #[serde(
@@ -626,17 +642,6 @@ impl Default for ConsumerData {
             subscription_data_set: empty_subscriptions(),
             unit_mode: false,
         }
-    }
-}
-
-impl Hash for ConsumerData {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.group_name.hash(state);
-        self.consume_type.hash(state);
-        self.message_model.hash(state);
-        self.consume_from_where.hash(state);
-        hash_optional_set(&self.subscription_data_set, state);
-        self.unit_mode.hash(state);
     }
 }
 
@@ -695,7 +700,15 @@ fn empty_subscriptions() -> Option<HashSet<Option<SubscriptionData>>> {
     Some(HashSet::new())
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Java inherits identity based `Object.equals`/`hashCode` for this DTO, so
+/// the native type intentionally has no structural equality or hash traits.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::heartbeat::HeartbeatData;
+/// fn require_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
+/// fn main() { require_java_identity::<HeartbeatData>(); }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HeartbeatData {
     #[serde(
