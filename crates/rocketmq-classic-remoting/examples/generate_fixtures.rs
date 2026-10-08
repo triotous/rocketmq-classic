@@ -700,7 +700,7 @@ fn generate_p4_bodies(output: &std::path::Path) {
         (
             "body-consumer-list-populated.bin",
             ConsumerListByGroupResponseBody {
-                consumer_id_list: Some(vec!["client-a".into(), "client-b".into()]),
+                consumer_id_list: Some(vec![Some("client-a".into()), Some("client-b".into())]),
             },
         ),
     ] {

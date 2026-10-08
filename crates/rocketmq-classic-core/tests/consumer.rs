@@ -265,7 +265,22 @@ async fn list_send_back_lock_and_unlock() {
         api.get_consumer_list_by_group(&addr, "workers", deadline())
             .await
             .unwrap(),
-        Some(vec!["a".into(), "b".into()])
+        Some(vec![Some("a".into()), Some("b".into())])
+    );
+    client.shutdown().await;
+    let (api, client, addr) = scripted(
+        response::SUCCESS,
+        None,
+        Some(br#"{"consumerIdList":[null,1]}"#.to_vec()),
+        request::GET_CONSUMER_LIST_BY_GROUP,
+        false,
+    )
+    .await;
+    assert_eq!(
+        api.get_consumer_list_by_group(&addr, "workers", deadline())
+            .await
+            .unwrap(),
+        Some(vec![None, Some("1".into())])
     );
     client.shutdown().await;
     let (api, client, addr) = scripted(

@@ -143,7 +143,7 @@ async fn uncached_consumer_lookup_refreshes_once_and_assignment_reuses_raw_topic
             .find_consumer_id_list("topic", "consumer")
             .await
             .unwrap(),
-        Some(vec!["b".into(), "a".into(), "b".into()])
+        Some(vec![Some("b".into()), Some("a".into()), Some("b".into())])
     );
     let assignments = runtime
         .query_assignment(

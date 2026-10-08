@@ -456,7 +456,7 @@ impl ClientRuntime {
         &self,
         topic: &str,
         group: &str,
-    ) -> Result<Option<Vec<String>>, RuntimeError> {
+    ) -> Result<Option<Vec<Option<String>>>, RuntimeError> {
         let Some(address) = self.lookup_broker_with_route_refresh(topic).await? else {
             return Ok(None);
         };

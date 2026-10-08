@@ -108,7 +108,14 @@ async fn java_invoked_consumer_requests_and_outcomes_match() {
                 .get_consumer_list_by_group(&addr, "consumer", deadline)
                 .await
             {
-                Ok(Some(clients)) => format!("clients={}", clients.join(",")),
+                Ok(Some(clients)) => format!(
+                    "clients={}",
+                    clients
+                        .into_iter()
+                        .map(|client| client.unwrap_or_else(|| "null".into()))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                ),
                 Err(RpcError::Response { code: 0, .. }) => {
                     "MQBrokerException;code=0;malformed".into()
                 }

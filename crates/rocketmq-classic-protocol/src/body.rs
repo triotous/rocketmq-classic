@@ -374,8 +374,12 @@ pub struct UnlockBatchResponseBody {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsumerListByGroupResponseBody {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub consumer_id_list: Option<Vec<String>>,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_optional_nullable_string_list",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub consumer_id_list: Option<Vec<Option<String>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -864,6 +868,37 @@ mod tests {
                 normalize(&mut actual);
                 normalize(&mut expected);
                 assert_eq!(actual, expected, "{}", case["name"]);
+            }
+        }
+    }
+
+    #[test]
+    fn consumer_list_inputs_match_invoked_java_fastjson() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        for case in fixture["consumerListCases"].as_array().unwrap() {
+            let decoded =
+                serde_json::from_value::<ConsumerListByGroupResponseBody>(case["input"].clone());
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            assert_eq!(
+                decoded.is_ok(),
+                java_accepts,
+                "{}: {decoded:?}",
+                case["name"]
+            );
+            if let Ok(decoded) = decoded {
+                assert_eq!(
+                    serde_json::to_value(&decoded.consumer_id_list).unwrap(),
+                    case["ids"],
+                    "{}",
+                    case["name"]
+                );
+                assert_eq!(
+                    serde_json::to_value(decoded).unwrap(),
+                    case["encoded"],
+                    "{}",
+                    case["name"]
+                );
             }
         }
     }

@@ -153,7 +153,7 @@ impl MQClientApi {
         addr: &str,
         consumer_group: &str,
         deadline: Instant,
-    ) -> Result<Option<Vec<String>>, RpcError> {
+    ) -> Result<Option<Vec<Option<String>>>, RpcError> {
         let code = request::GET_CONSUMER_LIST_BY_GROUP;
         let reply = self
             .request(

@@ -153,6 +153,27 @@ where
     Ok(Some(result))
 }
 
+pub fn deserialize_optional_nullable_string_list<'de, D>(
+    deserializer: D,
+) -> Result<Option<Vec<Option<String>>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    match value {
+        Value::Null => Ok(None),
+        Value::String(value) if value.is_empty() => Ok(Some(Vec::new())),
+        Value::String(value) => Ok(Some(vec![Some(value)])),
+        Value::Array(values) => Ok(Some(
+            values
+                .iter()
+                .map(|value| (!value.is_null()).then(|| java_string(value)))
+                .collect(),
+        )),
+        Value::Object(_) | Value::Number(_) | Value::Bool(_) => Ok(None),
+    }
+}
+
 pub fn deserialize_optional_nullable_string_map<'de, D>(
     deserializer: D,
 ) -> Result<Option<NullableStringMap>, D::Error>

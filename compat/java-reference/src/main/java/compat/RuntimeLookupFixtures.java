@@ -39,7 +39,7 @@ public final class RuntimeLookupFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "MQClientInstance.findBrokerAddrByTopic/BrokerData.selectBrokerAddr/QueryAssignmentResponseBody.decode");
+        fixture.put("entrypoint", "MQClientInstance.findBrokerAddrByTopic/BrokerData.selectBrokerAddr/QueryAssignmentResponseBody.decode/GetConsumerListByGroupResponseBody.decode");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
         String assignment = "{\"messageQueue\":{\"topic\":\"topic\",\"brokerName\":\"broker\",\"queueId\":2},\"mode\":\"POP\",\"attachments\":{\"key\":\"value\"}}";
@@ -50,6 +50,7 @@ public final class RuntimeLookupFixtures {
         fixture.put("assignmentDuplicateCount", response.getMessageQueueAssignments().size());
         fixture.put("assignmentModeCases", assignmentModeCases());
         fixture.put("assignmentAttachmentCases", assignmentAttachmentCases());
+        fixture.put("consumerListCases", consumerListCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
             com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
@@ -138,6 +139,45 @@ public final class RuntimeLookupFixtures {
                 decoded.getMessageQueueAssignments().iterator().next();
             item.put("outcome", "ACCEPTED");
             item.put("attachments", value.getAttachments());
+            byte[] encoded = decoded.encode();
+            item.put("encoded", com.alibaba.fastjson2.JSON.parseObject(
+                new String(encoded, java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (RuntimeException error) {
+            item.put("outcome", "REJECTED");
+            item.put("error", error.getClass().getSimpleName());
+        }
+        return item;
+    }
+
+    private static List<Object> consumerListCases() {
+        List<Object> cases = new ArrayList<>();
+        cases.add(consumerListCase("missing", null, false));
+        cases.add(consumerListCase("explicit-null", "null", true));
+        cases.add(consumerListCase("empty", "[]", true));
+        cases.add(consumerListCase("strings-with-duplicates", "[\"b\",\"a\",\"b\"]", true));
+        cases.add(consumerListCase("scalar-elements", "[1,1.9,true,null]", true));
+        cases.add(consumerListCase("nested-elements", "[[1,\"x\"],{\"key\":\"value\"}]", true));
+        cases.add(consumerListCase("object-field", "{\"id\":\"client\"}", true));
+        cases.add(consumerListCase("string-field", "\"client\"", true));
+        cases.add(consumerListCase("number-field", "7", true));
+        cases.add(consumerListCase("fraction-field", "1.9", true));
+        cases.add(consumerListCase("boolean-field", "true", true));
+        cases.add(consumerListCase("empty-string-field", "\"\"", true));
+        return cases;
+    }
+
+    private static Map<String, Object> consumerListCase(String name, String rawValue, boolean includeField) {
+        String body = includeField ? "{\"consumerIdList\":" + rawValue + "}" : "{}";
+        Map<String, Object> item = new TreeMap<>();
+        item.put("name", name);
+        item.put("input", com.alibaba.fastjson2.JSON.parseObject(body));
+        try {
+            org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody decoded =
+                org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody.decode(
+                    body.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody.class);
+            item.put("outcome", "ACCEPTED");
+            item.put("ids", decoded.getConsumerIdList());
             byte[] encoded = decoded.encode();
             item.put("encoded", com.alibaba.fastjson2.JSON.parseObject(
                 new String(encoded, java.nio.charset.StandardCharsets.UTF_8)));

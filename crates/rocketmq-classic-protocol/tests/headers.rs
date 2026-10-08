@@ -439,7 +439,7 @@ fn java_consumer_list_and_lock_bodies_preserve_optional_and_collection_semantics
     assert_eq!(empty.consumer_id_list, Some(vec![]));
     assert_eq!(
         populated.consumer_id_list,
-        Some(vec!["client-a".into(), "client-b".into()])
+        Some(vec![Some("client-a".into()), Some("client-b".into())])
     );
 
     let lock: LockBatchRequestBody =
