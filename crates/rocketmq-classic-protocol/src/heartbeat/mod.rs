@@ -400,6 +400,22 @@ mod tests {
         }
     }
 
+    #[test]
+    fn public_heartbeat_fingerprint_matches_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
+                .unwrap();
+        for case in fixture["cases"].as_array().unwrap() {
+            let data: HeartbeatData = serde_json::from_value(case["body"].clone()).unwrap();
+            assert_eq!(
+                data.compute_heartbeat_fingerprint().unwrap(),
+                case["fingerprint"].as_i64().unwrap() as i32,
+                "{}",
+                case["case"]
+            );
+        }
+    }
+
     fn current_millis() -> i64 {
         use std::time::{SystemTime, UNIX_EPOCH};
         SystemTime::now()
