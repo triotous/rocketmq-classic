@@ -541,6 +541,14 @@ public final class RuntimeRouteFixtures {
             "{\"readQueueNums\":+2}"));
         cases.add(routeDtoInputCase("queue-fastjson-leading-zero-number", "queueData",
             "{\"readQueueNums\":02}"));
+        cases.add(routeDtoInputCase("queue-fastjson-leading-plus-fraction", "queueData",
+            "{\"writeQueueNums\":+2.9}"));
+        cases.add(routeDtoInputCase("queue-fastjson-leading-zero-fraction", "queueData",
+            "{\"writeQueueNums\":02.9}"));
+        cases.add(routeDtoInputCase("mapping-fastjson-leading-plus-exponent", "mapping",
+            "{\"epoch\":+2e1}"));
+        cases.add(routeDtoInputCase("mapping-fastjson-leading-zero-exponent", "mapping",
+            "{\"epoch\":02e1}"));
         cases.add(routeDtoInputCase("queue-fastjson-nan-number", "queueData",
             "{\"readQueueNums\":NaN}"));
         cases.add(routeDtoInputCase("queue-fastjson-infinity-number", "queueData",
