@@ -12,4 +12,4 @@ Each setting now has an idiomatic Rust getter and `set_` method. Nullable string
 
 ## Evidence
 
-The Java `copyFields` oracle invokes every Java setter, snapshots source/clone/reset fields, and now directly invokes every Java getter for the same three objects. The native differential constructs the source through Rust setters, reads through Rust getters, and matches both Java getter output and field snapshots for all 33 settings. This includes explicit null strings, nullable enums, and signed integer boundaries. Current client-config fixture SHA-256: `2824c98496001ab46cc7137400359f51b2afe443d6fee779946606d78f379463`.
+The Java `copyFields` oracle invokes every Java setter, snapshots source/clone/reset fields, and now directly invokes every Java getter for the same three objects. The native differential constructs the source through Rust setters, reads through Rust getters, and matches both Java getter output and field snapshots for all 33 settings. This includes explicit null strings, nullable enums, and signed integer boundaries. Client-config fixture SHA-256 at this accessor update: `2824c98496001ab46cc7137400359f51b2afe443d6fee779946606d78f379463`.
