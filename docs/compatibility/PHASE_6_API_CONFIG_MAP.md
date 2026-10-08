@@ -1,6 +1,8 @@
 # Phase 6 API and configuration map
 
-AccessChannel public-enum update (2026-10-08): the pinned Java 5.5.1 enum cases invoke generated `values()` and `valueOf(String)` plus inherited `name()`, `ordinal()`, `toString()`, and `compareTo()`. Rust now exposes declaration-order `values()`, names, ordinals, display text, ordinal comparison, and typed null/unknown lookup errors. The actual oracle covers both constants, defensive array copying, null, empty, lowercase, and unknown names. [ADR-0024](../architecture/ADR-0024-access-channel-enum-api.md) records the boundary. Current client-config fixture SHA-256: `aa8e0e0e60096bdc7ffa9f7312331ef226e8254f9bd7aeccf9f9a85be1bd3d2f`.
+AccessChannel public-enum update (2026-10-08): the pinned Java 5.5.1 enum cases invoke generated `values()` and `valueOf(String)` plus inherited `name()`, `ordinal()`, `toString()`, and `compareTo()`. Rust now exposes declaration-order `values()`, names, ordinals, display text, ordinal comparison, and typed null/unknown lookup errors. The actual oracle covers both constants, defensive array copying, null, empty, lowercase, and unknown names. [ADR-0024](../architecture/ADR-0024-access-channel-enum-api.md) records the boundary. Client-config fixture SHA-256 at that update: `aa8e0e0e60096bdc7ffa9f7312331ef226e8254f9bd7aeccf9f9a85be1bd3d2f`.
+
+Runtime service-name update (2026-10-08): actual Java 5.5.1 calls to `RebalanceService.getServiceName()` and `PullMessageService.getServiceName()` return `RebalanceService` and `PullMessageService`. Rust exports matching `REBALANCE_SERVICE_NAME` and `PULL_MESSAGE_SERVICE_NAME` constants. Client-config fixture SHA-256 `57114f6198944de08fa6801207525abbbfd9e1532efe93fa02d2c8c64ab98fa4`; [ADR-0025](../architecture/ADR-0025-runtime-service-name-methods.md) records the boundary. This maps only the name methods; worker execution is audited separately below.
 
 LanguageCode public-method update (2026-10-08): actual Java 5.5.1 calls cover `getCode()`, exact-name `getCode(String)`, custom `valueOf(byte)`, all 14 constants, unknown/negative byte values, null and case-mismatched names, plus `RemotingSerializable.decode` of an unknown JSON name. Rust adds Java-shaped `name()`, `from_java_name()` and `java_value_of_byte()` helpers while preserving the preexisting raw `from_java_byte(i8) -> LanguageCode` signature. JSON and private-header unknown values now decode as `None`; the Rust-only `Unknown` variant remains a raw-code extension. [ADR-0023](../architecture/ADR-0023-language-code-java-methods.md) records the boundary. Client-config fixture SHA-256 at that update: `33441a65926214a006702b46369bfab8f44b35fc1951c1ab17a45166f0408fdf`.
 
@@ -275,6 +277,15 @@ Java enum `hashCode()` is identity-based with no stable numeric oracle; Rust doe
 | JSON/private-header decode | Unknown string and byte values decode to `None`, matching Java's nullable result; JSON encode rejects a Rust-only `Unknown` value |
 
 See [ADR-0023](../architecture/ADR-0023-language-code-java-methods.md) for fixture provenance, byte boundaries, and validation.
+
+## Runtime worker service-name methods
+
+| Pinned Java public method | Rust counterpart | Evidence / disposition |
+| --- | --- | --- |
+| `RebalanceService.getServiceName()` | `runtime::REBALANCE_SERVICE_NAME` | Actual Java fixture invokes the method on an unstarted service and records `RebalanceService`; native comparison passes. |
+| `PullMessageService.getServiceName()` | `runtime::PULL_MESSAGE_SERVICE_NAME` | Actual Java fixture invokes the method on an unstarted service and records `PullMessageService`; native comparison passes. |
+
+The Java methods return each class's `getSimpleName()`. The fixture does not start either worker or submit work to the pull service's scheduled executor. See [ADR-0025](../architecture/ADR-0025-runtime-service-name-methods.md); worker dispatch and shutdown behavior remain mapped in the runtime inventory.
 
 ## Other runtime exports, reverse inventory
 

@@ -28,7 +28,7 @@ numeric value, so no Java numeric hash helper is claimed.
 The generated `accessChannelMethodCases` fixture invokes both constants and
 name lookups for null, empty, exact, lowercase, and unknown input. It also
 checks ordering, `compareTo`, `toString`, round-trip lookup, and defensive
-`values()` copying. The current `client-config.json` SHA-256 is
+`values()` copying. The `client-config.json` SHA-256 at this update was
 `aa8e0e0e60096bdc7ffa9f7312331ef226e8254f9bd7aeccf9f9a85be1bd3d2f`.
 
 Full workspace/all-target tests, strict all-target/all-feature Clippy, pinned
