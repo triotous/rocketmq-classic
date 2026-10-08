@@ -38,7 +38,8 @@ public final class RuntimeAddressFixtures {
             for (String address : new String[] {"127.0.0.1:10911", "broker.example:10911",
                     "2001:db8::1:10911", "::1:10911", "[2001:db8::1]:10911",
                     "127.0.0.1:0", "127.0.0.1:65535", "127.0.0.1:65536", "127.0.0.1:-1",
-                    "fe80::1%7:10911", "[fe80::1%7]:10911"}) {
+                    "fe80::1%7:10911", "[fe80::1%7]:10911",
+                    "fe80::1%lo0:10911", "[fe80::1%lo0]:10911"}) {
                 String[] hostAndPort = addressProbe.splitAddress(address);
                 if (hostAndPort.length != 2) {
                     throw new IllegalStateException("Java client did not split address: " + address);
@@ -57,14 +58,18 @@ public final class RuntimeAddressFixtures {
                 item.put("port", hostAndPort[1]);
                 item.put("socketAddressAccepted", socketAddressAccepted);
                 if (hostAndPort[0].contains("%")) {
-                    boolean scopedHostResolved;
-                    try {
-                        InetAddress.getByName(hostAndPort[0]);
-                        scopedHostResolved = true;
-                    } catch (java.net.UnknownHostException rejected) {
-                        scopedHostResolved = false;
+                    String scope = hostAndPort[0].substring(hostAndPort[0].lastIndexOf('%') + 1);
+                    if (scope.endsWith("]")) scope = scope.substring(0, scope.length() - 1);
+                    if (scope.matches("\\d+")) {
+                        boolean scopedHostResolved;
+                        try {
+                            InetAddress.getByName(hostAndPort[0]);
+                            scopedHostResolved = true;
+                        } catch (java.net.UnknownHostException rejected) {
+                            scopedHostResolved = false;
+                        }
+                        item.put("scopedHostResolved", scopedHostResolved);
                     }
-                    item.put("scopedHostResolved", scopedHostResolved);
                 }
                 clientAddressCases.add(item);
             }

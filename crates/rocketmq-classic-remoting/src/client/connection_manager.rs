@@ -59,14 +59,23 @@ fn normalize_ipv6_host(host: &str) -> Result<String, TransportError> {
     if scope.is_empty() || scope.contains('%') {
         return Err(TransportError::Connect("invalid IPv6 scope id".into()));
     }
-    let scope = scope
-        .parse::<u32>()
-        .map_err(|_| TransportError::Connect("invalid IPv6 scope id".into()))?;
-    if scope == 0 {
-        Ok(parsed_host.to_string())
-    } else {
-        Ok(format!("{parsed_host}%{scope}"))
+    if scope.bytes().all(|byte| byte.is_ascii_digit()) {
+        let scope = scope
+            .parse::<u32>()
+            .map_err(|_| TransportError::Connect("invalid IPv6 scope id".into()))?;
+        return if scope == 0 {
+            Ok(parsed_host.to_string())
+        } else {
+            Ok(format!("{parsed_host}%{scope}"))
+        };
     }
+    if !scope
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || b"_.-:".contains(&byte))
+    {
+        return Err(TransportError::Connect("invalid IPv6 scope name".into()));
+    }
+    Ok(format!("{parsed_host}%{scope}"))
 }
 
 impl ClientInner {
@@ -327,5 +336,37 @@ mod tests {
                 "normalized {case}"
             );
         }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn named_ipv6_scope_resolves_to_the_interface_index() {
+        use std::net::ToSocketAddrs;
+
+        let interface = if cfg!(target_os = "macos") {
+            "lo0"
+        } else {
+            "lo"
+        };
+        let host = format!("fe80::1%{interface}");
+        let resolved = (host.as_str(), 10911)
+            .to_socket_addrs()
+            .expect("the loopback interface name resolves")
+            .find_map(|address| match address {
+                std::net::SocketAddr::V6(address) => Some(address),
+                std::net::SocketAddr::V4(_) => None,
+            })
+            .expect("the IPv6 literal resolves to IPv6");
+        assert_eq!(
+            resolved.ip(),
+            &"fe80::1".parse::<std::net::Ipv6Addr>().unwrap()
+        );
+        assert_ne!(resolved.scope_id(), 0);
+
+        let parsed = Address::parse(&format!("{host}:10911")).unwrap();
+        assert_eq!(
+            connection::split_address(parsed.as_str()).unwrap(),
+            (host, 10911)
+        );
     }
 }
