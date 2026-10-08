@@ -871,6 +871,26 @@ mod tests {
     }
 
     #[test]
+    fn route_change_sort_matches_invoked_java_broker_comparison_errors() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["topicRouteDataChanged"].as_array().unwrap() {
+            let current: TopicRouteData = serde_json::from_value(case["current"].clone()).unwrap();
+            let old: TopicRouteData = serde_json::from_value(case["old"].clone()).unwrap();
+            let cache = RouteCache::default();
+            super::super::TopicRouteTable::new(cache.clone())
+                .put("topic", TopicRouteDataHandle::new(old))
+                .unwrap();
+            let result = cache.route_changed("topic", &current);
+            if case["outcome"] == "OK" {
+                assert_eq!(result.unwrap(), case["changed"]);
+            } else {
+                assert!(matches!(result, Err(RuntimeError::InvalidRoute(_))));
+            }
+        }
+    }
+
+    #[test]
     fn ordered_integer_parser_matches_invoked_java_digits_and_signed_boundaries() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
