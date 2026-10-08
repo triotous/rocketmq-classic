@@ -174,6 +174,8 @@ public final class RuntimeRouteFixtures {
             {new MessageQueue("t", null, 0), new MessageQueue("t", "b", 0)},
             {new MessageQueue("t", "b", 0), new MessageQueue("t", null, 0)},
             {new MessageQueue("a", "b", 0), new MessageQueue("c", "b", 0)},
+            {new MessageQueue("abc", "b", 0), new MessageQueue("a", "b", 0)},
+            {new MessageQueue("\uD800\uDC00", "b", 0), new MessageQueue("\uE000", "b", 0)},
             {new MessageQueue("t", "a", 0), new MessageQueue("t", "c", 0)},
             {new MessageQueue("t", "b", Integer.MAX_VALUE), new MessageQueue("t", "b", -1)},
             {new MessageQueue("t", "b", Integer.MIN_VALUE), new MessageQueue("t", "b", 1)},

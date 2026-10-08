@@ -293,6 +293,14 @@ pub struct MessageQueue {
     queue_id: i32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum MessageQueueCompareError {
+    #[error("MessageQueue topic is null")]
+    NullTopic,
+    #[error("MessageQueue broker name is null")]
+    NullBrokerName,
+}
+
 impl MessageQueue {
     pub fn new(topic: impl Into<String>, broker_name: impl Into<String>, queue_id: i32) -> Self {
         Self {
@@ -328,6 +336,39 @@ impl MessageQueue {
     pub fn queue_id(&self) -> i32 {
         self.queue_id
     }
+
+    /// Returns the exact pinned Java 5.5.1 `MessageQueue.compareTo` result.
+    pub fn java_compare_to(&self, other: &Self) -> Result<i32, MessageQueueCompareError> {
+        let topic = self
+            .topic
+            .as_deref()
+            .ok_or(MessageQueueCompareError::NullTopic)?;
+        let other_topic = other
+            .topic
+            .as_deref()
+            .ok_or(MessageQueueCompareError::NullTopic)?;
+        let result = java_string_compare_to(topic, other_topic);
+        if result != 0 {
+            return Ok(result);
+        }
+        let broker = self
+            .broker_name
+            .as_deref()
+            .ok_or(MessageQueueCompareError::NullBrokerName)?;
+        let other_broker = other
+            .broker_name
+            .as_deref()
+            .ok_or(MessageQueueCompareError::NullBrokerName)?;
+        let result = java_string_compare_to(broker, other_broker);
+        if result != 0 {
+            return Ok(result);
+        }
+        Ok(match self.queue_id.cmp(&other.queue_id) {
+            Ordering::Less => -1,
+            Ordering::Equal => 0,
+            Ordering::Greater => 1,
+        })
+    }
 }
 
 impl Ord for MessageQueue {
@@ -351,6 +392,15 @@ impl PartialOrd for MessageQueue {
 
 fn java_string_cmp(left: &str, right: &str) -> Ordering {
     left.encode_utf16().cmp(right.encode_utf16())
+}
+
+fn java_string_compare_to(left: &str, right: &str) -> i32 {
+    for (a, b) in left.encode_utf16().zip(right.encode_utf16()) {
+        if a != b {
+            return i32::from(a) - i32::from(b);
+        }
+    }
+    (left.encode_utf16().count() as i32) - (right.encode_utf16().count() as i32)
 }
 
 fn java_optional_string_cmp(left: &Option<String>, right: &Option<String>) -> Ordering {
