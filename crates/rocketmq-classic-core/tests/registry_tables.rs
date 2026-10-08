@@ -159,6 +159,71 @@ async fn retained_registry_tables_match_every_invoked_java_primitive_outcome() {
 }
 
 #[tokio::test]
+async fn conditional_registry_mutations_match_java_custom_value_equality() {
+    struct EqualProducer(&'static str);
+    impl ProducerRuntime for EqualProducer {
+        fn map_value_equality_key(&self) -> Option<String> {
+            Some(self.0.to_owned())
+        }
+    }
+    struct EqualConsumer(&'static str);
+    impl ConsumerRuntime for EqualConsumer {
+        fn heartbeat_data(&self) -> ConsumerData {
+            ConsumerData::default()
+        }
+        fn map_value_equality_key(&self) -> Option<String> {
+            Some(self.0.to_owned())
+        }
+    }
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json"))
+            .unwrap();
+    let expected = &fixture["registryTables"]["customEquality"];
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&ClientConfig::new("registry-custom-equality"))
+        .await
+        .unwrap();
+    let producers = runtime.producer_table();
+    let producer_a: Arc<dyn ProducerRuntime> = Arc::new(EqualProducer("producer-equal"));
+    let producer_b: Arc<dyn ProducerRuntime> = Arc::new(EqualProducer("producer-equal"));
+    let producer_c: Arc<dyn ProducerRuntime> = Arc::new(EqualProducer("producer-replacement"));
+    producers.put("replace", producer_a.clone()).await.unwrap();
+    assert!(producers
+        .replace_if_equal("replace", &producer_b, producer_c)
+        .await
+        .unwrap());
+    producers.put("remove", producer_a).await.unwrap();
+    assert!(producers
+        .remove_if_equal("remove", &producer_b)
+        .await
+        .unwrap());
+
+    let consumers = runtime.consumer_table();
+    let consumer_a: Arc<dyn ConsumerRuntime> = Arc::new(EqualConsumer("consumer-equal"));
+    let consumer_b: Arc<dyn ConsumerRuntime> = Arc::new(EqualConsumer("consumer-equal"));
+    let consumer_c: Arc<dyn ConsumerRuntime> = Arc::new(EqualConsumer("consumer-replacement"));
+    consumers.put("replace", consumer_a.clone()).await.unwrap();
+    assert!(consumers
+        .replace_if_equal("replace", &consumer_b, consumer_c)
+        .await
+        .unwrap());
+    consumers.put("remove", consumer_a).await.unwrap();
+    assert!(consumers
+        .remove_if_equal("remove", &consumer_b)
+        .await
+        .unwrap());
+    assert_eq!(
+        serde_json::json!({
+            "producerReplaceByEqualValue": true,
+            "producerRemoveByEqualValue": true,
+            "consumerReplaceByEqualValue": true,
+            "consumerRemoveByEqualValue": true
+        }),
+        *expected
+    );
+}
+
+#[tokio::test]
 async fn group_unregister_matches_invoked_java_consumer_methods_and_removes_current_binding() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();

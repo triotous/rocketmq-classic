@@ -248,12 +248,29 @@ public final class RuntimeConfigFixtures {
     }
 
     private static <T> T tableOwner(Class<T> type) {
+        return tableOwner(type, new Object());
+    }
+
+    private static final class TableOwnerHandler implements java.lang.reflect.InvocationHandler {
+        private final Object equalityKey;
+        TableOwnerHandler(Object equalityKey) { this.equalityKey = equalityKey; }
+        @Override public Object invoke(Object proxy, java.lang.reflect.Method method, Object[] args) {
+            if ("equals".equals(method.getName())) {
+                Object other = args[0];
+                if (other == proxy) return true;
+                if (other == null || !java.lang.reflect.Proxy.isProxyClass(other.getClass())) return false;
+                java.lang.reflect.InvocationHandler otherHandler = java.lang.reflect.Proxy.getInvocationHandler(other);
+                return otherHandler instanceof TableOwnerHandler
+                    && java.util.Objects.equals(equalityKey, ((TableOwnerHandler) otherHandler).equalityKey);
+            }
+            if ("hashCode".equals(method.getName())) return equalityKey.hashCode();
+            throw new IllegalStateException("map fixture must not invoke owner callback: " + method.getName());
+        }
+    }
+
+    private static <T> T tableOwner(Class<T> type, Object equalityKey) {
         return type.cast(java.lang.reflect.Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[] {type},
-            (proxy, method, args) -> {
-                if ("equals".equals(method.getName())) return proxy == args[0];
-                if ("hashCode".equals(method.getName())) return System.identityHashCode(proxy);
-                throw new IllegalStateException("map fixture must not invoke owner callback: " + method.getName());
-            }));
+            new TableOwnerHandler(equalityKey)));
     }
 
     private static <T> Map<String, Object> tableMutations(java.util.concurrent.ConcurrentMap<String, T> table,
@@ -297,6 +314,32 @@ public final class RuntimeConfigFixtures {
             org.apache.rocketmq.client.impl.consumer.MQConsumerInner consumerB = tableOwner(org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class);
             result.put("producer", tableMutations(runtime.getProducerTable(), producerA, producerB, runtime::selectProducer));
             result.put("consumer", tableMutations(runtime.getConsumerTable(), consumerA, consumerB, runtime::selectConsumer));
+            Map<String, Object> equalValues = new TreeMap<>();
+            org.apache.rocketmq.client.impl.producer.MQProducerInner producerEqualA =
+                tableOwner(org.apache.rocketmq.client.impl.producer.MQProducerInner.class, "producer-equal");
+            org.apache.rocketmq.client.impl.producer.MQProducerInner producerEqualB =
+                tableOwner(org.apache.rocketmq.client.impl.producer.MQProducerInner.class, "producer-equal");
+            org.apache.rocketmq.client.impl.producer.MQProducerInner producerReplacement =
+                tableOwner(org.apache.rocketmq.client.impl.producer.MQProducerInner.class, "producer-replacement");
+            runtime.getProducerTable().put("equal-replace", producerEqualA);
+            equalValues.put("producerReplaceByEqualValue",
+                runtime.getProducerTable().replace("equal-replace", producerEqualB, producerReplacement));
+            runtime.getProducerTable().put("equal-remove", producerEqualA);
+            equalValues.put("producerRemoveByEqualValue",
+                runtime.getProducerTable().remove("equal-remove", producerEqualB));
+            org.apache.rocketmq.client.impl.consumer.MQConsumerInner consumerEqualA =
+                tableOwner(org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class, "consumer-equal");
+            org.apache.rocketmq.client.impl.consumer.MQConsumerInner consumerEqualB =
+                tableOwner(org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class, "consumer-equal");
+            org.apache.rocketmq.client.impl.consumer.MQConsumerInner consumerReplacement =
+                tableOwner(org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class, "consumer-replacement");
+            runtime.getConsumerTable().put("equal-replace", consumerEqualA);
+            equalValues.put("consumerReplaceByEqualValue",
+                runtime.getConsumerTable().replace("equal-replace", consumerEqualB, consumerReplacement));
+            runtime.getConsumerTable().put("equal-remove", consumerEqualA);
+            equalValues.put("consumerRemoveByEqualValue",
+                runtime.getConsumerTable().remove("equal-remove", consumerEqualB));
+            result.put("customEquality", equalValues);
             java.util.concurrent.ConcurrentMap<String, org.apache.rocketmq.client.impl.consumer.MQConsumerInner> retained = runtime.getConsumerTable();
             result.put("consumerRegisterAccepted", runtime.registerConsumer("registered", consumerA));
             result.put("consumerDirectPutReturnsRegistered", retained.put("registered", consumerB) == consumerA);
