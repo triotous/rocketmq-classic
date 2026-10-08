@@ -115,7 +115,7 @@ Copy column: **C** means both `cloneClientConfig` and `resetClientConfig` copy t
 | decodeDecompressBody | decode_decompress_body | bool; `com.rocketmq.decompress.body`, true | C | owner | single message decoder Phase 8 and POP/admin decode owners |
 | vipChannelEnabled | vip_channel_enabled | bool; `com.rocketmq.sendMessageWithVIPChannel`, false | C | owner | source-selected Broker RPC VIP conversion; not heartbeat/global transport rewriting |
 | useHeartbeatV2 | use_heartbeat_v2 | bool; `com.rocketmq.heartbeat.v2`, false | C | K | V2 negotiation/full/simple/fingerprint behavior |
-| useTLS | use_tls | bool; `tls.enable`, otherwise `tls.server.mode == enforcing` | C | K | remoting TLS; provisioning/live acceptance Phase 19 |
+| useTLS | use_tls | bool; `tls.enable`, otherwise `TlsMode::parse(tls.server.mode) == Enforcing` | C | K | remoting TLS; provisioning/live acceptance Phase 19 |
 | socksProxyConfig | socks_proxy_config | nullable String; `com.rocketmq.socks.proxy.config`, Some(`{}`) | C | K | null and exact empty retained in core, bridged to lower null/no-proxy parsing; whitespace-only constructor rejection golden; SOCKS transport parsing/connect |
 | mqClientApiTimeout | mq_client_api_timeout | i32 milliseconds; 3000 | C | K | fresh per-runtime RPC budget; nonpositive expires |
 | detectTimeout | detect_timeout | i32 milliseconds; 200 | C | owner | producer fault detector Phase 7 |
@@ -347,6 +347,18 @@ Java enum `hashCode()` is identity-based with no stable cross-run numeric value;
 | Unknown wire serialization byte | Java lookup yields null and `RemotingCommand.headerDecode` dereferences it; Rust returns `CodecError::UnsupportedSerialization(code)` before constructing a public enum value |
 
 Java enum `hashCode()` is identity-based with no stable cross-run numeric value; Rust does not claim a matching numeric enum hash. See [ADR-0027](../architecture/ADR-0027-serialize-type-java-enum-api.md) for direct oracle cases and the wire boundary.
+
+## Remoting TLS enum API: TlsMode
+
+| Pinned Java API | Rust counterpart / current behavior |
+| --- | --- |
+| `values()` / `valueOf(String)` | `TlsMode::values()` returns declaration order; `value_of_name(Option<&str>)` matches exact enum constants and typed Java null/unknown lookup failures |
+| `name()`, `ordinal()`, `toString()`, `compareTo(TlsMode)` | `name()`, `ordinal()`, `Display`, and `java_compare_to()` match Java enum values and declaration order |
+| `getName()` | `get_name()` returns the exact lowercase names `disabled`, `permissive`, and `enforcing` |
+| `parse(String)` | `parse(Option<&str>)` recognizes exact lowercase names and defaults to `Permissive`, including null, case mismatches, whitespace, and unknown values |
+| TLS selection from `tls.server.mode` | `TransportMode` uses `TlsMode::parse`; absent `tls.enable` enables TLS only for `Enforcing`, while an explicit `tls.enable` boolean takes precedence |
+
+The pinned Java fixture invokes all enum methods and parse boundary cases; the native differential checks direct outcomes. TLS credential provisioning and end-to-end acceptance remain Phase 19 work. See [ADR-0031](../architecture/ADR-0031-tls-mode-java-enum-api.md).
 
 ## Runtime worker and inherited ServiceThread methods
 
