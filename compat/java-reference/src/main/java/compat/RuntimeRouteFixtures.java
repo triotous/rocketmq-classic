@@ -802,6 +802,31 @@ public final class RuntimeRouteFixtures {
         cases.add(item);
     }
 
+    private static List<Object> brokerDataHashCodeCases() {
+        HashMap<Long, String> addresses = new HashMap<>();
+        addresses.put(Long.MIN_VALUE, "\uD800\uDC00");
+        addresses.put(Long.MAX_VALUE, null);
+        addresses.put(0L, "\uD83D\uDE00");
+        List<Object> cases = new ArrayList<>();
+        addBrokerDataHashCodeCase(cases, "null-fields", brokerData(null, null, null, false, null));
+        addBrokerDataHashCodeCase(cases, "unicode-name", brokerData(null, "\uD800\uDC00-name",
+            new HashMap<>(), true, "ignored"));
+        addBrokerDataHashCodeCase(cases, "long-keys-unicode-values",
+            brokerData("ignored-cluster", "broker", addresses, false, "ignored-zone"));
+        return cases;
+    }
+
+    private static void addBrokerDataHashCodeCase(List<Object> cases, String id,
+        org.apache.rocketmq.remoting.protocol.route.BrokerData data) {
+        Map<String, Object> item = new TreeMap<>();
+        item.put("id", id);
+        item.put("input", com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(data,
+            com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue,
+            com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringKeyAsString)));
+        item.put("hashCode", data.hashCode());
+        cases.add(item);
+    }
+
     private static List<Object> brokerDataCompareToCases() {
         List<Object> cases = new ArrayList<>();
         String[][] pairs = new String[][] {
@@ -987,6 +1012,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("runtimeTopicRouteTable", runtimeTopicRouteTable(inputs.get(0)));
         fixture.put("runtimeRawOfflineCleanup", runtimeRawOfflineCleanup(inputs.get(0)));
         fixture.put("brokerDataEquality", brokerDataEqualityCases());
+        fixture.put("brokerDataHashCode", brokerDataHashCodeCases());
         fixture.put("brokerDataCompareTo", brokerDataCompareToCases());
         fixture.put("topicRouteDataChanged", topicRouteDataChangedCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
