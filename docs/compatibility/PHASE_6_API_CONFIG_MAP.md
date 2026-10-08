@@ -189,7 +189,7 @@ The Java no-argument DTO constructors map to Rust `Default`; copy constructors m
 
 ## Heartbeat DTO public methods
 
-Java bean getters/setters map to the native DTO's public fields. `SubscriptionData.filterClassSource` remains retained but is omitted from JSON and from Java equality/hash/text behavior. Java `HashSet` iteration order is unspecified; native diagnostic text sorts set elements for deterministic output.
+Java bean getters/setters map to the native DTO's public fields. `SubscriptionData.filterClassSource` is accepted from JSON and retained, then omitted during Java serialization and from Java equality/hash/text behavior. Actual fixture cases cover both JSON decode and serialize directions. Java `HashSet` iteration order is unspecified; native diagnostic text sorts set elements for deterministic output.
 
 | Java public API | Rust counterpart | Evidence / disposition |
 | --- | --- | --- |
@@ -202,7 +202,7 @@ Java bean getters/setters map to the native DTO's public fields. `SubscriptionDa
 | `HeartbeatData.producerDataSet` decode/encode | `Option<Vec<ProducerData>>` | `ProducerData` inherits identity equality, so the actual Java `HashSet` retains two distinct rows with equal `groupName`; a prior native `HashSet` collapsed them. Actual Java decode/toString and native round-trip now retain both. |
 | `HeartbeatData.computeHeartbeatFingerprint` | `compute_heartbeat_fingerprint` | Seven actual Java runtime fingerprints and explicit null collection/primitive cases; the runtime delegates to this public method. |
 
-The heartbeat fixture SHA-256 is `10698ec4bbc5109ca4737fe45eea7afec02e5e84563de58906992b9194067493`. The method/constructor tests close these heartbeat DTO rows, not remaining source/input or whole-phase acceptance.
+The heartbeat fixture SHA-256 is `ae3dcdcd4fbed3dda9f996e1bfb02cb199fb8eaeb2352ed89e8c4a0ec9e80a12`. The method/constructor tests close these heartbeat DTO rows, not remaining source/input or whole-phase acceptance.
 
 ## Other runtime exports, reverse inventory
 

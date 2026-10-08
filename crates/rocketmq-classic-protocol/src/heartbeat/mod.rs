@@ -655,6 +655,14 @@ mod tests {
             assert_eq!(value.code_set.is_none(), case["codeNull"]);
             assert_eq!(value.expression_type.is_none(), case["expressionNull"]);
             assert_eq!(
+                value.filter_class_source,
+                case["filterClassSource"].as_str().map(str::to_owned)
+            );
+            assert_eq!(
+                value.filter_class_source.is_none(),
+                case["filterClassSourceNull"]
+            );
+            assert_eq!(
                 value.tags_set.as_ref().is_some_and(HashSet::is_empty),
                 case["tagsEmpty"]
             );
@@ -673,8 +681,18 @@ mod tests {
                 ("tagsSet", "encodedHasTags"),
                 ("codeSet", "encodedHasCode"),
                 ("expressionType", "encodedHasExpression"),
+                ("filterClassSource", "encodedHasFilterClassSource"),
             ] {
                 assert_eq!(encoded.get(field).is_some(), case[marker], "{field}");
+                if field == "filterClassSource" {
+                    assert_eq!(
+                        encoded
+                            .get(field)
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Null),
+                        case["encodedFilterClassSource"]
+                    );
+                }
             }
         }
     }
@@ -755,6 +773,22 @@ mod tests {
                 value.java_to_string(),
                 case["toString"],
                 "{} toString",
+                case["case"]
+            );
+            let encoded = serde_json::to_value(&value).unwrap();
+            assert_eq!(
+                encoded.get("filterClassSource").is_some(),
+                case["encodedHasFilterClassSource"],
+                "{} JSON field",
+                case["case"]
+            );
+            assert_eq!(
+                encoded
+                    .get("filterClassSource")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null),
+                case["encodedFilterClassSource"],
+                "{} JSON value",
                 case["case"]
             );
         }

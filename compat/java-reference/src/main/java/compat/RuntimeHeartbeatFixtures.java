@@ -31,7 +31,8 @@ public final class RuntimeHeartbeatFixtures {
         for (String input : new String[] {
             "{}",
             "{\"topic\":null,\"subString\":null,\"tagsSet\":null,\"codeSet\":null,\"expressionType\":null,\"subVersion\":0}",
-            "{\"topic\":\"T\",\"subString\":\"tag\",\"tagsSet\":[\"tag\"],\"codeSet\":[7],\"expressionType\":\"SQL92\",\"subVersion\":42}"
+            "{\"topic\":\"T\",\"subString\":\"tag\",\"tagsSet\":[\"tag\"],\"codeSet\":[7],\"expressionType\":\"SQL92\",\"subVersion\":42}",
+            "{\"topic\":\"filter-source\",\"filterClassSource\":\"source-from-json\"}"
         }) {
             long before = System.currentTimeMillis();
             SubscriptionData value = com.alibaba.fastjson2.JSON.parseObject(input, SubscriptionData.class);
@@ -46,6 +47,8 @@ public final class RuntimeHeartbeatFixtures {
             item.put("tagsNull", value.getTagsSet() == null);
             item.put("codeNull", value.getCodeSet() == null);
             item.put("expressionNull", value.getExpressionType() == null);
+            item.put("filterClassSource", value.getFilterClassSource());
+            item.put("filterClassSourceNull", value.getFilterClassSource() == null);
             item.put("tagsEmpty", value.getTagsSet() != null && value.getTagsSet().isEmpty());
             item.put("codeEmpty", value.getCodeSet() != null && value.getCodeSet().isEmpty());
             item.put("versionCurrent", value.getSubVersion() >= before && value.getSubVersion() <= after);
@@ -56,6 +59,8 @@ public final class RuntimeHeartbeatFixtures {
             item.put("encodedHasTags", encoded.containsKey("tagsSet"));
             item.put("encodedHasCode", encoded.containsKey("codeSet"));
             item.put("encodedHasExpression", encoded.containsKey("expressionType"));
+            item.put("encodedHasFilterClassSource", encoded.containsKey("filterClassSource"));
+            item.put("encodedFilterClassSource", encoded.get("filterClassSource"));
             cases.add(item);
         }
         return cases;
@@ -101,6 +106,10 @@ public final class RuntimeHeartbeatFixtures {
             item.put("rawInput", input[1]);
             item.put("hashCode", value.hashCode());
             item.put("toString", value.toString());
+            com.alibaba.fastjson2.JSONObject encoded = com.alibaba.fastjson2.JSON.parseObject(
+                com.alibaba.fastjson2.JSON.toJSONString(value));
+            item.put("encodedHasFilterClassSource", encoded.containsKey("filterClassSource"));
+            item.put("encodedFilterClassSource", encoded.get("filterClassSource"));
             values.add(item);
         }
         result.put("values", values);
