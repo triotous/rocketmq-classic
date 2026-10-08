@@ -1,6 +1,8 @@
 # Java 5.5.1 compatibility evidence
 
-HeartbeatData public collections `6b355b8`/`41a5fd2` match three invoked Java missing/null/populated decode and JSON cases, preserving constructor-empty sets, explicit null and consumer multiplicity. Heartbeat fixture SHA-256 `970674db0da0cc0a3e051f13082c30276113c10dff86309c349e0cd05f975bbb`; workspace, pinned Maven and strict Clippy pass. Fingerprint on null collections and primitive-null inputs remain unverified; Phase 6 remains PARTIAL.
+Null fingerprint and primitive decoding `4cbd803`/`5fe4045` match four actual Java 5.5.1 fingerprint calls and five explicit-null primitive inputs. Java's JSON clone restores null collections to empty before hashing; explicit-null primitive values become zero/false while absent SubscriptionData subVersion still starts at wall time. Fixture SHA-256 `118b49612461931280cf65e7912ecceb7deb1d30869a82e7e2d27b71b8afc53c`; full workspace, pinned Maven and strict Clippy pass. Null-topic runtime routing and broader Phase 6 audit remain open.
+
+HeartbeatData public collections `6b355b8`/`41a5fd2` match three invoked Java missing/null/populated decode and JSON cases, preserving constructor-empty sets, explicit null and consumer multiplicity. Initial heartbeat fixture SHA-256 `970674db0da0cc0a3e051f13082c30276113c10dff86309c349e0cd05f975bbb`; workspace, pinned Maven and strict Clippy pass. The then-open fingerprint and primitive-null branches are resolved by the newer oracle above; Phase 6 remains PARTIAL.
 
 ProducerData/ConsumerData public model `f8b745a`/`633a4a5` matches six invoked Java missing/null/populated DTO cases. Native heartbeat preparation also follows the pinned source's null subscription-set failure/empty-simple branches, tested privately. Heartbeat fixture SHA-256 `ce4d66d25c1031e36531ac184125120d480b3f715ffa3c944e63155c16cfc030`; workspace, pinned Maven and strict Clippy pass. HeartbeatData collections and further input branches remain open; Phase 6 is PARTIAL.
 
