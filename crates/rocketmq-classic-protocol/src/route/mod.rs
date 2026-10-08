@@ -862,6 +862,43 @@ mod topic_route_data_changed_method_tests {
     }
 }
 
+#[cfg(test)]
+mod topic_route_data_clone_method_tests {
+    use super::TopicRouteData;
+
+    #[test]
+    fn topic_route_data_copy_and_clone_methods_match_invoked_java_values_and_failures() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["topicRouteDataClone"].as_array().unwrap() {
+            let source: TopicRouteData = serde_json::from_value(case["input"].clone()).unwrap();
+            let expected_copy: TopicRouteData =
+                serde_json::from_value(case["copyConstructor"].clone()).unwrap();
+            assert_eq!(source.java_copy_constructed(), expected_copy, "{}", case["id"]);
+
+            let clone = source.clone_topic_route_data();
+            assert_eq!(clone.is_ok(), case["cloneOutcome"] == "OK", "{}", case["id"]);
+            if let Ok(clone) = clone {
+                let expected: TopicRouteData = serde_json::from_value(case["clone"].clone()).unwrap();
+                assert_eq!(clone, expected, "{}", case["id"]);
+            }
+
+            let deep_clone = source.deep_clone_topic_route_data();
+            assert_eq!(
+                deep_clone.is_ok(),
+                case["deepCloneOutcome"] == "OK",
+                "{}",
+                case["id"]
+            );
+            if let Ok(deep_clone) = deep_clone {
+                let expected: TopicRouteData =
+                    serde_json::from_value(case["deepClone"].clone()).unwrap();
+                assert_eq!(deep_clone, expected, "{}", case["id"]);
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TopicRouteData {
