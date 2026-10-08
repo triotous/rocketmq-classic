@@ -4,7 +4,6 @@
 
 - Java's 5.5.1 private RocketMQ serializer narrows request code and version to signed 16-bit values. The Rust private-header encoder rejects values outside that range instead of silently wrapping. JSON encoding retains full i32 request codes and is the supported path for such values. Java-generated fixture `private-large-code` documents the Java narrowing behavior; it is decoded as the narrowed signed value.
 - Java's private serializer writes both absent and empty remark as a zero-length string; Rust preserves the distinction in its command model but the wire decoder returns `None` for either representation. An absent versus empty body similarly collapses to no body when the frame body length is zero.
-- Java's `LanguageCode.valueOf(byte)` and `getCode(String)` return null for unknown values; native wire decoders now return `None` for unknown private-header bytes and JSON names. Rust still exposes `LanguageCode::Unknown` through its raw-code helpers; JSON encoding rejects that Rust-only value because it has no Java enum name. See [ADR-0023](../architecture/ADR-0023-language-code-java-methods.md).
 
 - No Rust client implementation exists at the start of Phase 0; all Rust mappings are pending their owning phase.
 - Java harness fixtures are offline protocol-command evidence, not live NameServer/Broker outcomes.

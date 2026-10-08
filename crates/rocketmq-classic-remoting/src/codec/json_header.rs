@@ -12,13 +12,7 @@ pub fn encode(command: &RemotingCommand, max_length: usize) -> Result<Vec<u8>, C
     let mut fields = Map::new();
     fields.insert("code".into(), command.code.into());
     if let Some(language) = command.language {
-        let language = match language {
-            LanguageCode::Unknown(code) => return Err(CodecError::UnsupportedLanguage(code)),
-            language => language
-                .name()
-                .expect("known language has a Java enum name"),
-        };
-        fields.insert("language".into(), language.into());
+        fields.insert("language".into(), language.name().into());
     }
     fields.insert("version".into(), command.version.into());
     fields.insert("opaque".into(), command.opaque.into());

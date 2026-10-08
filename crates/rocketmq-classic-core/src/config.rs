@@ -139,26 +139,7 @@ impl std::fmt::Display for ClientConfig {
             Some(AccessChannel::Cloud) => "CLOUD",
             None => "null",
         };
-        let language = self
-            .language
-            .map(|language| match language {
-                LanguageCode::Java => "JAVA".to_owned(),
-                LanguageCode::Cpp => "CPP".to_owned(),
-                LanguageCode::Dotnet => "DOTNET".to_owned(),
-                LanguageCode::Python => "PYTHON".to_owned(),
-                LanguageCode::Delphi => "DELPHI".to_owned(),
-                LanguageCode::Erlang => "ERLANG".to_owned(),
-                LanguageCode::Ruby => "RUBY".to_owned(),
-                LanguageCode::Other => "OTHER".to_owned(),
-                LanguageCode::Http => "HTTP".to_owned(),
-                LanguageCode::Go => "GO".to_owned(),
-                LanguageCode::Php => "PHP".to_owned(),
-                LanguageCode::Oms => "OMS".to_owned(),
-                LanguageCode::Rust => "RUST".to_owned(),
-                LanguageCode::NodeJs => "NODE_JS".to_owned(),
-                LanguageCode::Unknown(code) => format!("Unknown({code})"),
-            })
-            .unwrap_or_else(|| "null".to_owned());
+        let language = self.language.map(LanguageCode::name).unwrap_or("null");
         write!(
             f,
             "ClientConfig{{namesrvAddr='{}', clientIP='{}', instanceName='{}', clientCallbackExecutorThreads={}, namespace='{}', namespaceInitialized={}, namespaceV2='{}', accessChannel={}, pollNameServerInterval={}, heartbeatBrokerInterval={}, persistConsumerOffsetInterval={}, pullTimeDelayMillsWhenException={}, unitMode={}, unitName='{}', decodeReadBody={}, decodeDecompressBody={}, vipChannelEnabled={}, useHeartbeatV2={}, useTLS={}, socksProxyConfig='{}', mqClientApiTimeout={}, detectTimeout={}, detectInterval={}, language={}, enableStreamRequestType={}, sendLatencyEnable={}, startDetectorEnable={}, enableHeartbeatChannelEventListener={}, enableTrace={}, traceTopic='{}', enableConcurrentHeartbeat={}, concurrentHeartbeatThreadPoolSize={}}}",

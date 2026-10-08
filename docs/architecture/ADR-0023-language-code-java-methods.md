@@ -13,16 +13,16 @@ also returns a command with null language for an unknown JSON language string.
 
 ## Rust mapping
 
-`LanguageCode::code()` and `java_byte()` expose the stored code; `name()` maps
-known enum values to their Java names. `from_java_name()` and
-`java_value_of_byte()` return `None` for null or unknown inputs. The previous
-public `from_java_byte(i8) -> LanguageCode` signature remains unchanged as a
-raw-code helper, including its `Unknown(u8)` representation.
+`LanguageCode` contains exactly the 14 Java constants. `code()` and `name()` map
+the instance methods `getCode()` and `Enum.name()`. `from_java_name()` maps
+`getCode(String)`, and `from_java_byte(i8) -> Option<LanguageCode>` maps the
+custom `valueOf(byte)` lookup, including its null result for unknown values.
+There is no public raw-code variant or separate byte conversion API.
 
 JSON and private-header decoding now use the nullable Java lookup behavior, so
-unknown wire names and byte codes decode to `None`. The Rust-only `Unknown`
-variant remains available to raw-code callers; JSON encoding rejects it because
-it has no Java enum name, while private-header encoding can carry its raw byte.
+unknown wire names and byte codes decode to `None`. Since every representable
+`LanguageCode` has a Java enum name and code, JSON and private-header encoders
+only receive Java-defined values.
 
 ## Evidence and limits
 

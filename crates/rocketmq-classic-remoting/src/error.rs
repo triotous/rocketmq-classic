@@ -12,8 +12,6 @@ pub enum CodecError {
     HeaderTooLarge { header: usize, payload: usize },
     #[error("unsupported serialization type {0}")]
     UnsupportedSerialization(u8),
-    #[error("unsupported language code {0}")]
-    UnsupportedLanguage(u8),
     #[error("ROCKETMQ binary header requires a language")]
     MissingLanguage,
     #[error("malformed {0} header: {1}")]

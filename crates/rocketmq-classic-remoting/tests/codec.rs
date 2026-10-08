@@ -68,10 +68,11 @@ fn unknown_binary_language_code_matches_java_value_of_byte_null() {
     assert!(unknown.is_null());
 
     let command = RemotingCommand {
-        language: Some(rocketmq_classic_protocol::codes::LanguageCode::Unknown(255)),
+        language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
         ..Default::default()
     };
-    let bytes = rocketmq_header::encode(&command, DEFAULT_MAX_FRAME_SIZE).unwrap();
+    let mut bytes = rocketmq_header::encode(&command, DEFAULT_MAX_FRAME_SIZE).unwrap();
+    bytes[2] = u8::MAX;
     assert_eq!(rocketmq_header::decode(&bytes).unwrap().language, None);
 }
 

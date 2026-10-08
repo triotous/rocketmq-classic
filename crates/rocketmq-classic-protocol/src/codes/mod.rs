@@ -17,42 +17,27 @@ pub enum LanguageCode {
     Oms,
     Rust,
     NodeJs,
-    Unknown(u8),
 }
 
 impl LanguageCode {
-    pub const fn from_code(code: u8) -> Self {
+    pub const fn from_java_byte(code: i8) -> Option<Self> {
         match code {
-            0 => Self::Java,
-            1 => Self::Cpp,
-            2 => Self::Dotnet,
-            3 => Self::Python,
-            4 => Self::Delphi,
-            5 => Self::Erlang,
-            6 => Self::Ruby,
-            7 => Self::Other,
-            8 => Self::Http,
-            9 => Self::Go,
-            10 => Self::Php,
-            11 => Self::Oms,
-            12 => Self::Rust,
-            13 => Self::NodeJs,
-            value => Self::Unknown(value),
+            0 => Some(Self::Java),
+            1 => Some(Self::Cpp),
+            2 => Some(Self::Dotnet),
+            3 => Some(Self::Python),
+            4 => Some(Self::Delphi),
+            5 => Some(Self::Erlang),
+            6 => Some(Self::Ruby),
+            7 => Some(Self::Other),
+            8 => Some(Self::Http),
+            9 => Some(Self::Go),
+            10 => Some(Self::Php),
+            11 => Some(Self::Oms),
+            12 => Some(Self::Rust),
+            13 => Some(Self::NodeJs),
+            _ => None,
         }
-    }
-    pub const fn from_java_byte(code: i8) -> Self {
-        Self::from_code(code as u8)
-    }
-    pub const fn java_value_of_byte(code: i8) -> Option<Self> {
-        let code = code as u8;
-        if code <= 13 {
-            Some(Self::from_code(code))
-        } else {
-            None
-        }
-    }
-    pub const fn java_byte(self) -> i8 {
-        self.code() as i8
     }
     pub const fn code(self) -> u8 {
         match self {
@@ -70,27 +55,25 @@ impl LanguageCode {
             Self::Oms => 11,
             Self::Rust => 12,
             Self::NodeJs => 13,
-            Self::Unknown(value) => value,
         }
     }
 
-    pub const fn name(self) -> Option<&'static str> {
+    pub const fn name(self) -> &'static str {
         match self {
-            Self::Java => Some("JAVA"),
-            Self::Cpp => Some("CPP"),
-            Self::Dotnet => Some("DOTNET"),
-            Self::Python => Some("PYTHON"),
-            Self::Delphi => Some("DELPHI"),
-            Self::Erlang => Some("ERLANG"),
-            Self::Ruby => Some("RUBY"),
-            Self::Other => Some("OTHER"),
-            Self::Http => Some("HTTP"),
-            Self::Go => Some("GO"),
-            Self::Php => Some("PHP"),
-            Self::Oms => Some("OMS"),
-            Self::Rust => Some("RUST"),
-            Self::NodeJs => Some("NODE_JS"),
-            Self::Unknown(_) => None,
+            Self::Java => "JAVA",
+            Self::Cpp => "CPP",
+            Self::Dotnet => "DOTNET",
+            Self::Python => "PYTHON",
+            Self::Delphi => "DELPHI",
+            Self::Erlang => "ERLANG",
+            Self::Ruby => "RUBY",
+            Self::Other => "OTHER",
+            Self::Http => "HTTP",
+            Self::Go => "GO",
+            Self::Php => "PHP",
+            Self::Oms => "OMS",
+            Self::Rust => "RUST",
+            Self::NodeJs => "NODE_JS",
         }
     }
 
@@ -150,11 +133,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn java_language_registry_round_trips_all_known_and_unknown_codes() {
+    fn java_language_lookup_matches_known_and_unknown_byte_codes() {
         for code in 0..=13 {
-            assert_eq!(LanguageCode::from_code(code).code(), code);
+            let language = LanguageCode::from_java_byte(code as i8).unwrap();
+            assert_eq!(language.code(), code);
         }
-        assert_eq!(LanguageCode::from_code(255), LanguageCode::Unknown(255));
+        for code in [14, 127, -1, i8::MIN] {
+            assert_eq!(LanguageCode::from_java_byte(code), None);
+        }
         assert_eq!(LanguageCode::Rust.code(), 12);
     }
 
@@ -171,9 +157,9 @@ mod tests {
                     let code = case["code"].as_i64().unwrap() as u8;
                     let value = LanguageCode::from_java_name(Some(name)).unwrap();
                     assert_eq!(value.code(), code, "{case}");
-                    assert_eq!(value.name(), Some(name), "{case}");
+                    assert_eq!(value.name(), name, "{case}");
                     assert_eq!(
-                        LanguageCode::java_value_of_byte(code as i8),
+                        LanguageCode::from_java_byte(code as i8),
                         Some(value),
                         "{case}"
                     );
@@ -182,9 +168,9 @@ mod tests {
                 }
                 "byte" => {
                     let input = case["input"].as_i64().unwrap() as i8;
-                    let decoded = LanguageCode::java_value_of_byte(input);
+                    let decoded = LanguageCode::from_java_byte(input);
                     assert_eq!(
-                        decoded.and_then(LanguageCode::name),
+                        decoded.map(LanguageCode::name),
                         case["decoded"].as_str(),
                         "{case}"
                     );
@@ -193,7 +179,7 @@ mod tests {
                     let input = case["input"].as_str();
                     let decoded = LanguageCode::from_java_name(input);
                     assert_eq!(
-                        decoded.and_then(LanguageCode::name),
+                        decoded.map(LanguageCode::name),
                         case["decoded"].as_str(),
                         "{case}"
                     );

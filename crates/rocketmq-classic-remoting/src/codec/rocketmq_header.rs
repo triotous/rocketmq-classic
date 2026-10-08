@@ -75,7 +75,7 @@ pub fn decode(bytes: &[u8]) -> Result<RemotingCommand, CodecError> {
     }
     let mut cursor = Cursor { bytes, offset: 0 };
     let code = cursor.i16()? as i32;
-    let language = LanguageCode::java_value_of_byte(cursor.u8()? as i8);
+    let language = LanguageCode::from_java_byte(cursor.u8()? as i8);
     let version = cursor.i16()? as i32;
     let opaque = cursor.i32()?;
     let flag = cursor.i32()?;
