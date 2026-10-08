@@ -681,6 +681,7 @@ public final class RuntimeConfigFixtures {
             "{\"10.0.0.0/8\":{\"addr\":[1,true,null,\"x\"]}}",
             "{\"10.0.0.0/8\":{\"addr\":{\"host\":\"proxy\",\"port\":1080}}}",
             "{\"10.0.0.0/8\":{\"addr\":{\"port\":1080,\"host\":\"proxy\"}}}",
+            "{\"10.0.0.0/8\":{\"addr\":{\"quote\":\"a\\\"b\",\"newline\":\"a\\nb\",\"unicode\":\"λ\",\"slash\":\"/\"}}}",
             "{\"10.0.0.0/8\":{\"addr\":-.5}}"};
         for (int i = 0; i < inputs.length; i++) {
             ClientConfig config = new ClientConfig();
