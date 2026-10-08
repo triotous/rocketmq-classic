@@ -163,6 +163,8 @@ Methods implemented on `ClientRuntime` unless another owner is specified. Eviden
 
 ## Route DTO public methods
 
+The Java no-argument DTO constructors map to Rust `Default`; copy constructors map to owned `Clone` or `TopicRouteData::java_copy_constructed` where Java null-collection defaults differ. Parameterized constructor fields map to Rust struct construction, and Java bean getters/setters map to the DTO's public fields. Inherited `toJson` maps to serde JSON encoding. The method rows below track behavior requiring more than field access.
+
 | Java DTO method | Rust counterpart | Evidence / open surface |
 | --- | --- | --- |
 | `BrokerData.selectBrokerAddr` | `BrokerData::java_select_broker_addr -> Result<Option<String>, BrokerDataSelectAddrError>` | Seven actual Java cases cover master-first selection, all random fallback values, null master/address values, null address map NPE and empty-map IAE. Rust returns `None` for a selected null address and typed errors for the two exception branches. |
