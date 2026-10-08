@@ -27,6 +27,15 @@ impl TopicRouteTable {
     pub fn contains_key(&self, key: &str) -> Result<bool, RuntimeError> {
         Ok(self.0.snapshot()?.raw_routes.contains_key(key))
     }
+    /// Uses the source route-content equality used by map-value comparisons.
+    pub fn contains_value(&self, value: &TopicRouteData) -> Result<bool, RuntimeError> {
+        Ok(self
+            .0
+            .snapshot()?
+            .raw_routes
+            .values()
+            .any(|current| route_values_equal(current, value)))
+    }
     pub fn len(&self) -> Result<usize, RuntimeError> {
         Ok(self.0.snapshot()?.raw_routes.len())
     }
@@ -36,6 +45,18 @@ impl TopicRouteTable {
     /// Detached owned iteration copy; retaining this table handle stays live.
     pub fn snapshot(&self) -> Result<BTreeMap<String, Arc<TopicRouteData>>, RuntimeError> {
         Ok(self.0.snapshot()?.raw_routes.clone())
+    }
+    /// Visits a detached map snapshot without holding the route-cache lock.
+    /// Java's weakly consistent live traversal is not represented here.
+    pub fn for_each(
+        &self,
+        mut action: impl FnMut(&str, &Arc<TopicRouteData>),
+    ) -> Result<(), RuntimeError> {
+        let snapshot = self.snapshot()?;
+        for (key, value) in &snapshot {
+            action(key, value);
+        }
+        Ok(())
     }
     pub fn put(
         &self,
