@@ -142,6 +142,32 @@ impl BrokerData {
             .ok_or(BrokerDataCompareError::NullBrokerName)?;
         Ok(java_string_compare_to(name, other_name))
     }
+
+    /// Returns the pinned Java 5.5.1 `BrokerData.toString` text.
+    ///
+    /// Address entries use deterministic Rust key order. Java's `HashMap`
+    /// iteration order is unspecified.
+    pub fn java_to_string(&self) -> String {
+        let broker_addrs = self.broker_addrs.as_ref().map_or_else(
+            || "null".to_owned(),
+            |addresses| {
+                let entries = addresses
+                    .iter()
+                    .map(|(broker_id, address)| {
+                        format!("{broker_id}={}", address.as_deref().unwrap_or("null"))
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{{{entries}}}")
+            },
+        );
+        format!(
+            "BrokerData [brokerName={}, brokerAddrs={}, enableActingMaster={}]",
+            self.broker_name.as_deref().unwrap_or("null"),
+            broker_addrs,
+            self.enable_acting_master
+        )
+    }
 }
 
 fn java_long_hash_code(value: i64) -> i32 {
@@ -761,6 +787,65 @@ impl TopicRouteData {
         .fold(1i32, |hash, value| {
             hash.wrapping_mul(31).wrapping_add(value)
         })
+    }
+
+    /// Returns the pinned Java 5.5.1 `TopicRouteData.toString` text.
+    ///
+    /// Map entries use deterministic Rust key order. Java's `HashMap`
+    /// iteration order is unspecified.
+    pub fn java_to_string(&self) -> String {
+        let queue_datas = self.queue_datas.as_deref().map_or_else(
+            || "null".to_owned(),
+            |queues| {
+                let values = queues
+                    .iter()
+                    .map(QueueData::java_to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("[{values}]")
+            },
+        );
+        let broker_datas = self.broker_datas.as_deref().map_or_else(
+            || "null".to_owned(),
+            |brokers| {
+                let values = brokers
+                    .iter()
+                    .map(BrokerData::java_to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("[{values}]")
+            },
+        );
+        let filter_server_table = self.filter_server_table.as_ref().map_or_else(
+            || "null".to_owned(),
+            |filters| {
+                let entries = filters
+                    .iter()
+                    .map(|(broker, servers)| format!("{broker}=[{}]", servers.join(", ")))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{{{entries}}}")
+            },
+        );
+        let mapping_table = self.topic_queue_mapping_by_broker.as_ref().map_or_else(
+            || "null".to_owned(),
+            |mappings| {
+                let entries = mappings
+                    .iter()
+                    .map(|(broker, mapping)| format!("{broker}={}", mapping.java_to_string()))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{{{entries}}}")
+            },
+        );
+        format!(
+            "TopicRouteData [orderTopicConf={}, queueDatas={}, brokerDatas={}, filterServerTable={}, topicQueueMappingInfoTable={}]",
+            self.order_topic_conf.as_deref().unwrap_or("null"),
+            queue_datas,
+            broker_datas,
+            filter_server_table,
+            mapping_table
+        )
     }
 
     pub fn publish_queues(&self, topic: &str) -> Vec<MessageQueue> {
