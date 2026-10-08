@@ -4,6 +4,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -749,6 +750,58 @@ public final class RuntimeRouteFixtures {
         return result;
     }
 
+    private static org.apache.rocketmq.remoting.protocol.route.BrokerData brokerData(
+        String cluster, String name, HashMap<Long, String> addresses, boolean actingMaster, String zone) {
+        org.apache.rocketmq.remoting.protocol.route.BrokerData data =
+            new org.apache.rocketmq.remoting.protocol.route.BrokerData();
+        data.setCluster(cluster);
+        data.setBrokerName(name);
+        data.setBrokerAddrs(addresses);
+        data.setEnableActingMaster(actingMaster);
+        data.setZoneName(zone);
+        return data;
+    }
+
+    private static List<Object> brokerDataEqualityCases() {
+        HashMap<Long, String> master = new HashMap<>();
+        master.put(0L, "master:10911");
+        HashMap<Long, String> otherMaster = new HashMap<>();
+        otherMaster.put(0L, "other:10911");
+        HashMap<Long, String> withNull = new HashMap<>();
+        withNull.put(0L, null);
+        withNull.put(2L, "slave:10911");
+        List<Object> cases = new ArrayList<>();
+        addBrokerDataEqualityCase(cases, "metadata-only", brokerData("cluster-a", "broker", master, false, "zone-a"),
+            brokerData("cluster-b", "broker", master, true, "zone-b"));
+        addBrokerDataEqualityCase(cases, "broker-name", brokerData("cluster", "broker-a", master, false, null),
+            brokerData("cluster", "broker-b", master, false, null));
+        addBrokerDataEqualityCase(cases, "addresses", brokerData("cluster", "broker", master, false, null),
+            brokerData("cluster", "broker", otherMaster, false, null));
+        addBrokerDataEqualityCase(cases, "null-map-vs-empty", brokerData(null, "broker", null, false, null),
+            brokerData(null, "broker", new HashMap<>(), false, null));
+        addBrokerDataEqualityCase(cases, "both-null-map", brokerData("a", null, null, false, "a"),
+            brokerData("b", null, null, true, "b"));
+        addBrokerDataEqualityCase(cases, "null-address-value", brokerData(null, "broker", withNull, false, null),
+            brokerData("other", "broker", withNull, true, "other"));
+        return cases;
+    }
+
+    private static void addBrokerDataEqualityCase(List<Object> cases, String id,
+        org.apache.rocketmq.remoting.protocol.route.BrokerData left,
+        org.apache.rocketmq.remoting.protocol.route.BrokerData right) {
+        Map<String, Object> item = new TreeMap<>();
+        item.put("id", id);
+        item.put("left", com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(left,
+            com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue,
+            com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringKeyAsString)));
+        item.put("right", com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(right,
+            com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue,
+            com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringKeyAsString)));
+        item.put("equals", left.equals(right));
+        item.put("hashEqual", left.hashCode() == right.hashCode());
+        cases.add(item);
+    }
+
     public static void main(String[] args) throws Exception {
         String ordinary = "{\"queueDatas\":[{\"brokerName\":\"broker\",\"readQueueNums\":3,\"writeQueueNums\":2,\"perm\":6,\"topicSysFlag\":0}],"
             + "\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master:10911\",\"2\":\"slave:10911\"}}],\"filterServerTable\":{}}";
@@ -818,7 +871,7 @@ public final class RuntimeRouteFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "MQClientInstance.topicRouteData2TopicPublishInfo/topicRouteData2TopicSubscribeInfo/updateTopicRouteInfoFromNameServer/getTopicRouteTable/getAnExistTopicRouteData/queryTopicRouteData/cleanOfflineBroker/findBrokerAddressInPublish/findBrokerAddressInAdmin/findBrokerAddressInSubscribe/findBrokerAddrByTopic; ConcurrentMap put/putIfAbsent/replace/remove/clear; TopicRouteData JSON decode/equals; ClientMetadata.topicRouteData2EndpointsForStaticTopic; MixAll.brokerVIPChannel; Integer.parseInt/Character.digit");
+        fixture.put("entrypoint", "BrokerData.equals/hashCode; MQClientInstance.topicRouteData2TopicPublishInfo/topicRouteData2TopicSubscribeInfo/updateTopicRouteInfoFromNameServer/getTopicRouteTable/getAnExistTopicRouteData/queryTopicRouteData/cleanOfflineBroker/findBrokerAddressInPublish/findBrokerAddressInAdmin/findBrokerAddressInSubscribe/findBrokerAddrByTopic; ConcurrentMap put/putIfAbsent/replace/remove/clear; TopicRouteData JSON decode/equals; ClientMetadata.topicRouteData2EndpointsForStaticTopic; MixAll.brokerVIPChannel; Integer.parseInt/Character.digit");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
         fixture.put("vip", vip);
@@ -866,6 +919,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("runtimeEmptyEndpointTransition", runtimeEmptyEndpointTransition(staticInputs.get(0), inputs.get(0)));
         fixture.put("runtimeTopicRouteTable", runtimeTopicRouteTable(inputs.get(0)));
         fixture.put("runtimeRawOfflineCleanup", runtimeRawOfflineCleanup(inputs.get(0)));
+        fixture.put("brokerDataEquality", brokerDataEqualityCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
             com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
