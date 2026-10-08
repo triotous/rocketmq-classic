@@ -137,7 +137,9 @@ public final class RuntimeRouteFixtures {
             {"null-queue", "{\"queueDatas\":[null],\"brokerDatas\":[],\"filterServerTable\":{}}"},
             {"null-broker", "{\"queueDatas\":[],\"brokerDatas\":[null],\"filterServerTable\":{}}"},
             {"null-static-mapping", "{\"queueDatas\":[],\"brokerDatas\":[],\"filterServerTable\":{},"
-                + "\"topicQueueMappingByBroker\":{\"broker\":null}}"}
+                + "\"topicQueueMappingByBroker\":{\"broker\":null}}"},
+            {"null-filter-list", "{\"queueDatas\":[],\"brokerDatas\":[],"
+                + "\"filterServerTable\":{\"broker\":null}}"}
         };
         List<Object> cases = new ArrayList<>();
         for (String[] entry : inputs) {
@@ -987,13 +989,15 @@ public final class RuntimeRouteFixtures {
         String nullElements = "{\"queueDatas\":[null],\"brokerDatas\":[null],"
             + "\"filterServerTable\":{\"broker\":[\"filter-a\",null]},"
             + "\"topicQueueMappingByBroker\":{\"broker\":null}}";
+        String nullFilterList = "{\"filterServerTable\":{\"broker\":null}}";
         String[][] pairs = new String[][] {
             {"{}", "{}"},
             {nullCollections, emptyCollections},
             {populated, metadataOnly},
             {populated, differentQueue},
             {nullElements, nullElements},
-            {nullElements, emptyCollections}
+            {nullElements, emptyCollections},
+            {nullFilterList, nullFilterList}
         };
         List<Object> cases = new ArrayList<>();
         for (String[] pair : pairs) {
@@ -1031,7 +1035,8 @@ public final class RuntimeRouteFixtures {
         String nullElements = "{\"queueDatas\":[null],\"brokerDatas\":[null],"
             + "\"filterServerTable\":{\"broker\":[\"filter-a\",null]},"
             + "\"topicQueueMappingByBroker\":{\"broker\":null}}";
-        String[] inputs = new String[] {"{}", nullCollections, populated, nullElements};
+        String nullFilterList = "{\"filterServerTable\":{\"broker\":null}}";
+        String[] inputs = new String[] {"{}", nullCollections, populated, nullElements, nullFilterList};
         List<Object> cases = new ArrayList<>();
         for (String input : inputs) {
             org.apache.rocketmq.remoting.protocol.route.TopicRouteData route =
