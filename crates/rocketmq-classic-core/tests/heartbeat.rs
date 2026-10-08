@@ -728,6 +728,34 @@ async fn concurrent_v1_uses_parallel_peers_and_busy_heartbeat_gate_skips_a_round
 }
 
 #[tokio::test]
+async fn enabling_concurrent_heartbeat_after_construction_has_no_executor() {
+    let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = broker.local_addr().unwrap().to_string();
+    let mut config = ClientConfig::new("late-concurrent-heartbeat");
+    config.enable_concurrent_heartbeat = false;
+    let runtime = runtime(config, std::slice::from_ref(&address)).await;
+    runtime
+        .config()
+        .write()
+        .unwrap()
+        .enable_concurrent_heartbeat = true;
+    runtime
+        .register_consumer(
+            "consumer",
+            Arc::new(Consumer(Mutex::new(SubscriptionData::default()))),
+        )
+        .await
+        .unwrap();
+    assert!(!runtime.send_heartbeat_to_all_brokers().await.unwrap());
+    assert!(
+        tokio::time::timeout(Duration::from_millis(25), broker.accept())
+            .await
+            .is_err()
+    );
+    runtime.remoting().shutdown().await;
+}
+
+#[tokio::test]
 async fn rebalance_wrapper_uses_serial_v1_even_when_concurrent_heartbeat_is_enabled() {
     for is_rebalance in [false, true] {
         let master = TcpListener::bind("127.0.0.1:0").await.unwrap();
