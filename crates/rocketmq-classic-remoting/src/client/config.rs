@@ -356,14 +356,15 @@ fn ipv4_in_cidr(address: &str, cidr: &str) -> Result<bool, TransportError> {
 }
 
 fn java_ip_to_int(ip: &str) -> Result<i32, TransportError> {
-    let octets = ip.split('.').collect::<Vec<_>>();
-    if octets.len() != 4 {
-        return Err(TransportError::InvalidConfiguration(format!(
-            "invalid IPv4 address in SOCKS proxy CIDR: {ip}"
-        )));
-    }
+    // Java's ipToInt reads the first four split fields and ignores any extras.
     let mut address = 0_i32;
-    for (index, octet) in octets.iter().enumerate() {
+    let mut octets = ip.split('.');
+    for index in 0..4 {
+        let octet = octets.next().ok_or_else(|| {
+            TransportError::InvalidConfiguration(format!(
+                "invalid IPv4 address in SOCKS proxy CIDR: {ip}"
+            ))
+        })?;
         let value = octet.parse::<i32>().map_err(|error| {
             TransportError::InvalidConfiguration(format!(
                 "invalid IPv4 address in SOCKS proxy CIDR {ip}: {error}"
