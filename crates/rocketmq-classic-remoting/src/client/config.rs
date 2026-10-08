@@ -639,7 +639,9 @@ fn skip_json5_trivia(bytes: &[u8], mut index: usize) -> usize {
     }
 }
 
-fn normalize_fastjson_line_separators(input: &str) -> String {
+fn normalize_fastjson_source(input: &str) -> String {
+    // Fastjson drops line separators from line comments and permits them in strings,
+    // while Rust Strings cannot hold isolated UTF-16 surrogate code units.
     let bytes = input.as_bytes();
     let mut output = Vec::with_capacity(bytes.len());
     let mut index = 0;
@@ -684,9 +686,30 @@ fn normalize_fastjson_line_separators(input: &str) -> String {
         index += 1;
         while index < bytes.len() {
             if bytes[index] == b'\\' {
-                let end = (index + 2).min(bytes.len());
-                output.extend_from_slice(&bytes[index..end]);
-                index = end;
+                if let Some((code_unit, end)) = fastjson_unicode_escape(bytes, index) {
+                    if (0xd800..=0xdbff).contains(&code_unit) {
+                        match fastjson_unicode_escape(bytes, end) {
+                            Some((low, paired_end)) if (0xdc00..=0xdfff).contains(&low) => {
+                                output.extend_from_slice(&bytes[index..paired_end]);
+                                index = paired_end;
+                            }
+                            _ => {
+                                output.extend_from_slice(b"\\uFFFD");
+                                index = end;
+                            }
+                        }
+                    } else if (0xdc00..=0xdfff).contains(&code_unit) {
+                        output.extend_from_slice(b"\\uFFFD");
+                        index = end;
+                    } else {
+                        output.extend_from_slice(&bytes[index..end]);
+                        index = end;
+                    }
+                } else {
+                    let end = (index + 2).min(bytes.len());
+                    output.extend_from_slice(&bytes[index..end]);
+                    index = end;
+                }
             } else if bytes[index..].starts_with(&[0xe2, 0x80, 0xa8]) {
                 output.extend_from_slice(b"\\u2028");
                 index += 3;
@@ -700,7 +723,19 @@ fn normalize_fastjson_line_separators(input: &str) -> String {
             }
         }
     }
-    String::from_utf8(output).expect("line separator escaping preserves valid UTF-8")
+    String::from_utf8(output).expect("source normalization preserves valid UTF-8")
+}
+
+fn fastjson_unicode_escape(bytes: &[u8], start: usize) -> Option<(u16, usize)> {
+    if bytes.get(start..start + 2) != Some(b"\\u") {
+        return None;
+    }
+    let digits = bytes.get(start + 2..start + 6)?;
+    if !digits.iter().all(u8::is_ascii_hexdigit) {
+        return None;
+    }
+    let digits = std::str::from_utf8(digits).ok()?;
+    Some((u16::from_str_radix(digits, 16).ok()?, start + 6))
 }
 
 fn recover_fastjson_eof_line_comment(input: &str) -> String {
@@ -1071,7 +1106,7 @@ impl ClientConfig {
                 "Fastjson SOCKS parser rejects this JSON5 literal".into(),
             ));
         }
-        let string_normalized = normalize_fastjson_line_separators(&self.socks_proxy_config);
+        let string_normalized = normalize_fastjson_source(&self.socks_proxy_config);
         let recovered = recover_fastjson_eof_line_comment(&string_normalized);
         let (normalized, number_tokens) = normalize_fastjson_numbers(&recovered);
         let _number_scope = FastjsonNumberTokenScope::install(number_tokens);
@@ -1338,7 +1373,18 @@ mod tests {
             assert_eq!(case["routePresent"], true, "{}", case["input"]);
             match route {
                 super::ParsedProxyRoute::Proxy(proxy) => {
-                    assert_eq!(Some(proxy.address.as_str()), case["parsedAddr"].as_str());
+                    if let Some(code_units) = case["parsedAddrUtf16"].as_array() {
+                        let code_units = code_units
+                            .iter()
+                            .map(|unit| unit.as_u64().unwrap() as u16)
+                            .collect::<Vec<_>>();
+                        assert_eq!(code_units.len(), 1);
+                        assert!((0xd800..=0xdfff).contains(&code_units[0]));
+                        // Java String can retain lone surrogates; native String uses U+FFFD.
+                        assert_eq!(proxy.address, "\u{fffd}");
+                    } else {
+                        assert_eq!(Some(proxy.address.as_str()), case["parsedAddr"].as_str());
+                    }
                     assert_eq!(proxy.username.as_deref(), case["parsedUsername"].as_str());
                     assert_eq!(proxy.password.as_deref(), case["parsedPassword"].as_str());
                 }

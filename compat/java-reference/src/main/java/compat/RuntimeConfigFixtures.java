@@ -1094,7 +1094,9 @@ public final class RuntimeConfigFixtures {
             "{\"10.0.0.0/8\":{\"addr\":-123L}}",
             "{\"10.0.0.0/8\":{\"addr\":9223372036854775807L}}",
             "{\"10.0.0.0/8\":{\"addr\":-9223372036854775808L}}",
-            "{\"10.0.0.0/8\":{\"addr\":9223372036854775808L}}"};
+            "{\"10.0.0.0/8\":{\"addr\":9223372036854775808L}}",
+            "{\"10.0.0.0/8\":{\"addr\":\"" + ((char) 92) + "uD800\"}}",
+            "{\"10.0.0.0/8\":{\"addr\":\"" + ((char) 92) + "uDC00\"}}"};
         for (int i = 0; i < inputs.length; i++) {
             ClientConfig config = new ClientConfig();
             config.setClientIP("socks-construction-" + i);
@@ -1118,7 +1120,14 @@ public final class RuntimeConfigFixtures {
                         (Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig>) proxyField.get(remoting);
                     org.apache.rocketmq.remoting.proxy.SocksProxyConfig route = routes.get("10.0.0.0/8");
                     item.put("routePresent", route != null);
-                    item.put("parsedAddr", route == null ? null : route.getAddr());
+                    String parsedAddr = route == null ? null : route.getAddr();
+                    if (hasUnpairedSurrogate(parsedAddr)) {
+                        List<Integer> codeUnits = new ArrayList<>();
+                        for (char codeUnit : parsedAddr.toCharArray()) codeUnits.add((int) codeUnit);
+                        item.put("parsedAddrUtf16", codeUnits);
+                    } else {
+                        item.put("parsedAddr", parsedAddr);
+                    }
                     item.put("parsedUsername", route == null ? null : route.getUsername());
                     item.put("parsedPassword", route == null ? null : route.getPassword());
                 }
@@ -1130,6 +1139,20 @@ public final class RuntimeConfigFixtures {
             cases.add(item);
         }
         return cases;
+    }
+
+    private static boolean hasUnpairedSurrogate(String value) {
+        if (value == null) return false;
+        for (int i = 0; i < value.length(); i++) {
+            char current = value.charAt(i);
+            if (Character.isHighSurrogate(current)) {
+                if (i + 1 >= value.length() || !Character.isLowSurrogate(value.charAt(i + 1))) return true;
+                i++;
+            } else if (Character.isLowSurrogate(current)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static List<Object> socksCidr() {
