@@ -8,6 +8,8 @@ use rocketmq_classic_protocol::route::TopicRouteData;
 
 use crate::runtime::RuntimeError;
 
+use super::table::TopicRouteDataHandle;
+
 #[derive(Clone, Debug)]
 pub struct TopicSnapshot {
     pub route: Arc<TopicRouteData>,
@@ -20,7 +22,7 @@ pub struct TopicSnapshot {
 #[derive(Clone, Debug, Default)]
 pub struct RouteSnapshot {
     /// Source raw topic table; explicit map writes do not rebuild `topics`.
-    pub raw_routes: BTreeMap<String, Arc<TopicRouteData>>,
+    pub raw_routes: BTreeMap<String, TopicRouteDataHandle>,
     /// Last converted publication, independent of later raw map mutations.
     pub topics: BTreeMap<String, Arc<TopicSnapshot>>,
     pub broker_addresses: BTreeMap<String, BTreeMap<i64, Option<String>>>,
@@ -38,7 +40,7 @@ impl RouteSnapshot {
     /// Java selects a random BrokerData from this topic's raw cached route,
     /// then its master or a random available slave. Global broker metadata may
     /// have since been overwritten by another topic and must not be used here.
-    pub fn broker_address_by_topic(&self, topic: &str) -> Result<Option<&str>, RuntimeError> {
+    pub fn broker_address_by_topic(&self, topic: &str) -> Result<Option<String>, RuntimeError> {
         self.select_topic_broker(topic, |length| rand::random_range(0..length))
     }
 
@@ -46,10 +48,11 @@ impl RouteSnapshot {
         &self,
         topic: &str,
         mut select: impl FnMut(usize) -> usize,
-    ) -> Result<Option<&str>, RuntimeError> {
+    ) -> Result<Option<String>, RuntimeError> {
         let Some(route) = self.raw_routes.get(topic) else {
             return Ok(None);
         };
+        let route = route.snapshot()?;
         let brokers = route.broker_datas.as_deref().unwrap_or(&[]);
         if brokers.is_empty() {
             return Ok(None);
@@ -62,7 +65,7 @@ impl RouteSnapshot {
                 "selected broker has null address map",
             ))?;
         if let Some(master) = addresses.get(&0).and_then(Option::as_deref) {
-            return Ok(Some(master));
+            return Ok(Some(master.to_owned()));
         }
         if addresses.is_empty() {
             return Err(RuntimeError::InvalidRoute(
@@ -72,7 +75,7 @@ impl RouteSnapshot {
         Ok(addresses
             .values()
             .nth(select(addresses.len()))
-            .and_then(Option::as_deref))
+            .and_then(Option::clone))
     }
 
     pub fn publish_address(&self, broker: &str) -> Option<&str> {
@@ -160,7 +163,7 @@ pub(crate) struct RouteCache {
 impl RouteCache {
     pub(super) fn update_raw<R>(
         &self,
-        update: impl FnOnce(&mut BTreeMap<String, Arc<TopicRouteData>>) -> (bool, R),
+        update: impl FnOnce(&mut BTreeMap<String, TopicRouteDataHandle>) -> (bool, R),
     ) -> Result<R, RuntimeError> {
         let mut current = self
             .snapshot
@@ -192,18 +195,30 @@ impl RouteCache {
     }
 
     pub(crate) fn clean_offline(&self) -> Result<(), RuntimeError> {
+        let routes = self
+            .snapshot()?
+            .raw_routes
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut live = BTreeSet::new();
+        for route in routes {
+            let route = route.snapshot()?;
+            live.extend(
+                route
+                    .broker_datas
+                    .as_deref()
+                    .unwrap_or(&[])
+                    .iter()
+                    .filter_map(|broker| broker.broker_addrs.as_ref())
+                    .flat_map(|addresses| addresses.values())
+                    .cloned(),
+            );
+        }
         let mut current = self
             .snapshot
             .write()
             .map_err(|_| RuntimeError::RegistryPoisoned)?;
-        let live = current
-            .raw_routes
-            .values()
-            .flat_map(|route| route.broker_datas.as_deref().unwrap_or(&[]).iter())
-            .filter_map(|broker| broker.broker_addrs.as_ref())
-            .flat_map(|addresses| addresses.values())
-            .cloned()
-            .collect::<BTreeSet<_>>();
         let mut next = current.as_ref().clone();
         next.broker_addresses.retain(|_, addresses| {
             addresses.retain(|_, address| live.contains(address));
@@ -228,11 +243,11 @@ impl RouteCache {
         topic: &str,
         route: &TopicRouteData,
     ) -> Result<bool, RuntimeError> {
-        Ok(!self
-            .snapshot()?
-            .raw_routes
-            .get(topic)
-            .is_some_and(|old| routes_equal(old, route)))
+        let old = self.snapshot()?.raw_routes.get(topic).cloned();
+        match old {
+            Some(old) => Ok(!routes_equal(&old.snapshot()?, route)),
+            None => Ok(true),
+        }
     }
 
     pub(crate) fn replace_for_owner_update(
@@ -363,37 +378,80 @@ impl RouteCache {
                 ..route
             }),
         };
-        let mut current = self
-            .snapshot
-            .write()
-            .map_err(|_| RuntimeError::RegistryPoisoned)?;
-        let unchanged = current
-            .raw_routes
-            .get(topic)
-            .is_some_and(|old| routes_equal(old, &topic_snapshot.route));
-        if unchanged && !force {
-            return Ok(false);
-        }
-        // Java retains existing endpoints when a new conversion is empty.
-        if topic_snapshot.endpoints.is_empty() {
-            if let Some(old) = current.topics.get(topic) {
-                topic_snapshot.endpoints.clone_from(&old.endpoints);
-            }
-        }
-        let mut next = current.as_ref().clone();
-        next.raw_routes
-            .insert(topic.to_owned(), topic_snapshot.route.clone());
-        for broker in topic_snapshot.route.broker_datas.as_deref().unwrap_or(&[]) {
-            let Some(name) = broker.broker_name.clone() else {
-                continue;
+        loop {
+            let observed = self.snapshot()?.raw_routes.get(topic).cloned();
+            let unchanged = match &observed {
+                Some(old) => routes_equal(&old.snapshot()?, &topic_snapshot.route),
+                None => false,
             };
-            next.broker_addresses
-                .insert(name, broker.broker_addrs.clone().unwrap_or_default());
+            if unchanged && !force {
+                return Ok(false);
+            }
+            let mut current = self
+                .snapshot
+                .write()
+                .map_err(|_| RuntimeError::RegistryPoisoned)?;
+            let still_same = match (current.raw_routes.get(topic), observed.as_ref()) {
+                (None, None) => true,
+                (Some(current), Some(observed)) => current.ptr_eq(observed),
+                _ => false,
+            };
+            if !still_same {
+                drop(current);
+                continue;
+            }
+            // Java retains existing endpoints when a new conversion is empty.
+            if topic_snapshot.endpoints.is_empty() {
+                if let Some(old) = current.topics.get(topic) {
+                    topic_snapshot.endpoints.clone_from(&old.endpoints);
+                }
+            }
+            let mut next = current.as_ref().clone();
+            next.raw_routes.insert(
+                topic.to_owned(),
+                TopicRouteDataHandle::new((*topic_snapshot.route).clone()),
+            );
+            for broker in topic_snapshot.route.broker_datas.as_deref().unwrap_or(&[]) {
+                let Some(name) = broker.broker_name.clone() else {
+                    continue;
+                };
+                next.broker_addresses
+                    .insert(name, broker.broker_addrs.clone().unwrap_or_default());
+            }
+            next.topics
+                .insert(topic.to_owned(), Arc::new(topic_snapshot));
+            *current = Arc::new(next);
+            return Ok(!unchanged);
         }
-        next.topics
-            .insert(topic.to_owned(), Arc::new(topic_snapshot));
-        *current = Arc::new(next);
-        Ok(!unchanged)
+    }
+
+    pub(crate) fn replace_raw_if_same(
+        &self,
+        key: &str,
+        expected: &TopicRouteDataHandle,
+        value: TopicRouteDataHandle,
+    ) -> Result<bool, RuntimeError> {
+        self.update_raw(|map| {
+            let matched = map.get(key).is_some_and(|current| current.ptr_eq(expected));
+            if matched {
+                map.insert(key.to_owned(), value);
+            }
+            (matched, matched)
+        })
+    }
+
+    pub(crate) fn remove_raw_if_same(
+        &self,
+        key: &str,
+        expected: &TopicRouteDataHandle,
+    ) -> Result<bool, RuntimeError> {
+        self.update_raw(|map| {
+            let matched = map.get(key).is_some_and(|current| current.ptr_eq(expected));
+            if matched {
+                map.remove(key);
+            }
+            (matched, matched)
+        })
     }
 }
 
@@ -582,6 +640,7 @@ mod tests {
             let snapshot = cache.snapshot().unwrap();
             assert_eq!(snapshot.raw_routes.contains_key("topic"), case["cached"]);
             if let Some(cached) = snapshot.raw_routes.get("topic") {
+                let cached = cached.snapshot().unwrap();
                 assert_eq!(cached.queue_datas.is_none(), case["cachedQueueNull"]);
                 assert_eq!(cached.broker_datas.is_none(), case["cachedBrokerNull"]);
                 assert_eq!(
@@ -639,8 +698,10 @@ mod tests {
                 assert!(cache.replace("topic", route.clone()).unwrap());
                 assert!(!cache.route_changed("topic", &copy).unwrap());
                 assert_eq!(
-                    cache.snapshot().unwrap().raw_routes["topic"].as_ref(),
-                    &copy
+                    cache.snapshot().unwrap().raw_routes["topic"]
+                        .snapshot()
+                        .unwrap(),
+                    copy
                 );
             }
         }
@@ -666,8 +727,9 @@ mod tests {
             );
             let table = super::super::TopicRouteTable::new(cache.clone());
             table.clear().unwrap();
-            let raw: Arc<TopicRouteData> =
-                Arc::new(serde_json::from_value(case["rawInput"].clone()).unwrap());
+            let raw = TopicRouteDataHandle::new(
+                serde_json::from_value(case["rawInput"].clone()).unwrap(),
+            );
             table.put("raw", raw.clone()).unwrap();
             let before = cache.snapshot().unwrap();
             assert_eq!(case["outcome"], "OK");
@@ -678,11 +740,15 @@ mod tests {
                 case["publishAddressAfter"].as_str()
             );
             assert_eq!(
-                Arc::ptr_eq(&after.raw_routes["raw"], &raw),
+                after.raw_routes["raw"].ptr_eq(&raw),
                 case["rawObjectRetained"]
             );
             assert_eq!(
-                after.raw_routes["raw"].broker_datas.as_ref().unwrap()[0]
+                after.raw_routes["raw"]
+                    .snapshot()
+                    .unwrap()
+                    .broker_datas
+                    .unwrap()[0]
                     .broker_addrs
                     .is_none(),
                 case["rawNullMapRetained"]
@@ -700,7 +766,9 @@ mod tests {
             serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
         let case = &fixture["runtimeTopicRouteTable"];
         let first: TopicRouteData = serde_json::from_value(case["initialInput"].clone()).unwrap();
-        let second = Arc::new(serde_json::from_value(case["replacementInput"].clone()).unwrap());
+        let second = TopicRouteDataHandle::new(
+            serde_json::from_value(case["replacementInput"].clone()).unwrap(),
+        );
         let cache = RouteCache::default();
         let table = super::super::TopicRouteTable::new(cache.clone());
         assert_eq!(
@@ -708,21 +776,27 @@ mod tests {
             case["refreshChanged"]
         );
         let before = cache.snapshot().unwrap();
-        assert!(Arc::ptr_eq(
-            &table.get("topic").unwrap().unwrap(),
-            &before.raw_routes["topic"]
-        ));
+        assert!(
+            table
+                .get("topic")
+                .unwrap()
+                .unwrap()
+                .ptr_eq(&before.raw_routes["topic"])
+        );
         assert_eq!(
             before.publish_address("broker"),
             case["initialPublishAddress"].as_str()
         );
-        assert!(Arc::ptr_eq(
-            &table.put("topic", second).unwrap().unwrap(),
-            &before.raw_routes["topic"]
-        ));
+        assert!(
+            table
+                .put("topic", second)
+                .unwrap()
+                .unwrap()
+                .ptr_eq(&before.raw_routes["topic"])
+        );
         let direct = cache.snapshot().unwrap();
         assert_eq!(
-            direct.broker_address_by_topic("topic").unwrap(),
+            direct.broker_address_by_topic("topic").unwrap().as_deref(),
             case["topicAddressAfterDirectPut"].as_str()
         );
         assert_eq!(
@@ -734,14 +808,14 @@ mod tests {
             &before.topics["topic"]
         ));
         assert_eq!(
-            before.broker_address_by_topic("topic").unwrap(),
+            before.broker_address_by_topic("topic").unwrap().as_deref(),
             Some("master:10911")
         );
         table.clear().unwrap();
         let cleared = cache.snapshot().unwrap();
         assert!(table.get("topic").unwrap().is_none());
         assert_eq!(
-            cleared.broker_address_by_topic("topic").unwrap(),
+            cleared.broker_address_by_topic("topic").unwrap().as_deref(),
             case["topicAddressAfterClear"].as_str()
         );
         assert_eq!(
@@ -758,16 +832,18 @@ mod tests {
         assert!(cache.replace("topic", first).unwrap());
         assert!(table.contains_key("topic").unwrap());
         assert_eq!(before.publish_address("broker"), Some("master:10911"));
-        let mut invalid = before.raw_routes["topic"].as_ref().clone();
+        let mut invalid = before.raw_routes["topic"].snapshot().unwrap();
         invalid.broker_datas.as_mut().unwrap()[0].broker_addrs = None;
-        let invalid = Arc::new(invalid);
+        let invalid = TopicRouteDataHandle::new(invalid);
         table.put("invalid", invalid.clone()).unwrap();
         assert_eq!(
-            cache.replace("invalid", invalid.as_ref().clone()).unwrap(),
+            cache
+                .replace("invalid", invalid.snapshot().unwrap())
+                .unwrap(),
             case["unchangedInvalidRawRefreshChanged"]
         );
         assert_eq!(
-            Arc::ptr_eq(&table.get("invalid").unwrap().unwrap(), &invalid),
+            table.get("invalid").unwrap().unwrap().ptr_eq(&invalid),
             case["unchangedInvalidRawRefreshKeepsCachedObject"]
         );
     }
@@ -880,12 +956,12 @@ mod tests {
                     snapshot
                         .select_topic_broker("topic", |length| usize::from(length > 1))
                         .unwrap(),
-                    case["adminAddress"].as_str()
+                    case["adminAddress"].as_str().map(str::to_owned)
                 );
             }
             for _ in 0..128 {
                 let selected = snapshot.broker_address_by_topic("topic").unwrap();
-                assert!(selected.is_none() || selected == case["adminAddress"].as_str());
+                assert!(selected.is_none() || selected.as_deref() == case["adminAddress"].as_str());
             }
         }
     }
@@ -1049,11 +1125,11 @@ mod tests {
                     choices.next().unwrap()
                 })
                 .unwrap(),
-            Some("slave-b:10911")
+            Some("slave-b:10911".to_owned())
         );
         assert_eq!(
             snapshot.select_topic_broker("original", |_| 1).unwrap(),
-            Some("master-2:10911")
+            Some("master-2:10911".to_owned())
         );
         original.broker_datas.as_mut().unwrap()[0].broker_addrs = Some(BTreeMap::new());
         cache.replace("original", original).unwrap();
@@ -1078,7 +1154,9 @@ mod tests {
                 // that test setup without bypassing production cache validation.
                 snapshot.raw_routes.insert(
                     "topic".into(),
-                    Arc::new(serde_json::from_value(case["input"].clone()).unwrap()),
+                    TopicRouteDataHandle::new(
+                        serde_json::from_value(case["input"].clone()).unwrap(),
+                    ),
                 );
             }
             for _ in 0..128 {
@@ -1091,7 +1169,7 @@ mod tests {
                                 .as_array()
                                 .unwrap()
                                 .iter()
-                                .any(|value| value == selected)
+                                .any(|value| value.as_str() == Some(selected.as_str()))
                         );
                     }
                     "IllegalArgumentException" | "NullPointerException" => {

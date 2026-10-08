@@ -416,23 +416,20 @@ impl ClientRuntime {
         &self,
         topic: &str,
     ) -> Result<Option<String>, RuntimeError> {
-        Ok(self
-            .route_snapshot()?
-            .broker_address_by_topic(topic)?
-            .map(str::to_owned))
+        Ok(self.route_snapshot()?.broker_address_by_topic(topic)?)
     }
 
     pub fn get_existing_topic_route(
         &self,
         topic: &str,
-    ) -> Result<Option<Arc<rocketmq_classic_protocol::route::TopicRouteData>>, RuntimeError> {
+    ) -> Result<Option<crate::route::TopicRouteDataHandle>, RuntimeError> {
         Ok(self.route_snapshot()?.raw_routes.get(topic).cloned())
     }
 
     pub async fn query_topic_route(
         &self,
         topic: &str,
-    ) -> Result<Option<Arc<rocketmq_classic_protocol::route::TopicRouteData>>, RuntimeError> {
+    ) -> Result<Option<crate::route::TopicRouteDataHandle>, RuntimeError> {
         if let Some(route) = self.get_existing_topic_route(topic)? {
             return Ok(Some(route));
         }

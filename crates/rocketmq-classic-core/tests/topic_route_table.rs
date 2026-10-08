@@ -67,13 +67,18 @@ async fn raw_clear_query_refetches_once_and_retained_table_observes_wire_refresh
             .unwrap()
     );
     assert!(table.contains_key("topic").unwrap());
-    let replacement: Arc<TopicRouteData> =
-        Arc::new(serde_json::from_value(case["replacementInput"].clone()).unwrap());
+    let replacement = TopicRouteDataHandle::new(
+        serde_json::from_value(case["replacementInput"].clone()).unwrap(),
+    );
     table.put("topic", replacement.clone()).unwrap();
-    assert!(Arc::ptr_eq(
-        &runtime.query_topic_route("topic").await.unwrap().unwrap(),
-        &replacement
-    ));
+    assert!(
+        runtime
+            .query_topic_route("topic")
+            .await
+            .unwrap()
+            .unwrap()
+            .ptr_eq(&replacement)
+    );
     table.clear().unwrap();
     assert!(runtime.get_existing_topic_route("topic").unwrap().is_none());
     assert_eq!(
@@ -86,21 +91,22 @@ async fn raw_clear_query_refetches_once_and_retained_table_observes_wire_refresh
             .unwrap()
             .unwrap()
             .unwrap();
-    assert!(Arc::ptr_eq(
-        &table.get("topic").unwrap().unwrap(),
-        &refreshed
-    ));
+    assert!(table.get("topic").unwrap().unwrap().ptr_eq(&refreshed));
     assert_eq!(
-        refreshed.broker_datas.as_ref().unwrap()[0]
+        refreshed.snapshot().unwrap().broker_datas.unwrap()[0]
             .broker_addrs
             .as_ref()
             .unwrap()[&0],
         Some("master:10911".to_owned())
     );
-    assert!(Arc::ptr_eq(
-        &runtime.query_topic_route("topic").await.unwrap().unwrap(),
-        &refreshed
-    ));
+    assert!(
+        runtime
+            .query_topic_route("topic")
+            .await
+            .unwrap()
+            .unwrap()
+            .ptr_eq(&refreshed)
+    );
     runtime.remoting().shutdown().await;
     tokio::time::timeout(Duration::from_secs(5), peer)
         .await
@@ -116,7 +122,7 @@ async fn raw_map_put_if_absent_is_atomic_and_values_are_owned_without_runtime_re
         .await
         .unwrap();
     let table = runtime.topic_route_table();
-    let owner = Arc::new(TopicRouteData::default());
+    let owner = TopicRouteDataHandle::new(TopicRouteData::default());
     let installed = std::thread::scope(|scope| {
         let mut calls = Vec::new();
         for _ in 0..64 {
@@ -139,7 +145,7 @@ async fn raw_map_put_if_absent_is_atomic_and_values_are_owned_without_runtime_re
             .is_some()
     );
     assert!(Arc::ptr_eq(&before, &runtime.route_snapshot().unwrap()));
-    let weak_owner = Arc::downgrade(&owner);
+    let weak_owner = owner.downgrade();
     drop(owner);
     assert!(weak_owner.upgrade().is_some());
     let detached = table.snapshot().unwrap();
@@ -156,19 +162,20 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/route.json")).unwrap();
     let case = &fixture["runtimeTopicRouteTable"];
-    let first: Arc<TopicRouteData> =
-        Arc::new(serde_json::from_value(case["initialInput"].clone()).unwrap());
-    let second: Arc<TopicRouteData> =
-        Arc::new(serde_json::from_value(case["replacementInput"].clone()).unwrap());
-    let equal_second = Arc::new(second.as_ref().clone());
+    let first =
+        TopicRouteDataHandle::new(serde_json::from_value(case["initialInput"].clone()).unwrap());
+    let second = TopicRouteDataHandle::new(
+        serde_json::from_value(case["replacementInput"].clone()).unwrap(),
+    );
+    let equal_second = TopicRouteDataHandle::new(second.snapshot().unwrap());
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&ClientConfig::new("raw-table"))
         .await
         .unwrap();
     let table = runtime.topic_route_table();
     let retained = table.clone();
-    let same = |value: Option<Arc<TopicRouteData>>, expected: &Arc<TopicRouteData>| {
-        value.is_some_and(|value| Arc::ptr_eq(&value, expected))
+    let same = |value: Option<TopicRouteDataHandle>, expected: &TopicRouteDataHandle| {
+        value.is_some_and(|value| value.ptr_eq(expected))
     };
     let mut outcomes = BTreeMap::new();
     outcomes.insert("initialEmpty", table.is_empty().unwrap());
@@ -178,17 +185,17 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
     );
     outcomes.insert(
         "getOrDefaultPresent",
-        Arc::ptr_eq(
-            &table.get_or_default("topic", second.clone()).unwrap(),
-            &first,
-        ),
+        table
+            .get_or_default("topic", second.clone())
+            .unwrap()
+            .ptr_eq(&first),
     );
     outcomes.insert(
         "getOrDefaultAbsent",
-        Arc::ptr_eq(
-            &table.get_or_default("missing", second.clone()).unwrap(),
-            &second,
-        ),
+        table
+            .get_or_default("missing", second.clone())
+            .unwrap()
+            .ptr_eq(&second),
     );
     outcomes.insert(
         "getterSeesFirst",
@@ -213,13 +220,13 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
     outcomes.insert(
         "unequalReplaceRejected",
         !table
-            .replace_if_equal("topic", &first, second.clone())
+            .replace_if_equal("topic", &first.snapshot().unwrap(), second.clone())
             .unwrap(),
     );
     outcomes.insert(
         "equalCopyReplaceAccepted",
         table
-            .replace_if_equal("topic", &equal_second, first.clone())
+            .replace_if_equal("topic", &equal_second.snapshot().unwrap(), first.clone())
             .unwrap(),
     );
     outcomes.insert(
@@ -228,11 +235,15 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
     );
     outcomes.insert(
         "unequalRemoveRejected",
-        !table.remove_if_equal("topic", &first).unwrap(),
+        !table
+            .remove_if_equal("topic", &first.snapshot().unwrap())
+            .unwrap(),
     );
     outcomes.insert(
         "equalCopyRemoveAccepted",
-        table.remove_if_equal("topic", &equal_second).unwrap(),
+        table
+            .remove_if_equal("topic", &equal_second.snapshot().unwrap())
+            .unwrap(),
     );
     outcomes.insert(
         "absentReplaceNull",
@@ -279,9 +290,11 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
     );
     outcomes.insert(
         "containsValueEqualCopy",
-        table.contains_value(&equal_second).unwrap(),
+        table
+            .contains_value(&equal_second.snapshot().unwrap())
+            .unwrap(),
     );
-    let mut absent_route = second.as_ref().clone();
+    let mut absent_route = second.snapshot().unwrap();
     absent_route.broker_datas.as_mut().unwrap()[0].broker_name = Some("absent-broker".into());
     outcomes.insert(
         "containsValueAbsent",
@@ -301,7 +314,7 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
                 reentered_len == expected_routes.len()
                     && expected_routes
                         .get(key)
-                        .is_some_and(|expected| Arc::ptr_eq(value, expected)),
+                        .is_some_and(|expected| value.ptr_eq(expected)),
             );
         })
         .unwrap();
@@ -471,23 +484,27 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
     table.put("value-c", second.clone()).unwrap();
     outcomes.insert(
         "valuesViewContainsEqualCopy",
-        values_view.contains(&equal_second).unwrap(),
+        values_view
+            .contains(&equal_second.snapshot().unwrap())
+            .unwrap(),
     );
     outcomes.insert(
         "valuesViewRemoveEqualCopy",
-        values_view.remove(&equal_second).unwrap()
+        values_view
+            .remove(&equal_second.snapshot().unwrap())
+            .unwrap()
             && table
                 .snapshot()
                 .unwrap()
                 .values()
-                .filter(|value| value.as_ref() == equal_second.as_ref())
+                .filter(|value| value.snapshot().unwrap() == equal_second.snapshot().unwrap())
                 .count()
                 == 1,
     );
     outcomes.insert(
         "valuesViewRemoveIf",
         values_view
-            .remove_if(|value| value == first.as_ref())
+            .remove_if(|value| value == &first.snapshot().unwrap())
             .unwrap()
             > 0
             && !table.contains_key("value-a").unwrap(),
@@ -516,11 +533,15 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
     table.put("entry-keep", second.clone()).unwrap();
     outcomes.insert(
         "entryViewContainsEqualCopy",
-        entry_view.contains("entry-keep", &equal_second).unwrap(),
+        entry_view
+            .contains("entry-keep", &equal_second.snapshot().unwrap())
+            .unwrap(),
     );
     outcomes.insert(
         "entryViewRemoveEqualCopy",
-        entry_view.remove("entry-remove", &first).unwrap()
+        entry_view
+            .remove("entry-remove", &first.snapshot().unwrap())
+            .unwrap()
             && !table.contains_key("entry-remove").unwrap(),
     );
     outcomes.insert(
@@ -573,12 +594,15 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
     table.put("iterator-value", first.clone()).unwrap();
     outcomes.insert(
         "valuesIteratorRemove",
-        values_view.remove(&first).unwrap() && table.is_empty().unwrap(),
+        values_view.remove(&first.snapshot().unwrap()).unwrap() && table.is_empty().unwrap(),
     );
     table.put("iterator-entry", first.clone()).unwrap();
     outcomes.insert(
         "entryIteratorRemove",
-        entry_view.remove("iterator-entry", &first).unwrap() && table.is_empty().unwrap(),
+        entry_view
+            .remove("iterator-entry", &first.snapshot().unwrap())
+            .unwrap()
+            && table.is_empty().unwrap(),
     );
     // Rust uses explicit live-view removals in place of Java Iterator.remove; snapshot traversal
     // stays detached and does not claim Java's weakly consistent iteration contract.
@@ -608,15 +632,19 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
         case["topicAddressAfterDirectPut"].as_str()
     );
     assert!(runtime.route_snapshot().unwrap().topics.is_empty()); // No converted publication.
-    let metadata = Arc::new(serde_json::from_value(case["metadataOnlyInput"].clone()).unwrap());
+    let metadata = TopicRouteDataHandle::new(
+        serde_json::from_value(case["metadataOnlyInput"].clone()).unwrap(),
+    );
     table.put("metadata", first.clone()).unwrap();
     assert_eq!(
-        table.remove_if_equal("metadata", &metadata).unwrap(),
+        table
+            .remove_if_equal("metadata", &metadata.snapshot().unwrap())
+            .unwrap(),
         case["metadataEqualConditionalRemoveAccepted"]
     );
-    let mut invalid = first.as_ref().clone();
+    let mut invalid = first.snapshot().unwrap();
     invalid.broker_datas.as_mut().unwrap()[0].broker_addrs = None;
-    let invalid = Arc::new(invalid);
+    let invalid = TopicRouteDataHandle::new(invalid);
     table.put("invalid", invalid.clone()).unwrap();
     assert!(same(
         runtime.query_topic_route("invalid").await.unwrap(),

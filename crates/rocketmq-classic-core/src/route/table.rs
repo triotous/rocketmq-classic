@@ -3,8 +3,58 @@ use crate::runtime::RuntimeError;
 use rocketmq_classic_protocol::route::TopicRouteData;
 use std::{
     collections::{BTreeMap, BTreeSet},
-    sync::Arc,
+    sync::{Arc, RwLock, Weak},
 };
+
+/// Shared, safely mutable route DTO, matching the object identity Java stores
+/// in its raw topic route table.
+#[derive(Clone, Debug)]
+pub struct TopicRouteDataHandle(Arc<RwLock<TopicRouteData>>);
+
+#[derive(Clone)]
+pub struct WeakTopicRouteDataHandle(Weak<RwLock<TopicRouteData>>);
+
+impl WeakTopicRouteDataHandle {
+    pub fn upgrade(&self) -> Option<TopicRouteDataHandle> {
+        self.0.upgrade().map(TopicRouteDataHandle)
+    }
+}
+
+impl TopicRouteDataHandle {
+    pub fn new(route: TopicRouteData) -> Self {
+        Self(Arc::new(RwLock::new(route)))
+    }
+
+    /// Returns an owned DTO copy so callers can inspect it without holding a
+    /// lock or borrowing data that another alias may mutate.
+    pub fn snapshot(&self) -> Result<TopicRouteData, RuntimeError> {
+        self.0
+            .read()
+            .map(|route| route.clone())
+            .map_err(|_| RuntimeError::RegistryPoisoned)
+    }
+
+    /// Mutates the shared DTO observed by every alias to this handle.
+    /// The update closure runs while holding the write lock and must not call
+    /// back into snapshot or mutation methods on this same handle.
+    pub fn with_mut<R>(
+        &self,
+        update: impl FnOnce(&mut TopicRouteData) -> R,
+    ) -> Result<R, RuntimeError> {
+        self.0
+            .write()
+            .map(|mut route| update(&mut route))
+            .map_err(|_| RuntimeError::RegistryPoisoned)
+    }
+
+    pub fn ptr_eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+
+    pub fn downgrade(&self) -> WeakTopicRouteDataHandle {
+        WeakTopicRouteDataHandle(Arc::downgrade(&self.0))
+    }
+}
 
 /// Live raw topic map. Writes neither fetch nor validate/convert a route.
 /// Values use Java route content equality, not owner registration identity.
@@ -16,15 +66,15 @@ impl TopicRouteTable {
     pub(crate) fn new(cache: RouteCache) -> Self {
         Self(cache)
     }
-    pub fn get(&self, key: &str) -> Result<Option<Arc<TopicRouteData>>, RuntimeError> {
+    pub fn get(&self, key: &str) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
         Ok(self.0.snapshot()?.raw_routes.get(key).cloned())
     }
     /// Map.getOrDefault counterpart using raw-table presence only.
     pub fn get_or_default(
         &self,
         key: &str,
-        default: Arc<TopicRouteData>,
-    ) -> Result<Arc<TopicRouteData>, RuntimeError> {
+        default: TopicRouteDataHandle,
+    ) -> Result<TopicRouteDataHandle, RuntimeError> {
         Ok(self.get(key)?.unwrap_or(default))
     }
     pub fn contains_key(&self, key: &str) -> Result<bool, RuntimeError> {
@@ -32,12 +82,12 @@ impl TopicRouteTable {
     }
     /// Uses the source route-content equality used by map-value comparisons.
     pub fn contains_value(&self, value: &TopicRouteData) -> Result<bool, RuntimeError> {
-        Ok(self
-            .0
-            .snapshot()?
-            .raw_routes
-            .values()
-            .any(|current| route_values_equal(current, value)))
+        for current in self.0.snapshot()?.raw_routes.values() {
+            if route_values_equal(&current.snapshot()?, value) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
     pub fn len(&self) -> Result<usize, RuntimeError> {
         Ok(self.0.snapshot()?.raw_routes.len())
@@ -46,20 +96,37 @@ impl TopicRouteTable {
         Ok(self.len()? == 0)
     }
     /// Detached owned iteration copy; retaining this table handle stays live.
-    pub fn snapshot(&self) -> Result<BTreeMap<String, Arc<TopicRouteData>>, RuntimeError> {
+    pub fn snapshot(&self) -> Result<BTreeMap<String, TopicRouteDataHandle>, RuntimeError> {
         Ok(self.0.snapshot()?.raw_routes.clone())
     }
     /// Visits a detached map snapshot without holding the route-cache lock.
     /// Java's weakly consistent live traversal is not represented here.
     pub fn for_each(
         &self,
-        mut action: impl FnMut(&str, &Arc<TopicRouteData>),
+        mut action: impl FnMut(&str, &TopicRouteDataHandle),
     ) -> Result<(), RuntimeError> {
         let snapshot = self.snapshot()?;
         for (key, value) in &snapshot {
             action(key, value);
         }
         Ok(())
+    }
+
+    fn replace_if_handle_same(
+        &self,
+        key: &str,
+        expected: &TopicRouteDataHandle,
+        value: TopicRouteDataHandle,
+    ) -> Result<bool, RuntimeError> {
+        self.0.replace_raw_if_same(key, expected, value)
+    }
+
+    fn remove_if_handle_same(
+        &self,
+        key: &str,
+        expected: &TopicRouteDataHandle,
+    ) -> Result<bool, RuntimeError> {
+        self.0.remove_raw_if_same(key, expected)
     }
     pub fn key_set_view(&self) -> TopicRouteKeySetView {
         TopicRouteKeySetView(self.clone())
@@ -73,15 +140,15 @@ impl TopicRouteTable {
     pub fn put(
         &self,
         key: impl Into<String>,
-        value: Arc<TopicRouteData>,
-    ) -> Result<Option<Arc<TopicRouteData>>, RuntimeError> {
+        value: TopicRouteDataHandle,
+    ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
         let key = key.into();
         self.0.update_raw(|map| (true, map.insert(key, value)))
     }
     /// Writes all entries into the raw table without converting route snapshots.
     pub fn put_all(
         &self,
-        entries: BTreeMap<String, Arc<TopicRouteData>>,
+        entries: BTreeMap<String, TopicRouteDataHandle>,
     ) -> Result<(), RuntimeError> {
         if entries.is_empty() {
             return Ok(());
@@ -94,8 +161,8 @@ impl TopicRouteTable {
     pub fn put_if_absent(
         &self,
         key: impl Into<String>,
-        value: Arc<TopicRouteData>,
-    ) -> Result<Option<Arc<TopicRouteData>>, RuntimeError> {
+        value: TopicRouteDataHandle,
+    ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
         let key = key.into();
         self.0.update_raw(|map| {
             if let Some(previous) = map.get(&key) {
@@ -111,8 +178,8 @@ impl TopicRouteTable {
     pub fn compute_if_absent(
         &self,
         key: impl Into<String>,
-        mut mapping: impl FnMut(&str) -> Option<Arc<TopicRouteData>>,
-    ) -> Result<Option<Arc<TopicRouteData>>, RuntimeError> {
+        mut mapping: impl FnMut(&str) -> Option<TopicRouteDataHandle>,
+    ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
         let key = key.into();
         if let Some(current) = self.get(&key)? {
             return Ok(Some(current));
@@ -128,8 +195,8 @@ impl TopicRouteTable {
     pub fn compute_if_present(
         &self,
         key: impl Into<String>,
-        mut remapping: impl FnMut(&str, &Arc<TopicRouteData>) -> Option<Arc<TopicRouteData>>,
-    ) -> Result<Option<Arc<TopicRouteData>>, RuntimeError> {
+        mut remapping: impl FnMut(&str, &TopicRouteDataHandle) -> Option<TopicRouteDataHandle>,
+    ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
         let key = key.into();
         loop {
             let Some(current) = self.get(&key)? else {
@@ -137,12 +204,12 @@ impl TopicRouteTable {
             };
             match remapping(&key, &current) {
                 Some(value) => {
-                    if self.replace_if_equal(&key, &current, value.clone())? {
+                    if self.replace_if_handle_same(&key, &current, value.clone())? {
                         return Ok(Some(value));
                     }
                 }
                 None => {
-                    if self.remove_if_equal(&key, &current)? {
+                    if self.remove_if_handle_same(&key, &current)? {
                         return Ok(None);
                     }
                 }
@@ -153,8 +220,8 @@ impl TopicRouteTable {
     pub fn compute(
         &self,
         key: impl Into<String>,
-        mut remapping: impl FnMut(&str, Option<&Arc<TopicRouteData>>) -> Option<Arc<TopicRouteData>>,
-    ) -> Result<Option<Arc<TopicRouteData>>, RuntimeError> {
+        mut remapping: impl FnMut(&str, Option<&TopicRouteDataHandle>) -> Option<TopicRouteDataHandle>,
+    ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
         let key = key.into();
         loop {
             let current = self.get(&key)?;
@@ -167,12 +234,12 @@ impl TopicRouteTable {
                     }
                 }
                 (Some(current), Some(value)) => {
-                    if self.replace_if_equal(&key, current, value.clone())? {
+                    if self.replace_if_handle_same(&key, current, value.clone())? {
                         return Ok(Some(value));
                     }
                 }
                 (Some(current), None) => {
-                    if self.remove_if_equal(&key, current)? {
+                    if self.remove_if_handle_same(&key, current)? {
                         return Ok(None);
                     }
                 }
@@ -183,12 +250,12 @@ impl TopicRouteTable {
     pub fn merge(
         &self,
         key: impl Into<String>,
-        value: Arc<TopicRouteData>,
+        value: TopicRouteDataHandle,
         mut remapping: impl FnMut(
-            &Arc<TopicRouteData>,
-            &Arc<TopicRouteData>,
-        ) -> Option<Arc<TopicRouteData>>,
-    ) -> Result<Option<Arc<TopicRouteData>>, RuntimeError> {
+            &TopicRouteDataHandle,
+            &TopicRouteDataHandle,
+        ) -> Option<TopicRouteDataHandle>,
+    ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
         let key = key.into();
         loop {
             let Some(current) = self.get(&key)? else {
@@ -199,12 +266,12 @@ impl TopicRouteTable {
             };
             match remapping(&current, &value) {
                 Some(next) => {
-                    if self.replace_if_equal(&key, &current, next.clone())? {
+                    if self.replace_if_handle_same(&key, &current, next.clone())? {
                         return Ok(Some(next));
                     }
                 }
                 None => {
-                    if self.remove_if_equal(&key, &current)? {
+                    if self.remove_if_handle_same(&key, &current)? {
                         return Ok(None);
                     }
                 }
@@ -216,7 +283,7 @@ impl TopicRouteTable {
     /// callback runs without a cache lock and may be retried after a race.
     pub fn replace_all(
         &self,
-        mut remapping: impl FnMut(&str, &Arc<TopicRouteData>) -> Arc<TopicRouteData>,
+        mut remapping: impl FnMut(&str, &TopicRouteDataHandle) -> TopicRouteDataHandle,
     ) -> Result<(), RuntimeError> {
         for key in self.snapshot()?.into_keys() {
             loop {
@@ -224,7 +291,7 @@ impl TopicRouteTable {
                     break;
                 };
                 let value = remapping(&key, &current);
-                if self.replace_if_equal(&key, &current, value)? {
+                if self.replace_if_handle_same(&key, &current, value)? {
                     break;
                 }
             }
@@ -235,8 +302,8 @@ impl TopicRouteTable {
     pub fn replace(
         &self,
         key: impl Into<String>,
-        value: Arc<TopicRouteData>,
-    ) -> Result<Option<Arc<TopicRouteData>>, RuntimeError> {
+        value: TopicRouteDataHandle,
+    ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
         let key = key.into();
         self.0.update_raw(|map| {
             if let std::collections::btree_map::Entry::Occupied(mut entry) = map.entry(key) {
@@ -250,20 +317,22 @@ impl TopicRouteTable {
         &self,
         key: impl Into<String>,
         expected: &TopicRouteData,
-        value: Arc<TopicRouteData>,
+        value: TopicRouteDataHandle,
     ) -> Result<bool, RuntimeError> {
         let key = key.into();
-        self.0.update_raw(|map| {
-            let matched = map
-                .get(&key)
-                .is_some_and(|current| route_values_equal(current, expected));
-            if matched {
-                map.insert(key, value);
+        loop {
+            let Some(current) = self.get(&key)? else {
+                return Ok(false);
+            };
+            if !route_values_equal(&current.snapshot()?, expected) {
+                return Ok(false);
             }
-            (matched, matched)
-        })
+            if self.0.replace_raw_if_same(&key, &current, value.clone())? {
+                return Ok(true);
+            }
+        }
     }
-    pub fn remove(&self, key: &str) -> Result<Option<Arc<TopicRouteData>>, RuntimeError> {
+    pub fn remove(&self, key: &str) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
         self.0.update_raw(|map| {
             let previous = map.remove(key);
             (previous.is_some(), previous)
@@ -274,15 +343,17 @@ impl TopicRouteTable {
         key: &str,
         expected: &TopicRouteData,
     ) -> Result<bool, RuntimeError> {
-        self.0.update_raw(|map| {
-            let matched = map
-                .get(key)
-                .is_some_and(|current| route_values_equal(current, expected));
-            if matched {
-                map.remove(key);
+        loop {
+            let Some(current) = self.get(key)? else {
+                return Ok(false);
+            };
+            if !route_values_equal(&current.snapshot()?, expected) {
+                return Ok(false);
             }
-            (matched, matched)
-        })
+            if self.0.remove_raw_if_same(key, &current)? {
+                return Ok(true);
+            }
+        }
     }
     pub fn clear(&self) -> Result<(), RuntimeError> {
         self.0.update_raw(|map| {
@@ -326,7 +397,7 @@ impl TopicRouteKeySetView {
     ) -> Result<usize, RuntimeError> {
         let mut removed = 0;
         for (key, value) in self.0.snapshot()? {
-            if predicate(&key) && self.0.remove_if_equal(&key, &value)? {
+            if predicate(&key) && self.0.remove_if_handle_same(&key, &value)? {
                 removed += 1;
             }
         }
@@ -364,14 +435,16 @@ impl TopicRouteValuesView {
     }
 
     /// Returns a detached values copy from the live view.
-    pub fn snapshot(&self) -> Result<Vec<Arc<TopicRouteData>>, RuntimeError> {
+    pub fn snapshot(&self) -> Result<Vec<TopicRouteDataHandle>, RuntimeError> {
         Ok(self.0.snapshot()?.into_values().collect())
     }
 
     /// Removes one mapping whose route matches by source route equality.
     pub fn remove(&self, value: &TopicRouteData) -> Result<bool, RuntimeError> {
         for (key, current) in self.0.snapshot()? {
-            if route_values_equal(&current, value) && self.0.remove_if_equal(&key, value)? {
+            if route_values_equal(&current.snapshot()?, value)
+                && self.0.remove_if_handle_same(&key, &current)?
+            {
                 return Ok(true);
             }
         }
@@ -385,27 +458,48 @@ impl TopicRouteValuesView {
     ) -> Result<usize, RuntimeError> {
         let mut removed = 0;
         for (key, value) in self.0.snapshot()? {
-            if predicate(&value) && self.0.remove_if_equal(&key, &value)? {
+            let route = value.snapshot()?;
+            if predicate(&route) && self.0.remove_if_handle_same(&key, &value)? {
                 removed += 1;
             }
         }
         Ok(removed)
     }
 
-    pub fn remove_all(&self, values: &[Arc<TopicRouteData>]) -> Result<usize, RuntimeError> {
-        self.remove_if(|value| {
-            values
-                .iter()
-                .any(|candidate| route_values_equal(candidate, value))
-        })
+    pub fn remove_all(&self, values: &[TopicRouteDataHandle]) -> Result<usize, RuntimeError> {
+        let mut removed = 0;
+        for (key, current) in self.0.snapshot()? {
+            let current_value = current.snapshot()?;
+            let mut matches = false;
+            for candidate in values {
+                if route_values_equal(&candidate.snapshot()?, &current_value) {
+                    matches = true;
+                    break;
+                }
+            }
+            if matches && self.0.remove_if_handle_same(&key, &current)? {
+                removed += 1;
+            }
+        }
+        Ok(removed)
     }
 
-    pub fn retain_all(&self, values: &[Arc<TopicRouteData>]) -> Result<usize, RuntimeError> {
-        self.remove_if(|value| {
-            !values
-                .iter()
-                .any(|candidate| route_values_equal(candidate, value))
-        })
+    pub fn retain_all(&self, values: &[TopicRouteDataHandle]) -> Result<usize, RuntimeError> {
+        let mut removed = 0;
+        for (key, current) in self.0.snapshot()? {
+            let current_value = current.snapshot()?;
+            let mut matches = false;
+            for candidate in values {
+                if route_values_equal(&candidate.snapshot()?, &current_value) {
+                    matches = true;
+                    break;
+                }
+            }
+            if !matches && self.0.remove_if_handle_same(&key, &current)? {
+                removed += 1;
+            }
+        }
+        Ok(removed)
     }
 
     pub fn clear(&self) -> Result<(), RuntimeError> {
@@ -419,10 +513,10 @@ pub struct TopicRouteEntrySetView(TopicRouteTable);
 
 impl TopicRouteEntrySetView {
     pub fn contains(&self, key: &str, value: &TopicRouteData) -> Result<bool, RuntimeError> {
-        Ok(self
-            .0
-            .get(key)?
-            .is_some_and(|current| route_values_equal(&current, value)))
+        match self.0.get(key)? {
+            Some(current) => Ok(route_values_equal(&current.snapshot()?, value)),
+            None => Ok(false),
+        }
     }
 
     pub fn len(&self) -> Result<usize, RuntimeError> {
@@ -434,7 +528,7 @@ impl TopicRouteEntrySetView {
     }
 
     /// Returns a detached entry copy from the live view.
-    pub fn snapshot(&self) -> Result<BTreeMap<String, Arc<TopicRouteData>>, RuntimeError> {
+    pub fn snapshot(&self) -> Result<BTreeMap<String, TopicRouteDataHandle>, RuntimeError> {
         self.0.snapshot()
     }
 
@@ -449,7 +543,8 @@ impl TopicRouteEntrySetView {
     ) -> Result<usize, RuntimeError> {
         let mut removed = 0;
         for (key, value) in self.0.snapshot()? {
-            if predicate(&key, &value) && self.0.remove_if_equal(&key, &value)? {
+            let route = value.snapshot()?;
+            if predicate(&key, &route) && self.0.remove_if_handle_same(&key, &value)? {
                 removed += 1;
             }
         }
@@ -458,24 +553,39 @@ impl TopicRouteEntrySetView {
 
     pub fn remove_all(
         &self,
-        entries: &BTreeMap<String, Arc<TopicRouteData>>,
+        entries: &BTreeMap<String, TopicRouteDataHandle>,
     ) -> Result<usize, RuntimeError> {
-        self.remove_if(|key, value| {
-            entries
-                .get(key)
-                .is_some_and(|candidate| route_values_equal(candidate, value))
-        })
+        let mut removed = 0;
+        for (key, current) in self.0.snapshot()? {
+            let Some(candidate) = entries.get(&key) else {
+                continue;
+            };
+            let current_value = current.snapshot()?;
+            if route_values_equal(&candidate.snapshot()?, &current_value)
+                && self.0.remove_if_handle_same(&key, &current)?
+            {
+                removed += 1;
+            }
+        }
+        Ok(removed)
     }
 
     pub fn retain_all(
         &self,
-        entries: &BTreeMap<String, Arc<TopicRouteData>>,
+        entries: &BTreeMap<String, TopicRouteDataHandle>,
     ) -> Result<usize, RuntimeError> {
-        self.remove_if(|key, value| {
-            !entries
-                .get(key)
-                .is_some_and(|candidate| route_values_equal(candidate, value))
-        })
+        let mut removed = 0;
+        for (key, current) in self.0.snapshot()? {
+            let current_value = current.snapshot()?;
+            let matches = match entries.get(&key) {
+                Some(candidate) => route_values_equal(&candidate.snapshot()?, &current_value),
+                None => false,
+            };
+            if !matches && self.0.remove_if_handle_same(&key, &current)? {
+                removed += 1;
+            }
+        }
+        Ok(removed)
     }
 
     pub fn clear(&self) -> Result<(), RuntimeError> {
