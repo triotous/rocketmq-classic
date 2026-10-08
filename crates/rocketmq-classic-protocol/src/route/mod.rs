@@ -223,6 +223,35 @@ mod nullable_static_mapping_tests {
     }
 }
 
+#[cfg(test)]
+mod overlapping_static_mapping_tests {
+    use super::TopicRouteData;
+
+    #[test]
+    fn overlapping_static_owners_follow_invoked_java_epochs_and_fallback() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["overlappingStaticMappingOwners"]
+            .as_array()
+            .unwrap()
+        {
+            let route: TopicRouteData = serde_json::from_value(case["input"].clone()).unwrap();
+            let endpoints = route.static_queue_endpoints("topic").unwrap();
+            let rows: Vec<_> = endpoints
+                .iter()
+                .map(|(queue, owner)| {
+                    serde_json::json!({
+                        "queueId": queue.queue_id(),
+                        "brokerName": queue.broker_name(),
+                        "owner": owner,
+                    })
+                })
+                .collect();
+            assert_eq!(serde_json::json!(rows), case["endpoints"]);
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TopicQueueMappingInfo {

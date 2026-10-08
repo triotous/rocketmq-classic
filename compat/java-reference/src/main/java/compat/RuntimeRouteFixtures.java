@@ -248,6 +248,33 @@ public final class RuntimeRouteFixtures {
         return cases;
     }
 
+    private static List<Object> overlappingStaticMappingOwners() {
+        List<Object> cases = new ArrayList<>();
+        for (String input : new String[] {
+            "{\"topicQueueMappingByBroker\":{\"alpha\":{\"scope\":\"scope\",\"bname\":\"A\",\"epoch\":1,\"totalQueues\":2,\"currIdMap\":{\"0\":0}},\"beta\":{\"scope\":\"scope\",\"bname\":\"B\",\"epoch\":2,\"totalQueues\":1,\"currIdMap\":{\"0\":0}}}}",
+            "{\"topicQueueMappingByBroker\":{\"alpha\":{\"scope\":\"scope\",\"bname\":\"A\",\"epoch\":2,\"totalQueues\":2,\"currIdMap\":{\"0\":0}},\"beta\":{\"scope\":\"scope\",\"bname\":\"B\",\"epoch\":1,\"totalQueues\":1,\"currIdMap\":{\"0\":0}}}}",
+            "{\"topicQueueMappingByBroker\":{\"alpha\":{\"scope\":\"scope\",\"bname\":\"A\",\"epoch\":1,\"totalQueues\":2,\"currIdMap\":{\"0\":0}},\"beta\":{\"scope\":\"scope\",\"bname\":\"B\",\"epoch\":1,\"totalQueues\":1,\"currIdMap\":{\"0\":0}}}}"
+        }) {
+            TopicRouteData route = com.alibaba.fastjson2.JSON.parseObject(input, TopicRouteData.class);
+            Map<MessageQueue, String> endpoints =
+                org.apache.rocketmq.remoting.rpc.ClientMetadata.topicRouteData2EndpointsForStaticTopic("topic", route);
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (Map.Entry<MessageQueue, String> entry : endpoints.entrySet()) {
+                Map<String, Object> row = new TreeMap<>();
+                row.put("queueId", entry.getKey().getQueueId());
+                row.put("brokerName", entry.getKey().getBrokerName());
+                row.put("owner", entry.getValue());
+                rows.add(row);
+            }
+            rows.sort(Comparator.comparingInt(row -> (Integer) row.get("queueId")));
+            Map<String, Object> item = new TreeMap<>();
+            item.put("input", com.alibaba.fastjson2.JSON.parseObject(input));
+            item.put("endpoints", rows);
+            cases.add(item);
+        }
+        return cases;
+    }
+
     private static List<Object> runtimeNullableCollections() throws Exception {
         List<Object> cases = new ArrayList<>();
         for (String input : new String[] {
@@ -637,6 +664,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("messageQueueCompareTo", messageQueueCompareToCases());
         fixture.put("nullableStaticMappingFields", nullableStaticMappingFields());
         fixture.put("nullStaticMappingConversion", nullStaticMappingConversion());
+        fixture.put("overlappingStaticMappingOwners", overlappingStaticMappingOwners());
         fixture.put("runtimeNullableCollections", runtimeNullableCollections());
         fixture.put("runtimeEmptyEndpointTransition", runtimeEmptyEndpointTransition(staticInputs.get(0), inputs.get(0)));
         fixture.put("runtimeTopicRouteTable", runtimeTopicRouteTable(inputs.get(0)));
