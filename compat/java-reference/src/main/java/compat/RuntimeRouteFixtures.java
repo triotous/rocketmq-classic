@@ -517,6 +517,30 @@ public final class RuntimeRouteFixtures {
             "{\"currIdMap\":{\"1\":null}}"));
         cases.add(routeDtoInputCase("broker-invalid-boolean", "brokerData",
             "{\"enableActingMaster\":\"yes\"}"));
+        cases.add(routeDtoInputCase("queue-fastjson-single-quote-unquoted-key-trailing-comma", "queueData",
+            "{brokerName:'broker',readQueueNums:'2',}"));
+        cases.add(routeDtoInputCase("broker-fastjson-comments-unquoted-map-key", "brokerData",
+            "/* route */ {cluster:'cluster',brokerName:'broker',brokerAddrs:{0:'master:10911',},} // tail\n"));
+        cases.add(routeDtoInputCase("mapping-fastjson-line-comment", "mapping",
+            "{topic:'topic', // mapping fields\n bname:'broker',totalQueues:2,currIdMap:{'0':0,},}"));
+        cases.add(routeDtoInputCase("queue-fastjson-long-suffix", "queueData",
+            "{readQueueNums:2L,writeQueueNums:3L,perm:4L,topicSysFlag:5L}"));
+        cases.add(routeDtoInputCase("queue-fastjson-decimal-suffix", "queueData",
+            "{readQueueNums:2.9D,writeQueueNums:3.9F}"));
+        cases.add(routeDtoInputCase("mapping-fastjson-long-suffix", "mapping",
+            "{epoch:9223372036854775807L,totalQueues:2L,currIdMap:{0:1L}}"));
+        cases.add(routeDtoInputCase("route-filter-string-as-list", "topicRouteData",
+            "{filterServerTable:{broker:'server:10911'}}"));
+        cases.add(routeDtoInputCase("route-filter-number-as-list", "topicRouteData",
+            "{filterServerTable:{broker:1}}"));
+        cases.add(routeDtoInputCase("route-null-and-scalar-queue-rows", "topicRouteData",
+            "{queueDatas:[null,'broker'],brokerDatas:[]}"));
+        cases.add(routeDtoInputCase("route-null-mapping-value", "topicRouteData",
+            "{topicQueueMappingByBroker:{broker:null}}"));
+        cases.add(routeDtoInputCase("broker-address-array-shape", "brokerData",
+            "{brokerAddrs:[1,2]}"));
+        cases.add(routeDtoInputCase("mapping-id-array-shape", "mapping",
+            "{currIdMap:[1,2]}"));
         return cases;
     }
 

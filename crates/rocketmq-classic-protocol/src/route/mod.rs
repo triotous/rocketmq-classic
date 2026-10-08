@@ -1064,7 +1064,7 @@ mod route_dto_input_cases_tests {
     use rocketmq_classic_common::message::MessageQueue;
 
     #[test]
-    fn route_dto_scalar_inputs_match_invoked_java_fastjson() {
+    fn route_dto_inputs_match_invoked_java_fastjson() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
         for case in fixture["routeDtoInputCases"].as_array().unwrap() {
