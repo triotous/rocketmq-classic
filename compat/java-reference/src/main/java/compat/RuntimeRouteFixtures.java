@@ -504,6 +504,10 @@ public final class RuntimeRouteFixtures {
             "{\"epoch\":\"1e2\"}"));
         cases.add(routeDtoInputCase("mapping-long-minimum", "mapping",
             "{\"epoch\":\"-9223372036854775808\"}"));
+        cases.add(routeDtoInputCase("queue-unicode-decimal-string", "queueData",
+            "{\"readQueueNums\":\"１２\",\"writeQueueNums\":\"-١٢\"}"));
+        cases.add(routeDtoInputCase("mapping-unicode-decimal-strings", "mapping",
+            "{\"totalQueues\":\"१२\",\"epoch\":\"-１２\"}"));
         cases.add(routeDtoInputCase("mapping-long-overflow", "mapping",
             "{\"epoch\":9223372036854775808}"));
         cases.add(routeDtoInputCase("topic-route-nested-scalars", "topicRouteData",
