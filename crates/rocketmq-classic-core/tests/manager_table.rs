@@ -456,6 +456,21 @@ async fn retained_factory_table_and_atomic_mutations_match_invoked_java() {
             && entry_view.is_empty().unwrap(),
         java["collectionViewsEmptyAfterClear"]
     );
+    live.put("iterator-key", first.clone()).await.unwrap();
+    assert_eq!(
+        key_view.remove("iterator-key").await.unwrap() && live.is_empty().unwrap(),
+        java["keyIteratorRemove"]
+    );
+    live.put("iterator-value", first.clone()).await.unwrap();
+    assert_eq!(
+        values_view.remove(&first).await.unwrap() && live.is_empty().unwrap(),
+        java["valuesIteratorRemove"]
+    );
+    live.put("iterator-entry", first.clone()).await.unwrap();
+    assert_eq!(
+        entry_view.remove("iterator-entry", &first).await.unwrap() && live.is_empty().unwrap(),
+        java["entryIteratorRemove"]
+    );
     assert_eq!(
         first.state(),
         rocketmq_classic_core::runtime::RuntimeState::Created
