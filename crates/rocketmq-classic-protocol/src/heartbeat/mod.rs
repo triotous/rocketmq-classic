@@ -82,7 +82,7 @@ pub struct SubscriptionData {
     pub code_set: Option<HashSet<Option<i32>>>,
     #[serde(
         default = "current_subscription_version",
-        deserialize_with = "serde_fastjson::deserialize_i64"
+        deserialize_with = "serde_fastjson::deserialize_i64_reject_object"
     )]
     pub sub_version: i64,
     #[serde(

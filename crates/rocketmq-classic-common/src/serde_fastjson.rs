@@ -397,6 +397,20 @@ where
         .map(|value| value as i64)
 }
 
+pub fn deserialize_i64_reject_object<'de, D>(deserializer: D) -> Result<i64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    if value.is_object() {
+        return Err(de::Error::custom(
+            "Fastjson cannot coerce JSON object to a Java long",
+        ));
+    }
+    fastjson_integer::<D::Error>(&value, i64::MIN as i128, i64::MAX as i128)
+        .map(|value| value as i64)
+}
+
 pub fn deserialize_bool<'de, D>(deserializer: D) -> Result<bool, D::Error>
 where
     D: Deserializer<'de>,
