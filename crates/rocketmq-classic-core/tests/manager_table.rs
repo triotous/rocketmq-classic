@@ -346,6 +346,101 @@ async fn retained_factory_table_and_atomic_mutations_match_invoked_java() {
             && entry_view.contains("keep", &first).unwrap(),
         java["entryViewRetainAll"]
     );
+    assert_eq!(
+        Arc::ptr_eq(
+            &live
+                .compute_if_absent("compute-a", |_| Some(first.clone()))
+                .await
+                .unwrap()
+                .unwrap(),
+            &first
+        ),
+        java["computeIfAbsentMaps"]
+    );
+    assert_eq!(
+        Arc::ptr_eq(
+            &live
+                .compute_if_absent("compute-a", |_| Some(second.clone()))
+                .await
+                .unwrap()
+                .unwrap(),
+            &first
+        ),
+        java["computeIfAbsentKeepsCurrent"]
+    );
+    assert_eq!(
+        Arc::ptr_eq(
+            &live
+                .compute_if_present("compute-a", |_, _| Some(second.clone()))
+                .await
+                .unwrap()
+                .unwrap(),
+            &second
+        ) && entry_view.contains("compute-a", &second).unwrap(),
+        java["computeIfPresentReplaces"]
+    );
+    assert_eq!(
+        Arc::ptr_eq(
+            &live
+                .compute("compute-a", |_, _| Some(first.clone()))
+                .await
+                .unwrap()
+                .unwrap(),
+            &first
+        ) && entry_view.contains("compute-a", &first).unwrap(),
+        java["computeReplaces"]
+    );
+    assert_eq!(
+        Arc::ptr_eq(
+            &live
+                .compute("compute-b", |_, _| Some(second.clone()))
+                .await
+                .unwrap()
+                .unwrap(),
+            &second
+        ),
+        java["computeAbsentInserts"]
+    );
+    assert_eq!(
+        live.compute("compute-b", |_, _| None)
+            .await
+            .unwrap()
+            .is_none()
+            && !live.contains_key("compute-b").unwrap(),
+        java["computeNullRemoves"]
+    );
+    assert_eq!(
+        Arc::ptr_eq(
+            &live
+                .merge("compute-a", second.clone(), |_, added| Some(added.clone()))
+                .await
+                .unwrap()
+                .unwrap(),
+            &second
+        ),
+        java["mergeCombines"]
+    );
+    assert_eq!(
+        Arc::ptr_eq(
+            &live
+                .merge("merge-new", first.clone(), |_, _| None)
+                .await
+                .unwrap()
+                .unwrap(),
+            &first
+        ),
+        java["mergeAbsentInserts"]
+    );
+    live.replace_all(|_, _| second.clone()).await.unwrap();
+    assert_eq!(
+        live.len().unwrap() == 3
+            && live
+                .snapshot()
+                .unwrap()
+                .values()
+                .all(|value| Arc::ptr_eq(value, &second)),
+        java["replaceAllUpdatesMappings"]
+    );
     assert!(Arc::ptr_eq(
         &second_view.snapshot().unwrap()["keep"],
         &first
