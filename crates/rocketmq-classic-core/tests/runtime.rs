@@ -38,6 +38,38 @@ fn service_names_match_invoked_java_public_methods() {
     }
 }
 
+#[test]
+fn inherited_service_thread_oracle_records_java_thread_controls() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    assert_eq!(
+        fixture["serviceThreadCases"],
+        serde_json::json!([
+            {
+                "class": "RebalanceService",
+                "joinTimeMillis": 90000,
+                "initiallyDaemon": false,
+                "initiallyStopped": false,
+                "daemonAfterSet": true,
+                "stoppedAfterWakeup": false,
+                "stoppedAfterMakeStopBeforeStart": false,
+                "stoppedAfterShutdownBeforeStart": false
+            },
+            {
+                "class": "PullMessageService",
+                "joinTimeMillis": 90000,
+                "initiallyDaemon": false,
+                "initiallyStopped": false,
+                "daemonAfterSet": true,
+                "stoppedAfterWakeup": false,
+                "stoppedAfterMakeStopBeforeStart": false,
+                "stoppedAfterShutdownBeforeStart": false,
+                "scheduledExecutorShutdown": true
+            }
+        ])
+    );
+}
+
 struct RouteObserver {
     runtime: Weak<ClientRuntime>,
     updates: AtomicUsize,

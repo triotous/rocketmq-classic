@@ -160,6 +160,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("nullableSettings", nullableSettings());
         fixture.put("accessChannelMethodCases", accessChannelMethodCases());
         fixture.put("serviceNameCases", serviceNameCases());
+        fixture.put("serviceThreadCases", serviceThreadCases());
         fixture.put("languageCodeMethodCases", languageCodeMethodCases());
         fixture.put("socksConstruction", socksConstruction());
         fixture.put("socksConnection", socksConnection(true));
@@ -1565,6 +1566,36 @@ public final class RuntimeConfigFixtures {
         pullCase.put("class", "PullMessageService");
         pullCase.put("serviceName", pull.getServiceName());
         cases.add(pullCase);
+        return cases;
+    }
+
+    private static List<Object> serviceThreadCases() {
+        List<Object> cases = new ArrayList<>();
+        org.apache.rocketmq.common.ServiceThread[] services = {
+            new org.apache.rocketmq.client.impl.consumer.RebalanceService(null),
+            new org.apache.rocketmq.client.impl.consumer.PullMessageService(null)
+        };
+        for (org.apache.rocketmq.common.ServiceThread service : services) {
+            Map<String, Object> row = new TreeMap<>();
+            row.put("class", service.getServiceName());
+            row.put("joinTimeMillis", service.getJoinTime());
+            row.put("initiallyDaemon", service.isDaemon());
+            row.put("initiallyStopped", service.isStopped());
+            service.setDaemon(true);
+            row.put("daemonAfterSet", service.isDaemon());
+            service.wakeup();
+            row.put("stoppedAfterWakeup", service.isStopped());
+            service.makeStop();
+            row.put("stoppedAfterMakeStopBeforeStart", service.isStopped());
+            service.shutdown();
+            row.put("stoppedAfterShutdownBeforeStart", service.isStopped());
+            if (service instanceof org.apache.rocketmq.client.impl.consumer.PullMessageService) {
+                org.apache.rocketmq.client.impl.consumer.PullMessageService pull =
+                    (org.apache.rocketmq.client.impl.consumer.PullMessageService) service;
+                row.put("scheduledExecutorShutdown", pull.getScheduledExecutorService().isShutdown());
+            }
+            cases.add(row);
+        }
         return cases;
     }
 }
