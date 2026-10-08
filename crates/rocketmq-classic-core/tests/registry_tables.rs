@@ -231,6 +231,97 @@ async fn conditional_registry_mutations_match_java_custom_value_equality() {
 }
 
 #[tokio::test]
+async fn registry_default_map_operations_match_invoked_java() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json"))
+            .unwrap();
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&ClientConfig::new("registry-default-operations"))
+        .await
+        .unwrap();
+    macro_rules! check_operations {
+        ($table:expr, $first:expr, $second:expr, $expected:expr) => {{
+            let table = $table;
+            let first = $first;
+            let second = $second;
+            let mut calls = 0;
+            let compute_if_absent = table
+                .compute_if_absent("a", |_| {
+                    calls += 1;
+                    Some(first.clone())
+                })
+                .await
+                .unwrap();
+            let compute_if_absent_again = table
+                .compute_if_absent("a", |_| {
+                    calls += 1;
+                    Some(second.clone())
+                })
+                .await
+                .unwrap();
+            let compute_if_present = table
+                .compute_if_present("a", |_, _| Some(second.clone()))
+                .await
+                .unwrap();
+            let compute_if_present_absent = table
+                .compute_if_present("missing", |_, _| Some(second.clone()))
+                .await
+                .unwrap();
+            let compute_insert = table
+                .compute("b", |_, _| Some(first.clone()))
+                .await
+                .unwrap();
+            let compute_remove = table.compute("b", |_, _| None).await.unwrap();
+            let merge_insert = table
+                .merge("c", first.clone(), |_, _| Some(second.clone()))
+                .await
+                .unwrap();
+            let merge_update = table
+                .merge("c", second.clone(), |_, _| Some(second.clone()))
+                .await
+                .unwrap();
+            table
+                .replace_all(|_, _| first.clone())
+                .await
+                .unwrap();
+            let mut for_each_count = 0;
+            table
+                .for_each(|_, _| for_each_count += 1)
+                .unwrap();
+            let actual = serde_json::json!({
+                "computeIfAbsentInsert": same(compute_if_absent, &first),
+                "computeIfAbsentNoRemap": same(compute_if_absent_again, &first) && calls == 1,
+                "computeIfPresentUpdate": same(compute_if_present, &second),
+                "computeIfPresentAbsent": compute_if_present_absent.is_none(),
+                "computeInsert": same(compute_insert, &first),
+                "computeRemove": compute_remove.is_none() && !table.contains_key("b").unwrap(),
+                "mergeInsert": same(merge_insert, &first),
+                "mergeUpdate": same(merge_update, &second),
+                "replaceAll": same(table.get("a").unwrap(), &first)
+                    && same(table.get("c").unwrap(), &first),
+                "forEachCount": for_each_count,
+                "keys": table.keys().unwrap(),
+                "valuesCount": table.values().unwrap().len()
+            });
+            assert_eq!(actual, $expected);
+            table.clear().await.unwrap();
+        }};
+    }
+    check_operations!(
+        runtime.producer_table(),
+        Arc::new(Producer) as Arc<dyn ProducerRuntime>,
+        Arc::new(Producer) as Arc<dyn ProducerRuntime>,
+        fixture["registryTables"]["producerDefaultOperations"].clone()
+    );
+    check_operations!(
+        runtime.consumer_table(),
+        Arc::new(Consumer) as Arc<dyn ConsumerRuntime>,
+        Arc::new(Consumer) as Arc<dyn ConsumerRuntime>,
+        fixture["registryTables"]["consumerDefaultOperations"].clone()
+    );
+}
+
+#[tokio::test]
 async fn group_unregister_matches_invoked_java_consumer_methods_and_removes_current_binding() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();

@@ -300,6 +300,34 @@ public final class RuntimeConfigFixtures {
         return result;
     }
 
+    private static <T> Map<String, Object> tableDefaultOperations(
+        java.util.concurrent.ConcurrentMap<String, T> table, T first, T second) {
+        Map<String, Object> result = new TreeMap<>();
+        table.clear();
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        result.put("computeIfAbsentInsert", table.computeIfAbsent("a", key -> {
+            calls.incrementAndGet(); return first;
+        }) == first);
+        result.put("computeIfAbsentNoRemap", table.computeIfAbsent("a", key -> {
+            calls.incrementAndGet(); return second;
+        }) == first && calls.get() == 1);
+        result.put("computeIfPresentUpdate", table.computeIfPresent("a", (key, old) -> second) == second);
+        result.put("computeIfPresentAbsent", table.computeIfPresent("missing", (key, old) -> second) == null);
+        result.put("computeInsert", table.compute("b", (key, old) -> first) == first);
+        result.put("computeRemove", table.compute("b", (key, old) -> null) == null && !table.containsKey("b"));
+        result.put("mergeInsert", table.merge("c", first, (old, value) -> second) == first);
+        result.put("mergeUpdate", table.merge("c", second, (old, value) -> second) == second);
+        table.replaceAll((key, old) -> first);
+        result.put("replaceAll", table.get("a") == first && table.get("c") == first);
+        java.util.concurrent.atomic.AtomicInteger visited = new java.util.concurrent.atomic.AtomicInteger();
+        table.forEach((key, value) -> visited.incrementAndGet());
+        result.put("forEachCount", visited.get());
+        result.put("keys", new java.util.TreeSet<>(table.keySet()));
+        result.put("valuesCount", table.values().size());
+        table.clear();
+        return result;
+    }
+
     private static Map<String, Object> registryTables() throws Exception {
         ClientConfig config = new ClientConfig();
         config.setClientIP("registry-tables");
@@ -314,6 +342,10 @@ public final class RuntimeConfigFixtures {
             org.apache.rocketmq.client.impl.consumer.MQConsumerInner consumerB = tableOwner(org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class);
             result.put("producer", tableMutations(runtime.getProducerTable(), producerA, producerB, runtime::selectProducer));
             result.put("consumer", tableMutations(runtime.getConsumerTable(), consumerA, consumerB, runtime::selectConsumer));
+            result.put("producerDefaultOperations",
+                tableDefaultOperations(runtime.getProducerTable(), producerA, producerB));
+            result.put("consumerDefaultOperations",
+                tableDefaultOperations(runtime.getConsumerTable(), consumerA, consumerB));
             Map<String, Object> equalValues = new TreeMap<>();
             org.apache.rocketmq.client.impl.producer.MQProducerInner producerEqualA =
                 tableOwner(org.apache.rocketmq.client.impl.producer.MQProducerInner.class, "producer-equal");
