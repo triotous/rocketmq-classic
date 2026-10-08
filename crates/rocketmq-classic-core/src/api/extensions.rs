@@ -210,7 +210,7 @@ impl MQClientApi {
                 addr,
                 request::HEART_BEAT,
                 &LiteSubscriptionCtlRequestHeader,
-                Some(json_body(data)),
+                Some(data.java_encode().expect("heartbeat body serialization")),
                 deadline,
             )
             .await?;
@@ -228,7 +228,7 @@ impl MQClientApi {
                 addr,
                 request::HEART_BEAT,
                 &LiteSubscriptionCtlRequestHeader,
-                Some(json_body(data)),
+                Some(data.java_encode().expect("heartbeat body serialization")),
                 deadline,
             )
             .await?,

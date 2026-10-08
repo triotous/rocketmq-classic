@@ -804,6 +804,24 @@ impl Default for HeartbeatData {
 }
 
 impl HeartbeatData {
+    /// Java `RemotingSerializable.toJson(Object, prettyFormat)` and the
+    /// inherited instance `toJson(boolean)` serialize Fastjson's sorted bean
+    /// fields. `serde_json::Value` supplies the same deterministic key order.
+    pub fn java_to_json(&self, pretty_format: bool) -> Result<String, serde_json::Error> {
+        let value = serde_json::to_value(self)?;
+        if pretty_format {
+            serde_json::to_string_pretty(&value)
+        } else {
+            serde_json::to_string(&value)
+        }
+    }
+
+    /// Java `RemotingSerializable.encode(Object)` and inherited `encode()`
+    /// return the compact UTF-8 representation produced by `java_to_json`.
+    pub fn java_encode(&self) -> Result<Vec<u8>, serde_json::Error> {
+        Ok(self.java_to_json(false)?.into_bytes())
+    }
+
     /// Java `HeartbeatData.toString`; set ordering is normalized because the
     /// source uses HashSet iteration with unspecified order.
     pub fn java_to_string(&self) -> String {
@@ -1215,6 +1233,97 @@ mod tests {
             assert_eq!(case["equalFieldsDistinctInstanceEquals"], false, "{case}");
             assert_eq!(case["equalFieldsSetSize"], 2, "{case}");
         }
+    }
+
+    #[test]
+    fn heartbeat_inherited_serialization_methods_match_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
+                .unwrap();
+        let methods = &fixture["heartbeatSerializationMethodCases"];
+        assert_eq!(methods["staticEncodeNullIsNull"], true);
+        assert_eq!(methods["staticToJsonNull"], "null");
+        assert_eq!(methods["decodeNullIsNull"], true);
+        assert_eq!(methods["decodeListNullIsNull"], true);
+        assert_eq!(methods["fromJsonNullIsNull"], true);
+        assert_eq!(
+            methods["featureEncodeParameterType"],
+            "com.alibaba.fastjson2.JSONWriter$Feature"
+        );
+
+        for case in methods["cases"].as_array().unwrap() {
+            let raw_input = case["rawInput"].as_str().unwrap();
+            let value: HeartbeatData = serde_json::from_str(raw_input).unwrap();
+            let native_json = value.java_to_json(false).unwrap();
+            assert_eq!(
+                native_json, case["instanceJson"],
+                "{} instance encode",
+                case["case"]
+            );
+            assert_eq!(
+                native_json, case["staticJson"],
+                "{} static toJson",
+                case["case"]
+            );
+            assert_eq!(
+                native_json, case["instanceEncodedJson"],
+                "{} encode bytes",
+                case["case"]
+            );
+            assert_eq!(
+                native_json, case["staticEncodedJson"],
+                "{} static encode",
+                case["case"]
+            );
+            assert_eq!(
+                native_json, case["featureEncodedJson"],
+                "{} feature encode",
+                case["case"]
+            );
+            assert_eq!(
+                value.java_encode().unwrap(),
+                native_json.as_bytes(),
+                "{} UTF-8 encode",
+                case["case"]
+            );
+
+            let pretty_json = value.java_to_json(true).unwrap();
+            let actual_pretty: serde_json::Value = serde_json::from_str(&pretty_json).unwrap();
+            for field in ["instancePrettyJson", "staticPrettyJson"] {
+                let expected: serde_json::Value =
+                    serde_json::from_str(case[field].as_str().unwrap()).unwrap();
+                assert_eq!(actual_pretty, expected, "{} {field}", case["case"]);
+            }
+
+            let decoded_from_bytes: HeartbeatData =
+                serde_json::from_slice(native_json.as_bytes()).unwrap();
+            let decoded_from_text: HeartbeatData = serde_json::from_str(&native_json).unwrap();
+            let decoded_list: Vec<HeartbeatData> =
+                serde_json::from_str(&format!("[{native_json}]")).unwrap();
+            for decoded in [
+                decoded_from_bytes,
+                decoded_from_text,
+                decoded_list.into_iter().next().unwrap(),
+            ] {
+                let actual = serde_json::to_value(decoded).unwrap();
+                for field in ["decodedJson", "fromJsonJson", "decodedListJson"] {
+                    let expected: serde_json::Value =
+                        serde_json::from_str(case[field].as_str().unwrap()).unwrap();
+                    assert_eq!(actual, expected, "{} {field}", case["case"]);
+                }
+            }
+            assert_eq!(case["decodedListCount"], 1, "{} decodeList", case["case"]);
+        }
+
+        assert_eq!(
+            serde_json::to_string(&Option::<HeartbeatData>::None).unwrap(),
+            methods["staticToJsonNull"]
+        );
+        assert!(
+            serde_json::from_str::<Option<HeartbeatData>>("null")
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
