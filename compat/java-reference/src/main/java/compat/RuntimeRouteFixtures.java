@@ -942,11 +942,16 @@ public final class RuntimeRouteFixtures {
             + "\"topicQueueMappingByBroker\":null}";
         String emptyCollections = "{\"queueDatas\":[],\"brokerDatas\":[],\"filterServerTable\":{},"
             + "\"topicQueueMappingByBroker\":{}}";
+        String nullElements = "{\"queueDatas\":[null],\"brokerDatas\":[null],"
+            + "\"filterServerTable\":{\"broker\":[\"filter-a\",null]},"
+            + "\"topicQueueMappingByBroker\":{\"broker\":null}}";
         String[][] pairs = new String[][] {
             {"{}", "{}"},
             {nullCollections, emptyCollections},
             {populated, metadataOnly},
-            {populated, differentQueue}
+            {populated, differentQueue},
+            {nullElements, nullElements},
+            {nullElements, emptyCollections}
         };
         List<Object> cases = new ArrayList<>();
         for (String[] pair : pairs) {
@@ -981,7 +986,10 @@ public final class RuntimeRouteFixtures {
             + "\"totalQueues\":2,\"bname\":\"broker\",\"epoch\":1,\"dirty\":false,\"currIdMap\":{\"0\":0}}}}";
         String nullCollections = "{\"orderTopicConf\":null,\"queueDatas\":null,\"brokerDatas\":null,"
             + "\"filterServerTable\":null,\"topicQueueMappingByBroker\":null}";
-        String[] inputs = new String[] {"{}", nullCollections, populated};
+        String nullElements = "{\"queueDatas\":[null],\"brokerDatas\":[null],"
+            + "\"filterServerTable\":{\"broker\":[\"filter-a\",null]},"
+            + "\"topicQueueMappingByBroker\":{\"broker\":null}}";
+        String[] inputs = new String[] {"{}", nullCollections, populated, nullElements};
         List<Object> cases = new ArrayList<>();
         for (String input : inputs) {
             org.apache.rocketmq.remoting.protocol.route.TopicRouteData route =
