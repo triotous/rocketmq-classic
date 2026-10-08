@@ -554,6 +554,19 @@ public final class RuntimeRouteFixtures {
             table.putAll(bulkValues);
             primitives.put("putAllAdds", table.get("bulk-a") == first && table.get("bulk-b") == second
                 && table.size() == 3);
+            TopicRouteData absentValue = com.alibaba.fastjson2.JSON.parseObject(
+                com.alibaba.fastjson2.JSON.toJSONString(second), TopicRouteData.class);
+            absentValue.getBrokerDatas().get(0).setBrokerName("absent-broker");
+            primitives.put("containsValueEqualCopy", table.containsValue(equalSecond));
+            primitives.put("containsValueAbsent", !table.containsValue(absentValue));
+            Map<String, TopicRouteData> expectedRoutes = new TreeMap<>();
+            expectedRoutes.put("topic", second);
+            expectedRoutes.put("bulk-a", first);
+            expectedRoutes.put("bulk-b", second);
+            Map<String, Boolean> visitedRoutes = new TreeMap<>();
+            table.forEach((key, value) -> visitedRoutes.put(key, expectedRoutes.get(key) == value));
+            primitives.put("forEachVisitsCurrentMappings", visitedRoutes.size() == expectedRoutes.size()
+                && visitedRoutes.values().stream().allMatch(Boolean::booleanValue));
             primitives.put("computeIfAbsentMaps", table.computeIfAbsent("compute-a", key -> first) == first);
             primitives.put("computeIfAbsentKeepsCurrent", table.computeIfAbsent("compute-a", key -> second) == first);
             primitives.put("computeIfPresentReplaces", table.computeIfPresent("compute-a", (key, value) -> second) == second
