@@ -1,5 +1,7 @@
 # Java 5.5.1 compatibility evidence
 
+SOCKS Fastjson grammar extension `300ca27`/`0c07502` brings the actual constructor/parser oracle to 40 `socksConstruction` cases. Java rejects `Infinity`, `-Infinity`, unquoted identifier field names and binary `0b10`; it accepts single-quoted field names, signed `+123` and leading-zero decimal `0123`. Native parsing matches acceptance and reflected parsed values, with numeric-token-only leading-zero normalization outside strings/comments. Client-config fixture SHA-256 `da3b0dcdab5a83db0b4d7c9051009f54f46e614d557439662c24f4d0272ffa2f`; focused tests, full workspace, strict all-feature Clippy and offline Maven verify pass. Broader grammar and connection paths remain open; Phase 6 is PARTIAL and P6-V04 remains pending Phase 19.
+
 Actual `checkClientInBroker()` null-topic case `d591091`: with a non-TAG expression, Java throws before route lookup or Broker RPC. Native returns typed `InvalidRoute` and makes no network request. Fixture SHA-256 `73990a351770ca0d8451590eef16bc3931115f90853193f37f3e4e18d61c841d`; focused regression and pinned Maven verify pass.
 
 Null consumer subscription runtime preparation `1aac047` directly invokes the pinned method: full mode throws NullPointerException on a registered consumer returning null from `subscriptions()`, and simple mode builds empty subscription metadata. Native private preparation regression and Maven fixture verification pass. Heartbeat fixture SHA-256 `189e4a80c6f7f02083efc15dfe39535321872860a3d058c77eca975564193036`; wider Phase 6 audit remains open.
