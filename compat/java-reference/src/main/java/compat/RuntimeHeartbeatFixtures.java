@@ -288,7 +288,8 @@ public final class RuntimeHeartbeatFixtures {
         for (String input : new String[] {
             "{}",
             "{\"clientID\":null,\"producerDataSet\":null,\"consumerDataSet\":null,\"heartbeatFingerprint\":0,\"withoutSub\":false}",
-            "{\"clientID\":\"client\",\"producerDataSet\":[{\"groupName\":\"p\"}],\"consumerDataSet\":[{\"groupName\":\"c\",\"subscriptionDataSet\":[{\"topic\":\"topic\",\"subString\":\"tag\",\"tagsSet\":[\"tag\"],\"codeSet\":[7],\"subVersion\":42,\"expressionType\":\"SQL92\"}]}],\"heartbeatFingerprint\":7,\"withoutSub\":true}"
+            "{\"clientID\":\"client\",\"producerDataSet\":[{\"groupName\":\"p\"}],\"consumerDataSet\":[{\"groupName\":\"c\",\"subscriptionDataSet\":[{\"topic\":\"topic\",\"subString\":\"tag\",\"tagsSet\":[\"tag\"],\"codeSet\":[7],\"subVersion\":42,\"expressionType\":\"SQL92\"}]}],\"heartbeatFingerprint\":7,\"withoutSub\":true}",
+            "{\"clientID\":\"duplicate-producers\",\"producerDataSet\":[{\"groupName\":\"same\"},{\"groupName\":\"same\"}],\"consumerDataSet\":[],\"heartbeatFingerprint\":0,\"withoutSub\":false}"
         }) {
             HeartbeatData value = com.alibaba.fastjson2.JSON.parseObject(input, HeartbeatData.class);
             com.alibaba.fastjson2.JSONObject encoded = com.alibaba.fastjson2.JSON.parseObject(
@@ -302,6 +303,7 @@ public final class RuntimeHeartbeatFixtures {
             item.put("producerCount", value.getProducerDataSet() == null ? -1 : value.getProducerDataSet().size());
             item.put("consumerCount", value.getConsumerDataSet() == null ? -1 : value.getConsumerDataSet().size());
             item.put("fingerprint", value.getHeartbeatFingerprint());
+            item.put("computedFingerprint", value.computeHeartbeatFingerprint());
             item.put("withoutSub", value.isWithoutSub());
             item.put("encodedHasClient", encoded.containsKey("clientID"));
             item.put("encodedHasProducers", encoded.containsKey("producerDataSet"));
@@ -510,7 +512,7 @@ public final class RuntimeHeartbeatFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "MQClientInstance.registerProducer/registerConsumer/prepareHeartbeatData/unregisterProducer/unregisterConsumer; HeartbeatData.computeHeartbeatFingerprint/toString; ProducerData.toString; ConsumerData enum JSON names/toString; SubscriptionData.SUB_ALL/constructors/equals/hashCode/compareTo/toString");
+        fixture.put("entrypoint", "MQClientInstance.registerProducer/registerConsumer/prepareHeartbeatData/unregisterProducer/unregisterConsumer; HeartbeatData.computeHeartbeatFingerprint/toString/duplicate-ProducerData decode; ProducerData.toString; ConsumerData enum JSON names/toString; SubscriptionData.SUB_ALL/constructors/equals/hashCode/compareTo/toString");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
         fixture.put("multiplicityCases", multiplicityCases);

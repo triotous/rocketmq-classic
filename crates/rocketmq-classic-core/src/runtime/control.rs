@@ -750,24 +750,34 @@ mod tests {
         fn assert_heartbeat(command: &RemotingCommand, consumer: &Consumer, producers: &[&str]) {
             assert_eq!(command.code, request::HEART_BEAT);
             assert_eq!(command.language, Some(LanguageCode::Java));
-            let heartbeat: HeartbeatData =
+            let mut heartbeat: HeartbeatData =
                 serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
-            assert_eq!(
-                heartbeat,
-                HeartbeatData {
-                    client_id: Some("p6-u01@DEFAULT".into()),
-                    producer_data_set: Some(
-                        producers
-                            .iter()
-                            .map(|group| ProducerData {
-                                group_name: Some((*group).into())
-                            })
-                            .collect()
-                    ),
-                    consumer_data_set: Some(vec![consumer.heartbeat_data()]),
-                    ..Default::default()
-                }
-            );
+            let mut expected = HeartbeatData {
+                client_id: Some("p6-u01@DEFAULT".into()),
+                producer_data_set: Some(
+                    producers
+                        .iter()
+                        .map(|group| ProducerData {
+                            group_name: Some((*group).into()),
+                        })
+                        .collect(),
+                ),
+                consumer_data_set: Some(vec![consumer.heartbeat_data()]),
+                ..Default::default()
+            };
+            let by_group =
+                |left: &ProducerData, right: &ProducerData| left.group_name.cmp(&right.group_name);
+            heartbeat
+                .producer_data_set
+                .as_mut()
+                .unwrap()
+                .sort_by(by_group);
+            expected
+                .producer_data_set
+                .as_mut()
+                .unwrap()
+                .sort_by(by_group);
+            assert_eq!(heartbeat, expected);
             let json: serde_json::Value =
                 serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
             assert_eq!(json["clientID"], "p6-u01@DEFAULT");

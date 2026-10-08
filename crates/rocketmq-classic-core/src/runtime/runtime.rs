@@ -761,7 +761,7 @@ impl ClientRuntime {
                 .producer_data_set
                 .as_mut()
                 .unwrap()
-                .insert(ProducerData {
+                .push(ProducerData {
                     group_name: Some(group),
                 });
         }

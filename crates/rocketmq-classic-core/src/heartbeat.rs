@@ -112,10 +112,7 @@ impl ClientRuntime {
         let Some(mut full) = self.prepare_heartbeat_for_send()? else {
             return Ok(false);
         };
-        if full
-            .producer_data_set
-            .as_ref()
-            .is_none_or(HashSet::is_empty)
+        if full.producer_data_set.as_ref().is_none_or(Vec::is_empty)
             && full.consumer_data_set.as_ref().is_none_or(Vec::is_empty)
         {
             return Ok(false);
@@ -162,10 +159,7 @@ impl ClientRuntime {
         let Some(mut full) = self.prepare_heartbeat_for_send()? else {
             return Ok(false);
         };
-        if full
-            .producer_data_set
-            .as_ref()
-            .is_none_or(HashSet::is_empty)
+        if full.producer_data_set.as_ref().is_none_or(Vec::is_empty)
             && full.consumer_data_set.as_ref().is_none_or(Vec::is_empty)
         {
             return Ok(false);

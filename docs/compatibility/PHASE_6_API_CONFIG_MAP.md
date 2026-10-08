@@ -199,9 +199,10 @@ Java bean getters/setters map to the native DTO's public fields. `SubscriptionDa
 | `SubscriptionData.toString` | `java_to_string` | Actual Java values cover defaults, explicit nulls, Unicode and populated sets; Rust sorts set text because Java HashSet order is unspecified. |
 | `ProducerData.toString` / `ConsumerData.toString` / `HeartbeatData.toString` | each DTO's `java_to_string` | Actual default, null and populated Java DTO cases include nested subscription text. Rust uses deterministic set ordering and retains heartbeat consumer multiplicity. |
 | `ConsumerData` enum JSON fields | `ConsumeType`, `MessageModel`, `ConsumeFromWhere` serde mapping | Actual values cover all 3, 3, and 6 Java constants; names are case-insensitive, unknown strings become null, integer ordinals map by Java declaration order, fractional numbers truncate toward zero before ordinal lookup, and out-of-range values are rejected. Native decoding and re-encoding now match. |
+| `HeartbeatData.producerDataSet` decode/encode | `Option<Vec<ProducerData>>` | `ProducerData` inherits identity equality, so the actual Java `HashSet` retains two distinct rows with equal `groupName`; a prior native `HashSet` collapsed them. Actual Java decode/toString and native round-trip now retain both. |
 | `HeartbeatData.computeHeartbeatFingerprint` | `compute_heartbeat_fingerprint` | Seven actual Java runtime fingerprints and explicit null collection/primitive cases; the runtime delegates to this public method. |
 
-The heartbeat fixture SHA-256 is `ac14b0ba1f12bd68a2ecfe6729a45324eff00e49cbe336992ca4c3b2c47eebc4`. The method/constructor tests close these heartbeat DTO rows, not remaining source/input or whole-phase acceptance.
+The heartbeat fixture SHA-256 is `10698ec4bbc5109ca4737fe45eea7afec02e5e84563de58906992b9194067493`. The method/constructor tests close these heartbeat DTO rows, not remaining source/input or whole-phase acceptance.
 
 ## Other runtime exports, reverse inventory
 

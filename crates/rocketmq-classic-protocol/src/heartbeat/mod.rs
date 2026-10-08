@@ -534,7 +534,9 @@ pub struct HeartbeatData {
     #[serde(rename = "clientID", default, skip_serializing_if = "Option::is_none")]
     pub client_id: Option<String>,
     #[serde(default = "empty_producers", skip_serializing_if = "Option::is_none")]
-    pub producer_data_set: Option<HashSet<ProducerData>>,
+    /// Java ProducerData inherits identity equality, so repeated equal wire
+    /// rows must remain distinct after decoding.
+    pub producer_data_set: Option<Vec<ProducerData>>,
     #[serde(default = "empty_consumers", skip_serializing_if = "Option::is_none")]
     /// Java ConsumerData has object identity equality. Preserve its wire
     /// multiplicity rather than deduplicating structurally equal metadata.
@@ -569,7 +571,7 @@ impl HeartbeatData {
         format!(
             "HeartbeatData [clientID={}, producerDataSet={}, consumerDataSet={}]",
             java_nullable_string(&self.client_id),
-            java_hash_set_to_string(&self.producer_data_set, ProducerData::java_to_string),
+            java_vec_to_string(&self.producer_data_set, ProducerData::java_to_string),
             java_vec_to_string(&self.consumer_data_set, ConsumerData::java_to_string),
         )
     }
@@ -624,8 +626,8 @@ impl HeartbeatData {
     }
 }
 
-fn empty_producers() -> Option<HashSet<ProducerData>> {
-    Some(HashSet::new())
+fn empty_producers() -> Option<Vec<ProducerData>> {
+    Some(Vec::new())
 }
 
 fn empty_consumers() -> Option<Vec<ConsumerData>> {
@@ -892,6 +894,12 @@ mod tests {
                 case["producerCount"]
             );
             assert_eq!(
+                encoded["producerDataSet"]
+                    .as_array()
+                    .map_or(-1, |set| set.len() as i64),
+                case["producerCount"]
+            );
+            assert_eq!(
                 value
                     .consumer_data_set
                     .as_ref()
@@ -899,6 +907,10 @@ mod tests {
                 case["consumerCount"]
             );
             assert_eq!(value.heartbeat_fingerprint, case["fingerprint"]);
+            assert_eq!(
+                i64::from(value.compute_heartbeat_fingerprint().unwrap()),
+                case["computedFingerprint"]
+            );
             assert_eq!(value.is_without_sub, case["withoutSub"]);
             assert_eq!(encoded.get("clientID").is_some(), case["encodedHasClient"]);
             assert_eq!(
