@@ -220,6 +220,9 @@ public final class RuntimeConfigFixtures {
         manager.removeClientFactory(first.getClientId());
         org.apache.rocketmq.client.impl.factory.MQClientInstance second = manager.getOrCreateMQClientInstance(config);
         String id = first.getClientId();
+        java.util.Set<String> keyView = live.keySet();
+        java.util.Collection<org.apache.rocketmq.client.impl.factory.MQClientInstance> valuesView = live.values();
+        java.util.Set<Map.Entry<String, org.apache.rocketmq.client.impl.factory.MQClientInstance>> entryView = live.entrySet();
         Map<String, Object> result = new TreeMap<>();
         try {
             result.put("retainedViewSeesSecond", live.get(id) == second);
@@ -257,8 +260,19 @@ public final class RuntimeConfigFixtures {
             result.put("forEachVisitsCurrentMappings", visited.size() == expected.size()
                 && visited.entrySet().stream().allMatch(entry -> Boolean.TRUE.equals(entry.getValue()))
                 && expected.keySet().containsAll(visited.keySet()));
+            result.put("keyViewSeesBulk", keyView.contains("bulk-a") && keyView.size() == 4);
+            result.put("valuesViewSeesBulk", valuesView.contains(first) && valuesView.contains(second)
+                && valuesView.size() == 4);
+            result.put("entryViewSeesBulk", entryView.contains(new java.util.AbstractMap.SimpleImmutableEntry<>("bulk-a", first))
+                && entryView.size() == 4);
+            result.put("keyViewRemovesBulk", keyView.remove("bulk-b"));
+            result.put("entryViewRemovesBulk", entryView.remove(
+                new java.util.AbstractMap.SimpleImmutableEntry<>("bulk-a", first)));
+            result.put("viewsSeeRemovals", !keyView.contains("bulk-b") && !entryView.contains(
+                new java.util.AbstractMap.SimpleImmutableEntry<>("bulk-a", first)) && valuesView.size() == 2);
             live.clear();
             result.put("retainedViewEmptyAfterClear", live.isEmpty());
+            result.put("collectionViewsEmptyAfterClear", keyView.isEmpty() && valuesView.isEmpty() && entryView.isEmpty());
         } finally {
             live.remove(id);
             live.remove("");
