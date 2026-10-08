@@ -570,6 +570,14 @@ impl FactoryKeySetView {
         Ok(removed)
     }
 
+    pub async fn remove_all(&self, keys: &BTreeSet<String>) -> Result<usize, RuntimeError> {
+        self.remove_if(|key| keys.contains(key)).await
+    }
+
+    pub async fn retain_all(&self, keys: &BTreeSet<String>) -> Result<usize, RuntimeError> {
+        self.remove_if(|key| !keys.contains(key)).await
+    }
+
     pub async fn clear(&self) -> Result<(), RuntimeError> {
         self.0.clear().await
     }
@@ -619,6 +627,16 @@ impl FactoryValuesView {
             }
         }
         Ok(removed)
+    }
+
+    pub async fn remove_all(&self, values: &[Arc<ClientRuntime>]) -> Result<usize, RuntimeError> {
+        self.remove_if(|value| values.iter().any(|candidate| Arc::ptr_eq(candidate, value)))
+            .await
+    }
+
+    pub async fn retain_all(&self, values: &[Arc<ClientRuntime>]) -> Result<usize, RuntimeError> {
+        self.remove_if(|value| !values.iter().any(|candidate| Arc::ptr_eq(candidate, value)))
+            .await
     }
 
     pub async fn clear(&self) -> Result<(), RuntimeError> {
@@ -671,6 +689,30 @@ impl FactoryEntrySetView {
             }
         }
         Ok(removed)
+    }
+
+    pub async fn remove_all(
+        &self,
+        entries: &BTreeMap<String, Arc<ClientRuntime>>,
+    ) -> Result<usize, RuntimeError> {
+        self.remove_if(|key, value| {
+            entries
+                .get(key)
+                .is_some_and(|candidate| Arc::ptr_eq(candidate, value))
+        })
+        .await
+    }
+
+    pub async fn retain_all(
+        &self,
+        entries: &BTreeMap<String, Arc<ClientRuntime>>,
+    ) -> Result<usize, RuntimeError> {
+        self.remove_if(|key, value| {
+            !entries
+                .get(key)
+                .is_some_and(|candidate| Arc::ptr_eq(candidate, value))
+        })
+        .await
     }
 
     pub async fn clear(&self) -> Result<(), RuntimeError> {
