@@ -453,7 +453,7 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
     outcomes.insert(
         "valuesViewRemoveIf",
         values_view
-            .remove_if(|value| value.as_ref() == first.as_ref())
+            .remove_if(|value| value == first.as_ref())
             .unwrap()
             > 0
             && !table.contains_key("value-a").unwrap(),

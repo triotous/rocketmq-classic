@@ -1,7 +1,10 @@
 use super::cache::{RouteCache, route_values_equal};
 use crate::runtime::RuntimeError;
 use rocketmq_classic_protocol::route::TopicRouteData;
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 /// Live raw topic map. Writes neither fetch nor validate/convert a route.
 /// Values use Java route content equality, not owner registration identity.
@@ -57,6 +60,15 @@ impl TopicRouteTable {
             action(key, value);
         }
         Ok(())
+    }
+    pub fn key_set_view(&self) -> TopicRouteKeySetView {
+        TopicRouteKeySetView(self.clone())
+    }
+    pub fn values_view(&self) -> TopicRouteValuesView {
+        TopicRouteValuesView(self.clone())
+    }
+    pub fn entry_set_view(&self) -> TopicRouteEntrySetView {
+        TopicRouteEntrySetView(self.clone())
     }
     pub fn put(
         &self,
@@ -278,5 +290,195 @@ impl TopicRouteTable {
             map.clear();
             (changed, ())
         })
+    }
+}
+
+/// Retained live key-set view of a raw topic route table.
+#[derive(Clone)]
+pub struct TopicRouteKeySetView(TopicRouteTable);
+
+impl TopicRouteKeySetView {
+    pub fn contains(&self, key: &str) -> Result<bool, RuntimeError> {
+        self.0.contains_key(key)
+    }
+
+    pub fn len(&self) -> Result<usize, RuntimeError> {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> Result<bool, RuntimeError> {
+        self.0.is_empty()
+    }
+
+    /// Returns a detached key copy from the live view.
+    pub fn snapshot(&self) -> Result<BTreeSet<String>, RuntimeError> {
+        Ok(self.0.snapshot()?.into_keys().collect())
+    }
+
+    pub fn remove(&self, key: &str) -> Result<bool, RuntimeError> {
+        self.0.remove(key).map(|value| value.is_some())
+    }
+
+    /// Removes matching keys while visiting a detached entry snapshot.
+    pub fn remove_if(
+        &self,
+        mut predicate: impl FnMut(&str) -> bool,
+    ) -> Result<usize, RuntimeError> {
+        let mut removed = 0;
+        for (key, value) in self.0.snapshot()? {
+            if predicate(&key) && self.0.remove_if_equal(&key, &value)? {
+                removed += 1;
+            }
+        }
+        Ok(removed)
+    }
+
+    pub fn remove_all(&self, keys: &BTreeSet<String>) -> Result<usize, RuntimeError> {
+        self.remove_if(|key| keys.contains(key))
+    }
+
+    pub fn retain_all(&self, keys: &BTreeSet<String>) -> Result<usize, RuntimeError> {
+        self.remove_if(|key| !keys.contains(key))
+    }
+
+    pub fn clear(&self) -> Result<(), RuntimeError> {
+        self.0.clear()
+    }
+}
+
+/// Retained live values view of a raw topic route table.
+#[derive(Clone)]
+pub struct TopicRouteValuesView(TopicRouteTable);
+
+impl TopicRouteValuesView {
+    pub fn contains(&self, value: &TopicRouteData) -> Result<bool, RuntimeError> {
+        self.0.contains_value(value)
+    }
+
+    pub fn len(&self) -> Result<usize, RuntimeError> {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> Result<bool, RuntimeError> {
+        self.0.is_empty()
+    }
+
+    /// Returns a detached values copy from the live view.
+    pub fn snapshot(&self) -> Result<Vec<Arc<TopicRouteData>>, RuntimeError> {
+        Ok(self.0.snapshot()?.into_values().collect())
+    }
+
+    /// Removes one mapping whose route matches by source route equality.
+    pub fn remove(&self, value: &TopicRouteData) -> Result<bool, RuntimeError> {
+        for (key, current) in self.0.snapshot()? {
+            if route_values_equal(&current, value) && self.0.remove_if_equal(&key, value)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Removes matching values while visiting a detached entry snapshot.
+    pub fn remove_if(
+        &self,
+        mut predicate: impl FnMut(&TopicRouteData) -> bool,
+    ) -> Result<usize, RuntimeError> {
+        let mut removed = 0;
+        for (key, value) in self.0.snapshot()? {
+            if predicate(&value) && self.0.remove_if_equal(&key, &value)? {
+                removed += 1;
+            }
+        }
+        Ok(removed)
+    }
+
+    pub fn remove_all(&self, values: &[Arc<TopicRouteData>]) -> Result<usize, RuntimeError> {
+        self.remove_if(|value| {
+            values
+                .iter()
+                .any(|candidate| route_values_equal(candidate, value))
+        })
+    }
+
+    pub fn retain_all(&self, values: &[Arc<TopicRouteData>]) -> Result<usize, RuntimeError> {
+        self.remove_if(|value| {
+            !values
+                .iter()
+                .any(|candidate| route_values_equal(candidate, value))
+        })
+    }
+
+    pub fn clear(&self) -> Result<(), RuntimeError> {
+        self.0.clear()
+    }
+}
+
+/// Retained live entry-set view of a raw topic route table.
+#[derive(Clone)]
+pub struct TopicRouteEntrySetView(TopicRouteTable);
+
+impl TopicRouteEntrySetView {
+    pub fn contains(&self, key: &str, value: &TopicRouteData) -> Result<bool, RuntimeError> {
+        Ok(self
+            .0
+            .get(key)?
+            .is_some_and(|current| route_values_equal(&current, value)))
+    }
+
+    pub fn len(&self) -> Result<usize, RuntimeError> {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> Result<bool, RuntimeError> {
+        self.0.is_empty()
+    }
+
+    /// Returns a detached entry copy from the live view.
+    pub fn snapshot(&self) -> Result<BTreeMap<String, Arc<TopicRouteData>>, RuntimeError> {
+        self.0.snapshot()
+    }
+
+    pub fn remove(&self, key: &str, value: &TopicRouteData) -> Result<bool, RuntimeError> {
+        self.0.remove_if_equal(key, value)
+    }
+
+    /// Removes matching entries while visiting a detached entry snapshot.
+    pub fn remove_if(
+        &self,
+        mut predicate: impl FnMut(&str, &TopicRouteData) -> bool,
+    ) -> Result<usize, RuntimeError> {
+        let mut removed = 0;
+        for (key, value) in self.0.snapshot()? {
+            if predicate(&key, &value) && self.0.remove_if_equal(&key, &value)? {
+                removed += 1;
+            }
+        }
+        Ok(removed)
+    }
+
+    pub fn remove_all(
+        &self,
+        entries: &BTreeMap<String, Arc<TopicRouteData>>,
+    ) -> Result<usize, RuntimeError> {
+        self.remove_if(|key, value| {
+            entries
+                .get(key)
+                .is_some_and(|candidate| route_values_equal(candidate, value))
+        })
+    }
+
+    pub fn retain_all(
+        &self,
+        entries: &BTreeMap<String, Arc<TopicRouteData>>,
+    ) -> Result<usize, RuntimeError> {
+        self.remove_if(|key, value| {
+            !entries
+                .get(key)
+                .is_some_and(|candidate| route_values_equal(candidate, value))
+        })
+    }
+
+    pub fn clear(&self) -> Result<(), RuntimeError> {
+        self.0.clear()
     }
 }
