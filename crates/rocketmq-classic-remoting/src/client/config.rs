@@ -123,7 +123,7 @@ fn take_fastjson_number_token<E: serde::de::Error>() -> Result<String, E> {
 
 fn java_number_string(token: &str) -> String {
     if token.contains(['e', 'E']) {
-        let value = token.parse::<f64>().unwrap_or(f64::NAN);
+        let value = parse_fastjson_float(token).unwrap_or(f64::NAN);
         if value.is_nan() {
             return token.to_owned();
         }
@@ -137,9 +137,7 @@ fn java_number_string(token: &str) -> String {
         if value == 0.0 {
             return "0.0".into();
         }
-        return serde_json::Number::from_f64(value)
-            .expect("finite float is a JSON number")
-            .to_string();
+        return java_double_string(value);
     }
 
     let (negative, unsigned) = match token.as_bytes().first() {
@@ -163,6 +161,84 @@ fn java_number_string(token: &str) -> String {
         } else {
             output.push_str(fraction);
         }
+    }
+    output
+}
+
+fn parse_fastjson_float(token: &str) -> Option<f64> {
+    let token = token.strip_prefix('+').unwrap_or(token);
+    let exponent_position = token.find(['e', 'E']).unwrap_or(token.len());
+    let (mantissa, exponent) = token.split_at(exponent_position);
+    let (sign, unsigned) = match mantissa.as_bytes().first() {
+        Some(b'-') => ("-", &mantissa[1..]),
+        _ => ("", mantissa),
+    };
+    let normalized_mantissa = if let Some(fraction) = unsigned.strip_prefix('.') {
+        format!("{sign}0.{fraction}")
+    } else if unsigned.ends_with('.') {
+        format!("{sign}{unsigned}0")
+    } else {
+        mantissa.to_owned()
+    };
+    format!("{normalized_mantissa}{exponent}").parse().ok()
+}
+
+fn java_double_string(value: f64) -> String {
+    let rendered = serde_json::Number::from_f64(value.abs())
+        .expect("finite float is a JSON number")
+        .to_string();
+    let (mantissa, exponent) = rendered
+        .split_once('e')
+        .or_else(|| rendered.split_once('E'))
+        .map_or((rendered.as_str(), 0), |(mantissa, exponent)| {
+            (mantissa, exponent.parse::<i32>().unwrap_or(0))
+        });
+    let decimal_position = mantissa.find('.').unwrap_or(mantissa.len()) as i32;
+    let mut digits: String = mantissa.chars().filter(char::is_ascii_digit).collect();
+    let first_significant = digits
+        .bytes()
+        .position(|digit| digit != b'0')
+        .expect("nonzero float has a significant digit");
+    let decimal_exponent = decimal_position + exponent - first_significant as i32 - 1;
+    digits.drain(..first_significant);
+    while digits.ends_with('0') {
+        digits.pop();
+    }
+
+    let mut output = String::new();
+    if value.is_sign_negative() {
+        output.push('-');
+    }
+    if !(-3..7).contains(&decimal_exponent) {
+        output.push(digits.as_bytes()[0] as char);
+        output.push('.');
+        if digits.len() == 1 {
+            output.push('0');
+        } else {
+            output.push_str(&digits[1..]);
+        }
+        output.push('E');
+        output.push_str(&decimal_exponent.to_string());
+        return output;
+    }
+
+    let decimal_position = decimal_exponent + 1;
+    if decimal_position <= 0 {
+        output.push_str("0.");
+        output.extend(std::iter::repeat_n('0', (-decimal_position) as usize));
+        output.push_str(&digits);
+    } else if decimal_position as usize >= digits.len() {
+        output.push_str(&digits);
+        output.extend(std::iter::repeat_n(
+            '0',
+            decimal_position as usize - digits.len(),
+        ));
+        output.push_str(".0");
+    } else {
+        let decimal_position = decimal_position as usize;
+        output.push_str(&digits[..decimal_position]);
+        output.push('.');
+        output.push_str(&digits[decimal_position..]);
     }
     output
 }
@@ -322,6 +398,15 @@ fn contains_fastjson_rejected_literal(input: &str) -> bool {
                     index += 1;
                 }
                 index = (index + 2).min(bytes.len());
+            }
+            b'.' if bytes.get(index + 1).is_some_and(u8::is_ascii_digit) => {
+                let signed = index > 0
+                    && matches!(bytes[index - 1], b'+' | b'-')
+                    && (index < 2 || !is_number_token_byte(bytes[index - 2]));
+                if !signed && (index == 0 || !is_number_token_byte(bytes[index - 1])) {
+                    return true;
+                }
+                index += 1;
             }
             b'0' if (index == 0 || !is_number_token_byte(bytes[index - 1]))
                 && matches!(bytes.get(index + 1), Some(b'x' | b'X'))
