@@ -673,10 +673,24 @@ public final class RuntimeHeartbeatFixtures {
             "{\"subVersion\":0,\"topic\":{\"z\":1,\"a\":2}}"));
         cases.add(heartbeatDtoInputCase("subscription-array-to-string", "subscription",
             "{\"subVersion\":0,\"subString\":[true,null,\"x\",{\"z\":1,\"a\":2}]}"));
+        cases.add(heartbeatDtoInputCase("subscription-tags-singleton-string", "subscription",
+            "{\"subVersion\":0,\"tagsSet\":\"tag\"}"));
+        cases.add(heartbeatDtoInputCase("subscription-tags-singleton-number", "subscription",
+            "{\"subVersion\":0,\"tagsSet\":7}"));
+        cases.add(heartbeatDtoInputCase("subscription-codes-singleton-number", "subscription",
+            "{\"subVersion\":0,\"codeSet\":7}"));
+        cases.add(heartbeatDtoInputCase("subscription-codes-singleton-string", "subscription",
+            "{\"subVersion\":0,\"codeSet\":\"8\"}"));
         cases.add(heartbeatDtoInputCase("producer-object-to-string", "producer",
             "{\"groupName\":{\"z\":1,\"a\":2}}"));
         cases.add(heartbeatDtoInputCase("heartbeat-object-to-string", "heartbeat",
             "{\"clientID\":{\"z\":1,\"a\":2}}"));
+        cases.add(heartbeatDtoInputCase("consumer-subscriptions-singleton-object", "consumer",
+            "{\"subscriptionDataSet\":{\"topic\":\"T\",\"subVersion\":0}}"));
+        cases.add(heartbeatDtoInputCase("heartbeat-producers-singleton-object", "heartbeat",
+            "{\"producerDataSet\":{\"groupName\":\"P\"}}"));
+        cases.add(heartbeatDtoInputCase("heartbeat-consumers-singleton-object", "heartbeat",
+            "{\"consumerDataSet\":{\"groupName\":\"C\"}}"));
         return cases;
     }
 
