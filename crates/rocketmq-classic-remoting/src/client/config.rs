@@ -92,10 +92,7 @@ fn contains_fastjson_rejected_literal(input: &str) -> bool {
                     .get(end)
                     .is_none_or(|byte| !is_number_token_byte(*byte))
                 {
-                    let mut next = end;
-                    while bytes.get(next).is_some_and(u8::is_ascii_whitespace) {
-                        next += 1;
-                    }
+                    let next = skip_json5_trivia(bytes, end);
                     if bytes.get(next) != Some(&b':') {
                         return true;
                     }
@@ -114,14 +111,11 @@ fn contains_fastjson_rejected_literal(input: &str) -> bool {
                     index += 1;
                 }
                 let token = &bytes[start..index];
-                if matches!(token, b"NaN" | b"undefined") {
-                    let mut next = index;
-                    while bytes.get(next).is_some_and(u8::is_ascii_whitespace) {
-                        next += 1;
-                    }
-                    if bytes.get(next) != Some(&b':') {
-                        return true;
-                    }
+                let next = skip_json5_trivia(bytes, index);
+                if bytes.get(next) == Some(&b':')
+                    || matches!(token, b"NaN" | b"Infinity" | b"undefined")
+                {
+                    return true;
                 }
             }
             _ => index += 1,
@@ -136,6 +130,93 @@ fn is_number_token_byte(byte: u8) -> bool {
 
 fn is_identifier_token_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$')
+}
+
+fn skip_json5_trivia(bytes: &[u8], mut index: usize) -> usize {
+    loop {
+        while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+            index += 1;
+        }
+        if bytes.get(index..index + 2) == Some(b"//") {
+            index += 2;
+            while index < bytes.len() && bytes[index] != b'\n' {
+                index += 1;
+            }
+        } else if bytes.get(index..index + 2) == Some(b"/*") {
+            index += 2;
+            while index + 1 < bytes.len() && !(bytes[index] == b'*' && bytes[index + 1] == b'/') {
+                index += 1;
+            }
+            index = (index + 2).min(bytes.len());
+        } else {
+            return index;
+        }
+    }
+}
+
+fn normalize_fastjson_leading_zero_numbers(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut output = Vec::with_capacity(bytes.len());
+    let mut copied_through = 0;
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'"' | b'\'' => {
+                let quote = bytes[index];
+                index += 1;
+                while index < bytes.len() {
+                    if bytes[index] == b'\\' {
+                        index = (index + 2).min(bytes.len());
+                    } else if bytes[index] == quote {
+                        index += 1;
+                        break;
+                    } else {
+                        index += 1;
+                    }
+                }
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'/') => {
+                index += 2;
+                while index < bytes.len() && bytes[index] != b'\n' {
+                    index += 1;
+                }
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'*') => {
+                index += 2;
+                while index + 1 < bytes.len() && !(bytes[index] == b'*' && bytes[index + 1] == b'/')
+                {
+                    index += 1;
+                }
+                index = (index + 2).min(bytes.len());
+            }
+            b'0'..=b'9' if index == 0 || !is_number_token_byte(bytes[index - 1]) => {
+                let mut end = index;
+                while bytes.get(end).is_some_and(u8::is_ascii_digit) {
+                    end += 1;
+                }
+                if end - index > 1 && bytes[index] == b'0' {
+                    let next = skip_json5_trivia(bytes, end);
+                    let is_field_name = bytes.get(next) == Some(&b':');
+                    let valid_number_end = bytes.get(end).is_none_or(|byte| {
+                        byte.is_ascii_whitespace()
+                            || matches!(byte, b',' | b'}' | b']' | b'.' | b'e' | b'E')
+                    });
+                    if !is_field_name && valid_number_end {
+                        output.extend_from_slice(&bytes[copied_through..index]);
+                        let first_significant = (index..end)
+                            .find(|position| bytes[*position] != b'0')
+                            .unwrap_or(end - 1);
+                        output.extend_from_slice(&bytes[first_significant..end]);
+                        copied_through = end;
+                    }
+                }
+                index = end;
+            }
+            _ => index += 1,
+        }
+    }
+    output.extend_from_slice(&bytes[copied_through..]);
+    String::from_utf8(output).expect("normalization preserves valid UTF-8")
 }
 
 impl SocksProxyConfig {
@@ -297,8 +378,9 @@ impl ClientConfig {
                 "Fastjson SOCKS parser rejects this JSON5 literal".into(),
             ));
         }
+        let normalized = normalize_fastjson_leading_zero_numbers(&self.socks_proxy_config);
         let parsed: Option<HashMap<String, Option<RawProxyRoute>>> =
-            json5::from_str(&self.socks_proxy_config)
+            json5::from_str(&normalized)
                 .map_err(|error| TransportError::InvalidConfiguration(error.to_string()))?;
         Ok(parsed
             .unwrap_or_default()
@@ -479,8 +561,17 @@ mod tests {
         assert!(super::contains_fastjson_rejected_literal(
             r#"{"10.0.0.0/8":{"addr":NaN}}"#
         ));
+        assert!(super::contains_fastjson_rejected_literal(
+            r#"{"10.0.0.0/8":{"addr":Infinity}}"#
+        ));
+        assert!(super::contains_fastjson_rejected_literal(
+            r#"{"10.0.0.0/8":{addr: "proxy:1080"}}"#
+        ));
         assert!(!super::contains_fastjson_rejected_literal(
             r#"{"10.0.0.0/8":{"addr":"0x2a"}}"#
+        ));
+        assert!(!super::contains_fastjson_rejected_literal(
+            r#"{"10.0.0.0/8":{'addr':"proxy:1080"}}"#
         ));
         assert!(!super::contains_fastjson_rejected_literal(
             r#"{/* NaN and 0x2a are comment text */"10.0.0.0/8":{"addr":"proxy"}}"#
