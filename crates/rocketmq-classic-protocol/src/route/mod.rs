@@ -1458,6 +1458,7 @@ mod route_dto_input_cases_tests {
             "queue-fastjson-vertical-tab-prefix",
             "queue-fastjson-form-feed-prefix",
             "queue-fastjson-form-feed-before-number",
+            "queue-fastjson-form-feed-around-punctuation",
             "queue-fastjson-vertical-tab-before-number",
             "queue-fastjson-nbsp-prefix",
             "queue-fastjson-bom-prefix",
