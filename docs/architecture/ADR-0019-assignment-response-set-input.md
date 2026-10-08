@@ -1,0 +1,19 @@
+# ADR-0019: Match assignment response Set inputs
+
+Status: Accepted
+
+## Context
+
+Phase 6 `QueryAssignmentResponseBody.messageQueueAssignments` is a Java `Set<MessageQueueAssignment>`. Rust previously represented it as `Option<Vec<MessageQueueAssignment>>`, which rejected a Fastjson object-to-singleton conversion, rejected null members, and retained duplicate rows that Java's set removed.
+
+## Decision
+
+Represent the response field and runtime result as `Option<HashSet<Option<MessageQueueAssignment>>>`. Decode JSON arrays as sets, a JSON object as a singleton set, and null/missing fields as no set. Retain a null member, deduplicate repeated nulls and identical rows, and reject string, number, and Boolean top-level values. Default encoding omits a null set and preserves a null member as JSON null. The Rust set uses the normal derived `Eq`/`Hash` contract across all assignment fields.
+
+## Evidence
+
+`RuntimeLookupFixtures.assignmentBodyCases` invokes the pinned Java 5.5.1 `QueryAssignmentResponseBody.decode` for 11 missing/null/empty, singleton-object, null-member, duplicate, and rejected scalar cases. `assignment_body_inputs_match_invoked_java_fastjson` compares acceptance, decoded values, and re-encoded response shape. A runtime socket case verifies null-member retention and duplicate-row collapse.
+
+Current combined lookup fixture SHA-256: `0c5d9337f8d8adb3961ecbbcf63970aca2f8074048bc25b15d75de025fd2f809`.
+
+`MessageQueueAssignment.equals` in the pinned Java class compares only `messageQueue`, while its `hashCode` includes `messageQueue`, `mode`, and `attachments`. That violates Java's normal equals/hash contract and gives hash-collision-dependent set behavior for rows with the same queue but different metadata. Rust keeps a lawful all-fields `Eq`/`Hash` implementation; those unusual Java collision cases remain an explicit limit. This decision closes the recorded response-field inputs and standard set cases only; broader assignment API reconciliation, whole-Phase 6 source/API/input reconciliation, and P6-V04 Phase 19 evidence remain open.
