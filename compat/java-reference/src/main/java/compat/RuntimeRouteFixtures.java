@@ -554,6 +554,20 @@ public final class RuntimeRouteFixtures {
             table.putAll(bulkValues);
             primitives.put("putAllAdds", table.get("bulk-a") == first && table.get("bulk-b") == second
                 && table.size() == 3);
+            primitives.put("computeIfAbsentMaps", table.computeIfAbsent("compute-a", key -> first) == first);
+            primitives.put("computeIfAbsentKeepsCurrent", table.computeIfAbsent("compute-a", key -> second) == first);
+            primitives.put("computeIfPresentReplaces", table.computeIfPresent("compute-a", (key, value) -> second) == second
+                && table.get("compute-a") == second);
+            primitives.put("computeReplaces", table.compute("compute-a", (key, value) -> first) == first
+                && table.get("compute-a") == first);
+            primitives.put("computeAbsentInserts", table.compute("compute-b", (key, value) -> second) == second);
+            primitives.put("computeNullRemoves", table.compute("compute-b", (key, value) -> null) == null
+                && !table.containsKey("compute-b"));
+            primitives.put("mergeCombines", table.merge("compute-a", second, (oldValue, newValue) -> newValue) == second);
+            primitives.put("mergeAbsentInserts", table.merge("merge-new", first, (oldValue, newValue) -> null) == first);
+            table.replaceAll((key, value) -> first);
+            primitives.put("replaceAllUpdatesMappings", table.size() == 5
+                && table.values().stream().allMatch(value -> value == first));
             table.clear();
             result.put("primitives", primitives);
 
