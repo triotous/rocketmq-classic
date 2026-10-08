@@ -1,5 +1,7 @@
 # Java 5.5.1 compatibility evidence
 
+MessageQueue `compareTo` `c2c34e3`/`b001f65` is covered by eleven invoked 5.5.1 cases and public fallible native `java_compare_to`. The pinned jar uses `Integer.compare` for queue IDs; local source checkout `efa1be59` differs by using subtraction. Route fixture SHA-256 `a709df838628378dbca6044027cd873fd0b6a80c90591a24bf395207228c3269`; full workspace, pinned Maven and strict Clippy pass. Internal Rust `Ord` remains total for tree collections; Phase 6 remains PARTIAL.
+
 SOCKS field coercion `34ce95a`/`b3ada16` matches six invoked Java constructor and reflected proxy-map cases for numeric, Boolean, null and empty-array route fields. Config fixture SHA-256 `eefbb3c681864effb187cbabcef7e70750b079876d5e45e138d83f6aa6a5264d`; native red/green, full workspace, pinned Maven and strict Clippy pass. Other Fastjson grammar and connection paths remain open; Phase 6 is PARTIAL.
 
 MessageQueue public DTO correction `3577198`/`e242764` represents Java nullable topic/brokerName, JSON omission, and absent queueId zero. Fixture SHA-256 `e5520a19c71483fce328312f9d4263c6af7a0bfff4c712e40660ca90626c3453`; native red/green, full workspace, pinned Maven and strict Clippy pass. Null compareTo and broader API/input reconciliation remain open; Phase 6 is PARTIAL.
