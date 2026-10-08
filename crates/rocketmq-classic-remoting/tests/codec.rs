@@ -32,6 +32,17 @@ fn nullable_language_matches_invoked_java_json_and_binary_boundaries() {
         Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
     );
     assert_eq!(java["JSON"]["decodedLanguage"], "JAVA");
+    let unknown_language = json_header::decode(br#"{"code":34,"language":"not-a-language"}"#)
+        .unwrap()
+        .language;
+    assert_eq!(
+        unknown_language.is_none(),
+        java["JSON"]["unknownLanguageDecodedNull"]
+    );
+    assert_eq!(
+        unknown_language, None,
+        "Java LanguageCode.getCode(String) returns null for an unknown name"
+    );
     let explicit_null = br#"{"code":34,"language":null}"#;
     assert_eq!(
         json_header::decode(explicit_null)
@@ -42,6 +53,26 @@ fn nullable_language_matches_invoked_java_json_and_binary_boundaries() {
     );
     assert!(rocketmq_header::encode(&command, DEFAULT_MAX_FRAME_SIZE).is_err());
     assert_eq!(java["ROCKETMQ"]["outcome"], "NullPointerException");
+}
+
+#[test]
+fn unknown_binary_language_code_matches_java_value_of_byte_null() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let unknown = &fixture["languageCodeMethodCases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["case"] == "byte" && case["input"] == -1)
+        .unwrap()["decoded"];
+    assert!(unknown.is_null());
+
+    let command = RemotingCommand {
+        language: Some(rocketmq_classic_protocol::codes::LanguageCode::Unknown(255)),
+        ..Default::default()
+    };
+    let bytes = rocketmq_header::encode(&command, DEFAULT_MAX_FRAME_SIZE).unwrap();
+    assert_eq!(rocketmq_header::decode(&bytes).unwrap().language, None);
 }
 
 fn fixture_dir() -> PathBuf {

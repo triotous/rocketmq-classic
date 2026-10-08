@@ -43,6 +43,14 @@ impl LanguageCode {
     pub const fn from_java_byte(code: i8) -> Self {
         Self::from_code(code as u8)
     }
+    pub const fn java_value_of_byte(code: i8) -> Option<Self> {
+        let code = code as u8;
+        if code <= 13 {
+            Some(Self::from_code(code))
+        } else {
+            None
+        }
+    }
     pub const fn java_byte(self) -> i8 {
         self.code() as i8
     }
@@ -63,6 +71,46 @@ impl LanguageCode {
             Self::Rust => 12,
             Self::NodeJs => 13,
             Self::Unknown(value) => value,
+        }
+    }
+
+    pub const fn name(self) -> Option<&'static str> {
+        match self {
+            Self::Java => Some("JAVA"),
+            Self::Cpp => Some("CPP"),
+            Self::Dotnet => Some("DOTNET"),
+            Self::Python => Some("PYTHON"),
+            Self::Delphi => Some("DELPHI"),
+            Self::Erlang => Some("ERLANG"),
+            Self::Ruby => Some("RUBY"),
+            Self::Other => Some("OTHER"),
+            Self::Http => Some("HTTP"),
+            Self::Go => Some("GO"),
+            Self::Php => Some("PHP"),
+            Self::Oms => Some("OMS"),
+            Self::Rust => Some("RUST"),
+            Self::NodeJs => Some("NODE_JS"),
+            Self::Unknown(_) => None,
+        }
+    }
+
+    pub fn from_java_name(name: Option<&str>) -> Option<Self> {
+        match name {
+            Some("JAVA") => Some(Self::Java),
+            Some("CPP") => Some(Self::Cpp),
+            Some("DOTNET") => Some(Self::Dotnet),
+            Some("PYTHON") => Some(Self::Python),
+            Some("DELPHI") => Some(Self::Delphi),
+            Some("ERLANG") => Some(Self::Erlang),
+            Some("RUBY") => Some(Self::Ruby),
+            Some("OTHER") => Some(Self::Other),
+            Some("HTTP") => Some(Self::Http),
+            Some("GO") => Some(Self::Go),
+            Some("PHP") => Some(Self::Php),
+            Some("OMS") => Some(Self::Oms),
+            Some("RUST") => Some(Self::Rust),
+            Some("NODE_JS") => Some(Self::NodeJs),
+            _ => None,
         }
     }
 }
@@ -108,6 +156,51 @@ mod tests {
         }
         assert_eq!(LanguageCode::from_code(255), LanguageCode::Unknown(255));
         assert_eq!(LanguageCode::Rust.code(), 12);
+    }
+
+    #[test]
+    fn language_code_methods_match_invoked_java_values() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/client-config.json"
+        ))
+        .unwrap();
+        for case in fixture["languageCodeMethodCases"].as_array().unwrap() {
+            match case["case"].as_str().unwrap() {
+                "constant" => {
+                    let name = case["name"].as_str().unwrap();
+                    let code = case["code"].as_i64().unwrap() as u8;
+                    let value = LanguageCode::from_java_name(Some(name)).unwrap();
+                    assert_eq!(value.code(), code, "{case}");
+                    assert_eq!(value.name(), Some(name), "{case}");
+                    assert_eq!(
+                        LanguageCode::java_value_of_byte(code as i8),
+                        Some(value),
+                        "{case}"
+                    );
+                    assert_eq!(case["valueOfByte"], name, "{case}");
+                    assert_eq!(case["getCodeByName"], name, "{case}");
+                }
+                "byte" => {
+                    let input = case["input"].as_i64().unwrap() as i8;
+                    let decoded = LanguageCode::java_value_of_byte(input);
+                    assert_eq!(
+                        decoded.and_then(LanguageCode::name),
+                        case["decoded"].as_str(),
+                        "{case}"
+                    );
+                }
+                "name" => {
+                    let input = case["input"].as_str();
+                    let decoded = LanguageCode::from_java_name(input);
+                    assert_eq!(
+                        decoded.and_then(LanguageCode::name),
+                        case["decoded"].as_str(),
+                        "{case}"
+                    );
+                }
+                kind => panic!("unknown Java LanguageCode case: {kind}"),
+            }
+        }
     }
 
     #[test]

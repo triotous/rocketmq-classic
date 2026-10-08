@@ -158,6 +158,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("managerRemoval", managerRemoval(config));
         fixture.put("managerTable", managerTable(config));
         fixture.put("nullableSettings", nullableSettings());
+        fixture.put("languageCodeMethodCases", languageCodeMethodCases());
         fixture.put("socksConstruction", socksConstruction());
         fixture.put("socksConnection", socksConnection(true));
         fixture.put("socksConnectionNoAuth", socksConnection(false));
@@ -1457,10 +1458,53 @@ public final class RuntimeConfigFixtures {
                     outcome.put("explicitNullDecodedLanguageNull",
                         org.apache.rocketmq.remoting.protocol.RemotingSerializable.decode(explicitNull,
                             org.apache.rocketmq.remoting.protocol.RemotingCommand.class).getLanguage() == null);
+                    byte[] unknownName = "{\"code\":34,\"language\":\"not-a-language\"}"
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                    org.apache.rocketmq.remoting.protocol.RemotingCommand unknownDecoded =
+                        org.apache.rocketmq.remoting.protocol.RemotingSerializable.decode(unknownName,
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand.class);
+                    outcome.put("unknownLanguageDecodedNull", unknownDecoded.getLanguage() == null);
                 }
             } catch (RuntimeException error) { outcome.put("outcome", error.getClass().getSimpleName()); }
             result.put(type.name(), outcome);
         }
         return result;
+    }
+
+    private static List<Object> languageCodeMethodCases() {
+        List<Object> cases = new ArrayList<>();
+        for (org.apache.rocketmq.remoting.protocol.LanguageCode value :
+            org.apache.rocketmq.remoting.protocol.LanguageCode.values()) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", "constant");
+            item.put("name", value.name());
+            item.put("code", value.getCode());
+            org.apache.rocketmq.remoting.protocol.LanguageCode fromByte =
+                org.apache.rocketmq.remoting.protocol.LanguageCode.valueOf(value.getCode());
+            org.apache.rocketmq.remoting.protocol.LanguageCode fromName =
+                org.apache.rocketmq.remoting.protocol.LanguageCode.getCode(value.name());
+            item.put("valueOfByte", fromByte == null ? null : fromByte.name());
+            item.put("getCodeByName", fromName == null ? null : fromName.name());
+            cases.add(item);
+        }
+        for (byte input : new byte[] {0, 13, 14, 127, -1, -128}) {
+            org.apache.rocketmq.remoting.protocol.LanguageCode decoded =
+                org.apache.rocketmq.remoting.protocol.LanguageCode.valueOf(input);
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", "byte");
+            item.put("input", input);
+            item.put("decoded", decoded == null ? null : decoded.name());
+            cases.add(item);
+        }
+        for (String input : new String[] {null, "", "JAVA", "java", "NODE_JS", "UNKNOWN"}) {
+            org.apache.rocketmq.remoting.protocol.LanguageCode decoded =
+                org.apache.rocketmq.remoting.protocol.LanguageCode.getCode(input);
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", "name");
+            item.put("input", input);
+            item.put("decoded", decoded == null ? null : decoded.name());
+            cases.add(item);
+        }
+        return cases;
     }
 }

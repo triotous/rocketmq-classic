@@ -14,7 +14,9 @@ pub fn encode(command: &RemotingCommand, max_length: usize) -> Result<Vec<u8>, C
     if let Some(language) = command.language {
         let language = match language {
             LanguageCode::Unknown(code) => return Err(CodecError::UnsupportedLanguage(code)),
-            language => language_name(language),
+            language => language
+                .name()
+                .expect("known language has a Java enum name"),
         };
         fields.insert("language".into(), language.into());
     }
@@ -62,10 +64,7 @@ pub fn decode(bytes: &[u8]) -> Result<RemotingCommand, CodecError> {
     let language = match object.get("language") {
         None => Some(LanguageCode::Java),
         Some(Value::Null) => None,
-        Some(Value::String(name)) => Some(
-            language_code(name)
-                .ok_or_else(|| CodecError::Json(format!("unknown LanguageCode `{name}`")))?,
-        ),
+        Some(Value::String(name)) => LanguageCode::from_java_name(Some(name)),
         _ => return Err(CodecError::Json("language must be a string".into())),
     };
     let version = integer(object.get("version"), "version")?.unwrap_or_default();
@@ -150,46 +149,6 @@ fn integer(value: Option<&Value>, field: &'static str) -> Result<Option<i32>, Co
             .map(Some)
             .ok_or_else(|| CodecError::Json(format!("{field} must be a 32-bit integer"))),
     }
-}
-
-fn language_name(language: LanguageCode) -> &'static str {
-    match language {
-        LanguageCode::Java => "JAVA",
-        LanguageCode::Cpp => "CPP",
-        LanguageCode::Dotnet => "DOTNET",
-        LanguageCode::Python => "PYTHON",
-        LanguageCode::Delphi => "DELPHI",
-        LanguageCode::Erlang => "ERLANG",
-        LanguageCode::Ruby => "RUBY",
-        LanguageCode::Other => "OTHER",
-        LanguageCode::Http => "HTTP",
-        LanguageCode::Go => "GO",
-        LanguageCode::Php => "PHP",
-        LanguageCode::Oms => "OMS",
-        LanguageCode::Rust => "RUST",
-        LanguageCode::NodeJs => "NODE_JS",
-        LanguageCode::Unknown(_) => unreachable!(),
-    }
-}
-
-fn language_code(name: &str) -> Option<LanguageCode> {
-    Some(match name {
-        "JAVA" => LanguageCode::Java,
-        "CPP" => LanguageCode::Cpp,
-        "DOTNET" => LanguageCode::Dotnet,
-        "PYTHON" => LanguageCode::Python,
-        "DELPHI" => LanguageCode::Delphi,
-        "ERLANG" => LanguageCode::Erlang,
-        "RUBY" => LanguageCode::Ruby,
-        "OTHER" => LanguageCode::Other,
-        "HTTP" => LanguageCode::Http,
-        "GO" => LanguageCode::Go,
-        "PHP" => LanguageCode::Php,
-        "OMS" => LanguageCode::Oms,
-        "RUST" => LanguageCode::Rust,
-        "NODE_JS" => LanguageCode::NodeJs,
-        _ => return None,
-    })
 }
 
 #[cfg(test)]
