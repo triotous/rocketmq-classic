@@ -647,6 +647,20 @@ public final class RuntimeHeartbeatFixtures {
             "{\"clientID\":123,\"heartbeatFingerprint\":\"2\",\"withoutSub\":\"1\",\"producerDataSet\":[{\"groupName\":7}]}"));
         cases.add(heartbeatDtoInputCase("producer-string", "producer",
             "{\"groupName\":123}"));
+        cases.add(heartbeatDtoInputCase("subscription-leading-plus-zero-version", "subscription",
+            "{\"subVersion\":+02}"));
+        cases.add(heartbeatDtoInputCase("heartbeat-leading-plus-zero-fingerprint", "heartbeat",
+            "{\"heartbeatFingerprint\":+02}"));
+        cases.add(heartbeatDtoInputCase("consumer-form-feed-and-leading-zero", "consumer",
+            String.valueOf((char) 0x0c) + "{\"unitMode\":\f01}"));
+        cases.add(heartbeatDtoInputCase("heartbeat-bom-prefix", "heartbeat",
+            String.valueOf((char) 0xfeff) + "{\"withoutSub\":true}"));
+        cases.add(heartbeatDtoInputCase("subscription-form-feed-before-version", "subscription",
+            "{\"subVersion\":" + String.valueOf((char) 0x0c) + "+02}"));
+        cases.add(heartbeatDtoInputCase("consumer-vertical-tab-prefix", "consumer",
+            String.valueOf((char) 0x0b) + "{\"unitMode\":true}"));
+        cases.add(heartbeatDtoInputCase("heartbeat-embedded-bom", "heartbeat",
+            "{\"heartbeatFingerprint\":" + String.valueOf((char) 0xfeff) + "2}"));
         return cases;
     }
 
