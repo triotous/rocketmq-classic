@@ -2,7 +2,9 @@ use rocketmq_classic_core::{
     config::ClientConfig,
     runtime::{ClientRuntimeManager, ConsumerRuntime, ProducerRuntime, RuntimeError},
 };
-use rocketmq_classic_protocol::heartbeat::{ConsumerData, HeartbeatData, SubscriptionData};
+use rocketmq_classic_protocol::heartbeat::{
+    ConsumeFromWhere, ConsumeType, ConsumerData, HeartbeatData, MessageModel, SubscriptionData,
+};
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex},
@@ -16,6 +18,15 @@ struct Consumer(Mutex<ConsumerData>);
 impl ConsumerRuntime for Consumer {
     fn heartbeat_data(&self) -> ConsumerData {
         self.0.lock().unwrap().clone()
+    }
+}
+
+fn java_registered_consumer_fields() -> ConsumerData {
+    ConsumerData {
+        consume_type: Some(ConsumeType::ConsumeActively),
+        message_model: Some(MessageModel::Clustering),
+        consume_from_where: Some(ConsumeFromWhere::ConsumeFromLastOffset),
+        ..Default::default()
     }
 }
 
@@ -40,14 +51,14 @@ async fn distinct_registered_keys_preserve_equal_and_simple_consumer_metadata() 
         .await
         .unwrap();
     let first = Arc::new(Consumer(Mutex::new(ConsumerData {
-        group_name: "consumer".into(),
-        subscription_data_set: HashSet::from([SubscriptionData {
+        group_name: Some("consumer".into()),
+        subscription_data_set: Some(HashSet::from([SubscriptionData {
             topic: Some("other".into()),
             sub_string: Some("tag".into()),
             sub_version: 13,
             ..Default::default()
-        }]),
-        ..Default::default()
+        }])),
+        ..java_registered_consumer_fields()
     })));
     let a = runtime
         .register_consumer("registered-a", first.clone())
@@ -94,12 +105,12 @@ async fn distinct_registered_keys_preserve_equal_and_simple_consumer_metadata() 
         .await
         .unwrap();
     let second = Arc::new(Consumer(Mutex::new(ConsumerData {
-        subscription_data_set: HashSet::from([SubscriptionData {
+        subscription_data_set: Some(HashSet::from([SubscriptionData {
             topic: Some("second".into()),
             sub_string: Some("*".into()),
             sub_version: 14,
             ..Default::default()
-        }]),
+        }])),
         ..first.0.lock().unwrap().clone()
     })));
     b = runtime
@@ -182,14 +193,14 @@ async fn heartbeat_snapshots_follow_consumer_versions_and_without_subscription_f
     let producer = Arc::new(Producer);
     compare_java("empty", &runtime.prepare_heartbeat_data(false).unwrap());
     let consumer = Arc::new(Consumer(Mutex::new(ConsumerData {
-        group_name: "consumer".into(),
-        subscription_data_set: HashSet::from([SubscriptionData {
+        group_name: Some("consumer".into()),
+        subscription_data_set: Some(HashSet::from([SubscriptionData {
             topic: Some("topic".into()),
             sub_string: Some("*".into()),
             sub_version: 12,
             ..Default::default()
-        }]),
-        ..Default::default()
+        }])),
+        ..java_registered_consumer_fields()
     })));
     let producer_lease = runtime
         .register_producer("producer", producer.clone())
@@ -213,18 +224,20 @@ async fn heartbeat_snapshots_follow_consumer_versions_and_without_subscription_f
             .first()
             .unwrap()
             .subscription_data_set
+            .as_ref()
+            .unwrap()
             .iter()
             .next()
             .unwrap()
             .sub_version,
         12
     );
-    consumer.0.lock().unwrap().subscription_data_set = HashSet::from([SubscriptionData {
+    consumer.0.lock().unwrap().subscription_data_set = Some(HashSet::from([SubscriptionData {
         topic: Some("other".into()),
         sub_string: Some("tag".into()),
         sub_version: 13,
         ..Default::default()
-    }]);
+    }]));
     let second = runtime.prepare_heartbeat_data(false).unwrap();
     compare_java("subscription-change", &second);
     assert_ne!(first, second);
@@ -237,6 +250,8 @@ async fn heartbeat_snapshots_follow_consumer_versions_and_without_subscription_f
             .first()
             .unwrap()
             .subscription_data_set
+            .as_ref()
+            .unwrap()
             .is_empty()
     );
     let deadline = Instant::now() + Duration::from_secs(1);
@@ -315,7 +330,7 @@ async fn heartbeat_callbacks_can_reenter_registry_and_registries_do_not_create_o
             assert!(runtime.select_producer("producer").unwrap().is_some());
             assert!(runtime.select_consumer("consumer").unwrap().is_some());
             ConsumerData {
-                group_name: "consumer".into(),
+                group_name: Some("consumer".into()),
                 ..Default::default()
             }
         }

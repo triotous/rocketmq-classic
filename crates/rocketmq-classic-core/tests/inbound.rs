@@ -139,7 +139,7 @@ struct Consumer(Arc<Handler>);
 impl ConsumerRuntime for Consumer {
     fn heartbeat_data(&self) -> ConsumerData {
         ConsumerData {
-            group_name: "consumer".into(),
+            group_name: Some("consumer".into()),
             ..Default::default()
         }
     }

@@ -90,8 +90,8 @@ struct Consumer(Mutex<SubscriptionData>);
 impl ConsumerRuntime for Consumer {
     fn heartbeat_data(&self) -> ConsumerData {
         ConsumerData {
-            group_name: "consumer".into(),
-            subscription_data_set: HashSet::from([self.0.lock().unwrap().clone()]),
+            group_name: Some("consumer".into()),
+            subscription_data_set: Some(HashSet::from([self.0.lock().unwrap().clone()])),
             ..Default::default()
         }
     }
@@ -272,7 +272,7 @@ async fn active_broker_connection_sends_heartbeat_and_wakes_runtime_wide_rebalan
     impl ConsumerRuntime for Rebalancer {
         fn heartbeat_data(&self) -> ConsumerData {
             ConsumerData {
-                group_name: "rebalance-owner".into(),
+                group_name: Some("rebalance-owner".into()),
                 ..Default::default()
             }
         }
@@ -457,11 +457,16 @@ async fn v2_negotiates_full_simple_subscription_change_version_and_rebalance() {
             assert_eq!(body.is_without_sub, simple, "round {index}");
             assert_eq!(body.producer_data_set.len(), 1);
             let consumer = body.consumer_data_set.first().unwrap();
-            assert_eq!(consumer.subscription_data_set.is_empty(), simple);
+            assert_eq!(
+                consumer.subscription_data_set.as_ref().unwrap().is_empty(),
+                simple
+            );
             if !simple {
                 assert_eq!(
                     consumer
                         .subscription_data_set
+                        .as_ref()
+                        .unwrap()
                         .iter()
                         .next()
                         .unwrap()
@@ -785,7 +790,7 @@ async fn preparation_failure_returns_false_without_socket_and_releases_heartbeat
                 "consumer preparation failure"
             );
             ConsumerData {
-                group_name: "consumer".into(),
+                group_name: Some("consumer".into()),
                 ..Default::default()
             }
         }

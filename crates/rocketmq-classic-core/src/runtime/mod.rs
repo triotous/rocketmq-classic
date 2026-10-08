@@ -32,6 +32,8 @@ pub enum RuntimeError {
     AddressingCallbackFailed,
     #[error("heartbeat encoding failed: {0}")]
     HeartbeatEncoding(serde_json::Error),
+    #[error("invalid heartbeat consumer data: {0}")]
+    InvalidHeartbeatData(&'static str),
     #[error("periodic interval must be positive")]
     InvalidSchedule,
     #[error("periodic callback panicked")]

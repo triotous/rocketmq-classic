@@ -12,6 +12,9 @@ impl ClientRuntime {
     pub async fn check_client_in_broker(&self) -> Result<(), RuntimeError> {
         for (group, consumer) in self.groups.consumer_entries()? {
             let subscriptions = consumer.heartbeat_data().subscription_data_set;
+            let Some(subscriptions) = subscriptions else {
+                return Ok(());
+            };
             if subscriptions.is_empty() {
                 return Ok(()); // Java returns from the entire round, not continue.
             }

@@ -328,7 +328,7 @@ mod tests {
     impl ConsumerRuntime for Consumer {
         fn heartbeat_data(&self) -> ConsumerData {
             ConsumerData {
-                group_name: self.handler.owner.clone(),
+                group_name: Some(self.handler.owner.clone()),
                 ..Default::default()
             }
         }

@@ -138,19 +138,41 @@ pub enum ConsumeFromWhere {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ProducerData {
-    pub group_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_name: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsumerData {
-    pub group_name: String,
-    pub consume_type: ConsumeType,
-    pub message_model: MessageModel,
-    pub consume_from_where: ConsumeFromWhere,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub consume_type: Option<ConsumeType>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_model: Option<MessageModel>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub consume_from_where: Option<ConsumeFromWhere>,
+    #[serde(
+        default = "empty_subscriptions",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub subscription_data_set: Option<HashSet<SubscriptionData>>,
     #[serde(default)]
-    pub subscription_data_set: HashSet<SubscriptionData>,
     pub unit_mode: bool,
+}
+
+impl Default for ConsumerData {
+    fn default() -> Self {
+        Self {
+            group_name: None,
+            consume_type: None,
+            message_model: None,
+            consume_from_where: None,
+            subscription_data_set: empty_subscriptions(),
+            unit_mode: false,
+        }
+    }
 }
 
 impl Hash for ConsumerData {
@@ -159,9 +181,13 @@ impl Hash for ConsumerData {
         self.consume_type.hash(state);
         self.message_model.hash(state);
         self.consume_from_where.hash(state);
-        hash_set(&self.subscription_data_set, state);
+        hash_optional_set(&self.subscription_data_set, state);
         self.unit_mode.hash(state);
     }
+}
+
+fn empty_subscriptions() -> Option<HashSet<SubscriptionData>> {
+    Some(HashSet::new())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -233,21 +259,32 @@ mod tests {
                 .unwrap();
         let cases = &fixture["ownerFieldCases"];
         for case in cases["producers"].as_array().unwrap() {
-            let value: ProducerData = serde_json::from_str(case["rawInput"].as_str().unwrap()).unwrap();
+            let value: ProducerData =
+                serde_json::from_str(case["rawInput"].as_str().unwrap()).unwrap();
             let encoded = serde_json::to_value(&value).unwrap();
             assert_eq!(value.group_name.is_none(), case["groupNull"]);
             assert_eq!(encoded.get("groupName").is_some(), case["encodedHasGroup"]);
         }
         for case in cases["consumers"].as_array().unwrap() {
-            let value: ConsumerData = serde_json::from_str(case["rawInput"].as_str().unwrap()).unwrap();
+            let value: ConsumerData =
+                serde_json::from_str(case["rawInput"].as_str().unwrap()).unwrap();
             let encoded = serde_json::to_value(&value).unwrap();
             assert_eq!(value.group_name.is_none(), case["groupNull"]);
             assert_eq!(value.consume_type.is_none(), case["consumeTypeNull"]);
             assert_eq!(value.message_model.is_none(), case["messageModelNull"]);
-            assert_eq!(value.consume_from_where.is_none(), case["consumeFromWhereNull"]);
-            assert_eq!(value.subscription_data_set.is_none(), case["subscriptionsNull"]);
             assert_eq!(
-                value.subscription_data_set.as_ref().is_some_and(HashSet::is_empty),
+                value.consume_from_where.is_none(),
+                case["consumeFromWhereNull"]
+            );
+            assert_eq!(
+                value.subscription_data_set.is_none(),
+                case["subscriptionsNull"]
+            );
+            assert_eq!(
+                value
+                    .subscription_data_set
+                    .as_ref()
+                    .is_some_and(HashSet::is_empty),
                 case["subscriptionsEmpty"]
             );
             assert_eq!(value.unit_mode, case["unitMode"]);
@@ -300,14 +337,14 @@ mod tests {
             ..HeartbeatData::default()
         };
         heartbeat.consumer_data_set.push(ConsumerData {
-            group_name: "group".into(),
-            consume_from_where: ConsumeFromWhere::ConsumeFromLastOffset,
-            subscription_data_set: HashSet::from([SubscriptionData {
+            group_name: Some("group".into()),
+            consume_from_where: Some(ConsumeFromWhere::ConsumeFromLastOffset),
+            subscription_data_set: Some(HashSet::from([SubscriptionData {
                 topic: Some("topic".into()),
                 sub_string: Some("*".into()),
                 sub_version: i64::MAX,
                 ..SubscriptionData::default()
-            }]),
+            }])),
             ..ConsumerData::default()
         });
         let value = serde_json::to_value(&heartbeat).unwrap();

@@ -708,8 +708,8 @@ mod tests {
         impl ConsumerRuntime for Consumer {
             fn heartbeat_data(&self) -> ConsumerData {
                 ConsumerData {
-                    group_name: "consumer".into(),
-                    subscription_data_set: HashSet::from([self.0.lock().unwrap().clone()]),
+                    group_name: Some("consumer".into()),
+                    subscription_data_set: Some(HashSet::from([self.0.lock().unwrap().clone()])),
                     unit_mode: true,
                     ..Default::default()
                 }
@@ -757,7 +757,7 @@ mod tests {
                     producer_data_set: producers
                         .iter()
                         .map(|group| ProducerData {
-                            group_name: (*group).into()
+                            group_name: Some((*group).into())
                         })
                         .collect(),
                     consumer_data_set: vec![consumer.heartbeat_data()],

@@ -533,6 +533,7 @@ impl ClientRuntime {
                     .heartbeat_data()
                     .subscription_data_set
                     .into_iter()
+                    .flatten()
                     .filter_map(|sub| sub.topic),
             );
         }
@@ -747,14 +748,17 @@ impl ClientRuntime {
             ..Default::default()
         };
         for (group, _) in snapshot.producers {
-            heartbeat
-                .producer_data_set
-                .insert(ProducerData { group_name: group });
+            heartbeat.producer_data_set.insert(ProducerData {
+                group_name: Some(group),
+            });
         }
         for consumer in snapshot.consumers {
             let mut data = consumer.heartbeat_data();
             if without_sub {
-                data.subscription_data_set.clear();
+                data.subscription_data_set = Some(std::collections::HashSet::new());
+            } else if data.subscription_data_set.is_none() {
+                // Java constructs a fresh ConsumerData and addAll(null) fails.
+                return Err(RuntimeError::InvalidHeartbeatData("null subscription set"));
             }
             heartbeat.consumer_data_set.push(data);
         }

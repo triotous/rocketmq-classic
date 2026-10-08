@@ -114,7 +114,10 @@ impl ClientRuntime {
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             self.prepare_heartbeat_data(false)
         }))
-        .map_or(Ok(None), |result| result.map(Some))
+        .map_or(Ok(None), |result| match result {
+            Err(RuntimeError::InvalidHeartbeatData(_)) => Ok(None),
+            other => other.map(Some),
+        })
     }
 
     pub async fn send_heartbeat_to_broker(
@@ -153,7 +156,9 @@ impl ClientRuntime {
             .consumer_data_set
             .into_iter()
             .map(|mut consumer| {
-                consumer.subscription_data_set.clear();
+                if let Some(subscriptions) = consumer.subscription_data_set.as_mut() {
+                    subscriptions.clear();
+                }
                 consumer
             })
             .collect();
@@ -211,7 +216,9 @@ impl ClientRuntime {
             .consumer_data_set
             .into_iter()
             .map(|mut consumer| {
-                consumer.subscription_data_set.clear();
+                if let Some(subscriptions) = consumer.subscription_data_set.as_mut() {
+                    subscriptions.clear();
+                }
                 consumer
             })
             .collect();
@@ -327,7 +334,51 @@ impl ClientRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        config::ClientConfig,
+        runtime::{ClientRuntimeManager, ConsumerRuntime},
+    };
     use rocketmq_classic_protocol::heartbeat::{ConsumerData, SubscriptionData};
+
+    #[tokio::test]
+    async fn null_owner_subscription_set_matches_java_prepare_branch() {
+        struct NullSubscriptions;
+        impl ConsumerRuntime for NullSubscriptions {
+            fn heartbeat_data(&self) -> ConsumerData {
+                ConsumerData {
+                    subscription_data_set: None,
+                    ..Default::default()
+                }
+            }
+        }
+        let runtime = ClientRuntimeManager::new()
+            .get_or_create(&ClientConfig::new("null-subscription-set"))
+            .await
+            .unwrap();
+        let owner = Arc::new(NullSubscriptions);
+        let _lease = runtime
+            .register_consumer("group", owner.clone())
+            .await
+            .unwrap();
+        assert!(matches!(
+            runtime.prepare_heartbeat_data(false),
+            Err(RuntimeError::InvalidHeartbeatData("null subscription set"))
+        ));
+        let simple = runtime.prepare_heartbeat_data(true).unwrap();
+        assert!(
+            simple.consumer_data_set[0]
+                .subscription_data_set
+                .as_ref()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            !runtime
+                .send_heartbeat_to_broker(0, "broker", "127.0.0.1:1")
+                .await
+                .unwrap()
+        );
+    }
 
     #[test]
     fn singleton_fingerprints_match_invoked_java_oracle() {
@@ -348,13 +399,13 @@ mod tests {
     fn fingerprint_ignores_identity_subscription_version_and_simple_flag() {
         let mut data = HeartbeatData::default();
         data.consumer_data_set.push(ConsumerData {
-            group_name: "consumer".into(),
-            subscription_data_set: std::collections::HashSet::from([SubscriptionData {
+            group_name: Some("consumer".into()),
+            subscription_data_set: Some(std::collections::HashSet::from([SubscriptionData {
                 topic: Some("topic".into()),
                 sub_string: Some("*".into()),
                 sub_version: 1,
                 ..Default::default()
-            }]),
+            }])),
             ..Default::default()
         });
         let expected = fingerprint(&data).unwrap();
@@ -362,14 +413,24 @@ mod tests {
         data.heartbeat_fingerprint = 42;
         data.is_without_sub = true;
         let mut consumer = data.consumer_data_set.drain(..).next().unwrap();
-        let mut sub = consumer.subscription_data_set.drain().next().unwrap();
+        let mut sub = consumer
+            .subscription_data_set
+            .as_mut()
+            .unwrap()
+            .drain()
+            .next()
+            .unwrap();
         sub.sub_version = 99;
-        consumer.subscription_data_set.insert(sub.clone());
+        consumer
+            .subscription_data_set
+            .as_mut()
+            .unwrap()
+            .insert(sub.clone());
         data.consumer_data_set.push(consumer.clone());
         assert_eq!(fingerprint(&data).unwrap(), expected);
-        consumer.subscription_data_set.clear();
+        consumer.subscription_data_set.as_mut().unwrap().clear();
         sub.sub_string = Some("changed".into());
-        consumer.subscription_data_set.insert(sub);
+        consumer.subscription_data_set.as_mut().unwrap().insert(sub);
         data.consumer_data_set.clear();
         data.consumer_data_set.push(consumer);
         assert_ne!(fingerprint(&data).unwrap(), expected);
@@ -378,11 +439,11 @@ mod tests {
     #[test]
     fn fingerprint_preserves_duplicate_multiplicity_without_registration_order() {
         let a = ConsumerData {
-            group_name: "a".into(),
+            group_name: Some("a".into()),
             ..Default::default()
         };
         let b = ConsumerData {
-            group_name: "b".into(),
+            group_name: Some("b".into()),
             ..Default::default()
         };
         let mut data = HeartbeatData {

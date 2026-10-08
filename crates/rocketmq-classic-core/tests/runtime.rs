@@ -47,7 +47,7 @@ impl ProducerRuntime for RouteObserver {
 impl ConsumerRuntime for RouteObserver {
     fn heartbeat_data(&self) -> rocketmq_classic_protocol::heartbeat::ConsumerData {
         rocketmq_classic_protocol::heartbeat::ConsumerData {
-            group_name: "consumer".into(),
+            group_name: Some("consumer".into()),
             ..Default::default()
         }
     }
@@ -160,13 +160,15 @@ async fn all_topic_refresh_unions_registered_topics_and_continues_after_rejectio
                     .is_some()
             );
             ConsumerData {
-                subscription_data_set: ["common", "consumer-only"]
-                    .into_iter()
-                    .map(|topic| SubscriptionData {
-                        topic: Some(topic.into()),
-                        ..Default::default()
-                    })
-                    .collect(),
+                subscription_data_set: Some(
+                    ["common", "consumer-only"]
+                        .into_iter()
+                        .map(|topic| SubscriptionData {
+                            topic: Some(topic.into()),
+                            ..Default::default()
+                        })
+                        .collect(),
+                ),
                 ..Default::default()
             }
         }
