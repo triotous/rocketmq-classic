@@ -52,6 +52,7 @@ public final class RuntimeLookupFixtures {
         fixture.put("assignmentAttachmentCases", assignmentAttachmentCases());
         fixture.put("assignmentBodyCases", assignmentBodyCases());
         fixture.put("assignmentMethodCases", assignmentMethodCases());
+        fixture.put("messageRequestModeMethodCases", messageRequestModeMethodCases());
         fixture.put("consumerListCases", consumerListCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
             com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
@@ -241,6 +242,18 @@ public final class RuntimeLookupFixtures {
         differentQueue.setMessageQueue(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 3));
         populatedCase.put("equalsDifferentQueue", populated.equals(differentQueue));
         cases.add(populatedCase);
+        return cases;
+    }
+
+    private static List<Object> messageRequestModeMethodCases() {
+        List<Object> cases = new ArrayList<>();
+        for (org.apache.rocketmq.common.message.MessageRequestMode mode :
+            org.apache.rocketmq.common.message.MessageRequestMode.values()) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("constant", mode.name());
+            item.put("getName", mode.getName());
+            cases.add(item);
+        }
         return cases;
     }
 

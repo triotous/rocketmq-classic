@@ -23,6 +23,15 @@ pub enum MessageRequestMode {
     Pop,
 }
 
+impl MessageRequestMode {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Pull => "PULL",
+            Self::Pop => "POP",
+        }
+    }
+}
+
 fn default_assignment_mode() -> Option<MessageRequestMode> {
     Some(MessageRequestMode::Pull)
 }
@@ -1170,6 +1179,17 @@ mod tests {
                     Ok(case["equalsDifferentQueue"].as_bool().unwrap())
                 );
             }
+        }
+    }
+
+    #[test]
+    fn message_request_mode_name_matches_invoked_java_public_api() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        for case in fixture["messageRequestModeMethodCases"].as_array().unwrap() {
+            let mode: MessageRequestMode =
+                serde_json::from_value(case["constant"].clone()).unwrap();
+            assert_eq!(mode.name(), case["getName"].as_str().unwrap());
         }
     }
 
