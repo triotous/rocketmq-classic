@@ -36,7 +36,7 @@ pub enum RuntimeError {
     #[error("NameServer addressing callback registration panicked")]
     AddressingCallbackFailed,
     #[error("heartbeat encoding failed: {0}")]
-    HeartbeatEncoding(serde_json::Error),
+    HeartbeatEncoding(rocketmq_classic_protocol::heartbeat::HeartbeatFingerprintError),
     #[error("invalid heartbeat consumer data: {0}")]
     InvalidHeartbeatData(&'static str),
     #[error("periodic interval must be positive")]

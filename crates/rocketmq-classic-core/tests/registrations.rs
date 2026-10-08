@@ -52,12 +52,12 @@ async fn distinct_registered_keys_preserve_equal_and_simple_consumer_metadata() 
         .unwrap();
     let first = Arc::new(Consumer(Mutex::new(ConsumerData {
         group_name: Some("consumer".into()),
-        subscription_data_set: Some(HashSet::from([SubscriptionData {
+        subscription_data_set: Some(HashSet::from([Some(SubscriptionData {
             topic: Some("other".into()),
             sub_string: Some("tag".into()),
             sub_version: 13,
             ..Default::default()
-        }])),
+        })])),
         ..java_registered_consumer_fields()
     })));
     let a = runtime
@@ -109,12 +109,12 @@ async fn distinct_registered_keys_preserve_equal_and_simple_consumer_metadata() 
         .await
         .unwrap();
     let second = Arc::new(Consumer(Mutex::new(ConsumerData {
-        subscription_data_set: Some(HashSet::from([SubscriptionData {
+        subscription_data_set: Some(HashSet::from([Some(SubscriptionData {
             topic: Some("second".into()),
             sub_string: Some("*".into()),
             sub_version: 14,
             ..Default::default()
-        }])),
+        })])),
         ..first.0.lock().unwrap().clone()
     })));
     b = runtime
@@ -204,12 +204,12 @@ async fn heartbeat_snapshots_follow_consumer_versions_and_without_subscription_f
     compare_java("empty", &runtime.prepare_heartbeat_data(false).unwrap());
     let consumer = Arc::new(Consumer(Mutex::new(ConsumerData {
         group_name: Some("consumer".into()),
-        subscription_data_set: Some(HashSet::from([SubscriptionData {
+        subscription_data_set: Some(HashSet::from([Some(SubscriptionData {
             topic: Some("topic".into()),
             sub_string: Some("*".into()),
             sub_version: 12,
             ..Default::default()
-        }])),
+        })])),
         ..java_registered_consumer_fields()
     })));
     let producer_lease = runtime
@@ -235,21 +235,26 @@ async fn heartbeat_snapshots_follow_consumer_versions_and_without_subscription_f
             .unwrap()
             .first()
             .unwrap()
+            .as_ref()
+            .unwrap()
             .subscription_data_set
             .as_ref()
             .unwrap()
             .iter()
             .next()
             .unwrap()
+            .as_ref()
+            .unwrap()
             .sub_version,
         12
     );
-    consumer.0.lock().unwrap().subscription_data_set = Some(HashSet::from([SubscriptionData {
-        topic: Some("other".into()),
-        sub_string: Some("tag".into()),
-        sub_version: 13,
-        ..Default::default()
-    }]));
+    consumer.0.lock().unwrap().subscription_data_set =
+        Some(HashSet::from([Some(SubscriptionData {
+            topic: Some("other".into()),
+            sub_string: Some("tag".into()),
+            sub_version: 13,
+            ..Default::default()
+        })]));
     let second = runtime.prepare_heartbeat_data(false).unwrap();
     compare_java("subscription-change", &second);
     assert_ne!(first, second);
@@ -262,6 +267,8 @@ async fn heartbeat_snapshots_follow_consumer_versions_and_without_subscription_f
             .as_ref()
             .unwrap()
             .first()
+            .unwrap()
+            .as_ref()
             .unwrap()
             .subscription_data_set
             .as_ref()

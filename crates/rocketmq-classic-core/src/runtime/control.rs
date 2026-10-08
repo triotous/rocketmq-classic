@@ -711,7 +711,9 @@ mod tests {
             fn heartbeat_data(&self) -> ConsumerData {
                 ConsumerData {
                     group_name: Some("consumer".into()),
-                    subscription_data_set: Some(HashSet::from([self.0.lock().unwrap().clone()])),
+                    subscription_data_set: Some(HashSet::from([Some(
+                        self.0.lock().unwrap().clone(),
+                    )])),
                     unit_mode: true,
                     ..Default::default()
                 }
@@ -757,16 +759,21 @@ mod tests {
                 producer_data_set: Some(
                     producers
                         .iter()
-                        .map(|group| ProducerData {
-                            group_name: Some((*group).into()),
+                        .map(|group| {
+                            Some(ProducerData {
+                                group_name: Some((*group).into()),
+                            })
                         })
                         .collect(),
                 ),
-                consumer_data_set: Some(vec![consumer.heartbeat_data()]),
+                consumer_data_set: Some(vec![Some(consumer.heartbeat_data())]),
                 ..Default::default()
             };
-            let by_group =
-                |left: &ProducerData, right: &ProducerData| left.group_name.cmp(&right.group_name);
+            let by_group = |left: &Option<ProducerData>, right: &Option<ProducerData>| {
+                left.as_ref()
+                    .and_then(|data| data.group_name.as_ref())
+                    .cmp(&right.as_ref().and_then(|data| data.group_name.as_ref()))
+            };
             heartbeat
                 .producer_data_set
                 .as_mut()

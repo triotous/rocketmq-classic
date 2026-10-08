@@ -525,14 +525,14 @@ impl ClientRuntime {
         let groups = self.groups.snapshot()?;
         let mut topics = std::collections::BTreeSet::new();
         for consumer in groups.consumers {
-            topics.extend(
-                consumer
-                    .heartbeat_data()
-                    .subscription_data_set
-                    .into_iter()
-                    .flatten()
-                    .map(|sub| sub.topic),
-            );
+            if let Some(subscriptions) = consumer.heartbeat_data().subscription_data_set {
+                for subscription in subscriptions {
+                    let Some(subscription) = subscription else {
+                        return Err(RuntimeError::InvalidHeartbeatData("null subscription data"));
+                    };
+                    topics.insert(subscription.topic);
+                }
+            }
         }
         for (_, producer) in groups.producers {
             topics.extend(producer.publish_topics().into_iter().map(Some));
@@ -761,9 +761,9 @@ impl ClientRuntime {
                 .producer_data_set
                 .as_mut()
                 .unwrap()
-                .push(ProducerData {
+                .push(Some(ProducerData {
                     group_name: Some(group),
-                });
+                }));
         }
         for consumer in snapshot.consumers {
             let mut data = consumer.heartbeat_data();
@@ -773,7 +773,11 @@ impl ClientRuntime {
                 // Java constructs a fresh ConsumerData and addAll(null) fails.
                 return Err(RuntimeError::InvalidHeartbeatData("null subscription set"));
             }
-            heartbeat.consumer_data_set.as_mut().unwrap().push(data);
+            heartbeat
+                .consumer_data_set
+                .as_mut()
+                .unwrap()
+                .push(Some(data));
         }
         Ok(heartbeat)
     }

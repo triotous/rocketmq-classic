@@ -334,6 +334,45 @@ public final class RuntimeHeartbeatFixtures {
         return cases;
     }
 
+    private static List<Object> heartbeatNullElementCases() {
+        List<Object> cases = new ArrayList<>();
+        for (String[] testCase : new String[][] {
+            {"producer-null", "{\"producerDataSet\":[null,{\"groupName\":\"p\"},null],\"consumerDataSet\":[]}"},
+            {"consumer-null", "{\"producerDataSet\":[],\"consumerDataSet\":[null,{\"groupName\":\"c\"},null]}"},
+            {"subscription-null", "{\"producerDataSet\":[],\"consumerDataSet\":[{\"groupName\":\"c\","
+                + "\"subscriptionDataSet\":[null,{\"topic\":\"topic\",\"subString\":\"tag\","
+                + "\"tagsSet\":[],\"codeSet\":[],\"expressionType\":\"TAG\",\"subVersion\":1},null]}]}"}
+        }) {
+            HeartbeatData value = com.alibaba.fastjson2.JSON.parseObject(testCase[1], HeartbeatData.class);
+            com.alibaba.fastjson2.JSONObject encoded = com.alibaba.fastjson2.JSON.parseObject(
+                com.alibaba.fastjson2.JSON.toJSONString(value));
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", testCase[0]);
+            item.put("rawInput", testCase[1]);
+            item.put("toString", value.toString());
+            item.put("producerCount", value.getProducerDataSet() == null ? null : value.getProducerDataSet().size());
+            item.put("producerHasNull", value.getProducerDataSet() != null && value.getProducerDataSet().contains(null));
+            item.put("consumerCount", value.getConsumerDataSet() == null ? null : value.getConsumerDataSet().size());
+            item.put("consumerHasNull", value.getConsumerDataSet() != null && value.getConsumerDataSet().contains(null));
+            item.put("encodedProducerDataSet", encoded.get("producerDataSet"));
+            item.put("encodedConsumerDataSet", encoded.get("consumerDataSet"));
+            if ("subscription-null".equals(testCase[0])) {
+                ConsumerData consumer = value.getConsumerDataSet().iterator().next();
+                item.put("subscriptionCount", consumer.getSubscriptionDataSet().size());
+                item.put("subscriptionHasNull", consumer.getSubscriptionDataSet().contains(null));
+            }
+            try {
+                item.put("computedFingerprint", value.computeHeartbeatFingerprint());
+                item.put("fingerprintError", null);
+            } catch (Throwable error) {
+                item.put("computedFingerprint", null);
+                item.put("fingerprintError", error.getClass().getSimpleName());
+            }
+            cases.add(item);
+        }
+        return cases;
+    }
+
     private static List<Object> heartbeatAliasCases() {
         List<Object> cases = new ArrayList<>();
         for (String input : new String[] {
@@ -554,7 +593,7 @@ public final class RuntimeHeartbeatFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "MQClientInstance.registerProducer/registerConsumer/prepareHeartbeatData/unregisterProducer/unregisterConsumer; HeartbeatData.computeHeartbeatFingerprint/toString/duplicate-ProducerData decode; ProducerData.toString; ConsumerData enum JSON names/toString; SubscriptionData.SUB_ALL/constructors/equals/hashCode/compareTo/toString");
+        fixture.put("entrypoint", "MQClientInstance.registerProducer/registerConsumer/prepareHeartbeatData/unregisterProducer/unregisterConsumer; HeartbeatData.computeHeartbeatFingerprint/toString/duplicate-ProducerData decode/nullable producer-consumer-subscription set elements; ProducerData.toString; ConsumerData enum JSON names/toString; SubscriptionData.SUB_ALL/constructors/equals/hashCode/compareTo/toString");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
         fixture.put("multiplicityCases", multiplicityCases);
@@ -564,6 +603,8 @@ public final class RuntimeHeartbeatFixtures {
         fixture.put("ownerFieldCases", ownerFieldCases());
         fixture.put("consumerEnumCases", consumerEnumCases());
         fixture.put("heartbeatFieldCases", heartbeatFieldCases());
+        List<Object> nullElementCases = heartbeatNullElementCases();
+        fixture.put("heartbeatNullElementCases", nullElementCases);
         fixture.put("heartbeatAliasCases", heartbeatAliasCases());
         fixture.put("fingerprintNullCases", fingerprintNullCases());
         fixture.put("primitiveNullCases", primitiveNullCases());
@@ -577,6 +618,7 @@ public final class RuntimeHeartbeatFixtures {
             Files.writeString(file, json);
         }
         System.out.println("Runtime heartbeat invoked cases verified: " + cases.size()
+            + "; null-element cases: " + nullElementCases.size()
             + "; multiplicity cases: " + multiplicityCases.size());
     }
 

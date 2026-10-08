@@ -25,7 +25,7 @@ impl ConsumerRuntime for Consumer {
     fn heartbeat_data(&self) -> ConsumerData {
         ConsumerData {
             group_name: Some("different-callback-group".into()),
-            subscription_data_set: Some(self.0.iter().cloned().collect()),
+            subscription_data_set: Some(self.0.iter().cloned().map(Some).collect()),
             ..Default::default()
         }
     }

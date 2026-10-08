@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -232,27 +232,57 @@ fn java_integer_set_to_string(values: &Option<HashSet<Option<i32>>>) -> String {
 }
 
 fn java_hash_set_to_string<T>(
-    values: &Option<HashSet<T>>,
+    values: &Option<HashSet<Option<T>>>,
     mut item_to_string: impl FnMut(&T) -> String,
 ) -> String {
     let Some(values) = values else {
         return "null".to_owned();
     };
-    let mut values = values.iter().map(&mut item_to_string).collect::<Vec<_>>();
+    let mut values = values
+        .iter()
+        .map(|value| {
+            value.as_ref().map_or_else(
+                || (0, "null".to_owned()),
+                |value| (1, item_to_string(value)),
+            )
+        })
+        .collect::<Vec<_>>();
     values.sort();
-    format!("[{}]", values.join(", "))
+    format!(
+        "[{}]",
+        values
+            .into_iter()
+            .map(|(_, value)| value)
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
 }
 
 fn java_vec_to_string<T>(
-    values: &Option<Vec<T>>,
+    values: &Option<Vec<Option<T>>>,
     mut item_to_string: impl FnMut(&T) -> String,
 ) -> String {
     let Some(values) = values else {
         return "null".to_owned();
     };
-    let mut values = values.iter().map(&mut item_to_string).collect::<Vec<_>>();
+    let mut values = values
+        .iter()
+        .map(|value| {
+            value.as_ref().map_or_else(
+                || (0, "null".to_owned()),
+                |value| (1, item_to_string(value)),
+            )
+        })
+        .collect::<Vec<_>>();
     values.sort();
-    format!("[{}]", values.join(", "))
+    format!(
+        "[{}]",
+        values
+            .into_iter()
+            .map(|(_, value)| value)
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
 }
 
 fn hash_set<T: Hash, H: Hasher>(values: &HashSet<T>, state: &mut H) {
@@ -454,7 +484,7 @@ pub struct ConsumerData {
         default = "empty_subscriptions",
         skip_serializing_if = "Option::is_none"
     )]
-    pub subscription_data_set: Option<HashSet<SubscriptionData>>,
+    pub subscription_data_set: Option<HashSet<Option<SubscriptionData>>>,
     #[serde(default, deserialize_with = "deserialize_null_default")]
     pub unit_mode: bool,
 }
@@ -534,7 +564,7 @@ fn consume_from_where_java_name(value: ConsumeFromWhere) -> &'static str {
     }
 }
 
-fn empty_subscriptions() -> Option<HashSet<SubscriptionData>> {
+fn empty_subscriptions() -> Option<HashSet<Option<SubscriptionData>>> {
     Some(HashSet::new())
 }
 
@@ -546,11 +576,13 @@ pub struct HeartbeatData {
     #[serde(default = "empty_producers", skip_serializing_if = "Option::is_none")]
     /// Java ProducerData inherits identity equality, so repeated equal wire
     /// rows must remain distinct after decoding.
-    pub producer_data_set: Option<Vec<ProducerData>>,
+    #[serde(deserialize_with = "deserialize_identity_set_with_null")]
+    pub producer_data_set: Option<Vec<Option<ProducerData>>>,
     #[serde(default = "empty_consumers", skip_serializing_if = "Option::is_none")]
     /// Java ConsumerData has object identity equality. Preserve its wire
     /// multiplicity rather than deduplicating structurally equal metadata.
-    pub consumer_data_set: Option<Vec<ConsumerData>>,
+    #[serde(deserialize_with = "deserialize_identity_set_with_null")]
+    pub consumer_data_set: Option<Vec<Option<ConsumerData>>>,
     #[serde(default, deserialize_with = "deserialize_null_default")]
     pub heartbeat_fingerprint: i32,
     #[serde(
@@ -587,7 +619,7 @@ impl HeartbeatData {
 
     /// Computes the client-local heartbeat fingerprint using Java 5.5.1's
     /// JSON-copy defaults, normalized fields and Java UTF-16 string hash.
-    pub fn compute_heartbeat_fingerprint(&self) -> Result<i32, serde_json::Error> {
+    pub fn compute_heartbeat_fingerprint(&self) -> Result<i32, HeartbeatFingerprintError> {
         let mut value = serde_json::to_value(self)?;
         // Java serializes and reparses a copy first. Omitted nullable
         // collections regain their constructor-empty values during parsing.
@@ -602,11 +634,17 @@ impl HeartbeatData {
         value["withoutSub"] = false.into();
         if let Some(consumers) = value["consumerDataSet"].as_array_mut() {
             for consumer in consumers {
+                if consumer.is_null() {
+                    return Err(HeartbeatFingerprintError::NullConsumerData);
+                }
                 if !consumer["subscriptionDataSet"].is_array() {
                     consumer["subscriptionDataSet"] = serde_json::json!([]);
                 }
                 if let Some(subscriptions) = consumer["subscriptionDataSet"].as_array_mut() {
                     for subscription in subscriptions {
+                        if subscription.is_null() {
+                            return Err(HeartbeatFingerprintError::NullSubscriptionData);
+                        }
                         subscription["subVersion"] = 0.into();
                     }
                 }
@@ -635,11 +673,45 @@ impl HeartbeatData {
     }
 }
 
-fn empty_producers() -> Option<Vec<ProducerData>> {
+#[derive(Debug, thiserror::Error)]
+pub enum HeartbeatFingerprintError {
+    #[error("heartbeat fingerprint JSON conversion failed: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error("Java NullPointerException: null ConsumerData in consumerDataSet")]
+    NullConsumerData,
+    #[error("Java NullPointerException: null SubscriptionData in subscriptionDataSet")]
+    NullSubscriptionData,
+}
+
+fn deserialize_identity_set_with_null<'de, T, D>(
+    deserializer: D,
+) -> Result<Option<Vec<Option<T>>>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: Deserializer<'de>,
+{
+    let mut values = Option::<Vec<Option<T>>>::deserialize(deserializer)?;
+    if let Some(values) = values.as_mut() {
+        let mut retained_null = false;
+        values.retain(|value| {
+            if value.is_some() {
+                true
+            } else if retained_null {
+                false
+            } else {
+                retained_null = true;
+                true
+            }
+        });
+    }
+    Ok(values)
+}
+
+fn empty_producers() -> Option<Vec<Option<ProducerData>>> {
     Some(Vec::new())
 }
 
-fn empty_consumers() -> Option<Vec<ConsumerData>> {
+fn empty_consumers() -> Option<Vec<Option<ConsumerData>>> {
     Some(Vec::new())
 }
 
@@ -1010,6 +1082,118 @@ mod tests {
     }
 
     #[test]
+    fn heartbeat_null_set_members_match_invoked_java() {
+        fn sort_arrays(value: &mut serde_json::Value) {
+            match value {
+                serde_json::Value::Array(values) => {
+                    for value in values.iter_mut() {
+                        sort_arrays(value);
+                    }
+                    values.sort_unstable_by_key(serde_json::Value::to_string);
+                }
+                serde_json::Value::Object(values) => {
+                    for value in values.values_mut() {
+                        sort_arrays(value);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
+                .unwrap();
+        for case in fixture["heartbeatNullElementCases"].as_array().unwrap() {
+            let data: HeartbeatData =
+                serde_json::from_str(case["rawInput"].as_str().unwrap()).unwrap();
+            assert_eq!(
+                data.producer_data_set.as_ref().map(Vec::len),
+                case["producerCount"].as_u64().map(|count| count as usize),
+                "{} producer count",
+                case["case"]
+            );
+            assert_eq!(
+                data.producer_data_set
+                    .as_ref()
+                    .is_some_and(|values| values.iter().any(Option::is_none)),
+                case["producerHasNull"],
+                "{} producer null",
+                case["case"]
+            );
+            assert_eq!(
+                data.consumer_data_set.as_ref().map(Vec::len),
+                case["consumerCount"].as_u64().map(|count| count as usize),
+                "{} consumer count",
+                case["case"]
+            );
+            assert_eq!(
+                data.consumer_data_set
+                    .as_ref()
+                    .is_some_and(|values| values.iter().any(Option::is_none)),
+                case["consumerHasNull"],
+                "{} consumer null",
+                case["case"]
+            );
+
+            if let Some(consumers) = data.consumer_data_set.as_ref() {
+                if let Some(consumer) = consumers.iter().flatten().next() {
+                    if case.get("subscriptionCount").is_some() {
+                        let subscriptions = consumer.subscription_data_set.as_ref().unwrap();
+                        assert_eq!(
+                            subscriptions.len(),
+                            case["subscriptionCount"].as_u64().unwrap() as usize
+                        );
+                        assert_eq!(subscriptions.contains(&None), case["subscriptionHasNull"]);
+                    }
+                }
+            }
+
+            let encoded = serde_json::to_value(&data).unwrap();
+            for field in ["producerDataSet", "consumerDataSet"] {
+                let mut actual = encoded[field].clone();
+                let fixture_field = match field {
+                    "producerDataSet" => "encodedProducerDataSet",
+                    "consumerDataSet" => "encodedConsumerDataSet",
+                    _ => unreachable!(),
+                };
+                let mut expected = case[fixture_field].clone();
+                sort_arrays(&mut actual);
+                sort_arrays(&mut expected);
+                assert_eq!(actual, expected, "{} {field} JSON", case["case"]);
+            }
+            assert_eq!(
+                data.java_to_string(),
+                case["toString"],
+                "{} text",
+                case["case"]
+            );
+
+            let fingerprint = data.compute_heartbeat_fingerprint();
+            match case["fingerprintError"].as_str() {
+                None => assert_eq!(
+                    fingerprint.unwrap(),
+                    case["computedFingerprint"].as_i64().unwrap() as i32,
+                    "{} fingerprint",
+                    case["case"]
+                ),
+                Some("NullPointerException") if case["case"] == "consumer-null" => {
+                    assert!(matches!(
+                        fingerprint,
+                        Err(HeartbeatFingerprintError::NullConsumerData)
+                    ));
+                }
+                Some("NullPointerException") => {
+                    assert!(matches!(
+                        fingerprint,
+                        Err(HeartbeatFingerprintError::NullSubscriptionData)
+                    ));
+                }
+                Some(error) => panic!("unexpected Java fingerprint error: {error}"),
+            }
+        }
+    }
+
+    #[test]
     fn heartbeat_alias_inputs_match_invoked_java_property_names() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
@@ -1126,17 +1310,17 @@ mod tests {
             .consumer_data_set
             .as_mut()
             .unwrap()
-            .push(ConsumerData {
+            .push(Some(ConsumerData {
                 group_name: Some("group".into()),
                 consume_from_where: Some(ConsumeFromWhere::ConsumeFromLastOffset),
-                subscription_data_set: Some(HashSet::from([SubscriptionData {
+                subscription_data_set: Some(HashSet::from([Some(SubscriptionData {
                     topic: Some("topic".into()),
                     sub_string: Some("*".into()),
                     sub_version: i64::MAX,
                     ..SubscriptionData::default()
-                }])),
+                })])),
                 ..ConsumerData::default()
-            });
+            }));
         let value = serde_json::to_value(&heartbeat).unwrap();
         assert_eq!(value["clientID"], "client");
         assert_eq!(value["withoutSub"], false);

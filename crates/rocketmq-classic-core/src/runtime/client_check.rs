@@ -19,6 +19,9 @@ impl ClientRuntime {
                 return Ok(()); // Java returns from the entire round, not continue.
             }
             for subscription in subscriptions {
+                let Some(subscription) = subscription else {
+                    return Err(RuntimeError::InvalidHeartbeatData("null subscription data"));
+                };
                 if is_tag(subscription.expression_type.as_deref()) {
                     continue;
                 }

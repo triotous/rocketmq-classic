@@ -167,6 +167,7 @@ async fn all_topic_refresh_unions_registered_topics_and_continues_after_rejectio
                             topic: topic.map(str::to_owned),
                             ..Default::default()
                         })
+                        .map(Some)
                         .collect(),
                 ),
                 ..Default::default()
@@ -272,9 +273,9 @@ async fn null_subscription_topic_success_route_fails_before_cache_publication() 
     impl ConsumerRuntime for NullTopic {
         fn heartbeat_data(&self) -> ConsumerData {
             ConsumerData {
-                subscription_data_set: Some(std::collections::HashSet::from([
+                subscription_data_set: Some(std::collections::HashSet::from([Some(
                     SubscriptionData::default(),
-                ])),
+                )])),
                 ..Default::default()
             }
         }

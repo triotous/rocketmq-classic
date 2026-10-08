@@ -124,7 +124,7 @@ impl ClientRuntime {
         let mut simple = full.clone();
         simple.is_without_sub = true;
         if let Some(consumers) = simple.consumer_data_set.as_mut() {
-            for consumer in consumers {
+            for consumer in consumers.iter_mut().flatten() {
                 if let Some(subscriptions) = consumer.subscription_data_set.as_mut() {
                     subscriptions.clear();
                 }
@@ -183,7 +183,7 @@ impl ClientRuntime {
         let mut simple = full.clone();
         simple.is_without_sub = true;
         if let Some(consumers) = simple.consumer_data_set.as_mut() {
-            for consumer in consumers {
+            for consumer in consumers.iter_mut().flatten() {
                 if let Some(subscriptions) = consumer.subscription_data_set.as_mut() {
                     subscriptions.clear();
                 }
@@ -346,6 +346,8 @@ mod tests {
         let simple = runtime.prepare_heartbeat_data(true).unwrap();
         assert!(
             simple.consumer_data_set.as_ref().unwrap()[0]
+                .as_ref()
+                .unwrap()
                 .subscription_data_set
                 .as_ref()
                 .unwrap()
@@ -384,7 +386,10 @@ mod tests {
                 "null-producers" => data.producer_data_set = None,
                 "null-consumers" => data.consumer_data_set = None,
                 "null-subscriptions" => {
-                    data.consumer_data_set.as_mut().unwrap()[0].subscription_data_set = None;
+                    data.consumer_data_set.as_mut().unwrap()[0]
+                        .as_mut()
+                        .unwrap()
+                        .subscription_data_set = None;
                 }
                 _ => {}
             }
@@ -400,16 +405,21 @@ mod tests {
     #[test]
     fn fingerprint_ignores_identity_subscription_version_and_simple_flag() {
         let mut data = HeartbeatData::default();
-        data.consumer_data_set.as_mut().unwrap().push(ConsumerData {
-            group_name: Some("consumer".into()),
-            subscription_data_set: Some(std::collections::HashSet::from([SubscriptionData {
-                topic: Some("topic".into()),
-                sub_string: Some("*".into()),
-                sub_version: 1,
+        data.consumer_data_set
+            .as_mut()
+            .unwrap()
+            .push(Some(ConsumerData {
+                group_name: Some("consumer".into()),
+                subscription_data_set: Some(std::collections::HashSet::from([Some(
+                    SubscriptionData {
+                        topic: Some("topic".into()),
+                        sub_string: Some("*".into()),
+                        sub_version: 1,
+                        ..Default::default()
+                    },
+                )])),
                 ..Default::default()
-            }])),
-            ..Default::default()
-        });
+            }));
         let expected = fingerprint(&data).unwrap();
         data.client_id = Some("another".into());
         data.heartbeat_fingerprint = 42;
@@ -420,6 +430,7 @@ mod tests {
             .unwrap()
             .drain(..)
             .next()
+            .unwrap()
             .unwrap();
         let mut sub = consumer
             .subscription_data_set
@@ -427,23 +438,31 @@ mod tests {
             .unwrap()
             .drain()
             .next()
+            .unwrap()
             .unwrap();
         sub.sub_version = 99;
         consumer
             .subscription_data_set
             .as_mut()
             .unwrap()
-            .insert(sub.clone());
+            .insert(Some(sub.clone()));
         data.consumer_data_set
             .as_mut()
             .unwrap()
-            .push(consumer.clone());
+            .push(Some(consumer.clone()));
         assert_eq!(fingerprint(&data).unwrap(), expected);
         consumer.subscription_data_set.as_mut().unwrap().clear();
         sub.sub_string = Some("changed".into());
-        consumer.subscription_data_set.as_mut().unwrap().insert(sub);
+        consumer
+            .subscription_data_set
+            .as_mut()
+            .unwrap()
+            .insert(Some(sub));
         data.consumer_data_set.as_mut().unwrap().clear();
-        data.consumer_data_set.as_mut().unwrap().push(consumer);
+        data.consumer_data_set
+            .as_mut()
+            .unwrap()
+            .push(Some(consumer));
         assert_ne!(fingerprint(&data).unwrap(), expected);
     }
 
@@ -458,15 +477,15 @@ mod tests {
             ..Default::default()
         };
         let mut data = HeartbeatData {
-            consumer_data_set: Some(vec![a.clone(), b.clone()]),
+            consumer_data_set: Some(vec![Some(a.clone()), Some(b.clone())]),
             ..Default::default()
         };
         let expected = fingerprint(&data).unwrap();
         data.consumer_data_set.as_mut().unwrap().reverse();
         assert_eq!(fingerprint(&data).unwrap(), expected);
-        data.consumer_data_set.as_mut().unwrap().push(a);
+        data.consumer_data_set.as_mut().unwrap().push(Some(a));
         assert_ne!(fingerprint(&data).unwrap(), expected);
-        data.consumer_data_set.as_mut().unwrap().push(b);
+        data.consumer_data_set.as_mut().unwrap().push(Some(b));
         let duplicated = fingerprint(&data).unwrap();
         data.consumer_data_set.as_mut().unwrap().reverse();
         assert_eq!(fingerprint(&data).unwrap(), duplicated);
