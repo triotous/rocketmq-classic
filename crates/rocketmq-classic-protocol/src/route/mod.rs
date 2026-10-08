@@ -517,6 +517,26 @@ impl Default for TopicQueueMappingInfo {
     }
 }
 
+#[cfg(test)]
+mod topic_queue_mapping_method_tests {
+    use super::TopicQueueMappingInfo;
+
+    #[test]
+    fn topic_queue_mapping_methods_match_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["topicQueueMappingMethods"].as_array().unwrap() {
+            let left: TopicQueueMappingInfo = serde_json::from_value(case["left"].clone()).unwrap();
+            let right: TopicQueueMappingInfo = serde_json::from_value(case["right"].clone()).unwrap();
+            assert_eq!(left == right, case["equals"]);
+            assert_eq!(left.java_hash_code(), case["leftHashCode"].as_i64().unwrap() as i32);
+            assert_eq!(right.java_hash_code(), case["rightHashCode"].as_i64().unwrap() as i32);
+            assert_eq!(left.java_to_string(), case["leftToString"]);
+            assert_eq!(right.java_to_string(), case["rightToString"]);
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TopicRouteData {
