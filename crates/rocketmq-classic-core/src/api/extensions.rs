@@ -34,6 +34,64 @@ pub enum PopStatus {
     PollingFull,
 }
 
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum PopStatusLookupError {
+    #[error("Name is null")]
+    NullName,
+    #[error("No enum constant org.apache.rocketmq.client.consumer.PopStatus.{0}")]
+    UnknownName(String),
+}
+
+impl PopStatus {
+    pub const fn values() -> [Self; 4] {
+        [
+            Self::Found,
+            Self::NoNewMsg,
+            Self::PollingFull,
+            Self::PollingNotFound,
+        ]
+    }
+
+    pub fn value_of_name(name: Option<&str>) -> Result<Self, PopStatusLookupError> {
+        match name {
+            None => Err(PopStatusLookupError::NullName),
+            Some("FOUND") => Ok(Self::Found),
+            Some("NO_NEW_MSG") => Ok(Self::NoNewMsg),
+            Some("POLLING_FULL") => Ok(Self::PollingFull),
+            Some("POLLING_NOT_FOUND") => Ok(Self::PollingNotFound),
+            Some(other) => Err(PopStatusLookupError::UnknownName(other.to_owned())),
+        }
+    }
+
+    pub const fn name(&self) -> &'static str {
+        match self {
+            Self::Found => "FOUND",
+            Self::NoNewMsg => "NO_NEW_MSG",
+            Self::PollingFull => "POLLING_FULL",
+            Self::PollingNotFound => "POLLING_NOT_FOUND",
+        }
+    }
+
+    pub const fn ordinal(&self) -> i32 {
+        match self {
+            Self::Found => 0,
+            Self::NoNewMsg => 1,
+            Self::PollingFull => 2,
+            Self::PollingNotFound => 3,
+        }
+    }
+
+    pub const fn java_compare_to(&self, other: &Self) -> i32 {
+        self.ordinal() - other.ordinal()
+    }
+}
+
+impl std::fmt::Display for PopStatus {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.name())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PopReply<H> {
     pub status: PopStatus,
@@ -45,6 +103,53 @@ pub struct PopReply<H> {
 pub enum AckStatus {
     Ok,
     NoExist,
+}
+
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum AckStatusLookupError {
+    #[error("Name is null")]
+    NullName,
+    #[error("No enum constant org.apache.rocketmq.client.consumer.AckStatus.{0}")]
+    UnknownName(String),
+}
+
+impl AckStatus {
+    pub const fn values() -> [Self; 2] {
+        [Self::Ok, Self::NoExist]
+    }
+
+    pub fn value_of_name(name: Option<&str>) -> Result<Self, AckStatusLookupError> {
+        match name {
+            None => Err(AckStatusLookupError::NullName),
+            Some("OK") => Ok(Self::Ok),
+            Some("NO_EXIST") => Ok(Self::NoExist),
+            Some(other) => Err(AckStatusLookupError::UnknownName(other.to_owned())),
+        }
+    }
+
+    pub const fn name(&self) -> &'static str {
+        match self {
+            Self::Ok => "OK",
+            Self::NoExist => "NO_EXIST",
+        }
+    }
+
+    pub const fn ordinal(&self) -> i32 {
+        match self {
+            Self::Ok => 0,
+            Self::NoExist => 1,
+        }
+    }
+
+    pub const fn java_compare_to(&self, other: &Self) -> i32 {
+        self.ordinal() - other.ordinal()
+    }
+}
+
+impl std::fmt::Display for AckStatus {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.name())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

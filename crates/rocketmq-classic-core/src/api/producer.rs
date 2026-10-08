@@ -47,6 +47,64 @@ pub enum SendStatus {
     SlaveNotAvailable,
 }
 
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum SendStatusLookupError {
+    #[error("Name is null")]
+    NullName,
+    #[error("No enum constant org.apache.rocketmq.client.producer.SendStatus.{0}")]
+    UnknownName(String),
+}
+
+impl SendStatus {
+    pub const fn values() -> [Self; 4] {
+        [
+            Self::SendOk,
+            Self::FlushDiskTimeout,
+            Self::FlushSlaveTimeout,
+            Self::SlaveNotAvailable,
+        ]
+    }
+
+    pub fn value_of_name(name: Option<&str>) -> Result<Self, SendStatusLookupError> {
+        match name {
+            None => Err(SendStatusLookupError::NullName),
+            Some("SEND_OK") => Ok(Self::SendOk),
+            Some("FLUSH_DISK_TIMEOUT") => Ok(Self::FlushDiskTimeout),
+            Some("FLUSH_SLAVE_TIMEOUT") => Ok(Self::FlushSlaveTimeout),
+            Some("SLAVE_NOT_AVAILABLE") => Ok(Self::SlaveNotAvailable),
+            Some(other) => Err(SendStatusLookupError::UnknownName(other.to_owned())),
+        }
+    }
+
+    pub const fn name(&self) -> &'static str {
+        match self {
+            Self::SendOk => "SEND_OK",
+            Self::FlushDiskTimeout => "FLUSH_DISK_TIMEOUT",
+            Self::FlushSlaveTimeout => "FLUSH_SLAVE_TIMEOUT",
+            Self::SlaveNotAvailable => "SLAVE_NOT_AVAILABLE",
+        }
+    }
+
+    pub const fn ordinal(&self) -> i32 {
+        match self {
+            Self::SendOk => 0,
+            Self::FlushDiskTimeout => 1,
+            Self::FlushSlaveTimeout => 2,
+            Self::SlaveNotAvailable => 3,
+        }
+    }
+
+    pub const fn java_compare_to(&self, other: &Self) -> i32 {
+        self.ordinal() - other.ordinal()
+    }
+}
+
+impl std::fmt::Display for SendStatus {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.name())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SendResult {
     pub status: SendStatus,

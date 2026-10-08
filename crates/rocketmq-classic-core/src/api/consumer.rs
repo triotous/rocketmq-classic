@@ -25,6 +25,64 @@ pub enum PullStatus {
     OffsetIllegal,
 }
 
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum PullStatusLookupError {
+    #[error("Name is null")]
+    NullName,
+    #[error("No enum constant org.apache.rocketmq.client.consumer.PullStatus.{0}")]
+    UnknownName(String),
+}
+
+impl PullStatus {
+    pub const fn values() -> [Self; 4] {
+        [
+            Self::Found,
+            Self::NoNewMessage,
+            Self::NoMatchedMessage,
+            Self::OffsetIllegal,
+        ]
+    }
+
+    pub fn value_of_name(name: Option<&str>) -> Result<Self, PullStatusLookupError> {
+        match name {
+            None => Err(PullStatusLookupError::NullName),
+            Some("FOUND") => Ok(Self::Found),
+            Some("NO_NEW_MSG") => Ok(Self::NoNewMessage),
+            Some("NO_MATCHED_MSG") => Ok(Self::NoMatchedMessage),
+            Some("OFFSET_ILLEGAL") => Ok(Self::OffsetIllegal),
+            Some(other) => Err(PullStatusLookupError::UnknownName(other.to_owned())),
+        }
+    }
+
+    pub const fn name(&self) -> &'static str {
+        match self {
+            Self::Found => "FOUND",
+            Self::NoNewMessage => "NO_NEW_MSG",
+            Self::NoMatchedMessage => "NO_MATCHED_MSG",
+            Self::OffsetIllegal => "OFFSET_ILLEGAL",
+        }
+    }
+
+    pub const fn ordinal(&self) -> i32 {
+        match self {
+            Self::Found => 0,
+            Self::NoNewMessage => 1,
+            Self::NoMatchedMessage => 2,
+            Self::OffsetIllegal => 3,
+        }
+    }
+
+    pub const fn java_compare_to(&self, other: &Self) -> i32 {
+        self.ordinal() - other.ordinal()
+    }
+}
+
+impl std::fmt::Display for PullStatus {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.name())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PullResultExt {
     pub status: PullStatus,

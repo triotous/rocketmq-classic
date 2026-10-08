@@ -169,6 +169,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("languageCodeMethodCases", languageCodeMethodCases());
         fixture.put("serializeTypeMethodCases", serializeTypeMethodCases());
         fixture.put("compressionTypeMethodCases", compressionTypeMethodCases());
+        fixture.put("clientStatusEnumMethodCases", clientStatusEnumMethodCases());
         fixture.put("socksConstruction", socksConstruction());
         fixture.put("socksConnection", socksConnection(true));
         fixture.put("socksConnectionNoAuth", socksConnection(false));
@@ -1682,6 +1683,65 @@ public final class RuntimeConfigFixtures {
             try {
                 item.put("outcome", "OK");
                 item.put("decoded", org.apache.rocketmq.common.sysflag.MessageSysFlag.getCompressionType(flag).name());
+            } catch (RuntimeException error) {
+                item.put("outcome", error.getClass().getSimpleName());
+                item.put("message", error.getMessage());
+            }
+            cases.add(item);
+        }
+        return cases;
+    }
+
+    private static Map<String, Object> clientStatusEnumMethodCases() {
+        Map<String, Object> cases = new TreeMap<>();
+        cases.put("PullStatus", enumMethodCases(
+            org.apache.rocketmq.client.consumer.PullStatus::values,
+            org.apache.rocketmq.client.consumer.PullStatus::valueOf,
+            new String[] {null, "", "FOUND", "found", "NO_NEW_MSG", "UNKNOWN"}));
+        cases.put("PopStatus", enumMethodCases(
+            org.apache.rocketmq.client.consumer.PopStatus::values,
+            org.apache.rocketmq.client.consumer.PopStatus::valueOf,
+            new String[] {null, "", "FOUND", "found", "POLLING_FULL", "POLLING_NOT_FOUND", "UNKNOWN"}));
+        cases.put("AckStatus", enumMethodCases(
+            org.apache.rocketmq.client.consumer.AckStatus::values,
+            org.apache.rocketmq.client.consumer.AckStatus::valueOf,
+            new String[] {null, "", "OK", "ok", "NO_EXIST", "UNKNOWN"}));
+        cases.put("SendStatus", enumMethodCases(
+            org.apache.rocketmq.client.producer.SendStatus::values,
+            org.apache.rocketmq.client.producer.SendStatus::valueOf,
+            new String[] {null, "", "SEND_OK", "send_ok", "FLUSH_DISK_TIMEOUT", "SLAVE_NOT_AVAILABLE", "UNKNOWN"}));
+        return cases;
+    }
+
+    private static <E extends Enum<E>> List<Object> enumMethodCases(
+        java.util.function.Supplier<E[]> valuesMethod,
+        java.util.function.Function<String, E> valueOfMethod,
+        String[] lookupInputs) {
+        List<Object> cases = new ArrayList<>();
+        E[] values = valuesMethod.get();
+        List<String> names = new ArrayList<>();
+        for (E value : values) names.add(value.name());
+        for (E value : values) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", "constant");
+            item.put("name", value.name());
+            item.put("ordinal", value.ordinal());
+            item.put("text", value.toString());
+            item.put("values", names);
+            item.put("valueOfName", valueOfMethod.apply(value.name()).name());
+            item.put("compareNext", value.compareTo(values[(value.ordinal() + 1) % values.length]));
+            E[] mutated = valuesMethod.get();
+            mutated[0] = values[values.length - 1];
+            item.put("valuesDefensiveCopy", valuesMethod.get()[0] == values[0]);
+            cases.add(item);
+        }
+        for (String input : lookupInputs) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", "lookup");
+            item.put("input", input);
+            try {
+                item.put("outcome", "OK");
+                item.put("decoded", valueOfMethod.apply(input).name());
             } catch (RuntimeException error) {
                 item.put("outcome", error.getClass().getSimpleName());
                 item.put("message", error.getMessage());
