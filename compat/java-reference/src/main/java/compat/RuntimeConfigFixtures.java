@@ -272,6 +272,16 @@ public final class RuntimeConfigFixtures {
             result.put("viewsSeeRemovals", !keyView.contains("bulk-b") && !entryView.contains(
                 new java.util.AbstractMap.SimpleImmutableEntry<>("bulk-a", first)) && !keyView.contains(id)
                 && valuesView.size() == 1);
+            live.put("bulk-c", first);
+            live.put("bulk-d", second);
+            result.put("keyViewRemoveAll", keyView.removeAll(java.util.Collections.singleton("bulk-c")));
+            result.put("valuesViewRemoveAll", valuesView.removeAll(java.util.Collections.singleton(second))
+                && live.isEmpty());
+            live.put("keep", first);
+            live.put("drop", second);
+            result.put("entryViewRetainAll", entryView.retainAll(java.util.Collections.singleton(
+                new java.util.AbstractMap.SimpleImmutableEntry<>("keep", first)))
+                && live.size() == 1 && live.get("keep") == first);
             live.clear();
             result.put("retainedViewEmptyAfterClear", live.isEmpty());
             result.put("collectionViewsEmptyAfterClear", keyView.isEmpty() && valuesView.isEmpty() && entryView.isEmpty());
