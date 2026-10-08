@@ -168,6 +168,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("serviceLifecycleCases", serviceLifecycleCases());
         fixture.put("languageCodeMethodCases", languageCodeMethodCases());
         fixture.put("serializeTypeMethodCases", serializeTypeMethodCases());
+        fixture.put("compressionTypeMethodCases", compressionTypeMethodCases());
         fixture.put("socksConstruction", socksConstruction());
         fixture.put("socksConnection", socksConnection(true));
         fixture.put("socksConnectionNoAuth", socksConnection(false));
@@ -1595,6 +1596,92 @@ public final class RuntimeConfigFixtures {
                 item.put("outcome", "OK");
                 item.put("decoded",
                     org.apache.rocketmq.remoting.protocol.SerializeType.valueOf(input).name());
+            } catch (RuntimeException error) {
+                item.put("outcome", error.getClass().getSimpleName());
+                item.put("message", error.getMessage());
+            }
+            cases.add(item);
+        }
+        return cases;
+    }
+
+    private static List<Object> compressionTypeMethodCases() {
+        List<Object> cases = new ArrayList<>();
+        org.apache.rocketmq.common.compression.CompressionType[] values =
+            org.apache.rocketmq.common.compression.CompressionType.values();
+        List<String> names = new ArrayList<>();
+        for (org.apache.rocketmq.common.compression.CompressionType value : values) {
+            names.add(value.name());
+        }
+        for (org.apache.rocketmq.common.compression.CompressionType value : values) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", "constant");
+            item.put("name", value.name());
+            item.put("ordinal", value.ordinal());
+            item.put("text", value.toString());
+            item.put("values", names);
+            item.put("value", value.getValue());
+            item.put("compressionFlag", value.getCompressionFlag());
+            item.put("valueOfName",
+                org.apache.rocketmq.common.compression.CompressionType.valueOf(value.name()).name());
+            item.put("compareNext", value.compareTo(values[(value.ordinal() + 1) % values.length]));
+            org.apache.rocketmq.common.compression.CompressionType[] mutated =
+                org.apache.rocketmq.common.compression.CompressionType.values();
+            mutated[0] = org.apache.rocketmq.common.compression.CompressionType.ZLIB;
+            item.put("valuesDefensiveCopy",
+                org.apache.rocketmq.common.compression.CompressionType.values()[0]
+                    == org.apache.rocketmq.common.compression.CompressionType.LZ4);
+            cases.add(item);
+        }
+        for (String input : new String[] {null, "", "LZ4", "lz4", "ZSTD", "ZLIB", "UNKNOWN"}) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", "enumNameLookup");
+            item.put("input", input);
+            try {
+                item.put("outcome", "OK");
+                item.put("decoded",
+                    org.apache.rocketmq.common.compression.CompressionType.valueOf(input).name());
+            } catch (RuntimeException error) {
+                item.put("outcome", error.getClass().getSimpleName());
+                item.put("message", error.getMessage());
+            }
+            cases.add(item);
+        }
+        for (String input : new String[] {null, "", "LZ4", " lz4 ", " zstd ", "ZLIB", "\u00a0ZLIB\u00a0", "snappy"}) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", "of");
+            item.put("input", input);
+            try {
+                item.put("outcome", "OK");
+                item.put("decoded", org.apache.rocketmq.common.compression.CompressionType.of(input).name());
+            } catch (RuntimeException error) {
+                item.put("outcome", error.getClass().getSimpleName());
+                item.put("message", error.getMessage());
+            }
+            cases.add(item);
+        }
+        for (int input : new int[] {Integer.MIN_VALUE, -1, 0, 1, 2, 3, 4, 7, 8, Integer.MAX_VALUE}) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", "findByValue");
+            item.put("input", input);
+            try {
+                item.put("outcome", "OK");
+                item.put("decoded", org.apache.rocketmq.common.compression.CompressionType.findByValue(input).name());
+            } catch (RuntimeException error) {
+                item.put("outcome", error.getClass().getSimpleName());
+                item.put("message", error.getMessage());
+            }
+            cases.add(item);
+        }
+        for (int input : new int[] {-1, 0, 1, 2, 3, 4, 7, 8, 255}) {
+            int flag = (input << 8) | 0x4000;
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", "messageSysFlag");
+            item.put("input", input);
+            item.put("flag", flag);
+            try {
+                item.put("outcome", "OK");
+                item.put("decoded", org.apache.rocketmq.common.sysflag.MessageSysFlag.getCompressionType(flag).name());
             } catch (RuntimeException error) {
                 item.put("outcome", error.getClass().getSimpleName());
                 item.put("message", error.getMessage());
