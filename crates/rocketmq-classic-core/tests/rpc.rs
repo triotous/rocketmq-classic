@@ -446,6 +446,16 @@ async fn route_success_unknown_status_and_malformed_success() {
 }
 
 #[tokio::test]
+async fn route_json_null_success_body_returns_none() {
+    let (api, client) = route_reply(response::SUCCESS, Some(b"null".to_vec())).await;
+    let result = api
+        .get_topic_route("test-topic", Instant::now() + Duration::from_secs(2))
+        .await;
+    assert!(matches!(result, Ok(None)), "{result:?}");
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn route_fails_over_unavailable_nameserver_before_deadline() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let good = listener.local_addr().unwrap();

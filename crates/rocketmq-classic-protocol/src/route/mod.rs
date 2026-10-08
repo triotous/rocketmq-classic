@@ -2217,4 +2217,55 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn inherited_remoting_serialization_null_utilities_match_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        let java = &fixture["inheritedSerializationNullUtilities"];
+        assert_eq!(java["decodeNullBytesReturnsNull"], true);
+        assert_eq!(java["decodeJsonNullReturnsNull"], true);
+        assert_eq!(java["fromJsonNullInputReturnsNull"], true);
+        assert_eq!(java["fromJsonJsonNullReturnsNull"], true);
+        assert_eq!(java["decodeListNullBytesReturnsNull"], true);
+        assert_eq!(java["decodeListJsonNullReturnsNull"], true);
+        assert_eq!(java["decodeListNullMemberCount"], 1);
+        assert_eq!(java["decodeListHasNullMember"], true);
+
+        assert!(
+            TopicRouteData::java_decode_nullable(None)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            TopicRouteData::java_decode_nullable(Some(b"null"))
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            TopicRouteData::java_from_json_nullable(None)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            TopicRouteData::java_from_json_nullable(Some("null"))
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            TopicRouteData::java_decode_list_nullable(None)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            TopicRouteData::java_decode_list_nullable(Some(b"null"))
+                .unwrap()
+                .is_none()
+        );
+        let decoded = TopicRouteData::java_decode_list_nullable(Some(b"[null]"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(decoded.len(), 1);
+        assert!(decoded[0].is_none());
+    }
 }
