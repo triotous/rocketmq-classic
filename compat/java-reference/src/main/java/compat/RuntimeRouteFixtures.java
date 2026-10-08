@@ -1526,6 +1526,24 @@ public final class RuntimeRouteFixtures {
         return cases;
     }
 
+    private static Map<String, Object> inheritedSerializationNullUtilities() {
+        Map<String, Object> item = new TreeMap<>();
+        byte[] jsonNull = "null".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        item.put("decodeNullBytesReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.decode(null, TopicRouteData.class) == null);
+        item.put("decodeJsonNullReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.decode(jsonNull, TopicRouteData.class) == null);
+        item.put("fromJsonNullInputReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.fromJson(null, TopicRouteData.class) == null);
+        item.put("fromJsonJsonNullReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.fromJson("null", TopicRouteData.class) == null);
+        item.put("decodeListNullBytesReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.decodeList(null, TopicRouteData.class) == null);
+        item.put("decodeListJsonNullReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.decodeList(jsonNull, TopicRouteData.class) == null);
+        return item;
+    }
+
     public static void main(String[] args) throws Exception {
         String ordinary = "{\"queueDatas\":[{\"brokerName\":\"broker\",\"readQueueNums\":3,\"writeQueueNums\":2,\"perm\":6,\"topicSysFlag\":0}],"
             + "\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master:10911\",\"2\":\"slave:10911\"}}],\"filterServerTable\":{}}";
@@ -1673,6 +1691,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("topicRouteDataMethods", topicRouteDataMethodCases());
         fixture.put("topicRouteDataToString", topicRouteDataToStringCases());
         fixture.put("inheritedSerializationCases", inheritedSerializationCases());
+        fixture.put("inheritedSerializationNullUtilities", inheritedSerializationNullUtilities());
         fixture.put("brokerDataCompareTo", brokerDataCompareToCases());
         fixture.put("topicRouteDataChanged", topicRouteDataChangedCases());
         fixture.put("topicRouteDataClone", topicRouteDataCloneCases());
