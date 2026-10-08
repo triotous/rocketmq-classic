@@ -98,6 +98,36 @@ fn write_java_indent(output: &mut String, depth: usize) {
     }
 }
 
+/// Fastjson accepts form feed as JSON whitespace and a BOM at the document
+/// start; `serde_json` accepts neither, so normalize those positions only.
+fn normalize_fastjson_whitespace(input: &str) -> String {
+    let input = input.strip_prefix('\u{feff}').unwrap_or(input);
+    let mut output = String::with_capacity(input.len());
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for character in input.chars() {
+        if in_string {
+            output.push(character);
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                in_string = false;
+            }
+        } else if character == '"' {
+            in_string = true;
+            output.push(character);
+        } else if character == '\u{000c}' {
+            output.push(' ');
+        } else {
+            output.push(character);
+        }
+    }
+    output
+}
+
 fn quote_unquoted_integer_object_keys(input: &str) -> String {
     let bytes = input.as_bytes();
     let mut output = String::with_capacity(input.len());
@@ -293,7 +323,8 @@ fn normalize_fastjson_number_token(token: &str) -> Option<String> {
 }
 
 fn parse_java_route_json<T: DeserializeOwned>(input: &str) -> Result<T, serde_json::Error> {
-    let quoted_keys = quote_unquoted_integer_object_keys(input);
+    let whitespace_normalized = normalize_fastjson_whitespace(input);
+    let quoted_keys = quote_unquoted_integer_object_keys(&whitespace_normalized);
     let normalized = normalize_fastjson_number_tokens(&quoted_keys);
     serde_json::from_str(&normalized)
 }
@@ -304,7 +335,8 @@ fn parse_java_route_json_nullable<T: DeserializeOwned>(
     let Some(input) = input else {
         return Ok(None);
     };
-    let quoted_keys = quote_unquoted_integer_object_keys(input);
+    let whitespace_normalized = normalize_fastjson_whitespace(input);
+    let quoted_keys = quote_unquoted_integer_object_keys(&whitespace_normalized);
     let normalized = normalize_fastjson_number_tokens(&quoted_keys);
     serde_json::from_str(&normalized)
 }
@@ -326,7 +358,8 @@ fn decode_java_route_json_list_nullable<T: DeserializeOwned>(
         return Ok(None);
     };
     let input = String::from_utf8_lossy(data);
-    let quoted_keys = quote_unquoted_integer_object_keys(&input);
+    let whitespace_normalized = normalize_fastjson_whitespace(&input);
+    let quoted_keys = quote_unquoted_integer_object_keys(&whitespace_normalized);
     let normalized = normalize_fastjson_number_tokens(&quoted_keys);
     serde_json::from_str(&normalized)
 }
