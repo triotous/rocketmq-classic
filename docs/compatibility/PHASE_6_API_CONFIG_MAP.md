@@ -161,13 +161,15 @@ Current unregister update `3ccaf54`: `unregister_producer_by_group/unregister_co
 | getOrCreateMQClientInstance(config[,hook]) | `get_or_create/get_or_create_with_hook`; identity/config/oracle/concurrency/cancellation evidence |
 | removeClientFactory(id,instance) | `remove_client_factory`; exact identity-safe removal, stale-replacement checks |
 | removeClientFactory(id) | async `remove_client_factory_by_id`; source removal/replacement oracle, per-key initializer wait/cancel tests; does not replace identity-safe lifecycle cleanup |
-| getFactoryTable | `factory_table` returns live clonable FactoryTable; actual retained map/view mutations, value-membership, default-helper and `forEach` oracle, concurrent/ownership/property tests; published reads exclude private initializer reservations |
+| getFactoryTable | `factory_table` returns live clonable FactoryTable; actual retained map/view mutations, value-membership, default-helper, remapping and `forEach` oracle, concurrent/ownership/property tests; published reads exclude private initializer reservations |
 | getOrCreateProduceAccumulator | producer batching owner Phase7; no fake accumulator in Phase6 |
 
 | Source returned ConcurrentMap capability | Native FactoryTable API |
 | --- | --- |
 | get/containsKey/containsValue/size/isEmpty/getOrDefault | `get/contains_key/contains_value/len/is_empty/get_or_default`, owned published values, Java identity equality and caller-owned default |
 | put/putIfAbsent/putAll | async `put/put_if_absent/put_all`, return preceding identity or None; putAll applies per-key writes, not a multi-key transaction |
+| computeIfAbsent/computeIfPresent/compute/merge | async native counterparts; `Option::None` represents Java null-result/no mapping or removal; callbacks run outside locks and may be retried after a conflicting write |
+| replaceAll | async `replace_all`; snapshots keys, then conditionally replaces each current mapping; callback runs outside locks |
 | replace(key,value)/replace(key,expected,value) | async `replace/replace_if_same`; identity comparison, matching MQClientInstance Object equality |
 | remove(key)/remove(key,value) | async `remove/remove_if_same`; identity comparison, map changes only, no runtime shutdown |
 | clear | async `clear`, not a transaction against concurrent insertion |
