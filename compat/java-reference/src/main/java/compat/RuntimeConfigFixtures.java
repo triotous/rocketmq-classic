@@ -363,6 +363,39 @@ public final class RuntimeConfigFixtures {
         table.put("f", second);
         entries.clear();
         result.put("entryViewClear", table.isEmpty());
+
+        table.put("remove-key", first);
+        table.put("keep-key", second);
+        result.put("keyViewRemoveIf", keys.removeIf(key -> key.equals("remove-key"))
+            && !table.containsKey("remove-key"));
+        table.clear();
+        table.put("keep-key", first);
+        table.put("drop-key", second);
+        result.put("keyViewRetainAll", keys.retainAll(java.util.Collections.singleton("keep-key"))
+            && table.size() == 1 && table.containsKey("keep-key"));
+
+        table.clear();
+        table.put("remove-value", first);
+        table.put("keep-value", second);
+        result.put("valueViewRemoveIf", values.removeIf(value -> value == first)
+            && !table.containsKey("remove-value"));
+        table.clear();
+        table.put("keep-value", second);
+        table.put("drop-value", first);
+        result.put("valueViewRetainAll", values.retainAll(java.util.Collections.singleton(second))
+            && table.size() == 1 && table.containsKey("keep-value"));
+
+        table.clear();
+        table.put("remove-entry", first);
+        table.put("keep-entry", second);
+        result.put("entryViewRemoveIf", entries.removeIf(entry -> entry.getKey().equals("remove-entry"))
+            && !table.containsKey("remove-entry"));
+        table.clear();
+        table.put("keep-entry", second);
+        table.put("drop-entry", first);
+        result.put("entryViewRetainAll", entries.retainAll(java.util.Collections.singleton(
+            new java.util.AbstractMap.SimpleImmutableEntry<>("keep-entry", second)))
+            && table.size() == 1 && table.containsKey("keep-entry"));
         return result;
     }
 
