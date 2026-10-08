@@ -534,16 +534,25 @@ impl ClientRuntime {
                     .subscription_data_set
                     .into_iter()
                     .flatten()
-                    .filter_map(|sub| sub.topic),
+                    .map(|sub| sub.topic),
             );
         }
         for (_, producer) in groups.producers {
-            topics.extend(producer.publish_topics());
+            topics.extend(producer.publish_topics().into_iter().map(Some));
         }
         for topic in topics {
-            let _ = self
-                .update_topic_route(&topic, tokio::time::Instant::now() + self.rpc_timeout())
-                .await;
+            let deadline = tokio::time::Instant::now() + self.rpc_timeout();
+            if let Some(topic) = topic {
+                let _ = self.update_topic_route(&topic, deadline).await;
+            } else {
+                // Java includes null in its HashSet route union. The request
+                // header omits the null topic field on the wire.
+                match self.api.get_topic_route_nullable(None, deadline).await {
+                    Ok(_) => return Err(RuntimeError::InvalidRoute("null topic route key")),
+                    Err(error) if MQClientApi::route_error_is_client_exception(&error) => {}
+                    Err(error) => return Err(error.into()),
+                }
+            }
         }
         Ok(())
     }

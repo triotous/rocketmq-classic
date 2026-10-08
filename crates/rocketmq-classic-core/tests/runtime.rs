@@ -199,6 +199,15 @@ async fn all_topic_refresh_unions_registered_topics_and_continues_after_rejectio
         .unwrap();
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/route.json")).unwrap();
+    assert_eq!(fixture["nullSubscriptionTopicRefresh"]["requests"], 2);
+    assert_eq!(
+        fixture["nullSubscriptionTopicRefresh"]["requestedNull"],
+        true
+    );
+    assert_eq!(
+        fixture["nullSubscriptionTopicRefresh"]["requestedNamed"],
+        true
+    );
     let body = serde_json::to_vec(&fixture["cases"][0]["input"]).unwrap();
     let peer = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
@@ -213,12 +222,7 @@ async fn all_topic_refresh_unions_registered_topics_and_continues_after_rejectio
                 .unwrap()
                 .unwrap();
             assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
-            let topic = command
-                .ext_fields
-                .as_ref()
-                .unwrap()
-                .get("topic")
-                .cloned();
+            let topic = command.ext_fields.as_ref().unwrap().get("topic").cloned();
             assert!(seen.insert(topic.clone()), "duplicate route request");
             let mut reply = RemotingCommand {
                 code: if topic.as_deref() == Some("common") || topic.is_none() {
@@ -258,6 +262,72 @@ async fn all_topic_refresh_unions_registered_topics_and_continues_after_rejectio
     assert!(!snapshot.topics.contains_key("common"));
     assert!(snapshot.topics.contains_key("consumer-only"));
     assert!(snapshot.topics.contains_key("producer-only"));
+    runtime.remoting().shutdown().await;
+}
+
+#[tokio::test]
+async fn null_subscription_topic_success_route_fails_before_cache_publication() {
+    use rocketmq_classic_protocol::heartbeat::{ConsumerData, SubscriptionData};
+    struct NullTopic;
+    impl ConsumerRuntime for NullTopic {
+        fn heartbeat_data(&self) -> ConsumerData {
+            ConsumerData {
+                subscription_data_set: Some(std::collections::HashSet::from([
+                    SubscriptionData::default(),
+                ])),
+                ..Default::default()
+            }
+        }
+    }
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/route.json")).unwrap();
+    assert_eq!(
+        fixture["nullSubscriptionTopicRefresh"]["successRouteOutcome"],
+        "NullPointerException"
+    );
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut config = ClientConfig::new("null-topic-success");
+    config.namesrv_addr = Some(listener.local_addr().unwrap().to_string());
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+    let owner = Arc::new(NullTopic);
+    runtime
+        .register_consumer("consumer", owner.clone())
+        .await
+        .unwrap();
+    runtime.remoting().start().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut length = [0; 4];
+        stream.read_exact(&mut length).await.unwrap();
+        let mut bytes = BytesMut::from(&length[..]);
+        bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
+        stream.read_exact(&mut bytes[4..]).await.unwrap();
+        let command = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
+            .unwrap()
+            .unwrap();
+        assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
+        assert!(!command.ext_fields.as_ref().unwrap().contains_key("topic"));
+        let mut reply = RemotingCommand {
+            code: 0,
+            opaque: command.opaque,
+            body: Some(b"{}".to_vec()),
+            ..Default::default()
+        };
+        reply.mark_response();
+        stream
+            .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+            .await
+            .unwrap();
+    });
+    assert!(matches!(
+        runtime.update_all_topic_routes().await,
+        Err(RuntimeError::InvalidRoute("null topic route key"))
+    ));
+    peer.await.unwrap();
+    assert!(runtime.route_snapshot().unwrap().raw_routes.is_empty());
     runtime.remoting().shutdown().await;
 }
 

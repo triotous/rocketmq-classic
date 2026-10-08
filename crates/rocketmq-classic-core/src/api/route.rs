@@ -31,12 +31,22 @@ impl MQClientApi {
         topic: &str,
         deadline: Instant,
     ) -> Result<TopicRouteData, RpcError> {
+        self.get_topic_route_nullable(Some(topic), deadline).await
+    }
+
+    pub(crate) async fn get_topic_route_nullable(
+        &self,
+        topic: Option<&str>,
+        deadline: Instant,
+    ) -> Result<TopicRouteData, RpcError> {
         let mut fields = HeaderMap::new();
-        GetRouteInfoRequestHeader {
-            topic: topic.to_owned(),
-            accept_standard_json_only: None,
+        if let Some(topic) = topic {
+            GetRouteInfoRequestHeader {
+                topic: topic.to_owned(),
+                accept_standard_json_only: None,
+            }
+            .encode_fields(&mut fields);
         }
-        .encode_fields(&mut fields);
         let (reply, peer) = self
             .remoting
             .invoke_name_server_sync_with_peer(

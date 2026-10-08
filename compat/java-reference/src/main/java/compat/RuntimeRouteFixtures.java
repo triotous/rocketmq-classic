@@ -65,6 +65,13 @@ public final class RuntimeRouteFixtures {
             item.put("requests", api.requests);
             item.put("requestedNull", api.requestedTopics.contains(null));
             item.put("requestedNamed", api.requestedTopics.contains("topic"));
+            api.route = new TopicRouteData();
+            try {
+                runtime.updateTopicRouteInfoFromNameServer((String) null);
+                item.put("successRouteOutcome", "OK");
+            } catch (RuntimeException error) {
+                item.put("successRouteOutcome", error.getClass().getSimpleName());
+            }
         } finally {
             java.lang.reflect.Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
                 org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
