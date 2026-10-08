@@ -1,5 +1,7 @@
 # Phase 6 API and configuration map
 
+Assignment response enum input update: 17 actual Java 5.5.1 `QueryAssignmentResponseBody.decode` cases cover `MessageQueueAssignment.mode` defaults, nulls, names, ordinals, numeric strings/fractions, and rejection boundaries. Native `MessageQueueAssignment.mode` is nullable and defaults to `Some(Pull)`; decode and re-encode match the fixture. Lookup fixture SHA-256 `ef5ca72024a2556f5027998d3e18f1d82dfaa36d8961c2628389e9b2b69711ea`; [ADR-0016](../architecture/ADR-0016-assignment-mode-fastjson-input.md) records the boundary.
+
 Route DTO input update: 20 actual Java 5.5.1 Fastjson cases cover scalar coercions for `QueueData`, `MessageQueue`, `BrokerData`, `TopicQueueMappingInfo`, and nested `TopicRouteData`. Native decoding now matches the recorded fields and accept/reject outcomes, including null primitive defaults, numeric strings/fractions, boolean coercion, numeric map keys, address values, and filter-list elements. Fixture SHA-256 `6feb59b050e97e820c28d55de493555679b598e8358d2c13f521887f9d55340c`; [ADR-0014](../architecture/ADR-0014-route-dto-fastjson-input.md) records the boundary and remaining limits. Other DTO inputs and full Phase 6 reconciliation remain open.
 
 Latest SOCKS constructor and ClientConfig copy-field oracles: the pinned Java constructor grammar fixture has 109 cases, and native parsing matches every outcome and reflected route value. Java accepts leading/trailing comments and comments between object fields, preserves raw U+0001/U+2028 and `//`/`/*...*/` markers inside strings, and rejects comments after value colons, literal vertical-tab whitespace, unknown backslash escapes, and trailing non-comment text. Added cases establish that CR/U+2028/U+2029 do not terminate these Java `//` comments, and numeric `D`/`F`/`L` suffixes coerce to Java Double/Float/Long text, including Long boundary and overflow values. Java 5.5.1 `NettyRemotingClient.start/invokeSync` completes both username/password and no-auth local SOCKS5 round trips through scripted proxies. Both records check authentication negotiation, target, request payload, response, client-returned opaque correlation, and traffic in both directions; Rust transport tests `p3_u01_socks5_proxy_tunnels_a_remoting_request` and `p3_u01_socks5_no_auth_proxy_tunnels_a_remoting_request` cover the matching paths. The Java fixtures use explicit 64 KiB socket buffers because this JDK rejects the default zero send-buffer option before connection. The `copyFields` fixture snapshots all 33 non-internal `ClientConfig` fields from Java source, clone, and reset objects; the native differential matches all three snapshots, including Java's three omitted-field defaults/retentions. That earlier fixture version had SHA-256 `8a7a34c2268f78d46e9b7b909015db4217156d6040ee6b3908b31caa7e5c485a`; the current fixture hash is recorded in the toString update below. Broader Fastjson grammar and whole-phase source/API/input reconciliation remain open.
@@ -158,7 +160,7 @@ Methods implemented on `ClientRuntime` unless another owner is specified. Eviden
 | selectProducer / selectConsumer | `select_producer/select_consumer`, upgraded weak owners | registry tests; no strong ownership cycle |
 | getBrokerNameFromMessageQueue | `RouteSnapshot::broker_name` | Q static endpoint mapping |
 | findBrokerAddressInAdmin / InPublish / InSubscribe | `RouteSnapshot::admin_address/publish_address/subscribe_address` | Q exact/adjacent/fallback/version/slave cases |
-| findConsumerIdList / queryAssignment | `find_consumer_id_list/query_assignment` | L exact requests, fresh budgets, VIP/error/Set checks |
+| findConsumerIdList / queryAssignment | `find_consumer_id_list/query_assignment` | L exact requests, fresh budgets, VIP/error/Set checks; 17 actual assignment response enum inputs and re-encoding cases ([ADR-0016](../architecture/ADR-0016-assignment-mode-fastjson-input.md)) |
 | findBrokerAddrByTopic | `find_broker_address_by_topic`, raw topic BrokerData selection | Q/L, 8 invoked candidate/error cases |
 | resetOffset / getConsumerStatus | owned inactive inbound capabilities, no direct public owner implementation yet | reset/status matrix; process queues/offset stores and admin flow Phase 9/10/17 |
 | getAnExistTopicRouteData / queryTopicRouteData | `get_existing_topic_route/query_topic_route` | L cached-empty/absent refresh |
@@ -172,6 +174,14 @@ Methods implemented on `ClientRuntime` unless another owner is specified. Eviden
 | getConsumerStatsManager | concrete statistics owner not implemented | consumer/operational phases; not a new metrics service in Phase 6 |
 | getNettyClientConfig | native transport configuration initialized from ClientConfig; no Netty object | callback/TLS/SOCKS transport tests; later lower-client settings audit |
 | getProducerTable / getConsumerTable | `producer_table/consumer_table`, live `ProducerTable/ConsumerTable`; atomic and remapping methods, cloneable `key_set_view/values_view/entry_set_view` handles with predicate and collection membership mutations; detached snapshots | registry map/four consumer method outcomes, retained-view/bulk-operation oracle, custom-equality proxies and private atomic/reentry tests; [ADR-0009](../architecture/ADR-0009-live-runtime-registry-tables.md) maps detached traversal to one allowed ConcurrentHashMap iterator outcome and records weak ownership, value keys and lease/RPC ordering |
+
+## Assignment response DTO input
+
+The runtime's Java `QueryAssignmentResponseBody.decode` returns a set of `MessageQueueAssignment` rows. Rust uses `QueryAssignmentResponseBody.message_queue_assignments: Option<Vec<MessageQueueAssignment>>`; duplicate assignment rows remain a separately audited Set/equality behavior.
+
+| Java field/API | Rust counterpart | Evidence / disposition |
+| --- | --- | --- |
+| `MessageQueueAssignment.mode` | `Option<MessageRequestMode>`; `Default` uses `Some(Pull)` | Seventeen actual Java cases cover missing/default, explicit null, case-insensitive enum names, numeric ordinals, integer numeric strings, numeric fractions, invalid names, and rejection bounds. Native decode and re-encode match; [ADR-0016](../architecture/ADR-0016-assignment-mode-fastjson-input.md) records the tested limits. |
 
 ## Route DTO public methods
 
