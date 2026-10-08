@@ -333,6 +333,20 @@ impl FactoryTable {
             .collect())
     }
 
+    /// Visits one detached map snapshot. The callback runs without a manager
+    /// lock and may safely reenter this table; Java's weakly consistent live
+    /// traversal is not represented by this Rust convenience method.
+    pub fn for_each(
+        &self,
+        mut action: impl FnMut(&str, &Arc<ClientRuntime>),
+    ) -> Result<(), RuntimeError> {
+        let snapshot = self.snapshot()?;
+        for (key, runtime) in &snapshot {
+            action(key, runtime);
+        }
+        Ok(())
+    }
+
     pub async fn put(
         &self,
         key: &str,
