@@ -370,6 +370,11 @@ fn contains_fastjson_rejected_literal(input: &str) -> bool {
     let bytes = input.as_bytes();
     let mut index = 0;
     while index < bytes.len() {
+        // Fastjson accepts JSON's ASCII whitespace set but rejects the
+        // Unicode line separator that JSON5 treats as whitespace.
+        if bytes[index..].starts_with(&[0xe2, 0x80, 0xa8]) {
+            return true;
+        }
         match bytes[index] {
             b'"' | b'\'' => {
                 let quote = bytes[index];
@@ -965,6 +970,12 @@ mod tests {
         ));
         assert!(!super::contains_fastjson_rejected_literal(
             r#"{/* NaN and 0x2a are comment text */"10.0.0.0/8":{"addr":"proxy"}}"#
+        ));
+        assert!(super::contains_fastjson_rejected_literal(
+            "{\u{2028}\"10.0.0.0/8\":{\"addr\":\"proxy\"}}"
+        ));
+        assert!(!super::contains_fastjson_rejected_literal(
+            "{\"10.0.0.0/8\":{\"addr\":\"line\u{2028}separator\"}}"
         ));
         assert!(!super::contains_fastjson_rejected_literal(
             r#"{0x2a:{"addr":"proxy"}}"#
