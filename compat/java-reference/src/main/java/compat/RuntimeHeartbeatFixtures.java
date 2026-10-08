@@ -322,6 +322,27 @@ public final class RuntimeHeartbeatFixtures {
         return cases;
     }
 
+    private static List<Object> heartbeatAliasCases() {
+        List<Object> cases = new ArrayList<>();
+        for (String input : new String[] {
+            "{\"clientId\":\"lower-d\",\"isWithoutSub\":true}",
+            "{\"ClientID\":\"mixed-case\",\"WithoutSub\":true}",
+            "{\"CLIENTID\":\"upper\",\"WITHOUTSUB\":true}"
+        }) {
+            HeartbeatData value = com.alibaba.fastjson2.JSON.parseObject(input, HeartbeatData.class);
+            com.alibaba.fastjson2.JSONObject encoded = com.alibaba.fastjson2.JSON.parseObject(
+                com.alibaba.fastjson2.JSON.toJSONString(value));
+            Map<String, Object> item = new TreeMap<>();
+            item.put("rawInput", input);
+            item.put("clientID", value.getClientID());
+            item.put("withoutSub", value.isWithoutSub());
+            item.put("encodedClientID", encoded.get("clientID"));
+            item.put("encodedWithoutSub", encoded.get("withoutSub"));
+            cases.add(item);
+        }
+        return cases;
+    }
+
     private static List<Object> fingerprintNullCases() {
         List<Object> cases = new ArrayList<>();
         for (String name : new String[] {
@@ -531,6 +552,7 @@ public final class RuntimeHeartbeatFixtures {
         fixture.put("ownerFieldCases", ownerFieldCases());
         fixture.put("consumerEnumCases", consumerEnumCases());
         fixture.put("heartbeatFieldCases", heartbeatFieldCases());
+        fixture.put("heartbeatAliasCases", heartbeatAliasCases());
         fixture.put("fingerprintNullCases", fingerprintNullCases());
         fixture.put("primitiveNullCases", primitiveNullCases());
         fixture.put("nullOwnerSubscriptionPreparation", nullOwnerSubscriptionPreparation());

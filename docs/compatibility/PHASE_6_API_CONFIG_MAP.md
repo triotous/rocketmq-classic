@@ -199,10 +199,11 @@ Java bean getters/setters map to the native DTO's public fields. `SubscriptionDa
 | `SubscriptionData.toString` | `java_to_string` | Actual Java values cover defaults, explicit nulls, Unicode and populated sets; Rust sorts set text because Java HashSet order is unspecified. |
 | `ProducerData.toString` / `ConsumerData.toString` / `HeartbeatData.toString` | each DTO's `java_to_string` | Actual default, null and populated Java DTO cases include nested subscription text. Rust uses deterministic set ordering and retains heartbeat consumer multiplicity. |
 | `ConsumerData` enum JSON fields | `ConsumeType`, `MessageModel`, `ConsumeFromWhere` serde mapping | Actual values cover all 3, 3, and 6 Java constants; names are case-insensitive, unknown strings become null, integer ordinals map by Java declaration order, fractional numbers truncate toward zero before ordinal lookup, and out-of-range values are rejected. Native decoding and re-encoding now match. |
+| `HeartbeatData` JSON property names | `clientID`, `withoutSub` | Actual Fastjson cases confirm `clientId`, `isWithoutSub`, and mixed/all-uppercase variants are ignored; native serde now ignores these unknown spellings too. |
 | `HeartbeatData.producerDataSet` decode/encode | `Option<Vec<ProducerData>>` | `ProducerData` inherits identity equality, so the actual Java `HashSet` retains two distinct rows with equal `groupName`; a prior native `HashSet` collapsed them. Actual Java decode/toString and native round-trip now retain both. |
 | `HeartbeatData.computeHeartbeatFingerprint` | `compute_heartbeat_fingerprint` | Seven actual Java runtime fingerprints and explicit null collection/primitive cases; the runtime delegates to this public method. |
 
-The heartbeat fixture SHA-256 is `ae3dcdcd4fbed3dda9f996e1bfb02cb199fb8eaeb2352ed89e8c4a0ec9e80a12`. The method/constructor tests close these heartbeat DTO rows, not remaining source/input or whole-phase acceptance.
+The heartbeat fixture SHA-256 is `455765a2d1b926f7b2360275821793db6800f59c73eb15b33f4f92b22aa9345c`. The method/constructor tests close these heartbeat DTO rows, not remaining source/input or whole-phase acceptance.
 
 ## Other runtime exports, reverse inventory
 

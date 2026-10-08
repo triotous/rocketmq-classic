@@ -546,7 +546,6 @@ pub struct HeartbeatData {
     #[serde(
         default,
         rename = "withoutSub",
-        alias = "isWithoutSub",
         deserialize_with = "deserialize_null_default"
     )]
     pub is_without_sub: bool,
@@ -955,6 +954,43 @@ mod tests {
                 encoded.get("consumerDataSet").is_some(),
                 case["encodedHasConsumers"]
             );
+        }
+    }
+
+    #[test]
+    fn heartbeat_alias_inputs_match_invoked_java_property_names() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
+                .unwrap();
+        for case in fixture["heartbeatAliasCases"].as_array().unwrap() {
+            let value: HeartbeatData =
+                serde_json::from_str(case["rawInput"].as_str().unwrap()).unwrap();
+            assert_eq!(
+                value.client_id,
+                case["clientID"].as_str().map(str::to_owned),
+                "{} clientID",
+                case["rawInput"]
+            );
+            assert_eq!(
+                value.is_without_sub, case["withoutSub"],
+                "{} withoutSub",
+                case["rawInput"]
+            );
+            let encoded = serde_json::to_value(value).unwrap();
+            for (field, key) in [
+                ("clientID", "encodedClientID"),
+                ("withoutSub", "encodedWithoutSub"),
+            ] {
+                assert_eq!(
+                    encoded
+                        .get(field)
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null),
+                    case[key],
+                    "{} encode {field}",
+                    case["rawInput"]
+                );
+            }
         }
     }
 
