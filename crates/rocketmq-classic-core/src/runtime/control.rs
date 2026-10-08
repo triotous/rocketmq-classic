@@ -533,6 +533,8 @@ mod tests {
                     .prepare_heartbeat_data(false)
                     .unwrap()
                     .producer_data_set
+                    .as_ref()
+                    .unwrap()
                     .is_empty()
             );
             let replacement = manager.get_or_create(&config).await.unwrap();
@@ -754,13 +756,15 @@ mod tests {
                 heartbeat,
                 HeartbeatData {
                     client_id: Some("p6-u01@DEFAULT".into()),
-                    producer_data_set: producers
-                        .iter()
-                        .map(|group| ProducerData {
-                            group_name: Some((*group).into())
-                        })
-                        .collect(),
-                    consumer_data_set: vec![consumer.heartbeat_data()],
+                    producer_data_set: Some(
+                        producers
+                            .iter()
+                            .map(|group| ProducerData {
+                                group_name: Some((*group).into())
+                            })
+                            .collect()
+                    ),
+                    consumer_data_set: Some(vec![consumer.heartbeat_data()]),
                     ..Default::default()
                 }
             );
@@ -964,6 +968,8 @@ mod tests {
                     .prepare_heartbeat_data(false)
                     .unwrap()
                     .producer_data_set
+                    .as_ref()
+                    .unwrap()
                     .is_empty()
             );
             assert!(

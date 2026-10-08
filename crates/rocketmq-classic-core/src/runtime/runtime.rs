@@ -748,9 +748,13 @@ impl ClientRuntime {
             ..Default::default()
         };
         for (group, _) in snapshot.producers {
-            heartbeat.producer_data_set.insert(ProducerData {
-                group_name: Some(group),
-            });
+            heartbeat
+                .producer_data_set
+                .as_mut()
+                .unwrap()
+                .insert(ProducerData {
+                    group_name: Some(group),
+                });
         }
         for consumer in snapshot.consumers {
             let mut data = consumer.heartbeat_data();
@@ -760,7 +764,7 @@ impl ClientRuntime {
                 // Java constructs a fresh ConsumerData and addAll(null) fails.
                 return Err(RuntimeError::InvalidHeartbeatData("null subscription set"));
             }
-            heartbeat.consumer_data_set.push(data);
+            heartbeat.consumer_data_set.as_mut().unwrap().push(data);
         }
         Ok(heartbeat)
     }

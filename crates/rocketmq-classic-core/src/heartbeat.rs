@@ -143,7 +143,12 @@ impl ClientRuntime {
         let Some(mut full) = self.prepare_heartbeat_for_send()? else {
             return Ok(false);
         };
-        if full.producer_data_set.is_empty() && full.consumer_data_set.is_empty() {
+        if full
+            .producer_data_set
+            .as_ref()
+            .is_none_or(HashSet::is_empty)
+            && full.consumer_data_set.as_ref().is_none_or(Vec::is_empty)
+        {
             return Ok(false);
         }
         let v2 = self.config().use_heartbeat_v2;
@@ -152,16 +157,13 @@ impl ClientRuntime {
         }
         let mut simple = full.clone();
         simple.is_without_sub = true;
-        simple.consumer_data_set = simple
-            .consumer_data_set
-            .into_iter()
-            .map(|mut consumer| {
+        if let Some(consumers) = simple.consumer_data_set.as_mut() {
+            for consumer in consumers {
                 if let Some(subscriptions) = consumer.subscription_data_set.as_mut() {
                     subscriptions.clear();
                 }
-                consumer
-            })
-            .collect();
+            }
+        }
         // Unlike the all-Broker round, the explicit single-peer method does not
         // skip a slave when only producers are registered (Java 5.5.1).
         self.send_heartbeat_peer(broker, address, &full, &simple, v2)
@@ -191,7 +193,12 @@ impl ClientRuntime {
         let Some(mut full) = self.prepare_heartbeat_for_send()? else {
             return Ok(false);
         };
-        if full.producer_data_set.is_empty() && full.consumer_data_set.is_empty() {
+        if full
+            .producer_data_set
+            .as_ref()
+            .is_none_or(HashSet::is_empty)
+            && full.consumer_data_set.as_ref().is_none_or(Vec::is_empty)
+        {
             return Ok(false);
         }
         let routes = self.route_snapshot()?;
@@ -212,23 +219,22 @@ impl ClientRuntime {
         }
         let mut simple = full.clone();
         simple.is_without_sub = true;
-        simple.consumer_data_set = simple
-            .consumer_data_set
-            .into_iter()
-            .map(|mut consumer| {
+        if let Some(consumers) = simple.consumer_data_set.as_mut() {
+            for consumer in consumers {
                 if let Some(subscriptions) = consumer.subscription_data_set.as_mut() {
                     subscriptions.clear();
                 }
-                consumer
-            })
-            .collect();
+            }
+        }
         let peers = routes
             .broker_addresses
             .iter()
             .flat_map(|(broker, addresses)| {
                 addresses
                     .iter()
-                    .filter(|(id, _)| !full.consumer_data_set.is_empty() || **id == 0)
+                    .filter(|(id, _)| {
+                        !full.consumer_data_set.as_ref().is_none_or(Vec::is_empty) || **id == 0
+                    })
                     .filter_map(|(_, address)| {
                         address.as_deref().map(|address| (broker.as_str(), address))
                     })
@@ -366,7 +372,7 @@ mod tests {
         ));
         let simple = runtime.prepare_heartbeat_data(true).unwrap();
         assert!(
-            simple.consumer_data_set[0]
+            simple.consumer_data_set.as_ref().unwrap()[0]
                 .subscription_data_set
                 .as_ref()
                 .unwrap()
@@ -398,7 +404,7 @@ mod tests {
     #[test]
     fn fingerprint_ignores_identity_subscription_version_and_simple_flag() {
         let mut data = HeartbeatData::default();
-        data.consumer_data_set.push(ConsumerData {
+        data.consumer_data_set.as_mut().unwrap().push(ConsumerData {
             group_name: Some("consumer".into()),
             subscription_data_set: Some(std::collections::HashSet::from([SubscriptionData {
                 topic: Some("topic".into()),
@@ -412,7 +418,13 @@ mod tests {
         data.client_id = Some("another".into());
         data.heartbeat_fingerprint = 42;
         data.is_without_sub = true;
-        let mut consumer = data.consumer_data_set.drain(..).next().unwrap();
+        let mut consumer = data
+            .consumer_data_set
+            .as_mut()
+            .unwrap()
+            .drain(..)
+            .next()
+            .unwrap();
         let mut sub = consumer
             .subscription_data_set
             .as_mut()
@@ -426,13 +438,16 @@ mod tests {
             .as_mut()
             .unwrap()
             .insert(sub.clone());
-        data.consumer_data_set.push(consumer.clone());
+        data.consumer_data_set
+            .as_mut()
+            .unwrap()
+            .push(consumer.clone());
         assert_eq!(fingerprint(&data).unwrap(), expected);
         consumer.subscription_data_set.as_mut().unwrap().clear();
         sub.sub_string = Some("changed".into());
         consumer.subscription_data_set.as_mut().unwrap().insert(sub);
-        data.consumer_data_set.clear();
-        data.consumer_data_set.push(consumer);
+        data.consumer_data_set.as_mut().unwrap().clear();
+        data.consumer_data_set.as_mut().unwrap().push(consumer);
         assert_ne!(fingerprint(&data).unwrap(), expected);
     }
 
@@ -447,17 +462,17 @@ mod tests {
             ..Default::default()
         };
         let mut data = HeartbeatData {
-            consumer_data_set: vec![a.clone(), b.clone()],
+            consumer_data_set: Some(vec![a.clone(), b.clone()]),
             ..Default::default()
         };
         let expected = fingerprint(&data).unwrap();
-        data.consumer_data_set.reverse();
+        data.consumer_data_set.as_mut().unwrap().reverse();
         assert_eq!(fingerprint(&data).unwrap(), expected);
-        data.consumer_data_set.push(a);
+        data.consumer_data_set.as_mut().unwrap().push(a);
         assert_ne!(fingerprint(&data).unwrap(), expected);
-        data.consumer_data_set.push(b);
+        data.consumer_data_set.as_mut().unwrap().push(b);
         let duplicated = fingerprint(&data).unwrap();
-        data.consumer_data_set.reverse();
+        data.consumer_data_set.as_mut().unwrap().reverse();
         assert_eq!(fingerprint(&data).unwrap(), duplicated);
     }
 }

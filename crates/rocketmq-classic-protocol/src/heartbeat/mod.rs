@@ -190,21 +190,41 @@ fn empty_subscriptions() -> Option<HashSet<SubscriptionData>> {
     Some(HashSet::new())
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HeartbeatData {
-    #[serde(rename = "clientID")]
+    #[serde(rename = "clientID", default, skip_serializing_if = "Option::is_none")]
     pub client_id: Option<String>,
-    #[serde(default)]
-    pub producer_data_set: HashSet<ProducerData>,
-    #[serde(default)]
+    #[serde(default = "empty_producers", skip_serializing_if = "Option::is_none")]
+    pub producer_data_set: Option<HashSet<ProducerData>>,
+    #[serde(default = "empty_consumers", skip_serializing_if = "Option::is_none")]
     /// Java ConsumerData has object identity equality. Preserve its wire
     /// multiplicity rather than deduplicating structurally equal metadata.
-    pub consumer_data_set: Vec<ConsumerData>,
+    pub consumer_data_set: Option<Vec<ConsumerData>>,
     #[serde(default)]
     pub heartbeat_fingerprint: i32,
     #[serde(default, rename = "withoutSub", alias = "isWithoutSub")]
     pub is_without_sub: bool,
+}
+
+impl Default for HeartbeatData {
+    fn default() -> Self {
+        Self {
+            client_id: None,
+            producer_data_set: empty_producers(),
+            consumer_data_set: empty_consumers(),
+            heartbeat_fingerprint: 0,
+            is_without_sub: false,
+        }
+    }
+}
+
+fn empty_producers() -> Option<HashSet<ProducerData>> {
+    Some(HashSet::new())
+}
+
+fn empty_consumers() -> Option<Vec<ConsumerData>> {
+    Some(Vec::new())
 }
 
 #[cfg(test)]
@@ -306,18 +326,37 @@ mod tests {
             serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
                 .unwrap();
         for case in fixture["heartbeatFieldCases"].as_array().unwrap() {
-            let value: HeartbeatData = serde_json::from_str(case["rawInput"].as_str().unwrap()).unwrap();
+            let value: HeartbeatData =
+                serde_json::from_str(case["rawInput"].as_str().unwrap()).unwrap();
             let encoded = serde_json::to_value(&value).unwrap();
             assert_eq!(value.client_id.is_none(), case["clientNull"]);
             assert_eq!(value.producer_data_set.is_none(), case["producersNull"]);
             assert_eq!(value.consumer_data_set.is_none(), case["consumersNull"]);
-            assert_eq!(value.producer_data_set.as_ref().map_or(-1, |set| set.len() as i64), case["producerCount"]);
-            assert_eq!(value.consumer_data_set.as_ref().map_or(-1, |set| set.len() as i64), case["consumerCount"]);
+            assert_eq!(
+                value
+                    .producer_data_set
+                    .as_ref()
+                    .map_or(-1, |set| set.len() as i64),
+                case["producerCount"]
+            );
+            assert_eq!(
+                value
+                    .consumer_data_set
+                    .as_ref()
+                    .map_or(-1, |set| set.len() as i64),
+                case["consumerCount"]
+            );
             assert_eq!(value.heartbeat_fingerprint, case["fingerprint"]);
             assert_eq!(value.is_without_sub, case["withoutSub"]);
             assert_eq!(encoded.get("clientID").is_some(), case["encodedHasClient"]);
-            assert_eq!(encoded.get("producerDataSet").is_some(), case["encodedHasProducers"]);
-            assert_eq!(encoded.get("consumerDataSet").is_some(), case["encodedHasConsumers"]);
+            assert_eq!(
+                encoded.get("producerDataSet").is_some(),
+                case["encodedHasProducers"]
+            );
+            assert_eq!(
+                encoded.get("consumerDataSet").is_some(),
+                case["encodedHasConsumers"]
+            );
         }
     }
 
@@ -338,7 +377,7 @@ mod tests {
             let expected = case["body"]["consumerDataSet"].as_array().unwrap();
             let data: HeartbeatData = serde_json::from_value(case["body"].clone()).unwrap();
             assert_eq!(
-                data.consumer_data_set.len(),
+                data.consumer_data_set.as_ref().unwrap().len(),
                 expected.len(),
                 "{}",
                 case["case"]
@@ -357,17 +396,21 @@ mod tests {
             client_id: Some("client".into()),
             ..HeartbeatData::default()
         };
-        heartbeat.consumer_data_set.push(ConsumerData {
-            group_name: Some("group".into()),
-            consume_from_where: Some(ConsumeFromWhere::ConsumeFromLastOffset),
-            subscription_data_set: Some(HashSet::from([SubscriptionData {
-                topic: Some("topic".into()),
-                sub_string: Some("*".into()),
-                sub_version: i64::MAX,
-                ..SubscriptionData::default()
-            }])),
-            ..ConsumerData::default()
-        });
+        heartbeat
+            .consumer_data_set
+            .as_mut()
+            .unwrap()
+            .push(ConsumerData {
+                group_name: Some("group".into()),
+                consume_from_where: Some(ConsumeFromWhere::ConsumeFromLastOffset),
+                subscription_data_set: Some(HashSet::from([SubscriptionData {
+                    topic: Some("topic".into()),
+                    sub_string: Some("*".into()),
+                    sub_version: i64::MAX,
+                    ..SubscriptionData::default()
+                }])),
+                ..ConsumerData::default()
+            });
         let value = serde_json::to_value(&heartbeat).unwrap();
         assert_eq!(value["clientID"], "client");
         assert_eq!(value["withoutSub"], false);

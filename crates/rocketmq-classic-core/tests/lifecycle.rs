@@ -144,7 +144,7 @@ async fn read_unregister(stream: &mut TcpStream) -> RemotingCommand {
         let heartbeat: rocketmq_classic_protocol::heartbeat::HeartbeatData =
             serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
         assert_eq!(heartbeat.client_id.as_deref(), Some("192.0.2.6@DEFAULT"));
-        assert!(heartbeat.consumer_data_set.is_empty());
+        assert!(heartbeat.consumer_data_set.as_ref().unwrap().is_empty());
         // A newly established unregister channel now emits Java's optional
         // active heartbeat. Acknowledge it without weakening unregister order.
         respond(stream, &command, None).await;

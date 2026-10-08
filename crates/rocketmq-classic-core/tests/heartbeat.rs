@@ -208,7 +208,7 @@ async fn single_peer_sends_to_slave_for_producer_only_and_reports_wire_failure()
         let command = read(&mut stream).await;
         assert_eq!(command.code, request::HEART_BEAT);
         let body: HeartbeatData = serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
-        assert!(body.consumer_data_set.is_empty());
+        assert!(body.consumer_data_set.as_ref().unwrap().is_empty());
         respond(&mut stream, &command, None, false, false).await;
         let command = read(&mut stream).await;
         let mut response = RemotingCommand {
@@ -455,8 +455,8 @@ async fn v2_negotiates_full_simple_subscription_change_version_and_rebalance() {
                 serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
             assert_eq!(body.client_id.as_deref(), Some("heartbeat@DEFAULT"));
             assert_eq!(body.is_without_sub, simple, "round {index}");
-            assert_eq!(body.producer_data_set.len(), 1);
-            let consumer = body.consumer_data_set.first().unwrap();
+            assert_eq!(body.producer_data_set.as_ref().unwrap().len(), 1);
+            let consumer = body.consumer_data_set.as_ref().unwrap().first().unwrap();
             assert_eq!(
                 consumer.subscription_data_set.as_ref().unwrap().is_empty(),
                 simple
@@ -550,8 +550,8 @@ async fn v1_producer_only_skips_slave_and_empty_registry_skips_all() {
         let command = read(&mut stream).await;
         let body: HeartbeatData = serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
         assert_eq!(command.code, request::HEART_BEAT);
-        assert!(body.consumer_data_set.is_empty());
-        assert_eq!(body.producer_data_set.len(), 1);
+        assert!(body.consumer_data_set.as_ref().unwrap().is_empty());
+        assert_eq!(body.producer_data_set.as_ref().unwrap().len(), 1);
         assert_eq!(body.heartbeat_fingerprint, 0);
         assert!(!body.is_without_sub);
         respond(&mut stream, &command, None, false, false).await;
@@ -656,7 +656,7 @@ async fn concurrent_v1_uses_parallel_peers_and_busy_heartbeat_gate_skips_a_round
         let (mut stream, _) = slave.accept().await.unwrap();
         let command = read(&mut stream).await;
         let body: HeartbeatData = serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
-        assert_eq!(body.consumer_data_set.len(), 1);
+        assert_eq!(body.consumer_data_set.as_ref().unwrap().len(), 1);
         second.send(()).unwrap();
         respond(&mut stream, &command, None, false, false).await;
     });
@@ -839,7 +839,7 @@ async fn preparation_failure_returns_false_without_socket_and_releases_heartbeat
             let command = read(&mut stream).await;
             let body: HeartbeatData =
                 serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
-            assert_eq!(body.consumer_data_set.len(), 1);
+            assert_eq!(body.consumer_data_set.as_ref().unwrap().len(), 1);
             assert!(!body.is_without_sub);
             respond(&mut stream, &command, None, v2, false).await;
         });

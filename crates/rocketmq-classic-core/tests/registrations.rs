@@ -80,17 +80,21 @@ async fn distinct_registered_keys_preserve_equal_and_simple_consumer_metadata() 
         let actual = runtime.prepare_heartbeat_data(without_sub).unwrap();
         let expected: HeartbeatData = serde_json::from_value(case["body"].clone()).unwrap();
         assert_eq!(
-            actual.consumer_data_set.len(),
+            actual.consumer_data_set.as_ref().unwrap().len(),
             case["body"]["consumerDataSet"].as_array().unwrap().len(),
             "{name}"
         );
         let mut actual_rows: Vec<_> = actual
             .consumer_data_set
+            .as_ref()
+            .unwrap()
             .iter()
             .map(|row| serde_json::to_string(row).unwrap())
             .collect();
         let mut expected_rows: Vec<_> = expected
             .consumer_data_set
+            .as_ref()
+            .unwrap()
             .iter()
             .map(|row| serde_json::to_string(row).unwrap())
             .collect();
@@ -133,6 +137,8 @@ async fn distinct_registered_keys_preserve_equal_and_simple_consumer_metadata() 
             .prepare_heartbeat_data(false)
             .unwrap()
             .consumer_data_set
+            .as_ref()
+            .unwrap()
             .is_empty()
     );
 }
@@ -165,6 +171,8 @@ async fn duplicate_groups_and_stale_identity_tokens_cannot_remove_replacements()
             .prepare_heartbeat_data(false)
             .unwrap()
             .producer_data_set
+            .as_ref()
+            .unwrap()
             .len(),
         1
     );
@@ -179,6 +187,8 @@ async fn duplicate_groups_and_stale_identity_tokens_cannot_remove_replacements()
             .prepare_heartbeat_data(false)
             .unwrap()
             .producer_data_set
+            .as_ref()
+            .unwrap()
             .is_empty()
     );
 }
@@ -217,10 +227,12 @@ async fn heartbeat_snapshots_follow_consumer_versions_and_without_subscription_f
     let first = runtime.prepare_heartbeat_data(false).unwrap();
     compare_java("both", &first);
     assert_eq!(first.client_id.as_deref(), Some("192.0.2.6@DEFAULT"));
-    assert_eq!(first.producer_data_set.len(), 1);
+    assert_eq!(first.producer_data_set.as_ref().unwrap().len(), 1);
     assert_eq!(
         first
             .consumer_data_set
+            .as_ref()
+            .unwrap()
             .first()
             .unwrap()
             .subscription_data_set
@@ -247,6 +259,8 @@ async fn heartbeat_snapshots_follow_consumer_versions_and_without_subscription_f
     assert!(
         without
             .consumer_data_set
+            .as_ref()
+            .unwrap()
             .first()
             .unwrap()
             .subscription_data_set
@@ -270,6 +284,8 @@ async fn heartbeat_snapshots_follow_consumer_versions_and_without_subscription_f
             .prepare_heartbeat_data(false)
             .unwrap()
             .consumer_data_set
+            .as_ref()
+            .unwrap()
             .len(),
         1
     );
@@ -288,6 +304,8 @@ async fn heartbeat_snapshots_follow_consumer_versions_and_without_subscription_f
             .prepare_heartbeat_data(false)
             .unwrap()
             .consumer_data_set
+            .as_ref()
+            .unwrap()
             .is_empty()
     );
 }
@@ -314,6 +332,8 @@ async fn admin_leases_are_separate_from_heartbeat_groups_and_runtime_identity() 
             .prepare_heartbeat_data(false)
             .unwrap()
             .producer_data_set
+            .as_ref()
+            .unwrap()
             .is_empty()
     );
     assert!(runtime.unregister_admin(&lease).await.unwrap());
@@ -369,6 +389,8 @@ async fn heartbeat_callbacks_can_reenter_registry_and_registries_do_not_create_o
             .recv_timeout(std::time::Duration::from_secs(1))
             .unwrap()
             .consumer_data_set
+            .as_ref()
+            .unwrap()
             .len(),
         1
     );
