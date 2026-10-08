@@ -251,6 +251,90 @@ pub struct MessageQueueAssignment {
     pub attachments: Option<std::collections::BTreeMap<String, Option<String>>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum MessageQueueAssignmentEqualsError {
+    #[error("Java MessageQueueAssignment.equals dereferences a null messageQueue")]
+    NullMessageQueue,
+}
+
+impl MessageQueueAssignment {
+    pub fn message_queue(&self) -> Option<&MessageQueue> {
+        self.message_queue.as_ref()
+    }
+
+    pub fn set_message_queue(&mut self, message_queue: Option<MessageQueue>) {
+        self.message_queue = message_queue;
+    }
+
+    pub fn mode(&self) -> Option<MessageRequestMode> {
+        self.mode
+    }
+
+    pub fn set_mode(&mut self, mode: Option<MessageRequestMode>) {
+        self.mode = mode;
+    }
+
+    pub fn attachments(&self) -> Option<&std::collections::BTreeMap<String, Option<String>>> {
+        self.attachments.as_ref()
+    }
+
+    pub fn attachments_mut(
+        &mut self,
+    ) -> Option<&mut std::collections::BTreeMap<String, Option<String>>> {
+        self.attachments.as_mut()
+    }
+
+    pub fn set_attachments(
+        &mut self,
+        attachments: Option<std::collections::BTreeMap<String, Option<String>>>,
+    ) {
+        self.attachments = attachments;
+    }
+
+    /// Matches Java's public `equals` method, including its null-queue failure.
+    pub fn java_equals(
+        &self,
+        other: Option<&Self>,
+    ) -> Result<bool, MessageQueueAssignmentEqualsError> {
+        let Some(other) = other else {
+            return Ok(false);
+        };
+        if std::ptr::eq(self, other) {
+            return Ok(true);
+        }
+        let Some(message_queue) = self.message_queue.as_ref() else {
+            return Err(MessageQueueAssignmentEqualsError::NullMessageQueue);
+        };
+        Ok(other
+            .message_queue
+            .as_ref()
+            .is_some_and(|other_queue| message_queue == other_queue))
+    }
+
+    pub fn java_to_string(&self) -> String {
+        self.to_string()
+    }
+}
+
+impl std::fmt::Display for MessageQueueAssignment {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message_queue = self
+            .message_queue
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| "null".into());
+        let mode = match self.mode {
+            Some(MessageRequestMode::Pull) => "PULL",
+            Some(MessageRequestMode::Pop) => "POP",
+            None => "null",
+        };
+        write!(
+            formatter,
+            "MessageQueueAssignment [MessageQueue={message_queue}, Mode={mode}]"
+        )
+    }
+}
+
 impl Default for MessageQueueAssignment {
     fn default() -> Self {
         Self {
@@ -1018,6 +1102,73 @@ mod tests {
                 normalize(&mut actual);
                 normalize(&mut expected);
                 assert_eq!(actual, expected, "{}", case["name"]);
+            }
+        }
+    }
+
+    #[test]
+    fn assignment_methods_match_invoked_java_public_api() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        for case in fixture["assignmentMethodCases"].as_array().unwrap() {
+            let mut assignment = MessageQueueAssignment::default();
+            assignment.set_message_queue(
+                serde_json::from_value::<Option<MessageQueue>>(case["messageQueue"].clone())
+                    .unwrap(),
+            );
+            assignment.set_mode(
+                serde_json::from_value::<Option<MessageRequestMode>>(case["mode"].clone()).unwrap(),
+            );
+            assignment.set_attachments(
+                serde_json::from_value::<Option<
+                    std::collections::BTreeMap<String, Option<String>>,
+                >>(case["attachments"].clone())
+                .unwrap(),
+            );
+
+            assert_eq!(
+                assignment.message_queue(),
+                assignment.message_queue.as_ref(),
+                "{}",
+                case["name"]
+            );
+            assert_eq!(assignment.mode(), assignment.mode, "{}", case["name"]);
+            assert_eq!(
+                assignment.attachments(),
+                assignment.attachments.as_ref(),
+                "{}",
+                case["name"]
+            );
+            assert_eq!(
+                assignment.java_to_string(),
+                case["text"].as_str().unwrap(),
+                "{}",
+                case["name"]
+            );
+            assert_eq!(assignment.to_string(), case["text"].as_str().unwrap());
+            assert_eq!(assignment.java_equals(None), Ok(false));
+            assert_eq!(assignment.java_equals(Some(&assignment)), Ok(true));
+
+            if case["name"] == "default" {
+                assert_eq!(
+                    assignment.java_equals(Some(&MessageQueueAssignment::default())),
+                    Err(MessageQueueAssignmentEqualsError::NullMessageQueue)
+                );
+            } else {
+                let mut same_queue = assignment.clone();
+                same_queue.set_mode(Some(MessageRequestMode::Pull));
+                same_queue.set_attachments(None);
+                assert_eq!(
+                    assignment.java_equals(Some(&same_queue)),
+                    Ok(case["equalsSameQueueDifferentMetadata"].as_bool().unwrap())
+                );
+
+                let mut different_queue = same_queue.clone();
+                different_queue.set_message_queue(Some(MessageQueue::new("orders", "broker", 3)));
+                assert_eq!(
+                    assignment.java_equals(Some(&different_queue)),
+                    Ok(case["equalsDifferentQueue"].as_bool().unwrap())
+                );
             }
         }
     }

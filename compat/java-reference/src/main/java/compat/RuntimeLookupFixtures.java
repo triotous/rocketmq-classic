@@ -51,6 +51,7 @@ public final class RuntimeLookupFixtures {
         fixture.put("assignmentModeCases", assignmentModeCases());
         fixture.put("assignmentAttachmentCases", assignmentAttachmentCases());
         fixture.put("assignmentBodyCases", assignmentBodyCases());
+        fixture.put("assignmentMethodCases", assignmentMethodCases());
         fixture.put("consumerListCases", consumerListCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
             com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
@@ -187,6 +188,60 @@ public final class RuntimeLookupFixtures {
             item.put("error", error.getClass().getSimpleName());
         }
         return item;
+    }
+
+    private static List<Object> assignmentMethodCases() {
+        List<Object> cases = new ArrayList<>();
+        org.apache.rocketmq.common.message.MessageQueueAssignment empty =
+            new org.apache.rocketmq.common.message.MessageQueueAssignment();
+        Map<String, Object> emptyCase = new TreeMap<>();
+        emptyCase.put("name", "default");
+        emptyCase.put("messageQueue", null);
+        emptyCase.put("mode", empty.getMode() == null ? null : empty.getMode().name());
+        emptyCase.put("attachments", empty.getAttachments());
+        emptyCase.put("text", empty.toString());
+        emptyCase.put("equalsSelf", empty.equals(empty));
+        emptyCase.put("equalsNull", empty.equals(null));
+        emptyCase.put("equalsWrongType", empty.equals("not-an-assignment"));
+        try {
+            empty.equals(new org.apache.rocketmq.common.message.MessageQueueAssignment());
+            emptyCase.put("equalsDistinctNullQueue", "NO_EXCEPTION");
+        } catch (RuntimeException error) {
+            emptyCase.put("equalsDistinctNullQueue", error.getClass().getSimpleName());
+        }
+        cases.add(emptyCase);
+
+        org.apache.rocketmq.common.message.MessageQueue queue =
+            new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 2);
+        org.apache.rocketmq.common.message.MessageQueueAssignment populated =
+            new org.apache.rocketmq.common.message.MessageQueueAssignment();
+        populated.setMessageQueue(queue);
+        populated.setMode(org.apache.rocketmq.common.message.MessageRequestMode.POP);
+        Map<String, String> attachments = new TreeMap<>();
+        attachments.put("key", "value");
+        populated.setAttachments(attachments);
+        Map<String, Object> populatedCase = new TreeMap<>();
+        populatedCase.put("name", "populated");
+        Map<String, Object> messageQueue = new TreeMap<>();
+        messageQueue.put("topic", populated.getMessageQueue().getTopic());
+        messageQueue.put("brokerName", populated.getMessageQueue().getBrokerName());
+        messageQueue.put("queueId", populated.getMessageQueue().getQueueId());
+        populatedCase.put("messageQueue", messageQueue);
+        populatedCase.put("mode", populated.getMode().name());
+        populatedCase.put("attachments", populated.getAttachments());
+        populatedCase.put("text", populated.toString());
+        org.apache.rocketmq.common.message.MessageQueueAssignment sameQueueDifferentMetadata =
+            new org.apache.rocketmq.common.message.MessageQueueAssignment();
+        sameQueueDifferentMetadata.setMessageQueue(
+            new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 2));
+        sameQueueDifferentMetadata.setMode(org.apache.rocketmq.common.message.MessageRequestMode.PULL);
+        populatedCase.put("equalsSameQueueDifferentMetadata", populated.equals(sameQueueDifferentMetadata));
+        org.apache.rocketmq.common.message.MessageQueueAssignment differentQueue =
+            new org.apache.rocketmq.common.message.MessageQueueAssignment();
+        differentQueue.setMessageQueue(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 3));
+        populatedCase.put("equalsDifferentQueue", populated.equals(differentQueue));
+        cases.add(populatedCase);
+        return cases;
     }
 
     private static List<Object> consumerListCases() {
