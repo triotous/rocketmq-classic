@@ -183,6 +183,47 @@ public final class RuntimeHeartbeatFixtures {
         return result;
     }
 
+    private static List<Object> identityMethodCases() throws Exception {
+        ProducerData producerLeft = new ProducerData();
+        producerLeft.setGroupName("same");
+        ProducerData producerRight = new ProducerData();
+        producerRight.setGroupName("same");
+
+        ConsumerData consumerLeft = new ConsumerData();
+        consumerLeft.setGroupName("same");
+        ConsumerData consumerRight = new ConsumerData();
+        consumerRight.setGroupName("same");
+
+        HeartbeatData heartbeatLeft = new HeartbeatData();
+        heartbeatLeft.setClientID("same");
+        HeartbeatData heartbeatRight = new HeartbeatData();
+        heartbeatRight.setClientID("same");
+
+        List<Object> cases = new ArrayList<>();
+        for (Object[] pair : new Object[][] {
+            {"ProducerData", producerLeft, producerRight},
+            {"ConsumerData", consumerLeft, consumerRight},
+            {"HeartbeatData", heartbeatLeft, heartbeatRight}
+        }) {
+            Object left = pair[1];
+            Object right = pair[2];
+            Map<String, Object> item = new TreeMap<>();
+            item.put("class", pair[0]);
+            item.put("equalsDeclaringClass", left.getClass().getMethod("equals", Object.class)
+                .getDeclaringClass().getName());
+            item.put("hashCodeDeclaringClass", left.getClass().getMethod("hashCode")
+                .getDeclaringClass().getName());
+            item.put("sameInstanceEquals", left.equals(left));
+            item.put("equalFieldsDistinctInstanceEquals", left.equals(right));
+            java.util.Set<Object> values = new java.util.HashSet<>();
+            values.add(left);
+            values.add(right);
+            item.put("equalFieldsSetSize", values.size());
+            cases.add(item);
+        }
+        return cases;
+    }
+
     private static Map<String, Object> ownerFieldCases() {
         Map<String, Object> result = new TreeMap<>();
         List<Object> producers = new ArrayList<>();
@@ -684,13 +725,14 @@ public final class RuntimeHeartbeatFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "MQClientInstance.registerProducer/registerConsumer/prepareHeartbeatData/unregisterProducer/unregisterConsumer; HeartbeatData/ConsumerData/ProducerData/SubscriptionData Fastjson scalar inputs; HeartbeatData.computeHeartbeatFingerprint/toString/duplicate-ProducerData decode/nullable producer-consumer-subscription set elements; ProducerData.toString; ConsumerData enum JSON names/toString; ConsumeType.getTypeCN/MessageModel.getModeCN; SubscriptionData.SUB_ALL/constructors/equals/hashCode/compareTo/toString");
+        fixture.put("entrypoint", "MQClientInstance.registerProducer/registerConsumer/prepareHeartbeatData/unregisterProducer/unregisterConsumer; HeartbeatData/ConsumerData/ProducerData/SubscriptionData Fastjson scalar inputs; HeartbeatData.computeHeartbeatFingerprint/toString/duplicate-ProducerData decode/nullable producer-consumer-subscription set elements; ProducerData.toString; ConsumerData enum JSON names/toString; ConsumeType.getTypeCN/MessageModel.getModeCN; SubscriptionData.SUB_ALL/constructors/equals/hashCode/compareTo/toString; ProducerData/ConsumerData/HeartbeatData inherited Object equals/hashCode");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
         fixture.put("multiplicityCases", multiplicityCases);
         fixture.put("subscriptionFieldCases", subscriptionFieldCases());
         fixture.put("subscriptionConstructorCases", subscriptionConstructorCases());
         fixture.put("subscriptionMethods", subscriptionMethods());
+        fixture.put("identityMethodCases", identityMethodCases());
         fixture.put("ownerFieldCases", ownerFieldCases());
         fixture.put("consumerEnumCases", consumerEnumCases());
         fixture.put("consumerEnumMethodCases", consumerEnumMethodCases());

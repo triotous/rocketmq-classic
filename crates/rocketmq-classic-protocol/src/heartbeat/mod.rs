@@ -1189,6 +1189,22 @@ mod tests {
     }
 
     #[test]
+    fn heartbeat_dto_identity_methods_match_invoked_java_object_behavior() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
+                .unwrap();
+        let cases = fixture["identityMethodCases"].as_array().unwrap();
+        assert_eq!(cases.len(), 3);
+        for case in cases {
+            assert_eq!(case["equalsDeclaringClass"], "java.lang.Object", "{case}");
+            assert_eq!(case["hashCodeDeclaringClass"], "java.lang.Object", "{case}");
+            assert_eq!(case["sameInstanceEquals"], true, "{case}");
+            assert_eq!(case["equalFieldsDistinctInstanceEquals"], false, "{case}");
+            assert_eq!(case["equalFieldsSetSize"], 2, "{case}");
+        }
+    }
+
+    #[test]
     fn heartbeat_owner_fields_match_invoked_java_nulls_and_defaults() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
