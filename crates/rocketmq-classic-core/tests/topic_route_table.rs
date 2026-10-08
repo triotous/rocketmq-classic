@@ -1,3 +1,4 @@
+use rocketmq_classic_core::route::TopicRouteDataHandle;
 use rocketmq_classic_core::{config::ClientConfig, runtime::ClientRuntimeManager};
 use rocketmq_classic_protocol::route::TopicRouteData;
 use std::{
@@ -628,4 +629,44 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
     assert!(same(retained.get("invalid").unwrap(), &invalid));
     table.clear().unwrap();
     assert!(retained.is_empty().unwrap());
+}
+
+#[tokio::test]
+async fn raw_topic_table_values_preserve_mutable_java_aliases() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/route.json")).unwrap();
+    let expected = &fixture["runtimeTopicRouteTable"]["mutableAlias"];
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&ClientConfig::new("raw-table-mutable-alias"))
+        .await
+        .unwrap();
+    let table = runtime.topic_route_table();
+    let source_alias = TopicRouteDataHandle::new(TopicRouteData::default());
+    assert!(
+        table
+            .put("mutable-alias", source_alias.clone())
+            .unwrap()
+            .is_none()
+    );
+
+    source_alias
+        .with_mut(|route| route.order_topic_conf = Some("broker:2".to_owned()))
+        .unwrap();
+    let table_value = table.get("mutable-alias").unwrap().unwrap();
+    let original_mutation_visible =
+        table_value.snapshot().unwrap().order_topic_conf.as_deref() == Some("broker:2");
+
+    table_value
+        .with_mut(|route| route.order_topic_conf = Some("broker:3".to_owned()))
+        .unwrap();
+    let table_value_mutation_visible =
+        source_alias.snapshot().unwrap().order_topic_conf.as_deref() == Some("broker:3");
+    assert_eq!(
+        serde_json::json!({
+            "putRetainsObjectIdentity": true,
+            "originalMutationVisibleThroughTable": original_mutation_visible,
+            "tableValueMutationVisibleThroughOriginal": table_value_mutation_visible
+        }),
+        *expected
+    );
 }
