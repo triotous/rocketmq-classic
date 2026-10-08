@@ -1,6 +1,8 @@
 # Phase 6 API and configuration map
 
-Remoting command API update (2026-10-08): Rust now exposes `RemotingCommandType`, `RequestType`, and `RemotingCommand::get_type()` with Java declaration order, exact names, byte lookup behavior, and flag-derived type selection. The stream request hook obtains `ReqT` from `RequestType::Stream.get_code()`. Direct Java cases cover 22 enum, byte, and command-type outcomes. Current `client-config.json` SHA-256: `6d02747d6a267631d2bf98d064967bead5a4a168411a28cb15f34bfa46d0c764`. See [ADR-0032](../architecture/ADR-0032-remoting-command-enum-java-api.md). Full Phase 6 reconciliation remains open.
+Netty event enum API update (2026-10-08): Rust now exports `client::NettyEventType` in Java order (`CONNECT`, `CLOSE`, `IDLE`, `EXCEPTION`, `ACTIVE`) with generated/inherited enum methods and typed string lookup; the channel event queue uses this public enum. Twelve direct Java method cases pass. Current `client-config.json` SHA-256: `1fe6cf206b07e5f304634d7128ca4ca4c56a0114f010f21a0eeebb785529e3b5`. See [ADR-0033](../architecture/ADR-0033-netty-event-type-java-enum-api.md). Java `NettyEvent.getChannel()` returns a Netty `Channel`; the native callbacks do not expose a Tokio socket handle, so the event enum mapping does not assert carrier-object parity. Full Phase 6 reconciliation remains open.
+
+Remoting command API update (2026-10-08): Rust now exposes `RemotingCommandType`, `RequestType`, and `RemotingCommand::get_type()` with Java declaration order, exact names, byte lookup behavior, and flag-derived type selection. The stream request hook obtains `ReqT` from `RequestType::Stream.get_code()`. Direct Java cases cover 22 enum, byte, and command-type outcomes. Fixture SHA-256 at that update: `6d02747d6a267631d2bf98d064967bead5a4a168411a28cb15f34bfa46d0c764`. See [ADR-0032](../architecture/ADR-0032-remoting-command-enum-java-api.md). Full Phase 6 reconciliation remains open.
 
 TLS enum API update (2026-10-08): Java `TlsMode` values/order, generated/inherited methods, `getName()`, and exact fallback `parse(String)` are mapped to the public Rust enum and transport-selection path. Its fixture SHA-256 at that update was `948fcc7ca474d0ea48b39b1f60e075fa2213ff40290d51ec801c14af0e8fbad9`; see [ADR-0031](../architecture/ADR-0031-tls-mode-java-enum-api.md). TLS provisioning remains Phase 19 work.
 
@@ -430,3 +432,13 @@ Current unregister update `3ccaf54`: `unregister_producer_by_group/unregister_co
 `fetch_name_server_addr/name_server_addr` map MQClientAPIImpl discovery state, not a new resolver feature. `route_snapshot`, `TopicSnapshot`, `RouteSnapshot`, `BrokerAddress`, and `broker_vip_channel` map Java route/broker/publish/subscribe/static/version tables; converted route publication is immutable, while raw table DTO aliases use `TopicRouteDataHandle`. `prepare_heartbeat_data` exposes the Java heartbeat preparation capability for owners/tests; it does not add another periodic task. Failure-injection seams, queue probes, property readers and deterministic selection indices are private/test-only.
 
 This inventory identifies source/public boundaries still requiring work; it does not close complete source-branch, malformed-input, rollback or final whole-plan verification. P6-V04 remains PENDING_PHASE_19 against server 5.3.4.
+
+## Remoting Netty event enum API: NettyEventType
+
+| Pinned Java API | Rust counterpart / current behavior |
+| --- | --- |
+| `NettyEventType.values()` / `valueOf(String)` / inherited enum methods | `client::NettyEventType::values()`, `value_of_name`, `name`, `ordinal`, `Display`, and `java_compare_to()` match Java names, declaration order, and lookup failures |
+| `NettyEvent.getType()` | Native channel event queue stores the public `NettyEventType` directly; listener callbacks remain event-specific and carry the remote address |
+| `NettyEvent.getChannel()` | No direct Tokio socket handle is exposed through native callback API; this carrier-object difference is explicit and is not covered by enum parity |
+
+The pinned Java fixture invokes all five constants, defensive `values()` copies, and null/unknown/case-mismatched name lookups; the native differential checks 12 outcomes. See [ADR-0033](../architecture/ADR-0033-netty-event-type-java-enum-api.md).
