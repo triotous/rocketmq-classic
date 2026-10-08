@@ -30,7 +30,7 @@ use crate::{
 pub use config::{ClientConfig, SocksProxyConfig};
 pub use connection::TransportMode;
 pub use processor::RequestProcessor;
-pub use tls::{PrivateKeyDecryptionStrategy, TlsConfig};
+pub use tls::{PrivateKeyDecryptionStrategy, TlsConfig, TlsMode};
 
 #[cfg(test)]
 const LEGACY_OUTBOUND_QUEUE_CAPACITY: usize = 128;

@@ -16,7 +16,79 @@ use tokio_rustls::rustls::{
     pki_types::CertificateDer,
 };
 
+use rocketmq_classic_protocol::codes::JavaEnumLookupError;
+
 use crate::error::TransportError;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum TlsMode {
+    Disabled,
+    Permissive,
+    Enforcing,
+}
+
+impl TlsMode {
+    pub const fn values() -> [Self; 3] {
+        [Self::Disabled, Self::Permissive, Self::Enforcing]
+    }
+
+    pub fn value_of_name(name: Option<&str>) -> Result<Self, JavaEnumLookupError> {
+        match name {
+            None => Err(JavaEnumLookupError::NullName),
+            Some("DISABLED") => Ok(Self::Disabled),
+            Some("PERMISSIVE") => Ok(Self::Permissive),
+            Some("ENFORCING") => Ok(Self::Enforcing),
+            Some(other) => Err(JavaEnumLookupError::UnknownName {
+                enum_class: "org.apache.rocketmq.remoting.common.TlsMode",
+                name: other.to_owned(),
+            }),
+        }
+    }
+
+    /// Mirrors Java `TlsMode.parse`: exact lowercase names are recognized and
+    /// every other input, including null, selects `PERMISSIVE`.
+    pub fn parse(name: Option<&str>) -> Self {
+        match name {
+            Some("disabled") => Self::Disabled,
+            Some("enforcing") => Self::Enforcing,
+            _ => Self::Permissive,
+        }
+    }
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Disabled => "DISABLED",
+            Self::Permissive => "PERMISSIVE",
+            Self::Enforcing => "ENFORCING",
+        }
+    }
+
+    pub const fn ordinal(self) -> i32 {
+        match self {
+            Self::Disabled => 0,
+            Self::Permissive => 1,
+            Self::Enforcing => 2,
+        }
+    }
+
+    pub const fn java_compare_to(self, other: Self) -> i32 {
+        self.ordinal() - other.ordinal()
+    }
+
+    pub const fn get_name(self) -> &'static str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::Permissive => "permissive",
+            Self::Enforcing => "enforcing",
+        }
+    }
+}
+
+impl fmt::Display for TlsMode {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.name())
+    }
+}
 
 #[derive(Clone, Debug)]
 pub enum TransportMode {
@@ -38,14 +110,11 @@ impl TransportMode {
         config_file: Option<&Path>,
         strategy: Option<Arc<dyn PrivateKeyDecryptionStrategy>>,
     ) -> Result<Self, TransportError> {
-        let tls_mode = system_properties
-            .get("tls.server.mode")
-            .map(String::as_str)
-            .unwrap_or("permissive");
+        let tls_mode = TlsMode::parse(system_properties.get("tls.server.mode").map(String::as_str));
         let enabled = system_properties
             .get("tls.enable")
             .map(|value| value.eq_ignore_ascii_case("true"))
-            .unwrap_or(tls_mode == "enforcing");
+            .unwrap_or(tls_mode == TlsMode::Enforcing);
         if !enabled {
             return Ok(Self::Plain);
         }
@@ -633,7 +702,7 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
-    use super::{PrivateKeyDecryptionStrategy, TlsConfig, decrypt_private_key_pem};
+    use super::{PrivateKeyDecryptionStrategy, TlsConfig, TlsMode, decrypt_private_key_pem};
     use std::collections::HashMap;
 
     fn test_dir() -> PathBuf {
@@ -730,6 +799,89 @@ mod tests {
     }
 
     #[test]
+    fn tls_mode_methods_match_invoked_java_enum_and_parse_cases() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/client-config.json"
+        ))
+        .unwrap();
+        let cases = &fixture["tlsModeMethodCases"];
+        let enum_cases = cases["enum"].as_array().unwrap();
+        let values = TlsMode::values();
+        let expected_names = enum_cases
+            .iter()
+            .find(|case| case["case"] == "constant")
+            .unwrap()["values"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|name| name.as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            values.iter().map(|value| value.name()).collect::<Vec<_>>(),
+            expected_names
+        );
+        let mut mutated_values = TlsMode::values();
+        mutated_values[0] = values[values.len() - 1];
+        assert_eq!(TlsMode::values()[0], values[0]);
+
+        for case in enum_cases {
+            match case["case"].as_str().unwrap() {
+                "constant" => {
+                    let name = case["name"].as_str().unwrap();
+                    let value = TlsMode::value_of_name(Some(name)).unwrap();
+                    let ordinal = case["ordinal"].as_i64().unwrap() as i32;
+                    assert_eq!(value.name(), name, "{case}");
+                    assert_eq!(value.to_string(), case["text"].as_str().unwrap(), "{case}");
+                    assert_eq!(value.ordinal(), ordinal, "{case}");
+                    assert_eq!(value, values[ordinal as usize], "{case}");
+                    assert_eq!(
+                        value.get_name(),
+                        case["getName"].as_str().unwrap(),
+                        "{case}"
+                    );
+                    assert_eq!(case["valueOfName"], name, "{case}");
+                    assert_eq!(case["valuesDefensiveCopy"], true, "{case}");
+                    let next = values[(ordinal as usize + 1) % values.len()];
+                    assert_eq!(
+                        value.java_compare_to(next),
+                        case["compareNext"].as_i64().unwrap() as i32,
+                        "{case}"
+                    );
+                }
+                "lookup" => {
+                    let result = TlsMode::value_of_name(case["input"].as_str());
+                    match result {
+                        Ok(value) => {
+                            assert_eq!(case["outcome"], "OK", "{case}");
+                            assert_eq!(case["decoded"], value.name(), "{case}");
+                        }
+                        Err(error) => {
+                            let expected = if case["input"].is_null() {
+                                "NullPointerException"
+                            } else {
+                                "IllegalArgumentException"
+                            };
+                            assert_eq!(case["outcome"], expected, "{case}");
+                            assert_eq!(case["message"], error.to_string(), "{case}");
+                        }
+                    }
+                }
+                other => panic!("unknown Java TlsMode enum case: {other}"),
+            }
+        }
+
+        for case in cases["parse"].as_array().unwrap() {
+            let parsed = TlsMode::parse(case["input"].as_str());
+            assert_eq!(parsed.name(), case["parsed"].as_str().unwrap(), "{case}");
+            assert_eq!(
+                parsed.get_name(),
+                case["getName"].as_str().unwrap(),
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
     fn java_tls_transport_selection_matches_tls_enable_and_mode_defaults() {
         use super::TransportMode;
 
@@ -746,6 +898,16 @@ mod tests {
             .unwrap(),
             TransportMode::Tls(_)
         ));
+        for mode in ["ENFORCING", "unknown"] {
+            assert!(matches!(
+                TransportMode::from_java_properties(
+                    &HashMap::from([("tls.server.mode".into(), mode.into())]),
+                    None,
+                )
+                .unwrap(),
+                TransportMode::Plain
+            ));
+        }
         assert!(matches!(
             TransportMode::from_java_properties(
                 &HashMap::from([

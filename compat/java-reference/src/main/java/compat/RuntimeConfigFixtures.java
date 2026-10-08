@@ -149,7 +149,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("rebalanceLongs", rebalanceLongs);
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "ClientConfig.buildMQClientId/toString/cloneClientConfig/resetClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/queuesWithNamespace/changeInstanceNameToPID; MessageQueue.setTopic/setBrokerName/setQueueId; MQClientManager.getOrCreateMQClientInstance/removeClientFactory/getFactoryTable; MQClientInstance.constructor/getClientConfig/getNettyClientConfig/getProducerTable/getConsumerTable/selectProducer/selectConsumer/registerConsumer/unregisterConsumer; MQClientAPIImpl.getRemotingClient/NettyRemotingClient.publicExecutor (reflective capacity observation); NettyRemotingClient.start/invokeSync (local authenticated and no-auth SOCKS5 round trips); RemotingCommand.encode (null language JSON/ROCKETMQ); LanguageCode/SerializeType generated enum and custom value lookups; Long.parseLong (RebalanceService property parser)");
+        fixture.put("entrypoint", "ClientConfig.buildMQClientId/toString/cloneClientConfig/resetClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/queuesWithNamespace/changeInstanceNameToPID; MessageQueue.setTopic/setBrokerName/setQueueId; MQClientManager.getOrCreateMQClientInstance/removeClientFactory/getFactoryTable; MQClientInstance.constructor/getClientConfig/getNettyClientConfig/getProducerTable/getConsumerTable/selectProducer/selectConsumer/registerConsumer/unregisterConsumer; MQClientAPIImpl.getRemotingClient/NettyRemotingClient.publicExecutor (reflective capacity observation); NettyRemotingClient.start/invokeSync (local authenticated and no-auth SOCKS5 round trips); RemotingCommand.encode (null language JSON/ROCKETMQ); LanguageCode/SerializeType/TlsMode generated enum and custom value lookups; Long.parseLong (RebalanceService property parser)");
         fixture.put("serverBaselineContacted", false);
         fixture.put("identities", identities);
         fixture.put("defaults", defaults);
@@ -171,6 +171,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("compressionTypeMethodCases", compressionTypeMethodCases());
         fixture.put("clientStatusEnumMethodCases", clientStatusEnumMethodCases());
         fixture.put("protocolEnumMethodCases", protocolEnumMethodCases());
+        fixture.put("tlsModeMethodCases", tlsModeMethodCases());
         fixture.put("socksConstruction", socksConstruction());
         fixture.put("socksConnection", socksConnection(true));
         fixture.put("socksConnectionNoAuth", socksConnection(false));
@@ -1745,6 +1746,67 @@ public final class RuntimeConfigFixtures {
             org.apache.rocketmq.common.consumer.ConsumeFromWhere::valueOf,
             new String[] {null, "", "CONSUME_FROM_LAST_OFFSET", "consume_from_last_offset", "UNKNOWN"}));
         return cases;
+    }
+
+    private static Map<String, Object> tlsModeMethodCases() {
+        Map<String, Object> result = new TreeMap<>();
+        List<Object> enumCases = new ArrayList<>();
+        org.apache.rocketmq.remoting.common.TlsMode[] values =
+            org.apache.rocketmq.remoting.common.TlsMode.values();
+        List<String> names = new ArrayList<>();
+        for (org.apache.rocketmq.remoting.common.TlsMode value : values) {
+            names.add(value.name());
+        }
+        for (org.apache.rocketmq.remoting.common.TlsMode value : values) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", "constant");
+            item.put("name", value.name());
+            item.put("ordinal", value.ordinal());
+            item.put("text", value.toString());
+            item.put("getName", value.getName());
+            item.put("values", names);
+            item.put("valueOfName", org.apache.rocketmq.remoting.common.TlsMode.valueOf(value.name()).name());
+            item.put("compareNext", value.compareTo(values[(value.ordinal() + 1) % values.length]));
+            org.apache.rocketmq.remoting.common.TlsMode[] mutated =
+                org.apache.rocketmq.remoting.common.TlsMode.values();
+            mutated[0] = values[values.length - 1];
+            item.put("valuesDefensiveCopy",
+                org.apache.rocketmq.remoting.common.TlsMode.values()[0] == values[0]);
+            enumCases.add(item);
+        }
+        for (String input : new String[] {
+            null, "", "DISABLED", "disabled", "permissive", "enforcing", "unknown"
+        }) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", "lookup");
+            item.put("input", input);
+            try {
+                item.put("outcome", "OK");
+                item.put("decoded", org.apache.rocketmq.remoting.common.TlsMode.valueOf(input).name());
+            } catch (RuntimeException error) {
+                item.put("outcome", error.getClass().getSimpleName());
+                item.put("message", error.getMessage());
+            }
+            enumCases.add(item);
+        }
+        result.put("enum", enumCases);
+
+        List<Object> parseCases = new ArrayList<>();
+        for (String input : new String[] {
+            null, "", "disabled", "permissive", "enforcing", "DISABLED", "ENFORCING",
+            " enforcing", "enforcing ", "other"
+        }) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", "parse");
+            item.put("input", input);
+            org.apache.rocketmq.remoting.common.TlsMode parsed =
+                org.apache.rocketmq.remoting.common.TlsMode.parse(input);
+            item.put("parsed", parsed.name());
+            item.put("getName", parsed.getName());
+            parseCases.add(item);
+        }
+        result.put("parse", parseCases);
+        return result;
     }
 
     private static <E extends Enum<E>> List<Object> enumMethodCases(
