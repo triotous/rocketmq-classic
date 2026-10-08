@@ -171,7 +171,7 @@ Current unregister update `3ccaf54`: `unregister_producer_by_group/unregister_co
 | replace(key,value)/replace(key,expected,value) | async `replace/replace_if_same`; identity comparison, matching MQClientInstance Object equality |
 | remove(key)/remove(key,value) | async `remove/remove_if_same`; identity comparison, map changes only, no runtime shutdown |
 | clear | async `clear`, not a transaction against concurrent insertion |
-| keySet/values/entrySet | cloneable live `FactoryKeySetView`/`FactoryValuesView`/`FactoryEntrySetView` handles with contains/len/is_empty/snapshot/remove/clear; conditional entry/value removals use runtime identity |
+| keySet/values/entrySet | cloneable live `FactoryKeySetView`/`FactoryValuesView`/`FactoryEntrySetView` handles with contains/len/is_empty/snapshot/remove/remove_if/clear; conditional entry/value removals use runtime identity; predicates visit detached snapshots |
 | forEach | `for_each` visits one detached snapshot and runs callbacks without a manager lock; Java's weakly consistent live traversal is not represented |
 | copy/traverse map entries | explicit owned `snapshot`; view snapshots are detached, while retained view handles continue to read and mutate the live table |
 
