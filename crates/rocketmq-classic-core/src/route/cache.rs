@@ -561,10 +561,17 @@ fn java_decimal_digit(unit: u16) -> Option<u16> {
 fn routes_equal(left: &TopicRouteData, right: &TopicRouteData) -> Result<bool, RuntimeError> {
     let (mut left, mut right) = (left.clone(), right.clone());
     for route in [&mut left, &mut right] {
-        route
-            .queue_datas
-            .get_or_insert_with(Vec::new)
-            .sort_by(|a, b| a.broker_name.cmp(&b.broker_name));
+        let queues = route.queue_datas.get_or_insert_with(Vec::new);
+        if queues.len() > 1 && queues.iter().any(|queue| queue.broker_name.is_none()) {
+            return Err(RuntimeError::InvalidRoute(
+                "null queue broker name during sort",
+            ));
+        }
+        queues.sort_by(|left, right| {
+            left.java_compare_to(right)
+                .map(|result| result.cmp(&0))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         let brokers = route.broker_datas.get_or_insert_with(Vec::new);
         if brokers.len() > 1 && brokers.iter().any(|broker| broker.broker_name.is_none()) {
             return Err(RuntimeError::InvalidRoute("null broker name during sort"));

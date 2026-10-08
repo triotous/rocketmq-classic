@@ -18,6 +18,58 @@ pub struct QueueData {
     pub topic_sys_flag: i32,
 }
 
+/// Failure cases from the pinned Java `QueueData.compareTo` method.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum QueueDataCompareError {
+    #[error("QueueData broker name is null")]
+    NullBrokerName,
+}
+
+impl QueueData {
+    /// Returns the pinned Java 5.5.1 `QueueData.hashCode` result.
+    pub fn java_hash_code(&self) -> i32 {
+        let mut result = 1i32;
+        result = result.wrapping_mul(31).wrapping_add(
+            self.broker_name
+                .as_deref()
+                .map(java_string_hash_code)
+                .unwrap_or(0),
+        );
+        result = result.wrapping_mul(31).wrapping_add(self.perm);
+        result = result.wrapping_mul(31).wrapping_add(self.read_queue_nums);
+        result = result.wrapping_mul(31).wrapping_add(self.write_queue_nums);
+        result.wrapping_mul(31).wrapping_add(self.topic_sys_flag)
+    }
+
+    /// Returns the pinned Java 5.5.1 `QueueData.compareTo` result.
+    ///
+    /// Java compares broker names as UTF-16 strings and throws
+    /// `NullPointerException` when either name is null.
+    pub fn java_compare_to(&self, other: &Self) -> Result<i32, QueueDataCompareError> {
+        let name = self
+            .broker_name
+            .as_deref()
+            .ok_or(QueueDataCompareError::NullBrokerName)?;
+        let other_name = other
+            .broker_name
+            .as_deref()
+            .ok_or(QueueDataCompareError::NullBrokerName)?;
+        Ok(java_string_compare_to(name, other_name))
+    }
+
+    /// Returns the pinned Java 5.5.1 `QueueData.toString` text.
+    pub fn java_to_string(&self) -> String {
+        format!(
+            "QueueData [brokerName={}, readQueueNums={}, writeQueueNums={}, perm={}, topicSysFlag={}]",
+            self.broker_name.as_deref().unwrap_or("null"),
+            self.read_queue_nums,
+            self.write_queue_nums,
+            self.perm,
+            self.topic_sys_flag
+        )
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct BrokerData {
@@ -126,8 +178,14 @@ mod queue_data_method_tests {
             let left: QueueData = serde_json::from_value(case["left"].clone()).unwrap();
             let right: QueueData = serde_json::from_value(case["right"].clone()).unwrap();
             assert_eq!(left == right, case["equals"]);
-            assert_eq!(left.java_hash_code(), case["leftHashCode"].as_i64().unwrap() as i32);
-            assert_eq!(right.java_hash_code(), case["rightHashCode"].as_i64().unwrap() as i32);
+            assert_eq!(
+                left.java_hash_code(),
+                case["leftHashCode"].as_i64().unwrap() as i32
+            );
+            assert_eq!(
+                right.java_hash_code(),
+                case["rightHashCode"].as_i64().unwrap() as i32
+            );
             assert_eq!(left.java_to_string(), case["leftToString"]);
             assert_eq!(right.java_to_string(), case["rightToString"]);
             let result = left.java_compare_to(&right);
