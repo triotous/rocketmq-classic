@@ -1,5 +1,7 @@
 # Phase 6 API and configuration map
 
+Client check null-topic input update `d591091`: actual Java 5.5.1 `checkClientInBroker()` throws before lookup/RPC for a non-TAG subscription with null topic. Native returns typed `InvalidRoute` without network access; the invoked result is asserted in `tests/client_check.rs`. Fixture SHA-256 `73990a351770ca0d8451590eef16bc3931115f90853193f37f3e4e18d61c841d`; pinned Maven and focused regression pass.
+
 Public heartbeat DTO API update `91702a2`/`3c4f444`: Java `HeartbeatData.computeHeartbeatFingerprint()` maps to `HeartbeatData::compute_heartbeat_fingerprint() -> Result<i32, serde_json::Error>`. Seven actual Java runtime fingerprint cases match, and runtime uses this method instead of a private duplicate implementation. Fixture SHA-256 `118b49612461931280cf65e7912ecceb7deb1d30869a82e7e2d27b71b8afc53c`; workspace, Maven and strict Clippy pass. Other source/API reconciliation remains open.
 
 MessageQueue comparison `c2c34e3`/`b001f65` adds `java_compare_to`, a fallible public method matching eleven invoked Java 5.5.1 cases: null topic/broker failure, UTF-16 string difference, and signed `Integer.compare` queue ID result. Internal Rust `Ord` remains a total order for tree collections. Pinned tag commit `efa1be59` and the `rocketmq-common:5.5.1` bytecode both use `Integer.compare`. A previous claim of source/artifact divergence came from reading the separately changing Java worktree at 5.3.3 HEAD; it is superseded here. Route fixture SHA-256 `a709df838628378dbca6044027cd873fd0b6a80c90591a24bf395207228c3269`; full workspace, pinned Maven and strict Clippy pass. The older null-compareTo-open statement below is superseded; broader source/input audit remains open.
@@ -109,7 +111,7 @@ Methods implemented on `ClientRuntime` unless another owner is specified. Eviden
 | updateTopicRouteInfoFromNameServer(topic) | `update_topic_route(topic, deadline)` | R/Q |
 | updateTopicRouteInfoFromNameServer(topic,isDefault,producer) | `update_topic_route_from_default(topic, queue_count, deadline)` or ordinary update | R read-based clamp; producer-owned fallback Phase 7 |
 | parseOffsetTableFromBroker | `parse_offset_table_from_broker` | M, 10 actual Java cases; explicit namespace/owned-key conversion |
-| checkClientInBroker | `check_client_in_broker` | `tests/client_check.rs`, 15 actual Java cases; consumer-start activation Phase 10/13 |
+| checkClientInBroker | `check_client_in_broker` | `tests/client_check.rs`, 16 actual Java cases including null non-TAG topic failure before RPC; consumer-start activation Phase 10/13 |
 | sendHeartbeatToAllBrokerWithLock / WithLockV2(isRebalance) | `send_heartbeat_to_all_brokers[/with_rebalance]` | H, private heartbeat gate; V2 supersedes concurrent V1 |
 | sendHeartbeatToBroker(id,name,addr[,strictLockMode]) | `send_heartbeat_to_broker[/with_lock_mode]` | H single-peer/active-listener checks |
 | adjustThreadPool | `adjust_thread_pool`; periodic tick reuses public entry | T per-owner construction/poll failure and missing capability; actual push adjustment Phase 10 |

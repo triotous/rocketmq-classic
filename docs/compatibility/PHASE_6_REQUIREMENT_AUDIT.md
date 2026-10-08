@@ -1,5 +1,7 @@
 # Phase 6 requirement and handoff audit
 
+`checkClientInBroker` null-topic oracle `d591091` adds a pinned Java non-TAG case: null topic fails before route lookup or broker RPC. Native typed invalid-route result likewise makes no request; fixture SHA-256 `73990a351770ca0d8451590eef16bc3931115f90853193f37f3e4e18d61c841d`. Full API/source-input reconciliation remains open; Phase 6 is incomplete.
+
 Java owner-null preparation oracle `1aac047` confirms `prepareHeartbeatData(false)` fails when a registered consumer returns null subscriptions, while simple mode produces an empty set. Native's typed error and empty-simple behavior match; focused runtime regression and pinned Maven verify pass. Current heartbeat fixture SHA-256 `189e4a80c6f7f02083efc15dfe39535321872860a3d058c77eca975564193036`. Other API/source/input reconciliation remains open; Phase 6 is incomplete.
 
 Public heartbeat API correction `91702a2`/`3c4f444` adds the missing `HeartbeatData::compute_heartbeat_fingerprint()` counterpart for Java's public `computeHeartbeatFingerprint()`. Seven invoked Java values match at protocol level, and core uses that same public method. Heartbeat fixture SHA-256 `118b49612461931280cf65e7912ecceb7deb1d30869a82e7e2d27b71b8afc53c`; full workspace, Maven and strict Clippy pass. Other public/source/input reconciliation remains open; Phase 6 is incomplete.
