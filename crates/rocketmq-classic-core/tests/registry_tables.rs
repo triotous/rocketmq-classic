@@ -3,7 +3,10 @@ use rocketmq_classic_core::{
     runtime::{ClientRuntimeManager, ConsumerRuntime, ProducerRuntime, RuntimeError},
 };
 use rocketmq_classic_protocol::heartbeat::ConsumerData;
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, RwLock},
+};
 
 struct Producer;
 impl ProducerRuntime for Producer {}
@@ -175,6 +178,15 @@ async fn conditional_registry_mutations_match_java_custom_value_equality() {
             Some(self.0.to_owned())
         }
     }
+    struct DynamicConsumer(Arc<RwLock<String>>);
+    impl ConsumerRuntime for DynamicConsumer {
+        fn heartbeat_data(&self) -> ConsumerData {
+            ConsumerData::default()
+        }
+        fn map_value_equality_key(&self) -> Option<String> {
+            Some(self.0.read().unwrap().clone())
+        }
+    }
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
     let expected = &fixture["registryTables"]["customEquality"];
@@ -274,7 +286,7 @@ async fn conditional_registry_mutations_match_java_custom_value_equality() {
     assert!(consumers.contains_value(&consumer_b).unwrap());
     assert!(
         consumers
-            .replace_if_equal("replace", &consumer_b, consumer_c)
+            .replace_if_equal("replace", &consumer_b, consumer_c.clone())
             .await
             .unwrap()
     );
@@ -347,6 +359,42 @@ async fn conditional_registry_mutations_match_java_custom_value_equality() {
         > 0
         && same(consumers.get("entry-retain-all").unwrap(), &consumer_a)
         && !consumers.contains_key("other-entry-retain-all").unwrap();
+
+    let stored_key = Arc::new(RwLock::new("dynamic-before".to_owned()));
+    let probe_key = Arc::new(RwLock::new("dynamic-before".to_owned()));
+    let dynamic_stored: Arc<dyn ConsumerRuntime> = Arc::new(DynamicConsumer(stored_key.clone()));
+    let dynamic_probe: Arc<dyn ConsumerRuntime> = Arc::new(DynamicConsumer(probe_key.clone()));
+    consumers
+        .put("dynamic-equality", dynamic_stored)
+        .await
+        .unwrap();
+    let dynamic_contains_before = consumers.contains_value(&dynamic_probe).unwrap();
+    *stored_key.write().unwrap() = "dynamic-after".to_owned();
+    let dynamic_contains_after_stored_mutation = !consumers.contains_value(&dynamic_probe).unwrap();
+    *probe_key.write().unwrap() = "dynamic-after".to_owned();
+    let dynamic_contains_after_both_mutations = consumers.contains_value(&dynamic_probe).unwrap();
+
+    let replace_stored_key = Arc::new(RwLock::new("replace-before".to_owned()));
+    let replace_expected_key = Arc::new(RwLock::new("replace-before".to_owned()));
+    let replace_stored: Arc<dyn ConsumerRuntime> =
+        Arc::new(DynamicConsumer(replace_stored_key.clone()));
+    let replace_expected: Arc<dyn ConsumerRuntime> =
+        Arc::new(DynamicConsumer(replace_expected_key.clone()));
+    consumers
+        .put("dynamic-replace", replace_stored)
+        .await
+        .unwrap();
+    *replace_expected_key.write().unwrap() = "stale".to_owned();
+    let dynamic_replace_rejects_changed_expected = !consumers
+        .replace_if_equal("dynamic-replace", &replace_expected, consumer_c.clone())
+        .await
+        .unwrap();
+    *replace_stored_key.write().unwrap() = "replace-after".to_owned();
+    *replace_expected_key.write().unwrap() = "replace-after".to_owned();
+    let dynamic_replace_matches_current_equality = consumers
+        .replace_if_equal("dynamic-replace", &replace_expected, consumer_c)
+        .await
+        .unwrap();
     assert_eq!(
         serde_json::json!({
             "producerContainsEqualValue": true,
@@ -363,6 +411,11 @@ async fn conditional_registry_mutations_match_java_custom_value_equality() {
             "consumerValuesRemoveAllByEqualValue": consumer_values_remove_all,
             "consumerValuesRetainAllByEqualValue": consumer_values_retain_all,
             "consumerEntryRetainAllByEqualValue": consumer_entry_retain_all,
+            "dynamicContainsBeforeMutation": dynamic_contains_before,
+            "dynamicContainsAfterStoredMutation": dynamic_contains_after_stored_mutation,
+            "dynamicContainsAfterBothMutations": dynamic_contains_after_both_mutations,
+            "dynamicReplaceRejectsChangedExpected": dynamic_replace_rejects_changed_expected,
+            "dynamicReplaceMatchesCurrentEquality": dynamic_replace_matches_current_equality,
             "producerReplaceByEqualValue": true,
             "producerRemoveByEqualValue": true,
             "consumerReplaceByEqualValue": true,
