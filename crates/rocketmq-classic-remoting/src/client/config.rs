@@ -546,6 +546,24 @@ mod tests {
     }
 
     #[test]
+    fn socks_cidr_matching_matches_invoked_java_helper() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/client-config.json"
+        ))
+        .unwrap();
+        for case in fixture["socksCidr"].as_array().unwrap() {
+            let result = super::ipv4_in_cidr(
+                case["address"].as_str().unwrap(),
+                case["cidr"].as_str().unwrap(),
+            );
+            assert_eq!(result.is_ok(), case["outcome"] == "OK", "{case}");
+            if let Ok(matches) = result {
+                assert_eq!(matches, case["match"]);
+            }
+        }
+    }
+
+    #[test]
     fn socks_proxy_routes_match_java_ipv4_cidr_and_error_behavior() {
         let private_route = std::collections::HashMap::from([(
             "10.20.0.0/16".into(),
