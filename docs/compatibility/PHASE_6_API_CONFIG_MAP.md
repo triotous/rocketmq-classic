@@ -161,7 +161,7 @@ Current unregister update `3ccaf54`: `unregister_producer_by_group/unregister_co
 | getOrCreateMQClientInstance(config[,hook]) | `get_or_create/get_or_create_with_hook`; identity/config/oracle/concurrency/cancellation evidence |
 | removeClientFactory(id,instance) | `remove_client_factory`; exact identity-safe removal, stale-replacement checks |
 | removeClientFactory(id) | async `remove_client_factory_by_id`; source removal/replacement oracle, per-key initializer wait/cancel tests; does not replace identity-safe lifecycle cleanup |
-| getFactoryTable | `factory_table` returns live clonable FactoryTable; actual retained-view/mutation and default-helper oracle, concurrent/ownership/property tests; published reads exclude private initializer reservations |
+| getFactoryTable | `factory_table` returns live clonable FactoryTable; actual retained-view/mutation, default-helper and `forEach` oracle, concurrent/ownership/property tests; published reads exclude private initializer reservations |
 | getOrCreateProduceAccumulator | producer batching owner Phase7; no fake accumulator in Phase6 |
 
 | Source returned ConcurrentMap capability | Native FactoryTable API |
@@ -171,6 +171,7 @@ Current unregister update `3ccaf54`: `unregister_producer_by_group/unregister_co
 | replace(key,value)/replace(key,expected,value) | async `replace/replace_if_same`; identity comparison, matching MQClientInstance Object equality |
 | remove(key)/remove(key,value) | async `remove/remove_if_same`; identity comparison, map changes only, no runtime shutdown |
 | clear | async `clear`, not a transaction against concurrent insertion |
+| forEach | `for_each` visits one detached snapshot and runs callbacks without a manager lock; Java's weakly consistent live traversal is not represented |
 | copy/traverse map entries | explicit owned `snapshot`; live key/value/entry views and the other inherited ConcurrentMap defaults remain in the source/API audit |
 
 `fetch_name_server_addr/name_server_addr` map MQClientAPIImpl discovery state, not a new resolver feature. `route_snapshot`, `TopicSnapshot`, `RouteSnapshot`, `BrokerAddress`, and `broker_vip_channel` map Java route/broker/publish/subscribe/static/version tables and MixAll VIP logic with immutable native ownership. `prepare_heartbeat_data` exposes the Java heartbeat preparation capability for owners/tests; it does not add another periodic task. Failure-injection seams, queue probes, property readers and deterministic selection indices are private/test-only.
