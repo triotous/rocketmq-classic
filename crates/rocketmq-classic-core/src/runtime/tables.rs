@@ -20,20 +20,17 @@ pub(super) enum TableValue {
 #[derive(Clone)]
 pub(super) enum ValueComparison {
     Identity,
-    JavaEquals(Option<String>),
 }
 #[derive(Clone)]
 pub(super) enum TableMutation {
     Put {
         key: String,
         value: TableValue,
-        value_equality_key: Option<String>,
         only_absent: bool,
     },
     Replace {
         key: String,
         value: TableValue,
-        value_equality_key: Option<String>,
         expected: Option<TableValue>,
         comparison: Option<ValueComparison>,
     },
@@ -79,6 +76,13 @@ macro_rules! table {
         #[derive(Clone)]
         pub struct $name(TableHandle);
         impl $name {
+            fn owners_equal(expected: &Arc<dyn $owner>, current: &Arc<dyn $owner>) -> bool {
+                Arc::ptr_eq(expected, current)
+                    || expected
+                        .map_value_equality_key()
+                        .zip(current.map_value_equality_key())
+                        .is_some_and(|(expected, current)| expected == current)
+            }
             pub(super) fn new(runtime: &Arc<ClientRuntime>) -> Self {
                 Self(TableHandle {
                     kind: TableKind::$kind,
@@ -104,12 +108,10 @@ macro_rules! table {
                 &self,
                 value: &Arc<dyn $owner>,
             ) -> Result<bool, RuntimeError> {
-                let equality_key = value.map_value_equality_key();
-                self.0.groups.table_contains_value(
-                    self.0.kind,
-                    &TableValue::$kind(value.clone()),
-                    equality_key.as_deref(),
-                )
+                Ok(self
+                    .snapshot()?
+                    .values()
+                    .any(|current| Self::owners_equal(value, current)))
             }
             pub fn len(&self) -> Result<usize, RuntimeError> {
                 self.0.groups.table_len(self.0.kind)
@@ -163,11 +165,9 @@ macro_rules! table {
                 key: impl Into<String>,
                 value: Arc<dyn $owner>,
             ) -> Result<Option<Arc<dyn $owner>>, RuntimeError> {
-                let value_equality_key = value.map_value_equality_key();
                 self.write(TableMutation::Put {
                     key: key.into(),
                     value: TableValue::$kind(value),
-                    value_equality_key,
                     only_absent: false,
                 })
                 .await
@@ -177,11 +177,9 @@ macro_rules! table {
                 key: impl Into<String>,
                 value: Arc<dyn $owner>,
             ) -> Result<Option<Arc<dyn $owner>>, RuntimeError> {
-                let value_equality_key = value.map_value_equality_key();
                 self.write(TableMutation::Put {
                     key: key.into(),
                     value: TableValue::$kind(value),
-                    value_equality_key,
                     only_absent: true,
                 })
                 .await
@@ -201,13 +199,11 @@ macro_rules! table {
                 key: impl Into<String>,
                 value: Arc<dyn $owner>,
             ) -> Result<Option<Arc<dyn $owner>>, RuntimeError> {
-                let value_equality_key = value.map_value_equality_key();
                 let change = self
                     .0
                     .mutate(TableMutation::Replace {
                         key: key.into(),
                         value: TableValue::$kind(value),
-                        value_equality_key,
                         expected: None,
                         comparison: None,
                     })
@@ -224,12 +220,10 @@ macro_rules! table {
                 expected: &Arc<dyn $owner>,
                 value: Arc<dyn $owner>,
             ) -> Result<bool, RuntimeError> {
-                let value_equality_key = value.map_value_equality_key();
                 Ok(self
                     .0
                     .mutate(TableMutation::Replace {
                         key: key.into(),
-                        value_equality_key,
                         value: TableValue::$kind(value),
                         expected: Some(TableValue::$kind(expected.clone())),
                         comparison: Some(ValueComparison::Identity),
@@ -245,19 +239,18 @@ macro_rules! table {
                 expected: &Arc<dyn $owner>,
                 value: Arc<dyn $owner>,
             ) -> Result<bool, RuntimeError> {
-                let value_equality_key = value.map_value_equality_key();
-                let expected_key = expected.map_value_equality_key();
-                Ok(self
-                    .0
-                    .mutate(TableMutation::Replace {
-                        key: key.into(),
-                        value: TableValue::$kind(value),
-                        value_equality_key,
-                        expected: Some(TableValue::$kind(expected.clone())),
-                        comparison: Some(ValueComparison::JavaEquals(expected_key)),
-                    })
-                    .await?
-                    .matched)
+                let key = key.into();
+                loop {
+                    let Some(current) = self.get(&key)? else {
+                        return Ok(false);
+                    };
+                    if !Self::owners_equal(expected, &current) {
+                        return Ok(false);
+                    }
+                    if self.replace_if_same(&key, &current, value.clone()).await? {
+                        return Ok(true);
+                    }
+                }
             }
             pub async fn remove(
                 &self,
@@ -292,16 +285,18 @@ macro_rules! table {
                 key: impl Into<String>,
                 expected: &Arc<dyn $owner>,
             ) -> Result<bool, RuntimeError> {
-                let expected_key = expected.map_value_equality_key();
-                Ok(self
-                    .0
-                    .mutate(TableMutation::Remove {
-                        key: key.into(),
-                        expected: Some(TableValue::$kind(expected.clone())),
-                        comparison: Some(ValueComparison::JavaEquals(expected_key)),
-                    })
-                    .await?
-                    .matched)
+                let key = key.into();
+                loop {
+                    let Some(current) = self.get(&key)? else {
+                        return Ok(false);
+                    };
+                    if !Self::owners_equal(expected, &current) {
+                        return Ok(false);
+                    }
+                    if self.remove_if_same(&key, &current).await? {
+                        return Ok(true);
+                    }
+                }
             }
             /// ConcurrentMap-style remapping operations use conditional table
             /// mutations and may call the closure again after a concurrent write.
@@ -620,13 +615,10 @@ macro_rules! table_views {
                 key: &str,
                 value: &Arc<dyn $owner>,
             ) -> Result<bool, RuntimeError> {
-                let equality_key = value.map_value_equality_key();
-                self.0.groups.table_contains_entry(
-                    self.0.kind,
-                    key,
-                    &TableValue::$kind(value.clone()),
-                    equality_key.as_deref(),
-                )
+                Ok(self
+                    .table()
+                    .get(key)?
+                    .is_some_and(|current| $table::owners_equal(value, &current)))
             }
             pub fn len(&self) -> Result<usize, RuntimeError> {
                 self.0.groups.table_len(self.0.kind)

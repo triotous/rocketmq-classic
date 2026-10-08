@@ -11,10 +11,10 @@ use std::{
 /// Narrow MQProducerInner contract consumed by the shared runtime. Actual send
 /// and transaction behavior belongs to the producer's owning implementation.
 pub trait ProducerRuntime: Send + Sync + 'static {
-    /// Stable key used only by Java-style conditional map operations. `None`
+    /// Current key used only by Java-style conditional map operations. `None`
     /// keeps Object identity semantics. Implementations with value-based Java
     /// `equals` should return the same key exactly when those values compare
-    /// equal; the key is captured before registry locks are acquired.
+    /// equal. The key is sampled when values are compared, outside registry locks.
     fn map_value_equality_key(&self) -> Option<String> {
         None
     }
@@ -44,10 +44,10 @@ pub trait ProducerRuntime: Send + Sync + 'static {
 /// MQConsumerInner capabilities; optional futures are absent until an owning
 /// consumer phase implements the operation. Absence is not reported as success.
 pub trait ConsumerRuntime: Send + Sync + 'static {
-    /// Stable key used only by Java-style conditional map operations. `None`
+    /// Current key used only by Java-style conditional map operations. `None`
     /// keeps Object identity semantics. Implementations with value-based Java
     /// `equals` should return the same key exactly when those values compare
-    /// equal; the key is captured before registry locks are acquired.
+    /// equal. The key is sampled when values are compared, outside registry locks.
     fn map_value_equality_key(&self) -> Option<String> {
         None
     }
@@ -120,7 +120,6 @@ impl GroupLease {
 struct TableEntry<T: ?Sized> {
     identity: Arc<()>,
     handle: Weak<T>,
-    equality_key: Option<String>,
 }
 type ProducerEntry = TableEntry<dyn ProducerRuntime>;
 type ConsumerEntry = TableEntry<dyn ConsumerRuntime>;
@@ -167,81 +166,6 @@ impl GroupRegistry {
         Ok(match kind {
             super::tables::TableKind::Producer => entries.producers.contains_key(key),
             super::tables::TableKind::Consumer => entries.consumers.contains_key(key),
-        })
-    }
-    pub(super) fn table_contains_value(
-        &self,
-        kind: super::tables::TableKind,
-        expected: &super::tables::TableValue,
-        equality_key: Option<&str>,
-    ) -> Result<bool, RuntimeError> {
-        use super::tables::{TableKind, TableValue};
-        let entries = self
-            .entries
-            .lock()
-            .map_err(|_| RuntimeError::RegistryPoisoned)?;
-        Ok(match (kind, expected) {
-            (TableKind::Producer, TableValue::Producer(expected)) => {
-                entries.producers.values().any(|entry| {
-                    entry
-                        .handle
-                        .upgrade()
-                        .is_some_and(|current| Arc::ptr_eq(expected, &current))
-                        || equality_key
-                            .zip(entry.equality_key.as_deref())
-                            .is_some_and(|(expected, current)| expected == current)
-                })
-            }
-            (TableKind::Consumer, TableValue::Consumer(expected)) => {
-                entries.consumers.values().any(|entry| {
-                    entry
-                        .handle
-                        .upgrade()
-                        .is_some_and(|current| Arc::ptr_eq(expected, &current))
-                        || equality_key
-                            .zip(entry.equality_key.as_deref())
-                            .is_some_and(|(expected, current)| expected == current)
-                })
-            }
-            _ => false,
-        })
-    }
-    pub(super) fn table_contains_entry(
-        &self,
-        kind: super::tables::TableKind,
-        key: &str,
-        expected: &super::tables::TableValue,
-        equality_key: Option<&str>,
-    ) -> Result<bool, RuntimeError> {
-        use super::tables::{TableKind, TableValue};
-        let entries = self
-            .entries
-            .lock()
-            .map_err(|_| RuntimeError::RegistryPoisoned)?;
-        Ok(match (kind, expected) {
-            (TableKind::Producer, TableValue::Producer(expected)) => {
-                entries.producers.get(key).is_some_and(|entry| {
-                    entry
-                        .handle
-                        .upgrade()
-                        .is_some_and(|current| Arc::ptr_eq(expected, &current))
-                        || equality_key
-                            .zip(entry.equality_key.as_deref())
-                            .is_some_and(|(expected, current)| expected == current)
-                })
-            }
-            (TableKind::Consumer, TableValue::Consumer(expected)) => {
-                entries.consumers.get(key).is_some_and(|entry| {
-                    entry
-                        .handle
-                        .upgrade()
-                        .is_some_and(|current| Arc::ptr_eq(expected, &current))
-                        || equality_key
-                            .zip(entry.equality_key.as_deref())
-                            .is_some_and(|(expected, current)| expected == current)
-                })
-            }
-            _ => false,
         })
     }
     pub(super) fn table_snapshot(
@@ -335,7 +259,6 @@ impl GroupRegistry {
         group: &str,
         handle: Arc<dyn ProducerRuntime>,
     ) -> Result<GroupLease, RuntimeError> {
-        let equality_key = handle.map_value_equality_key();
         let mut entries = self
             .entries
             .lock()
@@ -355,7 +278,6 @@ impl GroupRegistry {
             ProducerEntry {
                 identity: lease.identity.clone(),
                 handle: Arc::downgrade(&handle),
-                equality_key,
             },
         );
         Ok(lease)
@@ -366,7 +288,6 @@ impl GroupRegistry {
         group: &str,
         handle: Arc<dyn ConsumerRuntime>,
     ) -> Result<GroupLease, RuntimeError> {
-        let equality_key = handle.map_value_equality_key();
         let mut entries = self
             .entries
             .lock()
@@ -386,7 +307,6 @@ impl GroupRegistry {
             ConsumerEntry {
                 identity: lease.identity.clone(),
                 handle: Arc::downgrade(&handle),
-                equality_key,
             },
         );
         Ok(lease)
@@ -556,22 +476,10 @@ fn mutate_map<T: ?Sized>(
         let Some(expected_value) = extract(expected) else {
             return false;
         };
-        let Some(current_entry) = map.get(key) else {
-            return false;
-        };
         match comparison {
             Some(ValueComparison::Identity) => previous
                 .as_ref()
                 .is_some_and(|current| Arc::ptr_eq(current, expected_value)),
-            Some(ValueComparison::JavaEquals(expected_key)) => {
-                previous
-                    .as_ref()
-                    .is_some_and(|current| Arc::ptr_eq(current, expected_value))
-                    || expected_key
-                        .as_ref()
-                        .zip(current_entry.equality_key.as_ref())
-                        .is_some_and(|(expected, current)| expected == current)
-            }
             None => false,
         }
     };
@@ -591,23 +499,13 @@ fn mutate_map<T: ?Sized>(
     };
     if matched {
         match mutation {
-            TableMutation::Put {
-                value,
-                value_equality_key,
-                ..
-            }
-            | TableMutation::Replace {
-                value,
-                value_equality_key,
-                ..
-            } => {
+            TableMutation::Put { value, .. } | TableMutation::Replace { value, .. } => {
                 let value = extract(value).ok_or(RuntimeError::RegistryPoisoned)?;
                 map.insert(
                     key.clone(),
                     TableEntry {
                         identity: Arc::new(()),
                         handle: Arc::downgrade(value),
-                        equality_key: value_equality_key.clone(),
                     },
                 );
             }
