@@ -183,7 +183,7 @@ impl ClientInner {
         };
         let (host, _) = connection::split_address(&key)?;
         let proxy = super::config::ClientConfig::proxy_for(&self.socks_proxy_routes, &host)?;
-        self.notify_channel(&key, super::ChannelEvent::Connect);
+        self.notify_channel(&key, super::NettyEventType::Connect);
         let mut dial = Box::pin(connection::connect(
             &key,
             &self.security,
@@ -225,7 +225,7 @@ impl ClientInner {
         }
         connections.insert(key.clone(), connection.clone());
         drop(connections);
-        self.notify_channel(&key, super::ChannelEvent::Active);
+        self.notify_channel(&key, super::NettyEventType::Active);
         Ok(connection)
     }
 
@@ -247,9 +247,9 @@ impl ClientInner {
         };
         if let Some(address) = &address {
             if failure.is_some() && failure != Some(TransportError::Closed) {
-                self.notify_channel(address, super::ChannelEvent::Exception);
+                self.notify_channel(address, super::NettyEventType::Exception);
             }
-            self.notify_channel(address, super::ChannelEvent::Close);
+            self.notify_channel(address, super::NettyEventType::Close);
             if !was_retired {
                 let mut chosen = self.chosen_nameserver.lock().unwrap();
                 if chosen.as_deref() == Some(address.as_str()) {

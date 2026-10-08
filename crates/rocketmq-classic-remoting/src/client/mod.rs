@@ -16,6 +16,7 @@ use std::{
 };
 
 use rand::{Rng, seq::SliceRandom};
+use rocketmq_classic_protocol::codes::JavaEnumLookupError;
 use std::task::{Context, Poll, Waker};
 use tokio::{
     sync::{mpsc, oneshot},
@@ -118,7 +119,7 @@ struct PendingEntry {
 struct Startup {
     inbound_receiver: mpsc::UnboundedReceiver<processor::InboundRequest>,
     callback_receiver: mpsc::UnboundedReceiver<CallbackTask>,
-    channel_event_receiver: mpsc::Receiver<(String, ChannelEvent)>,
+    channel_event_receiver: mpsc::Receiver<(String, NettyEventType)>,
 }
 
 struct ClientInner {
@@ -148,7 +149,7 @@ struct ClientInner {
     callback_executor: Mutex<Option<Arc<dyn CallbackExecutor>>>,
     rpc_hooks: Mutex<Vec<Arc<dyn RpcHook>>>,
     channel_listener: Option<Arc<dyn ChannelEventListener>>,
-    channel_event_sender: mpsc::Sender<(String, ChannelEvent)>,
+    channel_event_sender: mpsc::Sender<(String, NettyEventType)>,
     startup: Mutex<Option<Startup>>,
     runtime: Mutex<Option<tokio::runtime::Handle>>,
     started: AtomicBool,
@@ -457,13 +458,70 @@ where
     }
 }
 
-#[derive(Clone, Copy)]
-enum ChannelEvent {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NettyEventType {
     Connect,
     Close,
-    Exception,
     Idle,
+    Exception,
     Active,
+}
+
+impl NettyEventType {
+    pub const fn values() -> [Self; 5] {
+        [
+            Self::Connect,
+            Self::Close,
+            Self::Idle,
+            Self::Exception,
+            Self::Active,
+        ]
+    }
+
+    pub fn value_of_name(name: Option<&str>) -> Result<Self, JavaEnumLookupError> {
+        match name {
+            None => Err(JavaEnumLookupError::NullName),
+            Some("CONNECT") => Ok(Self::Connect),
+            Some("CLOSE") => Ok(Self::Close),
+            Some("IDLE") => Ok(Self::Idle),
+            Some("EXCEPTION") => Ok(Self::Exception),
+            Some("ACTIVE") => Ok(Self::Active),
+            Some(other) => Err(JavaEnumLookupError::UnknownName {
+                enum_class: "org.apache.rocketmq.remoting.netty.NettyEventType",
+                name: other.to_owned(),
+            }),
+        }
+    }
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Connect => "CONNECT",
+            Self::Close => "CLOSE",
+            Self::Idle => "IDLE",
+            Self::Exception => "EXCEPTION",
+            Self::Active => "ACTIVE",
+        }
+    }
+
+    pub const fn ordinal(self) -> i32 {
+        match self {
+            Self::Connect => 0,
+            Self::Close => 1,
+            Self::Idle => 2,
+            Self::Exception => 3,
+            Self::Active => 4,
+        }
+    }
+
+    pub const fn java_compare_to(self, other: Self) -> i32 {
+        self.ordinal() - other.ordinal()
+    }
+}
+
+impl std::fmt::Display for NettyEventType {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.name())
+    }
 }
 
 /// Routes callbacks to an application-owned executor, corresponding to Java's `setCallbackExecutor`.
@@ -1745,7 +1803,7 @@ impl ClientInner {
         }
     }
 
-    fn notify_channel(&self, address: &str, event: ChannelEvent) {
+    fn notify_channel(&self, address: &str, event: NettyEventType) {
         if self.channel_listener.is_some() {
             let _ = self
                 .channel_event_sender
@@ -1982,7 +2040,7 @@ fn run_callback(job: CallbackJob) {
 
 fn start_channel_event_worker(
     listener: Option<Arc<dyn ChannelEventListener>>,
-    mut receiver: mpsc::Receiver<(String, ChannelEvent)>,
+    mut receiver: mpsc::Receiver<(String, NettyEventType)>,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
@@ -1998,7 +2056,7 @@ fn start_channel_event_worker(
                 return;
             };
             let Some(listener) = &listener else { continue };
-            if matches!(event, ChannelEvent::Active) {
+            if matches!(event, NettyEventType::Active) {
                 let operation = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     listener.on_active_async(&address)
                 }));
@@ -2017,11 +2075,11 @@ fn start_channel_event_worker(
                 continue;
             }
             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match event {
-                ChannelEvent::Connect => listener.on_connect(&address),
-                ChannelEvent::Close => listener.on_close(&address),
-                ChannelEvent::Exception => listener.on_exception(&address),
-                ChannelEvent::Idle => listener.on_idle(&address),
-                ChannelEvent::Active => listener.on_active(&address),
+                NettyEventType::Connect => listener.on_connect(&address),
+                NettyEventType::Close => listener.on_close(&address),
+                NettyEventType::Exception => listener.on_exception(&address),
+                NettyEventType::Idle => listener.on_idle(&address),
+                NettyEventType::Active => listener.on_active(&address),
             }));
         }
     })
@@ -2214,6 +2272,70 @@ mod tests {
     use super::*;
 
     #[test]
+    fn netty_event_type_methods_match_invoked_java_enum() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/client-config.json"
+        ))
+        .unwrap();
+        let cases = fixture["nettyEventTypeMethodCases"].as_array().unwrap();
+        let values = NettyEventType::values();
+        let expected_names = cases
+            .iter()
+            .find(|case| case["case"] == "constant")
+            .unwrap()["values"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|name| name.as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            values.iter().map(|value| value.name()).collect::<Vec<_>>(),
+            expected_names
+        );
+        let mut mutated_values = NettyEventType::values();
+        mutated_values[0] = values[values.len() - 1];
+        assert_eq!(NettyEventType::values()[0], values[0]);
+
+        for case in cases {
+            match case["case"].as_str().unwrap() {
+                "constant" => {
+                    let name = case["name"].as_str().unwrap();
+                    let value = NettyEventType::value_of_name(Some(name)).unwrap();
+                    let ordinal = case["ordinal"].as_i64().unwrap() as i32;
+                    assert_eq!(value.name(), name, "{case}");
+                    assert_eq!(value.to_string(), case["text"].as_str().unwrap(), "{case}");
+                    assert_eq!(value.ordinal(), ordinal, "{case}");
+                    assert_eq!(value, values[ordinal as usize], "{case}");
+                    assert_eq!(case["valueOfName"], name, "{case}");
+                    assert_eq!(case["valuesDefensiveCopy"], true, "{case}");
+                    let next = values[(ordinal as usize + 1) % values.len()];
+                    assert_eq!(
+                        value.java_compare_to(next),
+                        case["compareNext"].as_i64().unwrap() as i32,
+                        "{case}"
+                    );
+                }
+                "lookup" => match NettyEventType::value_of_name(case["input"].as_str()) {
+                    Ok(value) => {
+                        assert_eq!(case["outcome"], "OK", "{case}");
+                        assert_eq!(case["decoded"], value.name(), "{case}");
+                    }
+                    Err(error) => {
+                        let expected = if case["input"].is_null() {
+                            "NullPointerException"
+                        } else {
+                            "IllegalArgumentException"
+                        };
+                        assert_eq!(case["outcome"], expected, "{case}");
+                        assert_eq!(case["message"], error.to_string(), "{case}");
+                    }
+                },
+                other => panic!("unknown Java NettyEventType case: {other}"),
+            }
+        }
+    }
+
+    #[test]
     fn mutable_hooks_are_ordered_and_legacy_hooks_observe_prior_mutation() {
         struct Mutator;
         impl RpcHook for Mutator {
@@ -2281,11 +2403,11 @@ mod tests {
         let (stop, shutdown) = tokio::sync::watch::channel(false);
         let worker = start_channel_event_worker(Some(listener.clone()), receiver, shutdown);
         sender
-            .send(("broker".into(), ChannelEvent::Active))
+            .send(("broker".into(), NettyEventType::Active))
             .await
             .unwrap();
         sender
-            .send(("broker".into(), ChannelEvent::Active))
+            .send(("broker".into(), NettyEventType::Active))
             .await
             .unwrap();
         listener.entered.notified().await;

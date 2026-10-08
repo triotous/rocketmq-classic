@@ -400,7 +400,7 @@ async fn run_connection(
             result = shutdown.changed() => if result.is_err() || *shutdown.borrow() { break None },
             _ = &mut idle_timer, if !max_idle_time.is_zero() => {
                 if let Some(inner) = inner.upgrade() {
-                    inner.notify_channel(&address, super::ChannelEvent::Idle);
+                    inner.notify_channel(&address, super::NettyEventType::Idle);
                 }
                 break None;
             },

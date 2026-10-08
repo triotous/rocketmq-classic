@@ -149,7 +149,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("rebalanceLongs", rebalanceLongs);
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "ClientConfig.buildMQClientId/toString/cloneClientConfig/resetClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/queuesWithNamespace/changeInstanceNameToPID; MessageQueue.setTopic/setBrokerName/setQueueId; MQClientManager.getOrCreateMQClientInstance/removeClientFactory/getFactoryTable; MQClientInstance.constructor/getClientConfig/getNettyClientConfig/getProducerTable/getConsumerTable/selectProducer/selectConsumer/registerConsumer/unregisterConsumer; MQClientAPIImpl.getRemotingClient/NettyRemotingClient.publicExecutor (reflective capacity observation); NettyRemotingClient.start/invokeSync (local authenticated and no-auth SOCKS5 round trips); RemotingCommand.encode/getType (null language JSON/ROCKETMQ); LanguageCode/SerializeType/TlsMode/RequestType/RemotingCommandType generated enum and custom value lookups; Long.parseLong (RebalanceService property parser)");
+        fixture.put("entrypoint", "ClientConfig.buildMQClientId/toString/cloneClientConfig/resetClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/queuesWithNamespace/changeInstanceNameToPID; MessageQueue.setTopic/setBrokerName/setQueueId; MQClientManager.getOrCreateMQClientInstance/removeClientFactory/getFactoryTable; MQClientInstance.constructor/getClientConfig/getNettyClientConfig/getProducerTable/getConsumerTable/selectProducer/selectConsumer/registerConsumer/unregisterConsumer; MQClientAPIImpl.getRemotingClient/NettyRemotingClient.publicExecutor (reflective capacity observation); NettyRemotingClient.start/invokeSync (local authenticated and no-auth SOCKS5 round trips); RemotingCommand.encode/getType (null language JSON/ROCKETMQ); LanguageCode/SerializeType/TlsMode/RequestType/RemotingCommandType/NettyEventType generated enum and custom value lookups; Long.parseLong (RebalanceService property parser)");
         fixture.put("serverBaselineContacted", false);
         fixture.put("identities", identities);
         fixture.put("defaults", defaults);
@@ -173,6 +173,10 @@ public final class RuntimeConfigFixtures {
         fixture.put("protocolEnumMethodCases", protocolEnumMethodCases());
         fixture.put("tlsModeMethodCases", tlsModeMethodCases());
         fixture.put("remotingEnumMethodCases", remotingEnumMethodCases());
+        fixture.put("nettyEventTypeMethodCases", enumMethodCases(
+            org.apache.rocketmq.remoting.netty.NettyEventType::values,
+            org.apache.rocketmq.remoting.netty.NettyEventType::valueOf,
+            new String[] {null, "", "CONNECT", "connect", "IDLE", "ACTIVE", "UNKNOWN"}));
         fixture.put("socksConstruction", socksConstruction());
         fixture.put("socksConnection", socksConnection(true));
         fixture.put("socksConnectionNoAuth", socksConnection(false));
