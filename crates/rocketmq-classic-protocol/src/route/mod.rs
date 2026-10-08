@@ -95,6 +95,21 @@ mod broker_data_equality_tests {
 }
 
 #[cfg(test)]
+mod broker_data_hash_code_tests {
+    use super::BrokerData;
+
+    #[test]
+    fn broker_data_hash_code_matches_invoked_java_hash_code() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["brokerDataHashCode"].as_array().unwrap() {
+            let broker: BrokerData = serde_json::from_value(case["input"].clone()).unwrap();
+            assert_eq!(broker.java_hash_code(), case["hashCode"].as_i64().unwrap() as i32, "{}", case["id"]);
+        }
+    }
+}
+
+#[cfg(test)]
 mod broker_data_compare_to_tests {
     use super::{BrokerData, BrokerDataCompareError};
 
