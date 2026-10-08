@@ -14,8 +14,10 @@ The helpers keep Rust DTO field types and serialization unchanged. Java exceptio
 
 ## Evidence
 
-`RuntimeRouteFixtures.routeDtoInputCases` invokes 25 actual inputs for `QueueData`, `MessageQueue`, `BrokerData`, `TopicQueueMappingInfo`, and nested `TopicRouteData`. The five added `MessageQueue.queueId` cases cover explicit null to zero, signed integer boundaries, fractional truncation, and overflow rejection. `route_dto_scalar_inputs_match_invoked_java_fastjson` compares accepted fields and rejected outcomes against the same Java inputs.
+`RuntimeRouteFixtures.routeDtoInputCases` invokes 37 actual inputs for `QueueData`, `MessageQueue`, `BrokerData`, `TopicQueueMappingInfo`, and nested `TopicRouteData`. The five `MessageQueue.queueId` cases cover explicit null to zero, signed integer boundaries, fractional truncation, and overflow rejection. Twelve added cases establish that route DTO `JSON.parseObject` rejects JSON5-style single quotes, comments, unquoted keys, trailing commas, numeric suffixes, plus malformed collection shapes; native route DTO parsing rejects the same inputs. This route parser boundary is separate from the permissive SOCKS constructor parser.
 
-Route fixture SHA-256: `5cc8ace8e2a4622f7aa849270b77ff6b3adf2f04cd99dd6d6563566744c8a104`.
+`route_dto_inputs_match_invoked_java_fastjson` compares accepted fields and rejected outcomes against the same Java inputs.
+
+Route fixture SHA-256: `6de3936438f326e57114da010a1363ae730c7a17de2913293472c7c91547c6bf`.
 
 Focused differential, full workspace tests, strict all-feature Clippy, pinned offline Maven verification, comparator/manifest, formatting, and diff checks pass. This closes the recorded scalar cases only; broader DTO input, Fastjson grammar, and whole-Phase 6 reconciliation remain open.
