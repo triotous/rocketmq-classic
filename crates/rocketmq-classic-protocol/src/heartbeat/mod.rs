@@ -154,6 +154,49 @@ mod tests {
     use super::*;
 
     #[test]
+    fn subscription_fields_match_invoked_java_nulls_and_defaults() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
+                .unwrap();
+        for case in fixture["subscriptionFieldCases"].as_array().unwrap() {
+            let raw = case["rawInput"].as_str().unwrap();
+            let before = current_millis();
+            let value: SubscriptionData = serde_json::from_str(raw).unwrap();
+            let after = current_millis();
+            let encoded = serde_json::to_value(&value).unwrap();
+            assert_eq!(value.topic.is_none(), case["topicNull"]);
+            assert_eq!(value.sub_string.is_none(), case["subStringNull"]);
+            assert_eq!(value.tags_set.is_none(), case["tagsNull"]);
+            assert_eq!(value.code_set.is_none(), case["codeNull"]);
+            assert_eq!(value.expression_type.is_none(), case["expressionNull"]);
+            assert_eq!(value.tags_set.as_ref().is_some_and(HashSet::is_empty), case["tagsEmpty"]);
+            assert_eq!(value.code_set.as_ref().is_some_and(HashSet::is_empty), case["codeEmpty"]);
+            if case["versionCurrent"] == true {
+                assert!((before..=after).contains(&value.sub_version));
+            }
+            assert_eq!(value.sub_version == 0, case["versionZero"]);
+            assert_eq!(value.sub_version == 42, case["versionFortyTwo"]);
+            for (field, marker) in [
+                ("topic", "encodedHasTopic"),
+                ("subString", "encodedHasSubString"),
+                ("tagsSet", "encodedHasTags"),
+                ("codeSet", "encodedHasCode"),
+                ("expressionType", "encodedHasExpression"),
+            ] {
+                assert_eq!(encoded.get(field).is_some(), case[marker], "{field}");
+            }
+        }
+    }
+
+    fn current_millis() -> i64 {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64
+    }
+
+    #[test]
     fn consumer_metadata_multiplicity_matches_invoked_java() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))

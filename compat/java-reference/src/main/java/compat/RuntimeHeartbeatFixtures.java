@@ -24,6 +24,41 @@ import org.apache.rocketmq.remoting.protocol.heartbeat.HeartbeatData;
 public final class RuntimeHeartbeatFixtures {
     private RuntimeHeartbeatFixtures() { }
 
+    private static List<Object> subscriptionFieldCases() {
+        List<Object> cases = new ArrayList<>();
+        for (String input : new String[] {
+            "{}",
+            "{\"topic\":null,\"subString\":null,\"tagsSet\":null,\"codeSet\":null,\"expressionType\":null,\"subVersion\":0}",
+            "{\"topic\":\"T\",\"subString\":\"tag\",\"tagsSet\":[\"tag\"],\"codeSet\":[7],\"expressionType\":\"SQL92\",\"subVersion\":42}"
+        }) {
+            long before = System.currentTimeMillis();
+            SubscriptionData value = com.alibaba.fastjson2.JSON.parseObject(input, SubscriptionData.class);
+            long after = System.currentTimeMillis();
+            com.alibaba.fastjson2.JSONObject encoded = com.alibaba.fastjson2.JSON.parseObject(
+                com.alibaba.fastjson2.JSON.toJSONString(value));
+            Map<String, Object> item = new TreeMap<>();
+            item.put("input", com.alibaba.fastjson2.JSON.parseObject(input));
+            item.put("rawInput", input);
+            item.put("topicNull", value.getTopic() == null);
+            item.put("subStringNull", value.getSubString() == null);
+            item.put("tagsNull", value.getTagsSet() == null);
+            item.put("codeNull", value.getCodeSet() == null);
+            item.put("expressionNull", value.getExpressionType() == null);
+            item.put("tagsEmpty", value.getTagsSet() != null && value.getTagsSet().isEmpty());
+            item.put("codeEmpty", value.getCodeSet() != null && value.getCodeSet().isEmpty());
+            item.put("versionCurrent", value.getSubVersion() >= before && value.getSubVersion() <= after);
+            item.put("versionZero", value.getSubVersion() == 0L);
+            item.put("versionFortyTwo", value.getSubVersion() == 42L);
+            item.put("encodedHasTopic", encoded.containsKey("topic"));
+            item.put("encodedHasSubString", encoded.containsKey("subString"));
+            item.put("encodedHasTags", encoded.containsKey("tagsSet"));
+            item.put("encodedHasCode", encoded.containsKey("codeSet"));
+            item.put("encodedHasExpression", encoded.containsKey("expressionType"));
+            cases.add(item);
+        }
+        return cases;
+    }
+
     private static void record(List<Object> cases, MQClientInstance runtime, String name,
         boolean withoutSub) throws Exception {
         Method prepare = MQClientInstance.class.getDeclaredMethod("prepareHeartbeatData", boolean.class);
@@ -122,6 +157,7 @@ public final class RuntimeHeartbeatFixtures {
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
         fixture.put("multiplicityCases", multiplicityCases);
+        fixture.put("subscriptionFieldCases", subscriptionFieldCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture) + "\n";
         Path file = Path.of(args[0]);
         if (args.length > 1 && "--verify".equals(args[1])) {
