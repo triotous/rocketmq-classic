@@ -61,6 +61,106 @@ public final class RuntimeHeartbeatFixtures {
         return cases;
     }
 
+    private static List<Object> subscriptionConstructorCases() {
+        List<Object> cases = new ArrayList<>();
+        SubscriptionData[] values = {
+            new SubscriptionData(),
+            new SubscriptionData("topic", "tag"),
+            new SubscriptionData(null, null)
+        };
+        String[] names = {"no-argument", "two-argument", "two-null-arguments"};
+        for (int i = 0; i < values.length; i++) {
+            SubscriptionData value = values[i];
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", names[i]);
+            item.put("topic", value.getTopic());
+            item.put("subString", value.getSubString());
+            item.put("tagsEmpty", value.getTagsSet() != null && value.getTagsSet().isEmpty());
+            item.put("codeEmpty", value.getCodeSet() != null && value.getCodeSet().isEmpty());
+            item.put("expressionType", value.getExpressionType());
+            item.put("versionCurrent", value.getSubVersion() > 0);
+            cases.add(item);
+        }
+        return cases;
+    }
+
+    private static Map<String, Object> subscriptionMethods() {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("subAll", SubscriptionData.SUB_ALL);
+        List<Object> values = new ArrayList<>();
+        for (String[] input : new String[][] {
+            {"defaults", "{\"topic\":\"topic\",\"subString\":\"tag\",\"subVersion\":42}"},
+            {"nullable", "{\"classFilterMode\":true,\"topic\":null,\"subString\":null,\"tagsSet\":null,\"codeSet\":null,\"subVersion\":-9,\"expressionType\":null}"},
+            {"unicode", "{\"topic\":\"🚀\",\"subString\":\"Ω\",\"tagsSet\":[\"tag\"],\"codeSet\":[7],\"subVersion\":9223372036854775807,\"expressionType\":\"SQL92\"}"},
+            {"sets", "{\"topic\":\"topic\",\"subString\":\"tagA||tagB\",\"tagsSet\":[\"alpha\",\"beta\"],\"codeSet\":[7,11],\"subVersion\":0,\"expressionType\":\"TAG\"}"}
+        }) {
+            SubscriptionData value = com.alibaba.fastjson2.JSON.parseObject(input[1], SubscriptionData.class);
+            value.setFilterClassSource("ignored-in-text-and-equality");
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", input[0]);
+            item.put("rawInput", input[1]);
+            item.put("hashCode", value.hashCode());
+            item.put("toString", value.toString());
+            values.add(item);
+        }
+        result.put("values", values);
+
+        String base = "{\"classFilterMode\":false,\"topic\":\"topic\",\"subString\":\"tag\","
+            + "\"tagsSet\":[\"alpha\",\"beta\"],\"codeSet\":[7,11],\"subVersion\":42,"
+            + "\"expressionType\":\"SQL92\"}";
+        String nullSets = base.replace("\"tagsSet\":[\"alpha\",\"beta\"]", "\"tagsSet\":null")
+            .replace("\"codeSet\":[7,11]", "\"codeSet\":null");
+        String emptySets = base.replace("\"tagsSet\":[\"alpha\",\"beta\"]", "\"tagsSet\":[]")
+            .replace("\"codeSet\":[7,11]", "\"codeSet\":[]");
+        List<Object> equalCases = new ArrayList<>();
+        for (String[] input : new String[][] {
+            {"filter-class-source-ignored", base, base, "source-a", "source-b"},
+            {"sub-version-compared-but-not-hashed", base, base.replace("\"subVersion\":42", "\"subVersion\":43"), "source", "source"},
+            {"null-versus-empty-sets", nullSets, emptySets, "source", "source"},
+            {"class-filter-mode", base, base.replace("\"classFilterMode\":false", "\"classFilterMode\":true"), "source", "source"},
+            {"topic", base, base.replace("\"topic\":\"topic\"", "\"topic\":\"other\""), "source", "source"},
+            {"expression-type", base, base.replace("\"expressionType\":\"SQL92\"", "\"expressionType\":\"TAG\""), "source", "source"},
+            {"tags-set", base, base.replace("\"beta\"", "\"gamma\""), "source", "source"},
+            {"code-set", base, base.replace("\"codeSet\":[7,11]", "\"codeSet\":[7,12]"), "source", "source"},
+            {"subscription-string", base, base.replace("\"subString\":\"tag\"", "\"subString\":\"other\""), "source", "source"}
+        }) {
+            SubscriptionData left = com.alibaba.fastjson2.JSON.parseObject(input[1], SubscriptionData.class);
+            SubscriptionData right = com.alibaba.fastjson2.JSON.parseObject(input[2], SubscriptionData.class);
+            left.setFilterClassSource(input[3]);
+            right.setFilterClassSource(input[4]);
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", input[0]);
+            item.put("leftInput", input[1]);
+            item.put("rightInput", input[2]);
+            item.put("leftFilterClassSource", input[3]);
+            item.put("rightFilterClassSource", input[4]);
+            item.put("equal", left.equals(right));
+            item.put("leftHashCode", left.hashCode());
+            item.put("rightHashCode", right.hashCode());
+            equalCases.add(item);
+        }
+        result.put("equalCases", equalCases);
+
+        List<Object> compareCases = new ArrayList<>();
+        for (String[] input : new String[][] {
+            {"null-concatenation", "{\"topic\":null,\"subString\":null}", "{\"topic\":\"null\",\"subString\":\"null\"}"},
+            {"utf16-order", "{\"topic\":\"\uE000\",\"subString\":\"x\"}", "{\"topic\":\"🚀\",\"subString\":\"x\"}"},
+            {"delimiter-collision", "{\"topic\":\"A@\",\"subString\":\"B\"}", "{\"topic\":\"A\",\"subString\":\"@B\"}"},
+            {"prefix", "{\"topic\":\"a\",\"subString\":\"\"}", "{\"topic\":\"a\",\"subString\":\"x\"}"}
+        }) {
+            SubscriptionData left = com.alibaba.fastjson2.JSON.parseObject(input[1], SubscriptionData.class);
+            SubscriptionData right = com.alibaba.fastjson2.JSON.parseObject(input[2], SubscriptionData.class);
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", input[0]);
+            item.put("leftInput", input[1]);
+            item.put("rightInput", input[2]);
+            item.put("comparison", left.compareTo(right));
+            compareCases.add(item);
+        }
+        result.put("compareCases", compareCases);
+        return result;
+    }
+
     private static Map<String, Object> ownerFieldCases() {
         Map<String, Object> result = new TreeMap<>();
         List<Object> producers = new ArrayList<>();
@@ -71,6 +171,7 @@ public final class RuntimeHeartbeatFixtures {
             Map<String, Object> item = new TreeMap<>();
             item.put("rawInput", input);
             item.put("groupNull", value.getGroupName() == null);
+            item.put("toString", value.toString());
             item.put("encodedHasGroup", encoded.containsKey("groupName"));
             producers.add(item);
         }
@@ -79,13 +180,15 @@ public final class RuntimeHeartbeatFixtures {
         for (String input : new String[] {
             "{}",
             "{\"groupName\":null,\"consumeType\":null,\"messageModel\":null,\"consumeFromWhere\":null,\"subscriptionDataSet\":null}",
-            "{\"groupName\":\"group\",\"consumeType\":\"CONSUME_ACTIVELY\",\"messageModel\":\"CLUSTERING\",\"consumeFromWhere\":\"CONSUME_FROM_LAST_OFFSET\",\"subscriptionDataSet\":[],\"unitMode\":true}"
+            "{\"groupName\":\"group\",\"consumeType\":\"CONSUME_ACTIVELY\",\"messageModel\":\"CLUSTERING\",\"consumeFromWhere\":\"CONSUME_FROM_LAST_OFFSET\",\"subscriptionDataSet\":[],\"unitMode\":true}",
+            "{\"groupName\":\"nested\",\"consumeType\":\"CONSUME_PASSIVELY\",\"messageModel\":\"BROADCASTING\",\"consumeFromWhere\":\"CONSUME_FROM_TIMESTAMP\",\"subscriptionDataSet\":[{\"topic\":\"topic\",\"subString\":\"tag\",\"tagsSet\":[\"tag\"],\"codeSet\":[7],\"subVersion\":42,\"expressionType\":\"SQL92\"}],\"unitMode\":false}"
         }) {
             ConsumerData value = com.alibaba.fastjson2.JSON.parseObject(input, ConsumerData.class);
             com.alibaba.fastjson2.JSONObject encoded = com.alibaba.fastjson2.JSON.parseObject(
                 com.alibaba.fastjson2.JSON.toJSONString(value));
             Map<String, Object> item = new TreeMap<>();
             item.put("rawInput", input);
+            item.put("toString", value.toString());
             item.put("groupNull", value.getGroupName() == null);
             item.put("consumeTypeNull", value.getConsumeType() == null);
             item.put("messageModelNull", value.getMessageModel() == null);
@@ -109,13 +212,14 @@ public final class RuntimeHeartbeatFixtures {
         for (String input : new String[] {
             "{}",
             "{\"clientID\":null,\"producerDataSet\":null,\"consumerDataSet\":null,\"heartbeatFingerprint\":0,\"withoutSub\":false}",
-            "{\"clientID\":\"client\",\"producerDataSet\":[{\"groupName\":\"p\"}],\"consumerDataSet\":[{\"groupName\":\"c\"}],\"heartbeatFingerprint\":7,\"withoutSub\":true}"
+            "{\"clientID\":\"client\",\"producerDataSet\":[{\"groupName\":\"p\"}],\"consumerDataSet\":[{\"groupName\":\"c\",\"subscriptionDataSet\":[{\"topic\":\"topic\",\"subString\":\"tag\",\"tagsSet\":[\"tag\"],\"codeSet\":[7],\"subVersion\":42,\"expressionType\":\"SQL92\"}]}],\"heartbeatFingerprint\":7,\"withoutSub\":true}"
         }) {
             HeartbeatData value = com.alibaba.fastjson2.JSON.parseObject(input, HeartbeatData.class);
             com.alibaba.fastjson2.JSONObject encoded = com.alibaba.fastjson2.JSON.parseObject(
                 com.alibaba.fastjson2.JSON.toJSONString(value));
             Map<String, Object> item = new TreeMap<>();
             item.put("rawInput", input);
+            item.put("toString", value.toString());
             item.put("clientNull", value.getClientID() == null);
             item.put("producersNull", value.getProducerDataSet() == null);
             item.put("consumersNull", value.getConsumerDataSet() == null);
@@ -330,11 +434,13 @@ public final class RuntimeHeartbeatFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "MQClientInstance.registerProducer/registerConsumer/prepareHeartbeatData/unregisterProducer/unregisterConsumer; HeartbeatData.computeHeartbeatFingerprint");
+        fixture.put("entrypoint", "MQClientInstance.registerProducer/registerConsumer/prepareHeartbeatData/unregisterProducer/unregisterConsumer; HeartbeatData.computeHeartbeatFingerprint/toString; ProducerData.toString; ConsumerData.toString; SubscriptionData.SUB_ALL/constructors/equals/hashCode/compareTo/toString");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
         fixture.put("multiplicityCases", multiplicityCases);
         fixture.put("subscriptionFieldCases", subscriptionFieldCases());
+        fixture.put("subscriptionConstructorCases", subscriptionConstructorCases());
+        fixture.put("subscriptionMethods", subscriptionMethods());
         fixture.put("ownerFieldCases", ownerFieldCases());
         fixture.put("heartbeatFieldCases", heartbeatFieldCases());
         fixture.put("fingerprintNullCases", fingerprintNullCases());

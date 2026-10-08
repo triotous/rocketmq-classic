@@ -3,7 +3,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SubscriptionData {
     #[serde(default, deserialize_with = "deserialize_null_default")]
@@ -30,6 +30,20 @@ pub struct SubscriptionData {
     pub filter_class_source: Option<String>,
 }
 
+impl PartialEq for SubscriptionData {
+    fn eq(&self, other: &Self) -> bool {
+        self.class_filter_mode == other.class_filter_mode
+            && self.topic == other.topic
+            && self.sub_string == other.sub_string
+            && self.tags_set == other.tags_set
+            && self.code_set == other.code_set
+            && self.sub_version == other.sub_version
+            && self.expression_type == other.expression_type
+    }
+}
+
+impl Eq for SubscriptionData {}
+
 impl Default for SubscriptionData {
     fn default() -> Self {
         Self {
@@ -54,8 +68,181 @@ impl Hash for SubscriptionData {
         hash_optional_set(&self.code_set, state);
         self.sub_version.hash(state);
         self.expression_type.hash(state);
-        self.filter_class_source.hash(state);
     }
+}
+
+impl SubscriptionData {
+    pub const SUB_ALL: &str = "*";
+
+    /// Mirrors the Java `(topic, subString)` constructor while retaining
+    /// Rust's explicit representation for nullable Java strings.
+    pub fn new(topic: Option<String>, sub_string: Option<String>) -> Self {
+        Self {
+            topic,
+            sub_string,
+            ..Self::default()
+        }
+    }
+
+    /// Java `SubscriptionData.hashCode`; subVersion and filterClassSource do
+    /// not participate even though subVersion is checked by `equals`.
+    pub fn java_hash_code(&self) -> i32 {
+        let mut hash = 1i32;
+        hash = hash
+            .wrapping_mul(31)
+            .wrapping_add(if self.class_filter_mode { 1231 } else { 1237 });
+        hash = hash
+            .wrapping_mul(31)
+            .wrapping_add(java_optional_set_hash(&self.code_set, |value| *value));
+        hash = hash.wrapping_mul(31).wrapping_add(
+            self.sub_string
+                .as_deref()
+                .map(java_string_hash_code)
+                .unwrap_or(0),
+        );
+        hash = hash
+            .wrapping_mul(31)
+            .wrapping_add(java_optional_set_hash(&self.tags_set, |value| {
+                java_string_hash_code(value)
+            }));
+        hash = hash.wrapping_mul(31).wrapping_add(
+            self.topic
+                .as_deref()
+                .map(java_string_hash_code)
+                .unwrap_or(0),
+        );
+        hash.wrapping_mul(31).wrapping_add(
+            self.expression_type
+                .as_deref()
+                .map(java_string_hash_code)
+                .unwrap_or(0),
+        )
+    }
+
+    /// Java `SubscriptionData.toString` field order and labels. Set contents
+    /// are sorted in Java string order because Java HashSet iteration order is
+    /// unspecified and Rust HashSet iteration is randomized.
+    pub fn java_to_string(&self) -> String {
+        format!(
+            "SubscriptionData [classFilterMode={}, topic={}, subString={}, tagsSet={}, codeSet={}, subVersion={}, expressionType={}]",
+            self.class_filter_mode,
+            java_nullable_string(&self.topic),
+            java_nullable_string(&self.sub_string),
+            java_string_set_to_string(&self.tags_set),
+            java_integer_set_to_string(&self.code_set),
+            self.sub_version,
+            java_nullable_string(&self.expression_type),
+        )
+    }
+
+    /// Java compares the concatenated `topic@subString` keys as UTF-16. A
+    /// null component is rendered as the literal `null` by StringBuilder.
+    pub fn java_compare_to(&self, other: &Self) -> i32 {
+        let left = format!(
+            "{}@{}",
+            java_nullable_string(&self.topic),
+            java_nullable_string(&self.sub_string)
+        );
+        let right = format!(
+            "{}@{}",
+            java_nullable_string(&other.topic),
+            java_nullable_string(&other.sub_string)
+        );
+        java_string_compare(&left, &right)
+    }
+}
+
+fn java_optional_set_hash<T>(
+    values: &Option<HashSet<T>>,
+    mut value_hash: impl FnMut(&T) -> i32,
+) -> i32 {
+    values.as_ref().map_or(0, |values| {
+        values
+            .iter()
+            .fold(0i32, |hash, value| hash.wrapping_add(value_hash(value)))
+    })
+}
+
+fn java_nullable_string(value: &Option<String>) -> &str {
+    value.as_deref().unwrap_or("null")
+}
+
+fn java_string_hash_code(value: &str) -> i32 {
+    value.encode_utf16().fold(0i32, |hash, unit| {
+        hash.wrapping_mul(31).wrapping_add(i32::from(unit))
+    })
+}
+
+fn java_string_compare(left: &str, right: &str) -> i32 {
+    let mut left = left.encode_utf16();
+    let mut right = right.encode_utf16();
+    loop {
+        match (left.next(), right.next()) {
+            (Some(left), Some(right)) if left != right => {
+                return i32::from(left) - i32::from(right);
+            }
+            (Some(_), Some(_)) => {}
+            (None, Some(_)) => return -(1 + right.count() as i32),
+            (Some(_), None) => return 1 + left.count() as i32,
+            (None, None) => return 0,
+        }
+    }
+}
+
+fn java_string_set_to_string(values: &Option<HashSet<String>>) -> String {
+    let Some(values) = values else {
+        return "null".to_owned();
+    };
+    let mut values = values.iter().collect::<Vec<_>>();
+    values.sort_by(|left, right| java_string_compare(left, right).cmp(&0));
+    format!(
+        "[{}]",
+        values
+            .into_iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
+}
+
+fn java_integer_set_to_string(values: &Option<HashSet<i32>>) -> String {
+    let Some(values) = values else {
+        return "null".to_owned();
+    };
+    let mut values = values.iter().copied().collect::<Vec<_>>();
+    values.sort_unstable();
+    format!(
+        "[{}]",
+        values
+            .into_iter()
+            .map(|value| value.to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
+}
+
+fn java_hash_set_to_string<T>(
+    values: &Option<HashSet<T>>,
+    mut item_to_string: impl FnMut(&T) -> String,
+) -> String {
+    let Some(values) = values else {
+        return "null".to_owned();
+    };
+    let mut values = values.iter().map(&mut item_to_string).collect::<Vec<_>>();
+    values.sort();
+    format!("[{}]", values.join(", "))
+}
+
+fn java_vec_to_string<T>(
+    values: &Option<Vec<T>>,
+    mut item_to_string: impl FnMut(&T) -> String,
+) -> String {
+    let Some(values) = values else {
+        return "null".to_owned();
+    };
+    let mut values = values.iter().map(&mut item_to_string).collect::<Vec<_>>();
+    values.sort();
+    format!("[{}]", values.join(", "))
 }
 
 fn hash_set<T: Hash, H: Hasher>(values: &HashSet<T>, state: &mut H) {
@@ -153,6 +340,15 @@ pub struct ProducerData {
     pub group_name: Option<String>,
 }
 
+impl ProducerData {
+    pub fn java_to_string(&self) -> String {
+        format!(
+            "ProducerData [groupName={}]",
+            java_nullable_string(&self.group_name)
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsumerData {
@@ -197,6 +393,57 @@ impl Hash for ConsumerData {
     }
 }
 
+impl ConsumerData {
+    pub fn java_to_string(&self) -> String {
+        format!(
+            "ConsumerData [groupName={}, consumeType={}, messageModel={}, consumeFromWhere={}, unitMode={}, subscriptionDataSet={}]",
+            java_nullable_string(&self.group_name),
+            self.consume_type
+                .map(consume_type_java_name)
+                .unwrap_or("null"),
+            self.message_model
+                .map(message_model_java_name)
+                .unwrap_or("null"),
+            self.consume_from_where
+                .map(consume_from_where_java_name)
+                .unwrap_or("null"),
+            self.unit_mode,
+            java_hash_set_to_string(&self.subscription_data_set, |subscription| {
+                subscription.java_to_string()
+            }),
+        )
+    }
+}
+
+fn consume_type_java_name(value: ConsumeType) -> &'static str {
+    match value {
+        ConsumeType::ConsumeActively => "CONSUME_ACTIVELY",
+        ConsumeType::ConsumePassively => "CONSUME_PASSIVELY",
+        ConsumeType::ConsumePop => "CONSUME_POP",
+    }
+}
+
+fn message_model_java_name(value: MessageModel) -> &'static str {
+    match value {
+        MessageModel::Clustering => "CLUSTERING",
+        MessageModel::Broadcasting => "BROADCASTING",
+        MessageModel::LiteSelective => "LITE_SELECTIVE",
+    }
+}
+
+fn consume_from_where_java_name(value: ConsumeFromWhere) -> &'static str {
+    match value {
+        ConsumeFromWhere::ConsumeFromLastOffset => "CONSUME_FROM_LAST_OFFSET",
+        ConsumeFromWhere::ConsumeFromLastOffsetAndFromMinWhenBootFirst => {
+            "CONSUME_FROM_LAST_OFFSET_AND_FROM_MIN_WHEN_BOOT_FIRST"
+        }
+        ConsumeFromWhere::ConsumeFromMinOffset => "CONSUME_FROM_MIN_OFFSET",
+        ConsumeFromWhere::ConsumeFromMaxOffset => "CONSUME_FROM_MAX_OFFSET",
+        ConsumeFromWhere::ConsumeFromFirstOffset => "CONSUME_FROM_FIRST_OFFSET",
+        ConsumeFromWhere::ConsumeFromTimestamp => "CONSUME_FROM_TIMESTAMP",
+    }
+}
+
 fn empty_subscriptions() -> Option<HashSet<SubscriptionData>> {
     Some(HashSet::new())
 }
@@ -236,6 +483,17 @@ impl Default for HeartbeatData {
 }
 
 impl HeartbeatData {
+    /// Java `HeartbeatData.toString`; set ordering is normalized because the
+    /// source uses HashSet iteration with unspecified order.
+    pub fn java_to_string(&self) -> String {
+        format!(
+            "HeartbeatData [clientID={}, producerDataSet={}, consumerDataSet={}]",
+            java_nullable_string(&self.client_id),
+            java_hash_set_to_string(&self.producer_data_set, ProducerData::java_to_string),
+            java_vec_to_string(&self.consumer_data_set, ConsumerData::java_to_string),
+        )
+    }
+
     /// Computes the client-local heartbeat fingerprint using Java 5.5.1's
     /// JSON-copy defaults, normalized fields and Java UTF-16 string hash.
     pub fn compute_heartbeat_fingerprint(&self) -> Result<i32, serde_json::Error> {
@@ -340,6 +598,117 @@ mod tests {
     }
 
     #[test]
+    fn subscription_constant_and_constructors_match_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
+                .unwrap();
+        assert_eq!(
+            SubscriptionData::SUB_ALL,
+            fixture["subscriptionMethods"]["subAll"]
+        );
+        for case in fixture["subscriptionConstructorCases"].as_array().unwrap() {
+            let value = match case["case"].as_str().unwrap() {
+                "no-argument" => SubscriptionData::default(),
+                "two-argument" => SubscriptionData::new(Some("topic".into()), Some("tag".into())),
+                "two-null-arguments" => SubscriptionData::new(None, None),
+                name => panic!("unknown SubscriptionData constructor case: {name}"),
+            };
+            assert_eq!(value.topic, case["topic"].as_str().map(str::to_owned));
+            assert_eq!(
+                value.sub_string,
+                case["subString"].as_str().map(str::to_owned)
+            );
+            assert_eq!(
+                value.tags_set.as_ref().is_some_and(HashSet::is_empty),
+                case["tagsEmpty"]
+            );
+            assert_eq!(
+                value.code_set.as_ref().is_some_and(HashSet::is_empty),
+                case["codeEmpty"]
+            );
+            assert_eq!(
+                value.expression_type,
+                case["expressionType"].as_str().map(str::to_owned)
+            );
+            assert_eq!(value.sub_version > 0, case["versionCurrent"]);
+        }
+    }
+
+    #[test]
+    fn subscription_equality_matches_invoked_java_method() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
+                .unwrap();
+        for case in fixture["subscriptionMethods"]["equalCases"]
+            .as_array()
+            .unwrap()
+        {
+            let mut left: SubscriptionData =
+                serde_json::from_str(case["leftInput"].as_str().unwrap()).unwrap();
+            let mut right: SubscriptionData =
+                serde_json::from_str(case["rightInput"].as_str().unwrap()).unwrap();
+            left.filter_class_source = case["leftFilterClassSource"].as_str().map(str::to_owned);
+            right.filter_class_source = case["rightFilterClassSource"].as_str().map(str::to_owned);
+            assert_eq!(left == right, case["equal"], "{}", case["case"]);
+        }
+    }
+
+    #[test]
+    fn subscription_methods_match_invoked_java_hash_text_and_comparison() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
+                .unwrap();
+        let methods = &fixture["subscriptionMethods"];
+        for case in methods["values"].as_array().unwrap() {
+            let mut value: SubscriptionData =
+                serde_json::from_str(case["rawInput"].as_str().unwrap()).unwrap();
+            value.filter_class_source = Some("ignored-in-text-and-equality".to_owned());
+            assert_eq!(
+                value.java_hash_code(),
+                case["hashCode"].as_i64().unwrap() as i32,
+                "{} hashCode",
+                case["case"]
+            );
+            assert_eq!(
+                value.java_to_string(),
+                case["toString"],
+                "{} toString",
+                case["case"]
+            );
+        }
+        for case in methods["equalCases"].as_array().unwrap() {
+            let left: SubscriptionData =
+                serde_json::from_str(case["leftInput"].as_str().unwrap()).unwrap();
+            let right: SubscriptionData =
+                serde_json::from_str(case["rightInput"].as_str().unwrap()).unwrap();
+            assert_eq!(
+                left.java_hash_code(),
+                case["leftHashCode"].as_i64().unwrap() as i32,
+                "{} left hashCode",
+                case["case"]
+            );
+            assert_eq!(
+                right.java_hash_code(),
+                case["rightHashCode"].as_i64().unwrap() as i32,
+                "{} right hashCode",
+                case["case"]
+            );
+        }
+        for case in methods["compareCases"].as_array().unwrap() {
+            let left: SubscriptionData =
+                serde_json::from_str(case["leftInput"].as_str().unwrap()).unwrap();
+            let right: SubscriptionData =
+                serde_json::from_str(case["rightInput"].as_str().unwrap()).unwrap();
+            assert_eq!(
+                left.java_compare_to(&right),
+                case["comparison"].as_i64().unwrap() as i32,
+                "{} compareTo",
+                case["case"]
+            );
+        }
+    }
+
+    #[test]
     fn heartbeat_owner_fields_match_invoked_java_nulls_and_defaults() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
@@ -350,6 +719,7 @@ mod tests {
                 serde_json::from_str(case["rawInput"].as_str().unwrap()).unwrap();
             let encoded = serde_json::to_value(&value).unwrap();
             assert_eq!(value.group_name.is_none(), case["groupNull"]);
+            assert_eq!(value.java_to_string(), case["toString"]);
             assert_eq!(encoded.get("groupName").is_some(), case["encodedHasGroup"]);
         }
         for case in cases["consumers"].as_array().unwrap() {
@@ -357,6 +727,7 @@ mod tests {
                 serde_json::from_str(case["rawInput"].as_str().unwrap()).unwrap();
             let encoded = serde_json::to_value(&value).unwrap();
             assert_eq!(value.group_name.is_none(), case["groupNull"]);
+            assert_eq!(value.java_to_string(), case["toString"]);
             assert_eq!(value.consume_type.is_none(), case["consumeTypeNull"]);
             assert_eq!(value.message_model.is_none(), case["messageModelNull"]);
             assert_eq!(
@@ -396,6 +767,7 @@ mod tests {
             let value: HeartbeatData =
                 serde_json::from_str(case["rawInput"].as_str().unwrap()).unwrap();
             let encoded = serde_json::to_value(&value).unwrap();
+            assert_eq!(value.java_to_string(), case["toString"]);
             assert_eq!(value.client_id.is_none(), case["clientNull"]);
             assert_eq!(value.producer_data_set.is_none(), case["producersNull"]);
             assert_eq!(value.consumer_data_set.is_none(), case["consumersNull"]);

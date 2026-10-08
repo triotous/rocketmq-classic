@@ -187,6 +187,21 @@ The Java no-argument DTO constructors map to Rust `Default`; copy constructors m
 | `TopicRouteData.topicRouteDataChanged` | `TopicRouteData::java_topic_route_data_changed` | Eleven actual Java cases cover unordered/equal lists, null-old, null list entries and null broker names; Rust returns typed errors for corresponding Java sort exceptions, and `RouteCache` calls the same method. |
 | `TopicRouteData` copy constructor / `cloneTopicRouteData` / `deepCloneTopicRouteData` | `java_copy_constructed` / `clone_topic_route_data` / `deep_clone_topic_route_data`; raw runtime aliases map to `TopicRouteDataHandle` | Eight actual Java cases cover values and null failures. Rust returns owned nested values for both clone operations; live raw table shared DTO identity remains represented separately by `TopicRouteDataHandle`. |
 
+## Heartbeat DTO public methods
+
+Java bean getters/setters map to the native DTO's public fields. `SubscriptionData.filterClassSource` remains retained but is omitted from JSON and from Java equality/hash/text behavior. Java `HashSet` iteration order is unspecified; native diagnostic text sorts set elements for deterministic output.
+
+| Java public API | Rust counterpart | Evidence / disposition |
+| --- | --- | --- |
+| `SubscriptionData()` / `SubscriptionData(String, String)` / `SUB_ALL` | `SubscriptionData::default/new(Option<String>, Option<String>)` / `SubscriptionData::SUB_ALL` | Three actual Java constructor cases include null arguments; `SUB_ALL` is checked as `"*"`. Constructor defaults, empty sets and current subVersion are compared. |
+| `SubscriptionData.equals` / `hashCode` | source-compatible `PartialEq/Eq` / `java_hash_code` | Actual Java pairs cover ignored `filterClassSource`, compared-but-unhashed `subVersion`, null versus empty sets, and each compared field; exact Java hashes cover Unicode and set sums. |
+| `SubscriptionData.compareTo` | `java_compare_to` | Four actual Java pairs cover null-to-`"null"` concatenation, UTF-16 ordering, `@` delimiter collisions, and prefix length results. |
+| `SubscriptionData.toString` | `java_to_string` | Actual Java values cover defaults, explicit nulls, Unicode and populated sets; Rust sorts set text because Java HashSet order is unspecified. |
+| `ProducerData.toString` / `ConsumerData.toString` / `HeartbeatData.toString` | each DTO's `java_to_string` | Actual default, null and populated Java DTO cases include nested subscription text. Rust uses deterministic set ordering and retains heartbeat consumer multiplicity. |
+| `HeartbeatData.computeHeartbeatFingerprint` | `compute_heartbeat_fingerprint` | Seven actual Java runtime fingerprints and explicit null collection/primitive cases; the runtime delegates to this public method. |
+
+The heartbeat fixture SHA-256 is `8846dc5542616264485fa10759f101d7af14588869d954cbbe73bfcbc3dd4f45`. The method/constructor tests close these heartbeat DTO rows, not remaining source/input or whole-phase acceptance.
+
 ## Other runtime exports, reverse inventory
 
 Cleanup audit update `75c2729` confirms raw null Broker maps are skipped, matching pinned source guard and two actual runtime cases; no production/API change. Existing raw table reads remain preserved while global addresses are cleaned. Route hash at that stage was `a1e55afbdda8db505efe05f13eb20687a21aa88ecd108bcfc1df6676a20ef558`; reviewed focused core74pass/1ignored/runtime7/topicTable3/workspace/exact Clippy/Maven exit0, fmt/diff/comparator/manifest22 pass. This closes the specific null-map cleanup uncertainty, not other DTO/mutable getter/default-map audits; the nullable lower-model fixes are recorded separately as implemented.
