@@ -407,6 +407,7 @@ async fn route_success_unknown_status_and_malformed_success() {
     let route = api
         .get_topic_route("test-topic", Instant::now() + Duration::from_secs(2))
         .await
+        .unwrap()
         .unwrap();
     let queues = route.publish_queues("test-topic");
     assert_eq!(queues.len(), 2);
@@ -436,7 +437,11 @@ async fn route_success_unknown_status_and_malformed_success() {
             .await;
         match (code, body) {
             (response::SUCCESS, Some(body)) if body.starts_with(b"{\"queueDatas\"") => {
-                assert!(result.unwrap().publish_queues("test-topic").is_empty());
+                assert!(result
+                    .unwrap()
+                    .unwrap()
+                    .publish_queues("test-topic")
+                    .is_empty());
             }
             (response::SUCCESS, _) => assert!(matches!(result, Err(RpcError::MalformedResponse { .. }))),
             (expected, _) => assert!(matches!(result, Err(RpcError::Response { code, peer, request_code: request::GET_ROUTEINFO_BY_TOPIC, .. }) if code == expected && peer == client.get_name_server_address_list().unwrap()[0])),
@@ -537,6 +542,7 @@ async fn route_failover_returns_success_from_second_nameserver_within_original_d
             .get_topic_route("test-topic", Instant::now() + Duration::from_secs(1)),
     )
     .await
+    .unwrap()
     .unwrap()
     .unwrap();
     assert!(route.publish_queues("test-topic").is_empty());

@@ -22,7 +22,7 @@ impl MQClientApi {
     pub async fn get_default_topic_route(
         &self,
         deadline: Instant,
-    ) -> Result<TopicRouteData, RpcError> {
+    ) -> Result<Option<TopicRouteData>, RpcError> {
         self.get_topic_route("TBW102", deadline).await
     }
 
@@ -30,7 +30,7 @@ impl MQClientApi {
         &self,
         topic: &str,
         deadline: Instant,
-    ) -> Result<TopicRouteData, RpcError> {
+    ) -> Result<Option<TopicRouteData>, RpcError> {
         self.get_topic_route_nullable(Some(topic), deadline).await
     }
 
@@ -38,7 +38,7 @@ impl MQClientApi {
         &self,
         topic: Option<&str>,
         deadline: Instant,
-    ) -> Result<TopicRouteData, RpcError> {
+    ) -> Result<Option<TopicRouteData>, RpcError> {
         let mut fields = HeaderMap::new();
         if let Some(topic) = topic {
             GetRouteInfoRequestHeader {
@@ -72,10 +72,12 @@ impl MQClientApi {
             peer: peer.clone(),
             reason: MISSING_ROUTE_BODY.into(),
         })?;
-        TopicRouteData::java_decode(&body).map_err(|error| RpcError::MalformedResponse {
-            request_code: request::GET_ROUTEINFO_BY_TOPIC,
-            peer,
-            reason: error.to_string(),
+        TopicRouteData::java_decode_nullable(Some(&body)).map_err(|error| {
+            RpcError::MalformedResponse {
+                request_code: request::GET_ROUTEINFO_BY_TOPIC,
+                peer,
+                reason: error.to_string(),
+            }
         })
     }
 }

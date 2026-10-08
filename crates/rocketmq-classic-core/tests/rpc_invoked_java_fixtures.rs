@@ -147,7 +147,10 @@ async fn java_invoked_cases_match_rust_requests_and_outcomes() {
         let outcome = match name {
             name if name.starts_with("route-") => {
                 match api.get_topic_route("oracle-topic", deadline).await {
-                    Ok(route) => format!("orderTopicConf={}", route.order_topic_conf.unwrap()),
+                    Ok(Some(route)) => {
+                        format!("orderTopicConf={}", route.order_topic_conf.unwrap())
+                    }
+                    Ok(None) => "null".into(),
                     Err(RpcError::Response { code, .. }) => {
                         format!("MQClientException;code={code}")
                     }

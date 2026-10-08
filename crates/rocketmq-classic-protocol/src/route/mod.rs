@@ -174,6 +174,37 @@ fn parse_java_route_json<T: DeserializeOwned>(input: &str) -> Result<T, serde_js
     serde_json::from_str(&normalized)
 }
 
+fn parse_java_route_json_nullable<T: DeserializeOwned>(
+    input: Option<&str>,
+) -> Result<Option<T>, serde_json::Error> {
+    let Some(input) = input else {
+        return Ok(None);
+    };
+    let normalized = quote_unquoted_integer_object_keys(input);
+    serde_json::from_str(&normalized)
+}
+
+fn decode_java_route_json_nullable<T: DeserializeOwned>(
+    data: Option<&[u8]>,
+) -> Result<Option<T>, serde_json::Error> {
+    let Some(data) = data else {
+        return Ok(None);
+    };
+    let input = String::from_utf8_lossy(data);
+    parse_java_route_json_nullable(Some(&input))
+}
+
+fn decode_java_route_json_list_nullable<T: DeserializeOwned>(
+    data: Option<&[u8]>,
+) -> Result<Option<Vec<Option<T>>>, serde_json::Error> {
+    let Some(data) = data else {
+        return Ok(None);
+    };
+    let input = String::from_utf8_lossy(data);
+    let normalized = quote_unquoted_integer_object_keys(&input);
+    serde_json::from_str(&normalized)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct QueueData {
@@ -986,14 +1017,33 @@ impl TopicQueueMappingInfo {
         parse_java_route_json(&String::from_utf8_lossy(data))
     }
 
+    /// Decodes the inherited nullable Java utility form, including null bytes
+    /// and JSON `null` as a null result.
+    pub fn java_decode_nullable(data: Option<&[u8]>) -> Result<Option<Self>, serde_json::Error> {
+        decode_java_route_json_nullable(data)
+    }
+
     /// Decodes the inherited Java `RemotingSerializable.decodeList` form.
     pub fn java_decode_list(data: &[u8]) -> Result<Vec<Self>, serde_json::Error> {
         parse_java_route_json(&String::from_utf8_lossy(data))
     }
 
+    /// Decodes the inherited nullable Java list utility, preserving null list
+    /// results and null members.
+    pub fn java_decode_list_nullable(
+        data: Option<&[u8]>,
+    ) -> Result<Option<Vec<Option<Self>>>, serde_json::Error> {
+        decode_java_route_json_list_nullable(data)
+    }
+
     /// Decodes the inherited Java `RemotingSerializable.fromJson` form.
     pub fn java_from_json(json: &str) -> Result<Self, serde_json::Error> {
         parse_java_route_json(json)
+    }
+
+    /// Decodes the inherited nullable Java `fromJson` utility form.
+    pub fn java_from_json_nullable(json: Option<&str>) -> Result<Option<Self>, serde_json::Error> {
+        parse_java_route_json_nullable(json)
     }
 
     /// Returns the pinned Java 5.5.1 `TopicQueueMappingInfo.hashCode` result.
@@ -1379,14 +1429,33 @@ impl TopicRouteData {
         parse_java_route_json(&String::from_utf8_lossy(data))
     }
 
+    /// Decodes the inherited nullable Java utility form, including null bytes
+    /// and JSON `null` as a null result.
+    pub fn java_decode_nullable(data: Option<&[u8]>) -> Result<Option<Self>, serde_json::Error> {
+        decode_java_route_json_nullable(data)
+    }
+
     /// Decodes the inherited Java `RemotingSerializable.decodeList` form.
     pub fn java_decode_list(data: &[u8]) -> Result<Vec<Self>, serde_json::Error> {
         parse_java_route_json(&String::from_utf8_lossy(data))
     }
 
+    /// Decodes the inherited nullable Java list utility, preserving null list
+    /// results and null members.
+    pub fn java_decode_list_nullable(
+        data: Option<&[u8]>,
+    ) -> Result<Option<Vec<Option<Self>>>, serde_json::Error> {
+        decode_java_route_json_list_nullable(data)
+    }
+
     /// Decodes the inherited Java `RemotingSerializable.fromJson` form.
     pub fn java_from_json(json: &str) -> Result<Self, serde_json::Error> {
         parse_java_route_json(json)
+    }
+
+    /// Decodes the inherited nullable Java `fromJson` utility form.
+    pub fn java_from_json_nullable(json: Option<&str>) -> Result<Option<Self>, serde_json::Error> {
+        parse_java_route_json_nullable(json)
     }
 
     /// Copies the DTO using the pinned Java `TopicRouteData` copy-constructor

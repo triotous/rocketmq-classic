@@ -583,7 +583,10 @@ impl ClientRuntime {
                 // Java includes null in its HashSet route union. The request
                 // header omits the null topic field on the wire.
                 match self.api.get_topic_route_nullable(None, deadline).await {
-                    Ok(_) => return Err(RuntimeError::InvalidRoute("null topic route key")),
+                    Ok(None) => {}
+                    Ok(Some(_)) => {
+                        return Err(RuntimeError::InvalidRoute("null topic route key"));
+                    }
                     Err(error) if MQClientApi::route_error_is_client_exception(&error) => {}
                     Err(error) => return Err(error.into()),
                 }
@@ -623,12 +626,14 @@ impl ClientRuntime {
         } else {
             self.api.get_topic_route(topic, deadline).await
         };
-        let mut route = match fetched {
+        let Some(mut route) = (match fetched {
             Ok(route) => route,
             // Java catches MQClientException and returns false, but propagates
             // transport failure. Rejection must not discard an existing route.
             Err(error) if MQClientApi::route_error_is_client_exception(&error) => return Ok(false),
             Err(error) => return Err(error.into()),
+        }) else {
+            return Ok(false);
         };
         if let Some(limit) = default_topic_queue_nums {
             for data in route
