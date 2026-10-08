@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
 
 use super::TransportMode;
 use crate::error::TransportError;
@@ -32,24 +32,110 @@ impl From<SocksProxyConfig> for ParsedProxyRoute {
 }
 
 #[derive(Deserialize)]
-struct RawProxyRoute {
-    #[serde(default, deserialize_with = "java_string_field")]
-    addr: Option<String>,
-    #[serde(default, deserialize_with = "java_string_field")]
-    username: Option<String>,
-    #[serde(default, deserialize_with = "java_string_field")]
-    password: Option<String>,
+#[serde(transparent)]
+struct RawProxyRoute(HashMap<String, Option<serde_json::Value>>);
+
+impl RawProxyRoute {
+    fn java_string_field(&self, name: &str) -> Option<String> {
+        self.0
+            .get(name)
+            .and_then(Option::as_ref)
+            .map(|value| match value {
+                serde_json::Value::String(value) => value.clone(),
+                other => other.to_string(),
+            })
+    }
 }
 
-fn java_string_field<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
-    Ok(value.map(|value| match value {
-        serde_json::Value::String(value) => value,
-        other => other.to_string(),
-    }))
+fn contains_fastjson_rejected_literal(input: &str) -> bool {
+    let bytes = input.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'"' | b'\'' => {
+                let quote = bytes[index];
+                index += 1;
+                while index < bytes.len() {
+                    if bytes[index] == b'\\' {
+                        index = (index + 2).min(bytes.len());
+                    } else if bytes[index] == quote {
+                        index += 1;
+                        break;
+                    } else {
+                        index += 1;
+                    }
+                }
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'/') => {
+                index += 2;
+                while index < bytes.len() && bytes[index] != b'\n' {
+                    index += 1;
+                }
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'*') => {
+                index += 2;
+                while index + 1 < bytes.len() && !(bytes[index] == b'*' && bytes[index + 1] == b'/')
+                {
+                    index += 1;
+                }
+                index = (index + 2).min(bytes.len());
+            }
+            b'0' if (index == 0 || !is_number_token_byte(bytes[index - 1]))
+                && matches!(bytes.get(index + 1), Some(b'x' | b'X'))
+                && bytes.get(index + 2).is_some_and(u8::is_ascii_hexdigit) =>
+            {
+                let mut end = index + 2;
+                while bytes.get(end).is_some_and(u8::is_ascii_hexdigit) {
+                    end += 1;
+                }
+                if bytes
+                    .get(end)
+                    .is_none_or(|byte| !is_number_token_byte(*byte))
+                {
+                    let mut next = end;
+                    while bytes.get(next).is_some_and(u8::is_ascii_whitespace) {
+                        next += 1;
+                    }
+                    if bytes.get(next) != Some(&b':') {
+                        return true;
+                    }
+                }
+                index = end;
+            }
+            b'a'..=b'z' | b'A'..=b'Z' | b'_' | b'$'
+                if index == 0 || !is_identifier_token_byte(bytes[index - 1]) =>
+            {
+                let start = index;
+                index += 1;
+                while bytes
+                    .get(index)
+                    .is_some_and(|byte| is_identifier_token_byte(*byte))
+                {
+                    index += 1;
+                }
+                let token = &bytes[start..index];
+                if matches!(token, b"NaN" | b"undefined") {
+                    let mut next = index;
+                    while bytes.get(next).is_some_and(u8::is_ascii_whitespace) {
+                        next += 1;
+                    }
+                    if bytes.get(next) != Some(&b':') {
+                        return true;
+                    }
+                }
+            }
+            _ => index += 1,
+        }
+    }
+    false
+}
+
+fn is_number_token_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$' | b'.')
+}
+
+fn is_identifier_token_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$')
 }
 
 impl SocksProxyConfig {
@@ -206,6 +292,11 @@ impl ClientConfig {
         if self.socks_proxy_config.is_empty() || self.socks_proxy_config.trim() == "null" {
             return Ok(HashMap::new());
         }
+        if contains_fastjson_rejected_literal(&self.socks_proxy_config) {
+            return Err(TransportError::InvalidConfiguration(
+                "Fastjson SOCKS parser rejects this JSON5 literal".into(),
+            ));
+        }
         let parsed: Option<HashMap<String, Option<RawProxyRoute>>> =
             json5::from_str(&self.socks_proxy_config)
                 .map_err(|error| TransportError::InvalidConfiguration(error.to_string()))?;
@@ -215,11 +306,11 @@ impl ClientConfig {
             .map(|(cidr, entry)| {
                 let route = match entry {
                     None => ParsedProxyRoute::Direct,
-                    Some(raw) => match raw.addr {
+                    Some(raw) => match raw.java_string_field("addr") {
                         Some(address) => ParsedProxyRoute::Proxy(SocksProxyConfig {
                             address,
-                            username: raw.username,
-                            password: raw.password,
+                            username: raw.java_string_field("username"),
+                            password: raw.java_string_field("password"),
                         }),
                         None => ParsedProxyRoute::MissingAddress,
                     },
@@ -380,6 +471,25 @@ mod tests {
     }
 
     #[test]
+    fn fastjson_literal_guard_ignores_quoted_and_comment_text() {
+        assert!(super::contains_fastjson_rejected_literal(
+            r#"{"10.0.0.0/8":{"addr":0x2a}}"#
+        ));
+        assert!(super::contains_fastjson_rejected_literal(
+            r#"{"10.0.0.0/8":{"addr":NaN}}"#
+        ));
+        assert!(!super::contains_fastjson_rejected_literal(
+            r#"{"10.0.0.0/8":{"addr":"0x2a"}}"#
+        ));
+        assert!(!super::contains_fastjson_rejected_literal(
+            r#"{/* NaN and 0x2a are comment text */"10.0.0.0/8":{"addr":"proxy"}}"#
+        ));
+        assert!(!super::contains_fastjson_rejected_literal(
+            r#"{0x2a:{"addr":"proxy"}}"#
+        ));
+    }
+
+    #[test]
     fn fastjson_constructor_inputs_preserve_matched_route_behavior() {
         let mut config = ClientConfig::default();
         config.set_socks_proxy_config(
@@ -416,12 +526,7 @@ mod tests {
             let mut config = ClientConfig::default();
             config.set_socks_proxy_config(case["input"].as_str().unwrap());
             let parsed = config.parse_socks_proxy_config();
-            assert_eq!(
-                parsed.is_ok(),
-                case["outcome"] == "OK",
-                "{}",
-                case["input"]
-            );
+            assert_eq!(parsed.is_ok(), case["outcome"] == "OK", "{}", case["input"]);
             if case["outcome"] != "OK" {
                 continue;
             }
