@@ -905,6 +905,51 @@ public final class RuntimeRouteFixtures {
         return cases;
     }
 
+    private static List<Object> topicRouteDataMethodCases() {
+        String populated = "{\"orderTopicConf\":\"broker:2\",\"queueDatas\":[{\"brokerName\":\"broker\","
+            + "\"readQueueNums\":2,\"writeQueueNums\":2,\"perm\":6,\"topicSysFlag\":1}],"
+            + "\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\","
+            + "\"brokerAddrs\":{\"0\":\"master:10911\"},\"zoneName\":\"zone\",\"enableActingMaster\":false}],"
+            + "\"filterServerTable\":{\"broker\":[\"filter-a\",\"filter-b\"]},"
+            + "\"topicQueueMappingByBroker\":{\"broker\":{\"topic\":\"topic\",\"scope\":\"__global__\","
+            + "\"totalQueues\":2,\"bname\":\"broker\",\"epoch\":1,\"dirty\":false,\"currIdMap\":{\"0\":0,\"1\":1}}}}";
+        String metadataOnly = populated.replace("\"cluster\":\"cluster\"", "\"cluster\":\"other\"")
+            .replace("\"zoneName\":\"zone\"", "\"zoneName\":\"other\"")
+            .replace("\"enableActingMaster\":false", "\"enableActingMaster\":true");
+        String differentQueue = populated.replace("\"perm\":6", "\"perm\":4");
+        String nullCollections = "{\"queueDatas\":null,\"brokerDatas\":null,\"filterServerTable\":null,"
+            + "\"topicQueueMappingByBroker\":null}";
+        String emptyCollections = "{\"queueDatas\":[],\"brokerDatas\":[],\"filterServerTable\":{},"
+            + "\"topicQueueMappingByBroker\":{}}";
+        String[][] pairs = new String[][] {
+            {"{}", "{}"},
+            {nullCollections, emptyCollections},
+            {populated, metadataOnly},
+            {populated, differentQueue}
+        };
+        List<Object> cases = new ArrayList<>();
+        for (String[] pair : pairs) {
+            org.apache.rocketmq.remoting.protocol.route.TopicRouteData left =
+                com.alibaba.fastjson2.JSON.parseObject(pair[0],
+                    org.apache.rocketmq.remoting.protocol.route.TopicRouteData.class);
+            org.apache.rocketmq.remoting.protocol.route.TopicRouteData right =
+                com.alibaba.fastjson2.JSON.parseObject(pair[1],
+                    org.apache.rocketmq.remoting.protocol.route.TopicRouteData.class);
+            Map<String, Object> item = new TreeMap<>();
+            item.put("left", com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(left,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringKeyAsString)));
+            item.put("right", com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(right,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringKeyAsString)));
+            item.put("equals", left.equals(right));
+            item.put("leftHashCode", left.hashCode());
+            item.put("rightHashCode", right.hashCode());
+            cases.add(item);
+        }
+        return cases;
+    }
+
     private static List<Object> brokerDataCompareToCases() {
         List<Object> cases = new ArrayList<>();
         String[][] pairs = new String[][] {
@@ -1100,6 +1145,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("brokerDataHashCode", brokerDataHashCodeCases());
         fixture.put("queueDataMethods", queueDataMethodCases());
         fixture.put("topicQueueMappingMethods", topicQueueMappingMethodsCases());
+        fixture.put("topicRouteDataMethods", topicRouteDataMethodCases());
         fixture.put("brokerDataCompareTo", brokerDataCompareToCases());
         fixture.put("topicRouteDataChanged", topicRouteDataChangedCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
