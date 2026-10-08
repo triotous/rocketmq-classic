@@ -655,7 +655,15 @@ public final class RuntimeConfigFixtures {
             "{\"10.0.0.0/8\":{\"addr\":null}}",
             "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\",\"username\":123}}",
             "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\",\"password\":false}}",
-            "{\"10.0.0.0/8\":{\"addr\":[]}}"};
+            "{\"10.0.0.0/8\":{\"addr\":[]}}",
+            "{\"10.0.0.0/8\":{addr:'proxy:1080',username:user,password:pass}}",
+            "{\"10.0.0.0/8\":{\"addr\":0x2a}}",
+            "{\"10.0.0.0/8\":{\"addr\":undefined}}",
+            "{\"10.0.0.0/8\":{\"addr\":NaN}}",
+            "{\"10.0.0.0/8\":{\"addr\":new Date(0)}}",
+            "{\"10.0.0.0/8\":{\"addr\":\"first\",\"addr\":\"last\"}}",
+            "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"} // route comment\n}",
+            "{\"10.0.0.0/8\":{\"addr\":\"proxy\\x3a1080\"}}"};
         for (int i = 0; i < inputs.length; i++) {
             ClientConfig config = new ClientConfig();
             config.setClientIP("socks-construction-" + i);
@@ -668,7 +676,7 @@ public final class RuntimeConfigFixtures {
                 runtime = new org.apache.rocketmq.client.impl.factory.MQClientInstance(config, 0, config.buildMQClientId());
                 item.put("outcome", "OK");
                 item.put("rawPreserved", java.util.Objects.equals(inputs[i], runtime.getNettyClientConfig().getSocksProxyConfig()));
-                if (i >= 19) {
+                if (i >= 19 && "OK".equals(item.get("outcome"))) {
                     java.lang.reflect.Field remotingField = org.apache.rocketmq.client.impl.MQClientAPIImpl.class.getDeclaredField("remotingClient");
                     remotingField.setAccessible(true);
                     Object remoting = remotingField.get(runtime.getMQClientAPIImpl());
