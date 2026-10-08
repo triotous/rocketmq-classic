@@ -1539,6 +1539,22 @@ public final class RuntimeRouteFixtures {
         for (String address : new String[] {"broker:10911", "[2001:db8::1]:10911", "2001:db8::1:10911"}) {
             vip.put(address, MixAll.brokerVIPChannel(true, address));
         }
+        List<Object> vipCases = new ArrayList<>();
+        for (String address : new String[] {"missing", "", ":10911", "broker:2", "broker:0", "broker:-1",
+            "broker:65536", "broker:2147483647", "broker:-2147483648", "broker:+2", "broker: 2",
+            "broker:١٠٩١١", "not:ipv6:10911", "broker:", "broker:999999999999"}) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("address", address);
+            item.put("disabled", MixAll.brokerVIPChannel(false, address));
+            try {
+                item.put("enabledOutcome", "OK");
+                item.put("enabledValue", MixAll.brokerVIPChannel(true, address));
+            } catch (RuntimeException error) {
+                item.put("enabledOutcome", error.getClass().getSimpleName());
+                item.put("enabledValue", null);
+            }
+            vipCases.add(item);
+        }
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
@@ -1546,6 +1562,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
         fixture.put("vip", vip);
+        fixture.put("vipCases", vipCases);
         List<Integer> digitZeros = new ArrayList<>();
         for (int codeUnit = 0; codeUnit <= Character.MAX_VALUE; codeUnit++) {
             if (Character.digit((char) codeUnit, 10) == 0) digitZeros.add(codeUnit);

@@ -1535,6 +1535,26 @@ mod tests {
     }
 
     #[test]
+    fn vip_helper_matches_invoked_java_int_and_split_semantics() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["vipCases"].as_array().unwrap() {
+            let address = case["address"].as_str().unwrap();
+            let actual = broker_vip_channel(true, address);
+            let java_accepts = case["enabledOutcome"] == "OK";
+            assert_eq!(actual.is_ok(), java_accepts, "{address}: {actual:?}");
+            if let Ok(actual) = actual {
+                assert_eq!(actual, case["enabledValue"].as_str().unwrap(), "{address}");
+            }
+            assert_eq!(
+                broker_vip_channel(false, address).unwrap(),
+                case["disabled"].as_str().unwrap(),
+                "disabled {address}"
+            );
+        }
+    }
+
+    #[test]
     fn snapshots_and_vip_compare_actual_pinned_java_conversion_results() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
