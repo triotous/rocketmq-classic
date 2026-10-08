@@ -631,19 +631,17 @@ mod tests {
         io::BufReader,
         path::PathBuf,
         sync::{Arc, Mutex},
-        time::{SystemTime, UNIX_EPOCH},
     };
 
     use super::{PrivateKeyDecryptionStrategy, TlsConfig, decrypt_private_key_pem};
     use std::collections::HashMap;
 
     fn test_dir() -> PathBuf {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!("rocketmq-tls-{unique}"));
-        fs::create_dir_all(&path).unwrap();
+        static NEXT_TEST_DIR: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let sequence = NEXT_TEST_DIR.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let path =
+            std::env::temp_dir().join(format!("rocketmq-tls-{}-{sequence}", std::process::id()));
+        fs::create_dir(&path).unwrap();
         path
     }
 
