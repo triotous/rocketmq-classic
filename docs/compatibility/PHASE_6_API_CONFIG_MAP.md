@@ -1,5 +1,7 @@
 # Phase 6 API and configuration map
 
+MessageQueueRouteState public enum API update (2026-10-08): Rust now exports `remoting::MessageQueueRouteState` with Java's `Expired`, `ReadOnly`, `Normal`, and `WriteOnly` declaration order, enum methods, and typed lookup errors. Direct Java cases invoke all four values and null/unknown/empty/case-mismatched lookups. The pinned artifact scan found no call sites outside the enum, so no route-state transition behavior is claimed. Current `client-config.json` SHA-256 `be97b56070efbdc49ed2294b06f36f6848a152ddb310fba30d349a32a95b52f3`; see [ADR-0035](../architecture/ADR-0035-message-queue-route-state-enum-api.md). Full Phase 6 reconciliation remains open.
+
 RequestSource public enum API update (2026-10-08): Rust now exports `remoting::RequestSource` with Java declaration order, enum methods and lookup errors, `get_value`, `is_valid`, `parse_integer`, and the exact `SYSTEM_PROPERTY_KEY` constant. Direct pinned Java cases cover 23 enum/integer inputs and the key. The artifact reference scan found no call sites outside the enum, so this maps its public surface without claiming that the constant activates property loading. Current `client-config.json` SHA-256 `1544344bd90fbefe577643e3ec7af1a8211dcc7bc780c2f39fef7e5ca9fcd391`; see [ADR-0034](../architecture/ADR-0034-request-source-java-enum-api.md). Full Phase 6 reconciliation remains open.
 
 Netty event enum API update (2026-10-08): Rust now exports `client::NettyEventType` in Java order (`CONNECT`, `CLOSE`, `IDLE`, `EXCEPTION`, `ACTIVE`) with generated/inherited enum methods and typed string lookup; the channel event queue uses this public enum. Twelve direct Java method cases pass. Fixture SHA-256 at that update: `1fe6cf206b07e5f304634d7128ca4ca4c56a0114f010f21a0eeebb785529e3b5`. See [ADR-0033](../architecture/ADR-0033-netty-event-type-java-enum-api.md). Java `NettyEvent.getChannel()` returns a Netty `Channel`; the native callbacks do not expose a Tokio socket handle, so the event enum mapping does not assert carrier-object parity. Full Phase 6 reconciliation remains open.
@@ -455,3 +457,11 @@ The pinned Java fixture invokes all five constants, defensive `values()` copies,
 | `SYSTEM_PROPERTY_KEY` | `RequestSource::SYSTEM_PROPERTY_KEY` exposes `rocketmq.requestSource`; the pinned artifacts contain no call site outside the enum, so no property-loading behavior is claimed |
 
 The pinned fixture invokes 23 enum/integer outcomes plus the property-key constant. See [ADR-0034](../architecture/ADR-0034-request-source-java-enum-api.md).
+
+## Remoting route-state enum API: MessageQueueRouteState
+
+| Pinned Java API | Rust counterpart / current behavior |
+| --- | --- |
+| `MessageQueueRouteState.values()` / `valueOf(String)` / inherited enum methods | `remoting::MessageQueueRouteState::values()`, `value_of_name`, `name`, `ordinal`, `Display`, and `java_compare_to()` match Java declaration order and lookup behavior |
+
+The direct fixture covers all four route-state constants and null, empty, unknown, and case-mismatched lookups. The pinned artifacts contain no call sites outside the enum; no state transition behavior is claimed. See [ADR-0035](../architecture/ADR-0035-message-queue-route-state-enum-api.md).
