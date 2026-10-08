@@ -528,6 +528,8 @@ public final class RuntimeRouteFixtures {
             Map<String, Object> primitives = new TreeMap<>();
             primitives.put("initialEmpty", table.isEmpty());
             primitives.put("firstPutAbsent", table.put("topic", first) == null);
+            primitives.put("getOrDefaultPresent", table.getOrDefault("topic", second) == first);
+            primitives.put("getOrDefaultAbsent", table.getOrDefault("missing", second) == second);
             primitives.put("getterSeesFirst", runtime.getAnExistTopicRouteData("topic") == first);
             primitives.put("putReturnsFirst", table.put("topic", second) == first);
             primitives.put("retainedGetterSeesReplacement", runtime.getTopicRouteTable() == table && runtime.getAnExistTopicRouteData("topic") == second);
@@ -546,6 +548,12 @@ public final class RuntimeRouteFixtures {
             primitives.put("retainedViewSeesClear", table.isEmpty());
             primitives.put("getterSeesClear", runtime.getAnExistTopicRouteData("topic") == null);
             primitives.put("putAfterClearAccepted", table.put("topic", second) == null && runtime.getAnExistTopicRouteData("topic") == second);
+            Map<String, TopicRouteData> bulkValues = new TreeMap<>();
+            bulkValues.put("bulk-a", first);
+            bulkValues.put("bulk-b", second);
+            table.putAll(bulkValues);
+            primitives.put("putAllAdds", table.get("bulk-a") == first && table.get("bulk-b") == second
+                && table.size() == 3);
             table.clear();
             result.put("primitives", primitives);
 
