@@ -11,6 +11,13 @@ use std::{
 /// Narrow MQProducerInner contract consumed by the shared runtime. Actual send
 /// and transaction behavior belongs to the producer's owning implementation.
 pub trait ProducerRuntime: Send + Sync + 'static {
+    /// Stable key used only by Java-style conditional map operations. `None`
+    /// keeps Object identity semantics. Implementations with value-based Java
+    /// `equals` should return the same key exactly when those values compare
+    /// equal; the key is captured before registry locks are acquired.
+    fn map_value_equality_key(&self) -> Option<String> {
+        None
+    }
     fn transaction_processor(
         &self,
     ) -> Option<Arc<dyn rocketmq_classic_remoting::client::RequestProcessor>> {
@@ -37,6 +44,13 @@ pub trait ProducerRuntime: Send + Sync + 'static {
 /// MQConsumerInner capabilities; optional futures are absent until an owning
 /// consumer phase implements the operation. Absence is not reported as success.
 pub trait ConsumerRuntime: Send + Sync + 'static {
+    /// Stable key used only by Java-style conditional map operations. `None`
+    /// keeps Object identity semantics. Implementations with value-based Java
+    /// `equals` should return the same key exactly when those values compare
+    /// equal; the key is captured before registry locks are acquired.
+    fn map_value_equality_key(&self) -> Option<String> {
+        None
+    }
     fn pull_message(
         &self,
         _request: Arc<dyn super::MessageRequest>,
@@ -106,6 +120,7 @@ impl GroupLease {
 struct TableEntry<T: ?Sized> {
     identity: Arc<()>,
     handle: Weak<T>,
+    equality_key: Option<String>,
 }
 type ProducerEntry = TableEntry<dyn ProducerRuntime>;
 type ConsumerEntry = TableEntry<dyn ConsumerRuntime>;
@@ -245,6 +260,7 @@ impl GroupRegistry {
         group: &str,
         handle: Arc<dyn ProducerRuntime>,
     ) -> Result<GroupLease, RuntimeError> {
+        let equality_key = handle.map_value_equality_key();
         let mut entries = self
             .entries
             .lock()
@@ -264,6 +280,7 @@ impl GroupRegistry {
             ProducerEntry {
                 identity: lease.identity.clone(),
                 handle: Arc::downgrade(&handle),
+                equality_key,
             },
         );
         Ok(lease)
@@ -274,6 +291,7 @@ impl GroupRegistry {
         group: &str,
         handle: Arc<dyn ConsumerRuntime>,
     ) -> Result<GroupLease, RuntimeError> {
+        let equality_key = handle.map_value_equality_key();
         let mut entries = self
             .entries
             .lock()
@@ -293,6 +311,7 @@ impl GroupRegistry {
             ConsumerEntry {
                 identity: lease.identity.clone(),
                 handle: Arc::downgrade(&handle),
+                equality_key,
             },
         );
         Ok(lease)
@@ -439,7 +458,7 @@ fn mutate_map<T: ?Sized>(
     extract: impl for<'a> Fn(&'a super::tables::TableValue) -> Option<&'a Arc<T>>,
     wrap: impl Fn(Arc<T>) -> super::tables::TableValue,
 ) -> Result<super::tables::TableChange, RuntimeError> {
-    use super::tables::{TableChange, TableMutation};
+    use super::tables::{TableChange, TableMutation, ValueComparison};
     let key = match mutation {
         TableMutation::Put { key, .. }
         | TableMutation::Replace { key, .. }
@@ -454,30 +473,66 @@ fn mutate_map<T: ?Sized>(
     };
     let present = map.contains_key(key);
     let previous = map.get(key).and_then(|entry| entry.handle.upgrade());
-    let matches = |expected: &Option<super::tables::TableValue>| {
-        expected.as_ref().is_none_or(|expected| {
-            previous
+    let matches = |expected: &Option<super::tables::TableValue>,
+                   comparison: &Option<ValueComparison>| {
+        let Some(expected) = expected.as_ref() else {
+            return true;
+        };
+        let Some(expected_value) = extract(expected) else {
+            return false;
+        };
+        let Some(current_entry) = map.get(key) else {
+            return false;
+        };
+        match comparison {
+            Some(ValueComparison::Identity) => previous
                 .as_ref()
-                .zip(extract(expected))
-                .is_some_and(|(current, expected)| Arc::ptr_eq(current, expected))
-        })
+                .is_some_and(|current| Arc::ptr_eq(current, expected_value)),
+            Some(ValueComparison::JavaEquals(expected_key)) => {
+                previous
+                    .as_ref()
+                    .is_some_and(|current| Arc::ptr_eq(current, expected_value))
+                    || expected_key
+                        .as_ref()
+                        .zip(current_entry.equality_key.as_ref())
+                        .is_some_and(|(expected, current)| expected == current)
+            }
+            None => false,
+        }
     };
     let matched = match mutation {
         TableMutation::Put { only_absent, .. } => !only_absent || !present,
-        TableMutation::Replace { expected, .. } | TableMutation::Remove { expected, .. } => {
-            present && matches(expected)
+        TableMutation::Replace {
+            expected,
+            comparison,
+            ..
         }
+        | TableMutation::Remove {
+            expected,
+            comparison,
+            ..
+        } => present && matches(expected, comparison),
         TableMutation::Clear => false,
     };
     if matched {
         match mutation {
-            TableMutation::Put { value, .. } | TableMutation::Replace { value, .. } => {
+            TableMutation::Put {
+                value,
+                value_equality_key,
+                ..
+            }
+            | TableMutation::Replace {
+                value,
+                value_equality_key,
+                ..
+            } => {
                 let value = extract(value).ok_or(RuntimeError::RegistryPoisoned)?;
                 map.insert(
                     key.clone(),
                     TableEntry {
                         identity: Arc::new(()),
                         handle: Arc::downgrade(value),
+                        equality_key: value_equality_key.clone(),
                     },
                 );
             }

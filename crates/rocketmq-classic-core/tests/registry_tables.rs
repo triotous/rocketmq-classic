@@ -176,8 +176,7 @@ async fn conditional_registry_mutations_match_java_custom_value_equality() {
         }
     }
     let fixture: serde_json::Value =
-        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json"))
-            .unwrap();
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
     let expected = &fixture["registryTables"]["customEquality"];
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&ClientConfig::new("registry-custom-equality"))
@@ -188,30 +187,38 @@ async fn conditional_registry_mutations_match_java_custom_value_equality() {
     let producer_b: Arc<dyn ProducerRuntime> = Arc::new(EqualProducer("producer-equal"));
     let producer_c: Arc<dyn ProducerRuntime> = Arc::new(EqualProducer("producer-replacement"));
     producers.put("replace", producer_a.clone()).await.unwrap();
-    assert!(producers
-        .replace_if_equal("replace", &producer_b, producer_c)
-        .await
-        .unwrap());
+    assert!(
+        producers
+            .replace_if_equal("replace", &producer_b, producer_c)
+            .await
+            .unwrap()
+    );
     producers.put("remove", producer_a).await.unwrap();
-    assert!(producers
-        .remove_if_equal("remove", &producer_b)
-        .await
-        .unwrap());
+    assert!(
+        producers
+            .remove_if_equal("remove", &producer_b)
+            .await
+            .unwrap()
+    );
 
     let consumers = runtime.consumer_table();
     let consumer_a: Arc<dyn ConsumerRuntime> = Arc::new(EqualConsumer("consumer-equal"));
     let consumer_b: Arc<dyn ConsumerRuntime> = Arc::new(EqualConsumer("consumer-equal"));
     let consumer_c: Arc<dyn ConsumerRuntime> = Arc::new(EqualConsumer("consumer-replacement"));
     consumers.put("replace", consumer_a.clone()).await.unwrap();
-    assert!(consumers
-        .replace_if_equal("replace", &consumer_b, consumer_c)
-        .await
-        .unwrap());
+    assert!(
+        consumers
+            .replace_if_equal("replace", &consumer_b, consumer_c)
+            .await
+            .unwrap()
+    );
     consumers.put("remove", consumer_a).await.unwrap();
-    assert!(consumers
-        .remove_if_equal("remove", &consumer_b)
-        .await
-        .unwrap());
+    assert!(
+        consumers
+            .remove_if_equal("remove", &consumer_b)
+            .await
+            .unwrap()
+    );
     assert_eq!(
         serde_json::json!({
             "producerReplaceByEqualValue": true,
