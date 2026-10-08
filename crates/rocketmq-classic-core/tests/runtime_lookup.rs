@@ -179,7 +179,9 @@ async fn uncached_consumer_lookup_refreshes_once_and_assignment_reuses_raw_topic
 async fn query_first_refreshes_and_both_lookup_rpcs_apply_vip_port() {
     let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = broker.local_addr().unwrap();
-    let (runtime, name_peer) = setup(Some(format!("127.0.0.1:{}", address.port() + 2)), true).await;
+    let (runtime, name_peer) =
+        setup(Some(format!("127.0.0.1:{}", address.port() + 2)), false).await;
+    runtime.config().write().unwrap().vip_channel_enabled = true;
     let peer = tokio::spawn(async move {
         let (mut socket, _) = broker.accept().await.unwrap();
         let command = read(&mut socket).await;

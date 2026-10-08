@@ -117,7 +117,7 @@ impl ClientRuntime {
         {
             return Ok(false);
         }
-        let v2 = self.config().use_heartbeat_v2;
+        let v2 = self.config_read().use_heartbeat_v2;
         if v2 {
             full.heartbeat_fingerprint = fingerprint(&full)?;
         }
@@ -168,7 +168,7 @@ impl ClientRuntime {
         if routes.broker_addresses.is_empty() {
             return Ok(false);
         }
-        let v2 = self.config().use_heartbeat_v2;
+        let v2 = self.config_read().use_heartbeat_v2;
         if v2 {
             full.heartbeat_fingerprint = fingerprint(&full)?;
             if is_rebalance {
@@ -203,11 +203,15 @@ impl ClientRuntime {
                     })
             })
             .collect::<Vec<_>>();
-        if !v2 && allow_concurrent_v1 && self.config().enable_concurrent_heartbeat {
+        if !v2 && allow_concurrent_v1 && self.config_read().enable_concurrent_heartbeat {
             if peers.is_empty() {
                 return Ok(false);
             }
-            let width = self.config().concurrent_heartbeat_thread_pool_size as usize;
+            let Some(width) = self.concurrent_heartbeat_width else {
+                // Java checks the mutable enable flag per heartbeat, but only
+                // creates its executor in the constructor when it was enabled.
+                return Ok(false);
+            };
             let mut pending = peers.into_iter();
             let mut active: Vec<PeerFuture<'_>> = Vec::new();
             loop {

@@ -209,11 +209,16 @@ async fn nullable_access_and_socks_settings_match_invoked_java_copy_and_construc
     assert_eq!(runtime.is_ok(), java["runtimeConstructed"]);
     let runtime = runtime.unwrap();
     assert_eq!(
-        runtime.config().socks_proxy_config.is_none(),
+        runtime
+            .config()
+            .read()
+            .unwrap()
+            .socks_proxy_config
+            .is_none(),
         java["runtimeSocksNull"]
     );
     assert_eq!(
-        runtime.config().language.is_none(),
+        runtime.config().read().unwrap().language.is_none(),
         java["runtimeLanguageNull"]
     );
 }
@@ -232,7 +237,14 @@ async fn callback_thread_constructor_acceptance_and_raw_values_match_invoked_jav
             .await;
         assert_eq!(result.is_ok(), java["outcome"] == "OK", "{java}");
         assert_eq!(
-            i64::from(result.unwrap().config().client_callback_executor_threads),
+            i64::from(
+                result
+                    .unwrap()
+                    .config()
+                    .read()
+                    .unwrap()
+                    .client_callback_executor_threads
+            ),
             java["raw"].as_i64().unwrap()
         );
     }
@@ -258,7 +270,7 @@ async fn socks_construction_matches_invoked_java_empty_and_whitespace_boundaries
         if let Ok(runtime) = result {
             assert_eq!(java["rawPreserved"], true);
             assert_eq!(
-                runtime.config().socks_proxy_config,
+                runtime.config().read().unwrap().socks_proxy_config.clone(),
                 config.socks_proxy_config
             );
         }
@@ -277,7 +289,10 @@ async fn runtime_uses_endpoint_address_getter_without_rewriting_raw_configuratio
         runtime.remoting().get_name_server_address_list().unwrap(),
         ["MQ_INST_a_b.example:9876"]
     );
-    assert_eq!(runtime.config().namesrv_addr, config.namesrv_addr);
+    assert_eq!(
+        runtime.config().read().unwrap().namesrv_addr,
+        config.namesrv_addr
+    );
 }
 
 #[test]
@@ -316,7 +331,7 @@ async fn manager_configuration_copy_matches_invoked_java_without_mutating_caller
     let runtime = manager.get_or_create(&config).await.unwrap();
     // Full Rust Clone preserves the observed lazy state; another Java-style
     // clone here would reset it again and hide a construction-path mismatch.
-    let mut actual = runtime.config().clone();
+    let mut actual = runtime.config().read().unwrap().clone();
     assert_eq!(
         i64::from(actual.trace_msg_batch_num),
         java["traceMsgBatchNum"]
@@ -336,6 +351,11 @@ async fn manager_configuration_copy_matches_invoked_java_without_mutating_caller
         i64::from(actual.concurrent_heartbeat_thread_pool_size),
         java["concurrentHeartbeatThreadPoolSize"]
     );
+    assert_eq!(java["configGetterSameObject"], true);
+    assert_eq!(java["configMutationVisible"], true);
+    runtime.config().write().unwrap().mq_client_api_timeout = 4321;
+    assert_eq!(runtime.config().read().unwrap().mq_client_api_timeout, 4321);
+    assert_eq!(config.mq_client_api_timeout, 3_000);
     assert_eq!(actual.get_namespace().unwrap(), java["namespace"].as_str());
     assert_eq!(
         config.get_namespace().unwrap().is_none(),

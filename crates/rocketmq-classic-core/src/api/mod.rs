@@ -3,6 +3,7 @@ pub mod extensions;
 pub mod producer;
 pub mod route;
 
+use crate::config::{SharedClientConfig, read_shared_client_config};
 use crate::error::RpcError;
 use rocketmq_classic_protocol::codes::response;
 use rocketmq_classic_protocol::header::{CommandHeader, HeaderMap};
@@ -15,6 +16,7 @@ use tokio::time::Instant;
 pub struct MQClientApi {
     remoting: RemotingClient,
     language: Option<rocketmq_classic_protocol::codes::LanguageCode>,
+    config: Option<SharedClientConfig>,
 }
 
 impl MQClientApi {
@@ -29,7 +31,19 @@ impl MQClientApi {
         remoting: RemotingClient,
         language: Option<rocketmq_classic_protocol::codes::LanguageCode>,
     ) -> Self {
-        Self { remoting, language }
+        Self {
+            remoting,
+            language,
+            config: None,
+        }
+    }
+
+    pub(crate) fn with_config(remoting: RemotingClient, config: SharedClientConfig) -> Self {
+        Self {
+            remoting,
+            language: None,
+            config: Some(config),
+        }
     }
 
     async fn request<H: CommandHeader>(
@@ -68,11 +82,16 @@ impl MQClientApi {
     ) -> Result<RemotingCommand, RpcError> {
         let mut fields = HeaderMap::new();
         header.encode_fields(&mut fields);
+        let heartbeat_language = self
+            .config
+            .as_ref()
+            .map(|config| read_shared_client_config(config).language)
+            .unwrap_or(self.language);
         let command = RemotingCommand {
             code,
             // Pinned Java sets clientConfig.language only on heartbeat V1/V2.
             language: if code == rocketmq_classic_protocol::codes::request::HEART_BEAT {
-                self.language
+                heartbeat_language
             } else {
                 Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
             },

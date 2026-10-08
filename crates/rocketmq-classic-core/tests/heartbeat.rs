@@ -494,8 +494,9 @@ async fn v2_negotiates_full_simple_subscription_change_version_and_rebalance() {
         assert_ne!(fingerprints[6], fingerprints[0]);
     });
     let mut config = ClientConfig::new("heartbeat");
-    config.use_heartbeat_v2 = true;
+    config.use_heartbeat_v2 = false;
     let runtime = runtime(config, std::slice::from_ref(&address)).await;
+    runtime.config().write().unwrap().use_heartbeat_v2 = true;
     let producer = Arc::new(Producer);
     let consumer = Arc::new(Consumer(Mutex::new(SubscriptionData {
         topic: Some("topic".into()),
@@ -673,6 +674,11 @@ async fn concurrent_v1_uses_parallel_peers_and_busy_heartbeat_gate_skips_a_round
     config.enable_concurrent_heartbeat = true;
     config.concurrent_heartbeat_thread_pool_size = 2;
     let runtime = runtime(config, &addresses).await;
+    {
+        let config = runtime.config();
+        let mut config = config.write().unwrap();
+        config.concurrent_heartbeat_thread_pool_size = 1;
+    }
     let consumer = Arc::new(Consumer(Mutex::new(SubscriptionData::default())));
     runtime
         .register_consumer("consumer", consumer.clone())

@@ -87,7 +87,7 @@ async fn explicit_offset_namespace_conversion_matches_invoked_java() {
             runtime.parse_offset_table_from_broker(rows("input"), case["namespace"].as_str());
         assert_eq!(output, rows("output"));
         assert_eq!(
-            runtime.config().namespace.as_deref(),
+            runtime.config().read().unwrap().namespace.as_deref(),
             Some("ignored-config-namespace")
         );
     }

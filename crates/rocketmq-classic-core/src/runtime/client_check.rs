@@ -35,7 +35,7 @@ impl ClientRuntime {
                 let expression_type = subscription.expression_type.clone().unwrap_or_default();
                 let result = async {
                     let address = crate::route::broker_vip_channel(
-                        self.config().vip_channel_enabled,
+                        self.config_read().vip_channel_enabled,
                         &address,
                     )?;
                     self.api()

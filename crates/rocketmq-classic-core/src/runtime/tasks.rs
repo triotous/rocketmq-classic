@@ -331,7 +331,7 @@ mod tests {
 
     fn tasks(runtime: &Arc<ClientRuntime>) -> OwnedTasks {
         let mut tasks = OwnedTasks::new(Arc::downgrade(runtime));
-        for schedule in schedules(runtime.config()).unwrap() {
+        for schedule in schedules(&runtime.config_snapshot()).unwrap() {
             tasks.register(schedule).unwrap();
         }
         tasks.activate();

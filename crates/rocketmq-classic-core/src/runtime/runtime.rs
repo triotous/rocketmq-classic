@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLockReadGuard},
 };
 
 use rocketmq_classic_remoting::client::{
@@ -13,7 +13,10 @@ use super::{
     manager::ManagerLink,
     registry::{GroupKind, GroupRegistry},
 };
-use crate::{api::MQClientApi, config::ClientConfig};
+use crate::{
+    api::MQClientApi,
+    config::{ClientConfig, SharedClientConfig, read_shared_client_config},
+};
 
 fn callback_executor_threads(configured: i32) -> usize {
     // NettyRemotingClient uses four public executor threads for any nonpositive
@@ -46,10 +49,24 @@ fn constructor_clock_uses_signed_epoch_milliseconds() {
     assert_eq!(epoch_millis(UNIX_EPOCH - Duration::from_nanos(1)), -1);
 }
 
+#[test]
+fn rpc_timeout_reads_the_live_runtime_configuration() {
+    let mut config = ClientConfig::new("live-timeout");
+    config.namesrv_addr = Some(String::new());
+    config.mq_client_api_timeout = 123;
+    let runtime = ClientRuntime::construct(config, &HashMap::new(), None).unwrap();
+    assert_eq!(
+        runtime.rpc_timeout(),
+        tokio::time::Duration::from_millis(123)
+    );
+    runtime.config().write().unwrap().mq_client_api_timeout = -9;
+    assert_eq!(runtime.rpc_timeout(), tokio::time::Duration::ZERO);
+}
+
 /// A manager-owned transport and typed API. Construction does not start tasks.
 pub struct ClientRuntime {
     boot_timestamp: i64,
-    config: ClientConfig,
+    config: SharedClientConfig,
     client_id: String,
     remoting: RemotingClient,
     api: MQClientApi,
@@ -64,6 +81,7 @@ pub struct ClientRuntime {
     pub(super) sharing_properties: HashMap<String, String>,
     pub(super) sharing_hook: Option<Arc<dyn RpcHook>>,
     pub(crate) heartbeat: crate::heartbeat::HeartbeatState,
+    pub(crate) concurrent_heartbeat_width: Option<usize>,
     heartbeat_listener: Option<Arc<crate::heartbeat::HeartbeatChannelListener>>,
     addressing: Arc<dyn crate::namesrv::TopAddressing>,
     discovery: Arc<crate::namesrv::DiscoveryState>,
@@ -92,6 +110,7 @@ impl ClientRuntime {
         provider: Option<Arc<dyn crate::namesrv::TopAddressing>>,
     ) -> Result<Self, RuntimeError> {
         let boot_timestamp = epoch_millis(std::time::SystemTime::now());
+        let shared_config = Arc::new(std::sync::RwLock::new(config.clone()));
         let rebalance = Arc::new(super::rebalance::RebalanceSignal::from_properties(
             properties,
         )?);
@@ -103,6 +122,9 @@ impl ClientRuntime {
                 .into(),
             );
         }
+        let concurrent_heartbeat_width = config
+            .enable_concurrent_heartbeat
+            .then_some(config.concurrent_heartbeat_thread_pool_size as usize);
         let callback_executor_threads =
             callback_executor_threads(config.client_callback_executor_threads);
         let transport = if config.use_tls {
@@ -139,7 +161,7 @@ impl ClientRuntime {
             remoting.update_name_server_address_list(crate::namesrv::split_addresses(&addresses));
         }
         let sharing_hook = hook.clone();
-        super::hooks::register(&remoting, &config, hook);
+        super::hooks::register(&remoting, shared_config.clone(), hook);
         let mut addressing = crate::namesrv::DefaultTopAddressing::new(
             crate::namesrv::ws_addr(properties),
             config.unit_name.clone(),
@@ -153,12 +175,11 @@ impl ClientRuntime {
             addressing.register_change_callback(discovery.callback());
         }))
         .map_err(|_| RuntimeError::AddressingCallbackFailed)?;
-        let language = config.language;
         Ok(Self {
             boot_timestamp,
             client_id: config.build_client_id(),
-            config,
-            api: MQClientApi::with_language(remoting.clone(), language),
+            config: shared_config.clone(),
+            api: MQClientApi::with_config(remoting.clone(), shared_config),
             remoting,
             routes: crate::route::RouteCache::default(),
             namesrv_gate: tokio::sync::Mutex::new(()),
@@ -171,6 +192,7 @@ impl ClientRuntime {
             sharing_properties: properties.clone(),
             sharing_hook,
             heartbeat: crate::heartbeat::HeartbeatState::default(),
+            concurrent_heartbeat_width,
             heartbeat_listener,
             addressing,
             discovery,
@@ -374,8 +396,20 @@ impl ClientRuntime {
         Ok(())
     }
 
-    pub fn config(&self) -> &ClientConfig {
-        &self.config
+    /// Returns a shared mutable handle to this runtime's retained config.
+    /// This mirrors Java `MQClientInstance.getClientConfig()`; constructor-only
+    /// transport settings remain captured by the already-created remoting client.
+    /// Drop read/write guards before calling runtime methods that may read config.
+    pub fn config(&self) -> SharedClientConfig {
+        self.config.clone()
+    }
+
+    pub(crate) fn config_read(&self) -> RwLockReadGuard<'_, ClientConfig> {
+        read_shared_client_config(&self.config)
+    }
+
+    pub(crate) fn config_snapshot(&self) -> ClientConfig {
+        self.config_read().clone()
     }
 
     pub fn api(&self) -> &MQClientApi {
@@ -461,7 +495,7 @@ impl ClientRuntime {
             return Ok(None);
         };
         let Ok(address) =
-            crate::route::broker_vip_channel(self.config.vip_channel_enabled, &address)
+            crate::route::broker_vip_channel(self.config_read().vip_channel_enabled, &address)
         else {
             return Ok(None);
         };
@@ -496,7 +530,8 @@ impl ClientRuntime {
         let Some(address) = self.lookup_broker_with_route_refresh(topic).await? else {
             return Ok(None);
         };
-        let address = crate::route::broker_vip_channel(self.config.vip_channel_enabled, &address)?;
+        let address =
+            crate::route::broker_vip_channel(self.config_read().vip_channel_enabled, &address)?;
         let body = rocketmq_classic_protocol::body::QueryAssignmentRequestBody {
             topic: Some(topic.into()),
             consumer_group: Some(consumer_group.into()),
@@ -1001,7 +1036,7 @@ impl ClientRuntime {
     }
 
     pub(crate) fn rpc_timeout(&self) -> tokio::time::Duration {
-        tokio::time::Duration::from_millis(self.config.mq_client_api_timeout.max(0) as u64)
+        tokio::time::Duration::from_millis(self.config_read().mq_client_api_timeout.max(0) as u64)
     }
 
     pub(super) fn attach_manager(self: &Arc<Self>, link: ManagerLink) -> Result<(), RuntimeError> {

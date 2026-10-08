@@ -640,7 +640,7 @@ impl FactoryTable {
                 // Retain the actual transport's sharing inputs, not today's
                 // process properties or a fabricated fresh hook identity.
                 let entry = Entry {
-                    config: value.config().clone(),
+                    config: value.config_snapshot(),
                     properties: value.sharing_properties.clone(),
                     hook: value.sharing_hook.clone(),
                     initialization: AsyncMutex::new(()),

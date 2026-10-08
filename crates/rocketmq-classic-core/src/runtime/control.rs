@@ -350,12 +350,14 @@ async fn run(
                         );
                         runtime.control.checkpoint(10 + index as u8)?;
                     }
-                    if runtime.config().namesrv_addr.is_none() {
+                    let needs_name_server_discovery = runtime.config_read().namesrv_addr.is_none();
+                    if needs_name_server_discovery {
                         runtime.fetch_name_server_addr().await;
                     }
                     runtime.remoting().start()?;
                     runtime.control.checkpoint(2)?;
-                    let specs = super::tasks::schedules(runtime.config())?;
+                    let config = runtime.config_snapshot();
+                    let specs = super::tasks::schedules(&config)?;
                     periodic = Some(super::tasks::OwnedTasks::new(Arc::downgrade(&runtime)));
                     for (index, schedule) in specs.into_iter().enumerate() {
                         if let Some(tasks) = periodic.as_mut() {

@@ -107,6 +107,65 @@ async fn nullable_heartbeat_language_reaches_hooks_and_json_wire() {
     runtime.remoting().shutdown().await;
 }
 
+#[tokio::test]
+async fn runtime_config_mutations_reach_heartbeat_language_and_namespace_hook() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    let mut config = ClientConfig::new("live-runtime-config");
+    config.namesrv_addr = Some(address.clone());
+    config.namespace_v2 = Some("before".into());
+    config.language = Some(LanguageCode::Java);
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+    let shared = runtime.config();
+    {
+        let mut config = shared.write().unwrap();
+        config.namespace_v2 = Some("after".into());
+        config.language = Some(LanguageCode::Cpp);
+    }
+    assert_eq!(config.namespace_v2.as_deref(), Some("before"));
+
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut length = [0; 4];
+        stream.read_exact(&mut length).await.unwrap();
+        let mut bytes = BytesMut::from(&length[..]);
+        bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
+        stream.read_exact(&mut bytes[4..]).await.unwrap();
+        let command = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
+            .unwrap()
+            .unwrap();
+        assert_eq!(command.code, request::HEART_BEAT);
+        assert_eq!(command.language, Some(LanguageCode::Cpp));
+        let fields = command.ext_fields.as_ref().unwrap();
+        assert_eq!(fields["ns"], "after");
+        assert_eq!(fields["nsd"], "true");
+        let mut reply = RemotingCommand {
+            opaque: command.opaque,
+            ..Default::default()
+        };
+        reply.mark_response();
+        stream
+            .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+            .await
+            .unwrap();
+    });
+    runtime.remoting().start().unwrap();
+    runtime
+        .api()
+        .send_heartbeat(
+            &address,
+            &HeartbeatData::default(),
+            Instant::now() + Duration::from_secs(3),
+        )
+        .await
+        .unwrap();
+    peer.await.unwrap();
+    runtime.remoting().shutdown().await;
+}
+
 impl RpcHook for Signer {
     fn before_request_mut_result(
         &self,

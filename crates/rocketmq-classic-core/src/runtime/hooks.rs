@@ -1,18 +1,19 @@
-use crate::config::{ClientConfig, java_whitespace};
+use crate::config::{SharedClientConfig, java_whitespace, read_shared_client_config};
 use rocketmq_classic_remoting::{
     RemotingCommand, RequestType,
     client::{RemotingClient, RpcHook, RpcHookError},
 };
 use std::sync::Arc;
 
-struct NamespaceFields(Option<String>);
+struct NamespaceFields(SharedClientConfig);
 impl RpcHook for NamespaceFields {
     fn before_request_mut_result(
         &self,
         _: &str,
         command: &mut RemotingCommand,
     ) -> Result<(), RpcHookError> {
-        if let Some(namespace) = self.0.as_deref().filter(|value| !value.is_empty()) {
+        let namespace = read_shared_client_config(&self.0).namespace_v2.clone();
+        if let Some(namespace) = namespace.as_deref().filter(|value| !value.is_empty()) {
             let fields = command.ext_fields.get_or_insert_with(Default::default);
             fields.insert("nsd".into(), "true".into());
             fields.insert("ns".into(), namespace.into());
@@ -67,7 +68,7 @@ impl RpcHook for DynamicFields {
 
 pub(super) fn register(
     client: &RemotingClient,
-    config: &ClientConfig,
+    config: SharedClientConfig,
     user: Option<Arc<dyn RpcHook>>,
 ) {
     register_with_dynamic(
@@ -82,12 +83,13 @@ pub(super) fn register(
 
 fn register_with_dynamic(
     client: &RemotingClient,
-    config: &ClientConfig,
+    config: SharedClientConfig,
     user: Option<Arc<dyn RpcHook>>,
     dynamic: DynamicFields,
 ) {
-    client.add_rpc_hook(Arc::new(NamespaceFields(config.namespace_v2.clone())));
-    if config.enable_stream_request_type {
+    let initial_config = read_shared_client_config(&config).clone();
+    client.add_rpc_hook(Arc::new(NamespaceFields(config)));
+    if initial_config.enable_stream_request_type {
         client.add_rpc_hook(Arc::new(StreamFields));
     }
     if let Some(user) = user {
@@ -220,7 +222,7 @@ mod tests {
             let zone = case["zone"].as_str().unwrap().to_owned();
             register_with_dynamic(
                 &client,
-                &config,
+                Arc::new(std::sync::RwLock::new(config.clone())),
                 Some(Arc::new(Signer(case["beforeUser"].clone()))),
                 DynamicFields {
                     read: Arc::new(move |_| Some(zone.clone())),

@@ -5,7 +5,10 @@
 
 use rocketmq_classic_common::message::MessageQueue;
 use rocketmq_classic_protocol::codes::LanguageCode;
-use std::collections::BTreeSet;
+use std::{
+    collections::BTreeSet,
+    sync::{Arc, RwLock, RwLockReadGuard},
+};
 
 mod local_address;
 pub(crate) mod namespace;
@@ -121,6 +124,21 @@ pub struct ClientConfig {
     pub enable_trace: bool,
     pub trace_topic: Option<String>,
     pub max_page_size_in_get_metadata: i32,
+}
+
+/// Shared mutable configuration exposed by a constructed client runtime.
+///
+/// Java's `MQClientInstance.getClientConfig()` returns the live mutable
+/// `ClientConfig` retained by that instance. Rust exposes the same ownership
+/// through a lock-protected handle.
+pub type SharedClientConfig = Arc<RwLock<ClientConfig>>;
+
+pub(crate) fn read_shared_client_config(
+    config: &SharedClientConfig,
+) -> RwLockReadGuard<'_, ClientConfig> {
+    config
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 impl std::fmt::Debug for ClientConfig {
