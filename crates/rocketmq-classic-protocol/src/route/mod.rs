@@ -1321,6 +1321,8 @@ mod route_dto_input_cases_tests {
             "message-queue-unicode-decimal-id",
             "broker-unicode-decimal-address-key",
             "mapping-unicode-decimal-id-key",
+            "queue-fastjson-leading-plus-number",
+            "queue-fastjson-leading-zero-number",
         ] {
             assert!(
                 cases.iter().any(|case| case["id"] == required),
