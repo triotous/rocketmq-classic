@@ -115,6 +115,32 @@ fn java_string_compare_to(left: &str, right: &str) -> i32 {
 }
 
 #[cfg(test)]
+mod queue_data_method_tests {
+    use super::{QueueData, QueueDataCompareError};
+
+    #[test]
+    fn queue_data_methods_match_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["queueDataMethods"].as_array().unwrap() {
+            let left: QueueData = serde_json::from_value(case["left"].clone()).unwrap();
+            let right: QueueData = serde_json::from_value(case["right"].clone()).unwrap();
+            assert_eq!(left == right, case["equals"]);
+            assert_eq!(left.java_hash_code(), case["leftHashCode"].as_i64().unwrap() as i32);
+            assert_eq!(right.java_hash_code(), case["rightHashCode"].as_i64().unwrap() as i32);
+            assert_eq!(left.java_to_string(), case["leftToString"]);
+            assert_eq!(right.java_to_string(), case["rightToString"]);
+            let result = left.java_compare_to(&right);
+            if case["outcome"] == "OK" {
+                assert_eq!(result.unwrap(), case["result"].as_i64().unwrap() as i32);
+            } else {
+                assert_eq!(result.unwrap_err(), QueueDataCompareError::NullBrokerName);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
 mod broker_data_equality_tests {
     use super::BrokerData;
 
