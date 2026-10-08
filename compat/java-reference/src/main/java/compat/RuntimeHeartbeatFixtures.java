@@ -18,6 +18,8 @@ import org.apache.rocketmq.common.consumer.ConsumeFromWhere;
 import org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel;
 import org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData;
 import org.apache.rocketmq.remoting.protocol.heartbeat.HeartbeatData;
+import org.apache.rocketmq.remoting.protocol.heartbeat.ConsumerData;
+import org.apache.rocketmq.remoting.protocol.heartbeat.ProducerData;
 
 /** Invokes actual runtime registration and private heartbeat preparation.
  * The transport is never started; finally releases all constructed resources. */
@@ -57,6 +59,49 @@ public final class RuntimeHeartbeatFixtures {
             cases.add(item);
         }
         return cases;
+    }
+
+    private static Map<String, Object> ownerFieldCases() {
+        Map<String, Object> result = new TreeMap<>();
+        List<Object> producers = new ArrayList<>();
+        for (String input : new String[] {"{}", "{\"groupName\":null}", "{\"groupName\":\"group\"}"}) {
+            ProducerData value = com.alibaba.fastjson2.JSON.parseObject(input, ProducerData.class);
+            com.alibaba.fastjson2.JSONObject encoded = com.alibaba.fastjson2.JSON.parseObject(
+                com.alibaba.fastjson2.JSON.toJSONString(value));
+            Map<String, Object> item = new TreeMap<>();
+            item.put("rawInput", input);
+            item.put("groupNull", value.getGroupName() == null);
+            item.put("encodedHasGroup", encoded.containsKey("groupName"));
+            producers.add(item);
+        }
+        result.put("producers", producers);
+        List<Object> consumers = new ArrayList<>();
+        for (String input : new String[] {
+            "{}",
+            "{\"groupName\":null,\"consumeType\":null,\"messageModel\":null,\"consumeFromWhere\":null,\"subscriptionDataSet\":null}",
+            "{\"groupName\":\"group\",\"consumeType\":\"CONSUME_ACTIVELY\",\"messageModel\":\"CLUSTERING\",\"consumeFromWhere\":\"CONSUME_FROM_LAST_OFFSET\",\"subscriptionDataSet\":[],\"unitMode\":true}"
+        }) {
+            ConsumerData value = com.alibaba.fastjson2.JSON.parseObject(input, ConsumerData.class);
+            com.alibaba.fastjson2.JSONObject encoded = com.alibaba.fastjson2.JSON.parseObject(
+                com.alibaba.fastjson2.JSON.toJSONString(value));
+            Map<String, Object> item = new TreeMap<>();
+            item.put("rawInput", input);
+            item.put("groupNull", value.getGroupName() == null);
+            item.put("consumeTypeNull", value.getConsumeType() == null);
+            item.put("messageModelNull", value.getMessageModel() == null);
+            item.put("consumeFromWhereNull", value.getConsumeFromWhere() == null);
+            item.put("subscriptionsNull", value.getSubscriptionDataSet() == null);
+            item.put("subscriptionsEmpty", value.getSubscriptionDataSet() != null && value.getSubscriptionDataSet().isEmpty());
+            item.put("unitMode", value.isUnitMode());
+            item.put("encodedHasGroup", encoded.containsKey("groupName"));
+            item.put("encodedHasConsumeType", encoded.containsKey("consumeType"));
+            item.put("encodedHasMessageModel", encoded.containsKey("messageModel"));
+            item.put("encodedHasConsumeFromWhere", encoded.containsKey("consumeFromWhere"));
+            item.put("encodedHasSubscriptions", encoded.containsKey("subscriptionDataSet"));
+            consumers.add(item);
+        }
+        result.put("consumers", consumers);
+        return result;
     }
 
     private static void record(List<Object> cases, MQClientInstance runtime, String name,
@@ -158,6 +203,7 @@ public final class RuntimeHeartbeatFixtures {
         fixture.put("cases", cases);
         fixture.put("multiplicityCases", multiplicityCases);
         fixture.put("subscriptionFieldCases", subscriptionFieldCases());
+        fixture.put("ownerFieldCases", ownerFieldCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture) + "\n";
         Path file = Path.of(args[0]);
         if (args.length > 1 && "--verify".equals(args[1])) {

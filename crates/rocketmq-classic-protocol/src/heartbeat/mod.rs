@@ -226,6 +226,43 @@ mod tests {
         }
     }
 
+    #[test]
+    fn heartbeat_owner_fields_match_invoked_java_nulls_and_defaults() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
+                .unwrap();
+        let cases = &fixture["ownerFieldCases"];
+        for case in cases["producers"].as_array().unwrap() {
+            let value: ProducerData = serde_json::from_str(case["rawInput"].as_str().unwrap()).unwrap();
+            let encoded = serde_json::to_value(&value).unwrap();
+            assert_eq!(value.group_name.is_none(), case["groupNull"]);
+            assert_eq!(encoded.get("groupName").is_some(), case["encodedHasGroup"]);
+        }
+        for case in cases["consumers"].as_array().unwrap() {
+            let value: ConsumerData = serde_json::from_str(case["rawInput"].as_str().unwrap()).unwrap();
+            let encoded = serde_json::to_value(&value).unwrap();
+            assert_eq!(value.group_name.is_none(), case["groupNull"]);
+            assert_eq!(value.consume_type.is_none(), case["consumeTypeNull"]);
+            assert_eq!(value.message_model.is_none(), case["messageModelNull"]);
+            assert_eq!(value.consume_from_where.is_none(), case["consumeFromWhereNull"]);
+            assert_eq!(value.subscription_data_set.is_none(), case["subscriptionsNull"]);
+            assert_eq!(
+                value.subscription_data_set.as_ref().is_some_and(HashSet::is_empty),
+                case["subscriptionsEmpty"]
+            );
+            assert_eq!(value.unit_mode, case["unitMode"]);
+            for (field, marker) in [
+                ("groupName", "encodedHasGroup"),
+                ("consumeType", "encodedHasConsumeType"),
+                ("messageModel", "encodedHasMessageModel"),
+                ("consumeFromWhere", "encodedHasConsumeFromWhere"),
+                ("subscriptionDataSet", "encodedHasSubscriptions"),
+            ] {
+                assert_eq!(encoded.get(field).is_some(), case[marker], "{field}");
+            }
+        }
+    }
+
     fn current_millis() -> i64 {
         use std::time::{SystemTime, UNIX_EPOCH};
         SystemTime::now()
