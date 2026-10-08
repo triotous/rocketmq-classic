@@ -132,6 +132,48 @@ public final class RuntimeRouteFixtures {
         return cases;
     }
 
+    private static List<Object> runtimeNullNestedRouteElements() throws Exception {
+        String[][] inputs = new String[][] {
+            {"null-queue", "{\"queueDatas\":[null],\"brokerDatas\":[],\"filterServerTable\":{}}"},
+            {"null-broker", "{\"queueDatas\":[],\"brokerDatas\":[null],\"filterServerTable\":{}}"},
+            {"null-static-mapping", "{\"queueDatas\":[],\"brokerDatas\":[],\"filterServerTable\":{},"
+                + "\"topicQueueMappingByBroker\":{\"broker\":null}}"}
+        };
+        List<Object> cases = new ArrayList<>();
+        for (String[] entry : inputs) {
+            org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+            config.setClientIP("route-null-nested-" + entry[0]);
+            MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+            org.apache.rocketmq.client.impl.MQClientAPIImpl original = runtime.getMQClientAPIImpl();
+            RouteApi api = new RouteApi(config);
+            Map<String, Object> item = new TreeMap<>();
+            try {
+                java.lang.reflect.Field field = MQClientInstance.class.getDeclaredField("mQClientAPIImpl");
+                field.setAccessible(true);
+                field.set(runtime, api);
+                item.put("id", entry[0]);
+                item.put("input", com.alibaba.fastjson2.JSON.parseObject(entry[1]));
+                api.route = com.alibaba.fastjson2.JSON.parseObject(entry[1], TopicRouteData.class);
+                try {
+                    item.put("changed", runtime.updateTopicRouteInfoFromNameServer("topic"));
+                    item.put("outcome", "OK");
+                } catch (RuntimeException error) {
+                    item.put("outcome", error.getClass().getSimpleName());
+                }
+                item.put("cachedRouteExists", runtime.getAnExistTopicRouteData("topic") != null);
+                item.put("requests", api.requests);
+            } finally {
+                java.lang.reflect.Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
+                    org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
+                cleanup.setAccessible(true);
+                try { cleanup.invoke(runtime, original, new IllegalStateException("null nested route fixture teardown")); }
+                finally { api.shutdown(); }
+            }
+            cases.add(item);
+        }
+        return cases;
+    }
+
     private static List<Object> nullableRouteCollections() {
         List<Object> cases = new ArrayList<>();
         for (String input : new String[] {
@@ -1192,6 +1234,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("integers", integerCases);
         fixture.put("runtimeNullBrokerMap", runtimeNullBrokerMap());
         fixture.put("runtimeNullBrokerValues", runtimeNullBrokerValues());
+        fixture.put("runtimeNullNestedRouteElements", runtimeNullNestedRouteElements());
         fixture.put("nullSubscriptionTopicRefresh", nullSubscriptionTopicRefresh());
         fixture.put("nullableRouteCollections", nullableRouteCollections());
         fixture.put("nullableNestedRouteFields", nullableNestedRouteFields());
