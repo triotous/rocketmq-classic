@@ -403,6 +403,132 @@ impl FactoryTable {
             .map(|(previous, _)| previous)
     }
 
+    /// ConcurrentMap remapping uses conditional writes; a closure may be
+    /// invoked again if another writer changes the same mapping.
+    pub async fn compute_if_absent(
+        &self,
+        key: impl Into<String>,
+        mut mapping: impl FnMut(&str) -> Option<Arc<ClientRuntime>>,
+    ) -> Result<Option<Arc<ClientRuntime>>, RuntimeError> {
+        let key = key.into();
+        if let Some(current) = self.get(&key)? {
+            return Ok(Some(current));
+        }
+        let Some(value) = mapping(&key) else {
+            return Ok(None);
+        };
+        Ok(Some(
+            self.put_if_absent(&key, value.clone())
+                .await?
+                .unwrap_or(value),
+        ))
+    }
+
+    pub async fn compute_if_present(
+        &self,
+        key: impl Into<String>,
+        mut remapping: impl FnMut(&str, &Arc<ClientRuntime>) -> Option<Arc<ClientRuntime>>,
+    ) -> Result<Option<Arc<ClientRuntime>>, RuntimeError> {
+        let key = key.into();
+        loop {
+            let Some(current) = self.get(&key)? else {
+                return Ok(None);
+            };
+            match remapping(&key, &current) {
+                Some(value) => {
+                    if self.replace_if_same(&key, &current, value.clone()).await? {
+                        return Ok(Some(value));
+                    }
+                }
+                None => {
+                    if self.remove_if_same(&key, &current).await? {
+                        return Ok(None);
+                    }
+                }
+            }
+        }
+    }
+
+    pub async fn compute(
+        &self,
+        key: impl Into<String>,
+        mut remapping: impl FnMut(&str, Option<&Arc<ClientRuntime>>) -> Option<Arc<ClientRuntime>>,
+    ) -> Result<Option<Arc<ClientRuntime>>, RuntimeError> {
+        let key = key.into();
+        loop {
+            let current = self.get(&key)?;
+            let value = remapping(&key, current.as_ref());
+            match (current.as_ref(), value) {
+                (None, None) => return Ok(None),
+                (None, Some(value)) => {
+                    if self.put_if_absent(&key, value.clone()).await?.is_none() {
+                        return Ok(Some(value));
+                    }
+                }
+                (Some(current), Some(value)) => {
+                    if self.replace_if_same(&key, current, value.clone()).await? {
+                        return Ok(Some(value));
+                    }
+                }
+                (Some(current), None) => {
+                    if self.remove_if_same(&key, current).await? {
+                        return Ok(None);
+                    }
+                }
+            }
+        }
+    }
+
+    pub async fn merge(
+        &self,
+        key: impl Into<String>,
+        value: Arc<ClientRuntime>,
+        mut remapping: impl FnMut(
+            &Arc<ClientRuntime>,
+            &Arc<ClientRuntime>,
+        ) -> Option<Arc<ClientRuntime>>,
+    ) -> Result<Option<Arc<ClientRuntime>>, RuntimeError> {
+        let key = key.into();
+        loop {
+            let Some(current) = self.get(&key)? else {
+                if self.put_if_absent(&key, value.clone()).await?.is_none() {
+                    return Ok(Some(value));
+                }
+                continue;
+            };
+            match remapping(&current, &value) {
+                Some(next) => {
+                    if self.replace_if_same(&key, &current, next.clone()).await? {
+                        return Ok(Some(next));
+                    }
+                }
+                None => {
+                    if self.remove_if_same(&key, &current).await? {
+                        return Ok(None);
+                    }
+                }
+            }
+        }
+    }
+
+    pub async fn replace_all(
+        &self,
+        mut remapping: impl FnMut(&str, &Arc<ClientRuntime>) -> Arc<ClientRuntime>,
+    ) -> Result<(), RuntimeError> {
+        for key in self.snapshot()?.into_keys() {
+            loop {
+                let Some(current) = self.get(&key)? else {
+                    break;
+                };
+                let value = remapping(&key, &current);
+                if self.replace_if_same(&key, &current, value).await? {
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub async fn replace(
         &self,
         key: &str,
