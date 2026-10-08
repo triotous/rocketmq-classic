@@ -7,6 +7,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeSet;
 import java.util.TreeMap;
 import org.apache.rocketmq.client.impl.factory.MQClientInstance;
 import org.apache.rocketmq.common.MixAll;
@@ -806,6 +807,45 @@ public final class RuntimeRouteFixtures {
         return data;
     }
 
+    private static List<Object> brokerDataSelectAddrCases() {
+        String[] inputs = new String[] {
+            "{\"brokerAddrs\":{\"0\":\"master\",\"1\":\"slave\"}}",
+            "{\"brokerAddrs\":{\"1\":\"one\",\"2\":\"two\"}}",
+            "{\"brokerAddrs\":{\"0\":null,\"2\":\"slave\"}}",
+            "{\"brokerAddrs\":{\"1\":null}}",
+            "{\"brokerAddrs\":{}}",
+            "{\"brokerAddrs\":null}",
+            "{}"
+        };
+        List<Object> cases = new ArrayList<>();
+        for (int index = 0; index < inputs.length; index++) {
+            org.apache.rocketmq.remoting.protocol.route.BrokerData data =
+                com.alibaba.fastjson2.JSON.parseObject(inputs[index],
+                    org.apache.rocketmq.remoting.protocol.route.BrokerData.class);
+            Map<String, Object> item = new TreeMap<>();
+            TreeSet<String> addresses = new TreeSet<>();
+            boolean nullAddress = false;
+            String exception = null;
+            for (int sample = 0; sample < 256; sample++) {
+                try {
+                    String address = data.selectBrokerAddr();
+                    if (address == null) nullAddress = true;
+                    else addresses.add(address);
+                } catch (RuntimeException error) {
+                    exception = error.getClass().getSimpleName();
+                    break;
+                }
+            }
+            item.put("id", "select-" + index);
+            item.put("input", com.alibaba.fastjson2.JSON.parseObject(inputs[index]));
+            item.put("addresses", new ArrayList<>(addresses));
+            item.put("nullAddress", nullAddress);
+            item.put("exception", exception);
+            cases.add(item);
+        }
+        return cases;
+    }
+
     private static List<Object> brokerDataEqualityCases() {
         HashMap<Long, String> master = new HashMap<>();
         master.put(0L, "master:10911");
@@ -1264,6 +1304,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("runtimeTopicRouteTable", runtimeTopicRouteTable(inputs.get(0)));
         fixture.put("runtimeRawOfflineCleanup", runtimeRawOfflineCleanup(inputs.get(0)));
         fixture.put("brokerDataEquality", brokerDataEqualityCases());
+        fixture.put("brokerDataSelectAddr", brokerDataSelectAddrCases());
         fixture.put("brokerDataHashCode", brokerDataHashCodeCases());
         fixture.put("brokerDataToString", brokerDataToStringCases());
         fixture.put("queueDataMethods", queueDataMethodCases());
