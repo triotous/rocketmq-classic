@@ -393,6 +393,14 @@ public final class RuntimeConfigFixtures {
             runtime.getProducerTable().put("equal-remove", producerEqualA);
             equalValues.put("producerRemoveByEqualValue",
                 runtime.getProducerTable().remove("equal-remove", producerEqualB));
+            runtime.getProducerTable().put("equal-values-remove", producerEqualA);
+            equalValues.put("producerValuesRemoveByEqualValue",
+                runtime.getProducerTable().values().remove(producerEqualB));
+            runtime.getProducerTable().put("equal-entry-remove", producerEqualA);
+            Map.Entry<String, org.apache.rocketmq.client.impl.producer.MQProducerInner> producerEntry =
+                new java.util.AbstractMap.SimpleImmutableEntry<>("equal-entry-remove", producerEqualB);
+            equalValues.put("producerEntryContainsEqualValue", runtime.getProducerTable().entrySet().contains(producerEntry));
+            equalValues.put("producerEntryRemoveByEqualValue", runtime.getProducerTable().entrySet().remove(producerEntry));
             org.apache.rocketmq.client.impl.consumer.MQConsumerInner consumerEqualA =
                 tableOwner(org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class, "consumer-equal");
             org.apache.rocketmq.client.impl.consumer.MQConsumerInner consumerEqualB =
@@ -406,6 +414,14 @@ public final class RuntimeConfigFixtures {
             runtime.getConsumerTable().put("equal-remove", consumerEqualA);
             equalValues.put("consumerRemoveByEqualValue",
                 runtime.getConsumerTable().remove("equal-remove", consumerEqualB));
+            runtime.getConsumerTable().put("equal-values-remove", consumerEqualA);
+            equalValues.put("consumerValuesRemoveByEqualValue",
+                runtime.getConsumerTable().values().remove(consumerEqualB));
+            runtime.getConsumerTable().put("equal-entry-remove", consumerEqualA);
+            Map.Entry<String, org.apache.rocketmq.client.impl.consumer.MQConsumerInner> consumerEntry =
+                new java.util.AbstractMap.SimpleImmutableEntry<>("equal-entry-remove", consumerEqualB);
+            equalValues.put("consumerEntryContainsEqualValue", runtime.getConsumerTable().entrySet().contains(consumerEntry));
+            equalValues.put("consumerEntryRemoveByEqualValue", runtime.getConsumerTable().entrySet().remove(consumerEntry));
             result.put("customEquality", equalValues);
             java.util.concurrent.ConcurrentMap<String, org.apache.rocketmq.client.impl.consumer.MQConsumerInner> retained = runtime.getConsumerTable();
             result.put("consumerRegisterAccepted", runtime.registerConsumer("registered", consumerA));
