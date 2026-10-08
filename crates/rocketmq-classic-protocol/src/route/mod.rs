@@ -282,6 +282,35 @@ mod broker_data_to_string_tests {
 }
 
 #[cfg(test)]
+mod broker_data_select_addr_tests {
+    use super::BrokerData;
+
+    #[test]
+    fn broker_data_select_addr_matches_invoked_java_outcomes() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["brokerDataSelectAddr"].as_array().unwrap() {
+            let broker: BrokerData = serde_json::from_value(case["input"].clone()).unwrap();
+            if let Some(exception) = case["exception"].as_str() {
+                let error = broker.java_select_broker_addr().unwrap_err();
+                assert_eq!(error.java_exception_name(), exception, "{}", case["id"]);
+                continue;
+            }
+            for _ in 0..128 {
+                match broker.java_select_broker_addr().unwrap() {
+                    Some(address) => assert!(
+                        case["addresses"].as_array().unwrap().contains(&address.into()),
+                        "unexpected address for {}: {address}",
+                        case["id"]
+                    ),
+                    None => assert_eq!(case["nullAddress"], true, "{}", case["id"]),
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
 mod broker_data_compare_to_tests {
     use super::{BrokerData, BrokerDataCompareError};
 
