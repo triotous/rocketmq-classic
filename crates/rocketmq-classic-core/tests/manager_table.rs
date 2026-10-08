@@ -369,6 +369,14 @@ async fn retained_factory_table_and_atomic_mutations_match_invoked_java() {
         java["computeIfAbsentKeepsCurrent"]
     );
     assert_eq!(
+        live.compute_if_absent("compute-null", |_| None)
+            .await
+            .unwrap()
+            .is_none()
+            && !live.contains_key("compute-null").unwrap(),
+        java["computeIfAbsentNullLeavesAbsent"]
+    );
+    assert_eq!(
         Arc::ptr_eq(
             &live
                 .compute_if_present("compute-a", |_, _| Some(second.clone()))
@@ -378,6 +386,14 @@ async fn retained_factory_table_and_atomic_mutations_match_invoked_java() {
             &second
         ) && entry_view.contains("compute-a", &second).unwrap(),
         java["computeIfPresentReplaces"]
+    );
+    assert_eq!(
+        live.compute_if_present("compute-a", |_, _| None)
+            .await
+            .unwrap()
+            .is_none()
+            && !live.contains_key("compute-a").unwrap(),
+        java["computeIfPresentNullRemoves"]
     );
     assert_eq!(
         Arc::ptr_eq(
@@ -410,6 +426,14 @@ async fn retained_factory_table_and_atomic_mutations_match_invoked_java() {
         java["computeNullRemoves"]
     );
     assert_eq!(
+        live.compute("compute-null-absent", |_, _| None)
+            .await
+            .unwrap()
+            .is_none()
+            && !live.contains_key("compute-null-absent").unwrap(),
+        java["computeAbsentNullLeavesAbsent"]
+    );
+    assert_eq!(
         Arc::ptr_eq(
             &live
                 .merge("compute-a", second.clone(), |_, added| Some(added.clone()))
@@ -430,6 +454,15 @@ async fn retained_factory_table_and_atomic_mutations_match_invoked_java() {
             &first
         ),
         java["mergeAbsentInserts"]
+    );
+    live.put("merge-remove", second.clone()).await.unwrap();
+    assert_eq!(
+        live.merge("merge-remove", first.clone(), |_, _| None)
+            .await
+            .unwrap()
+            .is_none()
+            && !live.contains_key("merge-remove").unwrap(),
+        java["mergeNullRemoves"]
     );
     live.replace_all(|_, _| second.clone()).await.unwrap();
     assert_eq!(
