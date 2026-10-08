@@ -145,6 +145,22 @@ mod nullable_message_queue_tests {
             assert_eq!(queue.queue_id(), case["queueId"].as_i64().unwrap() as i32);
         }
     }
+
+    #[test]
+    fn message_queue_compare_to_matches_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["messageQueueCompareTo"].as_array().unwrap() {
+            let left: MessageQueue = serde_json::from_value(case["left"].clone()).unwrap();
+            let right: MessageQueue = serde_json::from_value(case["right"].clone()).unwrap();
+            let result = left.java_compare_to(&right);
+            if case["outcome"] == "OK" {
+                assert_eq!(result.unwrap(), case["result"].as_i64().unwrap() as i32);
+            } else {
+                assert!(result.is_err());
+            }
+        }
+    }
 }
 
 #[cfg(test)]

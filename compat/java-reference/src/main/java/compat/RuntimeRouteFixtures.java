@@ -166,6 +166,34 @@ public final class RuntimeRouteFixtures {
         return cases;
     }
 
+    private static List<Object> messageQueueCompareToCases() {
+        List<Object> cases = new ArrayList<>();
+        MessageQueue[][] pairs = new MessageQueue[][] {
+            {new MessageQueue(null, "b", 0), new MessageQueue("t", "b", 0)},
+            {new MessageQueue("t", "b", 0), new MessageQueue(null, "b", 0)},
+            {new MessageQueue("t", null, 0), new MessageQueue("t", "b", 0)},
+            {new MessageQueue("t", "b", 0), new MessageQueue("t", null, 0)},
+            {new MessageQueue("a", "b", 0), new MessageQueue("c", "b", 0)},
+            {new MessageQueue("t", "a", 0), new MessageQueue("t", "c", 0)},
+            {new MessageQueue("t", "b", Integer.MAX_VALUE), new MessageQueue("t", "b", -1)},
+            {new MessageQueue("t", "b", Integer.MIN_VALUE), new MessageQueue("t", "b", 1)},
+            {new MessageQueue("t", "b", 5), new MessageQueue("t", "b", 5)}
+        };
+        for (MessageQueue[] pair : pairs) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("left", pair[0]);
+            item.put("right", pair[1]);
+            try {
+                item.put("result", pair[0].compareTo(pair[1]));
+                item.put("outcome", "OK");
+            } catch (NullPointerException error) {
+                item.put("outcome", "NullPointerException");
+            }
+            cases.add(item);
+        }
+        return cases;
+    }
+
     private static List<Object> nullableStaticMappingFields() {
         List<Object> cases = new ArrayList<>();
         for (String input : new String[] {
@@ -604,6 +632,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("nullableRouteCollections", nullableRouteCollections());
         fixture.put("nullableNestedRouteFields", nullableNestedRouteFields());
         fixture.put("nullableMessageQueueFields", nullableMessageQueueFields());
+        fixture.put("messageQueueCompareTo", messageQueueCompareToCases());
         fixture.put("nullableStaticMappingFields", nullableStaticMappingFields());
         fixture.put("nullStaticMappingConversion", nullStaticMappingConversion());
         fixture.put("runtimeNullableCollections", runtimeNullableCollections());
