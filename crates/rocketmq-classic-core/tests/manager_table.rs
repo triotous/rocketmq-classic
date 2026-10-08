@@ -443,7 +443,7 @@ async fn retained_factory_table_and_atomic_mutations_match_invoked_java() {
     );
     assert!(Arc::ptr_eq(
         &second_view.snapshot().unwrap()["keep"],
-        &first
+        &second
     ));
     live.clear().await.unwrap();
     assert_eq!(
