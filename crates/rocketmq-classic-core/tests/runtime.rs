@@ -305,13 +305,17 @@ async fn all_topic_refresh_unions_registered_topics_and_continues_after_rejectio
             let topic = command.ext_fields.as_ref().unwrap().get("topic").cloned();
             assert!(seen.insert(topic.clone()), "duplicate route request");
             let mut reply = RemotingCommand {
-                code: if topic.as_deref() == Some("common") || topic.is_none() {
+                code: if topic.as_deref() == Some("common") {
                     987654
                 } else {
                     0
                 },
                 opaque: command.opaque,
-                body: Some(body.clone()),
+                body: Some(if topic.is_none() {
+                    b"null".to_vec()
+                } else {
+                    body.clone()
+                }),
                 ..Default::default()
             };
             reply.mark_response();
