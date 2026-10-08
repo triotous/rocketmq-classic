@@ -313,6 +313,8 @@ public final class RuntimeConfigFixtures {
         }) == first && calls.get() == 1);
         result.put("computeIfPresentUpdate", table.computeIfPresent("a", (key, old) -> second) == second);
         result.put("computeIfPresentAbsent", table.computeIfPresent("missing", (key, old) -> second) == null);
+        result.put("getOrDefaultPresent", table.getOrDefault("a", first) == second);
+        result.put("getOrDefaultAbsent", table.getOrDefault("missing", second) == second);
         result.put("computeInsert", table.compute("b", (key, old) -> first) == first);
         result.put("computeRemove", table.compute("b", (key, old) -> null) == null && !table.containsKey("b"));
         result.put("mergeInsert", table.merge("c", first, (old, value) -> second) == first);
@@ -322,6 +324,11 @@ public final class RuntimeConfigFixtures {
         java.util.concurrent.atomic.AtomicInteger visited = new java.util.concurrent.atomic.AtomicInteger();
         table.forEach((key, value) -> visited.incrementAndGet());
         result.put("forEachCount", visited.get());
+        Map<String, T> additions = new TreeMap<>();
+        additions.put("d", second);
+        additions.put("e", first);
+        table.putAll(additions);
+        result.put("putAllAdds", table.get("d") == second && table.get("e") == first && table.size() == 4);
         result.put("keys", new java.util.TreeSet<>(table.keySet()));
         result.put("valuesCount", table.values().size());
         table.clear();
