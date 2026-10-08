@@ -417,6 +417,64 @@ async fn retained_registry_collection_views_match_invoked_java() {
             table.put("f", second.clone()).await.unwrap();
             entries.clear().await.unwrap();
             let entry_view_clear = table.is_empty().unwrap();
+            table.put("remove-key", first.clone()).await.unwrap();
+            table.put("keep-key", second.clone()).await.unwrap();
+            let key_view_remove_if = keys
+                .remove_if(|key| key == "remove-key")
+                .await
+                .unwrap()
+                == 1
+                && !table.contains_key("remove-key").unwrap();
+            table.clear().await.unwrap();
+            table.put("keep-key", first.clone()).await.unwrap();
+            table.put("drop-key", second.clone()).await.unwrap();
+            let key_view_retain_all = keys
+                .retain(|key| key == "keep-key")
+                .await
+                .unwrap()
+                == 1
+                && table.len().unwrap() == 1
+                && table.contains_key("keep-key").unwrap();
+
+            table.clear().await.unwrap();
+            table.put("remove-value", first.clone()).await.unwrap();
+            table.put("keep-value", second.clone()).await.unwrap();
+            let value_view_remove_if = values
+                .remove_if(|value| Arc::ptr_eq(value, &first))
+                .await
+                .unwrap()
+                == 1
+                && !table.contains_key("remove-value").unwrap();
+            table.clear().await.unwrap();
+            table.put("keep-value", second.clone()).await.unwrap();
+            table.put("drop-value", first.clone()).await.unwrap();
+            let value_view_retain_all = values
+                .retain(|value| Arc::ptr_eq(value, &second))
+                .await
+                .unwrap()
+                == 1
+                && table.len().unwrap() == 1
+                && table.contains_key("keep-value").unwrap();
+
+            table.clear().await.unwrap();
+            table.put("remove-entry", first.clone()).await.unwrap();
+            table.put("keep-entry", second.clone()).await.unwrap();
+            let entry_view_remove_if = entries
+                .remove_if(|key, _| key == "remove-entry")
+                .await
+                .unwrap()
+                == 1
+                && !table.contains_key("remove-entry").unwrap();
+            table.clear().await.unwrap();
+            table.put("keep-entry", second.clone()).await.unwrap();
+            table.put("drop-entry", first.clone()).await.unwrap();
+            let entry_view_retain_all = entries
+                .retain(|key, _| key == "keep-entry")
+                .await
+                .unwrap()
+                == 1
+                && table.len().unwrap() == 1
+                && table.contains_key("keep-entry").unwrap();
             assert_eq!(
                 serde_json::json!({
                     "retainedViewsSeeInitialPut": retained_views_see_initial_put,
@@ -428,6 +486,12 @@ async fn retained_registry_collection_views_match_invoked_java() {
                     "keyViewClear": key_view_clear,
                     "valueViewClear": value_view_clear,
                     "entryViewClear": entry_view_clear,
+                    "keyViewRemoveIf": key_view_remove_if,
+                    "keyViewRetainAll": key_view_retain_all,
+                    "valueViewRemoveIf": value_view_remove_if,
+                    "valueViewRetainAll": value_view_retain_all,
+                    "entryViewRemoveIf": entry_view_remove_if,
+                    "entryViewRetainAll": entry_view_retain_all,
                 }),
                 $expected
             );
