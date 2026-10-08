@@ -52,7 +52,7 @@ for None. Binary decode now uses Java's `LanguageCode.valueOf(byte)`, returning
 None for unknown codes; JSON string decode uses `getCode(String)` and likewise
 returns None for unknown names. Core heartbeat V1/V2 use the nullable config;
 other typed RPC requests continue to use Java. See [ADR-0023](ADR-0023-language-code-java-methods.md)
-for the pinned enum method oracle and current fixture hash. The config fixture
+for the pinned enum method oracle and fixture hash recorded at that LanguageCode update. The config fixture
 SHA-256 at this ADR's update was
 `9b7a324ef971a1ea4dc3642dd54f1a3bd432684c8ef5dac03de89a827a52d6f4`.
 Native config clone/reset/runtime, codec JSON/binary and scripted hook/wire tests
