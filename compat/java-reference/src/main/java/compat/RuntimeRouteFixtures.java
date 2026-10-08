@@ -474,6 +474,16 @@ public final class RuntimeRouteFixtures {
             "{\"topic\":123,\"brokerName\":false,\"queueId\":\"2\"}"));
         cases.add(routeDtoInputCase("message-queue-structured-strings", "messageQueue",
             "{\"topic\":[],\"brokerName\":{}}"));
+        cases.add(routeDtoInputCase("message-queue-id-null", "messageQueue",
+            "{\"queueId\":null}"));
+        cases.add(routeDtoInputCase("message-queue-id-minimum", "messageQueue",
+            "{\"queueId\":-2147483648}"));
+        cases.add(routeDtoInputCase("message-queue-id-maximum", "messageQueue",
+            "{\"queueId\":2147483647}"));
+        cases.add(routeDtoInputCase("message-queue-id-fraction", "messageQueue",
+            "{\"queueId\":-1.9}"));
+        cases.add(routeDtoInputCase("message-queue-id-overflow", "messageQueue",
+            "{\"queueId\":2147483648}"));
         cases.add(routeDtoInputCase("broker-scalars", "brokerData",
             "{\"cluster\":true,\"brokerName\":7,\"zoneName\":1.5,\"brokerAddrs\":{\"+1\":true,\"2\":3,\"3\":null},\"enableActingMaster\":\"TRUE\"}"));
         cases.add(routeDtoInputCase("broker-address-decimal-key", "brokerData",
