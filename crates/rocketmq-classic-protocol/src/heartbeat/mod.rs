@@ -13,9 +13,9 @@ pub struct SubscriptionData {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sub_string: Option<String>,
     #[serde(default = "empty_tags", skip_serializing_if = "Option::is_none")]
-    pub tags_set: Option<HashSet<String>>,
+    pub tags_set: Option<HashSet<Option<String>>>,
     #[serde(default = "empty_codes", skip_serializing_if = "Option::is_none")]
-    pub code_set: Option<HashSet<i32>>,
+    pub code_set: Option<HashSet<Option<i32>>>,
     #[serde(
         default = "current_subscription_version",
         deserialize_with = "deserialize_null_default"
@@ -93,7 +93,9 @@ impl SubscriptionData {
             .wrapping_add(if self.class_filter_mode { 1231 } else { 1237 });
         hash = hash
             .wrapping_mul(31)
-            .wrapping_add(java_optional_set_hash(&self.code_set, |value| *value));
+            .wrapping_add(java_optional_set_hash(&self.code_set, |value| {
+                value.unwrap_or(0)
+            }));
         hash = hash.wrapping_mul(31).wrapping_add(
             self.sub_string
                 .as_deref()
@@ -103,7 +105,7 @@ impl SubscriptionData {
         hash = hash
             .wrapping_mul(31)
             .wrapping_add(java_optional_set_hash(&self.tags_set, |value| {
-                java_string_hash_code(value)
+                value.as_deref().map(java_string_hash_code).unwrap_or(0)
             }));
         hash = hash.wrapping_mul(31).wrapping_add(
             self.topic
@@ -189,23 +191,31 @@ fn java_string_compare(left: &str, right: &str) -> i32 {
     }
 }
 
-fn java_string_set_to_string(values: &Option<HashSet<String>>) -> String {
+fn java_string_set_to_string(values: &Option<HashSet<Option<String>>>) -> String {
     let Some(values) = values else {
         return "null".to_owned();
     };
-    let mut values = values.iter().collect::<Vec<_>>();
-    values.sort_by(|left, right| java_string_compare(left, right).cmp(&0));
+    let mut values = values
+        .iter()
+        .map(|value| value.as_deref())
+        .collect::<Vec<_>>();
+    values.sort_by(|left, right| match (left, right) {
+        (None, None) => std::cmp::Ordering::Equal,
+        (None, Some(_)) => std::cmp::Ordering::Less,
+        (Some(_), None) => std::cmp::Ordering::Greater,
+        (Some(left), Some(right)) => java_string_compare(left, right).cmp(&0),
+    });
     format!(
         "[{}]",
         values
             .into_iter()
-            .map(String::as_str)
+            .map(|value| value.unwrap_or("null"))
             .collect::<Vec<_>>()
             .join(", ")
     )
 }
 
-fn java_integer_set_to_string(values: &Option<HashSet<i32>>) -> String {
+fn java_integer_set_to_string(values: &Option<HashSet<Option<i32>>>) -> String {
     let Some(values) = values else {
         return "null".to_owned();
     };
@@ -215,7 +225,7 @@ fn java_integer_set_to_string(values: &Option<HashSet<i32>>) -> String {
         "[{}]",
         values
             .into_iter()
-            .map(|value| value.to_string())
+            .map(|value| value.map_or_else(|| "null".to_owned(), |value| value.to_string()))
             .collect::<Vec<_>>()
             .join(", ")
     )
@@ -268,11 +278,11 @@ fn hash_optional_set<T: Hash, H: Hasher>(values: &Option<HashSet<T>>, state: &mu
     }
 }
 
-fn empty_tags() -> Option<HashSet<String>> {
+fn empty_tags() -> Option<HashSet<Option<String>>> {
     Some(HashSet::new())
 }
 
-fn empty_codes() -> Option<HashSet<i32>> {
+fn empty_codes() -> Option<HashSet<Option<i32>>> {
     Some(HashSet::new())
 }
 
@@ -669,6 +679,28 @@ mod tests {
                 value.code_set.as_ref().is_some_and(HashSet::is_empty),
                 case["codeEmpty"]
             );
+            assert_eq!(
+                value.tags_set.as_ref().map(HashSet::len),
+                case["tagsCount"].as_u64().map(|count| count as usize)
+            );
+            assert_eq!(
+                value.code_set.as_ref().map(HashSet::len),
+                case["codeCount"].as_u64().map(|count| count as usize)
+            );
+            assert_eq!(
+                value
+                    .tags_set
+                    .as_ref()
+                    .is_some_and(|values| values.contains(&None)),
+                case["tagsHasNull"]
+            );
+            assert_eq!(
+                value
+                    .code_set
+                    .as_ref()
+                    .is_some_and(|values| values.contains(&None)),
+                case["codeHasNull"]
+            );
             if case["versionCurrent"] == true {
                 assert!((before..=after).contains(&value.sub_version));
             }
@@ -691,6 +723,26 @@ mod tests {
                             .unwrap_or(serde_json::Value::Null),
                         case["encodedFilterClassSource"]
                     );
+                }
+            }
+            for (field, marker) in [("tagsSet", "tagsHasNull"), ("codeSet", "codeHasNull")] {
+                assert_eq!(
+                    encoded
+                        .get(field)
+                        .and_then(serde_json::Value::as_array)
+                        .is_some_and(|values| values.contains(&serde_json::Value::Null)),
+                    case[marker],
+                    "{field} null member"
+                );
+            }
+            for (field, expected_field) in [("tagsSet", "encodedTags"), ("codeSet", "encodedCode")]
+            {
+                if let Some(expected) = case[expected_field].as_array() {
+                    let mut expected = expected.clone();
+                    let mut actual = encoded[field].as_array().unwrap().clone();
+                    expected.sort_by_key(serde_json::Value::to_string);
+                    actual.sort_by_key(serde_json::Value::to_string);
+                    assert_eq!(actual, expected, "{field} JSON values");
                 }
             }
         }

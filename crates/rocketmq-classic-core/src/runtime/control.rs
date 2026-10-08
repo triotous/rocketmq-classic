@@ -843,8 +843,8 @@ mod tests {
             topic: Some("topic".into()),
             sub_string: Some("A".into()),
             sub_version: 41,
-            tags_set: Some(HashSet::from(["A".into()])),
-            code_set: Some(HashSet::from([65])),
+            tags_set: Some(HashSet::from([Some("A".into())])),
+            code_set: Some(HashSet::from([Some(65)])),
             ..Default::default()
         })));
         let producer_lease = frozen_io(runtime.register_producer("producer", producer.clone()))
@@ -899,8 +899,8 @@ mod tests {
             topic: Some("topic".into()),
             sub_string: Some("B".into()),
             sub_version: 42,
-            tags_set: Some(HashSet::from(["B".into()])),
-            code_set: Some(HashSet::from([66])),
+            tags_set: Some(HashSet::from([Some("B".into())])),
+            code_set: Some(HashSet::from([Some(66)])),
             ..Default::default()
         };
         tokio::time::advance(Duration::from_millis(29_999)).await;

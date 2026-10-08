@@ -32,6 +32,7 @@ public final class RuntimeHeartbeatFixtures {
             "{}",
             "{\"topic\":null,\"subString\":null,\"tagsSet\":null,\"codeSet\":null,\"expressionType\":null,\"subVersion\":0}",
             "{\"topic\":\"T\",\"subString\":\"tag\",\"tagsSet\":[\"tag\"],\"codeSet\":[7],\"expressionType\":\"SQL92\",\"subVersion\":42}",
+            "{\"topic\":\"null-members\",\"tagsSet\":[null,\"tag\",null],\"codeSet\":[null,7,null]}",
             "{\"topic\":\"filter-source\",\"filterClassSource\":\"source-from-json\"}"
         }) {
             long before = System.currentTimeMillis();
@@ -51,6 +52,10 @@ public final class RuntimeHeartbeatFixtures {
             item.put("filterClassSourceNull", value.getFilterClassSource() == null);
             item.put("tagsEmpty", value.getTagsSet() != null && value.getTagsSet().isEmpty());
             item.put("codeEmpty", value.getCodeSet() != null && value.getCodeSet().isEmpty());
+            item.put("tagsCount", value.getTagsSet() == null ? null : value.getTagsSet().size());
+            item.put("codeCount", value.getCodeSet() == null ? null : value.getCodeSet().size());
+            item.put("tagsHasNull", value.getTagsSet() != null && value.getTagsSet().contains(null));
+            item.put("codeHasNull", value.getCodeSet() != null && value.getCodeSet().contains(null));
             item.put("versionCurrent", value.getSubVersion() >= before && value.getSubVersion() <= after);
             item.put("versionZero", value.getSubVersion() == 0L);
             item.put("versionFortyTwo", value.getSubVersion() == 42L);
@@ -61,6 +66,10 @@ public final class RuntimeHeartbeatFixtures {
             item.put("encodedHasExpression", encoded.containsKey("expressionType"));
             item.put("encodedHasFilterClassSource", encoded.containsKey("filterClassSource"));
             item.put("encodedFilterClassSource", encoded.get("filterClassSource"));
+            if (value.getTopic() != null && value.getTopic().equals("null-members")) {
+                item.put("encodedTags", encoded.get("tagsSet"));
+                item.put("encodedCode", encoded.get("codeSet"));
+            }
             cases.add(item);
         }
         return cases;
@@ -97,7 +106,8 @@ public final class RuntimeHeartbeatFixtures {
             {"defaults", "{\"topic\":\"topic\",\"subString\":\"tag\",\"subVersion\":42}"},
             {"nullable", "{\"classFilterMode\":true,\"topic\":null,\"subString\":null,\"tagsSet\":null,\"codeSet\":null,\"subVersion\":-9,\"expressionType\":null}"},
             {"unicode", "{\"topic\":\"🚀\",\"subString\":\"Ω\",\"tagsSet\":[\"tag\"],\"codeSet\":[7],\"subVersion\":9223372036854775807,\"expressionType\":\"SQL92\"}"},
-            {"sets", "{\"topic\":\"topic\",\"subString\":\"tagA||tagB\",\"tagsSet\":[\"alpha\",\"beta\"],\"codeSet\":[7,11],\"subVersion\":0,\"expressionType\":\"TAG\"}"}
+            {"sets", "{\"topic\":\"topic\",\"subString\":\"tagA||tagB\",\"tagsSet\":[\"alpha\",\"beta\"],\"codeSet\":[7,11],\"subVersion\":0,\"expressionType\":\"TAG\"}"},
+            {"null-members", "{\"topic\":\"null-members\",\"subString\":\"tag\",\"tagsSet\":[null,\"alpha\"],\"codeSet\":[null,7],\"subVersion\":0,\"expressionType\":\"TAG\"}"}
         }) {
             SubscriptionData value = com.alibaba.fastjson2.JSON.parseObject(input[1], SubscriptionData.class);
             value.setFilterClassSource("ignored-in-text-and-equality");
@@ -130,7 +140,9 @@ public final class RuntimeHeartbeatFixtures {
             {"topic", base, base.replace("\"topic\":\"topic\"", "\"topic\":\"other\""), "source", "source"},
             {"expression-type", base, base.replace("\"expressionType\":\"SQL92\"", "\"expressionType\":\"TAG\""), "source", "source"},
             {"tags-set", base, base.replace("\"beta\"", "\"gamma\""), "source", "source"},
+            {"tags-null-member", base, base.replace("\"tagsSet\":[\"alpha\",\"beta\"]", "\"tagsSet\":[\"alpha\",null]"), "source", "source"},
             {"code-set", base, base.replace("\"codeSet\":[7,11]", "\"codeSet\":[7,12]"), "source", "source"},
+            {"code-null-member", base, base.replace("\"codeSet\":[7,11]", "\"codeSet\":[7,null]"), "source", "source"},
             {"subscription-string", base, base.replace("\"subString\":\"tag\"", "\"subString\":\"other\""), "source", "source"}
         }) {
             SubscriptionData left = com.alibaba.fastjson2.JSON.parseObject(input[1], SubscriptionData.class);
