@@ -555,6 +555,20 @@ public final class RuntimeRouteFixtures {
             "{\"readQueueNums\":Infinity}"));
         cases.add(routeDtoInputCase("queue-fastjson-hex-number", "queueData",
             "{\"readQueueNums\":0x10}"));
+        cases.add(routeDtoInputCase("queue-fastjson-vertical-tab-prefix", "queueData",
+            String.valueOf((char) 0x0b) + "{\"readQueueNums\":2}"));
+        cases.add(routeDtoInputCase("queue-fastjson-form-feed-prefix", "queueData",
+            String.valueOf((char) 0x0c) + "{\"readQueueNums\":2}"));
+        cases.add(routeDtoInputCase("queue-fastjson-form-feed-before-number", "queueData",
+            "{\"readQueueNums\":" + String.valueOf((char) 0x0c) + "2}"));
+        cases.add(routeDtoInputCase("queue-fastjson-vertical-tab-before-number", "queueData",
+            "{\"readQueueNums\":" + String.valueOf((char) 0x0b) + "2}"));
+        cases.add(routeDtoInputCase("queue-fastjson-nbsp-prefix", "queueData",
+            String.valueOf((char) 0x00a0) + "{\"readQueueNums\":2}"));
+        cases.add(routeDtoInputCase("queue-fastjson-bom-prefix", "queueData",
+            String.valueOf((char) 0xfeff) + "{\"readQueueNums\":2}"));
+        cases.add(routeDtoInputCase("queue-fastjson-bom-before-number", "queueData",
+            "{\"readQueueNums\":" + String.valueOf((char) 0xfeff) + "2}"));
         cases.add(routeDtoInputCase("mapping-fastjson-long-suffix", "mapping",
             "{epoch:9223372036854775807L,totalQueues:2L,currIdMap:{0:1L}}"));
         cases.add(routeDtoInputCase("route-filter-string-as-list", "topicRouteData",
