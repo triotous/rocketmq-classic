@@ -1,5 +1,7 @@
 # Phase 6 requirement and handoff audit
 
+Raw topic route map follow-up `f5431b6` adds native `get_or_default` and `put_all` after invoking the same operations on the pinned Java live `ConcurrentMap`; the bulk native mutation updates raw state once and preserves the derived route snapshot. Current route fixture SHA-256 `34f3d9b5be82c3989f90d1f3d1116ee105c9c6d4346b6a7a5a0a4a8203061f43`. Focused route-table, full workspace, exact all-feature Clippy, pinned Maven, fmt/diff, comparator and manifest22 gates pass. This closes those two invoked helpers only; other map defaults and DTO/input/source reconciliation remain open, so Phase 6 is incomplete.
+
 `checkClientInBroker` null-topic oracle `d591091` adds a pinned Java non-TAG case: null topic fails before route lookup or broker RPC. Native typed invalid-route result likewise makes no request; fixture SHA-256 `73990a351770ca0d8451590eef16bc3931115f90853193f37f3e4e18d61c841d`. Full API/source-input reconciliation remains open; Phase 6 is incomplete.
 
 Java owner-null preparation oracle `1aac047` confirms `prepareHeartbeatData(false)` fails when a registered consumer returns null subscriptions, while simple mode produces an empty set. Native's typed error and empty-simple behavior match; focused runtime regression and pinned Maven verify pass. Current heartbeat fixture SHA-256 `189e4a80c6f7f02083efc15dfe39535321872860a3d058c77eca975564193036`. Other API/source/input reconciliation remains open; Phase 6 is incomplete.
