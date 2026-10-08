@@ -274,6 +274,39 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
             && table.len().unwrap() == 3,
     );
     outcomes.insert(
+        "containsValueEqualCopy",
+        table.contains_value(&equal_second).unwrap(),
+    );
+    let mut absent_route = second.as_ref().clone();
+    absent_route.broker_datas.as_mut().unwrap()[0].broker_name = Some("absent-broker".into());
+    outcomes.insert(
+        "containsValueAbsent",
+        !table.contains_value(&absent_route).unwrap(),
+    );
+    let expected_routes = BTreeMap::from([
+        ("topic".to_owned(), second.clone()),
+        ("bulk-a".to_owned(), first.clone()),
+        ("bulk-b".to_owned(), second.clone()),
+    ]);
+    let mut visited_routes = BTreeMap::new();
+    table
+        .for_each(|key, value| {
+            let reentered_len = table.len().unwrap();
+            visited_routes.insert(
+                key.to_owned(),
+                reentered_len == expected_routes.len()
+                    && expected_routes
+                        .get(key)
+                        .is_some_and(|expected| Arc::ptr_eq(value, expected)),
+            );
+        })
+        .unwrap();
+    outcomes.insert(
+        "forEachVisitsCurrentMappings",
+        visited_routes.len() == expected_routes.len()
+            && visited_routes.values().all(|matches| *matches),
+    );
+    outcomes.insert(
         "computeIfAbsentMaps",
         same(
             table
