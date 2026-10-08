@@ -1391,17 +1391,39 @@ mod tests {
             "../../../../fixtures/runtime/client-config.json"
         ))
         .unwrap();
-        for case in fixture["socksConstruction"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .skip(19)
-        {
+        let cases = fixture["socksConstruction"].as_array().unwrap();
+        assert_eq!(
+            cases.len(),
+            254,
+            "Java oracle includes 126 prior cases and 128 ASCII escape followers"
+        );
+        for escaped in 0..=0x7f {
+            let mut expected = String::from("{\"10.0.0.0/8\":{\"addr\":\"A\\");
+            expected.push(char::from_u32(escaped).unwrap());
+            expected.push_str("Z\"}}");
+            assert_eq!(
+                cases[126 + escaped as usize]["input"],
+                expected,
+                "ASCII escape follower U+{escaped:04X}"
+            );
+        }
+
+        let mut outcome_mismatches = Vec::new();
+        for case in cases.iter().skip(19) {
             let mut config = ClientConfig::default();
             config.set_socks_proxy_config(case["input"].as_str().unwrap());
             let parsed = config.parse_socks_proxy_config();
-            assert_eq!(parsed.is_ok(), case["outcome"] == "OK", "{}", case["input"]);
-            if case["outcome"] != "OK" {
+            let java_accepted = case["outcome"] == "OK";
+            if parsed.is_ok() != java_accepted {
+                outcome_mismatches.push(format!(
+                    "input={:?}, Java={}, Rust={}",
+                    case["input"],
+                    case["outcome"],
+                    if parsed.is_ok() { "OK" } else { "error" }
+                ));
+                continue;
+            }
+            if !java_accepted {
                 continue;
             }
             let routes = parsed.unwrap();
@@ -1433,6 +1455,11 @@ mod tests {
                 super::ParsedProxyRoute::Direct => panic!("Java decoded a nonnull route object"),
             }
         }
+        assert!(
+            outcome_mismatches.is_empty(),
+            "SOCKS parser outcomes differ:\n{}",
+            outcome_mismatches.join("\n")
+        );
     }
 
     #[test]
