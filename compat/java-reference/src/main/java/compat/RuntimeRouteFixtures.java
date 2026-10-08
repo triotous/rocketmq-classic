@@ -910,10 +910,17 @@ public final class RuntimeRouteFixtures {
             + "[{\"brokerName\":\"a\",\"brokerAddrs\":{}},{\"brokerName\":\"b\",\"brokerAddrs\":{}}]}";
         String reversed = emptyPrefix
             + "[{\"brokerName\":\"b\",\"brokerAddrs\":{}},{\"brokerName\":\"a\",\"brokerAddrs\":{}}]}";
+        String nullQueue = "{\"queueDatas\":[{\"brokerName\":null}],\"filterServerTable\":{},\"brokerDatas\":[]}";
+        String multipleQueuesWithNull = "{\"queueDatas\":[{\"brokerName\":null},{\"brokerName\":\"broker\"}],\"filterServerTable\":{},\"brokerDatas\":[]}";
+        String orderedQueues = "{\"queueDatas\":[{\"brokerName\":\"a\"},{\"brokerName\":\"b\"}],\"filterServerTable\":{},\"brokerDatas\":[]}";
+        String reversedQueues = "{\"queueDatas\":[{\"brokerName\":\"b\"},{\"brokerName\":\"a\"}],\"filterServerTable\":{},\"brokerDatas\":[]}";
         String[][] pairs = new String[][] {
             {singleNull, singleNull},
             {multipleWithNull, multipleWithNull},
-            {reversed, ordered}
+            {reversed, ordered},
+            {nullQueue, nullQueue},
+            {multipleQueuesWithNull, multipleQueuesWithNull},
+            {reversedQueues, orderedQueues}
         };
         List<Object> cases = new ArrayList<>();
         for (String[] pair : pairs) {
