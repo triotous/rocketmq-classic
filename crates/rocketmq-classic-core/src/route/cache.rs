@@ -699,10 +699,7 @@ mod tests {
             serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
         for case in fixture["nullableRouteCollections"].as_array().unwrap() {
             let route: TopicRouteData = serde_json::from_value(case["input"].clone()).unwrap();
-            let mut copy = route.clone();
-            copy.queue_datas.get_or_insert_with(Vec::new);
-            copy.broker_datas.get_or_insert_with(Vec::new);
-            copy.filter_server_table.get_or_insert_with(BTreeMap::new);
+            let copy = route.java_copy_constructed();
             assert_eq!(
                 copy.queue_datas.as_ref().unwrap().is_empty(),
                 case["copyQueueEmpty"]

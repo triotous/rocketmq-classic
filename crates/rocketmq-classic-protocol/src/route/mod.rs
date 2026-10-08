@@ -458,6 +458,32 @@ mod nullable_route_collection_tests {
             );
         }
     }
+
+    #[test]
+    fn java_copy_constructor_normalizes_nullable_route_collections() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["nullableRouteCollections"].as_array().unwrap() {
+            let route: TopicRouteData = serde_json::from_value(case["input"].clone()).unwrap();
+            let copy = route.java_copy_constructed();
+            assert_eq!(
+                copy.queue_datas.as_ref().unwrap().is_empty(),
+                case["copyQueueEmpty"]
+            );
+            assert_eq!(
+                copy.broker_datas.as_ref().unwrap().is_empty(),
+                case["copyBrokerEmpty"]
+            );
+            assert_eq!(
+                copy.filter_server_table.as_ref().unwrap().is_empty(),
+                case["copyFilterEmpty"]
+            );
+            assert_eq!(
+                copy.topic_queue_mapping_by_broker.is_none(),
+                case["input"]["topicQueueMappingByBroker"].is_null()
+            );
+        }
+    }
 }
 
 #[cfg(test)]
