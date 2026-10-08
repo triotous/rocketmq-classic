@@ -643,6 +643,8 @@ public final class RuntimeHeartbeatFixtures {
             "{\"subVersion\":9223372036854775807}"));
         cases.add(heartbeatDtoInputCase("subscription-long-overflow", "subscription",
             "{\"subVersion\":9223372036854775808}"));
+        cases.add(heartbeatDtoInputCase("subscription-long-object-to-zero", "subscription",
+            "{\"subVersion\":{\"x\":1}}"));
         cases.add(heartbeatDtoInputCase("subscription-invalid-code", "subscription",
             "{\"codeSet\":[\"not-an-integer\"],\"subVersion\":0}"));
         cases.add(heartbeatDtoInputCase("consumer-scalars", "consumer",
@@ -677,10 +679,22 @@ public final class RuntimeHeartbeatFixtures {
             "{\"subVersion\":0,\"tagsSet\":\"tag\"}"));
         cases.add(heartbeatDtoInputCase("subscription-tags-singleton-number", "subscription",
             "{\"subVersion\":0,\"tagsSet\":7}"));
+        cases.add(heartbeatDtoInputCase("subscription-tags-singleton-boolean", "subscription",
+            "{\"subVersion\":0,\"tagsSet\":true}"));
+        cases.add(heartbeatDtoInputCase("subscription-tags-singleton-object", "subscription",
+            "{\"subVersion\":0,\"tagsSet\":{\"tag\":true}}"));
+        cases.add(heartbeatDtoInputCase("subscription-tags-object-member", "subscription",
+            "{\"subVersion\":0,\"tagsSet\":[{\"z\":1,\"a\":2}]}"));
         cases.add(heartbeatDtoInputCase("subscription-codes-singleton-number", "subscription",
             "{\"subVersion\":0,\"codeSet\":7}"));
         cases.add(heartbeatDtoInputCase("subscription-codes-singleton-string", "subscription",
             "{\"subVersion\":0,\"codeSet\":\"8\"}"));
+        cases.add(heartbeatDtoInputCase("subscription-codes-singleton-boolean", "subscription",
+            "{\"subVersion\":0,\"codeSet\":true}"));
+        cases.add(heartbeatDtoInputCase("subscription-codes-singleton-object", "subscription",
+            "{\"subVersion\":0,\"codeSet\":{\"code\":7}}"));
+        cases.add(heartbeatDtoInputCase("subscription-codes-object-member", "subscription",
+            "{\"subVersion\":0,\"codeSet\":[{\"code\":7}]}"));
         cases.add(heartbeatDtoInputCase("producer-object-to-string", "producer",
             "{\"groupName\":{\"z\":1,\"a\":2}}"));
         cases.add(heartbeatDtoInputCase("heartbeat-object-to-string", "heartbeat",
