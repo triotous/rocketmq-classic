@@ -154,6 +154,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("managerTable", managerTable(config));
         fixture.put("nullableSettings", nullableSettings());
         fixture.put("socksConstruction", socksConstruction());
+        fixture.put("socksCidr", socksCidr());
         fixture.put("callbackThreadsConstruction", callbackThreadsConstruction());
         fixture.put("registryTables", registryTables());
         fixture.put("endpoints", endpoints);
@@ -694,6 +695,31 @@ public final class RuntimeConfigFixtures {
                 item.put("outcome", error.getClass().getSimpleName());
             } finally {
                 if (runtime != null) cleanupRuntime(runtime);
+            }
+            cases.add(item);
+        }
+        return cases;
+    }
+
+    private static List<Object> socksCidr() {
+        List<Object> cases = new ArrayList<>();
+        String[][] inputs = {
+            {"10.20.4.5", "10.20.0.0/16"}, {"10.21.4.5", "10.20.0.0/16"},
+            {"10.20.4.5", "10.20.0.0/0"}, {"10.20.4.5", "10.20.0.0/33"},
+            {"10.20.4.5", "10.20.0.0/-1"}, {"10.20.4.5", "266.20.0.0/16"},
+            {"10.20.4.5", "10.20.0.0/16/ignored"}, {"10.20.4.5.99", "10.20.0.0/16"},
+            {"10.20.4.5.", "10.20.0.0/16"}, {"10.20.4.", "10.20.0.0/16"},
+            {"10.20.4.5", "10.20.0.0/not-a-prefix"}, {"10.20.4.5", "10.20.0.0"}
+        };
+        for (String[] input : inputs) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("address", input[0]);
+            item.put("cidr", input[1]);
+            try {
+                item.put("outcome", "OK");
+                item.put("match", org.apache.rocketmq.remoting.common.RemotingHelper.ipInCIDR(input[0], input[1]));
+            } catch (RuntimeException error) {
+                item.put("outcome", error.getClass().getSimpleName());
             }
             cases.add(item);
         }
