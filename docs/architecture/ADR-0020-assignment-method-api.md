@@ -14,6 +14,6 @@ Add idiomatic getters/setters, `Display` and `java_to_string`, and a typed `java
 
 Two actual Java 5.5.1 method cases cover default and populated accessors/text plus queue-only equality when mode and attachments differ, different queues, self/null/wrong-type inputs, and the null-queue exception. `assignment_methods_match_invoked_java_public_api` compares the Rust accessor values, `Display`, and explicit equality outcomes.
 
-Current combined lookup fixture SHA-256: `8cb7bcefaaeefd5a4b72371ca113c8a334823bef50936c26c7417f11491d2d7a`.
+Current combined lookup fixture SHA-256: `0c9ccc65b6c95d28d90d8de1bbac000436fe4468f1e7ebace6449ca1cf25c8e2`.
 
 Java `MessageRequestMode` inherits identity-based `Object.hashCode`, so its numeric hash changes across JVM runs and has no stable enum-value equivalent. Rust keeps standard `Hash`; reproducing Java's hash-bucket collision effects is not claimed. This closes the recorded accessor/equality/text cases only; the wider Phase 6 API/input audit remains open.
