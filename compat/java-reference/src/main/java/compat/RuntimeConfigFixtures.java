@@ -299,6 +299,22 @@ public final class RuntimeConfigFixtures {
             live.clear();
             result.put("retainedViewEmptyAfterClear", live.isEmpty());
             result.put("collectionViewsEmptyAfterClear", keyView.isEmpty() && valuesView.isEmpty() && entryView.isEmpty());
+            live.put("iterator-key", first);
+            java.util.Iterator<String> keyIterator = keyView.iterator();
+            keyIterator.next();
+            keyIterator.remove();
+            result.put("keyIteratorRemove", live.isEmpty());
+            live.put("iterator-value", first);
+            java.util.Iterator<org.apache.rocketmq.client.impl.factory.MQClientInstance> valueIterator = valuesView.iterator();
+            valueIterator.next();
+            valueIterator.remove();
+            result.put("valuesIteratorRemove", live.isEmpty());
+            live.put("iterator-entry", first);
+            java.util.Iterator<Map.Entry<String, org.apache.rocketmq.client.impl.factory.MQClientInstance>> entryIterator =
+                entryView.iterator();
+            entryIterator.next();
+            entryIterator.remove();
+            result.put("entryIteratorRemove", live.isEmpty());
         } finally {
             live.remove(id);
             live.remove("");
