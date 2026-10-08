@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SubscriptionData {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub class_filter_mode: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub topic: Option<String>,
@@ -16,7 +16,10 @@ pub struct SubscriptionData {
     pub tags_set: Option<HashSet<String>>,
     #[serde(default = "empty_codes", skip_serializing_if = "Option::is_none")]
     pub code_set: Option<HashSet<i32>>,
-    #[serde(default = "current_subscription_version")]
+    #[serde(
+        default = "current_subscription_version",
+        deserialize_with = "deserialize_null_default"
+    )]
     pub sub_version: i64,
     #[serde(
         default = "default_expression_type",
@@ -94,6 +97,14 @@ fn current_subscription_version() -> i64 {
         .unwrap_or_default()
 }
 
+fn deserialize_null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de> + Default,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
+}
+
 fn default_expression_type() -> Option<String> {
     Some("TAG".to_owned())
 }
@@ -158,7 +169,7 @@ pub struct ConsumerData {
         skip_serializing_if = "Option::is_none"
     )]
     pub subscription_data_set: Option<HashSet<SubscriptionData>>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub unit_mode: bool,
 }
 
@@ -201,9 +212,14 @@ pub struct HeartbeatData {
     /// Java ConsumerData has object identity equality. Preserve its wire
     /// multiplicity rather than deduplicating structurally equal metadata.
     pub consumer_data_set: Option<Vec<ConsumerData>>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub heartbeat_fingerprint: i32,
-    #[serde(default, rename = "withoutSub", alias = "isWithoutSub")]
+    #[serde(
+        default,
+        rename = "withoutSub",
+        alias = "isWithoutSub",
+        deserialize_with = "deserialize_null_default"
+    )]
     pub is_without_sub: bool,
 }
 

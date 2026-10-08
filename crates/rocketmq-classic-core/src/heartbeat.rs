@@ -72,11 +72,22 @@ type PeerFuture<'a> = Pin<Box<dyn Future<Output = Result<bool, RuntimeError>> + 
 /// part of the wire contract. Preserve Java's reset fields and UTF-16 hash.
 fn fingerprint(data: &HeartbeatData) -> Result<i32, RuntimeError> {
     let mut value = serde_json::to_value(data).map_err(RuntimeError::HeartbeatEncoding)?;
+    // Java fingerprints a JSON round-trip copy. Omitted null collections on
+    // that copy regain their constructor-empty values before hashing.
+    if !value["producerDataSet"].is_array() {
+        value["producerDataSet"] = serde_json::json!([]);
+    }
+    if !value["consumerDataSet"].is_array() {
+        value["consumerDataSet"] = serde_json::json!([]);
+    }
     value["clientID"] = "".into();
     value["heartbeatFingerprint"] = 0.into();
     value["withoutSub"] = false.into();
     if let Some(consumers) = value["consumerDataSet"].as_array_mut() {
         for consumer in consumers {
+            if !consumer["subscriptionDataSet"].is_array() {
+                consumer["subscriptionDataSet"] = serde_json::json!([]);
+            }
             if let Some(subscriptions) = consumer["subscriptionDataSet"].as_array_mut() {
                 for sub in subscriptions {
                     sub["subVersion"] = 0.into();
@@ -404,8 +415,7 @@ mod tests {
     #[test]
     fn null_collection_fingerprints_match_invoked_java_oracle() {
         let fixture: serde_json::Value =
-            serde_json::from_str(include_str!("../../../fixtures/runtime/heartbeat.json"))
-                .unwrap();
+            serde_json::from_str(include_str!("../../../fixtures/runtime/heartbeat.json")).unwrap();
         for case in fixture["fingerprintNullCases"].as_array().unwrap() {
             let mut data: HeartbeatData = serde_json::from_value(case["body"].clone()).unwrap();
             match case["case"].as_str().unwrap() {
