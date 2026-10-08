@@ -1,6 +1,8 @@
 # Phase 6 API and configuration map
 
-Netty event enum API update (2026-10-08): Rust now exports `client::NettyEventType` in Java order (`CONNECT`, `CLOSE`, `IDLE`, `EXCEPTION`, `ACTIVE`) with generated/inherited enum methods and typed string lookup; the channel event queue uses this public enum. Twelve direct Java method cases pass. Current `client-config.json` SHA-256: `1fe6cf206b07e5f304634d7128ca4ca4c56a0114f010f21a0eeebb785529e3b5`. See [ADR-0033](../architecture/ADR-0033-netty-event-type-java-enum-api.md). Java `NettyEvent.getChannel()` returns a Netty `Channel`; the native callbacks do not expose a Tokio socket handle, so the event enum mapping does not assert carrier-object parity. Full Phase 6 reconciliation remains open.
+RequestSource public enum API update (2026-10-08): Rust now exports `remoting::RequestSource` with Java declaration order, enum methods and lookup errors, `get_value`, `is_valid`, `parse_integer`, and the exact `SYSTEM_PROPERTY_KEY` constant. Direct pinned Java cases cover 23 enum/integer inputs and the key. The artifact reference scan found no call sites outside the enum, so this maps its public surface without claiming that the constant activates property loading. Current `client-config.json` SHA-256 `1544344bd90fbefe577643e3ec7af1a8211dcc7bc780c2f39fef7e5ca9fcd391`; see [ADR-0034](../architecture/ADR-0034-request-source-java-enum-api.md). Full Phase 6 reconciliation remains open.
+
+Netty event enum API update (2026-10-08): Rust now exports `client::NettyEventType` in Java order (`CONNECT`, `CLOSE`, `IDLE`, `EXCEPTION`, `ACTIVE`) with generated/inherited enum methods and typed string lookup; the channel event queue uses this public enum. Twelve direct Java method cases pass. Fixture SHA-256 at that update: `1fe6cf206b07e5f304634d7128ca4ca4c56a0114f010f21a0eeebb785529e3b5`. See [ADR-0033](../architecture/ADR-0033-netty-event-type-java-enum-api.md). Java `NettyEvent.getChannel()` returns a Netty `Channel`; the native callbacks do not expose a Tokio socket handle, so the event enum mapping does not assert carrier-object parity. Full Phase 6 reconciliation remains open.
 
 Remoting command API update (2026-10-08): Rust now exposes `RemotingCommandType`, `RequestType`, and `RemotingCommand::get_type()` with Java declaration order, exact names, byte lookup behavior, and flag-derived type selection. The stream request hook obtains `ReqT` from `RequestType::Stream.get_code()`. Direct Java cases cover 22 enum, byte, and command-type outcomes. Fixture SHA-256 at that update: `6d02747d6a267631d2bf98d064967bead5a4a168411a28cb15f34bfa46d0c764`. See [ADR-0032](../architecture/ADR-0032-remoting-command-enum-java-api.md). Full Phase 6 reconciliation remains open.
 
@@ -442,3 +444,14 @@ This inventory identifies source/public boundaries still requiring work; it does
 | `NettyEvent.getChannel()` | No direct Tokio socket handle is exposed through native callback API; this carrier-object difference is explicit and is not covered by enum parity |
 
 The pinned Java fixture invokes all five constants, defensive `values()` copies, and null/unknown/case-mismatched name lookups; the native differential checks 12 outcomes. See [ADR-0033](../architecture/ADR-0033-netty-event-type-java-enum-api.md).
+
+## Remoting request source enum API: RequestSource
+
+| Pinned Java API | Rust counterpart / current behavior |
+| --- | --- |
+| `RequestSource.values()` / `valueOf(String)` / inherited enum methods | `remoting::RequestSource::values()`, `value_of_name`, `name`, `ordinal`, `Display`, and `java_compare_to()` match Java declaration order and lookup failures |
+| `getValue()` | `get_value()` returns `-1`, `0`, `1`, and `2` in enum order |
+| `isValid(Integer)` / `parseInteger(Integer)` | `is_valid(Option<i32>)` accepts `-1..=2`; `parse_integer` maps those values and falls back to `Sdk` for null/out-of-range input |
+| `SYSTEM_PROPERTY_KEY` | `RequestSource::SYSTEM_PROPERTY_KEY` exposes `rocketmq.requestSource`; the pinned artifacts contain no call site outside the enum, so no property-loading behavior is claimed |
+
+The pinned fixture invokes 23 enum/integer outcomes plus the property-key constant. See [ADR-0034](../architecture/ADR-0034-request-source-java-enum-api.md).
