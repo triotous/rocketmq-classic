@@ -365,7 +365,7 @@ async fn conditional_registry_mutations_match_java_custom_value_equality() {
     let dynamic_stored: Arc<dyn ConsumerRuntime> = Arc::new(DynamicConsumer(stored_key.clone()));
     let dynamic_probe: Arc<dyn ConsumerRuntime> = Arc::new(DynamicConsumer(probe_key.clone()));
     consumers
-        .put("dynamic-equality", dynamic_stored)
+        .put("dynamic-equality", dynamic_stored.clone())
         .await
         .unwrap();
     let dynamic_contains_before = consumers.contains_value(&dynamic_probe).unwrap();
@@ -381,7 +381,7 @@ async fn conditional_registry_mutations_match_java_custom_value_equality() {
     let replace_expected: Arc<dyn ConsumerRuntime> =
         Arc::new(DynamicConsumer(replace_expected_key.clone()));
     consumers
-        .put("dynamic-replace", replace_stored)
+        .put("dynamic-replace", replace_stored.clone())
         .await
         .unwrap();
     *replace_expected_key.write().unwrap() = "stale".to_owned();
