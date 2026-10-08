@@ -345,7 +345,13 @@ public final class RuntimeConfigFixtures {
             "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\",}}",
             "{/* comment */\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}}",
             "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\",\"extra\":7}}",
-            "{\"10.0.0.0/8\":{}}", "{\"10.0.0.0/8\":null}"};
+            "{\"10.0.0.0/8\":{}}", "{\"10.0.0.0/8\":null}",
+            "{\"10.0.0.0/8\":{\"addr\":123}}",
+            "{\"10.0.0.0/8\":{\"addr\":true}}",
+            "{\"10.0.0.0/8\":{\"addr\":null}}",
+            "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\",\"username\":123}}",
+            "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\",\"password\":false}}",
+            "{\"10.0.0.0/8\":{\"addr\":[]}}"};
         for (int i = 0; i < inputs.length; i++) {
             ClientConfig config = new ClientConfig();
             config.setClientIP("socks-construction-" + i);
@@ -358,6 +364,20 @@ public final class RuntimeConfigFixtures {
                 runtime = new org.apache.rocketmq.client.impl.factory.MQClientInstance(config, 0, config.buildMQClientId());
                 item.put("outcome", "OK");
                 item.put("rawPreserved", java.util.Objects.equals(inputs[i], runtime.getNettyClientConfig().getSocksProxyConfig()));
+                if (i >= 19) {
+                    java.lang.reflect.Field remotingField = org.apache.rocketmq.client.impl.MQClientAPIImpl.class.getDeclaredField("remotingClient");
+                    remotingField.setAccessible(true);
+                    Object remoting = remotingField.get(runtime.getMQClientAPIImpl());
+                    java.lang.reflect.Field proxyField = org.apache.rocketmq.remoting.netty.NettyRemotingClient.class.getDeclaredField("proxyMap");
+                    proxyField.setAccessible(true);
+                    @SuppressWarnings("unchecked")
+                    Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig> routes =
+                        (Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig>) proxyField.get(remoting);
+                    org.apache.rocketmq.remoting.proxy.SocksProxyConfig route = routes.get("10.0.0.0/8");
+                    item.put("parsedAddr", route == null ? null : route.getAddr());
+                    item.put("parsedUsername", route == null ? null : route.getUsername());
+                    item.put("parsedPassword", route == null ? null : route.getPassword());
+                }
             } catch (RuntimeException error) {
                 item.put("outcome", error.getClass().getSimpleName());
             } finally {
