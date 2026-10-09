@@ -1151,6 +1151,17 @@ public final class RuntimeLookupFixtures {
         values.put("mqSet", messageQueueApiValues(body.getMqSet()));
         item.put("values", values);
         item.put("getterReturnsAssignedSet", body.getMqSet() == queues);
+        item.put("assignedValues", messageQueueApiValues(body.getMqSet()));
+        queues.remove(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 2));
+        queues.add(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 3));
+        item.put("externalMutationVisible", body.getMqSet().contains(
+            new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 3)));
+        body.getMqSet().remove(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 3));
+        body.getMqSet().add(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 4));
+        item.put("getterMutationVisibleToAssignedSet", queues.contains(
+            new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 4)));
+        values.put("mqSet", messageQueueApiValues(body.getMqSet()));
+        item.put("mutatedValues", values);
         item.put("text", body.toString());
 
         body.setConsumerGroup(null);
@@ -1186,6 +1197,17 @@ public final class RuntimeLookupFixtures {
         values.put("mqSet", messageQueueApiValues(body.getMqSet()));
         item.put("values", values);
         item.put("getterReturnsAssignedSet", body.getMqSet() == queues);
+        item.put("assignedValues", messageQueueApiValues(body.getMqSet()));
+        queues.remove(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 2));
+        queues.add(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 3));
+        item.put("externalMutationVisible", body.getMqSet().contains(
+            new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 3)));
+        body.getMqSet().remove(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 3));
+        body.getMqSet().add(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 4));
+        item.put("getterMutationVisibleToAssignedSet", queues.contains(
+            new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 4)));
+        values.put("mqSet", messageQueueApiValues(body.getMqSet()));
+        item.put("mutatedValues", values);
         item.put("text", body.toString());
 
         body.setConsumerGroup(null);
@@ -1206,6 +1228,16 @@ public final class RuntimeLookupFixtures {
         body.setLockOKMQSet(queues);
         item.put("values", messageQueueApiValues(body.getLockOKMQSet()));
         item.put("getterReturnsAssignedSet", body.getLockOKMQSet() == queues);
+        item.put("assignedValues", messageQueueApiValues(body.getLockOKMQSet()));
+        queues.remove(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 2));
+        queues.add(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 3));
+        item.put("externalMutationVisible", body.getLockOKMQSet().contains(
+            new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 3)));
+        body.getLockOKMQSet().remove(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 3));
+        body.getLockOKMQSet().add(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 4));
+        item.put("getterMutationVisibleToAssignedSet", queues.contains(
+            new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 4)));
+        item.put("mutatedValues", messageQueueApiValues(body.getLockOKMQSet()));
         body.setLockOKMQSet(null);
         item.put("nullSetterRemainsNull", body.getLockOKMQSet() == null);
         return item;
