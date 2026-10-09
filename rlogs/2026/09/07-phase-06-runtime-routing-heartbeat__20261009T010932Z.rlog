@@ -1,0 +1,9 @@
+Phase 6 continuation, 2026-10-09. Pinned Java source remains read-only at efa1be59d6fc747ad220f036c86030f05f0419f9.
+
+Assignment-mode probe commit beb6fe7 adds the exact decimal input `0.9999999999999999999`. The pinned Java decoder returns PULL after exact truncation; before the fix the native f64 path rounded this value to 1.0 and returned POP. A second oracle case shows decimal `4294967296.0` wraps to PULL, while the plain integer `4294967296` rejects. Probe commit 21d5b70 adds the integer-versus-decimal distinction.
+
+Implementation commit dcc822b decodes mode values from raw JSON tokens and routes numeric values through the shared Fastjson-compatible i32 conversion. The focused mode differential passes all 20 cases. The implementation and probes remain in separate commits.
+
+Fixture inventory: route DTO inputs 80, SHA-256 74ad05fe746f63b1b4fd5886d3fd135a60a4f252fd7ea037e6d4a420fedc4e12; lookup assignment-mode inputs 20, consumer-list inputs 13, assignment-attachment inputs seven, SHA-256 42a05d175175b94dc7e1bfc051940f70b16a01cbba0345ff2a35a5a0fa2d57e1; heartbeat DTO inputs 52, SHA-256 e183f318134bd5dfa85bcbd80276c3e85c444f3ca0ebbe8231696ef2b4305db7.
+
+Validation passed: all 75 protocol tests; full `cargo test --workspace --all-targets --locked --quiet`; strict all-target/all-feature Clippy; pinned offline Maven verify with deterministic fixture regeneration (22 scenarios); `python3 tests/differential/compare.py --self-test`; `cargo fmt --all -- --check`; and `git diff --check`. No Broker, Docker, live server, deployment, plan, or pinned Java source was modified. Phase 6 remains incomplete; P6-V04 stays PENDING_PHASE_19.
