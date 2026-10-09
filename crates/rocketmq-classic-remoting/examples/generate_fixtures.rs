@@ -664,11 +664,11 @@ fn generate_p4_bodies(output: &std::path::Path) {
         "body-consumer-status.bin",
         223,
         GetConsumerStatusBody {
-            message_queue_table: vec![(
+            message_queue_table: Some(vec![(
                 rocketmq_classic_common::message::MessageQueue::new("orders", "broker-a", 1),
                 9,
-            )],
-            consumer_table: std::collections::BTreeMap::new(),
+            )]),
+            consumer_table: Some(std::collections::BTreeMap::new()),
         }
         .encode_java_json()
         .expect("encode Java-compatible consumer status body"),

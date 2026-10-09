@@ -1633,33 +1633,277 @@ impl<'de> Deserialize<'de> for ConsumerListByGroupResponseBody {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetConsumerStatusBody {
-    #[serde(default, with = "message_queue_offset_table")]
-    pub message_queue_table: Vec<(MessageQueue, i64)>,
-    #[serde(default, with = "nested_message_queue_offset_table")]
-    pub consumer_table: std::collections::BTreeMap<String, Vec<(MessageQueue, i64)>>,
+    #[serde(with = "message_queue_offset_table")]
+    pub message_queue_table: Option<QueueOffsetEntries>,
+    #[serde(with = "nested_message_queue_offset_table")]
+    pub consumer_table: Option<ConsumerQueueOffsets>,
 }
 
 impl GetConsumerStatusBody {
     pub fn encode_java_json(&self) -> Result<Vec<u8>, serde_json::Error> {
-        let queue_table = encode_java_queue_table_text(&self.message_queue_table)?;
         let mut consumer_entries = Vec::new();
-        for (consumer, entries) in &self.consumer_table {
-            consumer_entries.push(format!(
-                "{}:{}",
-                serde_json::to_string(consumer)?,
+        if let Some(consumer_table) = &self.consumer_table {
+            for (consumer, entries) in consumer_table {
+                if let Some(entries) = entries {
+                    consumer_entries.push(format!(
+                        "{}:{}",
+                        serde_json::to_string(consumer)?,
+                        encode_java_queue_table_text(entries)?
+                    ));
+                }
+            }
+        }
+        let mut fields = Vec::new();
+        if self.consumer_table.is_some() {
+            fields.push(format!(
+                "\"consumerTable\":{{{}}}",
+                consumer_entries.join(",")
+            ));
+        }
+        if let Some(entries) = &self.message_queue_table {
+            fields.push(format!(
+                "\"messageQueueTable\":{}",
                 encode_java_queue_table_text(entries)?
             ));
         }
-        let consumer_table = format!("{{{}}}", consumer_entries.join(","));
-        Ok(format!(
-            "{{\"consumerTable\":{},\"messageQueueTable\":{}}}",
-            consumer_table, queue_table
-        )
-        .into_bytes())
+        Ok(format!("{{{}}}", fields.join(",")).into_bytes())
     }
+
+    /// Decode the Java Fastjson body syntax, including MessageQueue objects used as map keys.
+    pub fn decode_java_json(input: &str) -> Result<Self, serde_json::Error> {
+        let normalized = serde_fastjson::normalize_json_input(input);
+        let normalized = normalize_java_object_map_keys(&normalized)?;
+        serde_json::from_str(&normalized)
+    }
+
+    pub fn get_message_queue_table(&self) -> Option<&[(MessageQueue, i64)]> {
+        self.message_queue_table.as_deref()
+    }
+
+    pub fn set_message_queue_table(&mut self, value: Option<QueueOffsetEntries>) {
+        self.message_queue_table = value;
+    }
+
+    pub fn get_consumer_table(&self) -> Option<&ConsumerQueueOffsets> {
+        self.consumer_table.as_ref()
+    }
+
+    pub fn set_consumer_table(&mut self, value: Option<ConsumerQueueOffsets>) {
+        self.consumer_table = value;
+    }
+}
+
+impl Default for GetConsumerStatusBody {
+    fn default() -> Self {
+        Self {
+            message_queue_table: Some(Vec::new()),
+            consumer_table: Some(std::collections::BTreeMap::new()),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(default)]
+struct GetConsumerStatusBodyFields {
+    #[serde(with = "message_queue_offset_table")]
+    message_queue_table: Option<QueueOffsetEntries>,
+    #[serde(with = "nested_message_queue_offset_table")]
+    consumer_table: Option<ConsumerQueueOffsets>,
+}
+
+impl Default for GetConsumerStatusBodyFields {
+    fn default() -> Self {
+        Self {
+            message_queue_table: Some(Vec::new()),
+            consumer_table: Some(std::collections::BTreeMap::new()),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for GetConsumerStatusBody {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let fields: GetConsumerStatusBodyFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            message_queue_table: fields.message_queue_table,
+            consumer_table: fields.consumer_table,
+        })
+    }
+}
+
+fn normalize_java_object_map_keys(input: &str) -> Result<String, serde_json::Error> {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum ObjectKind {
+        Root,
+        ConsumerTable,
+        QueueTable,
+        Other,
+    }
+
+    struct ObjectFrame {
+        kind: ObjectKind,
+        last_key: Option<String>,
+    }
+
+    let bytes = input.as_bytes();
+    let mut output = String::with_capacity(input.len());
+    let mut objects = Vec::<ObjectFrame>::new();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'"' {
+            let end = skip_json_string(bytes, index).unwrap_or(bytes.len());
+            let is_key = bytes.get(skip_json_whitespace(bytes, end)) == Some(&b':');
+            if is_key {
+                if objects
+                    .last()
+                    .is_some_and(|object| object.kind == ObjectKind::QueueTable)
+                {
+                    return Err(java_queue_key_error());
+                }
+                if let Some(object) = objects.last_mut() {
+                    object.last_key = serde_json::from_str(&input[index..end]).ok();
+                }
+            }
+            output.push_str(&input[index..end]);
+            index = end;
+            continue;
+        }
+
+        if bytes[index] == b'{'
+            && objects
+                .last()
+                .is_some_and(|object| object.kind == ObjectKind::QueueTable)
+            && matches!(previous_json_byte(bytes, index), Some(b'{' | b','))
+        {
+            if let Some(end) = find_json_object_end(bytes, index) {
+                if bytes.get(skip_json_whitespace(bytes, end)) == Some(&b':') {
+                    let encoded_key = serde_json::to_string(&input[index..end])?;
+                    output.push_str(&encoded_key);
+                    index = end;
+                    continue;
+                }
+            }
+        }
+
+        if bytes[index] == b'{' {
+            let kind = match objects.last() {
+                None => ObjectKind::Root,
+                Some(parent) if previous_json_byte(bytes, index) == Some(b':') => {
+                    match (parent.kind, parent.last_key.as_deref()) {
+                        (ObjectKind::Root, Some("messageQueueTable")) => ObjectKind::QueueTable,
+                        (ObjectKind::Root, Some("consumerTable")) => ObjectKind::ConsumerTable,
+                        (ObjectKind::ConsumerTable, _) => ObjectKind::QueueTable,
+                        _ => ObjectKind::Other,
+                    }
+                }
+                Some(_) => ObjectKind::Other,
+            };
+            output.push('{');
+            objects.push(ObjectFrame {
+                kind,
+                last_key: None,
+            });
+            index += 1;
+            continue;
+        }
+
+        if bytes[index] == b'}' {
+            output.push('}');
+            objects.pop();
+            index += 1;
+            continue;
+        }
+
+        if bytes[index] == b',' {
+            if let Some(object) = objects.last_mut() {
+                object.last_key = None;
+            }
+            output.push(',');
+            index += 1;
+            continue;
+        }
+
+        let character = input[index..]
+            .chars()
+            .next()
+            .expect("byte index is within a UTF-8 string");
+        output.push(character);
+        index += character.len_utf8();
+    }
+    Ok(output)
+}
+
+fn java_queue_key_error() -> serde_json::Error {
+    serde_json::Error::io(std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        "Fastjson MessageQueue map keys must be object values",
+    ))
+}
+
+fn skip_json_string(bytes: &[u8], start: usize) -> Option<usize> {
+    if bytes.get(start) != Some(&b'"') {
+        return None;
+    }
+    let mut index = start + 1;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\\' => index = index.checked_add(2)?,
+            b'"' => return Some(index + 1),
+            _ => index += 1,
+        }
+    }
+    None
+}
+
+fn find_json_object_end(bytes: &[u8], start: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut index = start;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'"' => index = skip_json_string(bytes, index)?,
+            b'{' => {
+                depth += 1;
+                index += 1;
+            }
+            b'}' => {
+                depth = depth.checked_sub(1)?;
+                index += 1;
+                if depth == 0 {
+                    return Some(index);
+                }
+            }
+            _ => index += 1,
+        }
+    }
+    None
+}
+
+fn skip_json_whitespace(bytes: &[u8], mut index: usize) -> usize {
+    while bytes
+        .get(index)
+        .is_some_and(|byte| matches!(*byte, b' ' | b'\t' | b'\r' | b'\n'))
+    {
+        index += 1;
+    }
+    index
+}
+
+fn previous_json_byte(bytes: &[u8], index: usize) -> Option<u8> {
+    let mut previous = index.checked_sub(1)?;
+    while bytes
+        .get(previous)
+        .is_some_and(|byte| matches!(*byte, b' ' | b'\t' | b'\r' | b'\n'))
+    {
+        previous = previous.checked_sub(1)?;
+    }
+    bytes.get(previous).copied()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -1696,36 +1940,85 @@ fn encode_java_queue_table_text(
     Ok(format!("{{{}}}", parts.join(",")))
 }
 
-type QueueOffsetEntries = Vec<(MessageQueue, i64)>;
-type ConsumerQueueOffsets = std::collections::BTreeMap<String, QueueOffsetEntries>;
+pub type QueueOffsetEntries = Vec<(MessageQueue, i64)>;
+pub type ConsumerQueueOffsets = std::collections::BTreeMap<String, Option<QueueOffsetEntries>>;
 
 mod message_queue_offset_table {
     use super::encode_table;
     use super::{MessageQueue, QueueOffsetEntries};
+    use serde::de::MapAccess;
+    use serde::de::Visitor;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::fmt;
 
-    pub fn serialize<S>(entries: &QueueOffsetEntries, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(
+        entries: &Option<QueueOffsetEntries>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        encode_table(entries)
-            .map_err(serde::ser::Error::custom)?
-            .serialize(serializer)
+        match entries {
+            Some(entries) => encode_table(entries)
+                .map_err(serde::ser::Error::custom)?
+                .serialize(serializer),
+            None => serializer.serialize_none(),
+        }
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<QueueOffsetEntries, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<QueueOffsetEntries>, D::Error>
     where
         D: Deserializer<'de>,
     {
-        let encoded = std::collections::BTreeMap::<String, i64>::deserialize(deserializer)?;
-        encoded
-            .into_iter()
-            .map(|(key, offset)| {
-                let queue: MessageQueue =
-                    serde_json::from_str(&key).map_err(serde::de::Error::custom)?;
-                Ok((queue, offset))
-            })
-            .collect()
+        let Some(encoded) = Option::<RawQueueOffsetEntries>::deserialize(deserializer)? else {
+            return Ok(None);
+        };
+        decode_entries(encoded).map(Some)
+    }
+
+    pub(super) struct RawQueueOffsetEntries(Vec<(String, i64)>);
+
+    pub(super) fn decode_entries<E>(encoded: RawQueueOffsetEntries) -> Result<QueueOffsetEntries, E>
+    where
+        E: serde::de::Error,
+    {
+        let mut table = std::collections::BTreeMap::new();
+        for (key, offset) in encoded.0 {
+            let queue: MessageQueue =
+                serde_json::from_str(&key).map_err(serde::de::Error::custom)?;
+            table.insert(queue, offset);
+        }
+        Ok(table.into_iter().collect())
+    }
+
+    impl<'de> Deserialize<'de> for RawQueueOffsetEntries {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            struct TableVisitor;
+
+            impl<'de> Visitor<'de> for TableVisitor {
+                type Value = RawQueueOffsetEntries;
+
+                fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    formatter.write_str("a MessageQueue-keyed offset object")
+                }
+
+                fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+                where
+                    A: MapAccess<'de>,
+                {
+                    let mut entries = Vec::new();
+                    while let Some(key) = map.next_key::<String>()? {
+                        entries.push((key, map.next_value::<i64>()?));
+                    }
+                    Ok(RawQueueOffsetEntries(entries))
+                }
+            }
+
+            deserializer.deserialize_map(TableVisitor)
+        }
     }
 }
 
@@ -1741,36 +2034,94 @@ fn encode_table(
 mod nested_message_queue_offset_table {
     use super::ConsumerQueueOffsets;
     use super::encode_table;
+    use serde::de::MapAccess;
+    use serde::de::Visitor;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::fmt;
 
-    pub fn serialize<S>(entries: &ConsumerQueueOffsets, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(
+        entries: &Option<ConsumerQueueOffsets>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let encoded = entries
-            .iter()
-            .map(|(key, values)| {
-                Ok((
-                    key,
-                    encode_table(values).map_err(serde::ser::Error::custom)?,
-                ))
-            })
-            .collect::<Result<std::collections::BTreeMap<_, _>, S::Error>>()?;
-        encoded.serialize(serializer)
+        match entries {
+            Some(entries) => {
+                let mut encoded = std::collections::BTreeMap::new();
+                for (key, values) in entries {
+                    let values = values
+                        .as_ref()
+                        .map(|values| encode_table(values))
+                        .transpose()
+                        .map_err(serde::ser::Error::custom)?;
+                    encoded.insert(key, values);
+                }
+                encoded.serialize(serializer)
+            }
+            None => serializer.serialize_none(),
+        }
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<ConsumerQueueOffsets, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<ConsumerQueueOffsets>, D::Error>
     where
         D: Deserializer<'de>,
     {
-        let raw =
-            std::collections::BTreeMap::<String, serde_json::Value>::deserialize(deserializer)?;
-        raw.into_iter()
-            .map(|(key, value)| {
-                let entries = super::decode_table(value).map_err(serde::de::Error::custom)?;
-                Ok((key, entries))
-            })
-            .collect()
+        let Some(raw) = Option::<RawConsumerQueueOffsets>::deserialize(deserializer)? else {
+            return Ok(None);
+        };
+        let mut entries = std::collections::BTreeMap::new();
+        for (consumer, table) in raw.0 {
+            let table = table
+                .map(super::message_queue_offset_table::decode_entries::<D::Error>)
+                .transpose()?;
+            entries.insert(consumer, table);
+        }
+        Ok(Some(entries))
+    }
+
+    struct RawConsumerQueueOffsets(
+        Vec<(
+            String,
+            Option<super::message_queue_offset_table::RawQueueOffsetEntries>,
+        )>,
+    );
+
+    impl<'de> Deserialize<'de> for RawConsumerQueueOffsets {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            struct ConsumerTableVisitor;
+
+            impl<'de> Visitor<'de> for ConsumerTableVisitor {
+                type Value = RawConsumerQueueOffsets;
+
+                fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    formatter.write_str("a consumer-keyed MessageQueue offset object")
+                }
+
+                fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+                where
+                    A: MapAccess<'de>,
+                {
+                    let mut entries = Vec::new();
+                    while let Some(consumer) = map.next_key::<String>()? {
+                        entries.push(
+                            (
+                                consumer,
+                                map.next_value::<Option<
+                                    super::message_queue_offset_table::RawQueueOffsetEntries,
+                                >>()?,
+                            ),
+                        );
+                    }
+                    Ok(RawConsumerQueueOffsets(entries))
+                }
+            }
+
+            deserializer.deserialize_map(ConsumerTableVisitor)
+        }
     }
 }
 
@@ -1798,7 +2149,9 @@ mod optional_message_queue_offset_table {
         S: Serializer,
     {
         match entries {
-            Some(entries) => super::message_queue_offset_table::serialize(entries, serializer),
+            Some(entries) => super::encode_table(entries)
+                .map_err(serde::ser::Error::custom)?
+                .serialize(serializer),
             None => serializer.serialize_none(),
         }
     }
@@ -2092,11 +2445,11 @@ mod tests {
         assert_eq!(key["queueId"], 1);
 
         let status = GetConsumerStatusBody {
-            message_queue_table: vec![(queue.clone(), 7)],
-            consumer_table: std::collections::BTreeMap::from([(
+            message_queue_table: Some(vec![(queue.clone(), 7)]),
+            consumer_table: Some(std::collections::BTreeMap::from([(
                 "consumer-a".into(),
-                vec![(queue, 8)],
-            )]),
+                Some(vec![(queue, 8)]),
+            )])),
         };
         let value = serde_json::to_value(status).unwrap();
         let consumer_table = value["consumerTable"]["consumer-a"].as_object().unwrap();
@@ -2405,7 +2758,10 @@ mod tests {
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
         let cases = fixture["consumerStatusBodyInputCases"].as_array().unwrap();
         assert_eq!(cases.len(), 14);
-        let rows = |entries: &[(MessageQueue, i64)]| {
+        let rows = |entries: Option<&[(MessageQueue, i64)]>| {
+            let Some(entries) = entries else {
+                return serde_json::Value::Null;
+            };
             let mut rows = entries
                 .iter()
                 .map(|(queue, offset)| {
@@ -2423,9 +2779,8 @@ mod tests {
         let mut mismatches = Vec::new();
         for case in cases {
             let name = case["name"].as_str().unwrap();
-            let decoded = serde_fastjson::from_fastjson_str::<GetConsumerStatusBody>(
-                case["rawInput"].as_str().unwrap(),
-            );
+            let decoded =
+                GetConsumerStatusBody::decode_java_json(case["rawInput"].as_str().unwrap());
             let java_accepts = case["outcome"] == "ACCEPTED";
             match (decoded, java_accepts) {
                 (Ok(decoded), true) => {
@@ -2436,18 +2791,19 @@ mod tests {
                             case["encodedBody"]
                         ));
                     }
-                    if rows(&decoded.message_queue_table) != case["messageQueueTable"] {
+                    if rows(decoded.message_queue_table.as_deref()) != case["messageQueueTable"] {
                         mismatches.push(format!(
                             "{name}: messageQueueTable {} != Java {}",
-                            rows(&decoded.message_queue_table),
+                            rows(decoded.message_queue_table.as_deref()),
                             case["messageQueueTable"]
                         ));
                     }
-                    let actual_consumer_table = decoded
-                        .consumer_table
-                        .iter()
-                        .map(|(consumer, entries)| (consumer, rows(entries)))
-                        .collect::<std::collections::BTreeMap<_, _>>();
+                    let actual_consumer_table = decoded.consumer_table.as_ref().map(|table| {
+                        table
+                            .iter()
+                            .map(|(consumer, entries)| (consumer, rows(entries.as_deref())))
+                            .collect::<std::collections::BTreeMap<_, _>>()
+                    });
                     if serde_json::to_value(&actual_consumer_table).unwrap()
                         != case["consumerTable"]
                     {
@@ -2466,6 +2822,33 @@ mod tests {
             }
         }
         assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+    }
+
+    #[test]
+    fn consumer_status_body_accessors_keep_java_null_and_empty_states() {
+        let mut body = GetConsumerStatusBody::default();
+        assert!(body.get_message_queue_table().unwrap().is_empty());
+        assert!(body.get_consumer_table().unwrap().is_empty());
+
+        let queue = MessageQueue::new("orders", "broker-a", 1);
+        body.set_message_queue_table(Some(vec![(queue.clone(), 9)]));
+        body.set_consumer_table(Some(std::collections::BTreeMap::from([(
+            "consumer-a".to_owned(),
+            Some(vec![(queue.clone(), 8)]),
+        )])));
+        assert_eq!(
+            body.get_message_queue_table().unwrap(),
+            &[(queue.clone(), 9)]
+        );
+        assert_eq!(
+            body.get_consumer_table().unwrap()["consumer-a"],
+            Some(vec![(queue, 8)])
+        );
+
+        body.set_message_queue_table(None);
+        body.set_consumer_table(None);
+        assert!(body.get_message_queue_table().is_none());
+        assert!(body.get_consumer_table().is_none());
     }
 
     #[test]

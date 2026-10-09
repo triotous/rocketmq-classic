@@ -390,11 +390,8 @@ fn java_json_body_fixtures_decode_to_typed_assignment_lite_and_batch_models() {
             assert_eq!(*offset, 9);
             assert_eq!(typed.encode_java_json().unwrap(), raw);
         } else {
-            let table = decode_java_queue_offset_body(&raw, "messageQueueTable");
-            let typed = GetConsumerStatusBody {
-                message_queue_table: table.offset_table.unwrap_or_default(),
-                consumer_table: std::collections::BTreeMap::new(),
-            };
+            let typed = GetConsumerStatusBody::decode_java_json(std::str::from_utf8(&raw).unwrap())
+                .unwrap();
             let value = serde_json::to_value(&typed).unwrap();
             assert_eq!(
                 value["messageQueueTable"]
@@ -405,7 +402,7 @@ fn java_json_body_fixtures_decode_to_typed_assignment_lite_and_batch_models() {
                     .unwrap(),
                 9
             );
-            let (queue, offset) = &typed.message_queue_table[0];
+            let (queue, offset) = &typed.message_queue_table.as_ref().unwrap()[0];
             assert_eq!(queue.topic(), Some("orders"));
             assert_eq!(queue.broker_name(), Some("broker-a"));
             assert_eq!(*offset, 9);
