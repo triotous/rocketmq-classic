@@ -1949,6 +1949,19 @@ public final class RuntimeLookupFixtures {
         try { ranged.previousClearBit(-2); } catch (RuntimeException error) { bitSetRangeErrors.put("previousClearBelowMinusOne", error.getClass().getSimpleName()); }
         item.put("bitSetRangeErrors", bitSetRangeErrors);
 
+        java.util.BitSet rangeWordBoundary = new java.util.BitSet();
+        rangeWordBoundary.set(63, 66);
+        rangeWordBoundary.clear(64, 65);
+        rangeWordBoundary.flip(62, 64);
+        Map<String, Object> rangeWordBoundaryValues = new TreeMap<>();
+        rangeWordBoundaryValues.put("base64", java.util.Base64.getEncoder().encodeToString(
+            rangeWordBoundary.toByteArray()));
+        rangeWordBoundaryValues.put("sliceBase64", java.util.Base64.getEncoder().encodeToString(
+            rangeWordBoundary.get(61, 66).toByteArray()));
+        rangeWordBoundaryValues.put("cardinality", rangeWordBoundary.cardinality());
+        rangeWordBoundaryValues.put("length", rangeWordBoundary.length());
+        item.put("bitSetRangeWordBoundary", rangeWordBoundaryValues);
+
         org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody body =
             new org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody();
         item.put("bodyDefaults", java.util.Arrays.asList(body.getBrokerName(), body.getAcks()));
