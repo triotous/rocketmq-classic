@@ -1559,8 +1559,8 @@ mod tests {
         let cases = fixture["socksConstruction"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            402,
-            "Java oracle includes 126 prior cases, 256 byte-range followers, 15 Unicode escape cases, and five Unicode-whitespace cases"
+            412,
+            "Java oracle includes 126 prior cases, 256 byte-range followers, 15 Unicode escape cases, five Unicode-whitespace cases, and ten root-shape cases"
         );
         for escaped in 0..=0x7f {
             let mut expected = String::from("{\"10.0.0.0/8\":{\"addr\":\"A\\");
@@ -1600,6 +1600,20 @@ mod tests {
             "{\"10.0.0.0/8\":\u{3000}{\"addr\":\"proxy:1080\"}}",
             "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}\u{2029}}",
             "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}}\u{feff}",
+        ]) {
+            assert_eq!(case["input"], expected);
+        }
+        for (case, expected) in cases.iter().skip(402).zip([
+            "[]",
+            "\"text\"",
+            "true",
+            "42",
+            "[{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}}]",
+            "{\"10.0.0.0/8\":[]}",
+            "{\"10.0.0.0/8\":\"proxy:1080\"}",
+            "{\"10.0.0.0/8\":7}",
+            "{\"10.0.0.0/8\":true}",
+            "{\"10.0.0.0/8\":{\"addr\":\"first\"},\"10.0.0.0/8\":{\"addr\":\"last\"}}",
         ]) {
             assert_eq!(case["input"], expected);
         }

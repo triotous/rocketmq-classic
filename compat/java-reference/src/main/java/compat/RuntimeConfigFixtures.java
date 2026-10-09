@@ -1185,6 +1185,16 @@ public final class RuntimeConfigFixtures {
         allInputs.add("{\"10.0.0.0/8\":\u3000{\"addr\":\"proxy:1080\"}}");
         allInputs.add("{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}\u2029}");
         allInputs.add("{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}}\uFEFF");
+        allInputs.add("[]");
+        allInputs.add("\"text\"");
+        allInputs.add("true");
+        allInputs.add("42");
+        allInputs.add("[{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}}]");
+        allInputs.add("{\"10.0.0.0/8\":[]}");
+        allInputs.add("{\"10.0.0.0/8\":\"proxy:1080\"}");
+        allInputs.add("{\"10.0.0.0/8\":7}");
+        allInputs.add("{\"10.0.0.0/8\":true}");
+        allInputs.add("{\"10.0.0.0/8\":{\"addr\":\"first\"},\"10.0.0.0/8\":{\"addr\":\"last\"}}");
         for (int i = 0; i < allInputs.size(); i++) {
             String input = allInputs.get(i);
             ClientConfig config = new ClientConfig();
