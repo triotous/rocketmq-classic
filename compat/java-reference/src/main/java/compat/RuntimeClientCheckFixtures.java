@@ -20,6 +20,7 @@ import org.apache.rocketmq.remoting.RemotingClient;
 import org.apache.rocketmq.remoting.exception.RemotingConnectException;
 import org.apache.rocketmq.remoting.netty.NettyClientConfig;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
+import org.apache.rocketmq.remoting.protocol.body.CheckClientRequestBody;
 import org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData;
 import org.apache.rocketmq.remoting.protocol.route.TopicRouteData;
 
@@ -43,6 +44,7 @@ public final class RuntimeClientCheckFixtures {
         fixture.put("entrypoint", "MQClientInstance.checkClientInBroker/MQClientAPIImpl.checkClientInBroker/ExpressionType.isTagType");
         fixture.put("transport", "mock RemotingClient; constructed runtime never started");
         fixture.put("serverBaselineContacted", false); fixture.put("cases", cases);
+        fixture.put("checkClientBodyInputCases", checkClientBodyInputCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
             com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
@@ -50,6 +52,37 @@ public final class RuntimeClientCheckFixtures {
             if (!json.equals(Files.readString(file))) throw new IllegalStateException("fixture drift: " + file);
         } else { Files.createDirectories(file.getParent()); Files.writeString(file, json); }
         System.out.println("Runtime client check verified: " + cases.size());
+    }
+
+    private static List<Object> checkClientBodyInputCases() {
+        List<Object> cases = new ArrayList<>();
+        String[][] inputs = {
+            {"client-id-duplicate-last-wins", "{\"clientId\":\"first\",\"clientId\":\"last\"}"},
+            {"group-duplicate-last-wins", "{\"group\":\"first\",\"group\":\"last\"}"},
+            {"namespace-duplicate-last-wins", "{\"namespace\":\"first\",\"namespace\":\"last\"}"},
+            {"subscription-duplicate-last-wins", "{\"subscriptionData\":{\"topic\":\"first\",\"subVersion\":1},\"subscriptionData\":{\"topic\":\"last\",\"subVersion\":2}}"},
+            {"scalar-string-coercions", "{\"clientId\":123,\"group\":true,\"namespace\":{\"z\":1,\"a\":2}}"},
+            {"explicit-null-fields", "{\"clientId\":null,\"group\":null,\"namespace\":null,\"subscriptionData\":null}"},
+            {"subscription-data-scalar-rejected", "{\"subscriptionData\":\"text\"}"},
+            {"unknown-property-ignored", "{\"clientId\":\"client\",\"unknown\":42}"}
+        };
+        for (String[] input : inputs) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("id", input[0]);
+            item.put("rawInput", input[1]);
+            try {
+                CheckClientRequestBody body = com.alibaba.fastjson2.JSON.parseObject(
+                    input[1], CheckClientRequestBody.class);
+                item.put("outcome", "ACCEPTED");
+                item.put("fields", com.alibaba.fastjson2.JSON.parseObject(
+                    com.alibaba.fastjson2.JSON.toJSONString(body)));
+            } catch (RuntimeException error) {
+                item.put("outcome", "REJECTED");
+                item.put("error", error.getClass().getSimpleName());
+            }
+            cases.add(item);
+        }
+        return cases;
     }
 
     private static void record(List<Object> cases, String expression, boolean route, boolean subscriptions, int code, boolean transportFailure) throws Exception {

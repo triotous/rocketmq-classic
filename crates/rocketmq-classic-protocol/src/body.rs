@@ -1133,6 +1133,31 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn check_client_body_inputs_match_invoked_java_fastjson() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/runtime/client-check.json"
+        ))
+        .unwrap();
+        let cases = fixture["checkClientBodyInputCases"].as_array().unwrap();
+        assert_eq!(cases.len(), 8);
+        for case in cases {
+            let decoded = serde_fastjson::from_fastjson_str::<CheckClientRequestBody>(
+                case["rawInput"].as_str().unwrap(),
+            );
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            assert_eq!(decoded.is_ok(), java_accepts, "{}: {decoded:?}", case["id"]);
+            if let Ok(decoded) = decoded {
+                assert_eq!(
+                    serde_json::to_value(decoded).unwrap(),
+                    case["fields"],
+                    "{}",
+                    case["id"]
+                );
+            }
+        }
+    }
+
+    #[test]
     fn unregister_body_omits_absent_groups_but_keeps_empty_values() {
         let body = UnregisterClientRequestBody {
             client_id: Some("client".into()),
