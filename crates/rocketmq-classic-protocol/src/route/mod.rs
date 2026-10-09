@@ -1028,7 +1028,7 @@ mod overlapping_static_mapping_tests {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TopicQueueMappingInfo {
     #[serde(
@@ -1061,6 +1061,58 @@ pub struct TopicQueueMappingInfo {
         skip_serializing_if = "Option::is_none"
     )]
     pub curr_id_map: Option<BTreeMap<i32, i32>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TopicQueueMappingInfoFields {
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    topic: Option<String>,
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_i32")]
+    total_queues: i32,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    bname: Option<String>,
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_i64")]
+    epoch: i64,
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_bool")]
+    dirty: bool,
+    #[serde(
+        default = "default_mapping_scope",
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    scope: Option<String>,
+    #[serde(
+        default = "default_mapping_ids",
+        deserialize_with = "serde_fastjson::deserialize_optional_int_map"
+    )]
+    curr_id_map: Option<BTreeMap<i32, i32>>,
+}
+
+impl<'de> Deserialize<'de> for TopicQueueMappingInfo {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields = serde_fastjson::deserialize_fastjson_last_wins_object::<
+            _,
+            TopicQueueMappingInfoFields,
+        >(deserializer)?;
+        Ok(Self {
+            topic: fields.topic,
+            total_queues: fields.total_queues,
+            bname: fields.bname,
+            epoch: fields.epoch,
+            dirty: fields.dirty,
+            scope: fields.scope,
+            curr_id_map: fields.curr_id_map,
+        })
+    }
 }
 
 fn default_mapping_ids() -> Option<BTreeMap<i32, i32>> {
@@ -1360,7 +1412,7 @@ mod topic_route_data_clone_method_tests {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TopicRouteData {
     #[serde(
@@ -1385,6 +1437,45 @@ pub struct TopicRouteData {
     /// Preserves null mapping values in the Java route map.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub topic_queue_mapping_by_broker: Option<BTreeMap<String, Option<TopicQueueMappingInfo>>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TopicRouteDataFields {
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    order_topic_conf: Option<String>,
+    #[serde(default = "default_route_vec")]
+    queue_datas: Option<Vec<Option<QueueData>>>,
+    #[serde(default = "default_route_vec")]
+    broker_datas: Option<Vec<Option<BrokerData>>>,
+    #[serde(
+        default = "default_filter_table",
+        deserialize_with = "serde_fastjson::deserialize_optional_string_list_map"
+    )]
+    filter_server_table: Option<BTreeMap<String, Option<Vec<Option<String>>>>>,
+    topic_queue_mapping_by_broker: Option<BTreeMap<String, Option<TopicQueueMappingInfo>>>,
+}
+
+impl<'de> Deserialize<'de> for TopicRouteData {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields = serde_fastjson::deserialize_fastjson_last_wins_object::<
+            _,
+            TopicRouteDataFields,
+        >(deserializer)?;
+        Ok(Self {
+            order_topic_conf: fields.order_topic_conf,
+            queue_datas: fields.queue_datas,
+            broker_datas: fields.broker_datas,
+            filter_server_table: fields.filter_server_table,
+            topic_queue_mapping_by_broker: fields.topic_queue_mapping_by_broker,
+        })
+    }
 }
 
 #[cfg(test)]
