@@ -1322,7 +1322,7 @@ mod route_dto_input_cases_tests {
         let cases = fixture["routeDtoInputCases"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            84,
+            87,
             "Java oracle includes exact numeric and string coercions"
         );
         for required in [
@@ -1330,6 +1330,9 @@ mod route_dto_input_cases_tests {
             "queue-titlecase-property",
             "queue-snakecase-property",
             "queue-case-collision",
+            "broker-uppercase-property",
+            "mapping-uppercase-property",
+            "topic-route-uppercase-property",
             "broker-boolean-high-precision-decimal-one",
             "broker-address-high-precision-number-strings",
             "filter-server-high-precision-number-strings",

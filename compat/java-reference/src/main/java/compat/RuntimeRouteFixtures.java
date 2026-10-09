@@ -474,6 +474,12 @@ public final class RuntimeRouteFixtures {
             "{\"read_queue_nums\":7,\"broker_name\":\"snake\"}"));
         cases.add(routeDtoInputCase("queue-case-collision", "queueData",
             "{\"readQueueNums\":2,\"READQUEUENUMS\":7}"));
+        cases.add(routeDtoInputCase("broker-uppercase-property", "brokerData",
+            "{\"BROKERNAME\":\"upper\",\"CLUSTER\":\"cluster\",\"BROKERADDRS\":{\"0\":\"master:10911\"}}"));
+        cases.add(routeDtoInputCase("mapping-uppercase-property", "mapping",
+            "{\"TOPIC\":\"topic\",\"TOTALQUEUES\":7,\"CURRIDMAP\":{\"0\":1}}"));
+        cases.add(routeDtoInputCase("topic-route-uppercase-property", "topicRouteData",
+            "{\"ORDERTOPICCONF\":\"broker:1\",\"QUEUEDATAS\":[{\"BROKERNAME\":\"broker\"}]}"));
         cases.add(routeDtoInputCase("queue-empty-object-number", "queueData",
             "{\"readQueueNums\":{}}"));
         cases.add(routeDtoInputCase("queue-decimal-overflow-number", "queueData",
