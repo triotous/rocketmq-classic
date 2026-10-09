@@ -628,6 +628,7 @@ pub(crate) fn java_whitespace(value: char) -> bool {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use std::process::Command;
 
     #[test]
     fn every_constructor_field_matches_pinned_client_config_defaults() {
@@ -843,6 +844,42 @@ mod tests {
             _ => None,
         });
         assert!(config.use_tls);
+    }
+
+    #[test]
+    fn tls_enable_class_initialization_child() {
+        if std::env::var_os("ROCKETMQ_TLS_INIT_PROBE_CHILD").is_none() {
+            return;
+        }
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/runtime/client-config-tls.json"
+        ))
+        .unwrap();
+        let first = ClientConfig::new("first");
+        assert_eq!(first.use_tls, fixture["clientConfigUseTLS"]);
+
+        // The parent starts this exact one-test child process with tls.enable=false.
+        // SAFETY: no other test runs in this child process or reads the environment.
+        unsafe { std::env::set_var("tls.enable", "true") };
+        let second = ClientConfig::new("second");
+        assert_eq!(
+            second.use_tls,
+            fixture["clientConfigUseTLSAfterPropertyMutation"]
+        );
+    }
+
+    #[test]
+    fn client_tls_property_snapshot_matches_invoked_java_class_initialization() {
+        let status = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "config::tests::tls_enable_class_initialization_child",
+            ])
+            .env("ROCKETMQ_TLS_INIT_PROBE_CHILD", "1")
+            .env("tls.enable", "false")
+            .status()
+            .unwrap();
+        assert!(status.success());
     }
 
     #[test]

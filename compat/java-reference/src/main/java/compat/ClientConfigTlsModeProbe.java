@@ -17,6 +17,8 @@ public final class ClientConfigTlsModeProbe {
         System.clearProperty("tls.enable");
         ClientConfig config = new ClientConfig();
         NettyClientConfig netty = new NettyClientConfig();
+        System.setProperty("tls.enable", "true");
+        ClientConfig configAfterPropertyMutation = new ClientConfig();
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
@@ -24,9 +26,11 @@ public final class ClientConfigTlsModeProbe {
         fixture.put("tlsEnable", TlsSystemConfig.tlsEnable);
         fixture.put("tlsMode", TlsSystemConfig.tlsMode.name());
         fixture.put("clientConfigUseTLS", config.isUseTLS());
+        fixture.put("clientConfigUseTLSAfterPropertyMutation", configAfterPropertyMutation.isUseTLS());
         fixture.put("nettyClientConfigDefaultUseTLS", netty.isUseTLS());
         netty.setUseTLS(config.isUseTLS());
         fixture.put("runtimeCopiedUseTLS", netty.isUseTLS());
+        fixture.put("tlsEnableAfterPropertyMutation", TlsSystemConfig.tlsEnable);
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture) + "\n";
         Path file = Path.of(args[0]);
         if (args.length > 1 && "--verify".equals(args[1])) {
