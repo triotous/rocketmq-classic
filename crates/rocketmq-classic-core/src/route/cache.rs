@@ -186,15 +186,21 @@ impl RouteSnapshot {
         Ok(None)
     }
 
-    pub fn broker_name<'a>(&'a self, queue: &'a MessageQueue) -> Option<&'a str> {
-        let endpoints = queue
+    /// Resolves a queue's broker through the cached static endpoints, falling
+    /// back to the queue broker only when no endpoint map is present or empty.
+    /// A null Java topic causes a route error before that fallback can run.
+    pub fn broker_name<'a>(
+        &'a self,
+        queue: &'a MessageQueue,
+    ) -> Result<Option<&'a str>, RuntimeError> {
+        let topic = queue
             .topic()
-            .and_then(|name| self.topics.get(name))
-            .map(|topic| &topic.endpoints);
-        match endpoints.filter(|endpoints| !endpoints.is_empty()) {
+            .ok_or(RuntimeError::InvalidRoute("null message queue topic"))?;
+        let endpoints = self.topics.get(topic).map(|topic| &topic.endpoints);
+        Ok(match endpoints.filter(|endpoints| !endpoints.is_empty()) {
             Some(endpoints) => endpoints.get(queue).map(String::as_str),
             None => queue.broker_name(),
-        }
+        })
     }
 }
 
@@ -1416,8 +1422,12 @@ mod tests {
         assert_eq!(case["rawRouteHasStaticMappings"], false);
         let unmapped_queue: MessageQueue =
             serde_json::from_value(case["unmappedQueue"].clone()).unwrap();
+        let null_topic_queue: MessageQueue =
+            serde_json::from_value(case["nullTopicQueue"].clone()).unwrap();
         assert!(case["unmappedBrokerBefore"].is_null());
         assert!(case["unmappedBrokerAfter"].is_null());
+        assert_eq!(case["nullTopicBefore"]["outcome"], "NullPointerException");
+        assert_eq!(case["nullTopicAfter"]["outcome"], "NullPointerException");
         let cache = RouteCache::default();
         cache
             .replace(
@@ -1436,8 +1446,16 @@ mod tests {
             after.topics["topic"].endpoints,
             before.topics["topic"].endpoints
         );
-        assert_eq!(before.broker_name(&unmapped_queue), None);
-        assert_eq!(after.broker_name(&unmapped_queue), None);
+        assert_eq!(before.broker_name(&unmapped_queue).unwrap(), None);
+        assert_eq!(after.broker_name(&unmapped_queue).unwrap(), None);
+        assert!(matches!(
+            before.broker_name(&null_topic_queue),
+            Err(RuntimeError::InvalidRoute("null message queue topic"))
+        ));
+        assert!(matches!(
+            after.broker_name(&null_topic_queue),
+            Err(RuntimeError::InvalidRoute("null message queue topic"))
+        ));
         assert_eq!(after.topics["topic"].publish_queues.len(), 2);
         assert_eq!(after.topics["topic"].subscribe_queues.len(), 3);
         for (snapshot, rows) in [(&before, &case["before"]), (&after, &case["after"])] {
@@ -1447,7 +1465,10 @@ mod tests {
             );
             for row in rows.as_array().unwrap() {
                 let queue: MessageQueue = serde_json::from_value(row["queue"].clone()).unwrap();
-                assert_eq!(snapshot.broker_name(&queue), row["broker"].as_str());
+                assert_eq!(
+                    snapshot.broker_name(&queue).unwrap(),
+                    row["broker"].as_str()
+                );
             }
         }
         assert!(
@@ -1847,7 +1868,9 @@ mod tests {
         );
         assert!(snapshot.publish_address("missing").is_none());
         assert_eq!(
-            snapshot.broker_name(&MessageQueue::new("topic", "broker", 0)),
+            snapshot
+                .broker_name(&MessageQueue::new("topic", "broker", 0))
+                .unwrap(),
             Some("broker")
         );
     }
