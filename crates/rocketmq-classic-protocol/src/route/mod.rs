@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use rocketmq_classic_common::message::MessageQueue;
 use rocketmq_classic_common::serde_fastjson;
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
 
 fn java_route_json<T: Serialize>(
     value: &T,
@@ -208,7 +208,7 @@ fn decode_java_route_json_list_nullable<T: DeserializeOwned>(
     serde_json::from_str(&quoted_keys)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct QueueData {
     #[serde(
@@ -225,6 +225,41 @@ pub struct QueueData {
     pub perm: i32,
     #[serde(default, deserialize_with = "serde_fastjson::deserialize_i32")]
     pub topic_sys_flag: i32,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QueueDataFields {
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    broker_name: Option<String>,
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_i32")]
+    read_queue_nums: i32,
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_i32")]
+    write_queue_nums: i32,
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_i32")]
+    perm: i32,
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_i32")]
+    topic_sys_flag: i32,
+}
+
+impl<'de> Deserialize<'de> for QueueData {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: QueueDataFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            broker_name: fields.broker_name,
+            read_queue_nums: fields.read_queue_nums,
+            write_queue_nums: fields.write_queue_nums,
+            perm: fields.perm,
+            topic_sys_flag: fields.topic_sys_flag,
+        })
+    }
 }
 
 /// Failure cases from the pinned Java `QueueData.compareTo` method.
