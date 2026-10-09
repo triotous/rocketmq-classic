@@ -489,10 +489,15 @@ fn contains_fastjson_rejected_literal(input: &str) -> bool {
     let bytes = input.as_bytes();
     let mut index = 0;
     while index < bytes.len() {
-        // Fastjson accepts JSON's ASCII whitespace set but rejects the
-        // Unicode line separator that JSON5 treats as whitespace.
-        if bytes[index..].starts_with(&[0xe2, 0x80, 0xa8]) {
-            return true;
+        // Fastjson accepts a BOM only at the start of the document. JSON5 also
+        // treats Unicode whitespace as trivia, which Fastjson rejects outside
+        // strings and comments.
+        if bytes[index..].starts_with(&[0xef, 0xbb, 0xbf]) {
+            if index != 0 {
+                return true;
+            }
+            index += 3;
+            continue;
         }
         match bytes[index] {
             b'"' | b'\'' => {
@@ -605,6 +610,16 @@ fn contains_fastjson_rejected_literal(input: &str) -> bool {
                 {
                     return true;
                 }
+            }
+            _ if !bytes[index].is_ascii() => {
+                let character = input[index..]
+                    .chars()
+                    .next()
+                    .expect("a non-ASCII byte starts a UTF-8 code point");
+                if character.is_whitespace() {
+                    return true;
+                }
+                index += character.len_utf8();
             }
             _ => index += 1,
         }
