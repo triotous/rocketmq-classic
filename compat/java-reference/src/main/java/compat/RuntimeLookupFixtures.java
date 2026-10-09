@@ -1359,7 +1359,7 @@ public final class RuntimeLookupFixtures {
         queueTable.put(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 3), null);
         Map<String, Map<org.apache.rocketmq.common.message.MessageQueue, Long>> consumerTable =
             new java.util.LinkedHashMap<>();
-        consumerTable.put("workers", queueTable);
+        consumerTable.put("workers", new java.util.LinkedHashMap<>(queueTable));
         consumerTable.put("empty", new java.util.LinkedHashMap<>());
         consumerTable.put("null-table", null);
         body.setMessageQueueTable(queueTable);
@@ -1371,7 +1371,27 @@ public final class RuntimeLookupFixtures {
         item.put("values", values);
         item.put("getterReturnsAssignedMessageQueueTable", body.getMessageQueueTable() == queueTable);
         item.put("getterReturnsAssignedConsumerTable", body.getConsumerTable() == consumerTable);
-        item.put("nestedGetterReturnsAssignedTable", body.getConsumerTable().get("workers") == queueTable);
+        item.put("nestedGetterReturnsAssignedTable",
+            body.getConsumerTable().get("workers") == consumerTable.get("workers"));
+
+        queueTable.put(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 4), 99L);
+        item.put("messageQueueTableExternalMutationVisible",
+            body.getMessageQueueTable().containsKey(
+                new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 4)));
+        Map<org.apache.rocketmq.common.message.MessageQueue, Long> getterAddedTable =
+            new java.util.LinkedHashMap<>();
+        getterAddedTable.put(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 5), 100L);
+        body.getConsumerTable().put("getter-added", getterAddedTable);
+        item.put("consumerTableGetterMutationVisibleToAssignedMap", consumerTable.containsKey("getter-added"));
+        body.getConsumerTable().get("workers").put(
+            new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 6), 101L);
+        item.put("nestedGetterMutationVisibleToAssignedTable",
+            consumerTable.get("workers").containsKey(
+                new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 6)));
+        Map<String, Object> mutatedValues = new TreeMap<>();
+        mutatedValues.put("messageQueueTable", queueOffsetApiValues(body.getMessageQueueTable()));
+        mutatedValues.put("consumerTable", consumerTableApiValues(body.getConsumerTable()));
+        item.put("mutatedValues", mutatedValues);
 
         body.setMessageQueueTable(null);
         body.setConsumerTable(null);
