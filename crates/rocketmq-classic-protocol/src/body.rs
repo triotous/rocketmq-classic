@@ -1385,15 +1385,83 @@ pub struct BatchAck {
     pub bit_set: Option<Vec<u8>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageRequestModeSerializeWrapper {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub message_request_mode_map: Option<
         std::collections::BTreeMap<
             String,
             std::collections::BTreeMap<String, SetMessageRequestModeRequestBody>,
         >,
     >,
+}
+
+impl Default for MessageRequestModeSerializeWrapper {
+    fn default() -> Self {
+        Self {
+            message_request_mode_map: Some(std::collections::BTreeMap::new()),
+        }
+    }
+}
+
+impl MessageRequestModeSerializeWrapper {
+    pub fn get_message_request_mode_map(
+        &self,
+    ) -> Option<
+        &std::collections::BTreeMap<
+            String,
+            std::collections::BTreeMap<String, SetMessageRequestModeRequestBody>,
+        >,
+    > {
+        self.message_request_mode_map.as_ref()
+    }
+
+    pub fn set_message_request_mode_map(
+        &mut self,
+        message_request_mode_map: Option<
+            std::collections::BTreeMap<
+                String,
+                std::collections::BTreeMap<String, SetMessageRequestModeRequestBody>,
+            >,
+        >,
+    ) {
+        self.message_request_mode_map = message_request_mode_map;
+    }
+}
+
+fn default_message_request_mode_map() -> Option<
+    std::collections::BTreeMap<
+        String,
+        std::collections::BTreeMap<String, SetMessageRequestModeRequestBody>,
+    >,
+> {
+    Some(std::collections::BTreeMap::new())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MessageRequestModeSerializeWrapperFields {
+    #[serde(default = "default_message_request_mode_map")]
+    message_request_mode_map: Option<
+        std::collections::BTreeMap<
+            String,
+            std::collections::BTreeMap<String, SetMessageRequestModeRequestBody>,
+        >,
+    >,
+}
+
+impl<'de> Deserialize<'de> for MessageRequestModeSerializeWrapper {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: MessageRequestModeSerializeWrapperFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            message_request_mode_map: fields.message_request_mode_map,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -3357,10 +3425,12 @@ mod tests {
     fn message_request_mode_wrapper_inputs_match_invoked_java_fastjson() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
-        let cases = fixture["messageRequestModeWrapperCases"].as_array().unwrap();
-        batch_body_cases_match_java::<MessageRequestModeSerializeWrapper>(cases, 33);
-        let default_encoded = serde_json::to_value(MessageRequestModeSerializeWrapper::default())
+        let cases = fixture["messageRequestModeWrapperCases"]
+            .as_array()
             .unwrap();
+        batch_body_cases_match_java::<MessageRequestModeSerializeWrapper>(cases, 33);
+        let default_encoded =
+            serde_json::to_value(MessageRequestModeSerializeWrapper::default()).unwrap();
         assert_eq!(
             default_encoded,
             cases
@@ -3368,6 +3438,31 @@ mod tests {
                 .find(|case| case["name"] == "default-empty-map")
                 .unwrap()["encoded"],
             "Rust Default should match Java's no-argument wrapper values"
+        );
+
+        let api = &fixture["messageRequestModeWrapperApiCase"];
+        let mut wrapper = MessageRequestModeSerializeWrapper::default();
+        assert_eq!(api["defaultMapNonNull"], true);
+        assert_eq!(api["defaultMapSize"], 0);
+        assert_eq!(wrapper.get_message_request_mode_map().unwrap().len(), 0);
+        wrapper.set_message_request_mode_map(None);
+        assert_eq!(api["nullSetterRemainsNull"], true);
+        assert_eq!(wrapper.get_message_request_mode_map(), None);
+        wrapper.set_message_request_mode_map(Some(std::collections::BTreeMap::from([(
+            "orders".into(),
+            std::collections::BTreeMap::from([(
+                "workers".into(),
+                SetMessageRequestModeRequestBody {
+                    topic: Some("orders".into()),
+                    consumer_group: Some("workers".into()),
+                    mode: Some(MessageRequestMode::Pop),
+                    pop_share_queue_num: 2,
+                },
+            )]),
+        )])));
+        assert_eq!(
+            serde_json::to_value(wrapper).unwrap()["messageRequestModeMap"],
+            api["populatedMap"]
         );
     }
 
