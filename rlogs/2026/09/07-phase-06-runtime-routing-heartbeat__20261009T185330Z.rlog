@@ -147,3 +147,10 @@
 - Implementation commit `d1dc7dfd` adds `BatchAck::get_bit_set_mut() -> Option<&mut Vec<u8>>` for the DTO-owned `BitSet.toByteArray()` bytes. The focused differential passes after mutation. Rust does not retain identity with the caller-owned Java `BitSet` and does not expose Java's full `BitSet` API.
 - Full workspace/all-target tests, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios and fixture drift/cross-decodes), comparator self-test/manifest22, formatting, and diff checks pass. Workspace and Maven loopback fixtures used local scripted peers only.
 - Updated ADR-0053, Java compatibility, API/config map, requirement audit, runtime inventory, and this rlog. Other DTO aliases and full Phase 6 source/API/input/reverse-export reconciliation remain open; Phase 6 stays PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
+
+## MessageQueueAssignment attachments getter mutation — 2026-10-09T20:47:39Z
+
+- Existing `MessageQueueAssignment::attachments_mut()` was present in Rust, but its Java API oracle covered only getter readback. The pinned Java 5.5.1 method case now verifies `getAttachments()` returns the assigned Map and that insertion through the getter is visible through the setter-held reference. The Rust differential mutates the owned map and compares the final entries.
+- Oracle/test and fixture commit `359ed253`; aggregate `fixtures/runtime/lookup.json` SHA-256 `8b6dab97da3ebca80f494b07ebcc7b12da396d700587137e136ea8620ed8d972`. No production implementation change was required.
+- Focused public-method differential and full workspace/all-target tests, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios and fixture drift/cross-decodes), comparator self-test/manifest22, formatting, and diff checks pass. Local loopback fixtures used scripted peers only.
+- Updated ADR-0020, Java compatibility, API/config map, requirement audit, runtime inventory, and this rlog. Caller-owned Map identity remains an ownership gap; whole Phase 6 source/API/input/reverse-export reconciliation remains open and P6-V04 stays `PENDING_PHASE_19`.

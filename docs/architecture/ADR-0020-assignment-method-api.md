@@ -17,3 +17,12 @@ Two actual Java 5.5.1 method cases cover default and populated accessors/text pl
 Current combined lookup fixture SHA-256: `0c9ccc65b6c95d28d90d8de1bbac000436fe4468f1e7ebace6449ca1cf25c8e2`.
 
 Java `MessageRequestMode` inherits identity-based `Object.hashCode`, so its numeric hash changes across JVM runs and has no stable enum-value equivalent. Rust keeps standard `Hash`; reproducing Java's hash-bucket collision effects is not claimed. This closes the recorded accessor/equality/text cases only; the wider Phase 6 API/input audit remains open.
+
+## Mutable attachments getter continuation
+
+The pinned Java getter returns the same Map passed to `setAttachments()`. Direct Java mutation through `getAttachments()` is visible through the setter-held Map. Rust already exposed `attachments_mut()`; the new differential verifies the matching mutation through the DTO-owned `BTreeMap`. The Rust move setter does not preserve the caller-owned Java Map identity.
+
+- Direct Java evidence and Rust differential: `assignmentMethodCases` in `fixtures/runtime/lookup.json`; `assignment_methods_match_invoked_java_public_api`.
+- Oracle/test commit: `359ed253`; no implementation change was needed.
+- Current aggregate `fixtures/runtime/lookup.json` SHA-256: `8b6dab97da3ebca80f494b07ebcc7b12da396d700587137e136ea8620ed8d972`.
+- Full workspace/all-target tests, strict Clippy, pinned offline Maven verify, comparator/manifest22, formatting, and diff checks pass. Phase 6 remains PARTIAL and P6-V04 stays PENDING_PHASE_19.
