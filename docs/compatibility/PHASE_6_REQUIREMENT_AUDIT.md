@@ -246,7 +246,7 @@ Actual results inspected during this audit:
 
 Historical audit snapshot: fixture hashes listed here and the then-current core count69pass/1review-ignored predate the later nullable Broker DTO correction and live route-table/view implementation. At that point the ignored null-value golden failed and the native live table was missing. ADR-0008 subsequently enabled and passed the nullable test; `dae27fb`/`0a03138` implemented the live raw table and collection-view effects, now covered by the59-outcome route oracle above. Other fixture families retain their individual provenance in the inventories/harness. Full source/input and final-plan reconciliation remain open.
 
-The implementation remains on `07-phase-06-runtime-routing-heartbeat`, with separate logical implementation/test and evidence commits. The append-only [execution log](../../rlogs/2026/09/07-phase-06-runtime-routing-heartbeat__20261008T124615Z.rlog) records the latest red/green SOCKS cases, current gates and pending work. No Java checkout, live server or deployment state was modified.
+The implementation remains on `07-phase-06-runtime-routing-heartbeat`, with separate logical implementation/test and evidence commits. The append-only [latest execution log](../../rlogs/2026/09/07-phase-06-runtime-routing-heartbeat__20261009T001431Z.rlog) records the route DTO string-coercion cases, validation gates and pending work. No Java checkout, live server or deployment state was modified.
 
 ## Blank local serve address: source mapping resolved
 
