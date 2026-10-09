@@ -1129,8 +1129,28 @@ public final class RuntimeLookupFixtures {
             {"root-string", "\"body\""},
             {"root-boolean", "true"}
         };
+        String[][] offsetValues = {
+            {"null-value", "null"},
+            {"numeric-string", "\"9\""},
+            {"fraction", "1.5"},
+            {"boolean", "true"},
+            {"array", "[]"},
+            {"object", "{}"},
+            {"exponent", "1e3"},
+            {"long-max", "9223372036854775807"},
+            {"long-min", "-9223372036854775808"},
+            {"long-overflow-positive", "9223372036854775808"},
+            {"long-overflow-negative", "-9223372036854775809"}
+        };
+        List<String[]> inputRows = new ArrayList<>(Arrays.asList(inputs));
+        for (String[] value : offsetValues) {
+            inputRows.add(new String[] {"message-offset-" + value[0],
+                "{\"messageQueueTable\":{" + fastjsonKey + ":" + value[1] + "}}"});
+            inputRows.add(new String[] {"consumer-offset-" + value[0],
+                "{\"consumerTable\":{\"consumer-a\":{" + fastjsonKey + ":" + value[1] + "}}}"});
+        }
         List<Object> cases = new ArrayList<>();
-        for (String[] input : inputs) {
+        for (String[] input : inputRows) {
             Map<String, Object> item = new TreeMap<>();
             item.put("name", input[0]);
             item.put("rawInput", input[1]);
@@ -1176,8 +1196,25 @@ public final class RuntimeLookupFixtures {
             {"root-string", "\"body\""},
             {"root-boolean", "true"}
         };
+        String[][] offsetValues = {
+            {"numeric-string", "\"9\""},
+            {"fraction", "1.5"},
+            {"boolean", "true"},
+            {"array", "[]"},
+            {"object", "{}"},
+            {"exponent", "1e3"},
+            {"long-max", "9223372036854775807"},
+            {"long-min", "-9223372036854775808"},
+            {"long-overflow-positive", "9223372036854775808"},
+            {"long-overflow-negative", "-9223372036854775809"}
+        };
+        List<String[]> inputRows = new ArrayList<>(Arrays.asList(inputs));
+        for (String[] value : offsetValues) {
+            inputRows.add(new String[] {"offset-" + value[0],
+                "{\"offsetTable\":{" + key + ":" + value[1] + "}}"});
+        }
         List<Object> cases = new ArrayList<>();
-        for (String[] input : inputs) {
+        for (String[] input : inputRows) {
             Map<String, Object> item = new TreeMap<>();
             item.put("name", input[0]);
             item.put("rawInput", input[1]);

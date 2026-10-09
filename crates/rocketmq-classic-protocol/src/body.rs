@@ -2857,7 +2857,7 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
         let cases = fixture["consumerStatusBodyInputCases"].as_array().unwrap();
-        assert_eq!(cases.len(), 25);
+        assert_eq!(cases.len(), 47);
         let rows = |entries: Option<&[(MessageQueue, i64)]>| {
             let Some(entries) = entries else {
                 return serde_json::Value::Null;
@@ -2956,7 +2956,7 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
         let cases = fixture["resetOffsetBodyInputCases"].as_array().unwrap();
-        assert_eq!(cases.len(), 19);
+        assert_eq!(cases.len(), 29);
         let rows = |entries: Option<&[(MessageQueue, Option<i64>)]>| {
             let Some(entries) = entries else {
                 return serde_json::Value::Null;
