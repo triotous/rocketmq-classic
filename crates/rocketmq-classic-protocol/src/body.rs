@@ -1059,6 +1059,48 @@ impl<'de> Deserialize<'de> for QueryAssignmentRequestBody {
     }
 }
 
+impl QueryAssignmentRequestBody {
+    pub fn get_topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, topic: Option<String>) {
+        self.topic = topic;
+    }
+
+    pub fn get_consumer_group(&self) -> Option<&str> {
+        self.consumer_group.as_deref()
+    }
+
+    pub fn set_consumer_group(&mut self, consumer_group: Option<String>) {
+        self.consumer_group = consumer_group;
+    }
+
+    pub fn get_client_id(&self) -> Option<&str> {
+        self.client_id.as_deref()
+    }
+
+    pub fn set_client_id(&mut self, client_id: Option<String>) {
+        self.client_id = client_id;
+    }
+
+    pub fn get_strategy_name(&self) -> Option<&str> {
+        self.strategy_name.as_deref()
+    }
+
+    pub fn set_strategy_name(&mut self, strategy_name: Option<String>) {
+        self.strategy_name = strategy_name;
+    }
+
+    pub fn get_message_model(&self) -> Option<super::heartbeat::MessageModel> {
+        self.message_model
+    }
+
+    pub fn set_message_model(&mut self, message_model: Option<super::heartbeat::MessageModel>) {
+        self.message_model = message_model;
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageQueueAssignment {
@@ -1238,6 +1280,23 @@ impl<'de> Deserialize<'de> for QueryAssignmentResponseBody {
     }
 }
 
+impl QueryAssignmentResponseBody {
+    pub fn get_message_queue_assignments(
+        &self,
+    ) -> Option<&std::collections::HashSet<Option<MessageQueueAssignment>>> {
+        self.message_queue_assignments.as_ref()
+    }
+
+    pub fn set_message_queue_assignments(
+        &mut self,
+        message_queue_assignments: Option<
+            std::collections::HashSet<Option<MessageQueueAssignment>>,
+        >,
+    ) {
+        self.message_queue_assignments = message_queue_assignments;
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetMessageRequestModeRequestBody {
@@ -1253,6 +1312,40 @@ pub struct SetMessageRequestModeRequestBody {
     pub mode: Option<MessageRequestMode>,
     #[serde(default)]
     pub pop_share_queue_num: i32,
+}
+
+impl SetMessageRequestModeRequestBody {
+    pub fn get_topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, topic: Option<String>) {
+        self.topic = topic;
+    }
+
+    pub fn get_consumer_group(&self) -> Option<&str> {
+        self.consumer_group.as_deref()
+    }
+
+    pub fn set_consumer_group(&mut self, consumer_group: Option<String>) {
+        self.consumer_group = consumer_group;
+    }
+
+    pub fn get_mode(&self) -> Option<MessageRequestMode> {
+        self.mode
+    }
+
+    pub fn set_mode(&mut self, mode: Option<MessageRequestMode>) {
+        self.mode = mode;
+    }
+
+    pub fn get_pop_share_queue_num(&self) -> i32 {
+        self.pop_share_queue_num
+    }
+
+    pub fn set_pop_share_queue_num(&mut self, pop_share_queue_num: i32) {
+        self.pop_share_queue_num = pop_share_queue_num;
+    }
 }
 
 #[derive(Deserialize)]
@@ -2976,6 +3069,126 @@ mod tests {
         body.set_acks(None);
         assert!(body.get_acks().is_none());
         assert_eq!(case["bodyNullAcks"], true);
+    }
+
+    #[test]
+    fn assignment_body_public_methods_match_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+
+        let request_case = &fixture["queryAssignmentRequestApiCase"];
+        let mut request = QueryAssignmentRequestBody::default();
+        assert_eq!(
+            json!({
+                "topic": request.get_topic(),
+                "consumerGroup": request.get_consumer_group(),
+                "clientId": request.get_client_id(),
+                "strategyName": request.get_strategy_name(),
+                "messageModel": request.get_message_model(),
+            }),
+            request_case["defaults"]
+        );
+        request.set_topic(Some("orders".into()));
+        request.set_consumer_group(Some("workers".into()));
+        request.set_client_id(Some("client-a".into()));
+        request.set_strategy_name(Some("AllocateByCircle".into()));
+        request.set_message_model(Some(super::super::heartbeat::MessageModel::Clustering));
+        assert_eq!(
+            json!({
+                "topic": request.get_topic(),
+                "consumerGroup": request.get_consumer_group(),
+                "clientId": request.get_client_id(),
+                "strategyName": request.get_strategy_name(),
+                "messageModel": request.get_message_model(),
+            }),
+            request_case["values"]
+        );
+        request.set_topic(None);
+        request.set_consumer_group(None);
+        request.set_client_id(None);
+        request.set_strategy_name(None);
+        request.set_message_model(None);
+        assert_eq!(request_case["nullSettersRemainNull"], true);
+        assert_eq!(
+            json!({
+                "topic": request.get_topic(),
+                "consumerGroup": request.get_consumer_group(),
+                "clientId": request.get_client_id(),
+                "strategyName": request.get_strategy_name(),
+                "messageModel": request.get_message_model(),
+            }),
+            json!({
+                "topic": null,
+                "consumerGroup": null,
+                "clientId": null,
+                "strategyName": null,
+                "messageModel": null,
+            })
+        );
+
+        let response_case = &fixture["queryAssignmentResponseApiCase"];
+        let mut response = QueryAssignmentResponseBody::default();
+        assert_eq!(
+            serde_json::to_value(response.get_message_queue_assignments()).unwrap(),
+            response_case["defaultAssignments"]
+        );
+        let assignments: std::collections::HashSet<Option<MessageQueueAssignment>> =
+            serde_json::from_value(response_case["values"].clone()).unwrap();
+        response.set_message_queue_assignments(Some(assignments));
+        let returned_assignments = response.get_message_queue_assignments().unwrap();
+        assert_eq!(returned_assignments.len(), response_case["valueCount"]);
+        let returned_values = returned_assignments
+            .iter()
+            .map(|assignment| {
+                assignment.as_ref().map(|assignment| {
+                    json!({
+                        "messageQueue": assignment.message_queue(),
+                        "mode": assignment.mode(),
+                        "attachments": assignment.attachments(),
+                    })
+                })
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(json!(returned_values), response_case["values"]);
+        // Java returns the same mutable Set. Rust moves the HashSet into the DTO and lends it.
+        assert_eq!(response_case["setterRetainsSetIdentity"], true);
+        response.set_message_queue_assignments(None);
+        assert!(response.get_message_queue_assignments().is_none());
+        assert_eq!(response_case["nullSetterRemainsNull"], true);
+
+        let mode_case = &fixture["setRequestModeRequestApiCase"];
+        let mut mode_body = SetMessageRequestModeRequestBody::default();
+        assert_eq!(
+            json!({
+                "topic": mode_body.get_topic(),
+                "consumerGroup": mode_body.get_consumer_group(),
+                "mode": mode_body.get_mode(),
+                "popShareQueueNum": mode_body.get_pop_share_queue_num(),
+            }),
+            mode_case["defaults"]
+        );
+        mode_body.set_topic(Some("orders".into()));
+        mode_body.set_consumer_group(Some("workers".into()));
+        mode_body.set_mode(Some(MessageRequestMode::Pop));
+        mode_body.set_pop_share_queue_num(2);
+        assert_eq!(
+            json!({
+                "topic": mode_body.get_topic(),
+                "consumerGroup": mode_body.get_consumer_group(),
+                "mode": mode_body.get_mode(),
+                "popShareQueueNum": mode_body.get_pop_share_queue_num(),
+            }),
+            mode_case["values"]
+        );
+        mode_body.set_topic(None);
+        mode_body.set_consumer_group(None);
+        mode_body.set_mode(None);
+        mode_body.set_pop_share_queue_num(0);
+        assert_eq!(mode_case["nullSettersRemainNull"], true);
+        assert_eq!(
+            mode_body.get_pop_share_queue_num(),
+            mode_case["primitiveAfterReset"]
+        );
     }
 
     #[test]
