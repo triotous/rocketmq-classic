@@ -116,6 +116,14 @@
 - Full workspace/all-target tests, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios and fixture drift/cross-decodes), comparator self-test/manifest22, formatting, and diff checks pass.
 - Updated ADR-0058, Java compatibility, API/config map, requirement audit, runtime inventory, and this rlog. Other DTO aliases, malformed inputs, whole-source/reverse-export reconciliation, platform evidence, and P6-V04 remain open; Phase 6 stays PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
 
+## LiteSubscriptionDTO mutable OffsetOption getter mapping — 2026-10-09T20:25:41Z
+
+- Extended the actual pinned Java `liteSubscriptionDtoApiCase`: mutation through the `OffsetOption` passed to `setOffsetOption` is visible through `getOffsetOption`, and mutation through the getter is visible through the original object. Both finish at value 13.
+- Oracle/test and fixture commit `373dec0c`; aggregate `fixtures/runtime/lookup.json` SHA-256 `0880db9cf0e22cf22580c4c176e3413c7e3b2a2336fcc63dc6f81b616126fcaa`. The test-first Rust differential failed to compile because `offset_option_mut` was absent.
+- Implementation commit `6612a7fe` adds `LiteSubscriptionDto::offset_option_mut() -> Option<&mut OffsetOption>`. Focused differential passes; the Rust borrow mutates the DTO-owned object but does not retain Java's identity with the setter caller's object.
+- Full workspace/all-target tests, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios and fixture drift/cross-decodes), comparator self-test/manifest22, formatting, and diff checks pass.
+- Updated Java compatibility, API/config map, requirement audit, runtime inventory, and this rlog. Other DTO aliases, malformed inputs, whole-source/reverse-export reconciliation, platform evidence, and P6-V04 remain open; Phase 6 stays PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
+
 ## ResetOffsetBody mutable map getter mapping — 2026-10-09T20:08:59Z
 
 - Extended the pinned Java `resetOffsetBodyApiCase`: mutation through the Map assigned to `setOffsetTable` is visible through the body getter, and mutation through `getOffsetTable()` is visible through the original Map. The final table includes queue ids 2, 3 (null offset), 4 (99), and 5 (100).
