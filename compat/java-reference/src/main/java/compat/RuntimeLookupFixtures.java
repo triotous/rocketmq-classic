@@ -512,6 +512,11 @@ public final class RuntimeLookupFixtures {
             org.apache.rocketmq.common.lite.OffsetOption.Type.TAIL_N, 23L)));
         item.put("differentValue", option.equals(new org.apache.rocketmq.common.lite.OffsetOption(
             org.apache.rocketmq.common.lite.OffsetOption.Type.TAIL_N, 24L)));
+        Set<org.apache.rocketmq.common.lite.OffsetOption> equalOptions = new HashSet<>();
+        equalOptions.add(option);
+        equalOptions.add(new org.apache.rocketmq.common.lite.OffsetOption(
+            org.apache.rocketmq.common.lite.OffsetOption.Type.TAIL_N, 23L));
+        item.put("equalHashSetSize", equalOptions.size());
         return item;
     }
 

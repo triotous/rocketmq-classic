@@ -2891,6 +2891,14 @@ mod tests {
         assert!(option_case["equalValue"].as_bool().unwrap());
         assert!(!option_case["differentValue"].as_bool().unwrap());
         assert_eq!(option, OffsetOption::new(Some(OffsetOptionType::TailN), 23));
+        let equal_options = std::collections::HashSet::from([
+            option.clone(),
+            OffsetOption::new(Some(OffsetOptionType::TailN), 23),
+        ]);
+        assert_eq!(
+            equal_options.len(),
+            option_case["equalHashSetSize"].as_u64().unwrap() as usize
+        );
 
         let control_case = &fixture["liteSubscriptionControlApiCase"];
         let mut control = LiteSubscriptionCtlRequestBody::default();
