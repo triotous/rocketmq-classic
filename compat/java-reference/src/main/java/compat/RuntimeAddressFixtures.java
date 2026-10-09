@@ -3,6 +3,7 @@ package compat;
 import java.lang.reflect.Field;
 import java.net.Inet6Address;
 import java.net.InetAddress;
+import java.net.NetworkInterface;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -12,7 +13,7 @@ import java.util.TreeMap;
 import org.apache.rocketmq.common.UtilAll;
 import org.apache.rocketmq.common.utils.NetworkUtil;
 
-/** Deterministic address helpers only: no DNS, interface enumeration or Broker. */
+/** Address helpers plus a named-scope interface oracle; no DNS or Broker. */
 public final class RuntimeAddressFixtures {
     private RuntimeAddressFixtures() { }
 
@@ -37,6 +38,29 @@ public final class RuntimeAddressFixtures {
         }
         add(addresses, "fe80::1", 7, Inet6Address.getByAddress(null,
             InetAddress.getByName("fe80::1").getAddress(), 7));
+        List<Object> scopeCases = new ArrayList<>();
+        var interfaces = NetworkInterface.getNetworkInterfaces();
+        while (interfaces.hasMoreElements() && scopeCases.isEmpty()) {
+            NetworkInterface networkInterface = interfaces.nextElement();
+            var interfaceAddresses = networkInterface.getInetAddresses();
+            while (interfaceAddresses.hasMoreElements()) {
+                InetAddress address = interfaceAddresses.nextElement();
+                if (address instanceof Inet6Address) {
+                    Inet6Address ipv6 = (Inet6Address) address;
+                    Inet6Address namedScope = Inet6Address.getByAddress(
+                        null, ipv6.getAddress(), networkInterface);
+                    Inet6Address unscoped = Inet6Address.getByAddress(
+                        null, ipv6.getAddress(), -1);
+                    Map<String, Object> item = new TreeMap<>();
+                    item.put("interfaceName", networkInterface.getName());
+                    item.put("ip", unscoped.getHostAddress());
+                    item.put("scope", namedScope.getScopeId());
+                    item.put("normalized", NetworkUtil.normalizeHostAddress(namedScope));
+                    scopeCases.add(item);
+                    break;
+                }
+            }
+        }
         List<Object> clientAddressCases = new ArrayList<>();
         List<Object> channelTableKeyCases = new ArrayList<>();
         AddressProbe addressProbe = new AddressProbe();
@@ -138,6 +162,7 @@ public final class RuntimeAddressFixtures {
         fixture.put("entrypoint", "NetworkUtil.normalizeHostAddress/UtilAll.isInternalIP/isInternalV6IP/InetAddress.isLoopbackAddress/NettyRemotingClient.getHostAndPort/channelTables");
         fixture.put("serverBaselineContacted", false);
         fixture.put("addresses", addresses);
+        fixture.put("scopeCases", scopeCases);
         fixture.put("clientAddressCases", clientAddressCases);
         fixture.put("channelTableKeyCases", channelTableKeyCases);
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture) + "\n";
@@ -149,6 +174,7 @@ public final class RuntimeAddressFixtures {
             Files.writeString(file, json);
         }
         System.out.println("Runtime address helpers verified: " + addresses.size()
+            + "; named IPv6 scopes verified: " + scopeCases.size()
             + "; Java client endpoint splits verified: " + clientAddressCases.size());
     }
 

@@ -7,6 +7,7 @@ use std::{
 struct Address {
     ip: IpAddr,
     scope: u32,
+    scope_name: Option<String>,
 }
 
 fn internal(ip: IpAddr) -> bool {
@@ -133,6 +134,7 @@ fn local_host() -> io::Result<Address> {
     Ok(Address {
         ip: socket.ip(),
         scope,
+        scope_name: None,
     })
 }
 
@@ -188,6 +190,7 @@ fn interfaces() -> io::Result<Vec<Address>> {
                 Address {
                     ip: IpAddr::V4(Ipv4Addr::from(socket.sin_addr.s_addr.to_ne_bytes())),
                     scope: 0,
+                    scope_name: None,
                 }
             }
             libc::AF_INET6 => {
@@ -195,6 +198,7 @@ fn interfaces() -> io::Result<Vec<Address>> {
                 Address {
                     ip: IpAddr::V6(Ipv6Addr::from(socket.sin6_addr.s6_addr)),
                     scope: socket.sin6_scope_id,
+                    scope_name: None,
                 }
             }
             _ => continue,
@@ -264,6 +268,7 @@ fn interfaces() -> io::Result<Vec<Address>> {
                                 unsafe { socket.sin_addr.S_un.S_addr }.to_ne_bytes(),
                             )),
                             scope: 0,
+                            scope_name: None,
                         }
                     }
                     AF_INET6
@@ -274,6 +279,7 @@ fn interfaces() -> io::Result<Vec<Address>> {
                         Address {
                             ip: IpAddr::V6(Ipv6Addr::from(unsafe { socket.sin6_addr.u.Byte })),
                             scope: unsafe { socket.Anonymous.sin6_scope_id },
+                            scope_name: None,
                         }
                     }
                     _ => continue,
@@ -350,6 +356,7 @@ mod tests {
             let address = Address {
                 ip: case["ip"].as_str().unwrap().parse().unwrap(),
                 scope: case["scope"].as_u64().unwrap() as u32,
+                scope_name: None,
             };
             assert_eq!(
                 internal(address.ip),
@@ -367,11 +374,25 @@ mod tests {
                 "{case}"
             );
         }
+        for case in fixture["scopeCases"].as_array().unwrap() {
+            let address = Address {
+                ip: case["ip"].as_str().unwrap().parse().unwrap(),
+                scope: case["scope"].as_u64().unwrap() as u32,
+                scope_name: Some(case["interfaceName"].as_str().unwrap().to_owned()),
+            };
+            assert_eq!(address.scope_name.as_deref(), case["interfaceName"].as_str());
+            assert_eq!(
+                normalize(&address),
+                case["normalized"].as_str().unwrap(),
+                "{case}"
+            );
+        }
     }
     fn address(ip: &str) -> Address {
         Address {
             ip: ip.parse().unwrap(),
             scope: 0,
+            scope_name: None,
         }
     }
     #[test]
@@ -412,7 +433,8 @@ mod tests {
         assert_eq!(
             normalize(&Address {
                 ip: "fe80::1".parse().unwrap(),
-                scope: 7
+                scope: 7,
+                scope_name: None,
             }),
             "[fe80:0:0:0:0:0:0:1%7]"
         );
