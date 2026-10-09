@@ -121,3 +121,11 @@
 - The red differential showed Fastjson omits null `topic`/`brokerName` inside object map keys but always emits primitive `queueId`; absent or null IDs become `0`. Oracle/test commit `2260129` reproduced 12 exact encoded-body mismatches across the two DTOs. Shared encoder fix `eadcb33` now preserves Java key field order and omission/default behavior.
 - Validation passed: focused Java body differentials (7 tests), protocol all-target suite, full workspace/all-target tests with local loopback access, strict all-target/all-feature Clippy (`-D warnings`), pinned offline Maven verify (fixture drift and Java/Rust cross-decodes), comparator self-test, manifest validation (22 scenarios), fmt and diff checks.
 - ADR-0047/0048, Java compatibility, Phase 6 API/config, requirement audit, and runtime inventory now record the current counts/hash and map-key field behavior. Overall Phase 6 remains PARTIAL with broader source/API/input reconciliation open; P6-V04 stays `PENDING_PHASE_19`.
+
+
+## MessageQueue key field token matrix — 2026-10-09T17:03:05Z
+
+- Extended the oracle to invoke all seven JSON token kinds for `MessageQueue.topic`, `brokerName`, and `queueId` as object-valued map-key fields. Consumer status tests both its outer and nested tables. The fixture now has 77 ResetOffsetBody and 143 GetConsumerStatusBody cases; `lookup.json` SHA-256: `202dc2d502473e2e2a73861bfcc82e359668c8f5222744b619052be04c9c014f`.
+- Java and Rust match: String fields coerce scalar/array/object values to JSON text; queueId accepts numeric strings, truncates fractions, maps booleans to 1/0, maps null/object to zero and rejects arrays. No production change was required. Test commit: `85cd833`; key encoder fix remains `eadcb33`.
+- Validation passed: seven focused body-input differential tests, protocol all-target tests, pinned offline Maven verify (fixture drift and cross-decodes), comparator self-test, 22-scenario manifest validation, formatting and diff checks. Full workspace tests and strict Clippy had already passed after the encoder fix.
+- Updated both body ADRs, Java compatibility, Phase 6 API/config, requirement/runtime inventories, and the final current count/hash line. Phase 6 remains PARTIAL; wider source/API/input reconciliation remains open and P6-V04 stays `PENDING_PHASE_19`.
