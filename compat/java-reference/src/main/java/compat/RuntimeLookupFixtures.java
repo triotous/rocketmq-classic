@@ -75,6 +75,7 @@ public final class RuntimeLookupFixtures {
         fixture.put("setRequestModeCases", setRequestModeCases());
         fixture.put("setRequestModeFieldCases", setRequestModeFieldCases());
         fixture.put("setRequestModeRootCases", setRequestModeRootCases());
+        fixture.put("messageRequestModeWrapperCases", messageRequestModeWrapperCases());
         fixture.put("consumeDirectResultCases", consumeDirectResultCases());
         fixture.put("messageQueueInputCases", messageQueueInputCases());
         fixture.put("assignmentHashCollisionCases", assignmentHashCollisionCases());
@@ -830,6 +831,55 @@ public final class RuntimeLookupFixtures {
         cases.add(consumeDirectResultCase("duplicate-spent-time-last-wins",
             "{\"spentTimeMills\":9,\"spentTimeMills\":1.9}"));
         return cases;
+    }
+
+    private static List<Object> messageRequestModeWrapperCases() {
+        List<Object> cases = new ArrayList<>();
+        cases.add(messageRequestModeWrapperCase("default-empty-map", "{}"));
+        cases.add(messageRequestModeWrapperCase("explicit-null-map", "{\"messageRequestModeMap\":null}"));
+        String[] tokens = {"null", "\"text\"", "2", "1.5", "true", "[]", "{}"};
+        String[] names = {"null", "string", "integer", "fraction", "boolean", "array", "object"};
+        for (int index = 0; index < tokens.length; index++) {
+            cases.add(messageRequestModeWrapperCase("field-" + names[index],
+                "{\"messageRequestModeMap\":" + tokens[index] + "}"));
+            cases.add(messageRequestModeWrapperCase("topic-value-" + names[index],
+                "{\"messageRequestModeMap\":{\"orders\":" + tokens[index] + "}}"));
+            cases.add(messageRequestModeWrapperCase("group-value-" + names[index],
+                "{\"messageRequestModeMap\":{\"orders\":{\"workers\":" + tokens[index] + "}}}"));
+        }
+        String[][] roots = {
+            {"null", "null"}, {"empty-object", "{}"}, {"empty-array", "[]"},
+            {"string", "\"root\""}, {"integer", "7"}, {"fraction", "1.5"},
+            {"boolean", "true"}
+        };
+        for (String[] root : roots) {
+            cases.add(messageRequestModeWrapperCase("root-" + root[0], root[1]));
+        }
+        cases.add(messageRequestModeWrapperCase("duplicate-root-last-wins",
+            "{\"messageRequestModeMap\":{\"old\":{}},\"messageRequestModeMap\":{\"new\":{}}}"));
+        cases.add(messageRequestModeWrapperCase("duplicate-topic-last-wins",
+            "{\"messageRequestModeMap\":{\"orders\":{},\"orders\":{\"workers\":{}}}}"));
+        cases.add(messageRequestModeWrapperCase("duplicate-group-last-wins",
+            "{\"messageRequestModeMap\":{\"orders\":{\"workers\":{},\"workers\":{\"group-2\":{}}}}}"));
+        return cases;
+    }
+
+    private static Map<String, Object> messageRequestModeWrapperCase(String name, String rawInput) {
+        Map<String, Object> item = new TreeMap<>();
+        item.put("name", name);
+        item.put("rawInput", rawInput);
+        try {
+            org.apache.rocketmq.remoting.protocol.body.MessageRequestModeSerializeWrapper decoded =
+                com.alibaba.fastjson2.JSON.parseObject(rawInput,
+                    org.apache.rocketmq.remoting.protocol.body.MessageRequestModeSerializeWrapper.class);
+            item.put("outcome", "ACCEPTED");
+            item.put("encoded", com.alibaba.fastjson2.JSON.parseObject(
+                com.alibaba.fastjson2.JSON.toJSONString(decoded)));
+        } catch (RuntimeException error) {
+            item.put("outcome", "REJECTED");
+            item.put("error", error.getClass().getSimpleName());
+        }
+        return item;
     }
 
     private static String tokenName(String token) {

@@ -3354,6 +3354,24 @@ mod tests {
     }
 
     #[test]
+    fn message_request_mode_wrapper_inputs_match_invoked_java_fastjson() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let cases = fixture["messageRequestModeWrapperCases"].as_array().unwrap();
+        batch_body_cases_match_java::<MessageRequestModeSerializeWrapper>(cases, 33);
+        let default_encoded = serde_json::to_value(MessageRequestModeSerializeWrapper::default())
+            .unwrap();
+        assert_eq!(
+            default_encoded,
+            cases
+                .iter()
+                .find(|case| case["name"] == "default-empty-map")
+                .unwrap()["encoded"],
+            "Rust Default should match Java's no-argument wrapper values"
+        );
+    }
+
+    #[test]
     fn lite_subscription_enum_inputs_match_invoked_java_fastjson() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
