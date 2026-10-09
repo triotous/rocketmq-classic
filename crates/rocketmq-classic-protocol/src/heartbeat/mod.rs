@@ -773,11 +773,12 @@ mod fastjson_dto_input_tests {
         let cases = fixture["heartbeatDtoInputCases"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            49,
+            50,
             "Java oracle includes DTO scalar, numeric-boundary, and collection-shape probes"
         );
         for required in [
             "subscription-high-precision-number-to-string",
+            "subscription-exponent-number-to-string",
             "subscription-tags-high-precision-number-to-string",
             "subscription-leading-plus-zero-version",
             "heartbeat-leading-plus-zero-fingerprint",
