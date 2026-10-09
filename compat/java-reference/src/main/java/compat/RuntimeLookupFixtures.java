@@ -1799,6 +1799,20 @@ public final class RuntimeLookupFixtures {
         item.put("bodyBrokerName", body.getBrokerName());
         item.put("bodyAckCount", body.getAcks().size());
         item.put("bodyReturnsAssignedList", body.getAcks() == acks);
+        item.put("bodyAssignedQueueIds", java.util.List.of(body.getAcks().get(0).getQueueId()));
+        acks.clear();
+        org.apache.rocketmq.remoting.protocol.body.BatchAck externalAck =
+            new org.apache.rocketmq.remoting.protocol.body.BatchAck();
+        externalAck.setQueueId(3);
+        acks.add(externalAck);
+        item.put("externalMutationVisible", body.getAcks().get(0).getQueueId() == 3);
+        body.getAcks().clear();
+        org.apache.rocketmq.remoting.protocol.body.BatchAck getterAck =
+            new org.apache.rocketmq.remoting.protocol.body.BatchAck();
+        getterAck.setQueueId(4);
+        body.getAcks().add(getterAck);
+        item.put("getterMutationVisibleToAssignedList", acks.get(0).getQueueId() == 4);
+        item.put("bodyMutatedQueueIds", java.util.List.of(body.getAcks().get(0).getQueueId()));
         body.setAcks(null);
         item.put("bodyNullAcks", body.getAcks() == null);
         return item;
