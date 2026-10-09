@@ -559,11 +559,25 @@ where
             .map_err(de::Error::custom)?;
     let mut result = BTreeMap::new();
     for (key, value) in entries {
-        let value = if value.get().trim() == "null" {
+        let raw_value = value.get().trim();
+        let value = if raw_value == "null" {
             None
+        } else if raw_value.starts_with('"') {
+            let value = serde_json::from_str::<String>(raw_value).map_err(de::Error::custom)?;
+            Some(if value.is_empty() {
+                Vec::new()
+            } else {
+                vec![Some(value)]
+            })
+        } else if raw_value.starts_with('{') {
+            Some(vec![fastjson_nullable_string_from_raw::<D::Error>(
+                raw_value,
+            )?])
         } else {
-            let values = serde_json::from_str::<Vec<Box<serde_json::value::RawValue>>>(value.get())
-                .map_err(|_| de::Error::custom("expected a JSON string array or null"))?;
+            let values = serde_json::from_str::<Vec<Box<serde_json::value::RawValue>>>(raw_value)
+                .map_err(|_| {
+                de::Error::custom("expected a Fastjson string, object, array, or null")
+            })?;
             Some(
                 values
                     .iter()

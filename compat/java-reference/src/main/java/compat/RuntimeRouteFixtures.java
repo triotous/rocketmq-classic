@@ -672,7 +672,19 @@ public final class RuntimeRouteFixtures {
                 "{\"brokerAddrs\":{\"0\":" + shape[1] + "}}"));
             cases.add(routeDtoInputCase("filter-server-list-member-" + shape[0], "topicRouteData",
                 "{\"filterServerTable\":{\"broker\":[" + shape[1] + "]}}"));
+            cases.add(routeDtoInputCase("mapping-curr-id-map-value-" + shape[0], "mapping",
+                "{\"currIdMap\":{\"0\":" + shape[1] + "}}"));
+            cases.add(routeDtoInputCase("route-queue-data-element-" + shape[0], "topicRouteData",
+                "{\"queueDatas\":[" + shape[1] + "]}"));
+            cases.add(routeDtoInputCase("route-broker-data-element-" + shape[0], "topicRouteData",
+                "{\"brokerDatas\":[" + shape[1] + "]}"));
+            cases.add(routeDtoInputCase("route-filter-server-map-value-" + shape[0], "topicRouteData",
+                "{\"filterServerTable\":{\"broker\":" + shape[1] + "}}"));
+            cases.add(routeDtoInputCase("route-mapping-table-map-value-" + shape[0], "topicRouteData",
+                "{\"topicQueueMappingByBroker\":{\"broker\":" + shape[1] + "}}"));
         }
+        cases.add(routeDtoInputCase("route-filter-server-map-value-empty-string", "topicRouteData",
+            "{\"filterServerTable\":{\"broker\":\"\"}}"));
         cases.add(routeDtoInputCase("queue-unicode-decimal-string", "queueData",
             "{\"readQueueNums\":\"１２\",\"writeQueueNums\":\"-١٢\"}"));
         cases.add(routeDtoInputCase("mapping-unicode-decimal-strings", "mapping",
