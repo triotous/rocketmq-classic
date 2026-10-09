@@ -37,7 +37,9 @@ fn normalize(address: &Address) -> String {
                 .map(|part| format!("{part:x}"))
                 .collect::<Vec<_>>()
                 .join(":");
-            if address.scope == 0 {
+            if let Some(name) = &address.scope_name {
+                format!("[{host}%{name}]")
+            } else if address.scope == 0 {
                 format!("[{host}]")
             } else {
                 format!("[{host}%{}]", address.scope)
@@ -195,10 +197,13 @@ fn interfaces() -> io::Result<Vec<Address>> {
             }
             libc::AF_INET6 => {
                 let socket = unsafe { &*(interface.ifa_addr as *const libc::sockaddr_in6) };
+                let scope = socket.sin6_scope_id;
                 Address {
                     ip: IpAddr::V6(Ipv6Addr::from(socket.sin6_addr.s6_addr)),
-                    scope: socket.sin6_scope_id,
-                    scope_name: None,
+                    scope,
+                    // Java's Inet6Address stores the NetworkInterface itself
+                    // for scoped addresses, so getHostAddress prints its name.
+                    scope_name: (scope != 0).then(|| name.to_string()),
                 }
             }
             _ => continue,
@@ -210,7 +215,28 @@ fn interfaces() -> io::Result<Vec<Address>> {
 
 #[cfg(windows)]
 fn interfaces() -> io::Result<Vec<Address>> {
-    use windows_sys::Win32::{NetworkManagement::IpHelper::*, Networking::WinSock::*};
+    use windows_sys::Win32::{
+        NetworkManagement::{IpHelper::*, Ndis::NET_LUID_LH},
+        Networking::WinSock::*,
+    };
+
+    fn interface_name(luid: &NET_LUID_LH) -> io::Result<String> {
+        // OpenJDK obtains NetworkInterface.getName() from this LUID conversion.
+        let mut name = [0u16; 257];
+        let result = unsafe {
+            ConvertInterfaceLuidToNameW(std::ptr::from_ref(luid), name.as_mut_ptr(), name.len())
+        };
+        if result != 0 {
+            return Err(io::Error::from_raw_os_error(result as i32));
+        }
+        let length = name
+            .iter()
+            .position(|unit| *unit == 0)
+            .unwrap_or(name.len());
+        String::from_utf16(&name[..length])
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+    }
+
     let mut length = 15_000u32;
     for _ in 0..3 {
         // u64 storage supplies adapter structure alignment and a bounded buffer.
@@ -246,6 +272,7 @@ fn interfaces() -> io::Result<Vec<Address>> {
             if adapter.OperStatus != 1 || adapter.IfType == 23 || adapter.IfType == 28 {
                 continue;
             }
+            let interface_name = interface_name(&adapter.Luid)?;
             let mut unicast = adapter.FirstUnicastAddress;
             while !unicast.is_null() {
                 // SAFETY: this entry and its sockaddr are owned by storage.
@@ -276,10 +303,11 @@ fn interfaces() -> io::Result<Vec<Address>> {
                             >= std::mem::size_of::<SOCKADDR_IN6>() as i32 =>
                     {
                         let socket = unsafe { &*pointer.cast::<SOCKADDR_IN6>() };
+                        let scope = unsafe { socket.Anonymous.sin6_scope_id };
                         Address {
                             ip: IpAddr::V6(Ipv6Addr::from(unsafe { socket.sin6_addr.u.Byte })),
-                            scope: unsafe { socket.Anonymous.sin6_scope_id },
-                            scope_name: None,
+                            scope,
+                            scope_name: (scope != 0).then(|| interface_name.clone()),
                         }
                     }
                     _ => continue,
@@ -380,9 +408,36 @@ mod tests {
                 scope: case["scope"].as_u64().unwrap() as u32,
                 scope_name: Some(case["interfaceName"].as_str().unwrap().to_owned()),
             };
-            assert_eq!(address.scope_name.as_deref(), case["interfaceName"].as_str());
+            assert_eq!(
+                address.scope_name.as_deref(),
+                case["interfaceName"].as_str()
+            );
             assert_eq!(
                 normalize(&address),
+                case["normalized"].as_str().unwrap(),
+                "{case}"
+            );
+        }
+    }
+    #[cfg(unix)]
+    #[test]
+    fn interface_enumeration_retains_java_named_ipv6_scope() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/address.json"))
+                .unwrap();
+        let addresses = interfaces().unwrap();
+        for case in fixture["scopeCases"].as_array().unwrap() {
+            let expected = Address {
+                ip: case["ip"].as_str().unwrap().parse().unwrap(),
+                scope: case["scope"].as_u64().unwrap() as u32,
+                scope_name: Some(case["interfaceName"].as_str().unwrap().to_owned()),
+            };
+            assert!(
+                addresses.contains(&expected),
+                "Java interface scope missing from native enumeration: {case}; {addresses:?}"
+            );
+            assert_eq!(
+                normalize(&expected),
                 case["normalized"].as_str().unwrap(),
                 "{case}"
             );
