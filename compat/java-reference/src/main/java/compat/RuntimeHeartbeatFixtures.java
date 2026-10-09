@@ -641,6 +641,10 @@ public final class RuntimeHeartbeatFixtures {
             "{\"subVersion\":0,\"topic\":9223372036854775807.123456789012345678901}"));
         cases.add(heartbeatDtoInputCase("subscription-exponent-number-to-string", "subscription",
             "{\"subVersion\":0,\"topic\":1e2}"));
+        cases.add(heartbeatDtoInputCase("subscription-decimal-exponent-number-to-string", "subscription",
+            "{\"subVersion\":0,\"topic\":1.0e2}"));
+        cases.add(heartbeatDtoInputCase("subscription-precision-exponent-number-to-string", "subscription",
+            "{\"subVersion\":0,\"topic\":1.234567890123456789e2}"));
         cases.add(heartbeatDtoInputCase("subscription-tags-high-precision-number-to-string", "subscription",
             "{\"subVersion\":0,\"tagsSet\":[9223372036854775807.123456789012345678901]}"));
         cases.add(heartbeatDtoInputCase("subscription-decimal-primitives", "subscription",
