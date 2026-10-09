@@ -44,3 +44,6 @@ Null-topic runtime broker lookup mismatch: direct pinned Java `MQClientInstance.
 
 
 Windows local-interface code type-check: current macOS host has `x86_64-pc-windows-gnu` Rust std installed. Full `cargo check -p rocketmq-classic-core --target x86_64-pc-windows-gnu --locked` stops in `aws-lc-sys` because `x86_64-w64-mingw32-gcc` is missing, before the core crate is checked. A temporary isolated Cargo crate including the actual `crates/rocketmq-classic-core/src/config/local_address.rs` and pinned `windows-sys 0.61.2` features plus `hostname 0.4.2` passes `cargo check --target x86_64-pc-windows-gnu --tests --offline`. This checks the Windows-specific module and tests but does not execute Windows `GetAdaptersAddresses`; Windows runtime enumeration, non-macOS Unix behavior, and actual IPv6-only-host evidence remain open.
+
+
+Broker-name API inventory follow-up: updated the `MQClientInstance.getBrokerNameFromMessageQueue` row and route audit branch matrix to record the Rust `Result<Option<&str>, RuntimeError>` mapping, null-topic error, endpoint-map hit/miss, and fallback branches. Documentation commit `20544e52`; `git diff --check` passed.
