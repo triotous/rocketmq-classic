@@ -664,7 +664,20 @@ fn contains_fastjson_rejected_literal(input: &str) -> bool {
 fn fastjson_internal_trivia(character: char) -> bool {
     matches!(
         character,
-        '\u{0080}' | '\u{0088}' | '\u{0089}' | '\u{008a}' | '\u{008c}' | '\u{008d}' | '\u{00a0}'
+        '\u{0080}'
+            | '\u{0088}'
+            | '\u{0089}'
+            | '\u{008a}'
+            | '\u{008c}'
+            | '\u{008d}'
+            | '\u{00a0}'
+            | '\u{00c0}'
+            | '\u{00c8}'
+            | '\u{00c9}'
+            | '\u{00ca}'
+            | '\u{00cc}'
+            | '\u{00cd}'
+            | '\u{00e0}'
     )
 }
 
@@ -1724,7 +1737,7 @@ fn java_ip_to_int(ip: &str) -> Result<i32, TransportError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ClientConfig, SocksProxyConfig};
+    use super::{ClientConfig, ParsedProxyRoute, SocksProxyConfig};
 
     #[test]
     fn signed_time_settings_match_java_normalization() {
@@ -1983,6 +1996,53 @@ mod tests {
                 assert_eq!(
                     config.parse_socks_proxy_config().is_ok(),
                     accepted,
+                    "{name}, U+{code_unit:04X} ({inserted:?})"
+                );
+            }
+        }
+
+        let bmp_cases = fixture["socksBmpBoundaryObservations"].as_object().unwrap();
+        for (name, prefix, suffix) in boundaries {
+            let mut expected = vec![None; u16::MAX as usize + 1];
+            for group in bmp_cases[name].as_array().unwrap() {
+                let observation = group["observation"].clone();
+                for code_unit in group["codeUnits"].as_array().unwrap() {
+                    let code_unit = code_unit.as_u64().unwrap() as usize;
+                    expected[code_unit] = Some(observation.clone());
+                }
+            }
+            for code_unit in 0..=u16::MAX {
+                let inserted = char::from_u32(u32::from(code_unit))
+                    .map(|character| character.to_string())
+                    .unwrap_or_else(|| String::from_utf16_lossy(&[code_unit]));
+                config.set_socks_proxy_config(format!("{prefix}{inserted}{suffix}"));
+                let actual = config.parse_socks_proxy_config().ok().map(|routes| {
+                    let mut entries = routes.into_iter().collect::<Vec<_>>();
+                    entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+                    let entries = entries
+                        .into_iter()
+                        .map(|(key, route)| {
+                            let route = match route {
+                                ParsedProxyRoute::Direct => serde_json::Value::Null,
+                                ParsedProxyRoute::MissingAddress => serde_json::json!({
+                                    "addr": null,
+                                    "username": null,
+                                    "password": null
+                                }),
+                                ParsedProxyRoute::Proxy(proxy) => serde_json::json!({
+                                    "addr": proxy.address,
+                                    "username": proxy.username,
+                                    "password": proxy.password
+                                }),
+                            };
+                            serde_json::json!({"key": key, "route": route})
+                        })
+                        .collect::<Vec<_>>();
+                    serde_json::json!({"isNull": false, "entries": entries})
+                });
+                assert_eq!(
+                    actual,
+                    expected[usize::from(code_unit)],
                     "{name}, U+{code_unit:04X} ({inserted:?})"
                 );
             }

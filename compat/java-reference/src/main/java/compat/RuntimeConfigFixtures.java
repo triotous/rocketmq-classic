@@ -193,6 +193,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("socksLeadingCodeUnits", socksLeadingCodeUnits());
         fixture.put("socksControlBoundaryCases", socksControlBoundaryCases());
         fixture.put("socksUnicodeTriviaCases", socksUnicodeTriviaCases());
+        fixture.put("socksBmpBoundaryObservations", socksBmpBoundaryObservations());
         fixture.put("socksSubstituteEofObservations", socksSubstituteEofObservations());
         fixture.put("socksConstruction", socksConstruction());
         fixture.put("socksConnection", socksConnection(true));
@@ -1174,6 +1175,75 @@ public final class RuntimeConfigFixtures {
                 cases.add(item);
             }
             result.put(boundary[0], cases);
+        }
+        return result;
+    }
+
+    /** Direct Java semantic oracle for every BMP unit at six SOCKS JSON token boundaries. */
+    private static Map<String, Object> socksBmpBoundaryObservations() {
+        Map<String, Object> result = new TreeMap<>();
+        String[][] boundaries = {
+            {"root_after_open", "{", "\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}}"},
+            {"root_before_colon", "{\"10.0.0.0/8\"", ":{\"addr\":\"proxy:1080\"}}"},
+            {"root_after_colon", "{\"10.0.0.0/8\":", "{\"addr\":\"proxy:1080\"}}"},
+            {"proxy_after_open", "{\"10.0.0.0/8\":{", "\"addr\":\"proxy:1080\"}}"},
+            {"proxy_before_close", "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"", "}}"},
+            {"root_before_close", "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}", "}"}
+        };
+        com.alibaba.fastjson2.TypeReference<Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig>> type =
+            new com.alibaba.fastjson2.TypeReference<>() { };
+        for (String[] boundary : boundaries) {
+            Map<String, Map<String, Object>> grouped = new TreeMap<>();
+            for (int codeUnit = 0; codeUnit <= Character.MAX_VALUE; codeUnit++) {
+                String input = boundary[1] + (char) codeUnit + boundary[2];
+                try {
+                    Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig> parsed =
+                        com.alibaba.fastjson2.JSON.parseObject(input, type);
+                    Map<String, Object> observation = new TreeMap<>();
+                    observation.put("isNull", parsed == null);
+                    if (parsed == null) {
+                        observation.put("entries", null);
+                    } else {
+                        List<String> keys = new ArrayList<>(parsed.keySet());
+                        keys.sort((left, right) -> {
+                            if (left == null) return right == null ? 0 : -1;
+                            if (right == null) return 1;
+                            return left.compareTo(right);
+                        });
+                        List<Object> entries = new ArrayList<>();
+                        for (String key : keys) {
+                            Map<String, Object> entry = new TreeMap<>();
+                            entry.put("key", key);
+                            org.apache.rocketmq.remoting.proxy.SocksProxyConfig route = parsed.get(key);
+                            if (route == null) {
+                                entry.put("route", null);
+                            } else {
+                                Map<String, Object> fields = new TreeMap<>();
+                                fields.put("addr", route.getAddr());
+                                fields.put("username", route.getUsername());
+                                fields.put("password", route.getPassword());
+                                entry.put("route", fields);
+                            }
+                            entries.add(entry);
+                        }
+                        observation.put("entries", entries);
+                    }
+                    String signature = com.alibaba.fastjson2.JSON.toJSONString(
+                        observation, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue);
+                    Map<String, Object> group = grouped.computeIfAbsent(signature, ignored -> {
+                        Map<String, Object> item = new TreeMap<>();
+                        item.put("codeUnits", new ArrayList<Integer>());
+                        item.put("observation", observation);
+                        return item;
+                    });
+                    @SuppressWarnings("unchecked")
+                    List<Integer> codeUnits = (List<Integer>) group.get("codeUnits");
+                    codeUnits.add(codeUnit);
+                } catch (RuntimeException rejected) {
+                    // Rejections need no row; native checks all unlisted units reject.
+                }
+            }
+            result.put(boundary[0], new ArrayList<>(grouped.values()));
         }
         return result;
     }
