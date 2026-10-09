@@ -3628,6 +3628,65 @@ mod tests {
     }
 
     #[test]
+    fn consumer_status_and_reset_offset_public_methods_match_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+
+        let status_case = &fixture["consumerStatusBodyApiCase"];
+        let mut status = GetConsumerStatusBody::default();
+        assert_eq!(
+            serde_json::to_value(status.get_message_queue_table()).unwrap(),
+            status_case["defaults"]["messageQueueTable"]
+        );
+        assert_eq!(
+            serde_json::to_value(status.get_consumer_table()).unwrap(),
+            status_case["defaults"]["consumerTable"]
+        );
+        let message_queue_table: QueueOffsetEntries =
+            serde_json::from_value(status_case["values"]["messageQueueTable"].clone()).unwrap();
+        let consumer_table: ConsumerQueueOffsets =
+            serde_json::from_value(status_case["values"]["consumerTable"].clone()).unwrap();
+        status.set_message_queue_table(Some(message_queue_table));
+        status.set_consumer_table(Some(consumer_table));
+        assert_eq!(
+            serde_json::to_value(status.get_message_queue_table()).unwrap(),
+            status_case["values"]["messageQueueTable"]
+        );
+        assert_eq!(
+            serde_json::to_value(status.get_consumer_table()).unwrap(),
+            status_case["values"]["consumerTable"]
+        );
+        // Java returns the same mutable outer Maps and nested Map assigned by setters.
+        assert_eq!(status_case["getterReturnsAssignedMessageQueueTable"], true);
+        assert_eq!(status_case["getterReturnsAssignedConsumerTable"], true);
+        assert_eq!(status_case["nestedGetterReturnsAssignedTable"], true);
+        status.set_message_queue_table(None);
+        status.set_consumer_table(None);
+        assert!(status.get_message_queue_table().is_none());
+        assert!(status.get_consumer_table().is_none());
+        assert_eq!(status_case["nullSettersRemainNull"], true);
+
+        let reset_case = &fixture["resetOffsetBodyApiCase"];
+        let mut reset = ResetOffsetBody::default();
+        assert_eq!(
+            serde_json::to_value(reset.get_offset_table()).unwrap(),
+            reset_case["defaults"]
+        );
+        let offset_table: NullableQueueOffsetEntries =
+            serde_json::from_value(reset_case["values"].clone()).unwrap();
+        reset.set_offset_table(Some(offset_table));
+        assert_eq!(
+            serde_json::to_value(reset.get_offset_table()).unwrap(),
+            reset_case["values"]
+        );
+        // Java returns the same mutable Map; Rust owns a vector of ordered entries.
+        assert_eq!(reset_case["getterReturnsAssignedMap"], true);
+        reset.set_offset_table(None);
+        assert!(reset.get_offset_table().is_none());
+        assert_eq!(reset_case["nullSetterRemainsNull"], true);
+    }
+
+    #[test]
     fn check_client_body_inputs_match_invoked_java_fastjson() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/client-check.json"))

@@ -84,6 +84,8 @@ public final class RuntimeLookupFixtures {
         fixture.put("unlockBatchRequestApiCase", unlockBatchRequestApiCase());
         fixture.put("lockBatchResponseApiCase", lockBatchResponseApiCase());
         fixture.put("consumeDirectResultApiCase", consumeDirectResultApiCase());
+        fixture.put("consumerStatusBodyApiCase", consumerStatusBodyApiCase());
+        fixture.put("resetOffsetBodyApiCase", resetOffsetBodyApiCase());
         fixture.put("messageRequestModeWrapperCases", messageRequestModeWrapperCases());
         fixture.put("messageRequestModeWrapperApiCase", messageRequestModeWrapperApiCase());
         fixture.put("consumeDirectResultCases", consumeDirectResultCases());
@@ -1221,6 +1223,85 @@ public final class RuntimeLookupFixtures {
         result.setConsumeResult(null);
         result.setRemark(null);
         item.put("nullSettersRemainNull", result.getConsumeResult() == null && result.getRemark() == null);
+        return item;
+    }
+
+    private static List<Object> queueOffsetApiValues(
+            Map<org.apache.rocketmq.common.message.MessageQueue, Long> table) {
+        if (table == null) return null;
+        List<Object> rows = new ArrayList<>();
+        for (Map.Entry<org.apache.rocketmq.common.message.MessageQueue, Long> entry : table.entrySet()) {
+            org.apache.rocketmq.common.message.MessageQueue queue = entry.getKey();
+            Map<String, Object> queueValue = new TreeMap<>();
+            queueValue.put("topic", queue.getTopic());
+            queueValue.put("brokerName", queue.getBrokerName());
+            queueValue.put("queueId", queue.getQueueId());
+            rows.add(Arrays.asList(queueValue, entry.getValue()));
+        }
+        return rows;
+    }
+
+    private static Map<String, Object> consumerTableApiValues(
+            Map<String, Map<org.apache.rocketmq.common.message.MessageQueue, Long>> table) {
+        if (table == null) return null;
+        Map<String, Object> values = new TreeMap<>();
+        for (Map.Entry<String, Map<org.apache.rocketmq.common.message.MessageQueue, Long>> entry
+                : table.entrySet()) {
+            values.put(entry.getKey(), queueOffsetApiValues(entry.getValue()));
+        }
+        return values;
+    }
+
+    private static Map<String, Object> consumerStatusBodyApiCase() {
+        org.apache.rocketmq.remoting.protocol.body.GetConsumerStatusBody body =
+            new org.apache.rocketmq.remoting.protocol.body.GetConsumerStatusBody();
+        Map<String, Object> item = new TreeMap<>();
+        Map<String, Object> defaults = new TreeMap<>();
+        defaults.put("messageQueueTable", queueOffsetApiValues(body.getMessageQueueTable()));
+        defaults.put("consumerTable", consumerTableApiValues(body.getConsumerTable()));
+        item.put("defaults", defaults);
+
+        Map<org.apache.rocketmq.common.message.MessageQueue, Long> queueTable =
+            new java.util.LinkedHashMap<>();
+        queueTable.put(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 2), 42L);
+        queueTable.put(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 3), null);
+        Map<String, Map<org.apache.rocketmq.common.message.MessageQueue, Long>> consumerTable =
+            new java.util.LinkedHashMap<>();
+        consumerTable.put("workers", queueTable);
+        consumerTable.put("empty", new java.util.LinkedHashMap<>());
+        consumerTable.put("null-table", null);
+        body.setMessageQueueTable(queueTable);
+        body.setConsumerTable(consumerTable);
+
+        Map<String, Object> values = new TreeMap<>();
+        values.put("messageQueueTable", queueOffsetApiValues(body.getMessageQueueTable()));
+        values.put("consumerTable", consumerTableApiValues(body.getConsumerTable()));
+        item.put("values", values);
+        item.put("getterReturnsAssignedMessageQueueTable", body.getMessageQueueTable() == queueTable);
+        item.put("getterReturnsAssignedConsumerTable", body.getConsumerTable() == consumerTable);
+        item.put("nestedGetterReturnsAssignedTable", body.getConsumerTable().get("workers") == queueTable);
+
+        body.setMessageQueueTable(null);
+        body.setConsumerTable(null);
+        item.put("nullSettersRemainNull", body.getMessageQueueTable() == null && body.getConsumerTable() == null);
+        return item;
+    }
+
+    private static Map<String, Object> resetOffsetBodyApiCase() {
+        org.apache.rocketmq.remoting.protocol.body.ResetOffsetBody body =
+            new org.apache.rocketmq.remoting.protocol.body.ResetOffsetBody();
+        Map<String, Object> item = new TreeMap<>();
+        item.put("defaults", queueOffsetApiValues(body.getOffsetTable()));
+
+        Map<org.apache.rocketmq.common.message.MessageQueue, Long> offsetTable =
+            new java.util.LinkedHashMap<>();
+        offsetTable.put(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 2), 42L);
+        offsetTable.put(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 3), null);
+        body.setOffsetTable(offsetTable);
+        item.put("values", queueOffsetApiValues(body.getOffsetTable()));
+        item.put("getterReturnsAssignedMap", body.getOffsetTable() == offsetTable);
+        body.setOffsetTable(null);
+        item.put("nullSetterRemainsNull", body.getOffsetTable() == null);
         return item;
     }
 
