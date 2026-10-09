@@ -1570,8 +1570,8 @@ mod tests {
         let cases = fixture["liteSubscriptionEnumCases"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            23,
-            "Java oracle includes lite enum names and ordinals"
+            33,
+            "Java oracle includes lite enum values, duplicate fields, and list shapes"
         );
         for required in [
             "action-duplicate-last-wins",
@@ -1584,6 +1584,12 @@ mod tests {
             "subscription-set-duplicate-last-wins",
             "offset-type-duplicate-last-wins",
             "offset-value-duplicate-last-wins",
+            "subscription-set-null",
+            "subscription-set-empty",
+            "subscription-set-single-object",
+            "subscription-set-null-element",
+            "subscription-set-string-element",
+            "subscription-set-scalar-number",
         ] {
             assert!(
                 cases.iter().any(|case| case["name"] == required),

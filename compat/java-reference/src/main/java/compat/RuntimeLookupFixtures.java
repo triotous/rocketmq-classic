@@ -224,6 +224,16 @@ public final class RuntimeLookupFixtures {
         cases.add(liteSubscriptionEnumCase("offset-fractional", "{\"subscriptionSet\":[{\"offsetOption\":{\"type\":2.9,\"value\":1}}]}"));
         cases.add(liteSubscriptionEnumCase("offset-out-of-range", "{\"subscriptionSet\":[{\"offsetOption\":{\"type\":4,\"value\":1}}]}"));
         cases.add(liteSubscriptionEnumCase("offset-unknown-string", "{\"subscriptionSet\":[{\"offsetOption\":{\"type\":\"UNKNOWN\",\"value\":1}}]}"));
+        cases.add(liteSubscriptionEnumCase("subscription-set-null", "{\"subscriptionSet\":null}"));
+        cases.add(liteSubscriptionEnumCase("subscription-set-empty", "{\"subscriptionSet\":[]}"));
+        cases.add(liteSubscriptionEnumCase("subscription-set-single-object", "{\"subscriptionSet\":{\"topic\":\"object\"}}"));
+        cases.add(liteSubscriptionEnumCase("subscription-set-singleton-object-array", "{\"subscriptionSet\":[{\"topic\":\"array\"}]}"));
+        cases.add(liteSubscriptionEnumCase("subscription-set-null-element", "{\"subscriptionSet\":[null]}"));
+        cases.add(liteSubscriptionEnumCase("subscription-set-string-element", "{\"subscriptionSet\":[\"text\"]}"));
+        cases.add(liteSubscriptionEnumCase("subscription-set-number-element", "{\"subscriptionSet\":[42]}"));
+        cases.add(liteSubscriptionEnumCase("subscription-set-boolean-element", "{\"subscriptionSet\":[true]}"));
+        cases.add(liteSubscriptionEnumCase("subscription-set-scalar-string", "{\"subscriptionSet\":\"text\"}"));
+        cases.add(liteSubscriptionEnumCase("subscription-set-scalar-number", "{\"subscriptionSet\":42}"));
         return cases;
     }
 
