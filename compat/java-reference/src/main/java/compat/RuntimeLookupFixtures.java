@@ -803,7 +803,41 @@ public final class RuntimeLookupFixtures {
         cases.add(consumeDirectResultCase("unknown-numeric-string", "{\"consumeResult\":\"6\"}"));
         cases.add(consumeDirectResultCase("explicit-null", "{\"consumeResult\":null}"));
         cases.add(consumeDirectResultCase("boolean", "{\"consumeResult\":true}"));
+        String[] fields = {"order", "autoCommit", "consumeResult", "remark", "spentTimeMills"};
+        String[] tokens = {"null", "\"text\"", "2", "1.9", "true", "[]", "{}"};
+        for (String field : fields) {
+            for (String token : tokens) {
+                cases.add(consumeDirectResultCase("shape-" + field + "-" + tokenName(token),
+                    "{\"" + field + "\":" + token + "}"));
+            }
+        }
+        cases.add(consumeDirectResultCase("root-null", "null"));
+        cases.add(consumeDirectResultCase("root-empty-object", "{}"));
+        cases.add(consumeDirectResultCase("root-empty-array", "[]"));
+        cases.add(consumeDirectResultCase("root-string", "\"root\""));
+        cases.add(consumeDirectResultCase("root-integer", "7"));
+        cases.add(consumeDirectResultCase("root-fraction", "1.5"));
+        cases.add(consumeDirectResultCase("root-boolean", "true"));
+        cases.add(consumeDirectResultCase("duplicate-order-last-wins",
+            "{\"order\":false,\"order\":true}"));
+        cases.add(consumeDirectResultCase("duplicate-auto-commit-last-wins",
+            "{\"autoCommit\":true,\"autoCommit\":false}"));
+        cases.add(consumeDirectResultCase("duplicate-consume-result-last-wins",
+            "{\"consumeResult\":\"CR_SUCCESS\",\"consumeResult\":1.9}"));
+        cases.add(consumeDirectResultCase("duplicate-remark-last-wins",
+            "{\"remark\":\"first\",\"remark\":42}"));
+        cases.add(consumeDirectResultCase("duplicate-spent-time-last-wins",
+            "{\"spentTimeMills\":9,\"spentTimeMills\":1.9}"));
         return cases;
+    }
+
+    private static String tokenName(String token) {
+        if ("null".equals(token)) return "null";
+        if (token.startsWith("\"")) return "string";
+        if ("true".equals(token)) return "boolean";
+        if ("[]".equals(token)) return "array";
+        if ("{}".equals(token)) return "object";
+        return token.contains(".") ? "fraction" : "integer";
     }
 
     private static Map<String, Object> consumeDirectResultCase(String name, String rawInput) {

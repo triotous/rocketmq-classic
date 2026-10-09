@@ -3989,34 +3989,11 @@ mod tests {
     }
 
     #[test]
-    fn consume_direct_result_enum_inputs_match_invoked_java_fastjson() {
+    fn consume_direct_result_body_inputs_match_invoked_java_fastjson() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
         let cases = fixture["consumeDirectResultCases"].as_array().unwrap();
-        assert_eq!(
-            cases.len(),
-            19,
-            "Java oracle includes every consume result enum value"
-        );
-        for case in cases {
-            let raw_input = case["rawInput"].as_str().unwrap();
-            let decoded = serde_json::from_str::<ConsumeMessageDirectlyResult>(raw_input);
-            let java_accepts = case["outcome"] == "ACCEPTED";
-            assert_eq!(
-                decoded.is_ok(),
-                java_accepts,
-                "{}: {decoded:?}",
-                case["name"]
-            );
-            if let Ok(decoded) = decoded {
-                assert_eq!(
-                    serde_json::to_value(decoded).unwrap(),
-                    case["encoded"],
-                    "{}",
-                    case["name"]
-                );
-            }
-        }
+        batch_body_cases_match_java::<ConsumeMessageDirectlyResult>(cases, 66);
     }
 
     #[test]
