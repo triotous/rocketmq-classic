@@ -100,6 +100,22 @@
 - Full workspace/all-target tests, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios and fixture drift/cross-decodes), comparator self-test/manifest22, formatting, and diff checks pass.
 - Updated ADR-0057, Java compatibility, API/config map, requirement audit, runtime inventory, and this rlog. ResetOffsetBody mutable getter review, other DTO aliases, malformed inputs, whole-source/reverse-export reconciliation, platform evidence, and P6-V04 remain open; Phase 6 stays PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
 
+## Lite subscription Set getter mutation coverage — 2026-10-09T20:21:07Z
+
+- Extended pinned Java `liteSubscriptionDtoApiCase` and `liteSubscriptionControlApiCase` to mutate each assigned Set through the setter-held reference and through the DTO getter. The Lite topic Set ends with `getter-added`, `lite-a`, and `setter-added`; the control Set grows from one to three DTOs.
+- Oracle/test and fixture commit `4fd32a88`; lookup fixture SHA-256 `99d189c5eeba83f01b53a5ec23ab56cf5b902043db0849bd54a93ac2a3f3d743`. The first focused differential failed because these mutation results were not yet in the Java fixture.
+- Existing Rust `LiteSubscriptionDto::lite_topic_set_mut()` and `LiteSubscriptionCtlRequestBody::subscription_set_mut()` pass the new getter-side checks. Rust still does not retain Java's caller-owned Set identity; no production change was needed.
+- Full workspace/all-target tests, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios and fixture drift/cross-decodes), comparator self-test/manifest22, formatting, and diff checks pass.
+- Updated Java compatibility, API/config map, requirement audit, runtime inventory, and this rlog. Other DTO aliases and full source/API/input/reverse-export reconciliation remain open; P6-V04 stays `PENDING_PHASE_19`.
+
+## Heartbeat DTO mutable Set getter mapping — 2026-10-09T20:21:07Z
+
+- Extended pinned Java public-method cases for `SubscriptionData`, `ConsumerData`, and `HeartbeatData` to mutate collection values through both setter-held Sets and returned getters. Final tag/code values are `bronze/gold/silver` and `7/9/11`; consumer subscription and both heartbeat collection sizes become three.
+- Oracle/test and fixture commit `33829680`; `fixtures/runtime/heartbeat.json` SHA-256 `a03cd054471d1782251f8635adcc35d6da29f67f9900c215eadf67f76f5d9c30`. The test-first Rust differential failed to compile because five mutable getters were absent.
+- Implementation commit `5151a308` adds `get_tags_set_mut`, `get_code_set_mut`, `get_subscription_data_set_mut`, `get_producer_data_set_mut`, and `get_consumer_data_set_mut`. Focused Java/Rust differential passes through Rust-owned HashSets and vectors; external Java Set identity remains unrepresented.
+- Full workspace/all-target tests, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios and fixture drift/cross-decodes), comparator self-test/manifest22, formatting, and diff checks pass.
+- Updated ADR-0058, Java compatibility, API/config map, requirement audit, runtime inventory, and this rlog. Other DTO aliases, malformed inputs, whole-source/reverse-export reconciliation, platform evidence, and P6-V04 remain open; Phase 6 stays PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
+
 ## ResetOffsetBody mutable map getter mapping — 2026-10-09T20:08:59Z
 
 - Extended the pinned Java `resetOffsetBodyApiCase`: mutation through the Map assigned to `setOffsetTable` is visible through the body getter, and mutation through `getOffsetTable()` is visible through the original Map. The final table includes queue ids 2, 3 (null offset), 4 (99), and 5 (100).
