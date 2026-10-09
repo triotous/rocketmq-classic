@@ -1254,6 +1254,10 @@ public final class RuntimeConfigFixtures {
         allInputs.add("{1.25F:{\"addr\":\"proxy:1080\"}}");
         allInputs.add("{1D:{\"addr\":\"proxy:1080\"}}");
         allInputs.add("{1e7F:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{1:{\"addr\":\"first\"},01:{\"addr\":\"last\"}}");
+        allInputs.add("{01:{\"addr\":\"first\"},1:{\"addr\":\"last\"}}");
+        allInputs.add("{1:{\"addr\":\"first\"},01:{\"addr\":\"middle\"},1:{\"addr\":\"last\"}}");
+        allInputs.add("{1:{\"addr\":\"first\"},01:{\"addr\":\"middle\"},01:{\"addr\":\"last\"}}");
         for (int i = 0; i < allInputs.size(); i++) {
             String input = allInputs.get(i);
             ClientConfig config = new ClientConfig();
@@ -1276,10 +1280,14 @@ public final class RuntimeConfigFixtures {
                     @SuppressWarnings("unchecked")
                     Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig> routes =
                         (Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig>) proxyField.get(remoting);
-                    if (i >= allInputs.size() - 13) {
+                    if (i >= allInputs.size() - 17) {
                         List<String> routeKeys = new ArrayList<>(routes.keySet());
                         routeKeys.sort(java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder()));
                         item.put("routeKeys", routeKeys);
+                    }
+                    if (i >= allInputs.size() - 4) {
+                        org.apache.rocketmq.remoting.proxy.SocksProxyConfig numericRoute = routes.get("1");
+                        item.put("routeKeyOneAddr", numericRoute == null ? null : numericRoute.getAddr());
                     }
                     org.apache.rocketmq.remoting.proxy.SocksProxyConfig route = routes.get("10.0.0.0/8");
                     item.put("routePresent", route != null);

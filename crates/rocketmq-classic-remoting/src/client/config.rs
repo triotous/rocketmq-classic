@@ -1781,8 +1781,8 @@ mod tests {
         let cases = fixture["socksConstruction"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            442,
-            "Java oracle includes 126 prior cases, 256 byte-range followers, 15 Unicode escape cases, five Unicode-whitespace cases, ten root-shape cases, ten grammar-edge cases, four nested bean-property cases, three EOF-comment boundaries, eight unquoted route-key forms, and five unquoted numeric padding/suffix forms"
+            446,
+            "Java oracle includes 126 prior cases, 256 byte-range followers, 15 Unicode escape cases, five Unicode-whitespace cases, ten root-shape cases, ten grammar-edge cases, four nested bean-property cases, three EOF-comment boundaries, eight unquoted route-key forms, five numeric padding/suffix forms, and four canonical numeric-key collision cases"
         );
         for escaped in 0..=0x7f {
             let mut expected = String::from("{\"10.0.0.0/8\":{\"addr\":\"A\\");
@@ -1868,7 +1868,7 @@ mod tests {
         ]) {
             assert_eq!(case["input"], expected);
         }
-        for (case, expected) in cases.iter().skip(cases.len() - 13).zip([
+        for (case, expected) in cases.iter().skip(cases.len() - 17).zip([
             "{default:{\"addr\":\"proxy:1080\"}}",
             "{10:{\"addr\":\"proxy:1080\"}}",
             "{true:{\"addr\":\"proxy:1080\"}}",
@@ -1882,6 +1882,10 @@ mod tests {
             "{1.25F:{\"addr\":\"proxy:1080\"}}",
             "{1D:{\"addr\":\"proxy:1080\"}}",
             "{1e7F:{\"addr\":\"proxy:1080\"}}",
+            "{1:{\"addr\":\"first\"},01:{\"addr\":\"last\"}}",
+            "{01:{\"addr\":\"first\"},1:{\"addr\":\"last\"}}",
+            "{1:{\"addr\":\"first\"},01:{\"addr\":\"middle\"},1:{\"addr\":\"last\"}}",
+            "{1:{\"addr\":\"first\"},01:{\"addr\":\"middle\"},01:{\"addr\":\"last\"}}",
         ]) {
             assert_eq!(case["input"], expected);
         }
@@ -1918,6 +1922,13 @@ mod tests {
                     "route keys for {}",
                     case["input"]
                 );
+            }
+            if let Some(expected_address) = case["routeKeyOneAddr"].as_str() {
+                let Some(super::ParsedProxyRoute::Proxy(proxy)) = routes.get(&Some("1".into()))
+                else {
+                    panic!("Java route key 1 is absent for {}", case["input"]);
+                };
+                assert_eq!(proxy.address, expected_address, "{}", case["input"]);
             }
             let Some(route) = routes.get(&Some("10.0.0.0/8".into())) else {
                 assert_eq!(case["routePresent"], false, "{}", case["input"]);
