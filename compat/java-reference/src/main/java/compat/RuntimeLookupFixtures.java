@@ -526,14 +526,26 @@ public final class RuntimeLookupFixtures {
         item.put("type", option.getType().name());
         item.put("value", option.getValue());
         item.put("toString", option.toString());
-        item.put("equalValue", option.equals(new org.apache.rocketmq.common.lite.OffsetOption(
-            org.apache.rocketmq.common.lite.OffsetOption.Type.TAIL_N, 23L)));
-        item.put("differentValue", option.equals(new org.apache.rocketmq.common.lite.OffsetOption(
-            org.apache.rocketmq.common.lite.OffsetOption.Type.TAIL_N, 24L)));
+        org.apache.rocketmq.common.lite.OffsetOption equalOption =
+            new org.apache.rocketmq.common.lite.OffsetOption(
+                org.apache.rocketmq.common.lite.OffsetOption.Type.TAIL_N, 23L);
+        org.apache.rocketmq.common.lite.OffsetOption differentValueOption =
+            new org.apache.rocketmq.common.lite.OffsetOption(
+                org.apache.rocketmq.common.lite.OffsetOption.Type.TAIL_N, 24L);
+        org.apache.rocketmq.common.lite.OffsetOption differentTypeOption =
+            new org.apache.rocketmq.common.lite.OffsetOption(
+                org.apache.rocketmq.common.lite.OffsetOption.Type.POLICY, 23L);
+        item.put("equalValue", option.equals(equalOption));
+        item.put("differentValue", option.equals(differentValueOption));
+        item.put("differentType", option.equals(differentTypeOption));
+        item.put("nullEqualsFalse", !option.equals(null));
+        item.put("wrongTypeEqualsFalse", !option.equals("not an OffsetOption"));
+        int optionHash = option.hashCode();
+        item.put("hashCodeStableOnSameObject", optionHash == option.hashCode());
+        item.put("equalInstancesHaveSameHashCode", optionHash == equalOption.hashCode());
         Set<org.apache.rocketmq.common.lite.OffsetOption> equalOptions = new HashSet<>();
         equalOptions.add(option);
-        equalOptions.add(new org.apache.rocketmq.common.lite.OffsetOption(
-            org.apache.rocketmq.common.lite.OffsetOption.Type.TAIL_N, 23L));
+        equalOptions.add(equalOption);
         item.put("equalHashSetSize", equalOptions.size());
         return item;
     }

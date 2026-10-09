@@ -428,6 +428,13 @@ impl OffsetOption {
     pub const POLICY_MIN_VALUE: i64 = 1;
     pub const POLICY_MAX_VALUE: i64 = 2;
 
+    /// Mirrors Java `equals(Object)`, including null and wrong-type inputs.
+    pub fn java_equals(&self, other: Option<&dyn std::any::Any>) -> bool {
+        other
+            .and_then(|other| other.downcast_ref::<Self>())
+            .is_some_and(|other| self == other)
+    }
+
     pub fn new(option_type: Option<OffsetOptionType>, value: i64) -> Self {
         Self { option_type, value }
     }
@@ -4817,11 +4824,25 @@ mod tests {
         assert_eq!(option_case["value"], 23);
         assert!(option_case["equalValue"].as_bool().unwrap());
         assert!(!option_case["differentValue"].as_bool().unwrap());
+        assert!(!option_case["differentType"].as_bool().unwrap());
+        assert!(option_case["nullEqualsFalse"].as_bool().unwrap());
+        assert!(option_case["wrongTypeEqualsFalse"].as_bool().unwrap());
+        assert!(option_case["hashCodeStableOnSameObject"].as_bool().unwrap());
+        assert!(
+            option_case["equalInstancesHaveSameHashCode"]
+                .as_bool()
+                .unwrap()
+        );
         assert_eq!(option, OffsetOption::new(Some(OffsetOptionType::TailN), 23));
-        let equal_options = std::collections::HashSet::from([
-            option.clone(),
-            OffsetOption::new(Some(OffsetOptionType::TailN), 23),
-        ]);
+        assert!(option.java_equals(Some(&option as &dyn std::any::Any)));
+        assert!(!option.java_equals(None));
+        let wrong_type = "not an OffsetOption";
+        assert!(!option.java_equals(Some(&wrong_type as &dyn std::any::Any)));
+        let equal_option = OffsetOption::new(Some(OffsetOptionType::TailN), 23);
+        assert!(option.java_equals(Some(&equal_option as &dyn std::any::Any)));
+        let different_type = OffsetOption::new(Some(OffsetOptionType::Policy), 23);
+        assert!(!option.java_equals(Some(&different_type as &dyn std::any::Any)));
+        let equal_options = std::collections::HashSet::from([option.clone(), equal_option]);
         assert_eq!(
             equal_options.len(),
             option_case["equalHashSetSize"].as_u64().unwrap() as usize
