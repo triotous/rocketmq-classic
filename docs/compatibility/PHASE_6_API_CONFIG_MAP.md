@@ -194,6 +194,10 @@ SOCKS grammar extension `0c61f34`/`7899cea` invokes actual `NettyRemotingClient.
 
 Pinned client source: `rocketmq-all-5.5.1`, commit `efa1be59d6fc747ad220f036c86030f05f0419f9`. Java paths below are relative to `client/src/main/java/org/apache/rocketmq/client/`. This supplements the [runtime evidence inventory](PHASE_6_RUNTIME_INVENTORY.md); it is not complete phase acceptance or a live-server compatibility claim.
 
+### Address conversion helpers and phase ownership
+
+The pinned common `NetworkUtil` also exposes `string2SocketAddress`, `socketAddress2String`, and `convert2IpString` (lines 182–199). Their client call sites belong to later owners: `ClientRemotingProcessor.receiveReplyMessage` converts reply-header born/store host strings at lines 241/245 and is assigned to Phase 15's planned PUSH_REPLY_MESSAGE completion; `MQAdminImpl.viewMessage` formats the decoded MessageId address at line 275 and belongs to Phase 17's admin/query API. Phase 6 currently owns only the inbound correlation dispatch boundary for reply pushes, not address materialization or MessageId decoding. The planned Rust owners for those methods are therefore Phase 15 and Phase 17 respectively; they are not claimed as Phase 6 parity. `convert2IpString` has no call site in the pinned `rocketmq-client` module; its pinned common tests cover numeric loopback and `localhost`, and tools/proxy/store call sites are outside the client-only contract. The endpoint fixture's 49 cases cover `NettyRemotingClient.getHostAndPort`, a separate split-without-resolution method.
+
 ## ClientConfig: forward and reverse field inventory
 
 Every row maps the Java getter/setter pair to a Rust field. Java plain setters do not validate; Rust retains signed widths and validates at the owning operation. Strings, including SOCKS, are nullable `Option<String>`; AccessChannel and LanguageCode are also nullable. Namespace and NameServer transitions require the named Rust methods, not direct field assignment. `namespaceInitialized` remains private.
