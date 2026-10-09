@@ -1412,6 +1412,15 @@ public final class RuntimeLookupFixtures {
         body.setOffsetTable(offsetTable);
         item.put("values", queueOffsetApiValues(body.getOffsetTable()));
         item.put("getterReturnsAssignedMap", body.getOffsetTable() == offsetTable);
+        org.apache.rocketmq.common.message.MessageQueue externalQueue =
+            new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 4);
+        offsetTable.put(externalQueue, 99L);
+        item.put("externalMutationVisible", Long.valueOf(99L).equals(body.getOffsetTable().get(externalQueue)));
+        org.apache.rocketmq.common.message.MessageQueue getterQueue =
+            new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 5);
+        body.getOffsetTable().put(getterQueue, 100L);
+        item.put("getterMutationVisibleToAssignedMap", Long.valueOf(100L).equals(offsetTable.get(getterQueue)));
+        item.put("mutatedValues", queueOffsetApiValues(body.getOffsetTable()));
         body.setOffsetTable(null);
         item.put("nullSetterRemainsNull", body.getOffsetTable() == null);
         return item;

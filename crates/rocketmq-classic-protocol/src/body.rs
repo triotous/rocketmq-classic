@@ -3902,8 +3902,16 @@ mod tests {
             serde_json::to_value(reset.get_offset_table()).unwrap(),
             reset_case["values"]
         );
-        // Java returns the same mutable Map; Rust owns a vector of ordered entries.
         assert_eq!(reset_case["getterReturnsAssignedMap"], true);
+        assert_eq!(reset_case["externalMutationVisible"], true);
+        assert_eq!(reset_case["getterMutationVisibleToAssignedMap"], true);
+        let offset_table_mut = reset.get_offset_table_mut().unwrap();
+        offset_table_mut.push((MessageQueue::new("orders", "broker", 4), Some(99)));
+        offset_table_mut.push((MessageQueue::new("orders", "broker", 5), Some(100)));
+        assert_eq!(
+            serde_json::to_value(reset.get_offset_table()).unwrap(),
+            reset_case["mutatedValues"]
+        );
         reset.set_offset_table(None);
         assert!(reset.get_offset_table().is_none());
         assert_eq!(reset_case["nullSetterRemainsNull"], true);
