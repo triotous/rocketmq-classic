@@ -1,5 +1,6 @@
 package compat;
 
+import java.lang.reflect.Field;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.nio.file.Files;
@@ -37,10 +38,12 @@ public final class RuntimeAddressFixtures {
         add(addresses, "fe80::1", 7, Inet6Address.getByAddress(null,
             InetAddress.getByName("fe80::1").getAddress(), 7));
         List<Object> clientAddressCases = new ArrayList<>();
+        List<Object> channelTableKeyCases = new ArrayList<>();
         AddressProbe addressProbe = new AddressProbe();
         try {
             String supplementaryDigit = new String(Character.toChars(0x104A1));
             for (String address : new String[] {":10911", "127.0.0.1:10911", "broker.example:10911",
+                    "Broker.Example:10911", "127.0.0.1:010911",
                     "2001:db8::1:10911", "::1:10911", "[2001:db8::1]:10911",
                     "127.0.0.1:0", "127.0.0.1:65535", "127.0.0.1:65536", "127.0.0.1:-1",
                     "127.0.0.1:\u0661\u0660\u0669\u0661\u0661",
@@ -94,16 +97,31 @@ public final class RuntimeAddressFixtures {
                 }
                 clientAddressCases.add(item);
             }
+            String[][] keyPairs = {
+                {"127.0.0.1:10911", "127.0.0.1:010911"},
+                {"Broker.Example:10911", "broker.example:10911"},
+                {"2001:DB8::1:10911", "2001:db8::1:10911"},
+                {"[2001:DB8::1]:10911", "[2001:db8::1]:10911"}
+            };
+            for (String[] pair : keyPairs) {
+                Map<String, Object> item = new TreeMap<>();
+                item.put("firstAddress", pair[0]);
+                item.put("secondAddress", pair[1]);
+                item.put("javaChannelTableKeysDistinct",
+                    addressProbe.channelTableKeysDistinct(pair[0], pair[1]));
+                channelTableKeyCases.add(item);
+            }
         } finally {
             addressProbe.shutdown();
         }
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "NetworkUtil.normalizeHostAddress/UtilAll.isInternalIP/isInternalV6IP/InetAddress.isLoopbackAddress/NettyRemotingClient.getHostAndPort");
+        fixture.put("entrypoint", "NetworkUtil.normalizeHostAddress/UtilAll.isInternalIP/isInternalV6IP/InetAddress.isLoopbackAddress/NettyRemotingClient.getHostAndPort/channelTables");
         fixture.put("serverBaselineContacted", false);
         fixture.put("addresses", addresses);
         fixture.put("clientAddressCases", clientAddressCases);
+        fixture.put("channelTableKeyCases", channelTableKeyCases);
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture) + "\n";
         Path file = Path.of(args[0]);
         if (args.length > 1 && "--verify".equals(args[1])) {
@@ -132,6 +150,21 @@ public final class RuntimeAddressFixtures {
 
         private String[] splitAddress(String address) {
             return getHostAndPort(address);
+        }
+
+        @SuppressWarnings("unchecked")
+        private boolean channelTableKeysDistinct(String first, String second) throws Exception {
+            Field channelTablesField = getClass().getSuperclass().getDeclaredField("channelTables");
+            channelTablesField.setAccessible(true);
+            Map<String, Object> channelTables = (Map<String, Object>) channelTablesField.get(this);
+            channelTables.clear();
+            try {
+                channelTables.put(first, Boolean.TRUE);
+                channelTables.put(second, Boolean.TRUE);
+                return channelTables.size() == 2;
+            } finally {
+                channelTables.clear();
+            }
         }
     }
 }

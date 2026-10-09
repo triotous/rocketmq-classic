@@ -374,6 +374,7 @@ mod tests {
             let parsed = parsed.unwrap_or_else(|error| {
                 panic!("native parser rejected Java address {input:?}: {error}")
             });
+            assert_eq!(parsed.as_str(), input, "Java channel-table key for {case}");
             assert_eq!(
                 connection::split_address(input).unwrap(),
                 (expected_host.to_owned(), java_port),
@@ -401,6 +402,29 @@ mod tests {
             } else {
                 assert_eq!(normalized, (expected_host.to_owned(), java_port), "{case}");
             }
+        }
+    }
+
+    #[test]
+    fn address_cache_keys_preserve_java_raw_endpoint_identity() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/address.json"))
+                .unwrap();
+        for case in fixture["channelTableKeyCases"].as_array().unwrap() {
+            assert_eq!(
+                case["javaChannelTableKeysDistinct"].as_bool(),
+                Some(true),
+                "pinned Java channel-table result for {case}"
+            );
+            let first = case["firstAddress"].as_str().unwrap();
+            let second = case["secondAddress"].as_str().unwrap();
+            let first_key = Address::parse(first).unwrap();
+            let second_key = Address::parse(second).unwrap();
+            assert_ne!(
+                first_key.as_str(),
+                second_key.as_str(),
+                "Java retains these distinct channel-table keys: {case}"
+            );
         }
     }
 
