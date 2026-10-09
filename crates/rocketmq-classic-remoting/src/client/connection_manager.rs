@@ -25,9 +25,10 @@ impl Address {
                 .ok_or_else(|| TransportError::Connect("missing address port".into()))?;
             let parsed_port = parse_socket_port(port)?;
             if host.is_empty() {
-                return Err(TransportError::Connect("host must not be empty".into()));
-            }
-            if host.contains(':') {
+                // NettyRemotingClient passes this host to Bootstrap.connect;
+                // the pinned JDK resolves an empty hostname to IPv4 loopback.
+                format!("127.0.0.1:{parsed_port}")
+            } else if host.contains(':') {
                 let parsed_host = normalize_ipv6_host(host)?;
                 format!("[{}]:{}", parsed_host, parsed_port)
             } else {
