@@ -6,6 +6,12 @@
 - Removed the Rust-only public body DTO and synthetic serialization test in `0c60e2b1`. Full workspace/all-target tests, strict all-target/all-feature Clippy, fmt, diff and no-reference checks passed.
 - Added ADR-0051 and updated the Phase 6 requirement/API/runtime/Java compatibility inventories. Phase 6 remains PARTIAL with broad DTO/raw/source/branch/reverse-export reconciliation open; P6-V04 remains `PENDING_PHASE_19`.
 
+## Unregister body inventory correction — 2026-10-09T17:38:59Z
+
+- Continued the pinned-artifact public DTO scan and found the unused `UnregisterClientBody` type plus a stale request-code row claiming an optional JSON body. Java's `MQClientAPIImpl.unregisterClient` bytecode passes only `UnregisterClientRequestHeader` to request code 35; the three pinned 5.5.1 client/common/remoting jars contain neither Rust body type.
+- Removed `UnregisterClientBody` in `a1f8d747`; the earlier `UnregisterClientRequestBody` and synthetic-only test removal is `0c60e2b1`. Corrected `REQUEST_CODES.md` to state that command 35 has no request body.
+- Full workspace/all-target tests, strict all-target/all-feature Clippy, fmt and diff checks pass. Phase 6 remains PARTIAL; P6-V04 stays `PENDING_PHASE_19`.
+
 - Continued route DTO/runtime reconciliation on `07-phase-06-runtime-routing-heartbeat`.
 - Committed red Java oracle coverage as `ee5d3cb`; four cases establish that quoted and unquoted `null` keys become actual null `Long` keys in `BrokerData.brokerAddrs`, while `TopicQueueMappingInfo.currIdMap` rejects them as `Integer` keys. Route DTO input coverage is now 399 cases; `fixtures/runtime/route.json` SHA-256 is `0472ed8171207d35519adae7521741d359e343a3c378cf75537cb5c29cb41313`.
 - Implemented nullable broker IDs as `Option<i64>` across the DTO and route snapshot, including JSON key serialization and lookup behavior. Pinned `MQClientInstance` bytecode confirms admin/fallback lookups and heartbeat sends unbox selected IDs; Rust surfaces those paths as `InvalidRoute("null broker address id")`. Implementation and regressions are in `cadf260`.
