@@ -193,6 +193,9 @@ public final class RuntimeLookupFixtures {
         cases.add(assignmentBodyCase("duplicate-nested-mode-last-wins",
             "[{\"messageQueue\":{\"topic\":\"topic\",\"brokerName\":\"broker\",\"queueId\":2},"
                 + "\"mode\":\"PULL\",\"mode\":\"POP\"}]", true));
+        cases.add(assignmentBodyRawCase("duplicate-nested-queue-field-last-wins",
+            "{\"messageQueueAssignments\":[{\"messageQueue\":{\"topic\":\"first\","
+                + "\"topic\":\"last\",\"brokerName\":\"broker\",\"queueId\":2}}]}"));
         return cases;
     }
 
@@ -364,6 +367,12 @@ public final class RuntimeLookupFixtures {
         cases.add(messageQueueInputCase("queue-array", "{\"queueId\":[]}"));
         cases.add(messageQueueInputCase("topic-object", "{\"topic\":{\"k\":1}}"));
         cases.add(messageQueueInputCase("topic-null", "{\"topic\":null,\"brokerName\":null}"));
+        cases.add(messageQueueInputCase("duplicate-topic-last-wins",
+            "{\"topic\":\"first\",\"topic\":\"last\"}"));
+        cases.add(messageQueueInputCase("duplicate-broker-name-last-wins",
+            "{\"brokerName\":\"first\",\"brokerName\":\"last\"}"));
+        cases.add(messageQueueInputCase("duplicate-queue-id-last-wins",
+            "{\"queueId\":1,\"queueId\":2.9}"));
         return cases;
     }
 

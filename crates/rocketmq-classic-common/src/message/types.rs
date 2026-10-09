@@ -480,8 +480,8 @@ mod tests {
         let cases = fixture["messageQueueInputCases"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            16,
-            "Java oracle includes scalar and numeric boundaries"
+            19,
+            "Java oracle includes scalar, numeric and duplicate-field boundaries"
         );
         for case in cases {
             let raw_input = case["rawInput"].as_str().unwrap();

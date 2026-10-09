@@ -1434,7 +1434,7 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
         let cases = fixture["assignmentBodyCases"].as_array().unwrap();
-        assert_eq!(cases.len(), 14);
+        assert_eq!(cases.len(), 15);
         for case in cases {
             let decoded = serde_json::from_str::<QueryAssignmentResponseBody>(
                 case["rawInput"].as_str().unwrap(),
