@@ -2534,17 +2534,6 @@ fn default_auto_commit() -> bool {
     true
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct UnregisterClientBody {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub consumer_group: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub producer_group: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub client_id: Option<String>,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
