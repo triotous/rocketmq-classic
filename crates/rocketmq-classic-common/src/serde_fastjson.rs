@@ -383,8 +383,10 @@ pub fn deserialize_i32<'de, D>(deserializer: D) -> Result<i32, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let value = Value::deserialize(deserializer)?;
-    fastjson_integer::<D::Error>(&value, i32::MIN as i128, i32::MAX as i128)
+    // Retain the numeric lexeme so Java BigDecimal-to-int conversion doesn't
+    // lose low bits through an intermediate f64.
+    let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+    fastjson_integer_raw::<D::Error>(raw.get(), i32::MIN as i128, i32::MAX as i128, false)
         .map(|value| value as i32)
 }
 
@@ -392,8 +394,8 @@ pub fn deserialize_i64<'de, D>(deserializer: D) -> Result<i64, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let value = Value::deserialize(deserializer)?;
-    fastjson_integer::<D::Error>(&value, i64::MIN as i128, i64::MAX as i128)
+    let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+    fastjson_integer_raw::<D::Error>(raw.get(), i64::MIN as i128, i64::MAX as i128, false)
         .map(|value| value as i64)
 }
 
@@ -401,13 +403,8 @@ pub fn deserialize_i64_reject_object<'de, D>(deserializer: D) -> Result<i64, D::
 where
     D: Deserializer<'de>,
 {
-    let value = Value::deserialize(deserializer)?;
-    if value.is_object() {
-        return Err(de::Error::custom(
-            "Fastjson cannot coerce JSON object to a Java long",
-        ));
-    }
-    fastjson_integer::<D::Error>(&value, i64::MIN as i128, i64::MAX as i128)
+    let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+    fastjson_integer_raw::<D::Error>(raw.get(), i64::MIN as i128, i64::MAX as i128, true)
         .map(|value| value as i64)
 }
 
@@ -468,25 +465,29 @@ pub fn deserialize_optional_int_map<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    let value = Value::deserialize(deserializer)?;
-    let Value::Object(entries) = value else {
-        return if value.is_null() {
-            Ok(None)
-        } else {
-            Err(de::Error::custom("expected a JSON object or null"))
-        };
-    };
+    let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+    if raw.get().trim() == "null" {
+        return Ok(None);
+    }
+    let entries =
+        serde_json::from_str::<BTreeMap<String, Box<serde_json::value::RawValue>>>(raw.get())
+            .map_err(de::Error::custom)?;
     let mut result = BTreeMap::new();
     for (key, value) in entries {
         let key =
             fastjson_integer::<D::Error>(&Value::String(key), i32::MIN as i128, i32::MAX as i128)?
                 as i32;
-        if value.is_null() {
+        if value.get().trim() == "null" {
             return Err(de::Error::custom(
                 "Fastjson mapping ID value causes Java NullPointerException",
             ));
         }
-        let value = fastjson_integer::<D::Error>(&value, i32::MIN as i128, i32::MAX as i128)?;
+        let value = fastjson_integer_raw::<D::Error>(
+            value.get(),
+            i32::MIN as i128,
+            i32::MAX as i128,
+            false,
+        )?;
         result.insert(key, value as i32);
     }
     Ok(Some(result))
@@ -600,28 +601,46 @@ pub fn deserialize_optional_nullable_int_set<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    let value = Value::deserialize(deserializer)?;
-    let values = match value {
-        Value::Null => return Ok(None),
-        Value::Array(values) => values,
-        scalar @ (Value::Number(_) | Value::String(_) | Value::Bool(_) | Value::Object(_)) => {
-            vec![scalar]
-        }
+    let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+    let raw = raw.get().trim();
+    if raw == "null" {
+        return Ok(None);
+    }
+    let values = if raw.starts_with('[') {
+        serde_json::from_str::<Vec<Box<serde_json::value::RawValue>>>(raw)
+            .map_err(de::Error::custom)?
+    } else {
+        vec![
+            serde_json::from_str::<Box<serde_json::value::RawValue>>(raw)
+                .map_err(de::Error::custom)?,
+        ]
     };
     values
         .iter()
-        .map(|value| {
-            if value.is_null() {
-                Ok(None)
-            } else if value.is_object() {
-                Ok(Some(0))
-            } else {
-                fastjson_integer::<D::Error>(value, i32::MIN as i128, i32::MAX as i128)
-                    .map(|value| Some(value as i32))
-            }
-        })
+        .map(|value| fastjson_nullable_int_set_value::<D::Error>(value.get()))
         .collect::<Result<HashSet<_>, _>>()
         .map(Some)
+}
+
+fn fastjson_nullable_int_set_value<E>(raw: &str) -> Result<Option<i32>, E>
+where
+    E: de::Error,
+{
+    let raw = raw.trim();
+    if raw == "null" {
+        return Ok(None);
+    }
+    if raw.starts_with('{') {
+        return Ok(Some(0));
+    }
+    if raw == "true" {
+        return Ok(Some(1));
+    }
+    if raw == "false" {
+        return Ok(Some(0));
+    }
+    fastjson_integer_raw::<E>(raw, i32::MIN as i128, i32::MAX as i128, false)
+        .map(|value| Some(value as i32))
 }
 
 fn java_string(value: &Value) -> String {
@@ -655,8 +674,7 @@ where
                 return Err(E::custom("Fastjson numeric value is not finite"));
             }
             // Fastjson's primitive numeric conversion truncates decimal
-            // values; narrowing a parsed decimal follows Java Number.intValue
-            // style low-bit conversion at the tested i32 boundary.
+            // values; narrowing follows Java Number.intValue/longValue.
             let truncated = number.trunc() as i128;
             if minimum == i32::MIN as i128 && maximum == i32::MAX as i128 {
                 Ok((truncated as i32) as i128)
@@ -668,21 +686,187 @@ where
             if let Ok(integer) = value.parse::<i128>() {
                 return checked_integer::<E>(integer, minimum, maximum);
             }
-            let number = value
-                .parse::<f64>()
-                .map_err(|_| E::custom("Fastjson cannot coerce string to integer"))?;
-            if !number.is_finite() {
-                return Err(E::custom("Fastjson numeric string is not finite"));
+            if !value.contains(['.', 'e', 'E']) {
+                return Err(E::custom("Fastjson cannot coerce string to integer"));
             }
-            let truncated = number.trunc();
-            if truncated < minimum as f64 || truncated > maximum as f64 {
-                return Err(E::custom("Fastjson integer is out of range"));
-            }
-            Ok(truncated as i128)
+            let bits = if minimum == i32::MIN as i128 && maximum == i32::MAX as i128 {
+                32
+            } else {
+                64
+            };
+            decimal_integer::<E>(value, bits)
         }
         Value::Object(entries) if entries.is_empty() => Ok(0),
         _ => Err(E::custom("Fastjson cannot coerce JSON value to integer")),
     }
+}
+
+fn fastjson_integer_raw<E>(
+    raw: &str,
+    minimum: i128,
+    maximum: i128,
+    reject_object: bool,
+) -> Result<i128, E>
+where
+    E: de::Error,
+{
+    let raw = raw.trim();
+    if raw.starts_with('{') {
+        if reject_object {
+            return Err(E::custom(
+                "Fastjson cannot coerce JSON object to a Java long",
+            ));
+        }
+        let value = serde_json::from_str::<Value>(raw).map_err(E::custom)?;
+        return fastjson_integer::<E>(&value, minimum, maximum);
+    }
+    if raw.starts_with('[') {
+        return Err(E::custom("Fastjson cannot coerce JSON value to integer"));
+    }
+    if raw.starts_with('"') {
+        let value = serde_json::from_str::<String>(raw).map_err(E::custom)?;
+        return fastjson_integer::<E>(&Value::String(value), minimum, maximum);
+    }
+    if raw == "null" {
+        return Ok(0);
+    }
+    if raw == "true" {
+        return Ok(1);
+    }
+    if raw == "false" {
+        return Ok(0);
+    }
+    if raw.contains(['.', 'e', 'E']) {
+        let bits = if minimum == i32::MIN as i128 && maximum == i32::MAX as i128 {
+            32
+        } else {
+            64
+        };
+        return decimal_integer::<E>(raw, bits);
+    }
+    let integer = raw
+        .parse::<i128>()
+        .map_err(|_| E::custom("Fastjson integer value is out of range"))?;
+    checked_integer::<E>(integer, minimum, maximum)
+}
+
+/// Converts a Java BigDecimal-compatible token to the low 32 or 64 bits of
+/// its truncated integer value, matching `Number.intValue/longValue`.
+fn decimal_integer<E>(value: &str, bits: u32) -> Result<i128, E>
+where
+    E: de::Error,
+{
+    let bytes = value.as_bytes();
+    let (negative, start) = match bytes.first() {
+        Some(b'-') => (true, 1),
+        Some(b'+') => (false, 1),
+        _ => (false, 0),
+    };
+    let exponent_index = bytes[start..]
+        .iter()
+        .position(|byte| matches!(byte, b'e' | b'E'))
+        .map(|index| index + start);
+    let mantissa_end = exponent_index.unwrap_or(bytes.len());
+    let exponent = if let Some(index) = exponent_index {
+        parse_decimal_exponent::<E>(&bytes[index + 1..])?
+    } else {
+        0
+    };
+    let mantissa = &bytes[start..mantissa_end];
+    let decimal_index = mantissa.iter().position(|byte| *byte == b'.');
+    let (integer_digits, fractional_digits) = if let Some(index) = decimal_index {
+        if mantissa[index + 1..].contains(&b'.') {
+            return Err(E::custom("Fastjson cannot coerce string to integer"));
+        }
+        (&mantissa[..index], &mantissa[index + 1..])
+    } else {
+        (mantissa, &[][..])
+    };
+    if integer_digits
+        .iter()
+        .chain(fractional_digits)
+        .any(|byte| !byte.is_ascii_digit())
+        || (integer_digits.is_empty() && fractional_digits.is_empty())
+    {
+        return Err(E::custom("Fastjson cannot coerce string to integer"));
+    }
+
+    let total_digits = integer_digits.len() + fractional_digits.len();
+    let total_digits_i64 = i64::try_from(total_digits)
+        .map_err(|_| E::custom("Fastjson numeric string is too long"))?;
+    let fractional_digits_i64 = i64::try_from(fractional_digits.len())
+        .map_err(|_| E::custom("Fastjson numeric string is too long"))?;
+    let scale = fractional_digits_i64.saturating_sub(exponent);
+    let (digits_to_take, appended_zeroes) = if scale > 0 {
+        if scale >= total_digits_i64 {
+            return Ok(0);
+        }
+        ((total_digits_i64 - scale) as usize, 0)
+    } else {
+        (total_digits, scale.saturating_neg() as u64)
+    };
+
+    let mut low_bits = 0_u64;
+    for byte in integer_digits
+        .iter()
+        .chain(fractional_digits)
+        .take(digits_to_take)
+    {
+        low_bits = low_bits
+            .wrapping_mul(10)
+            .wrapping_add(u64::from(byte - b'0'));
+    }
+    low_bits = low_bits.wrapping_mul(pow10_wrapping(appended_zeroes));
+    if negative {
+        low_bits = low_bits.wrapping_neg();
+    }
+
+    Ok(if bits == 32 {
+        (low_bits as u32 as i32) as i128
+    } else {
+        (low_bits as i64) as i128
+    })
+}
+
+fn parse_decimal_exponent<E>(bytes: &[u8]) -> Result<i64, E>
+where
+    E: de::Error,
+{
+    let (negative, digits) = match bytes.first() {
+        Some(b'-') => (true, &bytes[1..]),
+        Some(b'+') => (false, &bytes[1..]),
+        _ => (false, bytes),
+    };
+    if digits.is_empty() || digits.iter().any(|byte| !byte.is_ascii_digit()) {
+        return Err(E::custom("Fastjson cannot coerce string to integer"));
+    }
+    let magnitude = digits.iter().fold(0_u64, |value, byte| {
+        value
+            .saturating_mul(10)
+            .saturating_add(u64::from(byte - b'0'))
+    });
+    Ok(if negative {
+        if magnitude > i64::MAX as u64 {
+            i64::MIN
+        } else {
+            -(magnitude as i64)
+        }
+    } else {
+        magnitude.min(i64::MAX as u64) as i64
+    })
+}
+
+fn pow10_wrapping(mut exponent: u64) -> u64 {
+    let mut result = 1_u64;
+    let mut power = 10_u64;
+    while exponent != 0 {
+        if exponent & 1 != 0 {
+            result = result.wrapping_mul(power);
+        }
+        power = power.wrapping_mul(power);
+        exponent >>= 1;
+    }
+    result
 }
 
 fn checked_integer<E>(value: i128, minimum: i128, maximum: i128) -> Result<i128, E>
