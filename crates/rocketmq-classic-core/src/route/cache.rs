@@ -796,7 +796,7 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
         let cases = fixture["runtimeRawCleanupShapes"].as_array().unwrap();
-        assert_eq!(cases.len(), 13);
+        assert_eq!(cases.len(), 14);
         for required in [
             "null-route-collections",
             "null-broker-row",
@@ -806,6 +806,7 @@ mod tests {
             "null-and-live-addresses",
             "null-row-and-live-address",
             "missing-route-fields",
+            "null-broker-list",
             "empty-broker-list",
             "missing-address-map",
             "null-broker-name-live-address",
