@@ -368,7 +368,7 @@ impl<'de> Deserialize<'de> for QueryAssignmentRequestBody {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageQueueAssignment {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -388,6 +388,37 @@ pub struct MessageQueueAssignment {
         skip_serializing_if = "Option::is_none"
     )]
     pub attachments: Option<std::collections::BTreeMap<String, Option<String>>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MessageQueueAssignmentFields {
+    message_queue: Option<MessageQueue>,
+    #[serde(
+        default = "default_assignment_mode",
+        deserialize_with = "deserialize_assignment_mode"
+    )]
+    mode: Option<MessageRequestMode>,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_optional_nullable_string_map"
+    )]
+    attachments: Option<std::collections::BTreeMap<String, Option<String>>>,
+}
+
+impl<'de> Deserialize<'de> for MessageQueueAssignment {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: MessageQueueAssignmentFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            message_queue: fields.message_queue,
+            mode: fields.mode,
+            attachments: fields.attachments,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -484,7 +515,7 @@ impl Default for MessageQueueAssignment {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryAssignmentResponseBody {
     #[serde(
@@ -494,6 +525,26 @@ pub struct QueryAssignmentResponseBody {
     )]
     pub message_queue_assignments:
         Option<std::collections::HashSet<Option<MessageQueueAssignment>>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QueryAssignmentResponseBodyFields {
+    #[serde(default, deserialize_with = "deserialize_optional_assignment_set")]
+    message_queue_assignments: Option<std::collections::HashSet<Option<MessageQueueAssignment>>>,
+}
+
+impl<'de> Deserialize<'de> for QueryAssignmentResponseBody {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: QueryAssignmentResponseBodyFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            message_queue_assignments: fields.message_queue_assignments,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
