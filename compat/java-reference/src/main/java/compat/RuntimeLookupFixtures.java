@@ -100,6 +100,7 @@ public final class RuntimeLookupFixtures {
         fixture.put("lockBatchResponseBodyCases", lockBatchResponseBodyCases());
         fixture.put("batchAckBodyInputCases", batchAckBodyInputCases());
         fixture.put("batchAckApiCase", batchAckApiCase());
+        fixture.put("batchAckBitSetCapacityCase", batchAckBitSetCapacityCase());
         fixture.put("resetOffsetBodyInputCases", resetOffsetBodyInputCases());
         fixture.put("consumerStatusBodyInputCases", consumerStatusBodyInputCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
@@ -2038,6 +2039,33 @@ public final class RuntimeLookupFixtures {
         item.put("bodyMutatedQueueIds", java.util.List.of(body.getAcks().get(0).getQueueId()));
         body.setAcks(null);
         item.put("bodyNullAcks", body.getAcks() == null);
+        return item;
+    }
+
+    private static Map<String, Object> batchAckBitSetCapacityCase() {
+        Map<String, Object> item = new TreeMap<>();
+        item.put("constructorSizes", List.of(
+            new java.util.BitSet().size(), new java.util.BitSet(0).size(),
+            new java.util.BitSet(1).size(), new java.util.BitSet(64).size(),
+            new java.util.BitSet(65).size()));
+        java.util.BitSet grown = new java.util.BitSet();
+        grown.set(63);
+        int afterBit63 = grown.size();
+        grown.set(64);
+        int afterBit64 = grown.size();
+        grown.set(128);
+        int afterBit128 = grown.size();
+        grown.clear(128);
+        item.put("growthAndClearSizes", List.of(afterBit63, afterBit64, afterBit128, grown.size()));
+        item.put("valueOfSizes", List.of(
+            java.util.BitSet.valueOf(new byte[] {1, 0, 0}).size(),
+            java.util.BitSet.valueOf(new long[] {1, 0}).size(),
+            java.util.BitSet.valueOf(new byte[] {}).size()));
+        java.util.BitSet source = new java.util.BitSet();
+        source.set(0);
+        source.set(64);
+        item.put("sliceSize", source.get(0, 65).size());
+        item.put("emptySliceSize", source.get(3, 3).size());
         return item;
     }
 
