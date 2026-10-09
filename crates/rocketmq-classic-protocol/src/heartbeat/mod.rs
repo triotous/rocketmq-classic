@@ -235,6 +235,11 @@ impl SubscriptionData {
         self.tags_set.as_ref()
     }
 
+    /// Borrows the owned tag Set mutably for Java-compatible getter mutations.
+    pub fn get_tags_set_mut(&mut self) -> Option<&mut HashSet<Option<String>>> {
+        self.tags_set.as_mut()
+    }
+
     pub fn set_tags_set(&mut self, value: Option<HashSet<Option<String>>>) {
         self.tags_set = value;
     }
@@ -249,6 +254,11 @@ impl SubscriptionData {
 
     pub fn get_code_set(&self) -> Option<&HashSet<Option<i32>>> {
         self.code_set.as_ref()
+    }
+
+    /// Borrows the owned code Set mutably for Java-compatible getter mutations.
+    pub fn get_code_set_mut(&mut self) -> Option<&mut HashSet<Option<i32>>> {
+        self.code_set.as_mut()
     }
 
     pub fn set_code_set(&mut self, value: Option<HashSet<Option<i32>>>) {
@@ -932,6 +942,13 @@ impl ConsumerData {
         self.subscription_data_set.as_ref()
     }
 
+    /// Borrows the owned subscription Set mutably for Java-compatible getter mutations.
+    pub fn get_subscription_data_set_mut(
+        &mut self,
+    ) -> Option<&mut HashSet<Option<SubscriptionData>>> {
+        self.subscription_data_set.as_mut()
+    }
+
     pub fn set_subscription_data_set(&mut self, value: Option<HashSet<Option<SubscriptionData>>>) {
         self.subscription_data_set = value;
     }
@@ -1264,12 +1281,22 @@ impl HeartbeatData {
         self.producer_data_set.as_deref()
     }
 
+    /// Borrows the owned producer rows mutably for Java-compatible getter mutations.
+    pub fn get_producer_data_set_mut(&mut self) -> Option<&mut Vec<Option<ProducerData>>> {
+        self.producer_data_set.as_mut()
+    }
+
     pub fn set_producer_data_set(&mut self, value: Option<Vec<Option<ProducerData>>>) {
         self.producer_data_set = value;
     }
 
     pub fn get_consumer_data_set(&self) -> Option<&[Option<ConsumerData>]> {
         self.consumer_data_set.as_deref()
+    }
+
+    /// Borrows the owned consumer rows mutably for Java-compatible getter mutations.
+    pub fn get_consumer_data_set_mut(&mut self) -> Option<&mut Vec<Option<ConsumerData>>> {
+        self.consumer_data_set.as_mut()
     }
 
     pub fn set_consumer_data_set(&mut self, value: Option<Vec<Option<ConsumerData>>>) {
@@ -1812,13 +1839,13 @@ mod tests {
         tags_mut.insert(Some("bronze".to_owned()));
         let mut mutated_tags = tags_mut.iter().cloned().collect::<Vec<_>>();
         mutated_tags.sort();
-        assert_eq!(mutated_tags, subscription_case["mutatedTags"]);
+        assert_eq!(json!(mutated_tags), subscription_case["mutatedTags"]);
         let codes_mut = subscription.get_code_set_mut().unwrap();
         codes_mut.insert(Some(9));
         codes_mut.insert(Some(11));
         let mut mutated_codes = codes_mut.iter().copied().collect::<Vec<_>>();
         mutated_codes.sort();
-        assert_eq!(mutated_codes, subscription_case["mutatedCodes"]);
+        assert_eq!(json!(mutated_codes), subscription_case["mutatedCodes"]);
         subscription.set_class_filter_mode(false);
         subscription.set_topic(None);
         subscription.set_sub_string(None);
@@ -1905,6 +1932,8 @@ mod tests {
         assert_eq!(
             subscription_set_mut.len(),
             consumer_case["mutatedSubscriptionDataSetSize"]
+                .as_u64()
+                .unwrap() as usize
         );
         consumer.set_group_name(None);
         consumer.set_consume_type(None);
@@ -1967,22 +1996,28 @@ mod tests {
             heartbeat_case["consumerGetterMutationVisibleToAssignedSet"],
             true
         );
-        let producer_data_set_mut = heartbeat.get_producer_data_set_mut().unwrap();
-        for group in ["producers-b", "producers-c"] {
-            let mut extra = ProducerData::default();
-            extra.set_group_name(Some(group.to_owned()));
-            producer_data_set_mut.push(Some(extra));
-        }
-        let consumer_data_set_mut = heartbeat.get_consumer_data_set_mut().unwrap();
-        for group in ["consumers", "admins"] {
-            let mut extra = ConsumerData::default();
-            extra.set_group_name(Some(group.to_owned()));
-            consumer_data_set_mut.push(Some(extra));
-        }
+        let producer_data_set_len = {
+            let producer_data_set_mut = heartbeat.get_producer_data_set_mut().unwrap();
+            for group in ["producers-b", "producers-c"] {
+                let mut extra = ProducerData::default();
+                extra.set_group_name(Some(group.to_owned()));
+                producer_data_set_mut.push(Some(extra));
+            }
+            producer_data_set_mut.len()
+        };
+        let consumer_data_set_len = {
+            let consumer_data_set_mut = heartbeat.get_consumer_data_set_mut().unwrap();
+            for group in ["consumers", "admins"] {
+                let mut extra = ConsumerData::default();
+                extra.set_group_name(Some(group.to_owned()));
+                consumer_data_set_mut.push(Some(extra));
+            }
+            consumer_data_set_mut.len()
+        };
         assert_eq!(
             json!({
-                "producerDataSet": producer_data_set_mut.len(),
-                "consumerDataSet": consumer_data_set_mut.len(),
+                "producerDataSet": producer_data_set_len,
+                "consumerDataSet": consumer_data_set_len,
             }),
             heartbeat_case["mutatedSetSizes"]
         );
