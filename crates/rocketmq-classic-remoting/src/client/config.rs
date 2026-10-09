@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -514,6 +514,100 @@ impl RawProxyRoute {
             .and_then(Option::as_ref)
             .map(FastjsonValue::java_string)
     }
+
+    fn reference(&self) -> Option<&str> {
+        match self.0.get("$ref").and_then(Option::as_ref) {
+            Some(FastjsonValue::String(value)) => Some(value),
+            _ => None,
+        }
+    }
+}
+
+fn fastjson_root_reference_key(path: &str) -> Option<String> {
+    if let Some(key) = path.strip_prefix("$.") {
+        return (!key.is_empty() && !key.chars().any(|value| matches!(value, '.' | '[' | ']')))
+            .then(|| key.to_owned());
+    }
+
+    let bytes = path.as_bytes();
+    let quote = match bytes.get(..3)? {
+        b"$['" => b'\'',
+        b"$[\"" => b'\"',
+        _ => return None,
+    };
+    let mut key = String::new();
+    let mut index = 3;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\\' => {
+                index += 1;
+                let escaped = *bytes.get(index)?;
+                key.push(char::from(escaped));
+                index += 1;
+            }
+            current if current == quote => {
+                return (bytes.get(index + 1..) == Some(b"]") && index + 2 == bytes.len())
+                    .then_some(key);
+            }
+            current if current.is_ascii() => {
+                key.push(char::from(current));
+                index += 1;
+            }
+            _ => {
+                let rest = std::str::from_utf8(bytes.get(index..)?).ok()?;
+                let character = rest.chars().next()?;
+                key.push(character);
+                index += character.len_utf8();
+            }
+        }
+    }
+    None
+}
+
+fn resolve_proxy_route_reference(
+    key: &str,
+    routes: &HashMap<String, Option<RawProxyRoute>>,
+    resolving: &mut HashSet<String>,
+) -> Result<ParsedProxyRoute, TransportError> {
+    let Some(entry) = routes.get(key) else {
+        return Ok(ParsedProxyRoute::Direct);
+    };
+    let Some(raw) = entry else {
+        return Ok(ParsedProxyRoute::Direct);
+    };
+    if let Some(reference) = raw.reference() {
+        if reference == "$" {
+            return Ok(ParsedProxyRoute::MissingAddress {
+                username: None,
+                password: None,
+            });
+        }
+        let target = fastjson_root_reference_key(reference).ok_or_else(|| {
+            TransportError::InvalidConfiguration(
+                "Fastjson SOCKS route reference path is unsupported".into(),
+            )
+        })?;
+        let target = format!("\0S{target}");
+        if !resolving.insert(key.to_owned()) {
+            return Err(TransportError::InvalidConfiguration(
+                "cyclic Fastjson SOCKS route reference".into(),
+            ));
+        }
+        let resolved = resolve_proxy_route_reference(&target, routes, resolving);
+        resolving.remove(key);
+        return resolved;
+    }
+    Ok(match raw.java_string_field("addr") {
+        Some(address) => ParsedProxyRoute::Proxy(SocksProxyConfig {
+            address,
+            username: raw.java_string_field("username"),
+            password: raw.java_string_field("password"),
+        }),
+        None => ParsedProxyRoute::MissingAddress {
+            username: raw.java_string_field("username"),
+            password: raw.java_string_field("password"),
+        },
+    })
 }
 
 fn contains_fastjson_rejected_literal(input: &str) -> bool {
@@ -1639,28 +1733,15 @@ impl ClientConfig {
         let parsed: Option<HashMap<String, Option<RawProxyRoute>>> =
             json5::from_str(&normalized)
                 .map_err(|error| TransportError::InvalidConfiguration(error.to_string()))?;
-        Ok(parsed
-            .unwrap_or_default()
-            .into_iter()
-            .map(|(encoded_cidr, entry)| {
-                let cidr = decode_fastjson_route_key(encoded_cidr);
-                let route = match entry {
-                    None => ParsedProxyRoute::Direct,
-                    Some(raw) => match raw.java_string_field("addr") {
-                        Some(address) => ParsedProxyRoute::Proxy(SocksProxyConfig {
-                            address,
-                            username: raw.java_string_field("username"),
-                            password: raw.java_string_field("password"),
-                        }),
-                        None => ParsedProxyRoute::MissingAddress {
-                            username: raw.java_string_field("username"),
-                            password: raw.java_string_field("password"),
-                        },
-                    },
-                };
-                (cidr, route)
+        let raw_routes = parsed.unwrap_or_default();
+        raw_routes
+            .keys()
+            .map(|encoded_cidr| {
+                let route =
+                    resolve_proxy_route_reference(encoded_cidr, &raw_routes, &mut HashSet::new())?;
+                Ok((decode_fastjson_route_key(encoded_cidr.clone()), route))
             })
-            .collect())
+            .collect()
     }
 
     pub(super) fn proxy_for<T: Clone + Into<ParsedProxyRoute>>(
@@ -2135,8 +2216,8 @@ mod tests {
         let cases = fixture["socksConstruction"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            494,
-            "Java oracle includes 126 prior cases, 256 byte-range followers, 15 Unicode escape cases, five Unicode-whitespace cases, ten root-shape cases, ten grammar-edge cases, four nested bean-property cases, three EOF-comment boundaries, three rejected base-prefixed route keys, eight unquoted route-key forms, five numeric padding/suffix forms, four canonical numeric-key collision cases, five cross-type key collision cases, three rejected signed base-prefixed route keys, two rejected unsigned leading-dot route keys, thirteen accepted signed/fraction/exponent/suffix route-key forms, nine rejected special/identifier route-key forms, seven exponent overflow/underflow route-key forms, four signed-zero edge/collision forms, and two Fastjson object-reference cases"
+            495,
+            "Java oracle includes 126 prior cases, 256 byte-range followers, 15 Unicode escape cases, five Unicode-whitespace cases, ten root-shape cases, ten grammar-edge cases, four nested bean-property cases, three EOF-comment boundaries, three rejected base-prefixed route keys, eight unquoted route-key forms, five numeric padding/suffix forms, four canonical numeric-key collision cases, five cross-type key collision cases, three rejected signed base-prefixed route keys, two rejected unsigned leading-dot route keys, thirteen accepted signed/fraction/exponent/suffix route-key forms, nine rejected special/identifier route-key forms, seven exponent overflow/underflow route-key forms, four signed-zero edge/collision forms, and three resolved or unresolved Fastjson object-reference cases"
         );
         for escaped in 0..=0x7f {
             let mut expected = String::from("{\"10.0.0.0/8\":{\"addr\":\"A\\");
@@ -2222,7 +2303,7 @@ mod tests {
         ]) {
             assert_eq!(case["input"], expected);
         }
-        for (case, expected) in cases.iter().skip(cases.len() - 62).take(60).zip([
+        for (case, expected) in cases.iter().skip(cases.len() - 63).take(60).zip([
             "{default:{\"addr\":\"proxy:1080\"}}",
             "{10:{\"addr\":\"proxy:1080\"}}",
             "{true:{\"addr\":\"proxy:1080\"}}",
@@ -2354,6 +2435,27 @@ mod tests {
                     panic!("Java referenced route is absent for {}", case["input"]);
                 };
                 assert_eq!(proxy.address, expected_address, "{}", case["input"]);
+                assert_eq!(
+                    proxy.username.as_deref(),
+                    case["referencedRouteUsername"].as_str(),
+                    "{}",
+                    case["input"]
+                );
+                assert_eq!(
+                    proxy.password.as_deref(),
+                    case["referencedRoutePassword"].as_str(),
+                    "{}",
+                    case["input"]
+                );
+                assert_eq!(
+                    super::ClientConfig::proxy_for(&routes, "192.168.1.9")
+                        .unwrap()
+                        .as_ref()
+                        .map(|proxy| proxy.address.as_str()),
+                    Some(expected_address),
+                    "{}",
+                    case["input"]
+                );
             }
             if let Some(expected_address) = case["chainedReferenceAddr"].as_str() {
                 let Some(super::ParsedProxyRoute::Proxy(proxy)) =
@@ -2362,6 +2464,27 @@ mod tests {
                     panic!("Java chained reference is absent for {}", case["input"]);
                 };
                 assert_eq!(proxy.address, expected_address, "{}", case["input"]);
+                assert_eq!(
+                    proxy.username.as_deref(),
+                    case["chainedReferenceUsername"].as_str(),
+                    "{}",
+                    case["input"]
+                );
+                assert_eq!(
+                    proxy.password.as_deref(),
+                    case["chainedReferencePassword"].as_str(),
+                    "{}",
+                    case["input"]
+                );
+                assert_eq!(
+                    super::ClientConfig::proxy_for(&routes, "172.16.1.9")
+                        .unwrap()
+                        .as_ref()
+                        .map(|proxy| proxy.address.as_str()),
+                    Some(expected_address),
+                    "{}",
+                    case["input"]
+                );
             }
             let Some(route) = routes.get(&Some("10.0.0.0/8".into())) else {
                 assert_eq!(case["routePresent"], false, "{}", case["input"]);

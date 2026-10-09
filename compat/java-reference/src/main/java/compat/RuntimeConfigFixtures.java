@@ -1693,6 +1693,7 @@ public final class RuntimeConfigFixtures {
         allInputs.add("{-1e-1000D:{\"addr\":\"first\"},0.0:{\"addr\":\"last\"}}");
         allInputs.add("{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\",\"username\":\"user\",\"password\":\"secret\"},\"192.168.0.0/16\":{\"$ref\":\"$['10.0.0.0/8']\"}}");
         allInputs.add("{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\",\"username\":\"user\"},\"192.168.0.0/16\":{\"$ref\":\"$['10.0.0.0/8']\"},\"172.16.0.0/12\":{\"$ref\":\"$['192.168.0.0/16']\"}}");
+        allInputs.add("{\"192.168.0.0/16\":{\"$ref\":\"$['missing']\"}}");
         for (int i = 0; i < allInputs.size(); i++) {
             String input = allInputs.get(i);
             ClientConfig config = new ClientConfig();
@@ -1747,11 +1748,15 @@ public final class RuntimeConfigFixtures {
                     if (input.contains("192.168.0.0/16")) {
                         org.apache.rocketmq.remoting.proxy.SocksProxyConfig referenced = routes.get("192.168.0.0/16");
                         item.put("referencedRouteAddr", referenced == null ? null : referenced.getAddr());
+                        item.put("referencedRouteUsername", referenced == null ? null : referenced.getUsername());
+                        item.put("referencedRoutePassword", referenced == null ? null : referenced.getPassword());
                         item.put("referenceSameObject", route != null && route == referenced);
                     }
                     if (input.contains("172.16.0.0/12")) {
                         org.apache.rocketmq.remoting.proxy.SocksProxyConfig chained = routes.get("172.16.0.0/12");
                         item.put("chainedReferenceAddr", chained == null ? null : chained.getAddr());
+                        item.put("chainedReferenceUsername", chained == null ? null : chained.getUsername());
+                        item.put("chainedReferencePassword", chained == null ? null : chained.getPassword());
                         item.put("chainedReferenceSameObject", route != null && route == chained);
                     }
                 }
@@ -2033,7 +2038,9 @@ public final class RuntimeConfigFixtures {
             {"{\"10.20.0.0/33\":{\"addr\":\"proxy-shift:1080\"}}", "10.20.4.5:9876", "10.20.4.5"},
             {"{\"10.0.0.0/8\":null}", "10.20.1.2:9876", "10.20.1.2"},
             {"{\"not-a-cidr\":{\"addr\":\"proxy-invalid:1080\"}}", "10.20.1.2:9876", "10.20.1.2"},
-            {"{}", "192.0.2.3:9876", "192.0.2.3"}
+            {"{}", "192.0.2.3:9876", "192.0.2.3"},
+            {"{\"10.0.0.0/8\":{\"addr\":\"proxy-reference:1080\"},\"192.168.0.0/16\":{\"$ref\":\"$['10.0.0.0/8']\"}}", "192.168.1.9:9876", "192.168.1.9"},
+            {"{\"192.168.0.0/16\":{\"$ref\":\"$['missing']\"}}", "192.168.1.9:9876", "192.168.1.9"}
         };
         for (int i = 0; i < inputs.length; i++) {
             ClientConfig config = new ClientConfig();
