@@ -58,6 +58,7 @@ public final class RuntimeLookupFixtures {
         fixture.put("assignmentBodyRootCases", assignmentBodyRootCases());
         fixture.put("liteSubscriptionEnumCases", liteSubscriptionEnumCases());
         fixture.put("liteSubscriptionFieldCases", liteSubscriptionFieldCases());
+        fixture.put("liteSubscriptionIdentityCases", liteSubscriptionIdentityCases());
         fixture.put("liteSubscriptionRootCases", liteSubscriptionRootCases());
         fixture.put("liteSubscriptionControlFieldCases", liteSubscriptionControlFieldCases());
         fixture.put("liteSubscriptionElementCases", liteSubscriptionElementCases());
@@ -325,6 +326,50 @@ public final class RuntimeLookupFixtures {
             }
         }
         return cases;
+    }
+
+    private static List<Object> liteSubscriptionIdentityCases() {
+        List<Object> cases = new ArrayList<>();
+        org.apache.rocketmq.common.lite.LiteSubscriptionDTO dto1 =
+            new org.apache.rocketmq.common.lite.LiteSubscriptionDTO()
+                .setGroup("workers").setTopic("orders").setVersion(7L);
+        org.apache.rocketmq.common.lite.LiteSubscriptionDTO dto2 =
+            new org.apache.rocketmq.common.lite.LiteSubscriptionDTO()
+                .setGroup("workers").setTopic("orders").setVersion(7L);
+        cases.add(liteIdentityCase("LiteSubscriptionDTO", dto1, dto2));
+
+        org.apache.rocketmq.common.lite.LiteSubscription subscription1 =
+            new org.apache.rocketmq.common.lite.LiteSubscription()
+                .setGroup("workers").setTopic("orders");
+        subscription1.addLiteTopic("lite-orders");
+        subscription1.setUpdateTime(7L);
+        org.apache.rocketmq.common.lite.LiteSubscription subscription2 =
+            new org.apache.rocketmq.common.lite.LiteSubscription()
+                .setGroup("workers").setTopic("orders");
+        subscription2.addLiteTopic("lite-orders");
+        subscription2.setUpdateTime(7L);
+        cases.add(liteIdentityCase("LiteSubscription", subscription1, subscription2));
+
+        org.apache.rocketmq.remoting.protocol.body.LiteSubscriptionCtlRequestBody body1 =
+            new org.apache.rocketmq.remoting.protocol.body.LiteSubscriptionCtlRequestBody();
+        body1.setSubscriptionSet(java.util.Set.of(dto1));
+        org.apache.rocketmq.remoting.protocol.body.LiteSubscriptionCtlRequestBody body2 =
+            new org.apache.rocketmq.remoting.protocol.body.LiteSubscriptionCtlRequestBody();
+        body2.setSubscriptionSet(java.util.Set.of(dto2));
+        cases.add(liteIdentityCase("LiteSubscriptionCtlRequestBody", body1, body2));
+        return cases;
+    }
+
+    private static Map<String, Object> liteIdentityCase(String className, Object left, Object right) {
+        Map<String, Object> item = new TreeMap<>();
+        item.put("class", className);
+        item.put("sameObjectEquals", left.equals(left));
+        item.put("equalFieldDistinctObjectsEquals", left.equals(right));
+        Set<Object> values = new HashSet<>();
+        values.add(left);
+        values.add(right);
+        item.put("equalFieldHashSetSize", values.size());
+        return item;
     }
 
     private static List<Object> liteSubscriptionRootCases() {

@@ -388,6 +388,14 @@ impl<'de> Deserialize<'de> for OffsetOption {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
+/// The Java DTO inherits identity-based `Object.equals` and `hashCode`.
+///
+/// ```compile_fail
+/// fn require_value_equality<T: PartialEq + Eq>() {}
+/// fn main() {
+///     require_value_equality::<rocketmq_classic_protocol::body::LiteSubscriptionDto>();
+/// }
+/// ```
 pub struct LiteSubscriptionDto {
     #[serde(
         default,
@@ -518,6 +526,14 @@ impl<'de> Deserialize<'de> for LiteSubscriptionDto {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
+/// Java `LiteSubscriptionCtlRequestBody` inherits identity-based equality.
+///
+/// ```compile_fail
+/// fn require_value_equality<T: PartialEq + Eq>() {}
+/// fn main() {
+///     require_value_equality::<rocketmq_classic_protocol::body::LiteSubscriptionCtlRequestBody>();
+/// }
+/// ```
 pub struct LiteSubscriptionCtlRequestBody {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subscription_set: Option<Vec<Option<LiteSubscriptionDto>>>,
@@ -562,6 +578,14 @@ impl<'de> Deserialize<'de> for LiteSubscriptionCtlRequestBody {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
+/// Java `LiteSubscription` inherits identity-based equality.
+///
+/// ```compile_fail
+/// fn require_value_equality<T: PartialEq + Eq>() {}
+/// fn main() {
+///     require_value_equality::<rocketmq_classic_protocol::body::LiteSubscription>();
+/// }
+/// ```
 pub struct LiteSubscription {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_id: Option<String>,
@@ -2238,6 +2262,28 @@ mod tests {
                     case["name"]
                 );
             }
+        }
+    }
+
+    #[test]
+    fn lite_subscription_identity_methods_match_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let cases = fixture["liteSubscriptionIdentityCases"].as_array().unwrap();
+        assert_eq!(cases.len(), 3);
+        for (case, expected_class) in cases.iter().zip([
+            "LiteSubscriptionDTO",
+            "LiteSubscription",
+            "LiteSubscriptionCtlRequestBody",
+        ]) {
+            assert_eq!(case["class"], expected_class);
+            assert_eq!(case["sameObjectEquals"], true, "{}", case["class"]);
+            assert_eq!(
+                case["equalFieldDistinctObjectsEquals"], false,
+                "{}",
+                case["class"]
+            );
+            assert_eq!(case["equalFieldHashSetSize"], 2, "{}", case["class"]);
         }
     }
 
