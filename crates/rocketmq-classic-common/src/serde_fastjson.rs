@@ -71,6 +71,27 @@ impl<'de> Deserialize<'de> for FastjsonRawObject {
     }
 }
 
+/// Deserialize an object after applying Fastjson's last-property-wins rule.
+/// Raw value tokens preserve the numeric spellings needed by field coercions.
+pub fn deserialize_fastjson_last_wins_object<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: DeserializeOwned,
+{
+    let FastjsonRawObject(values) = FastjsonRawObject::deserialize(deserializer)?;
+    let mut json = String::from("{");
+    for (index, (key, value)) in values.iter().enumerate() {
+        if index > 0 {
+            json.push(',');
+        }
+        json.push_str(&serde_json::to_string(key).map_err(de::Error::custom)?);
+        json.push(':');
+        json.push_str(value.get());
+    }
+    json.push('}');
+    serde_json::from_str(&json).map_err(de::Error::custom)
+}
+
 impl<'de> Deserialize<'de> for FastjsonStringValue {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

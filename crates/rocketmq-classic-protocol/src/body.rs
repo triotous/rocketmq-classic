@@ -318,7 +318,7 @@ pub struct LiteSubscription {
     pub lite_topic_set: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryAssignmentRequestBody {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -335,6 +335,37 @@ pub struct QueryAssignmentRequestBody {
         skip_serializing_if = "Option::is_none"
     )]
     pub message_model: Option<super::heartbeat::MessageModel>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QueryAssignmentRequestBodyFields {
+    topic: Option<String>,
+    consumer_group: Option<String>,
+    client_id: Option<String>,
+    strategy_name: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "super::heartbeat::deserialize_fastjson_optional_enum"
+    )]
+    message_model: Option<super::heartbeat::MessageModel>,
+}
+
+impl<'de> Deserialize<'de> for QueryAssignmentRequestBody {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: QueryAssignmentRequestBodyFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            topic: fields.topic,
+            consumer_group: fields.consumer_group,
+            client_id: fields.client_id,
+            strategy_name: fields.strategy_name,
+            message_model: fields.message_model,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -465,7 +496,7 @@ pub struct QueryAssignmentResponseBody {
         Option<std::collections::HashSet<Option<MessageQueueAssignment>>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetMessageRequestModeRequestBody {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -480,6 +511,36 @@ pub struct SetMessageRequestModeRequestBody {
     pub mode: Option<MessageRequestMode>,
     #[serde(default)]
     pub pop_share_queue_num: i32,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetMessageRequestModeRequestBodyFields {
+    topic: Option<String>,
+    consumer_group: Option<String>,
+    #[serde(
+        default = "default_assignment_mode",
+        deserialize_with = "super::heartbeat::deserialize_fastjson_optional_enum"
+    )]
+    mode: Option<MessageRequestMode>,
+    #[serde(default)]
+    pop_share_queue_num: i32,
+}
+
+impl<'de> Deserialize<'de> for SetMessageRequestModeRequestBody {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: SetMessageRequestModeRequestBodyFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            topic: fields.topic,
+            consumer_group: fields.consumer_group,
+            mode: fields.mode,
+            pop_share_queue_num: fields.pop_share_queue_num,
+        })
+    }
 }
 
 impl Default for SetMessageRequestModeRequestBody {
