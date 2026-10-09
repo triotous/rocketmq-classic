@@ -11,7 +11,7 @@ The pinned RocketMQ 5.5.1 `BatchAck` API exposes a no-argument constructor, gett
 
 Expose Rust snake_case getters and setters for all nine `BatchAck` properties and both body properties. Use `Default` for Java's no-argument constructor values, and implement `Display` so `BatchAck::to_string()` matches the invoked Java output, including BitSet index formatting.
 
-Rust represents the Java `BitSet` as optional bytes and the Java `List<BatchAck>` as `Option<Vec<Option<BatchAck>>>`. `get_acks_mut` now lends the owned Vec mutably, matching mutations performed through Java's `getAcks()` result. The Rust body setter still takes ownership of its vector, so identity with the caller-owned List passed to `setAcks` remains different.
+Rust represents the Java `BitSet` as an owned `BitSet` value and serializes its canonical bytes as Base64; the Java `List<BatchAck>` remains `Option<Vec<Option<BatchAck>>>`. `get_acks_mut` lends the owned Vec mutably, matching mutations performed through Java's `getAcks()` result. The Rust body setter still takes ownership of its vector, so identity with the caller-owned List passed to `setAcks` remains different.
 
 ## Consequences
 
@@ -38,11 +38,11 @@ The pinned Java `BatchAck.getBitSet()` returns the same mutable `BitSet` passed 
 
 ## Java-compatible BitSet value continuation
 
-`BatchAck.bit_set` now uses an owned Rust `BitSet` value rather than exposing raw Base64 bytes as its mutation API. It supports indexed get/set/clear/flip, `cardinality`, `length`, emptiness, and canonical Java `toByteArray()` encoding. BatchAck JSON keeps the existing Base64 field and omits an empty bit set as before. Negative indexes return a typed `BitSetError`; the direct Java oracle confirms those operations throw `IndexOutOfBoundsException`.
+`BatchAck.bit_set` now uses an owned Rust `BitSet` value rather than exposing raw Base64 bytes as its mutation API. It supports indexed get/set/clear/flip, range set/clear/flip/get, next and previous set/clear searches, `intersects`, `cardinality`, `length`, emptiness, and canonical Java `toByteArray()` encoding. BatchAck JSON keeps the existing Base64 field and omits an empty bit set as before. Negative indexes and invalid ranges return typed `BitSetError` values; the direct Java oracle confirms those operations throw `IndexOutOfBoundsException`.
 
 - Direct Java evidence covers bits 0, 2, 5, 7, 8, 63, 64, and 127; clear/flip, cardinality, length, canonical bytes, and negative-index failures.
 - Oracle/test commits: `ce97d07c` and `98d26175`; implementation/test commit: `7d2f2b98`.
 - `fixtures/runtime/lookup.json` SHA-256: `4ebfec17860c569431bfb2b7b952f59c83b3eb08d683b6198e4f24d6143cb400`.
 - Full workspace/all-target tests, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios), comparator self-test/manifest22, formatting, and diff checks pass.
 
-Rust owns the bit-set value and does not preserve identity with a separately held Java `BitSet`. The verified Rust method set is the one listed above; wider Phase 6 API/source reconciliation remains open.
+The range/search continuation adds direct cases for word-boundary crossing at bits 63–65, slice offsetting, intersecting/disjoint values, Java's `previous*Bit(-1)` special case, and invalid ranges. Rust still owns the value and does not preserve identity with a separately held Java `BitSet`. It does not yet map the full `java.util.BitSet` API, including bulk Boolean operations and all array/capacity methods. Oracle commits `24bdefa4`/`1a4031d7`; implementation/test commit `6ccdafcd`; current lookup fixture SHA-256 `5450d735158f927a4685d49fb17204bec2958129a6d2f15ba160b1d1653068ce`. Full Phase 6 API/source reconciliation remains open and P6-V04 stays PENDING_PHASE_19.
