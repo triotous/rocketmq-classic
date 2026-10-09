@@ -1799,7 +1799,7 @@ mod tests {
         assert_eq!(
             cases.len(),
             472,
-            "Java oracle includes 126 prior cases, 256 byte-range followers, 15 Unicode escape cases, five Unicode-whitespace cases, ten root-shape cases, ten grammar-edge cases, four nested bean-property cases, three EOF-comment boundaries, three rejected base-prefixed route keys, eight unquoted route-key forms, five numeric padding/suffix forms, four canonical numeric-key collision cases, five cross-type key collision cases, three rejected signed base-prefixed route keys, two rejected unsigned leading-dot route keys, and fourteen accepted signed/fraction/exponent/suffix route-key forms"
+            "Java oracle includes 126 prior cases, 256 byte-range followers, 15 Unicode escape cases, five Unicode-whitespace cases, ten root-shape cases, ten grammar-edge cases, four nested bean-property cases, three EOF-comment boundaries, three rejected base-prefixed route keys, eight unquoted route-key forms, five numeric padding/suffix forms, four canonical numeric-key collision cases, five cross-type key collision cases, three rejected signed base-prefixed route keys, two rejected unsigned leading-dot route keys, and thirteen accepted signed/fraction/exponent/suffix route-key forms"
         );
         for escaped in 0..=0x7f {
             let mut expected = String::from("{\"10.0.0.0/8\":{\"addr\":\"A\\");
