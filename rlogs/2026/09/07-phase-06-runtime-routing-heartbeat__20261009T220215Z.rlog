@@ -1,0 +1,7 @@
+Session: 2026-10-09T22:02:15Z
+Plan: plan/2026/09/07-phase-06-runtime-routing-heartbeat.md
+Branch: 07-phase-06-runtime-routing-heartbeat
+
+Completed in this session before applying the coding-general workflow: pinned Java `BitSet.clone()` oracle and regenerated lookup fixture (`b0dd6722`); Rust clone-isolation differential assertion (`6fb451f7`); compatibility inventory updates (`81069f2b`). Focused test, full workspace/all-target tests, strict Clippy, pinned offline Maven verify (22 scenarios), comparator self-test/manifest, formatting, and diff checks passed. `lookup.json` SHA-256: `df9a8c8523476111b203c6c3bfadfe1e65b444878b57befc896849724faf19db`.
+
+Read the Phase 6 plan, paired Traditional Chinese plan, execution index, coding-general skill, and the current requirement audit. P6-V01/V02/V03/U01 are checked; P6-V04 remains reserved for Phase 19. The audit still requires complete API/source/input and reverse-export reconciliation. Next action: identify and close a source-backed API gap, keeping fixture, native regression, docs, and log changes in separate commits.
