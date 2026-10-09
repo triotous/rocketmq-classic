@@ -155,6 +155,13 @@ public final class RuntimeConfigFixtures {
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
         fixture.put("entrypoint", "ClientConfig.buildMQClientId/toString/cloneClientConfig/resetClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/queuesWithNamespace/changeInstanceNameToPID; MessageQueue.setTopic/setBrokerName/setQueueId; MQClientManager.getOrCreateMQClientInstance/removeClientFactory/getFactoryTable; MQClientInstance.constructor/getClientConfig/getNettyClientConfig/getProducerTable/getConsumerTable/selectProducer/selectConsumer/registerConsumer/unregisterConsumer; MQClientAPIImpl.getRemotingClient/NettyRemotingClient.publicExecutor (reflective capacity observation); NettyRemotingClient.start/invokeSync (local authenticated and no-auth SOCKS5 round trips); RemotingCommand.encode/getType (null language JSON/ROCKETMQ); LanguageCode/SerializeType/TlsMode/RequestType/RemotingCommandType/NettyEventType generated enum and custom value lookups; Long.parseLong (RebalanceService property parser)");
         fixture.put("serverBaselineContacted", false);
+        fixture.put("networkUtilLocalAddress", org.apache.rocketmq.common.utils.NetworkUtil.getLocalAddress());
+        List<String> localAddressCandidates = new ArrayList<>();
+        for (java.net.InetAddress address : org.apache.rocketmq.common.utils.NetworkUtil.getLocalInetAddressList()) {
+            localAddressCandidates.add(address.getHostAddress());
+        }
+        fixture.put("networkUtilLocalAddressCandidates", localAddressCandidates);
+        fixture.put("clientConfigAutoClientIP", new ClientConfig().getClientIP());
         fixture.put("identities", identities);
         fixture.put("defaults", defaults);
         fixture.put("nameServerAddressCases", nameServerAddressCases());

@@ -868,6 +868,18 @@ mod tests {
         assert_eq!(client_property_snapshot(&configured), fixture["configured"]);
     }
 
+    #[test]
+    fn automatic_client_ip_matches_invoked_java_network_util_and_constructor() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json"))
+                .unwrap();
+        let java_network_address = fixture["networkUtilLocalAddress"].as_str().unwrap();
+        let java_client_address = fixture["clientConfigAutoClientIP"].as_str().unwrap();
+        assert_eq!(java_client_address, java_network_address);
+        let config = ClientConfig::new_auto().expect("automatic client-IP initialization");
+        assert_eq!(config.client_ip.as_deref(), Some(java_client_address));
+    }
+
     fn client_property_snapshot(config: &ClientConfig) -> serde_json::Value {
         serde_json::json!({
             "instanceName": config.instance_name,
