@@ -879,8 +879,8 @@ mod broker_data_select_addr_tests {
             serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
         let cases = fixture["brokerDataSelectAddr"].as_array().unwrap();
         assert_eq!(cases.len(), 10);
-        for index in 7..10 {
-            assert!(cases[index]["input"]["brokerAddrs"]["null"].is_string());
+        for case in cases.iter().skip(7) {
+            assert!(case["input"]["brokerAddrs"]["null"].is_string());
         }
         for case in cases {
             let broker: BrokerData = serde_json::from_value(case["input"].clone()).unwrap();
