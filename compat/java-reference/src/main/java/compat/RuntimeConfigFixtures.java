@@ -1241,6 +1241,9 @@ public final class RuntimeConfigFixtures {
         allInputs.add("{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"} // eof with root open");
         allInputs.add("{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\" // eof with route open");
         allInputs.add("{\"10.0.0.0/8\":{\"addr\":[\"first\",\"last\" // eof with array open");
+        allInputs.add("{0x2a:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{0b10:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{0o10:{\"addr\":\"proxy:1080\"}}");
         allInputs.add("{default:{\"addr\":\"proxy:1080\"}}");
         allInputs.add("{10:{\"addr\":\"proxy:1080\"}}");
         allInputs.add("{true:{\"addr\":\"proxy:1080\"}}");
