@@ -627,6 +627,204 @@ fn contains_fastjson_rejected_literal(input: &str) -> bool {
     false
 }
 
+fn normalize_fastjson_root_route_keys(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut start = 0;
+    if bytes.starts_with(&[0xef, 0xbb, 0xbf]) {
+        start = 3;
+    }
+    start = skip_fastjson_trivia(bytes, start);
+    if bytes.get(start) != Some(&b'{') {
+        return input.to_owned();
+    }
+
+    let mut replacements = Vec::<(usize, usize, Vec<u8>)>::new();
+    let mut index = start + 1;
+    loop {
+        index = skip_fastjson_trivia(bytes, index);
+        if matches!(bytes.get(index), Some(b'}' | b',')) || index >= bytes.len() {
+            if bytes.get(index) == Some(&b',') {
+                index += 1;
+                continue;
+            }
+            break;
+        }
+
+        let key_start = index;
+        let (key_end, encoded_key) = match bytes.get(index) {
+            Some(b'"' | b'\'') => {
+                let quote = bytes[index];
+                let mut end = index + 1;
+                while end < bytes.len() {
+                    if bytes[end] == b'\\' {
+                        end = (end + 2).min(bytes.len());
+                    } else if bytes[end] == quote {
+                        end += 1;
+                        break;
+                    } else {
+                        end += 1;
+                    }
+                }
+                if end > bytes.len() || bytes.get(end - 1) != Some(&quote) {
+                    break;
+                }
+                let mut encoded = Vec::with_capacity(end - index + 8);
+                encoded.push(quote);
+                encoded.extend_from_slice(b"\\u0000S");
+                encoded.extend_from_slice(&bytes[index + 1..end - 1]);
+                encoded.push(quote);
+                (end, Some(encoded))
+            }
+            _ => {
+                let numeric_end = decimal_number_end(bytes, index)
+                    .filter(|end| bytes.get(skip_fastjson_trivia(bytes, *end)) == Some(&b':'));
+                let token_end = numeric_end.unwrap_or_else(|| {
+                    let mut end = index;
+                    while bytes
+                        .get(end)
+                        .is_some_and(|byte| is_identifier_token_byte(*byte))
+                    {
+                        end += 1;
+                    }
+                    end
+                });
+                let token = &bytes[index..token_end];
+                let encoded = if numeric_end.is_some() {
+                    let token = std::str::from_utf8(token).unwrap_or_default();
+                    let mut text = String::new();
+                    write_json_string(&format!("\0S{}", java_number_string(token)), &mut text);
+                    Some(text.into_bytes())
+                } else if matches!(token, b"true" | b"false") {
+                    let mut encoded = Vec::new();
+                    let mut text = String::new();
+                    write_json_string(
+                        &format!("\0S{}", std::str::from_utf8(token).unwrap()),
+                        &mut text,
+                    );
+                    encoded.extend_from_slice(text.as_bytes());
+                    Some(encoded)
+                } else if token == b"null" {
+                    let mut encoded = Vec::new();
+                    let mut text = String::new();
+                    write_json_string("\0N", &mut text);
+                    encoded.extend_from_slice(text.as_bytes());
+                    Some(encoded)
+                } else {
+                    None
+                };
+                (token_end, encoded)
+            }
+        };
+        if key_end == key_start || bytes.get(skip_fastjson_trivia(bytes, key_end)) != Some(&b':') {
+            break;
+        }
+        if let Some(encoded_key) = encoded_key {
+            replacements.push((key_start, key_end, encoded_key));
+        }
+        let colon = skip_fastjson_trivia(bytes, key_end);
+        index = skip_fastjson_root_value(bytes, colon + 1);
+        if bytes.get(index) == Some(&b',') {
+            index += 1;
+        } else {
+            break;
+        }
+    }
+
+    if replacements.is_empty() {
+        return input.to_owned();
+    }
+    let mut output = Vec::with_capacity(bytes.len() + replacements.len() * 8);
+    let mut copied_through = 0;
+    for (key_start, key_end, encoded_key) in replacements {
+        output.extend_from_slice(&bytes[copied_through..key_start]);
+        output.extend_from_slice(&encoded_key);
+        copied_through = key_end;
+    }
+    output.extend_from_slice(&bytes[copied_through..]);
+    String::from_utf8(output).expect("root-key normalization preserves UTF-8")
+}
+
+fn skip_fastjson_trivia(bytes: &[u8], mut index: usize) -> usize {
+    loop {
+        while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+            index += 1;
+        }
+        if bytes.get(index..index + 2) == Some(b"//") {
+            index += 2;
+            while index < bytes.len()
+                && bytes[index] != b'\n'
+                && bytes[index] != b'\r'
+                && !bytes[index..].starts_with(&[0xe2, 0x80, 0xa8])
+                && !bytes[index..].starts_with(&[0xe2, 0x80, 0xa9])
+            {
+                index += 1;
+            }
+        } else if bytes.get(index..index + 2) == Some(b"/*") {
+            index += 2;
+            while index + 1 < bytes.len() && !(bytes[index] == b'*' && bytes[index + 1] == b'/') {
+                index += 1;
+            }
+            index = (index + 2).min(bytes.len());
+        } else {
+            return index;
+        }
+    }
+}
+
+fn skip_fastjson_root_value(bytes: &[u8], mut index: usize) -> usize {
+    let mut closers = Vec::new();
+    while index < bytes.len() {
+        match bytes[index] {
+            b'"' | b'\'' => {
+                let quote = bytes[index];
+                index += 1;
+                while index < bytes.len() {
+                    if bytes[index] == b'\\' {
+                        index = (index + 2).min(bytes.len());
+                    } else if bytes[index] == quote {
+                        index += 1;
+                        break;
+                    } else {
+                        index += 1;
+                    }
+                }
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'/') => {
+                index = skip_fastjson_trivia(bytes, index);
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'*') => {
+                index = skip_fastjson_trivia(bytes, index);
+            }
+            b'{' => {
+                closers.push(b'}');
+                index += 1;
+            }
+            b'[' => {
+                closers.push(b']');
+                index += 1;
+            }
+            b'}' | b']' if closers.is_empty() => return index,
+            b'}' | b']' => {
+                closers.pop();
+                index += 1;
+            }
+            b',' if closers.is_empty() => return index,
+            _ => index += 1,
+        }
+    }
+    index
+}
+
+fn decode_fastjson_route_key(key: String) -> Option<String> {
+    if let Some(value) = key.strip_prefix("\0S") {
+        Some(value.to_owned())
+    } else if key == "\0N" {
+        None
+    } else {
+        Some(key)
+    }
+}
+
 fn is_number_token_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$' | b'.')
 }
@@ -1301,16 +1499,17 @@ impl ClientConfig {
 
     pub(super) fn parse_socks_proxy_config(
         &self,
-    ) -> Result<HashMap<String, ParsedProxyRoute>, TransportError> {
+    ) -> Result<HashMap<Option<String>, ParsedProxyRoute>, TransportError> {
         if self.socks_proxy_config.is_empty() || self.socks_proxy_config.trim() == "null" {
             return Ok(HashMap::new());
         }
-        if contains_fastjson_rejected_literal(&self.socks_proxy_config) {
+        let keyed = normalize_fastjson_root_route_keys(&self.socks_proxy_config);
+        if contains_fastjson_rejected_literal(&keyed) {
             return Err(TransportError::InvalidConfiguration(
                 "Fastjson SOCKS parser rejects this JSON5 literal".into(),
             ));
         }
-        let string_normalized = normalize_fastjson_source(&self.socks_proxy_config);
+        let string_normalized = normalize_fastjson_source(&keyed);
         let recovered = recover_fastjson_eof_line_comment(&string_normalized);
         let (normalized, number_tokens) = normalize_fastjson_numbers(&recovered);
         let _number_scope = FastjsonNumberTokenScope::install(number_tokens);
@@ -1320,7 +1519,8 @@ impl ClientConfig {
         Ok(parsed
             .unwrap_or_default()
             .into_iter()
-            .map(|(cidr, entry)| {
+            .map(|(encoded_cidr, entry)| {
+                let cidr = decode_fastjson_route_key(encoded_cidr);
                 let route = match entry {
                     None => ParsedProxyRoute::Direct,
                     Some(raw) => match raw.java_string_field("addr") {
@@ -1338,10 +1538,16 @@ impl ClientConfig {
     }
 
     pub(super) fn proxy_for<T: Clone + Into<ParsedProxyRoute>>(
-        routes: &HashMap<String, T>,
+        routes: &HashMap<Option<String>, T>,
         host: &str,
     ) -> Result<Option<SocksProxyConfig>, TransportError> {
+        if routes.contains_key(&None) {
+            return Err(TransportError::InvalidConfiguration(
+                "cannot select a SOCKS route with a null CIDR key".into(),
+            ));
+        }
         for (cidr, route) in routes {
+            let cidr = cidr.as_ref().expect("null route keys rejected above");
             if cidr == "0.0.0.0/0" || ipv4_in_cidr(host, cidr)? {
                 return match route.clone().into() {
                     ParsedProxyRoute::Direct => Ok(None),
@@ -1471,7 +1677,7 @@ mod tests {
         config.set_socks_proxy_config(json);
         assert_eq!(config.get_socks_proxy_config(), json);
         assert!(matches!(
-            &config.parse_socks_proxy_config().unwrap()["10.1.0.0/16"],
+            &config.parse_socks_proxy_config().unwrap()[&Some("10.1.0.0/16".into())],
             super::ParsedProxyRoute::Proxy(proxy)
                 if proxy == &SocksProxyConfig::with_credentials("proxy.internal:1080", "user", "secret")
         ));
@@ -1486,6 +1692,22 @@ mod tests {
             ..ClientConfig::default()
         };
         assert!(null_map.parse_socks_proxy_config().unwrap().is_empty());
+    }
+
+    #[test]
+    fn socks_route_keys_preserve_null_separately_from_string_null() {
+        let mut null_config = ClientConfig::default();
+        null_config.set_socks_proxy_config("{null:null}");
+        let null_route = null_config.parse_socks_proxy_config().unwrap();
+        assert!(null_route.contains_key(&None));
+        assert!(ClientConfig::proxy_for(&null_route, "127.0.0.1").is_err());
+
+        let mut config = ClientConfig::default();
+        config.set_socks_proxy_config("{null:null, 'null':null}");
+        let routes = config.parse_socks_proxy_config().unwrap();
+        assert_eq!(routes.len(), 2);
+        assert!(routes.contains_key(&None));
+        assert!(routes.contains_key(&Some("null".into())));
     }
 
     #[test]
@@ -1679,18 +1901,20 @@ mod tests {
             }
             let routes = parsed.unwrap();
             if let Some(expected_keys) = case["routeKeys"].as_array() {
-                let actual_keys = routes.keys().collect::<Vec<_>>();
-                let expected_keys = expected_keys
+                let mut actual_keys = routes.keys().map(Option::as_deref).collect::<Vec<_>>();
+                actual_keys.sort();
+                let mut expected_keys = expected_keys
                     .iter()
                     .map(serde_json::Value::as_str)
-                    .collect::<Option<Vec<_>>>()
-                    .unwrap();
+                    .collect::<Vec<_>>();
+                expected_keys.sort();
                 assert_eq!(
                     actual_keys, expected_keys,
-                    "route keys for {}", case["input"]
+                    "route keys for {}",
+                    case["input"]
                 );
             }
-            let Some(route) = routes.get("10.0.0.0/8") else {
+            let Some(route) = routes.get(&Some("10.0.0.0/8".into())) else {
                 assert_eq!(case["routePresent"], false, "{}", case["input"]);
                 continue;
             };
@@ -1778,7 +2002,7 @@ mod tests {
     #[test]
     fn socks_proxy_routes_match_java_ipv4_cidr_and_error_behavior() {
         let private_route = std::collections::HashMap::from([(
-            "10.20.0.0/16".into(),
+            Some("10.20.0.0/16".into()),
             SocksProxyConfig::new("private-proxy:1080"),
         )]);
         assert_eq!(
@@ -1789,7 +2013,7 @@ mod tests {
             "private-proxy:1080"
         );
         let default_route = std::collections::HashMap::from([(
-            "0.0.0.0/0".into(),
+            Some("0.0.0.0/0".into()),
             SocksProxyConfig::new("default-proxy:1080"),
         )]);
         assert_eq!(
@@ -1811,7 +2035,7 @@ mod tests {
         );
 
         let zero_prefix = std::collections::HashMap::from([(
-            "10.20.0.0/0".into(),
+            Some("10.20.0.0/0".into()),
             SocksProxyConfig::new("zero-prefix-proxy:1080"),
         )]);
         assert!(
@@ -1821,14 +2045,14 @@ mod tests {
         );
         assert!(ClientConfig::proxy_for(&private_route, "broker.example").is_err());
         let invalid_cidr = std::collections::HashMap::from([(
-            "10.20.0.0/not-a-prefix".into(),
+            Some("10.20.0.0/not-a-prefix".into()),
             SocksProxyConfig::new("proxy:1080"),
         )]);
         assert!(ClientConfig::proxy_for(&invalid_cidr, "10.20.4.5").is_err());
 
         // Java ipToInt parses signed integers and Java int shifts mask shift counts to 0..31.
         let java_shifted_prefix = std::collections::HashMap::from([(
-            "10.20.0.0/33".into(),
+            Some("10.20.0.0/33".into()),
             SocksProxyConfig::new("shifted-prefix-proxy:1080"),
         )]);
         assert!(
@@ -1837,7 +2061,7 @@ mod tests {
                 .is_some()
         );
         let java_integer_octets = std::collections::HashMap::from([(
-            "266.20.0.0/16".into(),
+            Some("266.20.0.0/16".into()),
             SocksProxyConfig::new("integer-octet-proxy:1080"),
         )]);
         assert!(
