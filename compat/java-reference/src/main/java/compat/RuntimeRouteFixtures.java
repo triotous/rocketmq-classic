@@ -1219,6 +1219,13 @@ public final class RuntimeRouteFixtures {
                 TopicRouteData sibling = com.alibaba.fastjson2.JSON.parseObject(siblingInput, TopicRouteData.class);
                 runtime.getTopicRouteTable().put("sibling", sibling);
                 item.put("siblingInput", com.alibaba.fastjson2.JSON.parseObject(siblingInput));
+                java.lang.reflect.Field versionsField = MQClientInstance.class.getDeclaredField("brokerVersionTable");
+                versionsField.setAccessible(true);
+                java.util.concurrent.ConcurrentMap<String, java.util.concurrent.ConcurrentHashMap<String, Integer>> versions =
+                    (java.util.concurrent.ConcurrentMap<String, java.util.concurrent.ConcurrentHashMap<String, Integer>>) versionsField.get(runtime);
+                versions.computeIfAbsent("broker", ignored -> new java.util.concurrent.ConcurrentHashMap<>())
+                    .put("master:10911", 551);
+                item.put("brokerVersionBeforeCleanup", versions.get("broker").get("master:10911"));
             }
             if (id.equals("partial-candidate-before-null-row")) {
                 java.lang.reflect.Field addressesField = MQClientInstance.class.getDeclaredField("brokerAddrTable");
@@ -1258,6 +1265,13 @@ public final class RuntimeRouteFixtures {
                 normalized.put(String.valueOf(broker.getKey()), byId);
             }
             item.put("brokerAddressTable", normalized);
+            if (id.equals("address-retained-by-sibling-topic")) {
+                java.lang.reflect.Field versionsField = MQClientInstance.class.getDeclaredField("brokerVersionTable");
+                versionsField.setAccessible(true);
+                Map<?, ?> versions = (Map<?, ?>) versionsField.get(runtime);
+                item.put("brokerVersionAfterCleanup",
+                    ((Map<?, ?>) versions.get("broker")).get("master:10911"));
+            }
             item.put("fetchCount", api.requests);
             item.put("rawObjectRetained", runtime.getAnExistTopicRouteData("raw") == raw);
         } finally {
