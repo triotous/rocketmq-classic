@@ -2061,6 +2061,11 @@ public final class RuntimeLookupFixtures {
             java.util.BitSet.valueOf(new byte[] {1, 0, 0}).size(),
             java.util.BitSet.valueOf(new long[] {1, 0}).size(),
             java.util.BitSet.valueOf(new byte[] {}).size()));
+        try {
+            new java.util.BitSet(-1);
+        } catch (RuntimeException error) {
+            item.put("negativeCapacityError", error.getClass().getSimpleName());
+        }
         java.util.BitSet source = new java.util.BitSet();
         source.set(0);
         source.set(64);
