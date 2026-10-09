@@ -1797,7 +1797,9 @@ fn normalize_java_object_map_keys(input: &str) -> Result<String, serde_json::Err
                 None => ObjectKind::Root,
                 Some(parent) if previous_json_byte(bytes, index) == Some(b':') => {
                     match (parent.kind, parent.last_key.as_deref()) {
-                        (ObjectKind::Root, Some("messageQueueTable")) => ObjectKind::QueueTable,
+                        (ObjectKind::Root, Some("messageQueueTable" | "offsetTable")) => {
+                            ObjectKind::QueueTable
+                        }
                         (ObjectKind::Root, Some("consumerTable")) => ObjectKind::ConsumerTable,
                         (ObjectKind::ConsumerTable, _) => ObjectKind::QueueTable,
                         _ => ObjectKind::Other,
@@ -1906,21 +1908,81 @@ fn previous_json_byte(bytes: &[u8], index: usize) -> Option<u8> {
     bytes.get(previous).copied()
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResetOffsetBody {
     #[serde(
         skip_serializing_if = "Option::is_none",
         with = "optional_message_queue_offset_table"
     )]
-    pub offset_table: Option<Vec<(MessageQueue, i64)>>,
+    pub offset_table: Option<NullableQueueOffsetEntries>,
 }
 
 impl ResetOffsetBody {
     pub fn encode_java_json(&self) -> Result<Vec<u8>, serde_json::Error> {
-        let entries = self.offset_table.as_deref().unwrap_or_default();
-        let table = encode_java_queue_table_text(entries)?;
+        let Some(entries) = &self.offset_table else {
+            return Ok(b"{}".to_vec());
+        };
+        let mut table = std::collections::BTreeMap::new();
+        for (queue, offset) in entries {
+            table.insert(queue.clone(), *offset);
+        }
+        let entries = table
+            .into_iter()
+            .filter_map(|(queue, offset)| offset.map(|offset| (queue, offset)))
+            .collect::<Vec<_>>();
+        let table = encode_java_queue_table_text(&entries)?;
         Ok(format!("{{\"offsetTable\":{table}}}").into_bytes())
+    }
+
+    pub fn decode_java_json(input: &str) -> Result<Self, serde_json::Error> {
+        let normalized = serde_fastjson::normalize_json_input(input);
+        let normalized = normalize_java_object_map_keys(&normalized)?;
+        serde_json::from_str(&normalized)
+    }
+
+    pub fn get_offset_table(&self) -> Option<&[(MessageQueue, Option<i64>)]> {
+        self.offset_table.as_deref()
+    }
+
+    pub fn set_offset_table(&mut self, value: Option<NullableQueueOffsetEntries>) {
+        self.offset_table = value;
+    }
+}
+
+impl Default for ResetOffsetBody {
+    fn default() -> Self {
+        Self {
+            offset_table: Some(Vec::new()),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct ResetOffsetBodyFields {
+    #[serde(with = "optional_message_queue_offset_table")]
+    offset_table: Option<NullableQueueOffsetEntries>,
+}
+
+impl Default for ResetOffsetBodyFields {
+    fn default() -> Self {
+        Self {
+            offset_table: Some(Vec::new()),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ResetOffsetBody {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let fields: ResetOffsetBodyFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            offset_table: fields.offset_table,
+        })
     }
 }
 
@@ -1941,6 +2003,7 @@ fn encode_java_queue_table_text(
 }
 
 pub type QueueOffsetEntries = Vec<(MessageQueue, i64)>;
+pub type NullableQueueOffsetEntries = Vec<(MessageQueue, Option<i64>)>;
 pub type ConsumerQueueOffsets = std::collections::BTreeMap<String, Option<QueueOffsetEntries>>;
 
 mod message_queue_offset_table {
@@ -2125,45 +2188,82 @@ mod nested_message_queue_offset_table {
     }
 }
 
-fn decode_table(value: serde_json::Value) -> Result<Vec<(MessageQueue, i64)>, serde_json::Error> {
-    value
-        .as_object()
-        .ok_or_else(|| serde::de::Error::custom("expected MessageQueue-keyed object"))?
-        .iter()
-        .map(|(key, value)| {
-            let queue = serde_json::from_str(key)?;
-            let offset = serde_json::from_value(value.clone())?;
-            Ok((queue, offset))
-        })
-        .collect()
-}
-
 mod optional_message_queue_offset_table {
-    use super::*;
-    use serde::{Deserialize, Deserializer, Serializer};
+    use super::{MessageQueue, NullableQueueOffsetEntries};
+    use serde::de::{MapAccess, Visitor};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::fmt;
+
     pub fn serialize<S>(
-        entries: &Option<Vec<(MessageQueue, i64)>>,
+        entries: &Option<NullableQueueOffsetEntries>,
         serializer: S,
     ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         match entries {
-            Some(entries) => super::encode_table(entries)
-                .map_err(serde::ser::Error::custom)?
-                .serialize(serializer),
+            Some(entries) => {
+                let mut table = std::collections::BTreeMap::new();
+                for (queue, offset) in entries {
+                    table.insert(
+                        serde_json::to_string(queue).map_err(serde::ser::Error::custom)?,
+                        offset,
+                    );
+                }
+                table.serialize(serializer)
+            }
             None => serializer.serialize_none(),
         }
     }
+
     pub fn deserialize<'de, D>(
         deserializer: D,
-    ) -> Result<Option<Vec<(MessageQueue, i64)>>, D::Error>
+    ) -> Result<Option<NullableQueueOffsetEntries>, D::Error>
     where
         D: Deserializer<'de>,
     {
-        Option::<serde_json::Value>::deserialize(deserializer)?
-            .map(|value| super::decode_table(value).map_err(serde::de::Error::custom))
-            .transpose()
+        let Some(encoded) = Option::<RawQueueOffsetTable>::deserialize(deserializer)? else {
+            return Ok(None);
+        };
+        let mut table = std::collections::BTreeMap::new();
+        for (key, offset) in encoded.0 {
+            let queue: MessageQueue =
+                serde_json::from_str(&key).map_err(serde::de::Error::custom)?;
+            table.insert(queue, offset);
+        }
+        Ok(Some(table.into_iter().collect()))
+    }
+
+    struct RawQueueOffsetTable(Vec<(String, Option<i64>)>);
+
+    impl<'de> Deserialize<'de> for RawQueueOffsetTable {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            struct TableVisitor;
+
+            impl<'de> Visitor<'de> for TableVisitor {
+                type Value = RawQueueOffsetTable;
+
+                fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    formatter.write_str("a MessageQueue-keyed nullable offset object")
+                }
+
+                fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+                where
+                    A: MapAccess<'de>,
+                {
+                    let mut entries = Vec::new();
+                    while let Some(key) = map.next_key::<String>()? {
+                        entries.push((key, map.next_value::<Option<i64>>()?));
+                    }
+                    Ok(RawQueueOffsetTable(entries))
+                }
+            }
+
+            deserializer.deserialize_map(TableVisitor)
+        }
     }
 }
 
@@ -2435,7 +2535,7 @@ mod tests {
     fn runtime_inbound_bodies_keep_map_and_optional_shapes() {
         let queue = MessageQueue::new("orders", "broker-a", 1);
         let reset = ResetOffsetBody {
-            offset_table: Some(vec![(queue.clone(), 7)]),
+            offset_table: Some(vec![(queue.clone(), Some(7))]),
         };
         let value = serde_json::to_value(reset).unwrap();
         let offset_table = value["offsetTable"].as_object().unwrap();
@@ -2857,7 +2957,7 @@ mod tests {
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
         let cases = fixture["resetOffsetBodyInputCases"].as_array().unwrap();
         assert_eq!(cases.len(), 12);
-        let rows = |entries: Option<&[(MessageQueue, i64)]>| {
+        let rows = |entries: Option<&[(MessageQueue, Option<i64>)]>| {
             let Some(entries) = entries else {
                 return serde_json::Value::Null;
             };
@@ -2878,9 +2978,7 @@ mod tests {
         let mut mismatches = Vec::new();
         for case in cases {
             let name = case["name"].as_str().unwrap();
-            let decoded = serde_fastjson::from_fastjson_str::<ResetOffsetBody>(
-                case["rawInput"].as_str().unwrap(),
-            );
+            let decoded = ResetOffsetBody::decode_java_json(case["rawInput"].as_str().unwrap());
             let java_accepts = case["outcome"] == "ACCEPTED";
             match (decoded, java_accepts) {
                 (Ok(decoded), true) => {

@@ -373,7 +373,8 @@ fn java_json_body_fixtures_decode_to_typed_assignment_lite_and_batch_models() {
     for name in ["body-reset-offset", "body-consumer-status"] {
         let raw = java_body(name);
         if name == "body-reset-offset" {
-            let typed = decode_java_queue_offset_body(&raw, "offsetTable");
+            let typed =
+                ResetOffsetBody::decode_java_json(std::str::from_utf8(&raw).unwrap()).unwrap();
             let value = serde_json::to_value(&typed).unwrap();
             assert_eq!(
                 value["offsetTable"]
@@ -387,7 +388,7 @@ fn java_json_body_fixtures_decode_to_typed_assignment_lite_and_batch_models() {
             let (queue, offset) = &typed.offset_table.as_ref().unwrap()[0];
             assert_eq!(queue.topic(), Some("orders"));
             assert_eq!(queue.broker_name(), Some("broker-a"));
-            assert_eq!(*offset, 9);
+            assert_eq!(*offset, Some(9));
             assert_eq!(typed.encode_java_json().unwrap(), raw);
         } else {
             let typed = GetConsumerStatusBody::decode_java_json(std::str::from_utf8(&raw).unwrap())
@@ -489,34 +490,6 @@ fn java_consumer_list_and_lock_bodies_preserve_optional_and_collection_semantics
             .topic(),
         Some("orders")
     );
-}
-
-fn decode_java_queue_offset_body(raw: &[u8], field: &str) -> ResetOffsetBody {
-    let text = std::str::from_utf8(raw).unwrap();
-    let marker = format!("\"{field}\":{{{{");
-    let start = text.find(&marker).expect("Java map field exists") + marker.len() - 2;
-    let mut depth = 0_i32;
-    let mut end = start;
-    for (index, ch) in text[start..].char_indices() {
-        if ch == '{' {
-            depth += 1;
-        }
-        if ch == '}' {
-            depth -= 1;
-            if depth == 0 {
-                end = start + index + ch.len_utf8();
-                break;
-            }
-        }
-    }
-    let entry = &text[start + 1..end - 1];
-    let separator = entry.rfind("}:").expect("map key/value separator") + 1;
-    let key = &entry[..separator];
-    let offset = entry[separator + 1..].parse::<i64>().unwrap();
-    let queue: rocketmq_classic_common::message::MessageQueue = serde_json::from_str(key).unwrap();
-    ResetOffsetBody {
-        offset_table: Some(vec![(queue, offset)]),
-    }
 }
 
 #[test]
