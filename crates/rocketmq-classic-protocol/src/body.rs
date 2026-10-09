@@ -2583,6 +2583,11 @@ impl ResetOffsetBody {
         self.offset_table.as_deref()
     }
 
+    /// Borrows the owned queue offset rows mutably for Java-compatible getter mutations.
+    pub fn get_offset_table_mut(&mut self) -> Option<&mut NullableQueueOffsetEntries> {
+        self.offset_table.as_mut()
+    }
+
     pub fn set_offset_table(&mut self, value: Option<NullableQueueOffsetEntries>) {
         self.offset_table = value;
     }
