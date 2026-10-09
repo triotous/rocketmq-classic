@@ -58,6 +58,8 @@ public final class RuntimeLookupFixtures {
         fixture.put("liteSubscriptionEnumCases", liteSubscriptionEnumCases());
         fixture.put("queryAssignmentEnumCases", queryAssignmentEnumCases());
         fixture.put("setRequestModeCases", setRequestModeCases());
+        fixture.put("consumeDirectResultCases", consumeDirectResultCases());
+        fixture.put("messageQueueInputCases", messageQueueInputCases());
         fixture.put("assignmentHashCollisionCases", assignmentHashCollisionCases());
         fixture.put("assignmentMethodCases", assignmentMethodCases());
         fixture.put("messageRequestModeMethodCases", messageRequestModeMethodCases());
@@ -281,6 +283,85 @@ public final class RuntimeLookupFixtures {
             org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody decoded =
                 com.alibaba.fastjson2.JSON.parseObject(rawInput,
                     org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody.class);
+            item.put("outcome", "ACCEPTED");
+            item.put("encoded", com.alibaba.fastjson2.JSON.parseObject(
+                com.alibaba.fastjson2.JSON.toJSONString(decoded)));
+        } catch (RuntimeException error) {
+            item.put("outcome", "REJECTED");
+            item.put("error", error.getClass().getSimpleName());
+        }
+        return item;
+    }
+
+    private static List<Object> consumeDirectResultCases() {
+        List<Object> cases = new ArrayList<>();
+        for (org.apache.rocketmq.remoting.protocol.body.CMResult value :
+            org.apache.rocketmq.remoting.protocol.body.CMResult.values()) {
+            cases.add(consumeDirectResultCase("name-" + value.name(),
+                "{\"consumeResult\":\"" + value.name() + "\"}"));
+        }
+        for (int ordinal = 0;
+            ordinal <= org.apache.rocketmq.remoting.protocol.body.CMResult.values().length;
+            ordinal++) {
+            cases.add(consumeDirectResultCase("ordinal-" + ordinal,
+                "{\"consumeResult\":" + ordinal + "}"));
+        }
+        cases.add(consumeDirectResultCase("numeric-string", "{\"consumeResult\":\"1\"}"));
+        cases.add(consumeDirectResultCase("fractional", "{\"consumeResult\":1.9}"));
+        cases.add(consumeDirectResultCase("unknown-name", "{\"consumeResult\":\"UNKNOWN\"}"));
+        cases.add(consumeDirectResultCase("unknown-numeric-string", "{\"consumeResult\":\"6\"}"));
+        cases.add(consumeDirectResultCase("explicit-null", "{\"consumeResult\":null}"));
+        cases.add(consumeDirectResultCase("boolean", "{\"consumeResult\":true}"));
+        return cases;
+    }
+
+    private static Map<String, Object> consumeDirectResultCase(String name, String rawInput) {
+        Map<String, Object> item = new TreeMap<>();
+        item.put("name", name);
+        item.put("rawInput", rawInput);
+        try {
+            org.apache.rocketmq.remoting.protocol.body.ConsumeMessageDirectlyResult decoded =
+                com.alibaba.fastjson2.JSON.parseObject(rawInput,
+                    org.apache.rocketmq.remoting.protocol.body.ConsumeMessageDirectlyResult.class);
+            item.put("outcome", "ACCEPTED");
+            item.put("encoded", com.alibaba.fastjson2.JSON.parseObject(
+                com.alibaba.fastjson2.JSON.toJSONString(decoded)));
+        } catch (RuntimeException error) {
+            item.put("outcome", "REJECTED");
+            item.put("error", error.getClass().getSimpleName());
+        }
+        return item;
+    }
+
+    private static List<Object> messageQueueInputCases() {
+        List<Object> cases = new ArrayList<>();
+        cases.add(messageQueueInputCase("default", "{}"));
+        cases.add(messageQueueInputCase("normal", "{\"topic\":\"topic\",\"brokerName\":\"broker\",\"queueId\":2}"));
+        cases.add(messageQueueInputCase("scalar-coercions", "{\"topic\":42,\"brokerName\":true,\"queueId\":1.9}"));
+        cases.add(messageQueueInputCase("high-precision-topic", "{\"topic\":9223372036854775807.123456789012345678901}"));
+        cases.add(messageQueueInputCase("queue-minimum", "{\"queueId\":-2147483648}"));
+        cases.add(messageQueueInputCase("queue-maximum", "{\"queueId\":2147483647}"));
+        cases.add(messageQueueInputCase("queue-integer-overflow", "{\"queueId\":2147483648}"));
+        cases.add(messageQueueInputCase("queue-decimal-wrap", "{\"queueId\":2147483648.0}"));
+        cases.add(messageQueueInputCase("queue-fraction", "{\"queueId\":-1.9}"));
+        cases.add(messageQueueInputCase("queue-exponent-string", "{\"queueId\":\"1e2\"}"));
+        cases.add(messageQueueInputCase("queue-null", "{\"queueId\":null}"));
+        cases.add(messageQueueInputCase("queue-boolean", "{\"queueId\":true}"));
+        cases.add(messageQueueInputCase("queue-empty-object", "{\"queueId\":{}}"));
+        cases.add(messageQueueInputCase("queue-array", "{\"queueId\":[]}"));
+        cases.add(messageQueueInputCase("topic-object", "{\"topic\":{\"k\":1}}"));
+        cases.add(messageQueueInputCase("topic-null", "{\"topic\":null,\"brokerName\":null}"));
+        return cases;
+    }
+
+    private static Map<String, Object> messageQueueInputCase(String name, String rawInput) {
+        Map<String, Object> item = new TreeMap<>();
+        item.put("name", name);
+        item.put("rawInput", rawInput);
+        try {
+            org.apache.rocketmq.common.message.MessageQueue decoded =
+                com.alibaba.fastjson2.JSON.parseObject(rawInput,
+                    org.apache.rocketmq.common.message.MessageQueue.class);
             item.put("outcome", "ACCEPTED");
             item.put("encoded", com.alibaba.fastjson2.JSON.parseObject(
                 com.alibaba.fastjson2.JSON.toJSONString(decoded)));
