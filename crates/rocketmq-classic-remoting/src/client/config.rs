@@ -627,7 +627,12 @@ fn contains_fastjson_rejected_literal(input: &str) -> bool {
     false
 }
 
-fn normalize_fastjson_root_route_keys(input: &str) -> String {
+#[derive(Clone, Copy, Debug)]
+enum FastjsonRouteKeyError {
+    UnsignedLeadingDotNumber,
+}
+
+fn normalize_fastjson_root_route_keys(input: &str) -> Result<String, FastjsonRouteKeyError> {
     let bytes = input.as_bytes();
     let mut start = 0;
     if bytes.starts_with(&[0xef, 0xbb, 0xbf]) {
@@ -635,7 +640,7 @@ fn normalize_fastjson_root_route_keys(input: &str) -> String {
     }
     start = skip_fastjson_trivia(bytes, start);
     if bytes.get(start) != Some(&b'{') {
-        return input.to_owned();
+        return Ok(input.to_owned());
     }
 
     let mut replacements = Vec::<(usize, usize, Vec<u8>)>::new();
@@ -676,8 +681,12 @@ fn normalize_fastjson_root_route_keys(input: &str) -> String {
                 (end, Some(encoded))
             }
             _ => {
-                let numeric_end = decimal_number_end(bytes, index)
+                let decimal_end = decimal_number_end(bytes, index)
                     .filter(|end| bytes.get(skip_fastjson_trivia(bytes, *end)) == Some(&b':'));
+                if bytes.get(index) == Some(&b'.') && decimal_end.is_some() {
+                    return Err(FastjsonRouteKeyError::UnsignedLeadingDotNumber);
+                }
+                let numeric_end = decimal_end;
                 let token_end = numeric_end.unwrap_or_else(|| {
                     let mut end = index;
                     while bytes
@@ -731,7 +740,7 @@ fn normalize_fastjson_root_route_keys(input: &str) -> String {
     }
 
     if replacements.is_empty() {
-        return input.to_owned();
+        return Ok(input.to_owned());
     }
     let mut output = Vec::with_capacity(bytes.len() + replacements.len() * 8);
     let mut copied_through = 0;
@@ -741,7 +750,7 @@ fn normalize_fastjson_root_route_keys(input: &str) -> String {
         copied_through = key_end;
     }
     output.extend_from_slice(&bytes[copied_through..]);
-    String::from_utf8(output).expect("root-key normalization preserves UTF-8")
+    Ok(String::from_utf8(output).expect("root-key normalization preserves UTF-8"))
 }
 
 fn skip_fastjson_trivia(bytes: &[u8], mut index: usize) -> usize {
@@ -1503,7 +1512,15 @@ impl ClientConfig {
         if self.socks_proxy_config.is_empty() || self.socks_proxy_config.trim() == "null" {
             return Ok(HashMap::new());
         }
-        let keyed = normalize_fastjson_root_route_keys(&self.socks_proxy_config);
+        let keyed =
+            normalize_fastjson_root_route_keys(&self.socks_proxy_config).map_err(|error| {
+                let reason = match error {
+                    FastjsonRouteKeyError::UnsignedLeadingDotNumber => {
+                        "Fastjson SOCKS parser rejects an unsigned leading-dot route key"
+                    }
+                };
+                TransportError::InvalidConfiguration(reason.into())
+            })?;
         if contains_fastjson_rejected_literal(&keyed) {
             return Err(TransportError::InvalidConfiguration(
                 "Fastjson SOCKS parser rejects this JSON5 literal".into(),
