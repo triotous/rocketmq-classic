@@ -1414,6 +1414,10 @@ mod tests {
         assert_eq!(case["changed"], true);
         assert_eq!(case["retained"], true);
         assert_eq!(case["rawRouteHasStaticMappings"], false);
+        let unmapped_queue: MessageQueue =
+            serde_json::from_value(case["unmappedQueue"].clone()).unwrap();
+        assert!(case["unmappedBrokerBefore"].is_null());
+        assert!(case["unmappedBrokerAfter"].is_null());
         let cache = RouteCache::default();
         cache
             .replace(
@@ -1432,6 +1436,8 @@ mod tests {
             after.topics["topic"].endpoints,
             before.topics["topic"].endpoints
         );
+        assert_eq!(before.broker_name(&unmapped_queue), None);
+        assert_eq!(after.broker_name(&unmapped_queue), None);
         assert_eq!(after.topics["topic"].publish_queues.len(), 2);
         assert_eq!(after.topics["topic"].subscribe_queues.len(), 3);
         for (snapshot, rows) in [(&before, &case["before"]), (&after, &case["after"])] {
