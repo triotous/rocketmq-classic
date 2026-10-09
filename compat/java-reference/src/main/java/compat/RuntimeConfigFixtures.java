@@ -1289,6 +1289,7 @@ public final class RuntimeConfigFixtures {
     private static Map<String, Object> socksSupplementaryEscapeFollowerCases() {
         Map<String, Object> result = new TreeMap<>();
         List<Object> accepted = new ArrayList<>();
+        List<Object> acceptedRanges = new ArrayList<>();
         com.alibaba.fastjson2.TypeReference<Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig>> type =
             new com.alibaba.fastjson2.TypeReference<>() { };
         String prefix = "{\"10.0.0.0/8\":{\"addr\":\"A" + (char) 92;
@@ -1308,9 +1309,53 @@ public final class RuntimeConfigFixtures {
                 // Unlisted supplementary scalars are rejected by the char1 table.
             }
         }
+        int rangeStart = -1;
+        int rangeEnd = -1;
+        String rangeAddr = null;
+        int acceptedCodePointCount = 0;
+        for (int codePoint = Character.MIN_SUPPLEMENTARY_CODE_POINT;
+             codePoint <= Character.MAX_CODE_POINT; codePoint++) {
+            String input = prefix + new String(Character.toChars(codePoint)) + suffix;
+            try {
+                Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig> parsed =
+                    com.alibaba.fastjson2.JSON.parseObject(input, type);
+                org.apache.rocketmq.remoting.proxy.SocksProxyConfig route = parsed.get("10.0.0.0/8");
+                String addr = replaceUnpairedSurrogates(route.getAddr());
+                acceptedCodePointCount++;
+                if (rangeEnd + 1 == codePoint && addr.equals(rangeAddr)) {
+                    rangeEnd = codePoint;
+                } else {
+                    addSupplementaryEscapeRange(acceptedRanges, rangeStart, rangeEnd, rangeAddr);
+                    rangeStart = codePoint;
+                    rangeEnd = codePoint;
+                    rangeAddr = addr;
+                }
+            } catch (RuntimeException rejected) {
+                // Accepted supplementary followers are recorded as compact scalar ranges.
+                addSupplementaryEscapeRange(acceptedRanges, rangeStart, rangeEnd, rangeAddr);
+                rangeStart = -1;
+                rangeEnd = -1;
+                rangeAddr = null;
+            }
+        }
+        addSupplementaryEscapeRange(acceptedRanges, rangeStart, rangeEnd, rangeAddr);
         result.put("probedHighSurrogateCount", Character.MAX_HIGH_SURROGATE - Character.MIN_HIGH_SURROGATE + 1);
         result.put("accepted", accepted);
+        result.put("probedCodePointCount",
+            Character.MAX_CODE_POINT - Character.MIN_SUPPLEMENTARY_CODE_POINT + 1);
+        result.put("acceptedCodePointCount", acceptedCodePointCount);
+        result.put("acceptedRanges", acceptedRanges);
         return result;
+    }
+
+    private static void addSupplementaryEscapeRange(
+        List<Object> ranges, int start, int end, String addr) {
+        if (start < 0) return;
+        Map<String, Object> range = new TreeMap<>();
+        range.put("start", start);
+        range.put("end", end);
+        range.put("addr", addr);
+        ranges.add(range);
     }
 
     private static String replaceUnpairedSurrogates(String value) {

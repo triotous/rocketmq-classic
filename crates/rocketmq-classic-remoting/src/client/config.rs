@@ -2571,6 +2571,54 @@ mod tests {
     }
 
     #[test]
+    fn every_supplementary_escape_follower_matches_invoked_java_fastjson() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/client-config.json"
+        ))
+        .unwrap();
+        let cases = &fixture["socksSupplementaryEscapeFollowerCases"];
+        assert_eq!(cases["probedCodePointCount"], 1_048_576);
+        let ranges = cases["acceptedRanges"].as_array().unwrap();
+        let accepted_count: u64 = ranges
+            .iter()
+            .map(|range| range["end"].as_u64().unwrap() - range["start"].as_u64().unwrap() + 1)
+            .sum();
+        assert_eq!(accepted_count, cases["acceptedCodePointCount"]);
+
+        let mut range_index = 0;
+        let mut config = ClientConfig::default();
+        let prefix = "{\"10.0.0.0/8\":{\"addr\":\"A\\";
+        let suffix = "Z\"}}";
+        let mut compared = 0;
+        for code_point in 0x10000u32..=0x10ffff {
+            let code_point_u64 = u64::from(code_point);
+            while range_index < ranges.len()
+                && ranges[range_index]["end"].as_u64().unwrap() < code_point_u64
+            {
+                range_index += 1;
+            }
+            let expected = ranges.get(range_index).and_then(|range| {
+                (range["start"].as_u64().unwrap() <= code_point_u64)
+                    .then(|| range["addr"].as_str().unwrap().to_owned())
+            });
+            let follower = char::from_u32(code_point).unwrap();
+            config.set_socks_proxy_config(format!("{prefix}{follower}{suffix}"));
+            let actual = config.parse_socks_proxy_config().ok().and_then(|routes| {
+                routes
+                    .get(&Some("10.0.0.0/8".into()))
+                    .and_then(|route| match route {
+                        super::ParsedProxyRoute::Proxy(proxy) => Some(proxy.address.clone()),
+                        super::ParsedProxyRoute::MissingAddress { .. }
+                        | super::ParsedProxyRoute::Direct => None,
+                    })
+            });
+            assert_eq!(actual, expected, "U+{code_point:06X} ({follower:?})");
+            compared += 1;
+        }
+        assert_eq!(compared, 1_048_576);
+    }
+
+    #[test]
     fn socks_cidr_matching_matches_invoked_java_helper() {
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
             "../../../../fixtures/runtime/client-config.json"
