@@ -19,7 +19,7 @@ The tested Java 5.5.1 input and encode behavior now matches the native body DTO.
 
 ## Evidence
 
-- Direct Java corpus: batchAckBodyInputCases in fixtures/runtime/lookup.json (95 cases); SHA-256 39374bf2374e2ae745ea82335762d17ad05cde2b987c05bc0759b808e984267d.
+- Direct Java input corpus: `batchAckBodyInputCases` in `fixtures/runtime/lookup.json` (95 cases); SHA-256 at the input-oracle checkpoint `39374bf2374e2ae745ea82335762d17ad05cde2b987c05bc0759b808e984267d`. The later `batchAckApiCase` extends the aggregate lookup fixture; its current SHA-256 and public-method evidence are recorded in [ADR-0053](ADR-0053-batch-ack-public-api.md).
 - Oracle and fixture commit: 58ad8480; implementation and Rust differential: 381b6edf.
 - Validation: focused BatchAck differential; cargo test --workspace --all-targets --locked; strict all-target/all-feature Clippy; pinned offline Maven verify (fixture drift and Java cross-decodes, 22 RPC scenarios); cargo fmt --all --check; git diff --check.
 - Java behavior was invoked from pinned RocketMQ 5.5.1 artifacts; no alternate Java source checkout was used.

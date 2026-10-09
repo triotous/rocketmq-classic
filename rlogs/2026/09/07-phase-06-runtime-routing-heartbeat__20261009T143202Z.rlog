@@ -1,5 +1,11 @@
 # Phase 6 execution log — 2026-10-09T14:32:02Z
 
+## BatchAck public API method parity — 2026-10-09T17:56:09Z
+
+- Added a pinned Java 5.5.1 invocation for BatchAck constructor defaults, all nine property getter/setter pairs, `toString()`, and BatchAckMessageRequestBody broker/acks getters and setters. The oracle confirms Java returns the same mutable List passed to `setAcks`.
+- Rust now exposes the corresponding snake_case accessors and Java-shaped `Display` text. Values and null states match; Rust takes ownership of `Vec` and lends an immutable slice, so mutable List alias identity remains an explicit semantic gap. Oracle `7f3a4f0e`; implementation `c709e743`; current aggregate lookup fixture SHA-256 `d16675236d7b63ddc1ffd69c80df896370479f952f0af9f961214ed7d0237632`.
+- Full workspace/all-target tests, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios, fixture drift and Java cross-decodes), fmt and diff checks pass. Added ADR-0053 and updated the current Phase 6 API/runtime/Java/requirement evidence. Overall Phase 6 remains PARTIAL; P6-V04 stays `PENDING_PHASE_19`.
+
 ## BatchAck Fastjson body input parity — 2026-10-09T17:49:21Z
 
 - Added a direct pinned Java 5.5.1 BatchAckMessageRequestBody.decode/encode matrix with 95 cases. The red differential found Fastjson coercions/defaults, singleton and nullable List behavior, duplicate-field last-wins handling, and empty BitSet omission that derived Serde did not match.
