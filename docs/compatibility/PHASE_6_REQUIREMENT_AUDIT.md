@@ -1,5 +1,8 @@
 # Phase 6 requirement and handoff audit
 
+Windows interface enumeration compile-check continuation (2026-10-09): the host has the `x86_64-pc-windows-gnu` Rust target installed. The full core cross-check stops in `aws-lc-sys` because `x86_64-w64-mingw32-gcc` is unavailable before the core crate is checked. An isolated temporary Cargo crate including the actual `config/local_address.rs`, with pinned `windows-sys 0.61.2` features and `hostname 0.4.2`, passes `cargo check --target x86_64-pc-windows-gnu --tests --offline`. This proves the Windows-specific code and test module type-check; it does not execute `GetAdaptersAddresses`. Windows runtime enumeration, non-Windows-Unix behavior, and a real IPv6-only host remain unverified.
+
+
 Null-topic runtime broker lookup continuation (2026-10-09): pinned 5.5.1 bytecode and a direct invocation show `MQClientInstance.getBrokerNameFromMessageQueue` looks up `topicEndPointsTable` with the queue topic before applying fallback; a null topic throws `NullPointerException` both before and after the retained-static-endpoint refresh. The red native regression showed Rust incorrectly returned `fallback-broker`; `RouteSnapshot::broker_name` now returns `Result<Option<&str>, RuntimeError>` and maps this input to `InvalidRoute("null message queue topic")`. Oracle/fixture `5125b311`; fix/regression `e323c8da`; current `route.json` SHA-256 `780023c54340d92c538a3b106affdafb657c88378c221add2dd224faa0fc8fb1`. Full workspace tests (with loopback access), strict all-target/all-feature Clippy, pinned offline Maven verify (25 route inputs, 22 scenarios), comparator self-test/manifest22, formatting, and diff checks pass. Whole Phase 6 source/API/input/reverse-export reconciliation remains open; P6-V04 stays `PENDING_PHASE_19`.
 
 
