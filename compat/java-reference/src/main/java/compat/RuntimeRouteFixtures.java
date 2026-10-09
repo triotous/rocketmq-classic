@@ -496,6 +496,30 @@ public final class RuntimeRouteFixtures {
             "{\"zoneName\":\"first\",\"zoneName\":\"last\"}"));
         cases.add(routeDtoInputCase("broker-duplicate-acting-master-last-wins", "brokerData",
             "{\"enableActingMaster\":false,\"enableActingMaster\":true}"));
+        cases.add(routeDtoInputCase("mapping-duplicate-topic-last-wins", "mapping",
+            "{\"topic\":\"first\",\"topic\":\"last\"}"));
+        cases.add(routeDtoInputCase("mapping-duplicate-total-queues-last-wins", "mapping",
+            "{\"totalQueues\":1,\"totalQueues\":2.9}"));
+        cases.add(routeDtoInputCase("mapping-duplicate-bname-last-wins", "mapping",
+            "{\"bname\":\"first\",\"bname\":\"last\"}"));
+        cases.add(routeDtoInputCase("mapping-duplicate-epoch-last-wins", "mapping",
+            "{\"epoch\":1,\"epoch\":2}"));
+        cases.add(routeDtoInputCase("mapping-duplicate-dirty-last-wins", "mapping",
+            "{\"dirty\":false,\"dirty\":true}"));
+        cases.add(routeDtoInputCase("mapping-duplicate-scope-last-wins", "mapping",
+            "{\"scope\":\"first\",\"scope\":\"last\"}"));
+        cases.add(routeDtoInputCase("mapping-duplicate-curr-id-map-last-wins", "mapping",
+            "{\"currIdMap\":{\"0\":0},\"currIdMap\":{\"2\":2}}"));
+        cases.add(routeDtoInputCase("topic-route-duplicate-order-topic-last-wins", "topicRouteData",
+            "{\"orderTopicConf\":\"first\",\"orderTopicConf\":\"last\"}"));
+        cases.add(routeDtoInputCase("topic-route-duplicate-queue-datas-last-wins", "topicRouteData",
+            "{\"queueDatas\":[{\"brokerName\":\"first\"}],\"queueDatas\":[{\"brokerName\":\"last\"}]}"));
+        cases.add(routeDtoInputCase("topic-route-duplicate-broker-datas-last-wins", "topicRouteData",
+            "{\"brokerDatas\":[{\"cluster\":\"old\",\"brokerName\":\"first\",\"brokerAddrs\":{\"0\":\"old\"},\"zoneName\":\"old\",\"enableActingMaster\":false}],\"brokerDatas\":[{\"cluster\":\"last\",\"brokerName\":\"last\",\"brokerAddrs\":{\"0\":\"last\"},\"zoneName\":\"last\",\"enableActingMaster\":true}]}"));
+        cases.add(routeDtoInputCase("topic-route-duplicate-filter-server-table-last-wins", "topicRouteData",
+            "{\"filterServerTable\":{\"broker\":[\"first\"]},\"filterServerTable\":{\"broker\":[\"last\"]}}"));
+        cases.add(routeDtoInputCase("topic-route-duplicate-mapping-table-last-wins", "topicRouteData",
+            "{\"topicQueueMappingByBroker\":{\"first\":{\"topic\":\"old\",\"bname\":\"first\"}},\"topicQueueMappingByBroker\":{\"last\":{\"topic\":\"topic\",\"bname\":\"last\"}}}"));
         cases.add(routeDtoInputCase("mapping-uppercase-property", "mapping",
             "{\"TOPIC\":\"topic\",\"TOTALQUEUES\":7,\"CURRIDMAP\":{\"0\":1}}"));
         cases.add(routeDtoInputCase("topic-route-uppercase-property", "topicRouteData",
