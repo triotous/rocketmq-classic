@@ -814,7 +814,11 @@ pub struct ConsumeMessageDirectlyResult {
     pub order: bool,
     #[serde(default = "default_auto_commit")]
     pub auto_commit: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "super::heartbeat::deserialize_fastjson_optional_enum",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub consume_result: Option<ConsumeMessageResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remark: Option<String>,
@@ -844,6 +848,20 @@ impl_java_enum_api!(
     CrThrowException => "CR_THROW_EXCEPTION" = 4,
     CrReturnNull => "CR_RETURN_NULL" = 5,
 );
+
+impl super::heartbeat::JavaOrdinalEnum for ConsumeMessageResult {
+    fn from_java_ordinal(ordinal: i64) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::CrSuccess),
+            1 => Some(Self::CrLater),
+            2 => Some(Self::CrRollback),
+            3 => Some(Self::CrCommit),
+            4 => Some(Self::CrThrowException),
+            5 => Some(Self::CrReturnNull),
+            _ => None,
+        }
+    }
+}
 
 fn default_auto_commit() -> bool {
     true
@@ -1363,6 +1381,37 @@ mod tests {
         for case in cases {
             let raw_input = case["rawInput"].as_str().unwrap();
             let decoded = serde_json::from_str::<SetMessageRequestModeRequestBody>(raw_input);
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            assert_eq!(
+                decoded.is_ok(),
+                java_accepts,
+                "{}: {decoded:?}",
+                case["name"]
+            );
+            if let Ok(decoded) = decoded {
+                assert_eq!(
+                    serde_json::to_value(decoded).unwrap(),
+                    case["encoded"],
+                    "{}",
+                    case["name"]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn consume_direct_result_enum_inputs_match_invoked_java_fastjson() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let cases = fixture["consumeDirectResultCases"].as_array().unwrap();
+        assert_eq!(
+            cases.len(),
+            19,
+            "Java oracle includes every consume result enum value"
+        );
+        for case in cases {
+            let raw_input = case["rawInput"].as_str().unwrap();
+            let decoded = serde_json::from_str::<ConsumeMessageDirectlyResult>(raw_input);
             let java_accepts = case["outcome"] == "ACCEPTED";
             assert_eq!(
                 decoded.is_ok(),
