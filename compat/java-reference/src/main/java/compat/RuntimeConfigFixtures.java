@@ -1238,6 +1238,9 @@ public final class RuntimeConfigFixtures {
         allInputs.add("{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\",\"username\":\"first\",\"username\":null,\"password\":false}}");
         allInputs.add("{\"10.0.0.0/8\":{\"ADDR\":\"upper-proxy:1080\",\"USERNAME\":\"upper-user\",\"PASSWORD\":\"upper-password\"}}");
         allInputs.add("{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\",\"userName\":\"camel-user\",\"password\":\"pw\"}}");
+        allInputs.add("{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"} // eof with root open");
+        allInputs.add("{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\" // eof with route open");
+        allInputs.add("{\"10.0.0.0/8\":{\"addr\":[\"first\",\"last\" // eof with array open");
         for (int i = 0; i < allInputs.size(); i++) {
             String input = allInputs.get(i);
             ClientConfig config = new ClientConfig();

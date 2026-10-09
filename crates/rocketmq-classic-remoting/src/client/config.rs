@@ -1559,8 +1559,8 @@ mod tests {
         let cases = fixture["socksConstruction"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            426,
-            "Java oracle includes 126 prior cases, 256 byte-range followers, 15 Unicode escape cases, five Unicode-whitespace cases, ten root-shape cases, ten grammar-edge cases, and four nested bean-property cases"
+            429,
+            "Java oracle includes 126 prior cases, 256 byte-range followers, 15 Unicode escape cases, five Unicode-whitespace cases, ten root-shape cases, ten grammar-edge cases, four nested bean-property cases, and three EOF-comment boundaries"
         );
         for escaped in 0..=0x7f {
             let mut expected = String::from("{\"10.0.0.0/8\":{\"addr\":\"A\\");
@@ -1636,6 +1636,13 @@ mod tests {
             "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\",\"username\":\"first\",\"username\":null,\"password\":false}}",
             "{\"10.0.0.0/8\":{\"ADDR\":\"upper-proxy:1080\",\"USERNAME\":\"upper-user\",\"PASSWORD\":\"upper-password\"}}",
             "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\",\"userName\":\"camel-user\",\"password\":\"pw\"}}",
+        ]) {
+            assert_eq!(case["input"], expected);
+        }
+        for (case, expected) in cases.iter().skip(426).zip([
+            "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"} // eof with root open",
+            "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\" // eof with route open",
+            "{\"10.0.0.0/8\":{\"addr\":[\"first\",\"last\" // eof with array open",
         ]) {
             assert_eq!(case["input"], expected);
         }
