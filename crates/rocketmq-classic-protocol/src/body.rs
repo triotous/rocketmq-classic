@@ -386,6 +386,46 @@ impl<'de> Deserialize<'de> for OffsetOption {
     }
 }
 
+impl OffsetOption {
+    pub const POLICY_LAST_VALUE: i64 = 0;
+    pub const POLICY_MIN_VALUE: i64 = 1;
+    pub const POLICY_MAX_VALUE: i64 = 2;
+
+    pub fn new(option_type: Option<OffsetOptionType>, value: i64) -> Self {
+        Self { option_type, value }
+    }
+
+    pub fn option_type(&self) -> Option<OffsetOptionType> {
+        self.option_type
+    }
+
+    pub fn set_option_type(&mut self, option_type: Option<OffsetOptionType>) {
+        self.option_type = option_type;
+    }
+
+    pub fn value(&self) -> i64 {
+        self.value
+    }
+
+    pub fn set_value(&mut self, value: i64) {
+        self.value = value;
+    }
+}
+
+impl std::fmt::Display for OffsetOption {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let option_type = self
+            .option_type
+            .map(|option_type| option_type.to_string())
+            .unwrap_or_else(|| "null".to_owned());
+        write!(
+            formatter,
+            "OffsetOption{{type={option_type}, value={}}}",
+            self.value
+        )
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 /// The Java DTO inherits identity-based `Object.equals` and `hashCode`.
@@ -524,6 +564,115 @@ impl<'de> Deserialize<'de> for LiteSubscriptionDto {
     }
 }
 
+impl LiteSubscriptionDto {
+    pub fn action(&self) -> Option<LiteSubscriptionAction> {
+        self.action
+    }
+
+    pub fn set_action(&mut self, action: Option<LiteSubscriptionAction>) -> &mut Self {
+        self.action = action;
+        self
+    }
+
+    pub fn client_id(&self) -> Option<&str> {
+        self.client_id.as_deref()
+    }
+
+    pub fn set_client_id(&mut self, client_id: Option<String>) -> &mut Self {
+        self.client_id = client_id;
+        self
+    }
+
+    pub fn group(&self) -> Option<&str> {
+        self.group.as_deref()
+    }
+
+    pub fn set_group(&mut self, group: Option<String>) -> &mut Self {
+        self.group = group;
+        self
+    }
+
+    pub fn topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, topic: Option<String>) -> &mut Self {
+        self.topic = topic;
+        self
+    }
+
+    pub fn lite_topic_set(&self) -> Option<&std::collections::BTreeSet<Option<String>>> {
+        self.lite_topic_set.as_ref()
+    }
+
+    pub fn lite_topic_set_mut(
+        &mut self,
+    ) -> Option<&mut std::collections::BTreeSet<Option<String>>> {
+        self.lite_topic_set.as_mut()
+    }
+
+    pub fn set_lite_topic_set(
+        &mut self,
+        lite_topic_set: Option<std::collections::BTreeSet<Option<String>>>,
+    ) -> &mut Self {
+        self.lite_topic_set = lite_topic_set;
+        self
+    }
+
+    pub fn offset_option(&self) -> Option<&OffsetOption> {
+        self.offset_option.as_ref()
+    }
+
+    pub fn set_offset_option(&mut self, offset_option: Option<OffsetOption>) {
+        self.offset_option = offset_option;
+    }
+
+    pub fn version(&self) -> i64 {
+        self.version
+    }
+
+    pub fn set_version(&mut self, version: i64) -> &mut Self {
+        self.version = version;
+        self
+    }
+}
+
+impl std::fmt::Display for LiteSubscriptionDto {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let action = self
+            .action
+            .map(|action| action.to_string())
+            .unwrap_or_else(|| "null".to_owned());
+        let client_id = self.client_id.as_deref().unwrap_or("null");
+        let group = self.group.as_deref().unwrap_or("null");
+        let topic = self.topic.as_deref().unwrap_or("null");
+        let lite_topic_set = self
+            .lite_topic_set
+            .as_ref()
+            .map(|topics| {
+                format!(
+                    "[{}]",
+                    topics
+                        .iter()
+                        .map(|topic| topic.as_deref().unwrap_or("null"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            })
+            .unwrap_or_else(|| "null".to_owned());
+        let offset_option = self
+            .offset_option
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| "null".to_owned());
+        write!(
+            formatter,
+            "LiteSubscriptionDTO{{action={action}, clientId='{client_id}', group='{group}', topic='{topic}', liteTopicSet={lite_topic_set}, offsetOption={offset_option}, version={}}}",
+            self.version
+        )
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 /// Java `LiteSubscriptionCtlRequestBody` inherits identity-based equality.
@@ -573,6 +722,38 @@ impl<'de> Deserialize<'de> for LiteSubscriptionCtlRequestBody {
                 .collect()
         });
         Ok(Self { subscription_set })
+    }
+}
+
+impl LiteSubscriptionCtlRequestBody {
+    pub fn subscription_set(&self) -> Option<&[Option<LiteSubscriptionDto>]> {
+        self.subscription_set.as_deref()
+    }
+
+    pub fn subscription_set_mut(&mut self) -> Option<&mut Vec<Option<LiteSubscriptionDto>>> {
+        self.subscription_set.as_mut()
+    }
+
+    pub fn set_subscription_set(
+        &mut self,
+        subscription_set: Option<Vec<Option<LiteSubscriptionDto>>>,
+    ) {
+        let mut null_seen = false;
+        self.subscription_set = subscription_set.map(|items| {
+            items
+                .into_iter()
+                .filter(|item| {
+                    if item.is_some() {
+                        true
+                    } else if null_seen {
+                        false
+                    } else {
+                        null_seen = true;
+                        true
+                    }
+                })
+                .collect()
+        });
     }
 }
 
