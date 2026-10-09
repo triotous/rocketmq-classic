@@ -1798,8 +1798,8 @@ mod tests {
         let cases = fixture["socksConstruction"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            481,
-            "Java oracle includes 126 prior cases, 256 byte-range followers, 15 Unicode escape cases, five Unicode-whitespace cases, ten root-shape cases, ten grammar-edge cases, four nested bean-property cases, three EOF-comment boundaries, three rejected base-prefixed route keys, eight unquoted route-key forms, five numeric padding/suffix forms, four canonical numeric-key collision cases, five cross-type key collision cases, three rejected signed base-prefixed route keys, two rejected unsigned leading-dot route keys, thirteen accepted signed/fraction/exponent/suffix route-key forms, and nine rejected special/identifier route-key forms"
+            492,
+            "Java oracle includes 126 prior cases, 256 byte-range followers, 15 Unicode escape cases, five Unicode-whitespace cases, ten root-shape cases, ten grammar-edge cases, four nested bean-property cases, three EOF-comment boundaries, three rejected base-prefixed route keys, eight unquoted route-key forms, five numeric padding/suffix forms, four canonical numeric-key collision cases, five cross-type key collision cases, three rejected signed base-prefixed route keys, two rejected unsigned leading-dot route keys, thirteen accepted signed/fraction/exponent/suffix route-key forms, nine rejected special/identifier route-key forms, seven exponent overflow/underflow route-key forms, and four signed-zero edge/collision forms"
         );
         for escaped in 0..=0x7f {
             let mut expected = String::from("{\"10.0.0.0/8\":{\"addr\":\"A\\");
@@ -1885,7 +1885,7 @@ mod tests {
         ]) {
             assert_eq!(case["input"], expected);
         }
-        for (case, expected) in cases.iter().skip(cases.len() - 49).zip([
+        for (case, expected) in cases.iter().skip(cases.len() - 60).zip([
             "{default:{\"addr\":\"proxy:1080\"}}",
             "{10:{\"addr\":\"proxy:1080\"}}",
             "{true:{\"addr\":\"proxy:1080\"}}",
@@ -1935,6 +1935,17 @@ mod tests {
             "{NULL:{\"addr\":\"proxy:1080\"}}",
             "{Null:{\"addr\":\"proxy:1080\"}}",
             "{falsehood:{\"addr\":\"proxy:1080\"}}",
+            "{1e309:{\"addr\":\"proxy:1080\"}}",
+            "{-1e309:{\"addr\":\"proxy:1080\"}}",
+            "{1e-1000:{\"addr\":\"proxy:1080\"}}",
+            "{-1e-1000:{\"addr\":\"proxy:1080\"}}",
+            "{1e-1000:{\"addr\":\"first\"},0.0:{\"addr\":\"last\"}}",
+            "{0.0:{\"addr\":\"first\"},1e-1000:{\"addr\":\"last\"}}",
+            "{1e309:{\"addr\":\"first\"},'Infinity':{\"addr\":\"last\"}}",
+            "{-0e-1000:{\"addr\":\"proxy:1080\"}}",
+            "{-1e-1000D:{\"addr\":\"proxy:1080\"}}",
+            "{-1e-1000F:{\"addr\":\"proxy:1080\"}}",
+            "{-1e-1000D:{\"addr\":\"first\"},0.0:{\"addr\":\"last\"}}",
         ]) {
             assert_eq!(case["input"], expected);
         }

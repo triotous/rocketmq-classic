@@ -1293,6 +1293,17 @@ public final class RuntimeConfigFixtures {
         allInputs.add("{NULL:{\"addr\":\"proxy:1080\"}}");
         allInputs.add("{Null:{\"addr\":\"proxy:1080\"}}");
         allInputs.add("{falsehood:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{1e309:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{-1e309:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{1e-1000:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{-1e-1000:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{1e-1000:{\"addr\":\"first\"},0.0:{\"addr\":\"last\"}}");
+        allInputs.add("{0.0:{\"addr\":\"first\"},1e-1000:{\"addr\":\"last\"}}");
+        allInputs.add("{1e309:{\"addr\":\"first\"},'Infinity':{\"addr\":\"last\"}}");
+        allInputs.add("{-0e-1000:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{-1e-1000D:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{-1e-1000F:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{-1e-1000D:{\"addr\":\"first\"},0.0:{\"addr\":\"last\"}}");
         for (int i = 0; i < allInputs.size(); i++) {
             String input = allInputs.get(i);
             ClientConfig config = new ClientConfig();
@@ -1315,7 +1326,7 @@ public final class RuntimeConfigFixtures {
                     @SuppressWarnings("unchecked")
                     Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig> routes =
                         (Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig>) proxyField.get(remoting);
-                    if (i >= allInputs.size() - 49) {
+                    if (i >= allInputs.size() - 60) {
                         List<String> routeKeys = new ArrayList<>(routes.keySet());
                         routeKeys.sort(java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder()));
                         item.put("routeKeys", routeKeys);
