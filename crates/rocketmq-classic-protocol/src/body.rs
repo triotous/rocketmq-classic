@@ -5022,12 +5022,22 @@ mod tests {
             serde_json::to_value(dto.lite_topic_set()).unwrap(),
             dto_case["mutatedLiteTopicSet"]
         );
-        assert_eq!(dto.to_string(), dto_case["toString"].as_str().unwrap());
         assert!(
             dto_case["offsetOptionGetterReturnsSameObject"]
                 .as_bool()
                 .unwrap()
         );
+        assert_eq!(dto_case["offsetOptionExternalMutationVisible"], true);
+        assert_eq!(
+            dto_case["offsetOptionGetterMutationVisibleToAssignedObject"],
+            true
+        );
+        dto.offset_option_mut().unwrap().set_value(13);
+        assert_eq!(
+            dto.offset_option().unwrap().value(),
+            dto_case["mutatedOffsetOptionValue"].as_i64().unwrap()
+        );
+        assert_eq!(dto.to_string(), dto_case["toString"].as_str().unwrap());
         assert!(dto_case["versionSetterReturnsThis"].as_bool().unwrap());
         assert_eq!(dto_case["action"], "COMPLETE_ADD");
         assert_eq!(dto_case["clientId"], "client");

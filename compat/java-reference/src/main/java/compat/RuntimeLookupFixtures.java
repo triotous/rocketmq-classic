@@ -515,6 +515,11 @@ public final class RuntimeLookupFixtures {
         item.put("liteTopicSetGetterMutationVisibleToAssignedSet",
             topics.contains("getter-added"));
         item.put("mutatedLiteTopicSet", new ArrayList<>(dto.getLiteTopicSet()));
+        option.setValue(12L);
+        item.put("offsetOptionExternalMutationVisible", dto.getOffsetOption().getValue() == 12L);
+        dto.getOffsetOption().setValue(13L);
+        item.put("offsetOptionGetterMutationVisibleToAssignedObject", option.getValue() == 13L);
+        item.put("mutatedOffsetOptionValue", dto.getOffsetOption().getValue());
         item.put("toString", dto.toString());
         return item;
     }
