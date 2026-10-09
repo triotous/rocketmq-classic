@@ -207,12 +207,16 @@ impl ClientInner {
             deadline.min(Instant::now() + connect_timeout)
         };
         let (host, _) = connection::split_address(&key)?;
-        let proxy = super::config::ClientConfig::proxy_for(&self.socks_proxy_routes, &host)?;
+        let selected = super::config::ClientConfig::proxy_for(&self.socks_proxy_routes, &host)?;
         self.notify_channel(&key, super::NettyEventType::Connect);
+        let proxy = match selected.as_ref() {
+            Some(selection) => selection.connect_proxy()?,
+            None => None,
+        };
         let mut dial = Box::pin(connection::connect(
             &key,
             &self.security,
-            proxy.as_ref(),
+            proxy,
             self.config.client_socket_send_buffer_size,
             self.config.client_socket_receive_buffer_size,
             connect_deadline,

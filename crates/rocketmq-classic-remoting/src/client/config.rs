@@ -32,6 +32,25 @@ pub(super) enum ParsedProxyRoute {
     },
 }
 
+#[derive(Clone, Debug)]
+pub(super) struct ProxySelection {
+    pub(super) cidr: String,
+    pub(super) route: ParsedProxyRoute,
+}
+
+impl ProxySelection {
+    pub(super) fn connect_proxy(&self) -> Result<Option<&SocksProxyConfig>, TransportError> {
+        match &self.route {
+            ParsedProxyRoute::Direct => Ok(None),
+            ParsedProxyRoute::Proxy(proxy) => Ok(Some(proxy)),
+            ParsedProxyRoute::MissingAddress { .. } => Err(TransportError::Connect(format!(
+                "matched SOCKS proxy route {} has no address",
+                self.cidr
+            ))),
+        }
+    }
+}
+
 impl From<SocksProxyConfig> for ParsedProxyRoute {
     fn from(value: SocksProxyConfig) -> Self {
         Self::Proxy(value)
@@ -1742,7 +1761,7 @@ impl ClientConfig {
     pub(super) fn proxy_for<T: Clone + Into<ParsedProxyRoute>>(
         routes: &HashMap<Option<String>, T>,
         host: &str,
-    ) -> Result<Option<SocksProxyConfig>, TransportError> {
+    ) -> Result<Option<ProxySelection>, TransportError> {
         if routes.contains_key(&None) {
             return Err(TransportError::InvalidConfiguration(
                 "cannot select a SOCKS route with a null CIDR key".into(),
@@ -1751,15 +1770,10 @@ impl ClientConfig {
         for (cidr, route) in routes {
             let cidr = cidr.as_ref().expect("null route keys rejected above");
             if cidr == "0.0.0.0/0" || ipv4_in_cidr(host, cidr)? {
-                return match route.clone().into() {
-                    ParsedProxyRoute::Direct => Ok(None),
-                    ParsedProxyRoute::Proxy(proxy) => Ok(Some(proxy)),
-                    ParsedProxyRoute::MissingAddress { .. } => {
-                        Err(TransportError::InvalidConfiguration(
-                            "matched SOCKS proxy has no address".into(),
-                        ))
-                    }
-                };
+                return Ok(Some(ProxySelection {
+                    cidr: cidr.to_owned(),
+                    route: route.clone().into(),
+                }));
             }
         }
         Ok(None)
@@ -2173,7 +2187,11 @@ mod tests {
             );
             let selected = ClientConfig::proxy_for(&routes, "10.0.0.1").unwrap();
             assert_eq!(
-                selected.map(|proxy| proxy.address),
+                selected.and_then(|selection| match selection.route {
+                    super::ParsedProxyRoute::Proxy(proxy) => Some(proxy.address),
+                    super::ParsedProxyRoute::Direct
+                    | super::ParsedProxyRoute::MissingAddress { .. } => None,
+                }),
                 observation["addr"].as_str().map(str::to_owned),
                 "{name}"
             );
@@ -2187,19 +2205,29 @@ mod tests {
             "{'10.1.0.0/16':{'addr':'proxy:1080'},'10.2.0.0/16':null,'10.3.0.0/16':{}}",
         );
         let routes = config.parse_socks_proxy_config().unwrap();
-        assert_eq!(
-            ClientConfig::proxy_for(&routes, "10.1.2.3")
-                .unwrap()
-                .unwrap()
-                .address,
-            "proxy:1080"
-        );
-        assert!(
-            ClientConfig::proxy_for(&routes, "10.2.2.3")
-                .unwrap()
-                .is_none()
-        );
-        assert!(ClientConfig::proxy_for(&routes, "10.3.2.3").is_err());
+        let selected = ClientConfig::proxy_for(&routes, "10.1.2.3")
+            .unwrap()
+            .unwrap();
+        assert_eq!(selected.cidr, "10.1.0.0/16");
+        assert!(matches!(
+            selected.route,
+            super::ParsedProxyRoute::Proxy(SocksProxyConfig { address, .. })
+                if address == "proxy:1080"
+        ));
+        let selected = ClientConfig::proxy_for(&routes, "10.2.2.3")
+            .unwrap()
+            .unwrap();
+        assert_eq!(selected.cidr, "10.2.0.0/16");
+        assert!(matches!(selected.route, super::ParsedProxyRoute::Direct));
+        let selected = ClientConfig::proxy_for(&routes, "10.3.2.3")
+            .unwrap()
+            .unwrap();
+        assert_eq!(selected.cidr, "10.3.0.0/16");
+        assert!(selected.connect_proxy().is_err());
+        assert!(matches!(
+            selected.route,
+            super::ParsedProxyRoute::MissingAddress { .. }
+        ));
     }
 
     #[test]
@@ -2446,7 +2474,11 @@ mod tests {
                     super::ClientConfig::proxy_for(&routes, "192.168.1.9")
                         .unwrap()
                         .as_ref()
-                        .map(|proxy| proxy.address.as_str()),
+                        .and_then(|selection| match &selection.route {
+                            super::ParsedProxyRoute::Proxy(proxy) => Some(proxy.address.as_str()),
+                            super::ParsedProxyRoute::Direct
+                            | super::ParsedProxyRoute::MissingAddress { .. } => None,
+                        }),
                     Some(expected_address),
                     "{}",
                     case["input"]
@@ -2475,7 +2507,11 @@ mod tests {
                     super::ClientConfig::proxy_for(&routes, "172.16.1.9")
                         .unwrap()
                         .as_ref()
-                        .map(|proxy| proxy.address.as_str()),
+                        .and_then(|selection| match &selection.route {
+                            super::ParsedProxyRoute::Proxy(proxy) => Some(proxy.address.as_str()),
+                            super::ParsedProxyRoute::Direct
+                            | super::ParsedProxyRoute::MissingAddress { .. } => None,
+                        }),
                     Some(expected_address),
                     "{}",
                     case["input"]
@@ -2791,8 +2827,20 @@ mod tests {
             if case["outcome"] != "OK" {
                 continue;
             }
+            let selected = selected.unwrap();
             assert_eq!(
-                selected.unwrap().map(|proxy| proxy.address).as_deref(),
+                selected.as_ref().map(|selection| selection.cidr.as_str()),
+                case["proxyCidr"].as_str(),
+                "{case}"
+            );
+            assert_eq!(
+                selected
+                    .as_ref()
+                    .and_then(|selection| match &selection.route {
+                        super::ParsedProxyRoute::Proxy(proxy) => Some(proxy.address.as_str()),
+                        super::ParsedProxyRoute::Direct
+                        | super::ParsedProxyRoute::MissingAddress { .. } => None,
+                    }),
                 case["proxyAddress"].as_str(),
                 "{case}"
             );
@@ -2805,24 +2853,27 @@ mod tests {
             Some("10.20.0.0/16".into()),
             SocksProxyConfig::new("private-proxy:1080"),
         )]);
-        assert_eq!(
-            ClientConfig::proxy_for(&private_route, "10.20.4.5")
-                .unwrap()
-                .unwrap()
-                .address,
-            "private-proxy:1080"
-        );
+        let selected = ClientConfig::proxy_for(&private_route, "10.20.4.5")
+            .unwrap()
+            .unwrap();
+        assert_eq!(selected.cidr, "10.20.0.0/16");
+        assert!(matches!(
+            selected.route,
+            ParsedProxyRoute::Proxy(SocksProxyConfig { address, .. })
+                if address == "private-proxy:1080"
+        ));
         let default_route = std::collections::HashMap::from([(
             Some("0.0.0.0/0".into()),
             SocksProxyConfig::new("default-proxy:1080"),
         )]);
-        assert_eq!(
-            ClientConfig::proxy_for(&default_route, "192.0.2.5")
-                .unwrap()
-                .unwrap()
-                .address,
-            "default-proxy:1080"
-        );
+        let selected = ClientConfig::proxy_for(&default_route, "192.0.2.5")
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            selected.route,
+            ParsedProxyRoute::Proxy(SocksProxyConfig { address, .. })
+                if address == "default-proxy:1080"
+        ));
         assert!(
             ClientConfig::proxy_for(&default_route, "broker.example")
                 .unwrap()
