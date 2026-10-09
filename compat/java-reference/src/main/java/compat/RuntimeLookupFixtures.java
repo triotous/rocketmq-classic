@@ -1899,6 +1899,15 @@ public final class RuntimeLookupFixtures {
         try { ack.getBitSet().clear(-1); } catch (RuntimeException error) { negativeIndexErrors.put("clear", error.getClass().getSimpleName()); }
         try { ack.getBitSet().flip(-1); } catch (RuntimeException error) { negativeIndexErrors.put("flip", error.getClass().getSimpleName()); }
         item.put("bitSetNegativeIndexErrors", negativeIndexErrors);
+        java.util.BitSet wordBoundaryBits = new java.util.BitSet();
+        for (int index : new int[] {7, 8, 63, 64, 127}) wordBoundaryBits.set(index);
+        ack.setBitSet(wordBoundaryBits);
+        Map<String, Object> wordBoundary = new TreeMap<>();
+        wordBoundary.put("base64", java.util.Base64.getEncoder().encodeToString(
+            ack.getBitSet().toByteArray()));
+        wordBoundary.put("cardinality", ack.getBitSet().cardinality());
+        wordBoundary.put("length", ack.getBitSet().length());
+        item.put("bitSetWordBoundary", wordBoundary);
 
         org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody body =
             new org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody();
