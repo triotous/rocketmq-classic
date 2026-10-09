@@ -214,40 +214,67 @@ impl RouteCache {
     }
 
     pub(crate) fn clean_offline(&self) -> Result<(), RuntimeError> {
-        let routes = self
-            .snapshot()?
-            .raw_routes
-            .values()
-            .cloned()
-            .collect::<Vec<_>>();
-        let mut live = BTreeSet::new();
-        for route in routes {
-            let route = route.snapshot()?;
-            let broker_datas = route
-                .broker_datas
-                .as_deref()
-                .ok_or(RuntimeError::InvalidRoute(
-                    "null broker data list during cleanup",
-                ))?;
-            for broker in broker_datas {
-                let broker = broker.as_ref().ok_or(RuntimeError::InvalidRoute(
-                    "null broker data during cleanup",
-                ))?;
-                if let Some(addresses) = broker.broker_addrs.as_ref() {
-                    live.extend(addresses.values().cloned());
+        let source = self.snapshot()?;
+        let routes = source.raw_routes.values().cloned().collect::<Vec<_>>();
+        let mut deferred_updates = Vec::new();
+
+        for (broker_name, addresses) in &source.broker_addresses {
+            if addresses.is_empty() {
+                self.remove_broker_address_if_same(broker_name, addresses)?;
+                continue;
+            }
+
+            let mut retained_addresses = addresses.clone();
+            for (broker_id, address) in addresses {
+                if !broker_address_exists_in_raw_routes(&routes, address.as_deref())? {
+                    retained_addresses.remove(broker_id);
                 }
             }
+
+            if retained_addresses.is_empty() {
+                // Java removes an empty outer broker row through the live-map
+                // iterator immediately; nonempty inner-map replacements are
+                // held until the full traversal succeeds.
+                self.remove_broker_address_if_same(broker_name, addresses)?;
+            } else {
+                deferred_updates.push((broker_name.clone(), addresses.clone(), retained_addresses));
+            }
         }
+
+        if !deferred_updates.is_empty() {
+            let mut current = self
+                .snapshot
+                .write()
+                .map_err(|_| RuntimeError::RegistryPoisoned)?;
+            let mut next = current.as_ref().clone();
+            let mut changed = false;
+            for (broker_name, expected, retained) in deferred_updates {
+                if current.broker_addresses.get(&broker_name) == Some(&expected) {
+                    next.broker_addresses.insert(broker_name, retained);
+                    changed = true;
+                }
+            }
+            if changed {
+                *current = Arc::new(next);
+            }
+        }
+        Ok(())
+    }
+
+    fn remove_broker_address_if_same(
+        &self,
+        broker_name: &str,
+        expected: &BTreeMap<Option<i64>, Option<String>>,
+    ) -> Result<(), RuntimeError> {
         let mut current = self
             .snapshot
             .write()
             .map_err(|_| RuntimeError::RegistryPoisoned)?;
-        let mut next = current.as_ref().clone();
-        next.broker_addresses.retain(|_, addresses| {
-            addresses.retain(|_, address| live.contains(address));
-            !addresses.is_empty()
-        });
-        *current = Arc::new(next);
+        if current.broker_addresses.get(broker_name) == Some(expected) {
+            let mut next = current.as_ref().clone();
+            next.broker_addresses.remove(broker_name);
+            *current = Arc::new(next);
+        }
         Ok(())
     }
     pub(crate) fn snapshot(&self) -> Result<Arc<RouteSnapshot>, RuntimeError> {
@@ -506,6 +533,34 @@ impl RouteCache {
             (matched, matched)
         })
     }
+}
+
+fn broker_address_exists_in_raw_routes(
+    routes: &[TopicRouteDataHandle],
+    address: Option<&str>,
+) -> Result<bool, RuntimeError> {
+    for route in routes {
+        let route = route.snapshot()?;
+        let broker_datas = route
+            .broker_datas
+            .as_deref()
+            .ok_or(RuntimeError::InvalidRoute(
+                "null broker data list during cleanup",
+            ))?;
+        for broker in broker_datas {
+            let broker = broker.as_ref().ok_or(RuntimeError::InvalidRoute(
+                "null broker data during cleanup",
+            ))?;
+            if broker.broker_addrs.as_ref().is_some_and(|addresses| {
+                addresses
+                    .values()
+                    .any(|candidate| candidate.as_deref() == address)
+            }) {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }
 
 // Bound expansion of compact routes before invoking collection converters.
@@ -796,7 +851,7 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
         let cases = fixture["runtimeRawCleanupShapes"].as_array().unwrap();
-        assert_eq!(cases.len(), 19);
+        assert_eq!(cases.len(), 20);
         for required in [
             "null-route-collections",
             "null-broker-row",
@@ -816,6 +871,7 @@ mod tests {
             "address-retained-by-sibling-topic",
             "candidate-before-null-address-map",
             "null-address-map-before-candidate",
+            "empty-address-row-removed-before-later-failure",
             "live-null-address-retained",
         ] {
             assert!(
@@ -862,6 +918,17 @@ mod tests {
                 assert_eq!(case["brokerVersionBeforeCleanup"], 551);
                 assert_eq!(case["brokerVersionAfterCleanup"], 551);
             }
+            if case["id"] == "empty-address-row-removed-before-later-failure" {
+                assert_eq!(
+                    case["brokerAddressTraversal"],
+                    serde_json::json!(["a", "b"])
+                );
+                assert_eq!(case["outcome"], "NullPointerException");
+                assert_eq!(
+                    case["brokerAddressTable"],
+                    serde_json::json!({"b": {"0": "stale:10911"}})
+                );
+            }
             let cache = RouteCache::default();
             let initial: TopicRouteData =
                 serde_json::from_value(case["initialInput"].clone()).unwrap();
@@ -906,7 +973,12 @@ mod tests {
                 );
             }
             if case["outcome"] == "NullPointerException" {
-                assert!(Arc::ptr_eq(&before_cleanup, &snapshot), "{}", case["id"]);
+                if case["id"] == "empty-address-row-removed-before-later-failure" {
+                    assert!(!Arc::ptr_eq(&before_cleanup, &snapshot), "{}", case["id"]);
+                    assert_eq!(before_cleanup.broker_addresses.len(), 2);
+                } else {
+                    assert!(Arc::ptr_eq(&before_cleanup, &snapshot), "{}", case["id"]);
+                }
             }
             let broker_address_table = snapshot
                 .broker_addresses
