@@ -76,6 +76,7 @@ public final class RuntimeLookupFixtures {
         fixture.put("setRequestModeFieldCases", setRequestModeFieldCases());
         fixture.put("setRequestModeRootCases", setRequestModeRootCases());
         fixture.put("messageRequestModeWrapperCases", messageRequestModeWrapperCases());
+        fixture.put("messageRequestModeWrapperApiCase", messageRequestModeWrapperApiCase());
         fixture.put("consumeDirectResultCases", consumeDirectResultCases());
         fixture.put("messageQueueInputCases", messageQueueInputCases());
         fixture.put("assignmentHashCollisionCases", assignmentHashCollisionCases());
@@ -879,6 +880,36 @@ public final class RuntimeLookupFixtures {
             item.put("outcome", "REJECTED");
             item.put("error", error.getClass().getSimpleName());
         }
+        return item;
+    }
+
+    private static Map<String, Object> messageRequestModeWrapperApiCase() {
+        org.apache.rocketmq.remoting.protocol.body.MessageRequestModeSerializeWrapper wrapper =
+            new org.apache.rocketmq.remoting.protocol.body.MessageRequestModeSerializeWrapper();
+        Map<String, Object> item = new TreeMap<>();
+        item.put("defaultMapNonNull", wrapper.getMessageRequestModeMap() != null);
+        item.put("defaultMapSize", wrapper.getMessageRequestModeMap().size());
+        wrapper.setMessageRequestModeMap(null);
+        item.put("nullSetterRemainsNull", wrapper.getMessageRequestModeMap() == null);
+
+        org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody body =
+            new org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody();
+        body.setTopic("orders");
+        body.setConsumerGroup("workers");
+        body.setMode(org.apache.rocketmq.common.message.MessageRequestMode.POP);
+        body.setPopShareQueueNum(2);
+        java.util.concurrent.ConcurrentHashMap<String,
+            org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody> groups =
+                new java.util.concurrent.ConcurrentHashMap<>();
+        groups.put("workers", body);
+        java.util.concurrent.ConcurrentHashMap<String,
+            java.util.concurrent.ConcurrentHashMap<String,
+                org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody>> map =
+                    new java.util.concurrent.ConcurrentHashMap<>();
+        map.put("orders", groups);
+        wrapper.setMessageRequestModeMap(map);
+        item.put("setterRetainsMapIdentity", wrapper.getMessageRequestModeMap() == map);
+        item.put("populatedMap", wrapper.getMessageRequestModeMap());
         return item;
     }
 
