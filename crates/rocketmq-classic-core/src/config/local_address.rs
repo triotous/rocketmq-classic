@@ -74,6 +74,15 @@ fn select(addresses: Vec<Address>) -> Option<Address> {
     }
 }
 
+#[cfg(any(windows, test))]
+fn java_windows_interface_is_eligible(
+    admin_up: bool,
+    operational_up: bool,
+    point_to_point: bool,
+) -> bool {
+    admin_up && operational_up && !point_to_point
+}
+
 #[cfg(target_os = "macos")]
 fn java_candidate_order(mut addresses: Vec<Address>) -> Vec<Address> {
     // Pinned Java's NetworkUtil returns IPv4 candidates in the opposite order
@@ -216,7 +225,12 @@ fn interfaces() -> io::Result<Vec<Address>> {
 #[cfg(windows)]
 fn interfaces() -> io::Result<Vec<Address>> {
     use windows_sys::Win32::{
-        NetworkManagement::{IpHelper::*, Ndis::NET_LUID_LH},
+        NetworkManagement::{
+            IpHelper::*,
+            Ndis::{
+                IfOperStatusUp, NET_IF_ACCESS_POINT_TO_POINT, NET_IF_ADMIN_STATUS_UP, NET_LUID_LH,
+            },
+        },
         Networking::WinSock::*,
     };
 
@@ -269,7 +283,19 @@ fn interfaces() -> io::Result<Vec<Address>> {
             // inside storage, which remains owned through traversal.
             let adapter = unsafe { &*current };
             current = adapter.Next;
-            if adapter.OperStatus != 1 || adapter.IfType == 23 || adapter.IfType == 28 {
+            let mut row = MIB_IF_ROW2 {
+                InterfaceLuid: adapter.Luid,
+                ..Default::default()
+            };
+            let result = unsafe { GetIfEntry2(&mut row) };
+            if result != 0 {
+                return Err(io::Error::from_raw_os_error(result as i32));
+            }
+            if !java_windows_interface_is_eligible(
+                row.AdminStatus == NET_IF_ADMIN_STATUS_UP,
+                row.OperStatus == IfOperStatusUp,
+                row.AccessType == NET_IF_ACCESS_POINT_TO_POINT,
+            ) {
                 continue;
             }
             let interface_name = interface_name(&adapter.Luid)?;
@@ -333,6 +359,13 @@ fn interfaces() -> io::Result<Vec<Address>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn windows_interface_filter_matches_java_admin_oper_and_access_checks() {
+        assert!(java_windows_interface_is_eligible(true, true, false));
+        assert!(!java_windows_interface_is_eligible(false, true, false));
+        assert!(!java_windows_interface_is_eligible(true, false, false));
+        assert!(!java_windows_interface_is_eligible(true, true, true));
+    }
     #[cfg(unix)]
     #[test]
     fn interface_filter_uses_up_not_running_and_only_excludes_subinterfaces() {
