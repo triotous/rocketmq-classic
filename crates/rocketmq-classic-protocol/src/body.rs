@@ -2138,7 +2138,7 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
         let cases = fixture["liteSubscriptionSetCases"].as_array().unwrap();
-        assert_eq!(cases.len(), 3);
+        assert_eq!(cases.len(), 4);
         for case in cases {
             let decoded = serde_json::from_str::<LiteSubscriptionCtlRequestBody>(
                 case["rawInput"].as_str().unwrap(),

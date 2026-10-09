@@ -401,6 +401,8 @@ public final class RuntimeLookupFixtures {
             "{\"subscriptionSet\":[{\"topic\":\"same\"},{\"topic\":\"same\"}]}"));
         cases.add(liteSubscriptionEnumCase("lite-topic-set-duplicate-members",
             "{\"subscriptionSet\":[{\"liteTopicSet\":[\"b\",\"a\",\"b\",null,null]}]}"));
+        cases.add(liteSubscriptionEnumCase("lite-topic-set-empty-string",
+            "{\"subscriptionSet\":[{\"liteTopicSet\":\"\"}]}"));
         return cases;
     }
 
