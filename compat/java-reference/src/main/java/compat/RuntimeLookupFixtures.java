@@ -1909,6 +1909,46 @@ public final class RuntimeLookupFixtures {
         wordBoundary.put("length", ack.getBitSet().length());
         item.put("bitSetWordBoundary", wordBoundary);
 
+        java.util.BitSet ranged = new java.util.BitSet();
+        ranged.set(3, 12);
+        ranged.clear(5, 7);
+        ranged.flip(8, 14);
+        java.util.BitSet slice = ranged.get(2, 14);
+        java.util.BitSet intersects = new java.util.BitSet();
+        intersects.set(4);
+        java.util.BitSet disjoint = new java.util.BitSet();
+        disjoint.set(30);
+        Map<String, Object> bitSetRanges = new TreeMap<>();
+        bitSetRanges.put("base64", java.util.Base64.getEncoder().encodeToString(ranged.toByteArray()));
+        bitSetRanges.put("cardinality", ranged.cardinality());
+        bitSetRanges.put("length", ranged.length());
+        bitSetRanges.put("sliceBase64", java.util.Base64.getEncoder().encodeToString(slice.toByteArray()));
+        bitSetRanges.put("nextSetBit", List.of(
+            ranged.nextSetBit(0), ranged.nextSetBit(5), ranged.nextSetBit(8), ranged.nextSetBit(14)));
+        bitSetRanges.put("nextClearBit", List.of(
+            ranged.nextClearBit(3), ranged.nextClearBit(8), ranged.nextClearBit(14)));
+        bitSetRanges.put("previousSetBit", List.of(
+            ranged.previousSetBit(13), ranged.previousSetBit(11), ranged.previousSetBit(2),
+            ranged.previousSetBit(-1)));
+        bitSetRanges.put("previousClearBit", List.of(
+            ranged.previousClearBit(13), ranged.previousClearBit(3), ranged.previousClearBit(-1)));
+        bitSetRanges.put("intersects", ranged.intersects(intersects));
+        bitSetRanges.put("disjoint", ranged.intersects(disjoint));
+        item.put("bitSetRanges", bitSetRanges);
+
+        Map<String, Object> bitSetRangeErrors = new TreeMap<>();
+        try { ranged.set(-1, 2); } catch (RuntimeException error) { bitSetRangeErrors.put("setNegative", error.getClass().getSimpleName()); }
+        try { ranged.set(3, 2); } catch (RuntimeException error) { bitSetRangeErrors.put("setReversed", error.getClass().getSimpleName()); }
+        try { ranged.clear(-1, 2); } catch (RuntimeException error) { bitSetRangeErrors.put("clearNegative", error.getClass().getSimpleName()); }
+        try { ranged.flip(3, 2); } catch (RuntimeException error) { bitSetRangeErrors.put("flipReversed", error.getClass().getSimpleName()); }
+        try { ranged.get(-1, 2); } catch (RuntimeException error) { bitSetRangeErrors.put("getNegative", error.getClass().getSimpleName()); }
+        try { ranged.get(3, 2); } catch (RuntimeException error) { bitSetRangeErrors.put("getReversed", error.getClass().getSimpleName()); }
+        try { ranged.nextSetBit(-1); } catch (RuntimeException error) { bitSetRangeErrors.put("nextSetNegative", error.getClass().getSimpleName()); }
+        try { ranged.nextClearBit(-1); } catch (RuntimeException error) { bitSetRangeErrors.put("nextClearNegative", error.getClass().getSimpleName()); }
+        try { ranged.previousSetBit(-2); } catch (RuntimeException error) { bitSetRangeErrors.put("previousSetBelowMinusOne", error.getClass().getSimpleName()); }
+        try { ranged.previousClearBit(-2); } catch (RuntimeException error) { bitSetRangeErrors.put("previousClearBelowMinusOne", error.getClass().getSimpleName()); }
+        item.put("bitSetRangeErrors", bitSetRangeErrors);
+
         org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody body =
             new org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody();
         item.put("bodyDefaults", java.util.Arrays.asList(body.getBrokerName(), body.getAcks()));
