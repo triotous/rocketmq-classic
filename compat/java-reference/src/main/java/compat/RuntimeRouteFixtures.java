@@ -477,9 +477,13 @@ public final class RuntimeRouteFixtures {
                     fields.put("enableActingMaster", value.isEnableActingMaster());
                     Map<String, Object> addresses = new TreeMap<>();
                     if (value.getBrokerAddrs() != null) {
-                        value.getBrokerAddrs().forEach((key, address) -> addresses.put(key.toString(), address));
+                        value.getBrokerAddrs().forEach((key, address) -> addresses.put(String.valueOf(key), address));
                     }
                     fields.put("brokerAddrs", value.getBrokerAddrs() == null ? null : addresses);
+                    if (id.startsWith("broker-address-") && id.contains("null-key")) {
+                        item.put("brokerAddrsNullKeyPresent", value.getBrokerAddrs().containsKey(null));
+                        item.put("brokerAddrsStringNullKeyPresent", value.getBrokerAddrs().containsKey("null"));
+                    }
                     break;
                 }
                 case "mapping": {
@@ -494,7 +498,7 @@ public final class RuntimeRouteFixtures {
                     fields.put("dirty", value.isDirty());
                     Map<String, Object> ids = new TreeMap<>();
                     if (value.getCurrIdMap() != null) {
-                        value.getCurrIdMap().forEach((key, number) -> ids.put(key.toString(), number));
+                        value.getCurrIdMap().forEach((key, number) -> ids.put(String.valueOf(key), number));
                     }
                     fields.put("currIdMap", value.getCurrIdMap() == null ? null : ids);
                     break;
@@ -869,6 +873,14 @@ public final class RuntimeRouteFixtures {
             "{\"currIdMap\":{\"1\":10,\"01\":15,\"1\":20}}"));
         cases.add(routeDtoInputCase("mapping-id-key-normalization-collision-repeat-alias-last-wins", "mapping",
             "{\"currIdMap\":{\"01\":10,\"1\":15,\"01\":20}}"));
+        cases.add(routeDtoInputCase("broker-address-unquoted-null-key", "brokerData",
+            "{\"brokerAddrs\":{null:\"master\"}}"));
+        cases.add(routeDtoInputCase("broker-address-quoted-null-key", "brokerData",
+            "{\"brokerAddrs\":{\"null\":\"master\"}}"));
+        cases.add(routeDtoInputCase("mapping-id-unquoted-null-key", "mapping",
+            "{\"currIdMap\":{null:1}}"));
+        cases.add(routeDtoInputCase("mapping-id-quoted-null-key", "mapping",
+            "{\"currIdMap\":{\"null\":1}}"));
         String[][] fields = {
             {"queueData", "brokerName"}, {"queueData", "readQueueNums"},
             {"queueData", "writeQueueNums"}, {"queueData", "perm"},

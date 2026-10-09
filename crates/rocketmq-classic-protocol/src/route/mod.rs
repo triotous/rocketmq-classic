@@ -1744,7 +1744,7 @@ mod route_dto_input_cases_tests {
         let cases = fixture["routeDtoInputCases"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            395,
+            399,
             "Java oracle includes root shapes, exact coercions, duplicate fields, collection shapes, and per-field token kinds"
         );
         for dto in [
@@ -1896,6 +1896,8 @@ mod route_dto_input_cases_tests {
             "broker-address-key-normalization-collision-reverse",
             "broker-address-key-normalization-collision-repeat-first-key-last-wins",
             "broker-address-key-normalization-collision-repeat-alias-last-wins",
+            "broker-address-unquoted-null-key",
+            "broker-address-quoted-null-key",
             "mapping-id-key-plus-leading-zero",
             "mapping-id-key-fraction-string",
             "mapping-id-key-exponent-string",
@@ -1906,6 +1908,8 @@ mod route_dto_input_cases_tests {
             "mapping-id-key-normalization-collision-reverse",
             "mapping-id-key-normalization-collision-repeat-first-key-last-wins",
             "mapping-id-key-normalization-collision-repeat-alias-last-wins",
+            "mapping-id-unquoted-null-key",
+            "mapping-id-quoted-null-key",
             "mapping-long-plus-maximum-string",
             "mapping-long-leading-zero-string",
             "mapping-long-fraction-string",
@@ -1947,6 +1951,14 @@ mod route_dto_input_cases_tests {
                 cases.iter().any(|case| case["id"] == required),
                 "missing {required}"
             );
+        }
+        for id in [
+            "broker-address-unquoted-null-key",
+            "broker-address-quoted-null-key",
+        ] {
+            let case = cases.iter().find(|case| case["id"] == id).unwrap();
+            assert_eq!(case["brokerAddrsNullKeyPresent"], true, "{id}");
+            assert_eq!(case["brokerAddrsStringNullKeyPresent"], false, "{id}");
         }
         for case in cases {
             let raw_input = case["rawInput"].as_str().unwrap();
