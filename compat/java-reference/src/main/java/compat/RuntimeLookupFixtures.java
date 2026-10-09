@@ -1884,6 +1884,18 @@ public final class RuntimeLookupFixtures {
         item.put("bitSetMutationVisibleThroughSetterObject", bits.get(5));
         item.put("mutatedBitSetBase64", java.util.Base64.getEncoder().encodeToString(
             ack.getBitSet().toByteArray()));
+        java.util.BitSet clonedBits = (java.util.BitSet) ack.getBitSet().clone();
+        clonedBits.clear(0);
+        clonedBits.set(7);
+        Map<String, Object> bitSetClone = new TreeMap<>();
+        bitSetClone.put("cloneIsDistinctObject", clonedBits != ack.getBitSet());
+        bitSetClone.put("sourceBase64", java.util.Base64.getEncoder().encodeToString(
+            ack.getBitSet().toByteArray()));
+        bitSetClone.put("cloneBase64", java.util.Base64.getEncoder().encodeToString(
+            clonedBits.toByteArray()));
+        bitSetClone.put("sourceRetainsClearedBit", ack.getBitSet().get(0));
+        bitSetClone.put("sourceExcludesCloneBit", !ack.getBitSet().get(7));
+        item.put("bitSetClone", bitSetClone);
         java.util.BitSet operations = (java.util.BitSet) ack.getBitSet().clone();
         operations.clear(2);
         operations.flip(7);
