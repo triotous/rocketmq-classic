@@ -877,7 +877,12 @@ mod broker_data_select_addr_tests {
     fn broker_data_select_addr_matches_invoked_java_outcomes() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
-        for case in fixture["brokerDataSelectAddr"].as_array().unwrap() {
+        let cases = fixture["brokerDataSelectAddr"].as_array().unwrap();
+        assert_eq!(cases.len(), 10);
+        for index in 7..10 {
+            assert!(cases[index]["input"]["brokerAddrs"]["null"].is_string());
+        }
+        for case in cases {
             let broker: BrokerData = serde_json::from_value(case["input"].clone()).unwrap();
             if let Some(exception) = case["exception"].as_str() {
                 let error = broker.java_select_broker_addr().unwrap_err();
