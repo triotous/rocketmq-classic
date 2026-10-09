@@ -19,6 +19,18 @@ pub struct TopicSnapshot {
     pub order_topic: bool,
 }
 
+impl TopicSnapshot {
+    /// Converts a route DTO into the immutable publish, subscribe, and static
+    /// endpoint view used by the client runtime.
+    ///
+    /// This is the native counterpart to the route conversion methods on
+    /// Java's `MQClientInstance`. Invalid Java route states return a typed
+    /// error before any runtime cache is mutated.
+    pub fn from_route_data(topic: &str, route: &TopicRouteData) -> Result<Self, RuntimeError> {
+        convert_topic_route_data(topic, route)
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct RouteSnapshot {
     /// Source raw topic table; explicit map writes do not rebuild `topics`.
@@ -311,146 +323,7 @@ impl RouteCache {
         if !force && !self.route_changed(topic, &route)? {
             return Ok(false);
         }
-        // Java's brokerAddrTable is a ConcurrentHashMap: publishing a null
-        // address map fails, it is not a valid empty Broker. Validate before
-        // any conversion/publication to preserve the coherent native snapshot.
-        if route.broker_datas.is_none() {
-            return Err(RuntimeError::InvalidRoute("null broker data list"));
-        }
-        if route
-            .broker_datas
-            .as_deref()
-            .unwrap_or(&[])
-            .iter()
-            .any(Option::is_none)
-        {
-            return Err(RuntimeError::InvalidRoute("null broker data"));
-        }
-        if route
-            .broker_datas
-            .as_deref()
-            .unwrap_or(&[])
-            .iter()
-            .flatten()
-            .any(|broker| broker.broker_name.is_none())
-        {
-            return Err(RuntimeError::InvalidRoute("null broker name"));
-        }
-        let ordered = route
-            .order_topic_conf
-            .as_deref()
-            .is_some_and(|value| !value.is_empty());
-        let static_route = route.order_topic_conf.is_none()
-            && route
-                .topic_queue_mapping_by_broker
-                .as_ref()
-                .is_some_and(|mappings| !mappings.is_empty());
-        if route.queue_datas.is_none() && !ordered && !static_route {
-            return Err(RuntimeError::InvalidRoute("null queue data list"));
-        }
-        if !static_route
-            && route
-                .queue_datas
-                .as_deref()
-                .unwrap_or(&[])
-                .iter()
-                .any(Option::is_none)
-        {
-            return Err(RuntimeError::InvalidRoute("null queue data"));
-        }
-        if !ordered
-            && !static_route
-            && route.queue_datas.as_deref().unwrap_or(&[]).len() > 1
-            && route
-                .queue_datas
-                .as_deref()
-                .unwrap_or(&[])
-                .iter()
-                .flatten()
-                .any(|queue| queue.broker_name.is_none())
-        {
-            return Err(RuntimeError::InvalidRoute(
-                "null queue broker name during sort",
-            ));
-        }
-        if let Some(mappings) = &route.topic_queue_mapping_by_broker {
-            if mappings.values().any(Option::is_none) {
-                return Err(RuntimeError::InvalidRoute("null static mapping"));
-            }
-            for mapping in mappings
-                .values()
-                .flatten()
-                .filter(|mapping| mapping.scope.is_some())
-            {
-                let ids = mapping
-                    .curr_id_map
-                    .as_ref()
-                    .ok_or(RuntimeError::InvalidRoute("null static mapping id map"))?;
-                if mapping.bname.is_none()
-                    && ids.keys().any(|id| *id >= 0 && *id < mapping.total_queues)
-                {
-                    return Err(RuntimeError::InvalidRoute(
-                        "null static mapping broker name",
-                    ));
-                }
-            }
-        }
-        if route
-            .broker_datas
-            .as_deref()
-            .unwrap_or(&[])
-            .iter()
-            .flatten()
-            .any(|broker| broker.broker_addrs.is_none())
-        {
-            return Err(RuntimeError::InvalidRoute("null broker address map"));
-        }
-        // All conversion occurs before the writer lock. Invalid ordered data
-        // must not make Phase 1's tolerant helper publish a partial snapshot.
-        let mut conversion_route = route.clone();
-        if let Some(ordered) = route
-            .order_topic_conf
-            .as_deref()
-            .filter(|value| !value.is_empty())
-        {
-            let mut normalized = Vec::new();
-            for entry in ordered
-                .trim_end_matches(';')
-                .split(';')
-                .filter(|_| !ordered.trim_end_matches(';').is_empty())
-            {
-                let count = entry.split(':').nth(1).and_then(java_integer);
-                let count =
-                    count.ok_or(RuntimeError::InvalidRoute("invalid ordered queue count"))?;
-                normalized.push(format!(
-                    "{}:{count}",
-                    entry.split(':').next().unwrap_or_default()
-                ));
-            }
-            conversion_route.order_topic_conf = Some(normalized.join(";"));
-        }
-        // Raw order presence controls branch selection, even when a separator-
-        // only Java split normalizes to an empty conversion string.
-        validate_conversion_size(topic, &route)?;
-        let mut topic_snapshot =
-            TopicSnapshot {
-                publish_queues: if route.order_topic_conf.as_deref().is_some_and(|value| {
-                    !value.is_empty() && value.trim_end_matches(';').is_empty()
-                }) {
-                    Vec::new()
-                } else {
-                    conversion_route.publish_queues(topic)
-                },
-                subscribe_queues: route.subscribe_queues(topic).into_iter().collect(),
-                endpoints: route.static_queue_endpoints(topic).unwrap_or_default(),
-                order_topic: route
-                    .order_topic_conf
-                    .as_ref()
-                    .is_some_and(|value| !value.is_empty()),
-                // Java publishes a TopicRouteData copy whose constructor
-                // normalizes null collections to empty containers.
-                route: Arc::new(route.java_copy_constructed()),
-            };
+        let mut topic_snapshot = TopicSnapshot::from_route_data(topic, &route)?;
         loop {
             let observed = self.snapshot()?.raw_routes.get(topic).cloned();
             let unchanged = match &observed {
@@ -533,6 +406,152 @@ impl RouteCache {
             (matched, matched)
         })
     }
+}
+
+fn convert_topic_route_data(
+    topic: &str,
+    route: &TopicRouteData,
+) -> Result<TopicSnapshot, RuntimeError> {
+    // Java's brokerAddrTable is a ConcurrentHashMap: publishing a null
+    // address map fails, it is not a valid empty Broker. Validate before
+    // any conversion/publication to preserve the coherent native snapshot.
+    if route.broker_datas.is_none() {
+        return Err(RuntimeError::InvalidRoute("null broker data list"));
+    }
+    if route
+        .broker_datas
+        .as_deref()
+        .unwrap_or(&[])
+        .iter()
+        .any(Option::is_none)
+    {
+        return Err(RuntimeError::InvalidRoute("null broker data"));
+    }
+    if route
+        .broker_datas
+        .as_deref()
+        .unwrap_or(&[])
+        .iter()
+        .flatten()
+        .any(|broker| broker.broker_name.is_none())
+    {
+        return Err(RuntimeError::InvalidRoute("null broker name"));
+    }
+    let ordered = route
+        .order_topic_conf
+        .as_deref()
+        .is_some_and(|value| !value.is_empty());
+    let static_route = route.order_topic_conf.is_none()
+        && route
+            .topic_queue_mapping_by_broker
+            .as_ref()
+            .is_some_and(|mappings| !mappings.is_empty());
+    if route.queue_datas.is_none() && !ordered && !static_route {
+        return Err(RuntimeError::InvalidRoute("null queue data list"));
+    }
+    if !static_route
+        && route
+            .queue_datas
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .any(Option::is_none)
+    {
+        return Err(RuntimeError::InvalidRoute("null queue data"));
+    }
+    if !ordered
+        && !static_route
+        && route.queue_datas.as_deref().unwrap_or(&[]).len() > 1
+        && route
+            .queue_datas
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .flatten()
+            .any(|queue| queue.broker_name.is_none())
+    {
+        return Err(RuntimeError::InvalidRoute(
+            "null queue broker name during sort",
+        ));
+    }
+    if let Some(mappings) = &route.topic_queue_mapping_by_broker {
+        if mappings.values().any(Option::is_none) {
+            return Err(RuntimeError::InvalidRoute("null static mapping"));
+        }
+        for mapping in mappings
+            .values()
+            .flatten()
+            .filter(|mapping| mapping.scope.is_some())
+        {
+            let ids = mapping
+                .curr_id_map
+                .as_ref()
+                .ok_or(RuntimeError::InvalidRoute("null static mapping id map"))?;
+            if mapping.bname.is_none()
+                && ids.keys().any(|id| *id >= 0 && *id < mapping.total_queues)
+            {
+                return Err(RuntimeError::InvalidRoute(
+                    "null static mapping broker name",
+                ));
+            }
+        }
+    }
+    if route
+        .broker_datas
+        .as_deref()
+        .unwrap_or(&[])
+        .iter()
+        .flatten()
+        .any(|broker| broker.broker_addrs.is_none())
+    {
+        return Err(RuntimeError::InvalidRoute("null broker address map"));
+    }
+
+    let mut conversion_route = route.clone();
+    if let Some(ordered) = route
+        .order_topic_conf
+        .as_deref()
+        .filter(|value| !value.is_empty())
+    {
+        let mut normalized = Vec::new();
+        for entry in ordered
+            .trim_end_matches(';')
+            .split(';')
+            .filter(|_| !ordered.trim_end_matches(';').is_empty())
+        {
+            let count = entry.split(':').nth(1).and_then(java_integer);
+            let count = count.ok_or(RuntimeError::InvalidRoute("invalid ordered queue count"))?;
+            normalized.push(format!(
+                "{}:{count}",
+                entry.split(':').next().unwrap_or_default()
+            ));
+        }
+        conversion_route.order_topic_conf = Some(normalized.join(";"));
+    }
+
+    // Raw order presence controls branch selection, even when a separator-
+    // only Java split normalizes to an empty conversion string.
+    validate_conversion_size(topic, route)?;
+    Ok(TopicSnapshot {
+        publish_queues: if route
+            .order_topic_conf
+            .as_deref()
+            .is_some_and(|value| !value.is_empty() && value.trim_end_matches(';').is_empty())
+        {
+            Vec::new()
+        } else {
+            conversion_route.publish_queues(topic)
+        },
+        subscribe_queues: route.subscribe_queues(topic).into_iter().collect(),
+        endpoints: route.static_queue_endpoints(topic).unwrap_or_default(),
+        order_topic: route
+            .order_topic_conf
+            .as_ref()
+            .is_some_and(|value| !value.is_empty()),
+        // Java publishes a TopicRouteData copy whose constructor
+        // normalizes null collections to empty containers.
+        route: Arc::new(route.java_copy_constructed()),
+    })
 }
 
 fn broker_address_exists_in_raw_routes(
@@ -1878,9 +1897,36 @@ mod tests {
             let cache = RouteCache::default();
             let route = serde_json::from_value(case["input"].clone()).unwrap();
             if case["outcome"] == "OK" {
+                let converted = TopicSnapshot::from_route_data("topic", &route).unwrap();
+                assert_eq!(
+                    serde_json::to_value(&converted.publish_queues).unwrap(),
+                    case["publish"]
+                );
+                assert_eq!(
+                    serde_json::to_value(&converted.subscribe_queues).unwrap(),
+                    case["subscribe"]
+                );
+                assert_eq!(converted.order_topic, case["ordered"].as_bool().unwrap());
+                assert_eq!(
+                    serde_json::to_value(
+                        converted
+                            .endpoints
+                            .iter()
+                            .map(
+                                |(queue, broker)| serde_json::json!({"queue":queue,"broker":broker})
+                            )
+                            .collect::<Vec<_>>()
+                    )
+                    .unwrap(),
+                    case["endpoints"]
+                );
                 cache.replace("topic", route).unwrap();
                 let snapshot = cache.snapshot().unwrap();
                 let topic = &snapshot.topics["topic"];
+                assert_eq!(topic.publish_queues, converted.publish_queues);
+                assert_eq!(topic.subscribe_queues, converted.subscribe_queues);
+                assert_eq!(topic.endpoints, converted.endpoints);
+                assert_eq!(topic.order_topic, converted.order_topic);
                 assert_eq!(
                     serde_json::to_value(&topic.publish_queues).unwrap(),
                     case["publish"]
@@ -1904,6 +1950,7 @@ mod tests {
                     case["endpoints"]
                 );
             } else {
+                assert!(TopicSnapshot::from_route_data("topic", &route).is_err());
                 assert!(cache.replace("topic", route).is_err());
                 assert!(cache.snapshot().unwrap().topics.is_empty());
             }
