@@ -95,6 +95,43 @@ impl<'de> Deserialize<'de> for CheckClientRequestBody {
     }
 }
 
+impl CheckClientRequestBody {
+    pub fn get_client_id(&self) -> Option<&str> {
+        self.client_id.as_deref()
+    }
+
+    pub fn set_client_id(&mut self, client_id: Option<String>) {
+        self.client_id = client_id;
+    }
+
+    pub fn get_group(&self) -> Option<&str> {
+        self.group.as_deref()
+    }
+
+    pub fn set_group(&mut self, group: Option<String>) {
+        self.group = group;
+    }
+
+    pub fn get_subscription_data(&self) -> Option<&super::heartbeat::SubscriptionData> {
+        self.subscription_data.as_ref()
+    }
+
+    pub fn set_subscription_data(
+        &mut self,
+        subscription_data: Option<super::heartbeat::SubscriptionData>,
+    ) {
+        self.subscription_data = subscription_data;
+    }
+
+    pub fn get_namespace(&self) -> Option<&str> {
+        self.namespace.as_deref()
+    }
+
+    pub fn set_namespace(&mut self, namespace: Option<String>) {
+        self.namespace = namespace;
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum MessageRequestMode {
@@ -1888,6 +1925,53 @@ impl Default for LockBatchRequestBody {
     }
 }
 
+impl LockBatchRequestBody {
+    pub fn get_consumer_group(&self) -> Option<&str> {
+        self.consumer_group.as_deref()
+    }
+
+    pub fn set_consumer_group(&mut self, consumer_group: Option<String>) {
+        self.consumer_group = consumer_group;
+    }
+
+    pub fn get_client_id(&self) -> Option<&str> {
+        self.client_id.as_deref()
+    }
+
+    pub fn set_client_id(&mut self, client_id: Option<String>) {
+        self.client_id = client_id;
+    }
+
+    pub fn is_only_this_broker(&self) -> bool {
+        self.only_this_broker
+    }
+
+    pub fn set_only_this_broker(&mut self, only_this_broker: bool) {
+        self.only_this_broker = only_this_broker;
+    }
+
+    pub fn get_mq_set(&self) -> Option<&std::collections::HashSet<Option<MessageQueue>>> {
+        self.mq_set.as_ref()
+    }
+
+    pub fn set_mq_set(&mut self, mq_set: Option<std::collections::HashSet<Option<MessageQueue>>>) {
+        self.mq_set = mq_set;
+    }
+}
+
+impl std::fmt::Display for LockBatchRequestBody {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "LockBatchRequestBody{{consumerGroup={}, clientId={}, onlyThisBroker={}, mqSet={}}}",
+            self.consumer_group.as_deref().unwrap_or("null"),
+            self.client_id.as_deref().unwrap_or("null"),
+            self.only_this_broker,
+            java_message_queue_set_text(&self.mq_set)
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UnlockBatchRequestBody {
@@ -1949,6 +2033,72 @@ impl Default for UnlockBatchRequestBody {
     }
 }
 
+impl UnlockBatchRequestBody {
+    pub fn get_consumer_group(&self) -> Option<&str> {
+        self.consumer_group.as_deref()
+    }
+
+    pub fn set_consumer_group(&mut self, consumer_group: Option<String>) {
+        self.consumer_group = consumer_group;
+    }
+
+    pub fn get_client_id(&self) -> Option<&str> {
+        self.client_id.as_deref()
+    }
+
+    pub fn set_client_id(&mut self, client_id: Option<String>) {
+        self.client_id = client_id;
+    }
+
+    pub fn is_only_this_broker(&self) -> bool {
+        self.only_this_broker
+    }
+
+    pub fn set_only_this_broker(&mut self, only_this_broker: bool) {
+        self.only_this_broker = only_this_broker;
+    }
+
+    pub fn get_mq_set(&self) -> Option<&std::collections::HashSet<Option<MessageQueue>>> {
+        self.mq_set.as_ref()
+    }
+
+    pub fn set_mq_set(&mut self, mq_set: Option<std::collections::HashSet<Option<MessageQueue>>>) {
+        self.mq_set = mq_set;
+    }
+}
+
+impl std::fmt::Display for UnlockBatchRequestBody {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "UnlockBatchRequestBody{{consumerGroup={}, clientId={}, onlyThisBroker={}, mqSet={}}}",
+            self.consumer_group.as_deref().unwrap_or("null"),
+            self.client_id.as_deref().unwrap_or("null"),
+            self.only_this_broker,
+            java_message_queue_set_text(&self.mq_set)
+        )
+    }
+}
+
+fn java_message_queue_set_text(
+    queues: &Option<std::collections::HashSet<Option<MessageQueue>>>,
+) -> String {
+    match queues {
+        None => "null".to_owned(),
+        Some(queues) => format!(
+            "[{}]",
+            queues
+                .iter()
+                .map(|queue| queue
+                    .as_ref()
+                    .map(ToString::to_string)
+                    .unwrap_or_else(|| "null".to_owned()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LockBatchResponseBody {
@@ -1985,6 +2135,19 @@ impl Default for LockBatchResponseBody {
         Self {
             lock_okmq_set: default_message_queue_set(),
         }
+    }
+}
+
+impl LockBatchResponseBody {
+    pub fn get_lock_okmq_set(&self) -> Option<&std::collections::HashSet<Option<MessageQueue>>> {
+        self.lock_okmq_set.as_ref()
+    }
+
+    pub fn set_lock_okmq_set(
+        &mut self,
+        lock_okmq_set: Option<std::collections::HashSet<Option<MessageQueue>>>,
+    ) {
+        self.lock_okmq_set = lock_okmq_set;
     }
 }
 
@@ -2049,6 +2212,16 @@ impl<'de> Deserialize<'de> for ConsumerListByGroupResponseBody {
         }
 
         deserializer.deserialize_map(ConsumerListVisitor)
+    }
+}
+
+impl ConsumerListByGroupResponseBody {
+    pub fn get_consumer_id_list(&self) -> Option<&[Option<String>]> {
+        self.consumer_id_list.as_deref()
+    }
+
+    pub fn set_consumer_id_list(&mut self, consumer_id_list: Option<Vec<Option<String>>>) {
+        self.consumer_id_list = consumer_id_list;
     }
 }
 
@@ -2855,6 +3028,66 @@ impl<'de> Deserialize<'de> for ConsumeMessageDirectlyResult {
     }
 }
 
+impl ConsumeMessageDirectlyResult {
+    pub fn is_order(&self) -> bool {
+        self.order
+    }
+
+    pub fn set_order(&mut self, order: bool) {
+        self.order = order;
+    }
+
+    pub fn is_auto_commit(&self) -> bool {
+        self.auto_commit
+    }
+
+    pub fn set_auto_commit(&mut self, auto_commit: bool) {
+        self.auto_commit = auto_commit;
+    }
+
+    pub fn get_consume_result(&self) -> Option<ConsumeMessageResult> {
+        self.consume_result
+    }
+
+    pub fn set_consume_result(&mut self, consume_result: Option<ConsumeMessageResult>) {
+        self.consume_result = consume_result;
+    }
+
+    pub fn get_remark(&self) -> Option<&str> {
+        self.remark.as_deref()
+    }
+
+    pub fn set_remark(&mut self, remark: Option<String>) {
+        self.remark = remark;
+    }
+
+    pub fn get_spent_time_mills(&self) -> i64 {
+        self.spent_time_mills
+    }
+
+    pub fn set_spent_time_mills(&mut self, spent_time_mills: i64) {
+        self.spent_time_mills = spent_time_mills;
+    }
+}
+
+impl std::fmt::Display for ConsumeMessageDirectlyResult {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let consume_result = self
+            .consume_result
+            .map(|result| result.name())
+            .unwrap_or("null");
+        write!(
+            formatter,
+            "ConsumeMessageDirectlyResult [order={}, autoCommit={}, consumeResult={}, remark={}, spentTimeMills={}]",
+            self.order,
+            self.auto_commit,
+            consume_result,
+            self.remark.as_deref().unwrap_or("null"),
+            self.spent_time_mills
+        )
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ConsumeMessageResult {
@@ -3189,6 +3422,216 @@ mod tests {
             mode_body.get_pop_share_queue_num(),
             mode_case["primitiveAfterReset"]
         );
+    }
+
+    #[test]
+    fn remaining_runtime_body_public_methods_match_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+
+        let check_case = &fixture["checkClientBodyApiCase"];
+        let mut check = CheckClientRequestBody::default();
+        assert_eq!(
+            json!({
+                "clientId": check.get_client_id(),
+                "group": check.get_group(),
+                "subscriptionData": check.get_subscription_data(),
+                "namespace": check.get_namespace(),
+            }),
+            check_case["defaults"]
+        );
+        let subscription: super::super::heartbeat::SubscriptionData =
+            serde_json::from_value(check_case["values"]["subscriptionData"].clone()).unwrap();
+        check.set_client_id(Some("client-a".into()));
+        check.set_group(Some("workers".into()));
+        check.set_subscription_data(Some(subscription));
+        check.set_namespace(Some("tenant".into()));
+        let subscription_values = check.get_subscription_data().map(|value| {
+            json!({
+                "topic": value.topic.as_deref(),
+                "subString": value.sub_string.as_deref(),
+                "subVersion": value.sub_version,
+                "classFilterMode": value.class_filter_mode,
+                "expressionType": value.expression_type.as_deref(),
+                "tagsSet": value.tags_set.as_ref(),
+            })
+        });
+        assert_eq!(
+            json!({
+                "clientId": check.get_client_id(),
+                "group": check.get_group(),
+                "subscriptionData": subscription_values,
+                "namespace": check.get_namespace(),
+            }),
+            check_case["values"]
+        );
+        // Java returns the same mutable SubscriptionData object; Rust moves and lends the value.
+        assert_eq!(check_case["getterReturnsAssignedSubscription"], true);
+        check.set_client_id(None);
+        check.set_group(None);
+        check.set_subscription_data(None);
+        check.set_namespace(None);
+        assert!(check.get_client_id().is_none());
+        assert!(check.get_group().is_none());
+        assert!(check.get_subscription_data().is_none());
+        assert!(check.get_namespace().is_none());
+        assert_eq!(check_case["nullSettersRemainNull"], true);
+
+        let list_case = &fixture["consumerListApiCase"];
+        let mut consumer_list = ConsumerListByGroupResponseBody::default();
+        assert_eq!(
+            serde_json::to_value(consumer_list.get_consumer_id_list()).unwrap(),
+            list_case["defaultConsumerIds"]
+        );
+        let consumer_ids: Vec<Option<String>> =
+            serde_json::from_value(list_case["values"].clone()).unwrap();
+        consumer_list.set_consumer_id_list(Some(consumer_ids));
+        assert_eq!(
+            json!(consumer_list.get_consumer_id_list()),
+            list_case["values"]
+        );
+        // Java returns the same mutable List; Rust owns a Vec and lends a slice.
+        assert_eq!(list_case["getterReturnsAssignedList"], true);
+        consumer_list.set_consumer_id_list(None);
+        assert!(consumer_list.get_consumer_id_list().is_none());
+        assert_eq!(list_case["nullSetterRemainsNull"], true);
+
+        let lock_case = &fixture["lockBatchRequestApiCase"];
+        let mut lock = LockBatchRequestBody::default();
+        assert_eq!(
+            json!({
+                "consumerGroup": lock.get_consumer_group(),
+                "clientId": lock.get_client_id(),
+                "onlyThisBroker": lock.is_only_this_broker(),
+                "mqSet": lock.get_mq_set(),
+            }),
+            lock_case["defaults"]
+        );
+        assert_eq!(lock.to_string(), lock_case["defaultText"].as_str().unwrap());
+        let lock_queues: std::collections::HashSet<Option<MessageQueue>> =
+            serde_json::from_value(lock_case["values"]["mqSet"].clone()).unwrap();
+        lock.set_consumer_group(Some("workers".into()));
+        lock.set_client_id(Some("client-a".into()));
+        lock.set_only_this_broker(true);
+        lock.set_mq_set(Some(lock_queues));
+        assert_eq!(
+            json!({
+                "consumerGroup": lock.get_consumer_group(),
+                "clientId": lock.get_client_id(),
+                "onlyThisBroker": lock.is_only_this_broker(),
+                "mqSet": lock.get_mq_set(),
+            }),
+            lock_case["values"]
+        );
+        assert_eq!(lock.to_string(), lock_case["text"].as_str().unwrap());
+        assert_eq!(lock_case["getterReturnsAssignedSet"], true);
+        lock.set_consumer_group(None);
+        lock.set_client_id(None);
+        lock.set_only_this_broker(false);
+        lock.set_mq_set(None);
+        assert!(lock.get_consumer_group().is_none());
+        assert!(lock.get_client_id().is_none());
+        assert!(!lock.is_only_this_broker());
+        assert!(lock.get_mq_set().is_none());
+        assert_eq!(lock_case["nullSettersRemainNull"], true);
+
+        let unlock_case = &fixture["unlockBatchRequestApiCase"];
+        let mut unlock = UnlockBatchRequestBody::default();
+        assert_eq!(
+            json!({
+                "consumerGroup": unlock.get_consumer_group(),
+                "clientId": unlock.get_client_id(),
+                "onlyThisBroker": unlock.is_only_this_broker(),
+                "mqSet": unlock.get_mq_set(),
+            }),
+            unlock_case["defaults"]
+        );
+        assert_eq!(
+            unlock.to_string(),
+            unlock_case["defaultText"].as_str().unwrap()
+        );
+        let unlock_queues: std::collections::HashSet<Option<MessageQueue>> =
+            serde_json::from_value(unlock_case["values"]["mqSet"].clone()).unwrap();
+        unlock.set_consumer_group(Some("workers".into()));
+        unlock.set_client_id(Some("client-a".into()));
+        unlock.set_only_this_broker(true);
+        unlock.set_mq_set(Some(unlock_queues));
+        assert_eq!(
+            json!({
+                "consumerGroup": unlock.get_consumer_group(),
+                "clientId": unlock.get_client_id(),
+                "onlyThisBroker": unlock.is_only_this_broker(),
+                "mqSet": unlock.get_mq_set(),
+            }),
+            unlock_case["values"]
+        );
+        assert_eq!(unlock.to_string(), unlock_case["text"].as_str().unwrap());
+        assert_eq!(unlock_case["getterReturnsAssignedSet"], true);
+        unlock.set_consumer_group(None);
+        unlock.set_client_id(None);
+        unlock.set_only_this_broker(false);
+        unlock.set_mq_set(None);
+        assert!(unlock.get_consumer_group().is_none());
+        assert!(unlock.get_client_id().is_none());
+        assert!(!unlock.is_only_this_broker());
+        assert!(unlock.get_mq_set().is_none());
+        assert_eq!(unlock_case["nullSettersRemainNull"], true);
+
+        let lock_response_case = &fixture["lockBatchResponseApiCase"];
+        let mut lock_response = LockBatchResponseBody::default();
+        assert_eq!(
+            serde_json::to_value(lock_response.get_lock_okmq_set()).unwrap(),
+            lock_response_case["defaultLockOKMQSet"]
+        );
+        let lock_response_queues: std::collections::HashSet<Option<MessageQueue>> =
+            serde_json::from_value(lock_response_case["values"].clone()).unwrap();
+        lock_response.set_lock_okmq_set(Some(lock_response_queues));
+        assert_eq!(
+            json!(lock_response.get_lock_okmq_set()),
+            lock_response_case["values"]
+        );
+        assert_eq!(lock_response_case["getterReturnsAssignedSet"], true);
+        lock_response.set_lock_okmq_set(None);
+        assert!(lock_response.get_lock_okmq_set().is_none());
+        assert_eq!(lock_response_case["nullSetterRemainsNull"], true);
+
+        let direct_case = &fixture["consumeDirectResultApiCase"];
+        let mut direct = ConsumeMessageDirectlyResult::default();
+        assert_eq!(
+            json!({
+                "order": direct.is_order(),
+                "autoCommit": direct.is_auto_commit(),
+                "consumeResult": direct.get_consume_result(),
+                "remark": direct.get_remark(),
+                "spentTimeMills": direct.get_spent_time_mills(),
+            }),
+            direct_case["defaults"]
+        );
+        assert_eq!(
+            direct.to_string(),
+            direct_case["defaultText"].as_str().unwrap()
+        );
+        direct.set_order(true);
+        direct.set_auto_commit(false);
+        direct.set_consume_result(Some(ConsumeMessageResult::CrSuccess));
+        direct.set_remark(Some("consumed".into()));
+        direct.set_spent_time_mills(42);
+        assert_eq!(
+            json!({
+                "order": direct.is_order(),
+                "autoCommit": direct.is_auto_commit(),
+                "consumeResult": direct.get_consume_result(),
+                "remark": direct.get_remark(),
+                "spentTimeMills": direct.get_spent_time_mills(),
+            }),
+            direct_case["values"]
+        );
+        assert_eq!(direct.to_string(), direct_case["text"].as_str().unwrap());
+        direct.set_consume_result(None);
+        direct.set_remark(None);
+        assert!(direct.get_consume_result().is_none());
+        assert!(direct.get_remark().is_none());
+        assert_eq!(direct_case["nullSettersRemainNull"], true);
     }
 
     #[test]
