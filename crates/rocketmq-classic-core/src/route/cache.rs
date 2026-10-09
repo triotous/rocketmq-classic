@@ -1512,7 +1512,7 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/lookup.json")).unwrap();
         let cases = fixture["cases"].as_array().unwrap();
-        assert_eq!(cases.len(), 13);
+        assert_eq!(cases.len(), 14);
         for required in [
             "null-broker-id-single-address",
             "null-broker-id-with-master",
@@ -1532,6 +1532,12 @@ mod tests {
                 .unwrap_or_else(|| panic!("missing Java broker lookup case {required}"));
             assert_eq!(case["outcome"], "NullPointerException", "{required}");
         }
+        let missing_list = cases
+            .iter()
+            .find(|case| case["name"] == "missing-broker-list")
+            .expect("missing Java broker lookup case missing-broker-list");
+        assert_eq!(missing_list["outcome"], "NULL");
+        assert!(missing_list["input"].get("brokerDatas").is_none());
         for case in cases {
             let mut snapshot = RouteSnapshot::default();
             if !case["input"].is_null() {
