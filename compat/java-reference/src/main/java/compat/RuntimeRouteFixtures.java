@@ -466,6 +466,14 @@ public final class RuntimeRouteFixtures {
         List<Object> cases = new ArrayList<>();
         cases.add(routeDtoInputCase("queue-scalars", "queueData",
             "{\"brokerName\":123,\"readQueueNums\":\"2\",\"writeQueueNums\":1.9,\"perm\":true,\"topicSysFlag\":null}"));
+        cases.add(routeDtoInputCase("queue-uppercase-property", "queueData",
+            "{\"READQUEUENUMS\":7,\"BROKERNAME\":\"upper\"}"));
+        cases.add(routeDtoInputCase("queue-titlecase-property", "queueData",
+            "{\"ReadQueueNums\":7,\"BrokerName\":\"title\"}"));
+        cases.add(routeDtoInputCase("queue-snakecase-property", "queueData",
+            "{\"read_queue_nums\":7,\"broker_name\":\"snake\"}"));
+        cases.add(routeDtoInputCase("queue-case-collision", "queueData",
+            "{\"readQueueNums\":2,\"READQUEUENUMS\":7}"));
         cases.add(routeDtoInputCase("queue-empty-object-number", "queueData",
             "{\"readQueueNums\":{}}"));
         cases.add(routeDtoInputCase("queue-decimal-overflow-number", "queueData",
