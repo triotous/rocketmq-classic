@@ -43,7 +43,7 @@ public final class RuntimeLookupFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "MQClientInstance.findBrokerAddrByTopic/BrokerData.selectBrokerAddr/QueryAssignmentResponseBody.decode/GetConsumerListByGroupResponseBody.decode/ResetOffsetBody.decode/encode/GetConsumerStatusBody.decode/encode/BatchAckMessageRequestBody.decode/encode");
+        fixture.put("entrypoint", "MQClientInstance.findBrokerAddrByTopic/BrokerData.selectBrokerAddr/QueryAssignmentResponseBody.decode/GetConsumerListByGroupResponseBody.decode/ResetOffsetBody.decode/encode/GetConsumerStatusBody.decode/encode/BatchAckMessageRequestBody.decode/encode and public DTO constructor/getter/setter/toString methods");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
         String assignment = "{\"messageQueue\":{\"topic\":\"topic\",\"brokerName\":\"broker\",\"queueId\":2},\"mode\":\"POP\",\"attachments\":{\"key\":\"value\"}}";
@@ -78,6 +78,12 @@ public final class RuntimeLookupFixtures {
         fixture.put("setRequestModeFieldCases", setRequestModeFieldCases());
         fixture.put("setRequestModeRootCases", setRequestModeRootCases());
         fixture.put("setRequestModeRequestApiCase", setRequestModeRequestApiCase());
+        fixture.put("checkClientBodyApiCase", checkClientBodyApiCase());
+        fixture.put("consumerListApiCase", consumerListApiCase());
+        fixture.put("lockBatchRequestApiCase", lockBatchRequestApiCase());
+        fixture.put("unlockBatchRequestApiCase", unlockBatchRequestApiCase());
+        fixture.put("lockBatchResponseApiCase", lockBatchResponseApiCase());
+        fixture.put("consumeDirectResultApiCase", consumeDirectResultApiCase());
         fixture.put("messageRequestModeWrapperCases", messageRequestModeWrapperCases());
         fixture.put("messageRequestModeWrapperApiCase", messageRequestModeWrapperApiCase());
         fixture.put("consumeDirectResultCases", consumeDirectResultCases());
@@ -1016,6 +1022,205 @@ public final class RuntimeLookupFixtures {
         item.put("nullSettersRemainNull", body.getTopic() == null && body.getConsumerGroup() == null
             && body.getMode() == null);
         item.put("primitiveAfterReset", body.getPopShareQueueNum());
+        return item;
+    }
+
+    private static Map<String, Object> checkClientBodyApiCase() {
+        org.apache.rocketmq.remoting.protocol.body.CheckClientRequestBody body =
+            new org.apache.rocketmq.remoting.protocol.body.CheckClientRequestBody();
+        Map<String, Object> item = new TreeMap<>();
+        Map<String, Object> defaults = new TreeMap<>();
+        defaults.put("clientId", body.getClientId());
+        defaults.put("group", body.getGroup());
+        defaults.put("subscriptionData", body.getSubscriptionData());
+        defaults.put("namespace", body.getNamespace());
+        item.put("defaults", defaults);
+
+        org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData subscription =
+            new org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData("orders", "*");
+        subscription.setSubVersion(42L);
+        subscription.setClassFilterMode(true);
+        subscription.setExpressionType("TAG");
+        subscription.setTagsSet(new HashSet<>(List.of("gold")));
+        body.setClientId("client-a");
+        body.setGroup("workers");
+        body.setSubscriptionData(subscription);
+        body.setNamespace("tenant");
+        Map<String, Object> nested = new TreeMap<>();
+        nested.put("topic", body.getSubscriptionData().getTopic());
+        nested.put("subString", body.getSubscriptionData().getSubString());
+        nested.put("subVersion", body.getSubscriptionData().getSubVersion());
+        nested.put("classFilterMode", body.getSubscriptionData().isClassFilterMode());
+        nested.put("expressionType", body.getSubscriptionData().getExpressionType());
+        nested.put("tagsSet", new ArrayList<>(body.getSubscriptionData().getTagsSet()));
+        Map<String, Object> values = new TreeMap<>();
+        values.put("clientId", body.getClientId());
+        values.put("group", body.getGroup());
+        values.put("subscriptionData", nested);
+        values.put("namespace", body.getNamespace());
+        item.put("values", values);
+        item.put("getterReturnsAssignedSubscription", body.getSubscriptionData() == subscription);
+
+        body.setClientId(null);
+        body.setGroup(null);
+        body.setSubscriptionData(null);
+        body.setNamespace(null);
+        item.put("nullSettersRemainNull", body.getClientId() == null && body.getGroup() == null
+            && body.getSubscriptionData() == null && body.getNamespace() == null);
+        return item;
+    }
+
+    private static Map<String, Object> consumerListApiCase() {
+        org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody body =
+            new org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody();
+        Map<String, Object> item = new TreeMap<>();
+        item.put("defaultConsumerIds", body.getConsumerIdList());
+        List<String> consumerIds = new ArrayList<>(List.of("client-a", "client-b"));
+        body.setConsumerIdList(consumerIds);
+        item.put("values", body.getConsumerIdList());
+        item.put("getterReturnsAssignedList", body.getConsumerIdList() == consumerIds);
+        body.setConsumerIdList(null);
+        item.put("nullSetterRemainsNull", body.getConsumerIdList() == null);
+        return item;
+    }
+
+    private static List<Object> messageQueueApiValues(Set<org.apache.rocketmq.common.message.MessageQueue> queues) {
+        if (queues == null) return null;
+        List<Object> values = new ArrayList<>();
+        for (org.apache.rocketmq.common.message.MessageQueue queue : queues) {
+            if (queue == null) {
+                values.add(null);
+            } else {
+                Map<String, Object> item = new TreeMap<>();
+                item.put("topic", queue.getTopic());
+                item.put("brokerName", queue.getBrokerName());
+                item.put("queueId", queue.getQueueId());
+                values.add(item);
+            }
+        }
+        return values;
+    }
+
+    private static Set<org.apache.rocketmq.common.message.MessageQueue> oneQueueSet() {
+        Set<org.apache.rocketmq.common.message.MessageQueue> queues = new java.util.LinkedHashSet<>();
+        queues.add(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 2));
+        return queues;
+    }
+
+    private static Map<String, Object> lockBatchRequestApiCase() {
+        org.apache.rocketmq.remoting.protocol.body.LockBatchRequestBody body =
+            new org.apache.rocketmq.remoting.protocol.body.LockBatchRequestBody();
+        Map<String, Object> item = new TreeMap<>();
+        Map<String, Object> defaults = new TreeMap<>();
+        defaults.put("consumerGroup", body.getConsumerGroup());
+        defaults.put("clientId", body.getClientId());
+        defaults.put("onlyThisBroker", body.isOnlyThisBroker());
+        defaults.put("mqSet", messageQueueApiValues(body.getMqSet()));
+        item.put("defaults", defaults);
+        item.put("defaultText", body.toString());
+
+        Set<org.apache.rocketmq.common.message.MessageQueue> queues = oneQueueSet();
+        body.setConsumerGroup("workers");
+        body.setClientId("client-a");
+        body.setOnlyThisBroker(true);
+        body.setMqSet(queues);
+        Map<String, Object> values = new TreeMap<>();
+        values.put("consumerGroup", body.getConsumerGroup());
+        values.put("clientId", body.getClientId());
+        values.put("onlyThisBroker", body.isOnlyThisBroker());
+        values.put("mqSet", messageQueueApiValues(body.getMqSet()));
+        item.put("values", values);
+        item.put("getterReturnsAssignedSet", body.getMqSet() == queues);
+        item.put("text", body.toString());
+
+        body.setConsumerGroup(null);
+        body.setClientId(null);
+        body.setOnlyThisBroker(false);
+        body.setMqSet(null);
+        item.put("nullSettersRemainNull", body.getConsumerGroup() == null && body.getClientId() == null
+            && body.getMqSet() == null && !body.isOnlyThisBroker());
+        return item;
+    }
+
+    private static Map<String, Object> unlockBatchRequestApiCase() {
+        org.apache.rocketmq.remoting.protocol.body.UnlockBatchRequestBody body =
+            new org.apache.rocketmq.remoting.protocol.body.UnlockBatchRequestBody();
+        Map<String, Object> item = new TreeMap<>();
+        Map<String, Object> defaults = new TreeMap<>();
+        defaults.put("consumerGroup", body.getConsumerGroup());
+        defaults.put("clientId", body.getClientId());
+        defaults.put("onlyThisBroker", body.isOnlyThisBroker());
+        defaults.put("mqSet", messageQueueApiValues(body.getMqSet()));
+        item.put("defaults", defaults);
+        item.put("defaultText", body.toString());
+
+        Set<org.apache.rocketmq.common.message.MessageQueue> queues = oneQueueSet();
+        body.setConsumerGroup("workers");
+        body.setClientId("client-a");
+        body.setOnlyThisBroker(true);
+        body.setMqSet(queues);
+        Map<String, Object> values = new TreeMap<>();
+        values.put("consumerGroup", body.getConsumerGroup());
+        values.put("clientId", body.getClientId());
+        values.put("onlyThisBroker", body.isOnlyThisBroker());
+        values.put("mqSet", messageQueueApiValues(body.getMqSet()));
+        item.put("values", values);
+        item.put("getterReturnsAssignedSet", body.getMqSet() == queues);
+        item.put("text", body.toString());
+
+        body.setConsumerGroup(null);
+        body.setClientId(null);
+        body.setOnlyThisBroker(false);
+        body.setMqSet(null);
+        item.put("nullSettersRemainNull", body.getConsumerGroup() == null && body.getClientId() == null
+            && body.getMqSet() == null && !body.isOnlyThisBroker());
+        return item;
+    }
+
+    private static Map<String, Object> lockBatchResponseApiCase() {
+        org.apache.rocketmq.remoting.protocol.body.LockBatchResponseBody body =
+            new org.apache.rocketmq.remoting.protocol.body.LockBatchResponseBody();
+        Map<String, Object> item = new TreeMap<>();
+        item.put("defaultLockOKMQSet", messageQueueApiValues(body.getLockOKMQSet()));
+        Set<org.apache.rocketmq.common.message.MessageQueue> queues = oneQueueSet();
+        body.setLockOKMQSet(queues);
+        item.put("values", messageQueueApiValues(body.getLockOKMQSet()));
+        item.put("getterReturnsAssignedSet", body.getLockOKMQSet() == queues);
+        body.setLockOKMQSet(null);
+        item.put("nullSetterRemainsNull", body.getLockOKMQSet() == null);
+        return item;
+    }
+
+    private static Map<String, Object> consumeDirectResultApiCase() {
+        org.apache.rocketmq.remoting.protocol.body.ConsumeMessageDirectlyResult result =
+            new org.apache.rocketmq.remoting.protocol.body.ConsumeMessageDirectlyResult();
+        Map<String, Object> item = new TreeMap<>();
+        Map<String, Object> defaults = new TreeMap<>();
+        defaults.put("order", result.isOrder());
+        defaults.put("autoCommit", result.isAutoCommit());
+        defaults.put("consumeResult", result.getConsumeResult() == null ? null : result.getConsumeResult().name());
+        defaults.put("remark", result.getRemark());
+        defaults.put("spentTimeMills", result.getSpentTimeMills());
+        item.put("defaults", defaults);
+        item.put("defaultText", result.toString());
+
+        result.setOrder(true);
+        result.setAutoCommit(false);
+        result.setConsumeResult(org.apache.rocketmq.remoting.protocol.body.CMResult.CR_SUCCESS);
+        result.setRemark("consumed");
+        result.setSpentTimeMills(42L);
+        Map<String, Object> values = new TreeMap<>();
+        values.put("order", result.isOrder());
+        values.put("autoCommit", result.isAutoCommit());
+        values.put("consumeResult", result.getConsumeResult().name());
+        values.put("remark", result.getRemark());
+        values.put("spentTimeMills", result.getSpentTimeMills());
+        item.put("values", values);
+        item.put("text", result.toString());
+
+        result.setConsumeResult(null);
+        result.setRemark(null);
+        item.put("nullSettersRemainNull", result.getConsumeResult() == null && result.getRemark() == null);
         return item;
     }
 
