@@ -4745,6 +4745,17 @@ mod tests {
             serde_json::to_value(wrapper).unwrap()["messageRequestModeMap"],
             api["populatedMap"]
         );
+        assert_eq!(api["getterMutationVisible"], true);
+        let map = wrapper.get_message_request_mode_map_mut().unwrap();
+        map.entry("archive".into()).or_default();
+        let readers = map.get("orders").unwrap().get("workers").unwrap().clone();
+        map.get_mut("orders")
+            .unwrap()
+            .insert("readers".into(), readers);
+        assert_eq!(
+            serde_json::to_value(wrapper).unwrap()["messageRequestModeMap"],
+            api["getterMutatedMap"]
+        );
     }
 
     #[test]

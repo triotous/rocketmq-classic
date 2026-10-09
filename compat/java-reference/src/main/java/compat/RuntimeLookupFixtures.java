@@ -953,6 +953,15 @@ public final class RuntimeLookupFixtures {
         wrapper.setMessageRequestModeMap(map);
         item.put("setterRetainsMapIdentity", wrapper.getMessageRequestModeMap() == map);
         item.put("populatedMap", wrapper.getMessageRequestModeMap());
+        Map<String, java.util.concurrent.ConcurrentHashMap<String,
+            org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody>> getterMap =
+                wrapper.getMessageRequestModeMap();
+        getterMap.put("archive", new java.util.concurrent.ConcurrentHashMap<>());
+        getterMap.get("orders").put("readers", body);
+        item.put("getterMutationVisible", wrapper.getMessageRequestModeMap().get("archive")
+            == getterMap.get("archive")
+            && wrapper.getMessageRequestModeMap().get("orders").get("readers") == body);
+        item.put("getterMutatedMap", wrapper.getMessageRequestModeMap());
         return item;
     }
 
