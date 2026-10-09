@@ -1,7 +1,6 @@
 use crate::codes::JavaEnumLookupError;
 use rocketmq_classic_common::{message::MessageQueue, serde_fastjson};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
-use serde_json::Value;
 
 macro_rules! impl_java_enum_api {
     ($enum_type:ident, $java_class:literal, $count:literal, $($variant:ident => $name:literal = $ordinal:literal),+ $(,)?) => {
@@ -138,6 +137,17 @@ where
     map.end()
 }
 
+struct FastjsonI32(i32);
+
+impl<'de> Deserialize<'de> for FastjsonI32 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        serde_fastjson::deserialize_i32(deserializer).map(Self)
+    }
+}
+
 fn deserialize_assignment_mode<'de, D>(
     deserializer: D,
 ) -> Result<Option<MessageRequestMode>, D::Error>
@@ -154,57 +164,29 @@ where
         }
     }
 
-    fn from_number<E: de::Error>(number: f64) -> Result<Option<MessageRequestMode>, E> {
-        if !number.is_finite() {
-            return Err(E::custom("Fastjson MessageRequestMode must be finite"));
-        }
-        let ordinal = number.trunc();
-        if !(0.0..=1.0).contains(&ordinal) {
-            return Err(E::custom(format!(
-                "Fastjson MessageRequestMode ordinal {ordinal} is out of range"
-            )));
-        }
-        Ok(Some(if ordinal == 0.0 {
-            MessageRequestMode::Pull
-        } else {
-            MessageRequestMode::Pop
-        }))
+    let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+    let raw = raw.get().trim();
+    if raw == "null" {
+        return Ok(None);
     }
-
-    let value = Value::deserialize(deserializer)?;
-    match value {
-        Value::Null => Ok(None),
-        Value::String(value) if value.eq_ignore_ascii_case("PULL") => {
-            Ok(Some(MessageRequestMode::Pull))
-        }
-        Value::String(value) if value.eq_ignore_ascii_case("POP") => {
-            Ok(Some(MessageRequestMode::Pop))
-        }
-        Value::String(value) => match value.parse::<i64>() {
-            Ok(ordinal) => from_ordinal::<D::Error>(ordinal),
-            Err(_) => Ok(None),
-        },
-        Value::Number(value) => {
-            if let Some(ordinal) = value.as_i64() {
-                from_ordinal::<D::Error>(ordinal)
-            } else if let Some(ordinal) = value.as_u64() {
-                match ordinal {
-                    0 => Ok(Some(MessageRequestMode::Pull)),
-                    1 => Ok(Some(MessageRequestMode::Pop)),
-                    _ => Err(de::Error::custom(format!(
-                        "Fastjson MessageRequestMode ordinal {ordinal} is out of range"
-                    ))),
-                }
-            } else if let Some(number) = value.as_f64() {
-                from_number::<D::Error>(number)
-            } else {
-                Err(de::Error::custom("invalid Fastjson MessageRequestMode"))
-            }
-        }
-        _ => Err(de::Error::custom(
+    if raw.starts_with('"') {
+        let value = serde_json::from_str::<String>(raw).map_err(de::Error::custom)?;
+        return match value.as_str() {
+            value if value.eq_ignore_ascii_case("PULL") => Ok(Some(MessageRequestMode::Pull)),
+            value if value.eq_ignore_ascii_case("POP") => Ok(Some(MessageRequestMode::Pop)),
+            _ => match value.parse::<i64>() {
+                Ok(ordinal) => from_ordinal::<D::Error>(ordinal),
+                Err(_) => Ok(None),
+            },
+        };
+    }
+    if raw == "true" || raw == "false" || raw.starts_with('{') || raw.starts_with('[') {
+        return Err(de::Error::custom(
             "Fastjson cannot coerce this value to MessageRequestMode",
-        )),
+        ));
     }
+    let FastjsonI32(ordinal) = serde_json::from_str(raw).map_err(de::Error::custom)?;
+    from_ordinal::<D::Error>(ordinal as i64)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
