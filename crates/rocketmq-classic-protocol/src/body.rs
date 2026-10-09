@@ -1219,6 +1219,11 @@ impl MessageQueueAssignment {
         self.message_queue.as_ref()
     }
 
+    /// Borrows the owned queue mutably for Java-compatible getter mutations.
+    pub fn message_queue_mut(&mut self) -> Option<&mut MessageQueue> {
+        self.message_queue.as_mut()
+    }
+
     pub fn set_message_queue(&mut self, message_queue: Option<MessageQueue>) {
         self.message_queue = message_queue;
     }
@@ -5622,7 +5627,10 @@ mod tests {
                     );
                     assert_eq!(case["messageQueueGetterReturnsSetterObject"], true);
                     assignment.message_queue_mut().unwrap().set_queue_id(4);
-                    assert_eq!(case["messageQueueGetterMutationVisibleToSetterObject"], true);
+                    assert_eq!(
+                        case["messageQueueGetterMutationVisibleToSetterObject"],
+                        true
+                    );
                     assert_eq!(
                         serde_json::to_value(assignment.message_queue().unwrap()).unwrap(),
                         case["mutatedMessageQueue"]
