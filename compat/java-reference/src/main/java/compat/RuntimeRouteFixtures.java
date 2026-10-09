@@ -1535,6 +1535,152 @@ public final class RuntimeRouteFixtures {
         return cases;
     }
 
+    private static Map<String, Object> routeDtoAccessorCases() {
+        Map<String, Object> result = new TreeMap<>();
+
+        org.apache.rocketmq.remoting.protocol.route.BrokerData broker =
+            new org.apache.rocketmq.remoting.protocol.route.BrokerData();
+        HashMap<Long, String> addresses = new HashMap<>();
+        addresses.put(0L, "master:10911");
+        addresses.put(2L, null);
+        broker.setCluster("cluster");
+        broker.setBrokerName("broker");
+        broker.setBrokerAddrs(addresses);
+        broker.setZoneName("zone");
+        broker.setEnableActingMaster(true);
+        Map<String, Object> brokerValues = new TreeMap<>();
+        brokerValues.put("cluster", broker.getCluster());
+        brokerValues.put("brokerName", broker.getBrokerName());
+        Map<String, Object> brokerAddressValues = new TreeMap<>();
+        if (broker.getBrokerAddrs() != null) {
+            broker.getBrokerAddrs().forEach((key, value) -> brokerAddressValues.put(String.valueOf(key), value));
+        }
+        brokerValues.put("brokerAddrs", broker.getBrokerAddrs() == null ? null : brokerAddressValues);
+        brokerValues.put("zoneName", broker.getZoneName());
+        brokerValues.put("enableActingMaster", broker.isEnableActingMaster());
+        result.put("brokerData", brokerValues);
+        broker.setCluster(null);
+        broker.setBrokerName(null);
+        broker.setBrokerAddrs(null);
+        broker.setZoneName(null);
+        broker.setEnableActingMaster(false);
+        Map<String, Object> nullBrokerValues = new TreeMap<>();
+        nullBrokerValues.put("cluster", broker.getCluster());
+        nullBrokerValues.put("brokerName", broker.getBrokerName());
+        nullBrokerValues.put("brokerAddrs", broker.getBrokerAddrs());
+        nullBrokerValues.put("zoneName", broker.getZoneName());
+        nullBrokerValues.put("enableActingMaster", broker.isEnableActingMaster());
+        result.put("brokerDataNulls", nullBrokerValues);
+
+        org.apache.rocketmq.remoting.protocol.route.QueueData queue =
+            new org.apache.rocketmq.remoting.protocol.route.QueueData();
+        queue.setBrokerName("queue-broker");
+        queue.setReadQueueNums(3);
+        queue.setWriteQueueNums(5);
+        queue.setPerm(6);
+        queue.setTopicSysFlag(9);
+        Map<String, Object> queueValues = new TreeMap<>();
+        queueValues.put("brokerName", queue.getBrokerName());
+        queueValues.put("readQueueNums", queue.getReadQueueNums());
+        queueValues.put("writeQueueNums", queue.getWriteQueueNums());
+        queueValues.put("perm", queue.getPerm());
+        queueValues.put("topicSysFlag", queue.getTopicSysFlag());
+        result.put("queueData", queueValues);
+        queue.setBrokerName(null);
+        queue.setReadQueueNums(0);
+        queue.setWriteQueueNums(0);
+        queue.setPerm(0);
+        queue.setTopicSysFlag(0);
+        Map<String, Object> nullQueueValues = new TreeMap<>();
+        nullQueueValues.put("brokerName", queue.getBrokerName());
+        nullQueueValues.put("readQueueNums", queue.getReadQueueNums());
+        nullQueueValues.put("writeQueueNums", queue.getWriteQueueNums());
+        nullQueueValues.put("perm", queue.getPerm());
+        nullQueueValues.put("topicSysFlag", queue.getTopicSysFlag());
+        result.put("queueDataNulls", nullQueueValues);
+
+        org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo mapping =
+            new org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo();
+        java.util.concurrent.ConcurrentMap<Integer, Integer> ids = new java.util.concurrent.ConcurrentHashMap<>();
+        ids.put(0, 1);
+        ids.put(2, 4);
+        mapping.setTopic("topic");
+        mapping.setScope("__global__");
+        mapping.setTotalQueues(5);
+        mapping.setBname("mapping-broker");
+        mapping.setEpoch(7L);
+        mapping.setDirty(true);
+        mapping.setCurrIdMap(ids);
+        Map<String, Object> mappingValues = new TreeMap<>();
+        mappingValues.put("topic", mapping.getTopic());
+        mappingValues.put("scope", mapping.getScope());
+        mappingValues.put("totalQueues", mapping.getTotalQueues());
+        mappingValues.put("bname", mapping.getBname());
+        mappingValues.put("epoch", mapping.getEpoch());
+        mappingValues.put("dirty", mapping.isDirty());
+        Map<String, Object> mappingIdValues = new TreeMap<>();
+        if (mapping.getCurrIdMap() != null) {
+            mapping.getCurrIdMap().forEach((key, value) -> mappingIdValues.put(String.valueOf(key), value));
+        }
+        mappingValues.put("currIdMap", mapping.getCurrIdMap() == null ? null : mappingIdValues);
+        result.put("topicQueueMappingInfo", mappingValues);
+        mapping.setTopic(null);
+        mapping.setScope(null);
+        mapping.setTotalQueues(0);
+        mapping.setBname(null);
+        mapping.setEpoch(0L);
+        mapping.setDirty(false);
+        mapping.setCurrIdMap(null);
+        Map<String, Object> nullMappingValues = new TreeMap<>();
+        nullMappingValues.put("topic", mapping.getTopic());
+        nullMappingValues.put("scope", mapping.getScope());
+        nullMappingValues.put("totalQueues", mapping.getTotalQueues());
+        nullMappingValues.put("bname", mapping.getBname());
+        nullMappingValues.put("epoch", mapping.getEpoch());
+        nullMappingValues.put("dirty", mapping.isDirty());
+        nullMappingValues.put("currIdMap", mapping.getCurrIdMap());
+        result.put("topicQueueMappingInfoNulls", nullMappingValues);
+
+        org.apache.rocketmq.remoting.protocol.route.TopicRouteData route =
+            new org.apache.rocketmq.remoting.protocol.route.TopicRouteData();
+        org.apache.rocketmq.remoting.protocol.route.BrokerData routeBroker =
+            new org.apache.rocketmq.remoting.protocol.route.BrokerData();
+        routeBroker.setBrokerName("route-broker");
+        Map<String, List<String>> filters = new HashMap<>();
+        filters.put("broker", List.of("filter-a", "filter-b"));
+        Map<String, org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo> mappings = new HashMap<>();
+        mappings.put("mapping-broker", new org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo(
+            "topic", 5, "mapping-broker", 7L));
+        route.setOrderTopicConf("mapping-broker:5");
+        route.setQueueDatas(List.of(queueData("queue-broker", 3, 5, 6, 9)));
+        route.setBrokerDatas(List.of(routeBroker));
+        route.setFilterServerTable(new HashMap<>(filters));
+        route.setTopicQueueMappingByBroker(mappings);
+        Map<String, Object> routeValues = new TreeMap<>();
+        routeValues.put("orderTopicConf", route.getOrderTopicConf());
+        routeValues.put("queueDatas", route.getQueueDatas() == null ? null : route.getQueueDatas().stream()
+            .map(value -> value == null ? null : value.getBrokerName()).collect(java.util.stream.Collectors.toList()));
+        routeValues.put("brokerDatas", route.getBrokerDatas() == null ? null : route.getBrokerDatas().stream()
+            .map(value -> value == null ? null : value.getBrokerName()).collect(java.util.stream.Collectors.toList()));
+        routeValues.put("filterServerTable", route.getFilterServerTable());
+        routeValues.put("topicQueueMappingByBroker", route.getTopicQueueMappingByBroker() == null ? null
+            : new ArrayList<>(new TreeSet<>(route.getTopicQueueMappingByBroker().keySet())));
+        result.put("topicRouteData", routeValues);
+        route.setOrderTopicConf(null);
+        route.setQueueDatas(null);
+        route.setBrokerDatas(null);
+        route.setFilterServerTable(null);
+        route.setTopicQueueMappingByBroker(null);
+        Map<String, Object> nullRouteValues = new TreeMap<>();
+        nullRouteValues.put("orderTopicConf", route.getOrderTopicConf());
+        nullRouteValues.put("queueDatas", route.getQueueDatas());
+        nullRouteValues.put("brokerDatas", route.getBrokerDatas());
+        nullRouteValues.put("filterServerTable", route.getFilterServerTable());
+        nullRouteValues.put("topicQueueMappingByBroker", route.getTopicQueueMappingByBroker());
+        result.put("topicRouteDataNulls", nullRouteValues);
+        return result;
+    }
+
     private static List<Object> topicRouteDataToStringCases() {
         String populated = "{\"orderTopicConf\":\"broker:1\",\"queueDatas\":[{\"brokerName\":\"broker\","
             + "\"readQueueNums\":1,\"writeQueueNums\":2,\"perm\":6,\"topicSysFlag\":0}],"
@@ -1961,6 +2107,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("queueDataMethods", queueDataMethodCases());
         fixture.put("topicQueueMappingMethods", topicQueueMappingMethodsCases());
         fixture.put("topicRouteDataMethods", topicRouteDataMethodCases());
+        fixture.put("routeDtoAccessors", routeDtoAccessorCases());
         fixture.put("topicRouteDataToString", topicRouteDataToStringCases());
         fixture.put("inheritedSerializationCases", inheritedSerializationCases());
         fixture.put("inheritedSerializationNullUtilities", inheritedSerializationNullUtilities());
