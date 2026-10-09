@@ -321,7 +321,10 @@ struct OffsetOptionFields {
         deserialize_with = "super::heartbeat::deserialize_fastjson_optional_enum"
     )]
     option_type: Option<OffsetOptionType>,
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_i64_reject_object"
+    )]
     value: i64,
 }
 
@@ -490,9 +493,23 @@ impl<'de> Deserialize<'de> for LiteSubscriptionCtlRequestBody {
     {
         let fields: LiteSubscriptionCtlRequestBodyFields =
             serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
-        Ok(Self {
-            subscription_set: fields.subscription_set,
-        })
+        let mut null_seen = false;
+        let subscription_set = fields.subscription_set.map(|items| {
+            items
+                .into_iter()
+                .filter(|item| {
+                    if item.is_some() {
+                        true
+                    } else if null_seen {
+                        false
+                    } else {
+                        null_seen = true;
+                        true
+                    }
+                })
+                .collect()
+        });
+        Ok(Self { subscription_set })
     }
 }
 
