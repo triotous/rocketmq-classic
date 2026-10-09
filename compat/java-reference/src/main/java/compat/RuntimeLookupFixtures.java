@@ -979,32 +979,60 @@ public final class RuntimeLookupFixtures {
         Map<String, Object> item = new TreeMap<>();
         item.put("defaultAssignments", body.getMessageQueueAssignments());
 
-        org.apache.rocketmq.common.message.MessageQueueAssignment assignment =
-            new org.apache.rocketmq.common.message.MessageQueueAssignment();
-        assignment.setMessageQueue(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 2));
-        assignment.setMode(org.apache.rocketmq.common.message.MessageRequestMode.POP);
+        org.apache.rocketmq.common.message.MessageQueueAssignment assignment = messageQueueAssignment(
+            2, org.apache.rocketmq.common.message.MessageRequestMode.POP);
         java.util.Set<org.apache.rocketmq.common.message.MessageQueueAssignment> assignments =
             new java.util.LinkedHashSet<>();
         assignments.add(assignment);
         body.setMessageQueueAssignments(assignments);
         item.put("setterRetainsSetIdentity", body.getMessageQueueAssignments() == assignments);
         item.put("valueCount", body.getMessageQueueAssignments().size());
-        org.apache.rocketmq.common.message.MessageQueueAssignment returned =
-            body.getMessageQueueAssignments().iterator().next();
-        Map<String, Object> value = new TreeMap<>();
-        org.apache.rocketmq.common.message.MessageQueue queue = returned.getMessageQueue();
-        Map<String, Object> messageQueue = new TreeMap<>();
-        messageQueue.put("topic", queue.getTopic());
-        messageQueue.put("brokerName", queue.getBrokerName());
-        messageQueue.put("queueId", queue.getQueueId());
-        value.put("messageQueue", messageQueue);
-        value.put("mode", returned.getMode().name());
-        value.put("attachments", returned.getAttachments());
-        item.put("values", java.util.List.of(value));
+        item.put("values", messageQueueAssignmentApiValues(body.getMessageQueueAssignments()));
+        item.put("assignedValues", messageQueueAssignmentApiValues(body.getMessageQueueAssignments()));
+
+        org.apache.rocketmq.common.message.MessageQueueAssignment externalAssignment = messageQueueAssignment(
+            3, org.apache.rocketmq.common.message.MessageRequestMode.PULL);
+        assignments.remove(assignment);
+        assignments.add(externalAssignment);
+        item.put("externalMutationVisible", body.getMessageQueueAssignments().contains(externalAssignment));
+
+        org.apache.rocketmq.common.message.MessageQueueAssignment getterAssignment = messageQueueAssignment(
+            4, org.apache.rocketmq.common.message.MessageRequestMode.POP);
+        body.getMessageQueueAssignments().remove(externalAssignment);
+        body.getMessageQueueAssignments().add(getterAssignment);
+        item.put("getterMutationVisibleToAssignedSet", assignments.contains(getterAssignment));
+        item.put("mutatedValues", messageQueueAssignmentApiValues(body.getMessageQueueAssignments()));
 
         body.setMessageQueueAssignments(null);
         item.put("nullSetterRemainsNull", body.getMessageQueueAssignments() == null);
         return item;
+    }
+
+    private static org.apache.rocketmq.common.message.MessageQueueAssignment messageQueueAssignment(
+        int queueId, org.apache.rocketmq.common.message.MessageRequestMode mode) {
+        org.apache.rocketmq.common.message.MessageQueueAssignment assignment =
+            new org.apache.rocketmq.common.message.MessageQueueAssignment();
+        assignment.setMessageQueue(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", queueId));
+        assignment.setMode(mode);
+        return assignment;
+    }
+
+    private static List<Object> messageQueueAssignmentApiValues(
+        Set<org.apache.rocketmq.common.message.MessageQueueAssignment> assignments) {
+        List<Object> values = new ArrayList<>();
+        for (org.apache.rocketmq.common.message.MessageQueueAssignment assignment : assignments) {
+            Map<String, Object> value = new TreeMap<>();
+            org.apache.rocketmq.common.message.MessageQueue queue = assignment.getMessageQueue();
+            Map<String, Object> messageQueue = new TreeMap<>();
+            messageQueue.put("topic", queue.getTopic());
+            messageQueue.put("brokerName", queue.getBrokerName());
+            messageQueue.put("queueId", queue.getQueueId());
+            value.put("messageQueue", messageQueue);
+            value.put("mode", assignment.getMode().name());
+            value.put("attachments", assignment.getAttachments());
+            values.add(value);
+        }
+        return values;
     }
 
     private static Map<String, Object> setRequestModeRequestApiCase() {
