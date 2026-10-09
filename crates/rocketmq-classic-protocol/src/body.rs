@@ -576,7 +576,7 @@ impl<'de> Deserialize<'de> for LiteSubscriptionCtlRequestBody {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 /// Java `LiteSubscription` inherits identity-based equality.
 ///
@@ -588,13 +588,228 @@ impl<'de> Deserialize<'de> for LiteSubscriptionCtlRequestBody {
 /// ```
 pub struct LiteSubscription {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub client_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub topic: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub lite_topic_set: Option<std::collections::BTreeSet<Option<String>>>,
+    pub lite_topic_set: std::collections::BTreeSet<String>,
+    pub update_time: i64,
+}
+
+fn current_lite_subscription_time_millis() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(duration) => duration.as_millis().min(i64::MAX as u128) as i64,
+        Err(error) => -(error.duration().as_millis().min(i64::MAX as u128) as i64),
+    }
+}
+
+impl Default for LiteSubscription {
+    fn default() -> Self {
+        Self {
+            group: None,
+            topic: None,
+            lite_topic_set: std::collections::BTreeSet::new(),
+            update_time: current_lite_subscription_time_millis(),
+        }
+    }
+}
+
+impl LiteSubscription {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn group(&self) -> Option<&str> {
+        self.group.as_deref()
+    }
+
+    pub fn set_group(&mut self, group: Option<String>) -> &mut Self {
+        self.group = group;
+        self
+    }
+
+    pub fn topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, topic: Option<String>) -> &mut Self {
+        self.topic = topic;
+        self
+    }
+
+    pub fn lite_topic_set(&self) -> &std::collections::BTreeSet<String> {
+        &self.lite_topic_set
+    }
+
+    pub fn lite_topic_set_mut(&mut self) -> &mut std::collections::BTreeSet<String> {
+        &mut self.lite_topic_set
+    }
+
+    pub fn set_lite_topic_set<I, S>(&mut self, topics: I) -> &mut Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.lite_topic_set
+            .extend(topics.into_iter().map(|topic| topic.as_ref().to_owned()));
+        self
+    }
+
+    pub fn update_time(&self) -> i64 {
+        self.update_time
+    }
+
+    pub fn set_update_time(&mut self, update_time: i64) {
+        self.update_time = update_time;
+    }
+
+    pub fn add_lite_topic(&mut self, topic: impl Into<String>) -> bool {
+        self.update_time = current_lite_subscription_time_millis();
+        self.lite_topic_set.insert(topic.into())
+    }
+
+    pub fn add_lite_topics<I, S>(&mut self, topics: I)
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.update_time = current_lite_subscription_time_millis();
+        self.lite_topic_set
+            .extend(topics.into_iter().map(|topic| topic.as_ref().to_owned()));
+    }
+
+    pub fn remove_lite_topic(&mut self, topic: impl AsRef<str>) -> bool {
+        self.update_time = current_lite_subscription_time_millis();
+        self.lite_topic_set.remove(topic.as_ref())
+    }
+
+    pub fn remove_lite_topics<I, S>(&mut self, topics: I)
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.update_time = current_lite_subscription_time_millis();
+        for topic in topics {
+            self.lite_topic_set.remove(topic.as_ref());
+        }
+    }
+}
+
+impl std::fmt::Display for LiteSubscription {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let group = self.group.as_deref().unwrap_or("null");
+        let topic = self.topic.as_deref().unwrap_or("null");
+        let lite_topic_set = self
+            .lite_topic_set
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .join(", ");
+        write!(
+            formatter,
+            "LiteSubscription{{group='{group}', topic='{topic}', liteTopicSet=[{lite_topic_set}], updateTime={}}}",
+            self.update_time
+        )
+    }
+}
+
+struct LiteSubscriptionRawEntries(Vec<(String, Box<serde_json::value::RawValue>)>);
+
+impl<'de> Deserialize<'de> for LiteSubscriptionRawEntries {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct EntriesVisitor;
+
+        impl<'de> de::Visitor<'de> for EntriesVisitor {
+            type Value = LiteSubscriptionRawEntries;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a JSON object containing LiteSubscription fields")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut entries = Vec::new();
+                while let Some((name, value)) = map.next_entry()? {
+                    entries.push((name, value));
+                }
+                Ok(LiteSubscriptionRawEntries(entries))
+            }
+        }
+
+        deserializer.deserialize_map(EntriesVisitor)
+    }
+}
+
+fn parse_lite_subscription_nullable_string(raw: &str) -> Result<Option<String>, String> {
+    let mut deserializer = serde_json::Deserializer::from_str(raw);
+    let value = serde_fastjson::deserialize_nullable_string(&mut deserializer)
+        .map_err(|error| error.to_string())?;
+    deserializer.end().map_err(|error| error.to_string())?;
+    Ok(value)
+}
+
+fn parse_lite_subscription_update_time(raw: &str) -> Result<i64, String> {
+    let mut deserializer = serde_json::Deserializer::from_str(raw);
+    let value = serde_fastjson::deserialize_i64_reject_object(&mut deserializer)
+        .map_err(|error| error.to_string())?;
+    deserializer.end().map_err(|error| error.to_string())?;
+    Ok(value)
+}
+
+fn parse_lite_subscription_topic_set(
+    raw: &str,
+) -> Result<std::collections::BTreeSet<String>, String> {
+    let mut deserializer = serde_json::Deserializer::from_str(raw);
+    let values = deserialize_optional_fastjson_string_set(&mut deserializer)
+        .map_err(|error| error.to_string())?;
+    deserializer.end().map_err(|error| error.to_string())?;
+    let values =
+        values.ok_or_else(|| "LiteSubscription cannot add a null lite topic set".to_owned())?;
+    values
+        .into_iter()
+        .map(|value| {
+            value.ok_or_else(|| "LiteSubscription cannot add a null lite topic".to_owned())
+        })
+        .collect()
+}
+
+impl<'de> Deserialize<'de> for LiteSubscription {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let LiteSubscriptionRawEntries(entries) =
+            LiteSubscriptionRawEntries::deserialize(deserializer)?;
+        let mut subscription = Self::default();
+        for (name, raw) in entries {
+            match name.as_str() {
+                "group" => {
+                    subscription.group = parse_lite_subscription_nullable_string(raw.get())
+                        .map_err(de::Error::custom)?;
+                }
+                "topic" => {
+                    subscription.topic = parse_lite_subscription_nullable_string(raw.get())
+                        .map_err(de::Error::custom)?;
+                }
+                "liteTopicSet" => {
+                    let topics =
+                        parse_lite_subscription_topic_set(raw.get()).map_err(de::Error::custom)?;
+                    subscription.lite_topic_set.extend(topics);
+                }
+                "updateTime" => {
+                    subscription.update_time = parse_lite_subscription_update_time(raw.get())
+                        .map_err(de::Error::custom)?;
+                }
+                _ => {}
+            }
+        }
+        Ok(subscription)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
