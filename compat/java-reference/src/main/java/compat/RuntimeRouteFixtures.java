@@ -482,6 +482,20 @@ public final class RuntimeRouteFixtures {
             "{\"queueId\":2147483647}"));
         cases.add(routeDtoInputCase("message-queue-id-fraction", "messageQueue",
             "{\"queueId\":-1.9}"));
+        cases.add(routeDtoInputCase("message-queue-id-plus-string", "messageQueue",
+            "{\"queueId\":\"+2\"}"));
+        cases.add(routeDtoInputCase("message-queue-id-leading-zero-string", "messageQueue",
+            "{\"queueId\":\"002\"}"));
+        cases.add(routeDtoInputCase("message-queue-id-fraction-string", "messageQueue",
+            "{\"queueId\":\"-1.9\"}"));
+        cases.add(routeDtoInputCase("message-queue-id-exponent-string", "messageQueue",
+            "{\"queueId\":\"1e2\"}"));
+        cases.add(routeDtoInputCase("message-queue-id-whitespace-string", "messageQueue",
+            "{\"queueId\":\" 2 \"}"));
+        cases.add(routeDtoInputCase("message-queue-id-string-overflow", "messageQueue",
+            "{\"queueId\":\"2147483648\"}"));
+        cases.add(routeDtoInputCase("message-queue-id-string-underflow", "messageQueue",
+            "{\"queueId\":\"-2147483649\"}"));
         cases.add(routeDtoInputCase("message-queue-unicode-decimal-id", "messageQueue",
             "{\"queueId\":\"１２\"}"));
         cases.add(routeDtoInputCase("message-queue-id-overflow", "messageQueue",
