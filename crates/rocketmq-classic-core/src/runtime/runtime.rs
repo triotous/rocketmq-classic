@@ -660,7 +660,16 @@ impl ClientRuntime {
                     .consumers
                     .iter()
                     .any(|consumer| consumer.is_subscribe_topic_need_update(topic)));
-        if (changed || needed) && !groups.consumers.is_empty() && route.queue_datas.is_none() {
+        let static_route = route.order_topic_conf.is_none()
+            && route
+                .topic_queue_mapping_by_broker
+                .as_ref()
+                .is_some_and(|mappings| !mappings.is_empty());
+        if (changed || needed)
+            && !groups.consumers.is_empty()
+            && route.queue_datas.is_none()
+            && !static_route
+        {
             return Err(RuntimeError::InvalidRoute("null queue data list"));
         }
         let changed = if needed {

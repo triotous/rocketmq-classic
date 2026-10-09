@@ -352,7 +352,7 @@ Methods implemented on `ClientRuntime` unless another owner is specified. Eviden
 | start / shutdown | `start/shutdown`, serialized owned control task | C: 17 explicit / 18 discovery rollback points, cancellation, running identity/shared-user wire gates |
 | getClientId / getBootTimestamp / getClientConfig | `client_id/boot_timestamp/config -> SharedClientConfig` (shared mutable handle) | R/M/config, `runtime_hooks`, heartbeat and lookup tests; construction-time transport resources remain captured |
 | updateTopicRouteInfoFromNameServer() | `update_all_topic_routes`; periodic route tick reuses public entry | R empty-round/no-socket, union/dedup, rejection continuation, null-topic JSON-null no-op and callback registry reentry; T existing schedule checks |
-| updateTopicRouteInfoFromNameServer(topic) | `update_topic_route(topic, deadline)` | R/Q; successful null decode returns false without cache publication (ADR-0039) |
+| updateTopicRouteInfoFromNameServer(topic) | `update_topic_route(topic, deadline)` | R/Q; successful null decode returns false without cache publication (ADR-0039); actual registered-consumer null-queue cases distinguish ordered-route rejection from static-mapping success and normalized publication |
 | updateTopicRouteInfoFromNameServer(topic,isDefault,producer) | `update_topic_route_from_default(topic, queue_count, deadline)` or ordinary update | R read-based clamp; producer-owned fallback Phase 7 |
 | parseOffsetTableFromBroker | `parse_offset_table_from_broker` | M, 10 actual Java cases; explicit namespace/owned-key conversion |
 | checkClientInBroker | `check_client_in_broker` | `tests/client_check.rs`, 16 actual Java cases including null non-TAG topic failure before RPC; consumer-start activation Phase 10/13 |

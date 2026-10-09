@@ -889,7 +889,8 @@ public final class RuntimeRouteFixtures {
             "{\"queueDatas\":[],\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":null,\"brokerAddrs\":{}}]}",
             "{\"queueDatas\":[],\"brokerDatas\":[{\"cluster\":null,\"brokerName\":\"broker\",\"brokerAddrs\":{}}]}",
             "{\"queueDatas\":[{\"brokerName\":null,\"readQueueNums\":1,\"perm\":4}],\"brokerDatas\":[]}",
-            "{\"queueDatas\":[{\"brokerName\":null},{\"brokerName\":\"broker\"}],\"brokerDatas\":[]}"
+            "{\"queueDatas\":[{\"brokerName\":null},{\"brokerName\":\"broker\"}],\"brokerDatas\":[]}",
+            "{\"queueDatas\":null,\"brokerDatas\":[],\"filterServerTable\":{},\"topicQueueMappingByBroker\":{\"broker\":{\"scope\":\"__global__\",\"totalQueues\":1,\"bname\":\"broker\"}}}"
         }) {
             org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
             config.setClientIP("route-null-collections-" + cases.size());
@@ -902,7 +903,7 @@ public final class RuntimeRouteFixtures {
                 java.lang.reflect.Field field = MQClientInstance.class.getDeclaredField("mQClientAPIImpl");
                 field.setAccessible(true); field.set(runtime, api);
                 api.route = com.alibaba.fastjson2.JSON.parseObject(input, TopicRouteData.class);
-                boolean registeredConsumer = cases.size() == 5;
+                boolean registeredConsumer = cases.size() == 5 || cases.size() == 10;
                 item.put("registeredConsumer", registeredConsumer);
                 if (registeredConsumer) {
                     org.apache.rocketmq.client.impl.consumer.MQConsumerInner consumer =

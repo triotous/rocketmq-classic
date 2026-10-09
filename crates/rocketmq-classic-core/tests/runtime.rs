@@ -216,6 +216,72 @@ async fn registered_consumer_rejects_null_ordered_route_queue_list_like_java() {
 }
 
 #[tokio::test]
+async fn registered_consumer_accepts_null_static_route_queue_list_like_java() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/route.json")).unwrap();
+    let case = &fixture["runtimeNullableCollections"][10];
+    assert_eq!(case["registeredConsumer"], true);
+    assert_eq!(case["outcome"], "OK");
+    assert_eq!(case["changed"], true);
+    assert_eq!(case["cached"], true);
+    assert_eq!(case["cachedQueueNull"], false);
+    let body = serde_json::to_vec(&case["input"]).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut config = ClientConfig::new("null-static-consumer");
+    config.namesrv_addr = Some(listener.local_addr().unwrap().to_string());
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+    let consumer = Arc::new(RouteObserver {
+        runtime: Arc::downgrade(&runtime),
+        updates: AtomicUsize::new(0),
+        needed: AtomicBool::new(false),
+        need_checks: AtomicUsize::new(0),
+    });
+    runtime
+        .register_consumer("consumer", consumer.clone())
+        .await
+        .unwrap();
+    runtime.remoting().start().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut length = [0; 4];
+        stream.read_exact(&mut length).await.unwrap();
+        let mut bytes = BytesMut::from(&length[..]);
+        bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
+        stream.read_exact(&mut bytes[4..]).await.unwrap();
+        let request = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
+            .unwrap()
+            .unwrap();
+        assert_eq!(request.code, request::GET_ROUTEINFO_BY_TOPIC);
+        let mut reply = RemotingCommand {
+            code: 0,
+            opaque: request.opaque,
+            body: Some(body),
+            ..Default::default()
+        };
+        reply.mark_response();
+        stream
+            .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+            .await
+            .unwrap();
+    });
+    assert!(
+        runtime
+            .update_topic_route("topic", Instant::now() + Duration::from_secs(2))
+            .await
+            .unwrap()
+    );
+    let snapshot = runtime.route_snapshot().unwrap();
+    let route = snapshot.raw_routes["topic"].snapshot().unwrap();
+    assert!(route.queue_datas.as_ref().unwrap().is_empty());
+    assert_eq!(consumer.updates.load(Ordering::SeqCst), 1);
+    peer.await.unwrap();
+    runtime.remoting().shutdown().await;
+}
+
+#[tokio::test]
 async fn all_topic_refresh_unions_registered_topics_and_continues_after_rejection() {
     use rocketmq_classic_protocol::heartbeat::{ConsumerData, SubscriptionData};
     use std::collections::BTreeSet;
