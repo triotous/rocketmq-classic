@@ -34,7 +34,7 @@ public final class RuntimeHeartbeatFixtures {
             "{\"topic\":null,\"subString\":null,\"tagsSet\":null,\"codeSet\":null,\"expressionType\":null,\"subVersion\":0}",
             "{\"topic\":\"T\",\"subString\":\"tag\",\"tagsSet\":[\"tag\"],\"codeSet\":[7],\"expressionType\":\"SQL92\",\"subVersion\":42}",
             "{\"topic\":\"null-members\",\"tagsSet\":[null,\"tag\",null],\"codeSet\":[null,7,null]}",
-            "{\"topic\":\"filter-source\",\"filterClassSource\":\"source-from-json\"}"
+            "{\"topic\":\"filter-source\",\"filterClassSource\":\"source-first\",\"filterClassSource\":\"source-last\"}"
         }) {
             long before = System.currentTimeMillis();
             SubscriptionData value = com.alibaba.fastjson2.JSON.parseObject(input, SubscriptionData.class);
@@ -661,6 +661,44 @@ public final class RuntimeHeartbeatFixtures {
 
     private static List<Object> heartbeatDtoInputCases() {
         List<Object> cases = new ArrayList<>();
+        cases.add(heartbeatDtoInputCase("subscription-duplicate-class-filter-mode-last-wins", "subscription",
+            "{\"subVersion\":0,\"classFilterMode\":false,\"classFilterMode\":true}"));
+        cases.add(heartbeatDtoInputCase("subscription-duplicate-topic-last-wins", "subscription",
+            "{\"subVersion\":0,\"topic\":\"first\",\"topic\":\"last\"}"));
+        cases.add(heartbeatDtoInputCase("subscription-duplicate-sub-string-last-wins", "subscription",
+            "{\"subVersion\":0,\"subString\":\"first\",\"subString\":\"last\"}"));
+        cases.add(heartbeatDtoInputCase("subscription-duplicate-tags-set-last-wins", "subscription",
+            "{\"subVersion\":0,\"tagsSet\":[\"first\"],\"tagsSet\":[\"last\"]}"));
+        cases.add(heartbeatDtoInputCase("subscription-duplicate-code-set-last-wins", "subscription",
+            "{\"subVersion\":0,\"codeSet\":[1],\"codeSet\":[2]}"));
+        cases.add(heartbeatDtoInputCase("subscription-duplicate-sub-version-last-wins", "subscription",
+            "{\"subVersion\":1,\"subVersion\":2}"));
+        cases.add(heartbeatDtoInputCase("subscription-duplicate-expression-type-last-wins", "subscription",
+            "{\"subVersion\":0,\"expressionType\":\"SQL92\",\"expressionType\":\"TAG\"}"));
+        cases.add(heartbeatDtoInputCase("producer-duplicate-group-name-last-wins", "producer",
+            "{\"groupName\":\"first\",\"groupName\":\"last\"}"));
+        cases.add(heartbeatDtoInputCase("consumer-duplicate-group-name-last-wins", "consumer",
+            "{\"groupName\":\"first\",\"groupName\":\"last\"}"));
+        cases.add(heartbeatDtoInputCase("consumer-duplicate-consume-type-last-wins", "consumer",
+            "{\"consumeType\":\"CONSUME_ACTIVELY\",\"consumeType\":\"CONSUME_POP\"}"));
+        cases.add(heartbeatDtoInputCase("consumer-duplicate-message-model-last-wins", "consumer",
+            "{\"messageModel\":\"CLUSTERING\",\"messageModel\":\"BROADCASTING\"}"));
+        cases.add(heartbeatDtoInputCase("consumer-duplicate-consume-from-last-wins", "consumer",
+            "{\"consumeFromWhere\":\"CONSUME_FROM_LAST_OFFSET\",\"consumeFromWhere\":\"CONSUME_FROM_FIRST_OFFSET\"}"));
+        cases.add(heartbeatDtoInputCase("consumer-duplicate-subscription-set-last-wins", "consumer",
+            "{\"subscriptionDataSet\":[{\"topic\":\"first\",\"subVersion\":0}],\"subscriptionDataSet\":[{\"topic\":\"last\",\"subVersion\":0}]}"));
+        cases.add(heartbeatDtoInputCase("consumer-duplicate-unit-mode-last-wins", "consumer",
+            "{\"unitMode\":false,\"unitMode\":true}"));
+        cases.add(heartbeatDtoInputCase("heartbeat-duplicate-client-id-last-wins", "heartbeat",
+            "{\"clientID\":\"first\",\"clientID\":\"last\"}"));
+        cases.add(heartbeatDtoInputCase("heartbeat-duplicate-producer-set-last-wins", "heartbeat",
+            "{\"producerDataSet\":[{\"groupName\":\"first\"}],\"producerDataSet\":[{\"groupName\":\"last\"}]}"));
+        cases.add(heartbeatDtoInputCase("heartbeat-duplicate-consumer-set-last-wins", "heartbeat",
+            "{\"consumerDataSet\":[{\"groupName\":\"first\"}],\"consumerDataSet\":[{\"groupName\":\"last\"}]}"));
+        cases.add(heartbeatDtoInputCase("heartbeat-duplicate-fingerprint-last-wins", "heartbeat",
+            "{\"heartbeatFingerprint\":1,\"heartbeatFingerprint\":2}"));
+        cases.add(heartbeatDtoInputCase("heartbeat-duplicate-without-sub-last-wins", "heartbeat",
+            "{\"withoutSub\":false,\"withoutSub\":true}"));
         cases.add(heartbeatDtoInputCase("subscription-scalars", "subscription",
             "{\"classFilterMode\":-1,\"topic\":42,\"subString\":true,\"tagsSet\":[1,true,[],{},null],\"codeSet\":[\"2\",1.9,true,null],\"subVersion\":\"1e2\",\"expressionType\":3,\"filterClassSource\":false}"));
         cases.add(heartbeatDtoInputCase("subscription-high-precision-number-to-string", "subscription",
