@@ -1093,6 +1093,12 @@ public final class RuntimeLookupFixtures {
         body.setConsumerIdList(consumerIds);
         item.put("values", body.getConsumerIdList());
         item.put("getterReturnsAssignedList", body.getConsumerIdList() == consumerIds);
+        item.put("assignedValues", new ArrayList<>(body.getConsumerIdList()));
+        consumerIds.add("client-c");
+        item.put("externalMutationVisible", body.getConsumerIdList().contains("client-c"));
+        body.getConsumerIdList().add("client-d");
+        item.put("getterMutationVisibleToAssignedList", consumerIds.contains("client-d"));
+        item.put("mutatedValues", body.getConsumerIdList());
         body.setConsumerIdList(null);
         item.put("nullSetterRemainsNull", body.getConsumerIdList() == null);
         return item;
