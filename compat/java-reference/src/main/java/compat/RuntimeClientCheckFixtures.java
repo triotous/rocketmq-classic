@@ -82,6 +82,37 @@ public final class RuntimeClientCheckFixtures {
             }
             cases.add(item);
         }
+        String[][] fields = {
+            {"clientId", "string"}, {"group", "string"},
+            {"subscriptionData", "dto"}, {"namespace", "string"}
+        };
+        String[][] shapes = {
+            {"null", "null"}, {"numeric-string", "\"7\""}, {"integer", "0"},
+            {"fraction", "1.5"}, {"boolean", "true"}, {"array", "[]"}, {"object", "{}"}
+        };
+        for (String[] field : fields) {
+            for (String[] shape : shapes) {
+                String value = shape[1];
+                if (field[1].equals("dto") && shape[0].equals("object")) {
+                    value = "{\"subVersion\":0}";
+                }
+                String input = "{\"" + field[0] + "\":" + value + "}";
+                Map<String, Object> item = new TreeMap<>();
+                item.put("id", "shape-" + field[0] + "-" + shape[0]);
+                item.put("rawInput", input);
+                try {
+                    CheckClientRequestBody body = com.alibaba.fastjson2.JSON.parseObject(
+                        input, CheckClientRequestBody.class);
+                    item.put("outcome", "ACCEPTED");
+                    item.put("fields", com.alibaba.fastjson2.JSON.parseObject(
+                        com.alibaba.fastjson2.JSON.toJSONString(body)));
+                } catch (RuntimeException error) {
+                    item.put("outcome", "REJECTED");
+                    item.put("error", error.getClass().getSimpleName());
+                }
+                cases.add(item);
+            }
+        }
         return cases;
     }
 

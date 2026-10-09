@@ -1175,7 +1175,18 @@ mod tests {
             serde_json::from_str(include_str!("../../../fixtures/runtime/client-check.json"))
                 .unwrap();
         let cases = fixture["checkClientBodyInputCases"].as_array().unwrap();
-        assert_eq!(cases.len(), 8);
+        assert_eq!(cases.len(), 36);
+        for required in [
+            "shape-clientId-array",
+            "shape-group-fraction",
+            "shape-subscriptionData-object",
+            "shape-namespace-boolean",
+        ] {
+            assert!(
+                cases.iter().any(|case| case["id"] == required),
+                "missing {required}"
+            );
+        }
         for case in cases {
             let decoded = serde_fastjson::from_fastjson_str::<CheckClientRequestBody>(
                 case["rawInput"].as_str().unwrap(),

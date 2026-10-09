@@ -2,6 +2,10 @@
 
 Status: Accepted
 
+## Field-shape continuation (2026-10-09)
+
+The direct Java Fastjson corpus now has 36 inputs. The added 28 cases test null, numeric string, integer, fraction, Boolean, array, and object values on every field in `CheckClientRequestBody`. The nested `subscriptionData` object case pins its `SubscriptionData.subVersion` so Java's wall-clock constructor default does not make the fixture drift. All accepted values and rejections match the existing native decoder; no production change was needed. Fixture SHA-256 `7e9d758ce72e0282d484dc41404e77a318d922662def78988855fe4dc8958570`.
+
 ## Context
 
 `CheckClientRequestBody` is a public protocol DTO with optional `clientId`, `group`, `subscriptionData`, and `namespace` fields. RocketMQ 5.5.1 decodes it with Fastjson 2.0.63, which keeps the last duplicate property and coerces primitive/object values assigned to String fields. The derived Rust decoder rejected duplicate properties and did not apply those String coercions.
