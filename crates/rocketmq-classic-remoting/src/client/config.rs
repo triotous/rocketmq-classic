@@ -507,11 +507,11 @@ fn contains_fastjson_rejected_literal(input: &str) -> bool {
                             b'"' | b'\'' | b'\\' | b'/' | b'b' | b'f' | b'n' | b'r' | b't'
                             | b'v' | b'0' => index += 2,
                             b'x' => match fastjson_escape_digits(bytes, index, quote, 2) {
-                                Some(end) => index = end,
+                                Some((end, _, _)) => index = end,
                                 None => return true,
                             },
                             b'u' => match fastjson_escape_digits(bytes, index, quote, 4) {
-                                Some(end) => index = end,
+                                Some((end, _, _)) => index = end,
                                 None => return true,
                             },
                             escaped if fastjson_additional_escape_code_unit(escaped).is_some() => {
@@ -689,28 +689,53 @@ fn normalize_fastjson_source(input: &str) -> String {
         index += 1;
         while index < bytes.len() {
             if bytes[index] == b'\\' {
-                if let Some((code_unit, end)) = fastjson_escape_code_unit(bytes, index, quote, b'u')
+                if let Some((code_unit, end, trailing_unit)) =
+                    fastjson_escape_code_unit(bytes, index, quote, b'u')
                 {
                     if (0xd800..=0xdbff).contains(&code_unit) {
-                        match fastjson_escape_code_unit(bytes, end, quote, b'u') {
-                            Some((low, paired_end)) if (0xdc00..=0xdfff).contains(&low) => {
-                                push_json_unicode_escape(&mut output, code_unit);
-                                push_json_unicode_escape(&mut output, low);
-                                index = paired_end;
-                            }
-                            _ => {
-                                output.extend_from_slice(b"\\uFFFD");
-                                index = end;
+                        if let Some(low) =
+                            trailing_unit.filter(|low| (0xdc00..=0xdfff).contains(low))
+                        {
+                            // Fastjson counts UTF-16 units, so a supplementary scalar can
+                            // straddle the fourth digit. Its high unit completes this escape
+                            // and its low unit pairs with the decoded high surrogate.
+                            push_json_unicode_escape(&mut output, code_unit);
+                            push_json_unicode_escape(&mut output, low);
+                            index = end;
+                        } else {
+                            match fastjson_escape_code_unit(bytes, end, quote, b'u') {
+                                Some((low, paired_end, trailing_low))
+                                    if (0xdc00..=0xdfff).contains(&low) =>
+                                {
+                                    push_json_unicode_escape(&mut output, code_unit);
+                                    push_json_unicode_escape(&mut output, low);
+                                    if trailing_low.is_some() {
+                                        output.extend_from_slice(b"\\uFFFD");
+                                    }
+                                    index = paired_end;
+                                }
+                                _ => {
+                                    output.extend_from_slice(b"\\uFFFD");
+                                    index = end;
+                                }
                             }
                         }
                     } else if (0xdc00..=0xdfff).contains(&code_unit) {
                         output.extend_from_slice(b"\\uFFFD");
+                        if trailing_unit.is_some() {
+                            output.extend_from_slice(b"\\uFFFD");
+                        }
                         index = end;
                     } else {
                         push_json_unicode_escape(&mut output, code_unit);
+                        if trailing_unit.is_some() {
+                            // The low unit of a supplementary scalar fell outside this
+                            // fixed-width escape and remains raw, unpaired string content.
+                            output.extend_from_slice(b"\\uFFFD");
+                        }
                         index = end;
                     }
-                } else if let Some((code_unit, end)) =
+                } else if let Some((code_unit, end, _trailing_unit)) =
                     fastjson_escape_code_unit(bytes, index, quote, b'x')
                 {
                     push_json_unicode_escape(&mut output, code_unit);
@@ -758,11 +783,21 @@ fn normalize_fastjson_source(input: &str) -> String {
     String::from_utf8(output).expect("source normalization preserves valid UTF-8")
 }
 
-fn fastjson_escape_digits(bytes: &[u8], start: usize, quote: u8, count: usize) -> Option<usize> {
+fn fastjson_escape_digits(
+    bytes: &[u8],
+    start: usize,
+    quote: u8,
+    count: usize,
+) -> Option<(usize, [u16; 4], Option<u16>)> {
     let marker = *bytes.get(start.checked_add(1)?)?;
     let mut index = start.checked_add(2)?;
-    let mut consumed = 0;
-    while consumed < count {
+    if count > 4 {
+        return None;
+    }
+    let mut digits = [0; 4];
+    let mut digit_count = 0;
+    let mut trailing_unit = None;
+    while digit_count < count {
         let tail = std::str::from_utf8(bytes.get(index..)?).ok()?;
         let escaped = tail.chars().next()?;
         if escaped == char::from(quote) {
@@ -773,14 +808,18 @@ fn fastjson_escape_digits(bytes: &[u8], start: usize, quote: u8, count: usize) -
             // each UTF-16 code unit; values above ASCII 'f' throw.
             return None;
         }
-        let units = escaped.len_utf16();
-        if consumed + units > count {
-            return None;
+        let mut encoded = [0; 2];
+        for unit in escaped.encode_utf16(&mut encoded).iter().copied() {
+            if digit_count == count {
+                trailing_unit = Some(unit);
+                break;
+            }
+            digits[digit_count] = unit;
+            digit_count += 1;
         }
-        consumed += units;
         index += escaped.len_utf8();
     }
-    Some(index)
+    Some((index, digits, trailing_unit))
 }
 
 fn fastjson_escape_code_unit(
@@ -788,16 +827,15 @@ fn fastjson_escape_code_unit(
     start: usize,
     quote: u8,
     marker: u8,
-) -> Option<(u16, usize)> {
+) -> Option<(u16, usize, Option<u16>)> {
     if bytes.get(start) != Some(&b'\\') || bytes.get(start + 1) != Some(&marker) {
         return None;
     }
     let count = if marker == b'u' { 4 } else { 2 };
-    let end = fastjson_escape_digits(bytes, start, quote, count)?;
-    let digits = std::str::from_utf8(&bytes[start + 2..end]).ok()?;
+    let (end, digits, trailing_unit) = fastjson_escape_digits(bytes, start, quote, count)?;
     let mut value = 0u16;
     let marker = bytes[start + 1];
-    for digit in digits.encode_utf16() {
+    for digit in digits.iter().take(count).copied() {
         let nibble = if marker == b'x' {
             fastjson_x_escape_digit(digit)?
         } else {
@@ -805,7 +843,7 @@ fn fastjson_escape_code_unit(
         };
         value = value.wrapping_shl(4).wrapping_add(u16::from(nibble));
     }
-    Some((value, end))
+    Some((value, end, trailing_unit))
 }
 
 fn fastjson_non_ascii_escape_code_unit(bytes: &[u8], start: usize) -> Option<(u16, usize, bool)> {
