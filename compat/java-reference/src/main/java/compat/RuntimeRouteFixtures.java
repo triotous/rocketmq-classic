@@ -1564,7 +1564,10 @@ public final class RuntimeRouteFixtures {
             "{\"brokerAddrs\":{\"1\":null}}",
             "{\"brokerAddrs\":{}}",
             "{\"brokerAddrs\":null}",
-            "{}"
+            "{}",
+            "{\"brokerAddrs\":{\"null\":\"only-null-id\"}}",
+            "{\"brokerAddrs\":{\"null\":\"null-id\",\"2\":\"slave\"}}",
+            "{\"brokerAddrs\":{\"null\":\"null-id\",\"0\":\"master\",\"2\":\"slave\"}}"
         };
         List<Object> cases = new ArrayList<>();
         for (int index = 0; index < inputs.length; index++) {
