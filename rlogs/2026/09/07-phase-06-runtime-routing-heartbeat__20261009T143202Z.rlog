@@ -141,3 +141,9 @@
 
 - A direct regression compared Rust `Default` against the Java empty-object fixture and exposed `autoCommit=false` versus Java's constructor value `true`. Test commit `6d53470` records the red mismatch; implementation `b4ec6f4` replaces the derived `Default` with the Java-shaped values.
 - The 66-case DTO differential now also asserts constructor/default parity and passes. Focused test, formatting and diff checks pass. The full workspace, strict Clippy and Maven gates from the preceding decoder change remain green; Phase 6 stays PARTIAL and P6-V04 remains `PENDING_PHASE_19`.
+
+## Assignment response fractional field-shape case — 2026-10-09T17:18:05Z
+
+- Added a direct Java input with numeric fraction `1.5` for `messageQueueAssignments`, extending the QueryAssignmentResponseBody Set-field corpus from 29 to 30 cases and the total field/root matrix from 36 to 37. Java rejects the value with `JSONException`; the Rust differential agrees. No production change was needed.
+- Oracle/test commit `3e58bc1`; current `fixtures/runtime/lookup.json` SHA-256 `4723f8ad95ae556dbc99db83ef81cc311f0aae128cf59e23f8bbda6b1045618a`. Focused differential, format and diff checks pass.
+- Updated Phase 6 API/config, requirement, runtime and Java compatibility records. The overall source/API/input reconciliation remains open; Phase 6 remains PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
