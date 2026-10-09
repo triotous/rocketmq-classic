@@ -577,6 +577,50 @@ where
     Ok(None)
 }
 
+/// Decode a Java list field that Fastjson accepts as an array, a singleton
+/// object, or null. Preserve null rows and parse each DTO from its raw token so
+/// its own Fastjson-compatible duplicate-property and scalar rules still run.
+pub fn deserialize_optional_nullable_vec_or_single<'de, D, T>(
+    deserializer: D,
+) -> Result<Option<Vec<Option<T>>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: DeserializeOwned,
+{
+    let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+    let raw = raw.get().trim();
+    if raw == "null" {
+        return Ok(None);
+    }
+    if raw.starts_with('[') {
+        let values = serde_json::from_str::<Vec<Box<serde_json::value::RawValue>>>(raw)
+            .map_err(de::Error::custom)?;
+        return values
+            .iter()
+            .map(|value| {
+                if value.get().trim() == "null" {
+                    Ok(None)
+                } else {
+                    let normalized = normalize_json_input(value.get());
+                    serde_json::from_str::<T>(&normalized)
+                        .map(Some)
+                        .map_err(de::Error::custom)
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(Some);
+    }
+    if raw.starts_with('{') {
+        let normalized = normalize_json_input(raw);
+        return serde_json::from_str::<T>(&normalized)
+            .map(|value| Some(vec![Some(value)]))
+            .map_err(de::Error::custom);
+    }
+    Err(de::Error::custom(
+        "expected a JSON array, object, or null for a Java List field",
+    ))
+}
+
 pub fn deserialize_optional_nullable_string_map<'de, D>(
     deserializer: D,
 ) -> Result<Option<NullableStringMap>, D::Error>

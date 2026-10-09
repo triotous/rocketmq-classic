@@ -376,60 +376,11 @@ pub struct LiteSubscriptionCtlRequestBody {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LiteSubscriptionCtlRequestBodyFields {
-    #[serde(default, deserialize_with = "deserialize_lite_subscription_set")]
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_optional_nullable_vec_or_single"
+    )]
     subscription_set: Option<Vec<Option<LiteSubscriptionDto>>>,
-}
-
-struct LiteSubscriptionSetVisitor(std::marker::PhantomData<LiteSubscriptionDto>);
-
-impl<'de> de::Visitor<'de> for LiteSubscriptionSetVisitor {
-    type Value = Option<Vec<Option<LiteSubscriptionDto>>>;
-
-    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("a JSON array, object, or null for a Java List field")
-    }
-
-    fn visit_unit<E>(self) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        Ok(None)
-    }
-
-    fn visit_none<E>(self) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        Ok(None)
-    }
-
-    fn visit_seq<A>(self, mut sequence: A) -> Result<Self::Value, A::Error>
-    where
-        A: de::SeqAccess<'de>,
-    {
-        let mut values = Vec::new();
-        while let Some(value) = sequence.next_element::<Option<LiteSubscriptionDto>>()? {
-            values.push(value);
-        }
-        Ok(Some(values))
-    }
-
-    fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
-    where
-        A: de::MapAccess<'de>,
-    {
-        let value = LiteSubscriptionDto::deserialize(de::value::MapAccessDeserializer::new(map))?;
-        Ok(Some(vec![Some(value)]))
-    }
-}
-
-fn deserialize_lite_subscription_set<'de, D>(
-    deserializer: D,
-) -> Result<Option<Vec<Option<LiteSubscriptionDto>>>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    deserializer.deserialize_any(LiteSubscriptionSetVisitor(std::marker::PhantomData))
 }
 
 impl<'de> Deserialize<'de> for LiteSubscriptionCtlRequestBody {

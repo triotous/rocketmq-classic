@@ -1422,10 +1422,18 @@ pub struct TopicRouteData {
     )]
     pub order_topic_conf: Option<String>,
     /// Preserves both a null Java list and null QueueData entries.
-    #[serde(default = "default_route_vec", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default = "default_route_vec",
+        deserialize_with = "serde_fastjson::deserialize_optional_nullable_vec_or_single",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub queue_datas: Option<Vec<Option<QueueData>>>,
     /// Preserves both a null Java list and null BrokerData entries.
-    #[serde(default = "default_route_vec", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default = "default_route_vec",
+        deserialize_with = "serde_fastjson::deserialize_optional_nullable_vec_or_single",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub broker_datas: Option<Vec<Option<BrokerData>>>,
     /// Preserves null filter lists and null String entries inside those lists.
     #[serde(
@@ -1447,9 +1455,15 @@ struct TopicRouteDataFields {
         deserialize_with = "serde_fastjson::deserialize_nullable_string"
     )]
     order_topic_conf: Option<String>,
-    #[serde(default = "default_route_vec")]
+    #[serde(
+        default = "default_route_vec",
+        deserialize_with = "serde_fastjson::deserialize_optional_nullable_vec_or_single"
+    )]
     queue_datas: Option<Vec<Option<QueueData>>>,
-    #[serde(default = "default_route_vec")]
+    #[serde(
+        default = "default_route_vec",
+        deserialize_with = "serde_fastjson::deserialize_optional_nullable_vec_or_single"
+    )]
     broker_datas: Option<Vec<Option<BrokerData>>>,
     #[serde(
         default = "default_filter_table",
