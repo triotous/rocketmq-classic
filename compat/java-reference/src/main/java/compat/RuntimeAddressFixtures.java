@@ -40,7 +40,7 @@ public final class RuntimeAddressFixtures {
         AddressProbe addressProbe = new AddressProbe();
         try {
             String supplementaryDigit = new String(Character.toChars(0x104A1));
-            for (String address : new String[] {"127.0.0.1:10911", "broker.example:10911",
+            for (String address : new String[] {":10911", "127.0.0.1:10911", "broker.example:10911",
                     "2001:db8::1:10911", "::1:10911", "[2001:db8::1]:10911",
                     "127.0.0.1:0", "127.0.0.1:65535", "127.0.0.1:65536", "127.0.0.1:-1",
                     "127.0.0.1:\u0661\u0660\u0669\u0661\u0661",
@@ -71,6 +71,12 @@ public final class RuntimeAddressFixtures {
                 item.put("port", hostAndPort[1]);
                 item.put("portNumber", portNumber);
                 item.put("socketAddressAccepted", socketAddressAccepted);
+                if (socketAddressAccepted && hostAndPort[0].isEmpty()) {
+                    java.net.InetSocketAddress resolved =
+                        new java.net.InetSocketAddress(hostAndPort[0], portNumber);
+                    item.put("resolvedHostIsLoopback",
+                        resolved.getAddress() != null && resolved.getAddress().isLoopbackAddress());
+                }
                 if (hostAndPort[0].contains("%")) {
                     String scope = hostAndPort[0].substring(hostAndPort[0].lastIndexOf('%') + 1);
                     if (scope.endsWith("]")) scope = scope.substring(0, scope.length() - 1);

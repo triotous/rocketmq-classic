@@ -344,6 +344,7 @@ impl ClientInner {
 mod tests {
     use super::Address;
     use crate::client::connection;
+    use std::net::ToSocketAddrs;
 
     #[test]
     fn address_splitting_matches_pinned_java_last_colon_oracle() {
@@ -377,11 +378,21 @@ mod tests {
                 (expected_host.to_owned(), java_port),
                 "{case}"
             );
-            assert_eq!(
-                connection::split_address(parsed.as_str()).unwrap(),
-                (expected_host.to_owned(), java_port),
-                "normalized {case}"
-            );
+            let normalized = connection::split_address(parsed.as_str()).unwrap();
+            if java_host.is_empty() {
+                assert_eq!(normalized.1, java_port, "normalized port {case}");
+                let resolves_to_loopback = (normalized.0.as_str(), normalized.1)
+                    .to_socket_addrs()
+                    .unwrap()
+                    .any(|address| address.ip().is_loopback());
+                assert_eq!(
+                    resolves_to_loopback,
+                    case["resolvedHostIsLoopback"].as_bool().unwrap(),
+                    "normalized empty-host resolution {case}"
+                );
+            } else {
+                assert_eq!(normalized, (expected_host.to_owned(), java_port), "{case}");
+            }
         }
     }
 
