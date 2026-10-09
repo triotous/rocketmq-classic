@@ -1086,11 +1086,14 @@ public final class RuntimeRouteFixtures {
             if (queues.isEmpty()) throw new IllegalStateException("transition requires static endpoints");
             MessageQueue unmappedQueue = new MessageQueue("topic", "fallback-broker", 99);
             item.put("unmappedQueue", unmappedQueue);
+            MessageQueue nullTopicQueue = new MessageQueue(null, "fallback-broker", 99);
+            item.put("nullTopicQueue", nullTopicQueue);
             List<Object> before = new ArrayList<>();
             for (MessageQueue queue : queues) before.add(new TreeMap<>(Map.of(
                 "queue", queue, "broker", runtime.getBrokerNameFromMessageQueue(queue))));
             item.put("before", before);
             item.put("unmappedBrokerBefore", runtime.getBrokerNameFromMessageQueue(unmappedQueue));
+            item.put("nullTopicBefore", brokerNameOutcome(runtime, nullTopicQueue));
             api.route = com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(ordinary), TopicRouteData.class);
             item.put("changed", runtime.updateTopicRouteInfoFromNameServer("topic"));
             List<Object> after = new ArrayList<>();
@@ -1098,6 +1101,7 @@ public final class RuntimeRouteFixtures {
                 "queue", queue, "broker", runtime.getBrokerNameFromMessageQueue(queue))));
             item.put("after", after);
             item.put("unmappedBrokerAfter", runtime.getBrokerNameFromMessageQueue(unmappedQueue));
+            item.put("nullTopicAfter", brokerNameOutcome(runtime, nullTopicQueue));
             item.put("retained", before.equals(after));
             item.put("rawRouteHasStaticMappings", runtime.getAnExistTopicRouteData("topic").getTopicQueueMappingByBroker() != null
                 && !runtime.getAnExistTopicRouteData("topic").getTopicQueueMappingByBroker().isEmpty());
@@ -1107,6 +1111,18 @@ public final class RuntimeRouteFixtures {
             cleanup.setAccessible(true);
             cleanup.invoke(runtime, original, new IllegalStateException("endpoint fixture teardown"));
             api.shutdown();
+        }
+        return item;
+    }
+
+    private static Map<String, Object> brokerNameOutcome(MQClientInstance runtime, MessageQueue queue) {
+        Map<String, Object> item = new TreeMap<>();
+        try {
+            item.put("broker", runtime.getBrokerNameFromMessageQueue(queue));
+            item.put("outcome", "OK");
+        } catch (RuntimeException error) {
+            item.put("broker", null);
+            item.put("outcome", error.getClass().getSimpleName());
         }
         return item;
     }
