@@ -21,7 +21,10 @@ mvn -f compat/java-reference/pom.xml exec:java -Dexec.args='decode --input fixtu
 mvn -f compat/java-reference/pom.xml exec:java -Dexec.args='scenario --id HEARTBEAT-001 --output target/heartbeat.json'
 python3 tests/differential/compare.py --self-test
 mvn -f compat/java-reference/pom.xml exec:java -Dexec.args=invoked-rpc-oracle
+mvn -f compat/java-reference/pom.xml exec:java -Dexec.args="runtime-address-fixtures $(pwd)/fixtures/runtime/address.json"
 ```
+
+`runtime-address-fixtures` records the 42 numeric address helper cases, a named IPv6 scope created from a live loopback `NetworkInterface`, and 49 direct endpoint-split outcomes. Maven `verify` runs the generator in drift-check mode.
 
 The fixture command emits offline Remoting command frames (no live Broker). A frame is accompanied by JSON with version provenance, scenario, request code, decoded semantic fields, body length, full-frame SHA-256 and the command used to generate it. Live scenarios in `tests/differential/scenarios.yaml` explicitly remain `PENDING_PHASE_19`; command-frame fixtures are not claims of successful Broker operations.
 
