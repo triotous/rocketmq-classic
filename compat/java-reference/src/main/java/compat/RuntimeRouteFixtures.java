@@ -821,7 +821,14 @@ public final class RuntimeRouteFixtures {
         for (String input : new String[] {
             "{\"topicQueueMappingByBroker\":{\"alpha\":{\"scope\":\"scope\",\"bname\":\"A\",\"epoch\":1,\"totalQueues\":2,\"currIdMap\":{\"0\":0}},\"beta\":{\"scope\":\"scope\",\"bname\":\"B\",\"epoch\":2,\"totalQueues\":1,\"currIdMap\":{\"0\":0}}}}",
             "{\"topicQueueMappingByBroker\":{\"alpha\":{\"scope\":\"scope\",\"bname\":\"A\",\"epoch\":2,\"totalQueues\":2,\"currIdMap\":{\"0\":0}},\"beta\":{\"scope\":\"scope\",\"bname\":\"B\",\"epoch\":1,\"totalQueues\":1,\"currIdMap\":{\"0\":0}}}}",
-            "{\"topicQueueMappingByBroker\":{\"alpha\":{\"scope\":\"scope\",\"bname\":\"A\",\"epoch\":1,\"totalQueues\":2,\"currIdMap\":{\"0\":0}},\"beta\":{\"scope\":\"scope\",\"bname\":\"B\",\"epoch\":1,\"totalQueues\":1,\"currIdMap\":{\"0\":0}}}}"
+            "{\"topicQueueMappingByBroker\":{\"alpha\":{\"scope\":\"scope\",\"bname\":\"A\",\"epoch\":1,\"totalQueues\":2,\"currIdMap\":{\"0\":0}},\"beta\":{\"scope\":\"scope\",\"bname\":\"B\",\"epoch\":1,\"totalQueues\":1,\"currIdMap\":{\"0\":0}}}}",
+            "{\"topicQueueMappingByBroker\":{\"alpha\":{\"scope\":\"scope\",\"bname\":\"A\",\"epoch\":1,\"totalQueues\":3,\"currIdMap\":{\"0\":0,\"1\":1,\"2\":2}},\"beta\":{\"scope\":\"scope\",\"bname\":\"B\",\"epoch\":2,\"totalQueues\":2,\"currIdMap\":{\"1\":1}}}}",
+            "{\"topicQueueMappingByBroker\":{\"alpha\":{\"scope\":\"scope\",\"bname\":\"A\",\"epoch\":1,\"totalQueues\":2,\"currIdMap\":{\"0\":0}},\"beta\":{\"scope\":\"scope\",\"bname\":\"B\",\"epoch\":2,\"totalQueues\":1,\"currIdMap\":{\"5\":5}}}}",
+            "{\"topicQueueMappingByBroker\":{\"alpha\":{\"scope\":\"__global__\",\"bname\":\"A\",\"epoch\":1,\"totalQueues\":2,\"currIdMap\":{\"0\":0}},\"beta\":{\"scope\":\"global__\",\"bname\":\"B\",\"epoch\":2,\"totalQueues\":3,\"currIdMap\":{\"2\":2}}}}",
+            "{\"topicQueueMappingByBroker\":{\"alpha\":{\"scope\":\"scope\",\"bname\":null,\"epoch\":1,\"totalQueues\":2,\"currIdMap\":{}},\"beta\":{\"scope\":\"other\",\"bname\":\"\",\"epoch\":1,\"totalQueues\":1,\"currIdMap\":{\"0\":0}}}}",
+            "{\"topicQueueMappingByBroker\":{\"alpha\":{\"scope\":\"scope\",\"bname\":\"A\",\"epoch\":-2,\"totalQueues\":2,\"currIdMap\":{\"0\":0}},\"beta\":{\"scope\":\"other\",\"bname\":\"B\",\"epoch\":-1,\"totalQueues\":1,\"currIdMap\":{\"0\":0}}}}",
+            "{\"topicQueueMappingByBroker\":{\"alpha\":{\"scope\":\"scope\",\"bname\":\"A\",\"epoch\":1,\"totalQueues\":-2,\"currIdMap\":{\"0\":0}},\"beta\":{\"scope\":\"other\",\"bname\":\"B\",\"epoch\":1,\"totalQueues\":0,\"currIdMap\":{\"0\":0}}}}",
+            "{\"topicQueueMappingByBroker\":{\"alpha\":{\"scope\":null,\"bname\":\"A\",\"epoch\":1,\"totalQueues\":2,\"currIdMap\":{\"0\":0}},\"beta\":{\"scope\":\"scope\",\"bname\":\"B\",\"epoch\":1,\"totalQueues\":2,\"currIdMap\":{\"0\":0}}}}"
         }) {
             TopicRouteData route = com.alibaba.fastjson2.JSON.parseObject(input, TopicRouteData.class);
             Map<MessageQueue, String> endpoints =
@@ -834,7 +841,8 @@ public final class RuntimeRouteFixtures {
                 row.put("owner", entry.getValue());
                 rows.add(row);
             }
-            rows.sort(Comparator.comparingInt(row -> (Integer) row.get("queueId")));
+            rows.sort(Comparator.comparingInt((Map<String, Object> row) -> (Integer) row.get("queueId"))
+                .thenComparing(row -> (String) row.get("brokerName")));
             Map<String, Object> item = new TreeMap<>();
             item.put("input", com.alibaba.fastjson2.JSON.parseObject(input));
             item.put("endpoints", rows);
