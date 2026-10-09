@@ -293,8 +293,9 @@ impl ClientInner {
 
 #[cfg(test)]
 mod tests {
-    use super::Address;
+    use super::{Address, parse_socket_port};
     use crate::client::connection;
+    use std::collections::BTreeMap;
     use std::net::ToSocketAddrs;
 
     #[test]
@@ -414,6 +415,54 @@ mod tests {
                 first_key.as_str(),
                 second_key.as_str(),
                 "Java retains these distinct channel-table keys: {case}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_bmp_port_digit_matches_pinned_java_integer_parse_int() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/address.json"))
+                .unwrap();
+        let cases = fixture["javaPortDigitCases"].as_array().unwrap();
+        let mut java_digits = BTreeMap::new();
+        for case in cases {
+            let code_unit = case["codeUnit"].as_u64().unwrap() as u16;
+            let port = case["port"].as_u64().unwrap() as u16;
+            assert!(java_digits.insert(code_unit, port).is_none(), "{case}");
+        }
+        for code_unit in 0..=u16::MAX {
+            let character = char::from_u32(u32::from(code_unit)).unwrap_or('\u{fffd}');
+            let input = character.to_string();
+            let actual = parse_socket_port(&input).ok();
+            let expected = java_digits.get(&code_unit).copied();
+            assert_eq!(actual, expected, "U+{code_unit:04X} ({input:?})");
+        }
+    }
+
+    #[test]
+    fn every_java_valid_socket_port_is_accepted_and_preserved() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/address.json"))
+                .unwrap();
+        let oracle = &fixture["javaPortRangeCase"];
+        let minimum = oracle["minimum"].as_u64().unwrap() as u16;
+        let maximum = oracle["maximum"].as_u64().unwrap() as u16;
+        assert_eq!(minimum, 0);
+        assert_eq!(maximum, u16::MAX);
+        assert_eq!(oracle["acceptedCount"].as_u64(), Some(65_536));
+        assert_eq!(oracle["acceptedPortSum"].as_u64(), Some(2_147_450_880));
+        assert_eq!(oracle["allAcceptedAndPreserved"].as_bool(), Some(true));
+
+        for port in minimum..=maximum {
+            let input = format!("127.0.0.1:{port}");
+            let key = Address::parse(&input)
+                .unwrap_or_else(|error| panic!("pinned Java accepted socket port {port}: {error}"));
+            assert_eq!(key.as_str(), input);
+            assert_eq!(
+                connection::split_address(key.as_str()).unwrap(),
+                ("127.0.0.1".to_owned(), port),
+                "Java accepted and preserved port {port}"
             );
         }
     }

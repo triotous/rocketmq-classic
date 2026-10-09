@@ -63,7 +63,23 @@ public final class RuntimeAddressFixtures {
             }
         }
         List<Object> clientAddressCases = new ArrayList<>();
+        List<Object> javaPortDigitCases = new ArrayList<>();
         List<Object> channelTableKeyCases = new ArrayList<>();
+        Map<String, Object> javaPortRangeCase = new TreeMap<>();
+        for (int codeUnit = 0; codeUnit <= Character.MAX_VALUE; codeUnit++) {
+            String digit = String.valueOf((char) codeUnit);
+            try {
+                int parsed = Integer.parseInt(digit);
+                java.net.InetSocketAddress.createUnresolved("127.0.0.1", parsed);
+                Map<String, Object> item = new TreeMap<>();
+                item.put("codeUnit", codeUnit);
+                item.put("port", parsed);
+                javaPortDigitCases.add(item);
+            } catch (RuntimeException rejected) {
+                // Rejections are represented by an absent code unit. Rust checks
+                // the entire BMP domain against this direct JDK oracle.
+            }
+        }
         AddressProbe addressProbe = new AddressProbe();
         try {
             String supplementaryDigit = new String(Character.toChars(0x104A1));
@@ -140,6 +156,30 @@ public final class RuntimeAddressFixtures {
                 }
                 clientAddressCases.add(item);
             }
+            int acceptedPorts = 0;
+            long acceptedPortSum = 0;
+            boolean allPortsAccepted = true;
+            for (int port = 0; port <= 65535; port++) {
+                String address = "127.0.0.1:" + port;
+                try {
+                    String[] hostAndPort = addressProbe.splitAddress(address);
+                    int parsedPort = Integer.parseInt(hostAndPort[1]);
+                    java.net.InetSocketAddress.createUnresolved(hostAndPort[0], parsedPort);
+                    if (hostAndPort.length != 2 || !"127.0.0.1".equals(hostAndPort[0])
+                        || parsedPort != port) {
+                        allPortsAccepted = false;
+                    }
+                    acceptedPorts++;
+                    acceptedPortSum += parsedPort;
+                } catch (RuntimeException rejected) {
+                    allPortsAccepted = false;
+                }
+            }
+            javaPortRangeCase.put("minimum", 0);
+            javaPortRangeCase.put("maximum", 65535);
+            javaPortRangeCase.put("acceptedCount", acceptedPorts);
+            javaPortRangeCase.put("acceptedPortSum", acceptedPortSum);
+            javaPortRangeCase.put("allAcceptedAndPreserved", allPortsAccepted);
             String[][] keyPairs = {
                 {"127.0.0.1:10911", "127.0.0.1:010911"},
                 {"Broker.Example:10911", "broker.example:10911"},
@@ -160,11 +200,15 @@ public final class RuntimeAddressFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "NetworkUtil.normalizeHostAddress/UtilAll.isInternalIP/isInternalV6IP/InetAddress.isLoopbackAddress/NettyRemotingClient.getHostAndPort/channelTables");
+        fixture.put("javaRuntime", System.getProperty("java.runtime.version"));
+        fixture.put("javaVendor", System.getProperty("java.vendor"));
+        fixture.put("entrypoint", "NetworkUtil.normalizeHostAddress/UtilAll.isInternalIP/isInternalV6IP/InetAddress.isLoopbackAddress/NettyRemotingClient.getHostAndPort/Integer.parseInt/Character.digit/channelTables");
         fixture.put("serverBaselineContacted", false);
         fixture.put("addresses", addresses);
         fixture.put("scopeCases", scopeCases);
         fixture.put("clientAddressCases", clientAddressCases);
+        fixture.put("javaPortDigitCases", javaPortDigitCases);
+        fixture.put("javaPortRangeCase", javaPortRangeCase);
         fixture.put("channelTableKeyCases", channelTableKeyCases);
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture) + "\n";
         Path file = Path.of(args[0]);
@@ -176,7 +220,8 @@ public final class RuntimeAddressFixtures {
         }
         System.out.println("Runtime address helpers verified: " + addresses.size()
             + "; named IPv6 scopes verified: " + scopeCases.size()
-            + "; Java client endpoint splits verified: " + clientAddressCases.size());
+            + "; Java client endpoint splits verified: " + clientAddressCases.size()
+            + "; Java BMP port-digit code units verified: " + javaPortDigitCases.size());
     }
 
     private static void add(List<Object> addresses, String literal, int scope, InetAddress ip) {
