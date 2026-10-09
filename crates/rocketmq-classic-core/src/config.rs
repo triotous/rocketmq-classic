@@ -7,7 +7,7 @@ use rocketmq_classic_common::message::MessageQueue;
 use rocketmq_classic_protocol::codes::LanguageCode;
 use std::{
     collections::BTreeSet,
-    sync::{Arc, RwLock, RwLockReadGuard},
+    sync::{Arc, OnceLock, RwLock, RwLockReadGuard},
 };
 
 mod local_address;
@@ -133,6 +133,14 @@ pub struct ClientConfig {
 /// through a lock-protected handle.
 pub type SharedClientConfig = Arc<RwLock<ClientConfig>>;
 
+// Java ClientConfig.useTLS reads the class-initialized TlsSystemConfig.tlsEnable
+// value, so later system-property changes do not affect new ClientConfig objects.
+static JAVA_TLS_ENABLE: OnceLock<bool> = OnceLock::new();
+
+fn java_boolean_property(value: Option<String>, default: bool) -> bool {
+    value.map_or(default, |value| value.eq_ignore_ascii_case("true"))
+}
+
 pub(crate) fn read_shared_client_config(
     config: &SharedClientConfig,
 ) -> RwLockReadGuard<'_, ClientConfig> {
@@ -223,10 +231,29 @@ impl ClientConfig {
     /// Known Java system-property keys are read from the process environment;
     /// NAMESRV_ADDR remains the Java environment fallback.
     pub fn new(client_ip: impl Into<String>) -> Self {
-        Self::with_properties(client_ip.into(), |key| std::env::var(key).ok())
+        let tls_enable = *JAVA_TLS_ENABLE
+            .get_or_init(|| java_boolean_property(std::env::var("tls.enable").ok(), false));
+        Self::with_properties_and_tls_enable(
+            client_ip.into(),
+            |key| std::env::var(key).ok(),
+            tls_enable,
+        )
     }
 
+    #[cfg(test)]
     fn with_properties(client_ip: String, property: impl Fn(&str) -> Option<String>) -> Self {
+        let boolean = |key: &str, default: bool| {
+            property(key).map_or(default, |value| value.eq_ignore_ascii_case("true"))
+        };
+        let tls_enable = boolean("tls.enable", false);
+        Self::with_properties_and_tls_enable(client_ip, property, tls_enable)
+    }
+
+    fn with_properties_and_tls_enable(
+        client_ip: String,
+        property: impl Fn(&str) -> Option<String>,
+        tls_enable: bool,
+    ) -> Self {
         let boolean = |key: &str, default: bool| {
             property(key).map_or(default, |value| value.eq_ignore_ascii_case("true"))
         };
@@ -256,7 +283,7 @@ impl ClientConfig {
             decode_decompress_body: boolean(Self::DECODE_DECOMPRESS_BODY, true),
             vip_channel_enabled: boolean(Self::SEND_MESSAGE_WITH_VIP_CHANNEL_PROPERTY, false),
             use_heartbeat_v2: boolean(Self::HEART_BEAT_V2, false),
-            use_tls: boolean("tls.enable", false),
+            use_tls: tls_enable,
             socks_proxy_config: Some(
                 property(Self::SOCKS_PROXY_CONFIG).unwrap_or_else(|| "{}".into()),
             ),
