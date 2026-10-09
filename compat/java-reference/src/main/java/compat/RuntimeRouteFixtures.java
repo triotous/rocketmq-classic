@@ -466,6 +466,16 @@ public final class RuntimeRouteFixtures {
         List<Object> cases = new ArrayList<>();
         cases.add(routeDtoInputCase("queue-scalars", "queueData",
             "{\"brokerName\":123,\"readQueueNums\":\"2\",\"writeQueueNums\":1.9,\"perm\":true,\"topicSysFlag\":null}"));
+        cases.add(routeDtoInputCase("queue-duplicate-broker-name-last-wins", "queueData",
+            "{\"brokerName\":\"first\",\"brokerName\":123}"));
+        cases.add(routeDtoInputCase("queue-duplicate-read-queue-nums-last-wins", "queueData",
+            "{\"readQueueNums\":1,\"readQueueNums\":3.9}"));
+        cases.add(routeDtoInputCase("queue-duplicate-write-queue-nums-last-wins", "queueData",
+            "{\"writeQueueNums\":1,\"writeQueueNums\":2.9}"));
+        cases.add(routeDtoInputCase("queue-duplicate-perm-last-wins", "queueData",
+            "{\"perm\":3,\"perm\":0}"));
+        cases.add(routeDtoInputCase("queue-duplicate-topic-sys-flag-last-wins", "queueData",
+            "{\"topicSysFlag\":7,\"topicSysFlag\":null}"));
         cases.add(routeDtoInputCase("queue-uppercase-property", "queueData",
             "{\"READQUEUENUMS\":7,\"BROKERNAME\":\"upper\"}"));
         cases.add(routeDtoInputCase("queue-titlecase-property", "queueData",
