@@ -513,6 +513,7 @@ pub(super) async fn connect(
     deadline: Instant,
 ) -> Result<BoxedStream, TransportError> {
     let (host, port) = split_address(address)?;
+    let host = connect_host(&host);
     let stream = time::timeout(deadline.saturating_duration_since(Instant::now()), async {
         if let Some(proxy) = proxy {
             let stream = match (&proxy.username, &proxy.password) {
@@ -624,4 +625,13 @@ pub(super) fn split_address(address: &str) -> Result<(String, u16), TransportErr
     };
     let port = connection_manager::parse_socket_port(port)?;
     Ok((host.to_owned(), port))
+}
+
+pub(super) fn connect_host(host: &str) -> String {
+    if host.is_empty() {
+        // The pinned JDK resolves InetSocketAddress("", port) to IPv4 loopback.
+        "127.0.0.1".to_owned()
+    } else {
+        host.to_owned()
+    }
 }

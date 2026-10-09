@@ -262,6 +262,41 @@ async fn empty_host_endpoint_connects_to_java_ipv4_loopback_target() {
         .unwrap();
 }
 
+#[tokio::test]
+async fn raw_address_spellings_keep_distinct_java_channel_keys() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let mut streams = Vec::new();
+        for _ in 0..2 {
+            let (stream, _) = tokio::time::timeout(Duration::from_secs(2), listener.accept())
+                .await
+                .unwrap()
+                .unwrap();
+            streams.push(stream);
+        }
+        streams
+    });
+
+    let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
+    let address = address.to_string();
+    let (host, port) = address.rsplit_once(':').unwrap();
+    let alternate = format!("{host}:0{port}");
+    assert!(
+        client
+            .is_address_reachable(&address, Instant::now() + Duration::from_secs(2))
+            .await
+    );
+    assert!(
+        client
+            .is_address_reachable(&alternate, Instant::now() + Duration::from_secs(2))
+            .await
+    );
+    assert_eq!(peer.await.unwrap().len(), 2);
+    client.shutdown().await;
+}
+
 #[test]
 fn p3_client_can_be_constructed_without_runtime_and_start_requires_one() {
     let client = RemotingClient::new(TransportMode::Plain);

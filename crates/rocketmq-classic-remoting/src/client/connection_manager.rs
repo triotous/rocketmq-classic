@@ -11,31 +11,25 @@ pub(super) struct Address(String);
 
 impl Address {
     pub(super) fn parse(value: &str) -> Result<Self, TransportError> {
-        let normalized = if value.starts_with('[') {
+        if value.starts_with('[') {
             let (host, port) = value
                 .strip_prefix('[')
                 .and_then(|value| value.split_once("]:"))
                 .ok_or_else(|| TransportError::Connect("invalid bracketed IPv6 address".into()))?;
-            let parsed_host = normalize_ipv6_host(host)?;
-            let parsed_port = parse_socket_port(port)?;
-            format!("[{}]:{}", parsed_host, parsed_port)
+            normalize_ipv6_host(host)?;
+            parse_socket_port(port)?;
         } else {
             let (host, port) = value
                 .rsplit_once(':')
                 .ok_or_else(|| TransportError::Connect("missing address port".into()))?;
-            let parsed_port = parse_socket_port(port)?;
-            if host.is_empty() {
-                // NettyRemotingClient passes this host to Bootstrap.connect;
-                // the pinned JDK resolves an empty hostname to IPv4 loopback.
-                format!("127.0.0.1:{parsed_port}")
-            } else if host.contains(':') {
-                let parsed_host = normalize_ipv6_host(host)?;
-                format!("[{}]:{}", parsed_host, parsed_port)
-            } else {
-                format!("{}:{}", host.to_ascii_lowercase(), parsed_port)
+            parse_socket_port(port)?;
+            if host.contains(':') {
+                normalize_ipv6_host(host)?;
             }
-        };
-        Ok(Self(normalized))
+        }
+        // Java's channelTables is keyed by the unmodified address string.
+        // Parsing validates the endpoint but must not collapse alternate spellings.
+        Ok(Self(value.to_owned()))
     }
 
     pub(super) fn as_str(&self) -> &str {
@@ -383,7 +377,8 @@ mod tests {
             let normalized = connection::split_address(parsed.as_str()).unwrap();
             if java_host.is_empty() {
                 assert_eq!(normalized.1, java_port, "normalized port {case}");
-                let resolved = (normalized.0.as_str(), normalized.1)
+                let host = connection::connect_host(&normalized.0);
+                let resolved = (host.as_str(), normalized.1)
                     .to_socket_addrs()
                     .unwrap()
                     .next()
