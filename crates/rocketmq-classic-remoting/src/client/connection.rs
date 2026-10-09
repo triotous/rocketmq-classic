@@ -16,7 +16,7 @@ use crate::{
     error::{ErrorSource, TransportError},
 };
 
-use super::{ClientInner, config::SocksProxyConfig};
+use super::{ClientInner, config::SocksProxyConfig, connection_manager};
 
 pub use super::tls::TransportMode;
 
@@ -622,8 +622,6 @@ pub(super) fn split_address(address: &str) -> Result<(String, u16), TransportErr
             .rsplit_once(':')
             .ok_or_else(|| TransportError::Connect("missing address port".into()))?
     };
-    let port = port
-        .parse()
-        .map_err(|error: std::num::ParseIntError| TransportError::Connect(error.to_string()))?;
+    let port = connection_manager::parse_socket_port(port)?;
     Ok((host.to_owned(), port))
 }
