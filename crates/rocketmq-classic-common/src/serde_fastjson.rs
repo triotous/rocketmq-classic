@@ -13,6 +13,7 @@ use serde_json::Value;
 
 pub type NullableStringListTable = BTreeMap<String, Option<Vec<Option<String>>>>;
 pub type NullableStringMap = BTreeMap<String, Option<String>>;
+pub type NullableLongStringMap = BTreeMap<Option<i64>, Option<String>>;
 
 enum FastjsonStringValue {
     Null,
@@ -521,9 +522,27 @@ where
     }
 }
 
+pub fn serialize_nullable_long_string_map<S>(
+    value: &Option<NullableLongStringMap>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let Some(entries) = value else {
+        return serializer.serialize_none();
+    };
+    let mut map = serializer.serialize_map(Some(entries.len()))?;
+    for (key, value) in entries {
+        let key = key.map_or_else(|| "null".to_owned(), |key| key.to_string());
+        map.serialize_entry(&key, value)?;
+    }
+    map.end()
+}
+
 pub fn deserialize_optional_long_string_map<'de, D>(
     deserializer: D,
-) -> Result<Option<BTreeMap<i64, Option<String>>>, D::Error>
+) -> Result<Option<NullableLongStringMap>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -535,9 +554,15 @@ where
         serde_json::from_str::<FastjsonRawEntries>(raw.get()).map_err(de::Error::custom)?;
     let mut result = BTreeMap::new();
     for (key, value) in entries {
-        let key =
-            fastjson_integer::<D::Error>(&Value::String(key), i64::MIN as i128, i64::MAX as i128)?
-                as i64;
+        let key = if key == "null" {
+            None
+        } else {
+            Some(fastjson_integer::<D::Error>(
+                &Value::String(key),
+                i64::MIN as i128,
+                i64::MAX as i128,
+            )? as i64)
+        };
         let value = if value.get().trim() == "null" {
             None
         } else {

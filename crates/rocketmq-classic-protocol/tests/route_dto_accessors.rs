@@ -17,7 +17,12 @@ fn route_dto_public_fields_match_invoked_java_getter_setter_values() {
     let broker_addrs = broker.broker_addrs.as_ref().map(|values| {
         values
             .iter()
-            .map(|(key, value)| (key.to_string(), value.as_deref()))
+            .map(|(key, value)| {
+                (
+                    key.map_or_else(|| "null".to_owned(), |id| id.to_string()),
+                    value.as_deref(),
+                )
+            })
             .collect::<BTreeMap<_, _>>()
     });
     assert_eq!(

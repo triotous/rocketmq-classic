@@ -25,7 +25,7 @@ pub struct RouteSnapshot {
     pub raw_routes: BTreeMap<String, TopicRouteDataHandle>,
     /// Last converted publication, independent of later raw map mutations.
     pub topics: BTreeMap<String, Arc<TopicSnapshot>>,
-    pub broker_addresses: BTreeMap<String, BTreeMap<i64, Option<String>>>,
+    pub broker_addresses: BTreeMap<String, BTreeMap<Option<i64>, Option<String>>>,
     pub(crate) broker_versions: BTreeMap<(String, String), i32>,
 }
 
@@ -66,7 +66,7 @@ impl RouteSnapshot {
             .ok_or(RuntimeError::InvalidRoute(
                 "selected broker has null address map",
             ))?;
-        if let Some(master) = addresses.get(&0).and_then(Option::as_deref) {
+        if let Some(master) = addresses.get(&Some(0)).and_then(Option::as_deref) {
             return Ok(Some(master.to_owned()));
         }
         if addresses.is_empty() {
@@ -83,7 +83,7 @@ impl RouteSnapshot {
     pub fn publish_address(&self, broker: &str) -> Option<&str> {
         self.broker_addresses
             .get(broker)?
-            .get(&0)
+            .get(&Some(0))
             .and_then(Option::as_deref)
     }
 
@@ -92,57 +92,74 @@ impl RouteSnapshot {
         broker: &str,
         id: i64,
         only_this_broker: bool,
-    ) -> Option<BrokerAddress> {
-        let addresses = self.broker_addresses.get(broker)?;
+    ) -> Result<Option<BrokerAddress>, RuntimeError> {
+        let Some(addresses) = self.broker_addresses.get(broker) else {
+            return Ok(None);
+        };
         let exact_or_adjacent = addresses
-            .get_key_value(&id)
+            .get_key_value(&Some(id))
             .filter(|(_, address)| address.is_some())
             .or_else(|| {
                 (id != 0)
-                    .then(|| addresses.get_key_value(&id.wrapping_add(1)))
+                    .then(|| addresses.get_key_value(&Some(id.wrapping_add(1))))
                     .flatten()
                     .filter(|(_, address)| address.is_some())
             });
-        let selected = exact_or_adjacent.or_else(|| {
+        let is_exact_or_adjacent = exact_or_adjacent.is_some();
+        let Some(selected) = exact_or_adjacent.or_else(|| {
             (!only_this_broker)
                 .then(|| addresses.first_key_value())
                 .flatten()
-        })?;
-        let address = selected.1.as_ref()?;
-        Some(BrokerAddress {
+        }) else {
+            return Ok(None);
+        };
+        let slave = if is_exact_or_adjacent {
+            id != 0
+        } else {
+            selected
+                .0
+                .ok_or(RuntimeError::InvalidRoute("null broker address id"))?
+                != 0
+        };
+        let Some(address) = selected.1.as_ref() else {
+            return Ok(None);
+        };
+        Ok(Some(BrokerAddress {
             address: address.clone(),
             // Java changes the slave flag only for the arbitrary-entry fallback,
             // not for brokerId + 1 (including signed overflow/negative IDs).
-            slave: if exact_or_adjacent.is_some() {
-                id != 0
-            } else {
-                *selected.0 != 0
-            },
+            slave,
             version: self
                 .broker_versions
                 .get(&(broker.to_owned(), address.clone()))
                 .copied()
                 .unwrap_or(0),
-        })
+        }))
     }
 
-    pub fn admin_address(&self, broker: &str) -> Option<BrokerAddress> {
+    pub fn admin_address(&self, broker: &str) -> Result<Option<BrokerAddress>, RuntimeError> {
         // Java iterates until it finds a nonnull value. HashMap order is not
-        // observable when several valid entries exist.
-        let (id, address) = self
-            .broker_addresses
-            .get(broker)?
-            .iter()
-            .find_map(|(id, address)| address.as_ref().map(|address| (id, address)))?;
-        Some(BrokerAddress {
-            address: address.clone(),
-            slave: *id != 0,
-            version: self
-                .broker_versions
-                .get(&(broker.to_owned(), address.clone()))
-                .copied()
-                .unwrap_or(0),
-        })
+        // observable when several valid entries exist. Long IDs are unboxed
+        // only after a nonnull address is found.
+        let Some(addresses) = self.broker_addresses.get(broker) else {
+            return Ok(None);
+        };
+        for (id, address) in addresses {
+            let Some(address) = address else {
+                continue;
+            };
+            let id = id.ok_or(RuntimeError::InvalidRoute("null broker address id"))?;
+            return Ok(Some(BrokerAddress {
+                address: address.clone(),
+                slave: id != 0,
+                version: self
+                    .broker_versions
+                    .get(&(broker.to_owned(), address.clone()))
+                    .copied()
+                    .unwrap_or(0),
+            }));
+        }
+        Ok(None)
     }
 
     pub fn broker_name<'a>(&'a self, queue: &'a MessageQueue) -> Option<&'a str> {
@@ -568,7 +585,7 @@ fn validate_conversion_size(topic: &str, route: &TopicRouteData) -> Result<(), R
                 .flatten()
                 .find(|broker| broker.broker_name == queue.broker_name)
                 .and_then(|broker| broker.broker_addrs.as_ref())
-                .is_some_and(|addresses| addresses.contains_key(&0));
+                .is_some_and(|addresses| addresses.contains_key(&Some(0)));
             if master {
                 add(
                     queue.write_queue_nums,
@@ -825,8 +842,26 @@ mod tests {
             if case["outcome"] == "NullPointerException" {
                 assert!(Arc::ptr_eq(&before_cleanup, &snapshot), "{}", case["id"]);
             }
+            let broker_address_table = snapshot
+                .broker_addresses
+                .iter()
+                .map(|(broker, addresses)| {
+                    (
+                        broker.clone(),
+                        addresses
+                            .iter()
+                            .map(|(id, address)| {
+                                (
+                                    id.map_or_else(|| "null".to_owned(), |id| id.to_string()),
+                                    address,
+                                )
+                            })
+                            .collect::<BTreeMap<_, _>>(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
             assert_eq!(
-                serde_json::to_value(&snapshot.broker_addresses).unwrap(),
+                serde_json::to_value(broker_address_table).unwrap(),
                 case["brokerAddressTable"],
                 "{}",
                 case["id"]
@@ -1038,12 +1073,16 @@ mod tests {
                 case["publishAddress"].as_str()
             );
             assert_eq!(
-                snapshot.admin_address("broker").map(|peer| peer.address),
+                snapshot
+                    .admin_address("broker")
+                    .unwrap()
+                    .map(|peer| peer.address),
                 case["adminAddress"].as_str().map(str::to_owned)
             );
             assert_eq!(
                 snapshot
                     .subscribe_address("broker", 0, true)
+                    .unwrap()
                     .map(|peer| peer.address),
                 case["subscribeExactMasterAddress"]
                     .as_str()
@@ -1072,14 +1111,15 @@ mod tests {
         snapshot.broker_addresses.insert(
             "broker".into(),
             BTreeMap::from([
-                (0, Some("master:10911".into())),
-                (1, None),
-                (2, Some("slave:10911".into())),
+                (Some(0), Some("master:10911".into())),
+                (Some(1), None),
+                (Some(2), Some("slave:10911".into())),
             ]),
         );
         assert_eq!(
             snapshot
                 .subscribe_address("broker", 1, true)
+                .unwrap()
                 .unwrap()
                 .address,
             "slave:10911"
@@ -1088,18 +1128,31 @@ mod tests {
             .broker_addresses
             .get_mut("broker")
             .unwrap()
-            .remove(&2);
-        assert!(snapshot.subscribe_address("broker", 1, true).is_none());
-        let fallback = snapshot.subscribe_address("broker", 1, false).unwrap();
+            .remove(&Some(2));
+        assert!(
+            snapshot
+                .subscribe_address("broker", 1, true)
+                .unwrap()
+                .is_none()
+        );
+        let fallback = snapshot
+            .subscribe_address("broker", 1, false)
+            .unwrap()
+            .unwrap();
         assert_eq!(fallback.address, "master:10911");
         assert!(!fallback.slave);
         snapshot
             .broker_addresses
             .get_mut("broker")
             .unwrap()
-            .insert(0, None);
-        assert!(snapshot.subscribe_address("broker", 1, false).is_none());
-        assert!(snapshot.admin_address("broker").is_none());
+            .insert(Some(0), None);
+        assert!(
+            snapshot
+                .subscribe_address("broker", 1, false)
+                .unwrap()
+                .is_none()
+        );
+        assert!(snapshot.admin_address("broker").unwrap().is_none());
     }
 
     #[test]
@@ -1109,11 +1162,11 @@ mod tests {
         route.broker_datas.as_mut().unwrap()[0]
             .as_mut()
             .unwrap()
-            .broker_addrs = Some(BTreeMap::from([(0, None)]));
+            .broker_addrs = Some(BTreeMap::from([(Some(0), None)]));
         cache.replace("topic", route).unwrap();
         cache.clean_offline().unwrap();
         assert_eq!(
-            cache.snapshot().unwrap().broker_addresses["broker"][&0],
+            cache.snapshot().unwrap().broker_addresses["broker"][&Some(0)],
             None
         );
         cache.update_raw(|raw| (true, raw.clear())).unwrap();
@@ -1214,8 +1267,8 @@ mod tests {
             .as_mut()
             .unwrap()
             .broker_addrs = Some(BTreeMap::from([
-            (2, Some("slave-a:10911".into())),
-            (3, Some("slave-b:10911".into())),
+            (Some(2), Some("slave-a:10911".into())),
+            (Some(3), Some("slave-b:10911".into())),
         ]));
         original
             .broker_datas
@@ -1308,8 +1361,8 @@ mod tests {
             broker_datas: Some(vec![Some(BrokerData {
                 broker_name: Some("broker".into()),
                 broker_addrs: Some(BTreeMap::from([
-                    (0, Some(format!("master-{count}:10911"))),
-                    (2, Some("slave:10911".into())),
+                    (Some(0), Some(format!("master-{count}:10911"))),
+                    (Some(2), Some("slave:10911".into())),
                 ])),
                 ..Default::default()
             })]),
@@ -1321,16 +1374,17 @@ mod tests {
     fn admin_resolution_reports_selected_peer_version_and_subscription_preserves_adjacent_slave_flag()
      {
         let mut snapshot = RouteSnapshot::default();
-        assert!(snapshot.admin_address("missing").is_none());
+        assert!(snapshot.admin_address("missing").unwrap().is_none());
         snapshot
             .broker_addresses
             .insert("empty".into(), BTreeMap::new());
-        assert!(snapshot.admin_address("empty").is_none());
-        snapshot
-            .broker_addresses
-            .insert("broker".into(), BTreeMap::from([(2, Some("slave".into()))]));
+        assert!(snapshot.admin_address("empty").unwrap().is_none());
+        snapshot.broker_addresses.insert(
+            "broker".into(),
+            BTreeMap::from([(Some(2), Some("slave".into()))]),
+        );
         assert_eq!(
-            snapshot.admin_address("broker"),
+            snapshot.admin_address("broker").unwrap(),
             Some(BrokerAddress {
                 address: "slave".into(),
                 slave: true,
@@ -1340,22 +1394,75 @@ mod tests {
         snapshot
             .broker_versions
             .insert(("broker".into(), "slave".into()), 551);
-        assert_eq!(snapshot.admin_address("broker").unwrap().version, 551);
+        assert_eq!(
+            snapshot.admin_address("broker").unwrap().unwrap().version,
+            551
+        );
         snapshot
             .broker_addresses
             .get_mut("broker")
             .unwrap()
-            .insert(0, Some("master".into()));
+            .insert(Some(0), Some("master".into()));
         // Java's admin method chooses an available map entry, not a portable
         // master-first contract. Assert metadata for the actually selected peer.
-        let admin = snapshot.admin_address("broker").unwrap();
+        let admin = snapshot.admin_address("broker").unwrap().unwrap();
         assert_eq!(admin.slave, admin.address != "master");
         assert_eq!(admin.version, if admin.slave { 551 } else { 0 });
-        let adjacent = snapshot.subscribe_address("broker", -1, true).unwrap();
+        let adjacent = snapshot
+            .subscribe_address("broker", -1, true)
+            .unwrap()
+            .unwrap();
         assert_eq!(adjacent.address, "master");
         assert!(adjacent.slave); // Java keeps the originally requested nonzero-ID flag.
-        assert!(!snapshot.subscribe_address("broker", 0, true).unwrap().slave);
-        assert!(snapshot.subscribe_address("broker", 7, true).is_none());
+        assert!(
+            !snapshot
+                .subscribe_address("broker", 0, true)
+                .unwrap()
+                .unwrap()
+                .slave
+        );
+        assert!(
+            snapshot
+                .subscribe_address("broker", 7, true)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn nullable_broker_ids_fail_only_on_java_long_unboxing_paths() {
+        let mut snapshot = RouteSnapshot::default();
+        snapshot.broker_addresses.insert(
+            "null-id".into(),
+            BTreeMap::from([(None, Some("null-id:10911".into()))]),
+        );
+        assert!(matches!(
+            snapshot.admin_address("null-id"),
+            Err(RuntimeError::InvalidRoute("null broker address id"))
+        ));
+        assert!(matches!(
+            snapshot.subscribe_address("null-id", 7, false),
+            Err(RuntimeError::InvalidRoute("null broker address id"))
+        ));
+        assert_eq!(
+            snapshot.subscribe_address("null-id", 0, true).unwrap(),
+            None,
+            "a direct Long-key lookup does not unbox map entries"
+        );
+
+        snapshot.broker_addresses.insert(
+            "null-id-null-address".into(),
+            BTreeMap::from([(None, None)]),
+        );
+        assert_eq!(
+            snapshot.admin_address("null-id-null-address").unwrap(),
+            None,
+            "admin lookup skips null address values before unboxing"
+        );
+        assert!(matches!(
+            snapshot.subscribe_address("null-id-null-address", 7, false),
+            Err(RuntimeError::InvalidRoute("null broker address id"))
+        ));
     }
 
     #[test]
@@ -1367,7 +1474,10 @@ mod tests {
             .unwrap();
         let old = cache.snapshot().unwrap();
         assert_eq!(
-            old.subscribe_address("broker", 0, true).unwrap().version,
+            old.subscribe_address("broker", 0, true)
+                .unwrap()
+                .unwrap()
+                .version,
             551
         );
         cache.replace("second", route(2)).unwrap();
@@ -1375,7 +1485,7 @@ mod tests {
         cache.clean_offline().unwrap();
         let next = cache.snapshot().unwrap();
         assert!(next.publish_address("broker").is_none());
-        assert!(next.subscribe_address("broker", 2, true).is_some()); // first topic still references this slave
+        assert!(next.subscribe_address("broker", 2, true).unwrap().is_some()); // first topic still references this slave
         assert_eq!(
             next.broker_versions
                 .get(&("broker".into(), "master-1:10911".into())),
@@ -1473,18 +1583,31 @@ mod tests {
         let cache = RouteCache::default();
         cache.replace("topic", route(1)).unwrap();
         let snapshot = cache.snapshot().unwrap();
-        assert!(!snapshot.subscribe_address("broker", 0, true).unwrap().slave);
+        assert!(
+            !snapshot
+                .subscribe_address("broker", 0, true)
+                .unwrap()
+                .unwrap()
+                .slave
+        );
         assert_eq!(
             snapshot
                 .subscribe_address("broker", 1, true)
                 .unwrap()
+                .unwrap()
                 .address,
             "slave:10911"
         );
-        assert!(snapshot.subscribe_address("broker", 3, true).is_none());
+        assert!(
+            snapshot
+                .subscribe_address("broker", 3, true)
+                .unwrap()
+                .is_none()
+        );
         assert_eq!(
             snapshot
                 .subscribe_address("broker", 3, false)
+                .unwrap()
                 .unwrap()
                 .address,
             "master-1:10911"

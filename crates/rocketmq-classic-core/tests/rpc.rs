@@ -416,7 +416,7 @@ async fn route_success_unknown_status_and_malformed_success() {
     assert_eq!(queues[1].queue_id(), 1);
     let broker = route.broker_datas.as_ref().unwrap()[0].as_ref().unwrap();
     assert_eq!(
-        broker.broker_addrs.as_ref().unwrap()[&0].as_deref(),
+        broker.broker_addrs.as_ref().unwrap()[&Some(0)].as_deref(),
         Some("master:10911")
     );
     let mapping = route.topic_queue_mapping_by_broker.as_ref().unwrap()["broker"]

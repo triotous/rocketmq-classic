@@ -40,6 +40,9 @@ impl rocketmq_classic_remoting::client::ChannelEventListener for HeartbeatChanne
                     .iter()
                     .find(|(_, value)| value.as_deref() == Some(address))
                 {
+                    let Some(id) = id else {
+                        continue;
+                    };
                     if runtime
                         .send_heartbeat_to_broker_with_lock_mode(*id, broker, address, false)
                         .await
@@ -189,20 +192,24 @@ impl ClientRuntime {
                 }
             }
         }
-        let peers = routes
-            .broker_addresses
-            .iter()
-            .flat_map(|(broker, addresses)| {
-                addresses
-                    .iter()
-                    .filter(|(id, _)| {
-                        !full.consumer_data_set.as_ref().is_none_or(Vec::is_empty) || **id == 0
-                    })
-                    .filter_map(|(_, address)| {
-                        address.as_deref().map(|address| (broker.as_str(), address))
-                    })
-            })
-            .collect::<Vec<_>>();
+        let has_consumers = !full.consumer_data_set.as_ref().is_none_or(Vec::is_empty);
+        let mut peers = Vec::new();
+        for (broker, addresses) in &routes.broker_addresses {
+            for (id, address) in addresses {
+                let Some(address) = address.as_deref() else {
+                    continue;
+                };
+                // Java skips null address values first, then unboxes the Long
+                // key for its producer-only check and primitive send call.
+                let id = id.ok_or(RuntimeError::InvalidRoute("null broker address id"))?;
+                // Java compares the boxed Long with the primitive master ID
+                // only for producer-only heartbeats, which unboxes the key.
+                if !has_consumers && id != 0 {
+                    continue;
+                }
+                peers.push((broker.as_str(), address));
+            }
+        }
         if !v2 && allow_concurrent_v1 && self.config_read().enable_concurrent_heartbeat {
             if peers.is_empty() {
                 return Ok(false);

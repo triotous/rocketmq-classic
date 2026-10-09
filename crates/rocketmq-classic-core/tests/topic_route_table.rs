@@ -98,7 +98,7 @@ async fn raw_clear_query_refetches_once_and_retained_table_observes_wire_refresh
             .unwrap()
             .broker_addrs
             .as_ref()
-            .unwrap()[&0],
+            .unwrap()[&Some(0)],
         Some("master:10911".to_owned())
     );
     assert!(

@@ -309,18 +309,48 @@ fn quote_unquoted_numeric_object_keys(input: &str) -> String {
             index += character.len_utf8();
             continue;
         }
-        let can_quote_key = matches!(
-            stack.last(),
+        let key_kind = match stack.last() {
             Some(RouteJsonContainer::Object {
-                key_kind: RouteObjectKeyKind::IntegerMap
-                    | RouteObjectKeyKind::StringMap
-                    | RouteObjectKeyKind::StringDtoMap
-                    | RouteObjectKeyKind::GenericMap,
+                key_kind,
                 expecting_key: true,
                 ..
-            })
-        );
-        if can_quote_key
+            }) if matches!(
+                key_kind,
+                RouteObjectKeyKind::IntegerMap
+                    | RouteObjectKeyKind::StringMap
+                    | RouteObjectKeyKind::StringDtoMap
+                    | RouteObjectKeyKind::GenericMap
+            ) =>
+            {
+                Some(*key_kind)
+            }
+            _ => None,
+        };
+        if key_kind == Some(RouteObjectKeyKind::IntegerMap) && input[index..].starts_with("null") {
+            let key_end = index + "null".len();
+            let mut colon = key_end;
+            while bytes
+                .get(colon)
+                .is_some_and(|byte| byte.is_ascii_whitespace())
+            {
+                colon += 1;
+            }
+            if bytes.get(colon) == Some(&b':') {
+                output.push_str("\"null\"");
+                index = key_end;
+                if let Some(RouteJsonContainer::Object {
+                    expecting_key,
+                    field,
+                    ..
+                }) = stack.last_mut()
+                {
+                    *expecting_key = false;
+                    field.take();
+                }
+                continue;
+            }
+        }
+        if key_kind.is_some()
             && character.is_ascii()
             && matches!(bytes[index], b'+' | b'-' | b'0'..=b'9')
         {
@@ -541,10 +571,11 @@ pub struct BrokerData {
     pub broker_name: Option<String>,
     #[serde(
         default,
+        serialize_with = "serde_fastjson::serialize_nullable_long_string_map",
         deserialize_with = "serde_fastjson::deserialize_optional_long_string_map",
         skip_serializing_if = "Option::is_none"
     )]
-    pub broker_addrs: Option<BTreeMap<i64, Option<String>>>,
+    pub broker_addrs: Option<serde_fastjson::NullableLongStringMap>,
     #[serde(
         default,
         deserialize_with = "serde_fastjson::deserialize_nullable_string",
@@ -572,7 +603,7 @@ struct BrokerDataFields {
         default,
         deserialize_with = "serde_fastjson::deserialize_optional_long_string_map"
     )]
-    broker_addrs: Option<BTreeMap<i64, Option<String>>>,
+    broker_addrs: Option<serde_fastjson::NullableLongStringMap>,
     #[serde(
         default,
         deserialize_with = "serde_fastjson::deserialize_nullable_string"
@@ -642,7 +673,7 @@ impl BrokerData {
             .broker_addrs
             .as_ref()
             .ok_or(BrokerDataSelectAddrError::NullAddressMap)?;
-        if let Some(Some(master)) = addresses.get(&0) {
+        if let Some(Some(master)) = addresses.get(&Some(0)) {
             return Ok(Some(master.clone()));
         }
         if addresses.is_empty() {
@@ -663,7 +694,9 @@ impl BrokerData {
             .map(|addresses| {
                 addresses.iter().fold(0i32, |hash, (broker_id, address)| {
                     let address_hash = address.as_deref().map(java_string_hash_code).unwrap_or(0);
-                    hash.wrapping_add(java_long_hash_code(*broker_id) ^ address_hash)
+                    hash.wrapping_add(
+                        java_long_hash_code(broker_id.unwrap_or_default()) ^ address_hash,
+                    )
                 })
             })
             .unwrap_or(0);
@@ -705,7 +738,11 @@ impl BrokerData {
                 let entries = addresses
                     .iter()
                     .map(|(broker_id, address)| {
-                        format!("{broker_id}={}", address.as_deref().unwrap_or("null"))
+                        format!(
+                            "{}={}",
+                            broker_id.map_or_else(|| "null".to_owned(), |id| id.to_string()),
+                            address.as_deref().unwrap_or("null")
+                        )
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
@@ -912,10 +949,10 @@ mod nullable_broker_address_tests {
         let value = serde_json::json!({"cluster":"c","brokerName":"b","brokerAddrs":{"0":null,"1":"slave:10911"}});
         let broker: BrokerData = serde_json::from_value(value.clone()).unwrap();
         let addresses = broker.broker_addrs.as_ref().unwrap();
-        assert_eq!(addresses.get(&0), Some(&None));
-        assert!(!addresses.contains_key(&2));
+        assert_eq!(addresses.get(&Some(0)), Some(&None));
+        assert!(!addresses.contains_key(&Some(2)));
         assert_eq!(
-            addresses.get(&1).and_then(Option::as_deref),
+            addresses.get(&Some(1)).and_then(Option::as_deref),
             Some("slave:10911")
         );
         assert_eq!(
@@ -1959,6 +1996,11 @@ mod route_dto_input_cases_tests {
             let case = cases.iter().find(|case| case["id"] == id).unwrap();
             assert_eq!(case["brokerAddrsNullKeyPresent"], true, "{id}");
             assert_eq!(case["brokerAddrsStringNullKeyPresent"], false, "{id}");
+            let broker: BrokerData = parse_java_route_json(case["rawInput"].as_str().unwrap())
+                .expect("pinned Java accepts nullable Long map keys");
+            let addresses = broker.broker_addrs.unwrap();
+            assert!(addresses.contains_key(&None), "{id}");
+            assert_eq!(addresses.len(), 1, "{id}");
         }
         for case in cases {
             let raw_input = case["rawInput"].as_str().unwrap();
@@ -2482,7 +2524,7 @@ impl TopicRouteData {
                     broker
                         .broker_addrs
                         .as_ref()
-                        .is_some_and(|addresses| addresses.contains_key(&0))
+                        .is_some_and(|addresses| addresses.contains_key(&Some(0)))
                 });
         }
         let mut queue_data = self
@@ -2670,11 +2712,11 @@ mod tests {
             .as_ref()
             .unwrap()
             .clone();
-        duplicate.broker_addrs = Some(BTreeMap::from([(0, Some("other-master".into()))]));
+        duplicate.broker_addrs = Some(BTreeMap::from([(Some(0), Some("other-master".into()))]));
         route.broker_datas.as_mut().unwrap()[0]
             .as_mut()
             .unwrap()
-            .broker_addrs = Some(BTreeMap::from([(1, Some("slave".into()))]));
+            .broker_addrs = Some(BTreeMap::from([(Some(1), Some("slave".into()))]));
         route.broker_datas.as_mut().unwrap().push(Some(duplicate));
         assert!(route.publish_queues("topic").is_empty());
         route.topic_queue_mapping_by_broker = Some(BTreeMap::from([
@@ -2715,7 +2757,7 @@ mod tests {
         route.broker_datas.as_mut().unwrap()[0]
             .as_mut()
             .unwrap()
-            .broker_addrs = Some(BTreeMap::from([(0, Some("master".into()))]));
+            .broker_addrs = Some(BTreeMap::from([(Some(0), Some("master".into()))]));
         route.queue_datas.as_mut().unwrap().retain(|queue| {
             queue
                 .as_ref()
@@ -2791,7 +2833,7 @@ mod tests {
         route.broker_datas.as_mut().unwrap()[0]
             .as_mut()
             .unwrap()
-            .broker_addrs = Some(BTreeMap::from([(0, Some("b1-master".into()))]));
+            .broker_addrs = Some(BTreeMap::from([(Some(0), Some("b1-master".into()))]));
         assert_eq!(route.publish_queues("t").len(), 3);
         assert_eq!(route.subscribe_queues("t").len(), 15);
     }

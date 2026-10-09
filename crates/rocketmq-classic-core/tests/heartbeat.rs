@@ -188,7 +188,7 @@ async fn null_broker_value_is_cached_but_never_dialed_for_heartbeat() {
         .await
         .unwrap();
     assert_eq!(
-        runtime.route_snapshot().unwrap().broker_addresses["broker"][&0],
+        runtime.route_snapshot().unwrap().broker_addresses["broker"][&Some(0)],
         None
     );
     assert!(runtime.send_heartbeat_to_all_brokers().await.unwrap());
@@ -196,6 +196,64 @@ async fn null_broker_value_is_cached_but_never_dialed_for_heartbeat() {
         .await
         .unwrap()
         .unwrap();
+    runtime.remoting().shutdown().await;
+}
+
+#[tokio::test]
+async fn heartbeat_unboxes_nonnull_null_ids_and_skips_null_values() {
+    let mut config = ClientConfig::new("null-heartbeat-broker-id");
+    config.enable_heartbeat_channel_event_listener = false;
+    let runtime =
+        runtime_with_broker_addrs(config, serde_json::json!({"null":"127.0.0.1:1"})).await;
+    let producer = Arc::new(Producer);
+    let _lease = runtime
+        .register_producer("producer", producer.clone())
+        .await
+        .unwrap();
+    assert_eq!(
+        runtime
+            .prepare_heartbeat_data(false)
+            .unwrap()
+            .producer_data_set
+            .as_ref()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(runtime.route_snapshot().unwrap().broker_addresses["broker"].contains_key(&None));
+    let result = runtime.send_heartbeat_to_all_brokers().await;
+    assert!(
+        matches!(
+            &result,
+            Err(rocketmq_classic_core::runtime::RuntimeError::InvalidRoute(
+                "null broker address id"
+            ))
+        ),
+        "unexpected heartbeat result: {result:?}"
+    );
+    let consumer = Arc::new(Consumer(Mutex::new(SubscriptionData::default())));
+    let _consumer_lease = runtime
+        .register_consumer("consumer", consumer.clone())
+        .await
+        .unwrap();
+    assert!(matches!(
+        runtime.send_heartbeat_to_all_brokers().await,
+        Err(rocketmq_classic_core::runtime::RuntimeError::InvalidRoute(
+            "null broker address id"
+        ))
+    ));
+    runtime.remoting().shutdown().await;
+
+    let mut config = ClientConfig::new("null-heartbeat-broker-id-null-value");
+    config.enable_heartbeat_channel_event_listener = false;
+    let runtime = runtime_with_broker_addrs(config, serde_json::json!({"null":null})).await;
+    let producer = Arc::new(Producer);
+    let _lease = runtime
+        .register_producer("producer", producer.clone())
+        .await
+        .unwrap();
+    assert!(runtime.route_snapshot().unwrap().broker_addresses["broker"].contains_key(&None));
+    assert!(runtime.send_heartbeat_to_all_brokers().await.unwrap());
     runtime.remoting().shutdown().await;
 }
 
@@ -253,6 +311,7 @@ async fn single_peer_sends_to_slave_for_producer_only_and_reports_wire_failure()
             .route_snapshot()
             .unwrap()
             .subscribe_address("broker", 0, true)
+            .unwrap()
             .unwrap()
             .version,
         551
@@ -351,6 +410,7 @@ async fn active_broker_connection_sends_heartbeat_and_wakes_runtime_wide_rebalan
             .route_snapshot()
             .unwrap()
             .subscribe_address("broker", 0, true)
+            .unwrap()
             .unwrap()
             .version,
         551
@@ -540,6 +600,7 @@ async fn v2_negotiates_full_simple_subscription_change_version_and_rebalance() {
             .unwrap()
             .subscribe_address("broker", 0, true)
             .unwrap()
+            .unwrap()
             .version,
         551
     );
@@ -630,12 +691,14 @@ async fn failed_peer_does_not_prevent_heartbeat_to_other_brokers() {
         snapshot
             .subscribe_address("broker", 0, true)
             .unwrap()
+            .unwrap()
             .version,
         0
     );
     assert_eq!(
         snapshot
             .subscribe_address("broker", 1, true)
+            .unwrap()
             .unwrap()
             .version,
         551
@@ -714,12 +777,14 @@ async fn concurrent_v1_uses_parallel_peers_and_busy_heartbeat_gate_skips_a_round
         snapshot
             .subscribe_address("broker", 0, true)
             .unwrap()
+            .unwrap()
             .version,
         551
     );
     assert_eq!(
         snapshot
             .subscribe_address("broker", 1, true)
+            .unwrap()
             .unwrap()
             .version,
         551
