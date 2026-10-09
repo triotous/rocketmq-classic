@@ -53,3 +53,10 @@
 - The fixture has 499 `socksConstruction` cases and 32 `socksProxySelection` cases. SHA-256: `fd46551f8755e1ca55a6434bdf15eabe58014077a402e8e17928b9eb8d9039d7`.
 - Focused SOCKS tests, full `cargo test --workspace --all-targets --locked`, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios and Java cross-decodes), comparator self-test, manifest22 validation, format, and diff checks pass.
 - Updated ADR-0038, Java compatibility, API map, requirement audit and runtime inventory. Additional Fastjson grammar and whole Phase 6 source/API/input/reverse-export reconciliation remain open; Phase 6 remains PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
+
+## Consumer-list mutable getter mapping — 2026-10-09T19:41:12Z
+
+- Extended pinned Java `consumerListApiCase`: mutation through the List passed to `setConsumerIdList` and mutation through `getConsumerIdList` are mutually visible; final contents are `client-a`, `client-b`, `client-c`, `client-d`. Oracle/fixture commit `0877435c`; `lookup.json` SHA-256 `3d031033fb4f04d0ab78df0bf7818827dec7a460e8264812f303667ee42c020b`.
+- The test-first Rust differential failed to compile because no mutable getter existed. Implementation `dd4156c5` adds `get_consumer_id_list_mut() -> Option<&mut Vec<Option<String>>>`; the test moves the Vec into the DTO, mutates through the accessor, and checks the resulting values. Java external List identity remains outside Rust's move-based ownership model.
+- Focused DTO method differential, full workspace/all-target tests, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios and Java cross-decodes), comparator self-test, manifest22 validation, `cargo fmt --all -- --check`, and `git diff --check` pass.
+- Updated ADR-0055, Java compatibility, API map, requirement audit, runtime inventory, and this rlog. Other DTO aliases, malformed inputs, full source/reverse-export reconciliation, platform address evidence, and P6-V04 remain open.
