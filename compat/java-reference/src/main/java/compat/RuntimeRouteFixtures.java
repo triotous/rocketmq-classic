@@ -1173,7 +1173,8 @@ public final class RuntimeRouteFixtures {
             new String[] {"same-address-under-renamed-broker", "{\"brokerDatas\":[{\"brokerName\":\"renamed\",\"brokerAddrs\":{\"9\":\"master:10911\"}}]}"},
             new String[] {"address-retained-by-sibling-topic", "{\"brokerDatas\":[]}"},
             new String[] {"candidate-before-null-address-map", "{\"brokerDatas\":[{\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master:10911\"}},{\"brokerName\":\"broker\",\"brokerAddrs\":null}]}"},
-            new String[] {"null-address-map-before-candidate", "{\"brokerDatas\":[{\"brokerName\":\"broken\",\"brokerAddrs\":null},{\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master:10911\"}}]}"}
+            new String[] {"null-address-map-before-candidate", "{\"brokerDatas\":[{\"brokerName\":\"broken\",\"brokerAddrs\":null},{\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master:10911\"}}]}"},
+            new String[] {"empty-address-row-removed-before-later-failure", "{\"brokerDatas\":[null]}"}
         );
         List<Object> cases = new ArrayList<>();
         for (String[] shape : shapes) {
@@ -1199,6 +1200,14 @@ public final class RuntimeRouteFixtures {
 
             Map<String, Object> seed = com.alibaba.fastjson2.JSON.parseObject(
                 com.alibaba.fastjson2.JSON.toJSONString(initial), Map.class);
+            if (id.equals("empty-address-row-removed-before-later-failure")) {
+                seed = com.alibaba.fastjson2.JSON.parseObject(
+                    "{\"queueDatas\":[],\"brokerDatas\":["
+                        + "{\"cluster\":\"cluster\",\"brokerName\":\"a\",\"brokerAddrs\":{}},"
+                        + "{\"cluster\":\"cluster\",\"brokerName\":\"b\",\"brokerAddrs\":{\"0\":\"stale:10911\"}}],"
+                        + "\"filterServerTable\":{}}",
+                    Map.class);
+            }
             if (seedNullMaster) {
                 List<Map<String, Object>> brokers = (List<Map<String, Object>>) seed.get("brokerDatas");
                 Map<String, Object> addresses = (Map<String, Object>) brokers.get(0).get("brokerAddrs");
@@ -1216,6 +1225,12 @@ public final class RuntimeRouteFixtures {
             TopicRouteData raw = com.alibaba.fastjson2.JSON.parseObject(rawInput, TopicRouteData.class);
             runtime.getTopicRouteTable().clear();
             runtime.getTopicRouteTable().put("raw", raw);
+            if (id.equals("empty-address-row-removed-before-later-failure")) {
+                java.lang.reflect.Field addressesField = MQClientInstance.class.getDeclaredField("brokerAddrTable");
+                addressesField.setAccessible(true);
+                item.put("brokerAddressTraversal",
+                    new ArrayList<>(((Map<?, ?>) addressesField.get(runtime)).keySet()));
+            }
             if (id.equals("address-retained-by-sibling-topic")) {
                 String siblingInput = "{\"brokerDatas\":[{\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master:10911\"}}]}";
                 TopicRouteData sibling = com.alibaba.fastjson2.JSON.parseObject(siblingInput, TopicRouteData.class);
