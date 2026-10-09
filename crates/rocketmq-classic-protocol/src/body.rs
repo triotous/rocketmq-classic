@@ -2288,6 +2288,76 @@ mod tests {
     }
 
     #[test]
+    fn lite_subscription_methods_match_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let case = &fixture["liteSubscriptionApiCases"][0];
+        let mut subscription = LiteSubscription::new();
+        let subscription_ptr = std::ptr::addr_of_mut!(subscription);
+        assert_eq!(
+            subscription.set_group(Some("workers".into())) as *mut LiteSubscription,
+            subscription_ptr
+        );
+        assert_eq!(
+            subscription.set_topic(Some("orders".into())) as *mut LiteSubscription,
+            subscription_ptr
+        );
+        assert_eq!(subscription.group(), Some("workers"));
+        assert_eq!(subscription.topic(), Some("orders"));
+        subscription.set_update_time(case["initialTime"].as_i64().unwrap());
+
+        assert_eq!(
+            subscription.set_lite_topic_set(["lite-a"]) as *mut LiteSubscription,
+            subscription_ptr
+        );
+        assert_eq!(subscription.update_time(), 7);
+        assert!(subscription.lite_topic_set().contains("lite-a"));
+        assert!(subscription.add_lite_topic("lite-b"));
+        assert!(!subscription.add_lite_topic("lite-b"));
+        assert!(subscription.update_time() > 7);
+        subscription.add_lite_topics(["lite-c", "lite-d"]);
+        assert!(subscription.update_time() > 7);
+        assert!(subscription.lite_topic_set().contains("lite-c"));
+        assert!(subscription.remove_lite_topic("lite-b"));
+        subscription.remove_lite_topics(["lite-c", "lite-d"]);
+
+        let before_set_lite_topic_set = subscription.update_time();
+        subscription.set_lite_topic_set(["lite-e"]);
+        assert!(subscription.lite_topic_set().contains("lite-a"));
+        assert!(subscription.lite_topic_set().contains("lite-e"));
+        assert_eq!(subscription.update_time(), before_set_lite_topic_set);
+        subscription.remove_lite_topic("lite-e");
+        subscription.set_update_time(7);
+
+        assert!(case["groupSetterReturnsThis"].as_bool().unwrap());
+        assert!(case["topicSetterReturnsThis"].as_bool().unwrap());
+        assert!(case["setLiteTopicSetReturnsThis"].as_bool().unwrap());
+        assert!(case["setLiteTopicSetKeepsExisting"].as_bool().unwrap());
+        assert!(case["setLiteTopicSetLeavesUpdateTime"].as_bool().unwrap());
+        assert!(case["singleAddResult"].as_bool().unwrap());
+        assert!(!case["duplicateAddResult"].as_bool().unwrap());
+        assert!(case["singleAddUpdatesTime"].as_bool().unwrap());
+        assert!(case["collectionAddUpdatesTime"].as_bool().unwrap());
+        assert!(case["getterReturnsLiveSet"].as_bool().unwrap());
+        assert!(case["singleRemoveResult"].as_bool().unwrap());
+        assert!(case["collectionRemoveClearsMembers"].as_bool().unwrap());
+        assert!(
+            case["setLiteTopicSetAddsWithoutClearing"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(case["setLiteTopicSetDoesNotUpdateTime"].as_bool().unwrap());
+        assert_eq!(subscription.to_string(), case["toString"].as_str().unwrap());
+
+        let encoded = serde_json::to_value(&subscription).unwrap();
+        assert_eq!(encoded["group"], "workers");
+        assert_eq!(encoded["topic"], "orders");
+        assert_eq!(encoded["liteTopicSet"], serde_json::json!(["lite-a"]));
+        assert_eq!(encoded["updateTime"], 7);
+        assert!(encoded.get("clientId").is_none());
+    }
+
+    #[test]
     fn lite_subscription_root_shapes_match_invoked_java_fastjson() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();

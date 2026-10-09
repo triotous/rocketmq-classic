@@ -59,6 +59,7 @@ public final class RuntimeLookupFixtures {
         fixture.put("liteSubscriptionEnumCases", liteSubscriptionEnumCases());
         fixture.put("liteSubscriptionFieldCases", liteSubscriptionFieldCases());
         fixture.put("liteSubscriptionIdentityCases", liteSubscriptionIdentityCases());
+        fixture.put("liteSubscriptionApiCases", liteSubscriptionApiCases());
         fixture.put("liteSubscriptionRootCases", liteSubscriptionRootCases());
         fixture.put("liteSubscriptionControlFieldCases", liteSubscriptionControlFieldCases());
         fixture.put("liteSubscriptionElementCases", liteSubscriptionElementCases());
@@ -370,6 +371,47 @@ public final class RuntimeLookupFixtures {
         values.add(right);
         item.put("equalFieldHashSetSize", values.size());
         return item;
+    }
+
+    private static List<Object> liteSubscriptionApiCases() {
+        List<Object> cases = new ArrayList<>();
+        org.apache.rocketmq.common.lite.LiteSubscription subscription =
+            new org.apache.rocketmq.common.lite.LiteSubscription();
+        Map<String, Object> item = new TreeMap<>();
+        item.put("groupSetterReturnsThis", subscription.setGroup("workers") == subscription);
+        item.put("topicSetterReturnsThis", subscription.setTopic("orders") == subscription);
+        subscription.setUpdateTime(7L);
+        item.put("initialTime", subscription.getUpdateTime());
+        item.put("setLiteTopicSetReturnsThis",
+            subscription.setLiteTopicSet(Set.of("lite-a")) == subscription);
+        item.put("setLiteTopicSetKeepsExisting", subscription.getLiteTopicSet().contains("lite-a"));
+        item.put("setLiteTopicSetLeavesUpdateTime", subscription.getUpdateTime() == 7L);
+
+        Set<String> liveSet = subscription.getLiteTopicSet();
+        item.put("singleAddResult", subscription.addLiteTopic("lite-b"));
+        item.put("duplicateAddResult", subscription.addLiteTopic("lite-b"));
+        item.put("singleAddUpdatesTime", subscription.getUpdateTime() > 7L);
+        subscription.addLiteTopic(java.util.Arrays.asList("lite-c", "lite-d"));
+        item.put("collectionAddUpdatesTime", subscription.getUpdateTime() > 7L);
+        item.put("getterReturnsLiveSet", liveSet.contains("lite-c"));
+        item.put("singleRemoveResult", subscription.removeLiteTopic("lite-b"));
+        subscription.removeLiteTopic(java.util.Arrays.asList("lite-c", "lite-d"));
+        item.put("collectionRemoveClearsMembers",
+            !subscription.getLiteTopicSet().contains("lite-c")
+                && !subscription.getLiteTopicSet().contains("lite-d"));
+
+        long beforeSetLiteTopicSet = subscription.getUpdateTime();
+        subscription.setLiteTopicSet(Set.of("lite-e"));
+        item.put("setLiteTopicSetAddsWithoutClearing",
+            subscription.getLiteTopicSet().contains("lite-a")
+                && subscription.getLiteTopicSet().contains("lite-e"));
+        item.put("setLiteTopicSetDoesNotUpdateTime",
+            subscription.getUpdateTime() == beforeSetLiteTopicSet);
+        subscription.removeLiteTopic("lite-e");
+        subscription.setUpdateTime(7L);
+        item.put("toString", subscription.toString());
+        cases.add(item);
+        return cases;
     }
 
     private static List<Object> liteSubscriptionRootCases() {
