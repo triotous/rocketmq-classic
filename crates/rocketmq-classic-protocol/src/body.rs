@@ -991,9 +991,26 @@ mod tests {
 
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
-        for case in fixture["assignmentModeCases"].as_array().unwrap() {
-            let decoded =
-                serde_json::from_value::<QueryAssignmentResponseBody>(case["input"].clone());
+        let cases = fixture["assignmentModeCases"].as_array().unwrap();
+        assert_eq!(
+            cases.len(),
+            19,
+            "Java oracle includes decimal ordinal boundaries"
+        );
+        assert!(
+            cases
+                .iter()
+                .any(|case| case["name"] == "fractional-ordinal-precision-boundary")
+        );
+        assert!(
+            cases
+                .iter()
+                .any(|case| case["name"] == "decimal-ordinal-wraps-to-zero")
+        );
+        for case in cases {
+            let decoded = serde_json::from_str::<QueryAssignmentResponseBody>(
+                case["rawInput"].as_str().unwrap(),
+            );
             let java_accepts = case["outcome"] == "ACCEPTED";
             assert_eq!(
                 decoded.is_ok(),
