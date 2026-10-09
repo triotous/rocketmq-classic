@@ -2319,12 +2319,22 @@ impl GetConsumerStatusBody {
         self.message_queue_table.as_deref()
     }
 
+    /// Borrows the owned queue offset rows mutably for Java-compatible getter mutations.
+    pub fn get_message_queue_table_mut(&mut self) -> Option<&mut QueueOffsetEntries> {
+        self.message_queue_table.as_mut()
+    }
+
     pub fn set_message_queue_table(&mut self, value: Option<QueueOffsetEntries>) {
         self.message_queue_table = value;
     }
 
     pub fn get_consumer_table(&self) -> Option<&ConsumerQueueOffsets> {
         self.consumer_table.as_ref()
+    }
+
+    /// Borrows the owned consumer offset map mutably for Java-compatible getter mutations.
+    pub fn get_consumer_table_mut(&mut self) -> Option<&mut ConsumerQueueOffsets> {
+        self.consumer_table.as_mut()
     }
 
     pub fn set_consumer_table(&mut self, value: Option<ConsumerQueueOffsets>) {
@@ -3833,6 +3843,41 @@ mod tests {
         assert_eq!(
             serde_json::to_value(status.get_consumer_table()).unwrap(),
             status_case["values"]["consumerTable"]
+        );
+        let message_queue_table_mut = status.get_message_queue_table_mut().unwrap();
+        message_queue_table_mut.push((MessageQueue::new("orders", "broker", 4), Some(99)));
+        assert_eq!(
+            message_queue_table_mut
+                .iter()
+                .any(|(queue, offset)| queue.queue_id() == 4 && *offset == Some(99)),
+            status_case["messageQueueTableExternalMutationVisible"]
+        );
+        let consumer_table_mut = status.get_consumer_table_mut().unwrap();
+        consumer_table_mut.insert(
+            "getter-added".to_owned(),
+            Some(vec![(MessageQueue::new("orders", "broker", 5), Some(100))]),
+        );
+        assert_eq!(
+            consumer_table_mut.contains_key("getter-added"),
+            status_case["consumerTableGetterMutationVisibleToAssignedMap"]
+        );
+        let workers_mut = consumer_table_mut
+            .get_mut("workers")
+            .and_then(Option::as_mut)
+            .unwrap();
+        workers_mut.push((MessageQueue::new("orders", "broker", 6), Some(101)));
+        assert_eq!(
+            workers_mut
+                .iter()
+                .any(|(queue, offset)| queue.queue_id() == 6 && *offset == Some(101)),
+            status_case["nestedGetterMutationVisibleToAssignedTable"]
+        );
+        assert_eq!(
+            json!({
+                "messageQueueTable": status.get_message_queue_table(),
+                "consumerTable": status.get_consumer_table(),
+            }),
+            status_case["mutatedValues"]
         );
         // Java returns the same mutable outer Maps and nested Map assigned by setters.
         assert_eq!(status_case["getterReturnsAssignedMessageQueueTable"], true);
