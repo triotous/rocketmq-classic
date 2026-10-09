@@ -76,6 +76,9 @@ public final class RuntimeLookupFixtures {
         fixture.put("messageRequestModeMethodCases", messageRequestModeMethodCases());
         fixture.put("consumerListCases", consumerListCases());
         fixture.put("consumerListRootCases", consumerListRootCases());
+        fixture.put("lockBatchRequestBodyCases", lockBatchRequestBodyCases());
+        fixture.put("unlockBatchRequestBodyCases", unlockBatchRequestBodyCases());
+        fixture.put("lockBatchResponseBodyCases", lockBatchResponseBodyCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
             com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
@@ -867,6 +870,102 @@ public final class RuntimeLookupFixtures {
             cases.add(item);
         }
         return cases;
+    }
+
+    private static List<Object> lockBatchRequestBodyCases() {
+        return batchQueueBodyCases("lock-request",
+            org.apache.rocketmq.remoting.protocol.body.LockBatchRequestBody.class,
+            new String[] {"consumerGroup", "clientId", "onlyThisBroker", "mqSet"}, "mqSet");
+    }
+
+    private static List<Object> unlockBatchRequestBodyCases() {
+        return batchQueueBodyCases("unlock-request",
+            org.apache.rocketmq.remoting.protocol.body.UnlockBatchRequestBody.class,
+            new String[] {"consumerGroup", "clientId", "onlyThisBroker", "mqSet"}, "mqSet");
+    }
+
+    private static List<Object> lockBatchResponseBodyCases() {
+        return batchQueueBodyCases("lock-response",
+            org.apache.rocketmq.remoting.protocol.body.LockBatchResponseBody.class,
+            new String[] {"lockOKMQSet"}, "lockOKMQSet");
+    }
+
+    private static List<Object> batchQueueBodyCases(
+        String prefix, Class<?> bodyType, String[] fields, String queueSetField) {
+        List<Object> cases = new ArrayList<>();
+        String queue = "{\"topic\":\"orders\",\"brokerName\":\"broker\",\"queueId\":2}";
+        String[][] shapes = {
+            {"null", "null"}, {"string", "\"text\""}, {"integer", "7"},
+            {"fraction", "1.5"}, {"boolean", "true"}, {"array", "[]"},
+            {"object", queue}
+        };
+        for (String field : fields) {
+            for (String[] shape : shapes) {
+                String value = shape[1];
+                if (field.equals(queueSetField) && "object".equals(shape[0])) value = queue;
+                cases.add(batchQueueBodyCase(prefix + "-" + field + "-" + shape[0], bodyType,
+                    "{\"" + field + "\":" + value + "}"));
+            }
+        }
+        cases.add(batchQueueBodyCase(prefix + "-" + queueSetField + "-member-null", bodyType,
+            "{\"" + queueSetField + "\":[null]}"));
+        cases.add(batchQueueBodyCase(prefix + "-" + queueSetField + "-member-string", bodyType,
+            "{\"" + queueSetField + "\":[\"text\"]}"));
+        cases.add(batchQueueBodyCase(prefix + "-" + queueSetField + "-member-integer", bodyType,
+            "{\"" + queueSetField + "\":[7]}"));
+        cases.add(batchQueueBodyCase(prefix + "-" + queueSetField + "-member-fraction", bodyType,
+            "{\"" + queueSetField + "\":[1.5]}"));
+        cases.add(batchQueueBodyCase(prefix + "-" + queueSetField + "-member-boolean", bodyType,
+            "{\"" + queueSetField + "\":[true]}"));
+        cases.add(batchQueueBodyCase(prefix + "-" + queueSetField + "-member-array", bodyType,
+            "{\"" + queueSetField + "\":[[]]}"));
+        cases.add(batchQueueBodyCase(prefix + "-" + queueSetField + "-member-object", bodyType,
+            "{\"" + queueSetField + "\":[" + queue + "]}"));
+        cases.add(batchQueueBodyCase(prefix + "-" + queueSetField + "-duplicate-equal-members", bodyType,
+            "{\"" + queueSetField + "\":[" + queue + "," + queue + "]}"));
+        cases.add(batchQueueBodyCase(prefix + "-" + queueSetField + "-duplicate-null-members", bodyType,
+            "{\"" + queueSetField + "\":[null,null]}"));
+        cases.add(batchQueueBodyCase(prefix + "-" + queueSetField + "-empty-string", bodyType,
+            "{\"" + queueSetField + "\":\"\"}"));
+        cases.add(batchQueueBodyCase(prefix + "-" + queueSetField + "-duplicate-field-last-wins", bodyType,
+            "{\"" + queueSetField + "\":[null],\"" + queueSetField + "\":[" + queue + "]}"));
+        String[][] roots = {
+            {"null", "null"}, {"empty-object", "{}"}, {"empty-array", "[]"},
+            {"string", "\"root\""}, {"integer", "7"}, {"fraction", "1.5"},
+            {"boolean", "true"}
+        };
+        for (String[] root : roots) {
+            cases.add(batchQueueBodyCase(prefix + "-root-" + root[0], bodyType, root[1]));
+        }
+        return cases;
+    }
+
+    private static Map<String, Object> batchQueueBodyCase(String name, Class<?> bodyType, String rawInput) {
+        Map<String, Object> item = new TreeMap<>();
+        item.put("name", name);
+        item.put("rawInput", rawInput);
+        item.put("input", com.alibaba.fastjson2.JSON.parse(rawInput));
+        try {
+            byte[] input = rawInput.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            Object decoded = bodyType.getMethod("decode", byte[].class, Class.class)
+                .invoke(null, input, bodyType);
+            item.put("outcome", "ACCEPTED");
+            if (decoded == null) {
+                item.put("encoded", null);
+            } else {
+                byte[] encoded = (byte[]) bodyType.getMethod("encode").invoke(decoded);
+                item.put("encoded", com.alibaba.fastjson2.JSON.parseObject(
+                    new String(encoded, java.nio.charset.StandardCharsets.UTF_8)));
+            }
+        } catch (java.lang.reflect.InvocationTargetException error) {
+            Throwable cause = error.getCause();
+            item.put("outcome", "REJECTED");
+            item.put("error", cause == null ? error.getClass().getSimpleName() : cause.getClass().getSimpleName());
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            item.put("outcome", "REJECTED");
+            item.put("error", error.getClass().getSimpleName());
+        }
+        return item;
     }
 
     private static Map<String, Object> consumerListCase(String name, String rawValue, boolean includeField) {

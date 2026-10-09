@@ -1294,6 +1294,83 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    fn normalize_batch_body_value(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Array(values) => {
+                for value in values.iter_mut() {
+                    normalize_batch_body_value(value);
+                }
+                values.sort_by_key(|value| serde_json::to_string(value).unwrap());
+            }
+            serde_json::Value::Object(fields) => {
+                for value in fields.values_mut() {
+                    normalize_batch_body_value(value);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn batch_body_cases_match_java<T>(cases: &[serde_json::Value], expected_len: usize)
+    where
+        T: serde::de::DeserializeOwned + Serialize + std::fmt::Debug,
+    {
+        assert_eq!(cases.len(), expected_len);
+        let mut mismatches = Vec::new();
+        for case in cases {
+            let name = case["name"].as_str().unwrap();
+            let decoded = serde_json::from_str::<T>(case["rawInput"].as_str().unwrap());
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            match (decoded, java_accepts) {
+                (Ok(decoded), true) => {
+                    let mut actual = serde_json::to_value(decoded).unwrap();
+                    let mut expected = case["encoded"].clone();
+                    normalize_batch_body_value(&mut actual);
+                    normalize_batch_body_value(&mut expected);
+                    if actual != expected {
+                        mismatches.push(format!("{name}: encoded {actual} != Java {expected}"));
+                    }
+                }
+                (Ok(_), false) => mismatches.push(format!("{name}: Rust accepted, Java rejected")),
+                (Err(error), true) => {
+                    mismatches.push(format!("{name}: Rust rejected ({error}), Java accepted"))
+                }
+                (Err(_), false) => {}
+            }
+        }
+        assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+    }
+
+    #[test]
+    fn lock_batch_request_body_inputs_match_invoked_java_fastjson() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        batch_body_cases_match_java::<LockBatchRequestBody>(
+            fixture["lockBatchRequestBodyCases"].as_array().unwrap(),
+            46,
+        );
+    }
+
+    #[test]
+    fn unlock_batch_request_body_inputs_match_invoked_java_fastjson() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        batch_body_cases_match_java::<UnlockBatchRequestBody>(
+            fixture["unlockBatchRequestBodyCases"].as_array().unwrap(),
+            46,
+        );
+    }
+
+    #[test]
+    fn lock_batch_response_body_inputs_match_invoked_java_fastjson() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        batch_body_cases_match_java::<LockBatchResponseBody>(
+            fixture["lockBatchResponseBodyCases"].as_array().unwrap(),
+            25,
+        );
+    }
+
     #[test]
     fn check_client_body_inputs_match_invoked_java_fastjson() {
         let fixture: serde_json::Value =
