@@ -1990,12 +1990,21 @@ fn encode_java_queue_table_text(
         let Some(offset) = offset else {
             continue;
         };
-        let queue_key = format!(
-            "{{\"brokerName\":{},\"queueId\":{},\"topic\":{}}}",
-            serde_json::to_string(&queue.broker_name())?,
-            serde_json::to_string(&queue.queue_id())?,
-            serde_json::to_string(&queue.topic())?
-        );
+        let mut queue_fields = Vec::with_capacity(3);
+        if let Some(broker_name) = queue.broker_name() {
+            queue_fields.push(format!(
+                "\"brokerName\":{}",
+                serde_json::to_string(broker_name)?
+            ));
+        }
+        queue_fields.push(format!(
+            "\"queueId\":{}",
+            serde_json::to_string(&queue.queue_id())?
+        ));
+        if let Some(topic) = queue.topic() {
+            queue_fields.push(format!("\"topic\":{}", serde_json::to_string(topic)?));
+        }
+        let queue_key = format!("{{{}}}", queue_fields.join(","));
         parts.push(format!("{queue_key}:{}", serde_json::to_string(&offset)?));
     }
     Ok(format!("{{{}}}", parts.join(",")))
