@@ -672,6 +672,11 @@ impl LiteSubscriptionDto {
         self.offset_option.as_ref()
     }
 
+    /// Borrows the owned offset option mutably for Java-compatible getter mutations.
+    pub fn offset_option_mut(&mut self) -> Option<&mut OffsetOption> {
+        self.offset_option.as_mut()
+    }
+
     pub fn set_offset_option(&mut self, offset_option: Option<OffsetOption>) {
         self.offset_option = offset_option;
     }
