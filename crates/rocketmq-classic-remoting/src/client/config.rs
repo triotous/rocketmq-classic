@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::ops::Deref;
 
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -49,6 +50,125 @@ impl ProxySelection {
             ))),
         }
     }
+}
+
+#[derive(Clone, Debug, Default)]
+pub(super) struct ProxyRoutes {
+    routes: HashMap<Option<String>, ParsedProxyRoute>,
+    java_iteration_order: Vec<Option<String>>,
+}
+
+impl ProxyRoutes {
+    fn from_entries(entries: Vec<(Option<String>, ParsedProxyRoute)>) -> Self {
+        let mut routes = HashMap::with_capacity(entries.len());
+        let mut insertion_order = Vec::with_capacity(entries.len());
+        for (key, route) in entries {
+            if let Some(existing) = routes.get_mut(&key) {
+                *existing = route;
+            } else {
+                insertion_order.push(key.clone());
+                routes.insert(key, route);
+            }
+        }
+        let java_iteration_order = java_hash_map_iteration_order(&insertion_order);
+        Self {
+            routes,
+            java_iteration_order,
+        }
+    }
+}
+
+impl Deref for ProxyRoutes {
+    type Target = HashMap<Option<String>, ParsedProxyRoute>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.routes
+    }
+}
+
+impl IntoIterator for ProxyRoutes {
+    type Item = (Option<String>, ParsedProxyRoute);
+    type IntoIter = std::collections::hash_map::IntoIter<Option<String>, ParsedProxyRoute>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.routes.into_iter()
+    }
+}
+
+pub(super) trait ProxyRouteMap<T> {
+    fn contains_null_key(&self) -> bool;
+    fn entries_in_iteration_order(&self) -> Vec<(&Option<String>, &T)>;
+}
+
+impl<T> ProxyRouteMap<T> for HashMap<Option<String>, T> {
+    fn contains_null_key(&self) -> bool {
+        self.contains_key(&None)
+    }
+
+    fn entries_in_iteration_order(&self) -> Vec<(&Option<String>, &T)> {
+        self.iter().collect()
+    }
+}
+
+impl ProxyRouteMap<ParsedProxyRoute> for ProxyRoutes {
+    fn contains_null_key(&self) -> bool {
+        self.routes.contains_key(&None)
+    }
+
+    fn entries_in_iteration_order(&self) -> Vec<(&Option<String>, &ParsedProxyRoute)> {
+        self.java_iteration_order
+            .iter()
+            .filter_map(|key| self.routes.get_key_value(key))
+            .collect()
+    }
+}
+
+fn java_hash_map_iteration_order(insertion_order: &[Option<String>]) -> Vec<Option<String>> {
+    if insertion_order.is_empty() {
+        return Vec::new();
+    }
+
+    let source_capacity = java_default_hash_map_capacity(insertion_order.len());
+    let destination_capacity = java_put_all_hash_map_capacity(insertion_order.len());
+    let source_order = bucket_order(insertion_order, source_capacity);
+    let mut destination_order = source_order;
+    destination_order
+        .sort_by_key(|index| java_hash_map_bucket(&insertion_order[*index], destination_capacity));
+    destination_order
+        .into_iter()
+        .map(|index| insertion_order[index].clone())
+        .collect()
+}
+
+fn bucket_order(keys: &[Option<String>], capacity: usize) -> Vec<usize> {
+    let mut indexes = (0..keys.len()).collect::<Vec<_>>();
+    indexes.sort_by_key(|index| java_hash_map_bucket(&keys[*index], capacity));
+    indexes
+}
+
+fn java_default_hash_map_capacity(size: usize) -> usize {
+    let mut capacity = 16;
+    while size > capacity * 3 / 4 && capacity < (1 << 30) {
+        capacity *= 2;
+    }
+    capacity
+}
+
+fn java_put_all_hash_map_capacity(size: usize) -> usize {
+    let requested = ((size as f32 / 0.75_f32) + 1.0_f32) as usize;
+    requested.max(1).next_power_of_two().min(1 << 30)
+}
+
+fn java_hash_map_bucket(key: &Option<String>, capacity: usize) -> usize {
+    let hash = key.as_deref().map_or(0, java_string_hash_code);
+    let spread = hash ^ (hash >> 16);
+    (spread as usize) & (capacity - 1)
+}
+
+fn java_string_hash_code(value: &str) -> u32 {
+    value.encode_utf16().fold(0u32, |hash, unit| {
+        hash.wrapping_mul(31).wrapping_add(u32::from(unit))
+    })
 }
 
 impl From<SocksProxyConfig> for ParsedProxyRoute {
@@ -522,9 +642,49 @@ impl<'de> Deserialize<'de> for FastjsonValue {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(transparent)]
 struct RawProxyRoute(HashMap<String, Option<FastjsonValue>>);
+
+#[derive(Default)]
+struct OrderedRawProxyRoutes(Vec<(String, Option<RawProxyRoute>)>);
+
+impl<'de> Deserialize<'de> for OrderedRawProxyRoutes {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct OrderedRoutesVisitor;
+
+        impl<'de> Visitor<'de> for OrderedRoutesVisitor {
+            type Value = OrderedRawProxyRoutes;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a map of Fastjson SOCKS proxy routes")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut routes: Vec<(String, Option<RawProxyRoute>)> = Vec::new();
+                while let Some((key, route)) = map.next_entry()? {
+                    if let Some((_, existing)) = routes
+                        .iter_mut()
+                        .find(|(existing_key, _)| existing_key == &key)
+                    {
+                        *existing = route;
+                    } else {
+                        routes.push((key, route));
+                    }
+                }
+                Ok(OrderedRawProxyRoutes(routes))
+            }
+        }
+
+        deserializer.deserialize_map(OrderedRoutesVisitor)
+    }
+}
 
 impl RawProxyRoute {
     fn java_string_field(&self, name: &str) -> Option<String> {
@@ -1720,11 +1880,9 @@ impl ClientConfig {
         self.socks_proxy_config = json.into();
     }
 
-    pub(super) fn parse_socks_proxy_config(
-        &self,
-    ) -> Result<HashMap<Option<String>, ParsedProxyRoute>, TransportError> {
+    pub(super) fn parse_socks_proxy_config(&self) -> Result<ProxyRoutes, TransportError> {
         if self.socks_proxy_config.is_empty() {
-            return Ok(HashMap::new());
+            return Ok(ProxyRoutes::default());
         }
         let source = strip_fastjson_document_prefix(&self.socks_proxy_config);
         let keyed = normalize_fastjson_root_route_keys(source).map_err(|error| {
@@ -1744,30 +1902,38 @@ impl ClientConfig {
         let recovered = recover_fastjson_eof_line_comment(&string_normalized);
         let (normalized, number_tokens) = normalize_fastjson_numbers(&recovered);
         let _number_scope = FastjsonNumberTokenScope::install(number_tokens);
-        let parsed: Option<HashMap<String, Option<RawProxyRoute>>> =
-            json5::from_str(&normalized)
-                .map_err(|error| TransportError::InvalidConfiguration(error.to_string()))?;
-        let raw_routes = parsed.unwrap_or_default();
-        raw_routes
-            .keys()
-            .map(|encoded_cidr| {
+        let parsed: Option<OrderedRawProxyRoutes> = json5::from_str(&normalized)
+            .map_err(|error| TransportError::InvalidConfiguration(error.to_string()))?;
+        let ordered_raw_routes = parsed.unwrap_or_default().0;
+        let raw_routes = ordered_raw_routes
+            .iter()
+            .cloned()
+            .collect::<HashMap<_, _>>();
+        let routes = ordered_raw_routes
+            .iter()
+            .map(|(encoded_cidr, _)| {
                 let route =
                     resolve_proxy_route_reference(encoded_cidr, &raw_routes, &mut HashSet::new())?;
                 Ok((decode_fastjson_route_key(encoded_cidr.clone()), route))
             })
-            .collect()
+            .collect::<Result<Vec<_>, TransportError>>()?;
+        Ok(ProxyRoutes::from_entries(routes))
     }
 
-    pub(super) fn proxy_for<T: Clone + Into<ParsedProxyRoute>>(
-        routes: &HashMap<Option<String>, T>,
+    pub(super) fn proxy_for<T, R>(
+        routes: &R,
         host: &str,
-    ) -> Result<Option<ProxySelection>, TransportError> {
-        if routes.contains_key(&None) {
+    ) -> Result<Option<ProxySelection>, TransportError>
+    where
+        T: Clone + Into<ParsedProxyRoute>,
+        R: ProxyRouteMap<T>,
+    {
+        if routes.contains_null_key() {
             return Err(TransportError::InvalidConfiguration(
                 "cannot select a SOCKS route with a null CIDR key".into(),
             ));
         }
-        for (cidr, route) in routes {
+        for (cidr, route) in routes.entries_in_iteration_order() {
             let cidr = cidr.as_ref().expect("null route keys rejected above");
             if cidr == "0.0.0.0/0" || ipv4_in_cidr(host, cidr)? {
                 return Ok(Some(ProxySelection {
