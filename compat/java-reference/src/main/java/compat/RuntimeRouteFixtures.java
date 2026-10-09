@@ -1172,7 +1172,8 @@ public final class RuntimeRouteFixtures {
             new String[] {"ignored-null-collections-live-address", "{\"queueDatas\":null,\"filterServerTable\":null,\"brokerDatas\":[{\"brokerName\":\"broker\",\"brokerAddrs\":{\"2\":\"slave:10911\"}}]}"},
             new String[] {"same-address-under-renamed-broker", "{\"brokerDatas\":[{\"brokerName\":\"renamed\",\"brokerAddrs\":{\"9\":\"master:10911\"}}]}"},
             new String[] {"address-retained-by-sibling-topic", "{\"brokerDatas\":[]}"},
-            new String[] {"candidate-before-null-address-map", "{\"brokerDatas\":[{\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master:10911\"}},{\"brokerName\":\"broker\",\"brokerAddrs\":null}]}"}
+            new String[] {"candidate-before-null-address-map", "{\"brokerDatas\":[{\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master:10911\"}},{\"brokerName\":\"broker\",\"brokerAddrs\":null}]}"},
+            new String[] {"null-address-map-before-candidate", "{\"brokerDatas\":[{\"brokerName\":\"broken\",\"brokerAddrs\":null},{\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master:10911\"}}]}"}
         );
         List<Object> cases = new ArrayList<>();
         for (String[] shape : shapes) {
