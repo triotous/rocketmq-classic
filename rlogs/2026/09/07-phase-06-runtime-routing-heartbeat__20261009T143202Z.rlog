@@ -147,3 +147,10 @@
 - Added a direct Java input with numeric fraction `1.5` for `messageQueueAssignments`, extending the QueryAssignmentResponseBody Set-field corpus from 29 to 30 cases and the total field/root matrix from 36 to 37. Java rejects the value with `JSONException`; the Rust differential agrees. No production change was needed.
 - Oracle/test commit `3e58bc1`; current `fixtures/runtime/lookup.json` SHA-256 `4723f8ad95ae556dbc99db83ef81cc311f0aae128cf59e23f8bbda6b1045618a`. Focused differential, format and diff checks pass.
 - Updated Phase 6 API/config, requirement, runtime and Java compatibility records. The overall source/API/input reconciliation remains open; Phase 6 remains PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
+
+## MessageRequestModeSerializeWrapper Java default and input parity — 2026-10-09T17:26:31Z
+
+- Pinned Java 5.5.1 inspection confirms a no-argument constructor initializes messageRequestModeMap to an empty map and the public getter/setter preserve null and assigned values. The 33-case Fastjson corpus covers roots, all nested map levels, duplicate wrapper/key behavior, and malformed null/scalar/array shapes; a separate direct API fixture invokes constructor/getter/setter behavior.
+- The red Rust differential exposed null-versus-empty constructor output and duplicate-root rejection. Rust now has an explicit Java-shaped Default, public accessors, null-field omission, and shared last-wins object decoding. Oracle/input commit: 4456695d; direct API oracle commit: 910e6838; implementation: 33b993b8. Current lookup.json SHA-256: 9d4472bee58e739dbb0efa4c18a3e4405f7b58fd1e1975f862bbc431b61a016f.
+- Focused wrapper input/API test, protocol all-target suite (103 unit tests plus integration targets), full workspace/all-target tests with local loopback permission, strict all-target/all-feature Clippy, and pinned offline Maven verify (22 scenarios, fixture drift and Java/Rust cross-decodes) passed. Maven used the writable temporary repository/log paths. Formatting and diff checks pass.
+- Phase 6 remains PARTIAL; broader source/API/input/reverse-export reconciliation remains open, and P6-V04 stays PENDING_PHASE_19.
