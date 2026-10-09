@@ -486,6 +486,16 @@ public final class RuntimeRouteFixtures {
             "{\"readQueueNums\":2,\"READQUEUENUMS\":7}"));
         cases.add(routeDtoInputCase("broker-uppercase-property", "brokerData",
             "{\"BROKERNAME\":\"upper\",\"CLUSTER\":\"cluster\",\"BROKERADDRS\":{\"0\":\"master:10911\"}}"));
+        cases.add(routeDtoInputCase("broker-duplicate-cluster-last-wins", "brokerData",
+            "{\"cluster\":\"first\",\"cluster\":\"last\"}"));
+        cases.add(routeDtoInputCase("broker-duplicate-name-last-wins", "brokerData",
+            "{\"brokerName\":\"first\",\"brokerName\":\"last\"}"));
+        cases.add(routeDtoInputCase("broker-duplicate-addresses-last-wins", "brokerData",
+            "{\"brokerAddrs\":{\"0\":\"master\"},\"brokerAddrs\":{\"2\":\"slave\"}}"));
+        cases.add(routeDtoInputCase("broker-duplicate-zone-last-wins", "brokerData",
+            "{\"zoneName\":\"first\",\"zoneName\":\"last\"}"));
+        cases.add(routeDtoInputCase("broker-duplicate-acting-master-last-wins", "brokerData",
+            "{\"enableActingMaster\":false,\"enableActingMaster\":true}"));
         cases.add(routeDtoInputCase("mapping-uppercase-property", "mapping",
             "{\"TOPIC\":\"topic\",\"TOTALQUEUES\":7,\"CURRIDMAP\":{\"0\":1}}"));
         cases.add(routeDtoInputCase("topic-route-uppercase-property", "topicRouteData",

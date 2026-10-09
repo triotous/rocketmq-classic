@@ -1357,7 +1357,7 @@ mod route_dto_input_cases_tests {
         let cases = fixture["routeDtoInputCases"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            104,
+            109,
             "Java oracle includes exact numeric, string and duplicate-field coercions"
         );
         for required in [
@@ -1366,6 +1366,11 @@ mod route_dto_input_cases_tests {
             "queue-duplicate-write-queue-nums-last-wins",
             "queue-duplicate-perm-last-wins",
             "queue-duplicate-topic-sys-flag-last-wins",
+            "broker-duplicate-cluster-last-wins",
+            "broker-duplicate-name-last-wins",
+            "broker-duplicate-addresses-last-wins",
+            "broker-duplicate-zone-last-wins",
+            "broker-duplicate-acting-master-last-wins",
             "queue-uppercase-property",
             "queue-titlecase-property",
             "queue-snakecase-property",
