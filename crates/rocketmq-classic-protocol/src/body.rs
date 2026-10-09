@@ -468,9 +468,25 @@ pub struct QueryAssignmentRequestBody {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct QueryAssignmentRequestBodyFields {
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
     topic: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
     consumer_group: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
     client_id: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
     strategy_name: Option<String>,
     #[serde(
         default,
@@ -695,15 +711,44 @@ pub struct SetMessageRequestModeRequestBody {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SetMessageRequestModeRequestBodyFields {
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
     topic: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
     consumer_group: Option<String>,
     #[serde(
         default = "default_assignment_mode",
         deserialize_with = "super::heartbeat::deserialize_fastjson_optional_enum"
     )]
     mode: Option<MessageRequestMode>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_fastjson_i32_object_as_zero")]
     pop_share_queue_num: i32,
+}
+
+fn deserialize_fastjson_i32_object_as_zero<'de, D>(deserializer: D) -> Result<i32, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+    if raw.get().trim_start().starts_with('{') {
+        return Ok(0);
+    }
+
+    #[derive(Deserialize)]
+    struct ValueField {
+        #[serde(deserialize_with = "serde_fastjson::deserialize_i32")]
+        value: i32,
+    }
+
+    let wrapped = format!("{{\"value\":{}}}", raw.get());
+    serde_json::from_str::<ValueField>(&wrapped)
+        .map(|field| field.value)
+        .map_err(de::Error::custom)
 }
 
 impl<'de> Deserialize<'de> for SetMessageRequestModeRequestBody {

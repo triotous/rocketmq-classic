@@ -18,3 +18,9 @@
 - Expanded the pinned Java 5.5.1 lookup oracle with all seven JSON token kinds across every `QueryAssignmentRequestBody` field and every `SetMessageRequestModeRequestBody` field, plus seven root token shapes for each DTO. New corpus arrays: 35 query field cases, 28 setter field cases, and 7 root cases per type. Updated `fixtures/runtime/lookup.json` SHA-256: `67d4aaf007e77c7feae7e5db937a72869ffa421c77563fd47e9cc826624fb335`.
 - Added native differential regressions. Root-shape cases pass, but field-shape cases fail red: Java accepts numeric `topic` and coerces it to `"7"`; Rust's derived optional-string fields reject it. Further token diffs are now exposed by the full regression.
 - Checks: pinned offline Maven generator ran successfully; `cargo test -p rocketmq-classic-protocol --lib shapes_match_invoked_java_fastjson --locked` failed only in the two new field-shape tests as expected; `git diff --check` passes. No production code changed in the red commit.
+
+## Assignment request DTO compatibility fix — 2026-10-09T14:43:50Z
+
+- `QueryAssignmentRequestBody` and `SetMessageRequestModeRequestBody` string properties now use the shared Fastjson nullable-string coercer. `SetMessageRequestModeRequestBody.popShareQueueNum` uses the Java integer coercion rules and maps object values to zero, as the pinned oracle requires. No public field or setting was added.
+- All four new field/root differential tests pass. Full `cargo test --workspace --all-targets --locked` passes with local loopback access; strict workspace/all-target/all-feature Clippy passes; offline Maven verify passes the pinned Java self-test, 22-scenario manifest, all fixture drift checks, and Rust/Java cross-decodes; differential self-test/manifest22, fmt and diff checks pass.
+- Lookup fixture SHA-256 remains `67d4aaf007e77c7feae7e5db937a72869ffa421c77563fd47e9cc826624fb335`. P6-V04 remains `PENDING_PHASE_19`.
