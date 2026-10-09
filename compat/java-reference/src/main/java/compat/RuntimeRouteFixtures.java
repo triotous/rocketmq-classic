@@ -1060,6 +1060,90 @@ public final class RuntimeRouteFixtures {
         return cases;
     }
 
+    private static List<Object> runtimeRawCleanupShapes(Map<String, Object> initial) throws Exception {
+        List<String[]> shapes = List.of(
+            new String[] {"null-route-collections", "{\"queueDatas\":null,\"brokerDatas\":null,\"filterServerTable\":null}"},
+            new String[] {"null-broker-row", "{\"brokerDatas\":[null]}"},
+            new String[] {"null-address-map", "{\"brokerDatas\":[{\"brokerName\":\"broker\",\"brokerAddrs\":null}]}"},
+            new String[] {"empty-address-map", "{\"brokerDatas\":[{\"brokerName\":\"broker\",\"brokerAddrs\":{}}]}"},
+            new String[] {"null-address-only", "{\"brokerDatas\":[{\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":null}}]}"},
+            new String[] {"null-and-live-addresses", "{\"brokerDatas\":[{\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":null,\"2\":\"slave:10911\"}}]}"},
+            new String[] {"null-row-and-live-address", "{\"brokerDatas\":[null,{\"brokerName\":\"broker\",\"brokerAddrs\":{\"2\":\"slave:10911\"}}]}"}
+        );
+        List<Object> cases = new ArrayList<>();
+        for (String[] shape : shapes) {
+            cases.add(runtimeRawCleanupShape(initial, shape[0], shape[1], false));
+        }
+        cases.add(runtimeRawCleanupShape(initial, "live-null-address-retained",
+            "{\"brokerDatas\":[{\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":null}}]}", true));
+        return cases;
+    }
+
+    private static Map<String, Object> runtimeRawCleanupShape(Map<String, Object> initial, String id,
+        String rawInput, boolean seedNullMaster) throws Exception {
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("raw-cleanup-shape-" + id);
+        MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+        org.apache.rocketmq.client.impl.MQClientAPIImpl original = runtime.getMQClientAPIImpl();
+        RouteApi api = new RouteApi(config);
+        Map<String, Object> item = new TreeMap<>();
+        try {
+            java.lang.reflect.Field apiField = MQClientInstance.class.getDeclaredField("mQClientAPIImpl");
+            apiField.setAccessible(true);
+            apiField.set(runtime, api);
+
+            Map<String, Object> seed = com.alibaba.fastjson2.JSON.parseObject(
+                com.alibaba.fastjson2.JSON.toJSONString(initial), Map.class);
+            if (seedNullMaster) {
+                List<Map<String, Object>> brokers = (List<Map<String, Object>>) seed.get("brokerDatas");
+                Map<String, Object> addresses = (Map<String, Object>) brokers.get(0).get("brokerAddrs");
+                addresses.put("0", null);
+            }
+            TopicRouteData initialRoute = com.alibaba.fastjson2.JSON.parseObject(
+                com.alibaba.fastjson2.JSON.toJSONString(seed, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue),
+                TopicRouteData.class);
+            api.route = initialRoute;
+            item.put("id", id);
+            item.put("initialInput", seed);
+            item.put("rawInput", com.alibaba.fastjson2.JSON.parseObject(rawInput));
+            runtime.updateTopicRouteInfoFromNameServer("topic");
+
+            TopicRouteData raw = com.alibaba.fastjson2.JSON.parseObject(rawInput, TopicRouteData.class);
+            runtime.getTopicRouteTable().clear();
+            runtime.getTopicRouteTable().put("raw", raw);
+            java.lang.reflect.Method clean = MQClientInstance.class.getDeclaredMethod("cleanOfflineBroker");
+            clean.setAccessible(true);
+            try {
+                clean.invoke(runtime);
+                item.put("outcome", "OK");
+            } catch (java.lang.reflect.InvocationTargetException error) {
+                item.put("outcome", error.getCause().getClass().getSimpleName());
+            }
+
+            java.lang.reflect.Field addressesField = MQClientInstance.class.getDeclaredField("brokerAddrTable");
+            addressesField.setAccessible(true);
+            Map<?, ?> brokerAddressTable = (Map<?, ?>) addressesField.get(runtime);
+            Map<String, Object> normalized = new TreeMap<>();
+            for (Map.Entry<?, ?> broker : brokerAddressTable.entrySet()) {
+                Map<String, Object> byId = new TreeMap<>();
+                for (Map.Entry<?, ?> address : ((Map<?, ?>) broker.getValue()).entrySet()) {
+                    byId.put(String.valueOf(address.getKey()), address.getValue());
+                }
+                normalized.put(String.valueOf(broker.getKey()), byId);
+            }
+            item.put("brokerAddressTable", normalized);
+            item.put("fetchCount", api.requests);
+            item.put("rawObjectRetained", runtime.getAnExistTopicRouteData("raw") == raw);
+        } finally {
+            java.lang.reflect.Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
+                org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
+            cleanup.setAccessible(true);
+            try { cleanup.invoke(runtime, original, new IllegalStateException("raw cleanup shape fixture teardown")); }
+            finally { api.shutdown(); }
+        }
+        return item;
+    }
+
     private static Map<String, Object> runtimeTopicRouteTable(Map<String, Object> initial) throws Exception {
         org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
         config.setClientIP("route-live-table");
@@ -2134,6 +2218,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("runtimeEmptyEndpointTransition", runtimeEmptyEndpointTransition(staticInputs.get(0), inputs.get(0)));
         fixture.put("runtimeTopicRouteTable", runtimeTopicRouteTable(inputs.get(0)));
         fixture.put("runtimeRawOfflineCleanup", runtimeRawOfflineCleanup(inputs.get(0)));
+        fixture.put("runtimeRawCleanupShapes", runtimeRawCleanupShapes(inputs.get(0)));
         fixture.put("brokerDataEquality", brokerDataEqualityCases());
         fixture.put("brokerDataSelectAddr", brokerDataSelectAddrCases());
         fixture.put("brokerDataHashCode", brokerDataHashCodeCases());

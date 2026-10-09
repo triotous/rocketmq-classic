@@ -206,17 +206,20 @@ impl RouteCache {
         let mut live = BTreeSet::new();
         for route in routes {
             let route = route.snapshot()?;
-            live.extend(
-                route
-                    .broker_datas
-                    .as_deref()
-                    .unwrap_or(&[])
-                    .iter()
-                    .flatten()
-                    .filter_map(|broker| broker.broker_addrs.as_ref())
-                    .flat_map(|addresses| addresses.values())
-                    .cloned(),
-            );
+            let broker_datas = route
+                .broker_datas
+                .as_deref()
+                .ok_or(RuntimeError::InvalidRoute(
+                    "null broker data list during cleanup",
+                ))?;
+            for broker in broker_datas {
+                let broker = broker.as_ref().ok_or(RuntimeError::InvalidRoute(
+                    "null broker data during cleanup",
+                ))?;
+                if let Some(addresses) = broker.broker_addrs.as_ref() {
+                    live.extend(addresses.values().cloned());
+                }
+            }
         }
         let mut current = self
             .snapshot
@@ -768,6 +771,62 @@ mod tests {
                 before.publish_address("broker"),
                 case["publishAddressBefore"].as_str()
             );
+        }
+    }
+
+    #[test]
+    fn malformed_raw_route_cleanup_shapes_match_invoked_java_runtime() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        let cases = fixture["runtimeRawCleanupShapes"].as_array().unwrap();
+        assert_eq!(cases.len(), 8);
+        for required in [
+            "null-route-collections",
+            "null-broker-row",
+            "null-address-map",
+            "empty-address-map",
+            "null-address-only",
+            "null-and-live-addresses",
+            "null-row-and-live-address",
+            "live-null-address-retained",
+        ] {
+            assert!(
+                cases.iter().any(|case| case["id"] == required),
+                "missing {required}"
+            );
+        }
+        for case in cases {
+            let cache = RouteCache::default();
+            let initial: TopicRouteData =
+                serde_json::from_value(case["initialInput"].clone()).unwrap();
+            cache.replace("topic", initial).unwrap();
+            let table = super::super::TopicRouteTable::new(cache.clone());
+            table.clear().unwrap();
+            let raw: TopicRouteData = serde_json::from_value(case["rawInput"].clone()).unwrap();
+            let raw = TopicRouteDataHandle::new(raw);
+            table.put("raw", raw.clone()).unwrap();
+
+            assert_eq!(case["fetchCount"], 1, "{}", case["id"]);
+            let before_cleanup = cache.snapshot().unwrap();
+            let cleanup = cache.clean_offline();
+            match case["outcome"].as_str().unwrap() {
+                "OK" => assert!(cleanup.is_ok(), "{}: {cleanup:?}", case["id"]),
+                "NullPointerException" => {
+                    assert!(cleanup.is_err(), "{} unexpectedly succeeded", case["id"])
+                }
+                outcome => panic!("unexpected Java cleanup outcome {outcome}"),
+            }
+            let snapshot = cache.snapshot().unwrap();
+            if case["outcome"] == "NullPointerException" {
+                assert!(Arc::ptr_eq(&before_cleanup, &snapshot), "{}", case["id"]);
+            }
+            assert_eq!(
+                serde_json::to_value(&snapshot.broker_addresses).unwrap(),
+                case["brokerAddressTable"],
+                "{}",
+                case["id"]
+            );
+            assert!(snapshot.raw_routes["raw"].ptr_eq(&raw), "{}", case["id"]);
         }
     }
 
