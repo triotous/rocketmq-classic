@@ -2260,6 +2260,9 @@ public final class RuntimeRouteFixtures {
                     item.put("method", method);
                     item.put("topic", topic);
                     item.put("routeIsNull", route == null);
+                    if (route != null) {
+                        item.put("routeInput", routeInput);
+                    }
                     try {
                         if (method.equals("publish")) {
                             org.apache.rocketmq.client.impl.producer.TopicPublishInfo publish =
