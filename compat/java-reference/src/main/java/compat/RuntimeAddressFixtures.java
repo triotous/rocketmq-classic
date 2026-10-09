@@ -65,10 +65,12 @@ public final class RuntimeAddressFixtures {
         List<Object> clientAddressCases = new ArrayList<>();
         List<Object> javaPortDigitCases = new ArrayList<>();
         List<Object> javaHostCodeUnitRanges = new ArrayList<>();
+        List<Object> javaHostCodePointRanges = new ArrayList<>();
         List<Object> channelTableKeyCases = new ArrayList<>();
         Map<String, Object> javaPortRangeCase = new TreeMap<>();
         AddressProbe addressProbe = new AddressProbe();
         int acceptedHostCodeUnitCount = 0;
+        int acceptedHostCodePointCount = 0;
         try {
             for (int codeUnit = 0; codeUnit <= Character.MAX_VALUE; codeUnit++) {
                 String digit = String.valueOf((char) codeUnit);
@@ -120,6 +122,43 @@ public final class RuntimeAddressFixtures {
                 }
             }
             acceptedHostCodeUnitCount = acceptedHostCodeUnits.size();
+            List<Integer> acceptedHostCodePoints = new ArrayList<>();
+            for (int codePoint = Character.MIN_CODE_POINT; codePoint <= Character.MAX_CODE_POINT; codePoint++) {
+                if (codePoint >= Character.MIN_SURROGATE && codePoint <= Character.MAX_SURROGATE) continue;
+                String expectedHost = "broker" + new String(Character.toChars(codePoint)) + ".example";
+                String address = expectedHost + ":10911";
+                try {
+                    String[] hostAndPort = addressProbe.splitAddress(address);
+                    int port = Integer.parseInt(hostAndPort[1]);
+                    java.net.InetSocketAddress.createUnresolved(hostAndPort[0], port);
+                    if (hostAndPort.length == 2 && expectedHost.equals(hostAndPort[0]) && port == 10911) {
+                        acceptedHostCodePoints.add(codePoint);
+                    }
+                } catch (RuntimeException rejected) {
+                    // Rejected Unicode scalar values are represented by gaps in the ranges.
+                }
+            }
+            if (!acceptedHostCodePoints.isEmpty()) {
+                int rangeStart = acceptedHostCodePoints.get(0);
+                int previous = rangeStart;
+                for (int index = 1; index <= acceptedHostCodePoints.size(); index++) {
+                    if (index < acceptedHostCodePoints.size()
+                        && acceptedHostCodePoints.get(index) == previous + 1) {
+                        previous = acceptedHostCodePoints.get(index);
+                        continue;
+                    }
+                    List<Integer> range = new ArrayList<>();
+                    range.add(rangeStart);
+                    range.add(previous);
+                    javaHostCodePointRanges.add(range);
+                    if (index < acceptedHostCodePoints.size()) {
+                        int current = acceptedHostCodePoints.get(index);
+                        rangeStart = current;
+                        previous = current;
+                    }
+                }
+            }
+            acceptedHostCodePointCount = acceptedHostCodePoints.size();
             String supplementaryDigit = new String(Character.toChars(0x104A1));
             for (String address : new String[] {":10911", "127.0.0.1:10911", "broker.example:10911",
                     "Broker.Example:10911", "127.0.0.1:010911",
@@ -249,6 +288,8 @@ public final class RuntimeAddressFixtures {
         fixture.put("javaPortRangeCase", javaPortRangeCase);
         fixture.put("javaHostCodeUnitRanges", javaHostCodeUnitRanges);
         fixture.put("javaHostCodeUnitAcceptedCount", acceptedHostCodeUnitCount);
+        fixture.put("javaHostCodePointRanges", javaHostCodePointRanges);
+        fixture.put("javaHostCodePointAcceptedCount", acceptedHostCodePointCount);
         fixture.put("channelTableKeyCases", channelTableKeyCases);
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture) + "\n";
         Path file = Path.of(args[0]);
@@ -262,7 +303,8 @@ public final class RuntimeAddressFixtures {
             + "; named IPv6 scopes verified: " + scopeCases.size()
             + "; Java client endpoint splits verified: " + clientAddressCases.size()
             + "; Java BMP port-digit code units verified: " + javaPortDigitCases.size()
-            + "; Java BMP host code units verified: " + acceptedHostCodeUnitCount);
+            + "; Java BMP host code units verified: " + acceptedHostCodeUnitCount
+            + "; Java Unicode host code points verified: " + acceptedHostCodePointCount);
     }
 
     private static void add(List<Object> addresses, String literal, int scope, InetAddress ip) {

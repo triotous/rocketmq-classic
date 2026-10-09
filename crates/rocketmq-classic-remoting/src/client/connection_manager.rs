@@ -482,6 +482,46 @@ mod tests {
     }
 
     #[test]
+    fn every_unicode_scalar_host_matches_pinned_java_endpoint_split() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/address.json"))
+                .unwrap();
+        let accepted_count = fixture["javaHostCodePointAcceptedCount"].as_u64().unwrap();
+        assert_eq!(accepted_count, 0x110000 - 0x800);
+        let ranges = fixture["javaHostCodePointRanges"].as_array().unwrap();
+        let is_java_accepted = |code_point: u32| {
+            ranges.iter().any(|range| {
+                let start = range[0].as_u64().unwrap() as u32;
+                let end = range[1].as_u64().unwrap() as u32;
+                (start..=end).contains(&code_point)
+            })
+        };
+
+        for code_point in 0..=0x10_FFFF {
+            let Some(character) = char::from_u32(code_point) else {
+                continue;
+            };
+            let host = format!("broker{character}.example");
+            let address = format!("{host}:10911");
+            let expected = is_java_accepted(code_point);
+            let parsed = Address::parse(&address);
+            assert_eq!(
+                parsed.is_ok(),
+                expected,
+                "U+{code_point:04X} ({character:?}) Java unresolved-host acceptance"
+            );
+            if expected {
+                assert_eq!(parsed.unwrap().as_str(), address);
+                assert_eq!(
+                    connection::split_address(&address).unwrap(),
+                    (host, 10911),
+                    "U+{code_point:04X} ({character:?}) Java host/port split"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn every_java_valid_socket_port_is_accepted_and_preserved() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/address.json"))
