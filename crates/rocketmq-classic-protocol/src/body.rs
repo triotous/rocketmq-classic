@@ -3215,8 +3215,9 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
         let cases = fixture["assignmentBodyCases"].as_array().unwrap();
-        assert_eq!(cases.len(), 29);
+        assert_eq!(cases.len(), 30);
         for required in [
+            "fraction-field",
             "string-element",
             "number-element",
             "boolean-element",

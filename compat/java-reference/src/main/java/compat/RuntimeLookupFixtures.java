@@ -211,6 +211,7 @@ public final class RuntimeLookupFixtures {
         cases.add(assignmentBodyCase("object-field", "{" + queue + "}", true));
         cases.add(assignmentBodyCase("string-field", "\"assignment\"", true));
         cases.add(assignmentBodyCase("number-field", "7", true));
+        cases.add(assignmentBodyCase("fraction-field", "1.5", true));
         cases.add(assignmentBodyCase("boolean-field", "true", true));
         cases.add(assignmentBodyCase("identical-duplicates", "[{" + queue + "},{" + queue + "}]", true));
         String pull = "{\"messageQueue\":{\"topic\":\"topic\",\"brokerName\":\"broker\",\"queueId\":2},"
