@@ -579,6 +579,14 @@ public final class RuntimeRouteFixtures {
             "{\"ORDERTOPICCONF\":\"broker:1\",\"QUEUEDATAS\":[{\"BROKERNAME\":\"broker\"}]}"));
         cases.add(routeDtoInputCase("queue-empty-object-number", "queueData",
             "{\"readQueueNums\":{}}"));
+        cases.add(routeDtoInputCase("queue-unquoted-fraction-property-key", "queueData",
+            "{1.0:\"unknown\"}"));
+        cases.add(routeDtoInputCase("queue-unquoted-integer-property-key", "queueData",
+            "{1:\"unknown\"}"));
+        cases.add(routeDtoInputCase("queue-unquoted-plus-property-key", "queueData",
+            "{+1:\"unknown\"}"));
+        cases.add(routeDtoInputCase("queue-unknown-nested-unquoted-numeric-key", "queueData",
+            "{\"unknown\":{1:\"value\"}}"));
         cases.add(routeDtoInputCase("queue-decimal-overflow-number", "queueData",
             "{\"readQueueNums\":2147483648.0}"));
         cases.add(routeDtoInputCase("message-queue-scalars", "messageQueue",
@@ -615,6 +623,16 @@ public final class RuntimeRouteFixtures {
             "{\"cluster\":true,\"brokerName\":7,\"zoneName\":1.5,\"brokerAddrs\":{\"+1\":true,\"2\":3,\"3\":null},\"enableActingMaster\":\"TRUE\"}"));
         cases.add(routeDtoInputCase("broker-address-unquoted-integer-keys", "brokerData",
             "{\"brokerAddrs\":{0:\"master\",-1:\"slave\",9223372036854775807:\"maximum\"}}"));
+        cases.add(routeDtoInputCase("broker-address-unquoted-leading-zero-key", "brokerData",
+            "{\"brokerAddrs\":{01:\"leading-zero\"}}"));
+        cases.add(routeDtoInputCase("broker-address-unquoted-plus-key", "brokerData",
+            "{\"brokerAddrs\":{+1:\"plus\"}}"));
+        cases.add(routeDtoInputCase("broker-address-unquoted-fraction-key", "brokerData",
+            "{\"brokerAddrs\":{1.0:\"fraction\"}}"));
+        cases.add(routeDtoInputCase("broker-address-unquoted-negative-fraction-key", "brokerData",
+            "{\"brokerAddrs\":{-1.5:\"negative-fraction\"}}"));
+        cases.add(routeDtoInputCase("broker-address-unquoted-exponent-key", "brokerData",
+            "{\"brokerAddrs\":{1e2:\"exponent\"}}"));
         cases.add(routeDtoInputCase("broker-address-decimal-key", "brokerData",
             "{\"brokerAddrs\":{\"1.0\":0}}"));
         cases.add(routeDtoInputCase("broker-unicode-decimal-address-key", "brokerData",
@@ -635,6 +653,16 @@ public final class RuntimeRouteFixtures {
             "{\"topic\":42,\"bname\":true,\"scope\":3,\"totalQueues\":\"2\",\"epoch\":1.9,\"dirty\":\"TRUE\",\"currIdMap\":{\"01\":\"2\",\"2\":1.9,\"3\":true}}"));
         cases.add(routeDtoInputCase("mapping-curr-id-map-unquoted-integer-keys", "mapping",
             "{\"currIdMap\":{0:1,-1:2,2147483647:3}}"));
+        cases.add(routeDtoInputCase("mapping-curr-id-map-unquoted-leading-zero-key", "mapping",
+            "{\"currIdMap\":{01:1}}"));
+        cases.add(routeDtoInputCase("mapping-curr-id-map-unquoted-plus-key", "mapping",
+            "{\"currIdMap\":{+1:1}}"));
+        cases.add(routeDtoInputCase("mapping-curr-id-map-unquoted-fraction-key", "mapping",
+            "{\"currIdMap\":{1.0:1}}"));
+        cases.add(routeDtoInputCase("mapping-curr-id-map-unquoted-negative-fraction-key", "mapping",
+            "{\"currIdMap\":{-1.5:1}}"));
+        cases.add(routeDtoInputCase("mapping-curr-id-map-unquoted-exponent-key", "mapping",
+            "{\"currIdMap\":{1e2:1}}"));
         cases.add(routeDtoInputCase("mapping-exponent-string", "mapping",
             "{\"epoch\":\"1e2\"}"));
         cases.add(routeDtoInputCase("mapping-long-minimum", "mapping",
@@ -687,8 +715,22 @@ public final class RuntimeRouteFixtures {
             cases.add(routeDtoInputCase("route-mapping-table-map-value-" + shape[0], "topicRouteData",
                 "{\"topicQueueMappingByBroker\":{\"broker\":" + shape[1] + "}}"));
         }
+        cases.add(routeDtoInputCase("broker-address-object-value-unquoted-numeric-key", "brokerData",
+            "{\"brokerAddrs\":{\"0\":{1:\"value\"}}}"));
         cases.add(routeDtoInputCase("route-filter-server-map-value-empty-string", "topicRouteData",
             "{\"filterServerTable\":{\"broker\":\"\"}}"));
+        cases.add(routeDtoInputCase("route-filter-server-unquoted-fraction-key", "topicRouteData",
+            "{\"filterServerTable\":{1.0:[\"filter\"]}}"));
+        cases.add(routeDtoInputCase("route-filter-server-unquoted-plus-key", "topicRouteData",
+            "{\"filterServerTable\":{+1:[\"filter\"]}}"));
+        cases.add(routeDtoInputCase("route-filter-server-unquoted-exponent-key", "topicRouteData",
+            "{\"filterServerTable\":{1e2:[\"filter\"]}}"));
+        cases.add(routeDtoInputCase("route-mapping-table-unquoted-leading-zero-key", "topicRouteData",
+            "{\"topicQueueMappingByBroker\":{01:{\"topic\":\"topic\",\"bname\":\"broker\"}}}"));
+        cases.add(routeDtoInputCase("route-mapping-table-unquoted-plus-key", "topicRouteData",
+            "{\"topicQueueMappingByBroker\":{+1:{\"topic\":\"topic\",\"bname\":\"broker\"}}}"));
+        cases.add(routeDtoInputCase("route-mapping-table-unquoted-exponent-key", "topicRouteData",
+            "{\"topicQueueMappingByBroker\":{1e2:{\"topic\":\"topic\",\"bname\":\"broker\"}}}"));
         cases.add(routeDtoInputCase("queue-unicode-decimal-string", "queueData",
             "{\"readQueueNums\":\"１２\",\"writeQueueNums\":\"-١٢\"}"));
         cases.add(routeDtoInputCase("mapping-unicode-decimal-strings", "mapping",

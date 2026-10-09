@@ -30,9 +30,52 @@ impl FastjsonStringValue {
             Self::Bool(value) => Ok(value.to_string()),
             Self::Number(value) => Ok(value),
             Self::String(value) => Ok(value),
-            Self::Array(_) | Self::Object(_) => serde_json::to_string(&self),
+            Self::Array(_) | Self::Object(_) => {
+                let mut output = String::new();
+                write_fastjson_string_value(&self, &mut output)?;
+                Ok(output)
+            }
         }
     }
+}
+
+fn write_fastjson_string_value(
+    value: &FastjsonStringValue,
+    output: &mut String,
+) -> Result<(), serde_json::Error> {
+    match value {
+        FastjsonStringValue::Null => output.push_str("null"),
+        FastjsonStringValue::Bool(value) => output.push_str(if *value { "true" } else { "false" }),
+        FastjsonStringValue::Number(value) => output.push_str(value),
+        FastjsonStringValue::String(value) => output.push_str(&serde_json::to_string(value)?),
+        FastjsonStringValue::Array(values) => {
+            output.push('[');
+            for (index, value) in values.iter().enumerate() {
+                if index != 0 {
+                    output.push(',');
+                }
+                write_fastjson_string_value(value, output)?;
+            }
+            output.push(']');
+        }
+        FastjsonStringValue::Object(values) => {
+            output.push('{');
+            for (index, (key, value)) in values.iter().enumerate() {
+                if index != 0 {
+                    output.push(',');
+                }
+                if key.parse::<i64>().is_ok() {
+                    output.push_str(key);
+                } else {
+                    output.push_str(&serde_json::to_string(key)?);
+                }
+                output.push(':');
+                write_fastjson_string_value(value, output)?;
+            }
+            output.push('}');
+        }
+    }
+    Ok(())
 }
 
 struct FastjsonRawObject(Vec<(String, Box<serde_json::value::RawValue>)>);
@@ -423,9 +466,7 @@ where
     match value {
         FastjsonStringValue::Null => Ok(None),
         FastjsonStringValue::String(value) => Ok(Some(value)),
-        value => serde_json::to_string(&value)
-            .map(Some)
-            .map_err(de::Error::custom),
+        value => value.java_string().map(Some).map_err(de::Error::custom),
     }
 }
 

@@ -98,70 +98,280 @@ fn write_java_indent(output: &mut String, depth: usize) {
     }
 }
 
-fn quote_unquoted_integer_object_keys(input: &str) -> String {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RouteObjectKeyKind {
+    Bean,
+    IntegerMap,
+    StringMap,
+    StringDtoMap,
+    GenericMap,
+}
+
+enum RouteJsonContainer {
+    Object {
+        key_kind: RouteObjectKeyKind,
+        expecting_key: bool,
+        field: Option<String>,
+    },
+    Array {
+        object_values: RouteObjectKeyKind,
+    },
+}
+
+fn route_object_key_kind_for_value(stack: &mut [RouteJsonContainer]) -> RouteObjectKeyKind {
+    let Some(parent) = stack.last_mut() else {
+        return RouteObjectKeyKind::Bean;
+    };
+    match parent {
+        RouteJsonContainer::Object {
+            key_kind: RouteObjectKeyKind::Bean,
+            field,
+            ..
+        } => match field.take().as_deref() {
+            Some("brokerAddrs" | "currIdMap") => RouteObjectKeyKind::IntegerMap,
+            Some("filterServerTable") => RouteObjectKeyKind::StringMap,
+            Some("topicQueueMappingByBroker") => RouteObjectKeyKind::StringDtoMap,
+            _ => RouteObjectKeyKind::GenericMap,
+        },
+        RouteJsonContainer::Object {
+            key_kind: RouteObjectKeyKind::StringDtoMap,
+            field,
+            ..
+        } => {
+            field.take();
+            RouteObjectKeyKind::Bean
+        }
+        RouteJsonContainer::Object { field, .. } => {
+            field.take();
+            RouteObjectKeyKind::GenericMap
+        }
+        RouteJsonContainer::Array { object_values } => *object_values,
+    }
+}
+
+fn route_array_object_value_kind(stack: &mut [RouteJsonContainer]) -> RouteObjectKeyKind {
+    let Some(parent) = stack.last_mut() else {
+        return RouteObjectKeyKind::Bean;
+    };
+    match parent {
+        RouteJsonContainer::Object {
+            key_kind: RouteObjectKeyKind::Bean,
+            field,
+            ..
+        } => match field.take().as_deref() {
+            Some("queueDatas" | "brokerDatas") => RouteObjectKeyKind::Bean,
+            _ => RouteObjectKeyKind::GenericMap,
+        },
+        RouteJsonContainer::Object { field, .. } => {
+            field.take();
+            RouteObjectKeyKind::GenericMap
+        }
+        RouteJsonContainer::Array { .. } => RouteObjectKeyKind::GenericMap,
+    }
+}
+
+fn unquoted_numeric_object_key_end(bytes: &[u8], start: usize) -> Option<usize> {
+    let mut index = start;
+    if bytes
+        .get(index)
+        .is_some_and(|byte| matches!(*byte, b'+' | b'-'))
+    {
+        index += 1;
+    }
+    let integer_start = index;
+    while bytes.get(index).is_some_and(u8::is_ascii_digit) {
+        index += 1;
+    }
+    if index == integer_start {
+        return None;
+    }
+    if bytes.get(index) == Some(&b'.') {
+        index += 1;
+        let fraction_start = index;
+        while bytes.get(index).is_some_and(u8::is_ascii_digit) {
+            index += 1;
+        }
+        if index == fraction_start {
+            return None;
+        }
+    }
+    if matches!(bytes.get(index), Some(b'e' | b'E')) {
+        index += 1;
+        if matches!(bytes.get(index), Some(b'+' | b'-')) {
+            index += 1;
+        }
+        let exponent_start = index;
+        while bytes.get(index).is_some_and(u8::is_ascii_digit) {
+            index += 1;
+        }
+        if index == exponent_start {
+            return None;
+        }
+    }
+    Some(index)
+}
+
+fn java_numeric_object_key(raw: &str) -> String {
+    let normalized = serde_fastjson::normalize_json_input(raw);
+    if normalized.contains(['e', 'E']) {
+        if let Ok(number) = normalized.parse::<f64>() {
+            if let Some(number) = serde_json::Number::from_f64(number) {
+                return number.to_string();
+            }
+        }
+    }
+    normalized
+}
+
+fn quote_unquoted_numeric_object_keys(input: &str) -> String {
     let bytes = input.as_bytes();
     let mut output = String::with_capacity(input.len());
     let mut index = 0;
-    let mut in_string = false;
-    let mut escaped = false;
+    let mut stack = Vec::<RouteJsonContainer>::new();
 
     while index < input.len() {
         let Some(character) = input[index..].chars().next() else {
             break;
         };
-        if in_string {
-            output.push(character);
-            if escaped {
-                escaped = false;
-            } else if character == '\\' {
-                escaped = true;
-            } else if character == '"' {
-                in_string = false;
-            }
-            index += character.len_utf8();
-            continue;
-        }
         if character == '"' {
-            in_string = true;
+            let start = index;
+            index += 1;
+            while index < input.len() {
+                match bytes[index] {
+                    b'\\' => index = (index + 2).min(input.len()),
+                    b'"' => {
+                        index += 1;
+                        break;
+                    }
+                    _ => index += 1,
+                }
+            }
+            let key = serde_json::from_str::<String>(&input[start..index]).ok();
+            if let Some(RouteJsonContainer::Object {
+                expecting_key,
+                field,
+                ..
+            }) = stack.last_mut()
+            {
+                if *expecting_key {
+                    *expecting_key = false;
+                    *field = key;
+                } else {
+                    field.take();
+                }
+            }
+            output.push_str(&input[start..index]);
+            continue;
+        }
+        if character == '{' {
+            let key_kind = route_object_key_kind_for_value(&mut stack);
+            stack.push(RouteJsonContainer::Object {
+                key_kind,
+                expecting_key: true,
+                field: None,
+            });
             output.push(character);
             index += character.len_utf8();
             continue;
         }
-        if character == '{' || character == ',' {
+        if character == '[' {
+            let object_values = route_array_object_value_kind(&mut stack);
+            stack.push(RouteJsonContainer::Array { object_values });
             output.push(character);
             index += character.len_utf8();
-            let whitespace_start = index;
-            while bytes
-                .get(index)
-                .is_some_and(|byte| byte.is_ascii_whitespace())
-            {
-                index += 1;
-            }
-            let key_start = index;
-            if bytes.get(index) == Some(&b'-') {
-                index += 1;
-            }
-            let digits_start = index;
-            while bytes.get(index).is_some_and(u8::is_ascii_digit) {
-                index += 1;
-            }
-            let key_end = index;
-            while bytes
-                .get(index)
-                .is_some_and(|byte| byte.is_ascii_whitespace())
-            {
-                index += 1;
-            }
-            if digits_start != key_end && bytes.get(index) == Some(&b':') {
-                output.push_str(&input[whitespace_start..key_start]);
-                output.push('"');
-                output.push_str(&input[key_start..key_end]);
-                output.push('"');
-                output.push_str(&input[key_end..index]);
-                continue;
-            }
-            output.push_str(&input[whitespace_start..index]);
             continue;
+        }
+        if character == '}' || character == ']' {
+            stack.pop();
+            output.push(character);
+            index += character.len_utf8();
+            continue;
+        }
+        if character == ',' {
+            if let Some(RouteJsonContainer::Object {
+                expecting_key,
+                field,
+                ..
+            }) = stack.last_mut()
+            {
+                *expecting_key = true;
+                field.take();
+            }
+            output.push(character);
+            index += character.len_utf8();
+            continue;
+        }
+        if character == ':' {
+            if let Some(RouteJsonContainer::Object { expecting_key, .. }) = stack.last_mut() {
+                *expecting_key = false;
+            }
+            output.push(character);
+            index += character.len_utf8();
+            continue;
+        }
+        let can_quote_key = matches!(
+            stack.last(),
+            Some(RouteJsonContainer::Object {
+                key_kind: RouteObjectKeyKind::IntegerMap
+                    | RouteObjectKeyKind::StringMap
+                    | RouteObjectKeyKind::StringDtoMap
+                    | RouteObjectKeyKind::GenericMap,
+                expecting_key: true,
+                ..
+            })
+        );
+        if can_quote_key
+            && character.is_ascii()
+            && matches!(bytes[index], b'+' | b'-' | b'0'..=b'9')
+        {
+            let key_start = index;
+            if let Some(key_end) = unquoted_numeric_object_key_end(bytes, key_start) {
+                let mut colon = key_end;
+                while bytes
+                    .get(colon)
+                    .is_some_and(|byte| byte.is_ascii_whitespace())
+                {
+                    colon += 1;
+                }
+                if bytes.get(colon) == Some(&b':') {
+                    let key_kind = match stack.last() {
+                        Some(RouteJsonContainer::Object { key_kind, .. }) => *key_kind,
+                        _ => unreachable!(),
+                    };
+                    let key = &input[key_start..key_end];
+                    output.push('"');
+                    if key_kind == RouteObjectKeyKind::IntegerMap {
+                        output.push_str(key);
+                    } else {
+                        output.push_str(&java_numeric_object_key(key));
+                    }
+                    output.push('"');
+                    index = key_end;
+                    if let Some(RouteJsonContainer::Object {
+                        expecting_key,
+                        field,
+                        ..
+                    }) = stack.last_mut()
+                    {
+                        *expecting_key = false;
+                        field.take();
+                    }
+                    continue;
+                }
+            }
+        }
+        if character.is_ascii_whitespace() {
+            output.push(character);
+            index += character.len_utf8();
+            continue;
+        }
+        if let Some(RouteJsonContainer::Object {
+            expecting_key: false,
+            field,
+            ..
+        }) = stack.last_mut()
+        {
+            field.take();
         }
         output.push(character);
         index += character.len_utf8();
@@ -171,7 +381,7 @@ fn quote_unquoted_integer_object_keys(input: &str) -> String {
 
 fn parse_java_route_json<T: DeserializeOwned>(input: &str) -> Result<T, serde_json::Error> {
     let normalized = serde_fastjson::normalize_json_input(input);
-    let quoted_keys = quote_unquoted_integer_object_keys(&normalized);
+    let quoted_keys = quote_unquoted_numeric_object_keys(&normalized);
     serde_json::from_str(&quoted_keys)
 }
 
@@ -182,7 +392,7 @@ fn parse_java_route_json_nullable<T: DeserializeOwned>(
         return Ok(None);
     };
     let normalized = serde_fastjson::normalize_json_input(input);
-    let quoted_keys = quote_unquoted_integer_object_keys(&normalized);
+    let quoted_keys = quote_unquoted_numeric_object_keys(&normalized);
     serde_json::from_str(&quoted_keys)
 }
 
@@ -204,7 +414,7 @@ fn decode_java_route_json_list_nullable<T: DeserializeOwned>(
     };
     let input = String::from_utf8_lossy(data);
     let normalized = serde_fastjson::normalize_json_input(&input);
-    let quoted_keys = quote_unquoted_integer_object_keys(&normalized);
+    let quoted_keys = quote_unquoted_numeric_object_keys(&normalized);
     serde_json::from_str(&quoted_keys)
 }
 
@@ -1534,7 +1744,7 @@ mod route_dto_input_cases_tests {
         let cases = fixture["routeDtoInputCases"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            339,
+            360,
             "Java oracle includes exact coercions, duplicate fields, collection shapes, and per-field token kinds"
         );
         for required in [
@@ -1574,7 +1784,16 @@ mod route_dto_input_cases_tests {
             "broker-boolean-high-precision-decimal-one",
             "broker-address-high-precision-number-strings",
             "broker-address-unquoted-integer-keys",
+            "broker-address-unquoted-leading-zero-key",
+            "broker-address-unquoted-plus-key",
+            "broker-address-unquoted-fraction-key",
+            "broker-address-unquoted-negative-fraction-key",
+            "broker-address-unquoted-exponent-key",
             "filter-server-high-precision-number-strings",
+            "queue-unquoted-fraction-property-key",
+            "queue-unquoted-integer-property-key",
+            "queue-unquoted-plus-property-key",
+            "queue-unknown-nested-unquoted-numeric-key",
             "broker-address-map-value-null",
             "broker-address-map-value-string",
             "broker-address-map-value-integer",
@@ -1582,6 +1801,7 @@ mod route_dto_input_cases_tests {
             "broker-address-map-value-boolean",
             "broker-address-map-value-array",
             "broker-address-map-value-object",
+            "broker-address-object-value-unquoted-numeric-key",
             "filter-server-list-member-null",
             "filter-server-list-member-string",
             "filter-server-list-member-integer",
@@ -1618,6 +1838,12 @@ mod route_dto_input_cases_tests {
             "route-filter-server-map-value-array",
             "route-filter-server-map-value-object",
             "route-filter-server-map-value-empty-string",
+            "route-filter-server-unquoted-fraction-key",
+            "route-filter-server-unquoted-plus-key",
+            "route-filter-server-unquoted-exponent-key",
+            "route-mapping-table-unquoted-leading-zero-key",
+            "route-mapping-table-unquoted-plus-key",
+            "route-mapping-table-unquoted-exponent-key",
             "route-mapping-table-map-value-null",
             "route-mapping-table-map-value-string",
             "route-mapping-table-map-value-integer",
@@ -1667,6 +1893,11 @@ mod route_dto_input_cases_tests {
             "mapping-long-underflow-decimal-number",
             "mapping-curr-id-map-high-precision-decimals",
             "mapping-curr-id-map-unquoted-integer-keys",
+            "mapping-curr-id-map-unquoted-leading-zero-key",
+            "mapping-curr-id-map-unquoted-plus-key",
+            "mapping-curr-id-map-unquoted-fraction-key",
+            "mapping-curr-id-map-unquoted-negative-fraction-key",
+            "mapping-curr-id-map-unquoted-exponent-key",
             "broker-unicode-decimal-address-key",
             "mapping-unicode-decimal-id-key",
             "queue-fastjson-leading-plus-number",
