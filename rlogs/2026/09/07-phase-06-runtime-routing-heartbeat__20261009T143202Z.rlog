@@ -113,3 +113,11 @@
 - Java converts exponent strings as well as exponent tokens through its double-to-long path: extreme positive/negative values saturate at i64 bounds, tiny values and negative exponent zero become 0. The native implementation matched the new cases without production changes. Test commit: `9cfd106`; shared implementation: `f6a75eb`.
 - The focused body-input differentials passed (7 tests). Full workspace/all-target tests, strict all-target/all-feature Clippy (`-D warnings`), pinned offline Maven verify (fixture drift and Java/Rust cross-decodes), `cargo fmt --all -- --check`, and `git diff --check` passed.
 - Updated the current DTO entries and final gap summary in ADR-0047/0048, Java compatibility, Phase 6 API/config, requirement audit, and runtime inventory. Phase 6 remains PARTIAL with wider method/input reconciliation open; P6-V04 stays `PENDING_PHASE_19`.
+
+
+## Nullable MessageQueue fields in Fastjson map keys — 2026-10-09T17:00:15Z
+
+- Added six `ResetOffsetBody` and twelve `GetConsumerStatusBody` cases for object-valued `MessageQueue` keys with null/missing `topic` or `brokerName`, null `queueId`, empty objects and duplicate bean fields. The current fixture contains 56 and 101 cases respectively; `lookup.json` SHA-256: `aa378cf8a89c685f537a62948bea7fd4ca6c32d63d3574a4f01fba9d1da98b5c`.
+- The red differential showed Fastjson omits null `topic`/`brokerName` inside object map keys but always emits primitive `queueId`; absent or null IDs become `0`. Oracle/test commit `2260129` reproduced 12 exact encoded-body mismatches across the two DTOs. Shared encoder fix `eadcb33` now preserves Java key field order and omission/default behavior.
+- Validation passed: focused Java body differentials (7 tests), protocol all-target suite, full workspace/all-target tests with local loopback access, strict all-target/all-feature Clippy (`-D warnings`), pinned offline Maven verify (fixture drift and Java/Rust cross-decodes), comparator self-test, manifest validation (22 scenarios), fmt and diff checks.
+- ADR-0047/0048, Java compatibility, Phase 6 API/config, requirement audit, and runtime inventory now record the current counts/hash and map-key field behavior. Overall Phase 6 remains PARTIAL with broader source/API/input reconciliation open; P6-V04 stays `PENDING_PHASE_19`.
