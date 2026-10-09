@@ -74,6 +74,7 @@ public final class RuntimeAddressFixtures {
                 if (socketAddressAccepted && hostAndPort[0].isEmpty()) {
                     java.net.InetSocketAddress resolved =
                         new java.net.InetSocketAddress(hostAndPort[0], portNumber);
+                    item.put("resolvedHostAddress", resolved.getAddress().getHostAddress());
                     item.put("resolvedHostIsLoopback",
                         resolved.getAddress() != null && resolved.getAddress().isLoopbackAddress());
                 }

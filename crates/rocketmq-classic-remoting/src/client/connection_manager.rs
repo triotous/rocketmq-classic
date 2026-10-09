@@ -381,12 +381,19 @@ mod tests {
             let normalized = connection::split_address(parsed.as_str()).unwrap();
             if java_host.is_empty() {
                 assert_eq!(normalized.1, java_port, "normalized port {case}");
-                let resolves_to_loopback = (normalized.0.as_str(), normalized.1)
+                let resolved = (normalized.0.as_str(), normalized.1)
                     .to_socket_addrs()
                     .unwrap()
-                    .any(|address| address.ip().is_loopback());
+                    .next()
+                    .expect("normalized host resolves");
+                let java_resolved_ip: std::net::IpAddr = case["resolvedHostAddress"]
+                    .as_str()
+                    .unwrap()
+                    .parse()
+                    .unwrap();
+                assert_eq!(resolved.ip(), java_resolved_ip, "normalized target {case}");
                 assert_eq!(
-                    resolves_to_loopback,
+                    resolved.ip().is_loopback(),
                     case["resolvedHostIsLoopback"].as_bool().unwrap(),
                     "normalized empty-host resolution {case}"
                 );
