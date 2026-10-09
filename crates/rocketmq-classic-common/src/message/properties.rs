@@ -16,8 +16,8 @@ pub fn encode_properties(properties: &MessageProperties) -> String {
 }
 
 /// Parse properties using Java MessageDecoder's permissive record rules.
-/// Duplicate keys use last-value-wins; malformed and too-short entries are ignored.
-/// Unlike user-property validation, this wire decoder retains empty values and keys.
+/// Duplicate keys use last nonempty-value wins; malformed, too-short,
+/// empty-key, and empty-value entries are ignored without user-property validation.
 pub fn decode_properties(encoded: &str) -> MessageProperties {
     let mut properties = BTreeMap::new();
     for record in encoded.split(PROPERTY_SEPARATOR) {
