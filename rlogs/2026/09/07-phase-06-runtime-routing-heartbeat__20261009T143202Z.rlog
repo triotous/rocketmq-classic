@@ -129,3 +129,15 @@
 - Java and Rust match: String fields coerce scalar/array/object values to JSON text; queueId accepts numeric strings, truncates fractions, maps booleans to 1/0, maps null/object to zero and rejects arrays. No production change was required. Test commit: `85cd833`; key encoder fix remains `eadcb33`.
 - Validation passed: seven focused body-input differential tests, protocol all-target tests, pinned offline Maven verify (fixture drift and cross-decodes), comparator self-test, 22-scenario manifest validation, formatting and diff checks. Full workspace tests and strict Clippy had already passed after the encoder fix.
 - Updated both body ADRs, Java compatibility, Phase 6 API/config, requirement/runtime inventories, and the final current count/hash line. Phase 6 remains PARTIAL; wider source/API/input reconciliation remains open and P6-V04 stays `PENDING_PHASE_19`.
+
+## ConsumeMessageDirectlyResult field-shape and duplicate-input parity — 2026-10-09T17:11:56Z
+
+- Expanded the direct Java 5.5.1 `ConsumeMessageDirectlyResult` oracle from 19 enum cases to 66 cases: seven token kinds for each of five fields, seven root shapes, and last-wins duplicate probes for every field. `fixtures/runtime/lookup.json` SHA-256: `c7662fe1bbbe62726eef0eda14774a3bc08b3910581d771153c3b7b04eccaf40`.
+- The red differential found primitive bool/long null and numeric conversions, Fastjson String conversion for `remark`, and duplicate fields that derived Rust decoding rejected. Commits: oracle/test `910cbd2`; implementation `00d2ea8`. Rust now uses the raw-object last-wins deserializer and existing shared field coercers; all 66 cases match Java acceptance and encoded values.
+- Validation passed: focused DTO differential, full workspace/all-target tests with local loopback access, strict all-target/all-feature Clippy (`-D warnings`), pinned offline Maven verify (22 scenarios, fixture drift and Java/Rust cross-decodes), `cargo fmt --all -- --check`, and `git diff --check`. Maven used a writable temporary artifact-cache copy and `rocketmq.log.root` under `/private/tmp`.
+- Updated ADR-0049 and Phase 6 API/config, requirement, Java compatibility, and runtime inventories. Phase 6 remains PARTIAL; wider source/API/input/branch reconciliation remains open and P6-V04 stays `PENDING_PHASE_19`.
+
+## Consume-result Java constructor default follow-up — 2026-10-09T17:14:51Z
+
+- A direct regression compared Rust `Default` against the Java empty-object fixture and exposed `autoCommit=false` versus Java's constructor value `true`. Test commit `6d53470` records the red mismatch; implementation `b4ec6f4` replaces the derived `Default` with the Java-shaped values.
+- The 66-case DTO differential now also asserts constructor/default parity and passes. Focused test, formatting and diff checks pass. The full workspace, strict Clippy and Maven gates from the preceding decoder change remain green; Phase 6 stays PARTIAL and P6-V04 remains `PENDING_PHASE_19`.
