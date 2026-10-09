@@ -261,7 +261,7 @@ impl super::heartbeat::JavaOrdinalEnum for OffsetOptionType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct OffsetOption {
     #[serde(
@@ -275,7 +275,34 @@ pub struct OffsetOption {
     pub value: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OffsetOptionFields {
+    #[serde(
+        rename = "type",
+        default,
+        deserialize_with = "super::heartbeat::deserialize_fastjson_optional_enum"
+    )]
+    option_type: Option<OffsetOptionType>,
+    #[serde(default)]
+    value: i64,
+}
+
+impl<'de> Deserialize<'de> for OffsetOption {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: OffsetOptionFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            option_type: fields.option_type,
+            value: fields.value,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct LiteSubscriptionDto {
     #[serde(
@@ -298,11 +325,72 @@ pub struct LiteSubscriptionDto {
     pub version: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LiteSubscriptionDtoFields {
+    #[serde(
+        default,
+        deserialize_with = "super::heartbeat::deserialize_fastjson_optional_enum"
+    )]
+    action: Option<LiteSubscriptionAction>,
+    #[serde(default)]
+    client_id: Option<String>,
+    #[serde(default)]
+    group: Option<String>,
+    #[serde(default)]
+    topic: Option<String>,
+    #[serde(default)]
+    lite_topic_set: Option<Vec<String>>,
+    #[serde(default)]
+    offset_option: Option<OffsetOption>,
+    #[serde(default)]
+    version: i64,
+}
+
+impl<'de> Deserialize<'de> for LiteSubscriptionDto {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: LiteSubscriptionDtoFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            action: fields.action,
+            client_id: fields.client_id,
+            group: fields.group,
+            topic: fields.topic,
+            lite_topic_set: fields.lite_topic_set,
+            offset_option: fields.offset_option,
+            version: fields.version,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct LiteSubscriptionCtlRequestBody {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subscription_set: Option<Vec<LiteSubscriptionDto>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LiteSubscriptionCtlRequestBodyFields {
+    #[serde(default)]
+    subscription_set: Option<Vec<LiteSubscriptionDto>>,
+}
+
+impl<'de> Deserialize<'de> for LiteSubscriptionCtlRequestBody {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: LiteSubscriptionCtlRequestBodyFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            subscription_set: fields.subscription_set,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -1497,7 +1585,10 @@ mod tests {
             "offset-type-duplicate-last-wins",
             "offset-value-duplicate-last-wins",
         ] {
-            assert!(cases.iter().any(|case| case["name"] == required), "missing {required}");
+            assert!(
+                cases.iter().any(|case| case["name"] == required),
+                "missing {required}"
+            );
         }
         for case in cases {
             let raw_input = case["rawInput"].as_str().unwrap();
