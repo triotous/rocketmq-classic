@@ -195,6 +195,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("socksUnicodeTriviaCases", socksUnicodeTriviaCases());
         fixture.put("socksBmpBoundaryObservations", socksBmpBoundaryObservations());
         fixture.put("socksSubstituteEofObservations", socksSubstituteEofObservations());
+        fixture.put("socksFieldShapeCases", socksProxyFieldShapeCases());
         fixture.put("socksConstruction", socksConstruction());
         fixture.put("socksConnection", socksConnection(true));
         fixture.put("socksConnectionNoAuth", socksConnection(false));
@@ -1278,6 +1279,52 @@ public final class RuntimeConfigFixtures {
             result.put(boundary[0], item);
         }
         return result;
+    }
+
+    /** Direct Fastjson value-shape matrix for every SocksProxyConfig String field. */
+    private static List<Object> socksProxyFieldShapeCases() {
+        List<Object> cases = new ArrayList<>();
+        String[][] fields = {{"addr", "\"proxy:1080\""}, {"username", "\"user\""},
+            {"password", "\"secret\""}};
+        String[][] shapes = {{"null", "null"}, {"numeric-string", "\"7\""}, {"integer", "0"},
+            {"fraction", "1.5"}, {"boolean", "true"}, {"array", "[]"}, {"object", "{}"}};
+        com.alibaba.fastjson2.TypeReference<Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig>> type =
+            new com.alibaba.fastjson2.TypeReference<>() { };
+        for (String[] field : fields) {
+            for (String[] shape : shapes) {
+                StringBuilder route = new StringBuilder("{");
+                for (int index = 0; index < fields.length; index++) {
+                    if (index > 0) route.append(',');
+                    String property = fields[index][0];
+                    route.append('"').append(property).append("\":");
+                    if (property.equals(field[0])) {
+                        route.append(shape[1]);
+                    } else {
+                        route.append(fields[index][1]);
+                    }
+                }
+                route.append('}');
+                String input = "{\"10.0.0.0/8\":" + route + "}";
+                Map<String, Object> item = new TreeMap<>();
+                item.put("id", "shape-" + field[0] + "-" + shape[0]);
+                item.put("input", input);
+                try {
+                    Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig> parsed =
+                        com.alibaba.fastjson2.JSON.parseObject(input, type);
+                    item.put("outcome", "OK");
+                    org.apache.rocketmq.remoting.proxy.SocksProxyConfig value =
+                        parsed == null ? null : parsed.get("10.0.0.0/8");
+                    item.put("routePresent", value != null);
+                    item.put("parsedAddr", value == null ? null : value.getAddr());
+                    item.put("parsedUsername", value == null ? null : value.getUsername());
+                    item.put("parsedPassword", value == null ? null : value.getPassword());
+                } catch (RuntimeException rejected) {
+                    item.put("outcome", rejected.getClass().getSimpleName());
+                }
+                cases.add(item);
+            }
+        }
+        return cases;
     }
 
     private static List<Object> socksConstruction() throws Exception {

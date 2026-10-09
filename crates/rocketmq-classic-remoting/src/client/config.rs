@@ -24,7 +24,12 @@ pub struct SocksProxyConfig {
 pub(super) enum ParsedProxyRoute {
     Direct,
     Proxy(SocksProxyConfig),
-    MissingAddress,
+    // Java retains credentials even when this route can never reach a proxy.
+    #[allow(dead_code)]
+    MissingAddress {
+        username: Option<String>,
+        password: Option<String>,
+    },
 }
 
 impl From<SocksProxyConfig> for ParsedProxyRoute {
@@ -1647,7 +1652,10 @@ impl ClientConfig {
                             username: raw.java_string_field("username"),
                             password: raw.java_string_field("password"),
                         }),
-                        None => ParsedProxyRoute::MissingAddress,
+                        None => ParsedProxyRoute::MissingAddress {
+                            username: raw.java_string_field("username"),
+                            password: raw.java_string_field("password"),
+                        },
                     },
                 };
                 (cidr, route)
@@ -1670,9 +1678,11 @@ impl ClientConfig {
                 return match route.clone().into() {
                     ParsedProxyRoute::Direct => Ok(None),
                     ParsedProxyRoute::Proxy(proxy) => Ok(Some(proxy)),
-                    ParsedProxyRoute::MissingAddress => Err(TransportError::InvalidConfiguration(
-                        "matched SOCKS proxy has no address".into(),
-                    )),
+                    ParsedProxyRoute::MissingAddress { .. } => {
+                        Err(TransportError::InvalidConfiguration(
+                            "matched SOCKS proxy has no address".into(),
+                        ))
+                    }
                 };
             }
         }
@@ -2024,11 +2034,13 @@ mod tests {
                         .map(|(key, route)| {
                             let route = match route {
                                 ParsedProxyRoute::Direct => serde_json::Value::Null,
-                                ParsedProxyRoute::MissingAddress => serde_json::json!({
-                                    "addr": null,
-                                    "username": null,
-                                    "password": null
-                                }),
+                                ParsedProxyRoute::MissingAddress { username, password } => {
+                                    serde_json::json!({
+                                        "addr": null,
+                                        "username": username,
+                                        "password": password
+                                    })
+                                }
                                 ParsedProxyRoute::Proxy(proxy) => serde_json::json!({
                                     "addr": proxy.address,
                                     "username": proxy.username,
@@ -2366,8 +2378,10 @@ mod tests {
                     assert_eq!(proxy.username.as_deref(), case["parsedUsername"].as_str());
                     assert_eq!(proxy.password.as_deref(), case["parsedPassword"].as_str());
                 }
-                super::ParsedProxyRoute::MissingAddress => {
+                super::ParsedProxyRoute::MissingAddress { username, password } => {
                     assert!(case["parsedAddr"].is_null());
+                    assert_eq!(username.as_deref(), case["parsedUsername"].as_str());
+                    assert_eq!(password.as_deref(), case["parsedPassword"].as_str());
                 }
                 super::ParsedProxyRoute::Direct => panic!("Java decoded a nonnull route object"),
             }
@@ -2377,6 +2391,71 @@ mod tests {
             "SOCKS parser outcomes differ:\n{}",
             outcome_mismatches.join("\n")
         );
+    }
+
+    #[test]
+    fn socks_proxy_field_token_shapes_match_invoked_java_fastjson() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/client-config.json"
+        ))
+        .unwrap();
+        let cases = fixture["socksFieldShapeCases"].as_array().unwrap();
+        assert_eq!(cases.len(), 21);
+        for case in cases {
+            let mut config = ClientConfig::default();
+            config.set_socks_proxy_config(case["input"].as_str().unwrap());
+            let parsed = config.parse_socks_proxy_config();
+            let java_accepted = case["outcome"] == "OK";
+            assert_eq!(parsed.is_ok(), java_accepted, "{}", case["id"]);
+            if !java_accepted {
+                continue;
+            }
+            let routes = parsed.unwrap();
+            let route = routes
+                .get(&Some("10.0.0.0/8".into()))
+                .unwrap_or_else(|| panic!("missing route for {}", case["id"]));
+            assert_eq!(case["routePresent"], true, "{}", case["id"]);
+            match route {
+                super::ParsedProxyRoute::Proxy(proxy) => {
+                    assert_eq!(
+                        Some(proxy.address.as_str()),
+                        case["parsedAddr"].as_str(),
+                        "{}",
+                        case["id"]
+                    );
+                    assert_eq!(
+                        proxy.username.as_deref(),
+                        case["parsedUsername"].as_str(),
+                        "{}",
+                        case["id"]
+                    );
+                    assert_eq!(
+                        proxy.password.as_deref(),
+                        case["parsedPassword"].as_str(),
+                        "{}",
+                        case["id"]
+                    );
+                }
+                super::ParsedProxyRoute::MissingAddress { username, password } => {
+                    assert!(case["parsedAddr"].is_null(), "{}", case["id"]);
+                    assert_eq!(
+                        username.as_deref(),
+                        case["parsedUsername"].as_str(),
+                        "{}",
+                        case["id"]
+                    );
+                    assert_eq!(
+                        password.as_deref(),
+                        case["parsedPassword"].as_str(),
+                        "{}",
+                        case["id"]
+                    );
+                }
+                super::ParsedProxyRoute::Direct => {
+                    panic!("Java decoded a null route for {}", case["id"])
+                }
+            }
+        }
     }
 
     #[test]
