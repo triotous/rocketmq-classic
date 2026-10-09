@@ -1774,6 +1774,11 @@ impl BatchAck {
         self.bit_set.as_deref()
     }
 
+    /// Borrows the owned Java `BitSet.toByteArray()` bytes mutably.
+    pub fn get_bit_set_mut(&mut self) -> Option<&mut Vec<u8>> {
+        self.bit_set.as_mut()
+    }
+
     pub fn set_bit_set(&mut self, bit_set: Option<Vec<u8>>) {
         self.bit_set = bit_set;
     }
