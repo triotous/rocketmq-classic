@@ -61,12 +61,21 @@ pub struct CheckClientRequestBody {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CheckClientRequestBodyFields {
-    #[serde(default, deserialize_with = "serde_fastjson::deserialize_nullable_string")]
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
     client_id: Option<String>,
-    #[serde(default, deserialize_with = "serde_fastjson::deserialize_nullable_string")]
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
     group: Option<String>,
     subscription_data: Option<super::heartbeat::SubscriptionData>,
-    #[serde(default, deserialize_with = "serde_fastjson::deserialize_nullable_string")]
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
     namespace: Option<String>,
 }
 
@@ -1162,10 +1171,9 @@ mod tests {
 
     #[test]
     fn check_client_body_inputs_match_invoked_java_fastjson() {
-        let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../fixtures/runtime/client-check.json"
-        ))
-        .unwrap();
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/client-check.json"))
+                .unwrap();
         let cases = fixture["checkClientBodyInputCases"].as_array().unwrap();
         assert_eq!(cases.len(), 8);
         for case in cases {
