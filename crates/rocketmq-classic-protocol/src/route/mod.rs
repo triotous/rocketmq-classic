@@ -1341,6 +1341,7 @@ mod route_dto_input_cases_tests {
             "mapping-long-maximum-decimal-number",
             "mapping-long-overflow-decimal-number",
             "mapping-long-underflow-decimal-number",
+            "mapping-curr-id-map-high-precision-decimals",
             "broker-unicode-decimal-address-key",
             "mapping-unicode-decimal-id-key",
             "queue-fastjson-leading-plus-number",

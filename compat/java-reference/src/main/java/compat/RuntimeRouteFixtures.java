@@ -544,6 +544,8 @@ public final class RuntimeRouteFixtures {
             "{\"epoch\":-9223372036854775809.0}"));
         cases.add(routeDtoInputCase("mapping-unicode-decimal-id-key", "mapping",
             "{\"currIdMap\":{\"１２\":1}}"));
+        cases.add(routeDtoInputCase("mapping-curr-id-map-high-precision-decimals", "mapping",
+            "{\"currIdMap\":{\"0\":9223372036854775807.0,\"1\":2147483648.0,\"-1\":-2147483649.0}}"));
         cases.add(routeDtoInputCase("queue-unicode-decimal-string", "queueData",
             "{\"readQueueNums\":\"１２\",\"writeQueueNums\":\"-١٢\"}"));
         cases.add(routeDtoInputCase("mapping-unicode-decimal-strings", "mapping",
