@@ -1069,7 +1069,12 @@ public final class RuntimeRouteFixtures {
             new String[] {"empty-address-map", "{\"brokerDatas\":[{\"brokerName\":\"broker\",\"brokerAddrs\":{}}]}"},
             new String[] {"null-address-only", "{\"brokerDatas\":[{\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":null}}]}"},
             new String[] {"null-and-live-addresses", "{\"brokerDatas\":[{\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":null,\"2\":\"slave:10911\"}}]}"},
-            new String[] {"null-row-and-live-address", "{\"brokerDatas\":[null,{\"brokerName\":\"broker\",\"brokerAddrs\":{\"2\":\"slave:10911\"}}]}"}
+            new String[] {"null-row-and-live-address", "{\"brokerDatas\":[null,{\"brokerName\":\"broker\",\"brokerAddrs\":{\"2\":\"slave:10911\"}}]}"},
+            new String[] {"missing-route-fields", "{}"},
+            new String[] {"empty-broker-list", "{\"brokerDatas\":[]}"},
+            new String[] {"missing-address-map", "{\"brokerDatas\":[{\"brokerName\":\"broker\"}]}"},
+            new String[] {"null-broker-name-live-address", "{\"brokerDatas\":[{\"brokerName\":null,\"brokerAddrs\":{\"2\":\"slave:10911\"}}]}"},
+            new String[] {"ignored-null-collections-live-address", "{\"queueDatas\":null,\"filterServerTable\":null,\"brokerDatas\":[{\"brokerName\":\"broker\",\"brokerAddrs\":{\"2\":\"slave:10911\"}}]}"}
         );
         List<Object> cases = new ArrayList<>();
         for (String[] shape : shapes) {
