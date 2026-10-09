@@ -1139,7 +1139,8 @@ public final class RuntimeConfigFixtures {
             "{\"10.0.0.0/8\":{\"addr\":\"A" + slash + "u" + ((char) 0x03bb) + "234Z\"}}",
             "{\"10.0.0.0/8\":{\"addr\":\"A" + slash + "u123" + ((char) 0x03bb) + "Z\"}}",
             "{\"10.0.0.0/8\":{\"addr\":\"A" + slash + "u12" + new String(Character.toChars(0x1d7da)) + "4Z\"}}",
-            "{\"10.0.0.0/8\":{\"addr\":\"A" + slash + "u123" + new String(Character.toChars(0x1d7da)) + "Z\"}}"
+            "{\"10.0.0.0/8\":{\"addr\":\"A" + slash + "u123" + new String(Character.toChars(0x1d7da)) + "Z\"}}",
+            "{\"10.0.0.0/8\":{\"addr\":\"A" + slash + "uD83" + new String(Character.toChars(0x1d7da)) + "Z\"}}"
         };
         allInputs.addAll(java.util.Arrays.asList(unicodeEscapeInputs));
         for (int i = 0; i < allInputs.size(); i++) {
