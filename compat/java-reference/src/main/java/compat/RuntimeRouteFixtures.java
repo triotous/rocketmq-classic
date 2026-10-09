@@ -512,6 +512,8 @@ public final class RuntimeRouteFixtures {
             "{\"enableActingMaster\":2}"));
         cases.add(routeDtoInputCase("broker-boolean-decimal-number", "brokerData",
             "{\"enableActingMaster\":1.0}"));
+        cases.add(routeDtoInputCase("broker-boolean-high-precision-decimal-one", "brokerData",
+            "{\"enableActingMaster\":1.0000000000000000001}"));
         cases.add(routeDtoInputCase("broker-boolean-numeric-string", "brokerData",
             "{\"enableActingMaster\":\"1\"}"));
         cases.add(routeDtoInputCase("broker-boolean-null", "brokerData",
