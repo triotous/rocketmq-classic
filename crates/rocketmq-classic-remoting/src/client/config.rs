@@ -1506,8 +1506,8 @@ mod tests {
         let cases = fixture["socksConstruction"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            392,
-            "Java oracle includes 126 prior cases, 256 byte-range followers, and 10 Unicode escape cases"
+            396,
+            "Java oracle includes 126 prior cases, 256 byte-range followers, and 14 Unicode escape cases"
         );
         for escaped in 0..=0x7f {
             let mut expected = String::from("{\"10.0.0.0/8\":{\"addr\":\"A\\");
@@ -1531,6 +1531,7 @@ mod tests {
         }
         let unicode_escapes = [
             "u1λ34", "u12λ4", "u12١4", "u12１4", "u1𝟚34", "xλ0", "x0١", "u12\t4", "u12\n4", "𝟚",
+            "uλ234", "u123λ", "u12𝟚4", "u123𝟚",
         ];
         for (offset, escaped) in unicode_escapes.iter().enumerate() {
             let expected = format!("{{\"10.0.0.0/8\":{{\"addr\":\"A\\{escaped}Z\"}}}}");
