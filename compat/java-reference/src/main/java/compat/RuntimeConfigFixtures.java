@@ -194,6 +194,9 @@ public final class RuntimeConfigFixtures {
         fixture.put("socksControlBoundaryCases", socksControlBoundaryCases());
         fixture.put("socksUnicodeTriviaCases", socksUnicodeTriviaCases());
         fixture.put("socksBmpBoundaryObservations", socksBmpBoundaryObservations());
+        fixture.put("socksEscapeFollowerObservations", socksEscapeFollowerObservations());
+        fixture.put("socksEscapeFollowerProbedCodeUnitCount", Character.MAX_VALUE + 1);
+        fixture.put("socksSupplementaryEscapeFollowerCases", socksSupplementaryEscapeFollowerCases());
         fixture.put("socksSubstituteEofObservations", socksSubstituteEofObservations());
         fixture.put("socksFieldShapeCases", socksProxyFieldShapeCases());
         fixture.put("socksConstruction", socksConstruction());
@@ -1247,6 +1250,83 @@ public final class RuntimeConfigFixtures {
             result.put(boundary[0], new ArrayList<>(grouped.values()));
         }
         return result;
+    }
+
+    private static List<Object> socksEscapeFollowerObservations() {
+        Map<String, Map<String, Object>> grouped = new TreeMap<>();
+        com.alibaba.fastjson2.TypeReference<Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig>> type =
+            new com.alibaba.fastjson2.TypeReference<>() { };
+        String prefix = "{\"10.0.0.0/8\":{\"addr\":\"A" + (char) 92;
+        String suffix = "Z\"}}";
+        for (int codeUnit = 0; codeUnit <= Character.MAX_VALUE; codeUnit++) {
+            String input = prefix + (char) codeUnit + suffix;
+            try {
+                Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig> parsed =
+                    com.alibaba.fastjson2.JSON.parseObject(input, type);
+                org.apache.rocketmq.remoting.proxy.SocksProxyConfig route = parsed.get("10.0.0.0/8");
+                Map<String, Object> observation = new TreeMap<>();
+                observation.put("addr", route.getAddr());
+                observation.put("username", route.getUsername());
+                observation.put("password", route.getPassword());
+                String signature = com.alibaba.fastjson2.JSON.toJSONString(
+                    observation, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue);
+                Map<String, Object> group = grouped.computeIfAbsent(signature, ignored -> {
+                    Map<String, Object> item = new TreeMap<>();
+                    item.put("codeUnits", new ArrayList<Integer>());
+                    item.put("observation", observation);
+                    return item;
+                });
+                @SuppressWarnings("unchecked")
+                List<Integer> codeUnits = (List<Integer>) group.get("codeUnits");
+                codeUnits.add(codeUnit);
+            } catch (RuntimeException rejected) {
+                // Unlisted UTF-16 units are rejected by Fastjson's char1 escape table.
+            }
+        }
+        return new ArrayList<>(grouped.values());
+    }
+
+    private static Map<String, Object> socksSupplementaryEscapeFollowerCases() {
+        Map<String, Object> result = new TreeMap<>();
+        List<Object> accepted = new ArrayList<>();
+        com.alibaba.fastjson2.TypeReference<Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig>> type =
+            new com.alibaba.fastjson2.TypeReference<>() { };
+        String prefix = "{\"10.0.0.0/8\":{\"addr\":\"A" + (char) 92;
+        String suffix = "Z\"}}";
+        for (int high = Character.MIN_HIGH_SURROGATE; high <= Character.MAX_HIGH_SURROGATE; high++) {
+            int codePoint = Character.toCodePoint((char) high, Character.MIN_LOW_SURROGATE);
+            String input = prefix + new String(Character.toChars(codePoint)) + suffix;
+            try {
+                Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig> parsed =
+                    com.alibaba.fastjson2.JSON.parseObject(input, type);
+                org.apache.rocketmq.remoting.proxy.SocksProxyConfig route = parsed.get("10.0.0.0/8");
+                Map<String, Object> item = new TreeMap<>();
+                item.put("codePoint", codePoint);
+                item.put("addr", replaceUnpairedSurrogates(route.getAddr()));
+                accepted.add(item);
+            } catch (RuntimeException rejected) {
+                // Unlisted supplementary scalars are rejected by the char1 table.
+            }
+        }
+        result.put("probedHighSurrogateCount", Character.MAX_HIGH_SURROGATE - Character.MIN_HIGH_SURROGATE + 1);
+        result.put("accepted", accepted);
+        return result;
+    }
+
+    private static String replaceUnpairedSurrogates(String value) {
+        StringBuilder normalized = new StringBuilder(value.length());
+        for (int index = 0; index < value.length(); index++) {
+            char current = value.charAt(index);
+            if (Character.isHighSurrogate(current) && index + 1 < value.length()
+                && Character.isLowSurrogate(value.charAt(index + 1))) {
+                normalized.append(current).append(value.charAt(++index));
+            } else if (Character.isSurrogate(current)) {
+                normalized.append('\uFFFD');
+            } else {
+                normalized.append(current);
+            }
+        }
+        return normalized.toString();
     }
 
     private static Map<String, Object> socksSubstituteEofObservations() {

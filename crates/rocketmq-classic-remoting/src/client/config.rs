@@ -2459,6 +2459,118 @@ mod tests {
     }
 
     #[test]
+    fn socks_escape_follower_matches_invoked_java_fastjson_for_bmp_scalars() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/client-config.json"
+        ))
+        .unwrap();
+        assert_eq!(fixture["socksEscapeFollowerProbedCodeUnitCount"], 65_536);
+        let mut expected = vec![None; u16::MAX as usize + 1];
+        for group in fixture["socksEscapeFollowerObservations"]
+            .as_array()
+            .unwrap()
+        {
+            let observation = group["observation"].clone();
+            for code_unit in group["codeUnits"].as_array().unwrap() {
+                let code_unit = code_unit.as_u64().unwrap() as usize;
+                expected[code_unit] = Some(observation.clone());
+            }
+        }
+        assert_eq!(
+            expected.iter().filter(|entry| entry.is_some()).count(),
+            15_872
+        );
+
+        let mut config = ClientConfig::default();
+        let prefix = "{\"10.0.0.0/8\":{\"addr\":\"A\\";
+        let suffix = "Z\"}}";
+        let mut compared = 0;
+        for code_unit in 0..=u16::MAX {
+            if (0xd800..=0xdfff).contains(&code_unit) {
+                // A Rust String cannot carry the isolated Java UTF-16 unit.
+                continue;
+            }
+            let follower = char::from_u32(u32::from(code_unit)).unwrap();
+            config.set_socks_proxy_config(format!("{prefix}{follower}{suffix}"));
+            let actual = config.parse_socks_proxy_config().ok().and_then(|routes| {
+                routes
+                    .get(&Some("10.0.0.0/8".into()))
+                    .map(|route| match route {
+                        super::ParsedProxyRoute::Proxy(proxy) => serde_json::json!({
+                            "addr": proxy.address,
+                            "username": proxy.username,
+                            "password": proxy.password
+                        }),
+                        super::ParsedProxyRoute::MissingAddress { username, password } => {
+                            serde_json::json!({"addr": null, "username": username, "password": password})
+                        }
+                        super::ParsedProxyRoute::Direct => serde_json::json!({
+                            "addr": null,
+                            "username": null,
+                            "password": null
+                        }),
+                    })
+            });
+            assert_eq!(
+                actual,
+                expected[usize::from(code_unit)],
+                "U+{code_unit:04X} ({follower:?})"
+            );
+            compared += 1;
+        }
+        assert_eq!(compared, 63_488);
+    }
+
+    #[test]
+    fn socks_supplementary_escape_follower_matches_each_java_high_surrogate() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/client-config.json"
+        ))
+        .unwrap();
+        let cases = &fixture["socksSupplementaryEscapeFollowerCases"];
+        assert_eq!(cases["probedHighSurrogateCount"], 1024);
+        let accepted = cases["accepted"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|case| {
+                (
+                    case["codePoint"].as_u64().unwrap() as u32,
+                    case["addr"].as_str().unwrap().to_owned(),
+                )
+            })
+            .collect::<std::collections::BTreeMap<_, _>>();
+        assert_eq!(accepted.len(), 248);
+
+        let mut config = ClientConfig::default();
+        let prefix = "{\"10.0.0.0/8\":{\"addr\":\"A\\";
+        let suffix = "Z\"}}";
+        for high in 0xd800u32..=0xdbff {
+            let code_point = 0x10000 + ((high - 0xd800) << 10);
+            let follower = char::from_u32(code_point).unwrap();
+            config.set_socks_proxy_config(format!("{prefix}{follower}{suffix}"));
+            match accepted.get(&code_point) {
+                Some(expected_addr) => {
+                    let routes = config.parse_socks_proxy_config().unwrap_or_else(|error| {
+                        panic!("U+{code_point:06X} should parse as Java: {error}")
+                    });
+                    let route = routes.get(&Some("10.0.0.0/8".into())).unwrap();
+                    match route {
+                        super::ParsedProxyRoute::Proxy(proxy) => {
+                            assert_eq!(proxy.address, *expected_addr, "U+{code_point:06X}");
+                        }
+                        other => panic!("U+{code_point:06X} produced {other:?}"),
+                    }
+                }
+                None => assert!(
+                    config.parse_socks_proxy_config().is_err(),
+                    "U+{code_point:06X} should be rejected like Java"
+                ),
+            }
+        }
+    }
+
+    #[test]
     fn socks_cidr_matching_matches_invoked_java_helper() {
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
             "../../../../fixtures/runtime/client-config.json"
