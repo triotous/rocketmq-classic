@@ -2368,23 +2368,60 @@ mod optional_message_queue_offset_table {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsumeMessageDirectlyResult {
-    #[serde(default)]
     pub order: bool,
-    #[serde(default = "default_auto_commit")]
     pub auto_commit: bool,
-    #[serde(
-        default,
-        deserialize_with = "super::heartbeat::deserialize_fastjson_optional_enum",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub consume_result: Option<ConsumeMessageResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remark: Option<String>,
-    #[serde(default)]
     pub spent_time_mills: i64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConsumeMessageDirectlyResultFields {
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_bool")]
+    order: bool,
+    #[serde(
+        default = "default_auto_commit",
+        deserialize_with = "serde_fastjson::deserialize_bool"
+    )]
+    auto_commit: bool,
+    #[serde(
+        default,
+        deserialize_with = "super::heartbeat::deserialize_fastjson_optional_enum"
+    )]
+    consume_result: Option<ConsumeMessageResult>,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    remark: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_i64_reject_object"
+    )]
+    spent_time_mills: i64,
+}
+
+impl<'de> Deserialize<'de> for ConsumeMessageDirectlyResult {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: ConsumeMessageDirectlyResultFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            order: fields.order,
+            auto_commit: fields.auto_commit,
+            consume_result: fields.consume_result,
+            remark: fields.remark,
+            spent_time_mills: fields.spent_time_mills,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
