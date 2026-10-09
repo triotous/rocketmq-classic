@@ -16,6 +16,6 @@ Rust's BTreeMap ordering makes consumer rows deterministic; Java HashMap iterati
 
 ## Evidence
 
-The direct pinned Java fixture invokes `GetConsumerStatusBody.decode` and `encode` for 14 inputs: omitted, null and empty fields; object-valued and quoted queue keys; nested tables/nulls; duplicate keys/fields; and malformed types. Native differential checks acceptance, normalized maps and exact encoded body strings. Fixture `fixtures/runtime/lookup.json` SHA-256: `e81a66d804a035e2c833c3c21b6e92b7c0ce0e40edf9c3d9fc2031286e11d2d8`. Test checkpoints: `a13cf18`, `4ac436e`; implementation: `46cf2f7`.
+The direct pinned Java fixture invokes `GetConsumerStatusBody.decode` and `encode` for 25 inputs, covering every JSON token type for both tables, non-object roots, omitted/null/empty fields, object-valued and quoted queue keys, nested tables/nulls, duplicate keys/fields, and malformed types. Native differential checks acceptance, normalized maps and exact encoded body strings. Fixture `fixtures/runtime/lookup.json` SHA-256: `4ac75c6dc196cbc010ebf80bb53c9074cbd844ce057bc80c298d03f31e7326f8`. Test checkpoints: `a13cf18`, `4ac436e`, `030f7a5`; implementation: `46cf2f7`.
 
 Phase 6's broader source/API/settings/input reconciliation remains open; the matrix remains PARTIAL and P6-V04 stays `PENDING_PHASE_19`.

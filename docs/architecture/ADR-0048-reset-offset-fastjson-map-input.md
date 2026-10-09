@@ -14,6 +14,6 @@ Standard Serde serialization remains the JSON representation of Rust-owned field
 
 ## Evidence
 
-Twelve direct pinned Java fixture cases invoke `ResetOffsetBody.decode` and `encode`: omitted/null/empty tables, Fastjson and quoted queue keys, duplicate keys and fields, unknown fields, invalid table shapes and keys, and null offsets. Native differential checks acceptance, normalized rows, and exact encoded body strings. Fixture `fixtures/runtime/lookup.json` SHA-256: `ea3915896136f3c30d5c7c57bcf6a924e571121f351384532c58000291e11e09`. Test commit: `3d517eb`; implementation: `3b8ebe5`.
+Nineteen direct pinned Java fixture cases invoke `ResetOffsetBody.decode` and `encode`, covering every JSON token type for `offsetTable`, non-object roots, omitted/null/empty tables, Fastjson and quoted queue keys, duplicate keys and fields, unknown fields, invalid table shapes and keys, and null offsets. Native differential checks acceptance, normalized rows, and exact encoded body strings. Fixture `fixtures/runtime/lookup.json` SHA-256: `4ac75c6dc196cbc010ebf80bb53c9074cbd844ce057bc80c298d03f31e7326f8`. Test commits: `3d517eb`, `d8a027b`; implementation: `3b8ebe5`.
 
 Phase 6's broader source/API/settings/input reconciliation remains open; the matrix remains PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
