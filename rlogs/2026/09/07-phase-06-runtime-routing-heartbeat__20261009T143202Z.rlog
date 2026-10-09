@@ -154,3 +154,10 @@
 - The red Rust differential exposed null-versus-empty constructor output and duplicate-root rejection. Rust now has an explicit Java-shaped Default, public accessors, null-field omission, and shared last-wins object decoding. Oracle/input commit: 4456695d; direct API oracle commit: 910e6838; implementation: 33b993b8. Current lookup.json SHA-256: 9d4472bee58e739dbb0efa4c18a3e4405f7b58fd1e1975f862bbc431b61a016f.
 - Focused wrapper input/API test, protocol all-target suite (103 unit tests plus integration targets), full workspace/all-target tests with local loopback permission, strict all-target/all-feature Clippy, and pinned offline Maven verify (22 scenarios, fixture drift and Java/Rust cross-decodes) passed. Maven used the writable temporary repository/log paths. Formatting and diff checks pass.
 - Phase 6 remains PARTIAL; broader source/API/input/reverse-export reconciliation remains open, and P6-V04 stays PENDING_PHASE_19.
+
+
+## Automatic client-IP IPv6 candidate order — 2026-10-09T17:31:01Z
+
+- Inspected pinned 5.5.1 NetworkUtil.getLocalInetAddress bytecode: IPv4 candidates take priority; without IPv4, Java selects the first non-internal IPv6 candidate, falling back to the first IPv6 candidate. The existing Rust selector follows these branches.
+- Regression `8632ec69` extends the ordered selection case with two external IPv6 candidates and asserts the first candidate is selected. Focused core test, formatting, and diff checks pass. No production change was needed.
+- Updated ADR-0045 and Phase 6 requirement/API maps to close the multiple-external-IPv6 selection logic gap. Non-macOS interface enumeration and a real IPv6-only host remain open. Phase 6 remains PARTIAL and P6-V04 stays PENDING_PHASE_19.
