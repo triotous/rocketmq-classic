@@ -30,3 +30,11 @@
 - The fixture has 15 private SOCKS selection cases and SHA-256 `f3a1558b2722c74fe917bcba299484563ddcc4990b3db58419ac403fa2fb4a69`.
 - Focused SOCKS parser/selection tests, full `cargo test --workspace --all-targets --locked`, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios, drift and cross-decodes), comparator self-test and manifest22, `cargo fmt --all -- --check`, and `git diff --check` pass.
 - Updated ADR-0038 and the Phase 6 API, requirement, Java compatibility, and runtime inventory records. Phase 6 source/API/input reconciliation remains open; P6-V04 stays `PENDING_PHASE_19`.
+
+## SOCKS Java HashMap route-selection order — 2026-10-09T19:22:36Z
+
+- Added pinned Java 5.5.1 private `NettyRemotingClient.getProxy` cases for overlapping CIDRs. Three JSON field-order permutations of the same `/8`, `/9`, `/10`, and `/11` routes all select `/9`, demonstrating Java `HashMap` iteration rather than longest-prefix matching. A fourth case places two matching CIDR strings in different source buckets that collapse into one destination bucket; Java selects the entry from source bucket 1 although it appears second in JSON.
+- The native differential was red before implementation: the prior randomized map traversal selected `/11` instead of Java's `/9`. Oracle/test commits `99284f59` and `6f790b8a`; implementation commit `965109bd`. Rust preserves the parsed root-map insertion order and models Java source-map bucket traversal followed by destination `putAll` traversal.
+- The fixture has 499 `socksConstruction` cases and 19 `socksProxySelection` cases. `fixtures/runtime/client-config.json` SHA-256: `3e46fee1230a4dbf66837deca0a17015aeea87913fa9f3b08ad79e1aa0f90c42`.
+- Focused constructor/selection suites, full `cargo test --workspace --all-targets --locked`, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios and Java cross-decodes), differential comparator self-test, manifest22 validation, `cargo fmt --all -- --check`, and `git diff --check` pass.
+- Updated ADR-0038 and the Java compatibility, API map, requirement audit, and runtime inventory records. Broader Fastjson grammar and Phase 6 source/API/input/final-plan reconciliation remain open; Phase 6 remains PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
