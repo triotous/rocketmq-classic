@@ -1464,17 +1464,6 @@ impl<'de> Deserialize<'de> for MessageRequestModeSerializeWrapper {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct UnregisterClientRequestBody {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub consumer_group: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub producer_group: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub client_id: Option<String>,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LockBatchRequestBody {
@@ -2678,17 +2667,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn unregister_body_omits_absent_groups_but_keeps_empty_values() {
-        let body = UnregisterClientRequestBody {
-            client_id: Some("client".into()),
-            producer_group: Some(String::new()),
-            consumer_group: None,
-        };
-        let value = serde_json::to_value(body).unwrap();
-        assert_eq!(value, json!({"clientId":"client", "producerGroup":""}));
     }
 
     #[test]
