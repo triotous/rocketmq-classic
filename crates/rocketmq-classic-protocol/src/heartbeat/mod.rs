@@ -400,11 +400,13 @@ struct FastjsonEnumOrdinalInput {
     ordinal: i32,
 }
 
-trait JavaOrdinalEnum: Sized {
+pub(crate) trait JavaOrdinalEnum: Sized {
     fn from_java_ordinal(ordinal: i64) -> Option<Self>;
 }
 
-fn deserialize_fastjson_optional_enum<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+pub(crate) fn deserialize_fastjson_optional_enum<'de, D, T>(
+    deserializer: D,
+) -> Result<Option<T>, D::Error>
 where
     D: serde::Deserializer<'de>,
     T: Deserialize<'de> + JavaOrdinalEnum,

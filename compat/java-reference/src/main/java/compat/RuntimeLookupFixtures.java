@@ -55,6 +55,7 @@ public final class RuntimeLookupFixtures {
         fixture.put("assignmentModeCases", assignmentModeCases());
         fixture.put("assignmentAttachmentCases", assignmentAttachmentCases());
         fixture.put("assignmentBodyCases", assignmentBodyCases());
+        fixture.put("liteSubscriptionEnumCases", liteSubscriptionEnumCases());
         fixture.put("assignmentHashCollisionCases", assignmentHashCollisionCases());
         fixture.put("assignmentMethodCases", assignmentMethodCases());
         fixture.put("messageRequestModeMethodCases", messageRequestModeMethodCases());
@@ -184,6 +185,42 @@ public final class RuntimeLookupFixtures {
             + "\"mode\":\"POP\"}";
         cases.add(assignmentBodyCase("same-queue-different-mode", "[" + pull + "," + pop + "]", true));
         return cases;
+    }
+
+    private static List<Object> liteSubscriptionEnumCases() {
+        List<Object> cases = new ArrayList<>();
+        cases.add(liteSubscriptionEnumCase("action-name", "{\"subscriptionSet\":[{\"action\":\"PARTIAL_ADD\"}]}"));
+        cases.add(liteSubscriptionEnumCase("action-ordinal", "{\"subscriptionSet\":[{\"action\":1}]}"));
+        cases.add(liteSubscriptionEnumCase("action-numeric-string", "{\"subscriptionSet\":[{\"action\":\"1\"}]}"));
+        cases.add(liteSubscriptionEnumCase("action-fractional", "{\"subscriptionSet\":[{\"action\":1.9}]}"));
+        cases.add(liteSubscriptionEnumCase("action-out-of-range", "{\"subscriptionSet\":[{\"action\":4}]}"));
+        cases.add(liteSubscriptionEnumCase("action-unknown-string", "{\"subscriptionSet\":[{\"action\":\"UNKNOWN\"}]}"));
+        cases.add(liteSubscriptionEnumCase("offset-name", "{\"subscriptionSet\":[{\"offsetOption\":{\"type\":\"POLICY\",\"value\":1}}]}"));
+        cases.add(liteSubscriptionEnumCase("offset-missing-value", "{\"subscriptionSet\":[{\"offsetOption\":{\"type\":\"POLICY\"}}]}"));
+        cases.add(liteSubscriptionEnumCase("offset-ordinal", "{\"subscriptionSet\":[{\"offsetOption\":{\"type\":3,\"value\":1}}]}"));
+        cases.add(liteSubscriptionEnumCase("offset-numeric-string", "{\"subscriptionSet\":[{\"offsetOption\":{\"type\":\"3\",\"value\":1}}]}"));
+        cases.add(liteSubscriptionEnumCase("offset-fractional", "{\"subscriptionSet\":[{\"offsetOption\":{\"type\":2.9,\"value\":1}}]}"));
+        cases.add(liteSubscriptionEnumCase("offset-out-of-range", "{\"subscriptionSet\":[{\"offsetOption\":{\"type\":4,\"value\":1}}]}"));
+        cases.add(liteSubscriptionEnumCase("offset-unknown-string", "{\"subscriptionSet\":[{\"offsetOption\":{\"type\":\"UNKNOWN\",\"value\":1}}]}"));
+        return cases;
+    }
+
+    private static Map<String, Object> liteSubscriptionEnumCase(String name, String rawInput) {
+        Map<String, Object> item = new TreeMap<>();
+        item.put("name", name);
+        item.put("rawInput", rawInput);
+        try {
+            org.apache.rocketmq.remoting.protocol.body.LiteSubscriptionCtlRequestBody decoded =
+                com.alibaba.fastjson2.JSON.parseObject(rawInput,
+                    org.apache.rocketmq.remoting.protocol.body.LiteSubscriptionCtlRequestBody.class);
+            item.put("outcome", "ACCEPTED");
+            item.put("encoded", com.alibaba.fastjson2.JSON.parseObject(
+                com.alibaba.fastjson2.JSON.toJSONString(decoded)));
+        } catch (RuntimeException error) {
+            item.put("outcome", "REJECTED");
+            item.put("error", error.getClass().getSimpleName());
+        }
+        return item;
     }
 
     private static String stringWithHashCode(int target) {

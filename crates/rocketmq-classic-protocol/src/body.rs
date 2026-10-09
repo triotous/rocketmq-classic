@@ -208,6 +208,18 @@ impl_java_enum_api!(
     CompleteRemove => "COMPLETE_REMOVE" = 3,
 );
 
+impl super::heartbeat::JavaOrdinalEnum for LiteSubscriptionAction {
+    fn from_java_ordinal(ordinal: i64) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::PartialAdd),
+            1 => Some(Self::PartialRemove),
+            2 => Some(Self::CompleteAdd),
+            3 => Some(Self::CompleteRemove),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum OffsetOptionType {
@@ -227,18 +239,40 @@ impl_java_enum_api!(
     Timestamp => "TIMESTAMP" = 3,
 );
 
+impl super::heartbeat::JavaOrdinalEnum for OffsetOptionType {
+    fn from_java_ordinal(ordinal: i64) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::Policy),
+            1 => Some(Self::Offset),
+            2 => Some(Self::TailN),
+            3 => Some(Self::Timestamp),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct OffsetOption {
-    #[serde(rename = "type")]
+    #[serde(
+        rename = "type",
+        default,
+        deserialize_with = "super::heartbeat::deserialize_fastjson_optional_enum",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub option_type: Option<OffsetOptionType>,
+    #[serde(default)]
     pub value: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct LiteSubscriptionDto {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "super::heartbeat::deserialize_fastjson_optional_enum",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub action: Option<LiteSubscriptionAction>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_id: Option<String>,
@@ -250,6 +284,7 @@ pub struct LiteSubscriptionDto {
     pub lite_topic_set: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub offset_option: Option<OffsetOption>,
+    #[serde(default)]
     pub version: i64,
 }
 
@@ -1219,6 +1254,37 @@ mod tests {
                 normalize(&mut actual);
                 normalize(&mut expected);
                 assert_eq!(actual, expected, "{}", case["name"]);
+            }
+        }
+    }
+
+    #[test]
+    fn lite_subscription_enum_inputs_match_invoked_java_fastjson() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let cases = fixture["liteSubscriptionEnumCases"].as_array().unwrap();
+        assert_eq!(
+            cases.len(),
+            13,
+            "Java oracle includes lite enum names and ordinals"
+        );
+        for case in cases {
+            let raw_input = case["rawInput"].as_str().unwrap();
+            let decoded = serde_json::from_str::<LiteSubscriptionCtlRequestBody>(raw_input);
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            assert_eq!(
+                decoded.is_ok(),
+                java_accepts,
+                "{}: {decoded:?}",
+                case["name"]
+            );
+            if let Ok(decoded) = decoded {
+                assert_eq!(
+                    serde_json::to_value(decoded).unwrap(),
+                    case["encoded"],
+                    "{}",
+                    case["name"]
+                );
             }
         }
     }
