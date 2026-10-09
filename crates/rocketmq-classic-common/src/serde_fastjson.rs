@@ -37,6 +37,8 @@ impl FastjsonStringValue {
 
 struct FastjsonRawObject(Vec<(String, Box<serde_json::value::RawValue>)>);
 
+struct FastjsonRawEntries(Vec<(String, Box<serde_json::value::RawValue>)>);
+
 impl<'de> Deserialize<'de> for FastjsonRawObject {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -68,6 +70,36 @@ impl<'de> Deserialize<'de> for FastjsonRawObject {
         }
 
         deserializer.deserialize_map(FastjsonRawObjectVisitor)
+    }
+}
+
+impl<'de> Deserialize<'de> for FastjsonRawEntries {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct FastjsonRawEntriesVisitor;
+
+        impl<'de> Visitor<'de> for FastjsonRawEntriesVisitor {
+            type Value = FastjsonRawEntries;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a JSON object")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut entries = Vec::<(String, Box<serde_json::value::RawValue>)>::new();
+                while let Some((key, value)) = map.next_entry()? {
+                    entries.push((key, value));
+                }
+                Ok(FastjsonRawEntries(entries))
+            }
+        }
+
+        deserializer.deserialize_map(FastjsonRawEntriesVisitor)
     }
 }
 
@@ -458,8 +490,8 @@ where
     if raw.get().trim() == "null" {
         return Ok(None);
     }
-    let FastjsonRawObject(entries) =
-        serde_json::from_str::<FastjsonRawObject>(raw.get()).map_err(de::Error::custom)?;
+    let FastjsonRawEntries(entries) =
+        serde_json::from_str::<FastjsonRawEntries>(raw.get()).map_err(de::Error::custom)?;
     let mut result = BTreeMap::new();
     for (key, value) in entries {
         let key =
@@ -489,8 +521,8 @@ where
     if raw.get().trim() == "null" {
         return Ok(None);
     }
-    let FastjsonRawObject(entries) =
-        serde_json::from_str::<FastjsonRawObject>(raw.get()).map_err(de::Error::custom)?;
+    let FastjsonRawEntries(entries) =
+        serde_json::from_str::<FastjsonRawEntries>(raw.get()).map_err(de::Error::custom)?;
     let mut result = BTreeMap::new();
     for (key, value) in entries {
         let key =
