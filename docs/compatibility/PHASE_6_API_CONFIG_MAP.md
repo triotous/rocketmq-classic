@@ -1,5 +1,7 @@
 # Phase 6 API and configuration map
 
+Consumer status body API/input continuation (2026-10-09): `GetConsumerStatusBody` exposes Java-shaped getters/setters and nullable queue/consumer maps; its Rust fields use optional row tables to preserve Java's omitted/default versus explicit-null states. The direct 14-case Java corpus verifies non-standard MessageQueue object keys, duplicate last-wins decoding, nested nulls, invalid shapes and exact `encode()` output. Rust's BTreeMap traversal is deterministic while Java HashMap order is unspecified. See [ADR-0047](../architecture/ADR-0047-consumer-status-fastjson-map-input.md); broader DTO/source/input coverage remains incomplete and P6-V04 stays `PENDING_PHASE_19`.
+
 Lite subscription identity, API, and reverse-export continuation (2026-10-09): pinned 5.5.1 `LiteSubscriptionDTO`, `LiteSubscription`, and `LiteSubscriptionCtlRequestBody` inherit identity equality; Rust structural `PartialEq`/`Eq` was removed, with direct Java cases plus compile-fail API checks. Added Rust aliases `body::LiteSubscriptionDTO` and `header::GetConsumerListByGroupResponseBody` for exact Java simple class names. Rust maps the LiteSubscription field/method/input surface, DTO and OffsetOption constructors/accessors, control-body Set accessors, toString forms, and OffsetOption value-based HashSet behavior. Lookup fixture SHA-256: `d618ea8b60671b98fc7c8ec53746c2a0f4bddcb7c744d061b934d38cd6981538`. The raw process-specific Java OffsetOption hash number and broader source/config/input audit remain open. P6-V04 stays `PENDING_PHASE_19`.
 
 Lock batch Set DTO source/input closure (2026-10-09): pinned 5.5.1 declares lock and unlock `mqSet` plus response `lockOKMQSet` as `Set<MessageQueue>`. Direct Java coverage now includes 46 LockBatchRequestBody, 46 UnlockBatchRequestBody, and 25 LockBatchResponseBody cases. Rust matches singleton object conversion, null members, equality deduplication, last-wins fields, primitive boolean/String coercions, and constructor Set defaults; `lock_batch_mq` preserves the nullable Set result. Java artifacts contain no `UnlockBatchResponseBody`; that Rust-only public DTO remains an accepted extra. Lookup fixture SHA-256: `29211416d6c3f8c9af305fbe18e66b8ad1ada7c251333f69b8cd2f7970938d49`; [ADR-0046](../architecture/ADR-0046-lock-batch-set-fastjson-input.md). Other source/API/input reconciliation remains open; P6-V04 stays `PENDING_PHASE_19`.
@@ -662,3 +664,14 @@ The pinned fixture invokes 23 enum/integer outcomes plus the property-key consta
 | `MessageQueueRouteState.values()` / `valueOf(String)` / inherited enum methods | `remoting::MessageQueueRouteState::values()`, `value_of_name`, `name`, `ordinal`, `Display`, and `java_compare_to()` match Java declaration order and lookup behavior |
 
 The direct fixture covers all four route-state constants and null, empty, unknown, and case-mismatched lookups. The pinned artifacts contain no call sites outside the enum; no state transition behavior is claimed. See [ADR-0035](../architecture/ADR-0035-message-queue-route-state-enum-api.md).
+
+## Response body DTO: GetConsumerStatusBody
+
+| Pinned Java 5.5.1 API | Rust counterpart / current behavior |
+| --- | --- |
+| no-arg constructor; `messageQueueTable` and `consumerTable` initialized to empty maps | `GetConsumerStatusBody::default()` initializes both fields to `Some(empty)` |
+| `getMessageQueueTable` / `setMessageQueueTable(Map<MessageQueue, Long>)` | `get_message_queue_table` / `set_message_queue_table`; `Option<Vec<(MessageQueue, i64)>>` retains explicit null and queue/value entries |
+| `getConsumerTable` / `setConsumerTable(Map<String, Map<MessageQueue, Long>>)` | `get_consumer_table` / `set_consumer_table`; `Option<BTreeMap<String, Option<Vec<(MessageQueue, i64)>>>>` retains nullable outer and nested maps |
+| inherited `decode` / `encode` with Fastjson object map keys | `decode_java_json` parses Java's object-valued MessageQueue keys; `encode_java_json` emits the same body syntax and null omissions |
+
+Fourteen direct Java cases cover decoded fields, accepted/rejected input shapes and exact body encoding. `BTreeMap` output is deterministic; Java HashMap iteration order is unspecified. See [ADR-0047](../architecture/ADR-0047-consumer-status-fastjson-map-input.md).
