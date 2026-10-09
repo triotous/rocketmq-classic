@@ -61,6 +61,9 @@ public final class RuntimeLookupFixtures {
         fixture.put("liteSubscriptionIdentityCases", liteSubscriptionIdentityCases());
         fixture.put("liteSubscriptionApiCases", liteSubscriptionApiCases());
         fixture.put("liteSubscriptionInputCases", liteSubscriptionInputCases());
+        fixture.put("liteSubscriptionDtoApiCase", liteSubscriptionDtoApiCase());
+        fixture.put("offsetOptionApiCase", offsetOptionApiCase());
+        fixture.put("liteSubscriptionControlApiCase", liteSubscriptionControlApiCase());
         fixture.put("liteSubscriptionRootCases", liteSubscriptionRootCases());
         fixture.put("liteSubscriptionControlFieldCases", liteSubscriptionControlFieldCases());
         fixture.put("liteSubscriptionElementCases", liteSubscriptionElementCases());
@@ -459,6 +462,70 @@ public final class RuntimeLookupFixtures {
             cases.add(item);
         }
         return cases;
+    }
+
+    private static Map<String, Object> liteSubscriptionDtoApiCase() {
+        org.apache.rocketmq.common.lite.LiteSubscriptionDTO dto =
+            new org.apache.rocketmq.common.lite.LiteSubscriptionDTO();
+        Map<String, Object> item = new TreeMap<>();
+        item.put("actionSetterReturnsThis",
+            dto.setAction(org.apache.rocketmq.common.lite.LiteSubscriptionAction.COMPLETE_ADD) == dto);
+        item.put("clientIdSetterReturnsThis", dto.setClientId("client") == dto);
+        item.put("groupSetterReturnsThis", dto.setGroup("workers") == dto);
+        item.put("topicSetterReturnsThis", dto.setTopic("orders") == dto);
+        Set<String> topics = Set.of("lite-a");
+        item.put("liteTopicSetSetterReturnsThis", dto.setLiteTopicSet(topics) == dto);
+        item.put("liteTopicSetGetterReturnsSameSet", dto.getLiteTopicSet() == topics);
+        org.apache.rocketmq.common.lite.OffsetOption option =
+            new org.apache.rocketmq.common.lite.OffsetOption(
+                org.apache.rocketmq.common.lite.OffsetOption.Type.POLICY, 11L);
+        dto.setOffsetOption(option);
+        item.put("offsetOptionGetterReturnsSameObject", dto.getOffsetOption() == option);
+        item.put("versionSetterReturnsThis", dto.setVersion(9L) == dto);
+        item.put("action", dto.getAction().name());
+        item.put("clientId", dto.getClientId());
+        item.put("group", dto.getGroup());
+        item.put("topic", dto.getTopic());
+        item.put("liteTopicSet", dto.getLiteTopicSet());
+        item.put("offsetOptionType", dto.getOffsetOption().getType().name());
+        item.put("offsetOptionValue", dto.getOffsetOption().getValue());
+        item.put("version", dto.getVersion());
+        item.put("toString", dto.toString());
+        return item;
+    }
+
+    private static Map<String, Object> offsetOptionApiCase() {
+        org.apache.rocketmq.common.lite.OffsetOption option =
+            new org.apache.rocketmq.common.lite.OffsetOption();
+        Map<String, Object> item = new TreeMap<>();
+        item.put("defaultType", option.getType() == null ? null : option.getType().name());
+        item.put("defaultValue", option.getValue());
+        item.put("policyLastValue", org.apache.rocketmq.common.lite.OffsetOption.POLICY_LAST_VALUE);
+        item.put("policyMinValue", org.apache.rocketmq.common.lite.OffsetOption.POLICY_MIN_VALUE);
+        item.put("policyMaxValue", org.apache.rocketmq.common.lite.OffsetOption.POLICY_MAX_VALUE);
+        option.setType(org.apache.rocketmq.common.lite.OffsetOption.Type.TAIL_N);
+        option.setValue(23L);
+        item.put("type", option.getType().name());
+        item.put("value", option.getValue());
+        item.put("toString", option.toString());
+        item.put("equalValue", option.equals(new org.apache.rocketmq.common.lite.OffsetOption(
+            org.apache.rocketmq.common.lite.OffsetOption.Type.TAIL_N, 23L)));
+        item.put("differentValue", option.equals(new org.apache.rocketmq.common.lite.OffsetOption(
+            org.apache.rocketmq.common.lite.OffsetOption.Type.TAIL_N, 24L)));
+        return item;
+    }
+
+    private static Map<String, Object> liteSubscriptionControlApiCase() {
+        org.apache.rocketmq.remoting.protocol.body.LiteSubscriptionCtlRequestBody body =
+            new org.apache.rocketmq.remoting.protocol.body.LiteSubscriptionCtlRequestBody();
+        Map<String, Object> item = new TreeMap<>();
+        item.put("defaultSubscriptionSetIsNull", body.getSubscriptionSet() == null);
+        Set<org.apache.rocketmq.common.lite.LiteSubscriptionDTO> subscriptions = new HashSet<>();
+        subscriptions.add(new org.apache.rocketmq.common.lite.LiteSubscriptionDTO().setGroup("workers"));
+        body.setSubscriptionSet(subscriptions);
+        item.put("setterStoresSameSet", body.getSubscriptionSet() == subscriptions);
+        item.put("size", body.getSubscriptionSet().size());
+        return item;
     }
 
     private static List<Object> liteSubscriptionRootCases() {

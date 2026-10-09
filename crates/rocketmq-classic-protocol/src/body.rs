@@ -2618,6 +2618,114 @@ mod tests {
     }
 
     #[test]
+    fn lite_subscription_related_dto_apis_match_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+
+        let dto_case = &fixture["liteSubscriptionDtoApiCase"];
+        let mut dto = LiteSubscriptionDto::default();
+        let dto_ptr = std::ptr::addr_of_mut!(dto);
+        assert_eq!(
+            dto.set_action(Some(LiteSubscriptionAction::CompleteAdd)) as *mut LiteSubscriptionDto,
+            dto_ptr
+        );
+        assert_eq!(
+            dto.set_client_id(Some("client".into())) as *mut LiteSubscriptionDto,
+            dto_ptr
+        );
+        assert_eq!(
+            dto.set_group(Some("workers".into())) as *mut LiteSubscriptionDto,
+            dto_ptr
+        );
+        assert_eq!(
+            dto.set_topic(Some("orders".into())) as *mut LiteSubscriptionDto,
+            dto_ptr
+        );
+        let lite_topics = std::collections::BTreeSet::from([Some("lite-a".into())]);
+        assert_eq!(
+            dto.set_lite_topic_set(Some(lite_topics.clone())) as *mut LiteSubscriptionDto,
+            dto_ptr
+        );
+        let mut option = OffsetOption::new(Some(OffsetOptionType::Policy), 11);
+        dto.set_offset_option(Some(option.clone()));
+        assert_eq!(dto.set_version(9) as *mut LiteSubscriptionDto, dto_ptr);
+        assert_eq!(dto.action(), Some(LiteSubscriptionAction::CompleteAdd));
+        assert_eq!(dto.client_id(), Some("client"));
+        assert_eq!(dto.group(), Some("workers"));
+        assert_eq!(dto.topic(), Some("orders"));
+        assert_eq!(dto.lite_topic_set(), Some(&lite_topics));
+        assert_eq!(dto.offset_option(), Some(&option));
+        assert_eq!(dto.version(), 9);
+        assert_eq!(dto.to_string(), dto_case["toString"].as_str().unwrap());
+        assert!(dto_case["actionSetterReturnsThis"].as_bool().unwrap());
+        assert!(dto_case["clientIdSetterReturnsThis"].as_bool().unwrap());
+        assert!(dto_case["groupSetterReturnsThis"].as_bool().unwrap());
+        assert!(dto_case["topicSetterReturnsThis"].as_bool().unwrap());
+        assert!(dto_case["liteTopicSetSetterReturnsThis"].as_bool().unwrap());
+        assert!(
+            dto_case["liteTopicSetGetterReturnsSameSet"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(
+            dto_case["offsetOptionGetterReturnsSameObject"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(dto_case["versionSetterReturnsThis"].as_bool().unwrap());
+        assert_eq!(dto_case["action"], "COMPLETE_ADD");
+        assert_eq!(dto_case["clientId"], "client");
+        assert_eq!(dto_case["group"], "workers");
+        assert_eq!(dto_case["topic"], "orders");
+        assert_eq!(dto_case["liteTopicSet"], serde_json::json!(["lite-a"]));
+        assert_eq!(dto_case["offsetOptionType"], "POLICY");
+        assert_eq!(dto_case["offsetOptionValue"], 11);
+        assert_eq!(dto_case["version"], 9);
+
+        option.set_option_type(Some(OffsetOptionType::TailN));
+        option.set_value(23);
+        let option_case = &fixture["offsetOptionApiCase"];
+        assert_eq!(option.option_type(), Some(OffsetOptionType::TailN));
+        assert_eq!(option.value(), 23);
+        assert_eq!(
+            option.to_string(),
+            option_case["toString"].as_str().unwrap()
+        );
+        assert_eq!(option_case["defaultType"], serde_json::Value::Null);
+        assert_eq!(option_case["defaultValue"], 0);
+        assert_eq!(
+            option_case["policyLastValue"],
+            OffsetOption::POLICY_LAST_VALUE
+        );
+        assert_eq!(
+            option_case["policyMinValue"],
+            OffsetOption::POLICY_MIN_VALUE
+        );
+        assert_eq!(
+            option_case["policyMaxValue"],
+            OffsetOption::POLICY_MAX_VALUE
+        );
+        assert_eq!(option_case["type"], "TAIL_N");
+        assert_eq!(option_case["value"], 23);
+        assert!(option_case["equalValue"].as_bool().unwrap());
+        assert!(!option_case["differentValue"].as_bool().unwrap());
+        assert_eq!(option, OffsetOption::new(Some(OffsetOptionType::TailN), 23));
+
+        let control_case = &fixture["liteSubscriptionControlApiCase"];
+        let mut control = LiteSubscriptionCtlRequestBody::default();
+        assert!(control.subscription_set().is_none());
+        control.set_subscription_set(Some(vec![Some(dto)]));
+        assert_eq!(control.subscription_set().unwrap().len(), 1);
+        assert!(
+            control_case["defaultSubscriptionSetIsNull"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(control_case["setterStoresSameSet"].as_bool().unwrap());
+        assert_eq!(control_case["size"], 1);
+    }
+
+    #[test]
     fn lite_subscription_root_shapes_match_invoked_java_fastjson() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
