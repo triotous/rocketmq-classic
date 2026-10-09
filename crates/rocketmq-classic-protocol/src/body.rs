@@ -2151,13 +2151,6 @@ impl LockBatchResponseBody {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct UnlockBatchResponseBody {
-    #[serde(default)]
-    pub unlock_okmq_set: Vec<MessageQueue>,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsumerListByGroupResponseBody {
