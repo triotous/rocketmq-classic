@@ -91,3 +91,11 @@
 - Implementation commit `ecf19a87` adds `get_subscription_data_mut() -> Option<&mut SubscriptionData>`. Focused differential passes. Java caller-object identity remains different after Rust's owned setter.
 - Full `cargo test --workspace --all-targets --locked`, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios, fixture drift and cross-decodes), comparator self-test/manifest22, `cargo fmt --all -- --check`, and `git diff --check` pass.
 - Updated ADR-0055, Java compatibility, API/config map, requirement audit, runtime inventory, and this rlog. Other DTO aliases, malformed inputs, complete source/reverse-export reconciliation, platform evidence, and P6-V04 remain open; Phase 6 stays PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
+
+## GetConsumerStatusBody mutable map getter mapping — 2026-10-09T20:04:48Z
+
+- Extended the pinned Java `consumerStatusBodyApiCase` to mutate the assigned `messageQueueTable`, the returned `consumerTable`, and a nested consumer table. Each mutation is visible through the corresponding Java alias; the fixture records the final map values.
+- Oracle/test and fixture commit `89aef2e2`; aggregate `fixtures/runtime/lookup.json` SHA-256 `9fa29ff2a82f4227ebb8ea83c74c32702b6cf60f2b11e1eebbc8f0b1fff57da7`. The Rust test-first differential failed to compile because the mutable getters were absent.
+- Implementation commit `3d5cfd44` adds `get_message_queue_table_mut()` and `get_consumer_table_mut()`. The focused differential verifies mutation of both owned Rust maps and the nested rows; Java caller-owned Map identity remains unrepresented across Rust ownership.
+- Full workspace/all-target tests, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios and fixture drift/cross-decodes), comparator self-test/manifest22, formatting, and diff checks pass.
+- Updated ADR-0057, Java compatibility, API/config map, requirement audit, runtime inventory, and this rlog. ResetOffsetBody mutable getter review, other DTO aliases, malformed inputs, whole-source/reverse-export reconciliation, platform evidence, and P6-V04 remain open; Phase 6 stays PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
