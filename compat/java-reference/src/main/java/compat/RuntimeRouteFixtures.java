@@ -2273,6 +2273,9 @@ public final class RuntimeRouteFixtures {
                                 MQClientInstance.topicRouteData2TopicPublishInfo(topic, route);
                             item.put("publish", publish.getMessageQueueList());
                             item.put("ordered", publish.isOrderTopic());
+                            item.put("topicRouteData", com.alibaba.fastjson2.JSON.toJSONString(
+                                publish.getTopicRouteData(),
+                                com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue));
                         } else {
                             List<MessageQueue> subscribe = new ArrayList<>(
                                 MQClientInstance.topicRouteData2TopicSubscribeInfo(topic, route));
@@ -2343,6 +2346,9 @@ public final class RuntimeRouteFixtures {
                 }
                 item.put("publish", publishQueues);
                 item.put("ordered", publish.isOrderTopic());
+                item.put("topicRouteData", com.alibaba.fastjson2.JSON.toJSONString(
+                    publish.getTopicRouteData(),
+                    com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue));
                 List<MessageQueue> subscribe = new ArrayList<>(MQClientInstance.topicRouteData2TopicSubscribeInfo("topic", route));
                 subscribe.sort(Comparator.naturalOrder());
                 item.put("subscribe", subscribe);
