@@ -163,6 +163,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("queuesWithNamespace", queuesWithNamespace());
         fixture.put("managed", managed);
         fixture.put("managerRemoval", managerRemoval(config));
+        fixture.put("managerSharing", managerSharing());
         fixture.put("managerTable", managerTable(config));
         fixture.put("nullableSettings", nullableSettings());
         fixture.put("accessChannelMethodCases", accessChannelMethodCases());
@@ -232,6 +233,42 @@ public final class RuntimeConfigFixtures {
                     manager.removeClientFactory(id, first);
                     if (replacement != null) manager.removeClientFactory(id, replacement);
                 }
+            }
+        }
+        return result;
+    }
+
+    private static Map<String, Object> managerSharing() throws Exception {
+        org.apache.rocketmq.client.impl.MQClientManager manager = org.apache.rocketmq.client.impl.MQClientManager.getInstance();
+        ClientConfig firstConfig = new ClientConfig();
+        firstConfig.setClientIP("198.51.100.223");
+        firstConfig.setInstanceName("phase6-manager-sharing");
+        firstConfig.setNamesrvAddr("");
+        org.apache.rocketmq.client.impl.factory.MQClientInstance first = manager.getOrCreateMQClientInstance(firstConfig);
+        ClientConfig laterConfig = firstConfig.cloneClientConfig();
+        laterConfig.setNamesrvAddr("different-nameserver:9876");
+        laterConfig.setNamespaceV2("different-namespace");
+        laterConfig.setUseTLS(true);
+        laterConfig.setMqClientApiTimeout(1234);
+        org.apache.rocketmq.client.impl.factory.MQClientInstance later = null;
+        Map<String, Object> result = new TreeMap<>();
+        try {
+            later = manager.getOrCreateMQClientInstance(laterConfig);
+            ClientConfig retained = first.getClientConfig();
+            result.put("sameClientId", first.getClientId().equals(later.getClientId()));
+            result.put("sameRuntimeIdentity", first == later);
+            result.put("retainedNameserver", retained.getNamesrvAddr());
+            result.put("retainedNamespaceV2", retained.getNamespaceV2());
+            result.put("retainedTls", retained.isUseTLS());
+            result.put("retainedTimeout", retained.getMqClientApiTimeout());
+            result.put("laterConfigUnchanged", "different-nameserver:9876".equals(laterConfig.getNamesrvAddr())
+                && "different-namespace".equals(laterConfig.getNamespaceV2()) && laterConfig.isUseTLS()
+                && laterConfig.getMqClientApiTimeout() == 1234);
+        } finally {
+            try {
+                cleanupRuntime(first);
+            } finally {
+                manager.removeClientFactory(first.getClientId(), first);
             }
         }
         return result;

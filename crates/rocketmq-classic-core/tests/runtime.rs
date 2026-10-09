@@ -435,21 +435,48 @@ async fn p6_v01_many_first_lookups_share_one_unstarted_runtime_and_transport_own
 }
 
 #[tokio::test]
-async fn p6_v02_incompatible_transport_configuration_is_not_silently_shared() {
+async fn p6_v02_same_client_id_reuses_first_java_manager_runtime() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = &fixture["managerSharing"];
     let manager = ClientRuntimeManager::new();
-    let mut config = ClientConfig::new("192.0.2.6");
-    let first = manager.get_or_create(&config).await.unwrap();
-    config.namesrv_addr = Some("127.0.0.1:9876".into());
-    assert!(matches!(
-        manager.get_or_create(&config).await,
-        Err(RuntimeError::ConfigurationConflict { .. })
-    ));
-    config.namesrv_addr = None;
-    config.decode_read_body = false; // Consumer decoder policy, not transport ownership.
-    assert!(Arc::ptr_eq(
-        &first,
-        &manager.get_or_create(&config).await.unwrap()
-    ));
+    let mut first_config = ClientConfig::new("198.51.100.223");
+    first_config.instance_name = Some("phase6-manager-sharing".into());
+    first_config.namesrv_addr = Some(String::new());
+    let mut later_config = first_config.clone();
+    later_config.namesrv_addr = Some("different-nameserver:9876".into());
+    later_config.namespace_v2 = Some("different-namespace".into());
+    later_config.use_tls = true;
+    later_config.mq_client_api_timeout = 1234;
+
+    let first = manager.get_or_create(&first_config).await.unwrap();
+    let later = manager.get_or_create(&later_config).await.unwrap();
+    assert_eq!(first.client_id(), later.client_id());
+    assert_eq!(first.client_id() == later.client_id(), java["sameClientId"]);
+    assert_eq!(Arc::ptr_eq(&first, &later), java["sameRuntimeIdentity"]);
+    assert_eq!(
+        first.config().read().unwrap().namesrv_addr.as_deref(),
+        java["retainedNameserver"].as_str()
+    );
+    assert_eq!(
+        first.config().read().unwrap().namespace_v2,
+        java["retainedNamespaceV2"].as_str().map(str::to_owned)
+    );
+    assert_eq!(first.config().read().unwrap().use_tls, java["retainedTls"]);
+    assert_eq!(
+        first.config().read().unwrap().mq_client_api_timeout,
+        java["retainedTimeout"]
+    );
+    assert_eq!(
+        later_config.namesrv_addr.as_deref(),
+        Some("different-nameserver:9876")
+    );
+    assert_eq!(
+        later_config.namespace_v2.as_deref(),
+        Some("different-namespace")
+    );
+    assert!(later_config.use_tls);
+    assert_eq!(later_config.mq_client_api_timeout, 1234);
 }
 
 #[tokio::test]

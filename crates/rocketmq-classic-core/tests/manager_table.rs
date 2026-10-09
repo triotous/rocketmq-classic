@@ -31,23 +31,25 @@ async fn live_table_keeps_sharing_hooks_and_identity_cleanup_across_explicit_man
             .await
             .unwrap()
     ));
-    assert!(matches!(
-        target.get_or_create(&config).await,
-        Err(rocketmq_classic_core::runtime::RuntimeError::ConfigurationConflict { .. })
+    assert!(Arc::ptr_eq(
+        &first,
+        &target.get_or_create(&config).await.unwrap()
     ));
-    assert!(matches!(
-        target
+    assert!(Arc::ptr_eq(
+        &first,
+        &target
             .get_or_create_with_hook(&config, Some(Arc::new(Hook)))
-            .await,
-        Err(rocketmq_classic_core::runtime::RuntimeError::ConfigurationConflict { .. })
+            .await
+            .unwrap()
     ));
     let mut incompatible = config.clone();
     incompatible.namespace_v2 = Some("different".into());
-    assert!(matches!(
-        target
+    assert!(Arc::ptr_eq(
+        &first,
+        &target
             .get_or_create_with_hook(&incompatible, Some(hook.clone()))
-            .await,
-        Err(rocketmq_classic_core::runtime::RuntimeError::ConfigurationConflict { .. })
+            .await
+            .unwrap()
     ));
     first.start().await.unwrap();
     assert!(first.shutdown().await.unwrap());

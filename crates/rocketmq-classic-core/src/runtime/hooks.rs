@@ -161,14 +161,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn namespace_v2_and_stream_hook_conflicts_cannot_share_a_client_identity() {
+    async fn namespace_v2_and_stream_hook_collisions_reuse_the_first_runtime() {
         let manager = crate::runtime::ClientRuntimeManager::new();
         let mut config = ClientConfig::new("ip");
         let first = manager.get_or_create(&config).await.unwrap();
         config.namespace_v2 = Some("v2".into());
-        assert!(matches!(
-            manager.get_or_create(&config).await,
-            Err(crate::runtime::RuntimeError::ConfigurationConflict { .. })
+        assert!(Arc::ptr_eq(
+            &first,
+            &manager.get_or_create(&config).await.unwrap()
         ));
         config.namespace_v2 = None;
         config.namespace = Some("resource-only".into());
@@ -181,9 +181,9 @@ mod tests {
         config.unit_name = Some("unit".into());
         config.enable_stream_request_type = true;
         assert_eq!(config.build_client_id(), collision.client_id());
-        assert!(matches!(
-            manager.get_or_create(&config).await,
-            Err(crate::runtime::RuntimeError::ConfigurationConflict { .. })
+        assert!(Arc::ptr_eq(
+            &collision,
+            &manager.get_or_create(&config).await.unwrap()
         ));
     }
 
