@@ -42,6 +42,7 @@ public final class RuntimeAddressFixtures {
         var interfaces = NetworkInterface.getNetworkInterfaces();
         while (interfaces.hasMoreElements() && scopeCases.isEmpty()) {
             NetworkInterface networkInterface = interfaces.nextElement();
+            if (!networkInterface.isLoopback()) continue;
             var interfaceAddresses = networkInterface.getInetAddresses();
             while (interfaceAddresses.hasMoreElements()) {
                 InetAddress address = interfaceAddresses.nextElement();
