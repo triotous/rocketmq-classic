@@ -1797,6 +1797,28 @@ mod tests {
         // Java getters return the same mutable Sets; Rust owns them and lends borrows.
         assert_eq!(subscription_case["getterReturnsAssignedTagsSet"], true);
         assert_eq!(subscription_case["getterReturnsAssignedCodeSet"], true);
+        assert_eq!(subscription_case["externalTagMutationVisible"], true);
+        assert_eq!(
+            subscription_case["tagGetterMutationVisibleToAssignedSet"],
+            true
+        );
+        assert_eq!(subscription_case["externalCodeMutationVisible"], true);
+        assert_eq!(
+            subscription_case["codeGetterMutationVisibleToAssignedSet"],
+            true
+        );
+        let tags_mut = subscription.get_tags_set_mut().unwrap();
+        tags_mut.insert(Some("silver".to_owned()));
+        tags_mut.insert(Some("bronze".to_owned()));
+        let mut mutated_tags = tags_mut.iter().cloned().collect::<Vec<_>>();
+        mutated_tags.sort();
+        assert_eq!(mutated_tags, subscription_case["mutatedTags"]);
+        let codes_mut = subscription.get_code_set_mut().unwrap();
+        codes_mut.insert(Some(9));
+        codes_mut.insert(Some(11));
+        let mut mutated_codes = codes_mut.iter().copied().collect::<Vec<_>>();
+        mutated_codes.sort();
+        assert_eq!(mutated_codes, subscription_case["mutatedCodes"]);
         subscription.set_class_filter_mode(false);
         subscription.set_topic(None);
         subscription.set_sub_string(None);
@@ -1868,6 +1890,22 @@ mod tests {
         );
         // Java returns the assigned mutable Set; Rust owns the Set value.
         assert_eq!(consumer_case["getterReturnsAssignedSubscriptionSet"], true);
+        assert_eq!(consumer_case["externalSubscriptionMutationVisible"], true);
+        assert_eq!(
+            consumer_case["subscriptionGetterMutationVisibleToAssignedSet"],
+            true
+        );
+        let subscription_set_mut = consumer.get_subscription_data_set_mut().unwrap();
+        for topic in ["payments", "refunds"] {
+            subscription_set_mut.insert(Some(SubscriptionData::new(
+                Some(topic.to_owned()),
+                Some("*".to_owned()),
+            )));
+        }
+        assert_eq!(
+            subscription_set_mut.len(),
+            consumer_case["mutatedSubscriptionDataSetSize"]
+        );
         consumer.set_group_name(None);
         consumer.set_consume_type(None);
         consumer.set_message_model(None);
@@ -1919,6 +1957,35 @@ mod tests {
         // Java returns the assigned mutable Sets; Rust owns vectors for identity-based rows.
         assert_eq!(heartbeat_case["getterReturnsAssignedProducerSet"], true);
         assert_eq!(heartbeat_case["getterReturnsAssignedConsumerSet"], true);
+        assert_eq!(heartbeat_case["externalProducerMutationVisible"], true);
+        assert_eq!(
+            heartbeat_case["producerGetterMutationVisibleToAssignedSet"],
+            true
+        );
+        assert_eq!(heartbeat_case["externalConsumerMutationVisible"], true);
+        assert_eq!(
+            heartbeat_case["consumerGetterMutationVisibleToAssignedSet"],
+            true
+        );
+        let producer_data_set_mut = heartbeat.get_producer_data_set_mut().unwrap();
+        for group in ["producers-b", "producers-c"] {
+            let mut extra = ProducerData::default();
+            extra.set_group_name(Some(group.to_owned()));
+            producer_data_set_mut.push(Some(extra));
+        }
+        let consumer_data_set_mut = heartbeat.get_consumer_data_set_mut().unwrap();
+        for group in ["consumers", "admins"] {
+            let mut extra = ConsumerData::default();
+            extra.set_group_name(Some(group.to_owned()));
+            consumer_data_set_mut.push(Some(extra));
+        }
+        assert_eq!(
+            json!({
+                "producerDataSet": producer_data_set_mut.len(),
+                "consumerDataSet": consumer_data_set_mut.len(),
+            }),
+            heartbeat_case["mutatedSetSizes"]
+        );
         heartbeat.set_client_id(None);
         heartbeat.set_producer_data_set(None);
         heartbeat.set_consumer_data_set(None);
