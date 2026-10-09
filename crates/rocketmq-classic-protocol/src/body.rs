@@ -1484,37 +1484,204 @@ impl Default for SetMessageRequestModeRequestBody {
     }
 }
 
+/// A compact, Java-compatible bit set used by [`BatchAck`].
+///
+/// Bit indexes use the same little-endian byte ordering as
+/// `java.util.BitSet.toByteArray()`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BitSet {
+    words: Vec<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BitSetError {
+    NegativeIndex(i32),
+    AllocationFailed(i32),
+}
+
+impl std::fmt::Display for BitSetError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NegativeIndex(index) => {
+                write!(formatter, "bit index must be nonnegative: {index}")
+            }
+            Self::AllocationFailed(index) => {
+                write!(formatter, "could not allocate bit index: {index}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for BitSetError {}
+
+impl BitSet {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Creates a bit set from Java's little-endian `BitSet.toByteArray()` form.
+    pub fn from_byte_array(bytes: &[u8]) -> Self {
+        let mut words = bytes
+            .chunks(8)
+            .map(|chunk| {
+                let mut word = [0; 8];
+                word[..chunk.len()].copy_from_slice(chunk);
+                u64::from_le_bytes(word)
+            })
+            .collect::<Vec<_>>();
+        while words.last() == Some(&0) {
+            words.pop();
+        }
+        Self { words }
+    }
+
+    /// Returns the minimal little-endian byte array used by Java's `toByteArray()`.
+    pub fn to_byte_array(&self) -> Result<Vec<u8>, BitSetError> {
+        let bit_length = self.length();
+        let byte_length = bit_length.div_ceil(8);
+        let mut bytes = Vec::new();
+        bytes
+            .try_reserve_exact(byte_length)
+            .map_err(|_| BitSetError::AllocationFailed(bit_length.saturating_sub(1) as i32))?;
+        bytes.resize(byte_length, 0);
+        for (word_index, word) in self.words.iter().copied().enumerate() {
+            let start = word_index * 8;
+            if start >= byte_length {
+                break;
+            }
+            let encoded = word.to_le_bytes();
+            let count = (byte_length - start).min(encoded.len());
+            bytes[start..start + count].copy_from_slice(&encoded[..count]);
+        }
+        Ok(bytes)
+    }
+
+    pub fn get(&self, index: i32) -> Result<bool, BitSetError> {
+        let index = Self::checked_index(index)?;
+        let word = index / 64;
+        Ok(self
+            .words
+            .get(word)
+            .is_some_and(|value| value & (1 << (index % 64)) != 0))
+    }
+
+    pub fn set(&mut self, index: i32) -> Result<(), BitSetError> {
+        let index = Self::checked_index(index)?;
+        let word_index = index / 64;
+        if word_index >= self.words.len() {
+            let additional = word_index + 1 - self.words.len();
+            self.words
+                .try_reserve(additional)
+                .map_err(|_| BitSetError::AllocationFailed(index as i32))?;
+            self.words.resize(word_index + 1, 0);
+        }
+        self.words[word_index] |= 1 << (index % 64);
+        Ok(())
+    }
+
+    pub fn clear(&mut self, index: i32) -> Result<(), BitSetError> {
+        let index = Self::checked_index(index)?;
+        let word_index = index / 64;
+        if let Some(word) = self.words.get_mut(word_index) {
+            *word &= !(1 << (index % 64));
+            self.trim_trailing_zero_words();
+        }
+        Ok(())
+    }
+
+    pub fn flip(&mut self, index: i32) -> Result<(), BitSetError> {
+        let index = Self::checked_index(index)?;
+        if self.get(index as i32)? {
+            self.clear(index as i32)
+        } else {
+            self.set(index as i32)
+        }
+    }
+
+    pub fn cardinality(&self) -> usize {
+        self.words
+            .iter()
+            .map(|word| word.count_ones() as usize)
+            .sum()
+    }
+
+    /// Returns one plus the highest set-bit index, or zero for an empty set.
+    pub fn length(&self) -> usize {
+        self.words.last().map_or(0, |word| {
+            (self.words.len() - 1) * 64 + (64 - word.leading_zeros() as usize)
+        })
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.words.is_empty()
+    }
+
+    fn checked_index(index: i32) -> Result<usize, BitSetError> {
+        usize::try_from(index).map_err(|_| BitSetError::NegativeIndex(index))
+    }
+
+    fn trim_trailing_zero_words(&mut self) {
+        while self.words.last() == Some(&0) {
+            self.words.pop();
+        }
+    }
+
+    fn java_to_string(&self) -> String {
+        let mut output = String::from("{");
+        let mut first = true;
+        for (word_index, word) in self.words.iter().copied().enumerate() {
+            let mut remaining = word;
+            while remaining != 0 {
+                let bit = remaining.trailing_zeros() as usize;
+                if !first {
+                    output.push_str(", ");
+                }
+                first = false;
+                output.push_str(&(word_index * 64 + bit).to_string());
+                remaining &= remaining - 1;
+            }
+        }
+        output.push('}');
+        output
+    }
+}
+
 mod bitset_base64 {
+    use super::BitSet;
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     use rocketmq_classic_common::serde_fastjson;
     use serde::{Deserializer, Serializer};
 
-    pub fn serialize<S>(bytes: &Option<Vec<u8>>, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(bit_set: &Option<BitSet>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        match bytes {
-            Some(bytes) => serializer.serialize_str(&STANDARD.encode(bytes)),
+        match bit_set {
+            Some(bit_set) => serializer.serialize_str(
+                &STANDARD.encode(bit_set.to_byte_array().map_err(serde::ser::Error::custom)?),
+            ),
             None => serializer.serialize_none(),
         }
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Vec<u8>>, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<BitSet>, D::Error>
     where
         D: Deserializer<'de>,
     {
         let value = serde_fastjson::deserialize_nullable_string(deserializer)?;
         value
-            .map(|text| STANDARD.decode(text).map_err(serde::de::Error::custom))
+            .map(|text| {
+                STANDARD
+                    .decode(text)
+                    .map(|bytes| BitSet::from_byte_array(&bytes))
+                    .map_err(serde::de::Error::custom)
+            })
             .transpose()
     }
 }
 
-fn is_empty_bitset(value: &Option<Vec<u8>>) -> bool {
-    match value {
-        None => true,
-        Some(bytes) => bytes.is_empty(),
-    }
+fn is_empty_bitset(value: &Option<BitSet>) -> bool {
+    value.as_ref().is_none_or(BitSet::is_empty)
 }
 
 fn deserialize_batch_ack_list<'de, D>(
@@ -1624,7 +1791,7 @@ pub struct BatchAck {
         with = "bitset_base64",
         skip_serializing_if = "is_empty_bitset"
     )]
-    pub bit_set: Option<Vec<u8>>,
+    pub bit_set: Option<BitSet>,
 }
 
 #[derive(Deserialize)]
@@ -1686,7 +1853,7 @@ struct BatchAckFields {
     )]
     invisible_time: i64,
     #[serde(default, rename = "b", alias = "bitSet", with = "bitset_base64")]
-    bit_set: Option<Vec<u8>>,
+    bit_set: Option<BitSet>,
 }
 
 impl<'de> Deserialize<'de> for BatchAck {
@@ -1775,16 +1942,16 @@ impl BatchAck {
         self.invisible_time = invisible_time;
     }
 
-    pub fn get_bit_set(&self) -> Option<&[u8]> {
-        self.bit_set.as_deref()
+    pub fn get_bit_set(&self) -> Option<&BitSet> {
+        self.bit_set.as_ref()
     }
 
-    /// Borrows the owned Java `BitSet.toByteArray()` bytes mutably.
-    pub fn get_bit_set_mut(&mut self) -> Option<&mut Vec<u8>> {
+    /// Borrows the owned Java-compatible bit set mutably.
+    pub fn get_bit_set_mut(&mut self) -> Option<&mut BitSet> {
         self.bit_set.as_mut()
     }
 
-    pub fn set_bit_set(&mut self, bit_set: Option<Vec<u8>>) {
+    pub fn set_bit_set(&mut self, bit_set: Option<BitSet>) {
         self.bit_set = bit_set;
     }
 }
@@ -1794,23 +1961,10 @@ impl std::fmt::Display for BatchAck {
         let consumer_group = self.consumer_group.as_deref().unwrap_or("null");
         let topic = self.topic.as_deref().unwrap_or("null");
         let retry = self.retry.as_deref().unwrap_or("null");
-        let bit_set = match &self.bit_set {
-            None => "null".to_owned(),
-            Some(bytes) => {
-                let indices = bytes
-                    .iter()
-                    .enumerate()
-                    .flat_map(|(byte_index, byte)| {
-                        (0..8)
-                            .filter(move |&bit| byte & (1 << bit) != 0)
-                            .map(move |bit| byte_index.saturating_mul(8).saturating_add(bit))
-                    })
-                    .map(|index| index.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!("{{{indices}}}")
-            }
-        };
+        let bit_set = self
+            .bit_set
+            .as_ref()
+            .map_or_else(|| "null".to_owned(), BitSet::java_to_string);
         write!(
             formatter,
             "BatchAck{{consumerGroup='{consumer_group}', topic='{topic}', retry='{retry}', startOffset={}, queueId={}, reviveQueueId={}, popTime={}, invisibleTime={}, bitSet={bit_set}}}",
@@ -3342,7 +3496,7 @@ mod tests {
                 "reviveQueueId": ack.get_revive_queue_id(),
                 "popTime": ack.get_pop_time(),
                 "invisibleTime": ack.get_invisible_time(),
-                "bitSet": ack.get_bit_set(),
+                "bitSet": ack.get_bit_set().map(BitSet::to_byte_array).transpose().unwrap(),
             }),
             case["defaults"]
         );
@@ -3355,8 +3509,9 @@ mod tests {
         ack.set_revive_queue_id(2);
         ack.set_pop_time(10);
         ack.set_invisible_time(20);
-        ack.set_bit_set(Some(vec![0b0000_0101]));
+        ack.set_bit_set(Some(BitSet::from_byte_array(&[0b0000_0101, 0, 0])));
         let bit_set_base64 = serde_json::to_value(&ack).unwrap()["b"].clone();
+        let bits = ack.get_bit_set().unwrap();
         assert_eq!(
             json!({
                 "consumerGroup": ack.get_consumer_group(),
@@ -3368,6 +3523,9 @@ mod tests {
                 "popTime": ack.get_pop_time(),
                 "invisibleTime": ack.get_invisible_time(),
                 "bitSetBase64": bit_set_base64,
+                "bitSetCardinality": bits.cardinality(),
+                "bitSetLength": bits.length(),
+                "bitSetQueries": [bits.get(0).unwrap(), bits.get(1).unwrap(), bits.get(2).unwrap(), bits.get(5).unwrap()],
             }),
             case["values"]
         );
@@ -3376,10 +3534,66 @@ mod tests {
         assert_eq!(case["bitSetMutationVisibleThroughGetter"], true);
         assert_eq!(case["bitSetMutationVisibleThroughSetterObject"], true);
         let bits = ack.get_bit_set_mut().unwrap();
-        bits[0] |= 1 << 5;
+        bits.set(5).unwrap();
         assert_eq!(
             serde_json::to_value(&ack).unwrap()["b"],
             case["mutatedBitSetBase64"]
+        );
+        let mut operations = ack.get_bit_set().unwrap().clone();
+        operations.clear(2).unwrap();
+        operations.flip(7).unwrap();
+        let mut operations_ack = BatchAck::default();
+        operations_ack.set_bit_set(Some(operations.clone()));
+        assert_eq!(
+            json!({
+                "base64": serde_json::to_value(operations_ack).unwrap()["b"],
+                "cardinality": operations.cardinality(),
+                "length": operations.length(),
+                "isEmpty": operations.is_empty(),
+                "get": [operations.get(0).unwrap(), operations.get(2).unwrap(), operations.get(5).unwrap(), operations.get(7).unwrap()],
+            }),
+            case["bitSetOperations"]
+        );
+        assert_eq!(
+            json!({
+                "get": "IndexOutOfBoundsException",
+                "set": "IndexOutOfBoundsException",
+                "clear": "IndexOutOfBoundsException",
+                "flip": "IndexOutOfBoundsException",
+            }),
+            case["bitSetNegativeIndexErrors"]
+        );
+        assert_eq!(
+            ack.get_bit_set().unwrap().get(-1),
+            Err(BitSetError::NegativeIndex(-1))
+        );
+        assert_eq!(
+            ack.get_bit_set_mut().unwrap().set(-1),
+            Err(BitSetError::NegativeIndex(-1))
+        );
+        assert_eq!(
+            ack.get_bit_set_mut().unwrap().clear(-1),
+            Err(BitSetError::NegativeIndex(-1))
+        );
+        assert_eq!(
+            ack.get_bit_set_mut().unwrap().flip(-1),
+            Err(BitSetError::NegativeIndex(-1))
+        );
+        let mut word_boundary_bits = BitSet::new();
+        for index in [7, 8, 63, 64, 127] {
+            word_boundary_bits.set(index).unwrap();
+        }
+        assert_eq!(word_boundary_bits.cardinality(), 5);
+        assert_eq!(word_boundary_bits.length(), 128);
+        let mut word_boundary_ack = BatchAck::default();
+        word_boundary_ack.set_bit_set(Some(word_boundary_bits));
+        assert_eq!(
+            json!({
+                "base64": serde_json::to_value(word_boundary_ack).unwrap()["b"],
+                "cardinality": 5,
+                "length": 128,
+            }),
+            case["bitSetWordBoundary"]
         );
 
         let mut body = BatchAckMessageRequestBody::default();
@@ -4143,7 +4357,7 @@ mod tests {
                 revive_queue_id: 0,
                 pop_time: 10,
                 invisible_time: 20,
-                bit_set: Some(vec![0b0000_0101]),
+                bit_set: Some(BitSet::from_byte_array(&[0b0000_0101])),
             })]),
         };
         let value = serde_json::to_value(&body).unwrap();
@@ -4154,7 +4368,7 @@ mod tests {
         let round_trip: BatchAckMessageRequestBody = serde_json::from_value(value).unwrap();
         assert_eq!(
             round_trip.acks.unwrap()[0].as_ref().unwrap().bit_set,
-            Some(vec![0b0000_0101])
+            Some(BitSet::from_byte_array(&[0b0000_0101]))
         );
     }
 

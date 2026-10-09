@@ -642,7 +642,9 @@ fn generate_p4_bodies(output: &std::path::Path) {
                 revive_queue_id: 0,
                 pop_time: 10,
                 invisible_time: 20,
-                bit_set: Some(vec![0b0000_0101]),
+                bit_set: Some(rocketmq_classic_protocol::body::BitSet::from_byte_array(&[
+                    0b0000_0101,
+                ])),
             })]),
         },
     );
