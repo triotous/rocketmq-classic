@@ -51,7 +51,7 @@ macro_rules! impl_java_enum_api {
     };
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SubscriptionData {
     #[serde(default, deserialize_with = "serde_fastjson::deserialize_bool")]
@@ -98,6 +98,69 @@ pub struct SubscriptionData {
         skip_serializing
     )]
     pub filter_class_source: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SubscriptionDataFields {
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_bool")]
+    class_filter_mode: bool,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    topic: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    sub_string: Option<String>,
+    #[serde(
+        default = "empty_tags",
+        deserialize_with = "serde_fastjson::deserialize_optional_nullable_string_set"
+    )]
+    tags_set: Option<HashSet<Option<String>>>,
+    #[serde(
+        default = "empty_codes",
+        deserialize_with = "serde_fastjson::deserialize_optional_nullable_int_set"
+    )]
+    code_set: Option<HashSet<Option<i32>>>,
+    #[serde(
+        default = "current_subscription_version",
+        deserialize_with = "serde_fastjson::deserialize_i64_reject_object"
+    )]
+    sub_version: i64,
+    #[serde(
+        default = "default_expression_type",
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    expression_type: Option<String>,
+    #[serde(
+        rename = "filterClassSource",
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    filter_class_source: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for SubscriptionData {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: SubscriptionDataFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            class_filter_mode: fields.class_filter_mode,
+            topic: fields.topic,
+            sub_string: fields.sub_string,
+            tags_set: fields.tags_set,
+            code_set: fields.code_set,
+            sub_version: fields.sub_version,
+            expression_type: fields.expression_type,
+            filter_class_source: fields.filter_class_source,
+        })
+    }
 }
 
 impl PartialEq for SubscriptionData {
@@ -618,7 +681,7 @@ impl JavaOrdinalEnum for ConsumeFromWhere {
 /// fn require_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
 /// fn main() { require_java_identity::<ProducerData>(); }
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ProducerData {
     #[serde(
@@ -627,6 +690,29 @@ pub struct ProducerData {
         skip_serializing_if = "Option::is_none"
     )]
     pub group_name: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProducerDataFields {
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    group_name: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for ProducerData {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: ProducerDataFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            group_name: fields.group_name,
+        })
+    }
 }
 
 impl ProducerData {
@@ -646,7 +732,7 @@ impl ProducerData {
 /// fn require_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
 /// fn main() { require_java_identity::<ConsumerData>(); }
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsumerData {
     #[serde(
@@ -681,6 +767,47 @@ pub struct ConsumerData {
     pub subscription_data_set: Option<HashSet<Option<SubscriptionData>>>,
     #[serde(default, deserialize_with = "serde_fastjson::deserialize_bool")]
     pub unit_mode: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConsumerDataFields {
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    group_name: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_fastjson_optional_enum")]
+    consume_type: Option<ConsumeType>,
+    #[serde(default, deserialize_with = "deserialize_fastjson_optional_enum")]
+    message_model: Option<MessageModel>,
+    #[serde(default, deserialize_with = "deserialize_fastjson_optional_enum")]
+    consume_from_where: Option<ConsumeFromWhere>,
+    #[serde(
+        default = "empty_subscriptions",
+        deserialize_with = "deserialize_nullable_hash_set_with_null"
+    )]
+    subscription_data_set: Option<HashSet<Option<SubscriptionData>>>,
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_bool")]
+    unit_mode: bool,
+}
+
+impl<'de> Deserialize<'de> for ConsumerData {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: ConsumerDataFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            group_name: fields.group_name,
+            consume_type: fields.consume_type,
+            message_model: fields.message_model,
+            consume_from_where: fields.consume_from_where,
+            subscription_data_set: fields.subscription_data_set,
+            unit_mode: fields.unit_mode,
+        })
+    }
 }
 
 impl Default for ConsumerData {
@@ -759,7 +886,7 @@ fn empty_subscriptions() -> Option<HashSet<Option<SubscriptionData>>> {
 /// fn require_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
 /// fn main() { require_java_identity::<HeartbeatData>(); }
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HeartbeatData {
     #[serde(
@@ -787,6 +914,52 @@ pub struct HeartbeatData {
         deserialize_with = "serde_fastjson::deserialize_bool"
     )]
     pub is_without_sub: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HeartbeatDataFields {
+    #[serde(
+        rename = "clientID",
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    client_id: Option<String>,
+    #[serde(
+        default = "empty_producers",
+        deserialize_with = "deserialize_identity_set_with_null"
+    )]
+    producer_data_set: Option<Vec<Option<ProducerData>>>,
+    #[serde(
+        default = "empty_consumers",
+        deserialize_with = "deserialize_identity_set_with_null"
+    )]
+    consumer_data_set: Option<Vec<Option<ConsumerData>>>,
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_i32")]
+    heartbeat_fingerprint: i32,
+    #[serde(
+        default,
+        rename = "withoutSub",
+        deserialize_with = "serde_fastjson::deserialize_bool"
+    )]
+    is_without_sub: bool,
+}
+
+impl<'de> Deserialize<'de> for HeartbeatData {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: HeartbeatDataFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            client_id: fields.client_id,
+            producer_data_set: fields.producer_data_set,
+            consumer_data_set: fields.consumer_data_set,
+            heartbeat_fingerprint: fields.heartbeat_fingerprint,
+            is_without_sub: fields.is_without_sub,
+        })
+    }
 }
 
 #[cfg(test)]
