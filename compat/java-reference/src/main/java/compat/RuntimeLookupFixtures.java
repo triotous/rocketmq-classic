@@ -1871,6 +1871,10 @@ public final class RuntimeLookupFixtures {
         values.put("invisibleTime", ack.getInvisibleTime());
         values.put("bitSetBase64", java.util.Base64.getEncoder().encodeToString(
             ack.getBitSet().toByteArray()));
+        values.put("bitSetCardinality", ack.getBitSet().cardinality());
+        values.put("bitSetLength", ack.getBitSet().length());
+        values.put("bitSetQueries", List.of(
+            ack.getBitSet().get(0), ack.getBitSet().get(1), ack.getBitSet().get(2), ack.getBitSet().get(5)));
         item.put("values", values);
         item.put("toString", ack.toString());
         item.put("bitSetGetterReturnsAssignedObject", ack.getBitSet() == bits);
@@ -1879,6 +1883,22 @@ public final class RuntimeLookupFixtures {
         item.put("bitSetMutationVisibleThroughSetterObject", bits.get(5));
         item.put("mutatedBitSetBase64", java.util.Base64.getEncoder().encodeToString(
             ack.getBitSet().toByteArray()));
+        java.util.BitSet operations = (java.util.BitSet) ack.getBitSet().clone();
+        operations.clear(2);
+        operations.flip(7);
+        Map<String, Object> bitSetOperations = new TreeMap<>();
+        bitSetOperations.put("cardinality", operations.cardinality());
+        bitSetOperations.put("length", operations.length());
+        bitSetOperations.put("isEmpty", operations.isEmpty());
+        bitSetOperations.put("get", List.of(operations.get(0), operations.get(2), operations.get(5), operations.get(7)));
+        bitSetOperations.put("base64", java.util.Base64.getEncoder().encodeToString(operations.toByteArray()));
+        item.put("bitSetOperations", bitSetOperations);
+        Map<String, Object> negativeIndexErrors = new TreeMap<>();
+        try { ack.getBitSet().get(-1); } catch (RuntimeException error) { negativeIndexErrors.put("get", error.getClass().getSimpleName()); }
+        try { ack.getBitSet().set(-1); } catch (RuntimeException error) { negativeIndexErrors.put("set", error.getClass().getSimpleName()); }
+        try { ack.getBitSet().clear(-1); } catch (RuntimeException error) { negativeIndexErrors.put("clear", error.getClass().getSimpleName()); }
+        try { ack.getBitSet().flip(-1); } catch (RuntimeException error) { negativeIndexErrors.put("flip", error.getClass().getSimpleName()); }
+        item.put("bitSetNegativeIndexErrors", negativeIndexErrors);
 
         org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody body =
             new org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody();
