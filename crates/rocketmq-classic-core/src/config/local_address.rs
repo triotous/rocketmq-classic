@@ -443,6 +443,64 @@ mod tests {
             );
         }
     }
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn local_address_selection_matches_invoked_java_candidates_and_ipv6_fallback() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/client-config.json"
+        ))
+        .unwrap();
+        let java_candidates = fixture["networkUtilLocalAddressCandidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|candidate| Address {
+                ip: candidate
+                    .as_str()
+                    .unwrap()
+                    .split('%')
+                    .next()
+                    .unwrap()
+                    .parse()
+                    .unwrap(),
+                scope: 0,
+                scope_name: None,
+            })
+            .collect::<Vec<_>>();
+        let native_candidates = java_candidate_order(interfaces().unwrap());
+        let java_v4 = java_candidates
+            .iter()
+            .filter(|address| address.ip.is_ipv4())
+            .map(|address| address.ip)
+            .collect::<Vec<_>>();
+        let native_v4 = native_candidates
+            .iter()
+            .filter(|address| address.ip.is_ipv4())
+            .map(|address| address.ip)
+            .collect::<Vec<_>>();
+        assert_eq!(native_v4, java_v4);
+
+        let java_selected = select(java_candidates.clone()).unwrap();
+        let native_selected = select(native_candidates.clone()).unwrap();
+        assert_eq!(native_selected.ip, java_selected.ip);
+        assert_eq!(
+            normalize(&native_selected),
+            fixture["networkUtilLocalAddress"].as_str().unwrap()
+        );
+
+        let java_v6 = java_candidates
+            .into_iter()
+            .filter(|address| address.ip.is_ipv6())
+            .collect::<Vec<_>>();
+        let native_v6 = native_candidates
+            .into_iter()
+            .filter(|address| address.ip.is_ipv6())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            select(native_v6).map(|address| address.ip),
+            select(java_v6).map(|address| address.ip)
+        );
+    }
     fn address(ip: &str) -> Address {
         Address {
             ip: ip.parse().unwrap(),
