@@ -108,15 +108,6 @@ impl ClientRuntimeManager {
         Fut: Future<Output = Result<ClientRuntime, RuntimeError>>,
     {
         let client_id = config.build_client_id();
-        let properties: HashMap<_, _> = std::env::vars()
-            .filter(|(key, _)| {
-                key.starts_with("tls.")
-                    || key == "rocketmq.namesrv.domain"
-                    || key == "rocketmq.namesrv.domain.subgroup"
-                    || key == super::rebalance::WAIT_PROPERTY
-                    || key == super::rebalance::MIN_PROPERTY
-            })
-            .collect();
         loop {
             let entry = {
                 let mut entries = self
@@ -124,20 +115,23 @@ impl ClientRuntimeManager {
                     .lock()
                     .map_err(|_| RuntimeError::RegistryPoisoned)?;
                 let entry = entries.entry(client_id.clone()).or_insert_with(|| {
+                    let properties: HashMap<_, _> = std::env::vars()
+                        .filter(|(key, _)| {
+                            key.starts_with("tls.")
+                                || key == "rocketmq.namesrv.domain"
+                                || key == "rocketmq.namesrv.domain.subgroup"
+                                || key == super::rebalance::WAIT_PROPERTY
+                                || key == super::rebalance::MIN_PROPERTY
+                        })
+                        .collect();
                     Arc::new(Entry {
                         config: config.clone(),
-                        properties: properties.clone(),
+                        properties,
                         hook: hook.clone(),
                         initialization: AsyncMutex::new(()),
                         runtime: OnceLock::new(),
                     })
                 });
-                if !compatible(&entry.config, config)
-                    || entry.properties != properties
-                    || !same_hook(&entry.hook, &hook)
-                {
-                    return Err(RuntimeError::ConfigurationConflict { client_id });
-                }
                 entry.clone()
             };
             let _initialization = entry.initialization.lock().await;
@@ -244,14 +238,6 @@ impl ClientRuntimeManager {
                 Some(_) => continue,
             }
         }
-    }
-}
-
-fn same_hook(left: &Option<Arc<dyn RpcHook>>, right: &Option<Arc<dyn RpcHook>>) -> bool {
-    match (left, right) {
-        (None, None) => true,
-        (Some(left), Some(right)) => Arc::ptr_eq(left, right),
-        _ => false,
     }
 }
 
@@ -844,25 +830,6 @@ impl FactoryEntrySetView {
     pub async fn clear(&self) -> Result<(), RuntimeError> {
         self.0.clear().await
     }
-}
-
-fn compatible(left: &ClientConfig, right: &ClientConfig) -> bool {
-    left.namesrv_addr == right.namesrv_addr
-        && left.namespace_v2 == right.namespace_v2
-        && left.enable_stream_request_type == right.enable_stream_request_type
-        && left.use_tls == right.use_tls
-        && left.socks_proxy_config == right.socks_proxy_config
-        && left.client_callback_executor_threads == right.client_callback_executor_threads
-        && left.poll_name_server_interval == right.poll_name_server_interval
-        && left.heartbeat_broker_interval == right.heartbeat_broker_interval
-        && left.persist_consumer_offset_interval == right.persist_consumer_offset_interval
-        && left.mq_client_api_timeout == right.mq_client_api_timeout
-        && left.use_heartbeat_v2 == right.use_heartbeat_v2
-        && left.enable_heartbeat_channel_event_listener
-            == right.enable_heartbeat_channel_event_listener
-        && left.enable_concurrent_heartbeat == right.enable_concurrent_heartbeat
-        && left.concurrent_heartbeat_thread_pool_size == right.concurrent_heartbeat_thread_pool_size
-        && left.language == right.language
 }
 
 #[cfg(test)]

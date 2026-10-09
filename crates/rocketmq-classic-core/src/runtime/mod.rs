@@ -65,8 +65,6 @@ pub enum RuntimeError {
     InvalidBrokerPort,
     #[error("runtime RPC failed: {0}")]
     Rpc(#[from] crate::error::RpcError),
-    #[error("shared runtime configuration conflicts for client {client_id}")]
-    ConfigurationConflict { client_id: String },
     #[error("runtime registry lock was poisoned")]
     RegistryPoisoned,
     #[error("runtime construction failed: {0}")]
