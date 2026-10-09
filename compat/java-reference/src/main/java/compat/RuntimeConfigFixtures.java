@@ -1258,6 +1258,11 @@ public final class RuntimeConfigFixtures {
         allInputs.add("{01:{\"addr\":\"first\"},1:{\"addr\":\"last\"}}");
         allInputs.add("{1:{\"addr\":\"first\"},01:{\"addr\":\"middle\"},1:{\"addr\":\"last\"}}");
         allInputs.add("{1:{\"addr\":\"first\"},01:{\"addr\":\"middle\"},01:{\"addr\":\"last\"}}");
+        allInputs.add("{1:{\"addr\":\"first\"},\"1\":{\"addr\":\"last\"}}");
+        allInputs.add("{\"1\":{\"addr\":\"first\"},1:{\"addr\":\"last\"}}");
+        allInputs.add("{true:{\"addr\":\"first\"},\"true\":{\"addr\":\"last\"}}");
+        allInputs.add("{\"true\":{\"addr\":\"first\"},true:{\"addr\":\"last\"}}");
+        allInputs.add("{null:{\"addr\":\"null-key\"},'null':{\"addr\":\"string-key\"}}");
         for (int i = 0; i < allInputs.size(); i++) {
             String input = allInputs.get(i);
             ClientConfig config = new ClientConfig();
@@ -1280,14 +1285,22 @@ public final class RuntimeConfigFixtures {
                     @SuppressWarnings("unchecked")
                     Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig> routes =
                         (Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig>) proxyField.get(remoting);
-                    if (i >= allInputs.size() - 17) {
+                    if (i >= allInputs.size() - 22) {
                         List<String> routeKeys = new ArrayList<>(routes.keySet());
                         routeKeys.sort(java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder()));
                         item.put("routeKeys", routeKeys);
                     }
-                    if (i >= allInputs.size() - 4) {
-                        org.apache.rocketmq.remoting.proxy.SocksProxyConfig numericRoute = routes.get("1");
-                        item.put("routeKeyOneAddr", numericRoute == null ? null : numericRoute.getAddr());
+                    if (routes.containsKey("1")) {
+                        item.put("routeKeyOneAddr", routes.get("1").getAddr());
+                    }
+                    if (routes.containsKey("true")) {
+                        item.put("routeKeyTrueAddr", routes.get("true").getAddr());
+                    }
+                    if (routes.containsKey(null)) {
+                        item.put("routeKeyNullAddr", routes.get(null).getAddr());
+                    }
+                    if (routes.containsKey("null")) {
+                        item.put("routeKeyStringNullAddr", routes.get("null").getAddr());
                     }
                     org.apache.rocketmq.remoting.proxy.SocksProxyConfig route = routes.get("10.0.0.0/8");
                     item.put("routePresent", route != null);
