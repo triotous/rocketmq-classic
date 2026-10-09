@@ -615,15 +615,61 @@ pub struct UnlockBatchResponseBody {
     pub unlock_okmq_set: Vec<MessageQueue>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsumerListByGroupResponseBody {
-    #[serde(
-        default,
-        deserialize_with = "serde_fastjson::deserialize_optional_nullable_string_list",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub consumer_id_list: Option<Vec<Option<String>>>,
+}
+
+impl<'de> Deserialize<'de> for ConsumerListByGroupResponseBody {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ConsumerListVisitor;
+
+        impl<'de> de::Visitor<'de> for ConsumerListVisitor {
+            type Value = ConsumerListByGroupResponseBody;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a consumer-list response object")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut raw_consumer_id_list = None;
+                while let Some(key) = map.next_key::<String>()? {
+                    if key == "consumerIdList" {
+                        raw_consumer_id_list =
+                            Some(map.next_value::<Box<serde_json::value::RawValue>>()?);
+                    } else {
+                        map.next_value::<de::IgnoredAny>()?;
+                    }
+                }
+
+                let consumer_id_list = match raw_consumer_id_list {
+                    Some(raw) => {
+                        // Fastjson retains the last duplicate property before coercing its value.
+                        let mut raw_deserializer = serde_json::Deserializer::from_str(raw.get());
+                        let value = serde_fastjson::deserialize_optional_nullable_string_list(
+                            &mut raw_deserializer,
+                        )
+                        .map_err(de::Error::custom)?;
+                        raw_deserializer.end().map_err(de::Error::custom)?;
+                        value
+                    }
+                    None => None,
+                };
+
+                Ok(ConsumerListByGroupResponseBody { consumer_id_list })
+            }
+        }
+
+        deserializer.deserialize_map(ConsumerListVisitor)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -924,6 +970,14 @@ mod tests {
         assert_eq!(
             serde_json::to_value(ConsumerListByGroupResponseBody::default()).unwrap(),
             json!({})
+        );
+        let populated = serde_json::from_value::<ConsumerListByGroupResponseBody>(json!({
+            "consumerIdList": ["client"]
+        }))
+        .unwrap();
+        assert_eq!(
+            populated.consumer_id_list,
+            Some(vec![Some("client".into())])
         );
     }
 
