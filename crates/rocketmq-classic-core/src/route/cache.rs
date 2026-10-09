@@ -843,11 +843,16 @@ mod tests {
                     case["brokerAddressTable"],
                     serde_json::json!({"broker": {"0": "master:10911"}})
                 );
+                assert_eq!(case["brokerVersionBeforeCleanup"], 551);
+                assert_eq!(case["brokerVersionAfterCleanup"], 551);
             }
             let cache = RouteCache::default();
             let initial: TopicRouteData =
                 serde_json::from_value(case["initialInput"].clone()).unwrap();
             cache.replace("topic", initial).unwrap();
+            if case["id"] == "address-retained-by-sibling-topic" {
+                cache.record_version("broker", "master:10911", 551).unwrap();
+            }
             let table = super::super::TopicRouteTable::new(cache.clone());
             table.clear().unwrap();
             let raw: TopicRouteData = serde_json::from_value(case["rawInput"].clone()).unwrap();
@@ -876,6 +881,14 @@ mod tests {
                 outcome => panic!("unexpected Java cleanup outcome {outcome}"),
             }
             let snapshot = cache.snapshot().unwrap();
+            if case["id"] == "address-retained-by-sibling-topic" {
+                assert_eq!(
+                    snapshot
+                        .broker_versions
+                        .get(&("broker".to_owned(), "master:10911".to_owned())),
+                    Some(&551)
+                );
+            }
             if case["outcome"] == "NullPointerException" {
                 assert!(Arc::ptr_eq(&before_cleanup, &snapshot), "{}", case["id"]);
             }
