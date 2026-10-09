@@ -4,6 +4,8 @@ use thiserror::Error;
 
 pub type HeaderMap = BTreeMap<String, String>;
 
+pub use crate::body::ConsumerListByGroupResponseBody as GetConsumerListByGroupResponseBody;
+
 mod basic;
 pub use basic::{
     AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader, CheckTransactionStateRequestHeader,

@@ -412,6 +412,9 @@ pub struct LiteSubscriptionDto {
     pub version: i64,
 }
 
+#[allow(non_camel_case_types)]
+pub type LiteSubscriptionDTO = LiteSubscriptionDto;
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LiteSubscriptionDtoFields {
