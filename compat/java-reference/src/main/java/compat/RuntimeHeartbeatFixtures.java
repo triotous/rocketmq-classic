@@ -183,6 +183,204 @@ public final class RuntimeHeartbeatFixtures {
         return result;
     }
 
+    private static List<String> sortedStringSet(java.util.Set<String> values) {
+        if (values == null) return null;
+        List<String> result = new ArrayList<>(values);
+        result.sort(Comparator.nullsFirst(Comparator.naturalOrder()));
+        return result;
+    }
+
+    private static List<Integer> sortedIntegerSet(java.util.Set<Integer> values) {
+        if (values == null) return null;
+        List<Integer> result = new ArrayList<>(values);
+        result.sort(Comparator.nullsFirst(Comparator.naturalOrder()));
+        return result;
+    }
+
+    private static Map<String, Object> subscriptionApiValues(SubscriptionData value) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("classFilterMode", value.isClassFilterMode());
+        result.put("topic", value.getTopic());
+        result.put("subString", value.getSubString());
+        result.put("tagsSet", sortedStringSet(value.getTagsSet()));
+        result.put("codeSet", sortedIntegerSet(value.getCodeSet()));
+        result.put("subVersion", value.getSubVersion());
+        result.put("expressionType", value.getExpressionType());
+        result.put("filterClassSource", value.getFilterClassSource());
+        return result;
+    }
+
+    private static List<Object> subscriptionSetApiValues(java.util.Set<SubscriptionData> values) {
+        if (values == null) return null;
+        List<Object> result = new ArrayList<>();
+        for (SubscriptionData value : values)
+            result.add(value == null ? null : subscriptionApiValues(value));
+        return result;
+    }
+
+    private static Map<String, Object> subscriptionDataApiCase() {
+        SubscriptionData value = new SubscriptionData();
+        long before = System.currentTimeMillis();
+        long defaultVersion = value.getSubVersion();
+        long after = System.currentTimeMillis();
+        Map<String, Object> item = new TreeMap<>();
+        Map<String, Object> defaults = subscriptionApiValues(value);
+        defaults.remove("subVersion");
+        defaults.put("subVersionCurrent", defaultVersion >= before && defaultVersion <= after);
+        item.put("defaults", defaults);
+
+        value.setClassFilterMode(true);
+        value.setTopic("orders");
+        value.setSubString("*");
+        java.util.Set<String> tags = new java.util.LinkedHashSet<>();
+        tags.add("gold");
+        value.setTagsSet(tags);
+        java.util.Set<Integer> codes = new java.util.LinkedHashSet<>();
+        codes.add(7);
+        value.setCodeSet(codes);
+        value.setSubVersion(42L);
+        value.setExpressionType("SQL92");
+        value.setFilterClassSource("source-a");
+        item.put("values", subscriptionApiValues(value));
+        item.put("getterReturnsAssignedTagsSet", value.getTagsSet() == tags);
+        item.put("getterReturnsAssignedCodeSet", value.getCodeSet() == codes);
+
+        value.setClassFilterMode(false);
+        value.setTopic(null);
+        value.setSubString(null);
+        value.setTagsSet(null);
+        value.setCodeSet(null);
+        value.setSubVersion(0L);
+        value.setExpressionType(null);
+        value.setFilterClassSource(null);
+        item.put("nullSettersRemainNull", value.getTopic() == null && value.getSubString() == null
+            && value.getTagsSet() == null && value.getCodeSet() == null
+            && value.getExpressionType() == null && value.getFilterClassSource() == null);
+        Map<String, Object> primitiveAfterReset = new TreeMap<>();
+        primitiveAfterReset.put("classFilterMode", value.isClassFilterMode());
+        primitiveAfterReset.put("subVersion", value.getSubVersion());
+        item.put("primitiveAfterReset", primitiveAfterReset);
+        return item;
+    }
+
+    private static Map<String, Object> producerDataApiValues(ProducerData value) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("groupName", value.getGroupName());
+        return result;
+    }
+
+    private static Map<String, Object> producerDataApiCase() {
+        ProducerData value = new ProducerData();
+        Map<String, Object> item = new TreeMap<>();
+        item.put("defaults", producerDataApiValues(value));
+        value.setGroupName("producers");
+        item.put("values", producerDataApiValues(value));
+        value.setGroupName(null);
+        item.put("nullSetterRemainsNull", value.getGroupName() == null);
+        return item;
+    }
+
+    private static Map<String, Object> consumerDataApiValues(ConsumerData value) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("groupName", value.getGroupName());
+        result.put("consumeType", value.getConsumeType() == null ? null : value.getConsumeType().name());
+        result.put("messageModel", value.getMessageModel() == null ? null : value.getMessageModel().name());
+        result.put("consumeFromWhere", value.getConsumeFromWhere() == null ? null : value.getConsumeFromWhere().name());
+        result.put("subscriptionDataSet", subscriptionSetApiValues(value.getSubscriptionDataSet()));
+        result.put("unitMode", value.isUnitMode());
+        return result;
+    }
+
+    private static Map<String, Object> consumerDataApiCase() {
+        ConsumerData value = new ConsumerData();
+        Map<String, Object> item = new TreeMap<>();
+        item.put("defaults", consumerDataApiValues(value));
+        value.setGroupName("workers");
+        value.setConsumeType(ConsumeType.CONSUME_ACTIVELY);
+        value.setMessageModel(MessageModel.CLUSTERING);
+        value.setConsumeFromWhere(ConsumeFromWhere.CONSUME_FROM_LAST_OFFSET);
+        SubscriptionData subscription = new SubscriptionData();
+        subscription.setTopic("orders");
+        subscription.setSubString("*");
+        subscription.setSubVersion(42L);
+        java.util.Set<SubscriptionData> subscriptions = new java.util.LinkedHashSet<>();
+        subscriptions.add(subscription);
+        value.setSubscriptionDataSet(subscriptions);
+        value.setUnitMode(true);
+        item.put("values", consumerDataApiValues(value));
+        item.put("getterReturnsAssignedSubscriptionSet", value.getSubscriptionDataSet() == subscriptions);
+        value.setGroupName(null);
+        value.setConsumeType(null);
+        value.setMessageModel(null);
+        value.setConsumeFromWhere(null);
+        value.setSubscriptionDataSet(null);
+        value.setUnitMode(false);
+        item.put("nullSettersRemainNull", value.getGroupName() == null && value.getConsumeType() == null
+            && value.getMessageModel() == null && value.getConsumeFromWhere() == null
+            && value.getSubscriptionDataSet() == null && !value.isUnitMode());
+        return item;
+    }
+
+    private static List<Object> producerSetApiValues(java.util.Set<ProducerData> values) {
+        if (values == null) return null;
+        List<Object> result = new ArrayList<>();
+        for (ProducerData value : values)
+            result.add(value == null ? null : producerDataApiValues(value));
+        return result;
+    }
+
+    private static List<Object> consumerSetApiValues(java.util.Set<ConsumerData> values) {
+        if (values == null) return null;
+        List<Object> result = new ArrayList<>();
+        for (ConsumerData value : values)
+            result.add(value == null ? null : consumerDataApiValues(value));
+        return result;
+    }
+
+    private static Map<String, Object> heartbeatDataApiValues(HeartbeatData value) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("clientID", value.getClientID());
+        result.put("producerDataSet", producerSetApiValues(value.getProducerDataSet()));
+        result.put("consumerDataSet", consumerSetApiValues(value.getConsumerDataSet()));
+        result.put("heartbeatFingerprint", value.getHeartbeatFingerprint());
+        result.put("withoutSub", value.isWithoutSub());
+        return result;
+    }
+
+    private static Map<String, Object> heartbeatDataApiCase() {
+        HeartbeatData value = new HeartbeatData();
+        Map<String, Object> item = new TreeMap<>();
+        item.put("defaults", heartbeatDataApiValues(value));
+        value.setClientID("client-a");
+        ProducerData producer = new ProducerData();
+        producer.setGroupName("producers");
+        java.util.Set<ProducerData> producers = new java.util.LinkedHashSet<>();
+        producers.add(producer);
+        value.setProducerDataSet(producers);
+        ConsumerData consumer = new ConsumerData();
+        consumer.setGroupName("workers");
+        java.util.Set<ConsumerData> consumers = new java.util.LinkedHashSet<>();
+        consumers.add(consumer);
+        value.setConsumerDataSet(consumers);
+        value.setHeartbeatFingerprint(7);
+        value.setWithoutSub(true);
+        item.put("values", heartbeatDataApiValues(value));
+        item.put("getterReturnsAssignedProducerSet", value.getProducerDataSet() == producers);
+        item.put("getterReturnsAssignedConsumerSet", value.getConsumerDataSet() == consumers);
+        value.setClientID(null);
+        value.setProducerDataSet(null);
+        value.setConsumerDataSet(null);
+        value.setHeartbeatFingerprint(0);
+        value.setWithoutSub(false);
+        item.put("nullSettersRemainNull", value.getClientID() == null && value.getProducerDataSet() == null
+            && value.getConsumerDataSet() == null);
+        Map<String, Object> primitiveAfterReset = new TreeMap<>();
+        primitiveAfterReset.put("heartbeatFingerprint", value.getHeartbeatFingerprint());
+        primitiveAfterReset.put("withoutSub", value.isWithoutSub());
+        item.put("primitiveAfterReset", primitiveAfterReset);
+        return item;
+    }
+
     private static List<Object> identityMethodCases() throws Exception {
         ProducerData producerLeft = new ProducerData();
         producerLeft.setGroupName("same");
@@ -999,6 +1197,10 @@ public final class RuntimeHeartbeatFixtures {
         fixture.put("subscriptionFieldCases", subscriptionFieldCases());
         fixture.put("subscriptionConstructorCases", subscriptionConstructorCases());
         fixture.put("subscriptionMethods", subscriptionMethods());
+        fixture.put("subscriptionDataApiCase", subscriptionDataApiCase());
+        fixture.put("producerDataApiCase", producerDataApiCase());
+        fixture.put("consumerDataApiCase", consumerDataApiCase());
+        fixture.put("heartbeatDataApiCase", heartbeatDataApiCase());
         fixture.put("identityMethodCases", identityMethodCases());
         fixture.put("ownerFieldCases", ownerFieldCases());
         fixture.put("consumerEnumCases", consumerEnumCases());

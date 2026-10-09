@@ -207,6 +207,70 @@ impl Hash for SubscriptionData {
 impl SubscriptionData {
     pub const SUB_ALL: &str = "*";
 
+    pub fn is_class_filter_mode(&self) -> bool {
+        self.class_filter_mode
+    }
+
+    pub fn set_class_filter_mode(&mut self, value: bool) {
+        self.class_filter_mode = value;
+    }
+
+    pub fn get_topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, value: Option<String>) {
+        self.topic = value;
+    }
+
+    pub fn get_sub_string(&self) -> Option<&str> {
+        self.sub_string.as_deref()
+    }
+
+    pub fn set_sub_string(&mut self, value: Option<String>) {
+        self.sub_string = value;
+    }
+
+    pub fn get_tags_set(&self) -> Option<&HashSet<Option<String>>> {
+        self.tags_set.as_ref()
+    }
+
+    pub fn set_tags_set(&mut self, value: Option<HashSet<Option<String>>>) {
+        self.tags_set = value;
+    }
+
+    pub fn get_sub_version(&self) -> i64 {
+        self.sub_version
+    }
+
+    pub fn set_sub_version(&mut self, value: i64) {
+        self.sub_version = value;
+    }
+
+    pub fn get_code_set(&self) -> Option<&HashSet<Option<i32>>> {
+        self.code_set.as_ref()
+    }
+
+    pub fn set_code_set(&mut self, value: Option<HashSet<Option<i32>>>) {
+        self.code_set = value;
+    }
+
+    pub fn get_expression_type(&self) -> Option<&str> {
+        self.expression_type.as_deref()
+    }
+
+    pub fn set_expression_type(&mut self, value: Option<String>) {
+        self.expression_type = value;
+    }
+
+    pub fn get_filter_class_source(&self) -> Option<&str> {
+        self.filter_class_source.as_deref()
+    }
+
+    pub fn set_filter_class_source(&mut self, value: Option<String>) {
+        self.filter_class_source = value;
+    }
+
     /// Mirrors the Java `(topic, subString)` constructor while retaining
     /// Rust's explicit representation for nullable Java strings.
     pub fn new(topic: Option<String>, sub_string: Option<String>) -> Self {
@@ -716,6 +780,14 @@ impl<'de> Deserialize<'de> for ProducerData {
 }
 
 impl ProducerData {
+    pub fn get_group_name(&self) -> Option<&str> {
+        self.group_name.as_deref()
+    }
+
+    pub fn set_group_name(&mut self, value: Option<String>) {
+        self.group_name = value;
+    }
+
     pub fn java_to_string(&self) -> String {
         format!(
             "ProducerData [groupName={}]",
@@ -824,6 +896,54 @@ impl Default for ConsumerData {
 }
 
 impl ConsumerData {
+    pub fn get_group_name(&self) -> Option<&str> {
+        self.group_name.as_deref()
+    }
+
+    pub fn set_group_name(&mut self, value: Option<String>) {
+        self.group_name = value;
+    }
+
+    pub fn get_consume_type(&self) -> Option<ConsumeType> {
+        self.consume_type
+    }
+
+    pub fn set_consume_type(&mut self, value: Option<ConsumeType>) {
+        self.consume_type = value;
+    }
+
+    pub fn get_message_model(&self) -> Option<MessageModel> {
+        self.message_model
+    }
+
+    pub fn set_message_model(&mut self, value: Option<MessageModel>) {
+        self.message_model = value;
+    }
+
+    pub fn get_consume_from_where(&self) -> Option<ConsumeFromWhere> {
+        self.consume_from_where
+    }
+
+    pub fn set_consume_from_where(&mut self, value: Option<ConsumeFromWhere>) {
+        self.consume_from_where = value;
+    }
+
+    pub fn get_subscription_data_set(&self) -> Option<&HashSet<Option<SubscriptionData>>> {
+        self.subscription_data_set.as_ref()
+    }
+
+    pub fn set_subscription_data_set(&mut self, value: Option<HashSet<Option<SubscriptionData>>>) {
+        self.subscription_data_set = value;
+    }
+
+    pub fn is_unit_mode(&self) -> bool {
+        self.unit_mode
+    }
+
+    pub fn set_unit_mode(&mut self, value: bool) {
+        self.unit_mode = value;
+    }
+
     pub fn java_to_string(&self) -> String {
         format!(
             "ConsumerData [groupName={}, consumeType={}, messageModel={}, consumeFromWhere={}, unitMode={}, subscriptionDataSet={}]",
@@ -1132,6 +1252,46 @@ impl Default for HeartbeatData {
 }
 
 impl HeartbeatData {
+    pub fn get_client_id(&self) -> Option<&str> {
+        self.client_id.as_deref()
+    }
+
+    pub fn set_client_id(&mut self, value: Option<String>) {
+        self.client_id = value;
+    }
+
+    pub fn get_producer_data_set(&self) -> Option<&[Option<ProducerData>]> {
+        self.producer_data_set.as_deref()
+    }
+
+    pub fn set_producer_data_set(&mut self, value: Option<Vec<Option<ProducerData>>>) {
+        self.producer_data_set = value;
+    }
+
+    pub fn get_consumer_data_set(&self) -> Option<&[Option<ConsumerData>]> {
+        self.consumer_data_set.as_deref()
+    }
+
+    pub fn set_consumer_data_set(&mut self, value: Option<Vec<Option<ConsumerData>>>) {
+        self.consumer_data_set = value;
+    }
+
+    pub fn get_heartbeat_fingerprint(&self) -> i32 {
+        self.heartbeat_fingerprint
+    }
+
+    pub fn set_heartbeat_fingerprint(&mut self, value: i32) {
+        self.heartbeat_fingerprint = value;
+    }
+
+    pub fn is_without_sub(&self) -> bool {
+        self.is_without_sub
+    }
+
+    pub fn set_without_sub(&mut self, value: bool) {
+        self.is_without_sub = value;
+    }
+
     /// Decodes the inherited Java `RemotingSerializable.decode` form.
     pub fn java_decode(data: &[u8]) -> Result<Self, serde_json::Error> {
         serde_fastjson::from_fastjson_slice(data)
@@ -1353,6 +1513,7 @@ fn empty_consumers() -> Option<Vec<Option<ConsumerData>>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn subscription_fields_match_invoked_java_nulls_and_defaults() {
@@ -1580,6 +1741,200 @@ mod tests {
                 case["case"]
             );
         }
+    }
+
+    #[test]
+    fn heartbeat_dto_public_accessors_match_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
+                .unwrap();
+
+        let subscription_case = &fixture["subscriptionDataApiCase"];
+        let mut subscription = SubscriptionData::default();
+        assert!(!subscription.is_class_filter_mode());
+        assert!(subscription.get_topic().is_none());
+        assert!(subscription.get_sub_string().is_none());
+        assert_eq!(
+            serde_json::to_value(subscription.get_tags_set()).unwrap(),
+            subscription_case["defaults"]["tagsSet"]
+        );
+        assert_eq!(
+            serde_json::to_value(subscription.get_code_set()).unwrap(),
+            subscription_case["defaults"]["codeSet"]
+        );
+        assert_eq!(
+            subscription.get_sub_version() > 0,
+            subscription_case["defaults"]["subVersionCurrent"]
+        );
+        assert_eq!(subscription.get_expression_type(), Some("TAG"));
+        assert!(subscription.get_filter_class_source().is_none());
+
+        subscription.set_class_filter_mode(true);
+        subscription.set_topic(Some("orders".to_owned()));
+        subscription.set_sub_string(Some("*".to_owned()));
+        let mut tags = HashSet::new();
+        tags.insert(Some("gold".to_owned()));
+        subscription.set_tags_set(Some(tags));
+        let mut codes = HashSet::new();
+        codes.insert(Some(7));
+        subscription.set_code_set(Some(codes));
+        subscription.set_sub_version(42);
+        subscription.set_expression_type(Some("SQL92".to_owned()));
+        subscription.set_filter_class_source(Some("source-a".to_owned()));
+        assert_eq!(
+            json!({
+                "classFilterMode": subscription.is_class_filter_mode(),
+                "topic": subscription.get_topic(),
+                "subString": subscription.get_sub_string(),
+                "tagsSet": subscription.get_tags_set(),
+                "codeSet": subscription.get_code_set(),
+                "subVersion": subscription.get_sub_version(),
+                "expressionType": subscription.get_expression_type(),
+                "filterClassSource": subscription.get_filter_class_source(),
+            }),
+            subscription_case["values"]
+        );
+        // Java getters return the same mutable Sets; Rust owns them and lends borrows.
+        assert_eq!(subscription_case["getterReturnsAssignedTagsSet"], true);
+        assert_eq!(subscription_case["getterReturnsAssignedCodeSet"], true);
+        subscription.set_class_filter_mode(false);
+        subscription.set_topic(None);
+        subscription.set_sub_string(None);
+        subscription.set_tags_set(None);
+        subscription.set_code_set(None);
+        subscription.set_sub_version(0);
+        subscription.set_expression_type(None);
+        subscription.set_filter_class_source(None);
+        assert!(subscription.get_topic().is_none());
+        assert!(subscription.get_sub_string().is_none());
+        assert!(subscription.get_tags_set().is_none());
+        assert!(subscription.get_code_set().is_none());
+        assert!(subscription.get_expression_type().is_none());
+        assert!(subscription.get_filter_class_source().is_none());
+        assert_eq!(subscription_case["nullSettersRemainNull"], true);
+        assert_eq!(
+            json!({
+                "classFilterMode": subscription.is_class_filter_mode(),
+                "subVersion": subscription.get_sub_version(),
+            }),
+            subscription_case["primitiveAfterReset"]
+        );
+
+        let producer_case = &fixture["producerDataApiCase"];
+        let mut producer = ProducerData::default();
+        assert!(producer.get_group_name().is_none());
+        producer.set_group_name(Some("producers".to_owned()));
+        assert_eq!(
+            json!({"groupName": producer.get_group_name()}),
+            producer_case["values"]
+        );
+        producer.set_group_name(None);
+        assert!(producer.get_group_name().is_none());
+        assert_eq!(producer_case["nullSetterRemainsNull"], true);
+
+        let consumer_case = &fixture["consumerDataApiCase"];
+        let mut consumer = ConsumerData::default();
+        assert!(consumer.get_group_name().is_none());
+        assert!(consumer.get_consume_type().is_none());
+        assert!(consumer.get_message_model().is_none());
+        assert!(consumer.get_consume_from_where().is_none());
+        assert!(
+            consumer
+                .get_subscription_data_set()
+                .is_some_and(HashSet::is_empty)
+        );
+        assert!(!consumer.is_unit_mode());
+        consumer.set_group_name(Some("workers".to_owned()));
+        consumer.set_consume_type(Some(ConsumeType::ConsumeActively));
+        consumer.set_message_model(Some(MessageModel::Clustering));
+        consumer.set_consume_from_where(Some(ConsumeFromWhere::ConsumeFromLastOffset));
+        let mut subscriptions = HashSet::new();
+        let mut subscription =
+            SubscriptionData::new(Some("orders".to_owned()), Some("*".to_owned()));
+        subscription.set_sub_version(42);
+        subscriptions.insert(Some(subscription));
+        consumer.set_subscription_data_set(Some(subscriptions));
+        consumer.set_unit_mode(true);
+        assert_eq!(
+            json!({
+                "groupName": consumer.get_group_name(),
+                "consumeType": consumer.get_consume_type(),
+                "messageModel": consumer.get_message_model(),
+                "consumeFromWhere": consumer.get_consume_from_where(),
+                "subscriptionDataSet": consumer.get_subscription_data_set(),
+                "unitMode": consumer.is_unit_mode(),
+            }),
+            consumer_case["values"]
+        );
+        // Java returns the assigned mutable Set; Rust owns the Set value.
+        assert_eq!(consumer_case["getterReturnsAssignedSubscriptionSet"], true);
+        consumer.set_group_name(None);
+        consumer.set_consume_type(None);
+        consumer.set_message_model(None);
+        consumer.set_consume_from_where(None);
+        consumer.set_subscription_data_set(None);
+        consumer.set_unit_mode(false);
+        assert!(consumer.get_group_name().is_none());
+        assert!(consumer.get_consume_type().is_none());
+        assert!(consumer.get_message_model().is_none());
+        assert!(consumer.get_consume_from_where().is_none());
+        assert!(consumer.get_subscription_data_set().is_none());
+        assert!(!consumer.is_unit_mode());
+        assert_eq!(consumer_case["nullSettersRemainNull"], true);
+
+        let heartbeat_case = &fixture["heartbeatDataApiCase"];
+        let mut heartbeat = HeartbeatData::default();
+        assert!(heartbeat.get_client_id().is_none());
+        assert!(
+            heartbeat
+                .get_producer_data_set()
+                .is_some_and(<[_]>::is_empty)
+        );
+        assert!(
+            heartbeat
+                .get_consumer_data_set()
+                .is_some_and(<[_]>::is_empty)
+        );
+        assert_eq!(heartbeat.get_heartbeat_fingerprint(), 0);
+        assert!(!heartbeat.is_without_sub());
+        heartbeat.set_client_id(Some("client-a".to_owned()));
+        let mut producer = ProducerData::default();
+        producer.set_group_name(Some("producers".to_owned()));
+        heartbeat.set_producer_data_set(Some(vec![Some(producer)]));
+        let mut consumer = ConsumerData::default();
+        consumer.set_group_name(Some("workers".to_owned()));
+        heartbeat.set_consumer_data_set(Some(vec![Some(consumer)]));
+        heartbeat.set_heartbeat_fingerprint(7);
+        heartbeat.set_without_sub(true);
+        assert_eq!(
+            json!({
+                "clientID": heartbeat.get_client_id(),
+                "producerDataSet": heartbeat.get_producer_data_set(),
+                "consumerDataSet": heartbeat.get_consumer_data_set(),
+                "heartbeatFingerprint": heartbeat.get_heartbeat_fingerprint(),
+                "withoutSub": heartbeat.is_without_sub(),
+            }),
+            heartbeat_case["values"]
+        );
+        // Java returns the assigned mutable Sets; Rust owns vectors for identity-based rows.
+        assert_eq!(heartbeat_case["getterReturnsAssignedProducerSet"], true);
+        assert_eq!(heartbeat_case["getterReturnsAssignedConsumerSet"], true);
+        heartbeat.set_client_id(None);
+        heartbeat.set_producer_data_set(None);
+        heartbeat.set_consumer_data_set(None);
+        heartbeat.set_heartbeat_fingerprint(0);
+        heartbeat.set_without_sub(false);
+        assert!(heartbeat.get_client_id().is_none());
+        assert!(heartbeat.get_producer_data_set().is_none());
+        assert!(heartbeat.get_consumer_data_set().is_none());
+        assert_eq!(heartbeat_case["nullSettersRemainNull"], true);
+        assert_eq!(
+            json!({
+                "heartbeatFingerprint": heartbeat.get_heartbeat_fingerprint(),
+                "withoutSub": heartbeat.is_without_sub(),
+            }),
+            heartbeat_case["primitiveAfterReset"]
+        );
     }
 
     #[test]
