@@ -1155,8 +1155,15 @@ public final class RuntimeLookupFixtures {
             {"unknown-field-ignored", "{\"unknown\":7,\"offsetTable\":{" + key + ":9}}"},
             {"table-scalar", "{\"offsetTable\":7}"},
             {"table-array", "{\"offsetTable\":[]}"},
+            {"table-string", "{\"offsetTable\":\"not-a-table\"}"},
+            {"table-boolean", "{\"offsetTable\":true}"},
             {"offset-null", "{\"offsetTable\":{" + key + ":null}}"},
-            {"invalid-message-queue-key", "{\"offsetTable\":{\"not-a-queue\":9}}"}
+            {"invalid-message-queue-key", "{\"offsetTable\":{\"not-a-queue\":9}}"},
+            {"root-null", "null"},
+            {"root-array", "[]"},
+            {"root-number", "7"},
+            {"root-string", "\"body\""},
+            {"root-boolean", "true"}
         };
         List<Object> cases = new ArrayList<>();
         for (String[] input : inputs) {

@@ -2956,7 +2956,7 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
         let cases = fixture["resetOffsetBodyInputCases"].as_array().unwrap();
-        assert_eq!(cases.len(), 12);
+        assert_eq!(cases.len(), 19);
         let rows = |entries: Option<&[(MessageQueue, Option<i64>)]>| {
             let Some(entries) = entries else {
                 return serde_json::Value::Null;
