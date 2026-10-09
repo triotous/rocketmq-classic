@@ -83,3 +83,11 @@
 - Implementation commit `f4d85af0` adds `BatchAckMessageRequestBody::get_acks_mut() -> Option<&mut Vec<Option<BatchAck>>>`; focused differential passes. Rust reproduces getter mutation through ownership but does not retain Java's external List alias.
 - Full `cargo test --workspace --all-targets --locked`, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios, fixture drift and cross-decodes), comparator self-test/manifest22, `cargo fmt --all -- --check`, and `git diff --check` pass.
 - Updated ADR-0053, Java compatibility, API/config map, requirement audit, runtime inventory, and this rlog. Other DTO aliases, malformed inputs, whole-source/reverse-export reconciliation, platform evidence, and P6-V04 remain open; Phase 6 stays PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
+
+## CheckClientRequestBody mutable nested DTO getter mapping — 2026-10-09T19:59:16Z
+
+- Direct pinned Java `checkClientBodyApiCase` now changes `SubscriptionData.subVersion` through the object passed to `setSubscriptionData`, then changes `subString` through the body getter; both views observe the final values. Oracle/test and lookup fixture commit `cd8e761e`; aggregate lookup SHA-256 `f3d9e92e8965faa082e06f075755bed7b9fc7d0435698b35a58d19ac809d8c29`.
+- The test-first Rust differential failed to compile because `CheckClientRequestBody::get_subscription_data_mut` was absent. Its first green run exposed a getter-view normalization difference (`codeSet` is omitted from the Java API map); the test now compares the actual declared fields.
+- Implementation commit `ecf19a87` adds `get_subscription_data_mut() -> Option<&mut SubscriptionData>`. Focused differential passes. Java caller-object identity remains different after Rust's owned setter.
+- Full `cargo test --workspace --all-targets --locked`, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios, fixture drift and cross-decodes), comparator self-test/manifest22, `cargo fmt --all -- --check`, and `git diff --check` pass.
+- Updated ADR-0055, Java compatibility, API/config map, requirement audit, runtime inventory, and this rlog. Other DTO aliases, malformed inputs, complete source/reverse-export reconciliation, platform evidence, and P6-V04 remain open; Phase 6 stays PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
