@@ -659,6 +659,14 @@ public final class RuntimeHeartbeatFixtures {
             "{\"subVersion\":0,\"codeSet\":[\"1e2\"]}"));
         cases.add(heartbeatDtoInputCase("subscription-code-set-wide-decimal", "subscription",
             "{\"subVersion\":0,\"codeSet\":[2147483648.9]}"));
+        cases.add(heartbeatDtoInputCase("subscription-code-set-high-precision-decimal", "subscription",
+            "{\"subVersion\":0,\"codeSet\":[9223372036854775807.0,9223372036854775808.0,-9223372036854775809.0]}"));
+        cases.add(heartbeatDtoInputCase("subscription-code-set-decimal-long-maximum", "subscription",
+            "{\"subVersion\":0,\"codeSet\":[9223372036854775807.0]}"));
+        cases.add(heartbeatDtoInputCase("subscription-code-set-decimal-long-overflow-positive", "subscription",
+            "{\"subVersion\":0,\"codeSet\":[9223372036854775808.0]}"));
+        cases.add(heartbeatDtoInputCase("subscription-code-set-decimal-long-overflow-negative", "subscription",
+            "{\"subVersion\":0,\"codeSet\":[-9223372036854775809.0]}"));
         cases.add(heartbeatDtoInputCase("subscription-tags-coercion-deduplicates", "subscription",
             "{\"subVersion\":0,\"tagsSet\":[\"tag\",\"tag\",7,\"7\",null,null]}"));
         cases.add(heartbeatDtoInputCase("subscription-invalid-code", "subscription",
