@@ -1180,6 +1180,11 @@ public final class RuntimeConfigFixtures {
             "{\"10.0.0.0/8\":{\"addr\":\"A" + slash + "uD83" + new String(Character.toChars(0x1d7da)) + "Z\"}}"
         };
         allInputs.addAll(java.util.Arrays.asList(unicodeEscapeInputs));
+        allInputs.add("\u00a0{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{\u2003\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{\"10.0.0.0/8\":\u3000{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}\u2029}");
+        allInputs.add("{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}}\uFEFF");
         for (int i = 0; i < allInputs.size(); i++) {
             String input = allInputs.get(i);
             ClientConfig config = new ClientConfig();

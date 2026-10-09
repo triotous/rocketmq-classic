@@ -1544,8 +1544,8 @@ mod tests {
         let cases = fixture["socksConstruction"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            397,
-            "Java oracle includes 126 prior cases, 256 byte-range followers, and 15 Unicode escape cases"
+            402,
+            "Java oracle includes 126 prior cases, 256 byte-range followers, 15 Unicode escape cases, and five Unicode-whitespace cases"
         );
         for escaped in 0..=0x7f {
             let mut expected = String::from("{\"10.0.0.0/8\":{\"addr\":\"A\\");
@@ -1578,6 +1578,15 @@ mod tests {
                 expected,
                 "Unicode escape probe {offset}"
             );
+        }
+        for (case, expected) in cases.iter().skip(397).zip([
+            "\u{00a0}{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}}",
+            "{\u{2003}\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}}",
+            "{\"10.0.0.0/8\":\u{3000}{\"addr\":\"proxy:1080\"}}",
+            "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}\u{2029}}",
+            "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}}\u{feff}",
+        ]) {
+            assert_eq!(case["input"], expected);
         }
 
         let mut outcome_mismatches = Vec::new();
