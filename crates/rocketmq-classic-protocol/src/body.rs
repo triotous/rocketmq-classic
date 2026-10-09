@@ -45,7 +45,7 @@ macro_rules! impl_java_enum_api {
     };
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct CheckClientRequestBody {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -56,6 +56,34 @@ pub struct CheckClientRequestBody {
     pub subscription_data: Option<super::heartbeat::SubscriptionData>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub namespace: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CheckClientRequestBodyFields {
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_nullable_string")]
+    client_id: Option<String>,
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_nullable_string")]
+    group: Option<String>,
+    subscription_data: Option<super::heartbeat::SubscriptionData>,
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_nullable_string")]
+    namespace: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for CheckClientRequestBody {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: CheckClientRequestBodyFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            client_id: fields.client_id,
+            group: fields.group,
+            subscription_data: fields.subscription_data,
+            namespace: fields.namespace,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
