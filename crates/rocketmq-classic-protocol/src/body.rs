@@ -2368,7 +2368,7 @@ mod optional_message_queue_offset_table {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsumeMessageDirectlyResult {
     pub order: bool,
@@ -2378,6 +2378,18 @@ pub struct ConsumeMessageDirectlyResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remark: Option<String>,
     pub spent_time_mills: i64,
+}
+
+impl Default for ConsumeMessageDirectlyResult {
+    fn default() -> Self {
+        Self {
+            order: false,
+            auto_commit: default_auto_commit(),
+            consume_result: None,
+            remark: None,
+            spent_time_mills: 0,
+        }
+    }
 }
 
 #[derive(Deserialize)]
