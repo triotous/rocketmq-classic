@@ -775,9 +775,20 @@ mod tests {
 
     #[test]
     fn java_properties_have_exact_precedence_and_parse_boolean_rules() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/runtime/client-config.json"
+        ))
+        .unwrap();
+        let name_server = &fixture["nameServerAddressCases"];
+        assert_eq!(name_server["systemPropertyKey"], "rocketmq.namesrv.addr");
+        assert_eq!(name_server["environmentKey"], "NAMESRV_ADDR");
+        assert_eq!(name_server["systemPropertyValue"], "system:9876");
+        assert_eq!(name_server["explicitBlankPropertyValue"], "");
+
         let values = HashMap::from([
             ("rocketmq.namesrv.addr", ""),
-            ("ROCKETMQ_NAMESRV_ADDR", "fallback:9876"),
+            ("NAMESRV_ADDR", "fallback:9876"),
+            ("ROCKETMQ_NAMESRV_ADDR", "wrong-fallback:9876"),
             ("rocketmq.client.name", "custom"),
             ("com.rocketmq.heartbeat.v2", "TrUe"),
             ("com.rocketmq.read.body", " true "),
@@ -796,6 +807,16 @@ mod tests {
         assert!(!config.decode_read_body);
         assert!(!config.decode_decompress_body);
         assert!(!format!("{config:?}").contains("credentials"));
+
+        let fallback = ClientConfig::with_properties("ip".into(), |key| {
+            (key == name_server["environmentKey"].as_str().unwrap())
+                .then(|| "fallback:9876".to_owned())
+        });
+        assert_eq!(fallback.namesrv_addr.as_deref(), Some("fallback:9876"));
+        let rejected_alias = ClientConfig::with_properties("ip".into(), |key| {
+            (key == "ROCKETMQ_NAMESRV_ADDR").then(|| "wrong-fallback:9876".to_owned())
+        });
+        assert_eq!(rejected_alias.namesrv_addr, None);
     }
 
     #[test]

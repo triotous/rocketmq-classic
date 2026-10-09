@@ -11,6 +11,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.client.ClientConfig;
 
 /** Executes pinned ClientConfig methods and local SOCKS transport paths without a Broker. */
@@ -156,6 +157,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("serverBaselineContacted", false);
         fixture.put("identities", identities);
         fixture.put("defaults", defaults);
+        fixture.put("nameServerAddressCases", nameServerAddressCases());
         fixture.put("clone", clone);
         fixture.put("copyFields", clientConfigCopies());
         fixture.put("clientConfigToString", clientConfigToString());
@@ -201,6 +203,26 @@ public final class RuntimeConfigFixtures {
             Files.writeString(file, json);
         }
         System.out.println("ClientConfig identities/defaults/clone verified: " + identities.size());
+    }
+
+    private static Map<String, Object> nameServerAddressCases() {
+        Map<String, Object> cases = new TreeMap<>();
+        cases.put("systemPropertyKey", MixAll.NAMESRV_ADDR_PROPERTY);
+        cases.put("environmentKey", MixAll.NAMESRV_ADDR_ENV);
+        String previous = System.getProperty(MixAll.NAMESRV_ADDR_PROPERTY);
+        try {
+            System.setProperty(MixAll.NAMESRV_ADDR_PROPERTY, "system:9876");
+            cases.put("systemPropertyValue", new ClientConfig().getNamesrvAddr());
+            System.setProperty(MixAll.NAMESRV_ADDR_PROPERTY, "");
+            cases.put("explicitBlankPropertyValue", new ClientConfig().getNamesrvAddr());
+        } finally {
+            if (previous == null) {
+                System.clearProperty(MixAll.NAMESRV_ADDR_PROPERTY);
+            } else {
+                System.setProperty(MixAll.NAMESRV_ADDR_PROPERTY, previous);
+            }
+        }
+        return cases;
     }
 
     private static Map<String, Object> managerRemoval(ClientConfig config) throws Exception {
