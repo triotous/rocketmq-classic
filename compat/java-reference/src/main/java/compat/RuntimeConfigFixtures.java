@@ -1266,6 +1266,24 @@ public final class RuntimeConfigFixtures {
         allInputs.add("{true:{\"addr\":\"first\"},\"true\":{\"addr\":\"last\"}}");
         allInputs.add("{\"true\":{\"addr\":\"first\"},true:{\"addr\":\"last\"}}");
         allInputs.add("{null:{\"addr\":\"null-key\"},'null':{\"addr\":\"string-key\"}}");
+        allInputs.add("{-0x2a:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{+0b10:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{-0o10:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{.5F:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{-10:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{-0:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{-0.0:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{-.5:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{+.5:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{.5:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{1e+2:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{1e-2:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{1E7:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{1e-4F:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{-10L:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{+10L:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{1.0D:{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{1e+7D:{\"addr\":\"proxy:1080\"}}");
         for (int i = 0; i < allInputs.size(); i++) {
             String input = allInputs.get(i);
             ClientConfig config = new ClientConfig();
@@ -1288,7 +1306,7 @@ public final class RuntimeConfigFixtures {
                     @SuppressWarnings("unchecked")
                     Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig> routes =
                         (Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig>) proxyField.get(remoting);
-                    if (i >= allInputs.size() - 22) {
+                    if (i >= allInputs.size() - 40) {
                         List<String> routeKeys = new ArrayList<>(routes.keySet());
                         routeKeys.sort(java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder()));
                         item.put("routeKeys", routeKeys);

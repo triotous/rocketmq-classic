@@ -1781,8 +1781,8 @@ mod tests {
         let cases = fixture["socksConstruction"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            454,
-            "Java oracle includes 126 prior cases, 256 byte-range followers, 15 Unicode escape cases, five Unicode-whitespace cases, ten root-shape cases, ten grammar-edge cases, four nested bean-property cases, three EOF-comment boundaries, three rejected base-prefixed route keys, eight unquoted route-key forms, five numeric padding/suffix forms, four canonical numeric-key collision cases, and five cross-type key collision cases"
+            472,
+            "Java oracle includes 126 prior cases, 256 byte-range followers, 15 Unicode escape cases, five Unicode-whitespace cases, ten root-shape cases, ten grammar-edge cases, four nested bean-property cases, three EOF-comment boundaries, three rejected base-prefixed route keys, eight unquoted route-key forms, five numeric padding/suffix forms, four canonical numeric-key collision cases, five cross-type key collision cases, three rejected signed base-prefixed route keys, two rejected unsigned leading-dot route keys, and fourteen accepted signed/fraction/exponent/suffix route-key forms"
         );
         for escaped in 0..=0x7f {
             let mut expected = String::from("{\"10.0.0.0/8\":{\"addr\":\"A\\");
@@ -1868,7 +1868,7 @@ mod tests {
         ]) {
             assert_eq!(case["input"], expected);
         }
-        for (case, expected) in cases.iter().skip(cases.len() - 22).zip([
+        for (case, expected) in cases.iter().skip(cases.len() - 40).zip([
             "{default:{\"addr\":\"proxy:1080\"}}",
             "{10:{\"addr\":\"proxy:1080\"}}",
             "{true:{\"addr\":\"proxy:1080\"}}",
@@ -1891,6 +1891,24 @@ mod tests {
             "{true:{\"addr\":\"first\"},\"true\":{\"addr\":\"last\"}}",
             "{\"true\":{\"addr\":\"first\"},true:{\"addr\":\"last\"}}",
             "{null:{\"addr\":\"null-key\"},'null':{\"addr\":\"string-key\"}}",
+            "{-0x2a:{\"addr\":\"proxy:1080\"}}",
+            "{+0b10:{\"addr\":\"proxy:1080\"}}",
+            "{-0o10:{\"addr\":\"proxy:1080\"}}",
+            "{.5F:{\"addr\":\"proxy:1080\"}}",
+            "{-10:{\"addr\":\"proxy:1080\"}}",
+            "{-0:{\"addr\":\"proxy:1080\"}}",
+            "{-0.0:{\"addr\":\"proxy:1080\"}}",
+            "{-.5:{\"addr\":\"proxy:1080\"}}",
+            "{+.5:{\"addr\":\"proxy:1080\"}}",
+            "{.5:{\"addr\":\"proxy:1080\"}}",
+            "{1e+2:{\"addr\":\"proxy:1080\"}}",
+            "{1e-2:{\"addr\":\"proxy:1080\"}}",
+            "{1E7:{\"addr\":\"proxy:1080\"}}",
+            "{1e-4F:{\"addr\":\"proxy:1080\"}}",
+            "{-10L:{\"addr\":\"proxy:1080\"}}",
+            "{+10L:{\"addr\":\"proxy:1080\"}}",
+            "{1.0D:{\"addr\":\"proxy:1080\"}}",
+            "{1e+7D:{\"addr\":\"proxy:1080\"}}",
         ]) {
             assert_eq!(case["input"], expected);
         }
