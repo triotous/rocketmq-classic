@@ -116,6 +116,11 @@ impl CheckClientRequestBody {
         self.subscription_data.as_ref()
     }
 
+    /// Borrows the owned subscription data mutably for Java-compatible getter mutations.
+    pub fn get_subscription_data_mut(&mut self) -> Option<&mut super::heartbeat::SubscriptionData> {
+        self.subscription_data.as_mut()
+    }
+
     pub fn set_subscription_data(
         &mut self,
         subscription_data: Option<super::heartbeat::SubscriptionData>,
@@ -3561,6 +3566,28 @@ mod tests {
         );
         // Java returns the same mutable SubscriptionData object; Rust moves and lends the value.
         assert_eq!(check_case["getterReturnsAssignedSubscription"], true);
+        let subscription_mut = check.get_subscription_data_mut().unwrap();
+        subscription_mut.set_sub_version(43);
+        assert_eq!(
+            subscription_mut.get_sub_version() == 43,
+            check_case["externalMutationVisible"]
+        );
+        subscription_mut.set_sub_string(Some("orders*".into()));
+        assert_eq!(
+            subscription_mut.get_sub_string() == Some("orders*"),
+            check_case["getterMutationVisibleToAssignedSubscription"]
+        );
+        assert_eq!(
+            json!({
+                "topic": subscription_mut.get_topic(),
+                "subString": subscription_mut.get_sub_string(),
+                "subVersion": subscription_mut.get_sub_version(),
+                "classFilterMode": subscription_mut.is_class_filter_mode(),
+                "expressionType": subscription_mut.get_expression_type(),
+                "tagsSet": subscription_mut.get_tags_set(),
+            }),
+            check_case["mutatedSubscriptionData"]
+        );
         check.set_client_id(None);
         check.set_group(None);
         check.set_subscription_data(None);
