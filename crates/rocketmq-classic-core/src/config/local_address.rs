@@ -71,8 +71,34 @@ fn select(addresses: Vec<Address>) -> Option<Address> {
     }
 }
 
+#[cfg(target_os = "macos")]
+fn java_candidate_order(mut addresses: Vec<Address>) -> Vec<Address> {
+    // Pinned Java's NetworkUtil returns IPv4 candidates in the opposite order
+    // from macOS getifaddrs; preserve that order because its private-address
+    // fallback selects the last IPv4 candidate. IPv6 candidate order is kept.
+    let mut ipv4 = addresses
+        .iter()
+        .filter(|address| address.ip.is_ipv4())
+        .cloned()
+        .collect::<Vec<_>>();
+    ipv4.reverse();
+    for (address, replacement) in addresses
+        .iter_mut()
+        .filter(|address| address.ip.is_ipv4())
+        .zip(ipv4)
+    {
+        *address = replacement;
+    }
+    addresses
+}
+
+#[cfg(not(target_os = "macos"))]
+fn java_candidate_order(addresses: Vec<Address>) -> Vec<Address> {
+    addresses
+}
+
 pub(super) fn get() -> io::Result<String> {
-    resolve(interfaces(), local_host)
+    resolve(interfaces().map(java_candidate_order), local_host)
 }
 
 fn resolve(
@@ -389,6 +415,23 @@ mod tests {
                 scope: 7
             }),
             "[fe80:0:0:0:0:0:0:1%7]"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn java_candidate_order_reverses_only_macos_ipv4_candidates() {
+        assert_eq!(
+            java_candidate_order(vec![
+                address("10.10.10.111"),
+                address("fe80::1"),
+                address("192.168.139.3"),
+            ]),
+            vec![
+                address("192.168.139.3"),
+                address("fe80::1"),
+                address("10.10.10.111"),
+            ]
         );
     }
 }
