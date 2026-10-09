@@ -95,3 +95,13 @@
 - Updated ADR-0047/0048 and the Phase 6 API/config, runtime, requirement, and Java compatibility records. Current `fixtures/runtime/lookup.json` SHA-256: `4ac75c6dc196cbc010ebf80bb53c9074cbd844ce057bc80c298d03f31e7326f8`.
 - Full `cargo test --workspace --all-targets --locked` passed with loopback permission; strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios, fixture drift and Java/Rust cross-decodes), differential comparator self-test, manifest22 validation, `cargo fmt --all --check`, and `git diff --check` passed.
 - Broader Phase 6 source/API/input/reverse-export reconciliation remains open; the matrix stays PARTIAL and P6-V04 remains `PENDING_PHASE_19`. No plan files changed.
+
+
+## Java Long map-value coercion correction — 2026-10-09T16:50:18Z
+
+- Expanded the pinned Java 5.5.1 `ResetOffsetBody` and `GetConsumerStatusBody` decode/encode corpus to 40 and 69 cases. Fixture `fixtures/runtime/lookup.json` SHA-256: `c8abacef79c89afdc1a012f9c135bcf9265a52c3bd3b4d49874ca6b945368cb1`.
+- The direct oracle exposed Java `Long` conversion behavior for numeric strings, booleans, fractions, decimal overflow, exponent values, whitespace, empty strings, nulls, and overflowing integer tokens. Oracle expansion commits: `76cc4eb`, `c7e1e8c`; Rust implementation: `f6a75eb`.
+- Rust now preserves nullable `Long` map entries in both DTOs, parses raw JSON numeric tokens to retain Java's decimal-versus-exponent behavior, and shares the Java body encoder that skips null entries. Java encode omits decoded null offsets.
+- Updated ADR-0047/0048, the Java compatibility record, Phase 6 API/config map, requirement audit, and runtime inventory with the current behavior, case totals, fixture digest, and implementation commits.
+- Validation passed: `cargo test --workspace --all-targets --locked`; strict workspace Clippy with all targets/features and `-D warnings`; pinned offline Maven verify with fixture drift checks and Java/Rust cross-decodes; comparator self-test/manifest22; `cargo fmt --all --check`; `git diff --check`.
+- The requested Java source checkout at `/Users/nanashi07/Projects/3rd/rocketmq` remains unavailable in this environment; the new oracle uses pinned 5.5.1 artifacts. Phase 6 remains PARTIAL because the broader source/API/settings/input/reverse-export reconciliation is open. P6-V04 stays `PENDING_PHASE_19`.
