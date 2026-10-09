@@ -2071,6 +2071,11 @@ public final class RuntimeLookupFixtures {
         source.set(64);
         item.put("sliceSize", source.get(0, 65).size());
         item.put("emptySliceSize", source.get(3, 3).size());
+        java.util.BitSet narrow = new java.util.BitSet(1);
+        java.util.BitSet wide = new java.util.BitSet(128);
+        narrow.set(4);
+        wide.set(4);
+        item.put("equalWithDifferentCapacities", narrow.size() != wide.size() && narrow.equals(wide));
         return item;
     }
 
