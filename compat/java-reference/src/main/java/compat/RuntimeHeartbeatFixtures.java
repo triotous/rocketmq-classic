@@ -745,6 +745,10 @@ public final class RuntimeHeartbeatFixtures {
             "{\"subVersion\":0,\"tagsSet\":[\"tag\",\"tag\",7,\"7\",null,null]}"));
         cases.add(heartbeatDtoInputCase("subscription-invalid-code", "subscription",
             "{\"codeSet\":[\"not-an-integer\"],\"subVersion\":0}"));
+        cases.add(heartbeatDtoInputCase("subscription-code-set-null", "subscription",
+            "{\"subVersion\":0,\"codeSet\":null}"));
+        cases.add(heartbeatDtoInputCase("consumer-subscription-set-scalar-string", "consumer",
+            "{\"subscriptionDataSet\":\"topic\"}"));
         cases.add(heartbeatDtoInputCase("consumer-scalars", "consumer",
             "{\"groupName\":123,\"unitMode\":-1,\"subscriptionDataSet\":[{\"topic\":42,\"subVersion\":\"4\",\"classFilterMode\":1}]}"));
         cases.add(heartbeatDtoInputCase("consumer-unit-mode-other-number", "consumer",
