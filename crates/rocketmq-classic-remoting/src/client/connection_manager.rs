@@ -346,7 +346,27 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/address.json"))
                 .unwrap();
-        for case in fixture["clientAddressCases"].as_array().unwrap() {
+        let cases = fixture["clientAddressCases"].as_array().unwrap();
+        assert_eq!(cases.len(), 38);
+        for (case, expected) in cases.iter().skip(12).take(14).zip([
+            "127.0.0.1:+1",
+            "127.0.0.1:-0",
+            "127.0.0.1:+0001",
+            "127.0.0.1:00000",
+            "127.0.0.1:+١",
+            "127.0.0.1:1 ",
+            "127.0.0.1: 1",
+            "127.0.0.1:\t1",
+            "127.0.0.1:＋1",
+            "127.0.0.1:−1",
+            "127.0.0.1:00000000000000001",
+            "127.0.0.1:2147483647",
+            "127.0.0.1:-2147483648",
+            "127.0.0.1:-2147483649",
+        ]) {
+            assert_eq!(case["address"], expected);
+        }
+        for case in cases {
             let input = case["address"].as_str().unwrap();
             let java_host = case["host"].as_str().unwrap();
             let java_accepts = case["socketAddressAccepted"].as_bool().unwrap();
