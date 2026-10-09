@@ -1508,7 +1508,21 @@ mod tests {
     fn topic_broker_lookup_matches_invoked_java_candidates_and_failures() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/lookup.json")).unwrap();
-        for case in fixture["cases"].as_array().unwrap() {
+        let cases = fixture["cases"].as_array().unwrap();
+        assert_eq!(cases.len(), 11);
+        for required in [
+            "null-broker-id-single-address",
+            "null-broker-id-with-master",
+            "null-broker-id-with-slave",
+        ] {
+            let case = cases
+                .iter()
+                .find(|case| case["name"] == required)
+                .unwrap_or_else(|| panic!("missing Java broker lookup case {required}"));
+            assert_eq!(case["outcome"], "OK", "{required}");
+            assert!(case["input"]["brokerDatas"][0]["brokerAddrs"]["null"].is_string());
+        }
+        for case in cases {
             let mut snapshot = RouteSnapshot::default();
             if !case["input"].is_null() {
                 // The Java lookup oracle reflects directly into its raw route
