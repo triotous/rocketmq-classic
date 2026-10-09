@@ -77,6 +77,10 @@ public final class Main {
     }
 
     public static void main(String[] args) throws Exception {
+        if (args.length > 0 && "client-config-tls-mode-probe".equals(args[0])) {
+            ClientConfigTlsModeProbe.main(Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "runtime-hook-fixtures".equals(args[0])) {
             RuntimeHookFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;

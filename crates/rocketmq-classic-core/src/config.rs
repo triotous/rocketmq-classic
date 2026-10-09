@@ -818,16 +818,33 @@ mod tests {
     }
 
     #[test]
-    fn tls_enable_inherits_enforcing_mode_unless_explicitly_overridden() {
+    fn client_tls_enable_uses_global_enable_not_server_mode() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/runtime/client-config-tls.json"
+        ))
+        .unwrap();
+        assert_eq!(fixture["systemProperties"]["tls.server.mode"], "enforcing");
+        assert_eq!(fixture["tlsEnable"], false);
+        assert_eq!(fixture["tlsMode"], "ENFORCING");
+        assert_eq!(fixture["clientConfigUseTLS"], false);
+        assert_eq!(fixture["nettyClientConfigDefaultUseTLS"], true);
+        assert_eq!(fixture["runtimeCopiedUseTLS"], false);
+
         let config = ClientConfig::with_properties("ip".into(), |key| {
             (key == "tls.server.mode").then(|| "enforcing".into())
         });
-        assert!(config.use_tls);
+        assert_eq!(config.use_tls, fixture["clientConfigUseTLS"]);
         let config = ClientConfig::with_properties("ip".into(), |key| match key {
             "tls.server.mode" => Some("enforcing".into()),
             "tls.enable" => Some("false".into()),
             _ => None,
         });
         assert!(!config.use_tls);
+        let config = ClientConfig::with_properties("ip".into(), |key| match key {
+            "tls.server.mode" => Some("disabled".into()),
+            "tls.enable" => Some("true".into()),
+            _ => None,
+        });
+        assert!(config.use_tls);
     }
 }

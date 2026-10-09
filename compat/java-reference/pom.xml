@@ -91,6 +91,20 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-client-config-tls-mode-fixture</id>
+            <phase>verify</phase>
+            <goals><goal>exec</goal></goals>
+            <configuration>
+              <executable>${java.home}/bin/java</executable>
+              <arguments>
+                <argument>-cp</argument><classpath/>
+                <argument>compat.ClientConfigTlsModeProbe</argument>
+                <argument>${project.basedir}/../../fixtures/runtime/client-config-tls.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-runtime-hook-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>
