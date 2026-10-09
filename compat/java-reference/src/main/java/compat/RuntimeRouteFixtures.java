@@ -2236,6 +2236,57 @@ public final class RuntimeRouteFixtures {
         return item;
     }
 
+    private static List<Object> nullArgumentConversions(Map<String, Object> input,
+        Map<String, Object> staticInput) {
+        List<Object> cases = new ArrayList<>();
+        for (String method : new String[] {"publish", "subscribe"}) {
+            for (String shape : new String[] {"null-topic", "null-route", "null-topic-and-route"}) {
+                boolean[] staticVariants = shape.equals("null-topic")
+                    ? new boolean[] {false, true}
+                    : new boolean[] {false};
+                for (boolean staticRoute : staticVariants) {
+                    String topic = shape.equals("null-topic") || shape.equals("null-topic-and-route")
+                        ? null
+                        : "topic";
+                    boolean routeIsNull = shape.equals("null-route") || shape.equals("null-topic-and-route");
+                    Map<String, Object> routeInput = staticRoute ? staticInput : input;
+                    TopicRouteData route = routeIsNull
+                        ? null
+                        : com.alibaba.fastjson2.JSON.parseObject(
+                            com.alibaba.fastjson2.JSON.toJSONString(routeInput,
+                                com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue), TopicRouteData.class);
+                    Map<String, Object> item = new TreeMap<>();
+                    item.put("id", method + "-" + shape + (staticRoute ? "-static" : ""));
+                    item.put("method", method);
+                    item.put("topic", topic);
+                    item.put("routeIsNull", route == null);
+                    try {
+                        if (method.equals("publish")) {
+                            org.apache.rocketmq.client.impl.producer.TopicPublishInfo publish =
+                                MQClientInstance.topicRouteData2TopicPublishInfo(topic, route);
+                            item.put("publish", publish.getMessageQueueList());
+                            item.put("ordered", publish.isOrderTopic());
+                        } else {
+                            List<MessageQueue> subscribe = new ArrayList<>(
+                                MQClientInstance.topicRouteData2TopicSubscribeInfo(topic, route));
+                            subscribe.sort(Comparator.comparing(MessageQueue::getTopic,
+                                    Comparator.nullsFirst(Comparator.naturalOrder()))
+                                .thenComparing(MessageQueue::getBrokerName,
+                                    Comparator.nullsFirst(Comparator.naturalOrder()))
+                                .thenComparingInt(MessageQueue::getQueueId));
+                            item.put("subscribe", subscribe);
+                        }
+                        item.put("outcome", "OK");
+                    } catch (RuntimeException error) {
+                        item.put("outcome", error.getClass().getSimpleName());
+                    }
+                    cases.add(item);
+                }
+            }
+        }
+        return cases;
+    }
+
     public static void main(String[] args) throws Exception {
         String ordinary = "{\"queueDatas\":[{\"brokerName\":\"broker\",\"readQueueNums\":3,\"writeQueueNums\":2,\"perm\":6,\"topicSysFlag\":0}],"
             + "\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master:10911\",\"2\":\"slave:10911\"}}],\"filterServerTable\":{}}";
@@ -2324,6 +2375,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("entrypoint", "MessageQueue.equals/hashCode/toString/compareTo; BrokerData.equals/hashCode; MQClientInstance.topicRouteData2TopicPublishInfo/topicRouteData2TopicSubscribeInfo/updateTopicRouteInfoFromNameServer/getTopicRouteTable/getAnExistTopicRouteData/queryTopicRouteData/cleanOfflineBroker/findBrokerAddressInPublish/findBrokerAddressInAdmin/findBrokerAddressInSubscribe/findBrokerAddrByTopic; TopicPublishInfo.haveTopicRouterInfo/ok/getMessageQueueList/getTopicRouteData; ConcurrentMap put/putIfAbsent/replace/remove/clear; TopicRouteData inherited RemotingSerializable encode/toJson/decode/decodeList/fromJson; ClientMetadata.topicRouteData2EndpointsForStaticTopic; MixAll.brokerVIPChannel; Integer.parseInt/Character.digit");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
+        fixture.put("nullArgumentConversions", nullArgumentConversions(inputs.get(0), staticInputs.get(0)));
         fixture.put("topicPublishInfoPublication", runtimeTopicPublishInfoPublication());
         fixture.put("vip", vip);
         fixture.put("vipCases", vipCases);
