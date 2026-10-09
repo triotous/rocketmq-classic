@@ -3362,6 +3362,15 @@ mod tests {
             case["values"]
         );
         assert_eq!(ack.to_string(), case["toString"].as_str().unwrap());
+        assert_eq!(case["bitSetGetterReturnsAssignedObject"], true);
+        assert_eq!(case["bitSetMutationVisibleThroughGetter"], true);
+        assert_eq!(case["bitSetMutationVisibleThroughSetterObject"], true);
+        let bits = ack.get_bit_set_mut().unwrap();
+        bits[0] |= 1 << 5;
+        assert_eq!(
+            serde_json::to_value(&ack).unwrap()["b"],
+            case["mutatedBitSetBase64"]
+        );
 
         let mut body = BatchAckMessageRequestBody::default();
         assert_eq!(

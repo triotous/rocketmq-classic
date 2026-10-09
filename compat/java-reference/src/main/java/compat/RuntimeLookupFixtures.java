@@ -1859,6 +1859,12 @@ public final class RuntimeLookupFixtures {
             ack.getBitSet().toByteArray()));
         item.put("values", values);
         item.put("toString", ack.toString());
+        item.put("bitSetGetterReturnsAssignedObject", ack.getBitSet() == bits);
+        bits.set(5);
+        item.put("bitSetMutationVisibleThroughGetter", ack.getBitSet().get(5));
+        item.put("bitSetMutationVisibleThroughSetterObject", bits.get(5));
+        item.put("mutatedBitSetBase64", java.util.Base64.getEncoder().encodeToString(
+            ack.getBitSet().toByteArray()));
 
         org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody body =
             new org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody();
