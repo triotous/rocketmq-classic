@@ -188,6 +188,10 @@ public final class RuntimeLookupFixtures {
         String pop = "{\"messageQueue\":{\"topic\":\"topic\",\"brokerName\":\"broker\",\"queueId\":2},"
             + "\"mode\":\"POP\"}";
         cases.add(assignmentBodyCase("same-queue-different-mode", "[" + pull + "," + pop + "]", true));
+        cases.add(assignmentBodyRawCase("duplicate-root-field-last-wins",
+            "{\"messageQueueAssignments\":[{}],\"messageQueueAssignments\":[]}"));
+        cases.add(assignmentBodyCase("duplicate-nested-mode-last-wins",
+            "[{\"messageQueue\":{\"topic\":\"topic\"},\"mode\":\"PULL\",\"mode\":\"POP\"}]", true));
         return cases;
     }
 
@@ -425,9 +429,14 @@ public final class RuntimeLookupFixtures {
 
     private static Map<String, Object> assignmentBodyCase(String name, String rawValue, boolean includeField) {
         String body = includeField ? "{\"messageQueueAssignments\":" + rawValue + "}" : "{}";
+        return assignmentBodyRawCase(name, body);
+    }
+
+    private static Map<String, Object> assignmentBodyRawCase(String name, String body) {
         Map<String, Object> item = new TreeMap<>();
         item.put("name", name);
         item.put("input", com.alibaba.fastjson2.JSON.parseObject(body));
+        item.put("rawInput", body);
         try {
             org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody decoded =
                 org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody.decode(
