@@ -191,7 +191,8 @@ public final class RuntimeLookupFixtures {
         cases.add(assignmentBodyRawCase("duplicate-root-field-last-wins",
             "{\"messageQueueAssignments\":[{}],\"messageQueueAssignments\":[]}"));
         cases.add(assignmentBodyCase("duplicate-nested-mode-last-wins",
-            "[{\"messageQueue\":{\"topic\":\"topic\"},\"mode\":\"PULL\",\"mode\":\"POP\"}]", true));
+            "[{\"messageQueue\":{\"topic\":\"topic\",\"brokerName\":\"broker\",\"queueId\":2},"
+                + "\"mode\":\"PULL\",\"mode\":\"POP\"}]", true));
         return cases;
     }
 
