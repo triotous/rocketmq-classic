@@ -1414,6 +1414,24 @@ impl<'de> Deserialize<'de> for BatchAckMessageRequestBody {
     }
 }
 
+impl BatchAckMessageRequestBody {
+    pub fn get_broker_name(&self) -> Option<&str> {
+        self.broker_name.as_deref()
+    }
+
+    pub fn set_broker_name(&mut self, broker_name: Option<String>) {
+        self.broker_name = broker_name;
+    }
+
+    pub fn get_acks(&self) -> Option<&[Option<BatchAck>]> {
+        self.acks.as_deref()
+    }
+
+    pub fn set_acks(&mut self, acks: Option<Vec<Option<BatchAck>>>) {
+        self.acks = acks;
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
 pub struct BatchAck {
     #[serde(
@@ -1525,6 +1543,114 @@ impl<'de> Deserialize<'de> for BatchAck {
             invisible_time: fields.invisible_time,
             bit_set: fields.bit_set,
         })
+    }
+}
+
+impl BatchAck {
+    pub fn get_consumer_group(&self) -> Option<&str> {
+        self.consumer_group.as_deref()
+    }
+
+    pub fn set_consumer_group(&mut self, consumer_group: Option<String>) {
+        self.consumer_group = consumer_group;
+    }
+
+    pub fn get_topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, topic: Option<String>) {
+        self.topic = topic;
+    }
+
+    pub fn get_retry(&self) -> Option<&str> {
+        self.retry.as_deref()
+    }
+
+    pub fn set_retry(&mut self, retry: Option<String>) {
+        self.retry = retry;
+    }
+
+    pub fn get_start_offset(&self) -> i64 {
+        self.start_offset
+    }
+
+    pub fn set_start_offset(&mut self, start_offset: i64) {
+        self.start_offset = start_offset;
+    }
+
+    pub fn get_queue_id(&self) -> i32 {
+        self.queue_id
+    }
+
+    pub fn set_queue_id(&mut self, queue_id: i32) {
+        self.queue_id = queue_id;
+    }
+
+    pub fn get_revive_queue_id(&self) -> i32 {
+        self.revive_queue_id
+    }
+
+    pub fn set_revive_queue_id(&mut self, revive_queue_id: i32) {
+        self.revive_queue_id = revive_queue_id;
+    }
+
+    pub fn get_pop_time(&self) -> i64 {
+        self.pop_time
+    }
+
+    pub fn set_pop_time(&mut self, pop_time: i64) {
+        self.pop_time = pop_time;
+    }
+
+    pub fn get_invisible_time(&self) -> i64 {
+        self.invisible_time
+    }
+
+    pub fn set_invisible_time(&mut self, invisible_time: i64) {
+        self.invisible_time = invisible_time;
+    }
+
+    pub fn get_bit_set(&self) -> Option<&[u8]> {
+        self.bit_set.as_deref()
+    }
+
+    pub fn set_bit_set(&mut self, bit_set: Option<Vec<u8>>) {
+        self.bit_set = bit_set;
+    }
+}
+
+impl std::fmt::Display for BatchAck {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let consumer_group = self.consumer_group.as_deref().unwrap_or("null");
+        let topic = self.topic.as_deref().unwrap_or("null");
+        let retry = self.retry.as_deref().unwrap_or("null");
+        let bit_set = match &self.bit_set {
+            None => "null".to_owned(),
+            Some(bytes) => {
+                let indices = bytes
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(byte_index, byte)| {
+                        (0..8)
+                            .filter(move |&bit| byte & (1 << bit) != 0)
+                            .map(move |bit| byte_index.saturating_mul(8).saturating_add(bit))
+                    })
+                    .map(|index| index.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{{{indices}}}")
+            }
+        };
+        write!(
+            formatter,
+            "BatchAck{{consumerGroup='{consumer_group}', topic='{topic}', retry='{retry}', startOffset={}, queueId={}, reviveQueueId={}, popTime={}, invisibleTime={}, bitSet={bit_set}}}",
+            self.start_offset,
+            self.queue_id,
+            self.revive_queue_id,
+            self.pop_time,
+            self.invisible_time
+        )
     }
 }
 
@@ -2785,6 +2911,71 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn batch_ack_public_methods_match_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let case = &fixture["batchAckApiCase"];
+
+        let mut ack = BatchAck::default();
+        assert_eq!(
+            json!({
+                "consumerGroup": ack.get_consumer_group(),
+                "topic": ack.get_topic(),
+                "retry": ack.get_retry(),
+                "startOffset": ack.get_start_offset(),
+                "queueId": ack.get_queue_id(),
+                "reviveQueueId": ack.get_revive_queue_id(),
+                "popTime": ack.get_pop_time(),
+                "invisibleTime": ack.get_invisible_time(),
+                "bitSet": ack.get_bit_set(),
+            }),
+            case["defaults"]
+        );
+
+        ack.set_consumer_group(Some("workers".into()));
+        ack.set_topic(Some("orders".into()));
+        ack.set_retry(Some("0".into()));
+        ack.set_start_offset(100);
+        ack.set_queue_id(1);
+        ack.set_revive_queue_id(2);
+        ack.set_pop_time(10);
+        ack.set_invisible_time(20);
+        ack.set_bit_set(Some(vec![0b0000_0101]));
+        let bit_set_base64 = serde_json::to_value(&ack).unwrap()["b"].clone();
+        assert_eq!(
+            json!({
+                "consumerGroup": ack.get_consumer_group(),
+                "topic": ack.get_topic(),
+                "retry": ack.get_retry(),
+                "startOffset": ack.get_start_offset(),
+                "queueId": ack.get_queue_id(),
+                "reviveQueueId": ack.get_revive_queue_id(),
+                "popTime": ack.get_pop_time(),
+                "invisibleTime": ack.get_invisible_time(),
+                "bitSetBase64": bit_set_base64,
+            }),
+            case["values"]
+        );
+        assert_eq!(ack.to_string(), case["toString"].as_str().unwrap());
+
+        let mut body = BatchAckMessageRequestBody::default();
+        assert_eq!(
+            json!([body.get_broker_name(), body.get_acks()]),
+            case["bodyDefaults"]
+        );
+        body.set_broker_name(Some("broker-a".into()));
+        body.set_acks(Some(vec![Some(ack.clone())]));
+        assert_eq!(body.get_broker_name(), case["bodyBrokerName"].as_str());
+        assert_eq!(body.get_acks().unwrap().len(), case["bodyAckCount"]);
+        assert_eq!(body.get_acks().unwrap()[0], Some(ack));
+        // Java retains the same mutable List; this Rust DTO owns its Vec and lends a slice.
+        assert_eq!(case["bodyReturnsAssignedList"], true);
+        body.set_acks(None);
+        assert!(body.get_acks().is_none());
+        assert_eq!(case["bodyNullAcks"], true);
     }
 
     #[test]
