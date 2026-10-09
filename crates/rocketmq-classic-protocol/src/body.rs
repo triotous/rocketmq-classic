@@ -2358,6 +2358,51 @@ mod tests {
     }
 
     #[test]
+    fn lite_subscription_fastjson_inputs_match_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let cases = fixture["liteSubscriptionInputCases"].as_array().unwrap();
+        assert_eq!(cases.len(), 16);
+        for case in cases {
+            let decoded =
+                serde_json::from_str::<LiteSubscription>(case["rawInput"].as_str().unwrap());
+            if case["outcome"] == "REJECTED" {
+                assert!(decoded.is_err(), "{}: {decoded:?}", case["name"]);
+                continue;
+            }
+
+            let decoded = decoded.unwrap_or_else(|error| {
+                panic!("{}: {error}", case["name"]);
+            });
+            assert_eq!(
+                serde_json::to_value(decoded.group).unwrap(),
+                case["group"],
+                "{}",
+                case["name"]
+            );
+            assert_eq!(
+                serde_json::to_value(decoded.topic).unwrap(),
+                case["topic"],
+                "{}",
+                case["name"]
+            );
+            let lite_topics = decoded.lite_topic_set.into_iter().collect::<Vec<_>>();
+            assert_eq!(
+                serde_json::to_value(lite_topics).unwrap(),
+                case["liteTopicSet"],
+                "{}",
+                case["name"]
+            );
+            if let Some(update_time) = case["updateTime"].as_i64() {
+                assert_eq!(decoded.update_time, update_time, "{}", case["name"]);
+            }
+            if case["updateTimeWasInitialized"] == true {
+                assert!(decoded.update_time > 0, "{}", case["name"]);
+            }
+        }
+    }
+
+    #[test]
     fn lite_subscription_root_shapes_match_invoked_java_fastjson() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();

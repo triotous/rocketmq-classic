@@ -60,6 +60,7 @@ public final class RuntimeLookupFixtures {
         fixture.put("liteSubscriptionFieldCases", liteSubscriptionFieldCases());
         fixture.put("liteSubscriptionIdentityCases", liteSubscriptionIdentityCases());
         fixture.put("liteSubscriptionApiCases", liteSubscriptionApiCases());
+        fixture.put("liteSubscriptionInputCases", liteSubscriptionInputCases());
         fixture.put("liteSubscriptionRootCases", liteSubscriptionRootCases());
         fixture.put("liteSubscriptionControlFieldCases", liteSubscriptionControlFieldCases());
         fixture.put("liteSubscriptionElementCases", liteSubscriptionElementCases());
@@ -411,6 +412,52 @@ public final class RuntimeLookupFixtures {
         subscription.setUpdateTime(7L);
         item.put("toString", subscription.toString());
         cases.add(item);
+        return cases;
+    }
+
+    private static List<Object> liteSubscriptionInputCases() {
+        List<Object> cases = new ArrayList<>();
+        String[][] inputs = {
+            {"missing-set", "{}"},
+            {"null-set", "{\"liteTopicSet\":null}"},
+            {"empty-array", "{\"liteTopicSet\":[]}"},
+            {"string-singleton", "{\"liteTopicSet\":\"topic\"}"},
+            {"empty-string", "{\"liteTopicSet\":\"\"}"},
+            {"object-singleton", "{\"liteTopicSet\":{}}"},
+            {"array-string-coercion", "{\"liteTopicSet\":[\"x\",1,true]}"},
+            {"duplicate-set-members", "{\"liteTopicSet\":[\"x\",\"x\"]}"},
+            {"null-member", "{\"liteTopicSet\":[null]}"},
+            {"number-scalar", "{\"liteTopicSet\":7}"},
+            {"boolean-scalar", "{\"liteTopicSet\":true}"},
+            {"field-coercion", "{\"group\":7,\"topic\":true,\"updateTime\":\"9\",\"liteTopicSet\":\"topic\"}"},
+            {"null-update-time", "{\"updateTime\":null}"},
+            {"duplicate-fields", "{\"group\":\"first\",\"group\":\"last\",\"updateTime\":1,\"updateTime\":2}"},
+            {"duplicate-set-adds", "{\"liteTopicSet\":[\"a\"],\"liteTopicSet\":[\"b\"]}"},
+            {"unknown-client-id", "{\"clientId\":\"extra\"}"}
+        };
+        for (String[] input : inputs) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("name", input[0]);
+            item.put("rawInput", input[1]);
+            try {
+                org.apache.rocketmq.common.lite.LiteSubscription decoded =
+                    com.alibaba.fastjson2.JSON.parseObject(input[1],
+                        org.apache.rocketmq.common.lite.LiteSubscription.class);
+                item.put("outcome", "ACCEPTED");
+                item.put("group", decoded.getGroup());
+                item.put("topic", decoded.getTopic());
+                item.put("liteTopicSet", new java.util.TreeSet<>(decoded.getLiteTopicSet()));
+                if (input[1].contains("\"updateTime\"")) {
+                    item.put("updateTime", decoded.getUpdateTime());
+                } else {
+                    item.put("updateTimeWasInitialized", decoded.getUpdateTime() > 0L);
+                }
+            } catch (RuntimeException error) {
+                item.put("outcome", "REJECTED");
+                item.put("error", error.getClass().getSimpleName());
+            }
+            cases.add(item);
+        }
         return cases;
     }
 
