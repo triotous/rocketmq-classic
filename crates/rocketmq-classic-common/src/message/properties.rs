@@ -65,4 +65,20 @@ mod tests {
         assert_eq!(decoded.get("EMPTY").map(String::as_str), Some(""));
         assert!(!decoded.contains_key("broken"));
     }
+
+    #[test]
+    fn property_records_match_pinned_java_message_decoder_oracle() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/inbound-routing.json"
+        ))
+        .unwrap();
+        for case in fixture["propertyCases"].as_array().unwrap() {
+            let input = case["input"].as_str().unwrap();
+            assert_eq!(
+                serde_json::to_value(decode_properties(input)).unwrap(),
+                case["properties"],
+                "input {input:?}"
+            );
+        }
+    }
 }

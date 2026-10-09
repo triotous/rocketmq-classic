@@ -39,9 +39,27 @@ public final class RuntimeInboundRoutingFixtures {
             item.put("group",group); item.put("body",Base64.getEncoder().encodeToString(body));
             item.put("properties",MessageDecoder.decodeProperties(ByteBuffer.wrap(body))); cases.add(item);
         }
+        List<Object> propertyCases = new ArrayList<>();
+        String[] propertyInputs = {
+            "PGROUP\u0001\u0002",
+            "PGROUP\u0001producer-a\u0002",
+            "AB\u0001\u0002",
+            "AB\u0001",
+            "A\u0001x\u0002A\u0001\u0002",
+            "A\u0001x\u0002A\u0001y\u0002",
+            "A\u0001v\u0001tail\u0002",
+            "\u0001value\u0002",
+            "😀\u0001x\u0002"
+        };
+        for (String input : propertyInputs) {
+            Map<String,Object> item = new TreeMap<>();
+            item.put("input", input);
+            item.put("properties", MessageDecoder.string2messageProperties(input));
+            propertyCases.add(item);
+        }
         Map<String,Object> fixture = new TreeMap<>(); fixture.put("client","org.apache.rocketmq:rocketmq-client:5.5.1");
-        fixture.put("sourceCommit","efa1be59d6fc747ad220f036c86030f05f0419f9"); fixture.put("entrypoint","MessageDecoder.encode/decodeProperties; MessageVersion");
-        fixture.put("serverBaselineContacted",false); fixture.put("cases",cases);
+        fixture.put("sourceCommit","efa1be59d6fc747ad220f036c86030f05f0419f9"); fixture.put("entrypoint","MessageDecoder.encode/decodeProperties/string2messageProperties; MessageVersion");
+        fixture.put("serverBaselineContacted",false); fixture.put("cases",cases); fixture.put("propertyCases",propertyCases);
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture) + "\n"; Path file = Path.of(args[0]);
         if (args.length > 1 && "--verify".equals(args[1])) {
             if (!json.equals(Files.readString(file))) throw new IllegalStateException("fixture drift: " + file);
