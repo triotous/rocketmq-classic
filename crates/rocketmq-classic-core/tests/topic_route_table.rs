@@ -1,3 +1,4 @@
+use rocketmq_classic_common::message::MessageQueue;
 use rocketmq_classic_core::route::{TopicRouteDataHandle, TopicSnapshot};
 use rocketmq_classic_core::{config::ClientConfig, runtime::ClientRuntimeManager};
 use rocketmq_classic_protocol::route::TopicRouteData;
@@ -39,6 +40,48 @@ fn public_topic_snapshot_factory_matches_invoked_java_route_conversions() {
             );
         } else {
             assert!(TopicSnapshot::from_route_data("topic", &route).is_err());
+        }
+    }
+}
+
+#[test]
+fn public_nullable_route_conversion_arguments_match_invoked_java() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/route.json")).unwrap();
+    let cases = fixture["nullArgumentConversions"].as_array().unwrap();
+    assert_eq!(cases.len(), 8);
+
+    for case in cases {
+        let route = if case["routeIsNull"].as_bool().unwrap() {
+            None
+        } else {
+            Some(serde_json::from_value::<TopicRouteData>(case["routeInput"].clone()).unwrap())
+        };
+        let result =
+            TopicSnapshot::from_nullable_route_data(case["topic"].as_str(), route.as_ref());
+        if case["outcome"] == "OK" {
+            let snapshot = result.unwrap();
+            match case["method"].as_str().unwrap() {
+                "publish" => {
+                    let expected: Vec<MessageQueue> =
+                        serde_json::from_value(case["publish"].clone()).unwrap();
+                    assert_eq!(snapshot.publish_queues, expected, "{}", case["id"]);
+                    assert_eq!(snapshot.order_topic, case["ordered"].as_bool().unwrap());
+                }
+                "subscribe" => {
+                    let expected: Vec<MessageQueue> =
+                        serde_json::from_value(case["subscribe"].clone()).unwrap();
+                    assert_eq!(
+                        snapshot.subscribe_queues.into_iter().collect::<Vec<_>>(),
+                        expected,
+                        "{}",
+                        case["id"]
+                    );
+                }
+                other => panic!("unknown Java route converter {other}"),
+            }
+        } else {
+            assert!(result.is_err(), "{}", case["id"]);
         }
     }
 }

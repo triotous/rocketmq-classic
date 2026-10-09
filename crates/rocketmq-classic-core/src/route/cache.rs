@@ -27,6 +27,15 @@ impl TopicSnapshot {
     /// Java's `MQClientInstance`. Invalid Java route states return a typed
     /// error before any runtime cache is mutated.
     pub fn from_route_data(topic: &str, route: &TopicRouteData) -> Result<Self, RuntimeError> {
+        Self::from_nullable_route_data(Some(topic), Some(route))
+    }
+
+    /// Converts nullable Java route-converter arguments. A null topic is
+    /// retained in the generated queues; a null route returns a typed error.
+    pub fn from_nullable_route_data(
+        topic: Option<&str>,
+        route: Option<&TopicRouteData>,
+    ) -> Result<Self, RuntimeError> {
         convert_topic_route_data(topic, route)
     }
 }
@@ -409,9 +418,11 @@ impl RouteCache {
 }
 
 fn convert_topic_route_data(
-    topic: &str,
-    route: &TopicRouteData,
+    topic: Option<&str>,
+    route: Option<&TopicRouteData>,
 ) -> Result<TopicSnapshot, RuntimeError> {
+    let route = route.ok_or(RuntimeError::InvalidRoute("null topic route data"))?;
+    let queue_topic = topic.unwrap_or_default();
     // Java's brokerAddrTable is a ConcurrentHashMap: publishing a null
     // address map fails, it is not a valid empty Broker. Validate before
     // any conversion/publication to preserve the coherent native snapshot.
@@ -531,19 +542,40 @@ fn convert_topic_route_data(
 
     // Raw order presence controls branch selection, even when a separator-
     // only Java split normalizes to an empty conversion string.
-    validate_conversion_size(topic, route)?;
+    validate_conversion_size(queue_topic, route)?;
+    let mut publish_queues = if route
+        .order_topic_conf
+        .as_deref()
+        .is_some_and(|value| !value.is_empty() && value.trim_end_matches(';').is_empty())
+    {
+        Vec::new()
+    } else {
+        conversion_route.publish_queues(queue_topic)
+    };
+    for queue in &mut publish_queues {
+        queue.set_topic(topic.map(str::to_owned));
+    }
+    let subscribe_queues: Vec<MessageQueue> = route
+        .subscribe_queues(queue_topic)
+        .into_iter()
+        .map(|mut queue| {
+            queue.set_topic(topic.map(str::to_owned));
+            queue
+        })
+        .collect();
+    let endpoints = route
+        .static_queue_endpoints(queue_topic)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(mut queue, endpoint)| {
+            queue.set_topic(topic.map(str::to_owned));
+            (queue, endpoint)
+        })
+        .collect();
     Ok(TopicSnapshot {
-        publish_queues: if route
-            .order_topic_conf
-            .as_deref()
-            .is_some_and(|value| !value.is_empty() && value.trim_end_matches(';').is_empty())
-        {
-            Vec::new()
-        } else {
-            conversion_route.publish_queues(topic)
-        },
-        subscribe_queues: route.subscribe_queues(topic).into_iter().collect(),
-        endpoints: route.static_queue_endpoints(topic).unwrap_or_default(),
+        publish_queues,
+        subscribe_queues: subscribe_queues.into_iter().collect(),
+        endpoints,
         order_topic: route
             .order_topic_conf
             .as_ref()
