@@ -2,6 +2,10 @@
 
 Status: Accepted
 
+## Root-map object-reference continuation
+
+Three actual Java 5.5.1 cases cover a quoted root-key reference, a chained reference, and an unresolved target. The constructor retains the referenced `SocksProxyConfig` object; the private `NettyRemotingClient.getProxy` oracle selects the referencing CIDR with the target address and selects no proxy for an unresolved target. Java getter observations also preserve target username/password. The native parser recognizes root-key JSONPath forms `$.key`, `$['key']`, and `$["key"]`, resolves chains, and materializes the target address/credentials as an owned private route value. This keeps the effective selected proxy the same while using Rust value ownership. The red differential first failed because the referenced route lost its address. Oracle/test `80ba235d`; implementation `9cf5a8fb`; current `client-config.json` SHA-256 `0cafefb33a4611746f78005582a3394e7a6de8818932ea3d9d947e99d3d1eb5e`; constructor corpus 495 cases. Other Fastjson reference forms and grammar remain open.
+
 ## EOF comment boundary continuation
 
 Three direct pinned Java 5.5.1 constructor cases establish Fastjson's EOF line-comment boundary: an EOF comment after a complete nested proxy route permits the root object to end implicitly, while EOF inside an unfinished route object or array rejects. The native `recover_fastjson_eof_line_comment` behavior already matches these cases. Oracle/test commit `b468c58`; the SOCKS constructor corpus has 429 cases at `client-config.json` SHA-256 `1f25f9939e05b869005252f52fa9bb65510486e8f3caa74d51559c64ec91409b`. Focused differential and pinned Java fixture generation pass; no production change was required. This closes only this EOF boundary; broader Fastjson/source reconciliation remains open.

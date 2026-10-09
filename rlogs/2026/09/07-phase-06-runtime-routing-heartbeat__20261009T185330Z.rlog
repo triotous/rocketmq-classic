@@ -1,0 +1,8 @@
+## Fastjson SOCKS root-map object references — 2026-10-09T18:53:30Z
+
+- Direct pinned RocketMQ 5.5.1 construction and `NettyRemotingClient.getProxy` oracle cases established route `$ref` behavior: a reference resolves to the same `SocksProxyConfig` object, chained references retain address and credentials, and unresolved references select no proxy.
+- Added two resolved-reference cases plus one unresolved-reference case to the 495-case constructor corpus, with two actual private proxy-selection cases. The initial native differential failed because the referenced route had no address.
+- Native parsing now resolves simple and quoted root-key JSONPath references and chains into equivalent owned proxy values; CIDR matching and unresolved direct selection match Java. Red oracle commit `80ba235d`; implementation commit `9cf5a8fb`.
+- Current `fixtures/runtime/client-config.json` SHA-256: `0cafefb33a4611746f78005582a3394e7a6de8818932ea3d9d947e99d3d1eb5e`.
+- Focused reference parse/selection tests pass. Full `cargo test --workspace --all-targets --locked`, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios, Java fixture drift and cross-decodes), differential comparator self-test and manifest22 validation, `cargo fmt --all -- --check`, and `git diff --check` pass.
+- Updated ADR-0038 and the Phase 6 API, requirement, Java compatibility, and runtime inventory records. Additional Fastjson grammar forms, source/input reconciliation, non-macOS interface enumeration and a real IPv6-only host remain open. Phase 6 remains PARTIAL; P6-V04 stays `PENDING_PHASE_19`.
