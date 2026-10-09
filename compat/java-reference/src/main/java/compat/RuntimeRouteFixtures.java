@@ -663,6 +663,16 @@ public final class RuntimeRouteFixtures {
             "{\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":9223372036854775807.123456789012345678901,\"1\":1e2}}"));
         cases.add(routeDtoInputCase("filter-server-high-precision-number-strings", "topicRouteData",
             "{\"filterServerTable\":{\"broker\":[9223372036854775807.123456789012345678901,1e2]}}"));
+        String[][] nestedMemberShapes = {
+            {"null", "null"}, {"string", "\"value\""}, {"integer", "7"},
+            {"fraction", "1.5"}, {"boolean", "true"}, {"array", "[]"}, {"object", "{}"}
+        };
+        for (String[] shape : nestedMemberShapes) {
+            cases.add(routeDtoInputCase("broker-address-map-value-" + shape[0], "brokerData",
+                "{\"brokerAddrs\":{\"0\":" + shape[1] + "}}"));
+            cases.add(routeDtoInputCase("filter-server-list-member-" + shape[0], "topicRouteData",
+                "{\"filterServerTable\":{\"broker\":[" + shape[1] + "]}}"));
+        }
         cases.add(routeDtoInputCase("queue-unicode-decimal-string", "queueData",
             "{\"readQueueNums\":\"１２\",\"writeQueueNums\":\"-١٢\"}"));
         cases.add(routeDtoInputCase("mapping-unicode-decimal-strings", "mapping",
