@@ -546,6 +546,10 @@ public final class RuntimeRouteFixtures {
             "{\"currIdMap\":{\"１２\":1}}"));
         cases.add(routeDtoInputCase("mapping-curr-id-map-high-precision-decimals", "mapping",
             "{\"currIdMap\":{\"0\":9223372036854775807.0,\"1\":2147483648.0,\"-1\":-2147483649.0}}"));
+        cases.add(routeDtoInputCase("broker-address-high-precision-number-strings", "brokerData",
+            "{\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":9223372036854775807.123456789012345678901,\"1\":1e2}}"));
+        cases.add(routeDtoInputCase("filter-server-high-precision-number-strings", "topicRouteData",
+            "{\"filterServerTable\":{\"broker\":[9223372036854775807.123456789012345678901,1e2]}}"));
         cases.add(routeDtoInputCase("queue-unicode-decimal-string", "queueData",
             "{\"readQueueNums\":\"１２\",\"writeQueueNums\":\"-١٢\"}"));
         cases.add(routeDtoInputCase("mapping-unicode-decimal-strings", "mapping",

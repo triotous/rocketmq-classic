@@ -338,6 +338,8 @@ public final class RuntimeLookupFixtures {
         cases.add(consumerListCase("empty", "[]", true));
         cases.add(consumerListCase("strings-with-duplicates", "[\"b\",\"a\",\"b\"]", true));
         cases.add(consumerListCase("scalar-elements", "[1,1.9,true,null]", true));
+        cases.add(consumerListCase("high-precision-numeric-strings",
+            "[9223372036854775807.123456789012345678901,1e2]", true));
         cases.add(consumerListCase("nested-elements", "[[1,\"x\"],{\"key\":\"value\"}]", true));
         cases.add(consumerListCase("object-field", "{\"id\":\"client\"}", true));
         cases.add(consumerListCase("string-field", "\"client\"", true));
@@ -353,6 +355,7 @@ public final class RuntimeLookupFixtures {
         Map<String, Object> item = new TreeMap<>();
         item.put("name", name);
         item.put("input", com.alibaba.fastjson2.JSON.parseObject(body));
+        item.put("rawInput", body);
         try {
             org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody decoded =
                 org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody.decode(

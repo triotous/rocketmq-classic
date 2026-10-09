@@ -1086,9 +1086,15 @@ mod tests {
     fn consumer_list_inputs_match_invoked_java_fastjson() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
-        for case in fixture["consumerListCases"].as_array().unwrap() {
-            let decoded =
-                serde_json::from_value::<ConsumerListByGroupResponseBody>(case["input"].clone());
+        let cases = fixture["consumerListCases"].as_array().unwrap();
+        assert_eq!(cases.len(), 13, "Java oracle includes high-precision numeric strings");
+        assert!(cases
+            .iter()
+            .any(|case| case["name"] == "high-precision-numeric-strings"));
+        for case in cases {
+            let decoded = serde_json::from_str::<ConsumerListByGroupResponseBody>(
+                case["rawInput"].as_str().unwrap(),
+            );
             let java_accepts = case["outcome"] == "ACCEPTED";
             assert_eq!(
                 decoded.is_ok(),
