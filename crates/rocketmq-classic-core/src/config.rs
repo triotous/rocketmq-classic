@@ -221,7 +221,7 @@ impl ClientConfig {
     }
     /// Explicit client-IP selection, corresponding to Java `setClientIP`.
     /// Known Java system-property keys are read from the process environment;
-    /// ROCKETMQ_NAMESRV_ADDR remains the Java environment fallback.
+    /// NAMESRV_ADDR remains the Java environment fallback.
     pub fn new(client_ip: impl Into<String>) -> Self {
         Self::with_properties(client_ip.into(), |key| std::env::var(key).ok())
     }
@@ -235,8 +235,7 @@ impl ClientConfig {
             .and_then(|count| i32::try_from(count.get()).ok())
             .unwrap_or(1);
         Self {
-            namesrv_addr: property("rocketmq.namesrv.addr")
-                .or_else(|| property("ROCKETMQ_NAMESRV_ADDR")),
+            namesrv_addr: property("rocketmq.namesrv.addr").or_else(|| property("NAMESRV_ADDR")),
             client_ip: Some(client_ip),
             instance_name: Some(
                 property("rocketmq.client.name").unwrap_or_else(|| "DEFAULT".into()),
@@ -775,10 +774,9 @@ mod tests {
 
     #[test]
     fn java_properties_have_exact_precedence_and_parse_boolean_rules() {
-        let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../fixtures/runtime/client-config.json"
-        ))
-        .unwrap();
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json"))
+                .unwrap();
         let name_server = &fixture["nameServerAddressCases"];
         assert_eq!(name_server["systemPropertyKey"], "rocketmq.namesrv.addr");
         assert_eq!(name_server["environmentKey"], "NAMESRV_ADDR");
