@@ -1174,6 +1174,7 @@ public final class RuntimeRouteFixtures {
             new String[] {"address-retained-by-sibling-topic", "{\"brokerDatas\":[]}"},
             new String[] {"candidate-before-null-address-map", "{\"brokerDatas\":[{\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master:10911\"}},{\"brokerName\":\"broker\",\"brokerAddrs\":null}]}"},
             new String[] {"null-address-map-before-candidate", "{\"brokerDatas\":[{\"brokerName\":\"broken\",\"brokerAddrs\":null},{\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master:10911\"}}]}"},
+            new String[] {"null-broker-id-live-address", "{\"brokerDatas\":[{\"brokerName\":\"broker\",\"brokerAddrs\":{\"null\":\"master:10911\"}}]}"},
             new String[] {"empty-address-row-removed-before-later-failure", "{\"brokerDatas\":[null]}"}
         );
         List<Object> cases = new ArrayList<>();
