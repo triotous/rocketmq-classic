@@ -3911,6 +3911,8 @@ mod tests {
 
     #[test]
     fn batch_ack_public_methods_match_invoked_java() {
+        use base64::{Engine as _, engine::general_purpose::STANDARD};
+
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
         let case = &fixture["batchAckApiCase"];
@@ -3983,6 +3985,20 @@ mod tests {
                 "sourceExcludesCloneBit": !ack.get_bit_set().unwrap().get(7).unwrap(),
             }),
             case["bitSetClone"]
+        );
+        let preallocated_source = BitSet::try_with_capacity_bits(130).unwrap();
+        let mut preallocated_clone = preallocated_source.clone();
+        preallocated_clone.set(7).unwrap();
+        assert_eq!(
+            json!({
+                "cloneIsDistinctObject": !std::ptr::eq(&preallocated_source, &preallocated_clone),
+                "sourceSize": preallocated_source.size(),
+                "cloneSize": preallocated_clone.size(),
+                "sourceBase64": STANDARD.encode(preallocated_source.to_byte_array().unwrap()),
+                "cloneBase64": STANDARD.encode(preallocated_clone.to_byte_array().unwrap()),
+                "sourceExcludesCloneBit": !preallocated_source.get(7).unwrap(),
+            }),
+            case["bitSetPreallocatedClone"]
         );
         let mut operations = ack.get_bit_set().unwrap().clone();
         operations.clear(2).unwrap();
