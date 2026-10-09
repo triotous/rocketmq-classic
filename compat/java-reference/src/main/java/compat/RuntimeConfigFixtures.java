@@ -1195,6 +1195,16 @@ public final class RuntimeConfigFixtures {
         allInputs.add("{\"10.0.0.0/8\":7}");
         allInputs.add("{\"10.0.0.0/8\":true}");
         allInputs.add("{\"10.0.0.0/8\":{\"addr\":\"first\"},\"10.0.0.0/8\":{\"addr\":\"last\"}}");
+        allInputs.add("{\"10.0.0.0/8\":{\"addr\":proxy}}");
+        allInputs.add("{\"10.0.0.0/8\":{\"addr\":proxy:1080}}");
+        allInputs.add("{\"10.0.0.0/8\":{addr:\"proxy:1080\",},}");
+        allInputs.add("{'10.0.0.0/8':{'addr':'proxy:1080',},}");
+        allInputs.add("/* lead */{\"10.0.0.0/8\":/* route */{\"addr\":\"proxy:1080\"}/* inner */}/* tail */");
+        allInputs.add("// lead\r{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{\"10.0.0.0/8\":{\"username\":\"u\"// field\r,\"addr\":\"proxy:1080\"}}");
+        allInputs.add("{\"10.0.0.0/8\":{\"addr\":[\"first\",\"last\",]}}");
+        allInputs.add("{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\",,}}");
+        allInputs.add("{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}} // eof comment");
         for (int i = 0; i < allInputs.size(); i++) {
             String input = allInputs.get(i);
             ClientConfig config = new ClientConfig();
