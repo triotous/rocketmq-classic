@@ -1571,6 +1571,11 @@ impl BatchAckMessageRequestBody {
         self.acks.as_deref()
     }
 
+    /// Borrows the owned acknowledgement list mutably for Java-compatible getter mutations.
+    pub fn get_acks_mut(&mut self) -> Option<&mut Vec<Option<BatchAck>>> {
+        self.acks.as_mut()
+    }
+
     pub fn set_acks(&mut self, acks: Option<Vec<Option<BatchAck>>>) {
         self.acks = acks;
     }
@@ -3331,6 +3336,30 @@ mod tests {
         assert_eq!(body.get_broker_name(), case["bodyBrokerName"].as_str());
         assert_eq!(body.get_acks().unwrap().len(), case["bodyAckCount"]);
         assert_eq!(body.get_acks().unwrap()[0], Some(ack));
+        let acks_mut = body.get_acks_mut().unwrap();
+        acks_mut.clear();
+        let mut external_ack = BatchAck::default();
+        external_ack.set_queue_id(3);
+        acks_mut.push(Some(external_ack));
+        assert_eq!(
+            acks_mut.iter().flatten().any(|ack| ack.get_queue_id() == 3),
+            case["externalMutationVisible"]
+        );
+        acks_mut.clear();
+        let mut getter_ack = BatchAck::default();
+        getter_ack.set_queue_id(4);
+        acks_mut.push(Some(getter_ack));
+        assert_eq!(
+            acks_mut.iter().flatten().any(|ack| ack.get_queue_id() == 4),
+            case["getterMutationVisibleToAssignedList"]
+        );
+        let mutated_queue_ids = body
+            .get_acks()
+            .unwrap()
+            .iter()
+            .map(|ack| ack.as_ref().map(BatchAck::get_queue_id))
+            .collect::<Vec<_>>();
+        assert_eq!(json!(mutated_queue_ids), case["bodyMutatedQueueIds"]);
         // Java retains the same mutable List; this Rust DTO owns its Vec and lends a slice.
         assert_eq!(case["bodyReturnsAssignedList"], true);
         body.set_acks(None);
