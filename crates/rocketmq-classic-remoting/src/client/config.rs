@@ -709,13 +709,23 @@ fn fastjson_root_reference_key(path: &str) -> Option<String> {
     }
 
     let bytes = path.as_bytes();
-    let quote = match bytes.get(..3)? {
-        b"$['" => b'\'',
-        b"$[\"" => b'\"',
+    if !bytes.starts_with(b"$[") || bytes.last() != Some(&b']') {
+        return None;
+    }
+    let mut index = 2;
+    while bytes
+        .get(index)
+        .is_some_and(|byte| byte.is_ascii_whitespace())
+    {
+        index += 1;
+    }
+    let quote = match bytes.get(index) {
+        Some(b'\'') => b'\'',
+        Some(b'\"') => b'\"',
         _ => return None,
     };
+    index += 1;
     let mut key = String::new();
-    let mut index = 3;
     while index < bytes.len() {
         match bytes[index] {
             b'\\' => {
@@ -725,7 +735,14 @@ fn fastjson_root_reference_key(path: &str) -> Option<String> {
                 index += 1;
             }
             current if current == quote => {
-                return (bytes.get(index + 1..) == Some(b"]") && index + 2 == bytes.len())
+                index += 1;
+                while bytes
+                    .get(index)
+                    .is_some_and(|byte| byte.is_ascii_whitespace())
+                {
+                    index += 1;
+                }
+                return (bytes.get(index..) == Some(b"]") && index + 1 == bytes.len())
                     .then_some(key);
             }
             current if current.is_ascii() => {
@@ -758,11 +775,23 @@ fn resolve_proxy_route_reference(
         if reference == "#-1" {
             return Ok(ParsedProxyRoute::Direct);
         }
-        let target = fastjson_root_reference_key(reference).ok_or_else(|| {
-            TransportError::InvalidConfiguration(
+        if reference == "#-2" {
+            return Ok(ParsedProxyRoute::MissingAddress {
+                username: None,
+                password: None,
+            });
+        }
+        let Some(target) = fastjson_root_reference_key(reference) else {
+            if !matches!(reference.chars().next(), Some('$' | '#' | '@' | '.')) {
+                return Ok(ParsedProxyRoute::MissingAddress {
+                    username: None,
+                    password: None,
+                });
+            }
+            return Err(TransportError::InvalidConfiguration(
                 "Fastjson SOCKS route reference path is unsupported".into(),
-            )
-        })?;
+            ));
+        };
         let target = format!("\0S{target}");
         if !resolving.insert(key.to_owned()) {
             return Ok(ParsedProxyRoute::Direct);
