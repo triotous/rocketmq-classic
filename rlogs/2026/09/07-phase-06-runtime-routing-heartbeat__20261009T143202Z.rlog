@@ -105,3 +105,11 @@
 - Updated ADR-0047/0048, the Java compatibility record, Phase 6 API/config map, requirement audit, and runtime inventory with the current behavior, case totals, fixture digest, and implementation commits.
 - Validation passed: `cargo test --workspace --all-targets --locked`; strict workspace Clippy with all targets/features and `-D warnings`; pinned offline Maven verify with fixture drift checks and Java/Rust cross-decodes; comparator self-test/manifest22; `cargo fmt --all --check`; `git diff --check`.
 - The requested Java source checkout at `/Users/nanashi07/Projects/3rd/rocketmq` remains unavailable in this environment; the new oracle uses pinned 5.5.1 artifacts. Phase 6 remains PARTIAL because the broader source/API/settings/input/reverse-export reconciliation is open. P6-V04 stays `PENDING_PHASE_19`.
+
+
+## Extreme Java Long map-value probes — 2026-10-09T16:55:57Z
+
+- Added ten more pinned Java values to both map DTO oracles: `+1.5` and exponent strings, `1e400`/`1e-400` and negative counterparts, negative exponent zero, and `false`. Corpus totals are ResetOffsetBody 50 and GetConsumerStatusBody 89; `fixtures/runtime/lookup.json` SHA-256: `2ad29843f77f4b35cc3c7e78611c0c38c933a0c9a2db57ea0ae13053ddf69caa`.
+- Java converts exponent strings as well as exponent tokens through its double-to-long path: extreme positive/negative values saturate at i64 bounds, tiny values and negative exponent zero become 0. The native implementation matched the new cases without production changes. Test commit: `9cfd106`; shared implementation: `f6a75eb`.
+- The focused body-input differentials passed (7 tests). Full workspace/all-target tests, strict all-target/all-feature Clippy (`-D warnings`), pinned offline Maven verify (fixture drift and Java/Rust cross-decodes), `cargo fmt --all -- --check`, and `git diff --check` passed.
+- Updated the current DTO entries and final gap summary in ADR-0047/0048, Java compatibility, Phase 6 API/config, requirement audit, and runtime inventory. Phase 6 remains PARTIAL with wider method/input reconciliation open; P6-V04 stays `PENDING_PHASE_19`.
