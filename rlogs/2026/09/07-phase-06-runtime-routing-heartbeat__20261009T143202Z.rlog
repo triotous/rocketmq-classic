@@ -5,3 +5,10 @@
 - Implemented nullable broker IDs as `Option<i64>` across the DTO and route snapshot, including JSON key serialization and lookup behavior. Pinned `MQClientInstance` bytecode confirms admin/fallback lookups and heartbeat sends unbox selected IDs; Rust surfaces those paths as `InvalidRoute("null broker address id")`. Implementation and regressions are in `cadf260`.
 - Validation passed: full `cargo test --workspace --all-targets --locked`; strict all-target/all-feature Clippy; pinned offline Maven verify (22-scenario manifest, runtime fixture drift checks and Java cross-decodes); comparator self-test; `cargo fmt --check`; and `git diff --check`.
 - Updated ADR-0014, route/API/requirement/runtime inventories and Java 5.5.1 compatibility evidence. No plan files changed. Whole Phase 6 source/API/settings/input/branch/reverse-export reconciliation and final plan/index audit remain open; P6-V04 stays `PENDING_PHASE_19`.
+
+## Follow-up reconciliation — 2026-10-09T14:35:15Z
+
+- Cross-checked current fixture bytes against the compatibility map and matrix. Updated the current heartbeat DTO count/hash from the historical 213-case checkpoint (`4c6aee...`) to 241 cases and the actual current SHA-256 `385fc38890b6f18fc9ea74a4a6d2a47f52c27bae5ffc7851064c594cef426803`.
+- Updated the Phase 6 source row in `JAVA_5_5_1_COMPATIBILITY.md` to the current 399 route DTO / 241 heartbeat DTO corpus counts; its status remains PARTIAL while named DTO/raw-input and final reverse-export gaps remain open.
+- Checks: `shasum -a 256 fixtures/runtime/heartbeat.json` matches the documented digest; `git diff --check` passes. No plan files changed; P6-V04 remains `PENDING_PHASE_19`.
+- Reconciliation addendum: updated the current `PHASE_6_REQUIREMENT_AUDIT.md` remaining-work summary from the prior 395-case route checkpoint to 399, matching `fixtures/runtime/route.json` and the latest Java/native nullable-key cases; historical checkpoint notes remain unchanged.
