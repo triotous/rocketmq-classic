@@ -8,7 +8,7 @@ This standalone Maven project pins `org.apache.rocketmq:rocketmq-client:5.5.1`. 
 
 - Client binary SHA-256: `1c39c94a28e59b292e29d699872d693cdc2ce30bd54c4e0f95a4c377fd9dff84`
 - Client source SHA-256: `de63ae377bcc9b461b0d65b4cb77673d9daabb8f46caabef903826ea7c627e76`
-- JDK: OpenJDK 21.0.2; Maven 3.9.16
+- Maven fixture runtime: Maven 3.10.0 with Homebrew OpenJDK 27 on macOS arm64 (2026-10-09). Runtime-generated fixtures record `java.runtime.version` and `java.vendor`; the shell's standalone `java` may use another JDK.
 - Source paths verified in tag: `remoting/src/main/java/org/apache/rocketmq/remoting/protocol/RemotingCommand.java`, `RocketMQSerializable.java`, `RequestCode.java`, `ResponseCode.java`, and `client/src/main/java/org/apache/rocketmq/client/impl/MQClientAPIImpl.java`.
 - Maven dependency is pinned and build validation rejects a changed client version. Resolve/check source artifacts with `mvn -f compat/java-reference/pom.xml dependency:sources` when regenerating evidence.
 
@@ -24,7 +24,7 @@ mvn -f compat/java-reference/pom.xml exec:java -Dexec.args=invoked-rpc-oracle
 mvn -f compat/java-reference/pom.xml exec:java -Dexec.args="runtime-address-fixtures $(pwd)/fixtures/runtime/address.json"
 ```
 
-`runtime-address-fixtures` records the 42 numeric address helper cases, a named IPv6 scope created from a live loopback `NetworkInterface`, and 49 direct endpoint-split outcomes. Maven `verify` runs the generator in drift-check mode.
+`runtime-address-fixtures` records 42 numeric address helper cases, a named IPv6 scope created from a live loopback `NetworkInterface`, 49 direct endpoint-split outcomes, all 65,536 BMP UTF-16 host code units, all 1,112,064 Unicode scalar host values, all 65,536 socket ports, and every BMP code unit tested by `Integer.parseInt`. Maven `verify` runs the generator in drift-check mode.
 
 The fixture command emits offline Remoting command frames (no live Broker). A frame is accompanied by JSON with version provenance, scenario, request code, decoded semantic fields, body length, full-frame SHA-256 and the command used to generate it. Live scenarios in `tests/differential/scenarios.yaml` explicitly remain `PENDING_PHASE_19`; command-frame fixtures are not claims of successful Broker operations.
 
