@@ -576,11 +576,8 @@ fn resolve_proxy_route_reference(
         return Ok(ParsedProxyRoute::Direct);
     };
     if let Some(reference) = raw.reference() {
-        if reference == "$" {
-            return Ok(ParsedProxyRoute::MissingAddress {
-                username: None,
-                password: None,
-            });
+        if reference == "#-1" {
+            return Ok(ParsedProxyRoute::Direct);
         }
         let target = fastjson_root_reference_key(reference).ok_or_else(|| {
             TransportError::InvalidConfiguration(
@@ -2782,7 +2779,13 @@ mod tests {
         for case in fixture["socksProxySelection"].as_array().unwrap() {
             let mut config = ClientConfig::default();
             config.set_socks_proxy_config(case["config"].as_str().unwrap());
-            let routes = config.parse_socks_proxy_config().unwrap();
+            let routes = match config.parse_socks_proxy_config() {
+                Ok(routes) => routes,
+                Err(error) => {
+                    assert_ne!(case["outcome"], "OK", "{case}: {error}");
+                    continue;
+                }
+            };
             let selected = ClientConfig::proxy_for(&routes, case["host"].as_str().unwrap());
             assert_eq!(selected.is_ok(), case["outcome"] == "OK", "{case}");
             if case["outcome"] != "OK" {
