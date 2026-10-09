@@ -72,9 +72,12 @@ public final class RuntimeLookupFixtures {
         fixture.put("queryAssignmentEnumCases", queryAssignmentEnumCases());
         fixture.put("queryAssignmentFieldCases", queryAssignmentFieldCases());
         fixture.put("queryAssignmentRootCases", queryAssignmentRootCases());
+        fixture.put("queryAssignmentRequestApiCase", queryAssignmentRequestApiCase());
+        fixture.put("queryAssignmentResponseApiCase", queryAssignmentResponseApiCase());
         fixture.put("setRequestModeCases", setRequestModeCases());
         fixture.put("setRequestModeFieldCases", setRequestModeFieldCases());
         fixture.put("setRequestModeRootCases", setRequestModeRootCases());
+        fixture.put("setRequestModeRequestApiCase", setRequestModeRequestApiCase());
         fixture.put("messageRequestModeWrapperCases", messageRequestModeWrapperCases());
         fixture.put("messageRequestModeWrapperApiCase", messageRequestModeWrapperApiCase());
         fixture.put("consumeDirectResultCases", consumeDirectResultCases());
@@ -912,6 +915,107 @@ public final class RuntimeLookupFixtures {
         wrapper.setMessageRequestModeMap(map);
         item.put("setterRetainsMapIdentity", wrapper.getMessageRequestModeMap() == map);
         item.put("populatedMap", wrapper.getMessageRequestModeMap());
+        return item;
+    }
+
+    private static Map<String, Object> queryAssignmentRequestApiCase() {
+        org.apache.rocketmq.remoting.protocol.body.QueryAssignmentRequestBody body =
+            new org.apache.rocketmq.remoting.protocol.body.QueryAssignmentRequestBody();
+        Map<String, Object> item = new TreeMap<>();
+        Map<String, Object> defaults = new TreeMap<>();
+        defaults.put("topic", body.getTopic());
+        defaults.put("consumerGroup", body.getConsumerGroup());
+        defaults.put("clientId", body.getClientId());
+        defaults.put("strategyName", body.getStrategyName());
+        defaults.put("messageModel", body.getMessageModel() == null ? null : body.getMessageModel().name());
+        item.put("defaults", defaults);
+
+        body.setTopic("orders");
+        body.setConsumerGroup("workers");
+        body.setClientId("client-a");
+        body.setStrategyName("AllocateByCircle");
+        body.setMessageModel(org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel.CLUSTERING);
+        Map<String, Object> values = new TreeMap<>();
+        values.put("topic", body.getTopic());
+        values.put("consumerGroup", body.getConsumerGroup());
+        values.put("clientId", body.getClientId());
+        values.put("strategyName", body.getStrategyName());
+        values.put("messageModel", body.getMessageModel().name());
+        item.put("values", values);
+
+        body.setTopic(null);
+        body.setConsumerGroup(null);
+        body.setClientId(null);
+        body.setStrategyName(null);
+        body.setMessageModel(null);
+        item.put("nullSettersRemainNull", body.getTopic() == null && body.getConsumerGroup() == null
+            && body.getClientId() == null && body.getStrategyName() == null && body.getMessageModel() == null);
+        return item;
+    }
+
+    private static Map<String, Object> queryAssignmentResponseApiCase() {
+        org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody body =
+            new org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody();
+        Map<String, Object> item = new TreeMap<>();
+        item.put("defaultAssignments", body.getMessageQueueAssignments());
+
+        org.apache.rocketmq.common.message.MessageQueueAssignment assignment =
+            new org.apache.rocketmq.common.message.MessageQueueAssignment();
+        assignment.setMessageQueue(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 2));
+        assignment.setMode(org.apache.rocketmq.common.message.MessageRequestMode.POP);
+        java.util.Set<org.apache.rocketmq.common.message.MessageQueueAssignment> assignments =
+            new java.util.LinkedHashSet<>();
+        assignments.add(assignment);
+        body.setMessageQueueAssignments(assignments);
+        item.put("setterRetainsSetIdentity", body.getMessageQueueAssignments() == assignments);
+        item.put("valueCount", body.getMessageQueueAssignments().size());
+        org.apache.rocketmq.common.message.MessageQueueAssignment returned =
+            body.getMessageQueueAssignments().iterator().next();
+        Map<String, Object> value = new TreeMap<>();
+        org.apache.rocketmq.common.message.MessageQueue queue = returned.getMessageQueue();
+        Map<String, Object> messageQueue = new TreeMap<>();
+        messageQueue.put("topic", queue.getTopic());
+        messageQueue.put("brokerName", queue.getBrokerName());
+        messageQueue.put("queueId", queue.getQueueId());
+        value.put("messageQueue", messageQueue);
+        value.put("mode", returned.getMode().name());
+        value.put("attachments", returned.getAttachments());
+        item.put("values", java.util.List.of(value));
+
+        body.setMessageQueueAssignments(null);
+        item.put("nullSetterRemainsNull", body.getMessageQueueAssignments() == null);
+        return item;
+    }
+
+    private static Map<String, Object> setRequestModeRequestApiCase() {
+        org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody body =
+            new org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody();
+        Map<String, Object> item = new TreeMap<>();
+        Map<String, Object> defaults = new TreeMap<>();
+        defaults.put("topic", body.getTopic());
+        defaults.put("consumerGroup", body.getConsumerGroup());
+        defaults.put("mode", body.getMode() == null ? null : body.getMode().name());
+        defaults.put("popShareQueueNum", body.getPopShareQueueNum());
+        item.put("defaults", defaults);
+
+        body.setTopic("orders");
+        body.setConsumerGroup("workers");
+        body.setMode(org.apache.rocketmq.common.message.MessageRequestMode.POP);
+        body.setPopShareQueueNum(2);
+        Map<String, Object> values = new TreeMap<>();
+        values.put("topic", body.getTopic());
+        values.put("consumerGroup", body.getConsumerGroup());
+        values.put("mode", body.getMode().name());
+        values.put("popShareQueueNum", body.getPopShareQueueNum());
+        item.put("values", values);
+
+        body.setTopic(null);
+        body.setConsumerGroup(null);
+        body.setMode(null);
+        body.setPopShareQueueNum(0);
+        item.put("nullSettersRemainNull", body.getTopic() == null && body.getConsumerGroup() == null
+            && body.getMode() == null);
+        item.put("primitiveAfterReset", body.getPopShareQueueNum());
         return item;
     }
 
