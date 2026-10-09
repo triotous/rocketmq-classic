@@ -203,3 +203,9 @@
 - Pinned RocketMQ 5.5.1 client/common/remoting jars contain `LockBatchResponseBody` and no `UnlockBatchResponseBody`. Java fixture generation constructs the shared LockBatchResponseBody for both lock (code 41) and unlock (code 42) responses. The unused Rust-only public DTO was removed; no internal callers needed changes.
 - `cargo test -p rocketmq-classic-protocol --all-targets --locked` passes (106 unit tests plus all protocol integration tests); `cargo fmt --all --check` and `git diff --check` pass. The existing lock/unlock Java wire fixtures remain unchanged.
 - Implementation `a5fb87ce`; ADR-0056 and current API/runtime/requirement records updated. Phase 6 remains PARTIAL; P6-V04 stays `PENDING_PHASE_19`.
+
+## Consumer status and reset-offset public method oracles — 2026-10-09T18:18:22Z
+
+- Added direct pinned Java calls for every `GetConsumerStatusBody` and `ResetOffsetBody` map getter/setter. Constructor-empty defaults, assigned values, null setters, nullable offsets, empty/null nested consumer maps, and Java outer/nested Map identity are captured.
+- Existing Rust accessors match defaults, values, and null states. Rust owns entry vectors/maps and lends immutable views, so Java mutable Map alias identity remains explicit. Oracle/test `471b7160`; lookup.json SHA-256 `7b2ce204660f804147471cb2d6d220e669e33991285b64cc68faf699c15a8aff`.
+- Protocol all-target tests pass (107 unit tests and all protocol integrations); pinned offline Maven verify passes (22 scenarios, fixture drift, Java cross-decodes); fmt and diff checks pass. ADR-0057 and current Phase 6 API/runtime/Java/requirement records updated. Phase 6 remains PARTIAL; P6-V04 stays `PENDING_PHASE_19`.
