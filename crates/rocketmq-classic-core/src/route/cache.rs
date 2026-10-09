@@ -74,7 +74,10 @@ impl RouteSnapshot {
             return Ok(None);
         };
         let route = route.snapshot()?;
-        let brokers = route.broker_datas.as_deref().unwrap_or(&[]);
+        let brokers = route
+            .broker_datas
+            .as_deref()
+            .ok_or(RuntimeError::InvalidRoute("null broker data list"))?;
         if brokers.is_empty() {
             return Ok(None);
         }
@@ -1509,7 +1512,7 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/lookup.json")).unwrap();
         let cases = fixture["cases"].as_array().unwrap();
-        assert_eq!(cases.len(), 11);
+        assert_eq!(cases.len(), 13);
         for required in [
             "null-broker-id-single-address",
             "null-broker-id-with-master",
@@ -1521,6 +1524,13 @@ mod tests {
                 .unwrap_or_else(|| panic!("missing Java broker lookup case {required}"));
             assert_eq!(case["outcome"], "OK", "{required}");
             assert!(case["input"]["brokerDatas"][0]["brokerAddrs"]["null"].is_string());
+        }
+        for required in ["null-broker-list", "null-broker-row"] {
+            let case = cases
+                .iter()
+                .find(|case| case["name"] == required)
+                .unwrap_or_else(|| panic!("missing Java broker lookup case {required}"));
+            assert_eq!(case["outcome"], "NullPointerException", "{required}");
         }
         for case in cases {
             let mut snapshot = RouteSnapshot::default();
