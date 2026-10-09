@@ -197,3 +197,9 @@
 - Direct pinned Java 5.5.1 invocations and a Rust differential cover constructor defaults, getter/setter values, null setters, and tested text for CheckClientRequestBody, GetConsumerListByGroupResponseBody, LockBatchRequestBody, UnlockBatchRequestBody, LockBatchResponseBody, and ConsumeMessageDirectlyResult. Added snake_case accessors and Java-shaped Display for the three types with toString methods.
 - Java getter identity for assigned SubscriptionData/List/Set values remains a documented Rust ownership/alias semantic gap. Oracle `7e1155f8`; implementation `bca4329c`; lookup.json SHA-256 `bb0d6d759d1e5d23a532a1e5a4529089aaf88c714bc637ff332553edfc656cc0`.
 - Full workspace/all-target tests, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios, fixture drift, Java cross-decodes), fmt, and diff checks pass. ADR-0055 and current Phase 6 API/runtime/Java/requirement records updated. Broader source/API/input/reverse-export audit remains open; Phase 6 stays PARTIAL and P6-V04 remains `PENDING_PHASE_19`.
+
+## Remove Rust-only unlock response DTO — 2026-10-09T18:14:22Z
+
+- Pinned RocketMQ 5.5.1 client/common/remoting jars contain `LockBatchResponseBody` and no `UnlockBatchResponseBody`. Java fixture generation constructs the shared LockBatchResponseBody for both lock (code 41) and unlock (code 42) responses. The unused Rust-only public DTO was removed; no internal callers needed changes.
+- `cargo test -p rocketmq-classic-protocol --all-targets --locked` passes (106 unit tests plus all protocol integration tests); `cargo fmt --all --check` and `git diff --check` pass. The existing lock/unlock Java wire fixtures remain unchanged.
+- Implementation `a5fb87ce`; ADR-0056 and current API/runtime/requirement records updated. Phase 6 remains PARTIAL; P6-V04 stays `PENDING_PHASE_19`.

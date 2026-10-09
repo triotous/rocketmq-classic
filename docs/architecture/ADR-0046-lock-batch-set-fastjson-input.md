@@ -14,7 +14,7 @@ Represent the three Java Set fields as `Option<HashSet<Option<MessageQueue>>>`. 
 
 Decode request string and boolean fields with the shared Fastjson adapters and process objects with last-wins decoding. `MQClientApi::lock_batch_mq` returns `Option<HashSet<Option<MessageQueue>>>` to preserve Java's Set, nullable field, and nullable member outcomes.
 
-The pinned 5.5.1 client/common/remoting artifacts contain `LockBatchResponseBody` but no `UnlockBatchResponseBody`. The existing Rust-only `UnlockBatchResponseBody` remains an extra public DTO under the accepted Rust-only API disposition.
+The pinned 5.5.1 client/common/remoting artifacts contain `LockBatchResponseBody` but no `UnlockBatchResponseBody`. At this ADR checkpoint the unused Rust-only `UnlockBatchResponseBody` was still exported; it was later removed after confirming both response paths use the shared Java DTO. See [ADR-0056](ADR-0056-remove-non-java-unlock-response-body.md).
 
 ## Evidence
 
