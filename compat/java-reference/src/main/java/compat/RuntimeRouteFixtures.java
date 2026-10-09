@@ -1084,16 +1084,20 @@ public final class RuntimeRouteFixtures {
                 .topicRouteData2EndpointsForStaticTopic("topic", api.route).keySet());
             queues.sort(Comparator.naturalOrder());
             if (queues.isEmpty()) throw new IllegalStateException("transition requires static endpoints");
+            MessageQueue unmappedQueue = new MessageQueue("topic", "fallback-broker", 99);
+            item.put("unmappedQueue", unmappedQueue);
             List<Object> before = new ArrayList<>();
             for (MessageQueue queue : queues) before.add(new TreeMap<>(Map.of(
                 "queue", queue, "broker", runtime.getBrokerNameFromMessageQueue(queue))));
             item.put("before", before);
+            item.put("unmappedBrokerBefore", runtime.getBrokerNameFromMessageQueue(unmappedQueue));
             api.route = com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(ordinary), TopicRouteData.class);
             item.put("changed", runtime.updateTopicRouteInfoFromNameServer("topic"));
             List<Object> after = new ArrayList<>();
             for (MessageQueue queue : queues) after.add(new TreeMap<>(Map.of(
                 "queue", queue, "broker", runtime.getBrokerNameFromMessageQueue(queue))));
             item.put("after", after);
+            item.put("unmappedBrokerAfter", runtime.getBrokerNameFromMessageQueue(unmappedQueue));
             item.put("retained", before.equals(after));
             item.put("rawRouteHasStaticMappings", runtime.getAnExistTopicRouteData("topic").getTopicQueueMappingByBroker() != null
                 && !runtime.getAnExistTopicRouteData("topic").getTopicQueueMappingByBroker().isEmpty());
