@@ -1189,8 +1189,8 @@ mod tests {
         let cases = fixture["consumerListCases"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            13,
-            "Java oracle includes high-precision numeric strings"
+            16,
+            "Java oracle includes high-precision numeric strings and duplicate-field last-wins input"
         );
         assert!(
             cases

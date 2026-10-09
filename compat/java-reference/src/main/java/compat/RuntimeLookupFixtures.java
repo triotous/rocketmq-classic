@@ -537,11 +537,21 @@ public final class RuntimeLookupFixtures {
         cases.add(consumerListCase("fraction-field", "1.9", true));
         cases.add(consumerListCase("boolean-field", "true", true));
         cases.add(consumerListCase("empty-string-field", "\"\"", true));
+        cases.add(consumerListRawCase("duplicate-field-last-wins",
+            "{\"consumerIdList\":[\"first\"],\"consumerIdList\":[\"last\"]}"));
+        cases.add(consumerListRawCase("duplicate-field-earlier-scalar",
+            "{\"consumerIdList\":7,\"consumerIdList\":[\"last\"]}"));
+        cases.add(consumerListRawCase("duplicate-field-last-scalar",
+            "{\"consumerIdList\":[\"first\"],\"consumerIdList\":7}"));
         return cases;
     }
 
     private static Map<String, Object> consumerListCase(String name, String rawValue, boolean includeField) {
         String body = includeField ? "{\"consumerIdList\":" + rawValue + "}" : "{}";
+        return consumerListRawCase(name, body);
+    }
+
+    private static Map<String, Object> consumerListRawCase(String name, String body) {
         Map<String, Object> item = new TreeMap<>();
         item.put("name", name);
         item.put("input", com.alibaba.fastjson2.JSON.parseObject(body));
