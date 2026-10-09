@@ -633,7 +633,7 @@ fn generate_p4_bodies(output: &std::path::Path) {
         200151,
         &BatchAckMessageRequestBody {
             broker_name: Some("broker-a".into()),
-            acks: Some(vec![BatchAck {
+            acks: Some(vec![Some(BatchAck {
                 consumer_group: Some("workers".into()),
                 topic: Some("orders".into()),
                 retry: Some("0".into()),
@@ -643,7 +643,7 @@ fn generate_p4_bodies(output: &std::path::Path) {
                 pop_time: 10,
                 invisible_time: 20,
                 bit_set: Some(vec![0b0000_0101]),
-            }]),
+            })]),
         },
     );
     write_body_bytes(

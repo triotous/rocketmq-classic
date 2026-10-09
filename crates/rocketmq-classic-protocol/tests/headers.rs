@@ -366,7 +366,7 @@ fn java_json_body_fixtures_decode_to_typed_assignment_lite_and_batch_models() {
         serde_json::from_slice(&java_body("body-batch-ack")).unwrap();
     assert_eq!(batch.broker_name.as_deref(), Some("broker-a"));
     assert_eq!(
-        batch.acks.as_ref().unwrap()[0].bit_set,
+        batch.acks.as_ref().unwrap()[0].as_ref().unwrap().bit_set,
         Some(vec![0b0000_0101])
     );
 

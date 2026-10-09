@@ -1327,7 +1327,8 @@ impl Default for SetMessageRequestModeRequestBody {
 
 mod bitset_base64 {
     use base64::{Engine as _, engine::general_purpose::STANDARD};
-    use serde::{Deserialize, Deserializer, Serializer};
+    use rocketmq_classic_common::serde_fastjson;
+    use serde::{Deserializer, Serializer};
 
     pub fn serialize<S>(bytes: &Option<Vec<u8>>, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -1343,23 +1344,77 @@ mod bitset_base64 {
     where
         D: Deserializer<'de>,
     {
-        let value = Option::<String>::deserialize(deserializer)?;
+        let value = serde_fastjson::deserialize_nullable_string(deserializer)?;
         value
             .map(|text| STANDARD.decode(text).map_err(serde::de::Error::custom))
             .transpose()
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+fn is_empty_bitset(value: &Option<Vec<u8>>) -> bool {
+    match value {
+        None => true,
+        Some(bytes) => bytes.is_empty(),
+    }
+}
+
+fn deserialize_batch_ack_list<'de, D>(
+    deserializer: D,
+) -> Result<Option<Vec<Option<BatchAck>>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+    match raw.get().trim() {
+        // Fastjson's List converter treats a Boolean token as a singleton null row.
+        "true" | "false" => Ok(Some(vec![None])),
+        raw => {
+            let mut deserializer = serde_json::Deserializer::from_str(raw);
+            let rows =
+                serde_fastjson::deserialize_optional_nullable_vec_or_single(&mut deserializer)
+                    .map_err(de::Error::custom)?;
+            deserializer.end().map_err(de::Error::custom)?;
+            Ok(rows)
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct BatchAckMessageRequestBody {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub broker_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub acks: Option<Vec<BatchAck>>,
+    pub acks: Option<Vec<Option<BatchAck>>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BatchAckMessageRequestBodyFields {
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    broker_name: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_batch_ack_list")]
+    acks: Option<Vec<Option<BatchAck>>>,
+}
+
+impl<'de> Deserialize<'de> for BatchAckMessageRequestBody {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: BatchAckMessageRequestBodyFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            broker_name: fields.broker_name,
+            acks: fields.acks,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
 pub struct BatchAck {
     #[serde(
         rename = "c",
@@ -1381,8 +1436,96 @@ pub struct BatchAck {
     pub pop_time: i64,
     #[serde(rename = "it", alias = "invisibleTime")]
     pub invisible_time: i64,
-    #[serde(rename = "b", alias = "bitSet", with = "bitset_base64")]
+    #[serde(
+        rename = "b",
+        alias = "bitSet",
+        with = "bitset_base64",
+        skip_serializing_if = "is_empty_bitset"
+    )]
     pub bit_set: Option<Vec<u8>>,
+}
+
+#[derive(Deserialize)]
+struct BatchAckFields {
+    #[serde(
+        default,
+        rename = "c",
+        alias = "consumerGroup",
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    consumer_group: Option<String>,
+    #[serde(
+        default,
+        rename = "t",
+        alias = "topic",
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    topic: Option<String>,
+    #[serde(
+        default,
+        rename = "r",
+        alias = "retry",
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    retry: Option<String>,
+    #[serde(
+        default,
+        rename = "so",
+        alias = "startOffset",
+        deserialize_with = "serde_fastjson::deserialize_i64_reject_object"
+    )]
+    start_offset: i64,
+    #[serde(
+        default,
+        rename = "q",
+        alias = "queueId",
+        deserialize_with = "deserialize_fastjson_i32_object_as_zero"
+    )]
+    queue_id: i32,
+    #[serde(
+        default,
+        rename = "rq",
+        alias = "reviveQueueId",
+        deserialize_with = "deserialize_fastjson_i32_object_as_zero"
+    )]
+    revive_queue_id: i32,
+    #[serde(
+        default,
+        rename = "pt",
+        alias = "popTime",
+        deserialize_with = "serde_fastjson::deserialize_i64_reject_object"
+    )]
+    pop_time: i64,
+    #[serde(
+        default,
+        rename = "it",
+        alias = "invisibleTime",
+        deserialize_with = "serde_fastjson::deserialize_i64_reject_object"
+    )]
+    invisible_time: i64,
+    #[serde(default, rename = "b", alias = "bitSet", with = "bitset_base64")]
+    bit_set: Option<Vec<u8>>,
+}
+
+impl<'de> Deserialize<'de> for BatchAck {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: BatchAckFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            consumer_group: fields.consumer_group,
+            topic: fields.topic,
+            retry: fields.retry,
+            start_offset: fields.start_offset,
+            queue_id: fields.queue_id,
+            revive_queue_id: fields.revive_queue_id,
+            pop_time: fields.pop_time,
+            invisible_time: fields.invisible_time,
+            bit_set: fields.bit_set,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -2617,6 +2760,34 @@ mod tests {
     }
 
     #[test]
+    fn batch_ack_body_inputs_match_invoked_java_fastjson() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let cases = fixture["batchAckBodyInputCases"].as_array().unwrap();
+        assert_eq!(cases.len(), 95);
+        for case in cases {
+            let decoded = serde_json::from_str::<Option<BatchAckMessageRequestBody>>(
+                case["rawInput"].as_str().unwrap(),
+            );
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            assert_eq!(
+                decoded.is_ok(),
+                java_accepts,
+                "{}: {decoded:?}",
+                case["name"]
+            );
+            if let Ok(decoded) = decoded {
+                assert_eq!(
+                    serde_json::to_value(decoded).unwrap(),
+                    case["encoded"],
+                    "{}",
+                    case["name"]
+                );
+            }
+        }
+    }
+
+    #[test]
     fn check_client_body_inputs_match_invoked_java_fastjson() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/client-check.json"))
@@ -2792,7 +2963,7 @@ mod tests {
 
         let body = BatchAckMessageRequestBody {
             broker_name: Some("broker-a".into()),
-            acks: Some(vec![BatchAck {
+            acks: Some(vec![Some(BatchAck {
                 consumer_group: Some("workers".into()),
                 topic: Some("orders".into()),
                 retry: Some("0".into()),
@@ -2802,7 +2973,7 @@ mod tests {
                 pop_time: 10,
                 invisible_time: 20,
                 bit_set: Some(vec![0b0000_0101]),
-            }]),
+            })]),
         };
         let value = serde_json::to_value(&body).unwrap();
         let ack = &value["acks"][0];
@@ -2810,7 +2981,10 @@ mod tests {
         assert_eq!(ack["t"], "orders");
         assert_eq!(ack["b"], "BQ==");
         let round_trip: BatchAckMessageRequestBody = serde_json::from_value(value).unwrap();
-        assert_eq!(round_trip.acks.unwrap()[0].bit_set, Some(vec![0b0000_0101]));
+        assert_eq!(
+            round_trip.acks.unwrap()[0].as_ref().unwrap().bit_set,
+            Some(vec![0b0000_0101])
+        );
     }
 
     #[test]
