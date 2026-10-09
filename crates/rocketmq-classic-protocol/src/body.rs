@@ -4742,7 +4742,7 @@ mod tests {
             )]),
         )])));
         assert_eq!(
-            serde_json::to_value(wrapper).unwrap()["messageRequestModeMap"],
+            serde_json::to_value(&wrapper).unwrap()["messageRequestModeMap"],
             api["populatedMap"]
         );
         assert_eq!(api["getterMutationVisible"], true);

@@ -952,7 +952,8 @@ public final class RuntimeLookupFixtures {
         map.put("orders", groups);
         wrapper.setMessageRequestModeMap(map);
         item.put("setterRetainsMapIdentity", wrapper.getMessageRequestModeMap() == map);
-        item.put("populatedMap", wrapper.getMessageRequestModeMap());
+        item.put("populatedMap", com.alibaba.fastjson2.JSON.parseObject(
+            com.alibaba.fastjson2.JSON.toJSONString(wrapper.getMessageRequestModeMap())));
         Map<String, java.util.concurrent.ConcurrentHashMap<String,
             org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody>> getterMap =
                 wrapper.getMessageRequestModeMap();
