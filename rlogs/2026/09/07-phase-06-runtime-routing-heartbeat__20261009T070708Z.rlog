@@ -1,0 +1,8 @@
+# Phase 6 execution log — 2026-10-09T07:07:08Z
+
+- Branch: `07-phase-06-runtime-routing-heartbeat`; starting commit: `2d54d90`.
+- Applied `coding-general` execution requirements: use the existing phase plan, keep an append-only session log, commit logical changes separately, and perform a final plan-to-result audit.
+- Re-read the Phase 6 child plan and remaining-work section of the requirement audit. P6-V01/V02/V03/U01 are verified; P6-V04 remains Phase 19. Whole-phase source/API/input reconciliation remains open.
+- Compared pinned 5.5.1 public declarations with the API map. Added exact source names/owners for `ClientRemotingProcessor`'s constructor and five methods, anonymous `MQClientInstance` channel-listener callbacks, and the public `RebalanceService`/`PullMessageService` worker and scheduling methods. Updated the audit inventory; no production behavior changed.
+- Validation: `git diff --check` passed. Documentation review confirms inactive inbound handlers retain explicit later-phase ownership; no plan file was changed.
+- Status: method-map documentation change is ready for its own commit. Broader DTO/input, source branch, and reverse-export reconciliation is still in progress; no Phase 6 completion claim.

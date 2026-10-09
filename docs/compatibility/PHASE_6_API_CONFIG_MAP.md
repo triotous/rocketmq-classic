@@ -361,6 +361,26 @@ Methods implemented on `ClientRuntime` unless another owner is specified. Eviden
 | getNettyClientConfig | native transport configuration initialized from ClientConfig; no Netty object | All 20 Java `NettyClientConfig` settings/40 accessors, relevant `NettySystemConfig` properties, and construction/start/channel/operation read timing are mapped in [the Phase 3 remoting inventory](PHASE_3_REMOTING_INVENTORY.md); runtime settings and transport behavior have named coverage there. |
 | getProducerTable / getConsumerTable | `producer_table/consumer_table`, live `ProducerTable/ConsumerTable`; atomic and remapping methods, cloneable `key_set_view/values_view/entry_set_view` handles with predicate and collection membership mutations; detached snapshots | registry map/four consumer method outcomes, retained-view/bulk-operation oracle, custom-equality proxies and private atomic/reentry tests; [ADR-0009](../architecture/ADR-0009-live-runtime-registry-tables.md) maps detached traversal to one allowed ConcurrentHashMap iterator outcome and records weak ownership, value keys and lease/RPC ordering |
 
+The public callbacks below are methods of the anonymous `ChannelEventListener` created by the `MQClientInstance` constructor, not declared methods of `MQClientInstance` itself. They are included here because they are observable callback behavior on the runtime's remoting client.
+
+| Pinned Java listener callback | Rust counterpart / evidence |
+| --- | --- |
+| `onChannelConnect/Close/Exception/Idle(remoteAddr, channel)` | `ChannelEventListener::{on_connect,on_close,on_exception,on_idle}` default no-op methods, matching the Java listener body. |
+| `onChannelActive(remoteAddr, channel)` | `HeartbeatChannelListener::on_active_async` snapshots broker addresses, sends non-strict-lock heartbeat to matching broker entries, and wakes rebalance after a successful send; `tests/heartbeat.rs` listener cases and P6-U01 cover the activated path. |
+
+## `ClientRemotingProcessor` public methods
+
+Pinned Java 5.5.1 declares one constructor and five public methods. The constructor is privately owned by `ClientRuntime` and registered with the remoting client; the methods map as follows:
+
+| Java method | Rust counterpart / owner | Evidence and status |
+| --- | --- | --- |
+| `processRequest(ctx, request)` | `RequestProcessor::process/process_with_context` → `RuntimeProcessor::dispatch` | [Inbound matrix](PHASE_6_INBOUND_MATRIX.md) verifies all eight registered request-code routing slots, channel context, one-way silence and explicit inactive errors; slot routing only, not handler compatibility. |
+| `checkTransactionState(ctx, request)` | Producer-group lookup using stored-message `PGROUP` → optional `ProducerRuntime` transaction processor | Matrix code 39; decoder/routing metadata is covered, transaction execution is Phase 14. |
+| `notifyConsumerIdsChanged(ctx, request)` | Consumer-group lookup → `ConsumerOperation::ConsumerIdsChanged`; activating owner must call runtime-wide rebalance wakeup | Matrix code 40; explicit inactive result until Phase 9 supplies the consumer owner. |
+| `resetOffset(ctx, request)` | Group lookup → `ConsumerOperation::ResetOffset` | Matrix code 220; explicit inactive result until Phase 17 supplies reset/offset behavior. |
+| `getConsumeStatus(ctx, request)` | Group lookup → `ConsumerOperation::ConsumerStatus` | Matrix code 221; explicit inactive result until Phase 17 supplies status behavior. |
+| `ClientRemotingProcessor(mqClientFactory)` | Runtime-owned `RuntimeProcessor` registration and weak runtime binding | Lifecycle rollback removes the registered processor before transport close; constructor is not a user-facing Rust API. |
+
 ## `TopicPublishInfo` source-to-owner map
 
 Phase 6 owns `MQClientInstance.topicRouteData2TopicPublishInfo` route conversion and publication. Its Java conversion fills `topicRouteData`, `orderTopic`, and `messageQueueList`; route refresh marks `haveTopicRouterInfo=true` when it publishes an accepted route to registered producers. The actual Java `topicPublishInfoPublication` oracle confirms this is separate from `ok()`: an accepted route publishes `haveTopicRouterInfo=true` with a non-null raw route and zero queues, while a missing route yields no callback. Native `TopicSnapshot` carries the route, publish queues, and ordered-route flag; the route snapshot's presence is distinct from an empty queue list and is verified by the loopback regression named above. Phase 7 must preserve that distinction when building producer-local state and deciding whether to use default-topic fallback. Phase 7 owns the rest of `TopicPublishInfo`: `ok`, its live queue-list accessors, `QueueFilter`, all `selectOneMessageQueue` overloads, `resetIndex`/`ThreadLocalIndex`, `getWriteQueueNumsByBroker`, and diagnostic `toString`. No Rust `TopicPublishInfo` type or queue-selection parity is claimed by Phase 6; these source methods are audited with the producer owner in [Phase 7](../../plan/2026/09/08-phase-07-producer-core.md).
@@ -513,6 +533,11 @@ The pinned fixture directly calls both enum APIs, unknown byte lookups, `Remotin
 | --- | --- |
 | `RebalanceService.getServiceName()` | `runtime::REBALANCE_SERVICE_NAME`; direct Java call and native comparison pass. |
 | `PullMessageService.getServiceName()` | `runtime::PULL_MESSAGE_SERVICE_NAME`; direct Java call and native comparison pass. |
+| `RebalanceService.run()` | Owned `runtime/rebalance.rs` worker invokes registered optional rebalance capabilities; Java worker-loop source and property cadence are mapped in the runtime inventory. Real assignment/allocation is Phase 11. |
+| `PullMessageService.run()` | Owned `runtime/pull.rs` FIFO worker dispatches pull/pop requests to the current registered consumer capability; concrete fetching and process queues are consumer-phase work. |
+| `executePullRequestImmediately(pullRequest)` / `executePopPullRequestImmediately(popRequest)` | `execute_pull_request_immediately` / `execute_pop_pull_request_immediately`; FIFO/current-owner dispatch tests cover the runtime boundary. |
+| `executePullRequestLater(pullRequest,delay)` / `executePopPullRequestLater(popRequest,delay)` | Owned pull worker delayed queue; serial deadline and cancellation tests cover scheduling and shutdown. |
+| `executeTask(task)` / `executeTaskLater(task,delay)` / `getScheduledExecutorService()` | `execute_task` / `execute_task_later` scheduling capability; one owned worker and Java one-second graceful shutdown window are covered. Rust does not expose a JDK executor object. |
 | inherited `start()` / `shutdown()` | `ClientRuntime::start/shutdown` owns all workers; a Java fixture with a controlled `run` body verifies idempotent start and joined shutdown, while Rust activates and joins owned async tasks. The fixture does not invoke either RocketMQ worker loop, and the JDK thread interface is not exposed. |
 | inherited `wakeup()` | `rebalance_immediately` maps to the sticky/coalescing rebalance signal; pull/pop immediate methods enqueue work. Tokio notification/queue behavior does not expose `LockSupport.unpark`. |
 | inherited `isStopped()` | `ClientRuntime::state()` exposes the richer runtime enum; it is not a direct per-service stopped flag. |
