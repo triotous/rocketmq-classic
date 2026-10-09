@@ -2004,6 +2004,12 @@ public final class RuntimeLookupFixtures {
         bitSetBulkOperations.put("andNot", java.util.Base64.getEncoder().encodeToString(andNotResult.toByteArray()));
         bitSetBulkOperations.put("intersects", bulkLeft.intersects(bulkRight));
         bitSetBulkOperations.put("equalClone", bulkLeft.equals(bulkLeft.clone()));
+        bitSetBulkOperations.put("leftLongs", java.util.Arrays.stream(bulkLeft.toLongArray())
+            .boxed().collect(java.util.stream.Collectors.toList()));
+        bitSetBulkOperations.put("leftHashCode", bulkLeft.hashCode());
+        bitSetBulkOperations.put("leftToString", bulkLeft.toString());
+        bitSetBulkOperations.put("leftStream", bulkLeft.stream().boxed()
+            .collect(java.util.stream.Collectors.toList()));
         item.put("bitSetBulkOperations", bitSetBulkOperations);
 
         org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody body =
