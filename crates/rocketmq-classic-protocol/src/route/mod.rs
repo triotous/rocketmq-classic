@@ -1322,7 +1322,7 @@ mod route_dto_input_cases_tests {
         let cases = fixture["routeDtoInputCases"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            87,
+            99,
             "Java oracle includes exact numeric and string coercions"
         );
         for required in [
@@ -1346,6 +1346,18 @@ mod route_dto_input_cases_tests {
             "message-queue-id-whitespace-string",
             "message-queue-id-string-overflow",
             "message-queue-id-string-underflow",
+            "broker-address-key-plus-leading-zero",
+            "broker-address-key-fraction-string",
+            "broker-address-key-exponent-string",
+            "broker-address-key-whitespace-string",
+            "broker-address-key-long-maximum",
+            "broker-address-key-long-overflow",
+            "mapping-id-key-plus-leading-zero",
+            "mapping-id-key-fraction-string",
+            "mapping-id-key-exponent-string",
+            "mapping-id-key-whitespace-string",
+            "mapping-id-key-int-maximum",
+            "mapping-id-key-int-overflow",
             "mapping-long-plus-maximum-string",
             "mapping-long-leading-zero-string",
             "mapping-long-fraction-string",

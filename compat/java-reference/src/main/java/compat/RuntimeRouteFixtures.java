@@ -643,6 +643,30 @@ public final class RuntimeRouteFixtures {
             "{brokerAddrs:[1,2]}"));
         cases.add(routeDtoInputCase("mapping-id-array-shape", "mapping",
             "{currIdMap:[1,2]}"));
+        cases.add(routeDtoInputCase("broker-address-key-plus-leading-zero", "brokerData",
+            "{\"brokerAddrs\":{\"+002\":\"master\"}}"));
+        cases.add(routeDtoInputCase("broker-address-key-fraction-string", "brokerData",
+            "{\"brokerAddrs\":{\"-1.9\":\"master\"}}"));
+        cases.add(routeDtoInputCase("broker-address-key-exponent-string", "brokerData",
+            "{\"brokerAddrs\":{\"1e2\":\"master\"}}"));
+        cases.add(routeDtoInputCase("broker-address-key-whitespace-string", "brokerData",
+            "{\"brokerAddrs\":{\" 2 \":\"master\"}}"));
+        cases.add(routeDtoInputCase("broker-address-key-long-maximum", "brokerData",
+            "{\"brokerAddrs\":{\"9223372036854775807\":\"master\"}}"));
+        cases.add(routeDtoInputCase("broker-address-key-long-overflow", "brokerData",
+            "{\"brokerAddrs\":{\"9223372036854775808\":\"master\"}}"));
+        cases.add(routeDtoInputCase("mapping-id-key-plus-leading-zero", "mapping",
+            "{\"currIdMap\":{\"+002\":1}}"));
+        cases.add(routeDtoInputCase("mapping-id-key-fraction-string", "mapping",
+            "{\"currIdMap\":{\"-1.9\":1}}"));
+        cases.add(routeDtoInputCase("mapping-id-key-exponent-string", "mapping",
+            "{\"currIdMap\":{\"1e2\":1}}"));
+        cases.add(routeDtoInputCase("mapping-id-key-whitespace-string", "mapping",
+            "{\"currIdMap\":{\" 2 \":1}}"));
+        cases.add(routeDtoInputCase("mapping-id-key-int-maximum", "mapping",
+            "{\"currIdMap\":{\"2147483647\":1}}"));
+        cases.add(routeDtoInputCase("mapping-id-key-int-overflow", "mapping",
+            "{\"currIdMap\":{\"2147483648\":1}}"));
         return cases;
     }
 
