@@ -514,10 +514,12 @@ impl RawProxyRoute {
 fn contains_fastjson_rejected_literal(input: &str) -> bool {
     let bytes = input.as_bytes();
     let mut index = 0;
+    let mut root_opened = false;
     while index < bytes.len() {
         // Fastjson accepts a BOM only at the start of the document. JSON5 also
-        // treats Unicode whitespace as trivia, which Fastjson rejects outside
-        // strings and comments.
+        // treats most Unicode whitespace as trivia, which Fastjson rejects
+        // outside strings and comments; a small source-probed set is accepted
+        // after the root object opens.
         if bytes[index..].starts_with(&[0xef, 0xbb, 0xbf]) {
             if index != 0 {
                 return true;
@@ -637,12 +639,18 @@ fn contains_fastjson_rejected_literal(input: &str) -> bool {
                     return true;
                 }
             }
+            b'{' => {
+                root_opened = true;
+                index += 1;
+            }
             _ if !bytes[index].is_ascii() => {
                 let character = input[index..]
                     .chars()
                     .next()
                     .expect("a non-ASCII byte starts a UTF-8 code point");
-                if character.is_whitespace() {
+                if character.is_whitespace()
+                    && (!root_opened || !fastjson_internal_trivia(character))
+                {
                     return true;
                 }
                 index += character.len_utf8();
@@ -651,6 +659,13 @@ fn contains_fastjson_rejected_literal(input: &str) -> bool {
         }
     }
     false
+}
+
+fn fastjson_internal_trivia(character: char) -> bool {
+    matches!(
+        character,
+        '\u{0080}' | '\u{0088}' | '\u{0089}' | '\u{008a}' | '\u{008c}' | '\u{008d}' | '\u{00a0}'
+    )
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -899,6 +914,7 @@ fn normalize_fastjson_source(input: &str) -> String {
     let bytes = input.as_bytes();
     let mut output = Vec::with_capacity(bytes.len());
     let mut index = 0;
+    let mut root_opened = false;
     while index < bytes.len() {
         if bytes.get(index..index + 2) == Some(b"//") {
             output.extend_from_slice(b"//");
@@ -913,6 +929,12 @@ fn normalize_fastjson_source(input: &str) -> String {
                     output.push(bytes[index]);
                     index += 1;
                 }
+            }
+            if bytes.get(index) == Some(&b'\n') {
+                // The LF terminates Fastjson's line comment and must survive
+                // the outside-string control-character normalization below.
+                output.push(b'\n');
+                index += 1;
             }
             continue;
         }
@@ -931,6 +953,31 @@ fn normalize_fastjson_source(input: &str) -> String {
             continue;
         }
         if !matches!(bytes[index], b'"' | b'\'') {
+            if matches!(bytes[index], 0 | 8 | 9 | 10 | 12 | 13) {
+                // Fastjson 2.0.63's JSONReaderUTF16.next skips this exact
+                // control-character bitset in addition to ordinary spaces.
+                output.push(b' ');
+                index += 1;
+                continue;
+            }
+            if !bytes[index].is_ascii() {
+                let character = input[index..]
+                    .chars()
+                    .next()
+                    .expect("a non-ASCII byte starts a UTF-8 code point");
+                if root_opened && fastjson_internal_trivia(character) {
+                    output.push(b' ');
+                    index += character.len_utf8();
+                    continue;
+                }
+                let end = index + character.len_utf8();
+                output.extend_from_slice(&bytes[index..end]);
+                index = end;
+                continue;
+            }
+            if bytes[index] == b'{' {
+                root_opened = true;
+            }
             output.push(bytes[index]);
             index += 1;
             continue;
@@ -1232,6 +1279,18 @@ fn recover_fastjson_eof_line_comment(input: &str) -> String {
             b'[' => {
                 closing.push(b']');
                 index += 1;
+            }
+            0x1a => {
+                // Fastjson's UTF-16 reader treats SUB as its end-of-input sentinel.
+                // It can finish an open root object, but not a nested value.
+                if closing.len() > 1 {
+                    return String::from_utf8(bytes[..index].to_vec()).expect("valid UTF-8");
+                }
+                let mut output = String::from_utf8(bytes[..index].to_vec()).expect("valid UTF-8");
+                for delimiter in closing.iter().rev() {
+                    output.push(*delimiter as char);
+                }
+                return output;
             }
             b'}' | b']' => {
                 if closing.pop() != Some(bytes[index]) {
@@ -1538,18 +1597,18 @@ impl ClientConfig {
     pub(super) fn parse_socks_proxy_config(
         &self,
     ) -> Result<HashMap<Option<String>, ParsedProxyRoute>, TransportError> {
-        if self.socks_proxy_config.is_empty() || self.socks_proxy_config.trim() == "null" {
+        if self.socks_proxy_config.is_empty() {
             return Ok(HashMap::new());
         }
-        let keyed =
-            normalize_fastjson_root_route_keys(&self.socks_proxy_config).map_err(|error| {
-                let reason = match error {
-                    FastjsonRouteKeyError::UnsignedLeadingDotNumber => {
-                        "Fastjson SOCKS parser rejects an unsigned leading-dot route key"
-                    }
-                };
-                TransportError::InvalidConfiguration(reason.into())
-            })?;
+        let source = strip_fastjson_document_prefix(&self.socks_proxy_config);
+        let keyed = normalize_fastjson_root_route_keys(source).map_err(|error| {
+            let reason = match error {
+                FastjsonRouteKeyError::UnsignedLeadingDotNumber => {
+                    "Fastjson SOCKS parser rejects an unsigned leading-dot route key"
+                }
+            };
+            TransportError::InvalidConfiguration(reason.into())
+        })?;
         if contains_fastjson_rejected_literal(&keyed) {
             return Err(TransportError::InvalidConfiguration(
                 "Fastjson SOCKS parser rejects this JSON5 literal".into(),
@@ -1606,6 +1665,25 @@ impl ClientConfig {
         }
         Ok(None)
     }
+}
+
+/// Fastjson 2.0.63 skips these UTF-16 units before its root value. The
+/// compatibility fixture probes every BMP code unit at the document boundary.
+fn strip_fastjson_document_prefix(input: &str) -> &str {
+    input.trim_start_matches(|character| {
+        matches!(
+            character,
+            '\u{0000}'
+                | '\u{0008}'
+                | '\t'
+                | '\n'
+                | '\u{000c}'
+                | '\r'
+                | ' '
+                | '\u{feff}'
+                | '\u{fffe}'
+        )
+    })
 }
 
 fn ipv4_in_cidr(address: &str, cidr: &str) -> Result<bool, TransportError> {
@@ -1794,6 +1872,164 @@ mod tests {
         assert!(!super::contains_fastjson_rejected_literal(
             r#"{0x2a:{"addr":"proxy"}}"#
         ));
+    }
+
+    #[test]
+    fn every_bmp_leading_code_unit_matches_invoked_java_fastjson() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/client-config.json"
+        ))
+        .unwrap();
+        let cases = &fixture["socksLeadingCodeUnits"];
+        let route_accepted = cases["route"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|code_unit| code_unit.as_u64().unwrap() as u16)
+            .collect::<std::collections::BTreeSet<_>>();
+        let null_accepted = cases["null"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|code_unit| code_unit.as_u64().unwrap() as u16)
+            .collect::<std::collections::BTreeSet<_>>();
+        let route = r#"{"10.0.0.0/8":{"addr":"proxy:1080"}}"#;
+        let mut config = ClientConfig::default();
+        for code_unit in 0..=u16::MAX {
+            assert!(
+                !(0xd800..=0xdfff).contains(&code_unit)
+                    || (!route_accepted.contains(&code_unit)
+                        && !null_accepted.contains(&code_unit)),
+                "Java cannot express a surrogate code unit as accepted leading trivia: U+{code_unit:04X}"
+            );
+            let prefix = String::from_utf16_lossy(&[code_unit]);
+            config.set_socks_proxy_config(format!("{prefix}{route}"));
+            assert_eq!(
+                config.parse_socks_proxy_config().is_ok(),
+                route_accepted.contains(&code_unit),
+                "route prefix U+{code_unit:04X} ({prefix:?})"
+            );
+            config.set_socks_proxy_config(format!("{prefix}null"));
+            let parsed_null = config.parse_socks_proxy_config();
+            assert_eq!(
+                parsed_null.is_ok(),
+                null_accepted.contains(&code_unit),
+                "null prefix U+{code_unit:04X} ({prefix:?})"
+            );
+            if null_accepted.contains(&code_unit) {
+                assert!(parsed_null.unwrap().is_empty(), "U+{code_unit:04X}");
+            }
+        }
+
+        let control_cases = fixture["socksControlBoundaryCases"].as_object().unwrap();
+        let boundaries = [
+            (
+                "root_after_open",
+                "{",
+                r#""10.0.0.0/8":{"addr":"proxy:1080"}}"#,
+            ),
+            (
+                "root_before_colon",
+                r#"{"10.0.0.0/8""#,
+                r#":{"addr":"proxy:1080"}}"#,
+            ),
+            (
+                "root_after_colon",
+                r#"{"10.0.0.0/8":"#,
+                r#"{"addr":"proxy:1080"}}"#,
+            ),
+            (
+                "proxy_after_open",
+                r#"{"10.0.0.0/8":{"#,
+                r#""addr":"proxy:1080"}}"#,
+            ),
+            (
+                "proxy_before_close",
+                r#"{"10.0.0.0/8":{"addr":"proxy:1080""#,
+                "}}",
+            ),
+            (
+                "root_before_close",
+                r#"{"10.0.0.0/8":{"addr":"proxy:1080"}"#,
+                "}",
+            ),
+        ];
+        for (name, prefix, suffix) in boundaries {
+            let accepted = control_cases[name]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|code_unit| code_unit.as_u64().unwrap() as u16)
+                .collect::<std::collections::BTreeSet<_>>();
+            for code_point in 0..=32 {
+                let code_unit = code_point as u16;
+                let inserted = char::from_u32(code_point).unwrap().to_string();
+                config.set_socks_proxy_config(format!("{prefix}{inserted}{suffix}"));
+                assert_eq!(
+                    config.parse_socks_proxy_config().is_ok(),
+                    accepted.contains(&code_unit),
+                    "{name}, U+{code_unit:04X} ({inserted:?})"
+                );
+            }
+        }
+
+        let unicode_cases = fixture["socksUnicodeTriviaCases"].as_object().unwrap();
+        for (name, prefix, suffix) in boundaries {
+            for case in unicode_cases[name].as_array().unwrap() {
+                let code_unit = case["codeUnit"].as_u64().unwrap() as u32;
+                let accepted = case["accepted"].as_bool().unwrap();
+                let inserted = char::from_u32(code_unit).unwrap().to_string();
+                config.set_socks_proxy_config(format!("{prefix}{inserted}{suffix}"));
+                assert_eq!(
+                    config.parse_socks_proxy_config().is_ok(),
+                    accepted,
+                    "{name}, U+{code_unit:04X} ({inserted:?})"
+                );
+            }
+        }
+
+        let eof_observations = fixture["socksSubstituteEofObservations"]
+            .as_object()
+            .unwrap();
+        let eof_boundaries = [
+            (
+                "root_after_open",
+                "{",
+                r#""10.0.0.0/8":{"addr":"proxy:1080"}}"#,
+            ),
+            (
+                "root_before_close",
+                r#"{"10.0.0.0/8":{"addr":"proxy:1080"}"#,
+                "}",
+            ),
+        ];
+        for (name, prefix, suffix) in eof_boundaries {
+            let observation = &eof_observations[name];
+            assert_eq!(observation["outcome"], "OK");
+            config.set_socks_proxy_config(format!("{prefix}\u{001a}{suffix}"));
+            let routes = config.parse_socks_proxy_config().unwrap();
+            let mut keys = routes
+                .keys()
+                .map(|key| key.clone().unwrap())
+                .collect::<Vec<_>>();
+            keys.sort();
+            assert_eq!(
+                keys,
+                observation["keys"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|key| key.as_str().unwrap().to_owned())
+                    .collect::<Vec<_>>(),
+                "{name}"
+            );
+            let selected = ClientConfig::proxy_for(&routes, "10.0.0.1").unwrap();
+            assert_eq!(
+                selected.map(|proxy| proxy.address),
+                observation["addr"].as_str().map(str::to_owned),
+                "{name}"
+            );
+        }
     }
 
     #[test]

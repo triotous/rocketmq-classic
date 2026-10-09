@@ -190,6 +190,10 @@ public final class RuntimeConfigFixtures {
             org.apache.rocketmq.remoting.netty.NettyEventType::values,
             org.apache.rocketmq.remoting.netty.NettyEventType::valueOf,
             new String[] {null, "", "CONNECT", "connect", "IDLE", "ACTIVE", "UNKNOWN"}));
+        fixture.put("socksLeadingCodeUnits", socksLeadingCodeUnits());
+        fixture.put("socksControlBoundaryCases", socksControlBoundaryCases());
+        fixture.put("socksUnicodeTriviaCases", socksUnicodeTriviaCases());
+        fixture.put("socksSubstituteEofObservations", socksSubstituteEofObservations());
         fixture.put("socksConstruction", socksConstruction());
         fixture.put("socksConnection", socksConnection(true));
         fixture.put("socksConnectionNoAuth", socksConnection(false));
@@ -1084,6 +1088,126 @@ public final class RuntimeConfigFixtures {
             cases.add(item);
         }
         return cases;
+    }
+
+    /** Direct Fastjson 2.0.63 source-path probe for every possible leading UTF-16 unit. */
+    private static Map<String, Object> socksLeadingCodeUnits() {
+        Map<String, Object> cases = new TreeMap<>();
+        String route = "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}}";
+        com.alibaba.fastjson2.TypeReference<Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig>> type =
+            new com.alibaba.fastjson2.TypeReference<>() { };
+        for (String[] probe : new String[][] {{"route", route}, {"null", "null"}}) {
+            List<Object> accepted = new ArrayList<>();
+            for (int codeUnit = 0; codeUnit <= Character.MAX_VALUE; codeUnit++) {
+                String input = (char) codeUnit + probe[1];
+                try {
+                    com.alibaba.fastjson2.JSON.parseObject(input, type);
+                    accepted.add(codeUnit);
+                } catch (RuntimeException rejected) {
+                    // The compact golden stores successful units; native checks the whole BMP.
+                }
+            }
+            cases.put(probe[0], accepted);
+        }
+        return cases;
+    }
+
+    /** Direct Fastjson whitespace scan for C0 units at each JSON token boundary. */
+    private static Map<String, Object> socksControlBoundaryCases() {
+        Map<String, Object> result = new TreeMap<>();
+        String[][] boundaries = {
+            {"root_after_open", "{", "\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}}"},
+            {"root_before_colon", "{\"10.0.0.0/8\"", ":{\"addr\":\"proxy:1080\"}}"},
+            {"root_after_colon", "{\"10.0.0.0/8\":", "{\"addr\":\"proxy:1080\"}}"},
+            {"proxy_after_open", "{\"10.0.0.0/8\":{", "\"addr\":\"proxy:1080\"}}"},
+            {"proxy_before_close", "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"", "}}"},
+            {"root_before_close", "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}", "}"}
+        };
+        com.alibaba.fastjson2.TypeReference<Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig>> type =
+            new com.alibaba.fastjson2.TypeReference<>() { };
+        for (String[] boundary : boundaries) {
+            List<Object> accepted = new ArrayList<>();
+            for (int codeUnit = 0; codeUnit <= 32; codeUnit++) {
+                String input = boundary[1] + (char) codeUnit + boundary[2];
+                try {
+                    com.alibaba.fastjson2.JSON.parseObject(input, type);
+                    accepted.add(codeUnit);
+                } catch (RuntimeException rejected) {
+                    // Keep only accepted C0 units in the compact source oracle.
+                }
+            }
+            result.put(boundary[0], accepted);
+        }
+        return result;
+    }
+
+    /** Direct Java trivia candidates across Unicode whitespace and control categories. */
+    private static Map<String, Object> socksUnicodeTriviaCases() {
+        Map<String, Object> result = new TreeMap<>();
+        String[][] boundaries = {
+            {"root_after_open", "{", "\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}}"},
+            {"root_before_colon", "{\"10.0.0.0/8\"", ":{\"addr\":\"proxy:1080\"}}"},
+            {"root_after_colon", "{\"10.0.0.0/8\":", "{\"addr\":\"proxy:1080\"}}"},
+            {"proxy_after_open", "{\"10.0.0.0/8\":{", "\"addr\":\"proxy:1080\"}}"},
+            {"proxy_before_close", "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"", "}}"},
+            {"root_before_close", "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}", "}"}
+        };
+        com.alibaba.fastjson2.TypeReference<Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig>> type =
+            new com.alibaba.fastjson2.TypeReference<>() { };
+        for (String[] boundary : boundaries) {
+            List<Object> cases = new ArrayList<>();
+            for (int codeUnit = 0; codeUnit <= Character.MAX_VALUE; codeUnit++) {
+                char character = (char) codeUnit;
+                if (!Character.isWhitespace(character) && !Character.isSpaceChar(character)
+                    && !Character.isISOControl(character)) {
+                    continue;
+                }
+                String input = boundary[1] + character + boundary[2];
+                Map<String, Object> item = new TreeMap<>();
+                item.put("codeUnit", codeUnit);
+                try {
+                    com.alibaba.fastjson2.JSON.parseObject(input, type);
+                    item.put("accepted", true);
+                } catch (RuntimeException rejected) {
+                    item.put("accepted", false);
+                }
+                cases.add(item);
+            }
+            result.put(boundary[0], cases);
+        }
+        return result;
+    }
+
+    private static Map<String, Object> socksSubstituteEofObservations() {
+        Map<String, Object> result = new TreeMap<>();
+        String[][] boundaries = {
+            {"root_after_open", "{", "\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}}"},
+            {"root_before_close", "{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\"}", "}"}
+        };
+        com.alibaba.fastjson2.TypeReference<Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig>> type =
+            new com.alibaba.fastjson2.TypeReference<>() { };
+        for (String[] boundary : boundaries) {
+            Map<String, Object> item = new TreeMap<>();
+            String input = boundary[1] + (char) 0x1a + boundary[2];
+            try {
+                Map<String, org.apache.rocketmq.remoting.proxy.SocksProxyConfig> parsed =
+                    com.alibaba.fastjson2.JSON.parseObject(input, type);
+                item.put("outcome", "OK");
+                if (parsed == null) {
+                    item.put("keys", null);
+                } else {
+                    List<String> keys = new ArrayList<>(parsed.keySet());
+                    keys.sort(String::compareTo);
+                    item.put("keys", keys);
+                    org.apache.rocketmq.remoting.proxy.SocksProxyConfig route = parsed.get("10.0.0.0/8");
+                    item.put("addr", route == null ? null : route.getAddr());
+                }
+            } catch (RuntimeException rejected) {
+                item.put("outcome", rejected.getClass().getSimpleName());
+            }
+            result.put(boundary[0], item);
+        }
+        return result;
     }
 
     private static List<Object> socksConstruction() throws Exception {
