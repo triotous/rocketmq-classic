@@ -613,6 +613,8 @@ public final class RuntimeRouteFixtures {
             "{\"queueId\":2147483648}"));
         cases.add(routeDtoInputCase("broker-scalars", "brokerData",
             "{\"cluster\":true,\"brokerName\":7,\"zoneName\":1.5,\"brokerAddrs\":{\"+1\":true,\"2\":3,\"3\":null},\"enableActingMaster\":\"TRUE\"}"));
+        cases.add(routeDtoInputCase("broker-address-unquoted-integer-keys", "brokerData",
+            "{\"brokerAddrs\":{0:\"master\",-1:\"slave\",9223372036854775807:\"maximum\"}}"));
         cases.add(routeDtoInputCase("broker-address-decimal-key", "brokerData",
             "{\"brokerAddrs\":{\"1.0\":0}}"));
         cases.add(routeDtoInputCase("broker-unicode-decimal-address-key", "brokerData",
@@ -631,6 +633,8 @@ public final class RuntimeRouteFixtures {
             "{\"enableActingMaster\":null}"));
         cases.add(routeDtoInputCase("mapping-scalars", "mapping",
             "{\"topic\":42,\"bname\":true,\"scope\":3,\"totalQueues\":\"2\",\"epoch\":1.9,\"dirty\":\"TRUE\",\"currIdMap\":{\"01\":\"2\",\"2\":1.9,\"3\":true}}"));
+        cases.add(routeDtoInputCase("mapping-curr-id-map-unquoted-integer-keys", "mapping",
+            "{\"currIdMap\":{0:1,-1:2,2147483647:3}}"));
         cases.add(routeDtoInputCase("mapping-exponent-string", "mapping",
             "{\"epoch\":\"1e2\"}"));
         cases.add(routeDtoInputCase("mapping-long-minimum", "mapping",
