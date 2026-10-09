@@ -178,6 +178,13 @@ public final class RuntimeLookupFixtures {
         cases.add(assignmentBodyCase("single-default", "[{}]", true));
         cases.add(assignmentBodyCase("null-element", "[null]", true));
         cases.add(assignmentBodyCase("duplicate-null-elements", "[null,null]", true));
+        cases.add(assignmentBodyCase("string-element", "[\"assignment\"]", true));
+        cases.add(assignmentBodyCase("number-element", "[7]", true));
+        cases.add(assignmentBodyCase("boolean-element", "[true]", true));
+        cases.add(assignmentBodyCase("array-element", "[[]]", true));
+        cases.add(assignmentBodyCase("nested-array-object-element", "[[{}]]", true));
+        cases.add(assignmentBodyCase("mixed-null-object-elements", "[null,{}]", true));
+        cases.add(assignmentBodyCase("mixed-scalar-object-elements", "[7,{}]", true));
         cases.add(assignmentBodyCase("object-field", "{" + queue + "}", true));
         cases.add(assignmentBodyCase("string-field", "\"assignment\"", true));
         cases.add(assignmentBodyCase("number-field", "7", true));

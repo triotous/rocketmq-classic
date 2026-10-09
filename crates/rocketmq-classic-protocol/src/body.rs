@@ -1597,7 +1597,21 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
         let cases = fixture["assignmentBodyCases"].as_array().unwrap();
-        assert_eq!(cases.len(), 15);
+        assert_eq!(cases.len(), 22);
+        for required in [
+            "string-element",
+            "number-element",
+            "boolean-element",
+            "array-element",
+            "nested-array-object-element",
+            "mixed-null-object-elements",
+            "mixed-scalar-object-elements",
+        ] {
+            assert!(
+                cases.iter().any(|case| case["name"] == required),
+                "missing {required}"
+            );
+        }
         for case in cases {
             let decoded = serde_json::from_str::<QueryAssignmentResponseBody>(
                 case["rawInput"].as_str().unwrap(),
