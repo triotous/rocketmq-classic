@@ -19,9 +19,11 @@ Phase 5 RPC 已驗收。consumer pull/rebalance 尚未實作；runtime 只提供
 
 - 先完成: [Phase 5](06-phase-05-typed-rpc-api.zh-tw.md).
 
+來源對照修正（2026-10-09）：Pinned `MQClientManager.getOrCreateMQClientInstance` 先查 client-ID table，已存在時直接回傳；只有 key 不存在才會進入 `computeIfAbsent`。後續 config/hook 不會取代或觸發 first-runtime conflict check。原本的 `localServeAddr` 文字屬於 Proxy `ProxyConfig.initData`，在 client-only phase 範圍之外；此處應使用來源確認的 `ClientConfig.clientIP`/`NetworkUtil.getLocalAddress` 行為。詳見[需求稽核](../../docs/compatibility/PHASE_6_REQUIREMENT_AUDIT.md)。
+
 ### 2.1 必讀 Java 參考
 
-- 實作前，依索引的 pinned source 規則確認以下 class/method 與實際 call site；此計畫未獨立驗證 Java artifact。
+- 上述來源對照修正已依 pinned 5.5.1 artifact 驗證；改動以下行為前，仍須依執行索引的 pinned-source 規則確認各 class/method 與實際 call site。
 - `MQClientManager`
 - `MQClientInstance`
 - `ClientConfig`
@@ -45,13 +47,13 @@ crates/rocketmq-classic-core/tests/runtime.rs
 docs/architecture/ADR-0002-client-runtime-sharing.md
 ```
 
-ClientRuntimeManager 是明確可共享 handle，不是不可重設的 global singleton。後續 facade 共享 default manager，測試可指定 manager。client-ID entry 管理 single initialization；比對 TLS/auth/NameServer 等 runtime-affecting 設定，遇衝突拒絕，不靜默共享不相容 transport。建立 Created→Starting→Running→ShuttingDown→Stopped 與 startup failure。group registration 依 identity 管理，不依 Arc strong count。
+ClientRuntimeManager 是明確可共享 handle，不是不可重設的 global singleton。後續 facade 共享 default manager，測試可指定 manager。client-ID entry 管理 single initialization，並遵守 Java first-mapping 行為：相同 ID 再次呼叫時回傳既有 runtime，即使後續 config/hook 不同；保留首次 runtime 的 config/property/hook snapshot，且不修改後續 caller config。不得因後續同 ID 呼叫的 config 衝突而拒絕。建立 Created→Starting→Running→ShuttingDown→Stopped 與 startup failure。group registration 依 identity 管理，不依 Arc strong count。
 
 ## 4. 依序實作步驟
 
 ### 4.1 P6-01 / P6-02 — 建立 identity 與 single-flight creation
 
-以 fixture 測試 ClientConfig ID，包含 instance/unit 組成及 blank local serve address 視為 unset。先以 per-key OnceCell 或 entry 取得 ownership，再建立 socket/task。不同 key 可並行初始化。初始化失敗只移除自己的 entry，依文件允許 retry。在 ADR-0002 明確記錄 runtime ownership。
+以 fixture 測試 ClientConfig ID，包含 instance/unit 組成，並測試來源確認的 automatic `clientIP` 初始化。`ProxyConfig.localServeAddr` 屬於 server，不在此 client phase 範圍。先以 per-key OnceCell 或 entry 取得 ownership，再建立 socket/task。不同 key 可並行初始化。初始化失敗只移除自己的 entry，依文件允許 retry。在 ADR-0002 明確記錄 runtime ownership。
 
 ### 4.2 P6-03 / P6-04 — 實作 lifecycle 與 group lease
 
@@ -74,7 +76,7 @@ fetch 時不持有 cache lock，先完整轉換 route，再替換 topic/broker/p
 先寫對應失敗測試／Oracle fixture，再依序實作；以下 case 必須成為可執行檢查，而非人工勾選。以下檢查不依賴 Docker 或 live Broker，使用 Java fixture、可控時鐘及 scripted peer；共通命令與證據規則見執行索引。
 
 - [ ] **P6-V01** — 同 ID 大量並行 get_or_create 只產生一個 identity/task set/socket pool；不同 ID 不被全域序列化。
-- [ ] **P6-V02** — stale failed creation 與 unregister token 不得移除 replacement；不相容共享設定被拒絕。
+- [ ] **P6-V02** — stale failed creation 與 unregister token 不得移除 replacement；重複 ID 必須回傳 Java 首次建立的 runtime，且後續設定不同時仍保留首次 config/hook。
 - [ ] **P6-V03** — paused-time timer、route snapshot reader 及全部 startup-failure point 不留下 partial state 或 task leak。
 
 - [ ] **P6-U01** — scripted response 與 paused time 驗證 heartbeat/subscription/unregister bytes，以及共享使用者獨立 shutdown。
