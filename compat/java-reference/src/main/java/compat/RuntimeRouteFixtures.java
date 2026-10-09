@@ -1163,6 +1163,7 @@ public final class RuntimeRouteFixtures {
             new String[] {"null-address-only", "{\"brokerDatas\":[{\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":null}}]}"},
             new String[] {"null-and-live-addresses", "{\"brokerDatas\":[{\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":null,\"2\":\"slave:10911\"}}]}"},
             new String[] {"null-row-and-live-address", "{\"brokerDatas\":[null,{\"brokerName\":\"broker\",\"brokerAddrs\":{\"2\":\"slave:10911\"}}]}"},
+            new String[] {"partial-candidate-before-null-row", "{\"brokerDatas\":[{\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master:10911\"}},null]}"},
             new String[] {"missing-route-fields", "{}"},
             new String[] {"null-broker-list", "{\"brokerDatas\":null}"},
             new String[] {"empty-broker-list", "{\"brokerDatas\":[]}"},
@@ -1211,6 +1212,23 @@ public final class RuntimeRouteFixtures {
             TopicRouteData raw = com.alibaba.fastjson2.JSON.parseObject(rawInput, TopicRouteData.class);
             runtime.getTopicRouteTable().clear();
             runtime.getTopicRouteTable().put("raw", raw);
+            if (id.equals("partial-candidate-before-null-row")) {
+                java.lang.reflect.Field addressesField = MQClientInstance.class.getDeclaredField("brokerAddrTable");
+                addressesField.setAccessible(true);
+                Map<?, ?> addressTable = (Map<?, ?>) addressesField.get(runtime);
+                item.put("cleanupAddressTraversal",
+                    new ArrayList<>(((Map<?, ?>) addressTable.get("broker")).values()));
+                java.lang.reflect.Method exists = MQClientInstance.class.getDeclaredMethod(
+                    "isBrokerAddrExistInTopicRouteTable", String.class);
+                exists.setAccessible(true);
+                item.put("masterAddressVisibleBeforeFailure", exists.invoke(runtime, "master:10911"));
+                try {
+                    exists.invoke(runtime, "slave:10911");
+                    item.put("laterStaleAddressOutcome", "OK");
+                } catch (java.lang.reflect.InvocationTargetException error) {
+                    item.put("laterStaleAddressOutcome", error.getCause().getClass().getSimpleName());
+                }
+            }
             java.lang.reflect.Method clean = MQClientInstance.class.getDeclaredMethod("cleanOfflineBroker");
             clean.setAccessible(true);
             try {
