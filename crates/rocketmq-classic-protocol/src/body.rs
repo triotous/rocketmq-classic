@@ -5620,6 +5620,13 @@ mod tests {
                         serde_json::to_value(assignment.attachments().unwrap()).unwrap(),
                         case["mutatedAttachments"]
                     );
+                    assert_eq!(case["messageQueueGetterReturnsSetterObject"], true);
+                    assignment.message_queue_mut().unwrap().set_queue_id(4);
+                    assert_eq!(case["messageQueueGetterMutationVisibleToSetterObject"], true);
+                    assert_eq!(
+                        serde_json::to_value(assignment.message_queue().unwrap()).unwrap(),
+                        case["mutatedMessageQueue"]
+                    );
                 }
             }
         }

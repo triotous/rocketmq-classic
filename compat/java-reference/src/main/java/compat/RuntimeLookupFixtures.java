@@ -1670,6 +1670,14 @@ public final class RuntimeLookupFixtures {
             new org.apache.rocketmq.common.message.MessageQueueAssignment();
         differentQueue.setMessageQueue(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 3));
         populatedCase.put("equalsDifferentQueue", populated.equals(differentQueue));
+        populatedCase.put("messageQueueGetterReturnsSetterObject", populated.getMessageQueue() == queue);
+        populated.getMessageQueue().setQueueId(4);
+        populatedCase.put("messageQueueGetterMutationVisibleToSetterObject", queue.getQueueId() == 4);
+        Map<String, Object> mutatedQueue = new TreeMap<>();
+        mutatedQueue.put("topic", populated.getMessageQueue().getTopic());
+        mutatedQueue.put("brokerName", populated.getMessageQueue().getBrokerName());
+        mutatedQueue.put("queueId", populated.getMessageQueue().getQueueId());
+        populatedCase.put("mutatedMessageQueue", mutatedQueue);
         cases.add(populatedCase);
         return cases;
     }
