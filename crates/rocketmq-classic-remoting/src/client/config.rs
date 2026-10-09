@@ -1781,8 +1781,8 @@ mod tests {
         let cases = fixture["socksConstruction"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            437,
-            "Java oracle includes 126 prior cases, 256 byte-range followers, 15 Unicode escape cases, five Unicode-whitespace cases, ten root-shape cases, ten grammar-edge cases, four nested bean-property cases, three EOF-comment boundaries, and eight unquoted route-key forms"
+            442,
+            "Java oracle includes 126 prior cases, 256 byte-range followers, 15 Unicode escape cases, five Unicode-whitespace cases, ten root-shape cases, ten grammar-edge cases, four nested bean-property cases, three EOF-comment boundaries, eight unquoted route-key forms, and five unquoted numeric padding/suffix forms"
         );
         for escaped in 0..=0x7f {
             let mut expected = String::from("{\"10.0.0.0/8\":{\"addr\":\"A\\");
@@ -1868,7 +1868,7 @@ mod tests {
         ]) {
             assert_eq!(case["input"], expected);
         }
-        for (case, expected) in cases.iter().skip(429).zip([
+        for (case, expected) in cases.iter().skip(cases.len() - 13).zip([
             "{default:{\"addr\":\"proxy:1080\"}}",
             "{10:{\"addr\":\"proxy:1080\"}}",
             "{true:{\"addr\":\"proxy:1080\"}}",
@@ -1877,6 +1877,11 @@ mod tests {
             "{1.5:{\"addr\":\"proxy:1080\"}}",
             "{1e2:{\"addr\":\"proxy:1080\"}}",
             "{+10:{\"addr\":\"proxy:1080\"}}",
+            "{0123:{\"addr\":\"proxy:1080\"}}",
+            "{123L:{\"addr\":\"proxy:1080\"}}",
+            "{1.25F:{\"addr\":\"proxy:1080\"}}",
+            "{1D:{\"addr\":\"proxy:1080\"}}",
+            "{1e7F:{\"addr\":\"proxy:1080\"}}",
         ]) {
             assert_eq!(case["input"], expected);
         }
