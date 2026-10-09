@@ -85,6 +85,7 @@ public final class RuntimeLookupFixtures {
         cases.add(assignmentModeCase("fractional-ordinal", "1.9"));
         cases.add(assignmentModeCase("fractional-ordinal-precision-boundary", "0.9999999999999999999"));
         cases.add(assignmentModeCase("decimal-ordinal-wraps-to-zero", "4294967296.0"));
+        cases.add(assignmentModeCase("integer-ordinal-wrap-boundary", "4294967296"));
         cases.add(assignmentModeCase("negative-fractional-ordinal", "-0.9"));
         cases.add(assignmentModeCase("negative-ordinal", "-1"));
         cases.add(assignmentModeCase("ordinal-out-of-range", "2"));

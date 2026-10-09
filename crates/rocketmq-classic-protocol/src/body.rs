@@ -976,7 +976,7 @@ mod tests {
         let cases = fixture["assignmentModeCases"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            19,
+            20,
             "Java oracle includes decimal ordinal boundaries"
         );
         assert!(
@@ -988,6 +988,11 @@ mod tests {
             cases
                 .iter()
                 .any(|case| case["name"] == "decimal-ordinal-wraps-to-zero")
+        );
+        assert!(
+            cases
+                .iter()
+                .any(|case| case["name"] == "integer-ordinal-wrap-boundary")
         );
         for case in cases {
             let decoded = serde_json::from_str::<QueryAssignmentResponseBody>(
