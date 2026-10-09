@@ -711,6 +711,14 @@ public final class RuntimeRouteFixtures {
             "{\"currIdMap\":{\"2147483647\":1}}"));
         cases.add(routeDtoInputCase("mapping-id-key-int-overflow", "mapping",
             "{\"currIdMap\":{\"2147483648\":1}}"));
+        cases.add(routeDtoInputCase("route-queue-datas-single-object", "topicRouteData",
+            "{\"queueDatas\":{\"brokerName\":\"broker\",\"readQueueNums\":2,\"writeQueueNums\":3}}"));
+        cases.add(routeDtoInputCase("route-broker-datas-single-object", "topicRouteData",
+            "{\"brokerDatas\":{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"127.0.0.1:10911\"},\"zoneName\":\"zone\"}}"));
+        cases.add(routeDtoInputCase("route-queue-datas-null-element", "topicRouteData",
+            "{\"queueDatas\":[null]}"));
+        cases.add(routeDtoInputCase("route-broker-datas-null-element", "topicRouteData",
+            "{\"brokerDatas\":[null]}"));
         return cases;
     }
 
