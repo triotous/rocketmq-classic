@@ -247,11 +247,13 @@ async fn list_send_back_lock_and_unlock() {
     let locked = api
         .lock_batch_mq(&addr, &LockBatchRequestBody::default(), deadline())
         .await
+        .unwrap()
         .unwrap();
     assert_eq!(locked.len(), 1);
-    assert_eq!(locked[0].topic(), Some("orders"));
-    assert_eq!(locked[0].broker_name(), Some("broker"));
-    assert_eq!(locked[0].queue_id(), 2);
+    let locked_queue = locked.iter().next().unwrap().as_ref().unwrap();
+    assert_eq!(locked_queue.topic(), Some("orders"));
+    assert_eq!(locked_queue.broker_name(), Some("broker"));
+    assert_eq!(locked_queue.queue_id(), 2);
     client.shutdown().await;
     let (api, client, addr) = scripted(
         response::SUCCESS,
@@ -326,6 +328,7 @@ async fn list_send_back_lock_and_unlock() {
     assert!(
         api.lock_batch_mq(&addr, &LockBatchRequestBody::default(), deadline())
             .await
+            .unwrap()
             .unwrap()
             .is_empty()
     );

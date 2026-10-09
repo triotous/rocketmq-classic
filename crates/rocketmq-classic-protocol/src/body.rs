@@ -161,6 +161,50 @@ where
     Ok(Some(assignments))
 }
 
+fn default_message_queue_set() -> Option<std::collections::HashSet<Option<MessageQueue>>> {
+    Some(std::collections::HashSet::new())
+}
+
+fn deserialize_optional_message_queue_set<'de, D>(
+    deserializer: D,
+) -> Result<Option<std::collections::HashSet<Option<MessageQueue>>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+    let raw = raw.get().trim();
+    if raw == "null" || raw == "\"\"" {
+        return Ok(None);
+    }
+    let values = if raw.starts_with('[') {
+        serde_json::from_str::<Vec<Box<serde_json::value::RawValue>>>(raw)
+            .map_err(de::Error::custom)?
+    } else if raw.starts_with('{') {
+        vec![
+            serde_json::from_str::<Box<serde_json::value::RawValue>>(raw)
+                .map_err(de::Error::custom)?,
+        ]
+    } else {
+        return Err(de::Error::custom(
+            "expected a JSON message queue array, object, empty string, or null",
+        ));
+    };
+
+    values
+        .into_iter()
+        .map(|value| {
+            if value.get().trim() == "null" {
+                Ok(None)
+            } else {
+                serde_json::from_str::<MessageQueue>(value.get())
+                    .map(Some)
+                    .map_err(de::Error::custom)
+            }
+        })
+        .collect::<Result<std::collections::HashSet<_>, _>>()
+        .map(Some)
+}
+
 /// Java's default JSON writer omits null-valued entries in this map.
 fn serialize_assignment_attachments<S>(
     attachments: &Option<std::collections::BTreeMap<String, Option<String>>>,
@@ -940,7 +984,7 @@ pub struct UnregisterClientRequestBody {
     pub client_id: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LockBatchRequestBody {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -949,28 +993,157 @@ pub struct LockBatchRequestBody {
     pub client_id: Option<String>,
     #[serde(default)]
     pub only_this_broker: bool,
-    #[serde(default)]
-    pub mq_set: Vec<MessageQueue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mq_set: Option<std::collections::HashSet<Option<MessageQueue>>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LockBatchRequestBodyFields {
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    consumer_group: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    client_id: Option<String>,
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_bool")]
+    only_this_broker: bool,
+    #[serde(
+        default = "default_message_queue_set",
+        deserialize_with = "deserialize_optional_message_queue_set"
+    )]
+    mq_set: Option<std::collections::HashSet<Option<MessageQueue>>>,
+}
+
+impl<'de> Deserialize<'de> for LockBatchRequestBody {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: LockBatchRequestBodyFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            consumer_group: fields.consumer_group,
+            client_id: fields.client_id,
+            only_this_broker: fields.only_this_broker,
+            mq_set: fields.mq_set,
+        })
+    }
+}
+
+impl Default for LockBatchRequestBody {
+    fn default() -> Self {
+        Self {
+            consumer_group: None,
+            client_id: None,
+            only_this_broker: false,
+            mq_set: default_message_queue_set(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UnlockBatchRequestBody {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub consumer_group: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_id: Option<String>,
-    #[serde(default)]
     pub only_this_broker: bool,
-    #[serde(default)]
-    pub mq_set: Vec<MessageQueue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mq_set: Option<std::collections::HashSet<Option<MessageQueue>>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UnlockBatchRequestBodyFields {
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    consumer_group: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    client_id: Option<String>,
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_bool")]
+    only_this_broker: bool,
+    #[serde(
+        default = "default_message_queue_set",
+        deserialize_with = "deserialize_optional_message_queue_set"
+    )]
+    mq_set: Option<std::collections::HashSet<Option<MessageQueue>>>,
+}
+
+impl<'de> Deserialize<'de> for UnlockBatchRequestBody {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: UnlockBatchRequestBodyFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            consumer_group: fields.consumer_group,
+            client_id: fields.client_id,
+            only_this_broker: fields.only_this_broker,
+            mq_set: fields.mq_set,
+        })
+    }
+}
+
+impl Default for UnlockBatchRequestBody {
+    fn default() -> Self {
+        Self {
+            consumer_group: None,
+            client_id: None,
+            only_this_broker: false,
+            mq_set: default_message_queue_set(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LockBatchResponseBody {
-    #[serde(default, rename = "lockOKMQSet")]
-    pub lock_okmq_set: Vec<MessageQueue>,
+    #[serde(rename = "lockOKMQSet", skip_serializing_if = "Option::is_none")]
+    pub lock_okmq_set: Option<std::collections::HashSet<Option<MessageQueue>>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LockBatchResponseBodyFields {
+    #[serde(
+        default = "default_message_queue_set",
+        rename = "lockOKMQSet",
+        deserialize_with = "deserialize_optional_message_queue_set"
+    )]
+    lock_okmq_set: Option<std::collections::HashSet<Option<MessageQueue>>>,
+}
+
+impl<'de> Deserialize<'de> for LockBatchResponseBody {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: LockBatchResponseBodyFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            lock_okmq_set: fields.lock_okmq_set,
+        })
+    }
+}
+
+impl Default for LockBatchResponseBody {
+    fn default() -> Self {
+        Self {
+            lock_okmq_set: default_message_queue_set(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -1319,7 +1492,7 @@ mod tests {
         let mut mismatches = Vec::new();
         for case in cases {
             let name = case["name"].as_str().unwrap();
-            let decoded = serde_json::from_str::<T>(case["rawInput"].as_str().unwrap());
+            let decoded = serde_json::from_str::<Option<T>>(case["rawInput"].as_str().unwrap());
             let java_accepts = case["outcome"] == "ACCEPTED";
             match (decoded, java_accepts) {
                 (Ok(decoded), true) => {
@@ -1430,7 +1603,9 @@ mod tests {
             consumer_group: Some("workers".into()),
             client_id: Some("client".into()),
             only_this_broker: false,
-            mq_set: vec![MessageQueue::new("orders", "broker-a", 0)],
+            mq_set: Some(std::collections::HashSet::from([Some(MessageQueue::new(
+                "orders", "broker-a", 0,
+            ))])),
         };
         let unlock = UnlockBatchRequestBody {
             consumer_group: lock.consumer_group.clone(),
@@ -1470,7 +1645,9 @@ mod tests {
         let body = LockBatchRequestBody {
             consumer_group: Some("workers".into()),
             client_id: Some("client".into()),
-            mq_set: vec![MessageQueue::new("orders", "broker-a", 0)],
+            mq_set: Some(std::collections::HashSet::from([Some(MessageQueue::new(
+                "orders", "broker-a", 0,
+            ))])),
             ..LockBatchRequestBody::default()
         };
         let value = serde_json::to_value(body).unwrap();

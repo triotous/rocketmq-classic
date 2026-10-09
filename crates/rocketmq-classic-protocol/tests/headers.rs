@@ -448,15 +448,50 @@ fn java_consumer_list_and_lock_bodies_preserve_optional_and_collection_semantics
         serde_json::from_slice(&read_body("body-lock-request")).unwrap();
     let unlock: UnlockBatchRequestBody =
         serde_json::from_slice(&read_body("body-unlock-request")).unwrap();
-    assert_eq!(lock.mq_set[0].broker_name(), Some("broker-a"));
+    assert_eq!(
+        lock.mq_set
+            .as_ref()
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .broker_name(),
+        Some("broker-a")
+    );
     assert!(!lock.only_this_broker);
     assert!(unlock.only_this_broker);
     let response: LockBatchResponseBody =
         serde_json::from_slice(&read_body("body-lock-response")).unwrap();
-    assert_eq!(response.lock_okmq_set[0].queue_id(), 1);
+    assert_eq!(
+        response
+            .lock_okmq_set
+            .as_ref()
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .queue_id(),
+        1
+    );
     let unlock_response: LockBatchResponseBody =
         serde_json::from_slice(&read_body("body-unlock-response")).unwrap();
-    assert_eq!(unlock_response.lock_okmq_set[0].topic(), Some("orders"));
+    assert_eq!(
+        unlock_response
+            .lock_okmq_set
+            .as_ref()
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .topic(),
+        Some("orders")
+    );
 }
 
 fn decode_java_queue_offset_body(raw: &[u8], field: &str) -> ResetOffsetBody {

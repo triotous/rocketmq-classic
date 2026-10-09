@@ -234,19 +234,21 @@ async fn java_invoked_consumer_more_requests_and_outcomes_match() {
             let body = LockBatchRequestBody {
                 consumer_group: Some("consumer".into()),
                 client_id: Some("client".into()),
-                mq_set: vec![queue],
+                mq_set: Some(std::collections::HashSet::from([Some(queue)])),
                 ..Default::default()
             };
             match api.lock_batch_mq(&addr, &body, deadline).await {
-                Ok(queues) => {
+                Ok(Some(queues)) => {
                     assert_eq!(queues.len(), 1);
+                    let queue = queues.iter().find_map(Option::as_ref).unwrap();
                     format!(
                         "queues={}:{}:{}",
-                        queues[0].topic().unwrap_or_default(),
-                        queues[0].broker_name().unwrap_or_default(),
-                        queues[0].queue_id()
+                        queue.topic().unwrap_or_default(),
+                        queue.broker_name().unwrap_or_default(),
+                        queue.queue_id()
                     )
                 }
+                Ok(None) => "queues=null".into(),
                 Err(RpcError::Response { code, .. }) => format!("MQBrokerException;code={code}"),
                 Err(RpcError::MalformedResponse { .. }) => "malformed".into(),
                 other => panic!("unexpected lock result: {other:?}"),
@@ -255,7 +257,7 @@ async fn java_invoked_consumer_more_requests_and_outcomes_match() {
             let body = UnlockBatchRequestBody {
                 consumer_group: Some("consumer".into()),
                 client_id: Some("client".into()),
-                mq_set: vec![queue],
+                mq_set: Some(std::collections::HashSet::from([Some(queue)])),
                 ..Default::default()
             };
             match api

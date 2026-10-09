@@ -254,7 +254,7 @@ impl MQClientApi {
         addr: &str,
         body: &LockBatchRequestBody,
         deadline: Instant,
-    ) -> Result<Vec<MessageQueue>, RpcError> {
+    ) -> Result<Option<std::collections::HashSet<Option<MessageQueue>>>, RpcError> {
         let code = request::LOCK_BATCH_MQ;
         let payload = serde_json::to_vec(body).expect("lock body serialization cannot fail");
         let reply = self
