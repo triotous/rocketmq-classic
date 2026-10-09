@@ -491,9 +491,10 @@ public final class RuntimeLookupFixtures {
         item.put("clientIdSetterReturnsThis", dto.setClientId("client") == dto);
         item.put("groupSetterReturnsThis", dto.setGroup("workers") == dto);
         item.put("topicSetterReturnsThis", dto.setTopic("orders") == dto);
-        Set<String> topics = Set.of("lite-a");
+        Set<String> topics = new java.util.TreeSet<>(Set.of("lite-a"));
         item.put("liteTopicSetSetterReturnsThis", dto.setLiteTopicSet(topics) == dto);
         item.put("liteTopicSetGetterReturnsSameSet", dto.getLiteTopicSet() == topics);
+        item.put("liteTopicSet", new ArrayList<>(dto.getLiteTopicSet()));
         org.apache.rocketmq.common.lite.OffsetOption option =
             new org.apache.rocketmq.common.lite.OffsetOption(
                 org.apache.rocketmq.common.lite.OffsetOption.Type.POLICY, 11L);
@@ -504,10 +505,16 @@ public final class RuntimeLookupFixtures {
         item.put("clientId", dto.getClientId());
         item.put("group", dto.getGroup());
         item.put("topic", dto.getTopic());
-        item.put("liteTopicSet", dto.getLiteTopicSet());
         item.put("offsetOptionType", dto.getOffsetOption().getType().name());
         item.put("offsetOptionValue", dto.getOffsetOption().getValue());
         item.put("version", dto.getVersion());
+        topics.add("setter-added");
+        item.put("liteTopicSetExternalMutationVisible",
+            dto.getLiteTopicSet().contains("setter-added"));
+        dto.getLiteTopicSet().add("getter-added");
+        item.put("liteTopicSetGetterMutationVisibleToAssignedSet",
+            topics.contains("getter-added"));
+        item.put("mutatedLiteTopicSet", new ArrayList<>(dto.getLiteTopicSet()));
         item.put("toString", dto.toString());
         return item;
     }
@@ -555,11 +562,17 @@ public final class RuntimeLookupFixtures {
             new org.apache.rocketmq.remoting.protocol.body.LiteSubscriptionCtlRequestBody();
         Map<String, Object> item = new TreeMap<>();
         item.put("defaultSubscriptionSetIsNull", body.getSubscriptionSet() == null);
-        Set<org.apache.rocketmq.common.lite.LiteSubscriptionDTO> subscriptions = new HashSet<>();
+        Set<org.apache.rocketmq.common.lite.LiteSubscriptionDTO> subscriptions =
+            new java.util.LinkedHashSet<>();
         subscriptions.add(new org.apache.rocketmq.common.lite.LiteSubscriptionDTO().setGroup("workers"));
         body.setSubscriptionSet(subscriptions);
         item.put("setterStoresSameSet", body.getSubscriptionSet() == subscriptions);
         item.put("size", body.getSubscriptionSet().size());
+        subscriptions.add(new org.apache.rocketmq.common.lite.LiteSubscriptionDTO().setGroup("consumers"));
+        item.put("externalMutationVisible", body.getSubscriptionSet().size() == 2);
+        body.getSubscriptionSet().add(new org.apache.rocketmq.common.lite.LiteSubscriptionDTO().setGroup("admins"));
+        item.put("getterMutationVisibleToAssignedSet", subscriptions.size() == 3);
+        item.put("mutatedSize", body.getSubscriptionSet().size());
         return item;
     }
 

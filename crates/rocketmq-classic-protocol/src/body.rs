@@ -5000,7 +5000,6 @@ mod tests {
         assert_eq!(dto.lite_topic_set(), Some(&lite_topics));
         assert_eq!(dto.offset_option(), Some(&option));
         assert_eq!(dto.version(), 9);
-        assert_eq!(dto.to_string(), dto_case["toString"].as_str().unwrap());
         assert!(dto_case["actionSetterReturnsThis"].as_bool().unwrap());
         assert!(dto_case["clientIdSetterReturnsThis"].as_bool().unwrap());
         assert!(dto_case["groupSetterReturnsThis"].as_bool().unwrap());
@@ -5011,6 +5010,19 @@ mod tests {
                 .as_bool()
                 .unwrap()
         );
+        assert_eq!(dto_case["liteTopicSetExternalMutationVisible"], true);
+        assert_eq!(
+            dto_case["liteTopicSetGetterMutationVisibleToAssignedSet"],
+            true
+        );
+        let lite_topics_mut = dto.lite_topic_set_mut().unwrap();
+        lite_topics_mut.insert(Some("setter-added".into()));
+        lite_topics_mut.insert(Some("getter-added".into()));
+        assert_eq!(
+            serde_json::to_value(dto.lite_topic_set()).unwrap(),
+            dto_case["mutatedLiteTopicSet"]
+        );
+        assert_eq!(dto.to_string(), dto_case["toString"].as_str().unwrap());
         assert!(
             dto_case["offsetOptionGetterReturnsSameObject"]
                 .as_bool()
@@ -5089,6 +5101,15 @@ mod tests {
         );
         assert!(control_case["setterStoresSameSet"].as_bool().unwrap());
         assert_eq!(control_case["size"], 1);
+        assert_eq!(control_case["externalMutationVisible"], true);
+        assert_eq!(control_case["getterMutationVisibleToAssignedSet"], true);
+        let subscription_set_mut = control.subscription_set_mut().unwrap();
+        subscription_set_mut.push(Some(LiteSubscriptionDto::default()));
+        subscription_set_mut.push(Some(LiteSubscriptionDto::default()));
+        assert_eq!(
+            subscription_set_mut.len(),
+            control_case["mutatedSize"].as_u64().unwrap() as usize
+        );
     }
 
     #[test]
