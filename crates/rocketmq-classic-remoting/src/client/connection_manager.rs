@@ -347,7 +347,7 @@ mod tests {
             serde_json::from_str(include_str!("../../../../fixtures/runtime/address.json"))
                 .unwrap();
         let cases = fixture["clientAddressCases"].as_array().unwrap();
-        assert_eq!(cases.len(), 38);
+        assert_eq!(cases.len(), 49);
         for (case, expected) in cases.iter().skip(12).take(14).zip([
             "127.0.0.1:+1",
             "127.0.0.1:-0",
@@ -366,8 +366,27 @@ mod tests {
         ]) {
             assert_eq!(case["address"], expected);
         }
+        for (case, expected) in cases.iter().skip(38).zip([
+            "",
+            "broker.example",
+            "broker.example:",
+            "broker.example: ",
+            "host:1:2",
+            "host::2",
+            "[2001:db8::1:10911",
+            "[2001:db8::1]10911",
+            "[2001:db8::1]junk:10911",
+            " host:10911",
+            "host :10911",
+        ]) {
+            assert_eq!(case["address"], expected);
+        }
         for case in cases {
             let input = case["address"].as_str().unwrap();
+            if case.get("splitError").is_some() {
+                assert!(Address::parse(input).is_err(), "Java split rejected {case}");
+                continue;
+            }
             let java_host = case["host"].as_str().unwrap();
             let java_accepts = case["socketAddressAccepted"].as_bool().unwrap();
             let parsed = Address::parse(input);

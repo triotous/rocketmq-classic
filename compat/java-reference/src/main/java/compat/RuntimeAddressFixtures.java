@@ -58,10 +58,26 @@ public final class RuntimeAddressFixtures {
                     "127.0.0.1:\u0662\u0661\u0664\u0667\u0664\u0668\u0663\u0666\u0664\u0668",
                     "127.0.0.1:" + supplementaryDigit,
                     "fe80::1%7:10911", "[fe80::1%7]:10911",
-                    "fe80::1%lo0:10911", "[fe80::1%lo0]:10911"}) {
-                String[] hostAndPort = addressProbe.splitAddress(address);
+                    "fe80::1%lo0:10911", "[fe80::1%lo0]:10911", "", "broker.example",
+                    "broker.example:", "broker.example: ", "host:1:2", "host::2",
+                    "[2001:db8::1:10911", "[2001:db8::1]10911", "[2001:db8::1]junk:10911",
+                    " host:10911", "host :10911"}) {
+                Map<String, Object> item = new TreeMap<>();
+                item.put("address", address);
+                String[] hostAndPort;
+                try {
+                    hostAndPort = addressProbe.splitAddress(address);
+                } catch (RuntimeException rejected) {
+                    item.put("splitError", rejected.getClass().getSimpleName());
+                    item.put("socketAddressAccepted", false);
+                    clientAddressCases.add(item);
+                    continue;
+                }
                 if (hostAndPort.length != 2) {
-                    throw new IllegalStateException("Java client did not split address: " + address);
+                    item.put("splitError", "split-length-" + hostAndPort.length);
+                    item.put("socketAddressAccepted", false);
+                    clientAddressCases.add(item);
+                    continue;
                 }
                 boolean socketAddressAccepted;
                 Integer portNumber = null;
@@ -72,8 +88,6 @@ public final class RuntimeAddressFixtures {
                 } catch (RuntimeException rejected) {
                     socketAddressAccepted = false;
                 }
-                Map<String, Object> item = new TreeMap<>();
-                item.put("address", address);
                 item.put("host", hostAndPort[0]);
                 item.put("port", hostAndPort[1]);
                 item.put("portNumber", portNumber);
