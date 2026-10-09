@@ -55,6 +55,7 @@ public final class RuntimeLookupFixtures {
         fixture.put("assignmentModeCases", assignmentModeCases());
         fixture.put("assignmentAttachmentCases", assignmentAttachmentCases());
         fixture.put("assignmentBodyCases", assignmentBodyCases());
+        fixture.put("assignmentBodyRootCases", assignmentBodyRootCases());
         fixture.put("liteSubscriptionEnumCases", liteSubscriptionEnumCases());
         fixture.put("queryAssignmentEnumCases", queryAssignmentEnumCases());
         fixture.put("queryAssignmentFieldCases", queryAssignmentFieldCases());
@@ -68,6 +69,7 @@ public final class RuntimeLookupFixtures {
         fixture.put("assignmentMethodCases", assignmentMethodCases());
         fixture.put("messageRequestModeMethodCases", messageRequestModeMethodCases());
         fixture.put("consumerListCases", consumerListCases());
+        fixture.put("consumerListRootCases", consumerListRootCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
             com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
@@ -213,6 +215,40 @@ public final class RuntimeLookupFixtures {
         for (int i = 0; i < messageQueueValues.length; i++) {
             cases.add(assignmentBodyRawCase("message-queue-" + messageQueueNames[i],
                 "{\"messageQueueAssignments\":[{\"messageQueue\":" + messageQueueValues[i] + ",\"mode\":\"PULL\"}]}"));
+        }
+        return cases;
+    }
+
+    private static List<Object> assignmentBodyRootCases() {
+        List<Object> cases = new ArrayList<>();
+        String[][] roots = {
+            {"null", "null"}, {"empty-object", "{}"}, {"empty-array", "[]"},
+            {"string", "\"root\""}, {"integer", "7"}, {"fraction", "1.5"},
+            {"boolean", "true"}
+        };
+        for (String[] root : roots) {
+            String body = root[1];
+            Map<String, Object> item = new TreeMap<>();
+            item.put("name", "root-" + root[0]);
+            item.put("input", com.alibaba.fastjson2.JSON.parse(body));
+            item.put("rawInput", body);
+            try {
+                org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody decoded =
+                    org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody.decode(
+                        body.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                        org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody.class);
+                item.put("outcome", "ACCEPTED");
+                Set<org.apache.rocketmq.common.message.MessageQueueAssignment> assignments =
+                    decoded.getMessageQueueAssignments();
+                item.put("assignments", assignments);
+                byte[] encoded = decoded.encode();
+                item.put("encoded", com.alibaba.fastjson2.JSON.parseObject(
+                    new String(encoded, java.nio.charset.StandardCharsets.UTF_8)));
+            } catch (RuntimeException error) {
+                item.put("outcome", "REJECTED");
+                item.put("error", error.getClass().getSimpleName());
+            }
+            cases.add(item);
         }
         return cases;
     }
@@ -683,6 +719,38 @@ public final class RuntimeLookupFixtures {
             "{\"consumerIdList\":7,\"consumerIdList\":[\"last\"]}"));
         cases.add(consumerListRawCase("duplicate-field-last-scalar",
             "{\"consumerIdList\":[\"first\"],\"consumerIdList\":7}"));
+        return cases;
+    }
+
+    private static List<Object> consumerListRootCases() {
+        List<Object> cases = new ArrayList<>();
+        String[][] roots = {
+            {"null", "null"}, {"empty-object", "{}"}, {"empty-array", "[]"},
+            {"string", "\"root\""}, {"integer", "7"}, {"fraction", "1.5"},
+            {"boolean", "true"}
+        };
+        for (String[] root : roots) {
+            String body = root[1];
+            Map<String, Object> item = new TreeMap<>();
+            item.put("name", "root-" + root[0]);
+            item.put("input", com.alibaba.fastjson2.JSON.parse(body));
+            item.put("rawInput", body);
+            try {
+                org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody decoded =
+                    org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody.decode(
+                        body.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                        org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody.class);
+                item.put("outcome", "ACCEPTED");
+                item.put("ids", decoded.getConsumerIdList());
+                byte[] encoded = decoded.encode();
+                item.put("encoded", com.alibaba.fastjson2.JSON.parseObject(
+                    new String(encoded, java.nio.charset.StandardCharsets.UTF_8)));
+            } catch (RuntimeException error) {
+                item.put("outcome", "REJECTED");
+                item.put("error", error.getClass().getSimpleName());
+            }
+            cases.add(item);
+        }
         return cases;
     }
 

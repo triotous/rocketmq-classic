@@ -113,6 +113,29 @@ public final class RuntimeClientCheckFixtures {
                 cases.add(item);
             }
         }
+        String[][] roots = {
+            {"null", "null"}, {"empty-object", "{}"}, {"empty-array", "[]"},
+            {"string", "\"root\""}, {"integer", "7"}, {"fraction", "1.5"},
+            {"boolean", "true"}
+        };
+        for (String[] root : roots) {
+            String input = root[1];
+            Map<String, Object> item = new TreeMap<>();
+            item.put("id", "root-" + root[0]);
+            item.put("rawInput", input);
+            try {
+                CheckClientRequestBody body = com.alibaba.fastjson2.JSON.parseObject(
+                    input, CheckClientRequestBody.class);
+                body.getClientId(); // Exercise the handler's first DTO access for null roots.
+                item.put("outcome", "ACCEPTED");
+                item.put("fields", com.alibaba.fastjson2.JSON.parseObject(
+                    com.alibaba.fastjson2.JSON.toJSONString(body)));
+            } catch (RuntimeException error) {
+                item.put("outcome", "REJECTED");
+                item.put("error", error.getClass().getSimpleName());
+            }
+            cases.add(item);
+        }
         return cases;
     }
 

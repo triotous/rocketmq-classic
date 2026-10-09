@@ -1220,12 +1220,19 @@ mod tests {
             serde_json::from_str(include_str!("../../../fixtures/runtime/client-check.json"))
                 .unwrap();
         let cases = fixture["checkClientBodyInputCases"].as_array().unwrap();
-        assert_eq!(cases.len(), 36);
+        assert_eq!(cases.len(), 43);
         for required in [
             "shape-clientId-array",
             "shape-group-fraction",
             "shape-subscriptionData-object",
             "shape-namespace-boolean",
+            "root-null",
+            "root-empty-object",
+            "root-empty-array",
+            "root-string",
+            "root-integer",
+            "root-fraction",
+            "root-boolean",
         ] {
             assert!(
                 cases.iter().any(|case| case["id"] == required),
@@ -1600,6 +1607,40 @@ mod tests {
     }
 
     #[test]
+    fn consumer_list_root_shapes_match_invoked_java_fastjson() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let cases = fixture["consumerListRootCases"].as_array().unwrap();
+        assert_eq!(cases.len(), 7);
+        for case in cases {
+            let decoded = serde_json::from_str::<ConsumerListByGroupResponseBody>(
+                case["rawInput"].as_str().unwrap(),
+            );
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            assert_eq!(
+                decoded.is_ok(),
+                java_accepts,
+                "{}: {decoded:?}",
+                case["name"]
+            );
+            if let Ok(decoded) = decoded {
+                assert_eq!(
+                    serde_json::to_value(&decoded.consumer_id_list).unwrap(),
+                    case["ids"],
+                    "{}",
+                    case["name"]
+                );
+                assert_eq!(
+                    serde_json::to_value(decoded).unwrap(),
+                    case["encoded"],
+                    "{}",
+                    case["name"]
+                );
+            }
+        }
+    }
+
+    #[test]
     fn assignment_and_request_mode_json_preserve_optional_fields_and_defaults() {
         let query: QueryAssignmentRequestBody = serde_json::from_value(serde_json::json!({
             "topic":"orders", "consumerGroup":"workers", "clientId":"client",
@@ -1664,6 +1705,75 @@ mod tests {
                 "missing {required}"
             );
         }
+        for case in cases {
+            let decoded = serde_json::from_str::<QueryAssignmentResponseBody>(
+                case["rawInput"].as_str().unwrap(),
+            );
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            assert_eq!(
+                decoded.is_ok(),
+                java_accepts,
+                "{}: {decoded:?}",
+                case["name"]
+            );
+            if let Ok(decoded) = decoded {
+                let actual_assignments = decoded.message_queue_assignments.as_ref().map(|items| {
+                    items
+                        .iter()
+                        .map(|item| match item {
+                            Some(item) => serde_json::json!({
+                                "attachments": &item.attachments,
+                                "messageQueue": item.message_queue.as_ref().map(|queue| {
+                                    serde_json::json!({
+                                        "topic": queue.topic(),
+                                        "brokerName": queue.broker_name(),
+                                        "queueId": queue.queue_id(),
+                                    })
+                                }),
+                                "mode": item.mode,
+                            }),
+                            None => serde_json::Value::Null,
+                        })
+                        .collect::<Vec<_>>()
+                });
+                let mut actual_assignments = serde_json::to_value(actual_assignments).unwrap();
+                let mut expected_assignments = case["assignments"].clone();
+                normalize(&mut actual_assignments);
+                normalize(&mut expected_assignments);
+                assert_eq!(actual_assignments, expected_assignments, "{}", case["name"]);
+
+                let mut actual = serde_json::to_value(decoded).unwrap();
+                let mut expected = case["encoded"].clone();
+                normalize(&mut actual);
+                normalize(&mut expected);
+                assert_eq!(actual, expected, "{}", case["name"]);
+            }
+        }
+    }
+
+    #[test]
+    fn assignment_body_root_shapes_match_invoked_java_fastjson() {
+        fn normalize(value: &mut serde_json::Value) {
+            match value {
+                serde_json::Value::Array(values) => {
+                    for value in values.iter_mut() {
+                        normalize(value);
+                    }
+                    values.sort_by_key(|value| serde_json::to_string(value).unwrap());
+                }
+                serde_json::Value::Object(fields) => {
+                    for value in fields.values_mut() {
+                        normalize(value);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let cases = fixture["assignmentBodyRootCases"].as_array().unwrap();
+        assert_eq!(cases.len(), 7);
         for case in cases {
             let decoded = serde_json::from_str::<QueryAssignmentResponseBody>(
                 case["rawInput"].as_str().unwrap(),
