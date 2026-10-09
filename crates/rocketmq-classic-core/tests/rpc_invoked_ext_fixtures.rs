@@ -101,7 +101,7 @@ async fn invoked_lite_subscription_extension_matches_rust() {
         client.start().unwrap();
         let api = MQClientApi::new(client.clone());
         let body = LiteSubscriptionCtlRequestBody {
-            subscription_set: Some(vec![LiteSubscriptionDto {
+            subscription_set: Some(vec![Some(LiteSubscriptionDto {
                 action: Some(LiteSubscriptionAction::CompleteAdd),
                 client_id: Some("client".into()),
                 group: Some("workers".into()),
@@ -109,7 +109,7 @@ async fn invoked_lite_subscription_extension_matches_rust() {
                 lite_topic_set: Some(vec!["lite-orders".into()]),
                 version: 0,
                 ..Default::default()
-            }]),
+            })]),
         };
         let outcome = match api
             .lite_subscription_ctl(&addr, &body, Instant::now() + Duration::from_secs(3))

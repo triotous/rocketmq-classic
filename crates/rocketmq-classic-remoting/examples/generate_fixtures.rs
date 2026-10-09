@@ -611,7 +611,7 @@ fn generate_p4_bodies(output: &std::path::Path) {
         "body-lite-subscription.bin",
         200071,
         &LiteSubscriptionCtlRequestBody {
-            subscription_set: Some(vec![LiteSubscriptionDto {
+            subscription_set: Some(vec![Some(LiteSubscriptionDto {
                 action: Some(LiteSubscriptionAction::CompleteAdd),
                 client_id: Some("client".into()),
                 group: Some("workers".into()),
@@ -622,7 +622,7 @@ fn generate_p4_bodies(output: &std::path::Path) {
                     value: 1,
                 }),
                 version: 2,
-            }]),
+            })]),
         },
     );
     write_body(
