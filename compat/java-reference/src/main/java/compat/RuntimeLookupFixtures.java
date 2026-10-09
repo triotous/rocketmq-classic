@@ -1116,7 +1116,18 @@ public final class RuntimeLookupFixtures {
             {"message-table-scalar", "{\"messageQueueTable\":7}"},
             {"consumer-table-scalar", "{\"consumerTable\":7}"},
             {"message-offset-null", "{\"messageQueueTable\":{" + escapedKey + ":null}}"},
-            {"invalid-message-queue-key", "{\"messageQueueTable\":{\"not-a-queue\":9}}"}
+            {"invalid-message-queue-key", "{\"messageQueueTable\":{\"not-a-queue\":9}}"},
+            {"message-table-array", "{\"messageQueueTable\":[]}"},
+            {"message-table-string", "{\"messageQueueTable\":\"not-a-table\"}"},
+            {"message-table-boolean", "{\"messageQueueTable\":true}"},
+            {"consumer-table-array", "{\"consumerTable\":[]}"},
+            {"consumer-table-string", "{\"consumerTable\":\"not-a-table\"}"},
+            {"consumer-table-boolean", "{\"consumerTable\":true}"},
+            {"root-null", "null"},
+            {"root-array", "[]"},
+            {"root-number", "7"},
+            {"root-string", "\"body\""},
+            {"root-boolean", "true"}
         };
         List<Object> cases = new ArrayList<>();
         for (String[] input : inputs) {
