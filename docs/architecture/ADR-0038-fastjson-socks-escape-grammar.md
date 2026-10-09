@@ -2,6 +2,10 @@
 
 Status: Accepted
 
+## Cyclic reference continuation
+
+Two more direct Java 5.5.1 constructor and private `NettyRemotingClient.getProxy` cases cover a self-reference and a two-route cycle. Java constructs successfully and selects no proxy for either cycle; the native differential first failed because the resolver rejected both as errors. Rust now resolves a detected cycle to the equivalent direct/no-proxy route. Oracle/test commit `115a2cb1`; implementation `2f60397e`; the constructor corpus has 497 cases and `client-config.json` SHA-256 `0434b8f5de37827ad98c145d60e9888a1d7e851f79e7872742047b4e760d8c03`. Focused constructor/selection tests, full workspace tests, strict Clippy, pinned offline Maven verify, comparator/manifest22, format, and diff checks pass. Other Fastjson reference forms and grammar remain open.
+
 ## Root-map object-reference continuation
 
 Three actual Java 5.5.1 cases cover a quoted root-key reference, a chained reference, and an unresolved target. The constructor retains the referenced `SocksProxyConfig` object; the private `NettyRemotingClient.getProxy` oracle selects the referencing CIDR with the target address and selects no proxy for an unresolved target. Java getter observations also preserve target username/password. The native parser recognizes root-key JSONPath forms `$.key`, `$['key']`, and `$["key"]`, resolves chains, and materializes the target address/credentials as an owned private route value. This keeps the effective selected proxy the same while using Rust value ownership. The red differential first failed because the referenced route lost its address. Oracle/test `80ba235d`; implementation `9cf5a8fb`; current `client-config.json` SHA-256 `0cafefb33a4611746f78005582a3394e7a6de8818932ea3d9d947e99d3d1eb5e`; constructor corpus 495 cases. Other Fastjson reference forms and grammar remain open.

@@ -6,3 +6,11 @@
 - Current `fixtures/runtime/client-config.json` SHA-256: `0cafefb33a4611746f78005582a3394e7a6de8818932ea3d9d947e99d3d1eb5e`.
 - Focused reference parse/selection tests pass. Full `cargo test --workspace --all-targets --locked`, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios, Java fixture drift and cross-decodes), differential comparator self-test and manifest22 validation, `cargo fmt --all -- --check`, and `git diff --check` pass.
 - Updated ADR-0038 and the Phase 6 API, requirement, Java compatibility, and runtime inventory records. Additional Fastjson grammar forms, source/input reconciliation, non-macOS interface enumeration and a real IPv6-only host remain open. Phase 6 remains PARTIAL; P6-V04 stays `PENDING_PHASE_19`.
+
+## Fastjson SOCKS cyclic references — 2026-10-09T18:59:08Z
+
+- Added pinned Java constructor and actual private `NettyRemotingClient.getProxy` cases for a self-reference and a two-route `$ref` cycle. Java constructs both and selects no proxy; the native parser differential failed first because it rejected both cycles.
+- Test/oracle and fixture commit: `115a2cb1`. Resolver implementation commit: `2f60397e`. The resolver now maps a detected cycle to the same direct/no-proxy outcome.
+- The SOCKS constructor corpus has 497 cases. Current `fixtures/runtime/client-config.json` SHA-256: `0434b8f5de37827ad98c145d60e9888a1d7e851f79e7872742047b4e760d8c03`.
+- Focused constructor and proxy-selection tests pass. Full `cargo test --workspace --all-targets --locked`, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios, fixture checks and cross-decodes), differential self-test and manifest22, `cargo fmt --all -- --check`, and `git diff --check` pass.
+- Updated ADR-0038 and the Phase 6 API, requirement, Java compatibility, and runtime inventory records. Remaining Fastjson grammar and broad Phase 6 source/API/input reconciliation remain open; Phase 6 remains PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
