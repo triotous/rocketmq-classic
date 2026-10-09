@@ -232,6 +232,36 @@ fn command(code: i32) -> RemotingCommand {
     }
 }
 
+#[tokio::test]
+async fn empty_host_endpoint_connects_to_java_ipv4_loopback_target() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let request = read_command(&mut stream).await;
+        assert_eq!(request.code, 77);
+        let mut response = RemotingCommand {
+            opaque: request.opaque,
+            ..Default::default()
+        };
+        response.mark_response();
+        write_command(&mut stream, &response).await;
+    });
+
+    let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
+    let response = client
+        .invoke_sync(&format!(":{port}"), command(77), Duration::from_secs(2))
+        .await
+        .unwrap();
+    assert!(response.is_response());
+    client.shutdown().await;
+    tokio::time::timeout(Duration::from_secs(2), peer)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
 #[test]
 fn p3_client_can_be_constructed_without_runtime_and_start_requires_one() {
     let client = RemotingClient::new(TransportMode::Plain);
