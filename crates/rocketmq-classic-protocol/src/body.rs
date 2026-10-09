@@ -1845,6 +1845,18 @@ impl MessageRequestModeSerializeWrapper {
         self.message_request_mode_map.as_ref()
     }
 
+    /// Borrows the owned nested map mutably for Java-compatible getter mutations.
+    pub fn get_message_request_mode_map_mut(
+        &mut self,
+    ) -> Option<
+        &mut std::collections::BTreeMap<
+            String,
+            std::collections::BTreeMap<String, SetMessageRequestModeRequestBody>,
+        >,
+    > {
+        self.message_request_mode_map.as_mut()
+    }
+
     pub fn set_message_request_mode_map(
         &mut self,
         message_request_mode_map: Option<
