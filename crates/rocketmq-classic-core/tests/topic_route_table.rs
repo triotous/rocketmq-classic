@@ -41,6 +41,9 @@ fn public_topic_snapshot_factory_matches_invoked_java_route_conversions() {
                 .unwrap(),
                 case["endpoints"]
             );
+            let expected_route =
+                TopicRouteData::java_from_json(case["topicRouteData"].as_str().unwrap()).unwrap();
+            assert_eq!(snapshot.route.as_ref(), &expected_route);
         } else {
             assert!(TopicSnapshot::from_route_data("topic", &route).is_err());
         }
@@ -64,6 +67,11 @@ fn public_nullable_route_conversion_arguments_match_invoked_java() {
             TopicSnapshot::from_nullable_route_data(case["topic"].as_str(), route.as_ref());
         if case["outcome"] == "OK" {
             let snapshot = result.unwrap();
+            if let Some(route_data) = case.get("topicRouteData") {
+                let expected_route =
+                    TopicRouteData::java_from_json(route_data.as_str().unwrap()).unwrap();
+                assert_eq!(snapshot.route.as_ref(), &expected_route, "{}", case["id"]);
+            }
             if case["topic"].is_null() {
                 assert!(
                     snapshot
