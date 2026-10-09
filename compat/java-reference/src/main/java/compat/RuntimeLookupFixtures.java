@@ -1652,8 +1652,14 @@ public final class RuntimeLookupFixtures {
         messageQueue.put("queueId", populated.getMessageQueue().getQueueId());
         populatedCase.put("messageQueue", messageQueue);
         populatedCase.put("mode", populated.getMode().name());
-        populatedCase.put("attachments", populated.getAttachments());
+        populatedCase.put("attachments", new TreeMap<>(populated.getAttachments()));
         populatedCase.put("text", populated.toString());
+        Map<String, String> getterAttachments = populated.getAttachments();
+        populatedCase.put("attachmentsGetterReturnsSetterMap", getterAttachments == attachments);
+        getterAttachments.put("getter", "visible");
+        populatedCase.put("attachmentsGetterMutationVisibleToSetterMap",
+            "visible".equals(attachments.get("getter")));
+        populatedCase.put("mutatedAttachments", new TreeMap<>(populated.getAttachments()));
         org.apache.rocketmq.common.message.MessageQueueAssignment sameQueueDifferentMetadata =
             new org.apache.rocketmq.common.message.MessageQueueAssignment();
         sameQueueDifferentMetadata.setMessageQueue(

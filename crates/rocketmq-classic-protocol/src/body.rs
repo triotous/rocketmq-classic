@@ -5611,6 +5611,16 @@ mod tests {
                     assignment.java_equals(Some(&different_queue)),
                     Ok(case["equalsDifferentQueue"].as_bool().unwrap())
                 );
+                if case["name"] == "populated" {
+                    assert_eq!(case["attachmentsGetterReturnsSetterMap"], true);
+                    let attachments = assignment.attachments_mut().unwrap();
+                    attachments.insert("getter".into(), Some("visible".into()));
+                    assert_eq!(case["attachmentsGetterMutationVisibleToSetterMap"], true);
+                    assert_eq!(
+                        serde_json::to_value(assignment.attachments().unwrap()).unwrap(),
+                        case["mutatedAttachments"]
+                    );
+                }
             }
         }
     }
