@@ -162,3 +162,10 @@
 - Implementation commit `8fff4781` adds `MessageQueueAssignment::message_queue_mut() -> Option<&mut MessageQueue>`. The focused differential and full workspace tests pass; Rust matches mutation of its owned nested queue but does not preserve the caller-owned Java object alias.
 - Strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios and fixture drift/cross-decodes), comparator self-test/manifest22, formatting, and diff checks pass. Workspace and Maven loopback tests use local scripted peers only.
 - Updated ADR-0020, Java compatibility, API/config map, requirement audit, runtime inventory, and this rlog. Other DTO aliases and full Phase 6 source/API/input/reverse-export reconciliation remain open; Phase 6 stays PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
+
+## Protocol borrow-returning getter sweep — 2026-10-09T20:52:20Z
+
+- The final scan of public borrow-returning collection and nested-object accessors across `rocketmq-classic-protocol` found mutable accessors for all discovered DTO-owned collections and nested references. Direct Java mutation evidence now also covers the previously untested `MessageQueueAssignment.attachments` Map and `messageQueue` object getters, in addition to the newly added request-mode map and BatchAck BitSet cases.
+- Oracle/test commits: `94a0d62d`, `0614eda5`, `bd3d2e71`, `359ed253`, `caff0e22`; implementation commits: `6c19de4c`, `d1dc7dfd`, `8fff4781`; the assignment attachment mutator was already implemented. Current aggregate `fixtures/runtime/lookup.json` SHA-256: `9cdbcae68d20569b3d0cfdbf774aaf4183a63430438d9e3d74e8ad2e64b863d1`.
+- Full workspace/all-target tests, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios and fixture drift/cross-decodes), comparator self-test/manifest22, `cargo fmt --all -- --check`, and `git diff --check` pass. Loopback fixtures use local scripted peers only.
+- Remaining caller-owned Java collection/object identity gaps are recorded; this does not close full Phase 6 source/API/input/reverse-export reconciliation or P6-V04 Phase 19 validation. Phase 6 stays PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
