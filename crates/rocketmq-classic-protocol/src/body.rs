@@ -1488,14 +1488,16 @@ impl Default for SetMessageRequestModeRequestBody {
 ///
 /// Bit indexes use the same little-endian byte ordering as
 /// `java.util.BitSet.toByteArray()`.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct BitSet {
     words: Vec<u64>,
+    java_capacity_words: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BitSetError {
     NegativeIndex(i32),
+    NegativeCapacity(i32),
     InvalidRange { from: i32, to: i32 },
     IndexOverflow(usize),
     AllocationFailed(i32),
@@ -1506,6 +1508,12 @@ impl std::fmt::Display for BitSetError {
         match self {
             Self::NegativeIndex(index) => {
                 write!(formatter, "bit index must be nonnegative: {index}")
+            }
+            Self::NegativeCapacity(capacity) => {
+                write!(
+                    formatter,
+                    "bit-set capacity must be nonnegative: {capacity}"
+                )
             }
             Self::InvalidRange { from, to } => {
                 write!(formatter, "bit range must have from <= to: {from}..{to}")
@@ -1522,9 +1530,41 @@ impl std::fmt::Display for BitSetError {
 
 impl std::error::Error for BitSetError {}
 
+impl Default for BitSet {
+    fn default() -> Self {
+        Self {
+            words: Vec::new(),
+            java_capacity_words: 1,
+        }
+    }
+}
+
+impl PartialEq for BitSet {
+    fn eq(&self, other: &Self) -> bool {
+        self.words == other.words
+    }
+}
+
+impl Eq for BitSet {}
+
 impl BitSet {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Creates a bit set with Java's requested initial capacity in bits.
+    pub fn try_with_capacity_bits(capacity: i32) -> Result<Self, BitSetError> {
+        let capacity =
+            usize::try_from(capacity).map_err(|_| BitSetError::NegativeCapacity(capacity))?;
+        let capacity_words = capacity.div_ceil(64);
+        let mut words = Vec::new();
+        words.try_reserve_exact(capacity_words).map_err(|_| {
+            BitSetError::AllocationFailed(capacity.saturating_sub(1).min(i32::MAX as usize) as i32)
+        })?;
+        Ok(Self {
+            words,
+            java_capacity_words: capacity_words,
+        })
     }
 
     /// Creates a bit set from Java's little-endian `BitSet.toByteArray()` form.
@@ -1540,7 +1580,33 @@ impl BitSet {
         while words.last() == Some(&0) {
             words.pop();
         }
-        Self { words }
+        let java_capacity_words = words.len();
+        Self {
+            words,
+            java_capacity_words,
+        }
+    }
+
+    /// Creates a bit set from Java's native signed-long `BitSet.valueOf(long[])` form.
+    pub fn try_from_long_array(values: &[i64]) -> Result<Self, BitSetError> {
+        let mut words = Vec::new();
+        words
+            .try_reserve_exact(values.len())
+            .map_err(|_| BitSetError::AllocationFailed(i32::MAX))?;
+        words.extend(values.iter().map(|value| *value as u64));
+        while words.last() == Some(&0) {
+            words.pop();
+        }
+        let java_capacity_words = words.len();
+        Ok(Self {
+            words,
+            java_capacity_words,
+        })
+    }
+
+    /// Returns the Java `BitSet.size()` capacity in bits.
+    pub fn size(&self) -> usize {
+        self.java_capacity_words.saturating_mul(64)
     }
 
     /// Returns the minimal little-endian byte array used by Java's `toByteArray()`.
@@ -1576,15 +1642,18 @@ impl BitSet {
     pub fn set(&mut self, index: i32) -> Result<(), BitSetError> {
         let index = Self::checked_index(index)?;
         let word_index = index / 64;
-        if word_index >= self.words.len() {
-            let additional = word_index + 1 - self.words.len();
-            self.words
-                .try_reserve(additional)
-                .map_err(|_| BitSetError::AllocationFailed(index as i32))?;
-            self.words.resize(word_index + 1, 0);
-        }
+        self.ensure_words_len(word_index + 1, index as i32)?;
         self.words[word_index] |= 1 << (index % 64);
         Ok(())
+    }
+
+    /// Sets or clears one bit, matching Java's `set(index, value)` overload.
+    pub fn set_with_value(&mut self, index: i32, value: bool) -> Result<(), BitSetError> {
+        if value {
+            self.set(index)
+        } else {
+            self.clear(index)
+        }
     }
 
     pub fn clear(&mut self, index: i32) -> Result<(), BitSetError> {
@@ -1621,12 +1690,34 @@ impl BitSet {
         self.mutate_range(from, to, true, |word, mask| word ^ mask)
     }
 
+    /// Sets or clears every bit in the half-open range, matching Java's boolean overload.
+    pub fn set_range_with_value(
+        &mut self,
+        from: i32,
+        to: i32,
+        value: bool,
+    ) -> Result<(), BitSetError> {
+        if value {
+            self.set_range(from, to)
+        } else {
+            self.clear_range(from, to)
+        }
+    }
+
+    /// Clears all bits while keeping this owned value reusable.
+    pub fn clear_all(&mut self) {
+        self.words.clear();
+    }
+
     /// Returns a copy of the half-open range, shifted so `from` becomes bit zero.
     pub fn get_range(&self, from: i32, to: i32) -> Result<Self, BitSetError> {
         let (from, to) = Self::checked_range(from, to)?;
         let bit_count = to - from;
         if bit_count == 0 {
-            return Ok(Self::new());
+            return Ok(Self {
+                words: Vec::new(),
+                java_capacity_words: 0,
+            });
         }
 
         let output_word_count = bit_count.div_ceil(64);
@@ -1654,7 +1745,10 @@ impl BitSet {
         while words.last() == Some(&0) {
             words.pop();
         }
-        Ok(Self { words })
+        Ok(Self {
+            words,
+            java_capacity_words: output_word_count,
+        })
     }
 
     /// Returns the next set bit at or after `from`, or `-1` when none exists.
@@ -1780,6 +1874,89 @@ impl BitSet {
             .any(|(left, right)| left & right != 0)
     }
 
+    /// Replaces this value with its bitwise intersection with `other`.
+    pub fn and(&mut self, other: &Self) {
+        for (index, word) in self.words.iter_mut().enumerate() {
+            *word &= other.words.get(index).copied().unwrap_or(0);
+        }
+        self.trim_trailing_zero_words();
+    }
+
+    /// Adds every set bit from `other` to this value.
+    pub fn or(&mut self, other: &Self) -> Result<(), BitSetError> {
+        self.ensure_words_len(
+            other.words.len(),
+            other.length().saturating_sub(1).min(i32::MAX as usize) as i32,
+        )?;
+        for (word, other_word) in self.words.iter_mut().zip(&other.words) {
+            *word |= other_word;
+        }
+        Ok(())
+    }
+
+    /// Replaces this value with its bitwise exclusive-or with `other`.
+    pub fn xor(&mut self, other: &Self) -> Result<(), BitSetError> {
+        self.ensure_words_len(
+            other.words.len(),
+            other.length().saturating_sub(1).min(i32::MAX as usize) as i32,
+        )?;
+        for (word, other_word) in self.words.iter_mut().zip(&other.words) {
+            *word ^= other_word;
+        }
+        self.trim_trailing_zero_words();
+        Ok(())
+    }
+
+    /// Clears every bit present in `other` from this value.
+    pub fn and_not(&mut self, other: &Self) {
+        for (word, other_word) in self.words.iter_mut().zip(&other.words) {
+            *word &= !other_word;
+        }
+        self.trim_trailing_zero_words();
+    }
+
+    /// Returns the used 64-bit words in Java's `toLongArray()` order.
+    pub fn to_long_array(&self) -> Result<Vec<i64>, BitSetError> {
+        let mut words = Vec::new();
+        words
+            .try_reserve_exact(self.words.len())
+            .map_err(|_| BitSetError::AllocationFailed(self.length().saturating_sub(1) as i32))?;
+        words.extend(self.words.iter().map(|word| *word as i64));
+        Ok(words)
+    }
+
+    /// Returns the Java `BitSet.hashCode()` value.
+    pub fn java_hash_code(&self) -> i32 {
+        let hash = self
+            .words
+            .iter()
+            .enumerate()
+            .fold(1234_u64, |hash, (index, word)| {
+                hash ^ word.wrapping_mul(index as u64 + 1)
+            });
+        ((hash >> 32) ^ hash) as i32
+    }
+
+    /// Iterates over set-bit indexes in ascending order.
+    pub fn iter_set_bits(&self) -> impl Iterator<Item = usize> + '_ {
+        let mut next_word_index = 0;
+        let mut active_word_index = 0;
+        let mut remaining = 0_u64;
+        std::iter::from_fn(move || {
+            loop {
+                if remaining != 0 {
+                    let bit = remaining.trailing_zeros() as usize;
+                    remaining &= remaining - 1;
+                    return Some(active_word_index * 64 + bit);
+                }
+                let word = self.words.get(next_word_index).copied()?;
+                active_word_index = next_word_index;
+                next_word_index += 1;
+                remaining = word;
+            }
+        })
+    }
+
     pub fn cardinality(&self) -> usize {
         self.words
             .iter()
@@ -1827,11 +2004,7 @@ impl BitSet {
         let first_word = from / 64;
         let mut last_word = (to - 1) / 64;
         if may_grow {
-            let needed_words = last_word + 1;
-            self.words
-                .try_reserve(needed_words.saturating_sub(self.words.len()))
-                .map_err(|_| BitSetError::AllocationFailed((to - 1) as i32))?;
-            self.words.resize(self.words.len().max(needed_words), 0);
+            self.ensure_words_len(last_word + 1, (to - 1) as i32)?;
         } else if first_word >= self.words.len() {
             return Ok(());
         } else {
@@ -1857,13 +2030,33 @@ impl BitSet {
         i32::try_from(index).map_err(|_| BitSetError::IndexOverflow(index))
     }
 
+    fn ensure_words_len(
+        &mut self,
+        words_len: usize,
+        allocation_index: i32,
+    ) -> Result<(), BitSetError> {
+        let java_capacity_words = if words_len > self.java_capacity_words {
+            self.java_capacity_words.saturating_mul(2).max(words_len)
+        } else {
+            self.java_capacity_words
+        };
+        if words_len > self.words.len() {
+            self.words
+                .try_reserve(words_len - self.words.len())
+                .map_err(|_| BitSetError::AllocationFailed(allocation_index))?;
+            self.words.resize(words_len, 0);
+        }
+        self.java_capacity_words = java_capacity_words;
+        Ok(())
+    }
+
     fn trim_trailing_zero_words(&mut self) {
         while self.words.last() == Some(&0) {
             self.words.pop();
         }
     }
 
-    fn java_to_string(&self) -> String {
+    pub fn java_to_string(&self) -> String {
         let mut output = String::from("{");
         let mut first = true;
         for (word_index, word) in self.words.iter().copied().enumerate() {
@@ -3935,6 +4128,110 @@ mod tests {
                 "length": range_word_boundary.length(),
             }),
             case["bitSetRangeWordBoundary"]
+        );
+
+        let mut boolean_operations = BitSet::new();
+        boolean_operations.set_range(2, 6).unwrap();
+        boolean_operations.set_with_value(4, false).unwrap();
+        boolean_operations.set_with_value(8, true).unwrap();
+        boolean_operations.set_range_with_value(1, 3, true).unwrap();
+        boolean_operations
+            .set_range_with_value(2, 5, false)
+            .unwrap();
+        let mut cleared = boolean_operations.clone();
+        cleared.clear_all();
+        assert_eq!(
+            json!({
+                "base64": bit_set_base64(&boolean_operations),
+                "longs": boolean_operations.to_long_array().unwrap(),
+                "cardinality": boolean_operations.cardinality(),
+                "length": boolean_operations.length(),
+                "hashCode": boolean_operations.java_hash_code(),
+                "toString": boolean_operations.java_to_string(),
+                "stream": boolean_operations.iter_set_bits().collect::<Vec<_>>(),
+                "clear": cleared.is_empty() && cleared.cardinality() == 0 && cleared.length() == 0,
+            }),
+            case["bitSetBooleanOperations"]
+        );
+
+        let mut bulk_left = BitSet::new();
+        for index in [0, 2, 5, 64, 127] {
+            bulk_left.set(index).unwrap();
+        }
+        let mut bulk_right = BitSet::new();
+        for index in [1, 2, 5, 64, 126] {
+            bulk_right.set(index).unwrap();
+        }
+        let mut and_result = bulk_left.clone();
+        and_result.and(&bulk_right);
+        let mut or_result = bulk_left.clone();
+        or_result.or(&bulk_right).unwrap();
+        let mut xor_result = bulk_left.clone();
+        xor_result.xor(&bulk_right).unwrap();
+        let mut and_not_result = bulk_left.clone();
+        and_not_result.and_not(&bulk_right);
+        assert_eq!(
+            json!({
+                "and": bit_set_base64(&and_result),
+                "or": bit_set_base64(&or_result),
+                "xor": bit_set_base64(&xor_result),
+                "andNot": bit_set_base64(&and_not_result),
+                "intersects": bulk_left.intersects(&bulk_right),
+                "equalClone": bulk_left == bulk_left.clone(),
+                "leftLongs": bulk_left.to_long_array().unwrap(),
+                "leftHashCode": bulk_left.java_hash_code(),
+                "leftToString": bulk_left.java_to_string(),
+                "leftStream": bulk_left.iter_set_bits().collect::<Vec<_>>(),
+            }),
+            case["bitSetBulkOperations"]
+        );
+
+        let capacity_case = &fixture["batchAckBitSetCapacityCase"];
+        let mut grown = BitSet::new();
+        grown.set(63).unwrap();
+        let after_bit_63 = grown.size();
+        grown.set(64).unwrap();
+        let after_bit_64 = grown.size();
+        grown.set(128).unwrap();
+        let after_bit_128 = grown.size();
+        grown.clear(128).unwrap();
+        let mut capacity_source = BitSet::new();
+        capacity_source.set(0).unwrap();
+        capacity_source.set(64).unwrap();
+        let mut narrow_capacity = BitSet::try_with_capacity_bits(1).unwrap();
+        let mut wide_capacity = BitSet::try_with_capacity_bits(128).unwrap();
+        narrow_capacity.set(4).unwrap();
+        wide_capacity.set(4).unwrap();
+        assert_eq!(
+            json!({
+                "constructorSizes": [
+                    BitSet::new().size(),
+                    BitSet::try_with_capacity_bits(0).unwrap().size(),
+                    BitSet::try_with_capacity_bits(1).unwrap().size(),
+                    BitSet::try_with_capacity_bits(64).unwrap().size(),
+                    BitSet::try_with_capacity_bits(65).unwrap().size(),
+                ],
+                "growthAndClearSizes": [after_bit_63, after_bit_64, after_bit_128, grown.size()],
+                "valueOfSizes": [
+                    BitSet::from_byte_array(&[1, 0, 0]).size(),
+                    BitSet::try_from_long_array(&[1, 0]).unwrap().size(),
+                    BitSet::try_from_long_array(&[]).unwrap().size(),
+                ],
+                "negativeCapacityError": capacity_case["negativeCapacityError"],
+                "sliceSize": capacity_source.get_range(0, 65).unwrap().size(),
+                "emptySliceSize": BitSet::new().get_range(3, 3).unwrap().size(),
+                "equalWithDifferentCapacities": narrow_capacity.size() != wide_capacity.size()
+                    && narrow_capacity == wide_capacity,
+            }),
+            capacity_case.clone()
+        );
+        assert_eq!(
+            BitSet::try_with_capacity_bits(-1),
+            Err(BitSetError::NegativeCapacity(-1))
+        );
+        assert_eq!(
+            capacity_case["negativeCapacityError"],
+            "NegativeArraySizeException"
         );
 
         let mut body = BatchAckMessageRequestBody::default();
