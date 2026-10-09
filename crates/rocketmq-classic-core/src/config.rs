@@ -256,10 +256,7 @@ impl ClientConfig {
             decode_decompress_body: boolean(Self::DECODE_DECOMPRESS_BODY, true),
             vip_channel_enabled: boolean(Self::SEND_MESSAGE_WITH_VIP_CHANNEL_PROPERTY, false),
             use_heartbeat_v2: boolean(Self::HEART_BEAT_V2, false),
-            use_tls: boolean(
-                "tls.enable",
-                property("tls.server.mode").as_deref() == Some("enforcing"),
-            ),
+            use_tls: boolean("tls.enable", false),
             socks_proxy_config: Some(
                 property(Self::SOCKS_PROXY_CONFIG).unwrap_or_else(|| "{}".into()),
             ),
