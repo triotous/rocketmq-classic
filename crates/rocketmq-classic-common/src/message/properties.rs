@@ -27,7 +27,7 @@ pub fn decode_properties(encoded: &str) -> MessageProperties {
         let Some((key, value)) = record.split_once(NAME_VALUE_SEPARATOR) else {
             continue;
         };
-        if !key.is_empty() {
+        if !key.is_empty() && !value.is_empty() {
             properties.insert(key.to_owned(), value.to_owned());
         }
     }
@@ -62,7 +62,7 @@ mod tests {
         assert_eq!(decoded.get("a").map(String::as_str), Some("3"));
         assert_eq!(decoded.get("UNKNOWN").map(String::as_str), Some("kept"));
         assert_eq!(decoded.get("x").map(String::as_str), Some("1"));
-        assert_eq!(decoded.get("EMPTY").map(String::as_str), Some(""));
+        assert!(!decoded.contains_key("EMPTY"));
         assert!(!decoded.contains_key("broken"));
     }
 
