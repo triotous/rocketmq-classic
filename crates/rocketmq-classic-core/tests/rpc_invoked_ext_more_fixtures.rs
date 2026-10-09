@@ -199,7 +199,7 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
             let request = SetMessageRequestModeRequestBody {
                 topic: Some("oracle-topic".into()),
                 consumer_group: Some("consumer".into()),
-                mode: MessageRequestMode::Pop,
+                mode: Some(MessageRequestMode::Pop),
                 pop_share_queue_num: 2,
             };
             match api

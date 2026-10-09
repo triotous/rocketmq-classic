@@ -351,7 +351,7 @@ fn java_json_body_fixtures_decode_to_typed_assignment_lite_and_batch_models() {
 
     let mode: SetMessageRequestModeRequestBody =
         serde_json::from_slice(&java_body("body-set-request-mode")).unwrap();
-    assert_eq!(mode.mode, MessageRequestMode::Pop);
+    assert_eq!(mode.mode, Some(MessageRequestMode::Pop));
     assert_eq!(mode.pop_share_queue_num, 2);
 
     let lite: LiteSubscriptionCtlRequestBody =

@@ -56,6 +56,8 @@ public final class RuntimeLookupFixtures {
         fixture.put("assignmentAttachmentCases", assignmentAttachmentCases());
         fixture.put("assignmentBodyCases", assignmentBodyCases());
         fixture.put("liteSubscriptionEnumCases", liteSubscriptionEnumCases());
+        fixture.put("queryAssignmentEnumCases", queryAssignmentEnumCases());
+        fixture.put("setRequestModeCases", setRequestModeCases());
         fixture.put("assignmentHashCollisionCases", assignmentHashCollisionCases());
         fixture.put("assignmentMethodCases", assignmentMethodCases());
         fixture.put("messageRequestModeMethodCases", messageRequestModeMethodCases());
@@ -213,6 +215,72 @@ public final class RuntimeLookupFixtures {
             org.apache.rocketmq.remoting.protocol.body.LiteSubscriptionCtlRequestBody decoded =
                 com.alibaba.fastjson2.JSON.parseObject(rawInput,
                     org.apache.rocketmq.remoting.protocol.body.LiteSubscriptionCtlRequestBody.class);
+            item.put("outcome", "ACCEPTED");
+            item.put("encoded", com.alibaba.fastjson2.JSON.parseObject(
+                com.alibaba.fastjson2.JSON.toJSONString(decoded)));
+        } catch (RuntimeException error) {
+            item.put("outcome", "REJECTED");
+            item.put("error", error.getClass().getSimpleName());
+        }
+        return item;
+    }
+
+    private static List<Object> queryAssignmentEnumCases() {
+        List<Object> cases = new ArrayList<>();
+        cases.add(queryAssignmentEnumCase("name", "{\"messageModel\":\"CLUSTERING\"}"));
+        cases.add(queryAssignmentEnumCase("ordinal", "{\"messageModel\":1}"));
+        cases.add(queryAssignmentEnumCase("numeric-string", "{\"messageModel\":\"1\"}"));
+        cases.add(queryAssignmentEnumCase("fractional", "{\"messageModel\":2.9}"));
+        cases.add(queryAssignmentEnumCase("unknown-name", "{\"messageModel\":\"UNKNOWN\"}"));
+        cases.add(queryAssignmentEnumCase("unknown-numeric-string", "{\"messageModel\":\"3\"}"));
+        cases.add(queryAssignmentEnumCase("out-of-range", "{\"messageModel\":3}"));
+        cases.add(queryAssignmentEnumCase("explicit-null", "{\"messageModel\":null}"));
+        return cases;
+    }
+
+    private static Map<String, Object> queryAssignmentEnumCase(String name, String rawInput) {
+        Map<String, Object> item = new TreeMap<>();
+        item.put("name", name);
+        item.put("rawInput", rawInput);
+        try {
+            org.apache.rocketmq.remoting.protocol.body.QueryAssignmentRequestBody decoded =
+                com.alibaba.fastjson2.JSON.parseObject(rawInput,
+                    org.apache.rocketmq.remoting.protocol.body.QueryAssignmentRequestBody.class);
+            item.put("outcome", "ACCEPTED");
+            item.put("encoded", com.alibaba.fastjson2.JSON.parseObject(
+                com.alibaba.fastjson2.JSON.toJSONString(decoded)));
+        } catch (RuntimeException error) {
+            item.put("outcome", "REJECTED");
+            item.put("error", error.getClass().getSimpleName());
+        }
+        return item;
+    }
+
+    private static List<Object> setRequestModeCases() {
+        List<Object> cases = new ArrayList<>();
+        cases.add(setRequestModeCase("missing", "{}"));
+        cases.add(setRequestModeCase("name", "{\"mode\":\"POP\"}"));
+        cases.add(setRequestModeCase("ordinal", "{\"mode\":1}"));
+        cases.add(setRequestModeCase("numeric-string", "{\"mode\":\"1\"}"));
+        cases.add(setRequestModeCase("fractional", "{\"mode\":1.9}"));
+        cases.add(setRequestModeCase("unknown-name", "{\"mode\":\"UNKNOWN\"}"));
+        cases.add(setRequestModeCase("unknown-numeric-string", "{\"mode\":\"2\"}"));
+        cases.add(setRequestModeCase("out-of-range", "{\"mode\":2}"));
+        cases.add(setRequestModeCase("explicit-null", "{\"mode\":null}"));
+        cases.add(setRequestModeCase("boolean", "{\"mode\":true}"));
+        cases.add(setRequestModeCase("primitive-default", "{\"topic\":\"orders\"}"));
+        cases.add(setRequestModeCase("decimal-wrap", "{\"mode\":4294967296.0}"));
+        return cases;
+    }
+
+    private static Map<String, Object> setRequestModeCase(String name, String rawInput) {
+        Map<String, Object> item = new TreeMap<>();
+        item.put("name", name);
+        item.put("rawInput", rawInput);
+        try {
+            org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody decoded =
+                com.alibaba.fastjson2.JSON.parseObject(rawInput,
+                    org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody.class);
             item.put("outcome", "ACCEPTED");
             item.put("encoded", com.alibaba.fastjson2.JSON.parseObject(
                 com.alibaba.fastjson2.JSON.toJSONString(decoded)));

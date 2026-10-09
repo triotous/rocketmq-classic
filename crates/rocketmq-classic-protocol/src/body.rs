@@ -74,6 +74,16 @@ impl_java_enum_api!(
     Pop => "POP" = 1,
 );
 
+impl super::heartbeat::JavaOrdinalEnum for MessageRequestMode {
+    fn from_java_ordinal(ordinal: i64) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::Pull),
+            1 => Some(Self::Pop),
+            _ => None,
+        }
+    }
+}
+
 fn default_assignment_mode() -> Option<MessageRequestMode> {
     Some(MessageRequestMode::Pull)
 }
@@ -319,7 +329,11 @@ pub struct QueryAssignmentRequestBody {
     pub client_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub strategy_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "super::heartbeat::deserialize_fastjson_optional_enum",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub message_model: Option<super::heartbeat::MessageModel>,
 }
 
@@ -451,16 +465,32 @@ pub struct QueryAssignmentResponseBody {
         Option<std::collections::HashSet<Option<MessageQueueAssignment>>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetMessageRequestModeRequestBody {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub topic: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub consumer_group: Option<String>,
+    #[serde(
+        default = "default_assignment_mode",
+        deserialize_with = "super::heartbeat::deserialize_fastjson_optional_enum",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub mode: Option<MessageRequestMode>,
     #[serde(default)]
-    pub mode: MessageRequestMode,
     pub pop_share_queue_num: i32,
+}
+
+impl Default for SetMessageRequestModeRequestBody {
+    fn default() -> Self {
+        Self {
+            topic: None,
+            consumer_group: None,
+            mode: default_assignment_mode(),
+            pop_share_queue_num: 0,
+        }
+    }
 }
 
 mod bitset_base64 {
@@ -1190,7 +1220,7 @@ mod tests {
             "topic":"orders", "consumerGroup":"workers", "popShareQueueNum":0
         }))
         .unwrap();
-        assert_eq!(mode.mode, MessageRequestMode::Pull);
+        assert_eq!(mode.mode, Some(MessageRequestMode::Pull));
         assert_eq!(serde_json::to_value(mode).unwrap()["mode"], "PULL");
 
         let absent: LiteSubscriptionCtlRequestBody =
@@ -1271,6 +1301,68 @@ mod tests {
         for case in cases {
             let raw_input = case["rawInput"].as_str().unwrap();
             let decoded = serde_json::from_str::<LiteSubscriptionCtlRequestBody>(raw_input);
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            assert_eq!(
+                decoded.is_ok(),
+                java_accepts,
+                "{}: {decoded:?}",
+                case["name"]
+            );
+            if let Ok(decoded) = decoded {
+                assert_eq!(
+                    serde_json::to_value(decoded).unwrap(),
+                    case["encoded"],
+                    "{}",
+                    case["name"]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn query_assignment_request_enum_inputs_match_invoked_java_fastjson() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let cases = fixture["queryAssignmentEnumCases"].as_array().unwrap();
+        assert_eq!(
+            cases.len(),
+            8,
+            "Java oracle includes assignment request enum inputs"
+        );
+        for case in cases {
+            let raw_input = case["rawInput"].as_str().unwrap();
+            let decoded = serde_json::from_str::<QueryAssignmentRequestBody>(raw_input);
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            assert_eq!(
+                decoded.is_ok(),
+                java_accepts,
+                "{}: {decoded:?}",
+                case["name"]
+            );
+            if let Ok(decoded) = decoded {
+                assert_eq!(
+                    serde_json::to_value(decoded).unwrap(),
+                    case["encoded"],
+                    "{}",
+                    case["name"]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn set_request_mode_inputs_match_invoked_java_fastjson() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let cases = fixture["setRequestModeCases"].as_array().unwrap();
+        assert_eq!(
+            cases.len(),
+            12,
+            "Java oracle includes request mode defaults and coercions"
+        );
+        for case in cases {
+            let raw_input = case["rawInput"].as_str().unwrap();
+            let decoded = serde_json::from_str::<SetMessageRequestModeRequestBody>(raw_input);
             let java_accepts = case["outcome"] == "ACCEPTED";
             assert_eq!(
                 decoded.is_ok(),
@@ -1419,7 +1511,7 @@ mod tests {
                     SetMessageRequestModeRequestBody {
                         topic: Some("orders".into()),
                         consumer_group: Some("workers".into()),
-                        mode: MessageRequestMode::Pop,
+                        mode: Some(MessageRequestMode::Pop),
                         pop_share_queue_num: 2,
                     },
                 )]),

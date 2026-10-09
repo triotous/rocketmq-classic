@@ -602,7 +602,7 @@ fn generate_p4_bodies(output: &std::path::Path) {
         &SetMessageRequestModeRequestBody {
             topic: Some("orders".into()),
             consumer_group: Some("workers".into()),
-            mode: MessageRequestMode::Pop,
+            mode: Some(MessageRequestMode::Pop),
             pop_share_queue_num: 2,
         },
     );
