@@ -1679,7 +1679,7 @@ impl GetConsumerStatusBody {
         serde_json::from_str(&normalized)
     }
 
-    pub fn get_message_queue_table(&self) -> Option<&[(MessageQueue, i64)]> {
+    pub fn get_message_queue_table(&self) -> Option<&[(MessageQueue, Option<i64>)]> {
         self.message_queue_table.as_deref()
     }
 
@@ -1923,15 +1923,7 @@ impl ResetOffsetBody {
         let Some(entries) = &self.offset_table else {
             return Ok(b"{}".to_vec());
         };
-        let mut table = std::collections::BTreeMap::new();
-        for (queue, offset) in entries {
-            table.insert(queue.clone(), *offset);
-        }
-        let entries = table
-            .into_iter()
-            .filter_map(|(queue, offset)| offset.map(|offset| (queue, offset)))
-            .collect::<Vec<_>>();
-        let table = encode_java_queue_table_text(&entries)?;
+        let table = encode_java_queue_table_text(entries)?;
         Ok(format!("{{\"offsetTable\":{table}}}").into_bytes())
     }
 
@@ -1987,24 +1979,120 @@ impl<'de> Deserialize<'de> for ResetOffsetBody {
 }
 
 fn encode_java_queue_table_text(
-    entries: &[(MessageQueue, i64)],
+    entries: &[(MessageQueue, Option<i64>)],
 ) -> Result<String, serde_json::Error> {
-    let mut parts = Vec::with_capacity(entries.len());
+    let mut table = std::collections::BTreeMap::new();
     for (queue, offset) in entries {
+        table.insert(queue.clone(), *offset);
+    }
+    let mut parts = Vec::with_capacity(entries.len());
+    for (queue, offset) in table {
+        let Some(offset) = offset else {
+            continue;
+        };
         let queue_key = format!(
             "{{\"brokerName\":{},\"queueId\":{},\"topic\":{}}}",
             serde_json::to_string(&queue.broker_name())?,
             serde_json::to_string(&queue.queue_id())?,
             serde_json::to_string(&queue.topic())?
         );
-        parts.push(format!("{queue_key}:{}", serde_json::to_string(offset)?));
+        parts.push(format!("{queue_key}:{}", serde_json::to_string(&offset)?));
     }
     Ok(format!("{{{}}}", parts.join(",")))
 }
 
-pub type QueueOffsetEntries = Vec<(MessageQueue, i64)>;
-pub type NullableQueueOffsetEntries = Vec<(MessageQueue, Option<i64>)>;
+pub type QueueOffsetEntries = Vec<(MessageQueue, Option<i64>)>;
+pub type NullableQueueOffsetEntries = QueueOffsetEntries;
 pub type ConsumerQueueOffsets = std::collections::BTreeMap<String, Option<QueueOffsetEntries>>;
+
+#[derive(Debug, Clone, Copy)]
+struct FastjsonLong(Option<i64>);
+
+impl FastjsonLong {
+    fn from_raw<E>(raw: &str) -> Result<Self, E>
+    where
+        E: de::Error,
+    {
+        if raw == "null" {
+            return Ok(Self(None));
+        }
+        if raw == "true" {
+            return Ok(Self(Some(1)));
+        }
+        if raw == "false" {
+            return Ok(Self(Some(0)));
+        }
+        if raw.starts_with('"') {
+            let text: String = serde_json::from_str(raw).map_err(E::custom)?;
+            return Self::from_string::<E>(&text);
+        }
+        if raw.contains('.') && !raw.bytes().any(|byte| matches!(byte, b'e' | b'E')) {
+            return decimal_text_to_java_long::<E>(raw).map(|value| Self(Some(value)));
+        }
+        if raw.bytes().any(|byte| matches!(byte, b'e' | b'E')) {
+            let value = raw.parse::<f64>().map_err(E::custom)?;
+            return Ok(Self(Some(value as i64)));
+        }
+        raw.parse::<i64>()
+            .map(|value| Self(Some(value)))
+            .map_err(E::custom)
+    }
+
+    fn from_string<E>(text: &str) -> Result<Self, E>
+    where
+        E: de::Error,
+    {
+        if text.is_empty() {
+            return Ok(Self(None));
+        }
+        if let Ok(value) = text.parse::<i64>() {
+            return Ok(Self(Some(value)));
+        }
+        if text.contains('.') && !text.bytes().any(|byte| matches!(byte, b'e' | b'E')) {
+            return decimal_text_to_java_long::<E>(text).map(|value| Self(Some(value)));
+        }
+        if text.bytes().any(|byte| matches!(byte, b'e' | b'E')) {
+            let value = text.parse::<f64>().map_err(E::custom)?;
+            return Ok(Self(Some(value as i64)));
+        }
+        Err(E::custom("string is not a Java Long value"))
+    }
+}
+
+fn decimal_text_to_java_long<E>(text: &str) -> Result<i64, E>
+where
+    E: de::Error,
+{
+    let (negative, unsigned) = match text.as_bytes().first() {
+        Some(b'-') => (true, &text[1..]),
+        Some(b'+') => (false, &text[1..]),
+        _ => (false, text),
+    };
+    let mut pieces = unsigned.split('.');
+    let integer = pieces.next().unwrap_or_default();
+    let fraction = pieces
+        .next()
+        .ok_or_else(|| E::custom("invalid decimal value"))?;
+    if pieces.next().is_some()
+        || (integer.is_empty() && fraction.is_empty())
+        || !integer.bytes().all(|byte| byte.is_ascii_digit())
+        || !fraction.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return Err(E::custom("invalid decimal value"));
+    }
+    let mut magnitude = 0u64;
+    for digit in integer.bytes() {
+        magnitude = magnitude
+            .wrapping_mul(10)
+            .wrapping_add(u64::from(digit - b'0'));
+    }
+    let value = if negative {
+        0u64.wrapping_sub(magnitude)
+    } else {
+        magnitude
+    };
+    Ok(value as i64)
+}
 
 mod message_queue_offset_table {
     use super::encode_table;
@@ -2039,7 +2127,7 @@ mod message_queue_offset_table {
         decode_entries(encoded).map(Some)
     }
 
-    pub(super) struct RawQueueOffsetEntries(Vec<(String, i64)>);
+    pub(super) struct RawQueueOffsetEntries(Vec<(String, Option<i64>)>);
 
     pub(super) fn decode_entries<E>(encoded: RawQueueOffsetEntries) -> Result<QueueOffsetEntries, E>
     where
@@ -2074,7 +2162,9 @@ mod message_queue_offset_table {
                 {
                     let mut entries = Vec::new();
                     while let Some(key) = map.next_key::<String>()? {
-                        entries.push((key, map.next_value::<i64>()?));
+                        let raw = map.next_value::<Box<serde_json::value::RawValue>>()?;
+                        let offset = super::FastjsonLong::from_raw::<A::Error>(raw.get())?.0;
+                        entries.push((key, offset));
                     }
                     Ok(RawQueueOffsetEntries(entries))
                 }
@@ -2086,8 +2176,8 @@ mod message_queue_offset_table {
 }
 
 fn encode_table(
-    entries: &[(MessageQueue, i64)],
-) -> Result<std::collections::BTreeMap<String, i64>, serde_json::Error> {
+    entries: &[(MessageQueue, Option<i64>)],
+) -> Result<std::collections::BTreeMap<String, Option<i64>>, serde_json::Error> {
     entries
         .iter()
         .map(|(queue, offset)| Ok((serde_json::to_string(queue)?, *offset)))
@@ -2256,7 +2346,9 @@ mod optional_message_queue_offset_table {
                 {
                     let mut entries = Vec::new();
                     while let Some(key) = map.next_key::<String>()? {
-                        entries.push((key, map.next_value::<Option<i64>>()?));
+                        let raw = map.next_value::<Box<serde_json::value::RawValue>>()?;
+                        let offset = super::FastjsonLong::from_raw::<A::Error>(raw.get())?.0;
+                        entries.push((key, offset));
                     }
                     Ok(RawQueueOffsetTable(entries))
                 }
@@ -2545,10 +2637,10 @@ mod tests {
         assert_eq!(key["queueId"], 1);
 
         let status = GetConsumerStatusBody {
-            message_queue_table: Some(vec![(queue.clone(), 7)]),
+            message_queue_table: Some(vec![(queue.clone(), Some(7))]),
             consumer_table: Some(std::collections::BTreeMap::from([(
                 "consumer-a".into(),
-                Some(vec![(queue, 8)]),
+                Some(vec![(queue, Some(8))]),
             )])),
         };
         let value = serde_json::to_value(status).unwrap();
@@ -2857,8 +2949,8 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
         let cases = fixture["consumerStatusBodyInputCases"].as_array().unwrap();
-        assert_eq!(cases.len(), 47);
-        let rows = |entries: Option<&[(MessageQueue, i64)]>| {
+        assert_eq!(cases.len(), 69);
+        let rows = |entries: Option<&[(MessageQueue, Option<i64>)]>| {
             let Some(entries) = entries else {
                 return serde_json::Value::Null;
             };
@@ -2931,18 +3023,33 @@ mod tests {
         assert!(body.get_consumer_table().unwrap().is_empty());
 
         let queue = MessageQueue::new("orders", "broker-a", 1);
-        body.set_message_queue_table(Some(vec![(queue.clone(), 9)]));
+        body.set_message_queue_table(Some(vec![(queue.clone(), Some(9))]));
         body.set_consumer_table(Some(std::collections::BTreeMap::from([(
             "consumer-a".to_owned(),
-            Some(vec![(queue.clone(), 8)]),
+            Some(vec![(queue.clone(), Some(8))]),
         )])));
         assert_eq!(
             body.get_message_queue_table().unwrap(),
-            &[(queue.clone(), 9)]
+            &[(queue.clone(), Some(9))]
         );
         assert_eq!(
             body.get_consumer_table().unwrap()["consumer-a"],
-            Some(vec![(queue, 8)])
+            Some(vec![(queue, Some(8))])
+        );
+
+        let queue = MessageQueue::new("orders", "broker-a", 1);
+        body.set_message_queue_table(Some(vec![(queue.clone(), None)]));
+        body.set_consumer_table(Some(std::collections::BTreeMap::from([(
+            "consumer-a".to_owned(),
+            Some(vec![(queue.clone(), None)]),
+        )])));
+        assert_eq!(
+            body.get_message_queue_table().unwrap(),
+            &[(queue.clone(), None)]
+        );
+        assert_eq!(
+            body.get_consumer_table().unwrap()["consumer-a"],
+            Some(vec![(queue, None)])
         );
 
         body.set_message_queue_table(None);
@@ -2956,7 +3063,7 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
         let cases = fixture["resetOffsetBodyInputCases"].as_array().unwrap();
-        assert_eq!(cases.len(), 29);
+        assert_eq!(cases.len(), 40);
         let rows = |entries: Option<&[(MessageQueue, Option<i64>)]>| {
             let Some(entries) = entries else {
                 return serde_json::Value::Null;

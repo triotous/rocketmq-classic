@@ -666,7 +666,7 @@ fn generate_p4_bodies(output: &std::path::Path) {
         GetConsumerStatusBody {
             message_queue_table: Some(vec![(
                 rocketmq_classic_common::message::MessageQueue::new("orders", "broker-a", 1),
-                9,
+                Some(9),
             )]),
             consumer_table: Some(std::collections::BTreeMap::new()),
         }

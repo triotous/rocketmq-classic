@@ -406,7 +406,7 @@ fn java_json_body_fixtures_decode_to_typed_assignment_lite_and_batch_models() {
             let (queue, offset) = &typed.message_queue_table.as_ref().unwrap()[0];
             assert_eq!(queue.topic(), Some("orders"));
             assert_eq!(queue.broker_name(), Some("broker-a"));
-            assert_eq!(*offset, 9);
+            assert_eq!(*offset, Some(9));
             assert_eq!(typed.encode_java_json().unwrap(), raw);
         }
     }
