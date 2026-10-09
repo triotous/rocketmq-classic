@@ -395,11 +395,9 @@ fn current_subscription_version() -> i64 {
 }
 
 #[derive(Deserialize)]
-#[serde(untagged)]
-enum FastjsonEnumInput {
-    Name(String),
-    Ordinal(i64),
-    Decimal(f64),
+struct FastjsonEnumOrdinalInput {
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i32")]
+    ordinal: i32,
 }
 
 trait JavaOrdinalEnum: Sized {
@@ -411,19 +409,66 @@ where
     D: serde::Deserializer<'de>,
     T: Deserialize<'de> + JavaOrdinalEnum,
 {
-    match Option::<FastjsonEnumInput>::deserialize(deserializer)? {
+    match Option::<Box<serde_json::value::RawValue>>::deserialize(deserializer)? {
         None => Ok(None),
-        Some(FastjsonEnumInput::Name(name)) => Ok(T::deserialize(
-            serde::de::value::StringDeserializer::<D::Error>::new(name.to_ascii_uppercase()),
-        )
-        .ok()),
-        Some(FastjsonEnumInput::Ordinal(ordinal)) => T::from_java_ordinal(ordinal)
-            .map(Some)
-            .ok_or_else(|| <D::Error as serde::de::Error>::custom("enum ordinal out of range")),
-        Some(FastjsonEnumInput::Decimal(ordinal)) => T::from_java_ordinal(ordinal.trunc() as i64)
-            .map(Some)
-            .ok_or_else(|| <D::Error as serde::de::Error>::custom("enum ordinal out of range")),
+        Some(raw) if raw.get().starts_with('"') => {
+            let name = serde_json::from_str::<String>(raw.get())
+                .map_err(<D::Error as de::Error>::custom)?;
+            if let Ok(value) = T::deserialize(
+                serde::de::value::StringDeserializer::<D::Error>::new(name.to_ascii_uppercase()),
+            ) {
+                return Ok(Some(value));
+            }
+            if is_ascii_signed_integer(&name) {
+                let ordinal = name.parse::<i32>().map_err(|error| {
+                    <D::Error as serde::de::Error>::custom(format!("enum ordinal: {error}"))
+                })?;
+                return Ok(T::from_java_ordinal(i64::from(ordinal)));
+            }
+            Ok(None)
+        }
+        Some(raw) if raw.get() == "null" => Ok(None),
+        Some(raw) => {
+            let token = raw.get();
+            let ordinal = if token.contains(['e', 'E']) {
+                let value = token
+                    .parse::<f64>()
+                    .map_err(<D::Error as de::Error>::custom)?;
+                if !value.is_finite() {
+                    return Err(<D::Error as de::Error>::custom(
+                        "enum ordinal is not finite",
+                    ));
+                }
+                value as i32
+            } else if token.contains('.') {
+                let wrapped = format!("{{\"ordinal\":{token}}}");
+                serde_json::from_str::<FastjsonEnumOrdinalInput>(&wrapped)
+                    .map_err(<D::Error as de::Error>::custom)?
+                    .ordinal
+            } else {
+                token
+                    .parse::<i64>()
+                    .map_err(|error| {
+                        <D::Error as de::Error>::custom(format!("enum ordinal: {error}"))
+                    })?
+                    .try_into()
+                    .map_err(|error| {
+                        <D::Error as de::Error>::custom(format!("enum ordinal: {error}"))
+                    })?
+            };
+            T::from_java_ordinal(i64::from(ordinal))
+                .map(Some)
+                .ok_or_else(|| <D::Error as de::Error>::custom("enum ordinal out of range"))
+        }
     }
+}
+
+fn is_ascii_signed_integer(value: &str) -> bool {
+    let digits = value
+        .strip_prefix('+')
+        .or_else(|| value.strip_prefix('-'))
+        .unwrap_or(value);
+    !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 fn default_expression_type() -> Option<String> {
@@ -1322,7 +1367,7 @@ mod tests {
         let cases = fixture["consumerEnumCases"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            51,
+            65,
             "Java oracle includes enum name and ordinal coercions"
         );
         for case in cases {
