@@ -616,7 +616,9 @@ fn generate_p4_bodies(output: &std::path::Path) {
                 client_id: Some("client".into()),
                 group: Some("workers".into()),
                 topic: Some("orders".into()),
-                lite_topic_set: Some(vec!["lite-orders".into()]),
+                lite_topic_set: Some(std::collections::BTreeSet::from([Some(
+                    "lite-orders".into(),
+                )])),
                 offset_option: Some(OffsetOption {
                     option_type: Some(OffsetOptionType::Policy),
                     value: 1,

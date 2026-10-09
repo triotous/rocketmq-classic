@@ -355,10 +355,13 @@ pub struct LiteSubscriptionDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub topic: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub lite_topic_set: Option<Vec<String>>,
+    pub lite_topic_set: Option<std::collections::BTreeSet<Option<String>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub offset_option: Option<OffsetOption>,
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_i64_reject_object"
+    )]
     pub version: i64,
 }
 
@@ -370,18 +373,78 @@ struct LiteSubscriptionDtoFields {
         deserialize_with = "super::heartbeat::deserialize_fastjson_optional_enum"
     )]
     action: Option<LiteSubscriptionAction>,
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
     client_id: Option<String>,
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
     group: Option<String>,
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
     topic: Option<String>,
-    #[serde(default)]
-    lite_topic_set: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_fastjson_string_set")]
+    lite_topic_set: Option<std::collections::BTreeSet<Option<String>>>,
     #[serde(default)]
     offset_option: Option<OffsetOption>,
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_i64_reject_object"
+    )]
     version: i64,
+}
+
+fn deserialize_optional_fastjson_string_set<'de, D>(
+    deserializer: D,
+) -> Result<Option<std::collections::BTreeSet<Option<String>>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+    let raw = raw.get().trim();
+    if raw == "null" {
+        return Ok(None);
+    }
+
+    fn parse_value<E>(raw: &str) -> Result<Option<String>, E>
+    where
+        E: de::Error,
+    {
+        let mut deserializer = serde_json::Deserializer::from_str(raw);
+        let value =
+            serde_fastjson::deserialize_nullable_string(&mut deserializer).map_err(E::custom)?;
+        deserializer.end().map_err(E::custom)?;
+        Ok(value)
+    }
+
+    if raw.starts_with('"') {
+        let value = serde_json::from_str::<String>(raw).map_err(de::Error::custom)?;
+        let mut values = std::collections::BTreeSet::new();
+        if !value.is_empty() {
+            values.insert(Some(value));
+        }
+        return Ok(Some(values));
+    }
+    if raw.starts_with('{') {
+        return Ok(Some(std::collections::BTreeSet::from([parse_value(raw)?])));
+    }
+    if raw.starts_with('[') {
+        let values = serde_json::from_str::<Vec<Box<serde_json::value::RawValue>>>(raw)
+            .map_err(de::Error::custom)?;
+        return values
+            .iter()
+            .map(|value| parse_value(value.get()))
+            .collect::<Result<std::collections::BTreeSet<_>, _>>()
+            .map(Some);
+    }
+    Err(de::Error::custom(
+        "expected a Fastjson string, object, array, or null for a Java Set field",
+    ))
 }
 
 impl<'de> Deserialize<'de> for LiteSubscriptionDto {
@@ -443,7 +506,7 @@ pub struct LiteSubscription {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub topic: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub lite_topic_set: Option<Vec<String>>,
+    pub lite_topic_set: Option<std::collections::BTreeSet<Option<String>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
@@ -1382,7 +1445,9 @@ mod tests {
             client_id: Some("client".into()),
             group: Some("workers".into()),
             topic: Some("orders".into()),
-            lite_topic_set: Some(vec!["lite-orders".into()]),
+            lite_topic_set: Some(std::collections::BTreeSet::from([Some(
+                "lite-orders".into(),
+            )])),
             offset_option: Some(OffsetOption {
                 option_type: Some(OffsetOptionType::Timestamp),
                 value: 99,
@@ -2236,7 +2301,7 @@ mod tests {
             client_id: Some("client".into()),
             group: Some("workers".into()),
             topic: Some("orders".into()),
-            lite_topic_set: Some(vec!["shard-a".into()]),
+            lite_topic_set: Some(std::collections::BTreeSet::from([Some("shard-a".into())])),
             offset_option: Some(OffsetOption {
                 option_type: Some(OffsetOptionType::Policy),
                 value: 1,

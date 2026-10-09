@@ -106,7 +106,9 @@ async fn invoked_lite_subscription_extension_matches_rust() {
                 client_id: Some("client".into()),
                 group: Some("workers".into()),
                 topic: Some("orders".into()),
-                lite_topic_set: Some(vec!["lite-orders".into()]),
+                lite_topic_set: Some(std::collections::BTreeSet::from([Some(
+                    "lite-orders".into(),
+                )])),
                 version: 0,
                 ..Default::default()
             })]),
