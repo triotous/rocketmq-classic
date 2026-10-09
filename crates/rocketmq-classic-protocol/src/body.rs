@@ -2220,6 +2220,12 @@ impl ConsumerListByGroupResponseBody {
         self.consumer_id_list.as_deref()
     }
 
+    /// Borrows the owned Java-compatible list mutably so callers can perform
+    /// the mutations available through Java's mutable `List` getter.
+    pub fn get_consumer_id_list_mut(&mut self) -> Option<&mut Vec<Option<String>>> {
+        self.consumer_id_list.as_mut()
+    }
+
     pub fn set_consumer_id_list(&mut self, consumer_id_list: Option<Vec<Option<String>>>) {
         self.consumer_id_list = consumer_id_list;
     }
@@ -3484,13 +3490,24 @@ mod tests {
             list_case["defaultConsumerIds"]
         );
         let consumer_ids: Vec<Option<String>> =
-            serde_json::from_value(list_case["values"].clone()).unwrap();
+            serde_json::from_value(list_case["assignedValues"].clone()).unwrap();
         consumer_list.set_consumer_id_list(Some(consumer_ids));
+        let consumer_ids_mut = consumer_list.get_consumer_id_list_mut().unwrap();
+        consumer_ids_mut.push(Some("client-c".into()));
         assert_eq!(
-            json!(consumer_list.get_consumer_id_list()),
-            list_case["values"]
+            consumer_ids_mut.contains(&Some("client-c".into())),
+            list_case["externalMutationVisible"]
         );
-        // Java returns the same mutable List; Rust owns a Vec and lends a slice.
+        consumer_ids_mut.push(Some("client-d".into()));
+        assert_eq!(
+            consumer_ids_mut.contains(&Some("client-d".into())),
+            list_case["getterMutationVisibleToAssignedList"]
+        );
+        assert_eq!(
+            serde_json::to_value(consumer_list.get_consumer_id_list()).unwrap(),
+            list_case["mutatedValues"]
+        );
+        // Java shares List identity; Rust moves the Vec into the body and lends mutable access through its owner.
         assert_eq!(list_case["getterReturnsAssignedList"], true);
         consumer_list.set_consumer_id_list(None);
         assert!(consumer_list.get_consumer_id_list().is_none());
