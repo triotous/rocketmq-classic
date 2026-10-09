@@ -43,7 +43,7 @@ public final class RuntimeLookupFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "MQClientInstance.findBrokerAddrByTopic/BrokerData.selectBrokerAddr/QueryAssignmentResponseBody.decode/GetConsumerListByGroupResponseBody.decode/ResetOffsetBody.decode/encode/GetConsumerStatusBody.decode/encode");
+        fixture.put("entrypoint", "MQClientInstance.findBrokerAddrByTopic/BrokerData.selectBrokerAddr/QueryAssignmentResponseBody.decode/GetConsumerListByGroupResponseBody.decode/ResetOffsetBody.decode/encode/GetConsumerStatusBody.decode/encode/BatchAckMessageRequestBody.decode/encode");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
         String assignment = "{\"messageQueue\":{\"topic\":\"topic\",\"brokerName\":\"broker\",\"queueId\":2},\"mode\":\"POP\",\"attachments\":{\"key\":\"value\"}}";
@@ -87,6 +87,7 @@ public final class RuntimeLookupFixtures {
         fixture.put("lockBatchRequestBodyCases", lockBatchRequestBodyCases());
         fixture.put("unlockBatchRequestBodyCases", unlockBatchRequestBodyCases());
         fixture.put("lockBatchResponseBodyCases", lockBatchResponseBodyCases());
+        fixture.put("batchAckBodyInputCases", batchAckBodyInputCases());
         fixture.put("resetOffsetBodyInputCases", resetOffsetBodyInputCases());
         fixture.put("consumerStatusBodyInputCases", consumerStatusBodyInputCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
@@ -1212,6 +1213,69 @@ public final class RuntimeLookupFixtures {
         return batchQueueBodyCases("lock-response",
             org.apache.rocketmq.remoting.protocol.body.LockBatchResponseBody.class,
             new String[] {"lockOKMQSet"}, "lockOKMQSet");
+    }
+
+    private static List<Object> batchAckBodyInputCases() {
+        List<Object> cases = new ArrayList<>();
+        String[] tokens = {"null", "\"text\"", "7", "1.5", "true", "[]", "{}"};
+        String[] names = {"null", "string", "integer", "fraction", "boolean", "array", "object"};
+        cases.add(batchAckBodyInputCase("default-empty", "{}"));
+        cases.add(batchAckBodyInputCase("acks-null", "{\"acks\":null}"));
+        cases.add(batchAckBodyInputCase("acks-empty", "{\"acks\":[]}"));
+        cases.add(batchAckBodyInputCase("acks-singleton-object", "{\"acks\":{}}"));
+        cases.add(batchAckBodyInputCase("acks-null-member", "{\"acks\":[null]}"));
+        cases.add(batchAckBodyInputCase("acks-duplicate-members", "{\"acks\":[{},{}]}"));
+        for (int i = 0; i < tokens.length; i++) {
+            cases.add(batchAckBodyInputCase("broker-name-" + names[i],
+                "{\"brokerName\":" + tokens[i] + "}"));
+            cases.add(batchAckBodyInputCase("acks-field-" + names[i],
+                "{\"acks\":" + tokens[i] + "}"));
+        }
+        String[] fields = {"c", "t", "r", "so", "q", "rq", "pt", "it", "b"};
+        for (String field : fields) {
+            for (int i = 0; i < tokens.length; i++) {
+                cases.add(batchAckBodyInputCase("ack-" + field + "-" + names[i],
+                    "{\"acks\":[{\"" + field + "\":" + tokens[i] + "}]}"));
+            }
+        }
+        cases.add(batchAckBodyInputCase("base64-valid-bits",
+            "{\"acks\":[{\"b\":\"BQ==\"}]}"));
+        cases.add(batchAckBodyInputCase("base64-empty-bits",
+            "{\"acks\":[{\"b\":\"\"}]}"));
+        cases.add(batchAckBodyInputCase("duplicate-body-field-last-wins",
+            "{\"brokerName\":\"first\",\"brokerName\":\"last\"}"));
+        cases.add(batchAckBodyInputCase("duplicate-ack-field-last-wins",
+            "{\"acks\":[{\"so\":1,\"so\":2}]}"));
+        cases.add(batchAckBodyInputCase("unknown-fields-ignored",
+            "{\"unknown\":7,\"acks\":[{\"unknown\":true}]}"));
+        String[][] roots = {
+            {"null", "null"}, {"empty-object", "{}"}, {"empty-array", "[]"},
+            {"string", "\"root\""}, {"integer", "7"}, {"fraction", "1.5"},
+            {"boolean", "true"}
+        };
+        for (String[] root : roots) {
+            cases.add(batchAckBodyInputCase("root-" + root[0], root[1]));
+        }
+        return cases;
+    }
+
+    private static Map<String, Object> batchAckBodyInputCase(String name, String rawInput) {
+        Map<String, Object> item = new TreeMap<>();
+        item.put("name", name);
+        item.put("rawInput", rawInput);
+        try {
+            org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody decoded =
+                org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody.decode(
+                    rawInput.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody.class);
+            item.put("outcome", "ACCEPTED");
+            item.put("encoded", decoded == null ? null : com.alibaba.fastjson2.JSON.parseObject(
+                new String(decoded.encode(), java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (RuntimeException error) {
+            item.put("outcome", "REJECTED");
+            item.put("error", error.getClass().getSimpleName());
+        }
+        return item;
     }
 
     private static List<Object> consumerStatusBodyInputCases() {
