@@ -1331,6 +1331,13 @@ impl QueryAssignmentResponseBody {
         self.message_queue_assignments.as_ref()
     }
 
+    /// Borrows the owned assignment set mutably for Java-compatible getter mutations.
+    pub fn get_message_queue_assignments_mut(
+        &mut self,
+    ) -> Option<&mut std::collections::HashSet<Option<MessageQueueAssignment>>> {
+        self.message_queue_assignments.as_mut()
+    }
+
     pub fn set_message_queue_assignments(
         &mut self,
         message_queue_assignments: Option<
@@ -3393,11 +3400,42 @@ mod tests {
             response_case["defaultAssignments"]
         );
         let assignments: std::collections::HashSet<Option<MessageQueueAssignment>> =
-            serde_json::from_value(response_case["values"].clone()).unwrap();
+            serde_json::from_value(response_case["assignedValues"].clone()).unwrap();
         response.set_message_queue_assignments(Some(assignments));
-        let returned_assignments = response.get_message_queue_assignments().unwrap();
-        assert_eq!(returned_assignments.len(), response_case["valueCount"]);
-        let returned_values = returned_assignments
+        assert_eq!(
+            response.get_message_queue_assignments().unwrap().len(),
+            response_case["valueCount"]
+        );
+        let assignments_mut = response.get_message_queue_assignments_mut().unwrap();
+        assignments_mut.clear();
+        assignments_mut.insert(Some(MessageQueueAssignment {
+            message_queue: Some(MessageQueue::new("orders", "broker", 3)),
+            mode: Some(MessageRequestMode::Pull),
+            attachments: None,
+        }));
+        assert_eq!(
+            assignments_mut.iter().any(|assignment| assignment
+                .as_ref()
+                .and_then(MessageQueueAssignment::message_queue)
+                .is_some_and(|queue| queue.queue_id() == 3)),
+            response_case["externalMutationVisible"]
+        );
+        assignments_mut.clear();
+        assignments_mut.insert(Some(MessageQueueAssignment {
+            message_queue: Some(MessageQueue::new("orders", "broker", 4)),
+            mode: Some(MessageRequestMode::Pop),
+            attachments: None,
+        }));
+        assert_eq!(
+            assignments_mut.iter().any(|assignment| assignment
+                .as_ref()
+                .and_then(MessageQueueAssignment::message_queue)
+                .is_some_and(|queue| queue.queue_id() == 4)),
+            response_case["getterMutationVisibleToAssignedSet"]
+        );
+        let mutated_values = response
+            .get_message_queue_assignments()
+            .unwrap()
             .iter()
             .map(|assignment| {
                 assignment.as_ref().map(|assignment| {
@@ -3409,7 +3447,7 @@ mod tests {
                 })
             })
             .collect::<Vec<_>>();
-        assert_eq!(json!(returned_values), response_case["values"]);
+        assert_eq!(json!(mutated_values), response_case["mutatedValues"]);
         // Java returns the same mutable Set. Rust moves the HashSet into the DTO and lends it.
         assert_eq!(response_case["setterRetainsSetIdentity"], true);
         response.set_message_queue_assignments(None);
