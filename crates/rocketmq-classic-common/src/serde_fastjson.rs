@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::collections::HashSet;
 use std::fmt;
 
-use serde::de::{MapAccess, SeqAccess, Visitor};
+use serde::de::{MapAccess, Visitor};
 use serde::ser::{SerializeMap, SerializeSeq};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de, de::DeserializeOwned};
 use serde_json::Value;
@@ -17,7 +17,7 @@ pub type NullableStringMap = BTreeMap<String, Option<String>>;
 enum FastjsonStringValue {
     Null,
     Bool(bool),
-    Number(serde_json::Number),
+    Number(String),
     String(String),
     Array(Vec<Self>),
     Object(Vec<(String, Self)>),
@@ -28,10 +28,46 @@ impl FastjsonStringValue {
         match self {
             Self::Null => Ok("null".to_owned()),
             Self::Bool(value) => Ok(value.to_string()),
-            Self::Number(value) => Ok(value.to_string()),
+            Self::Number(value) => Ok(value),
             Self::String(value) => Ok(value),
             Self::Array(_) | Self::Object(_) => serde_json::to_string(&self),
         }
+    }
+}
+
+struct FastjsonRawObject(Vec<(String, Box<serde_json::value::RawValue>)>);
+
+impl<'de> Deserialize<'de> for FastjsonRawObject {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct FastjsonRawObjectVisitor;
+
+        impl<'de> Visitor<'de> for FastjsonRawObjectVisitor {
+            type Value = FastjsonRawObject;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a JSON object")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut values = Vec::<(String, Box<serde_json::value::RawValue>)>::new();
+                while let Some((key, value)) = map.next_entry()? {
+                    if let Some((_, current)) = values.iter_mut().find(|(name, _)| *name == key) {
+                        *current = value;
+                    } else {
+                        values.push((key, value));
+                    }
+                }
+                Ok(FastjsonRawObject(values))
+            }
+        }
+
+        deserializer.deserialize_map(FastjsonRawObjectVisitor)
     }
 }
 
@@ -40,102 +76,61 @@ impl<'de> Deserialize<'de> for FastjsonStringValue {
     where
         D: Deserializer<'de>,
     {
-        struct FastjsonStringValueVisitor;
-
-        impl<'de> Visitor<'de> for FastjsonStringValueVisitor {
-            type Value = FastjsonStringValue;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                formatter.write_str("any JSON value")
-            }
-
-            fn visit_unit<E>(self) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Ok(FastjsonStringValue::Null)
-            }
-
-            fn visit_none<E>(self) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Ok(FastjsonStringValue::Null)
-            }
-
-            fn visit_bool<E>(self, value: bool) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Ok(FastjsonStringValue::Bool(value))
-            }
-
-            fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Ok(FastjsonStringValue::Number(value.into()))
-            }
-
-            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Ok(FastjsonStringValue::Number(value.into()))
-            }
-
-            fn visit_f64<E>(self, value: f64) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                serde_json::Number::from_f64(value)
-                    .map(FastjsonStringValue::Number)
-                    .ok_or_else(|| E::custom("non-finite number is not valid JSON"))
-            }
-
-            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Ok(FastjsonStringValue::String(value.to_owned()))
-            }
-
-            fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Ok(FastjsonStringValue::String(value))
-            }
-
-            fn visit_seq<A>(self, mut sequence: A) -> Result<Self::Value, A::Error>
-            where
-                A: SeqAccess<'de>,
-            {
-                let mut values = Vec::new();
-                while let Some(value) = sequence.next_element()? {
-                    values.push(value);
-                }
-                Ok(FastjsonStringValue::Array(values))
-            }
-
-            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-            where
-                A: MapAccess<'de>,
-            {
-                let mut values = Vec::<(String, FastjsonStringValue)>::new();
-                while let Some((key, value)) = map.next_entry()? {
-                    if let Some((_, current)) = values.iter_mut().find(|(name, _)| *name == key) {
-                        *current = value;
-                    } else {
-                        values.push((key, value));
-                    }
-                }
-                Ok(FastjsonStringValue::Object(values))
-            }
-        }
-
-        deserializer.deserialize_any(FastjsonStringValueVisitor)
+        let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+        fastjson_string_value_from_raw::<D::Error>(raw.get())
     }
+}
+
+fn fastjson_string_value_from_raw<E>(raw: &str) -> Result<FastjsonStringValue, E>
+where
+    E: de::Error,
+{
+    let raw = raw.trim();
+    match raw {
+        "null" => return Ok(FastjsonStringValue::Null),
+        "true" => return Ok(FastjsonStringValue::Bool(true)),
+        "false" => return Ok(FastjsonStringValue::Bool(false)),
+        _ => {}
+    }
+    if raw.starts_with('"') {
+        return serde_json::from_str::<String>(raw)
+            .map(FastjsonStringValue::String)
+            .map_err(de::Error::custom);
+    }
+    if raw.starts_with('[') {
+        let values = serde_json::from_str::<Vec<Box<serde_json::value::RawValue>>>(raw)
+            .map_err(de::Error::custom)?;
+        return values
+            .iter()
+            .map(|value| fastjson_string_value_from_raw::<E>(value.get()))
+            .collect::<Result<Vec<_>, _>>()
+            .map(FastjsonStringValue::Array);
+    }
+    if raw.starts_with('{') {
+        let FastjsonRawObject(values) =
+            serde_json::from_str::<FastjsonRawObject>(raw).map_err(de::Error::custom)?;
+        return values
+            .into_iter()
+            .map(|(key, value)| {
+                fastjson_string_value_from_raw::<E>(value.get()).map(|value| (key, value))
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(FastjsonStringValue::Object);
+    }
+    if raw.starts_with('-') || raw.as_bytes().first().is_some_and(u8::is_ascii_digit) {
+        let number = if raw.contains(['e', 'E']) {
+            let value = raw
+                .parse::<f64>()
+                .map_err(|_| E::custom("Fastjson numeric value is not representable"))?;
+            serde_json::Number::from_f64(value)
+                .ok_or_else(|| E::custom("Fastjson numeric value is not finite"))?
+                .to_string()
+        } else {
+            raw.to_owned()
+        };
+        return Ok(FastjsonStringValue::Number(number));
+    }
+    Err(E::custom("expected a JSON value"))
 }
 
 impl Serialize for FastjsonStringValue {
@@ -146,7 +141,9 @@ impl Serialize for FastjsonStringValue {
         match self {
             Self::Null => serializer.serialize_unit(),
             Self::Bool(value) => serializer.serialize_bool(*value),
-            Self::Number(value) => value.serialize(serializer),
+            Self::Number(value) => serde_json::value::RawValue::from_string(value.clone())
+                .map_err(serde::ser::Error::custom)?
+                .serialize(serializer),
             Self::String(value) => serializer.serialize_str(value),
             Self::Array(values) => {
                 let mut sequence = serializer.serialize_seq(Some(values.len()))?;
