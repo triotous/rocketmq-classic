@@ -844,4 +844,40 @@ mod tests {
         });
         assert!(config.use_tls);
     }
+
+    #[test]
+    fn java_property_backed_client_fields_match_pinned_constructor_fixture() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/runtime/client-config-properties.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            fixture["sourceCommit"],
+            "efa1be59d6fc747ad220f036c86030f05f0419f9"
+        );
+        let defaults = ClientConfig::with_properties("ip".into(), |_| None);
+        assert_eq!(client_property_snapshot(&defaults), fixture["defaults"]);
+
+        let properties = fixture["systemProperties"].as_object().unwrap();
+        let configured = ClientConfig::with_properties("ip".into(), |key| {
+            properties
+                .get(key)
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        });
+        assert_eq!(client_property_snapshot(&configured), fixture["configured"]);
+    }
+
+    fn client_property_snapshot(config: &ClientConfig) -> serde_json::Value {
+        serde_json::json!({
+            "instanceName": config.instance_name,
+            "decodeReadBody": config.decode_read_body,
+            "decodeDecompressBody": config.decode_decompress_body,
+            "vipChannelEnabled": config.vip_channel_enabled,
+            "useHeartbeatV2": config.use_heartbeat_v2,
+            "socksProxyConfig": config.socks_proxy_config,
+            "sendLatencyEnable": config.send_latency_enable,
+            "startDetectorEnable": config.start_detector_enable,
+        })
+    }
 }

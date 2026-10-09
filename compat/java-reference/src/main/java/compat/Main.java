@@ -81,6 +81,10 @@ public final class Main {
             ClientConfigTlsModeProbe.main(Arrays.copyOfRange(args, 1, args.length));
             return;
         }
+        if (args.length > 0 && "client-config-properties-probe".equals(args[0])) {
+            ClientConfigPropertiesProbe.main(Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "runtime-hook-fixtures".equals(args[0])) {
             RuntimeHookFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;

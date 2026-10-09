@@ -105,6 +105,20 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-client-config-properties-fixture</id>
+            <phase>verify</phase>
+            <goals><goal>exec</goal></goals>
+            <configuration>
+              <executable>${java.home}/bin/java</executable>
+              <arguments>
+                <argument>-cp</argument><classpath/>
+                <argument>compat.ClientConfigPropertiesProbe</argument>
+                <argument>${project.basedir}/../../fixtures/runtime/client-config-properties.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-runtime-hook-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>
