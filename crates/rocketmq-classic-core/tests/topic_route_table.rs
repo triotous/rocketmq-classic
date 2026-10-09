@@ -1,10 +1,47 @@
-use rocketmq_classic_core::route::TopicRouteDataHandle;
+use rocketmq_classic_core::route::{TopicRouteDataHandle, TopicSnapshot};
 use rocketmq_classic_core::{config::ClientConfig, runtime::ClientRuntimeManager};
 use rocketmq_classic_protocol::route::TopicRouteData;
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
 };
+
+#[test]
+fn public_topic_snapshot_factory_matches_invoked_java_route_conversions() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/route.json")).unwrap();
+    let cases = fixture["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 25);
+
+    for case in cases {
+        let route: TopicRouteData = serde_json::from_value(case["input"].clone()).unwrap();
+        if case["outcome"] == "OK" {
+            let snapshot = TopicSnapshot::from_route_data("topic", &route).unwrap();
+            assert_eq!(
+                serde_json::to_value(&snapshot.publish_queues).unwrap(),
+                case["publish"]
+            );
+            assert_eq!(
+                serde_json::to_value(&snapshot.subscribe_queues).unwrap(),
+                case["subscribe"]
+            );
+            assert_eq!(snapshot.order_topic, case["ordered"].as_bool().unwrap());
+            assert_eq!(
+                serde_json::to_value(
+                    snapshot
+                        .endpoints
+                        .iter()
+                        .map(|(queue, broker)| serde_json::json!({"queue":queue,"broker":broker}))
+                        .collect::<Vec<_>>()
+                )
+                .unwrap(),
+                case["endpoints"]
+            );
+        } else {
+            assert!(TopicSnapshot::from_route_data("topic", &route).is_err());
+        }
+    }
+}
 
 #[tokio::test]
 async fn raw_clear_query_refetches_once_and_retained_table_observes_wire_refresh() {
