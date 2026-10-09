@@ -637,6 +637,10 @@ public final class RuntimeHeartbeatFixtures {
         List<Object> cases = new ArrayList<>();
         cases.add(heartbeatDtoInputCase("subscription-scalars", "subscription",
             "{\"classFilterMode\":-1,\"topic\":42,\"subString\":true,\"tagsSet\":[1,true,[],{},null],\"codeSet\":[\"2\",1.9,true,null],\"subVersion\":\"1e2\",\"expressionType\":3,\"filterClassSource\":false}"));
+        cases.add(heartbeatDtoInputCase("subscription-high-precision-number-to-string", "subscription",
+            "{\"subVersion\":0,\"topic\":9223372036854775807.123456789012345678901}"));
+        cases.add(heartbeatDtoInputCase("subscription-tags-high-precision-number-to-string", "subscription",
+            "{\"subVersion\":0,\"tagsSet\":[9223372036854775807.123456789012345678901]}"));
         cases.add(heartbeatDtoInputCase("subscription-decimal-primitives", "subscription",
             "{\"classFilterMode\":1.0,\"subVersion\":1.9}"));
         cases.add(heartbeatDtoInputCase("subscription-long-maximum", "subscription",
