@@ -75,18 +75,24 @@ Route inbound check-transaction, consumer-change, reset-offset, consumer-status,
 
 Write the failing check/oracle fixture before its implementation. The cases below must become runnable checks, not manual checklist-only claims. Run these checks without Docker or a live Broker; use Java fixtures, controlled clocks and scripted peers. Shared commands and evidence rules are in the execution index.
 
-- [ ] **P6-V01** — Many concurrent get_or_create calls for one ID yield one identity, one task set and one socket pool; different IDs are not globally serialized.
-- [ ] **P6-V02** — Stale failed creation and unregister tokens cannot remove replacements; repeated IDs return the first Java runtime and retain its config/hook despite later differing inputs.
-- [ ] **P6-V03** — Paused-time timers, route snapshot readers and all startup-failure points leave no partial state or leaked tasks.
+- [x] **P6-V01** — Many concurrent get_or_create calls for one ID yield one identity, one task set and one socket pool; different IDs are not globally serialized.
+- [x] **P6-V02** — Stale failed creation and unregister tokens cannot remove replacements; repeated IDs return the first Java runtime and retain its config/hook despite later differing inputs.
+- [x] **P6-V03** — Paused-time timers, route snapshot readers and all startup-failure points leave no partial state or leaked tasks.
 
-- [ ] **P6-U01** — Scripted responses and paused time verify heartbeat/subscription/unregister bytes and independent shutdown of shared users.
+- [x] **P6-U01** — Scripted responses and paused time verify heartbeat/subscription/unregister bytes and independent shutdown of shared users.
 
 ### 5.1 Local commands after implementation
 
-Run after this phase or earlier phases create the named entry points. This documentation task does not execute these commands or claim their tests pass.
+Verified 2026-10-09. The first sandboxed full-workspace run was blocked only on three loopback binds; rerunning with local socket access passed. See the [requirement audit](../../docs/compatibility/PHASE_6_REQUIREMENT_AUDIT.md) for per-ID evidence and fixture provenance.
 
 ```bash
-cargo test -p rocketmq-classic-core --test runtime --locked
+cargo test --workspace --all-targets --locked
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+mvn -o -q -f compat/java-reference/pom.xml verify
+python3 tests/differential/compare.py --self-test
+python3 tests/differential/compare.py --validate-manifest
+cargo fmt --all -- --check
+git diff --check
 ```
 
 ### 5.2 Phase 19 live-test handoff

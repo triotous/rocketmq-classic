@@ -1,5 +1,6 @@
 use bytes::BytesMut;
 use rocketmq_classic_protocol::codes::request;
+use rocketmq_classic_remoting::client::RpcHook;
 use rocketmq_classic_remoting::{
     RemotingCommand,
     codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
@@ -21,6 +22,10 @@ use rocketmq_classic_core::{
         ProducerRuntime, REBALANCE_SERVICE_NAME, RuntimeError,
     },
 };
+
+struct IdentityHook;
+
+impl RpcHook for IdentityHook {}
 
 #[test]
 fn service_names_match_invoked_java_public_methods() {
@@ -449,8 +454,16 @@ async fn p6_v02_same_client_id_reuses_first_java_manager_runtime() {
     later_config.use_tls = true;
     later_config.mq_client_api_timeout = 1234;
 
-    let first = manager.get_or_create(&first_config).await.unwrap();
-    let later = manager.get_or_create(&later_config).await.unwrap();
+    let first_hook: Arc<dyn RpcHook> = Arc::new(IdentityHook);
+    let later_hook: Arc<dyn RpcHook> = Arc::new(IdentityHook);
+    let first = manager
+        .get_or_create_with_hook(&first_config, Some(first_hook.clone()))
+        .await
+        .unwrap();
+    let later = manager
+        .get_or_create_with_hook(&later_config, Some(later_hook.clone()))
+        .await
+        .unwrap();
     assert_eq!(first.client_id(), later.client_id());
     assert_eq!(first.client_id() == later.client_id(), java["sameClientId"]);
     assert_eq!(Arc::ptr_eq(&first, &later), java["sameRuntimeIdentity"]);
@@ -477,6 +490,19 @@ async fn p6_v02_same_client_id_reuses_first_java_manager_runtime() {
     );
     assert!(later_config.use_tls);
     assert_eq!(later_config.mq_client_api_timeout, 1234);
+    let registered_hooks = first.remoting().get_rpc_hooks();
+    assert_eq!(java["firstHookRetained"], true);
+    assert_eq!(java["laterHookIgnored"], true);
+    assert!(
+        registered_hooks
+            .iter()
+            .any(|registered| Arc::ptr_eq(registered, &first_hook))
+    );
+    assert!(
+        !registered_hooks
+            .iter()
+            .any(|registered| Arc::ptr_eq(registered, &later_hook))
+    );
 }
 
 #[tokio::test]

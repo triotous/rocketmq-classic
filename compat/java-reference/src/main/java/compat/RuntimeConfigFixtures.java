@@ -273,7 +273,22 @@ public final class RuntimeConfigFixtures {
         firstConfig.setClientIP("198.51.100.223");
         firstConfig.setInstanceName("phase6-manager-sharing");
         firstConfig.setNamesrvAddr("");
-        org.apache.rocketmq.client.impl.factory.MQClientInstance first = manager.getOrCreateMQClientInstance(firstConfig);
+        org.apache.rocketmq.remoting.RPCHook firstHook = new org.apache.rocketmq.remoting.RPCHook() {
+            @Override
+            public void doBeforeRequest(String remoteAddr, org.apache.rocketmq.remoting.protocol.RemotingCommand request) { }
+            @Override
+            public void doAfterResponse(String remoteAddr, org.apache.rocketmq.remoting.protocol.RemotingCommand request,
+                org.apache.rocketmq.remoting.protocol.RemotingCommand response) { }
+        };
+        org.apache.rocketmq.remoting.RPCHook laterHook = new org.apache.rocketmq.remoting.RPCHook() {
+            @Override
+            public void doBeforeRequest(String remoteAddr, org.apache.rocketmq.remoting.protocol.RemotingCommand request) { }
+            @Override
+            public void doAfterResponse(String remoteAddr, org.apache.rocketmq.remoting.protocol.RemotingCommand request,
+                org.apache.rocketmq.remoting.protocol.RemotingCommand response) { }
+        };
+        org.apache.rocketmq.client.impl.factory.MQClientInstance first =
+            manager.getOrCreateMQClientInstance(firstConfig, firstHook);
         ClientConfig laterConfig = firstConfig.cloneClientConfig();
         laterConfig.setNamesrvAddr("different-nameserver:9876");
         laterConfig.setNamespaceV2("different-namespace");
@@ -282,10 +297,16 @@ public final class RuntimeConfigFixtures {
         org.apache.rocketmq.client.impl.factory.MQClientInstance later = null;
         Map<String, Object> result = new TreeMap<>();
         try {
-            later = manager.getOrCreateMQClientInstance(laterConfig);
+            later = manager.getOrCreateMQClientInstance(laterConfig, laterHook);
             ClientConfig retained = first.getClientConfig();
+            @SuppressWarnings("unchecked")
+            List<org.apache.rocketmq.remoting.RPCHook> registeredHooks = (List<org.apache.rocketmq.remoting.RPCHook>)
+                first.getMQClientAPIImpl().getRemotingClient().getClass().getMethod("getRPCHook")
+                    .invoke(first.getMQClientAPIImpl().getRemotingClient());
             result.put("sameClientId", first.getClientId().equals(later.getClientId()));
             result.put("sameRuntimeIdentity", first == later);
+            result.put("firstHookRetained", registeredHooks.contains(firstHook));
+            result.put("laterHookIgnored", !registeredHooks.contains(laterHook));
             result.put("retainedNameserver", retained.getNamesrvAddr());
             result.put("retainedNamespaceV2", retained.getNamespaceV2());
             result.put("retainedTls", retained.isUseTLS());

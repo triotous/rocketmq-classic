@@ -75,18 +75,24 @@ fetch 時不持有 cache lock，先完整轉換 route，再替換 topic/broker/p
 
 先寫對應失敗測試／Oracle fixture，再依序實作；以下 case 必須成為可執行檢查，而非人工勾選。以下檢查不依賴 Docker 或 live Broker，使用 Java fixture、可控時鐘及 scripted peer；共通命令與證據規則見執行索引。
 
-- [ ] **P6-V01** — 同 ID 大量並行 get_or_create 只產生一個 identity/task set/socket pool；不同 ID 不被全域序列化。
-- [ ] **P6-V02** — stale failed creation 與 unregister token 不得移除 replacement；重複 ID 必須回傳 Java 首次建立的 runtime，且後續設定不同時仍保留首次 config/hook。
-- [ ] **P6-V03** — paused-time timer、route snapshot reader 及全部 startup-failure point 不留下 partial state 或 task leak。
+- [x] **P6-V01** — 同 ID 大量並行 get_or_create 只產生一個 identity/task set/socket pool；不同 ID 不被全域序列化。
+- [x] **P6-V02** — stale failed creation 與 unregister token 不得移除 replacement；重複 ID 必須回傳 Java 首次建立的 runtime，且後續設定不同時仍保留首次 config/hook。
+- [x] **P6-V03** — paused-time timer、route snapshot reader 及全部 startup-failure point 不留下 partial state 或 task leak。
 
-- [ ] **P6-U01** — scripted response 與 paused time 驗證 heartbeat/subscription/unregister bytes，以及共享使用者獨立 shutdown。
+- [x] **P6-U01** — scripted response 與 paused time 驗證 heartbeat/subscription/unregister bytes，以及共享使用者獨立 shutdown。
 
 ### 5.1 實作完成後的本機命令
 
-下列命令由本 phase 或前面的 phase 建立對應 entry point 後執行；此次文件拆分未執行或宣稱測試通過。
+已於 2026-10-09 驗證。第一次 sandbox 全 workspace 執行僅因三個 loopback bind 權限失敗；取得本機 socket 權限後重跑通過。各 ID 證據與 fixture provenance 見[需求稽核](../../docs/compatibility/PHASE_6_REQUIREMENT_AUDIT.md)。
 
 ```bash
-cargo test -p rocketmq-classic-core --test runtime --locked
+cargo test --workspace --all-targets --locked
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+mvn -o -q -f compat/java-reference/pom.xml verify
+python3 tests/differential/compare.py --self-test
+python3 tests/differential/compare.py --validate-manifest
+cargo fmt --all -- --check
+git diff --check
 ```
 
 ### 5.2 Phase 19 live 測試交接
