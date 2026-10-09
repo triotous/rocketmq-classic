@@ -1,6 +1,9 @@
 use rocketmq_classic_common::message::MessageQueue;
 use rocketmq_classic_core::route::{TopicRouteDataHandle, TopicSnapshot};
-use rocketmq_classic_core::{config::ClientConfig, runtime::ClientRuntimeManager};
+use rocketmq_classic_core::{
+    config::ClientConfig,
+    runtime::{ClientRuntimeManager, RuntimeError},
+};
 use rocketmq_classic_protocol::route::TopicRouteData;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -61,6 +64,40 @@ fn public_nullable_route_conversion_arguments_match_invoked_java() {
             TopicSnapshot::from_nullable_route_data(case["topic"].as_str(), route.as_ref());
         if case["outcome"] == "OK" {
             let snapshot = result.unwrap();
+            if case["topic"].is_null() {
+                assert!(
+                    snapshot
+                        .publish_queues
+                        .iter()
+                        .all(|queue| queue.topic().is_none()),
+                    "{}",
+                    case["id"]
+                );
+                assert!(
+                    snapshot
+                        .subscribe_queues
+                        .iter()
+                        .all(|queue| queue.topic().is_none()),
+                    "{}",
+                    case["id"]
+                );
+                if route.as_ref().is_some_and(|route| {
+                    route
+                        .topic_queue_mapping_by_broker
+                        .as_ref()
+                        .is_some_and(|mappings| !mappings.is_empty())
+                }) {
+                    assert!(!snapshot.endpoints.is_empty(), "{}", case["id"]);
+                    assert!(
+                        snapshot
+                            .endpoints
+                            .keys()
+                            .all(|queue| queue.topic().is_none()),
+                        "{}",
+                        case["id"]
+                    );
+                }
+            }
             match case["method"].as_str().unwrap() {
                 "publish" => {
                     let expected: Vec<MessageQueue> =
@@ -81,7 +118,14 @@ fn public_nullable_route_conversion_arguments_match_invoked_java() {
                 other => panic!("unknown Java route converter {other}"),
             }
         } else {
-            assert!(result.is_err(), "{}", case["id"]);
+            assert!(
+                matches!(
+                    result,
+                    Err(RuntimeError::InvalidRoute("null topic route data"))
+                ),
+                "{}",
+                case["id"]
+            );
         }
     }
 }
