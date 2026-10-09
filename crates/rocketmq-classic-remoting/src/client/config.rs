@@ -589,9 +589,7 @@ fn resolve_proxy_route_reference(
         })?;
         let target = format!("\0S{target}");
         if !resolving.insert(key.to_owned()) {
-            return Err(TransportError::InvalidConfiguration(
-                "cyclic Fastjson SOCKS route reference".into(),
-            ));
+            return Ok(ParsedProxyRoute::Direct);
         }
         let resolved = resolve_proxy_route_reference(&target, routes, resolving);
         resolving.remove(key);
