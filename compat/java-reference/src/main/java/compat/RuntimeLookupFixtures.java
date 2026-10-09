@@ -59,6 +59,10 @@ public final class RuntimeLookupFixtures {
         fixture.put("liteSubscriptionEnumCases", liteSubscriptionEnumCases());
         fixture.put("liteSubscriptionFieldCases", liteSubscriptionFieldCases());
         fixture.put("liteSubscriptionRootCases", liteSubscriptionRootCases());
+        fixture.put("liteSubscriptionControlFieldCases", liteSubscriptionControlFieldCases());
+        fixture.put("liteSubscriptionElementCases", liteSubscriptionElementCases());
+        fixture.put("liteSubscriptionOffsetValueCases", liteSubscriptionOffsetValueCases());
+        fixture.put("liteSubscriptionSetCases", liteSubscriptionSetCases());
         fixture.put("queryAssignmentEnumCases", queryAssignmentEnumCases());
         fixture.put("queryAssignmentFieldCases", queryAssignmentFieldCases());
         fixture.put("queryAssignmentRootCases", queryAssignmentRootCases());
@@ -346,6 +350,57 @@ public final class RuntimeLookupFixtures {
             }
             cases.add(item);
         }
+        return cases;
+    }
+
+    private static List<Object> liteSubscriptionControlFieldCases() {
+        List<Object> cases = new ArrayList<>();
+        String[][] shapes = {
+            {"null", "null"}, {"numeric-string", "\"7\""}, {"integer", "0"},
+            {"fraction", "1.5"}, {"boolean", "true"}, {"array", "[]"}, {"object", "{}"}
+        };
+        for (String[] shape : shapes) {
+            String input = "{\"subscriptionSet\":" + shape[1] + "}";
+            cases.add(liteSubscriptionEnumCase("shape-subscriptionSet-" + shape[0], input));
+        }
+        return cases;
+    }
+
+    private static List<Object> liteSubscriptionElementCases() {
+        List<Object> cases = new ArrayList<>();
+        String[][] elements = {
+            {"null", "null"}, {"string", "\"topic\""}, {"integer", "7"},
+            {"fraction", "1.5"}, {"boolean", "true"}, {"array", "[]"}, {"object", "{}"}
+        };
+        for (String[] element : elements) {
+            String input = "{\"subscriptionSet\":[{\"liteTopicSet\":[" + element[1] + "]}]}";
+            cases.add(liteSubscriptionEnumCase("element-liteTopicSet-" + element[0], input));
+        }
+        return cases;
+    }
+
+    private static List<Object> liteSubscriptionOffsetValueCases() {
+        List<Object> cases = new ArrayList<>();
+        String[][] values = {
+            {"null", "null"}, {"numeric-string", "\"7\""}, {"integer", "0"},
+            {"fraction", "1.5"}, {"boolean", "true"}, {"array", "[]"}, {"object", "{}"}
+        };
+        for (String[] value : values) {
+            String input = "{\"subscriptionSet\":[{\"offsetOption\":{\"type\":\"POLICY\",\"value\":"
+                + value[1] + "}}]}";
+            cases.add(liteSubscriptionEnumCase("shape-offset-value-" + value[0], input));
+        }
+        return cases;
+    }
+
+    private static List<Object> liteSubscriptionSetCases() {
+        List<Object> cases = new ArrayList<>();
+        cases.add(liteSubscriptionEnumCase("subscription-set-duplicate-null-members",
+            "{\"subscriptionSet\":[null,null]}"));
+        cases.add(liteSubscriptionEnumCase("subscription-set-distinct-equal-dtos",
+            "{\"subscriptionSet\":[{\"topic\":\"same\"},{\"topic\":\"same\"}]}"));
+        cases.add(liteSubscriptionEnumCase("lite-topic-set-duplicate-members",
+            "{\"subscriptionSet\":[{\"liteTopicSet\":[\"b\",\"a\",\"b\",null,null]}]}"));
         return cases;
     }
 

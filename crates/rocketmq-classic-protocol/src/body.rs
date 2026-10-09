@@ -1996,6 +1996,154 @@ mod tests {
     }
 
     #[test]
+    fn lite_subscription_control_field_shapes_match_invoked_java_fastjson() {
+        fn normalize(value: &mut serde_json::Value) {
+            match value {
+                serde_json::Value::Array(values) => {
+                    for value in values.iter_mut() {
+                        normalize(value);
+                    }
+                    values.sort_by_key(|value| serde_json::to_string(value).unwrap());
+                }
+                serde_json::Value::Object(fields) => {
+                    for value in fields.values_mut() {
+                        normalize(value);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let cases = fixture["liteSubscriptionControlFieldCases"]
+            .as_array()
+            .unwrap();
+        assert_eq!(cases.len(), 7);
+        for case in cases {
+            let decoded = serde_json::from_str::<LiteSubscriptionCtlRequestBody>(
+                case["rawInput"].as_str().unwrap(),
+            );
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            assert_eq!(
+                decoded.is_ok(),
+                java_accepts,
+                "{}: {decoded:?}",
+                case["name"]
+            );
+            if let Ok(decoded) = decoded {
+                let mut actual = serde_json::to_value(decoded).unwrap();
+                let mut expected = case["encoded"].clone();
+                normalize(&mut actual);
+                normalize(&mut expected);
+                assert_eq!(actual, expected, "{}", case["name"]);
+            }
+        }
+    }
+
+    #[test]
+    fn lite_subscription_set_element_shapes_match_invoked_java_fastjson() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let cases = fixture["liteSubscriptionElementCases"].as_array().unwrap();
+        assert_eq!(cases.len(), 7);
+        for case in cases {
+            let decoded = serde_json::from_str::<LiteSubscriptionCtlRequestBody>(
+                case["rawInput"].as_str().unwrap(),
+            );
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            assert_eq!(
+                decoded.is_ok(),
+                java_accepts,
+                "{}: {decoded:?}",
+                case["name"]
+            );
+            if let Ok(decoded) = decoded {
+                assert_eq!(
+                    serde_json::to_value(decoded).unwrap(),
+                    case["encoded"],
+                    "{}",
+                    case["name"]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn lite_subscription_offset_value_shapes_match_invoked_java_fastjson() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let cases = fixture["liteSubscriptionOffsetValueCases"]
+            .as_array()
+            .unwrap();
+        assert_eq!(cases.len(), 7);
+        for case in cases {
+            let decoded = serde_json::from_str::<LiteSubscriptionCtlRequestBody>(
+                case["rawInput"].as_str().unwrap(),
+            );
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            assert_eq!(
+                decoded.is_ok(),
+                java_accepts,
+                "{}: {decoded:?}",
+                case["name"]
+            );
+            if let Ok(decoded) = decoded {
+                assert_eq!(
+                    serde_json::to_value(decoded).unwrap(),
+                    case["encoded"],
+                    "{}",
+                    case["name"]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn lite_subscription_set_duplicates_match_invoked_java_fastjson() {
+        fn normalize(value: &mut serde_json::Value) {
+            match value {
+                serde_json::Value::Array(values) => {
+                    for value in values.iter_mut() {
+                        normalize(value);
+                    }
+                    values.sort_by_key(|value| serde_json::to_string(value).unwrap());
+                }
+                serde_json::Value::Object(fields) => {
+                    for value in fields.values_mut() {
+                        normalize(value);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let cases = fixture["liteSubscriptionSetCases"].as_array().unwrap();
+        assert_eq!(cases.len(), 3);
+        for case in cases {
+            let decoded = serde_json::from_str::<LiteSubscriptionCtlRequestBody>(
+                case["rawInput"].as_str().unwrap(),
+            );
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            assert_eq!(
+                decoded.is_ok(),
+                java_accepts,
+                "{}: {decoded:?}",
+                case["name"]
+            );
+            if let Ok(decoded) = decoded {
+                let mut actual = serde_json::to_value(decoded).unwrap();
+                let mut expected = case["encoded"].clone();
+                normalize(&mut actual);
+                normalize(&mut expected);
+                assert_eq!(actual, expected, "{}", case["name"]);
+            }
+        }
+    }
+
+    #[test]
     fn query_assignment_request_enum_inputs_match_invoked_java_fastjson() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
