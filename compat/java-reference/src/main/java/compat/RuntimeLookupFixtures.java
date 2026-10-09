@@ -85,6 +85,7 @@ public final class RuntimeLookupFixtures {
         fixture.put("lockBatchRequestBodyCases", lockBatchRequestBodyCases());
         fixture.put("unlockBatchRequestBodyCases", unlockBatchRequestBodyCases());
         fixture.put("lockBatchResponseBodyCases", lockBatchResponseBodyCases());
+        fixture.put("consumerStatusBodyInputCases", consumerStatusBodyInputCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
             com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
@@ -1094,6 +1095,74 @@ public final class RuntimeLookupFixtures {
         return batchQueueBodyCases("lock-response",
             org.apache.rocketmq.remoting.protocol.body.LockBatchResponseBody.class,
             new String[] {"lockOKMQSet"}, "lockOKMQSet");
+    }
+
+    private static List<Object> consumerStatusBodyInputCases() {
+        String key = "{\"topic\":\"orders\",\"brokerName\":\"broker-a\",\"queueId\":1}";
+        String escapedKey = com.alibaba.fastjson2.JSON.toJSONString(key);
+        String fastjsonKey = "{\"topic\":\"orders\",\"brokerName\":\"broker-a\",\"queueId\":1}";
+        String[][] inputs = {
+            {"omitted", "{}"},
+            {"null-fields", "{\"messageQueueTable\":null,\"consumerTable\":null}"},
+            {"empty-fields", "{\"messageQueueTable\":{},\"consumerTable\":{}}"},
+            {"quoted-message-queue-key", "{\"messageQueueTable\":{" + escapedKey + ":9}}"},
+            {"fastjson-message-queue-key", "{\"messageQueueTable\":{" + fastjsonKey + ":9}}"},
+            {"nested-quoted-message-queue-key", "{\"consumerTable\":{\"consumer-a\":{" + escapedKey + ":9}}}"},
+            {"nested-fastjson-message-queue-key", "{\"consumerTable\":{\"consumer-a\":{" + fastjsonKey + ":9}}}"},
+            {"duplicate-table-entry-last-wins", "{\"messageQueueTable\":{" + fastjsonKey + ":7," + fastjsonKey + ":9}}"},
+            {"duplicate-field-last-wins", "{\"messageQueueTable\":{},\"messageQueueTable\":{" + fastjsonKey + ":9}}"},
+            {"message-table-scalar", "{\"messageQueueTable\":7}"},
+            {"consumer-table-scalar", "{\"consumerTable\":7}"},
+            {"message-offset-null", "{\"messageQueueTable\":{" + escapedKey + ":null}}"},
+            {"invalid-message-queue-key", "{\"messageQueueTable\":{\"not-a-queue\":9}}"}
+        };
+        List<Object> cases = new ArrayList<>();
+        for (String[] input : inputs) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("name", input[0]);
+            item.put("rawInput", input[1]);
+            try {
+                org.apache.rocketmq.remoting.protocol.body.GetConsumerStatusBody decoded =
+                    org.apache.rocketmq.remoting.protocol.body.GetConsumerStatusBody.decode(
+                        input[1].getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                        org.apache.rocketmq.remoting.protocol.body.GetConsumerStatusBody.class);
+                item.put("outcome", "ACCEPTED");
+                item.put("messageQueueTable", consumerStatusQueueRows(decoded.getMessageQueueTable()));
+                item.put("consumerTable", consumerStatusConsumerRows(decoded.getConsumerTable()));
+            } catch (RuntimeException error) {
+                item.put("outcome", "REJECTED");
+                item.put("error", error.getClass().getSimpleName());
+            }
+            cases.add(item);
+        }
+        return cases;
+    }
+
+    private static Object consumerStatusQueueRows(
+        Map<org.apache.rocketmq.common.message.MessageQueue, Long> table) {
+        if (table == null) return null;
+        List<Object> rows = new ArrayList<>();
+        for (Map.Entry<org.apache.rocketmq.common.message.MessageQueue, Long> entry : table.entrySet()) {
+            org.apache.rocketmq.common.message.MessageQueue queue = entry.getKey();
+            Map<String, Object> row = new TreeMap<>();
+            row.put("topic", queue == null ? null : queue.getTopic());
+            row.put("brokerName", queue == null ? null : queue.getBrokerName());
+            row.put("queueId", queue == null ? null : queue.getQueueId());
+            row.put("offset", entry.getValue());
+            rows.add(row);
+        }
+        rows.sort(Comparator.comparing(com.alibaba.fastjson2.JSON::toJSONString));
+        return rows;
+    }
+
+    private static Object consumerStatusConsumerRows(
+        Map<String, Map<org.apache.rocketmq.common.message.MessageQueue, Long>> table) {
+        if (table == null) return null;
+        Map<String, Object> result = new TreeMap<>();
+        for (Map.Entry<String, Map<org.apache.rocketmq.common.message.MessageQueue, Long>> entry : table.entrySet()) {
+            result.put(entry.getKey(), consumerStatusQueueRows(entry.getValue()));
+        }
+        return result;
     }
 
     private static List<Object> batchQueueBodyCases(

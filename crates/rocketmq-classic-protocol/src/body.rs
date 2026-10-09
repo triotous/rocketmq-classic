@@ -2400,6 +2400,68 @@ mod tests {
     }
 
     #[test]
+    fn consumer_status_body_inputs_match_invoked_java_fastjson() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let cases = fixture["consumerStatusBodyInputCases"].as_array().unwrap();
+        assert_eq!(cases.len(), 13);
+        let rows = |entries: &[(MessageQueue, i64)]| {
+            let mut rows = entries
+                .iter()
+                .map(|(queue, offset)| {
+                    serde_json::json!({
+                        "topic": queue.topic(),
+                        "brokerName": queue.broker_name(),
+                        "queueId": queue.queue_id(),
+                        "offset": offset
+                    })
+                })
+                .collect::<Vec<_>>();
+            rows.sort_by_key(serde_json::Value::to_string);
+            serde_json::Value::Array(rows)
+        };
+        let mut mismatches = Vec::new();
+        for case in cases {
+            let name = case["name"].as_str().unwrap();
+            let decoded = serde_fastjson::from_fastjson_str::<GetConsumerStatusBody>(
+                case["rawInput"].as_str().unwrap(),
+            );
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            match (decoded, java_accepts) {
+                (Ok(decoded), true) => {
+                    if rows(&decoded.message_queue_table) != case["messageQueueTable"] {
+                        mismatches.push(format!(
+                            "{name}: messageQueueTable {} != Java {}",
+                            rows(&decoded.message_queue_table),
+                            case["messageQueueTable"]
+                        ));
+                    }
+                    let actual_consumer_table = decoded
+                        .consumer_table
+                        .iter()
+                        .map(|(consumer, entries)| (consumer, rows(entries)))
+                        .collect::<std::collections::BTreeMap<_, _>>();
+                    if serde_json::to_value(&actual_consumer_table).unwrap()
+                        != case["consumerTable"]
+                    {
+                        mismatches.push(format!(
+                            "{name}: consumerTable {} != Java {}",
+                            serde_json::to_value(actual_consumer_table).unwrap(),
+                            case["consumerTable"]
+                        ));
+                    }
+                }
+                (Ok(_), false) => mismatches.push(format!("{name}: Rust accepted, Java rejected")),
+                (Err(error), true) => {
+                    mismatches.push(format!("{name}: Rust rejected ({error}), Java accepted"))
+                }
+                (Err(_), false) => {}
+            }
+        }
+        assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+    }
+
+    #[test]
     fn assignment_and_request_mode_json_preserve_optional_fields_and_defaults() {
         let query: QueryAssignmentRequestBody = serde_json::from_value(serde_json::json!({
             "topic":"orders", "consumerGroup":"workers", "clientId":"client",
