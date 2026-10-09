@@ -35,3 +35,14 @@ The pinned Java `BatchAck.getBitSet()` returns the same mutable `BitSet` passed 
 - Oracle/test commit: `bd3d2e71`; implementation commit: `d1dc7dfd`.
 - Current aggregate `fixtures/runtime/lookup.json` SHA-256: `abfe31546b68799aced43ff4f631f5dea37a4c14efac1dfc60a1ed637a22b970`.
 - Full workspace/all-target tests, strict Clippy, pinned offline Maven verify, comparator/manifest22, formatting, and diff checks pass. Rust does not preserve identity with the caller-owned Java `BitSet`; Phase 6 remains PARTIAL and P6-V04 stays PENDING_PHASE_19.
+
+## Java-compatible BitSet value continuation
+
+`BatchAck.bit_set` now uses an owned Rust `BitSet` value rather than exposing raw Base64 bytes as its mutation API. It supports indexed get/set/clear/flip, `cardinality`, `length`, emptiness, and canonical Java `toByteArray()` encoding. BatchAck JSON keeps the existing Base64 field and omits an empty bit set as before. Negative indexes return a typed `BitSetError`; the direct Java oracle confirms those operations throw `IndexOutOfBoundsException`.
+
+- Direct Java evidence covers bits 0, 2, 5, 7, 8, 63, 64, and 127; clear/flip, cardinality, length, canonical bytes, and negative-index failures.
+- Oracle/test commits: `ce97d07c` and `98d26175`; implementation/test commit: `7d2f2b98`.
+- `fixtures/runtime/lookup.json` SHA-256: `4ebfec17860c569431bfb2b7b952f59c83b3eb08d683b6198e4f24d6143cb400`.
+- Full workspace/all-target tests, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios), comparator self-test/manifest22, formatting, and diff checks pass.
+
+Rust owns the bit-set value and does not preserve identity with a separately held Java `BitSet`. The verified Rust method set is the one listed above; wider Phase 6 API/source reconciliation remains open.
