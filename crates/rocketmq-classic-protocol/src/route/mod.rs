@@ -1506,7 +1506,7 @@ mod route_dto_input_cases_tests {
         let cases = fixture["routeDtoInputCases"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            129,
+            133,
             "Java oracle includes exact coercions, duplicate fields, and collection shapes"
         );
         for required in [
@@ -1564,6 +1564,8 @@ mod route_dto_input_cases_tests {
             "broker-address-key-long-overflow",
             "broker-address-key-normalization-collision-forward",
             "broker-address-key-normalization-collision-reverse",
+            "broker-address-key-normalization-collision-repeat-first-key-last-wins",
+            "broker-address-key-normalization-collision-repeat-alias-last-wins",
             "mapping-id-key-plus-leading-zero",
             "mapping-id-key-fraction-string",
             "mapping-id-key-exponent-string",
@@ -1572,6 +1574,8 @@ mod route_dto_input_cases_tests {
             "mapping-id-key-int-overflow",
             "mapping-id-key-normalization-collision-forward",
             "mapping-id-key-normalization-collision-reverse",
+            "mapping-id-key-normalization-collision-repeat-first-key-last-wins",
+            "mapping-id-key-normalization-collision-repeat-alias-last-wins",
             "mapping-long-plus-maximum-string",
             "mapping-long-leading-zero-string",
             "mapping-long-fraction-string",

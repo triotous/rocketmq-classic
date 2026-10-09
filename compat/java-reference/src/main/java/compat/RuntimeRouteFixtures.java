@@ -727,6 +727,14 @@ public final class RuntimeRouteFixtures {
             "{\"currIdMap\":{\"1\":10,\"01\":20}}"));
         cases.add(routeDtoInputCase("mapping-id-key-normalization-collision-reverse", "mapping",
             "{\"currIdMap\":{\"01\":10,\"1\":20}}"));
+        cases.add(routeDtoInputCase("broker-address-key-normalization-collision-repeat-first-key-last-wins", "brokerData",
+            "{\"brokerAddrs\":{\"5\":\"first\",\"05\":\"middle\",\"5\":\"last\"}}"));
+        cases.add(routeDtoInputCase("broker-address-key-normalization-collision-repeat-alias-last-wins", "brokerData",
+            "{\"brokerAddrs\":{\"05\":\"first\",\"5\":\"middle\",\"05\":\"last\"}}"));
+        cases.add(routeDtoInputCase("mapping-id-key-normalization-collision-repeat-first-key-last-wins", "mapping",
+            "{\"currIdMap\":{\"1\":10,\"01\":15,\"1\":20}}"));
+        cases.add(routeDtoInputCase("mapping-id-key-normalization-collision-repeat-alias-last-wins", "mapping",
+            "{\"currIdMap\":{\"01\":10,\"1\":15,\"01\":20}}"));
         return cases;
     }
 
