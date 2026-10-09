@@ -719,6 +719,14 @@ public final class RuntimeRouteFixtures {
             "{\"queueDatas\":[null]}"));
         cases.add(routeDtoInputCase("route-broker-datas-null-element", "topicRouteData",
             "{\"brokerDatas\":[null]}"));
+        cases.add(routeDtoInputCase("broker-address-key-normalization-collision-forward", "brokerData",
+            "{\"brokerAddrs\":{\"5\":\"first\",\"05\":\"last\"}}"));
+        cases.add(routeDtoInputCase("broker-address-key-normalization-collision-reverse", "brokerData",
+            "{\"brokerAddrs\":{\"05\":\"first\",\"5\":\"last\"}}"));
+        cases.add(routeDtoInputCase("mapping-id-key-normalization-collision-forward", "mapping",
+            "{\"currIdMap\":{\"1\":10,\"01\":20}}"));
+        cases.add(routeDtoInputCase("mapping-id-key-normalization-collision-reverse", "mapping",
+            "{\"currIdMap\":{\"01\":10,\"1\":20}}"));
         return cases;
     }
 
