@@ -314,7 +314,7 @@ impl QueueData {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct BrokerData {
     #[serde(
@@ -343,6 +343,50 @@ pub struct BrokerData {
     pub zone_name: Option<String>,
     #[serde(default, deserialize_with = "serde_fastjson::deserialize_bool")]
     pub enable_acting_master: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BrokerDataFields {
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    cluster: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    broker_name: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_optional_long_string_map"
+    )]
+    broker_addrs: Option<BTreeMap<i64, Option<String>>>,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    zone_name: Option<String>,
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_bool")]
+    enable_acting_master: bool,
+}
+
+impl<'de> Deserialize<'de> for BrokerData {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: BrokerDataFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            cluster: fields.cluster,
+            broker_name: fields.broker_name,
+            broker_addrs: fields.broker_addrs,
+            zone_name: fields.zone_name,
+            enable_acting_master: fields.enable_acting_master,
+        })
+    }
 }
 
 impl PartialEq for BrokerData {
