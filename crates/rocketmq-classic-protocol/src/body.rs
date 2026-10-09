@@ -1496,6 +1496,8 @@ pub struct BitSet {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BitSetError {
     NegativeIndex(i32),
+    InvalidRange { from: i32, to: i32 },
+    IndexOverflow(usize),
     AllocationFailed(i32),
 }
 
@@ -1504,6 +1506,12 @@ impl std::fmt::Display for BitSetError {
         match self {
             Self::NegativeIndex(index) => {
                 write!(formatter, "bit index must be nonnegative: {index}")
+            }
+            Self::InvalidRange { from, to } => {
+                write!(formatter, "bit range must have from <= to: {from}..{to}")
+            }
+            Self::IndexOverflow(index) => {
+                write!(formatter, "bit index does not fit Java int: {index}")
             }
             Self::AllocationFailed(index) => {
                 write!(formatter, "could not allocate bit index: {index}")
@@ -1598,6 +1606,180 @@ impl BitSet {
         }
     }
 
+    /// Sets every bit in the half-open range `from..to`.
+    pub fn set_range(&mut self, from: i32, to: i32) -> Result<(), BitSetError> {
+        self.mutate_range(from, to, true, |word, mask| word | mask)
+    }
+
+    /// Clears every bit in the half-open range `from..to`.
+    pub fn clear_range(&mut self, from: i32, to: i32) -> Result<(), BitSetError> {
+        self.mutate_range(from, to, false, |word, mask| word & !mask)
+    }
+
+    /// Flips every bit in the half-open range `from..to`.
+    pub fn flip_range(&mut self, from: i32, to: i32) -> Result<(), BitSetError> {
+        self.mutate_range(from, to, true, |word, mask| word ^ mask)
+    }
+
+    /// Returns a copy of the half-open range, shifted so `from` becomes bit zero.
+    pub fn get_range(&self, from: i32, to: i32) -> Result<Self, BitSetError> {
+        let (from, to) = Self::checked_range(from, to)?;
+        let bit_count = to - from;
+        if bit_count == 0 {
+            return Ok(Self::new());
+        }
+
+        let output_word_count = bit_count.div_ceil(64);
+        let mut words = Vec::new();
+        words
+            .try_reserve_exact(output_word_count)
+            .map_err(|_| BitSetError::AllocationFailed((to - 1) as i32))?;
+        for output_word_index in 0..output_word_count {
+            let source_bit_index = from + output_word_index * 64;
+            let source_word_index = source_bit_index / 64;
+            let shift = source_bit_index % 64;
+            let lower = self.words.get(source_word_index).copied().unwrap_or(0) >> shift;
+            let upper = if shift == 0 {
+                0
+            } else {
+                self.words.get(source_word_index + 1).copied().unwrap_or(0) << (64 - shift)
+            };
+            let mut word = lower | upper;
+            let remaining_bits = bit_count - output_word_index * 64;
+            if remaining_bits < 64 {
+                word &= (1_u64 << remaining_bits) - 1;
+            }
+            words.push(word);
+        }
+        while words.last() == Some(&0) {
+            words.pop();
+        }
+        Ok(Self { words })
+    }
+
+    /// Returns the next set bit at or after `from`, or `-1` when none exists.
+    pub fn next_set_bit(&self, from: i32) -> Result<i32, BitSetError> {
+        let from = Self::checked_index(from)?;
+        let mut word_index = from / 64;
+        let Some(first_word) = self.words.get(word_index).copied() else {
+            return Ok(-1);
+        };
+        let first_candidate = first_word & (u64::MAX << (from % 64));
+        if first_candidate != 0 {
+            return Self::java_index(word_index * 64 + first_candidate.trailing_zeros() as usize);
+        }
+        word_index += 1;
+        while let Some(word) = self.words.get(word_index).copied() {
+            if word != 0 {
+                return Self::java_index(word_index * 64 + word.trailing_zeros() as usize);
+            }
+            word_index += 1;
+        }
+        Ok(-1)
+    }
+
+    /// Returns the next clear bit at or after `from`.
+    pub fn next_clear_bit(&self, from: i32) -> Result<i32, BitSetError> {
+        let from = Self::checked_index(from)?;
+        let mut word_index = from / 64;
+        let Some(first_word) = self.words.get(word_index).copied() else {
+            return Self::java_index(from);
+        };
+        let first_candidate = !first_word & (u64::MAX << (from % 64));
+        if first_candidate != 0 {
+            return Self::java_index(word_index * 64 + first_candidate.trailing_zeros() as usize);
+        }
+        word_index += 1;
+        while let Some(word) = self.words.get(word_index).copied() {
+            if word != u64::MAX {
+                let candidate = !word;
+                return Self::java_index(word_index * 64 + candidate.trailing_zeros() as usize);
+            }
+            word_index += 1;
+        }
+        Self::java_index(self.words.len() * 64)
+    }
+
+    /// Returns the previous set bit at or before `from`, or `-1` when none exists.
+    /// Java defines `previousSetBit(-1)` as `-1` as a special case.
+    pub fn previous_set_bit(&self, from: i32) -> Result<i32, BitSetError> {
+        if from == -1 {
+            return Ok(-1);
+        }
+        if from < -1 {
+            return Err(BitSetError::NegativeIndex(from));
+        }
+        let from = from as usize;
+        if self.words.is_empty() {
+            return Ok(-1);
+        }
+        let mut word_index = (from / 64).min(self.words.len() - 1);
+        let bit_offset = from.min(word_index * 64 + 63) % 64;
+        let mask = if bit_offset == 63 {
+            u64::MAX
+        } else {
+            (1_u64 << (bit_offset + 1)) - 1
+        };
+        let candidate = self.words[word_index] & mask;
+        if candidate != 0 {
+            return Self::java_index(word_index * 64 + (63 - candidate.leading_zeros() as usize));
+        }
+        while word_index > 0 {
+            word_index -= 1;
+            let candidate = self.words[word_index];
+            if candidate != 0 {
+                return Self::java_index(
+                    word_index * 64 + (63 - candidate.leading_zeros() as usize),
+                );
+            }
+        }
+        Ok(-1)
+    }
+
+    /// Returns the previous clear bit at or before `from`, or `-1` when none exists.
+    /// Java defines `previousClearBit(-1)` as `-1` as a special case.
+    pub fn previous_clear_bit(&self, from: i32) -> Result<i32, BitSetError> {
+        if from == -1 {
+            return Ok(-1);
+        }
+        if from < -1 {
+            return Err(BitSetError::NegativeIndex(from));
+        }
+        let from = from as usize;
+        if from / 64 >= self.words.len() {
+            return Self::java_index(from);
+        }
+        let mut word_index = from / 64;
+        let bit_offset = from % 64;
+        let mask = if bit_offset == 63 {
+            u64::MAX
+        } else {
+            (1_u64 << (bit_offset + 1)) - 1
+        };
+        let candidate = !self.words[word_index] & mask;
+        if candidate != 0 {
+            return Self::java_index(word_index * 64 + (63 - candidate.leading_zeros() as usize));
+        }
+        while word_index > 0 {
+            word_index -= 1;
+            let candidate = !self.words[word_index];
+            if candidate != 0 {
+                return Self::java_index(
+                    word_index * 64 + (63 - candidate.leading_zeros() as usize),
+                );
+            }
+        }
+        Ok(-1)
+    }
+
+    /// Returns true if this bit set and `other` share at least one set bit.
+    pub fn intersects(&self, other: &Self) -> bool {
+        self.words
+            .iter()
+            .zip(&other.words)
+            .any(|(left, right)| left & right != 0)
+    }
+
     pub fn cardinality(&self) -> usize {
         self.words
             .iter()
@@ -1618,6 +1800,61 @@ impl BitSet {
 
     fn checked_index(index: i32) -> Result<usize, BitSetError> {
         usize::try_from(index).map_err(|_| BitSetError::NegativeIndex(index))
+    }
+
+    fn checked_range(from: i32, to: i32) -> Result<(usize, usize), BitSetError> {
+        let from_index = Self::checked_index(from)?;
+        if to < 0 {
+            return Err(BitSetError::NegativeIndex(to));
+        }
+        if from > to {
+            return Err(BitSetError::InvalidRange { from, to });
+        }
+        Ok((from_index, to as usize))
+    }
+
+    fn mutate_range(
+        &mut self,
+        from: i32,
+        to: i32,
+        may_grow: bool,
+        operation: fn(u64, u64) -> u64,
+    ) -> Result<(), BitSetError> {
+        let (from, to) = Self::checked_range(from, to)?;
+        if from == to {
+            return Ok(());
+        }
+        let first_word = from / 64;
+        let mut last_word = (to - 1) / 64;
+        if may_grow {
+            let needed_words = last_word + 1;
+            self.words
+                .try_reserve(needed_words.saturating_sub(self.words.len()))
+                .map_err(|_| BitSetError::AllocationFailed((to - 1) as i32))?;
+            self.words.resize(self.words.len().max(needed_words), 0);
+        } else if first_word >= self.words.len() {
+            return Ok(());
+        } else {
+            last_word = last_word.min(self.words.len() - 1);
+        }
+        for word_index in first_word..=last_word {
+            let word_start = word_index * 64;
+            let start_bit = from.saturating_sub(word_start).min(64);
+            let end_bit = (to - word_start).min(64);
+            let lower_mask = u64::MAX << start_bit;
+            let upper_mask = if end_bit == 64 {
+                u64::MAX
+            } else {
+                (1_u64 << end_bit) - 1
+            };
+            self.words[word_index] = operation(self.words[word_index], lower_mask & upper_mask);
+        }
+        self.trim_trailing_zero_words();
+        Ok(())
+    }
+
+    fn java_index(index: usize) -> Result<i32, BitSetError> {
+        i32::try_from(index).map_err(|_| BitSetError::IndexOverflow(index))
     }
 
     fn trim_trailing_zero_words(&mut self) {
@@ -3594,6 +3831,110 @@ mod tests {
                 "length": 128,
             }),
             case["bitSetWordBoundary"]
+        );
+
+        let bit_set_base64 = |bits: &BitSet| {
+            let mut encoded_ack = BatchAck::default();
+            encoded_ack.set_bit_set(Some(bits.clone()));
+            serde_json::to_value(encoded_ack).unwrap()["b"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        };
+        let mut ranged = BitSet::new();
+        ranged.set_range(3, 12).unwrap();
+        ranged.clear_range(5, 7).unwrap();
+        ranged.flip_range(8, 14).unwrap();
+        let slice = ranged.get_range(2, 14).unwrap();
+        let mut intersects = BitSet::new();
+        intersects.set(4).unwrap();
+        let mut disjoint = BitSet::new();
+        disjoint.set(30).unwrap();
+        assert_eq!(
+            json!({
+                "base64": bit_set_base64(&ranged),
+                "cardinality": ranged.cardinality(),
+                "length": ranged.length(),
+                "sliceBase64": bit_set_base64(&slice),
+                "nextSetBit": [
+                    ranged.next_set_bit(0).unwrap(),
+                    ranged.next_set_bit(5).unwrap(),
+                    ranged.next_set_bit(8).unwrap(),
+                    ranged.next_set_bit(14).unwrap(),
+                ],
+                "nextClearBit": [
+                    ranged.next_clear_bit(3).unwrap(),
+                    ranged.next_clear_bit(8).unwrap(),
+                    ranged.next_clear_bit(14).unwrap(),
+                ],
+                "previousSetBit": [
+                    ranged.previous_set_bit(13).unwrap(),
+                    ranged.previous_set_bit(11).unwrap(),
+                    ranged.previous_set_bit(2).unwrap(),
+                    ranged.previous_set_bit(-1).unwrap(),
+                ],
+                "previousClearBit": [
+                    ranged.previous_clear_bit(13).unwrap(),
+                    ranged.previous_clear_bit(3).unwrap(),
+                    ranged.previous_clear_bit(-1).unwrap(),
+                ],
+                "intersects": ranged.intersects(&intersects),
+                "disjoint": ranged.intersects(&disjoint),
+            }),
+            case["bitSetRanges"]
+        );
+        assert_eq!(ranged.next_set_bit(-1), Err(BitSetError::NegativeIndex(-1)));
+        assert_eq!(
+            ranged.next_clear_bit(-1),
+            Err(BitSetError::NegativeIndex(-1))
+        );
+        assert_eq!(
+            ranged.previous_set_bit(-2),
+            Err(BitSetError::NegativeIndex(-2))
+        );
+        assert_eq!(
+            ranged.previous_clear_bit(-2),
+            Err(BitSetError::NegativeIndex(-2))
+        );
+        assert_eq!(ranged.set_range(-1, 2), Err(BitSetError::NegativeIndex(-1)));
+        assert_eq!(
+            ranged.set_range(3, 2),
+            Err(BitSetError::InvalidRange { from: 3, to: 2 })
+        );
+        assert_eq!(
+            ranged.clear_range(-1, 2),
+            Err(BitSetError::NegativeIndex(-1))
+        );
+        assert_eq!(
+            ranged.flip_range(3, 2),
+            Err(BitSetError::InvalidRange { from: 3, to: 2 })
+        );
+        assert_eq!(ranged.get_range(-1, 2), Err(BitSetError::NegativeIndex(-1)));
+        assert_eq!(
+            ranged.get_range(3, 2),
+            Err(BitSetError::InvalidRange { from: 3, to: 2 })
+        );
+        assert!(
+            case["bitSetRangeErrors"]
+                .as_object()
+                .unwrap()
+                .values()
+                .all(|error| error == "IndexOutOfBoundsException")
+        );
+
+        let mut range_word_boundary = BitSet::new();
+        range_word_boundary.set_range(63, 66).unwrap();
+        range_word_boundary.clear_range(64, 65).unwrap();
+        range_word_boundary.flip_range(62, 64).unwrap();
+        let range_word_boundary_slice = range_word_boundary.get_range(61, 66).unwrap();
+        assert_eq!(
+            json!({
+                "base64": bit_set_base64(&range_word_boundary),
+                "sliceBase64": bit_set_base64(&range_word_boundary_slice),
+                "cardinality": range_word_boundary.cardinality(),
+                "length": range_word_boundary.length(),
+            }),
+            case["bitSetRangeWordBoundary"]
         );
 
         let mut body = BatchAckMessageRequestBody::default();
