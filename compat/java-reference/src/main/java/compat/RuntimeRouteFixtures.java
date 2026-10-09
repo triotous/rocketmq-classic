@@ -522,6 +522,26 @@ public final class RuntimeRouteFixtures {
             "{\"epoch\":\"1e2\"}"));
         cases.add(routeDtoInputCase("mapping-long-minimum", "mapping",
             "{\"epoch\":\"-9223372036854775808\"}"));
+        cases.add(routeDtoInputCase("mapping-long-plus-maximum-string", "mapping",
+            "{\"epoch\":\"+9223372036854775807\"}"));
+        cases.add(routeDtoInputCase("mapping-long-leading-zero-string", "mapping",
+            "{\"epoch\":\"0002\"}"));
+        cases.add(routeDtoInputCase("mapping-long-fraction-string", "mapping",
+            "{\"epoch\":\"1.9\"}"));
+        cases.add(routeDtoInputCase("mapping-long-maximum-decimal-string", "mapping",
+            "{\"epoch\":\"9223372036854775807.0\"}"));
+        cases.add(routeDtoInputCase("mapping-long-minimum-decimal-string", "mapping",
+            "{\"epoch\":\"-9223372036854775808.0\"}"));
+        cases.add(routeDtoInputCase("mapping-long-overflow-decimal-string", "mapping",
+            "{\"epoch\":\"9223372036854775808.0\"}"));
+        cases.add(routeDtoInputCase("mapping-long-underflow-decimal-string", "mapping",
+            "{\"epoch\":\"-9223372036854775809.0\"}"));
+        cases.add(routeDtoInputCase("mapping-long-maximum-decimal-number", "mapping",
+            "{\"epoch\":9223372036854775807.0}"));
+        cases.add(routeDtoInputCase("mapping-long-overflow-decimal-number", "mapping",
+            "{\"epoch\":9223372036854775808.0}"));
+        cases.add(routeDtoInputCase("mapping-long-underflow-decimal-number", "mapping",
+            "{\"epoch\":-9223372036854775809.0}"));
         cases.add(routeDtoInputCase("mapping-unicode-decimal-id-key", "mapping",
             "{\"currIdMap\":{\"１２\":1}}"));
         cases.add(routeDtoInputCase("queue-unicode-decimal-string", "queueData",
