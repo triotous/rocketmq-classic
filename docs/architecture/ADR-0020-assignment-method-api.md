@@ -26,3 +26,12 @@ The pinned Java getter returns the same Map passed to `setAttachments()`. Direct
 - Oracle/test commit: `359ed253`; no implementation change was needed.
 - Current aggregate `fixtures/runtime/lookup.json` SHA-256: `8b6dab97da3ebca80f494b07ebcc7b12da396d700587137e136ea8620ed8d972`.
 - Full workspace/all-target tests, strict Clippy, pinned offline Maven verify, comparator/manifest22, formatting, and diff checks pass. Phase 6 remains PARTIAL and P6-V04 stays PENDING_PHASE_19.
+
+## Mutable nested queue getter continuation
+
+The pinned Java getter returns the same `MessageQueue` assigned with `setMessageQueue()`. Direct Java mutation through `getMessageQueue()` changes that queue object. Rust adds `message_queue_mut()` to borrow the DTO-owned nested queue mutably; the focused differential changes the queue id through that borrow and matches the Java fixture. The Rust move setter does not preserve the caller-owned object identity.
+
+- Direct Java evidence and Rust differential: populated `assignmentMethodCases` entry in `fixtures/runtime/lookup.json`; `assignment_methods_match_invoked_java_public_api`.
+- Oracle/test commit: `caff0e22`; implementation commit: `8fff4781`.
+- Current aggregate `fixtures/runtime/lookup.json` SHA-256: `9cdbcae68d20569b3d0cfdbf774aaf4183a63430438d9e3d74e8ad2e64b863d1`.
+- Full workspace/all-target tests, strict Clippy, pinned offline Maven verify, comparator/manifest22, formatting, and diff checks pass. Phase 6 remains PARTIAL and P6-V04 stays PENDING_PHASE_19.
