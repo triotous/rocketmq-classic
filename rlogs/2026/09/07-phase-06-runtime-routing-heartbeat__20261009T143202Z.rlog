@@ -1,5 +1,11 @@
 # Phase 6 execution log — 2026-10-09T14:32:02Z
 
+## BatchAck Fastjson body input parity — 2026-10-09T17:49:21Z
+
+- Added a direct pinned Java 5.5.1 BatchAckMessageRequestBody.decode/encode matrix with 95 cases. The red differential found Fastjson coercions/defaults, singleton and nullable List behavior, duplicate-field last-wins handling, and empty BitSet omission that derived Serde did not match.
+- Rust now matches the corpus through raw last-wins DTO decoding, Java-shaped primitive/String coercions, Option<Vec<Option<BatchAck>>>, and Base64 BitSet handling. Oracle 58ad8480; implementation 381b6edf; lookup fixture SHA-256 39374bf2374e2ae745ea82335762d17ad05cde2b987c05bc0759b808e984267d.
+- Full workspace/all-target tests, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios, fixture drift and Java cross-decodes), focused 95-case differential, fmt and diff checks pass. Other DTO/raw/source/branch/reverse-export reconciliation remains open; Phase 6 stays PARTIAL and P6-V04 remains PENDING_PHASE_19.
+
 ## Unregister request API reconciliation — 2026-10-09T17:35:50Z
 
 - Pinned 5.5.1 client/common/remoting artifact scans found no `UnregisterClientRequestBody`. `MQClientAPIImpl.unregisterClient` bytecode creates request code 35 with `UnregisterClientRequestHeader` and sends no body; the Java header exposes clientID, producerGroup and consumerGroup.

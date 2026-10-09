@@ -19,7 +19,7 @@ The tested constructor, public accessor, wrapper input, and normalized output be
 
 ## Evidence
 
-- Java input fixture: messageRequestModeWrapperCases in fixtures/runtime/lookup.json (33 cases); direct API observation: messageRequestModeWrapperApiCase. Current fixture SHA-256: 9d4472bee58e739dbb0efa4c18a3e4405f7b58fd1e1975f862bbc431b61a016f.
+- Java input fixture: messageRequestModeWrapperCases in fixtures/runtime/lookup.json (33 cases); direct API observation: messageRequestModeWrapperApiCase. then-current fixture SHA-256: 9d4472bee58e739dbb0efa4c18a3e4405f7b58fd1e1975f862bbc431b61a016f.
 - Oracle/input commit: 4456695d; direct API oracle commit: 910e6838; implementation and Rust differential assertion commit: 33b993b8.
 - Validation: cargo test --workspace --all-targets --locked; cargo clippy --workspace --all-targets --all-features --locked -- -D warnings; pinned offline Maven verify with fixture drift and cross-decodes (22 scenarios); cargo fmt --all --check; git diff --check.
 - The unavailable Java source checkout was not used; the oracle executes pinned RocketMQ 5.5.1 artifacts. Phase 6 remains PARTIAL and P6-V04 stays PENDING_PHASE_19.
