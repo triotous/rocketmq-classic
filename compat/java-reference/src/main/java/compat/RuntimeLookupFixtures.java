@@ -28,6 +28,7 @@ public final class RuntimeLookupFixtures {
         try {
             add(cases, runtime, "missing-topic", null, new String[] {});
             add(cases, runtime, "empty-brokers", "[]", new String[] {});
+            add(cases, runtime, "missing-broker-list", "MISSING", new String[] {});
             add(cases, runtime, "null-broker-list", "null", new String[] {});
             add(cases, runtime, "null-broker-row", "[null]", new String[] {});
             add(cases, runtime, "master-preferred", "[{\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master:10911\",\"2\":\"slave:10911\"}}]", new String[] {"master:10911"});
@@ -2475,7 +2476,9 @@ public final class RuntimeLookupFixtures {
     }
 
     private static void add(List<Object> cases, MQClientInstance runtime, String name, String brokers, String[] candidates) {
-        String input = brokers == null ? null : "{\"queueDatas\":[],\"brokerDatas\":" + brokers + ",\"filterServerTable\":{}}";
+        String input = brokers == null ? null : "MISSING".equals(brokers)
+            ? "{\"queueDatas\":[],\"filterServerTable\":{}}"
+            : "{\"queueDatas\":[],\"brokerDatas\":" + brokers + ",\"filterServerTable\":{}}";
         if (input != null) {
             com.alibaba.fastjson2.JSONObject json = com.alibaba.fastjson2.JSON.parseObject(input);
             com.alibaba.fastjson2.JSONArray brokerRows = json.getJSONArray("brokerDatas");
