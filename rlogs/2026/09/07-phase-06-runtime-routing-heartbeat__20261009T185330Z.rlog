@@ -38,3 +38,11 @@
 - The fixture has 499 `socksConstruction` cases and 19 `socksProxySelection` cases. `fixtures/runtime/client-config.json` SHA-256: `3e46fee1230a4dbf66837deca0a17015aeea87913fa9f3b08ad79e1aa0f90c42`.
 - Focused constructor/selection suites, full `cargo test --workspace --all-targets --locked`, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios and Java cross-decodes), differential comparator self-test, manifest22 validation, `cargo fmt --all -- --check`, and `git diff --check` pass.
 - Updated ADR-0038 and the Java compatibility, API map, requirement audit, and runtime inventory records. Broader Fastjson grammar and Phase 6 source/API/input/final-plan reconciliation remain open; Phase 6 remains PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
+
+## SOCKS additional Fastjson reference paths — 2026-10-09T19:28:34Z
+
+- Added nine direct Java 5.5.1 private `NettyRemotingClient.getProxy` inputs covering `$.target`, `$["target"]`, `$[ 'target' ]`, `$[0]`, `@`, `..`, `#-2`, bare `target`, and `$..target`. Java resolves dot, double-quoted bracket, and whitespace-bearing quoted bracket forms to the target proxy. `#-2` and bare `target` retain the matching CIDR entry with a null address; numeric-index, self, parent, and recursive-descent forms fail.
+- The native differential first failed on `$[ 'target' ]`. Rust now accepts ASCII whitespace around the quoted bracket key, preserves `#-2` and bare-name no-address routes, and rejects the unsuccessful forms. Oracle/test commit `c90a1bec`; implementation commit `27700865`.
+- The fixture now has 499 constructor cases and 28 private selection cases. `fixtures/runtime/client-config.json` SHA-256: `2099360007a6e46dbba89ba22c70d7ca7354fe49b2b5129a082bd42ff9f2b011`.
+- Focused SOCKS tests, full `cargo test --workspace --all-targets --locked`, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios and Java cross-decodes), comparator self-test, manifest22 validation, `cargo fmt --all -- --check`, and `git diff --check` pass.
+- Updated ADR-0038 and the Java compatibility, API map, requirement audit, and runtime inventory. Remaining Fastjson paths and the broad Phase 6 source/API/input/final-plan reconciliation remain open; Phase 6 remains PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
