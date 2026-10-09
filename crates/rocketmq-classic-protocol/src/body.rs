@@ -311,7 +311,7 @@ impl super::heartbeat::JavaOrdinalEnum for LiteSubscriptionAction {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum OffsetOptionType {
     Policy,
@@ -342,7 +342,7 @@ impl super::heartbeat::JavaOrdinalEnum for OffsetOptionType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct OffsetOption {
     #[serde(
