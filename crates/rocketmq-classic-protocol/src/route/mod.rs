@@ -1320,7 +1320,11 @@ mod route_dto_input_cases_tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
         let cases = fixture["routeDtoInputCases"].as_array().unwrap();
-        assert_eq!(cases.len(), 79, "Java oracle includes exact string coercions");
+        assert_eq!(
+            cases.len(),
+            79,
+            "Java oracle includes exact string coercions"
+        );
         for required in [
             "broker-address-high-precision-number-strings",
             "filter-server-high-precision-number-strings",

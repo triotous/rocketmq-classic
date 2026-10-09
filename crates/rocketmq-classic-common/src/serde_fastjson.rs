@@ -433,23 +433,26 @@ pub fn deserialize_optional_long_string_map<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    let value = Value::deserialize(deserializer)?;
-    let Value::Object(entries) = value else {
-        return if value.is_null() {
-            Ok(None)
-        } else {
-            Err(de::Error::custom("expected a JSON object or null"))
-        };
-    };
+    let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+    if raw.get().trim() == "null" {
+        return Ok(None);
+    }
+    let entries =
+        serde_json::from_str::<BTreeMap<String, Box<serde_json::value::RawValue>>>(raw.get())
+            .map_err(de::Error::custom)?;
     let mut result = BTreeMap::new();
     for (key, value) in entries {
         let key =
             fastjson_integer::<D::Error>(&Value::String(key), i64::MIN as i128, i64::MAX as i128)?
                 as i64;
-        let value = if value.is_null() {
+        let value = if value.get().trim() == "null" {
             None
         } else {
-            Some(java_string(&value))
+            Some(
+                fastjson_string_value_from_raw::<D::Error>(value.get())?
+                    .java_string()
+                    .map_err(de::Error::custom)?,
+            )
         };
         result.insert(key, value);
     }
@@ -496,25 +499,26 @@ pub fn deserialize_optional_string_list_map<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    let value = Value::deserialize(deserializer)?;
-    let Value::Object(entries) = value else {
-        return if value.is_null() {
-            Ok(None)
-        } else {
-            Err(de::Error::custom("expected a JSON object or null"))
-        };
-    };
+    let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+    if raw.get().trim() == "null" {
+        return Ok(None);
+    }
+    let entries =
+        serde_json::from_str::<BTreeMap<String, Box<serde_json::value::RawValue>>>(raw.get())
+            .map_err(de::Error::custom)?;
     let mut result = BTreeMap::new();
     for (key, value) in entries {
-        let value = match value {
-            Value::Null => None,
-            Value::Array(values) => Some(
+        let value = if value.get().trim() == "null" {
+            None
+        } else {
+            let values = serde_json::from_str::<Vec<Box<serde_json::value::RawValue>>>(value.get())
+                .map_err(|_| de::Error::custom("expected a JSON string array or null"))?;
+            Some(
                 values
                     .iter()
-                    .map(|value| (!value.is_null()).then(|| java_string(value)))
-                    .collect(),
-            ),
-            _ => return Err(de::Error::custom("expected a JSON string array or null")),
+                    .map(|value| fastjson_nullable_string_from_raw::<D::Error>(value.get()))
+                    .collect::<Result<Vec<_>, _>>()?,
+            )
         };
         result.insert(key, value);
     }
@@ -527,19 +531,29 @@ pub fn deserialize_optional_nullable_string_list<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    let value = Value::deserialize(deserializer)?;
-    match value {
-        Value::Null => Ok(None),
-        Value::String(value) if value.is_empty() => Ok(Some(Vec::new())),
-        Value::String(value) => Ok(Some(vec![Some(value)])),
-        Value::Array(values) => Ok(Some(
-            values
-                .iter()
-                .map(|value| (!value.is_null()).then(|| java_string(value)))
-                .collect(),
-        )),
-        Value::Object(_) | Value::Number(_) | Value::Bool(_) => Ok(None),
+    let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+    let raw = raw.get().trim();
+    if raw == "null" {
+        return Ok(None);
     }
+    if raw.starts_with('"') {
+        let value = serde_json::from_str::<String>(raw).map_err(de::Error::custom)?;
+        return Ok(Some(if value.is_empty() {
+            Vec::new()
+        } else {
+            vec![Some(value)]
+        }));
+    }
+    if raw.starts_with('[') {
+        let values = serde_json::from_str::<Vec<Box<serde_json::value::RawValue>>>(raw)
+            .map_err(de::Error::custom)?;
+        return values
+            .iter()
+            .map(|value| fastjson_nullable_string_from_raw::<D::Error>(value.get()))
+            .collect::<Result<Vec<_>, _>>()
+            .map(Some);
+    }
+    Ok(None)
 }
 
 pub fn deserialize_optional_nullable_string_map<'de, D>(
@@ -548,20 +562,33 @@ pub fn deserialize_optional_nullable_string_map<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    let value = Value::deserialize(deserializer)?;
-    let Value::Object(entries) = value else {
-        return if value.is_null() {
-            Ok(None)
-        } else {
-            Err(de::Error::custom("expected a JSON object or null"))
-        };
-    };
-    Ok(Some(
-        entries
-            .iter()
-            .map(|(key, value)| (key.clone(), (!value.is_null()).then(|| java_string(value))))
-            .collect(),
-    ))
+    let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+    if raw.get().trim() == "null" {
+        return Ok(None);
+    }
+    let entries =
+        serde_json::from_str::<BTreeMap<String, Box<serde_json::value::RawValue>>>(raw.get())
+            .map_err(de::Error::custom)?;
+    entries
+        .into_iter()
+        .map(|(key, value)| {
+            fastjson_nullable_string_from_raw::<D::Error>(value.get()).map(|value| (key, value))
+        })
+        .collect::<Result<NullableStringMap, _>>()
+        .map(Some)
+}
+
+fn fastjson_nullable_string_from_raw<E>(raw: &str) -> Result<Option<String>, E>
+where
+    E: de::Error,
+{
+    if raw.trim() == "null" {
+        return Ok(None);
+    }
+    fastjson_string_value_from_raw::<E>(raw)?
+        .java_string()
+        .map(Some)
+        .map_err(de::Error::custom)
 }
 
 pub fn deserialize_optional_nullable_string_set<'de, D>(
@@ -638,16 +665,6 @@ where
     }
     fastjson_integer_raw::<E>(raw, i32::MIN as i128, i32::MAX as i128, false)
         .map(|value| Some(value as i32))
-}
-
-fn java_string(value: &Value) -> String {
-    match value {
-        Value::Null => "null".to_owned(),
-        Value::String(value) => value.clone(),
-        Value::Bool(value) => value.to_string(),
-        Value::Number(value) => value.to_string(),
-        Value::Array(_) | Value::Object(_) => value.to_string(),
-    }
 }
 
 fn fastjson_integer<E>(value: &Value, minimum: i128, maximum: i128) -> Result<i128, E>

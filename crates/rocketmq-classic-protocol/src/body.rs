@@ -85,29 +85,34 @@ fn deserialize_optional_assignment_set<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    let value = Value::deserialize(deserializer)?;
-    match value {
-        Value::Null => Ok(None),
-        Value::Array(values) => {
-            let mut assignments = std::collections::HashSet::with_capacity(values.len());
-            for value in values {
-                let assignment = if value.is_null() {
-                    None
-                } else {
-                    Some(serde_json::from_value(value).map_err(de::Error::custom)?)
-                };
-                assignments.insert(assignment);
-            }
-            Ok(Some(assignments))
-        }
-        Value::Object(_) => {
-            let assignment = serde_json::from_value(value).map_err(de::Error::custom)?;
-            Ok(Some(std::collections::HashSet::from([Some(assignment)])))
-        }
-        _ => Err(de::Error::custom(
-            "expected a JSON assignment array, object, or null",
-        )),
+    let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+    let raw = raw.get().trim();
+    if raw == "null" {
+        return Ok(None);
     }
+    let values = if raw.starts_with('[') {
+        serde_json::from_str::<Vec<Box<serde_json::value::RawValue>>>(raw)
+            .map_err(de::Error::custom)?
+    } else if raw.starts_with('{') {
+        vec![
+            serde_json::from_str::<Box<serde_json::value::RawValue>>(raw)
+                .map_err(de::Error::custom)?,
+        ]
+    } else {
+        return Err(de::Error::custom(
+            "expected a JSON assignment array, object, or null",
+        ));
+    };
+    let mut assignments = std::collections::HashSet::with_capacity(values.len());
+    for value in values {
+        let assignment = if value.get().trim() == "null" {
+            None
+        } else {
+            Some(serde_json::from_str(value.get()).map_err(de::Error::custom)?)
+        };
+        assignments.insert(assignment);
+    }
+    Ok(Some(assignments))
 }
 
 /// Java's default JSON writer omits null-valued entries in this map.
@@ -1046,8 +1051,16 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
         let cases = fixture["assignmentAttachmentCases"].as_array().unwrap();
-        assert_eq!(cases.len(), 7, "Java oracle includes numeric string coercions");
-        assert!(cases.iter().any(|case| case["name"] == "numeric-string-values"));
+        assert_eq!(
+            cases.len(),
+            7,
+            "Java oracle includes numeric string coercions"
+        );
+        assert!(
+            cases
+                .iter()
+                .any(|case| case["name"] == "numeric-string-values")
+        );
         for case in cases {
             let decoded = serde_json::from_str::<QueryAssignmentResponseBody>(
                 case["rawInput"].as_str().unwrap(),
@@ -1087,10 +1100,16 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
         let cases = fixture["consumerListCases"].as_array().unwrap();
-        assert_eq!(cases.len(), 13, "Java oracle includes high-precision numeric strings");
-        assert!(cases
-            .iter()
-            .any(|case| case["name"] == "high-precision-numeric-strings"));
+        assert_eq!(
+            cases.len(),
+            13,
+            "Java oracle includes high-precision numeric strings"
+        );
+        assert!(
+            cases
+                .iter()
+                .any(|case| case["name"] == "high-precision-numeric-strings")
+        );
         for case in cases {
             let decoded = serde_json::from_str::<ConsumerListByGroupResponseBody>(
                 case["rawInput"].as_str().unwrap(),
