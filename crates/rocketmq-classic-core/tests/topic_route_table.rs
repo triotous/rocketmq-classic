@@ -52,7 +52,7 @@ fn public_nullable_route_conversion_arguments_match_invoked_java() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/route.json")).unwrap();
     let cases = fixture["nullArgumentConversions"].as_array().unwrap();
-    assert_eq!(cases.len(), 8);
+    assert_eq!(cases.len(), 10);
 
     for case in cases {
         let route = if case["routeIsNull"].as_bool().unwrap() {
