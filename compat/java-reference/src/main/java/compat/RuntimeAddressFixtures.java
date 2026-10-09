@@ -64,24 +64,62 @@ public final class RuntimeAddressFixtures {
         }
         List<Object> clientAddressCases = new ArrayList<>();
         List<Object> javaPortDigitCases = new ArrayList<>();
+        List<Object> javaHostCodeUnitRanges = new ArrayList<>();
         List<Object> channelTableKeyCases = new ArrayList<>();
         Map<String, Object> javaPortRangeCase = new TreeMap<>();
-        for (int codeUnit = 0; codeUnit <= Character.MAX_VALUE; codeUnit++) {
-            String digit = String.valueOf((char) codeUnit);
-            try {
-                int parsed = Integer.parseInt(digit);
-                java.net.InetSocketAddress.createUnresolved("127.0.0.1", parsed);
-                Map<String, Object> item = new TreeMap<>();
-                item.put("codeUnit", codeUnit);
-                item.put("port", parsed);
-                javaPortDigitCases.add(item);
-            } catch (RuntimeException rejected) {
-                // Rejections are represented by an absent code unit. Rust checks
-                // the entire BMP domain against this direct JDK oracle.
-            }
-        }
         AddressProbe addressProbe = new AddressProbe();
+        int acceptedHostCodeUnitCount = 0;
         try {
+            for (int codeUnit = 0; codeUnit <= Character.MAX_VALUE; codeUnit++) {
+                String digit = String.valueOf((char) codeUnit);
+                try {
+                    int parsed = Integer.parseInt(digit);
+                    java.net.InetSocketAddress.createUnresolved("127.0.0.1", parsed);
+                    Map<String, Object> item = new TreeMap<>();
+                    item.put("codeUnit", codeUnit);
+                    item.put("port", parsed);
+                    javaPortDigitCases.add(item);
+                } catch (RuntimeException rejected) {
+                    // Rejections are represented by an absent code unit. Rust checks
+                    // the entire BMP domain against this direct JDK oracle.
+                }
+            }
+            List<Integer> acceptedHostCodeUnits = new ArrayList<>();
+            for (int codeUnit = 0; codeUnit <= Character.MAX_VALUE; codeUnit++) {
+                String expectedHost = "broker" + (char) codeUnit + ".example";
+                String address = expectedHost + ":10911";
+                try {
+                    String[] hostAndPort = addressProbe.splitAddress(address);
+                    int port = Integer.parseInt(hostAndPort[1]);
+                    java.net.InetSocketAddress.createUnresolved(hostAndPort[0], port);
+                    if (hostAndPort.length == 2 && expectedHost.equals(hostAndPort[0]) && port == 10911) {
+                        acceptedHostCodeUnits.add(codeUnit);
+                    }
+                } catch (RuntimeException rejected) {
+                    // Rejected UTF-16 units are represented by gaps in the ranges.
+                }
+            }
+            if (!acceptedHostCodeUnits.isEmpty()) {
+                int rangeStart = acceptedHostCodeUnits.get(0);
+                int previous = rangeStart;
+                for (int index = 1; index <= acceptedHostCodeUnits.size(); index++) {
+                    if (index < acceptedHostCodeUnits.size()
+                        && acceptedHostCodeUnits.get(index) == previous + 1) {
+                        previous = acceptedHostCodeUnits.get(index);
+                        continue;
+                    }
+                    List<Integer> range = new ArrayList<>();
+                    range.add(rangeStart);
+                    range.add(previous);
+                    javaHostCodeUnitRanges.add(range);
+                    if (index < acceptedHostCodeUnits.size()) {
+                        int current = acceptedHostCodeUnits.get(index);
+                        rangeStart = current;
+                        previous = current;
+                    }
+                }
+            }
+            acceptedHostCodeUnitCount = acceptedHostCodeUnits.size();
             String supplementaryDigit = new String(Character.toChars(0x104A1));
             for (String address : new String[] {":10911", "127.0.0.1:10911", "broker.example:10911",
                     "Broker.Example:10911", "127.0.0.1:010911",
@@ -209,6 +247,8 @@ public final class RuntimeAddressFixtures {
         fixture.put("clientAddressCases", clientAddressCases);
         fixture.put("javaPortDigitCases", javaPortDigitCases);
         fixture.put("javaPortRangeCase", javaPortRangeCase);
+        fixture.put("javaHostCodeUnitRanges", javaHostCodeUnitRanges);
+        fixture.put("javaHostCodeUnitAcceptedCount", acceptedHostCodeUnitCount);
         fixture.put("channelTableKeyCases", channelTableKeyCases);
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture) + "\n";
         Path file = Path.of(args[0]);
@@ -221,7 +261,8 @@ public final class RuntimeAddressFixtures {
         System.out.println("Runtime address helpers verified: " + addresses.size()
             + "; named IPv6 scopes verified: " + scopeCases.size()
             + "; Java client endpoint splits verified: " + clientAddressCases.size()
-            + "; Java BMP port-digit code units verified: " + javaPortDigitCases.size());
+            + "; Java BMP port-digit code units verified: " + javaPortDigitCases.size()
+            + "; Java BMP host code units verified: " + acceptedHostCodeUnitCount);
     }
 
     private static void add(List<Object> addresses, String literal, int scope, InetAddress ip) {

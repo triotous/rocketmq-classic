@@ -441,6 +441,47 @@ mod tests {
     }
 
     #[test]
+    fn every_representable_bmp_host_unit_matches_pinned_java_endpoint_split() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/address.json"))
+                .unwrap();
+        let accepted_count = fixture["javaHostCodeUnitAcceptedCount"].as_u64().unwrap();
+        assert_eq!(accepted_count, u64::from(u16::MAX) + 1);
+        let ranges = fixture["javaHostCodeUnitRanges"].as_array().unwrap();
+        let is_java_accepted = |code_unit: u16| {
+            ranges.iter().any(|range| {
+                let start = range[0].as_u64().unwrap() as u16;
+                let end = range[1].as_u64().unwrap() as u16;
+                (start..=end).contains(&code_unit)
+            })
+        };
+
+        for code_unit in 0..=u16::MAX {
+            let Some(character) = char::from_u32(u32::from(code_unit)) else {
+                // Rust str cannot represent Java's isolated UTF-16 surrogates.
+                continue;
+            };
+            let host = format!("broker{character}.example");
+            let address = format!("{host}:10911");
+            let expected = is_java_accepted(code_unit);
+            let parsed = Address::parse(&address);
+            assert_eq!(
+                parsed.is_ok(),
+                expected,
+                "U+{code_unit:04X} ({character:?}) Java unresolved-host acceptance"
+            );
+            if expected {
+                assert_eq!(parsed.unwrap().as_str(), address);
+                assert_eq!(
+                    connection::split_address(&address).unwrap(),
+                    (host, 10911),
+                    "U+{code_unit:04X} ({character:?}) Java host/port split"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn every_java_valid_socket_port_is_accepted_and_preserved() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/address.json"))
