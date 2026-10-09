@@ -18,6 +18,10 @@ Decode primitive long fields through the Java-compatible integer adapters. Null 
 
 ## Evidence
 
-The direct pinned Java corpus combines 114 cases: the original 33 enum/default/duplicate/collection inputs, 49 per-field token shapes, seven DTO wrapper roots, seven `subscriptionSet` field shapes, seven `liteTopicSet` member shapes, seven `OffsetOption.value` shapes, and four set/empty-string cases. Native differentials match acceptance and encoded values. Test/fix commits: `bdbe660`/`8f1ddd0` and `d3a298e`/`ab3d0e2`; empty-string oracle: `df69ec0`. Current `lookup.json` SHA-256: `ecb83ddd48d7d19fd3e8e015bc6d281b67f96d1c99e59091ace43d4d86c41756`.
+The direct pinned Java input corpus has 114 cases: the original 33 enum/default/duplicate/collection inputs, 49 per-field token shapes, seven DTO wrapper roots, seven `subscriptionSet` field shapes, seven `liteTopicSet` member shapes, seven `OffsetOption.value` shapes, and four set/empty-string cases. Native differentials match acceptance and encoded values. Test/fix commits: `bdbe660`/`8f1ddd0` and `d3a298e`/`ab3d0e2`; empty-string oracle: `df69ec0`. The shared `lookup.json` fixture also contains three direct identity-method cases; current SHA-256 is `0ddf0c9ae47ab86d17cb400da466802350cf7db50be234bb012668c91cd523e7`.
 
-This records these Lite DTO input boundaries only. Broader Phase 6 source/API/input reconciliation remains open, and P6-V04 stays `PENDING_PHASE_19`.
+## Java identity and public type mapping
+
+Pinned 5.5.1 `LiteSubscriptionDTO`, `LiteSubscription`, and `LiteSubscriptionCtlRequestBody` inherit identity-based `Object.equals`/`hashCode`; Rust no longer gives these models structural `PartialEq`/`Eq`. Their three Java identity cases confirm distinct equal-field objects compare false and remain separate HashSet members. The Rust API also exports `body::LiteSubscriptionDTO` and `header::GetConsumerListByGroupResponseBody` aliases for the pinned Java simple class names.
+
+The separate Rust `body::LiteSubscription` model still does not match Java's field/method surface: Java has `group`, `topic`, `liteTopicSet`, `updateTime`, topic mutation methods and accessors; Rust retains a `client_id` field and lacks `update_time` and those methods. The getter/setter surface on the DTO classes also remains under audit. Broader Phase 6 source/API/input reconciliation remains open, and P6-V04 stays `PENDING_PHASE_19`.
