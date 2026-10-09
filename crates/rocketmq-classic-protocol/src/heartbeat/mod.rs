@@ -993,9 +993,28 @@ mod fastjson_dto_input_tests {
         let cases = fixture["heartbeatDtoInputCases"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            213,
-            "Java oracle includes DTO scalar, numeric-boundary, collection-shape, and per-field token-kind probes"
+            241,
+            "Java oracle includes DTO root shapes, scalar, numeric-boundary, collection-shape, and per-field token-kind probes"
         );
+        for dto in ["subscription", "producer", "consumer", "heartbeat"] {
+            for shape in [
+                "empty-object",
+                "null",
+                "empty-array",
+                "singleton-array",
+                "number",
+                "boolean",
+                "string",
+            ] {
+                let id = format!("root-{dto}-{shape}");
+                assert!(
+                    cases
+                        .iter()
+                        .any(|case| case["id"].as_str() == Some(id.as_str())),
+                    "missing {id}"
+                );
+            }
+        }
         for required in [
             "subscription-duplicate-class-filter-mode-last-wins",
             "subscription-duplicate-topic-last-wins",
@@ -1072,21 +1091,26 @@ mod fastjson_dto_input_tests {
         for case in cases {
             let raw_input = case["rawInput"].as_str().unwrap();
             let decoded = match case["type"].as_str().unwrap() {
-                "subscription" => serde_fastjson::from_fastjson_str::<SubscriptionData>(raw_input)
-                    .and_then(serde_json::to_value),
-                "producer" => serde_fastjson::from_fastjson_str::<ProducerData>(raw_input)
-                    .and_then(serde_json::to_value),
-                "consumer" => serde_fastjson::from_fastjson_str::<ConsumerData>(raw_input)
-                    .and_then(serde_json::to_value),
-                "heartbeat" => {
-                    HeartbeatData::java_from_json(raw_input).and_then(serde_json::to_value)
+                "subscription" => {
+                    serde_fastjson::from_fastjson_str::<Option<SubscriptionData>>(raw_input)
+                        .and_then(serde_json::to_value)
                 }
+                "producer" => serde_fastjson::from_fastjson_str::<Option<ProducerData>>(raw_input)
+                    .and_then(serde_json::to_value),
+                "consumer" => serde_fastjson::from_fastjson_str::<Option<ConsumerData>>(raw_input)
+                    .and_then(serde_json::to_value),
+                "heartbeat" => HeartbeatData::java_from_json_nullable(Some(raw_input))
+                    .and_then(serde_json::to_value),
                 other => panic!("unknown heartbeat DTO case type {other}"),
             };
             let java_accepts = case["outcome"] == "ACCEPTED";
             assert_eq!(decoded.is_ok(), java_accepts, "{}: {decoded:?}", case["id"]);
             if let Ok(mut decoded) = decoded {
                 let mut expected = case["fields"].clone();
+                if case["id"] == "root-subscription-empty-object" {
+                    decoded.as_object_mut().unwrap().remove("subVersion");
+                    expected.as_object_mut().unwrap().remove("subVersion");
+                }
                 normalize_json(&mut decoded);
                 normalize_json(&mut expected);
                 assert_eq!(decoded, expected, "{}", case["id"]);

@@ -4,7 +4,11 @@ Status: Accepted
 
 ## DTO field-shape continuation (2026-10-09)
 
-The direct Java input fixture now contains 213 cases. A new 140-case matrix applies null, numeric string, integer, fraction, Boolean, array, and object values to every field across `SubscriptionData`, `ProducerData`, `ConsumerData`, and `HeartbeatData`. The generator pins `subVersion` to zero for unrelated SubscriptionData field probes because the omitted-field constructor default is wall-clock based. The direct explicit-null input confirms both Java and the existing native decoder produce zero; omission continues to use the constructor timestamp. All 213 accepted/rejected outcomes and normalized values match, with no production change; `heartbeat_dto_inputs_match_invoked_java_fastjson` passes. Current heartbeat fixture SHA-256: `4c6aee94aaec527dfb864bea1bed8d6f2903132e6e73e3a353c3ce08a77affdf`.
+At this field-shape checkpoint, the direct Java input fixture contained 213 cases. A new 140-case matrix applies null, numeric string, integer, fraction, Boolean, array, and object values to every field across `SubscriptionData`, `ProducerData`, `ConsumerData`, and `HeartbeatData`. The generator pins `subVersion` to zero for unrelated SubscriptionData field probes because the omitted-field constructor default is wall-clock based. The direct explicit-null input confirms both Java and the existing native decoder produce zero; omission continues to use the constructor timestamp. All 213 accepted/rejected outcomes and normalized values match, with no production change; `heartbeat_dto_inputs_match_invoked_java_fastjson` passes. Checkpoint heartbeat fixture SHA-256: `4c6aee94aaec527dfb864bea1bed8d6f2903132e6e73e3a353c3ce08a77affdf`.
+
+## DTO root-token continuation (2026-10-09)
+
+The matrix now adds 28 root-shape cases across the same four DTOs: empty object, null, empty array, singleton array, number, Boolean, and string. Fastjson accepts empty objects and JSON null, returning null for the latter; it rejects arrays and scalar roots. Rust compares these operations as `Option<T>`, and `HeartbeatData::java_from_json_nullable` covers the public nullable adapter. The empty `SubscriptionData` case omits `subVersion` from comparison because its Java constructor uses the wall clock. All cases pass; no production change was required. The complete input corpus now contains 241 cases at fixture SHA-256 `385fc38890b6f18fc9ea74a4a4d2a47f52c27bae5ffc7851064c594cef426803`.
 
 ## Context
 

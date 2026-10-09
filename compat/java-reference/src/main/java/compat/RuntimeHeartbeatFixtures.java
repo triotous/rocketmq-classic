@@ -651,7 +651,11 @@ public final class RuntimeHeartbeatFixtures {
             String encoded = com.alibaba.fastjson2.JSON.toJSONString(value,
                 com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue);
             item.put("outcome", "ACCEPTED");
-            item.put("fields", normalizeHeartbeatJson(com.alibaba.fastjson2.JSON.parseObject(encoded)));
+            Map<String, Object> fields = com.alibaba.fastjson2.JSON.parseObject(encoded);
+            if ("root-subscription-empty-object".equals(id)) {
+                fields.remove("subVersion"); // Constructor timestamp is intentionally nondeterministic.
+            }
+            item.put("fields", normalizeHeartbeatJson(fields));
         } catch (RuntimeException error) {
             item.put("outcome", "REJECTED");
             item.put("error", error.getClass().getSimpleName());
@@ -661,6 +665,17 @@ public final class RuntimeHeartbeatFixtures {
 
     private static List<Object> heartbeatDtoInputCases() {
         List<Object> cases = new ArrayList<>();
+        String[] rootDtoTypes = {"subscription", "producer", "consumer", "heartbeat"};
+        String[][] rootShapes = {
+            {"empty-object", "{}"}, {"null", "null"}, {"empty-array", "[]"},
+            {"singleton-array", "[{}]"}, {"number", "0"}, {"boolean", "true"},
+            {"string", "\"text\""}
+        };
+        for (String type : rootDtoTypes) {
+            for (String[] shape : rootShapes) {
+                cases.add(heartbeatDtoInputCase("root-" + type + "-" + shape[0], type, shape[1]));
+            }
+        }
         cases.add(heartbeatDtoInputCase("subscription-duplicate-class-filter-mode-last-wins", "subscription",
             "{\"subVersion\":0,\"classFilterMode\":false,\"classFilterMode\":true}"));
         cases.add(heartbeatDtoInputCase("subscription-duplicate-topic-last-wins", "subscription",
