@@ -21,6 +21,6 @@ Direct pinned Java invocation and Rust regressions now cover each DTO's defaults
 
 - Direct Java calls: `queryAssignmentRequestApiCase`, `queryAssignmentResponseApiCase`, and `setRequestModeRequestApiCase` in `fixtures/runtime/lookup.json`.
 - Oracle commit: `7c7d8b5b`; Rust implementation: `fc5f2336`.
-- Current aggregate `fixtures/runtime/lookup.json` SHA-256: `e716392045bd2dc0eae95f7815c6cdc5a9485fed707515ea852ada8c56be8b59`.
+- Aggregate fixture SHA-256 at this assignment API checkpoint: `e716392045bd2dc0eae95f7815c6cdc5a9485fed707515ea852ada8c56be8b59`. Later runtime DTO method oracles update the digest; see [ADR-0055](ADR-0055-runtime-body-public-api.md) for the current value.
 - Validation: `cargo test --workspace --all-targets --locked`; strict all-target/all-feature Clippy; pinned offline Maven verify (22 scenarios, fixture drift, Java cross-decodes); `cargo fmt --all --check`; `git diff --check`.
 - Oracle uses pinned RocketMQ 5.5.1 artifacts; the requested alternate Java source checkout was unavailable.

@@ -191,3 +191,9 @@
 - Inspected pinned 5.5.1 NetworkUtil.getLocalInetAddress bytecode: IPv4 candidates take priority; without IPv4, Java selects the first non-internal IPv6 candidate, falling back to the first IPv6 candidate. The existing Rust selector follows these branches.
 - Regression `8632ec69` extends the ordered selection case with two external IPv6 candidates and asserts the first candidate is selected. Focused core test, formatting, and diff checks pass. No production change was needed.
 - Updated ADR-0045 and Phase 6 requirement/API maps to close the multiple-external-IPv6 selection logic gap. Non-macOS interface enumeration and a real IPv6-only host remain open. Phase 6 remains PARTIAL and P6-V04 stays PENDING_PHASE_19.
+
+## Remaining runtime body public API parity — 2026-10-09T18:11:42Z
+
+- Direct pinned Java 5.5.1 invocations and a Rust differential cover constructor defaults, getter/setter values, null setters, and tested text for CheckClientRequestBody, GetConsumerListByGroupResponseBody, LockBatchRequestBody, UnlockBatchRequestBody, LockBatchResponseBody, and ConsumeMessageDirectlyResult. Added snake_case accessors and Java-shaped Display for the three types with toString methods.
+- Java getter identity for assigned SubscriptionData/List/Set values remains a documented Rust ownership/alias semantic gap. Oracle `7e1155f8`; implementation `bca4329c`; lookup.json SHA-256 `bb0d6d759d1e5d23a532a1e5a4529089aaf88c714bc637ff332553edfc656cc0`.
+- Full workspace/all-target tests, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios, fixture drift, Java cross-decodes), fmt, and diff checks pass. ADR-0055 and current Phase 6 API/runtime/Java/requirement records updated. Broader source/API/input/reverse-export audit remains open; Phase 6 stays PARTIAL and P6-V04 remains `PENDING_PHASE_19`.
