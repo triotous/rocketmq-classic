@@ -1398,8 +1398,8 @@ mod tests {
         let cases = fixture["queryAssignmentEnumCases"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            8,
-            "Java oracle includes assignment request enum inputs"
+            10,
+            "Java oracle includes assignment request enum and duplicate-field inputs"
         );
         for case in cases {
             let raw_input = case["rawInput"].as_str().unwrap();
@@ -1429,8 +1429,8 @@ mod tests {
         let cases = fixture["setRequestModeCases"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            12,
-            "Java oracle includes request mode defaults and coercions"
+            14,
+            "Java oracle includes request mode defaults, coercions, and duplicate fields"
         );
         for case in cases {
             let raw_input = case["rawInput"].as_str().unwrap();

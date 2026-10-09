@@ -237,6 +237,10 @@ public final class RuntimeLookupFixtures {
         cases.add(queryAssignmentEnumCase("unknown-numeric-string", "{\"messageModel\":\"3\"}"));
         cases.add(queryAssignmentEnumCase("out-of-range", "{\"messageModel\":3}"));
         cases.add(queryAssignmentEnumCase("explicit-null", "{\"messageModel\":null}"));
+        cases.add(queryAssignmentEnumCase("duplicate-name-then-ordinal",
+            "{\"messageModel\":\"BROADCASTING\",\"messageModel\":1}"));
+        cases.add(queryAssignmentEnumCase("duplicate-ordinal-then-name",
+            "{\"messageModel\":1,\"messageModel\":\"BROADCASTING\"}"));
         return cases;
     }
 
@@ -272,6 +276,10 @@ public final class RuntimeLookupFixtures {
         cases.add(setRequestModeCase("boolean", "{\"mode\":true}"));
         cases.add(setRequestModeCase("primitive-default", "{\"topic\":\"orders\"}"));
         cases.add(setRequestModeCase("decimal-wrap", "{\"mode\":4294967296.0}"));
+        cases.add(setRequestModeCase("duplicate-name-then-ordinal",
+            "{\"mode\":\"PULL\",\"mode\":1}"));
+        cases.add(setRequestModeCase("duplicate-ordinal-then-name",
+            "{\"mode\":1,\"mode\":\"PULL\"}"));
         return cases;
     }
 
