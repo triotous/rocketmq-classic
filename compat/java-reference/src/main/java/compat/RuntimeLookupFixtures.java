@@ -124,6 +124,8 @@ public final class RuntimeLookupFixtures {
         cases.add(assignmentAttachmentCase("explicit-null", "null"));
         cases.add(assignmentAttachmentCase("scalar-values",
             "{\"number\":1,\"fraction\":1.9,\"boolean\":true,\"nullValue\":null}"));
+        cases.add(assignmentAttachmentCase("numeric-string-values",
+            "{\"plain\":9223372036854775807.123456789012345678901,\"exponent\":1e2}"));
         cases.add(assignmentAttachmentCase("nested-values",
             "{\"array\":[1,\"x\"],\"object\":{\"key\":\"value\"}}"));
         cases.add(assignmentAttachmentCase("array-map", "[]"));
@@ -138,6 +140,7 @@ public final class RuntimeLookupFixtures {
         Map<String, Object> item = new TreeMap<>();
         item.put("name", name);
         item.put("input", com.alibaba.fastjson2.JSON.parseObject(body));
+        item.put("rawInput", body);
         try {
             org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody decoded =
                 org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody.decode(

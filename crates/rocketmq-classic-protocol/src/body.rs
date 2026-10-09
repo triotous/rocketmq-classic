@@ -1045,9 +1045,13 @@ mod tests {
 
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
-        for case in fixture["assignmentAttachmentCases"].as_array().unwrap() {
-            let decoded =
-                serde_json::from_value::<QueryAssignmentResponseBody>(case["input"].clone());
+        let cases = fixture["assignmentAttachmentCases"].as_array().unwrap();
+        assert_eq!(cases.len(), 7, "Java oracle includes numeric string coercions");
+        assert!(cases.iter().any(|case| case["name"] == "numeric-string-values"));
+        for case in cases {
+            let decoded = serde_json::from_str::<QueryAssignmentResponseBody>(
+                case["rawInput"].as_str().unwrap(),
+            );
             let java_accepts = case["outcome"] == "ACCEPTED";
             assert_eq!(
                 decoded.is_ok(),
