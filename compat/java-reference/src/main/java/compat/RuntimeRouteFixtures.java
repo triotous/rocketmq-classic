@@ -788,6 +788,32 @@ public final class RuntimeRouteFixtures {
             "{\"currIdMap\":{\"1\":10,\"01\":15,\"1\":20}}"));
         cases.add(routeDtoInputCase("mapping-id-key-normalization-collision-repeat-alias-last-wins", "mapping",
             "{\"currIdMap\":{\"01\":10,\"1\":15,\"01\":20}}"));
+        String[][] fields = {
+            {"queueData", "brokerName"}, {"queueData", "readQueueNums"},
+            {"queueData", "writeQueueNums"}, {"queueData", "perm"},
+            {"queueData", "topicSysFlag"},
+            {"brokerData", "cluster"}, {"brokerData", "brokerName"},
+            {"brokerData", "zoneName"}, {"brokerData", "enableActingMaster"},
+            {"brokerData", "brokerAddrs"},
+            {"mapping", "topic"}, {"mapping", "bname"}, {"mapping", "scope"},
+            {"mapping", "totalQueues"}, {"mapping", "epoch"}, {"mapping", "dirty"},
+            {"mapping", "currIdMap"},
+            {"topicRouteData", "orderTopicConf"}, {"topicRouteData", "queueDatas"},
+            {"topicRouteData", "brokerDatas"}, {"topicRouteData", "filterServerTable"},
+            {"topicRouteData", "topicQueueMappingByBroker"}
+        };
+        String[][] shapes = {
+            {"null", "null"}, {"numeric-string", "\"7\""}, {"integer", "0"},
+            {"fraction", "1.5"}, {"boolean", "true"}, {"array", "[]"}, {"object", "{}"}
+        };
+        for (String[] field : fields) {
+            for (String[] shape : shapes) {
+                String rawInput = "{" + com.alibaba.fastjson2.JSON.toJSONString(field[1])
+                    + ":" + shape[1] + "}";
+                cases.add(routeDtoInputCase("shape-" + field[0] + "-" + field[1] + "-" + shape[0],
+                    field[0], rawInput));
+            }
+        }
         return cases;
     }
 

@@ -1045,7 +1045,10 @@ pub struct TopicQueueMappingInfo {
         skip_serializing_if = "Option::is_none"
     )]
     pub bname: Option<String>,
-    #[serde(default, deserialize_with = "serde_fastjson::deserialize_i64")]
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_i64_reject_object"
+    )]
     pub epoch: i64,
     #[serde(default, deserialize_with = "serde_fastjson::deserialize_bool")]
     pub dirty: bool,
@@ -1078,7 +1081,10 @@ struct TopicQueueMappingInfoFields {
         deserialize_with = "serde_fastjson::deserialize_nullable_string"
     )]
     bname: Option<String>,
-    #[serde(default, deserialize_with = "serde_fastjson::deserialize_i64")]
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_i64_reject_object"
+    )]
     epoch: i64,
     #[serde(default, deserialize_with = "serde_fastjson::deserialize_bool")]
     dirty: bool,
@@ -1499,6 +1505,28 @@ mod route_dto_input_cases_tests {
     };
     use rocketmq_classic_common::message::MessageQueue;
 
+    fn null_omission_equivalent(actual: &serde_json::Value, expected: &serde_json::Value) -> bool {
+        match (actual, expected) {
+            (serde_json::Value::Object(actual), serde_json::Value::Object(expected)) => {
+                actual.iter().all(|(key, value)| match expected.get(key) {
+                    Some(expected) => null_omission_equivalent(value, expected),
+                    None => value.is_null(),
+                }) && expected.iter().all(|(key, value)| match actual.get(key) {
+                    Some(actual) => null_omission_equivalent(actual, value),
+                    None => value.is_null(),
+                })
+            }
+            (serde_json::Value::Array(actual), serde_json::Value::Array(expected)) => {
+                actual.len() == expected.len()
+                    && actual
+                        .iter()
+                        .zip(expected)
+                        .all(|(actual, expected)| null_omission_equivalent(actual, expected))
+            }
+            _ => actual == expected,
+        }
+    }
+
     #[test]
     fn route_dto_inputs_match_invoked_java_fastjson() {
         let fixture: serde_json::Value =
@@ -1506,8 +1534,8 @@ mod route_dto_input_cases_tests {
         let cases = fixture["routeDtoInputCases"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            133,
-            "Java oracle includes exact coercions, duplicate fields, and collection shapes"
+            287,
+            "Java oracle includes exact coercions, duplicate fields, collection shapes, and per-field token kinds"
         );
         for required in [
             "queue-duplicate-broker-name-last-wins",
@@ -1603,6 +1631,9 @@ mod route_dto_input_cases_tests {
             "queue-fastjson-nbsp-prefix",
             "queue-fastjson-bom-prefix",
             "queue-fastjson-bom-before-number",
+            "shape-mapping-currIdMap-array",
+            "shape-topicRouteData-queueDatas-object",
+            "shape-brokerData-enableActingMaster-fraction",
         ] {
             assert!(
                 cases.iter().any(|case| case["id"] == required),
@@ -1638,7 +1669,11 @@ mod route_dto_input_cases_tests {
                             case["id"]
                         );
                     } else {
-                        assert_eq!(actual, Some(expected), "{}.{field}", case["id"]);
+                        assert!(
+                            actual.is_some_and(|actual| null_omission_equivalent(actual, expected)),
+                            "{}.{field}: actual {actual:?}, expected {expected:?}",
+                            case["id"]
+                        );
                     }
                 }
             }
