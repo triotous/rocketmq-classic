@@ -509,7 +509,7 @@ mod tests {
         }
     }
     #[test]
-    fn java_selection_prefers_external_v4_then_last_internal_v4_then_v6() {
+    fn java_selection_matches_java_family_and_candidate_order() {
         assert_eq!(
             select(vec![
                 address("::1"),
@@ -532,7 +532,8 @@ mod tests {
             select(vec![
                 address("fe80::1"),
                 address("fec0::1"),
-                address("fc00::1")
+                address("fc00::1"),
+                address("2001:db8::2")
             ]),
             Some(address("fc00::1"))
         );
