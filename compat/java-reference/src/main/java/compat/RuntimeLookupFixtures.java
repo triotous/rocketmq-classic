@@ -57,7 +57,11 @@ public final class RuntimeLookupFixtures {
         fixture.put("assignmentBodyCases", assignmentBodyCases());
         fixture.put("liteSubscriptionEnumCases", liteSubscriptionEnumCases());
         fixture.put("queryAssignmentEnumCases", queryAssignmentEnumCases());
+        fixture.put("queryAssignmentFieldCases", queryAssignmentFieldCases());
+        fixture.put("queryAssignmentRootCases", queryAssignmentRootCases());
         fixture.put("setRequestModeCases", setRequestModeCases());
+        fixture.put("setRequestModeFieldCases", setRequestModeFieldCases());
+        fixture.put("setRequestModeRootCases", setRequestModeRootCases());
         fixture.put("consumeDirectResultCases", consumeDirectResultCases());
         fixture.put("messageQueueInputCases", messageQueueInputCases());
         fixture.put("assignmentHashCollisionCases", assignmentHashCollisionCases());
@@ -333,6 +337,81 @@ public final class RuntimeLookupFixtures {
             org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody decoded =
                 com.alibaba.fastjson2.JSON.parseObject(rawInput,
                     org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody.class);
+            item.put("outcome", "ACCEPTED");
+            item.put("encoded", com.alibaba.fastjson2.JSON.parseObject(
+                com.alibaba.fastjson2.JSON.toJSONString(decoded)));
+        } catch (RuntimeException error) {
+            item.put("outcome", "REJECTED");
+            item.put("error", error.getClass().getSimpleName());
+        }
+        return item;
+    }
+
+    private static List<Object> queryAssignmentFieldCases() {
+        String[][] fields = {
+            {"topic", "string"}, {"consumerGroup", "string"}, {"clientId", "string"},
+            {"strategyName", "string"}, {"messageModel", "enum"}
+        };
+        return requestBodyFieldCases(
+            "query-assignment", org.apache.rocketmq.remoting.protocol.body.QueryAssignmentRequestBody.class,
+            fields);
+    }
+
+    private static List<Object> setRequestModeFieldCases() {
+        String[][] fields = {
+            {"topic", "string"}, {"consumerGroup", "string"}, {"mode", "enum"},
+            {"popShareQueueNum", "integer"}
+        };
+        return requestBodyFieldCases(
+            "set-request-mode", org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody.class,
+            fields);
+    }
+
+    private static List<Object> requestBodyFieldCases(String prefix, Class<?> type, String[][] fields) {
+        String[][] shapes = {
+            {"null", "null"}, {"numeric-string", "\"7\""}, {"integer", "7"},
+            {"fraction", "1.5"}, {"boolean", "true"}, {"array", "[\"x\",1]"},
+            {"object", "{\"b\":2,\"a\":1}"}
+        };
+        List<Object> cases = new ArrayList<>();
+        for (String[] field : fields) {
+            for (String[] shape : shapes) {
+                cases.add(requestBodyFieldCase(prefix + "-" + field[0] + "-" + shape[0],
+                    "{\"" + field[0] + "\":" + shape[1] + "}", type));
+            }
+        }
+        return cases;
+    }
+
+    private static List<Object> requestBodyRootCases(String prefix, Class<?> type) {
+        String[][] roots = {
+            {"empty-object", "{}"}, {"null", "null"}, {"empty-array", "[]"},
+            {"singleton-array", "[{}]"}, {"number", "7"}, {"boolean", "true"},
+            {"string", "\"text\""}
+        };
+        List<Object> cases = new ArrayList<>();
+        for (String[] root : roots) {
+            cases.add(requestBodyFieldCase(prefix + "-root-" + root[0], root[1], type));
+        }
+        return cases;
+    }
+
+    private static List<Object> queryAssignmentRootCases() {
+        return requestBodyRootCases(
+            "query-assignment", org.apache.rocketmq.remoting.protocol.body.QueryAssignmentRequestBody.class);
+    }
+
+    private static List<Object> setRequestModeRootCases() {
+        return requestBodyRootCases(
+            "set-request-mode", org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody.class);
+    }
+
+    private static Map<String, Object> requestBodyFieldCase(String name, String rawInput, Class<?> type) {
+        Map<String, Object> item = new TreeMap<>();
+        item.put("name", name);
+        item.put("rawInput", rawInput);
+        try {
+            Object decoded = com.alibaba.fastjson2.JSON.parseObject(rawInput, type);
             item.put("outcome", "ACCEPTED");
             item.put("encoded", com.alibaba.fastjson2.JSON.parseObject(
                 com.alibaba.fastjson2.JSON.toJSONString(decoded)));

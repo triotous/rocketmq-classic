@@ -1751,6 +1751,62 @@ mod tests {
     }
 
     #[test]
+    fn query_assignment_request_field_shapes_match_invoked_java_fastjson() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let cases = fixture["queryAssignmentFieldCases"].as_array().unwrap();
+        assert_eq!(cases.len(), 35);
+        for case in cases {
+            let decoded = serde_json::from_str::<QueryAssignmentRequestBody>(
+                case["rawInput"].as_str().unwrap(),
+            );
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            assert_eq!(
+                decoded.is_ok(),
+                java_accepts,
+                "{}: {decoded:?}",
+                case["name"]
+            );
+            if let Ok(decoded) = decoded {
+                assert_eq!(
+                    serde_json::to_value(decoded).unwrap(),
+                    case["encoded"],
+                    "{}",
+                    case["name"]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn query_assignment_request_root_shapes_match_invoked_java_fastjson() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let cases = fixture["queryAssignmentRootCases"].as_array().unwrap();
+        assert_eq!(cases.len(), 7);
+        for case in cases {
+            let decoded = serde_json::from_str::<Option<QueryAssignmentRequestBody>>(
+                case["rawInput"].as_str().unwrap(),
+            );
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            assert_eq!(
+                decoded.is_ok(),
+                java_accepts,
+                "{}: {decoded:?}",
+                case["name"]
+            );
+            if let Ok(decoded) = decoded {
+                assert_eq!(
+                    serde_json::to_value(decoded).unwrap(),
+                    case["encoded"],
+                    "{}",
+                    case["name"]
+                );
+            }
+        }
+    }
+
+    #[test]
     fn set_request_mode_inputs_match_invoked_java_fastjson() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
@@ -1763,6 +1819,62 @@ mod tests {
         for case in cases {
             let raw_input = case["rawInput"].as_str().unwrap();
             let decoded = serde_json::from_str::<SetMessageRequestModeRequestBody>(raw_input);
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            assert_eq!(
+                decoded.is_ok(),
+                java_accepts,
+                "{}: {decoded:?}",
+                case["name"]
+            );
+            if let Ok(decoded) = decoded {
+                assert_eq!(
+                    serde_json::to_value(decoded).unwrap(),
+                    case["encoded"],
+                    "{}",
+                    case["name"]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn set_request_mode_field_shapes_match_invoked_java_fastjson() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let cases = fixture["setRequestModeFieldCases"].as_array().unwrap();
+        assert_eq!(cases.len(), 28);
+        for case in cases {
+            let decoded = serde_json::from_str::<SetMessageRequestModeRequestBody>(
+                case["rawInput"].as_str().unwrap(),
+            );
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            assert_eq!(
+                decoded.is_ok(),
+                java_accepts,
+                "{}: {decoded:?}",
+                case["name"]
+            );
+            if let Ok(decoded) = decoded {
+                assert_eq!(
+                    serde_json::to_value(decoded).unwrap(),
+                    case["encoded"],
+                    "{}",
+                    case["name"]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn set_request_mode_root_shapes_match_invoked_java_fastjson() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let cases = fixture["setRequestModeRootCases"].as_array().unwrap();
+        assert_eq!(cases.len(), 7);
+        for case in cases {
+            let decoded = serde_json::from_str::<Option<SetMessageRequestModeRequestBody>>(
+                case["rawInput"].as_str().unwrap(),
+            );
             let java_accepts = case["outcome"] == "ACCEPTED";
             assert_eq!(
                 decoded.is_ok(),
