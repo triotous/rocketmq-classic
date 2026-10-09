@@ -458,9 +458,8 @@ where
     if raw.get().trim() == "null" {
         return Ok(None);
     }
-    let entries =
-        serde_json::from_str::<BTreeMap<String, Box<serde_json::value::RawValue>>>(raw.get())
-            .map_err(de::Error::custom)?;
+    let FastjsonRawObject(entries) =
+        serde_json::from_str::<FastjsonRawObject>(raw.get()).map_err(de::Error::custom)?;
     let mut result = BTreeMap::new();
     for (key, value) in entries {
         let key =
@@ -490,9 +489,8 @@ where
     if raw.get().trim() == "null" {
         return Ok(None);
     }
-    let entries =
-        serde_json::from_str::<BTreeMap<String, Box<serde_json::value::RawValue>>>(raw.get())
-            .map_err(de::Error::custom)?;
+    let FastjsonRawObject(entries) =
+        serde_json::from_str::<FastjsonRawObject>(raw.get()).map_err(de::Error::custom)?;
     let mut result = BTreeMap::new();
     for (key, value) in entries {
         let key =
