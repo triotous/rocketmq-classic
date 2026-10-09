@@ -139,3 +139,11 @@
 - Implementation commit `6c19de4c` adds `MessageRequestModeSerializeWrapper::get_message_request_mode_map_mut()`. The focused differential passes. Rust supports mutation of its owned outer and nested `BTreeMap`s but does not preserve Java identity with the caller-owned map passed to the setter.
 - Unprivileged workspace/Maven runs hit the environment's loopback socket restriction; the required workspace/all-target tests and pinned offline Maven verify passed when rerun with local loopback access. Strict Clippy, comparator self-test/manifest22, format, and diff checks pass.
 - Updated ADR-0050, Java compatibility, API/config map, requirement audit, runtime inventory, and this rlog. The whole Phase 6 source/API/input/reverse-export reconciliation remains open; Phase 6 stays PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
+
+## BatchAck mutable BitSet getter — 2026-10-09T20:42:36Z
+
+- The collection-accessor sweep found `BatchAck.getBitSet()` returns a mutable Java `BitSet`, while Rust exposed only an immutable byte slice. The pinned Java oracle confirms that `getBitSet()` returns the object assigned by `setBitSet`; setting bit 5 through the getter is visible through both references and changes the serialized `BitSet.toByteArray()` bytes from `BQ==` to `JQ==`.
+- Oracle/test commit `bd3d2e71`; aggregate `fixtures/runtime/lookup.json` SHA-256 `abfe31546b68799aced43ff4f631f5dea37a4c14efac1dfc60a1ed637a22b970`. The Rust test-first differential failed to compile because `get_bit_set_mut` was absent.
+- Implementation commit `d1dc7dfd` adds `BatchAck::get_bit_set_mut() -> Option<&mut Vec<u8>>` for the DTO-owned `BitSet.toByteArray()` bytes. The focused differential passes after mutation. Rust does not retain identity with the caller-owned Java `BitSet` and does not expose Java's full `BitSet` API.
+- Full workspace/all-target tests, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios and fixture drift/cross-decodes), comparator self-test/manifest22, formatting, and diff checks pass. Workspace and Maven loopback fixtures used local scripted peers only.
+- Updated ADR-0053, Java compatibility, API/config map, requirement audit, runtime inventory, and this rlog. Other DTO aliases and full Phase 6 source/API/input/reverse-export reconciliation remain open; Phase 6 stays PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
