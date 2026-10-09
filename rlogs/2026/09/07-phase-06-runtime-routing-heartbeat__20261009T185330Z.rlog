@@ -46,3 +46,10 @@
 - The fixture now has 499 constructor cases and 28 private selection cases. `fixtures/runtime/client-config.json` SHA-256: `2099360007a6e46dbba89ba22c70d7ca7354fe49b2b5129a082bd42ff9f2b011`.
 - Focused SOCKS tests, full `cargo test --workspace --all-targets --locked`, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios and Java cross-decodes), comparator self-test, manifest22 validation, `cargo fmt --all -- --check`, and `git diff --check` pass.
 - Updated ADR-0038 and the Java compatibility, API map, requirement audit, and runtime inventory. Remaining Fastjson paths and the broad Phase 6 source/API/input/final-plan reconciliation remain open; Phase 6 remains PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
+
+## SOCKS additional bare-reference observations — 2026-10-09T19:35:02Z
+
+- Added four actual Java private-selection cases for empty `$ref`, one space, bare `target.addr`, and bare `0`; all select the matching CIDR and expose a null proxy address. The `0` case intentionally has no root key named `0`, while `$[0]` remains the separate failing array-index form. Oracle/test commit `47d09d76`; the Rust implementation required no change.
+- The fixture has 499 `socksConstruction` cases and 32 `socksProxySelection` cases. SHA-256: `fd46551f8755e1ca55a6434bdf15eabe58014077a402e8e17928b9eb8d9039d7`.
+- Focused SOCKS tests, full `cargo test --workspace --all-targets --locked`, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios and Java cross-decodes), comparator self-test, manifest22 validation, format, and diff checks pass.
+- Updated ADR-0038, Java compatibility, API map, requirement audit and runtime inventory. Additional Fastjson grammar and whole Phase 6 source/API/input/reverse-export reconciliation remain open; Phase 6 remains PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
