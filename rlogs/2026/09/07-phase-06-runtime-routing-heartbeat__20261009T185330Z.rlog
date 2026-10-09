@@ -131,3 +131,11 @@
 - Implementation commit `ff81313a` adds `ResetOffsetBody::get_offset_table_mut()`. The focused Java/Rust differential passes; Rust supports mutation through its owned ordered rows but does not preserve caller-owned Map identity.
 - Full workspace/all-target tests, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios and fixture drift/cross-decodes), comparator self-test/manifest22, formatting, and diff checks pass.
 - Updated ADR-0057, Java compatibility, API/config map, requirement audit, runtime inventory, and this rlog. Other DTO aliases, malformed inputs, whole-source/reverse-export reconciliation, platform evidence, and P6-V04 remain open; Phase 6 stays PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
+
+## MessageRequestModeSerializeWrapper mutable map getter — 2026-10-09T20:38:43Z
+
+- The getter sweep found that `MessageRequestModeSerializeWrapper.getMessageRequestModeMap()` returns a live mutable nested map in pinned RocketMQ 5.5.1, but Rust exposed only an immutable borrow. The direct Java case adds an outer topic and nested group entry through the getter and verifies both remain visible through the wrapper. It also checks that the setter-retained map identity is true in Java.
+- Oracle/test commit `94a0d62d`; a follow-up snapshots the original populated map before getter mutation so the initial and final expected maps are independently recorded (`0614eda5`). Current aggregate `fixtures/runtime/lookup.json` SHA-256: `c0ba2b2cf51eb3c900a90e57a807edb25bda2cee0fed1b9e54a303680814c6bb`.
+- Implementation commit `6c19de4c` adds `MessageRequestModeSerializeWrapper::get_message_request_mode_map_mut()`. The focused differential passes. Rust supports mutation of its owned outer and nested `BTreeMap`s but does not preserve Java identity with the caller-owned map passed to the setter.
+- Unprivileged workspace/Maven runs hit the environment's loopback socket restriction; the required workspace/all-target tests and pinned offline Maven verify passed when rerun with local loopback access. Strict Clippy, comparator self-test/manifest22, format, and diff checks pass.
+- Updated ADR-0050, Java compatibility, API/config map, requirement audit, runtime inventory, and this rlog. The whole Phase 6 source/API/input/reverse-export reconciliation remains open; Phase 6 stays PARTIAL and P6-V04 stays `PENDING_PHASE_19`.

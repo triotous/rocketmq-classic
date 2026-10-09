@@ -23,3 +23,12 @@ The tested constructor, public accessor, wrapper input, and normalized output be
 - Oracle/input commit: 4456695d; direct API oracle commit: 910e6838; implementation and Rust differential assertion commit: 33b993b8.
 - Validation: cargo test --workspace --all-targets --locked; cargo clippy --workspace --all-targets --all-features --locked -- -D warnings; pinned offline Maven verify with fixture drift and cross-decodes (22 scenarios); cargo fmt --all --check; git diff --check.
 - The unavailable Java source checkout was not used; the oracle executes pinned RocketMQ 5.5.1 artifacts. Phase 6 remains PARTIAL and P6-V04 stays PENDING_PHASE_19.
+
+## Mutable map getter continuation
+
+The pinned Java API returns its live nested map from `getMessageRequestModeMap()`. Direct Java calls mutate both the outer topic map and a nested consumer-group map through the returned reference. Rust adds `get_message_request_mode_map_mut()` so the DTO-owned maps can be changed through the getter path; it does not preserve alias identity with the caller-owned map passed to the Java setter.
+
+- Direct Java case: `messageRequestModeWrapperApiCase` in `fixtures/runtime/lookup.json`; Rust differential: `message_request_mode_wrapper_inputs_match_invoked_java_fastjson`.
+- Oracle/test commits: `94a0d62d`, `0614eda5`; implementation commit: `6c19de4c`.
+- Current aggregate `fixtures/runtime/lookup.json` SHA-256: `c0ba2b2cf51eb3c900a90e57a807edb25bda2cee0fed1b9e54a303680814c6bb`.
+- Full workspace tests, strict Clippy, pinned offline Maven verify, comparator/manifest22, formatting, and diff checks pass. Phase 6 remains PARTIAL; P6-V04 stays PENDING_PHASE_19.
