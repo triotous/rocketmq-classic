@@ -28,6 +28,8 @@ public final class RuntimeLookupFixtures {
         try {
             add(cases, runtime, "missing-topic", null, new String[] {});
             add(cases, runtime, "empty-brokers", "[]", new String[] {});
+            add(cases, runtime, "null-broker-list", "null", new String[] {});
+            add(cases, runtime, "null-broker-row", "[null]", new String[] {});
             add(cases, runtime, "master-preferred", "[{\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master:10911\",\"2\":\"slave:10911\"}}]", new String[] {"master:10911"});
             add(cases, runtime, "single-slave", "[{\"brokerName\":\"broker\",\"brokerAddrs\":{\"2\":\"slave:10911\"}}]", new String[] {"slave:10911"});
             add(cases, runtime, "random-slaves", "[{\"brokerName\":\"broker\",\"brokerAddrs\":{\"2\":\"a:10911\",\"3\":\"b:10911\"}}]", new String[] {"a:10911", "b:10911"});
@@ -2476,8 +2478,11 @@ public final class RuntimeLookupFixtures {
         String input = brokers == null ? null : "{\"queueDatas\":[],\"brokerDatas\":" + brokers + ",\"filterServerTable\":{}}";
         if (input != null) {
             com.alibaba.fastjson2.JSONObject json = com.alibaba.fastjson2.JSON.parseObject(input);
-            for (Object broker : json.getJSONArray("brokerDatas")) {
-                ((com.alibaba.fastjson2.JSONObject) broker).put("cluster", "cluster");
+            com.alibaba.fastjson2.JSONArray brokerRows = json.getJSONArray("brokerDatas");
+            if (brokerRows != null) {
+                for (Object broker : brokerRows) {
+                    if (broker != null) ((com.alibaba.fastjson2.JSONObject) broker).put("cluster", "cluster");
+                }
             }
             input = com.alibaba.fastjson2.JSON.toJSONString(json,
                 com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue);
