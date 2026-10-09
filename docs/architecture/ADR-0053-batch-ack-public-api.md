@@ -21,6 +21,6 @@ The invoked constructor, getter, setter, and `toString()` values now match the p
 
 - Direct pinned Java invocation: `batchAckApiCase` in `fixtures/runtime/lookup.json`, covering defaults, all property readbacks, `toString()`, body defaults and values, assigned-list identity, and null setter behavior.
 - Oracle commit: `7f3a4f0e`; Rust implementation: `c709e743`.
-- Current aggregate `fixtures/runtime/lookup.json` SHA-256: `d16675236d7b63ddc1ffd69c80df896370479f952f0af9f961214ed7d0237632`.
+- Aggregate fixture SHA-256 at this ADR's BatchAck API checkpoint: `d16675236d7b63ddc1ffd69c80df896370479f952f0af9f961214ed7d0237632`. Later assignment body API cases update the aggregate; see [ADR-0054](ADR-0054-assignment-body-public-api.md) for the current digest.
 - Validation: `cargo test --workspace --all-targets --locked`; strict all-target/all-feature Clippy; pinned offline Maven verify (22 scenarios, fixture drift, Java cross-decodes); `cargo fmt --all --check`; `git diff --check`.
 - Oracle uses pinned RocketMQ 5.5.1 artifacts; the requested alternate Java source checkout was unavailable.

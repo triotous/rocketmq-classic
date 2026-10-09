@@ -1,9 +1,15 @@
 # Phase 6 execution log — 2026-10-09T14:32:02Z
 
+## Assignment DTO public method parity — 2026-10-09T18:03:00Z
+
+- Added pinned Java 5.5.1 API cases for `QueryAssignmentRequestBody`, `QueryAssignmentResponseBody`, and `SetMessageRequestModeRequestBody`, covering no-argument defaults, every getter/setter, populated readback, and null setter behavior. The oracle confirms `PULL`/zero defaults on the mode request and that Java returns the same mutable Set assigned to the response body.
+- Rust now exposes all corresponding snake_case accessors and matches the invoked values/null states. Its owned HashSet plus borrowed getter does not preserve Java mutable Set alias identity. Oracle `7c7d8b5b`; implementation `fc5f2336`; current lookup fixture SHA-256 `e716392045bd2dc0eae95f7815c6cdc5a9485fed707515ea852ada8c56be8b59`.
+- Full workspace/all-target tests, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios, fixture drift, Java cross-decodes), fmt, and diff checks pass. Added ADR-0054 and updated current Phase 6 API/runtime/Java/requirement evidence. Phase 6 remains PARTIAL; P6-V04 stays `PENDING_PHASE_19`.
+
 ## BatchAck public API method parity — 2026-10-09T17:56:09Z
 
 - Added a pinned Java 5.5.1 invocation for BatchAck constructor defaults, all nine property getter/setter pairs, `toString()`, and BatchAckMessageRequestBody broker/acks getters and setters. The oracle confirms Java returns the same mutable List passed to `setAcks`.
-- Rust now exposes the corresponding snake_case accessors and Java-shaped `Display` text. Values and null states match; Rust takes ownership of `Vec` and lends an immutable slice, so mutable List alias identity remains an explicit semantic gap. Oracle `7f3a4f0e`; implementation `c709e743`; current aggregate lookup fixture SHA-256 `d16675236d7b63ddc1ffd69c80df896370479f952f0af9f961214ed7d0237632`.
+- Rust now exposes the corresponding snake_case accessors and Java-shaped `Display` text. Values and null states match; Rust takes ownership of `Vec` and lends an immutable slice, so mutable List alias identity remains an explicit semantic gap. Oracle `7f3a4f0e`; implementation `c709e743`; aggregate lookup fixture SHA-256 at this checkpoint `d16675236d7b63ddc1ffd69c80df896370479f952f0af9f961214ed7d0237632`.
 - Full workspace/all-target tests, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios, fixture drift and Java cross-decodes), fmt and diff checks pass. Added ADR-0053 and updated the current Phase 6 API/runtime/Java/requirement evidence. Overall Phase 6 remains PARTIAL; P6-V04 stays `PENDING_PHASE_19`.
 
 ## BatchAck Fastjson body input parity — 2026-10-09T17:49:21Z
