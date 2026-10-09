@@ -1482,9 +1482,23 @@ mod tests {
         let cases = fixture["liteSubscriptionEnumCases"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            13,
+            23,
             "Java oracle includes lite enum names and ordinals"
         );
+        for required in [
+            "action-duplicate-last-wins",
+            "client-id-duplicate-last-wins",
+            "group-duplicate-last-wins",
+            "topic-duplicate-last-wins",
+            "lite-topic-set-duplicate-last-wins",
+            "offset-option-duplicate-last-wins",
+            "version-duplicate-last-wins",
+            "subscription-set-duplicate-last-wins",
+            "offset-type-duplicate-last-wins",
+            "offset-value-duplicate-last-wins",
+        ] {
+            assert!(cases.iter().any(|case| case["name"] == required), "missing {required}");
+        }
         for case in cases {
             let raw_input = case["rawInput"].as_str().unwrap();
             let decoded = serde_json::from_str::<LiteSubscriptionCtlRequestBody>(raw_input);

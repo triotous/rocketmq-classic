@@ -201,6 +201,16 @@ public final class RuntimeLookupFixtures {
 
     private static List<Object> liteSubscriptionEnumCases() {
         List<Object> cases = new ArrayList<>();
+        cases.add(liteSubscriptionEnumCase("action-duplicate-last-wins", "{\"subscriptionSet\":[{\"action\":\"PARTIAL_ADD\",\"action\":\"COMPLETE_REMOVE\"}]}"));
+        cases.add(liteSubscriptionEnumCase("client-id-duplicate-last-wins", "{\"subscriptionSet\":[{\"clientId\":\"first\",\"clientId\":\"last\"}]}"));
+        cases.add(liteSubscriptionEnumCase("group-duplicate-last-wins", "{\"subscriptionSet\":[{\"group\":\"first\",\"group\":\"last\"}]}"));
+        cases.add(liteSubscriptionEnumCase("topic-duplicate-last-wins", "{\"subscriptionSet\":[{\"topic\":\"first\",\"topic\":\"last\"}]}"));
+        cases.add(liteSubscriptionEnumCase("lite-topic-set-duplicate-last-wins", "{\"subscriptionSet\":[{\"liteTopicSet\":[\"first\"],\"liteTopicSet\":[\"last\"]}]}"));
+        cases.add(liteSubscriptionEnumCase("offset-option-duplicate-last-wins", "{\"subscriptionSet\":[{\"offsetOption\":{\"type\":\"POLICY\",\"value\":1},\"offsetOption\":{\"type\":\"TIMESTAMP\",\"value\":2}}]}"));
+        cases.add(liteSubscriptionEnumCase("version-duplicate-last-wins", "{\"subscriptionSet\":[{\"version\":1,\"version\":2}]}"));
+        cases.add(liteSubscriptionEnumCase("subscription-set-duplicate-last-wins", "{\"subscriptionSet\":[{\"topic\":\"first\"}],\"subscriptionSet\":[{\"topic\":\"last\"}]}"));
+        cases.add(liteSubscriptionEnumCase("offset-type-duplicate-last-wins", "{\"subscriptionSet\":[{\"offsetOption\":{\"type\":\"POLICY\",\"type\":\"TIMESTAMP\",\"value\":1}}]}"));
+        cases.add(liteSubscriptionEnumCase("offset-value-duplicate-last-wins", "{\"subscriptionSet\":[{\"offsetOption\":{\"type\":\"POLICY\",\"value\":1,\"value\":2}}]}"));
         cases.add(liteSubscriptionEnumCase("action-name", "{\"subscriptionSet\":[{\"action\":\"PARTIAL_ADD\"}]}"));
         cases.add(liteSubscriptionEnumCase("action-ordinal", "{\"subscriptionSet\":[{\"action\":1}]}"));
         cases.add(liteSubscriptionEnumCase("action-numeric-string", "{\"subscriptionSet\":[{\"action\":\"1\"}]}"));
