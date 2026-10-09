@@ -1182,6 +1182,25 @@ public final class RuntimeLookupFixtures {
             inputRows.add(new String[] {"consumer-offset-" + value[0],
                 "{\"consumerTable\":{\"consumer-a\":{" + fastjsonKey + ":" + value[1] + "}}}"});
         }
+        String[][] queueFieldShapes = {
+            {"null", "null"}, {"string", "\"field-value\""}, {"integer", "7"},
+            {"fraction", "1.5"}, {"boolean", "true"}, {"array", "[]"}, {"object", "{}"}
+        };
+        for (String field : new String[] {"topic", "brokerName", "queueId"}) {
+            for (String[] shape : queueFieldShapes) {
+                String value = shape[1];
+                if ("queueId".equals(field) && "string".equals(shape[0])) value = "\"7\"";
+                String topic = "topic".equals(field) ? value : "\"orders\"";
+                String broker = "brokerName".equals(field) ? value : "\"broker-a\"";
+                String queueId = "queueId".equals(field) ? value : "1";
+                String queueKey = "{\"topic\":" + topic + ",\"brokerName\":" + broker
+                    + ",\"queueId\":" + queueId + "}";
+                inputRows.add(new String[] {"message-key-" + field + "-" + shape[0],
+                    "{\"messageQueueTable\":{" + queueKey + ":9}}"});
+                inputRows.add(new String[] {"consumer-key-" + field + "-" + shape[0],
+                    "{\"consumerTable\":{\"consumer-a\":{" + queueKey + ":9}}}"});
+            }
+        }
         List<Object> cases = new ArrayList<>();
         for (String[] input : inputRows) {
             Map<String, Object> item = new TreeMap<>();
@@ -1272,6 +1291,23 @@ public final class RuntimeLookupFixtures {
         for (String[] value : offsetValues) {
             inputRows.add(new String[] {"offset-" + value[0],
                 "{\"offsetTable\":{" + key + ":" + value[1] + "}}"});
+        }
+        String[][] queueFieldShapes = {
+            {"null", "null"}, {"string", "\"field-value\""}, {"integer", "7"},
+            {"fraction", "1.5"}, {"boolean", "true"}, {"array", "[]"}, {"object", "{}"}
+        };
+        for (String field : new String[] {"topic", "brokerName", "queueId"}) {
+            for (String[] shape : queueFieldShapes) {
+                String value = shape[1];
+                if ("queueId".equals(field) && "string".equals(shape[0])) value = "\"7\"";
+                String topic = "topic".equals(field) ? value : "\"orders\"";
+                String broker = "brokerName".equals(field) ? value : "\"broker-a\"";
+                String queueId = "queueId".equals(field) ? value : "1";
+                String queueKey = "{\"topic\":" + topic + ",\"brokerName\":" + broker
+                    + ",\"queueId\":" + queueId + "}";
+                inputRows.add(new String[] {"queue-key-" + field + "-" + shape[0],
+                    "{\"offsetTable\":{" + queueKey + ":9}}"});
+            }
         }
         List<Object> cases = new ArrayList<>();
         for (String[] input : inputRows) {
