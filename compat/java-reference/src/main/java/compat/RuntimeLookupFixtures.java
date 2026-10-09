@@ -88,6 +88,7 @@ public final class RuntimeLookupFixtures {
         fixture.put("unlockBatchRequestBodyCases", unlockBatchRequestBodyCases());
         fixture.put("lockBatchResponseBodyCases", lockBatchResponseBodyCases());
         fixture.put("batchAckBodyInputCases", batchAckBodyInputCases());
+        fixture.put("batchAckApiCase", batchAckApiCase());
         fixture.put("resetOffsetBodyInputCases", resetOffsetBodyInputCases());
         fixture.put("consumerStatusBodyInputCases", consumerStatusBodyInputCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
@@ -1275,6 +1276,63 @@ public final class RuntimeLookupFixtures {
             item.put("outcome", "REJECTED");
             item.put("error", error.getClass().getSimpleName());
         }
+        return item;
+    }
+
+    private static Map<String, Object> batchAckApiCase() {
+        org.apache.rocketmq.remoting.protocol.body.BatchAck ack =
+            new org.apache.rocketmq.remoting.protocol.body.BatchAck();
+        Map<String, Object> item = new TreeMap<>();
+        Map<String, Object> defaults = new TreeMap<>();
+        defaults.put("consumerGroup", ack.getConsumerGroup());
+        defaults.put("topic", ack.getTopic());
+        defaults.put("retry", ack.getRetry());
+        defaults.put("startOffset", ack.getStartOffset());
+        defaults.put("queueId", ack.getQueueId());
+        defaults.put("reviveQueueId", ack.getReviveQueueId());
+        defaults.put("popTime", ack.getPopTime());
+        defaults.put("invisibleTime", ack.getInvisibleTime());
+        defaults.put("bitSet", ack.getBitSet());
+        item.put("defaults", defaults);
+
+        ack.setConsumerGroup("workers");
+        ack.setTopic("orders");
+        ack.setRetry("0");
+        ack.setStartOffset(100L);
+        ack.setQueueId(1);
+        ack.setReviveQueueId(2);
+        ack.setPopTime(10L);
+        ack.setInvisibleTime(20L);
+        java.util.BitSet bits = new java.util.BitSet();
+        bits.set(0);
+        bits.set(2);
+        ack.setBitSet(bits);
+        Map<String, Object> values = new TreeMap<>();
+        values.put("consumerGroup", ack.getConsumerGroup());
+        values.put("topic", ack.getTopic());
+        values.put("retry", ack.getRetry());
+        values.put("startOffset", ack.getStartOffset());
+        values.put("queueId", ack.getQueueId());
+        values.put("reviveQueueId", ack.getReviveQueueId());
+        values.put("popTime", ack.getPopTime());
+        values.put("invisibleTime", ack.getInvisibleTime());
+        values.put("bitSetBase64", java.util.Base64.getEncoder().encodeToString(
+            ack.getBitSet().toByteArray()));
+        item.put("values", values);
+        item.put("toString", ack.toString());
+
+        org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody body =
+            new org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody();
+        item.put("bodyDefaults", java.util.Arrays.asList(body.getBrokerName(), body.getAcks()));
+        body.setBrokerName("broker-a");
+        List<org.apache.rocketmq.remoting.protocol.body.BatchAck> acks = new ArrayList<>();
+        acks.add(ack);
+        body.setAcks(acks);
+        item.put("bodyBrokerName", body.getBrokerName());
+        item.put("bodyAckCount", body.getAcks().size());
+        item.put("bodyReturnsAssignedList", body.getAcks() == acks);
+        body.setAcks(null);
+        item.put("bodyNullAcks", body.getAcks() == null);
         return item;
     }
 
