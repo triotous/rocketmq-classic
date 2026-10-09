@@ -796,7 +796,7 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
         let cases = fixture["runtimeRawCleanupShapes"].as_array().unwrap();
-        assert_eq!(cases.len(), 16);
+        assert_eq!(cases.len(), 17);
         for required in [
             "null-route-collections",
             "null-broker-row",
@@ -813,6 +813,7 @@ mod tests {
             "null-broker-name-live-address",
             "ignored-null-collections-live-address",
             "same-address-under-renamed-broker",
+            "address-retained-by-sibling-topic",
             "live-null-address-retained",
         ] {
             assert!(
@@ -836,6 +837,13 @@ mod tests {
                     serde_json::json!({"broker": {"0": "master:10911"}})
                 );
             }
+            if case["id"] == "address-retained-by-sibling-topic" {
+                assert_eq!(case["outcome"], "OK");
+                assert_eq!(
+                    case["brokerAddressTable"],
+                    serde_json::json!({"broker": {"0": "master:10911"}})
+                );
+            }
             let cache = RouteCache::default();
             let initial: TopicRouteData =
                 serde_json::from_value(case["initialInput"].clone()).unwrap();
@@ -845,6 +853,13 @@ mod tests {
             let raw: TopicRouteData = serde_json::from_value(case["rawInput"].clone()).unwrap();
             let raw = TopicRouteDataHandle::new(raw);
             table.put("raw", raw.clone()).unwrap();
+            if case["id"] == "address-retained-by-sibling-topic" {
+                let sibling: TopicRouteData =
+                    serde_json::from_value(case["siblingInput"].clone()).unwrap();
+                table
+                    .put("sibling", TopicRouteDataHandle::new(sibling))
+                    .unwrap();
+            }
 
             assert_eq!(case["fetchCount"], 1, "{}", case["id"]);
             let before_cleanup = cache.snapshot().unwrap();
