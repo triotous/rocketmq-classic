@@ -4031,6 +4031,16 @@ mod tests {
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
         let cases = fixture["consumeDirectResultCases"].as_array().unwrap();
         batch_body_cases_match_java::<ConsumeMessageDirectlyResult>(cases, 66);
+        let default_encoded =
+            serde_json::to_value(ConsumeMessageDirectlyResult::default()).unwrap();
+        assert_eq!(
+            default_encoded,
+            cases
+                .iter()
+                .find(|case| case["name"] == "root-empty-object")
+                .unwrap()["encoded"],
+            "Rust Default should match Java's no-argument DTO values"
+        );
     }
 
     #[test]
