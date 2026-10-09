@@ -1559,8 +1559,8 @@ mod tests {
         let cases = fixture["socksConstruction"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            429,
-            "Java oracle includes 126 prior cases, 256 byte-range followers, 15 Unicode escape cases, five Unicode-whitespace cases, ten root-shape cases, ten grammar-edge cases, four nested bean-property cases, and three EOF-comment boundaries"
+            437,
+            "Java oracle includes 126 prior cases, 256 byte-range followers, 15 Unicode escape cases, five Unicode-whitespace cases, ten root-shape cases, ten grammar-edge cases, four nested bean-property cases, three EOF-comment boundaries, and eight unquoted route-key forms"
         );
         for escaped in 0..=0x7f {
             let mut expected = String::from("{\"10.0.0.0/8\":{\"addr\":\"A\\");
@@ -1646,6 +1646,18 @@ mod tests {
         ]) {
             assert_eq!(case["input"], expected);
         }
+        for (case, expected) in cases.iter().skip(429).zip([
+            "{default:{\"addr\":\"proxy:1080\"}}",
+            "{10:{\"addr\":\"proxy:1080\"}}",
+            "{true:{\"addr\":\"proxy:1080\"}}",
+            "{false:{\"addr\":\"proxy:1080\"}}",
+            "{null:{\"addr\":\"proxy:1080\"}}",
+            "{1.5:{\"addr\":\"proxy:1080\"}}",
+            "{1e2:{\"addr\":\"proxy:1080\"}}",
+            "{+10:{\"addr\":\"proxy:1080\"}}",
+        ]) {
+            assert_eq!(case["input"], expected);
+        }
 
         let mut outcome_mismatches = Vec::new();
         for case in cases.iter().skip(19) {
@@ -1666,6 +1678,18 @@ mod tests {
                 continue;
             }
             let routes = parsed.unwrap();
+            if let Some(expected_keys) = case["routeKeys"].as_array() {
+                let actual_keys = routes.keys().collect::<Vec<_>>();
+                let expected_keys = expected_keys
+                    .iter()
+                    .map(serde_json::Value::as_str)
+                    .collect::<Option<Vec<_>>>()
+                    .unwrap();
+                assert_eq!(
+                    actual_keys, expected_keys,
+                    "route keys for {}", case["input"]
+                );
+            }
             let Some(route) = routes.get("10.0.0.0/8") else {
                 assert_eq!(case["routePresent"], false, "{}", case["input"]);
                 continue;
