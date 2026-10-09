@@ -1875,6 +1875,62 @@ mod tests {
     }
 
     #[test]
+    fn lite_subscription_field_shapes_match_invoked_java_fastjson() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let cases = fixture["liteSubscriptionFieldCases"].as_array().unwrap();
+        assert_eq!(cases.len(), 49);
+        for case in cases {
+            let decoded = serde_json::from_str::<LiteSubscriptionCtlRequestBody>(
+                case["rawInput"].as_str().unwrap(),
+            );
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            assert_eq!(
+                decoded.is_ok(),
+                java_accepts,
+                "{}: {decoded:?}",
+                case["name"]
+            );
+            if let Ok(decoded) = decoded {
+                assert_eq!(
+                    serde_json::to_value(decoded).unwrap(),
+                    case["encoded"],
+                    "{}",
+                    case["name"]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn lite_subscription_root_shapes_match_invoked_java_fastjson() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let cases = fixture["liteSubscriptionRootCases"].as_array().unwrap();
+        assert_eq!(cases.len(), 7);
+        for case in cases {
+            let decoded = serde_json::from_str::<LiteSubscriptionCtlRequestBody>(
+                case["rawInput"].as_str().unwrap(),
+            );
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            assert_eq!(
+                decoded.is_ok(),
+                java_accepts,
+                "{}: {decoded:?}",
+                case["name"]
+            );
+            if let Ok(decoded) = decoded {
+                assert_eq!(
+                    serde_json::to_value(decoded).unwrap(),
+                    case["encoded"],
+                    "{}",
+                    case["name"]
+                );
+            }
+        }
+    }
+
+    #[test]
     fn query_assignment_request_enum_inputs_match_invoked_java_fastjson() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();

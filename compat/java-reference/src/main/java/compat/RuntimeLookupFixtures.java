@@ -57,6 +57,8 @@ public final class RuntimeLookupFixtures {
         fixture.put("assignmentBodyCases", assignmentBodyCases());
         fixture.put("assignmentBodyRootCases", assignmentBodyRootCases());
         fixture.put("liteSubscriptionEnumCases", liteSubscriptionEnumCases());
+        fixture.put("liteSubscriptionFieldCases", liteSubscriptionFieldCases());
+        fixture.put("liteSubscriptionRootCases", liteSubscriptionRootCases());
         fixture.put("queryAssignmentEnumCases", queryAssignmentEnumCases());
         fixture.put("queryAssignmentFieldCases", queryAssignmentFieldCases());
         fixture.put("queryAssignmentRootCases", queryAssignmentRootCases());
@@ -288,6 +290,62 @@ public final class RuntimeLookupFixtures {
         cases.add(liteSubscriptionEnumCase("subscription-set-boolean-element", "{\"subscriptionSet\":[true]}"));
         cases.add(liteSubscriptionEnumCase("subscription-set-scalar-string", "{\"subscriptionSet\":\"text\"}"));
         cases.add(liteSubscriptionEnumCase("subscription-set-scalar-number", "{\"subscriptionSet\":42}"));
+        return cases;
+    }
+
+    private static List<Object> liteSubscriptionFieldCases() {
+        List<Object> cases = new ArrayList<>();
+        String[][] fields = {
+            {"action"}, {"clientId"}, {"group"}, {"topic"},
+            {"liteTopicSet"}, {"offsetOption"}, {"version"}
+        };
+        String[][] shapes = {
+            {"null", "null"}, {"numeric-string", "\"7\""}, {"integer", "0"},
+            {"fraction", "1.5"}, {"boolean", "true"}, {"array", "[]"}, {"object", "{}"}
+        };
+        for (String[] field : fields) {
+            for (String[] shape : shapes) {
+                String value = shape[1];
+                if (field[0].equals("action") && shape[0].equals("numeric-string")) {
+                    value = "\"1\"";
+                }
+                if (field[0].equals("offsetOption") && shape[0].equals("object")) {
+                    value = "{\"type\":\"POLICY\",\"value\":1}";
+                }
+                String input = "{\"subscriptionSet\":[{\"" + field[0] + "\":" + value + "}]}";
+                cases.add(liteSubscriptionEnumCase(
+                    "shape-" + field[0] + "-" + shape[0], input));
+            }
+        }
+        return cases;
+    }
+
+    private static List<Object> liteSubscriptionRootCases() {
+        List<Object> cases = new ArrayList<>();
+        String[][] roots = {
+            {"null", "null"}, {"empty-object", "{}"}, {"empty-array", "[]"},
+            {"string", "\"root\""}, {"integer", "7"}, {"fraction", "1.5"},
+            {"boolean", "true"}
+        };
+        for (String[] root : roots) {
+            String input = root[1];
+            Map<String, Object> item = new TreeMap<>();
+            item.put("name", "root-" + root[0]);
+            item.put("rawInput", input);
+            try {
+                org.apache.rocketmq.remoting.protocol.body.LiteSubscriptionCtlRequestBody decoded =
+                    com.alibaba.fastjson2.JSON.parseObject(input,
+                        org.apache.rocketmq.remoting.protocol.body.LiteSubscriptionCtlRequestBody.class);
+                decoded.getSubscriptionSet();
+                item.put("outcome", "ACCEPTED");
+                item.put("encoded", com.alibaba.fastjson2.JSON.parseObject(
+                    com.alibaba.fastjson2.JSON.toJSONString(decoded)));
+            } catch (RuntimeException error) {
+                item.put("outcome", "REJECTED");
+                item.put("error", error.getClass().getSimpleName());
+            }
+            cases.add(item);
+        }
         return cases;
     }
 
