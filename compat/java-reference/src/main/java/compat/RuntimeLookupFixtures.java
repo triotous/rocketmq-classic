@@ -34,6 +34,9 @@ public final class RuntimeLookupFixtures {
             add(cases, runtime, "random-brokers", "[{\"brokerName\":\"a\",\"brokerAddrs\":{\"0\":\"a:10911\",\"2\":\"ignored:10911\"}},{\"brokerName\":\"b\",\"brokerAddrs\":{\"2\":\"b:10911\"}}]", new String[] {"a:10911", "b:10911"});
             add(cases, runtime, "empty-addresses", "[{\"brokerName\":\"broker\",\"brokerAddrs\":{}}]", new String[] {});
             add(cases, runtime, "null-address-map", "[{\"brokerName\":\"broker\",\"brokerAddrs\":null}]", new String[] {});
+            add(cases, runtime, "null-broker-id-single-address", "[{\"brokerName\":\"broker\",\"brokerAddrs\":{\"null\":\"null-id:10911\"}}]", new String[] {"null-id:10911"});
+            add(cases, runtime, "null-broker-id-with-master", "[{\"brokerName\":\"broker\",\"brokerAddrs\":{\"null\":\"null-id:10911\",\"0\":\"master:10911\"}}]", new String[] {"master:10911"});
+            add(cases, runtime, "null-broker-id-with-slave", "[{\"brokerName\":\"broker\",\"brokerAddrs\":{\"null\":\"null-id:10911\",\"2\":\"slave:10911\"}}]", new String[] {"null-id:10911", "slave:10911"});
         } finally {
             Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
                 org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
