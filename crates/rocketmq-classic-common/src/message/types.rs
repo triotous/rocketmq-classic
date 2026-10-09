@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
 pub const NAME_VALUE_SEPARATOR: char = '\u{1}';
@@ -279,7 +279,7 @@ impl MessageExt {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize)]
 pub struct MessageQueue {
     #[serde(
         default,
@@ -300,6 +300,42 @@ pub struct MessageQueue {
         deserialize_with = "crate::serde_fastjson::deserialize_i32"
     )]
     queue_id: i32,
+}
+
+#[derive(Deserialize)]
+struct MessageQueueFields {
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_fastjson::deserialize_nullable_string"
+    )]
+    topic: Option<String>,
+    #[serde(
+        rename = "brokerName",
+        default,
+        deserialize_with = "crate::serde_fastjson::deserialize_nullable_string"
+    )]
+    broker_name: Option<String>,
+    #[serde(
+        rename = "queueId",
+        default,
+        deserialize_with = "crate::serde_fastjson::deserialize_i32"
+    )]
+    queue_id: i32,
+}
+
+impl<'de> Deserialize<'de> for MessageQueue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: MessageQueueFields =
+            crate::serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            topic: fields.topic,
+            broker_name: fields.broker_name,
+            queue_id: fields.queue_id,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
