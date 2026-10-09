@@ -2,6 +2,10 @@
 
 Status: Accepted
 
+## Special reference continuation
+
+Pinned Java constructor and private `getProxy` cases show that Fastjson accepts `$ref` `#-1` as a null/no-address route and rejects root `$` with `ClassCastException`. The prior Rust resolver rejected `#-1` and accepted `$`; the corrected parser maps `#-1` to direct selection and rejects `$`. Oracle/test commit `9a8dc90d`; implementation `8cc47fc8`; the constructor corpus has 499 cases at `client-config.json` SHA-256 `15e8e57a07b7a488f45750d10f5820ed41a49a2aba198254d7e2b85ba84f871a`.
+
 ## Cyclic reference continuation
 
 Two more direct Java 5.5.1 constructor and private `NettyRemotingClient.getProxy` cases cover a self-reference and a two-route cycle. Java constructs successfully and selects no proxy for either cycle; the native differential first failed because the resolver rejected both as errors. Rust now resolves a detected cycle to the equivalent direct/no-proxy route. Oracle/test commit `115a2cb1`; implementation `2f60397e`; the constructor corpus has 497 cases and `client-config.json` SHA-256 `0434b8f5de37827ad98c145d60e9888a1d7e851f79e7872742047b4e760d8c03`. Focused constructor/selection tests, full workspace tests, strict Clippy, pinned offline Maven verify, comparator/manifest22, format, and diff checks pass. Other Fastjson reference forms and grammar remain open.

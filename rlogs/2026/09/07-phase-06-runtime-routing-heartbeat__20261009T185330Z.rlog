@@ -14,3 +14,11 @@
 - The SOCKS constructor corpus has 497 cases. Current `fixtures/runtime/client-config.json` SHA-256: `0434b8f5de37827ad98c145d60e9888a1d7e851f79e7872742047b4e760d8c03`.
 - Focused constructor and proxy-selection tests pass. Full `cargo test --workspace --all-targets --locked`, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios, fixture checks and cross-decodes), differential self-test and manifest22, `cargo fmt --all -- --check`, and `git diff --check` pass.
 - Updated ADR-0038 and the Phase 6 API, requirement, Java compatibility, and runtime inventory records. Remaining Fastjson grammar and broad Phase 6 source/API/input reconciliation remain open; Phase 6 remains PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
+
+## Fastjson SOCKS special references — 2026-10-09T19:06:01Z
+
+- Added actual pinned Java constructor and private `getProxy` cases for `$ref` `#-1` and root `$`. Java accepts `#-1` as a null/no-address route and selects no proxy; root `$` fails construction with `ClassCastException`. The native constructor differential failed first on both outcomes: it rejected `#-1` and accepted `$`.
+- Test/oracle and fixture commit: `9a8dc90d`. Resolver implementation commit: `8cc47fc8`. Rust now maps `#-1` to direct/no-proxy selection and rejects root `$`; the selection differential handles construction-stage Java failures as error outcomes.
+- The SOCKS constructor corpus has 499 cases. Current `fixtures/runtime/client-config.json` SHA-256: `15e8e57a07b7a488f45750d10f5820ed41a49a2aba198254d7e2b85ba84f871a`.
+- Focused constructor/selection tests, full `cargo test --workspace --all-targets --locked`, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios, fixture checks and cross-decodes), differential self-test and manifest22, `cargo fmt --all -- --check`, and `git diff --check` pass.
+- Updated ADR-0038 and the Phase 6 API, requirement, Java compatibility, and runtime inventory records. Other Fastjson forms and broad Phase 6 source/API/input reconciliation remain open; Phase 6 remains PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
