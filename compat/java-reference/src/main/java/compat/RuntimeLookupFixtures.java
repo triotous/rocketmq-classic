@@ -1109,6 +1109,7 @@ public final class RuntimeLookupFixtures {
             {"fastjson-message-queue-key", "{\"messageQueueTable\":{" + fastjsonKey + ":9}}"},
             {"nested-quoted-message-queue-key", "{\"consumerTable\":{\"consumer-a\":{" + escapedKey + ":9}}}"},
             {"nested-fastjson-message-queue-key", "{\"consumerTable\":{\"consumer-a\":{" + fastjsonKey + ":9}}}"},
+            {"nested-null-map", "{\"consumerTable\":{\"consumer-a\":null}}"},
             {"duplicate-table-entry-last-wins", "{\"messageQueueTable\":{" + fastjsonKey + ":7," + fastjsonKey + ":9}}"},
             {"duplicate-field-last-wins", "{\"messageQueueTable\":{},\"messageQueueTable\":{" + fastjsonKey + ":9}}"},
             {"message-table-scalar", "{\"messageQueueTable\":7}"},
@@ -1129,6 +1130,7 @@ public final class RuntimeLookupFixtures {
                 item.put("outcome", "ACCEPTED");
                 item.put("messageQueueTable", consumerStatusQueueRows(decoded.getMessageQueueTable()));
                 item.put("consumerTable", consumerStatusConsumerRows(decoded.getConsumerTable()));
+                item.put("encodedBody", new String(decoded.encode(), java.nio.charset.StandardCharsets.UTF_8));
             } catch (RuntimeException error) {
                 item.put("outcome", "REJECTED");
                 item.put("error", error.getClass().getSimpleName());

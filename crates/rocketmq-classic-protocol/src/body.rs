@@ -2404,7 +2404,7 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
         let cases = fixture["consumerStatusBodyInputCases"].as_array().unwrap();
-        assert_eq!(cases.len(), 13);
+        assert_eq!(cases.len(), 14);
         let rows = |entries: &[(MessageQueue, i64)]| {
             let mut rows = entries
                 .iter()
@@ -2429,6 +2429,13 @@ mod tests {
             let java_accepts = case["outcome"] == "ACCEPTED";
             match (decoded, java_accepts) {
                 (Ok(decoded), true) => {
+                    let encoded = String::from_utf8(decoded.encode_java_json().unwrap()).unwrap();
+                    if encoded != case["encodedBody"] {
+                        mismatches.push(format!(
+                            "{name}: encoded body {encoded} != Java {}",
+                            case["encodedBody"]
+                        ));
+                    }
                     if rows(&decoded.message_queue_table) != case["messageQueueTable"] {
                         mismatches.push(format!(
                             "{name}: messageQueueTable {} != Java {}",
