@@ -807,6 +807,37 @@ public final class RuntimeHeartbeatFixtures {
             "{\"producerDataSet\":{\"groupName\":\"P\"}}"));
         cases.add(heartbeatDtoInputCase("heartbeat-consumers-singleton-object", "heartbeat",
             "{\"consumerDataSet\":{\"groupName\":\"C\"}}"));
+        String[][] fields = {
+            {"subscription", "classFilterMode"}, {"subscription", "topic"},
+            {"subscription", "subString"}, {"subscription", "tagsSet"},
+            {"subscription", "codeSet"}, {"subscription", "subVersion"},
+            {"subscription", "expressionType"}, {"subscription", "filterClassSource"},
+            {"producer", "groupName"},
+            {"consumer", "groupName"}, {"consumer", "consumeType"},
+            {"consumer", "messageModel"}, {"consumer", "consumeFromWhere"},
+            {"consumer", "subscriptionDataSet"}, {"consumer", "unitMode"},
+            {"heartbeat", "clientID"}, {"heartbeat", "producerDataSet"},
+            {"heartbeat", "consumerDataSet"}, {"heartbeat", "heartbeatFingerprint"},
+            {"heartbeat", "withoutSub"}
+        };
+        String[][] shapes = {
+            {"null", "null"}, {"numeric-string", "\"7\""}, {"integer", "0"},
+            {"fraction", "1.5"}, {"boolean", "true"}, {"array", "[]"}, {"object", "{}"}
+        };
+        for (String[] field : fields) {
+            for (String[] shape : shapes) {
+                String value = shape[1];
+                if (field[0].equals("consumer") && field[1].equals("subscriptionDataSet")
+                    && shape[0].equals("object")) {
+                    value = "{\"topic\":\"T\",\"subVersion\":0}";
+                }
+                String rawInput = "{\"" + field[1] + "\":" + value
+                    + (field[0].equals("subscription") && !field[1].equals("subVersion")
+                        ? ",\"subVersion\":0" : "") + "}";
+                cases.add(heartbeatDtoInputCase("shape-" + field[0] + "-" + field[1] + "-" + shape[0],
+                    field[0], rawInput));
+            }
+        }
         return cases;
     }
 

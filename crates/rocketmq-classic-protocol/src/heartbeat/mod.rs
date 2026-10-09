@@ -993,8 +993,8 @@ mod fastjson_dto_input_tests {
         let cases = fixture["heartbeatDtoInputCases"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            73,
-            "Java oracle includes DTO scalar, numeric-boundary, and collection-shape probes"
+            213,
+            "Java oracle includes DTO scalar, numeric-boundary, collection-shape, and per-field token-kind probes"
         );
         for required in [
             "subscription-duplicate-class-filter-mode-last-wins",
@@ -1060,6 +1060,9 @@ mod fastjson_dto_input_tests {
             "consumer-subscription-set-scalar-string",
             "heartbeat-producers-singleton-object",
             "heartbeat-consumers-singleton-object",
+            "shape-subscription-subVersion-object",
+            "shape-consumer-consumeType-array",
+            "shape-heartbeat-producerDataSet-object",
         ] {
             assert!(
                 cases.iter().any(|case| case["id"] == required),
