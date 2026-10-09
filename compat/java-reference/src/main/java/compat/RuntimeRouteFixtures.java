@@ -517,6 +517,19 @@ public final class RuntimeRouteFixtures {
 
     private static List<Object> routeDtoInputCases() {
         List<Object> cases = new ArrayList<>();
+        String[] rootDtoTypes = {
+            "queueData", "messageQueue", "brokerData", "mapping", "topicRouteData"
+        };
+        String[][] rootShapes = {
+            {"empty-object", "{}"}, {"null", "null"}, {"empty-array", "[]"},
+            {"singleton-array", "[{}]"}, {"number", "0"}, {"boolean", "true"},
+            {"string", "\"text\""}
+        };
+        for (String dto : rootDtoTypes) {
+            for (String[] shape : rootShapes) {
+                cases.add(routeDtoInputCase("root-" + dto + "-" + shape[0], dto, shape[1]));
+            }
+        }
         cases.add(routeDtoInputCase("queue-scalars", "queueData",
             "{\"brokerName\":123,\"readQueueNums\":\"2\",\"writeQueueNums\":1.9,\"perm\":true,\"topicSysFlag\":null}"));
         cases.add(routeDtoInputCase("queue-duplicate-broker-name-last-wins", "queueData",

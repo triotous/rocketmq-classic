@@ -1744,9 +1744,34 @@ mod route_dto_input_cases_tests {
         let cases = fixture["routeDtoInputCases"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            360,
-            "Java oracle includes exact coercions, duplicate fields, collection shapes, and per-field token kinds"
+            395,
+            "Java oracle includes root shapes, exact coercions, duplicate fields, collection shapes, and per-field token kinds"
         );
+        for dto in [
+            "queueData",
+            "messageQueue",
+            "brokerData",
+            "mapping",
+            "topicRouteData",
+        ] {
+            for shape in [
+                "empty-object",
+                "null",
+                "empty-array",
+                "singleton-array",
+                "number",
+                "boolean",
+                "string",
+            ] {
+                let id = format!("root-{dto}-{shape}");
+                assert!(
+                    cases
+                        .iter()
+                        .any(|case| case["id"].as_str() == Some(id.as_str())),
+                    "missing {id}"
+                );
+            }
+        }
         for required in [
             "queue-duplicate-broker-name-last-wins",
             "queue-duplicate-read-queue-nums-last-wins",
