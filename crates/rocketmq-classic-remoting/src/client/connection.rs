@@ -610,19 +610,13 @@ pub(super) async fn connect(
 }
 
 pub(super) fn split_address(address: &str) -> Result<(String, u16), TransportError> {
-    let (host, port) = if let Some(rest) = address.strip_prefix('[') {
-        let (host, suffix) = rest
-            .split_once(']')
-            .ok_or_else(|| TransportError::Connect("invalid bracketed IPv6 address".into()))?;
-        let port = suffix
-            .strip_prefix(':')
-            .ok_or_else(|| TransportError::Connect("missing address port".into()))?;
-        (host, port)
-    } else {
-        address
-            .rsplit_once(':')
-            .ok_or_else(|| TransportError::Connect("missing address port".into()))?
-    };
+    let (raw_host, port) = address
+        .rsplit_once(':')
+        .ok_or_else(|| TransportError::Connect("missing address port".into()))?;
+    let host = raw_host
+        .strip_prefix('[')
+        .and_then(|host| host.strip_suffix(']'))
+        .unwrap_or(raw_host);
     let port = connection_manager::parse_socket_port(port)?;
     Ok((host.to_owned(), port))
 }

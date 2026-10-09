@@ -11,22 +11,10 @@ pub(super) struct Address(String);
 
 impl Address {
     pub(super) fn parse(value: &str) -> Result<Self, TransportError> {
-        if value.starts_with('[') {
-            let (host, port) = value
-                .strip_prefix('[')
-                .and_then(|value| value.split_once("]:"))
-                .ok_or_else(|| TransportError::Connect("invalid bracketed IPv6 address".into()))?;
-            normalize_ipv6_host(host)?;
-            parse_socket_port(port)?;
-        } else {
-            let (host, port) = value
-                .rsplit_once(':')
-                .ok_or_else(|| TransportError::Connect("missing address port".into()))?;
-            parse_socket_port(port)?;
-            if host.contains(':') {
-                normalize_ipv6_host(host)?;
-            }
-        }
+        let (_, port) = value
+            .rsplit_once(':')
+            .ok_or_else(|| TransportError::Connect("missing address port".into()))?;
+        parse_socket_port(port)?;
         // Java's channelTables is keyed by the unmodified address string.
         // Parsing validates the endpoint but must not collapse alternate spellings.
         Ok(Self(value.to_owned()))
@@ -86,38 +74,6 @@ fn java_decimal_digit(unit: u16) -> Option<u16> {
     ZEROS
         .iter()
         .find_map(|zero| unit.checked_sub(*zero).filter(|digit| *digit < 10))
-}
-
-fn normalize_ipv6_host(host: &str) -> Result<String, TransportError> {
-    let (address, scope) = host
-        .split_once('%')
-        .map_or((host, None), |(address, scope)| (address, Some(scope)));
-    let parsed_host = address
-        .parse::<std::net::Ipv6Addr>()
-        .map_err(|error| TransportError::Connect(error.to_string()))?;
-    let Some(scope) = scope else {
-        return Ok(parsed_host.to_string());
-    };
-    if scope.is_empty() || scope.contains('%') {
-        return Err(TransportError::Connect("invalid IPv6 scope id".into()));
-    }
-    if scope.bytes().all(|byte| byte.is_ascii_digit()) {
-        let scope = scope
-            .parse::<u32>()
-            .map_err(|_| TransportError::Connect("invalid IPv6 scope id".into()))?;
-        return if scope == 0 {
-            Ok(parsed_host.to_string())
-        } else {
-            Ok(format!("{parsed_host}%{scope}"))
-        };
-    }
-    if !scope
-        .bytes()
-        .all(|byte| byte.is_ascii_alphanumeric() || b"_.-:".contains(&byte))
-    {
-        return Err(TransportError::Connect("invalid IPv6 scope name".into()));
-    }
-    Ok(format!("{parsed_host}%{scope}"))
 }
 
 impl ClientInner {
