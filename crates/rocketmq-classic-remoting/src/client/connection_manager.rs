@@ -316,7 +316,7 @@ mod tests {
             if !java_accepts {
                 continue;
             }
-            let java_port = case["port"].as_str().unwrap().parse::<u16>().unwrap();
+            let java_port = case["portNumber"].as_i64().unwrap() as u16;
             let expected_host = java_host
                 .strip_prefix('[')
                 .and_then(|host| host.strip_suffix(']'))

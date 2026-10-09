@@ -35,9 +35,17 @@ public final class RuntimeAddressFixtures {
         List<Object> clientAddressCases = new ArrayList<>();
         AddressProbe addressProbe = new AddressProbe();
         try {
+            String supplementaryDigit = new String(Character.toChars(0x104A1));
             for (String address : new String[] {"127.0.0.1:10911", "broker.example:10911",
                     "2001:db8::1:10911", "::1:10911", "[2001:db8::1]:10911",
                     "127.0.0.1:0", "127.0.0.1:65535", "127.0.0.1:65536", "127.0.0.1:-1",
+                    "127.0.0.1:\u0661\u0660\u0669\u0661\u0661",
+                    "127.0.0.1:\uff11\uff12\uff13\uff14",
+                    "127.0.0.1:1\u0662\uff13",
+                    "127.0.0.1:\u0966\u0967\u0966\u0966\u0966",
+                    "127.0.0.1:-\u0661", "127.0.0.1:\u0666\u0665\u0665\u0663\u0666",
+                    "127.0.0.1:\u0662\u0661\u0664\u0667\u0664\u0668\u0663\u0666\u0664\u0668",
+                    "127.0.0.1:" + supplementaryDigit,
                     "fe80::1%7:10911", "[fe80::1%7]:10911",
                     "fe80::1%lo0:10911", "[fe80::1%lo0]:10911"}) {
                 String[] hostAndPort = addressProbe.splitAddress(address);
@@ -45,9 +53,10 @@ public final class RuntimeAddressFixtures {
                     throw new IllegalStateException("Java client did not split address: " + address);
                 }
                 boolean socketAddressAccepted;
+                Integer portNumber = null;
                 try {
-                    java.net.InetSocketAddress.createUnresolved(
-                        hostAndPort[0], Integer.parseInt(hostAndPort[1]));
+                    portNumber = Integer.parseInt(hostAndPort[1]);
+                    java.net.InetSocketAddress.createUnresolved(hostAndPort[0], portNumber);
                     socketAddressAccepted = true;
                 } catch (RuntimeException rejected) {
                     socketAddressAccepted = false;
@@ -56,6 +65,7 @@ public final class RuntimeAddressFixtures {
                 item.put("address", address);
                 item.put("host", hostAndPort[0]);
                 item.put("port", hostAndPort[1]);
+                item.put("portNumber", portNumber);
                 item.put("socketAddressAccepted", socketAddressAccepted);
                 if (hostAndPort[0].contains("%")) {
                     String scope = hostAndPort[0].substring(hostAndPort[0].lastIndexOf('%') + 1);
