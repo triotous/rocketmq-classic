@@ -796,7 +796,7 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
         let cases = fixture["runtimeRawCleanupShapes"].as_array().unwrap();
-        assert_eq!(cases.len(), 18);
+        assert_eq!(cases.len(), 19);
         for required in [
             "null-route-collections",
             "null-broker-row",
@@ -815,6 +815,7 @@ mod tests {
             "same-address-under-renamed-broker",
             "address-retained-by-sibling-topic",
             "candidate-before-null-address-map",
+            "null-address-map-before-candidate",
             "live-null-address-retained",
         ] {
             assert!(
@@ -839,6 +840,13 @@ mod tests {
                 );
             }
             if case["id"] == "candidate-before-null-address-map" {
+                assert_eq!(case["outcome"], "OK");
+                assert_eq!(
+                    case["brokerAddressTable"],
+                    serde_json::json!({"broker": {"0": "master:10911"}})
+                );
+            }
+            if case["id"] == "null-address-map-before-candidate" {
                 assert_eq!(case["outcome"], "OK");
                 assert_eq!(
                     case["brokerAddressTable"],
