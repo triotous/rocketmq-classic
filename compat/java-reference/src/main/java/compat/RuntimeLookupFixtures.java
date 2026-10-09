@@ -1103,6 +1103,20 @@ public final class RuntimeLookupFixtures {
         item.put("values", values);
         item.put("getterReturnsAssignedSubscription", body.getSubscriptionData() == subscription);
 
+        subscription.setSubVersion(43L);
+        item.put("externalMutationVisible", body.getSubscriptionData().getSubVersion() == 43L);
+        body.getSubscriptionData().setSubString("orders*");
+        item.put("getterMutationVisibleToAssignedSubscription",
+            "orders*".equals(subscription.getSubString()));
+        Map<String, Object> mutatedSubscription = new TreeMap<>();
+        mutatedSubscription.put("topic", body.getSubscriptionData().getTopic());
+        mutatedSubscription.put("subString", body.getSubscriptionData().getSubString());
+        mutatedSubscription.put("subVersion", body.getSubscriptionData().getSubVersion());
+        mutatedSubscription.put("classFilterMode", body.getSubscriptionData().isClassFilterMode());
+        mutatedSubscription.put("expressionType", body.getSubscriptionData().getExpressionType());
+        mutatedSubscription.put("tagsSet", new ArrayList<>(body.getSubscriptionData().getTagsSet()));
+        item.put("mutatedSubscriptionData", mutatedSubscription);
+
         body.setClientId(null);
         body.setGroup(null);
         body.setSubscriptionData(null);
