@@ -2,6 +2,10 @@
 
 Status: Accepted
 
+## Matched route with no address
+
+An actual Java 5.5.1 `MQClientInstance` and private `NettyRemotingClient.getProxy` case shows that a matching CIDR with an empty `SocksProxyConfig` still returns a selected map entry with that CIDR and a null address. The earlier native selection returned an error and lost the selected route. Rust now retains the matched CIDR and route value, then handles the missing address on the connection path. Oracle/test commit `1ca984ac`; implementation `c4bcbbbb`; the fixture SHA-256 is `f3a1558b2722c74fe917bcba299484563ddcc4990b3db58419ac403fa2fb4a69`, with 15 actual private selection cases. Full workspace, strict Clippy, pinned offline Maven verify, comparator/manifest22, format, and diff checks pass.
+
 ## Special reference continuation
 
 Pinned Java constructor and private `getProxy` cases show that Fastjson accepts `$ref` `#-1` as a null/no-address route and rejects root `$` with `ClassCastException`. The prior Rust resolver rejected `#-1` and accepted `$`; the corrected parser maps `#-1` to direct selection and rejects `$`. Oracle/test commit `9a8dc90d`; implementation `8cc47fc8`; the constructor corpus has 499 cases at `client-config.json` SHA-256 `15e8e57a07b7a488f45750d10f5820ed41a49a2aba198254d7e2b85ba84f871a`.
