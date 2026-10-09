@@ -1896,6 +1896,19 @@ public final class RuntimeLookupFixtures {
         bitSetClone.put("sourceRetainsClearedBit", ack.getBitSet().get(0));
         bitSetClone.put("sourceExcludesCloneBit", !ack.getBitSet().get(7));
         item.put("bitSetClone", bitSetClone);
+        java.util.BitSet preallocatedCloneSource = new java.util.BitSet(130);
+        java.util.BitSet preallocatedClone = (java.util.BitSet) preallocatedCloneSource.clone();
+        preallocatedClone.set(7);
+        Map<String, Object> bitSetPreallocatedClone = new TreeMap<>();
+        bitSetPreallocatedClone.put("cloneIsDistinctObject", preallocatedClone != preallocatedCloneSource);
+        bitSetPreallocatedClone.put("sourceSize", preallocatedCloneSource.size());
+        bitSetPreallocatedClone.put("cloneSize", preallocatedClone.size());
+        bitSetPreallocatedClone.put("sourceBase64", java.util.Base64.getEncoder().encodeToString(
+            preallocatedCloneSource.toByteArray()));
+        bitSetPreallocatedClone.put("cloneBase64", java.util.Base64.getEncoder().encodeToString(
+            preallocatedClone.toByteArray()));
+        bitSetPreallocatedClone.put("sourceExcludesCloneBit", !preallocatedCloneSource.get(7));
+        item.put("bitSetPreallocatedClone", bitSetPreallocatedClone);
         java.util.BitSet operations = (java.util.BitSet) ack.getBitSet().clone();
         operations.clear(2);
         operations.flip(7);
