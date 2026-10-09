@@ -3969,6 +3969,21 @@ mod tests {
             serde_json::to_value(&ack).unwrap()["b"],
             case["mutatedBitSetBase64"]
         );
+        let mut cloned_bits = ack.get_bit_set().unwrap().clone();
+        cloned_bits.clear(0).unwrap();
+        cloned_bits.set(7).unwrap();
+        let mut cloned_ack = BatchAck::default();
+        cloned_ack.set_bit_set(Some(cloned_bits));
+        assert_eq!(
+            json!({
+                "cloneIsDistinctObject": true,
+                "sourceBase64": serde_json::to_value(&ack).unwrap()["b"],
+                "cloneBase64": serde_json::to_value(&cloned_ack).unwrap()["b"],
+                "sourceRetainsClearedBit": ack.get_bit_set().unwrap().get(0).unwrap(),
+                "sourceExcludesCloneBit": !ack.get_bit_set().unwrap().get(7).unwrap(),
+            }),
+            case["bitSetClone"]
+        );
         let mut operations = ack.get_bit_set().unwrap().clone();
         operations.clear(2).unwrap();
         operations.flip(7).unwrap();
