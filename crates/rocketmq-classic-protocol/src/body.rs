@@ -1597,7 +1597,7 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
         let cases = fixture["assignmentBodyCases"].as_array().unwrap();
-        assert_eq!(cases.len(), 22);
+        assert_eq!(cases.len(), 29);
         for required in [
             "string-element",
             "number-element",
@@ -1606,6 +1606,13 @@ mod tests {
             "nested-array-object-element",
             "mixed-null-object-elements",
             "mixed-scalar-object-elements",
+            "message-queue-null",
+            "message-queue-string",
+            "message-queue-number",
+            "message-queue-boolean",
+            "message-queue-array",
+            "message-queue-empty-object",
+            "message-queue-object",
         ] {
             assert!(
                 cases.iter().any(|case| case["name"] == required),
@@ -1630,7 +1637,13 @@ mod tests {
                         .map(|item| match item {
                             Some(item) => serde_json::json!({
                                 "attachments": &item.attachments,
-                                "messageQueue": &item.message_queue,
+                                "messageQueue": item.message_queue.as_ref().map(|queue| {
+                                    serde_json::json!({
+                                        "topic": queue.topic(),
+                                        "brokerName": queue.broker_name(),
+                                        "queueId": queue.queue_id(),
+                                    })
+                                }),
                                 "mode": item.mode,
                             }),
                             None => serde_json::Value::Null,

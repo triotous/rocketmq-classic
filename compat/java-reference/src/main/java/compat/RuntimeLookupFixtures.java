@@ -203,6 +203,13 @@ public final class RuntimeLookupFixtures {
         cases.add(assignmentBodyRawCase("duplicate-nested-queue-field-last-wins",
             "{\"messageQueueAssignments\":[{\"messageQueue\":{\"topic\":\"first\","
                 + "\"topic\":\"last\",\"brokerName\":\"broker\",\"queueId\":2}}]}"));
+        String[] messageQueueValues = {"null", "\"queue\"", "7", "true", "[]", "{}",
+            "{\"topic\":\"topic\",\"brokerName\":\"broker\",\"queueId\":2}"};
+        String[] messageQueueNames = {"null", "string", "number", "boolean", "array", "empty-object", "object"};
+        for (int i = 0; i < messageQueueValues.length; i++) {
+            cases.add(assignmentBodyRawCase("message-queue-" + messageQueueNames[i],
+                "{\"messageQueueAssignments\":[{\"messageQueue\":" + messageQueueValues[i] + ",\"mode\":\"PULL\"}]}"));
+        }
         return cases;
     }
 
