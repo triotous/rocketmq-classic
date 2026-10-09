@@ -1691,6 +1691,8 @@ public final class RuntimeConfigFixtures {
         allInputs.add("{-1e-1000D:{\"addr\":\"proxy:1080\"}}");
         allInputs.add("{-1e-1000F:{\"addr\":\"proxy:1080\"}}");
         allInputs.add("{-1e-1000D:{\"addr\":\"first\"},0.0:{\"addr\":\"last\"}}");
+        allInputs.add("{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\",\"username\":\"user\",\"password\":\"secret\"},\"192.168.0.0/16\":{\"$ref\":\"$['10.0.0.0/8']\"}}");
+        allInputs.add("{\"10.0.0.0/8\":{\"addr\":\"proxy:1080\",\"username\":\"user\"},\"192.168.0.0/16\":{\"$ref\":\"$['10.0.0.0/8']\"},\"172.16.0.0/12\":{\"$ref\":\"$['192.168.0.0/16']\"}}");
         for (int i = 0; i < allInputs.size(); i++) {
             String input = allInputs.get(i);
             ClientConfig config = new ClientConfig();
@@ -1742,6 +1744,16 @@ public final class RuntimeConfigFixtures {
                     }
                     item.put("parsedUsername", route == null ? null : route.getUsername());
                     item.put("parsedPassword", route == null ? null : route.getPassword());
+                    if (input.contains("192.168.0.0/16")) {
+                        org.apache.rocketmq.remoting.proxy.SocksProxyConfig referenced = routes.get("192.168.0.0/16");
+                        item.put("referencedRouteAddr", referenced == null ? null : referenced.getAddr());
+                        item.put("referenceSameObject", route != null && route == referenced);
+                    }
+                    if (input.contains("172.16.0.0/12")) {
+                        org.apache.rocketmq.remoting.proxy.SocksProxyConfig chained = routes.get("172.16.0.0/12");
+                        item.put("chainedReferenceAddr", chained == null ? null : chained.getAddr());
+                        item.put("chainedReferenceSameObject", route != null && route == chained);
+                    }
                 }
             } catch (RuntimeException error) {
                 item.put("outcome", error.getClass().getSimpleName());
