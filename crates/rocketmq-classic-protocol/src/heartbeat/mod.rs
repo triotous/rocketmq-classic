@@ -1319,7 +1319,13 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
                 .unwrap();
-        for case in fixture["consumerEnumCases"].as_array().unwrap() {
+        let cases = fixture["consumerEnumCases"].as_array().unwrap();
+        assert_eq!(
+            cases.len(),
+            51,
+            "Java oracle includes enum name and ordinal coercions"
+        );
+        for case in cases {
             let input = case["rawInput"].as_str().unwrap();
             match case["outcome"].as_str().unwrap() {
                 "accepted" | "null" => {
