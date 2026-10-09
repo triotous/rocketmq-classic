@@ -386,7 +386,7 @@ impl<'de> Deserialize<'de> for OffsetOption {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 /// The Java DTO inherits identity-based `Object.equals` and `hashCode`.
 ///
@@ -524,7 +524,7 @@ impl<'de> Deserialize<'de> for LiteSubscriptionDto {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 /// Java `LiteSubscriptionCtlRequestBody` inherits identity-based equality.
 ///
@@ -576,7 +576,7 @@ impl<'de> Deserialize<'de> for LiteSubscriptionCtlRequestBody {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 /// Java `LiteSubscription` inherits identity-based equality.
 ///
@@ -2785,10 +2785,9 @@ mod tests {
             value["subscriptionSet"][0]["offsetOption"]["type"],
             "POLICY"
         );
-        assert_eq!(
-            serde_json::from_value::<LiteSubscriptionCtlRequestBody>(value).unwrap(),
-            ctl
-        );
+        let round_tripped =
+            serde_json::from_value::<LiteSubscriptionCtlRequestBody>(value.clone()).unwrap();
+        assert_eq!(serde_json::to_value(round_tripped).unwrap(), value);
 
         let wrapper = MessageRequestModeSerializeWrapper {
             message_request_mode_map: Some(std::collections::BTreeMap::from([(
