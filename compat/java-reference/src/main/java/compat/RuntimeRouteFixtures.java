@@ -133,6 +133,59 @@ public final class RuntimeRouteFixtures {
         return cases;
     }
 
+    private static Map<String, Object> runtimeTopicPublishInfoPublication() throws Exception {
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("route-publish-info-state");
+        MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+        org.apache.rocketmq.client.impl.MQClientAPIImpl original = runtime.getMQClientAPIImpl();
+        RouteApi api = new RouteApi(config);
+        Map<String, Object> result = new TreeMap<>();
+        Map<String, org.apache.rocketmq.client.impl.producer.TopicPublishInfo> published = new HashMap<>();
+        String input = "{\"queueDatas\":[{\"brokerName\":\"broker\",\"readQueueNums\":0,\"writeQueueNums\":0,\"perm\":6,\"topicSysFlag\":0}],"
+            + "\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"127.0.0.1:10911\"}}],\"filterServerTable\":{}}";
+        result.put("input", com.alibaba.fastjson2.JSON.parseObject(input));
+        try {
+            java.lang.reflect.Field field = MQClientInstance.class.getDeclaredField("mQClientAPIImpl");
+            field.setAccessible(true);
+            field.set(runtime, api);
+            api.route = com.alibaba.fastjson2.JSON.parseObject(input, TopicRouteData.class);
+            org.apache.rocketmq.client.impl.producer.MQProducerInner producer =
+                (org.apache.rocketmq.client.impl.producer.MQProducerInner) java.lang.reflect.Proxy.newProxyInstance(
+                    org.apache.rocketmq.client.impl.producer.MQProducerInner.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.client.impl.producer.MQProducerInner.class},
+                    (proxy, method, values) -> {
+                        if ("updateTopicPublishInfo".equals(method.getName())) {
+                            published.put((String) values[0],
+                                (org.apache.rocketmq.client.impl.producer.TopicPublishInfo) values[1]);
+                            return null;
+                        }
+                        if ("getPublishTopicList".equals(method.getName())) return java.util.Collections.emptySet();
+                        if (method.getReturnType() == boolean.class) return false;
+                        if (method.getReturnType() == int.class) return 0;
+                        return null;
+                    });
+            runtime.getProducerTable().put("producer", producer);
+            result.put("producerInserted", runtime.getProducerTable().containsKey("producer"));
+            result.put("acceptedRouteChanged", runtime.updateTopicRouteInfoFromNameServer("topic"));
+            org.apache.rocketmq.client.impl.producer.TopicPublishInfo info = published.get("topic");
+            result.put("callbackDelivered", info != null);
+            result.put("haveTopicRouterInfo", info != null && info.isHaveTopicRouterInfo());
+            result.put("ok", info != null && info.ok());
+            result.put("publishQueueCount", info == null ? null : info.getMessageQueueList().size());
+            result.put("topicRouteDataPresent", info != null && info.getTopicRouteData() != null);
+            api.route = null;
+            result.put("missingRouteChanged", runtime.updateTopicRouteInfoFromNameServer("missing"));
+            result.put("missingRouteCallbackDelivered", published.containsKey("missing"));
+        } finally {
+            java.lang.reflect.Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
+                org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
+            cleanup.setAccessible(true);
+            try { cleanup.invoke(runtime, original, new IllegalStateException("publish info state fixture teardown")); }
+            finally { api.shutdown(); }
+        }
+        return result;
+    }
+
     private static List<Object> runtimeNullNestedRouteElements() throws Exception {
         String[][] inputs = new String[][] {
             {"null-queue", "{\"queueDatas\":[null],\"brokerDatas\":[],\"filterServerTable\":{}}"},
@@ -1847,9 +1900,10 @@ public final class RuntimeRouteFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "MessageQueue.equals/hashCode/toString/compareTo; BrokerData.equals/hashCode; MQClientInstance.topicRouteData2TopicPublishInfo/topicRouteData2TopicSubscribeInfo/updateTopicRouteInfoFromNameServer/getTopicRouteTable/getAnExistTopicRouteData/queryTopicRouteData/cleanOfflineBroker/findBrokerAddressInPublish/findBrokerAddressInAdmin/findBrokerAddressInSubscribe/findBrokerAddrByTopic; ConcurrentMap put/putIfAbsent/replace/remove/clear; TopicRouteData inherited RemotingSerializable encode/toJson/decode/decodeList/fromJson; ClientMetadata.topicRouteData2EndpointsForStaticTopic; MixAll.brokerVIPChannel; Integer.parseInt/Character.digit");
+        fixture.put("entrypoint", "MessageQueue.equals/hashCode/toString/compareTo; BrokerData.equals/hashCode; MQClientInstance.topicRouteData2TopicPublishInfo/topicRouteData2TopicSubscribeInfo/updateTopicRouteInfoFromNameServer/getTopicRouteTable/getAnExistTopicRouteData/queryTopicRouteData/cleanOfflineBroker/findBrokerAddressInPublish/findBrokerAddressInAdmin/findBrokerAddressInSubscribe/findBrokerAddrByTopic; TopicPublishInfo.haveTopicRouterInfo/ok/getMessageQueueList/getTopicRouteData; ConcurrentMap put/putIfAbsent/replace/remove/clear; TopicRouteData inherited RemotingSerializable encode/toJson/decode/decodeList/fromJson; ClientMetadata.topicRouteData2EndpointsForStaticTopic; MixAll.brokerVIPChannel; Integer.parseInt/Character.digit");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
+        fixture.put("topicPublishInfoPublication", runtimeTopicPublishInfoPublication());
         fixture.put("vip", vip);
         fixture.put("vipCases", vipCases);
         List<Integer> digitZeros = new ArrayList<>();

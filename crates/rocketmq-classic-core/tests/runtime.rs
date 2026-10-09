@@ -752,6 +752,99 @@ async fn different_topic_refreshes_serialize_wire_fetches_without_blocking_snaps
 }
 
 #[tokio::test]
+async fn accepted_empty_route_keeps_route_presence_separate_from_publish_queue_ok() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/route.json")).unwrap();
+    let java = &fixture["topicPublishInfoPublication"];
+    assert_eq!(java["producerInserted"], true);
+    assert_eq!(java["acceptedRouteChanged"], true);
+    assert_eq!(java["callbackDelivered"], true);
+    assert_eq!(java["haveTopicRouterInfo"], true);
+    assert_eq!(java["ok"], false);
+    assert_eq!(java["publishQueueCount"], 0);
+    assert_eq!(java["topicRouteDataPresent"], true);
+    assert_eq!(java["missingRouteChanged"], false);
+    assert_eq!(java["missingRouteCallbackDelivered"], false);
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut config = ClientConfig::new("192.0.2.6");
+    config.namesrv_addr = Some(listener.local_addr().unwrap().to_string());
+    let body = serde_json::to_vec(&java["input"]).unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        for (topic, body) in [("topic", body), ("missing", b"null".to_vec())] {
+            let mut length = [0; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut bytes = BytesMut::from(&length[..]);
+            bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut bytes[4..]).await.unwrap();
+            let command = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
+                .unwrap()
+                .unwrap();
+            assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
+            assert_eq!(command.ext_fields.as_ref().unwrap()["topic"], topic);
+            let mut reply = RemotingCommand {
+                opaque: command.opaque,
+                body: Some(body),
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .await
+                .unwrap();
+        }
+    });
+
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+    let producer = Arc::new(RouteObserver {
+        runtime: Arc::downgrade(&runtime),
+        updates: AtomicUsize::new(0),
+        needed: AtomicBool::new(false),
+        need_checks: AtomicUsize::new(0),
+    });
+    runtime
+        .register_producer("producer", producer.clone())
+        .await
+        .unwrap();
+    assert!(
+        !runtime
+            .route_snapshot()
+            .unwrap()
+            .topics
+            .contains_key("topic")
+    );
+    runtime.remoting().start().unwrap();
+    assert!(
+        runtime
+            .update_topic_route("topic", Instant::now() + Duration::from_secs(2))
+            .await
+            .unwrap()
+    );
+    assert!(
+        !runtime
+            .update_topic_route("missing", Instant::now() + Duration::from_secs(2))
+            .await
+            .unwrap()
+    );
+
+    let snapshot = runtime.route_snapshot().unwrap();
+    let topic = snapshot
+        .topics
+        .get("topic")
+        .expect("published route snapshot");
+    assert!(topic.publish_queues.is_empty());
+    assert_eq!(topic.route.queue_datas.as_ref().unwrap().len(), 1);
+    assert!(!snapshot.topics.contains_key("missing"));
+    assert_eq!(producer.updates.load(Ordering::SeqCst), 1);
+    peer.await.unwrap();
+    runtime.remoting().shutdown().await;
+}
+
+#[tokio::test]
 async fn default_route_fetch_uses_auto_create_topic_and_clamps_both_counts_from_read_count() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut config = ClientConfig::new("192.0.2.6");
