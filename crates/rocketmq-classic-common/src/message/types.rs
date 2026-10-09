@@ -474,6 +474,37 @@ mod tests {
     use super::*;
 
     #[test]
+    fn message_queue_fastjson_inputs_match_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/lookup.json")).unwrap();
+        let cases = fixture["messageQueueInputCases"].as_array().unwrap();
+        assert_eq!(
+            cases.len(),
+            16,
+            "Java oracle includes scalar and numeric boundaries"
+        );
+        for case in cases {
+            let raw_input = case["rawInput"].as_str().unwrap();
+            let decoded = serde_json::from_str::<MessageQueue>(raw_input);
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            assert_eq!(
+                decoded.is_ok(),
+                java_accepts,
+                "{}: {decoded:?}",
+                case["name"]
+            );
+            if let Ok(decoded) = decoded {
+                assert_eq!(
+                    serde_json::to_value(decoded).unwrap(),
+                    case["encoded"],
+                    "{}",
+                    case["name"]
+                );
+            }
+        }
+    }
+
+    #[test]
     fn java_queue_order_uses_utf16_code_units() {
         let supplementary = MessageQueue::new("\u{10000}", "b", 0);
         let bmp = MessageQueue::new("\u{e000}", "b", 0);
