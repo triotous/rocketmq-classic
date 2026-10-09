@@ -1962,6 +1962,50 @@ public final class RuntimeLookupFixtures {
         rangeWordBoundaryValues.put("length", rangeWordBoundary.length());
         item.put("bitSetRangeWordBoundary", rangeWordBoundaryValues);
 
+        java.util.BitSet booleanOperations = new java.util.BitSet();
+        booleanOperations.set(2, 6);
+        booleanOperations.set(4, false);
+        booleanOperations.set(8, true);
+        booleanOperations.set(1, 3, true);
+        booleanOperations.set(2, 5, false);
+        Map<String, Object> bitSetBooleanOperations = new TreeMap<>();
+        bitSetBooleanOperations.put("base64", java.util.Base64.getEncoder().encodeToString(
+            booleanOperations.toByteArray()));
+        bitSetBooleanOperations.put("longs", java.util.Arrays.stream(booleanOperations.toLongArray())
+            .boxed().collect(java.util.stream.Collectors.toList()));
+        bitSetBooleanOperations.put("cardinality", booleanOperations.cardinality());
+        bitSetBooleanOperations.put("length", booleanOperations.length());
+        bitSetBooleanOperations.put("hashCode", booleanOperations.hashCode());
+        bitSetBooleanOperations.put("toString", booleanOperations.toString());
+        bitSetBooleanOperations.put("stream", booleanOperations.stream().boxed()
+            .collect(java.util.stream.Collectors.toList()));
+        java.util.BitSet cleared = (java.util.BitSet) booleanOperations.clone();
+        cleared.clear();
+        bitSetBooleanOperations.put("clear", cleared.isEmpty()
+            && cleared.cardinality() == 0 && cleared.length() == 0);
+        item.put("bitSetBooleanOperations", bitSetBooleanOperations);
+
+        java.util.BitSet bulkLeft = new java.util.BitSet();
+        for (int index : new int[] {0, 2, 5, 64, 127}) bulkLeft.set(index);
+        java.util.BitSet bulkRight = new java.util.BitSet();
+        for (int index : new int[] {1, 2, 5, 64, 126}) bulkRight.set(index);
+        Map<String, Object> bitSetBulkOperations = new TreeMap<>();
+        java.util.BitSet andResult = (java.util.BitSet) bulkLeft.clone();
+        andResult.and(bulkRight);
+        bitSetBulkOperations.put("and", java.util.Base64.getEncoder().encodeToString(andResult.toByteArray()));
+        java.util.BitSet orResult = (java.util.BitSet) bulkLeft.clone();
+        orResult.or(bulkRight);
+        bitSetBulkOperations.put("or", java.util.Base64.getEncoder().encodeToString(orResult.toByteArray()));
+        java.util.BitSet xorResult = (java.util.BitSet) bulkLeft.clone();
+        xorResult.xor(bulkRight);
+        bitSetBulkOperations.put("xor", java.util.Base64.getEncoder().encodeToString(xorResult.toByteArray()));
+        java.util.BitSet andNotResult = (java.util.BitSet) bulkLeft.clone();
+        andNotResult.andNot(bulkRight);
+        bitSetBulkOperations.put("andNot", java.util.Base64.getEncoder().encodeToString(andNotResult.toByteArray()));
+        bitSetBulkOperations.put("intersects", bulkLeft.intersects(bulkRight));
+        bitSetBulkOperations.put("equalClone", bulkLeft.equals(bulkLeft.clone()));
+        item.put("bitSetBulkOperations", bitSetBulkOperations);
+
         org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody body =
             new org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody();
         item.put("bodyDefaults", java.util.Arrays.asList(body.getBrokerName(), body.getAcks()));
