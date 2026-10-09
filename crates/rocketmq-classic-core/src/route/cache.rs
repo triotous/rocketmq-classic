@@ -796,7 +796,7 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
         let cases = fixture["runtimeRawCleanupShapes"].as_array().unwrap();
-        assert_eq!(cases.len(), 14);
+        assert_eq!(cases.len(), 15);
         for required in [
             "null-route-collections",
             "null-broker-row",
@@ -805,6 +805,7 @@ mod tests {
             "null-address-only",
             "null-and-live-addresses",
             "null-row-and-live-address",
+            "partial-candidate-before-null-row",
             "missing-route-fields",
             "null-broker-list",
             "empty-broker-list",
@@ -819,6 +820,14 @@ mod tests {
             );
         }
         for case in cases {
+            if case["id"] == "partial-candidate-before-null-row" {
+                assert_eq!(
+                    case["cleanupAddressTraversal"],
+                    serde_json::json!(["master:10911", "slave:10911"])
+                );
+                assert_eq!(case["masterAddressVisibleBeforeFailure"], true);
+                assert_eq!(case["laterStaleAddressOutcome"], "NullPointerException");
+            }
             let cache = RouteCache::default();
             let initial: TopicRouteData =
                 serde_json::from_value(case["initialInput"].clone()).unwrap();
