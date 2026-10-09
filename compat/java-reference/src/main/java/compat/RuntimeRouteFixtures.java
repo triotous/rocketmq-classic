@@ -1170,7 +1170,8 @@ public final class RuntimeRouteFixtures {
             new String[] {"missing-address-map", "{\"brokerDatas\":[{\"brokerName\":\"broker\"}]}"},
             new String[] {"null-broker-name-live-address", "{\"brokerDatas\":[{\"brokerName\":null,\"brokerAddrs\":{\"2\":\"slave:10911\"}}]}"},
             new String[] {"ignored-null-collections-live-address", "{\"queueDatas\":null,\"filterServerTable\":null,\"brokerDatas\":[{\"brokerName\":\"broker\",\"brokerAddrs\":{\"2\":\"slave:10911\"}}]}"},
-            new String[] {"same-address-under-renamed-broker", "{\"brokerDatas\":[{\"brokerName\":\"renamed\",\"brokerAddrs\":{\"9\":\"master:10911\"}}]}"}
+            new String[] {"same-address-under-renamed-broker", "{\"brokerDatas\":[{\"brokerName\":\"renamed\",\"brokerAddrs\":{\"9\":\"master:10911\"}}]}"},
+            new String[] {"address-retained-by-sibling-topic", "{\"brokerDatas\":[]}"}
         );
         List<Object> cases = new ArrayList<>();
         for (String[] shape : shapes) {
@@ -1213,6 +1214,12 @@ public final class RuntimeRouteFixtures {
             TopicRouteData raw = com.alibaba.fastjson2.JSON.parseObject(rawInput, TopicRouteData.class);
             runtime.getTopicRouteTable().clear();
             runtime.getTopicRouteTable().put("raw", raw);
+            if (id.equals("address-retained-by-sibling-topic")) {
+                String siblingInput = "{\"brokerDatas\":[{\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master:10911\"}}]}";
+                TopicRouteData sibling = com.alibaba.fastjson2.JSON.parseObject(siblingInput, TopicRouteData.class);
+                runtime.getTopicRouteTable().put("sibling", sibling);
+                item.put("siblingInput", com.alibaba.fastjson2.JSON.parseObject(siblingInput));
+            }
             if (id.equals("partial-candidate-before-null-row")) {
                 java.lang.reflect.Field addressesField = MQClientInstance.class.getDeclaredField("brokerAddrTable");
                 addressesField.setAccessible(true);
