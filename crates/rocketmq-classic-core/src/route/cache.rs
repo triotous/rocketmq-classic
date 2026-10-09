@@ -835,7 +835,11 @@ mod tests {
             match case["outcome"].as_str().unwrap() {
                 "OK" => assert!(cleanup.is_ok(), "{}: {cleanup:?}", case["id"]),
                 "NullPointerException" => {
-                    assert!(cleanup.is_err(), "{} unexpectedly succeeded", case["id"])
+                    assert!(
+                        matches!(cleanup, Err(RuntimeError::InvalidRoute(_))),
+                        "{}: expected the typed invalid-route mapping of Java's null dereference, got {cleanup:?}",
+                        case["id"]
+                    )
                 }
                 outcome => panic!("unexpected Java cleanup outcome {outcome}"),
             }
