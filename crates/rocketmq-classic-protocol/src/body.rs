@@ -2852,6 +2852,64 @@ mod tests {
     }
 
     #[test]
+    fn reset_offset_body_inputs_match_invoked_java_fastjson() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let cases = fixture["resetOffsetBodyInputCases"].as_array().unwrap();
+        assert_eq!(cases.len(), 12);
+        let rows = |entries: Option<&[(MessageQueue, i64)]>| {
+            let Some(entries) = entries else {
+                return serde_json::Value::Null;
+            };
+            let mut rows = entries
+                .iter()
+                .map(|(queue, offset)| {
+                    serde_json::json!({
+                        "topic": queue.topic(),
+                        "brokerName": queue.broker_name(),
+                        "queueId": queue.queue_id(),
+                        "offset": offset
+                    })
+                })
+                .collect::<Vec<_>>();
+            rows.sort_by_key(serde_json::Value::to_string);
+            serde_json::Value::Array(rows)
+        };
+        let mut mismatches = Vec::new();
+        for case in cases {
+            let name = case["name"].as_str().unwrap();
+            let decoded = serde_fastjson::from_fastjson_str::<ResetOffsetBody>(
+                case["rawInput"].as_str().unwrap(),
+            );
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            match (decoded, java_accepts) {
+                (Ok(decoded), true) => {
+                    if rows(decoded.offset_table.as_deref()) != case["offsetTable"] {
+                        mismatches.push(format!(
+                            "{name}: offsetTable {} != Java {}",
+                            rows(decoded.offset_table.as_deref()),
+                            case["offsetTable"]
+                        ));
+                    }
+                    let encoded = String::from_utf8(decoded.encode_java_json().unwrap()).unwrap();
+                    if encoded != case["encodedBody"] {
+                        mismatches.push(format!(
+                            "{name}: encoded body {encoded} != Java {}",
+                            case["encodedBody"]
+                        ));
+                    }
+                }
+                (Ok(_), false) => mismatches.push(format!("{name}: Rust accepted, Java rejected")),
+                (Err(error), true) => {
+                    mismatches.push(format!("{name}: Rust rejected ({error}), Java accepted"))
+                }
+                (Err(_), false) => {}
+            }
+        }
+        assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+    }
+
+    #[test]
     fn assignment_and_request_mode_json_preserve_optional_fields_and_defaults() {
         let query: QueryAssignmentRequestBody = serde_json::from_value(serde_json::json!({
             "topic":"orders", "consumerGroup":"workers", "clientId":"client",

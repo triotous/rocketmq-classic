@@ -43,7 +43,7 @@ public final class RuntimeLookupFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "MQClientInstance.findBrokerAddrByTopic/BrokerData.selectBrokerAddr/QueryAssignmentResponseBody.decode/GetConsumerListByGroupResponseBody.decode");
+        fixture.put("entrypoint", "MQClientInstance.findBrokerAddrByTopic/BrokerData.selectBrokerAddr/QueryAssignmentResponseBody.decode/GetConsumerListByGroupResponseBody.decode/ResetOffsetBody.decode/encode/GetConsumerStatusBody.decode/encode");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
         String assignment = "{\"messageQueue\":{\"topic\":\"topic\",\"brokerName\":\"broker\",\"queueId\":2},\"mode\":\"POP\",\"attachments\":{\"key\":\"value\"}}";
@@ -85,6 +85,7 @@ public final class RuntimeLookupFixtures {
         fixture.put("lockBatchRequestBodyCases", lockBatchRequestBodyCases());
         fixture.put("unlockBatchRequestBodyCases", unlockBatchRequestBodyCases());
         fixture.put("lockBatchResponseBodyCases", lockBatchResponseBodyCases());
+        fixture.put("resetOffsetBodyInputCases", resetOffsetBodyInputCases());
         fixture.put("consumerStatusBodyInputCases", consumerStatusBodyInputCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
             com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
@@ -1130,6 +1131,45 @@ public final class RuntimeLookupFixtures {
                 item.put("outcome", "ACCEPTED");
                 item.put("messageQueueTable", consumerStatusQueueRows(decoded.getMessageQueueTable()));
                 item.put("consumerTable", consumerStatusConsumerRows(decoded.getConsumerTable()));
+                item.put("encodedBody", new String(decoded.encode(), java.nio.charset.StandardCharsets.UTF_8));
+            } catch (RuntimeException error) {
+                item.put("outcome", "REJECTED");
+                item.put("error", error.getClass().getSimpleName());
+            }
+            cases.add(item);
+        }
+        return cases;
+    }
+
+    private static List<Object> resetOffsetBodyInputCases() {
+        String key = "{\"topic\":\"orders\",\"brokerName\":\"broker-a\",\"queueId\":1}";
+        String escapedKey = com.alibaba.fastjson2.JSON.toJSONString(key);
+        String[][] inputs = {
+            {"omitted", "{}"},
+            {"explicit-null", "{\"offsetTable\":null}"},
+            {"empty-table", "{\"offsetTable\":{}}"},
+            {"fastjson-message-queue-key", "{\"offsetTable\":{" + key + ":9}}"},
+            {"quoted-message-queue-key", "{\"offsetTable\":{" + escapedKey + ":9}}"},
+            {"duplicate-table-entry-last-wins", "{\"offsetTable\":{" + key + ":7," + key + ":9}}"},
+            {"duplicate-field-last-wins", "{\"offsetTable\":{},\"offsetTable\":{" + key + ":9}}"},
+            {"unknown-field-ignored", "{\"unknown\":7,\"offsetTable\":{" + key + ":9}}"},
+            {"table-scalar", "{\"offsetTable\":7}"},
+            {"table-array", "{\"offsetTable\":[]}"},
+            {"offset-null", "{\"offsetTable\":{" + key + ":null}}"},
+            {"invalid-message-queue-key", "{\"offsetTable\":{\"not-a-queue\":9}}"}
+        };
+        List<Object> cases = new ArrayList<>();
+        for (String[] input : inputs) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("name", input[0]);
+            item.put("rawInput", input[1]);
+            try {
+                org.apache.rocketmq.remoting.protocol.body.ResetOffsetBody decoded =
+                    org.apache.rocketmq.remoting.protocol.body.ResetOffsetBody.decode(
+                        input[1].getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                        org.apache.rocketmq.remoting.protocol.body.ResetOffsetBody.class);
+                item.put("outcome", "ACCEPTED");
+                item.put("offsetTable", consumerStatusQueueRows(decoded.getOffsetTable()));
                 item.put("encodedBody", new String(decoded.encode(), java.nio.charset.StandardCharsets.UTF_8));
             } catch (RuntimeException error) {
                 item.put("outcome", "REJECTED");
