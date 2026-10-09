@@ -60,3 +60,11 @@
 - The test-first Rust differential failed to compile because no mutable getter existed. Implementation `dd4156c5` adds `get_consumer_id_list_mut() -> Option<&mut Vec<Option<String>>>`; the test moves the Vec into the DTO, mutates through the accessor, and checks the resulting values. Java external List identity remains outside Rust's move-based ownership model.
 - Focused DTO method differential, full workspace/all-target tests, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios and Java cross-decodes), comparator self-test, manifest22 validation, `cargo fmt --all -- --check`, and `git diff --check` pass.
 - Updated ADR-0055, Java compatibility, API map, requirement audit, runtime inventory, and this rlog. Other DTO aliases, malformed inputs, full source/reverse-export reconciliation, platform address evidence, and P6-V04 remain open.
+
+## Lock-batch mutable Set getter mapping — 2026-10-09T19:47:36Z
+
+- Extended direct pinned Java API cases for `LockBatchRequestBody`, `UnlockBatchRequestBody`, and `LockBatchResponseBody`: mutations through both the Set passed to the setter and the Set returned by the getter are mutually visible. Each case replaces queue id 2 with id 3 through the original reference, then id 4 through the getter.
+- Oracle/test and fixture commit `f80a844d`; aggregate `fixtures/runtime/lookup.json` SHA-256 `8f8f823b9a63d14dd5cf4d9b86d0538ad5ebe142138d4316639ce3e60bc5fd6c`. The Rust differential first failed to compile because the three mutable getter methods were absent.
+- Implementation commit `c8aeb821` adds `get_mq_set_mut` to both request DTOs and `get_lock_okmq_set_mut` to the response DTO. Focused native differential now passes and compares final values; Java identity with the caller's pre-move Set remains an ownership difference.
+- Full `cargo test --workspace --all-targets --locked`, strict Clippy, pinned offline Maven verify (22 scenarios and fixture drift/cross-decodes), comparator self-test and manifest22 validation, `cargo fmt --all -- --check`, and `git diff --check` pass.
+- Updated ADR-0055, Java compatibility, API/config map, requirement audit, runtime inventory, and this rlog. Other DTO aliases, malformed inputs, source/reverse-export reconciliation, platform address evidence, and P6-V04 remain open; Phase 6 stays PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
