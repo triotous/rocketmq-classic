@@ -196,6 +196,32 @@ fn java_number_string(token: &str) -> String {
     output
 }
 
+fn java_route_key_number_string(token: &str) -> String {
+    let canonical = java_number_string(token);
+    if canonical != "0.0" {
+        return canonical;
+    }
+
+    let floating_token = token
+        .strip_suffix('d')
+        .or_else(|| token.strip_suffix('D'))
+        .or_else(|| token.strip_suffix('f'))
+        .or_else(|| token.strip_suffix('F'))
+        .unwrap_or(token);
+    let Some((mantissa, _)) = floating_token.split_once(['e', 'E']) else {
+        return canonical;
+    };
+    if mantissa.starts_with('-')
+        && mantissa
+            .bytes()
+            .any(|digit| digit.is_ascii_digit() && digit != b'0')
+    {
+        "-0.0".into()
+    } else {
+        canonical
+    }
+}
+
 fn canonical_integer_string(token: &str) -> String {
     let (negative, digits) = match token.as_bytes().first() {
         Some(b'-') => (true, &token[1..]),
@@ -701,7 +727,10 @@ fn normalize_fastjson_root_route_keys(input: &str) -> Result<String, FastjsonRou
                 let encoded = if numeric_end.is_some() {
                     let token = std::str::from_utf8(token).unwrap_or_default();
                     let mut text = String::new();
-                    write_json_string(&format!("\0S{}", java_number_string(token)), &mut text);
+                    write_json_string(
+                        &format!("\0S{}", java_route_key_number_string(token)),
+                        &mut text,
+                    );
                     Some(text.into_bytes())
                 } else if matches!(token, b"true" | b"false") {
                     let mut encoded = Vec::new();
