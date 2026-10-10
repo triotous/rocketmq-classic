@@ -1118,15 +1118,20 @@ public final class RuntimeRouteFixtures {
     }
 
     private static List<Object> runtimeRouteNestedCollectionMatrix() throws Exception {
-        List<Object> cases = new ArrayList<>(16);
+        List<Object> cases = new ArrayList<>(625);
         String[] fields = {"queueDatas", "brokerDatas", "filterServerTable", "topicQueueMappingByBroker"};
-        for (int mask = 0; mask < (1 << fields.length); mask++) {
+        String[] states = {"absent", "null", "empty", "populated", "nullNested"};
+        for (int indexValue = 0; indexValue < 625; indexValue++) {
             Map<String, Object> input = new TreeMap<>();
-            Map<String, Object> states = new TreeMap<>();
+            Map<String, Object> selectedStates = new TreeMap<>();
+            int remaining = indexValue;
             for (int index = 0; index < fields.length; index++) {
-                String state = (mask & (1 << index)) == 0 ? "populated" : "nullNested";
-                states.put(fields[index], state);
-                input.put(fields[index], routeCollectionValue(fields[index], state));
+                String state = states[remaining % states.length];
+                remaining /= states.length;
+                selectedStates.put(fields[index], state);
+                if (!"absent".equals(state)) {
+                    input.put(fields[index], routeCollectionValue(fields[index], state));
+                }
             }
             String json = com.alibaba.fastjson2.JSON.toJSONString(input,
                 com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue,
@@ -1142,7 +1147,7 @@ public final class RuntimeRouteFixtures {
                 field.setAccessible(true);
                 field.set(runtime, api);
                 item.put("input", com.alibaba.fastjson2.JSON.parseObject(json));
-                item.put("states", states);
+                item.put("states", selectedStates);
                 api.route = com.alibaba.fastjson2.JSON.parseObject(json, TopicRouteData.class);
                 try {
                     item.put("changed", runtime.updateTopicRouteInfoFromNameServer("topic"));
