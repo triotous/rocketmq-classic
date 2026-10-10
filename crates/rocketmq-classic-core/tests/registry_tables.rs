@@ -967,6 +967,13 @@ async fn running_table_writes_wait_for_unregister_and_cancelled_queue_writes_do_
         .register_consumer("registered", first.clone())
         .await
         .unwrap();
+    let entry = table
+        .entry_set_view()
+        .entry_snapshots()
+        .unwrap()
+        .into_iter()
+        .find(|entry| entry.key() == "registered")
+        .unwrap();
     table
         .put("cancelled-unregister", second.clone())
         .await
@@ -993,6 +1000,11 @@ async fn running_table_writes_wait_for_unregister_and_cancelled_queue_writes_do_
         let second = second.clone();
         tokio::spawn(async move { table.put("cancelled", second).await })
     };
+    let cancelled_entry_set_value = {
+        let entry = entry.clone();
+        let second = second.clone();
+        tokio::spawn(async move { entry.set_value(second).await })
+    };
     let cancelled_unregister = {
         let runtime = runtime.clone();
         tokio::spawn(async move {
@@ -1007,15 +1019,27 @@ async fn running_table_writes_wait_for_unregister_and_cancelled_queue_writes_do_
     tokio::time::sleep(Duration::from_millis(20)).await;
     assert!(!write.is_finished());
     assert!(!cancelled.is_finished());
+    assert!(!cancelled_entry_set_value.is_finished());
     assert!(!cancelled_unregister.is_finished());
     assert!(table.get("registered").unwrap().is_none()); // Reads are not blocked by the actor's RPC.
+    assert!(Arc::ptr_eq(&entry.value().unwrap(), &first));
     cancelled.abort();
     assert!(matches!(cancelled.await, Err(error) if error.is_cancelled()));
+    cancelled_entry_set_value.abort();
+    assert!(matches!(cancelled_entry_set_value.await, Err(error) if error.is_cancelled()));
+    assert!(Arc::ptr_eq(&entry.value().unwrap(), &first));
     cancelled_unregister.abort();
     assert!(matches!(cancelled_unregister.await, Err(error) if error.is_cancelled()));
     release.send(()).unwrap();
     assert!(unregister.await.unwrap().unwrap());
     assert!(write.await.unwrap().unwrap().is_none());
+    assert!(same(table.get("registered").unwrap(), &second));
+    assert!(Arc::ptr_eq(&entry.value().unwrap(), &first));
+    assert!(Arc::ptr_eq(
+        &entry.set_value(second.clone()).await.unwrap(),
+        &first
+    ));
+    assert!(Arc::ptr_eq(&entry.value().unwrap(), &second));
     assert!(same(table.get("registered").unwrap(), &second));
     assert!(!table.contains_key("cancelled").unwrap());
     assert!(same(table.get("cancelled-unregister").unwrap(), &second));

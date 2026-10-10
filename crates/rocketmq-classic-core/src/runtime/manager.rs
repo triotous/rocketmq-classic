@@ -3,9 +3,9 @@ use std::{
     future::Future,
     sync::{Arc, Mutex, OnceLock, RwLock, Weak},
 };
+use tokio::sync::Mutex as AsyncMutex;
 
 use rocketmq_classic_remoting::client::RpcHook;
-use tokio::sync::Mutex as AsyncMutex;
 
 use super::{ClientRuntime, RuntimeError};
 use crate::config::ClientConfig;
@@ -766,6 +766,7 @@ pub struct FactoryEntryHandle {
     table: FactoryTable,
     key: String,
     value: Arc<RwLock<Arc<ClientRuntime>>>,
+    update_lock: Arc<AsyncMutex<()>>,
 }
 
 impl FactoryEntryHandle {
@@ -784,14 +785,13 @@ impl FactoryEntryHandle {
         &self,
         value: Arc<ClientRuntime>,
     ) -> Result<Arc<ClientRuntime>, RuntimeError> {
-        let previous = {
-            let mut current = self
-                .value
-                .write()
-                .map_err(|_| RuntimeError::RegistryPoisoned)?;
-            std::mem::replace(&mut *current, value.clone())
-        };
-        self.table.put(&self.key, value).await?;
+        let _update = self.update_lock.lock().await;
+        let previous = self.value()?;
+        self.table.put(&self.key, value.clone()).await?;
+        *self
+            .value
+            .write()
+            .map_err(|_| RuntimeError::RegistryPoisoned)? = value;
         Ok(previous)
     }
 }
@@ -827,6 +827,7 @@ impl FactoryEntrySetView {
                 table: self.0.clone(),
                 key,
                 value: Arc::new(RwLock::new(value)),
+                update_lock: Arc::new(AsyncMutex::new(())),
             })
             .collect())
     }

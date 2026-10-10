@@ -6,6 +6,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     sync::{Arc, RwLock, Weak},
 };
+use tokio::sync::Mutex as AsyncMutex;
 
 #[derive(Clone, Copy)]
 pub(super) enum TableKind {
@@ -611,6 +612,7 @@ macro_rules! table_views {
             table: $table,
             key: String,
             value: Arc<RwLock<Arc<dyn $owner>>>,
+            update_lock: Arc<AsyncMutex<()>>,
         }
         impl $entry_handle {
             pub fn key(&self) -> &str {
@@ -626,14 +628,13 @@ macro_rules! table_views {
                 &self,
                 value: Arc<dyn $owner>,
             ) -> Result<Arc<dyn $owner>, RuntimeError> {
-                let previous = {
-                    let mut current = self
-                        .value
-                        .write()
-                        .map_err(|_| RuntimeError::RegistryPoisoned)?;
-                    std::mem::replace(&mut *current, value.clone())
-                };
-                self.table.put(self.key.clone(), value).await?;
+                let _update = self.update_lock.lock().await;
+                let previous = self.value()?;
+                self.table.put(self.key.clone(), value.clone()).await?;
+                *self
+                    .value
+                    .write()
+                    .map_err(|_| RuntimeError::RegistryPoisoned)? = value;
                 Ok(previous)
             }
         }
@@ -674,6 +675,7 @@ macro_rules! table_views {
                         table: table.clone(),
                         key,
                         value: Arc::new(RwLock::new(value)),
+                        update_lock: Arc::new(AsyncMutex::new(())),
                     })
                     .collect())
             }
