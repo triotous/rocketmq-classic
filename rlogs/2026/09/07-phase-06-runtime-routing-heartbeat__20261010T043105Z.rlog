@@ -100,3 +100,9 @@
 - Added `route_collection_state_product_matches_invoked_unstarted_java` in `route/cache.rs`; it checks all 256 outcomes and collection sizes. Focused differential passes. Native regression commit: `9630f66e`.
 - Full verification passed: `cargo test --workspace --all-targets --locked` with reviewed loopback access; strict workspace/all-target/all-feature Clippy; pinned offline Maven verify (22 scenarios; 38 Java-decoded headers and 14 typed bodies); comparator self-test; manifest validation (22 scenarios); formatting; and `git diff --check`.
 - Updated the route/API/requirement audits and ADR-0078's current whole-file hash reference. This closes the four outer-collection state combinations for runtime publication; nested malformed combinations and full Phase 6 source/API/input/reverse-export reconciliation remain open. P6-V04 remains `PENDING_PHASE_19`.
+
+## Route nested collection interaction oracle
+
+- Added `runtimeRouteNestedCollectionMatrix` to the pinned Java `RuntimeRouteFixtures`, invoking real unstarted `MQClientInstance.updateTopicRouteInfoFromNameServer` across all 16 combinations of populated or null nested values in `queueDatas`, `brokerDatas`, `filterServerTable`, and `topicQueueMappingByBroker`.
+- Java accepts null queue rows in ordinary/static route conversions, null filter lists, and null mapping values; null BrokerData rows fail before cache publication. Interactions are recorded with changed/cached state and all four cached collection sizes. Fixture SHA-256: `3ad583764e466bcfe1f827aad49a9e3207a1465f3adb44e7edaa48211b578fad`.
+- Generated with pinned offline Maven Java 5.5.1. The first `exec:java` invocation targeted the wrong entrypoint and was corrected to use `runtime-route-fixtures`; the generator then completed all runtime cases. Rust differential and full verification remain pending.

@@ -1072,6 +1072,16 @@ public final class RuntimeRouteFixtures {
 
     private static Object routeCollectionValue(String field, String state) {
         if ("null".equals(state)) return null;
+        if ("nullNested".equals(state)) {
+            if ("queueDatas".equals(field) || "brokerDatas".equals(field)) {
+                List<Object> rows = new ArrayList<>();
+                rows.add(null);
+                return rows;
+            }
+            Map<String, Object> values = new TreeMap<>();
+            values.put("broker", null);
+            return values;
+        }
         if ("empty".equals(state)) {
             return "queueDatas".equals(field) || "brokerDatas".equals(field)
                 ? new ArrayList<>() : new TreeMap<>();
@@ -1105,6 +1115,59 @@ public final class RuntimeRouteFixtures {
             return Map.of("broker", mapping);
         }
         return null;
+    }
+
+    private static List<Object> runtimeRouteNestedCollectionMatrix() throws Exception {
+        List<Object> cases = new ArrayList<>(16);
+        String[] fields = {"queueDatas", "brokerDatas", "filterServerTable", "topicQueueMappingByBroker"};
+        for (int mask = 0; mask < (1 << fields.length); mask++) {
+            Map<String, Object> input = new TreeMap<>();
+            Map<String, Object> states = new TreeMap<>();
+            for (int index = 0; index < fields.length; index++) {
+                String state = (mask & (1 << index)) == 0 ? "populated" : "nullNested";
+                states.put(fields[index], state);
+                input.put(fields[index], routeCollectionValue(fields[index], state));
+            }
+            String json = com.alibaba.fastjson2.JSON.toJSONString(input,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringKeyAsString);
+            org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+            config.setClientIP("route-nested-matrix-" + cases.size());
+            MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+            org.apache.rocketmq.client.impl.MQClientAPIImpl original = runtime.getMQClientAPIImpl();
+            RouteApi api = new RouteApi(config);
+            Map<String, Object> item = new TreeMap<>();
+            try {
+                java.lang.reflect.Field field = MQClientInstance.class.getDeclaredField("mQClientAPIImpl");
+                field.setAccessible(true);
+                field.set(runtime, api);
+                item.put("input", com.alibaba.fastjson2.JSON.parseObject(json));
+                item.put("states", states);
+                api.route = com.alibaba.fastjson2.JSON.parseObject(json, TopicRouteData.class);
+                try {
+                    item.put("changed", runtime.updateTopicRouteInfoFromNameServer("topic"));
+                    item.put("outcome", "OK");
+                } catch (RuntimeException error) {
+                    item.put("changed", null);
+                    item.put("outcome", error.getClass().getSimpleName());
+                }
+                TopicRouteData cached = runtime.getAnExistTopicRouteData("topic");
+                item.put("cached", cached != null);
+                if (cached != null) {
+                    item.put("cachedQueueCount", cached.getQueueDatas() == null ? -1 : cached.getQueueDatas().size());
+                    item.put("cachedBrokerCount", cached.getBrokerDatas() == null ? -1 : cached.getBrokerDatas().size());
+                    item.put("cachedFilterCount", cached.getFilterServerTable() == null ? -1 : cached.getFilterServerTable().size());
+                    item.put("cachedMappingCount", cached.getTopicQueueMappingByBroker() == null ? -1 : cached.getTopicQueueMappingByBroker().size());
+                }
+            } finally {
+                java.lang.reflect.Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
+                    org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
+                cleanup.setAccessible(true);
+                cleanup.invoke(runtime, original, new IllegalStateException("route nested collection fixture teardown"));
+                api.shutdown();
+            }
+            cases.add(item);
+        }
+        return cases;
     }
 
     private static List<Object> runtimeRouteCollectionMatrix() throws Exception {
@@ -2757,6 +2820,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("overlappingStaticMappingOwners", overlappingStaticMappingOwners());
         fixture.put("runtimeNullableCollections", runtimeNullableCollections());
         fixture.put("runtimeRouteCollectionMatrix", runtimeRouteCollectionMatrix());
+        fixture.put("runtimeRouteNestedCollectionMatrix", runtimeRouteNestedCollectionMatrix());
         fixture.put("runtimeEmptyEndpointTransition", runtimeEmptyEndpointTransition(staticInputs.get(0), inputs.get(0)));
         fixture.put("runtimeTopicRouteTable", runtimeTopicRouteTable(inputs.get(0)));
         fixture.put("runtimeRawOfflineCleanup", runtimeRawOfflineCleanup(inputs.get(0)));
