@@ -87,8 +87,6 @@ pub trait ConsumerRuntime: Send + Sync + 'static {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ConsumerOperation {
-    /// Phase 9 must wake the runtime-wide rebalance service, not just this group.
-    ConsumerIdsChanged,
     ResetOffset,
     ConsumerStatus,
     RunningInfo,

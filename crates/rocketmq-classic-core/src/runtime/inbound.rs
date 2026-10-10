@@ -45,6 +45,13 @@ impl RuntimeProcessor {
                 "client runtime is not running",
             )));
         }
+        if command.code == request::NOTIFY_CONSUMER_IDS_CHANGED {
+            // Java decodes this header for logging only, then wakes the
+            // runtime-wide rebalance service and returns null. The group does
+            // not constrain which consumers are rebalanced.
+            runtime.rebalance_immediately();
+            return Ok(None);
+        }
         let groups = runtime
             .groups
             .snapshot()
@@ -92,11 +99,6 @@ impl RuntimeProcessor {
             }
             code => {
                 let (operation, key, phase) = match code {
-                    request::NOTIFY_CONSUMER_IDS_CHANGED => (
-                        ConsumerOperation::ConsumerIdsChanged,
-                        "consumerGroup",
-                        "Phase 9",
-                    ),
                     request::RESET_CONSUMER_CLIENT_OFFSET => {
                         (ConsumerOperation::ResetOffset, "group", "Phase 17")
                     }
@@ -132,7 +134,6 @@ impl RuntimeProcessor {
                 match command.code {
                     request::CHECK_TRANSACTION_STATE => "Phase 14",
                     request::PUSH_REPLY_MESSAGE_TO_CLIENT => "Phase 15",
-                    request::NOTIFY_CONSUMER_IDS_CHANGED => "Phase 9",
                     _ => "Phase 17",
                 },
             ))),
@@ -230,7 +231,14 @@ mod tests {
     };
     use base64::Engine;
     use rocketmq_classic_protocol::heartbeat::ConsumerData;
-    use std::sync::Mutex;
+    use std::{
+        future::Future,
+        pin::Pin,
+        sync::{
+            Mutex,
+            atomic::{AtomicUsize, Ordering},
+        },
+    };
 
     fn fixtures() -> serde_json::Value {
         serde_json::from_str(include_str!(
@@ -345,6 +353,18 @@ mod tests {
             }
         }
     }
+    struct RebalancingConsumer(AtomicUsize);
+    impl ConsumerRuntime for RebalancingConsumer {
+        fn heartbeat_data(&self) -> ConsumerData {
+            ConsumerData::default()
+        }
+        fn try_rebalance(&self) -> Option<Pin<Box<dyn Future<Output = bool> + Send + '_>>> {
+            Some(Box::pin(async {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                true
+            }))
+        }
+    }
     fn handler(runtime: &Arc<ClientRuntime>, owner: &str) -> Arc<Handler> {
         Arc::new(Handler {
             owner: owner.into(),
@@ -392,6 +412,32 @@ mod tests {
             )
             .unwrap()
             .unwrap()
+    }
+    fn dispatch_optional(
+        runtime: &Arc<ClientRuntime>,
+        fields: &[(&str, &str)],
+    ) -> Option<RemotingCommand> {
+        runtime
+            .inbound
+            .process_with_context(
+                "broker:10911",
+                RemotingCommand {
+                    code: request::NOTIFY_CONSUMER_IDS_CHANGED,
+                    ext_fields: Some(
+                        fields
+                            .iter()
+                            .map(|(key, value)| (key.to_string(), value.to_string()))
+                            .collect(),
+                    ),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+    }
+    async fn settle() {
+        for _ in 0..30 {
+            tokio::task::yield_now().await;
+        }
     }
     async fn unregister(runtime: &Arc<ClientRuntime>, lease: &GroupLease, producer: bool) {
         if producer {
@@ -540,7 +586,6 @@ mod tests {
             .await
             .unwrap();
         for (code, key) in [
-            (request::NOTIFY_CONSUMER_IDS_CHANGED, "consumerGroup"),
             (request::RESET_CONSUMER_CLIENT_OFFSET, "group"),
             (request::GET_CONSUMER_STATUS_FROM_CLIENT, "group"),
             (request::GET_CONSUMER_RUNNING_INFO, "consumerGroup"),
@@ -557,7 +602,7 @@ mod tests {
                 response::REQUEST_CODE_NOT_SUPPORTED
             );
         }
-        assert_eq!(first.handler.calls.lock().unwrap().len(), 5);
+        assert_eq!(first.handler.calls.lock().unwrap().len(), 4);
         assert!(second.handler.calls.lock().unwrap().is_empty());
         unregister(&runtime, &first_lease, false).await;
         assert_eq!(
@@ -575,6 +620,42 @@ mod tests {
         assert!(other.shutdown().await.unwrap());
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn consumer_ids_changed_wakes_runtime_wide_rebalance_and_returns_no_response() {
+        let runtime = runtime("consumer-ids-changed-runtime-wide").await;
+        let first = Arc::new(RebalancingConsumer(AtomicUsize::new(0)));
+        let second = Arc::new(RebalancingConsumer(AtomicUsize::new(0)));
+        let first_lease = runtime
+            .register_consumer("consumer-a", first.clone())
+            .await
+            .unwrap();
+        let second_lease = runtime
+            .register_consumer("consumer-b", second.clone())
+            .await
+            .unwrap();
+
+        // The worker enforces the source minimum interval from construction.
+        tokio::time::advance(std::time::Duration::from_secs(1)).await;
+        settle().await;
+        assert!(dispatch_optional(&runtime, &[("consumerGroup", "consumer-a")]).is_none());
+        settle().await;
+        assert_eq!(first.0.load(Ordering::SeqCst), 1);
+        assert_eq!(second.0.load(Ordering::SeqCst), 1);
+
+        // The Java header's consumerGroup is optional and does not route the
+        // wakeup to a single registered group.
+        tokio::time::advance(std::time::Duration::from_secs(1)).await;
+        settle().await;
+        assert!(dispatch_optional(&runtime, &[]).is_none());
+        settle().await;
+        assert_eq!(first.0.load(Ordering::SeqCst), 2);
+        assert_eq!(second.0.load(Ordering::SeqCst), 2);
+
+        unregister(&runtime, &first_lease, false).await;
+        unregister(&runtime, &second_lease, false).await;
+        assert!(runtime.shutdown().await.unwrap());
+    }
+
     #[tokio::test]
     async fn absent_consumer_group_and_handler_capabilities_return_phase_errors() {
         let runtime = runtime("consumer-inactive-slots").await;
@@ -584,11 +665,6 @@ mod tests {
             .await
             .unwrap();
         for (code, key, phase) in [
-            (
-                request::NOTIFY_CONSUMER_IDS_CHANGED,
-                "consumerGroup",
-                "Phase 9",
-            ),
             (request::RESET_CONSUMER_CLIENT_OFFSET, "group", "Phase 17"),
             (
                 request::GET_CONSUMER_STATUS_FROM_CLIENT,

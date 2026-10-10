@@ -61,12 +61,15 @@ async fn inactive_runtime_slots_match_phase_errors_and_no_dispatch_silence() {
                 ..Default::default()
             };
             write(&mut stream, &command).await;
-            if code == request::NOTIFY_UNSUBSCRIBE_LITE {
+            if matches!(
+                code,
+                request::NOTIFY_CONSUMER_IDS_CHANGED | request::NOTIFY_UNSUBSCRIBE_LITE
+            ) {
                 assert!(
                     tokio::time::timeout(Duration::from_millis(20), read(&mut stream))
                         .await
                         .is_err(),
-                    "the registered but undispatched Java code must not reply"
+                    "Java null-return paths must not reply"
                 );
                 continue;
             }
