@@ -812,6 +812,24 @@ impl ClientRuntime {
         receive.await.map_err(|_| self.control_error())??.accept()
     }
 
+    /// Retain an admin owner by group, matching Java `registerAdminExt`.
+    /// Null group or owner inputs are rejected with `false`; duplicate groups
+    /// keep their first owner. Admin operations themselves belong to Phase 17.
+    pub fn register_admin_ext(
+        &self,
+        group: Option<&str>,
+        owner: Option<Arc<dyn std::any::Any + Send + Sync>>,
+    ) -> Result<bool, RuntimeError> {
+        self.groups.register_admin_ext(group, owner)
+    }
+
+    /// Remove the current admin owner by group, matching Java's unconditional
+    /// `unregisterAdminExt` removal. `None` maps Java's null-key failure to a
+    /// typed invalid-route error.
+    pub fn unregister_admin_ext(&self, group: Option<&str>) -> Result<(), RuntimeError> {
+        self.groups.unregister_admin_ext(group)
+    }
+
     pub fn select_producer(
         &self,
         group: &str,

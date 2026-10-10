@@ -727,6 +727,121 @@ async fn p6_v02_failed_construction_can_retry_and_stale_removal_preserves_replac
 }
 
 #[tokio::test]
+async fn admin_registration_retains_owner_and_matches_invoked_java() {
+    use std::any::Any;
+
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let expected = &fixture["registryTables"]["adminRegistration"];
+    let manager = ClientRuntimeManager::new();
+    let runtime = manager
+        .get_or_create(&ClientConfig::new("admin-registration"))
+        .await
+        .unwrap();
+
+    struct AdminOwner;
+    let null_owner = Arc::new(AdminOwner);
+    let null_owner_weak = Arc::downgrade(&null_owner);
+    let first_owner: Arc<dyn Any + Send + Sync> = null_owner.clone();
+    assert!(
+        !runtime
+            .register_admin_ext(None, Some(first_owner.clone()))
+            .unwrap()
+    );
+    drop(first_owner);
+    drop(null_owner);
+    assert!(null_owner_weak.upgrade().is_none());
+    assert!(!runtime.register_admin_ext(Some("admin"), None).unwrap());
+    assert!(expected["nullGroupRejected"].as_bool().unwrap());
+    assert!(expected["nullAdminRejected"].as_bool().unwrap());
+
+    let first = Arc::new(AdminOwner);
+    let first_weak = Arc::downgrade(&first);
+    let first_owner: Arc<dyn Any + Send + Sync> = first.clone();
+    assert_eq!(
+        runtime
+            .register_admin_ext(Some("admin"), Some(first_owner))
+            .unwrap(),
+        expected["firstRegistrationAccepted"].as_bool().unwrap()
+    );
+    drop(first);
+    assert_eq!(
+        first_weak.upgrade().is_some(),
+        expected["firstOwnerRetained"].as_bool().unwrap()
+    );
+
+    let second = Arc::new(AdminOwner);
+    let second_weak = Arc::downgrade(&second);
+    let second_owner: Arc<dyn Any + Send + Sync> = second.clone();
+    assert_eq!(
+        runtime
+            .register_admin_ext(Some("admin"), Some(second_owner))
+            .unwrap(),
+        !expected["duplicateRejected"].as_bool().unwrap()
+    );
+    drop(second);
+    assert!(second_weak.upgrade().is_none());
+    assert_eq!(
+        first_weak.upgrade().is_some(),
+        expected["duplicateKeepsFirstOwner"].as_bool().unwrap()
+    );
+
+    runtime.unregister_admin_ext(Some("admin")).unwrap();
+    assert_eq!(
+        first_weak.upgrade().is_none(),
+        expected["groupUnregisterRemovesOwner"].as_bool().unwrap()
+    );
+    runtime.unregister_admin_ext(Some("missing")).unwrap();
+    assert!(expected["unregisterMissingIsNoOp"].as_bool().unwrap());
+    assert!(matches!(
+        runtime.unregister_admin_ext(None),
+        Err(RuntimeError::InvalidRoute("null admin group"))
+    ));
+    assert!(expected["nullUnregisterThrows"].as_bool().unwrap());
+
+    let empty_owner = Arc::new(AdminOwner);
+    let empty_weak = Arc::downgrade(&empty_owner);
+    let empty_erased: Arc<dyn Any + Send + Sync> = empty_owner.clone();
+    assert_eq!(
+        runtime
+            .register_admin_ext(Some(""), Some(empty_erased))
+            .unwrap(),
+        expected["emptyGroupAccepted"].as_bool().unwrap()
+    );
+    drop(empty_owner);
+    assert_eq!(
+        empty_weak.upgrade().is_some(),
+        expected["emptyGroupRetainsOwner"].as_bool().unwrap()
+    );
+    runtime.unregister_admin_ext(Some("")).unwrap();
+    assert_eq!(
+        empty_weak.upgrade().is_none(),
+        expected["emptyGroupRemoved"].as_bool().unwrap()
+    );
+
+    let replacement = Arc::new(AdminOwner);
+    let replacement_weak = Arc::downgrade(&replacement);
+    let replacement_owner: Arc<dyn Any + Send + Sync> = replacement.clone();
+    assert_eq!(
+        runtime
+            .register_admin_ext(Some("admin"), Some(replacement_owner))
+            .unwrap(),
+        expected["secondRegistrationAcceptedAfterRemoval"]
+            .as_bool()
+            .unwrap()
+    );
+    drop(replacement);
+    assert_eq!(
+        replacement_weak.upgrade().is_some(),
+        expected["secondOwnerRetainedAfterRemoval"]
+            .as_bool()
+            .unwrap()
+    );
+    runtime.unregister_admin_ext(Some("admin")).unwrap();
+    assert!(replacement_weak.upgrade().is_none());
+}
+
+#[tokio::test]
 async fn json_null_route_response_returns_false_and_preserves_cached_snapshot() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut config = ClientConfig::new("192.0.2.6");

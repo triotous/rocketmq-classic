@@ -122,11 +122,18 @@ struct TableEntry<T: ?Sized> {
 type ProducerEntry = TableEntry<dyn ProducerRuntime>;
 type ConsumerEntry = TableEntry<dyn ConsumerRuntime>;
 
+struct AdminEntry {
+    identity: Arc<()>,
+    // MQClientInstance retains MQAdminExtInner only to keep registration and
+    // runtime ownership alive; Phase 17 supplies the admin operations.
+    _owner: Option<Arc<dyn std::any::Any + Send + Sync>>,
+}
+
 #[derive(Default)]
 struct Entries {
     producers: BTreeMap<String, ProducerEntry>,
     consumers: BTreeMap<String, ConsumerEntry>,
-    admins: BTreeMap<String, Arc<()>>,
+    admins: BTreeMap<String, AdminEntry>,
 }
 
 #[derive(Default)]
@@ -325,8 +332,51 @@ impl GroupRegistry {
             kind: GroupKind::Admin,
             identity: Arc::new(()),
         };
-        entries.admins.insert(group.into(), lease.identity.clone());
+        entries.admins.insert(
+            group.into(),
+            AdminEntry {
+                identity: lease.identity.clone(),
+                _owner: None,
+            },
+        );
         Ok(lease)
+    }
+
+    pub fn register_admin_ext(
+        &self,
+        group: Option<&str>,
+        owner: Option<Arc<dyn std::any::Any + Send + Sync>>,
+    ) -> Result<bool, RuntimeError> {
+        let (Some(group), Some(owner)) = (group, owner) else {
+            return Ok(false);
+        };
+        let mut entries = self
+            .entries
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?;
+        if entries.admins.contains_key(group) {
+            return Ok(false);
+        }
+        entries.admins.insert(
+            group.into(),
+            AdminEntry {
+                identity: Arc::new(()),
+                _owner: Some(owner),
+            },
+        );
+        Ok(true)
+    }
+
+    pub fn unregister_admin_ext(&self, group: Option<&str>) -> Result<(), RuntimeError> {
+        let Some(group) = group else {
+            return Err(RuntimeError::InvalidRoute("null admin group"));
+        };
+        self.entries
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?
+            .admins
+            .remove(group);
+        Ok(())
     }
 
     pub fn unregister(&self, lease: &GroupLease, kind: GroupKind) -> Result<bool, RuntimeError> {
@@ -346,7 +396,10 @@ impl GroupRegistry {
                 .consumers
                 .get(&lease.group)
                 .map(|entry| &entry.identity),
-            GroupKind::Admin => entries.admins.get(&lease.group),
+            GroupKind::Admin => entries
+                .admins
+                .get(&lease.group)
+                .map(|entry| &entry.identity),
         };
         if !identity.is_some_and(|identity| Arc::ptr_eq(identity, &lease.identity)) {
             return Ok(false);
