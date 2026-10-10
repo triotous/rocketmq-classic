@@ -78,6 +78,24 @@ async fn reply(
         .unwrap();
 }
 
+fn check_peer(
+    listener: TcpListener,
+    expected_port: u16,
+    expected_body: serde_json::Value,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let command = read(&mut socket).await;
+        assert_eq!(command.code, request::CHECK_CLIENT_CONFIG);
+        assert_eq!(socket.local_addr().unwrap().port(), expected_port);
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(command.body.as_ref().unwrap()).unwrap(),
+            expected_body
+        );
+        reply(&mut socket, &command, 0, None).await;
+    })
+}
+
 #[test]
 fn check_client_body_matches_actual_java_api_payload() {
     let fixture: serde_json::Value =
@@ -250,6 +268,97 @@ async fn non_tag_check_uses_registered_key_vip_and_source_error_boundaries() {
         })
         .collect();
     assert_eq!(outcomes.len(), 3);
+}
+
+#[tokio::test]
+async fn vip_mutation_after_runtime_construction_matches_invoked_java_check_api() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-check.json")).unwrap();
+    let mutation = &fixture["vipMutation"];
+    assert_eq!(mutation["invocations"], 2);
+    assert_eq!(mutation["vipDisabled"][0], "127.0.0.1:10911");
+    assert_eq!(mutation["vipEnabled"][0], "127.0.0.1:10909");
+    let expected_body = fixture["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| {
+            case["expression"] == "SQL92"
+                && case["invocations"] == 1
+                && case["responseCode"] == 0
+                && case["transportFailure"] == false
+        })
+        .unwrap()["body"]
+        .clone();
+
+    let (vip_broker, ordinary_broker) = loop {
+        let vip_broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let vip_port = vip_broker.local_addr().unwrap().port();
+        if vip_port > u16::MAX - 2 {
+            continue;
+        }
+        match TcpListener::bind(format!("127.0.0.1:{}", vip_port + 2)).await {
+            Ok(ordinary_broker) => break (vip_broker, ordinary_broker),
+            Err(_) => continue,
+        }
+    };
+    let vip_port = vip_broker.local_addr().unwrap().port();
+    let ordinary_port = ordinary_broker.local_addr().unwrap().port();
+    let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let nameserver_addr = nameserver.local_addr().unwrap().to_string();
+    let route = serde_json::to_vec(&serde_json::json!({
+        "queueDatas": [],
+        "brokerDatas": [{
+            "cluster": "cluster",
+            "brokerName": "broker",
+            "brokerAddrs": {"0": format!("127.0.0.1:{ordinary_port}")}
+        }],
+        "filterServerTable": {}
+    }))
+    .unwrap();
+    let name_peer = tokio::spawn(async move {
+        let (mut socket, _) = nameserver.accept().await.unwrap();
+        let command = read(&mut socket).await;
+        assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
+        reply(&mut socket, &command, 0, Some(route)).await;
+    });
+    let mut config = ClientConfig::new("check-client");
+    config.namesrv_addr = Some(nameserver_addr);
+    config.vip_channel_enabled = false;
+    config.enable_heartbeat_channel_event_listener = false;
+    config.mq_client_api_timeout = 1234;
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+    runtime.remoting().start().unwrap();
+    let consumer = Arc::new(Consumer(Some(vec![subscription("SQL92")])));
+    assert!(consumer.heartbeat_data().subscription_data_set.is_some());
+    let _lease = runtime
+        .register_consumer("registered-group", consumer.clone())
+        .await
+        .unwrap();
+    assert!(
+        runtime
+            .update_topic_route("topic", Instant::now() + Duration::from_secs(3))
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        runtime.find_broker_address_by_topic("topic").unwrap(),
+        Some(format!("127.0.0.1:{ordinary_port}"))
+    );
+
+    let ordinary_peer = check_peer(ordinary_broker, ordinary_port, expected_body.clone());
+    runtime.check_client_in_broker().await.unwrap();
+    runtime.config().write().unwrap().vip_channel_enabled = true;
+    let vip_peer = check_peer(vip_broker, vip_port, expected_body);
+    runtime.check_client_in_broker().await.unwrap();
+
+    runtime.remoting().shutdown().await;
+    ordinary_peer.await.unwrap();
+    vip_peer.await.unwrap();
+    name_peer.await.unwrap();
 }
 
 #[tokio::test]

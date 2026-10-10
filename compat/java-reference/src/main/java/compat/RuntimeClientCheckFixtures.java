@@ -45,6 +45,7 @@ public final class RuntimeClientCheckFixtures {
         fixture.put("entrypoint", "MQClientInstance.checkClientInBroker/MQClientAPIImpl.checkClientInBroker/ExpressionType.isTagType");
         fixture.put("transport", "mock RemotingClient; constructed runtime never started");
         fixture.put("serverBaselineContacted", false); fixture.put("cases", cases);
+        fixture.put("vipMutation", runtimeVipMutation());
         fixture.put("checkClientBodyInputCases", checkClientBodyInputCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
             com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
@@ -196,5 +197,63 @@ public final class RuntimeClientCheckFixtures {
             api.shutdown();
         }
         cases.add(item);
+    }
+
+    private static Map<String, Object> runtimeVipMutation() throws Exception {
+        ClientConfig config = new ClientConfig();
+        config.setClientIP("check-client");
+        config.setVipChannelEnabled(false);
+        MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+        MQClientAPIImpl original = runtime.getMQClientAPIImpl();
+        List<String> addresses = new ArrayList<>();
+        RemotingClient transport = (RemotingClient) Proxy.newProxyInstance(
+            RemotingClient.class.getClassLoader(), new Class<?>[] {RemotingClient.class},
+            (proxy, method, values) -> {
+                if (method.getName().equals("invokeSync")) {
+                    addresses.add((String) values[0]);
+                    return RemotingCommand.createResponseCommand(0, null);
+                }
+                return method.getReturnType() == boolean.class ? false : null;
+            });
+        MQClientAPIImpl api = new MQClientAPIImpl(
+            new NettyClientConfig(), null, null, config, null, ignored -> transport);
+        Field field = MQClientInstance.class.getDeclaredField("mQClientAPIImpl");
+        field.setAccessible(true);
+        field.set(runtime, api);
+        Map<String, Object> result = new TreeMap<>();
+        try {
+            SubscriptionData subscription = new SubscriptionData();
+            subscription.setTopic("topic");
+            subscription.setSubString("a > 1");
+            subscription.setSubVersion(42);
+            subscription.setExpressionType("SQL92");
+            MQConsumerInner consumer = (MQConsumerInner) Proxy.newProxyInstance(
+                MQConsumerInner.class.getClassLoader(), new Class<?>[] {MQConsumerInner.class},
+                (proxy, method, values) -> {
+                    if (method.getName().equals("subscriptions")) {
+                        return Collections.singleton(subscription);
+                    }
+                    return method.getReturnType() == boolean.class ? false : null;
+                });
+            runtime.registerConsumer("registered-group", consumer);
+            runtime.getTopicRouteTable().put("topic", com.alibaba.fastjson2.JSON.parseObject(
+                "{\"queueDatas\":[],\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"127.0.0.1:10911\"}}],\"filterServerTable\":{}}",
+                TopicRouteData.class));
+
+            runtime.checkClientInBroker();
+            result.put("vipDisabled", new ArrayList<>(addresses));
+            addresses.clear();
+            config.setVipChannelEnabled(true);
+            runtime.checkClientInBroker();
+            result.put("vipEnabled", new ArrayList<>(addresses));
+            result.put("invocations", 2);
+        } finally {
+            Method cleanup = MQClientInstance.class.getDeclaredMethod(
+                "cleanupAfterConstructionFailure", MQClientAPIImpl.class, Throwable.class);
+            cleanup.setAccessible(true);
+            cleanup.invoke(runtime, original, new IllegalStateException("VIP mutation fixture teardown"));
+            api.shutdown();
+        }
+        return result;
     }
 }
