@@ -1564,6 +1564,40 @@ public final class RuntimeRouteFixtures {
         return result;
     }
 
+    private static Map<String, Object> brokerAddressLookupOutcome(
+        java.util.function.Supplier<?> lookup) {
+        Map<String, Object> result = new TreeMap<>();
+        try {
+            result.put("isNull", lookup.get() == null);
+            result.put("outcome", "OK");
+        } catch (RuntimeException error) {
+            result.put("isNull", false);
+            result.put("outcome", error.getClass().getSimpleName());
+        }
+        return result;
+    }
+
+    private static Map<String, Object> runtimeNullBrokerAddressLookups() throws Exception {
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("null-broker-address-lookups");
+        MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+        Map<String, Object> result = new TreeMap<>();
+        try {
+            result.put("admin", brokerAddressLookupOutcome(() -> runtime.findBrokerAddressInAdmin(null)));
+            result.put("publish", brokerAddressLookupOutcome(() -> runtime.findBrokerAddressInPublish(null)));
+            result.put("subscribe", brokerAddressLookupOutcome(
+                () -> runtime.findBrokerAddressInSubscribe(null, 0L, true)));
+        } finally {
+            java.lang.reflect.Method cleanup = MQClientInstance.class.getDeclaredMethod(
+                "cleanupAfterConstructionFailure", org.apache.rocketmq.client.impl.MQClientAPIImpl.class,
+                Throwable.class);
+            cleanup.setAccessible(true);
+            cleanup.invoke(runtime, runtime.getMQClientAPIImpl(),
+                new IllegalStateException("null broker address lookup fixture teardown"));
+        }
+        return result;
+    }
+
     private static List<Object> runtimeRawOfflineCleanup(Map<String, Object> initial) throws Exception {
         List<Object> cases = new ArrayList<>();
         for (boolean priorBroker : new boolean[] {false, true}) {
@@ -3203,6 +3237,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("runtimeEmptyEndpointTransition", runtimeEmptyEndpointTransition(staticInputs.get(0), inputs.get(0)));
         fixture.put("runtimeNullBrokerQueue", runtimeNullBrokerQueue());
         fixture.put("runtimeNullTopicBrokerSelection", runtimeNullTopicBrokerSelection());
+        fixture.put("runtimeNullBrokerAddressLookups", runtimeNullBrokerAddressLookups());
         fixture.put("runtimeTopicRouteTable", runtimeTopicRouteTable(inputs.get(0)));
         fixture.put("runtimeRawOfflineCleanup", runtimeRawOfflineCleanup(inputs.get(0)));
         fixture.put("runtimeRawCleanupShapes", runtimeRawCleanupShapes(inputs.get(0)));
