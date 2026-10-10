@@ -924,6 +924,18 @@ async fn concurrent_v1_uses_parallel_peers_and_busy_heartbeat_gate_skips_a_round
 
 #[tokio::test]
 async fn enabling_concurrent_heartbeat_after_construction_has_no_executor() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/heartbeat.json")).unwrap();
+    let java_case = &fixture["concurrentHeartbeatExecutorMutation"];
+    assert!(
+        !java_case["executorPresentBeforeMutation"]
+            .as_bool()
+            .unwrap()
+    );
+    assert!(java_case["configuredAfterMutation"].as_bool().unwrap());
+    assert!(!java_case["executorPresentAfterMutation"].as_bool().unwrap());
+    assert!(!java_case["sendOutcome"].as_bool().unwrap());
+
     let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = broker.local_addr().unwrap().to_string();
     let mut config = ClientConfig::new("late-concurrent-heartbeat");

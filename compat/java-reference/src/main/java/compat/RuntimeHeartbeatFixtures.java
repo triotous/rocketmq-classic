@@ -1252,7 +1252,7 @@ public final class RuntimeHeartbeatFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "MQClientInstance constructor heartbeat ChannelEventListener selection/registerProducer/registerConsumer/prepareHeartbeatData/unregisterProducer/unregisterConsumer; HeartbeatData/ConsumerData/ProducerData/SubscriptionData Fastjson scalar inputs; HeartbeatData.computeHeartbeatFingerprint/toString/duplicate-ProducerData decode/nullable producer-consumer-subscription set elements; ProducerData.toString; ConsumerData enum JSON names/toString; ConsumeType.getTypeCN/MessageModel.getModeCN; SubscriptionData.SUB_ALL/constructors/equals/hashCode/compareTo/toString; ProducerData/ConsumerData/HeartbeatData inherited Object equals/hashCode; HeartbeatData inherited RemotingSerializable encode/toJson/decode/decodeList/fromJson methods");
+        fixture.put("entrypoint", "MQClientInstance constructor heartbeat ChannelEventListener selection/registerProducer/registerConsumer/prepareHeartbeatData/unregisterProducer/unregisterConsumer/sendHeartbeatToAllBrokerWithLock and live concurrent-heartbeat setting mutation; HeartbeatData/ConsumerData/ProducerData/SubscriptionData Fastjson scalar inputs; HeartbeatData.computeHeartbeatFingerprint/toString/duplicate-ProducerData decode/nullable producer-consumer-subscription set elements; ProducerData.toString; ConsumerData enum JSON names/toString; ConsumeType.getTypeCN/MessageModel.getModeCN; SubscriptionData.SUB_ALL/constructors/equals/hashCode/compareTo/toString; ProducerData/ConsumerData/HeartbeatData inherited Object equals/hashCode; HeartbeatData inherited RemotingSerializable encode/toJson/decode/decodeList/fromJson methods");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
         fixture.put("multiplicityCases", multiplicityCases);
@@ -1278,6 +1278,7 @@ public final class RuntimeHeartbeatFixtures {
         fixture.put("nullOwnerSubscriptionPreparation", nullOwnerSubscriptionPreparation());
         fixture.put("channelEventListenerCases", channelEventListenerCases());
         fixture.put("heartbeatV2SettingMutation", heartbeatV2SettingMutation());
+        fixture.put("concurrentHeartbeatExecutorMutation", concurrentHeartbeatExecutorMutation());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture) + "\n";
         Path file = Path.of(args[0]);
         if (args.length > 1 && "--verify".equals(args[1])) {
@@ -1393,6 +1394,42 @@ public final class RuntimeHeartbeatFixtures {
                 api.shutdown();
                 producer.shutdown();
             }
+        }
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> concurrentHeartbeatExecutorMutation() throws Exception {
+        ClientConfig config = new ClientConfig();
+        config.setClientIP("concurrent-heartbeat-executor-mutation");
+        config.setEnableConcurrentHeartbeat(false);
+        MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+        Map<String, Object> result = new TreeMap<>();
+        try {
+            java.lang.reflect.Field producerField = MQClientInstance.class.getDeclaredField("producerTable");
+            producerField.setAccessible(true);
+            ((Map<String, Object>) producerField.get(runtime)).put("fixture-producer", new Object());
+
+            java.lang.reflect.Field brokerField = MQClientInstance.class.getDeclaredField("brokerAddrTable");
+            brokerField.setAccessible(true);
+            Map<String, java.util.HashMap<Long, String>> brokerTable =
+                (Map<String, java.util.HashMap<Long, String>>) brokerField.get(runtime);
+            java.util.HashMap<Long, String> addresses = new java.util.HashMap<>();
+            addresses.put(0L, "127.0.0.1:10911");
+            brokerTable.put("fixture-broker", addresses);
+
+            java.lang.reflect.Field executorField = MQClientInstance.class.getDeclaredField("concurrentHeartbeatExecutor");
+            executorField.setAccessible(true);
+            result.put("executorPresentBeforeMutation", executorField.get(runtime) != null);
+            config.setEnableConcurrentHeartbeat(true);
+            result.put("configuredAfterMutation", config.isEnableConcurrentHeartbeat());
+            result.put("executorPresentAfterMutation", executorField.get(runtime) != null);
+            result.put("sendOutcome", runtime.sendHeartbeatToAllBrokerWithLock());
+        } finally {
+            Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
+                org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
+            cleanup.setAccessible(true);
+            cleanup.invoke(runtime, runtime.getMQClientAPIImpl(), new IllegalStateException("concurrent heartbeat fixture teardown"));
         }
         return result;
     }
