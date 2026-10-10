@@ -1150,6 +1150,84 @@ public final class RuntimeConfigFixtures {
         return result;
     }
 
+    private static <T> Map<String, Object> replaceAllEquivalentValueRace(
+        java.util.concurrent.ConcurrentMap<String, T> table, T first, T equalWriter, T computed, String prefix) {
+        Map<String, Object> result = new TreeMap<>();
+        String key = "replace-all-equal-race";
+        table.put(key, first);
+        AtomicInteger callbackCalls = new AtomicInteger();
+        AtomicReference<T> initialCallbackValue = new AtomicReference<>();
+        AtomicReference<T> writerPrevious = new AtomicReference<>();
+        AtomicReference<Throwable> callbackFailure = new AtomicReference<>();
+        AtomicReference<Throwable> writerFailure = new AtomicReference<>();
+        CountDownLatch callbackEntered = new CountDownLatch(1);
+        CountDownLatch releaseCallback = new CountDownLatch(1);
+        CountDownLatch writerStarted = new CountDownLatch(1);
+        CountDownLatch writerFinished = new CountDownLatch(1);
+        Thread replaceAllThread = new Thread(() -> {
+            try {
+                table.replaceAll((currentKey, oldValue) -> {
+                    if (!currentKey.equals(key)) {
+                        return oldValue;
+                    }
+                    if (callbackCalls.incrementAndGet() == 1) {
+                        initialCallbackValue.set(oldValue);
+                        callbackEntered.countDown();
+                        awaitUnchecked(releaseCallback, "equal-value replaceAll callback release");
+                    }
+                    return computed;
+                });
+            } catch (Throwable error) {
+                callbackFailure.set(error);
+            }
+        }, "java-replace-all-equal-oracle");
+        Thread writerThread = new Thread(() -> {
+            writerStarted.countDown();
+            try {
+                writerPrevious.set(table.put(key, equalWriter));
+            } catch (Throwable error) {
+                writerFailure.set(error);
+            } finally {
+                writerFinished.countDown();
+            }
+        }, "java-replace-all-equal-writer");
+        replaceAllThread.setDaemon(true);
+        writerThread.setDaemon(true);
+        replaceAllThread.start();
+        try {
+            awaitUnchecked(callbackEntered, "equal-value replaceAll callback");
+            writerThread.start();
+            awaitUnchecked(writerStarted, "equal-value replaceAll writer");
+            result.put(prefix + "ReplaceAllEqualWriterRunsDuringCallback",
+                writerFinished.await(100, TimeUnit.MILLISECONDS));
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted while checking equal-value replaceAll", error);
+        } finally {
+            releaseCallback.countDown();
+        }
+        try {
+            replaceAllThread.join(5000);
+            writerThread.join(5000);
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted while joining equal-value replaceAll fixture threads", error);
+        }
+        if (replaceAllThread.isAlive() || writerThread.isAlive()) {
+            throw new IllegalStateException("ConcurrentHashMap equal-value replaceAll threads did not finish");
+        }
+        if (callbackFailure.get() != null || writerFailure.get() != null) {
+            throw new IllegalStateException("ConcurrentHashMap equal-value replaceAll fixture failed",
+                callbackFailure.get() != null ? callbackFailure.get() : writerFailure.get());
+        }
+        result.put(prefix + "ReplaceAllEqualWriterPreservesSingleCallback",
+            callbackCalls.get() == 1 && initialCallbackValue.get() == first);
+        result.put(prefix + "ReplaceAllEqualWriterObservedOldValue", writerPrevious.get() == first);
+        result.put(prefix + "ReplaceAllEqualWriterFinalValueIsComputed", table.get(key) == computed);
+        table.remove(key);
+        return result;
+    }
+
     private static <T> Map<String, Object> tableLiveViews(
         java.util.concurrent.ConcurrentMap<String, T> table, T first, T second) {
         Map<String, Object> result = new TreeMap<>();
@@ -1272,6 +1350,8 @@ public final class RuntimeConfigFixtures {
                 tableOwner(org.apache.rocketmq.client.impl.producer.MQProducerInner.class, "producer-replacement");
             org.apache.rocketmq.client.impl.producer.MQProducerInner producerOther =
                 tableOwner(org.apache.rocketmq.client.impl.producer.MQProducerInner.class, "producer-other");
+            equalValues.putAll(replaceAllEquivalentValueRace(runtime.getProducerTable(), producerEqualA,
+                producerEqualB, producerReplacement, "producer"));
             runtime.getProducerTable().put("equal-replace", producerEqualA);
             equalValues.put("producerContainsEqualValue", runtime.getProducerTable().containsValue(producerEqualB));
             equalValues.put("producerReplaceByEqualValue",
@@ -1311,6 +1391,8 @@ public final class RuntimeConfigFixtures {
                 tableOwner(org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class, "consumer-replacement");
             org.apache.rocketmq.client.impl.consumer.MQConsumerInner consumerOther =
                 tableOwner(org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class, "consumer-other");
+            equalValues.putAll(replaceAllEquivalentValueRace(runtime.getConsumerTable(), consumerEqualA,
+                consumerEqualB, consumerReplacement, "consumer"));
             runtime.getConsumerTable().put("equal-replace", consumerEqualA);
             equalValues.put("consumerContainsEqualValue", runtime.getConsumerTable().containsValue(consumerEqualB));
             equalValues.put("consumerReplaceByEqualValue",

@@ -194,7 +194,7 @@ async fn conditional_registry_mutations_match_java_custom_value_equality() {
     }
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
-    let expected = &fixture["registryTables"]["customEquality"];
+    let mut expected = fixture["registryTables"]["customEquality"].clone();
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&ClientConfig::new("registry-custom-equality"))
         .await
@@ -400,6 +400,10 @@ async fn conditional_registry_mutations_match_java_custom_value_equality() {
         .replace_if_equal("dynamic-replace", &replace_expected, consumer_c)
         .await
         .unwrap();
+    expected
+        .as_object_mut()
+        .unwrap()
+        .retain(|key, _| !key.contains("ReplaceAllEqualWriter"));
     assert_eq!(
         serde_json::json!({
             "producerContainsEqualValue": true,
@@ -426,7 +430,129 @@ async fn conditional_registry_mutations_match_java_custom_value_equality() {
             "consumerReplaceByEqualValue": true,
             "consumerRemoveByEqualValue": true
         }),
-        *expected
+        expected
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn registry_replace_all_uses_java_value_equality_for_concurrent_update() {
+    struct EqualProducer(&'static str);
+    impl ProducerRuntime for EqualProducer {
+        fn map_value_equality_key(&self) -> Option<String> {
+            Some(self.0.to_owned())
+        }
+    }
+    struct EqualConsumer(&'static str);
+    impl ConsumerRuntime for EqualConsumer {
+        fn heartbeat_data(&self) -> ConsumerData {
+            ConsumerData::default()
+        }
+        fn map_value_equality_key(&self) -> Option<String> {
+            Some(self.0.to_owned())
+        }
+    }
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let expected = &fixture["registryTables"]["customEquality"];
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&ClientConfig::new("registry-replace-all-value-equality"))
+        .await
+        .unwrap();
+
+    macro_rules! check_equal_writer {
+        ($table:expr, $first:expr, $equal_writer:expr, $computed:expr, $prefix:literal) => {{
+            let table = $table;
+            let first = $first;
+            let equal_writer = $equal_writer;
+            let computed = $computed;
+            let key = "replace-all-equal-race";
+            table.put(key, first.clone()).await.unwrap();
+            let calls = Arc::new(AtomicUsize::new(0));
+            let callback_initial_is_first = Arc::new(AtomicBool::new(false));
+            let (entered_tx, entered_rx) = mpsc::channel();
+            let (release_tx, release_rx) = mpsc::channel();
+            let table_for_replace = table.clone();
+            let calls_for_task = calls.clone();
+            let initial_for_task = callback_initial_is_first.clone();
+            let first_for_task = first.clone();
+            let computed_for_task = computed.clone();
+            let replacing = tokio::spawn(async move {
+                table_for_replace
+                    .replace_all(move |current_key, current| {
+                        if current_key != key {
+                            return current.clone();
+                        }
+                        if calls_for_task.fetch_add(1, Ordering::SeqCst) == 0 {
+                            initial_for_task
+                                .store(Arc::ptr_eq(current, &first_for_task), Ordering::SeqCst);
+                            entered_tx.send(()).unwrap();
+                            release_rx.recv().unwrap();
+                        }
+                        computed_for_task.clone()
+                    })
+                    .await
+                    .unwrap()
+            });
+            tokio::task::spawn_blocking(move || entered_rx.recv().unwrap())
+                .await
+                .unwrap();
+            let table_for_writer = table.clone();
+            let writer_value = equal_writer.clone();
+            let (writer_started_tx, writer_started_rx) = tokio::sync::oneshot::channel();
+            let mut writer = tokio::spawn(async move {
+                writer_started_tx.send(()).unwrap();
+                table_for_writer.put(key, writer_value).await.unwrap()
+            });
+            writer_started_rx.await.unwrap();
+            let writer_result = tokio::time::timeout(Duration::from_secs(1), &mut writer).await;
+            let writer_runs_during_callback = writer_result.is_ok();
+            release_tx.send(()).unwrap();
+            replacing.await.unwrap();
+            let writer_previous = match writer_result {
+                Ok(result) => result.unwrap(),
+                Err(_) => writer.await.unwrap(),
+            };
+            let callbacks_preserve_single_call = calls.load(Ordering::SeqCst) == 1
+                && callback_initial_is_first.load(Ordering::SeqCst);
+            let writer_observed_old =
+                writer_previous.is_some_and(|value| Arc::ptr_eq(&value, &first));
+            let final_is_computed = table
+                .get(key)
+                .unwrap()
+                .is_some_and(|value| Arc::ptr_eq(&value, &computed));
+            assert_eq!(
+                writer_runs_during_callback,
+                expected[concat!($prefix, "ReplaceAllEqualWriterRunsDuringCallback")]
+            );
+            assert_eq!(
+                callbacks_preserve_single_call,
+                expected[concat!($prefix, "ReplaceAllEqualWriterPreservesSingleCallback")]
+            );
+            assert_eq!(
+                writer_observed_old,
+                expected[concat!($prefix, "ReplaceAllEqualWriterObservedOldValue")]
+            );
+            assert_eq!(
+                final_is_computed,
+                expected[concat!($prefix, "ReplaceAllEqualWriterFinalValueIsComputed")]
+            );
+            table.remove(key).await.unwrap();
+        }};
+    }
+
+    check_equal_writer!(
+        runtime.producer_table(),
+        Arc::new(EqualProducer("producer-equal")) as Arc<dyn ProducerRuntime>,
+        Arc::new(EqualProducer("producer-equal")) as Arc<dyn ProducerRuntime>,
+        Arc::new(EqualProducer("producer-replacement")) as Arc<dyn ProducerRuntime>,
+        "producer"
+    );
+    check_equal_writer!(
+        runtime.consumer_table(),
+        Arc::new(EqualConsumer("consumer-equal")) as Arc<dyn ConsumerRuntime>,
+        Arc::new(EqualConsumer("consumer-equal")) as Arc<dyn ConsumerRuntime>,
+        Arc::new(EqualConsumer("consumer-replacement")) as Arc<dyn ConsumerRuntime>,
+        "consumer"
     );
 }
 

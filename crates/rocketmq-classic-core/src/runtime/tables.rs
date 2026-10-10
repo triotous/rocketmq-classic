@@ -488,13 +488,23 @@ macro_rules! table {
                         // outside its bin lock and retries after a lost CAS.
                         let value = remapping(&key, &current);
                         let gate = self.0.key_gate(&key).await?;
+                        let Some(latest) = self.get(&key)? else {
+                            break;
+                        };
+                        // ConcurrentHashMap's conditional replace compares
+                        // the old value with equals(), not reference identity.
+                        // Read the equal current value under the per-key gate,
+                        // then commit against that stable mapping by identity.
+                        if !Self::owners_equal(&current, &latest) {
+                            continue;
+                        }
                         let change = self
                             .0
                             .mutate_with_gate(
                                 TableMutation::Replace {
                                     key: key.clone(),
                                     value: TableValue::$kind(value),
-                                    expected: Some(TableValue::$kind(current)),
+                                    expected: Some(TableValue::$kind(latest)),
                                     comparison: Some(ValueComparison::Identity),
                                 },
                                 Some(gate),
