@@ -446,7 +446,14 @@ impl TopicRouteTable {
     /// whole-table transaction.
     pub fn clear(&self) -> Result<(), RuntimeError> {
         for key in self.snapshot()?.into_keys() {
-            let _gate = self.0.lock_raw_route_key(&key)?;
+            // Java's ConcurrentHashMap.clear can remove the key currently
+            // being remapped by this thread. Other threads still wait for
+            // the per-key operation to finish before clear removes it.
+            let _gate = match self.0.lock_raw_route_key(&key) {
+                Ok(gate) => Some(gate),
+                Err(RuntimeError::RecursiveRouteTableMutation) => None,
+                Err(error) => return Err(error),
+            };
             self.0.update_raw(|map| (map.remove(&key).is_some(), ()))?;
         }
         Ok(())

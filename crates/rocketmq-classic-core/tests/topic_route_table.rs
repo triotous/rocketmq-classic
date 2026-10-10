@@ -767,6 +767,31 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
         !table.contains_key("clear-race").unwrap(),
     );
 
+    table.put("clear-reentrant", first.clone()).unwrap();
+    let mut reentrant_clear_completes = false;
+    let mut reentrant_clear_observes_absent = false;
+    let reentrant_clear_result = table
+        .compute("clear-reentrant", |key, _| {
+            reentrant_clear_completes = table.clear().is_ok();
+            reentrant_clear_observes_absent =
+                reentrant_clear_completes && table.get(key).unwrap().is_none();
+            Some(second.clone())
+        })
+        .unwrap();
+    outcomes.insert("clearReentrantCompletes", reentrant_clear_completes);
+    outcomes.insert(
+        "clearReentrantRemovesBeforeCallbackReturns",
+        reentrant_clear_observes_absent,
+    );
+    outcomes.insert(
+        "clearReentrantComputeReturnsValue",
+        same(reentrant_clear_result, &second),
+    );
+    outcomes.insert(
+        "clearReentrantComputedValueRemains",
+        table.contains_key("clear-reentrant").unwrap(),
+    );
+
     table.put("recursive-write", first.clone()).unwrap();
     let mut recursive_write_rejected = false;
     table

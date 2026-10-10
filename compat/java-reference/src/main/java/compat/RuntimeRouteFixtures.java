@@ -2120,6 +2120,25 @@ public final class RuntimeRouteFixtures {
             primitives.put("clearComputeReturnsValue", clearComputeResult.get() == second);
             primitives.put("clearRemovesComputedValue", !table.containsKey("clear-race"));
 
+            table.put("clear-reentrant", first);
+            AtomicReference<Throwable> reentrantClearFailure = new AtomicReference<>();
+            AtomicReference<Boolean> reentrantClearObservedAbsent = new AtomicReference<>(false);
+            TopicRouteData reentrantClearResult = table.compute("clear-reentrant", (key, oldValue) -> {
+                try {
+                    table.clear();
+                    reentrantClearObservedAbsent.set(!table.containsKey(key));
+                } catch (Throwable error) {
+                    reentrantClearFailure.set(error);
+                }
+                return second;
+            });
+            primitives.put("clearReentrantCompletes", reentrantClearFailure.get() == null);
+            primitives.put("clearReentrantRemovesBeforeCallbackReturns",
+                Boolean.TRUE.equals(reentrantClearObservedAbsent.get()));
+            primitives.put("clearReentrantComputeReturnsValue", reentrantClearResult == second);
+            primitives.put("clearReentrantComputedValueRemains", table.get("clear-reentrant") == second);
+            table.clear();
+
             table.remove("compute-a");
             table.remove("merge-new");
             table.clear();
