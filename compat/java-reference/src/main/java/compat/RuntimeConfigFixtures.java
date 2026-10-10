@@ -298,6 +298,7 @@ public final class RuntimeConfigFixtures {
         };
         org.apache.rocketmq.client.impl.factory.MQClientInstance first =
             manager.getOrCreateMQClientInstance(firstConfig, firstHook);
+        String runtimeClientId = first.getClientId();
         ClientConfig laterConfig = firstConfig.cloneClientConfig();
         laterConfig.setNamesrvAddr("different-nameserver:9876");
         laterConfig.setNamespaceV2("different-namespace");
@@ -320,6 +321,12 @@ public final class RuntimeConfigFixtures {
             result.put("retainedNamespaceV2", retained.getNamespaceV2());
             result.put("retainedTls", retained.isUseTLS());
             result.put("retainedTimeout", retained.getMqClientApiTimeout());
+            result.put("clientIdBeforeConfigMutation", runtimeClientId);
+            retained.setClientIP("203.0.113.44");
+            retained.setInstanceName("mutated-runtime-instance");
+            retained.setUnitName("mutated-runtime-unit");
+            result.put("clientIdAfterConfigMutation", first.getClientId());
+            result.put("configDerivedClientIdAfterMutation", retained.buildMQClientId());
             result.put("laterConfigUnchanged", "different-nameserver:9876".equals(laterConfig.getNamesrvAddr())
                 && "different-namespace".equals(laterConfig.getNamespaceV2()) && laterConfig.isUseTLS()
                 && laterConfig.getMqClientApiTimeout() == 1234);
@@ -327,7 +334,7 @@ public final class RuntimeConfigFixtures {
             try {
                 cleanupRuntime(first);
             } finally {
-                manager.removeClientFactory(first.getClientId(), first);
+                manager.removeClientFactory(runtimeClientId, first);
             }
         }
         return result;
