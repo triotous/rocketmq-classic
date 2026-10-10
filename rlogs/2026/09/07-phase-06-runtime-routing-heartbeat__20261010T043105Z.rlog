@@ -193,3 +193,10 @@
 
 - Updated `ClientRuntime::register_admin_ext` docs to require a `Weak<ClientRuntime>` for owner back-references. The started-runtime differential now uses an admin owner holding only a Weak handle and proves the runtime's Weak becomes un-upgradeable after admin removal, shutdown and dropping manager/runtime handles.
 - Commit `bcc98f46`; focused `admin_registration_blocks_shutdown_until_owner_is_unregistered` and strict core Clippy pass, along with formatting/diff checks. The registry still retains the admin owner strongly as Java does; caller-provided owner types must avoid strong back-reference cycles. Full Phase 6 remains PARTIAL; P6-V04 stays `PENDING_PHASE_19`.
+
+## Runtime lookup invocation continuation
+
+- Added direct calls through pinned Java 5.5.1 `MQClientInstance.findConsumerIdList/queryAssignment`, with a recorder replacing only `MQClientAPIImpl`. The fixture records one route refresh, selected Broker address, query fields, 3000ms consumer timeout, explicit assignment timeout, ordered consumer IDs, empty assignment Set, swallowed consumer RPC failure and propagated assignment RPC failure.
+- Java oracle/fixture commit `a5d9a91c`; `fixtures/runtime/lookup.json` SHA-256 `df8d77e566ed706002ba5f09e7ea80869e929973ba7ed7b680e61ce6ab45c649`. Rust differential commit `cb37ec00` feeds the Java consumer IDs and assignment arguments into the existing loopback peer and compares the emitted request.
+- Focused `cargo test -p rocketmq-classic-core --test runtime_lookup uncached_consumer_lookup_refreshes_once_and_assignment_reuses_raw_topic_broker --locked` passed; then all five `runtime_lookup` integration tests passed after aligning their client IP with the Java oracle. Full pinned offline Maven verify passed with reviewed loopback access, including all 22 scenarios, fixture drift checks, and Java cross-decodes. `cargo fmt --all -- --check` and `git diff --check` passed. No production runtime code changed.
+- This closes direct runtime-entrypoint invocation evidence for the two lookup methods only. Full API/source/input/reverse-export reconciliation remains PARTIAL; P6-V04 stays `PENDING_PHASE_19`.
