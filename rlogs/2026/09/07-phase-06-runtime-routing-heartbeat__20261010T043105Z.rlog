@@ -170,3 +170,9 @@
 
 - Extended the direct `MQClientInstance.registerAdminExt/unregisterAdminExt` invocation to capture null group/admin rejection, strong owner retention, duplicate preservation, empty-group acceptance, missing-group removal, group-key re-registration, and null-key removal failure.
 - Pinned offline `RuntimeConfigFixtures` generation passed. All 15 direct Java observations are recorded under `registryTables.adminRegistration`; updated `client-config.json` SHA-256: `14885daa5c6f2669c2443b9b9d5720ea2fa8e93945a620d03b1cc65a7274f38b`. Native parity remains pending.
+
+## Java admin registration implementation and validation
+
+- Implemented in `c60cbba8` (`Match Java admin registration ownership`): `GroupRegistry` now keeps a strong, opaque owner for each `registerAdminExt` group, rejects null/duplicate registration with `false`, retains the first owner, and removes unconditionally by group. Identity-lease registration remains independently supported. Rust maps Java's null unregister key exception to `RuntimeError::InvalidRoute("null admin group")`; concrete admin methods remain Phase 17.
+- Added `admin_registration_retains_owner_and_matches_invoked_java`, which compares all 15 fixture outcomes (including the empty-table check after null-input rejection) and verifies owner retention and release with `Weak` references. The test assertion follow-up is `83a75070`; Java fixture commit is `78eff96c`; fixture SHA-256 remains `14885daa5c6f2669c2443b9b9d5720ea2fa8e93945a620d03b1cc65a7274f38b`.
+- Focused differential, core all-target tests, workspace all-target tests, strict core/workspace Clippy, pinned offline Maven verify (22 scenarios), comparator self-test/manifest22, formatting, and diff checks pass. The Phase 6 matrix remains PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
