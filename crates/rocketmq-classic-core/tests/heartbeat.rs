@@ -86,6 +86,63 @@ async fn v2_full_and_simple_wire_preserve_duplicate_consumer_metadata() {
     runtime.remoting().shutdown().await;
 }
 
+#[tokio::test]
+async fn heartbeat_protocol_mode_reads_live_v2_setting_after_construction() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/heartbeat.json")).unwrap();
+    let java_mode = &fixture["heartbeatV2SettingMutation"];
+    assert!(!java_mode["configuredBefore"].as_bool().unwrap());
+    assert!(java_mode["configuredAfterMutation"].as_bool().unwrap());
+    assert_eq!(java_mode["modeCalls"], serde_json::json!(["V1", "V2"]));
+    assert!(java_mode["v1Outcome"].as_bool().unwrap());
+    assert!(java_mode["v2Outcome"].as_bool().unwrap());
+
+    let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = broker.local_addr().unwrap().to_string();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = broker.accept().await.unwrap();
+        let mut observed_modes = Vec::new();
+        for _ in 0..2 {
+            let command = read(&mut stream).await;
+            assert_eq!(command.code, request::HEART_BEAT);
+            let body: HeartbeatData =
+                serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
+            observed_modes.push(if body.heartbeat_fingerprint == 0 {
+                "V1"
+            } else {
+                "V2"
+            });
+            respond(&mut stream, &command, None, true, false).await;
+        }
+        assert_eq!(observed_modes, ["V1", "V2"]);
+    });
+    let mut config = ClientConfig::new("heartbeat-mode");
+    config.use_heartbeat_v2 = false;
+    config.enable_heartbeat_channel_event_listener = false;
+    let runtime = runtime(config, &[address.clone()]).await;
+    assert!(!runtime.config().read().unwrap().use_heartbeat_v2);
+    let producer = Arc::new(Producer);
+    let _lease = runtime
+        .register_producer("producer", producer.clone())
+        .await
+        .unwrap();
+    assert_eq!(
+        runtime
+            .prepare_heartbeat_data(false)
+            .unwrap()
+            .producer_data_set
+            .unwrap()
+            .with(|rows| rows.len()),
+        1
+    );
+    assert_eq!(runtime.route_snapshot().unwrap().broker_addresses.len(), 1);
+    assert!(runtime.send_heartbeat_to_all_brokers().await.unwrap());
+    runtime.config().write().unwrap().use_heartbeat_v2 = true;
+    assert!(runtime.send_heartbeat_to_all_brokers().await.unwrap());
+    peer.await.unwrap();
+    runtime.remoting().shutdown().await;
+}
+
 impl ProducerRuntime for Producer {}
 struct Consumer(Mutex<SubscriptionData>);
 impl ConsumerRuntime for Consumer {
