@@ -1904,6 +1904,35 @@ public final class RuntimeRouteFixtures {
                 !table.remove("topic", null));
             primitives.put("nullMapOperationArgumentsKeepMapping",
                 table.size() == 1 && table.get("topic") == first);
+            AtomicInteger nullComputeCallbackCalls = new AtomicInteger();
+            primitives.put("computeIfAbsentNullKeyThrowsNullPointer", throwsNullPointer(() ->
+                table.computeIfAbsent(null, key -> {
+                    nullComputeCallbackCalls.incrementAndGet();
+                    return second;
+                })));
+            primitives.put("computeIfPresentNullKeyThrowsNullPointer", throwsNullPointer(() ->
+                table.computeIfPresent(null, (key, oldValue) -> {
+                    nullComputeCallbackCalls.incrementAndGet();
+                    return second;
+                })));
+            primitives.put("computeNullKeyThrowsNullPointer", throwsNullPointer(() ->
+                table.compute(null, (key, oldValue) -> {
+                    nullComputeCallbackCalls.incrementAndGet();
+                    return second;
+                })));
+            primitives.put("mergeNullKeyThrowsNullPointer", throwsNullPointer(() ->
+                table.merge(null, second, (oldValue, newValue) -> {
+                    nullComputeCallbackCalls.incrementAndGet();
+                    return newValue;
+                })));
+            primitives.put("mergeNullValueThrowsNullPointer", throwsNullPointer(() ->
+                table.merge("topic", null, (oldValue, newValue) -> {
+                    nullComputeCallbackCalls.incrementAndGet();
+                    return newValue;
+                })));
+            primitives.put("nullComputeArgumentsSkipCallbacks", nullComputeCallbackCalls.get() == 0);
+            primitives.put("nullComputeArgumentsKeepMapping",
+                table.size() == 1 && table.get("topic") == first);
             primitives.put("getOrDefaultPresent", table.getOrDefault("topic", second) == first);
             primitives.put("getOrDefaultAbsent", table.getOrDefault("missing", second) == second);
             primitives.put("getOrDefaultNullDefaultPresent", table.getOrDefault("topic", null) == first);

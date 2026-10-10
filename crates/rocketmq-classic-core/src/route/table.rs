@@ -377,6 +377,17 @@ impl TopicRouteTable {
         })?;
         Ok(Some(previous.unwrap_or(value)))
     }
+    /// Preserves Java `computeIfAbsent`'s null-key rejection before callback.
+    pub fn compute_if_absent_nullable(
+        &self,
+        key: Option<&str>,
+        mapping: impl FnMut(&str) -> Option<TopicRouteDataHandle>,
+    ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null topic route key"));
+        };
+        self.compute_if_absent(key, mapping)
+    }
 
     pub fn compute_if_present(
         &self,
@@ -398,6 +409,17 @@ impl TopicRouteTable {
                 None
             }
         })
+    }
+    /// Preserves Java `computeIfPresent`'s null-key rejection before callback.
+    pub fn compute_if_present_nullable(
+        &self,
+        key: Option<&str>,
+        remapping: impl FnMut(&str, &TopicRouteDataHandle) -> Option<TopicRouteDataHandle>,
+    ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null topic route key"));
+        };
+        self.compute_if_present(key, remapping)
     }
 
     pub fn compute(
@@ -430,6 +452,17 @@ impl TopicRouteTable {
                 Ok(None)
             }
         }
+    }
+    /// Preserves Java `compute`'s null-key rejection before callback.
+    pub fn compute_nullable(
+        &self,
+        key: Option<&str>,
+        remapping: impl FnMut(&str, Option<&TopicRouteDataHandle>) -> Option<TopicRouteDataHandle>,
+    ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null topic route key"));
+        };
+        self.compute(key, remapping)
     }
 
     pub fn merge(
@@ -464,6 +497,24 @@ impl TopicRouteTable {
                 None
             }
         })
+    }
+    /// Preserves Java `merge`'s null-key/value rejection before callback.
+    pub fn merge_nullable(
+        &self,
+        key: Option<&str>,
+        value: Option<TopicRouteDataHandle>,
+        remapping: impl FnMut(
+            &TopicRouteDataHandle,
+            &TopicRouteDataHandle,
+        ) -> Option<TopicRouteDataHandle>,
+    ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null topic route key"));
+        };
+        let Some(value) = value else {
+            return Err(RuntimeError::InvalidRoute("null topic route value"));
+        };
+        self.merge(key, value, remapping)
     }
 
     /// Replaces values for keys in one detached key snapshot. The callback

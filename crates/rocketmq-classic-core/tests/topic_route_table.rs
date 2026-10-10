@@ -417,6 +417,65 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
         "nullMapOperationArgumentsKeepMapping",
         table.len().unwrap() == 1 && same(table.get("topic").unwrap(), &first),
     );
+    let mut null_compute_callback_calls = 0;
+    outcomes.insert(
+        "computeIfAbsentNullKeyThrowsNullPointer",
+        matches!(
+            table.compute_if_absent_nullable(None, |_| {
+                null_compute_callback_calls += 1;
+                Some(second.clone())
+            }),
+            Err(RuntimeError::InvalidRoute("null topic route key"))
+        ),
+    );
+    outcomes.insert(
+        "computeIfPresentNullKeyThrowsNullPointer",
+        matches!(
+            table.compute_if_present_nullable(None, |_, _| {
+                null_compute_callback_calls += 1;
+                Some(second.clone())
+            }),
+            Err(RuntimeError::InvalidRoute("null topic route key"))
+        ),
+    );
+    outcomes.insert(
+        "computeNullKeyThrowsNullPointer",
+        matches!(
+            table.compute_nullable(None, |_, _| {
+                null_compute_callback_calls += 1;
+                Some(second.clone())
+            }),
+            Err(RuntimeError::InvalidRoute("null topic route key"))
+        ),
+    );
+    outcomes.insert(
+        "mergeNullKeyThrowsNullPointer",
+        matches!(
+            table.merge_nullable(None, Some(second.clone()), |_, new_value| {
+                null_compute_callback_calls += 1;
+                Some(new_value.clone())
+            }),
+            Err(RuntimeError::InvalidRoute("null topic route key"))
+        ),
+    );
+    outcomes.insert(
+        "mergeNullValueThrowsNullPointer",
+        matches!(
+            table.merge_nullable(Some("topic"), None, |_, new_value| {
+                null_compute_callback_calls += 1;
+                Some(new_value.clone())
+            }),
+            Err(RuntimeError::InvalidRoute("null topic route value"))
+        ),
+    );
+    outcomes.insert(
+        "nullComputeArgumentsSkipCallbacks",
+        null_compute_callback_calls == 0,
+    );
+    outcomes.insert(
+        "nullComputeArgumentsKeepMapping",
+        table.len().unwrap() == 1 && same(table.get("topic").unwrap(), &first),
+    );
     outcomes.insert(
         "getOrDefaultPresent",
         table
