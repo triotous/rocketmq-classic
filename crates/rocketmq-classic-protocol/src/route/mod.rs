@@ -1083,6 +1083,20 @@ mod nullable_message_queue_tests {
         for case in fixture["messageQueueMethods"].as_array().unwrap() {
             let queue: MessageQueue = serde_json::from_value(case["queue"].clone()).unwrap();
             let copy = queue.clone();
+            let constructed = MessageQueue::new_nullable(
+                queue.topic().map(str::to_owned),
+                queue.broker_name().map(str::to_owned),
+                queue.queue_id(),
+            );
+            assert_eq!(constructed, queue, "{} constructor fields", case["case"]);
+            if let (Some(topic), Some(broker_name)) = (queue.topic(), queue.broker_name()) {
+                assert_eq!(
+                    MessageQueue::new(topic, broker_name, queue.queue_id()),
+                    queue,
+                    "{} non-null constructor fields",
+                    case["case"]
+                );
+            }
             assert_eq!(
                 queue.java_hash_code(),
                 case["hashCode"].as_i64().unwrap() as i32
