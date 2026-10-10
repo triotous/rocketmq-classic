@@ -442,6 +442,9 @@ async fn active_broker_connection_sends_heartbeat_and_wakes_runtime_wide_rebalan
 
 #[tokio::test]
 async fn disabled_or_unknown_channel_does_not_send_unsolicited_heartbeat() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/heartbeat.json")).unwrap();
+    let java_listener_cases = fixture["channelEventListenerCases"].as_array().unwrap();
     for enabled in [false, true] {
         let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = broker.local_addr().unwrap().to_string();
@@ -456,6 +459,34 @@ async fn disabled_or_unknown_channel_does_not_send_unsolicited_heartbeat() {
             },
         )
         .await;
+        let java_case = java_listener_cases
+            .iter()
+            .find(|case| case["configured"].as_bool() == Some(enabled))
+            .unwrap();
+        let listener_before_mutation = runtime.remoting().get_channel_event_listener();
+        assert_eq!(
+            listener_before_mutation.is_some(),
+            java_case["listenerInitiallyPresent"].as_bool().unwrap()
+        );
+        runtime
+            .config()
+            .write()
+            .unwrap()
+            .enable_heartbeat_channel_event_listener = !enabled;
+        let listener_after_mutation = runtime.remoting().get_channel_event_listener();
+        assert_eq!(
+            listener_after_mutation.is_some(),
+            java_case["listenerAfterMutationPresent"].as_bool().unwrap()
+        );
+        let same_listener = match (&listener_before_mutation, &listener_after_mutation) {
+            (Some(before), Some(after)) => Arc::ptr_eq(before, after),
+            (None, None) => true,
+            _ => false,
+        };
+        assert_eq!(
+            same_listener,
+            java_case["sameListenerAfterMutation"].as_bool().unwrap()
+        );
         let producer = Arc::new(Producer);
         let lease = runtime
             .register_producer("producer", producer.clone())
