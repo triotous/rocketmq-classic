@@ -1,5 +1,7 @@
 # Phase 6 API and configuration map
 
+`SendResult` public field alignment (`b2a00689`, 2026-10-10): the pinned Java 5.5.1 result has public getter/setter pairs for send status, IDs, message queue, queue offset, transaction ID, recall handle, raw response body, region and trace flag. Rust now exposes nullable `raw_resp_body: Option<Vec<u8>>` and initializes it to `None`, as the Java `MQClientAPIImpl` send path does. Rust's former `batch_uniq_id` result field was removed: `batchUniqId` belongs to `SendMessageResponseHeader`, not Java `SendResult`; the protocol header mapping remains. A direct Java invoked fixture checks null raw-body defaults for sync, async and batch sends; Rust producer regressions assert the same. Producer loopback tests and pinned offline Maven verify pass. This reconciles this result type only; broader public-struct field and Phase 6 source/input/platform scans remain open, and P6-V04 remains a Phase 19 handoff.
+
 Public enum variant reverse scan (`2026-10-10`): a variant-level pass over the core crate's 17 public enums found that several maps named the Java enum values or Rust enum type but omitted the exact Rust variants. The API map now records all 72 declared variants, including the Rust-only send selectors and lifecycle/error carriers; `RuntimeError::StartupFailure` is explicitly marked test-only. Existing invoked enum, RPC, lifecycle and inbound fixtures remain the behavior evidence. This closes the variant-name inventory only; broader input/source/platform reconciliation remains open and P6-V04 remains a Phase 19 handoff.
 
 Public `ConfigError` result mapping (`89e23102`, `c48db47d`, 2026-10-10): the Rust error carrier now lists only the four source-backed Java failure branches and maps each to its originating ClientConfig operation. The unused `LocalAddress` variant was removed because Java catches address-discovery failures and keeps the null `clientIP` default; a new pinned Java oracle records `changeInstanceNameToPID()` throwing `NullPointerException` for a null instance name, and the Rust differential maps it to `NullInstanceName`. The complete variant mapping and lazy queue short-circuit behavior are listed below. `client-config.json` SHA-256: `eb4028b6c5ce5cfce6e86ae0ec08110200c4d8bcebf67bcc2854b2e929d87ff0`. Focused Rust regression and full pinned offline Maven verify (22 scenarios and fixture checks) pass. Whole Phase 6 API/settings/source/input/platform reconciliation remains open; P6-V04 remains a Phase 19 handoff.
@@ -948,6 +950,24 @@ A follow-up exact-name scan across all 16 `runtime/*.rs` and `route/*.rs` source
 `fetch_name_server_addr/name_server_addr` map MQClientAPIImpl discovery state, not a new resolver feature. `route_snapshot`, `TopicSnapshot`, `RouteSnapshot`, `BrokerAddress`, and `broker_vip_channel` map Java route/broker/publish/subscribe/static/version tables; raw-table and published route copies have separate outer collections and share nested mutable DTO handles, matching Java copy construction. Raw table DTO aliases use `TopicRouteDataHandle`. `SharedValue<T>` is a small shared mutable DTO handle; the CheckClient body, LiteSubscription and Lite DTOs, and Lite control body use it to preserve their documented aliases. Other migrated handles are listed with their DTOs above; status/reset Map aliases are covered by [ADR-0073](../architecture/ADR-0073-shared-runtime-map-body-aliases.md), heartbeat collection aliases by [ADR-0074](../architecture/ADR-0074-shared-heartbeat-set-aliases.md), and TopicRouteData collection aliases by [ADR-0076](../architecture/ADR-0076-shared-topic-route-data-collections.md). `prepare_heartbeat_data` exposes the Java heartbeat preparation capability for owners/tests; it does not add another periodic task. Failure-injection seams, queue probes, property readers and deterministic selection indices are private/test-only.
 
 This inventory identifies source/public boundaries still requiring work; it does not close complete source-branch, malformed-input, rollback or final whole-plan verification. P6-V04 remains PENDING_PHASE_19 against server 5.3.4.
+
+## Producer `SendResult` public fields
+
+| Pinned Java 5.5.1 API | Rust counterpart / current behavior |
+| --- | --- |
+| `getSendStatus` / `setSendStatus` | `SendResult::status: SendStatus`; enum names and values are mapped in the send-status enum row above |
+| `getMsgId` / `setMsgId` | `msg_id`; populated from the unique message ID supplied to the send operation |
+| `getOffsetMsgId` / `setOffsetMsgId` | `offset_msg_id`; populated from response-header `msgId` |
+| `getMessageQueue` / `setMessageQueue` | Flattened into `topic`, `broker_name`, and `queue_id`; Rust does not return a nested Java `MessageQueue` object here |
+| `getQueueOffset` / `setQueueOffset` | `queue_offset` |
+| `getTransactionId` / `setTransactionId` | `transaction_id: Option<String>` |
+| `getRecallHandle` / `setRecallHandle` | `recall_handle: Option<String>` |
+| `getRawRespBody` / `setRawRespBody(byte[])` | `raw_resp_body: Option<Vec<u8>>`; null is preserved and normal `MQClientAPIImpl` send results leave it `None` |
+| `getRegionId` / `setRegionId` | `region_id` |
+| `isTraceOn` / `setTraceOn` | `trace_on` |
+| `SendMessageResponseHeader.getBatchUniqId` | `SendMessageResponseHeader::batch_uniq_id` only; Java `SendResult` has no `batchUniqId` accessor or field |
+
+Pinned `javap -public` on Java `SendResult` and `SendMessageResponseHeader` establishes the accessor boundary. `ProducerMoreInvokedFixtures` invokes the result getter on ordinary and batch sync/async sends and checks that raw response body remains null; the Rust producer tests and invoked-request differential assert the same value. Request/response command fixtures continue to cover `batchUniqId` as a response-header input. This table records result-object field/API correspondence and the explicit flattened queue carrier; it does not claim producer-owner or send-retry parity (Phase 7).
 
 ## Remoting Netty event enum API: NettyEventType
 
