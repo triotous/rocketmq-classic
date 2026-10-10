@@ -49,7 +49,7 @@ public final class RuntimeLookupFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "MQClientInstance.findBrokerAddrByTopic/MQClientInstance.startScheduledTask registration/BrokerData.selectBrokerAddr/QueryAssignmentResponseBody.decode/GetConsumerListByGroupResponseBody.decode/ResetOffsetBody.decode/encode/GetConsumerStatusBody.decode/encode/BatchAckMessageRequestBody.decode/encode and public DTO constructor/getter/setter/toString methods");
+        fixture.put("entrypoint", "MQClientInstance.findBrokerAddrByTopic/findConsumerIdList/queryAssignment/startScheduledTask registration/BrokerData.selectBrokerAddr/QueryAssignmentResponseBody.decode/GetConsumerListByGroupResponseBody.decode/ResetOffsetBody.decode/encode/GetConsumerStatusBody.decode/encode/BatchAckMessageRequestBody.decode/encode and public DTO constructor/getter/setter/toString methods");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
         String assignment = "{\"messageQueue\":{\"topic\":\"topic\",\"brokerName\":\"broker\",\"queueId\":2},\"mode\":\"POP\",\"attachments\":{\"key\":\"value\"}}";
@@ -108,6 +108,7 @@ public final class RuntimeLookupFixtures {
         fixture.put("batchAckApiCase", batchAckApiCase());
         fixture.put("batchAckBitSetCapacityCase", batchAckBitSetCapacityCase());
         fixture.put("runtimeScheduledTaskCases", runtimeScheduledTaskCases());
+        fixture.put("runtimeLookupInvocation", runtimeLookupInvocation());
         fixture.put("resetOffsetBodyInputCases", resetOffsetBodyInputCases());
         fixture.put("consumerStatusBodyInputCases", consumerStatusBodyInputCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
@@ -2743,5 +2744,107 @@ public final class RuntimeLookupFixtures {
             }
         }
         return cases;
+    }
+
+    private static final class RuntimeLookupApi extends org.apache.rocketmq.client.impl.MQClientAPIImpl {
+        TopicRouteData route;
+        final List<String> refreshTopics = new ArrayList<>();
+        final List<Map<String, Object>> consumerCalls = new ArrayList<>();
+        final List<Map<String, Object>> assignmentCalls = new ArrayList<>();
+        boolean failConsumer;
+        boolean failAssignment;
+
+        RuntimeLookupApi(ClientConfig config) {
+            super(new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null, config, null,
+                ignored -> (org.apache.rocketmq.remoting.RemotingClient) java.lang.reflect.Proxy.newProxyInstance(
+                    RuntimeLookupFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> method.getReturnType() == boolean.class ? false : null));
+        }
+
+        @Override
+        public TopicRouteData getTopicRouteInfoFromNameServer(String topic, long timeout) {
+            refreshTopics.add(topic);
+            return route;
+        }
+
+        @Override
+        public List<String> getConsumerIdListByGroup(String address, String group, long timeout)
+            throws org.apache.rocketmq.remoting.exception.RemotingConnectException,
+                org.apache.rocketmq.remoting.exception.RemotingSendRequestException,
+                org.apache.rocketmq.remoting.exception.RemotingTimeoutException,
+                org.apache.rocketmq.client.exception.MQBrokerException, InterruptedException {
+            Map<String, Object> call = new TreeMap<>();
+            call.put("address", address);
+            call.put("group", group);
+            call.put("timeout", timeout);
+            consumerCalls.add(call);
+            if (failConsumer) throw new org.apache.rocketmq.remoting.exception.RemotingConnectException("fixture");
+            return Arrays.asList("b", "a", "b");
+        }
+
+        @Override
+        public java.util.Set<org.apache.rocketmq.common.message.MessageQueueAssignment> queryAssignment(
+            String address, String topic, String group, String clientId, String strategy,
+            org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel messageModel, long timeout)
+            throws org.apache.rocketmq.remoting.exception.RemotingException,
+                org.apache.rocketmq.client.exception.MQBrokerException, InterruptedException {
+            Map<String, Object> call = new TreeMap<>();
+            call.put("address", address);
+            call.put("topic", topic);
+            call.put("group", group);
+            call.put("clientId", clientId);
+            call.put("strategy", strategy);
+            call.put("messageModel", messageModel.name());
+            call.put("timeout", timeout);
+            assignmentCalls.add(call);
+            if (failAssignment) throw new org.apache.rocketmq.remoting.exception.RemotingConnectException("fixture");
+            return java.util.Collections.emptySet();
+        }
+    }
+
+    private static Map<String, Object> runtimeLookupInvocation() throws Exception {
+        ClientConfig config = new ClientConfig();
+        config.setClientIP("192.0.2.6");
+        MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+        org.apache.rocketmq.client.impl.MQClientAPIImpl original = runtime.getMQClientAPIImpl();
+        RuntimeLookupApi api = new RuntimeLookupApi(config);
+        Map<String, Object> result = new TreeMap<>();
+        try {
+            api.route = com.alibaba.fastjson2.JSON.parseObject(
+                "{\"queueDatas\":[],\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"broker:10911\"}}],\"filterServerTable\":{}}",
+                TopicRouteData.class);
+            java.lang.reflect.Field field = MQClientInstance.class.getDeclaredField("mQClientAPIImpl");
+            field.setAccessible(true);
+            field.set(runtime, api);
+
+            List<String> consumerIds = runtime.findConsumerIdList("topic", "consumer");
+            result.put("consumerOutcome", consumerIds);
+            result.put("consumerCalls", api.consumerCalls);
+            java.util.Set<org.apache.rocketmq.common.message.MessageQueueAssignment> assignments =
+                runtime.queryAssignment("topic", "consumer", "strategy",
+                    org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel.BROADCASTING, 3000);
+            result.put("assignmentOutcome", assignments == null ? null : assignments.size());
+            result.put("assignmentCalls", api.assignmentCalls);
+            result.put("refreshTopics", api.refreshTopics);
+
+            api.failConsumer = true;
+            result.put("consumerFailureOutcome", runtime.findConsumerIdList("topic", "consumer"));
+            api.failAssignment = true;
+            try {
+                runtime.queryAssignment("topic", "consumer", "strategy",
+                    org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel.BROADCASTING, 3000);
+                result.put("assignmentFailureOutcome", "OK");
+            } catch (Exception error) {
+                result.put("assignmentFailureOutcome", error.getClass().getSimpleName());
+            }
+        } finally {
+            Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
+                org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
+            cleanup.setAccessible(true);
+            try { cleanup.invoke(runtime, original, new IllegalStateException("lookup invocation fixture teardown")); }
+            finally { api.shutdown(); }
+        }
+        return result;
     }
 }
