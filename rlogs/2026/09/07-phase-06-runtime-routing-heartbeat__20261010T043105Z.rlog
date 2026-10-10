@@ -165,3 +165,8 @@
 - Pinned `rocketmq-client-5.5.1.jar` bytecode shows the `MQClientInstance` constructor creates the concurrent fixed pool only when enabled and uses the configured thread count at that time; `sendHeartbeatToAllBrokerWithLock` reads the live enable flag on each call.
 - Focused tests passed: `concurrent_v1_uses_parallel_peers_and_busy_heartbeat_gate_skips_a_round`, `enabling_concurrent_heartbeat_after_construction_has_no_executor`, `rebalance_wrapper_uses_serial_v1_even_when_concurrent_heartbeat_is_enabled`, and `p6_v02_failed_construction_can_retry_and_stale_removal_preserves_replacement`. Together they exercise actual two-peer concurrency, constructor-snapshot width, late-enable no-send behavior, serial wrapper behavior, and nonpositive pool-size rejection/retry.
 - These cases close only the concurrent-heartbeat setting branches. Other settings activation paths and full Phase 6 source/API/input/reverse-export reconciliation remain open; P6-V04 stays `PENDING_PHASE_19`.
+
+## Java admin registration oracle
+
+- Extended the direct `MQClientInstance.registerAdminExt/unregisterAdminExt` invocation to capture null group/admin rejection, strong owner retention, duplicate preservation, empty-group acceptance, missing-group removal, group-key re-registration, and null-key removal failure.
+- Pinned offline `RuntimeConfigFixtures` generation passed. All 15 direct Java observations are recorded under `registryTables.adminRegistration`; updated `client-config.json` SHA-256: `14885daa5c6f2669c2443b9b9d5720ea2fa8e93945a620d03b1cc65a7274f38b`. Native parity remains pending.

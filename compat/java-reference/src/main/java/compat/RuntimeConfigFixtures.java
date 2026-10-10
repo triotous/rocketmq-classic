@@ -1086,8 +1086,55 @@ public final class RuntimeConfigFixtures {
             result.put("consumerRegisterAfterDirectPutRejected", !runtime.registerConsumer("registered", consumerA));
             runtime.unregisterConsumer("registered"); // Empty Broker table: no outbound RPC.
             result.put("consumerUnregisterRemovesCurrentMapping", !retained.containsKey("registered"));
+            result.put("adminRegistration", adminRegistration(runtime));
         } finally { cleanupRuntime(runtime); }
         return result;
+    }
+
+    private static Map<String, Object> adminRegistration(
+        org.apache.rocketmq.client.impl.factory.MQClientInstance runtime) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        java.lang.reflect.Field field = runtime.getClass().getDeclaredField("adminExtTable");
+        field.setAccessible(true);
+        java.util.concurrent.ConcurrentMap<String, org.apache.rocketmq.client.admin.MQAdminExtInner> table =
+            (java.util.concurrent.ConcurrentMap<String, org.apache.rocketmq.client.admin.MQAdminExtInner>) field.get(runtime);
+        org.apache.rocketmq.client.admin.MQAdminExtInner first =
+            tableOwner(org.apache.rocketmq.client.admin.MQAdminExtInner.class, "admin-first");
+        org.apache.rocketmq.client.admin.MQAdminExtInner second =
+            tableOwner(org.apache.rocketmq.client.admin.MQAdminExtInner.class, "admin-second");
+        result.put("nullGroupRejected", !runtime.registerAdminExt(null, first));
+        result.put("nullAdminRejected", !runtime.registerAdminExt("admin", null));
+        result.put("emptyAfterNullRejected", table.isEmpty());
+        result.put("firstRegistrationAccepted", runtime.registerAdminExt("admin", first));
+        result.put("firstOwnerRetained", table.get("admin") == first);
+        result.put("duplicateRejected", !runtime.registerAdminExt("admin", second));
+        result.put("duplicateKeepsFirstOwner", table.get("admin") == first);
+        result.put("groupUnregisterRemovesOwner", removeAdmin(runtime, table, "admin"));
+        result.put("unregisterMissingIsNoOp", removeAdmin(runtime, table, "missing"));
+        boolean nullUnregisterThrows;
+        try {
+            runtime.unregisterAdminExt(null);
+            nullUnregisterThrows = false;
+        } catch (NullPointerException expected) {
+            nullUnregisterThrows = true;
+        }
+        result.put("nullUnregisterThrows", nullUnregisterThrows);
+        result.put("emptyGroupAccepted", runtime.registerAdminExt("", first));
+        result.put("emptyGroupRetainsOwner", table.get("") == first);
+        runtime.unregisterAdminExt("");
+        result.put("emptyGroupRemoved", !table.containsKey(""));
+        result.put("secondRegistrationAcceptedAfterRemoval", runtime.registerAdminExt("admin", second));
+        result.put("secondOwnerRetainedAfterRemoval", table.get("admin") == second);
+        runtime.unregisterAdminExt("admin");
+        return result;
+    }
+
+    private static boolean removeAdmin(
+        org.apache.rocketmq.client.impl.factory.MQClientInstance runtime,
+        java.util.concurrent.ConcurrentMap<String, org.apache.rocketmq.client.admin.MQAdminExtInner> table,
+        String group) {
+        runtime.unregisterAdminExt(group);
+        return !table.containsKey(group);
     }
 
     private static List<Object> callbackThreadsConstruction() throws Exception {
