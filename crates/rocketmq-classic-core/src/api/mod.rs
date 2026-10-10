@@ -82,6 +82,19 @@ impl MQClientApi {
     ) -> Result<RemotingCommand, RpcError> {
         let mut fields = HeaderMap::new();
         header.encode_fields(&mut fields);
+        self.request_fields_with_mode(addr, code, fields, body, deadline, sync)
+            .await
+    }
+
+    async fn request_fields_with_mode(
+        &self,
+        addr: &str,
+        code: i32,
+        fields: HeaderMap,
+        body: Option<Vec<u8>>,
+        deadline: Instant,
+        sync: bool,
+    ) -> Result<RemotingCommand, RpcError> {
         let heartbeat_language = self
             .config
             .as_ref()

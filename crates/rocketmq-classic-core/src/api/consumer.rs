@@ -6,10 +6,9 @@ use rocketmq_classic_protocol::{
     },
     codes::{request, response},
     header::{
-        ConsumerSendMsgBackRequestHeader, GetConsumerListByGroupRequestHeader,
-        LockBatchMqRequestHeader, PullMessageRequestHeader, PullMessageResponseHeader,
-        QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
-        UpdateConsumerOffsetRequestHeader,
+        ConsumerSendMsgBackRequestHeader, HeaderMap, LockBatchMqRequestHeader,
+        PullMessageRequestHeader, PullMessageResponseHeader, QueryConsumerOffsetRequestHeader,
+        QueryConsumerOffsetResponseHeader, UpdateConsumerOffsetRequestHeader,
     },
 };
 use tokio::time::Instant;
@@ -212,17 +211,23 @@ impl MQClientApi {
         consumer_group: &str,
         deadline: Instant,
     ) -> Result<Option<Vec<Option<String>>>, RpcError> {
+        self.get_consumer_list_by_group_nullable(addr, Some(consumer_group), deadline)
+            .await
+    }
+
+    pub async fn get_consumer_list_by_group_nullable(
+        &self,
+        addr: &str,
+        consumer_group: Option<&str>,
+        deadline: Instant,
+    ) -> Result<Option<Vec<Option<String>>>, RpcError> {
         let code = request::GET_CONSUMER_LIST_BY_GROUP;
+        let mut fields = HeaderMap::new();
+        if let Some(consumer_group) = consumer_group {
+            fields.insert("consumerGroup".into(), consumer_group.to_owned());
+        }
         let reply = self
-            .request(
-                addr,
-                code,
-                &GetConsumerListByGroupRequestHeader {
-                    consumer_group: consumer_group.into(),
-                },
-                None,
-                deadline,
-            )
+            .request_fields_with_mode(addr, code, fields, None, deadline, true)
             .await?;
         let reply = classify(reply, code, addr)?;
         if reply.body.is_none() {

@@ -534,6 +534,18 @@ impl ClientRuntime {
         topic: &str,
         group: &str,
     ) -> Result<Option<Vec<Option<String>>>, RuntimeError> {
+        self.find_consumer_id_list_nullable(Some(topic), Some(group))
+            .await
+    }
+
+    /// Nullable Java entry point for `findConsumerIdList`; the source resolves
+    /// the topic's broker before entering its best-effort Broker RPC branch.
+    pub async fn find_consumer_id_list_nullable(
+        &self,
+        topic: Option<&str>,
+        group: Option<&str>,
+    ) -> Result<Option<Vec<Option<String>>>, RuntimeError> {
+        let topic = topic.ok_or(RuntimeError::InvalidRoute("null broker lookup topic"))?;
         let Some(address) = self.lookup_broker_with_route_refresh(topic).await? else {
             return Ok(None);
         };
@@ -544,24 +556,13 @@ impl ClientRuntime {
         };
         Ok(self
             .api
-            .get_consumer_list_by_group(
+            .get_consumer_list_by_group_nullable(
                 &address,
                 group,
                 tokio::time::Instant::now() + self.rpc_timeout(),
             )
             .await
             .unwrap_or(None))
-    }
-
-    /// Nullable Java entry point for `findConsumerIdList`; the source resolves
-    /// the topic's broker before entering its best-effort Broker RPC branch.
-    pub async fn find_consumer_id_list_nullable(
-        &self,
-        topic: Option<&str>,
-        group: &str,
-    ) -> Result<Option<Vec<Option<String>>>, RuntimeError> {
-        let topic = topic.ok_or(RuntimeError::InvalidRoute("null broker lookup topic"))?;
-        self.find_consumer_id_list(topic, group).await
     }
 
     /// Assignment keeps Java's explicit signed millisecond timeout and
