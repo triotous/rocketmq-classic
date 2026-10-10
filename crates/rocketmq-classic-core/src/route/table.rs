@@ -205,6 +205,17 @@ impl TopicRouteTable {
         Ok(())
     }
 
+    /// Preserves Java `ConcurrentMap.forEach(null)` rejection.
+    pub fn for_each_nullable(
+        &self,
+        action: Option<&mut crate::runtime::TableForEach<'_, TopicRouteDataHandle>>,
+    ) -> Result<(), RuntimeError> {
+        let Some(action) = action else {
+            return Err(RuntimeError::InvalidRoute("null topic route callback"));
+        };
+        self.for_each(|key, value| action(key, value))
+    }
+
     fn replace_if_handle_same_locked(
         &self,
         key: &str,
@@ -389,6 +400,18 @@ impl TopicRouteTable {
         self.compute_if_absent(key, mapping)
     }
 
+    /// Preserves Java's nullable mapping-function boundary in addition to its key boundary.
+    pub fn compute_if_absent_with_nullable_callback(
+        &self,
+        key: Option<&str>,
+        mapping: Option<&mut crate::runtime::TableComputeIfAbsent<'_, TopicRouteDataHandle>>,
+    ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
+        let Some(mapping) = mapping else {
+            return Err(RuntimeError::InvalidRoute("null topic route callback"));
+        };
+        self.compute_if_absent_nullable(key, |key| mapping(key))
+    }
+
     pub fn compute_if_present(
         &self,
         key: impl Into<String>,
@@ -420,6 +443,18 @@ impl TopicRouteTable {
             return Err(RuntimeError::InvalidRoute("null topic route key"));
         };
         self.compute_if_present(key, remapping)
+    }
+
+    /// Preserves Java's nullable remapping-function boundary in addition to its key boundary.
+    pub fn compute_if_present_with_nullable_callback(
+        &self,
+        key: Option<&str>,
+        remapping: Option<&mut crate::runtime::TableComputeIfPresent<'_, TopicRouteDataHandle>>,
+    ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
+        let Some(remapping) = remapping else {
+            return Err(RuntimeError::InvalidRoute("null topic route callback"));
+        };
+        self.compute_if_present_nullable(key, |key, value| remapping(key, value))
     }
 
     pub fn compute(
@@ -463,6 +498,18 @@ impl TopicRouteTable {
             return Err(RuntimeError::InvalidRoute("null topic route key"));
         };
         self.compute(key, remapping)
+    }
+
+    /// Preserves Java's nullable remapping-function boundary in addition to its key boundary.
+    pub fn compute_with_nullable_callback(
+        &self,
+        key: Option<&str>,
+        remapping: Option<&mut crate::runtime::TableCompute<'_, TopicRouteDataHandle>>,
+    ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
+        let Some(remapping) = remapping else {
+            return Err(RuntimeError::InvalidRoute("null topic route callback"));
+        };
+        self.compute_nullable(key, |key, old_value| remapping(key, old_value))
     }
 
     pub fn merge(
@@ -517,6 +564,21 @@ impl TopicRouteTable {
         self.merge(key, value, remapping)
     }
 
+    /// Preserves Java's nullable remapping-function boundary in addition to key/value checks.
+    pub fn merge_with_nullable_callback(
+        &self,
+        key: Option<&str>,
+        value: Option<TopicRouteDataHandle>,
+        remapping: Option<&mut crate::runtime::TableMerge<'_, TopicRouteDataHandle>>,
+    ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
+        let Some(remapping) = remapping else {
+            return Err(RuntimeError::InvalidRoute("null topic route callback"));
+        };
+        self.merge_nullable(key, value, |old_value, new_value| {
+            remapping(old_value, new_value)
+        })
+    }
+
     /// Replaces values for keys in one detached key snapshot. The callback
     /// runs without a cache lock and may be retried if a concurrent write
     /// changes that key before its conditional replacement.
@@ -525,6 +587,17 @@ impl TopicRouteTable {
         mut remapping: impl FnMut(&str, &TopicRouteDataHandle) -> TopicRouteDataHandle,
     ) -> Result<(), RuntimeError> {
         self.replace_all_with_nullable_results(|key, observed| Some(remapping(key, observed)))
+    }
+
+    /// Preserves Java `ConcurrentMap.replaceAll(null)` rejection.
+    pub fn replace_all_nullable(
+        &self,
+        remapping: Option<&mut crate::runtime::TableReplaceAll<'_, TopicRouteDataHandle>>,
+    ) -> Result<(), RuntimeError> {
+        let Some(remapping) = remapping else {
+            return Err(RuntimeError::InvalidRoute("null topic route callback"));
+        };
+        self.replace_all(|key, value| remapping(key, value))
     }
 
     /// Applies a Java-style `replaceAll` callback that can return null.

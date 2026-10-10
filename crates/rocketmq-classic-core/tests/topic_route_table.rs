@@ -540,6 +540,52 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
         "nullViewPredicateArgumentsKeepMapping",
         table.len().unwrap() == 1 && same(table.get("topic").unwrap(), &first),
     );
+    outcomes.insert(
+        "forEachNullActionThrowsNullPointer",
+        matches!(
+            table.for_each_nullable(None),
+            Err(RuntimeError::InvalidRoute("null topic route callback"))
+        ),
+    );
+    outcomes.insert(
+        "replaceAllNullFunctionThrowsNullPointer",
+        matches!(
+            table.replace_all_nullable(None),
+            Err(RuntimeError::InvalidRoute("null topic route callback"))
+        ),
+    );
+    outcomes.insert(
+        "computeIfAbsentNullFunctionThrowsNullPointer",
+        matches!(
+            table.compute_if_absent_with_nullable_callback(Some("topic"), None),
+            Err(RuntimeError::InvalidRoute("null topic route callback"))
+        ),
+    );
+    outcomes.insert(
+        "computeIfPresentNullFunctionThrowsNullPointer",
+        matches!(
+            table.compute_if_present_with_nullable_callback(Some("topic"), None),
+            Err(RuntimeError::InvalidRoute("null topic route callback"))
+        ),
+    );
+    outcomes.insert(
+        "computeNullFunctionThrowsNullPointer",
+        matches!(
+            table.compute_with_nullable_callback(Some("topic"), None),
+            Err(RuntimeError::InvalidRoute("null topic route callback"))
+        ),
+    );
+    outcomes.insert(
+        "mergeNullFunctionThrowsNullPointer",
+        matches!(
+            table.merge_with_nullable_callback(Some("topic"), Some(second.clone()), None),
+            Err(RuntimeError::InvalidRoute("null topic route callback"))
+        ),
+    );
+    outcomes.insert(
+        "nullMapCallbackArgumentsKeepMapping",
+        table.len().unwrap() == 1 && same(table.get("topic").unwrap(), &first),
+    );
     let mut null_compute_callback_calls = 0;
     outcomes.insert(
         "computeIfAbsentNullKeyThrowsNullPointer",
