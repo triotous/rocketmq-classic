@@ -14,7 +14,10 @@ use rocketmq_classic_remoting::{
 };
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -927,6 +930,7 @@ async fn enabling_concurrent_heartbeat_after_construction_has_no_executor() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/heartbeat.json")).unwrap();
     let java_case = &fixture["concurrentHeartbeatExecutorMutation"];
+    assert_eq!(java_case["preparedProducerCount"], 1);
     assert!(
         !java_case["executorPresentBeforeMutation"]
             .as_bool()
@@ -946,19 +950,136 @@ async fn enabling_concurrent_heartbeat_after_construction_has_no_executor() {
         .write()
         .unwrap()
         .enable_concurrent_heartbeat = true;
-    runtime
-        .register_consumer(
-            "consumer",
-            Arc::new(Consumer(Mutex::new(SubscriptionData::default()))),
-        )
+    let consumer = Arc::new(Consumer(Mutex::new(SubscriptionData::default())));
+    let _lease = runtime
+        .register_consumer("consumer", consumer.clone())
         .await
         .unwrap();
+    let prepared = runtime.prepare_heartbeat_data(false).unwrap();
+    assert_eq!(
+        prepared
+            .consumer_data_set
+            .as_ref()
+            .unwrap()
+            .with(|rows| rows.len()),
+        1
+    );
     assert!(!runtime.send_heartbeat_to_all_brokers().await.unwrap());
     assert!(
         tokio::time::timeout(Duration::from_millis(25), broker.accept())
             .await
             .is_err()
     );
+    runtime.remoting().shutdown().await;
+}
+
+#[tokio::test]
+async fn disabling_concurrent_heartbeat_after_construction_uses_serial_path() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/heartbeat.json")).unwrap();
+    let java_case = &fixture["concurrentHeartbeatFlagMutationToSerial"];
+    assert_eq!(java_case["preparedProducerCount"], 1);
+    assert!(java_case["configuredBeforeMutation"].as_bool().unwrap());
+    assert!(
+        java_case["executorPresentBeforeMutation"]
+            .as_bool()
+            .unwrap()
+    );
+    assert!(!java_case["configuredAfterMutation"].as_bool().unwrap());
+    assert!(java_case["executorPresentAfterMutation"].as_bool().unwrap());
+    assert!(java_case["sendOutcome"].as_bool().unwrap());
+    assert_eq!(java_case["sendModes"], serde_json::json!(["V1"]));
+
+    let master = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let slave = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addresses = [
+        master.local_addr().unwrap().to_string(),
+        slave.local_addr().unwrap().to_string(),
+    ];
+    let first_delivery = Arc::new(AtomicBool::new(false));
+    let (first_seen, mut first_received) = tokio::sync::mpsc::unbounded_channel();
+    let (second_seen, mut second_received) = tokio::sync::mpsc::unbounded_channel();
+    let (release, release_rx) = tokio::sync::watch::channel(false);
+    let mut peers = Vec::new();
+    for (name, listener) in [("master", master), ("slave", slave)] {
+        let first_delivery = first_delivery.clone();
+        let first_seen = first_seen.clone();
+        let second_seen = second_seen.clone();
+        let mut release_rx = release_rx.clone();
+        peers.push(tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let command = read(&mut stream).await;
+            if !first_delivery.swap(true, Ordering::SeqCst) {
+                first_seen.send(name).unwrap();
+                while !*release_rx.borrow() {
+                    release_rx.changed().await.unwrap();
+                }
+            } else {
+                second_seen.send(name).unwrap();
+            }
+            respond(&mut stream, &command, None, false, false).await;
+        }));
+    }
+
+    let mut config = ClientConfig::new("serial-after-concurrent-heartbeat");
+    config.enable_concurrent_heartbeat = true;
+    config.concurrent_heartbeat_thread_pool_size = 2;
+    let runtime = runtime(config, &addresses).await;
+    runtime
+        .config()
+        .write()
+        .unwrap()
+        .enable_concurrent_heartbeat = false;
+    let consumer = Arc::new(Consumer(Mutex::new(SubscriptionData::default())));
+    let _lease = runtime
+        .register_consumer("consumer", consumer.clone())
+        .await
+        .unwrap();
+    let prepared = runtime.prepare_heartbeat_data(false).unwrap();
+    assert_eq!(
+        prepared
+            .consumer_data_set
+            .as_ref()
+            .unwrap()
+            .with(|rows| rows.len()),
+        1
+    );
+    assert_eq!(
+        runtime.route_snapshot().unwrap().broker_addresses["broker"].len(),
+        2
+    );
+    let mut sending = {
+        let runtime = runtime.clone();
+        tokio::spawn(async move { runtime.send_heartbeat_to_all_brokers().await })
+    };
+    tokio::select! {
+        result = &mut sending => panic!("heartbeat send completed before peer accepted: {result:?}"),
+        first = tokio::time::timeout(Duration::from_secs(2), first_received.recv()) => {
+            first.unwrap().unwrap();
+        }
+    }
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), second_received.recv())
+            .await
+            .is_err(),
+        "the second broker must not receive a heartbeat before the first reply"
+    );
+
+    release.send(true).unwrap();
+    tokio::time::timeout(Duration::from_secs(2), second_received.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_secs(2), sending)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap()
+    );
+    for peer in peers {
+        peer.await.unwrap();
+    }
     runtime.remoting().shutdown().await;
 }
 
