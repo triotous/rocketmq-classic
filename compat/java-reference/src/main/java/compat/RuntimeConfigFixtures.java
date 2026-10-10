@@ -153,7 +153,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("rebalanceLongs", rebalanceLongs);
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "ClientConfig.buildMQClientId/toString/cloneClientConfig/resetClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/queuesWithNamespace/changeInstanceNameToPID; MessageQueue.setTopic/setBrokerName/setQueueId; MQClientManager.getOrCreateMQClientInstance/removeClientFactory/getFactoryTable; MQClientInstance.constructor/getClientConfig/getNettyClientConfig/getProducerTable/getConsumerTable/selectProducer/selectConsumer/registerConsumer/unregisterConsumer; MQClientAPIImpl.getRemotingClient/NettyRemotingClient.publicExecutor (reflective capacity observation); NettyRemotingClient.start/invokeSync (local authenticated and no-auth SOCKS5 round trips); RemotingCommand.encode/getType (null language JSON/ROCKETMQ); LanguageCode/SerializeType/TlsMode/RequestType/RemotingCommandType/NettyEventType generated enum and custom value lookups; Long.parseLong (RebalanceService property parser)");
+        fixture.put("entrypoint", "ClientConfig.buildMQClientId/toString/cloneClientConfig/resetClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/queuesWithNamespace/changeInstanceNameToPID; MessageQueue.setTopic/setBrokerName/setQueueId; MQClientManager.getOrCreateMQClientInstance/removeClientFactory/getFactoryTable; MQClientInstance.constructor/getClientConfig/getNettyClientConfig/getProducerTable/getConsumerTable/selectProducer/selectConsumer/registerConsumer/unregisterConsumer; MQClientAPIImpl.getRemotingClient/getNameServerAddressList/NettyRemotingClient.publicExecutor (reflective capacity observation); NettyRemotingClient.start/invokeSync (local authenticated and no-auth SOCKS5 round trips); RemotingCommand.encode/getType (null language JSON/ROCKETMQ); LanguageCode/SerializeType/TlsMode/RequestType/RemotingCommandType/NettyEventType generated enum and custom value lookups; Long.parseLong (RebalanceService property parser)");
         fixture.put("serverBaselineContacted", false);
         fixture.put("networkUtilLocalAddress", org.apache.rocketmq.common.utils.NetworkUtil.getLocalAddress());
         List<String> localAddressCandidates = new ArrayList<>();
@@ -173,6 +173,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("managed", managed);
         fixture.put("managerRemoval", managerRemoval(config));
         fixture.put("managerSharing", managerSharing());
+        fixture.put("nameServerAddressSnapshotCases", nameServerAddressSnapshotCases());
         fixture.put("managerTable", managerTable(config));
         fixture.put("nullableSettings", nullableSettings());
         fixture.put("accessChannelMethodCases", accessChannelMethodCases());
@@ -338,6 +339,34 @@ public final class RuntimeConfigFixtures {
             }
         }
         return result;
+    }
+
+    private static List<Object> nameServerAddressSnapshotCases() throws Exception {
+        List<Object> cases = new ArrayList<>();
+        int index = 0;
+        for (String initial : new String[] {null, "initial-nameserver:9876"}) {
+            ClientConfig config = new ClientConfig();
+            config.setClientIP("192.0.2.80");
+            config.setInstanceName("phase6-nameserver-snapshot-" + index++);
+            config.setNamesrvAddr(initial);
+            org.apache.rocketmq.client.impl.factory.MQClientInstance runtime =
+                new org.apache.rocketmq.client.impl.factory.MQClientInstance(config, 0, config.buildMQClientId());
+            try {
+                Map<String, Object> item = new TreeMap<>();
+                item.put("configuredAtConstruction", initial);
+                List<String> before = runtime.getMQClientAPIImpl().getNameServerAddressList();
+                item.put("activeAddressesBeforeMutation", before == null ? null : new ArrayList<>(before));
+                String changed = initial == null ? "added-after-construction:9876" : "changed-after-construction:9876";
+                config.setNamesrvAddr(changed);
+                item.put("configAfterMutation", config.getNamesrvAddr());
+                List<String> after = runtime.getMQClientAPIImpl().getNameServerAddressList();
+                item.put("activeAddressesAfterMutation", after == null ? null : new ArrayList<>(after));
+                cases.add(item);
+            } finally {
+                cleanupRuntime(runtime);
+            }
+        }
+        return cases;
     }
 
     private static Map<String, Object> clientConfigCopies() throws Exception {
