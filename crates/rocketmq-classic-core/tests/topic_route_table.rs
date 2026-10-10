@@ -336,6 +336,88 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
         table.put("topic", first.clone()).unwrap().is_none(),
     );
     outcomes.insert(
+        "containsValueNullThrowsNullPointer",
+        matches!(
+            table.contains_value_nullable(None),
+            Err(RuntimeError::InvalidRoute("null topic route value"))
+        ),
+    );
+    outcomes.insert(
+        "putNullKeyThrowsNullPointer",
+        matches!(
+            table.put_nullable(None, Some(second.clone())),
+            Err(RuntimeError::InvalidRoute("null topic route key"))
+        ),
+    );
+    outcomes.insert(
+        "putNullValueThrowsNullPointer",
+        matches!(
+            table.put_nullable(Some("topic"), None),
+            Err(RuntimeError::InvalidRoute("null topic route value"))
+        ),
+    );
+    outcomes.insert(
+        "putIfAbsentNullKeyThrowsNullPointer",
+        matches!(
+            table.put_if_absent_nullable(None, Some(second.clone())),
+            Err(RuntimeError::InvalidRoute("null topic route key"))
+        ),
+    );
+    outcomes.insert(
+        "putIfAbsentNullValueThrowsNullPointer",
+        matches!(
+            table.put_if_absent_nullable(Some("topic"), None),
+            Err(RuntimeError::InvalidRoute("null topic route value"))
+        ),
+    );
+    outcomes.insert(
+        "replaceNullKeyThrowsNullPointer",
+        matches!(
+            table.replace_nullable(None, Some(second.clone())),
+            Err(RuntimeError::InvalidRoute("null topic route key"))
+        ),
+    );
+    outcomes.insert(
+        "replaceNullValueThrowsNullPointer",
+        matches!(
+            table.replace_nullable(Some("topic"), None),
+            Err(RuntimeError::InvalidRoute("null topic route value"))
+        ),
+    );
+    outcomes.insert(
+        "conditionalReplaceNullKeyThrowsNullPointer",
+        matches!(
+            table.replace_if_equal_nullable(
+                None,
+                Some(&first.snapshot().unwrap()),
+                Some(second.clone())
+            ),
+            Err(RuntimeError::InvalidRoute("null topic route key"))
+        ),
+    );
+    outcomes.insert(
+        "conditionalReplaceNullExpectedThrowsNullPointer",
+        matches!(
+            table.replace_if_equal_nullable(Some("topic"), None, Some(second.clone())),
+            Err(RuntimeError::InvalidRoute("null topic route value"))
+        ),
+    );
+    outcomes.insert(
+        "conditionalReplaceNullValueThrowsNullPointer",
+        matches!(
+            table.replace_if_equal_nullable(Some("topic"), Some(&first.snapshot().unwrap()), None),
+            Err(RuntimeError::InvalidRoute("null topic route value"))
+        ),
+    );
+    outcomes.insert(
+        "conditionalRemoveNullValueReturnsFalse",
+        !table.remove_if_equal_nullable(Some("topic"), None).unwrap(),
+    );
+    outcomes.insert(
+        "nullMapOperationArgumentsKeepMapping",
+        table.len().unwrap() == 1 && same(table.get("topic").unwrap(), &first),
+    );
+    outcomes.insert(
         "getOrDefaultPresent",
         table
             .get_or_default("topic", second.clone())

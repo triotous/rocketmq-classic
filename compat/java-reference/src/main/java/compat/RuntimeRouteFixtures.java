@@ -1850,6 +1850,15 @@ public final class RuntimeRouteFixtures {
         }
     }
 
+    private static boolean throwsNullPointer(Runnable operation) {
+        try {
+            operation.run();
+            return false;
+        } catch (NullPointerException error) {
+            return true;
+        }
+    }
+
     private static Map<String, Object> runtimeTopicRouteTable(Map<String, Object> initial) throws Exception {
         org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
         config.setClientIP("route-live-table");
@@ -1871,6 +1880,30 @@ public final class RuntimeRouteFixtures {
             Map<String, Object> primitives = new TreeMap<>();
             primitives.put("initialEmpty", table.isEmpty());
             primitives.put("firstPutAbsent", table.put("topic", first) == null);
+            primitives.put("containsValueNullThrowsNullPointer",
+                throwsNullPointer(() -> table.containsValue(null)));
+            primitives.put("putNullKeyThrowsNullPointer",
+                throwsNullPointer(() -> table.put(null, second)));
+            primitives.put("putNullValueThrowsNullPointer",
+                throwsNullPointer(() -> table.put("topic", null)));
+            primitives.put("putIfAbsentNullKeyThrowsNullPointer",
+                throwsNullPointer(() -> table.putIfAbsent(null, second)));
+            primitives.put("putIfAbsentNullValueThrowsNullPointer",
+                throwsNullPointer(() -> table.putIfAbsent("topic", null)));
+            primitives.put("replaceNullKeyThrowsNullPointer",
+                throwsNullPointer(() -> table.replace(null, second)));
+            primitives.put("replaceNullValueThrowsNullPointer",
+                throwsNullPointer(() -> table.replace("topic", null)));
+            primitives.put("conditionalReplaceNullKeyThrowsNullPointer",
+                throwsNullPointer(() -> table.replace(null, first, second)));
+            primitives.put("conditionalReplaceNullExpectedThrowsNullPointer",
+                throwsNullPointer(() -> table.replace("topic", null, second)));
+            primitives.put("conditionalReplaceNullValueThrowsNullPointer",
+                throwsNullPointer(() -> table.replace("topic", first, null)));
+            primitives.put("conditionalRemoveNullValueReturnsFalse",
+                !table.remove("topic", null));
+            primitives.put("nullMapOperationArgumentsKeepMapping",
+                table.size() == 1 && table.get("topic") == first);
             primitives.put("getOrDefaultPresent", table.getOrDefault("topic", second) == first);
             primitives.put("getOrDefaultAbsent", table.getOrDefault("missing", second) == second);
             primitives.put("getOrDefaultNullDefaultPresent", table.getOrDefault("topic", null) == first);

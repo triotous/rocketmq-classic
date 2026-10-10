@@ -172,6 +172,16 @@ impl TopicRouteTable {
         }
         Ok(false)
     }
+    /// Preserves Java `ConcurrentMap.containsValue`'s null-value rejection.
+    pub fn contains_value_nullable(
+        &self,
+        value: Option<&TopicRouteData>,
+    ) -> Result<bool, RuntimeError> {
+        let Some(value) = value else {
+            return Err(RuntimeError::InvalidRoute("null topic route value"));
+        };
+        self.contains_value(value)
+    }
     pub fn len(&self) -> Result<usize, RuntimeError> {
         Ok(self.0.snapshot()?.raw_routes.len())
     }
@@ -254,6 +264,20 @@ impl TopicRouteTable {
         let _gate = self.0.lock_raw_route_key(&key)?;
         self.0.update_raw(|map| (true, map.insert(key, value)))
     }
+    /// Preserves Java `ConcurrentMap.put`'s null-key/value rejection.
+    pub fn put_nullable(
+        &self,
+        key: Option<&str>,
+        value: Option<TopicRouteDataHandle>,
+    ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null topic route key"));
+        };
+        let Some(value) = value else {
+            return Err(RuntimeError::InvalidRoute("null topic route value"));
+        };
+        self.put(key, value)
+    }
     /// Writes entries in source iteration order without converting route snapshots.
     pub fn put_all<I>(&self, entries: I) -> Result<(), RuntimeError>
     where
@@ -312,6 +336,20 @@ impl TopicRouteTable {
                 (true, None)
             }
         })
+    }
+    /// Preserves Java `ConcurrentMap.putIfAbsent`'s null-key/value rejection.
+    pub fn put_if_absent_nullable(
+        &self,
+        key: Option<&str>,
+        value: Option<TopicRouteDataHandle>,
+    ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null topic route key"));
+        };
+        let Some(value) = value else {
+            return Err(RuntimeError::InvalidRoute("null topic route value"));
+        };
+        self.put_if_absent(key, value)
     }
     /// Applies a Java-style ConcurrentMap remapping function. Conditional
     /// Updates serialize by exact key while the callback runs, so it is called
@@ -479,6 +517,20 @@ impl TopicRouteTable {
             }
         })
     }
+    /// Preserves Java `ConcurrentMap.replace(key, value)` null checks.
+    pub fn replace_nullable(
+        &self,
+        key: Option<&str>,
+        value: Option<TopicRouteDataHandle>,
+    ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null topic route key"));
+        };
+        let Some(value) = value else {
+            return Err(RuntimeError::InvalidRoute("null topic route value"));
+        };
+        self.replace(key, value)
+    }
     pub fn replace_if_equal(
         &self,
         key: impl Into<String>,
@@ -498,6 +550,24 @@ impl TopicRouteTable {
                 return Ok(true);
             }
         }
+    }
+    /// Preserves Java `ConcurrentMap.replace(key, oldValue, newValue)` null checks.
+    pub fn replace_if_equal_nullable(
+        &self,
+        key: Option<&str>,
+        expected: Option<&TopicRouteData>,
+        value: Option<TopicRouteDataHandle>,
+    ) -> Result<bool, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null topic route key"));
+        };
+        let Some(expected) = expected else {
+            return Err(RuntimeError::InvalidRoute("null topic route value"));
+        };
+        let Some(value) = value else {
+            return Err(RuntimeError::InvalidRoute("null topic route value"));
+        };
+        self.replace_if_equal(key, expected, value)
     }
     pub fn remove(&self, key: &str) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
         let _gate = self.0.lock_raw_route_key(key)?;
@@ -533,6 +603,21 @@ impl TopicRouteTable {
                 return Ok(true);
             }
         }
+    }
+    /// Preserves Java `ConcurrentMap.remove(key, value)` null-key and
+    /// null-expected-value behavior.
+    pub fn remove_if_equal_nullable(
+        &self,
+        key: Option<&str>,
+        expected: Option<&TopicRouteData>,
+    ) -> Result<bool, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null topic route key"));
+        };
+        let Some(expected) = expected else {
+            return Ok(false);
+        };
+        self.remove_if_equal(key, expected)
     }
     /// Removes the keys observed at traversal start one at a time. Per-key
     /// gates order clear with compute-style mutations without making a
