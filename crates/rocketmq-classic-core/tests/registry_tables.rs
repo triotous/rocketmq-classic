@@ -167,6 +167,60 @@ async fn retained_registry_tables_match_every_invoked_java_primitive_outcome() {
 }
 
 #[tokio::test]
+async fn group_registration_matches_java_strong_owner_retention() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let expected = &fixture["registryTables"]["registrationRetainsOwners"];
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&ClientConfig::new("registry-strong-owners"))
+        .await
+        .unwrap();
+    let producer_table = runtime.producer_table();
+    let consumer_table = runtime.consumer_table();
+
+    let producer: Arc<dyn ProducerRuntime> = Arc::new(Producer);
+    let producer_weak = Arc::downgrade(&producer);
+    runtime
+        .register_producer("strong-producer", producer.clone())
+        .await
+        .unwrap();
+    drop(producer);
+    let producer_weak_reference_still_live = producer_weak.upgrade().is_some();
+    let producer_selector_returns_registered_owner = same(
+        runtime.select_producer("strong-producer").unwrap(),
+        &producer_weak.upgrade().unwrap(),
+    );
+
+    let consumer: Arc<dyn ConsumerRuntime> = Arc::new(Consumer);
+    let consumer_weak = Arc::downgrade(&consumer);
+    runtime
+        .register_consumer("strong-consumer", consumer.clone())
+        .await
+        .unwrap();
+    drop(consumer);
+    let consumer_weak_reference_still_live = consumer_weak.upgrade().is_some();
+    let consumer_selector_returns_registered_owner = same(
+        runtime.select_consumer("strong-consumer").unwrap(),
+        &consumer_weak.upgrade().unwrap(),
+    );
+
+    assert_eq!(
+        serde_json::json!({
+            "producerWeakReferenceStillLive": producer_weak_reference_still_live,
+            "producerSelectorReturnsRegisteredOwner": producer_selector_returns_registered_owner,
+            "consumerWeakReferenceStillLive": consumer_weak_reference_still_live,
+            "consumerSelectorReturnsRegisteredOwner": consumer_selector_returns_registered_owner,
+        }),
+        *expected
+    );
+
+    producer_table.clear().await.unwrap();
+    consumer_table.clear().await.unwrap();
+    assert!(producer_weak.upgrade().is_none());
+    assert!(consumer_weak.upgrade().is_none());
+}
+
+#[tokio::test]
 async fn nullable_runtime_selectors_match_invoked_java_null_key_failures() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
@@ -1184,7 +1238,7 @@ async fn group_unregister_matches_invoked_java_consumer_methods_and_removes_curr
 }
 
 #[tokio::test]
-async fn live_table_replacement_invalidates_old_lease_without_retaining_runtime_or_owners() {
+async fn live_table_replacement_invalidates_old_lease_and_retains_owners_without_runtime() {
     let manager = ClientRuntimeManager::new();
     let mut config = ClientConfig::new("registry-lease");
     config.namesrv_addr = Some(String::new());
@@ -1222,11 +1276,14 @@ async fn live_table_replacement_invalidates_old_lease_without_retaining_runtime_
     assert!(same(table.get("after").unwrap(), &second));
     let weak_owner = Arc::downgrade(&second);
     drop(second);
-    assert!(weak_owner.upgrade().is_none());
-    assert!(table.get("after").unwrap().is_none());
-    assert!(table.contains_key("after").unwrap()); // Binding does not disappear on owner drop.
+    assert!(weak_owner.upgrade().is_some());
+    assert!(same(
+        table.get("after").unwrap(),
+        &weak_owner.upgrade().unwrap()
+    ));
     table.clear().await.unwrap();
     assert!(table.is_empty().unwrap());
+    assert!(weak_owner.upgrade().is_none());
 }
 
 #[tokio::test]
@@ -1445,7 +1502,7 @@ async fn running_table_writes_wait_for_unregister_and_cancelled_queue_writes_do_
         .put("producer", producer)
         .await
         .unwrap();
-    // Weak-owner expiry does not make the binding absent.
+    // A mapped owner remains alive until the Java-style group unregister runs.
     assert!(
         runtime
             .unregister_producer_by_group("producer", Instant::now() + Duration::from_secs(3))

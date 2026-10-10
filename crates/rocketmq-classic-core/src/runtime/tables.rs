@@ -95,9 +95,11 @@ impl TableHandle {
 
 macro_rules! table {
     ($name:ident, $owner:ident, $kind:ident, $select:ident, $null_group:literal, $key_set:ident, $values_view:ident, $entry_set:ident) => {
-        /// Live registry mapping using the runtime's weak-owner contract.
-        /// Callers retain owner Arcs; owner drop does not remove its key.
-        /// Primitive writes neither unregister from Brokers nor stop owners.
+        /// Live registry mapping that strongly retains each mapped owner until
+        /// replacement, removal, or clear, matching Java ConcurrentMap values.
+        /// Owner implementations that refer back to `ClientRuntime` must use a
+        /// weak runtime reference to avoid an `Arc` cycle. Primitive writes
+        /// neither unregister from Brokers nor stop owners.
         #[derive(Clone)]
         pub struct $name(TableHandle);
         impl $name {
@@ -998,9 +1000,11 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(drops.load(Ordering::SeqCst), 1);
+        assert_eq!(drops.load(Ordering::SeqCst), 0);
         assert!(consumer.contains_key("drop").unwrap());
         consumer.clear().await.unwrap();
+        assert_eq!(drops.load(Ordering::SeqCst), 1);
+        assert!(!consumer.contains_key("drop").unwrap());
         assert!(runtime.control.existing_sender().unwrap().is_none());
     }
 }

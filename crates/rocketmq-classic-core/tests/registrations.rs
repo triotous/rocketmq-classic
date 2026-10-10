@@ -462,7 +462,7 @@ async fn admin_leases_are_separate_from_heartbeat_groups_and_runtime_identity() 
 }
 
 #[tokio::test]
-async fn heartbeat_callbacks_can_reenter_registry_and_registries_do_not_create_owner_cycles() {
+async fn heartbeat_callbacks_can_reenter_registry_without_runtime_owner_cycles() {
     use rocketmq_classic_core::runtime::ClientRuntime;
     struct ReentrantConsumer(std::sync::Weak<ClientRuntime>);
     impl ConsumerRuntime for ReentrantConsumer {
@@ -476,10 +476,10 @@ async fn heartbeat_callbacks_can_reenter_registry_and_registries_do_not_create_o
             }
         }
     }
-    struct OwningProducer(Arc<ClientRuntime>);
-    impl ProducerRuntime for OwningProducer {
+    struct WeakRuntimeProducer(std::sync::Weak<ClientRuntime>);
+    impl ProducerRuntime for WeakRuntimeProducer {
         fn publish_topics(&self) -> std::collections::BTreeSet<String> {
-            assert!(!self.0.client_id().is_empty());
+            assert!(!self.0.upgrade().unwrap().client_id().is_empty());
             Default::default()
         }
     }
@@ -489,7 +489,7 @@ async fn heartbeat_callbacks_can_reenter_registry_and_registries_do_not_create_o
         .await
         .unwrap();
     let weak = Arc::downgrade(&runtime);
-    let producer = Arc::new(OwningProducer(runtime.clone()));
+    let producer = Arc::new(WeakRuntimeProducer(weak.clone()));
     let consumer = Arc::new(ReentrantConsumer(weak.clone()));
     let _producer_lease = runtime
         .register_producer("producer", producer.clone())
@@ -518,7 +518,7 @@ async fn heartbeat_callbacks_can_reenter_registry_and_registries_do_not_create_o
     thread.join().unwrap();
     drop(manager);
     drop(runtime);
-    assert!(weak.upgrade().is_some()); // Producer owns the runtime.
+    assert!(weak.upgrade().is_none()); // Registry owner back-references must be weak.
     drop(producer);
-    assert!(weak.upgrade().is_none()); // Registry is weak; no owner cycle.
+    drop(consumer);
 }

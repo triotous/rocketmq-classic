@@ -118,7 +118,7 @@ impl GroupLease {
 
 struct TableEntry<T: ?Sized> {
     identity: Arc<()>,
-    handle: Weak<T>,
+    handle: Arc<T>,
 }
 type ProducerEntry = TableEntry<dyn ProducerRuntime>;
 type ConsumerEntry = TableEntry<dyn ConsumerRuntime>;
@@ -213,22 +213,12 @@ impl GroupRegistry {
             TableKind::Producer => entries
                 .producers
                 .iter()
-                .filter_map(|(key, entry)| {
-                    entry
-                        .handle
-                        .upgrade()
-                        .map(|value| (key.clone(), TableValue::Producer(value)))
-                })
+                .map(|(key, entry)| (key.clone(), TableValue::Producer(entry.handle.clone())))
                 .collect(),
             TableKind::Consumer => entries
                 .consumers
                 .iter()
-                .filter_map(|(key, entry)| {
-                    entry
-                        .handle
-                        .upgrade()
-                        .map(|value| (key.clone(), TableValue::Consumer(value)))
-                })
+                .map(|(key, entry)| (key.clone(), TableValue::Consumer(entry.handle.clone())))
                 .collect(),
         })
     }
@@ -238,6 +228,34 @@ impl GroupRegistry {
         mutation: &super::tables::TableMutation,
     ) -> Result<super::tables::TableChange, RuntimeError> {
         use super::tables::{TableKind, TableValue};
+        if matches!(mutation, super::tables::TableMutation::Clear) {
+            match kind {
+                TableKind::Producer => {
+                    let removed = {
+                        let mut entries = self
+                            .entries
+                            .lock()
+                            .map_err(|_| RuntimeError::RegistryPoisoned)?;
+                        std::mem::take(&mut entries.producers)
+                    };
+                    drop(removed);
+                }
+                TableKind::Consumer => {
+                    let removed = {
+                        let mut entries = self
+                            .entries
+                            .lock()
+                            .map_err(|_| RuntimeError::RegistryPoisoned)?;
+                        std::mem::take(&mut entries.consumers)
+                    };
+                    drop(removed);
+                }
+            }
+            return Ok(super::tables::TableChange {
+                previous: None,
+                matched: true,
+            });
+        }
         {
             let mut entries = self
                 .entries
@@ -300,6 +318,8 @@ impl GroupRegistry {
             .lock()
             .map_err(|_| RuntimeError::RegistryPoisoned)?;
         if entries.producers.contains_key(group) {
+            drop(entries);
+            drop(handle);
             return Err(RuntimeError::DuplicateGroup {
                 group: group.into(),
             });
@@ -313,7 +333,7 @@ impl GroupRegistry {
             group.into(),
             ProducerEntry {
                 identity: lease.identity.clone(),
-                handle: Arc::downgrade(&handle),
+                handle,
             },
         );
         Ok(lease)
@@ -329,6 +349,8 @@ impl GroupRegistry {
             .lock()
             .map_err(|_| RuntimeError::RegistryPoisoned)?;
         if entries.consumers.contains_key(group) {
+            drop(entries);
+            drop(handle);
             return Err(RuntimeError::DuplicateGroup {
                 group: group.into(),
             });
@@ -342,7 +364,7 @@ impl GroupRegistry {
             group.into(),
             ConsumerEntry {
                 identity: lease.identity.clone(),
-                handle: Arc::downgrade(&handle),
+                handle,
             },
         );
         Ok(lease)
@@ -440,18 +462,14 @@ impl GroupRegistry {
         if !identity.is_some_and(|identity| Arc::ptr_eq(identity, &lease.identity)) {
             return Ok(false);
         }
-        let removed_admin = match kind {
-            GroupKind::Producer => {
-                entries.producers.remove(&lease.group);
-                None
-            }
-            GroupKind::Consumer => {
-                entries.consumers.remove(&lease.group);
-                None
-            }
-            GroupKind::Admin => entries.admins.remove(&lease.group),
+        let (removed_producer, removed_consumer, removed_admin) = match kind {
+            GroupKind::Producer => (entries.producers.remove(&lease.group), None, None),
+            GroupKind::Consumer => (None, entries.consumers.remove(&lease.group), None),
+            GroupKind::Admin => (None, None, entries.admins.remove(&lease.group)),
         };
         drop(entries);
+        drop(removed_producer);
+        drop(removed_consumer);
         drop(removed_admin);
         Ok(true)
     }
@@ -461,20 +479,28 @@ impl GroupRegistry {
         group: &str,
         kind: GroupKind,
     ) -> Result<bool, RuntimeError> {
-        let (removed, removed_admin) = {
+        let (removed, removed_producer, removed_consumer, removed_admin) = {
             let mut entries = self
                 .entries
                 .lock()
                 .map_err(|_| RuntimeError::RegistryPoisoned)?;
             match kind {
-                GroupKind::Producer => (entries.producers.remove(group).is_some(), None),
-                GroupKind::Consumer => (entries.consumers.remove(group).is_some(), None),
+                GroupKind::Producer => {
+                    let entry = entries.producers.remove(group);
+                    (entry.is_some(), entry, None, None)
+                }
+                GroupKind::Consumer => {
+                    let entry = entries.consumers.remove(group);
+                    (entry.is_some(), None, entry, None)
+                }
                 GroupKind::Admin => {
                     let entry = entries.admins.remove(group);
-                    (entry.is_some(), entry)
+                    (entry.is_some(), None, None, entry)
                 }
             }
         };
+        drop(removed_producer);
+        drop(removed_consumer);
         drop(removed_admin);
         Ok(removed)
     }
@@ -488,14 +514,12 @@ impl GroupRegistry {
             producers: entries
                 .producers
                 .iter()
-                .filter_map(|(group, entry)| {
-                    entry.handle.upgrade().map(|handle| (group.clone(), handle))
-                })
+                .map(|(group, entry)| (group.clone(), entry.handle.clone()))
                 .collect(),
             consumers: entries
                 .consumers
                 .values()
-                .filter_map(|entry| entry.handle.upgrade())
+                .map(|entry| entry.handle.clone())
                 .collect(),
         })
     }
@@ -508,9 +532,7 @@ impl GroupRegistry {
         Ok(entries
             .consumers
             .iter()
-            .filter_map(|(group, entry)| {
-                entry.handle.upgrade().map(|handle| (group.clone(), handle))
-            })
+            .map(|(group, entry)| (group.clone(), entry.handle.clone()))
             .collect())
     }
 
@@ -525,7 +547,7 @@ impl GroupRegistry {
         Ok(entries
             .producers
             .get(group)
-            .and_then(|entry| entry.handle.upgrade()))
+            .map(|entry| entry.handle.clone()))
     }
 
     pub fn select_consumer(
@@ -539,7 +561,7 @@ impl GroupRegistry {
         Ok(entries
             .consumers
             .get(group)
-            .and_then(|entry| entry.handle.upgrade()))
+            .map(|entry| entry.handle.clone()))
     }
 }
 
@@ -554,16 +576,10 @@ fn mutate_map<T: ?Sized>(
         TableMutation::Put { key, .. }
         | TableMutation::Replace { key, .. }
         | TableMutation::Remove { key, .. } => key,
-        TableMutation::Clear => {
-            map.clear();
-            return Ok(TableChange {
-                previous: None,
-                matched: true,
-            });
-        }
+        TableMutation::Clear => unreachable!("clear is detached before map mutation"),
     };
     let present = map.contains_key(key);
-    let previous = map.get(key).and_then(|entry| entry.handle.upgrade());
+    let previous = map.get(key).map(|entry| entry.handle.clone());
     let matches = |expected: &Option<super::tables::TableValue>,
                    comparison: &Option<ValueComparison>| {
         let Some(expected) = expected.as_ref() else {
@@ -601,7 +617,7 @@ fn mutate_map<T: ?Sized>(
                     key.clone(),
                     TableEntry {
                         identity: Arc::new(()),
-                        handle: Arc::downgrade(value),
+                        handle: value.clone(),
                     },
                 );
             }
@@ -698,5 +714,190 @@ mod admin_owner_drop_tests {
     #[test]
     fn registry_clear_drops_admin_owner_after_unlock() {
         assert_admin_owner_drop_can_reenter(GroupRegistry::clear);
+    }
+}
+
+#[cfg(test)]
+mod runtime_owner_drop_tests {
+    use super::*;
+    use std::{
+        sync::{
+            atomic::{AtomicBool, Ordering},
+            mpsc,
+        },
+        thread,
+        time::Duration,
+    };
+
+    struct ReenterOnDrop {
+        registry: Weak<GroupRegistry>,
+        reentered: Arc<AtomicBool>,
+    }
+
+    impl ProducerRuntime for ReenterOnDrop {}
+
+    impl ConsumerRuntime for ReenterOnDrop {
+        fn heartbeat_data(&self) -> ConsumerData {
+            ConsumerData::default()
+        }
+    }
+
+    struct ReplacementOwner;
+
+    impl ProducerRuntime for ReplacementOwner {}
+
+    impl ConsumerRuntime for ReplacementOwner {
+        fn heartbeat_data(&self) -> ConsumerData {
+            ConsumerData::default()
+        }
+    }
+
+    impl Drop for ReenterOnDrop {
+        fn drop(&mut self) {
+            let Some(registry) = self.registry.upgrade() else {
+                return;
+            };
+            if registry.register_admin("from-drop").is_ok() {
+                self.reentered.store(true, Ordering::SeqCst);
+            }
+        }
+    }
+
+    fn assert_runtime_owner_drop_can_reenter(
+        kind: GroupKind,
+        remove: impl FnOnce(&GroupRegistry, &GroupLease) + Send + 'static,
+    ) {
+        let registry = Arc::new(GroupRegistry::default());
+        let reentered = Arc::new(AtomicBool::new(false));
+        let owner = Arc::new(ReenterOnDrop {
+            registry: Arc::downgrade(&registry),
+            reentered: reentered.clone(),
+        });
+        let lease = match kind {
+            GroupKind::Producer => {
+                let owner: Arc<dyn ProducerRuntime> = owner.clone();
+                registry.register_producer("owner", owner).unwrap()
+            }
+            GroupKind::Consumer => {
+                let owner: Arc<dyn ConsumerRuntime> = owner.clone();
+                registry.register_consumer("owner", owner).unwrap()
+            }
+            GroupKind::Admin => unreachable!(),
+        };
+        drop(owner);
+
+        let (reply, receive) = mpsc::channel();
+        let worker_registry = registry.clone();
+        let worker = thread::spawn(move || {
+            remove(&worker_registry, &lease);
+            let contains_reentered = worker_registry
+                .entries
+                .lock()
+                .unwrap()
+                .admins
+                .contains_key("from-drop");
+            let _ = reply.send(contains_reentered);
+        });
+
+        assert_eq!(
+            receive.recv_timeout(Duration::from_secs(2)),
+            Ok(true),
+            "producer/consumer owner destructor must be able to re-enter the registry"
+        );
+        worker.join().unwrap();
+        assert!(reentered.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn producer_lease_and_group_removals_drop_owner_after_unlock() {
+        assert_runtime_owner_drop_can_reenter(GroupKind::Producer, |registry, lease| {
+            assert!(registry.unregister(lease, GroupKind::Producer).unwrap());
+        });
+        assert_runtime_owner_drop_can_reenter(GroupKind::Producer, |registry, _| {
+            assert!(
+                registry
+                    .remove_by_group("owner", GroupKind::Producer)
+                    .unwrap()
+            );
+        });
+    }
+
+    #[test]
+    fn consumer_lease_and_group_removals_drop_owner_after_unlock() {
+        assert_runtime_owner_drop_can_reenter(GroupKind::Consumer, |registry, lease| {
+            assert!(registry.unregister(lease, GroupKind::Consumer).unwrap());
+        });
+        assert_runtime_owner_drop_can_reenter(GroupKind::Consumer, |registry, _| {
+            assert!(
+                registry
+                    .remove_by_group("owner", GroupKind::Consumer)
+                    .unwrap()
+            );
+        });
+    }
+
+    #[test]
+    fn raw_table_remove_replace_clear_and_registry_clear_drop_owner_after_unlock() {
+        use super::super::tables::{TableKind, TableMutation, TableValue};
+
+        for kind in [GroupKind::Producer, GroupKind::Consumer] {
+            let table_kind = match kind {
+                GroupKind::Producer => TableKind::Producer,
+                GroupKind::Consumer => TableKind::Consumer,
+                GroupKind::Admin => unreachable!(),
+            };
+            assert_runtime_owner_drop_can_reenter(kind, move |registry, _| {
+                let change = registry
+                    .mutate_table(
+                        table_kind,
+                        &TableMutation::Remove {
+                            key: "owner".into(),
+                            expected: None,
+                            comparison: None,
+                        },
+                    )
+                    .unwrap();
+                drop(change);
+            });
+
+            let table_kind = match kind {
+                GroupKind::Producer => TableKind::Producer,
+                GroupKind::Consumer => TableKind::Consumer,
+                GroupKind::Admin => unreachable!(),
+            };
+            assert_runtime_owner_drop_can_reenter(kind, move |registry, _| {
+                let replacement = match kind {
+                    GroupKind::Producer => TableValue::Producer(Arc::new(ReplacementOwner)),
+                    GroupKind::Consumer => TableValue::Consumer(Arc::new(ReplacementOwner)),
+                    GroupKind::Admin => unreachable!(),
+                };
+                let change = registry
+                    .mutate_table(
+                        table_kind,
+                        &TableMutation::Replace {
+                            key: "owner".into(),
+                            expected: None,
+                            comparison: None,
+                            value: replacement,
+                        },
+                    )
+                    .unwrap();
+                drop(change);
+            });
+
+            let table_kind = match kind {
+                GroupKind::Producer => TableKind::Producer,
+                GroupKind::Consumer => TableKind::Consumer,
+                GroupKind::Admin => unreachable!(),
+            };
+            assert_runtime_owner_drop_can_reenter(kind, move |registry, _| {
+                registry
+                    .mutate_table(table_kind, &TableMutation::Clear)
+                    .unwrap();
+            });
+            assert_runtime_owner_drop_can_reenter(kind, |registry, _| {
+                registry.clear().unwrap();
+            });
+        }
     }
 }
