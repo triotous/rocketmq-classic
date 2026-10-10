@@ -2986,6 +2986,30 @@ public final class RuntimeLookupFixtures {
             field.setAccessible(true);
             field.set(runtime, api);
 
+            org.apache.rocketmq.client.impl.consumer.MQConsumerInner nonNullConsumer =
+                (org.apache.rocketmq.client.impl.consumer.MQConsumerInner) java.lang.reflect.Proxy.newProxyInstance(
+                    RuntimeLookupFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class},
+                    (proxy, method, values) -> method.getReturnType() == boolean.class ? false : null);
+            result.put("nullGroupConsumerRegistrationAccepted", runtime.registerConsumer(null, nonNullConsumer));
+            result.put("nullOwnerConsumerRegistrationAccepted", runtime.registerConsumer("null-owner", null));
+            result.put("nullGroupProducerRegistrationAccepted", runtime.registerProducer(null, null));
+            result.put("nullOwnerProducerRegistrationAccepted", runtime.registerProducer("null-owner", null));
+            result.put("registrationTablesRemainEmpty",
+                runtime.getConsumerTable().isEmpty() && runtime.getProducerTable().isEmpty());
+            try {
+                runtime.unregisterConsumer(null);
+                result.put("nullConsumerUnregisterOutcome", "OK");
+            } catch (RuntimeException error) {
+                result.put("nullConsumerUnregisterOutcome", error.getClass().getSimpleName());
+            }
+            try {
+                runtime.unregisterProducer(null);
+                result.put("nullProducerUnregisterOutcome", "OK");
+            } catch (RuntimeException error) {
+                result.put("nullProducerUnregisterOutcome", error.getClass().getSimpleName());
+            }
+
             List<String> consumerIds = runtime.findConsumerIdList("topic", "consumer");
             result.put("consumerOutcome", consumerIds);
             result.put("consumerCalls", new ArrayList<>(api.consumerCalls));
