@@ -1038,7 +1038,8 @@ async fn nullable_registry_bulk_and_traversal_callbacks_match_invoked_java() {
         .unwrap();
 
     macro_rules! check_bulk_inputs {
-        ($table:ident, $expected:expr, $prefix:literal, $owner:path, $first:ident, $second:ident) => {{
+        ($table:ident, $expected:expr, $prefix:literal, $owner:path, $first:ident, $second:ident,
+            $null_key:literal, $null_value:literal) => {{
             for suffix in [
                 "PutAllNullMap",
                 "ForEachNullAction",
@@ -1074,10 +1075,79 @@ async fn nullable_registry_bulk_and_traversal_callbacks_match_invoked_java() {
                 initial_keys
             );
 
+            let field = format!("{}PutAllNullKey", $prefix);
+            assert_eq!(
+                $expected.get(field.as_str()).unwrap(),
+                "NullPointerException"
+            );
+            let null_key_rows = [
+                (
+                    Some("put-all-before-null-key".to_owned()),
+                    Some($first.clone()),
+                ),
+                (None, Some($first.clone())),
+                (
+                    Some("put-all-after-null-key".to_owned()),
+                    Some($second.clone()),
+                ),
+            ];
+            assert!(matches!(
+                $table.put_all_nullable_rows(Some(&null_key_rows)).await,
+                Err(RuntimeError::InvalidRoute($null_key))
+            ));
+            let field = format!("{}PutAllNullKeyKeysAfter", $prefix);
+            assert_eq!(
+                $table
+                    .snapshot()
+                    .unwrap()
+                    .into_keys()
+                    .collect::<std::collections::BTreeSet<_>>(),
+                serde_json::from_value($expected.get(field.as_str()).unwrap().clone()).unwrap(),
+                "{field}"
+            );
+            assert!(
+                $table
+                    .remove("put-all-before-null-key")
+                    .await
+                    .unwrap()
+                    .is_some()
+            );
+
+            let field = format!("{}PutAllNullValue", $prefix);
+            assert_eq!(
+                $expected.get(field.as_str()).unwrap(),
+                "NullPointerException"
+            );
+            let null_value_rows = [
+                (
+                    Some("put-all-before-null-value".to_owned()),
+                    Some($first.clone()),
+                ),
+                (Some("put-all-null-value".to_owned()), None),
+                (
+                    Some("put-all-after-null-value".to_owned()),
+                    Some($second.clone()),
+                ),
+            ];
+            assert!(matches!(
+                $table.put_all_nullable_rows(Some(&null_value_rows)).await,
+                Err(RuntimeError::InvalidRoute($null_value))
+            ));
+            let field = format!("{}PutAllNullValueKeysAfter", $prefix);
+            assert_eq!(
+                $table
+                    .snapshot()
+                    .unwrap()
+                    .into_keys()
+                    .collect::<std::collections::BTreeSet<_>>(),
+                serde_json::from_value($expected.get(field.as_str()).unwrap().clone()).unwrap(),
+                "{field}"
+            );
+
             let mut visited = 0;
             let mut action = |_: &str, _: &Arc<dyn $owner>| visited += 1;
             $table.for_each_nullable(Some(&mut action)).unwrap();
-            assert_eq!(visited, initial_keys.len());
+            assert_eq!(visited, $table.len().unwrap());
 
             let additions = BTreeMap::from([("added".to_owned(), $second.clone())]);
             $table.put_all_nullable(Some(&additions)).await.unwrap();
@@ -1101,7 +1171,11 @@ async fn nullable_registry_bulk_and_traversal_callbacks_match_invoked_java() {
     let producer_a: Arc<dyn ProducerRuntime> = Arc::new(Producer);
     let producer_b: Arc<dyn ProducerRuntime> = Arc::new(Producer);
     producer_table
-        .put("existing", producer_a.clone())
+        .put("nullable-default-present", producer_a.clone())
+        .await
+        .unwrap();
+    producer_table
+        .put("strong-producer", producer_b.clone())
         .await
         .unwrap();
     check_bulk_inputs!(
@@ -1110,14 +1184,20 @@ async fn nullable_registry_bulk_and_traversal_callbacks_match_invoked_java() {
         "producer",
         ProducerRuntime,
         producer_a,
-        producer_b
+        producer_b,
+        "null producer group",
+        "null producer value"
     );
 
     let consumer_table = runtime.consumer_table();
     let consumer_a: Arc<dyn ConsumerRuntime> = Arc::new(Consumer);
     let consumer_b: Arc<dyn ConsumerRuntime> = Arc::new(Consumer);
     consumer_table
-        .put("existing", consumer_a.clone())
+        .put("nullable-default-present", consumer_a.clone())
+        .await
+        .unwrap();
+    consumer_table
+        .put("strong-consumer", consumer_b.clone())
         .await
         .unwrap();
     check_bulk_inputs!(
@@ -1126,7 +1206,9 @@ async fn nullable_registry_bulk_and_traversal_callbacks_match_invoked_java() {
         "consumer",
         ConsumerRuntime,
         consumer_a,
-        consumer_b
+        consumer_b,
+        "null consumer group",
+        "null consumer value"
     );
     assert_eq!(runtime.state(), RuntimeState::Created);
 }

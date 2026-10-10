@@ -708,14 +708,17 @@ async fn nullable_factory_bulk_and_traversal_callbacks_match_invoked_java() {
     let manager = ClientRuntimeManager::new();
     let table = manager.factory_table();
     let first = manager
-        .get_or_create(&ClientConfig::new("nullable-factory-bulk-first"))
+        .get_or_create(&ClientConfig::new("manager-copy"))
         .await
         .unwrap();
-    let second = manager
+    let second = ClientRuntimeManager::new()
         .get_or_create(&ClientConfig::new("nullable-factory-bulk-second"))
         .await
         .unwrap();
-    table.put("existing", first.clone()).await.unwrap();
+    table
+        .put("manager-copy@DEFAULT", first.clone())
+        .await
+        .unwrap();
     let initial_keys: BTreeSet<_> = table.snapshot().unwrap().into_keys().collect();
     assert!(matches!(
         table.put_all_nullable(None).await,
@@ -740,10 +743,67 @@ async fn nullable_factory_bulk_and_traversal_callbacks_match_invoked_java() {
         initial_keys
     );
 
+    assert_eq!(java["factoryPutAllNullKey"], "NullPointerException");
+    let null_key_rows = [
+        (
+            Some("put-all-before-null-key".to_owned()),
+            Some(first.clone()),
+        ),
+        (None, Some(first.clone())),
+        (
+            Some("put-all-after-null-key".to_owned()),
+            Some(second.clone()),
+        ),
+    ];
+    assert!(matches!(
+        table.put_all_nullable_rows(Some(&null_key_rows)).await,
+        Err(RuntimeError::InvalidRoute("null factory key"))
+    ));
+    assert_eq!(
+        table
+            .snapshot()
+            .unwrap()
+            .into_keys()
+            .collect::<BTreeSet<_>>(),
+        serde_json::from_value(java["factoryPutAllNullKeyKeysAfter"].clone()).unwrap()
+    );
+    assert!(
+        table
+            .remove("put-all-before-null-key")
+            .await
+            .unwrap()
+            .is_some()
+    );
+
+    assert_eq!(java["factoryPutAllNullValue"], "NullPointerException");
+    let null_value_rows = [
+        (
+            Some("put-all-before-null-value".to_owned()),
+            Some(first.clone()),
+        ),
+        (Some("put-all-null-value".to_owned()), None),
+        (
+            Some("put-all-after-null-value".to_owned()),
+            Some(second.clone()),
+        ),
+    ];
+    assert!(matches!(
+        table.put_all_nullable_rows(Some(&null_value_rows)).await,
+        Err(RuntimeError::InvalidRoute("null factory value"))
+    ));
+    assert_eq!(
+        table
+            .snapshot()
+            .unwrap()
+            .into_keys()
+            .collect::<BTreeSet<_>>(),
+        serde_json::from_value(java["factoryPutAllNullValueKeysAfter"].clone()).unwrap()
+    );
+
     let mut visited = 0;
     let mut action = |_: &str, _: &Arc<_>| visited += 1;
     table.for_each_nullable(Some(&mut action)).unwrap();
-    assert_eq!(visited, initial_keys.len());
+    assert_eq!(visited, initial_keys.len() + 1);
     let entries = BTreeMap::from([("added".to_owned(), second.clone())]);
     table.put_all_nullable(Some(&entries)).await.unwrap();
     assert!(Arc::ptr_eq(&table.get("added").unwrap().unwrap(), &second));

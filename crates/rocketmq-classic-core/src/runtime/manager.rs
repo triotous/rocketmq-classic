@@ -645,6 +645,27 @@ impl FactoryTable {
         Ok(())
     }
 
+    /// Applies ordered nullable source-map rows with Java `putAll` failure
+    /// behavior; writes before an invalid key/value are not rolled back.
+    pub async fn put_all_nullable_rows(
+        &self,
+        entries: Option<&[NullableTableEntry<ClientRuntime>]>,
+    ) -> Result<(), RuntimeError> {
+        let Some(entries) = entries else {
+            return Err(RuntimeError::InvalidRoute("null factory putAll map"));
+        };
+        for (key, value) in entries {
+            let Some(key) = key.as_deref() else {
+                return Err(RuntimeError::InvalidRoute("null factory key"));
+            };
+            let Some(value) = value else {
+                return Err(RuntimeError::InvalidRoute("null factory value"));
+            };
+            self.put(key, value.clone()).await?;
+        }
+        Ok(())
+    }
+
     pub async fn put_if_absent(
         &self,
         key: &str,

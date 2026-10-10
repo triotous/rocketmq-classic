@@ -4,6 +4,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -768,10 +769,9 @@ public final class RuntimeConfigFixtures {
         result.put(caseName + "KeysAfter", new ArrayList<>(new java.util.TreeSet<>(table.keySet())));
     }
 
-    private static <T> Map<String, Object> nullableTableViewNullElements(String prefix,
+    private static <T> java.util.concurrent.ConcurrentHashMap<String, T> isolatedTableProbe(String prefix,
         java.util.concurrent.ConcurrentMap<String, T> source) {
-        Map<String, Object> result = new TreeMap<>();
-        java.util.concurrent.ConcurrentMap<String, T> probe = new java.util.concurrent.ConcurrentHashMap<>();
+        java.util.concurrent.ConcurrentHashMap<String, T> probe = new java.util.concurrent.ConcurrentHashMap<>();
         if ("factory".equals(prefix)) {
             probe.put("manager-copy@DEFAULT", source.get("manager-copy@DEFAULT"));
         } else {
@@ -779,6 +779,13 @@ public final class RuntimeConfigFixtures {
             String otherKey = "producer".equals(prefix) ? "strong-producer" : "strong-consumer";
             probe.put(otherKey, source.get(otherKey));
         }
+        return probe;
+    }
+
+    private static <T> Map<String, Object> nullableTableViewNullElements(String prefix,
+        java.util.concurrent.ConcurrentMap<String, T> source) {
+        Map<String, Object> result = new TreeMap<>();
+        java.util.concurrent.ConcurrentHashMap<String, T> probe = isolatedTableProbe(prefix, source);
         for (String viewName : List.of("Key", "Values", "Entries")) {
             Object matchedMember;
             if ("Key".equals(viewName)) {
@@ -840,6 +847,25 @@ public final class RuntimeConfigFixtures {
         captureThrowable(result, prefix + "PutAllNullMap", () -> table.putAll(null));
         captureThrowable(result, prefix + "ForEachNullAction", () -> table.forEach(null));
         captureThrowable(result, prefix + "ReplaceAllNullFunction", () -> table.replaceAll(null));
+
+        T value = table.values().iterator().next();
+        java.util.concurrent.ConcurrentMap<String, T> nullKeyTable = isolatedTableProbe(prefix, table);
+        Map<String, T> nullKeyInputs = new LinkedHashMap<>();
+        nullKeyInputs.put("put-all-before-null-key", value);
+        nullKeyInputs.put(null, value);
+        nullKeyInputs.put("put-all-after-null-key", value);
+        captureThrowable(result, prefix + "PutAllNullKey", () -> nullKeyTable.putAll(nullKeyInputs));
+        result.put(prefix + "PutAllNullKeyKeysAfter",
+            new ArrayList<>(new java.util.TreeSet<>(nullKeyTable.keySet())));
+
+        java.util.concurrent.ConcurrentMap<String, T> nullValueTable = isolatedTableProbe(prefix, table);
+        Map<String, T> nullValueInputs = new LinkedHashMap<>();
+        nullValueInputs.put("put-all-before-null-value", value);
+        nullValueInputs.put("put-all-null-value", null);
+        nullValueInputs.put("put-all-after-null-value", value);
+        captureThrowable(result, prefix + "PutAllNullValue", () -> nullValueTable.putAll(nullValueInputs));
+        result.put(prefix + "PutAllNullValueKeysAfter",
+            new ArrayList<>(new java.util.TreeSet<>(nullValueTable.keySet())));
         return result;
     }
 
