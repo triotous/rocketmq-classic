@@ -603,6 +603,82 @@ async fn start_fetches_nameserver_after_live_address_is_cleared_but_keeps_active
     assert!(runtime.shutdown().await.unwrap());
 }
 
+#[tokio::test]
+async fn start_skips_discovery_after_live_nameserver_address_becomes_empty() {
+    use rocketmq_classic_core::{namesrv::TopAddressing, runtime::ClientRuntimeManager};
+    use std::{
+        future::Future,
+        pin::Pin,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+    };
+
+    struct CountingAddressing(Arc<AtomicUsize>);
+    impl TopAddressing for CountingAddressing {
+        fn fetch_ns_addr(&self) -> Pin<Box<dyn Future<Output = Option<String>> + Send + '_>> {
+            Box::pin(async move {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Some(" \t".into())
+            })
+        }
+    }
+
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/start.json")).unwrap();
+    let java_case = &fixture["configuredToEmpty"];
+    assert_eq!(java_case["namesrvAddrAtStart"], "");
+    assert_eq!(java_case["discoveryCalls"], 0);
+    assert_eq!(java_case["scheduledTaskCount"], 4);
+    assert_eq!(java_case["startOutcome"], "RUNNING");
+    assert_eq!(java_case["shutdownOutcome"], "OK");
+    let addresses = ["configured-at-construction:9876".to_owned()];
+    assert_eq!(
+        java_case["activeAddressesBeforeStart"],
+        serde_json::json!(addresses)
+    );
+    assert_eq!(
+        java_case["activeAddressesAfterStart"],
+        java_case["activeAddressesBeforeStart"]
+    );
+
+    let fetch_calls = Arc::new(AtomicUsize::new(0));
+    let manager = ClientRuntimeManager::with_top_addressing(Arc::new(CountingAddressing(
+        fetch_calls.clone(),
+    )));
+    let mut config = ClientConfig::new("192.0.2.82");
+    config.instance_name = Some("phase6-start-nameserver-empty".into());
+    config.namesrv_addr = Some(addresses[0].clone());
+    config.enable_heartbeat_channel_event_listener = false;
+    let runtime = manager.get_or_create(&config).await.unwrap();
+    assert_eq!(
+        runtime.remoting().get_name_server_address_list(),
+        Some(addresses.to_vec())
+    );
+    runtime
+        .config()
+        .write()
+        .unwrap()
+        .set_namesrv_addr(Some(String::new()));
+    assert_eq!(
+        runtime.config().read().unwrap().namesrv_addr.as_deref(),
+        java_case["namesrvAddrAtStart"].as_str()
+    );
+
+    runtime.start().await.unwrap();
+    assert_eq!(
+        fetch_calls.load(Ordering::SeqCst),
+        java_case["discoveryCalls"]
+    );
+    assert!(runtime.name_server_addr().is_none());
+    assert_eq!(
+        runtime.remoting().get_name_server_address_list(),
+        Some(addresses.to_vec())
+    );
+    assert!(runtime.shutdown().await.unwrap());
+}
+
 #[test]
 fn centralized_defaults_and_java_clone_copy_exact_fields() {
     let fixture: Value =

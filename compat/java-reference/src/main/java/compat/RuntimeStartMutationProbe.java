@@ -23,6 +23,11 @@ public final class RuntimeStartMutationProbe {
     private RuntimeStartMutationProbe() { }
 
     private static Map<String, Object> runCase(boolean nullAtConstruction) throws Exception {
+        return runCase(nullAtConstruction, false);
+    }
+
+    private static Map<String, Object> runCase(boolean nullAtConstruction, boolean emptyBeforeStart)
+        throws Exception {
         Map<String, Object> item = new TreeMap<>();
         ClientConfig config = new ClientConfig();
         config.setClientIP(nullAtConstruction ? "192.0.2.6" : "192.0.2.7");
@@ -39,6 +44,8 @@ public final class RuntimeStartMutationProbe {
         item.put("activeAddressesBeforeMutation", api.getNameServerAddressList());
         if (nullAtConstruction) {
             config.setNamesrvAddr("late-after-construction:9876");
+        } else if (emptyBeforeStart) {
+            config.setNamesrvAddr("");
         } else {
             config.setNamesrvAddr(null);
         }
@@ -113,6 +120,7 @@ public final class RuntimeStartMutationProbe {
         Map<String, Object> item = new TreeMap<>();
         item.put("nullToConfigured", runCase(true));
         item.put("configuredToNull", runCase(false));
+        item.put("configuredToEmpty", runCase(false, true));
         for (Object value : item.values()) {
             @SuppressWarnings("unchecked") Map<String, Object> result = (Map<String, Object>) value;
             if (!"RUNNING".equals(result.get("startOutcome")) || !"OK".equals(result.get("shutdownOutcome"))) {
