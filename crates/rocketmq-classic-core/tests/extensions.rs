@@ -292,7 +292,7 @@ async fn change_invisible_time_returns_java_ack_metadata() {
         let (api, client, addr, task) =
             peer(request::CHANGE_MESSAGE_INVISIBLETIME, status, None, fields).await;
         let result = api
-            .change_invisible_time(&addr, &Default::default(), deadline())
+            .change_invisible_time(&addr, "broker", &Default::default(), deadline())
             .await;
         match status {
             response::SUCCESS => {
@@ -301,6 +301,19 @@ async fn change_invisible_time_returns_java_ack_metadata() {
                 assert_eq!(
                     (result.pop_time, result.invisible_time, result.revive_qid),
                     expected
+                );
+                let (pop_time, invisible_time, revive_qid) = expected;
+                assert_eq!(
+                    result.extra_info.as_deref(),
+                    Some(
+                        format!(
+                            "0 {} {} {} 0 broker 0 0",
+                            pop_time.unwrap(),
+                            invisible_time.unwrap(),
+                            revive_qid.unwrap()
+                        )
+                        .as_str()
+                    )
                 );
             }
             _ => {
@@ -503,7 +516,7 @@ async fn async_extension_status_and_malformed_matrix() {
             )
             .await;
             let result = api
-                .change_invisible_time(&addr, &Default::default(), deadline())
+                .change_invisible_time(&addr, "broker", &Default::default(), deadline())
                 .await;
             let result = result.unwrap();
             assert_eq!(result.status, AckStatus::Ok);
@@ -819,7 +832,7 @@ async fn change_invisibility_defaults_revive_queue_id_outside_i32() {
         )
         .await;
         let result = api
-            .change_invisible_time(&addr, &Default::default(), deadline())
+            .change_invisible_time(&addr, "broker", &Default::default(), deadline())
             .await;
         let result = result.unwrap();
         assert_eq!(result.status, AckStatus::Ok);
@@ -836,7 +849,7 @@ async fn change_invisibility_non_success_ignores_invalid_primitive_header() {
     let (api, client, addr, task) =
         peer(request::CHANGE_MESSAGE_INVISIBLETIME, 999, None, fields).await;
     let result = api
-        .change_invisible_time(&addr, &Default::default(), deadline())
+        .change_invisible_time(&addr, "broker", &Default::default(), deadline())
         .await;
     assert_eq!(result.unwrap().status, AckStatus::NoExist);
     task.await.unwrap();

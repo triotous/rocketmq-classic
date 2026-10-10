@@ -158,6 +158,7 @@ pub struct ChangeInvisibleTimeResult {
     pub pop_time: Option<i64>,
     pub invisible_time: Option<i64>,
     pub revive_qid: Option<i32>,
+    pub extra_info: Option<String>,
 }
 
 fn json_body<T: serde::Serialize>(value: &T, request_code: i32) -> Result<Vec<u8>, RpcError> {
@@ -443,6 +444,7 @@ impl MQClientApi {
     pub async fn change_invisible_time(
         &self,
         addr: &str,
+        broker_name: &str,
         header: &ChangeInvisibleTimeRequestHeader,
         deadline: Instant,
     ) -> Result<ChangeInvisibleTimeResult, RpcError> {
@@ -465,6 +467,7 @@ impl MQClientApi {
                 pop_time: None,
                 invisible_time: None,
                 revive_qid: None,
+                extra_info: None,
             });
         }
         Ok(ChangeInvisibleTimeResult {
@@ -472,8 +475,38 @@ impl MQClientApi {
             pop_time: Some(pop_time),
             invisible_time: Some(invisible_time),
             revive_qid: Some(revive_qid),
+            extra_info: Some(change_invisible_extra_info(
+                header.offset,
+                pop_time,
+                invisible_time,
+                revive_qid,
+                &header.topic,
+                broker_name,
+                header.queue_id,
+            )),
         })
     }
+}
+
+fn change_invisible_extra_info(
+    offset: i64,
+    pop_time: i64,
+    invisible_time: i64,
+    revive_qid: i32,
+    topic: &str,
+    broker_name: &str,
+    queue_id: i32,
+) -> String {
+    let retry = if topic.starts_with("%RETRY%") && topic.contains('+') {
+        2
+    } else if topic.starts_with("%RETRY%") {
+        1
+    } else {
+        0
+    };
+    format!(
+        "{offset} {pop_time} {invisible_time} {revive_qid} {retry} {broker_name} {queue_id} {offset}"
+    )
 }
 
 #[cfg(test)]
@@ -503,6 +536,25 @@ mod serialization_tests {
                 assert!(!source.to_string().is_empty());
             }
             other => panic!("unexpected error: {other}"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod change_invisible_tests {
+    use super::change_invisible_extra_info;
+
+    #[test]
+    fn extra_info_tracks_java_retry_topic_classification() {
+        for (topic, retry) in [
+            ("oracle-topic", "0"),
+            ("%RETRY%consumer", "1"),
+            ("%RETRY%consumer+P1", "2"),
+        ] {
+            assert_eq!(
+                change_invisible_extra_info(17, 123, 456, 2, topic, "broker", 2),
+                format!("17 123 456 2 {retry} broker 2 17")
+            );
         }
     }
 }

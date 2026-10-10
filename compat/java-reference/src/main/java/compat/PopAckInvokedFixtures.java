@@ -151,5 +151,25 @@ public final class PopAckInvokedFixtures {
                 }
             }
         }
+        for (String topic : new String[] {"oracle-topic", "%RETRY%consumer", "%RETRY%consumer+P1"}) {
+            change.setTopic(topic);
+            AckResult[] ackResult = new AckResult[1];
+            Throwable[] error = new Throwable[1];
+            api.changeInvisibleTimeAsync("broker", "broker:10911", change, 10000, new AckCallback() {
+                public void onSuccess(AckResult value) { ackResult[0] = value; }
+                public void onException(Throwable value) { error[0] = value; }
+            });
+            ChangeInvisibleTimeResponseHeader header = new ChangeInvisibleTimeResponseHeader();
+            header.setPopTime(123L);
+            header.setInvisibleTime(456L);
+            header.setReviveQid(2);
+            RemotingCommand response = RemotingCommand.createResponseCommandWithHeader(ResponseCode.SUCCESS, header);
+            response.makeCustomHeaderToNet();
+            completion[0].operationSucceed(response);
+            String retry = topic.contains("+") ? "2" : topic.startsWith("%RETRY%") ? "1" : "0";
+            check(error[0] == null && ackResult[0] != null
+                && ("17 123 456 2 " + retry + " broker 2 17").equals(ackResult[0].getExtraInfo()),
+                "change invisible retry extra info " + topic);
+        }
     }
 }

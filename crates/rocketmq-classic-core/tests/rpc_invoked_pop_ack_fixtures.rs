@@ -226,6 +226,7 @@ async fn invoked_pop_ack_callbacks_match_rust_domain_outcomes() {
                 match api
                     .change_invisible_time(
                         &addr,
+                        "broker",
                         &ChangeInvisibleTimeRequestHeader {
                             consumer_group: "consumer".into(),
                             topic: "oracle-topic".into(),
@@ -240,10 +241,8 @@ async fn invoked_pop_ack_callbacks_match_rust_domain_outcomes() {
                     .await
                 {
                     Ok(result) if result.status == AckStatus::Ok => format!(
-                        "status=OK;extra=17 {} {} {} 0 broker 2 17",
-                        result.pop_time.unwrap(),
-                        result.invisible_time.unwrap(),
-                        result.revive_qid.unwrap()
+                        "status=OK;extra={}",
+                        result.extra_info.as_deref().expect("success extra info")
                     ),
                     Ok(_) => "status=NO_EXIST".into(),
                     Err(RpcError::MalformedResponse { .. }) => "malformed".into(),

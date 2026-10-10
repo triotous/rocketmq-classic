@@ -310,6 +310,7 @@ async fn broker_methods_use_one_attempt_and_honor_deadline() {
         false,
         |api, addr, deadline| api.change_invisible_time(
             addr,
+            "broker",
             &ChangeInvisibleTimeRequestHeader::default(),
             deadline
         )
