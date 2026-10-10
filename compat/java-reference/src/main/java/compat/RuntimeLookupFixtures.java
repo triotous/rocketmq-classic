@@ -115,6 +115,7 @@ public final class RuntimeLookupFixtures {
         fixture.put("batchAckBitSetCapacityCase", batchAckBitSetCapacityCase());
         fixture.put("runtimeScheduledTaskCases", runtimeScheduledTaskCases());
         fixture.put("runtimeLookupInvocation", runtimeLookupInvocation());
+        fixture.put("runtimeLookupVipMutation", runtimeLookupVipMutation());
         fixture.put("resetOffsetBodyInputCases", resetOffsetBodyInputCases());
         fixture.put("consumerStatusBodyInputCases", consumerStatusBodyInputCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
@@ -2871,6 +2872,69 @@ public final class RuntimeLookupFixtures {
                 org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
             cleanup.setAccessible(true);
             try { cleanup.invoke(runtime, original, new IllegalStateException("lookup invocation fixture teardown")); }
+            finally { api.shutdown(); }
+        }
+        return result;
+    }
+
+    private static final class VipCaptureApi extends org.apache.rocketmq.client.impl.MQClientAPIImpl {
+        VipCaptureApi(ClientConfig config, List<String> addresses) {
+            super(new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null, config, null,
+                ignored -> (org.apache.rocketmq.remoting.RemotingClient) java.lang.reflect.Proxy.newProxyInstance(
+                    RuntimeLookupFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            addresses.add((String) values[0]);
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand response =
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+                                    org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null);
+                            response.setBody(("{\"consumerIdList\":[],\"messageQueueAssignments\":[]}")
+                                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                            return response;
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        }
+    }
+
+    private static Map<String, Object> runtimeLookupVipMutation() throws Exception {
+        ClientConfig config = new ClientConfig();
+        config.setClientIP("192.0.2.6");
+        MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+        org.apache.rocketmq.client.impl.MQClientAPIImpl original = runtime.getMQClientAPIImpl();
+        List<String> consumerAddresses = new ArrayList<>();
+        VipCaptureApi api = new VipCaptureApi(config, consumerAddresses);
+        Map<String, Object> result = new TreeMap<>();
+        try {
+            TopicRouteData route = com.alibaba.fastjson2.JSON.parseObject(
+                "{\"queueDatas\":[],\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"127.0.0.1:10913\"}}],\"filterServerTable\":{}}",
+                TopicRouteData.class);
+            runtime.getTopicRouteTable().put("vip-topic", route);
+            java.lang.reflect.Field field = MQClientInstance.class.getDeclaredField("mQClientAPIImpl");
+            field.setAccessible(true);
+            field.set(runtime, api);
+
+            runtime.findConsumerIdList("vip-topic", "consumer");
+            result.put("consumerAddressVipDisabled", new ArrayList<>(consumerAddresses));
+            consumerAddresses.clear();
+            runtime.queryAssignment("vip-topic", "consumer", "strategy",
+                org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel.BROADCASTING, 3000);
+            result.put("assignmentAddressVipDisabled", new ArrayList<>(consumerAddresses));
+            consumerAddresses.clear();
+
+            config.setVipChannelEnabled(true);
+            runtime.findConsumerIdList("vip-topic", "consumer");
+            result.put("consumerAddressVipEnabled", new ArrayList<>(consumerAddresses));
+            consumerAddresses.clear();
+            runtime.queryAssignment("vip-topic", "consumer", "strategy",
+                org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel.BROADCASTING, 3000);
+            result.put("assignmentAddressVipEnabled", new ArrayList<>(consumerAddresses));
+        } finally {
+            Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
+                org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
+            cleanup.setAccessible(true);
+            try { cleanup.invoke(runtime, original, new IllegalStateException("VIP mutation fixture teardown")); }
             finally { api.shutdown(); }
         }
         return result;
