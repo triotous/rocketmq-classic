@@ -875,6 +875,47 @@ async fn nullable_factory_bulk_and_traversal_callbacks_match_invoked_java() {
 }
 
 #[tokio::test]
+async fn hash_map_nullable_put_all_order_matches_invoked_java() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = &fixture["managerTable"]["nullableBulkInputs"];
+    assert_eq!(
+        java["factoryHashMapPutAllNullValue"],
+        "NullPointerException"
+    );
+    let visit_order: Vec<String> =
+        serde_json::from_value(java["factoryHashMapPutAllNullValueVisitOrder"].clone()).unwrap();
+    let null_value_key = java["factoryHashMapPutAllNullValueKey"].as_str().unwrap();
+    assert_eq!(visit_order.len(), 3);
+    assert_eq!(visit_order[1], null_value_key);
+
+    let table = ClientRuntimeManager::new().factory_table();
+    let value = ClientRuntimeManager::new()
+        .get_or_create(&ClientConfig::new("hash-map-put-all-value"))
+        .await
+        .unwrap();
+    table.put("seed", value.clone()).await.unwrap();
+    let rows: Vec<_> = visit_order
+        .iter()
+        .map(|key| {
+            (
+                Some(key.clone()),
+                (key != null_value_key).then(|| value.clone()),
+            )
+        })
+        .collect();
+    assert!(matches!(
+        table.put_all_nullable_rows(Some(&rows)).await,
+        Err(RuntimeError::InvalidRoute("null factory value"))
+    ));
+    let expected: Vec<String> =
+        serde_json::from_value(java["factoryHashMapPutAllNullValueKeysAfter"].clone()).unwrap();
+    let mut actual: Vec<_> = table.snapshot().unwrap().into_keys().collect();
+    actual.sort();
+    assert_eq!(actual, expected);
+}
+
+#[tokio::test]
 async fn nullable_factory_replace_all_results_match_invoked_java_partial_updates() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();

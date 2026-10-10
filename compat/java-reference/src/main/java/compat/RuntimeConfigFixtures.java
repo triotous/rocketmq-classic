@@ -879,6 +879,36 @@ public final class RuntimeConfigFixtures {
         captureThrowable(result, prefix + "PutAllNullValue", () -> nullValueTable.putAll(nullValueInputs));
         result.put(prefix + "PutAllNullValueKeysAfter",
             new ArrayList<>(new java.util.TreeSet<>(nullValueTable.keySet())));
+        result.putAll(nullableHashMapPutAllInputs(prefix, value));
+        return result;
+    }
+
+    private static String hashMapKeyAtBucket(String stem, int bucket) {
+        for (int suffix = 0; suffix < 100_000; suffix++) {
+            String key = stem + suffix;
+            int hash = key.hashCode();
+            if (((hash ^ (hash >>> 16)) & 15) == bucket) return key;
+        }
+        throw new IllegalStateException("could not find HashMap bucket " + bucket);
+    }
+
+    private static <T> Map<String, Object> nullableHashMapPutAllInputs(String prefix, T value) {
+        Map<String, Object> result = new TreeMap<>();
+        String beforeNullValue = hashMapKeyAtBucket(prefix + "-hash-before-", 2);
+        String nullValueKey = hashMapKeyAtBucket(prefix + "-hash-null-", 5);
+        String afterNullValue = hashMapKeyAtBucket(prefix + "-hash-after-", 9);
+        Map<String, T> source = new java.util.HashMap<>();
+        source.put(afterNullValue, value);
+        source.put(nullValueKey, null);
+        source.put(beforeNullValue, value);
+        result.put(prefix + "HashMapPutAllNullValueVisitOrder", new ArrayList<>(source.keySet()));
+        result.put(prefix + "HashMapPutAllNullValueKey", nullValueKey);
+
+        java.util.concurrent.ConcurrentHashMap<String, T> target = new java.util.concurrent.ConcurrentHashMap<>();
+        target.put("seed", value);
+        captureThrowable(result, prefix + "HashMapPutAllNullValue", () -> target.putAll(source));
+        result.put(prefix + "HashMapPutAllNullValueKeysAfter",
+            new ArrayList<>(new java.util.TreeSet<>(target.keySet())));
         return result;
     }
 
