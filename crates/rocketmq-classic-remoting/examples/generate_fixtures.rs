@@ -657,10 +657,10 @@ fn generate_p4_bodies(output: &std::path::Path) {
         "body-reset-offset.bin",
         212,
         ResetOffsetBody {
-            offset_table: Some(vec![(
+            offset_table: Some(SharedValue::new(vec![(
                 rocketmq_classic_common::message::MessageQueue::new("orders", "broker-a", 1),
                 Some(9),
-            )]),
+            )])),
         }
         .encode_java_json()
         .expect("encode Java-compatible reset body"),
@@ -670,11 +670,11 @@ fn generate_p4_bodies(output: &std::path::Path) {
         "body-consumer-status.bin",
         223,
         GetConsumerStatusBody {
-            message_queue_table: Some(vec![(
+            message_queue_table: Some(SharedValue::new(vec![(
                 rocketmq_classic_common::message::MessageQueue::new("orders", "broker-a", 1),
                 Some(9),
-            )]),
-            consumer_table: Some(std::collections::BTreeMap::new()),
+            )])),
+            consumer_table: Some(SharedValue::new(std::collections::BTreeMap::new())),
         }
         .encode_java_json()
         .expect("encode Java-compatible consumer status body"),

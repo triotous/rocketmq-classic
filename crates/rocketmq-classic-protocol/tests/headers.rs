@@ -403,7 +403,8 @@ fn java_json_body_fixtures_decode_to_typed_assignment_lite_and_batch_models() {
                     .unwrap(),
                 9
             );
-            let (queue, offset) = &typed.offset_table.as_ref().unwrap()[0];
+            let offset_table = typed.offset_table.as_ref().unwrap().snapshot();
+            let (queue, offset) = &offset_table[0];
             assert_eq!(queue.topic(), Some("orders"));
             assert_eq!(queue.broker_name(), Some("broker-a"));
             assert_eq!(*offset, Some(9));
@@ -421,7 +422,8 @@ fn java_json_body_fixtures_decode_to_typed_assignment_lite_and_batch_models() {
                     .unwrap(),
                 9
             );
-            let (queue, offset) = &typed.message_queue_table.as_ref().unwrap()[0];
+            let message_queue_table = typed.message_queue_table.as_ref().unwrap().snapshot();
+            let (queue, offset) = &message_queue_table[0];
             assert_eq!(queue.topic(), Some("orders"));
             assert_eq!(queue.broker_name(), Some("broker-a"));
             assert_eq!(*offset, Some(9));

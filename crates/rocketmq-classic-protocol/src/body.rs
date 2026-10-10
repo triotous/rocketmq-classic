@@ -3033,24 +3033,29 @@ impl ConsumerListByGroupResponseBody {
 #[serde(rename_all = "camelCase")]
 pub struct GetConsumerStatusBody {
     #[serde(with = "message_queue_offset_table")]
-    pub message_queue_table: Option<QueueOffsetEntries>,
+    pub message_queue_table: Option<SharedQueueOffsetEntries>,
     #[serde(with = "nested_message_queue_offset_table")]
-    pub consumer_table: Option<ConsumerQueueOffsets>,
+    pub consumer_table: Option<SharedConsumerQueueOffsets>,
 }
 
 impl GetConsumerStatusBody {
     pub fn encode_java_json(&self) -> Result<Vec<u8>, serde_json::Error> {
         let mut consumer_entries = Vec::new();
         if let Some(consumer_table) = &self.consumer_table {
-            for (consumer, entries) in consumer_table {
-                if let Some(entries) = entries {
-                    consumer_entries.push(format!(
-                        "{}:{}",
-                        serde_json::to_string(consumer)?,
-                        encode_java_queue_table_text(entries)?
-                    ));
+            consumer_table.with(|consumer_table| {
+                for (consumer, entries) in consumer_table {
+                    if let Some(entries) = entries {
+                        let encoded =
+                            entries.with(|entries| encode_java_queue_table_text(entries))?;
+                        consumer_entries.push(format!(
+                            "{}:{}",
+                            serde_json::to_string(consumer)?,
+                            encoded
+                        ));
+                    }
                 }
-            }
+                Ok::<_, serde_json::Error>(())
+            })?;
         }
         let mut fields = Vec::new();
         if self.consumer_table.is_some() {
@@ -3062,7 +3067,7 @@ impl GetConsumerStatusBody {
         if let Some(entries) = &self.message_queue_table {
             fields.push(format!(
                 "\"messageQueueTable\":{}",
-                encode_java_queue_table_text(entries)?
+                entries.with(|entries| encode_java_queue_table_text(entries))?
             ));
         }
         Ok(format!("{{{}}}", fields.join(",")).into_bytes())
@@ -3075,29 +3080,27 @@ impl GetConsumerStatusBody {
         serde_json::from_str(&normalized)
     }
 
-    pub fn get_message_queue_table(&self) -> Option<&[(MessageQueue, Option<i64>)]> {
-        self.message_queue_table.as_deref()
+    pub fn get_message_queue_table(&self) -> Option<SharedQueueOffsetEntries> {
+        self.message_queue_table.clone()
     }
 
-    /// Borrows the owned queue offset rows mutably for Java-compatible getter mutations.
-    pub fn get_message_queue_table_mut(&mut self) -> Option<&mut QueueOffsetEntries> {
-        self.message_queue_table.as_mut()
+    pub fn get_message_queue_table_mut(&mut self) -> Option<SharedQueueOffsetEntries> {
+        self.get_message_queue_table()
     }
 
-    pub fn set_message_queue_table(&mut self, value: Option<QueueOffsetEntries>) {
+    pub fn set_message_queue_table(&mut self, value: Option<SharedQueueOffsetEntries>) {
         self.message_queue_table = value;
     }
 
-    pub fn get_consumer_table(&self) -> Option<&ConsumerQueueOffsets> {
-        self.consumer_table.as_ref()
+    pub fn get_consumer_table(&self) -> Option<SharedConsumerQueueOffsets> {
+        self.consumer_table.clone()
     }
 
-    /// Borrows the owned consumer offset map mutably for Java-compatible getter mutations.
-    pub fn get_consumer_table_mut(&mut self) -> Option<&mut ConsumerQueueOffsets> {
-        self.consumer_table.as_mut()
+    pub fn get_consumer_table_mut(&mut self) -> Option<SharedConsumerQueueOffsets> {
+        self.get_consumer_table()
     }
 
-    pub fn set_consumer_table(&mut self, value: Option<ConsumerQueueOffsets>) {
+    pub fn set_consumer_table(&mut self, value: Option<SharedConsumerQueueOffsets>) {
         self.consumer_table = value;
     }
 }
@@ -3105,8 +3108,8 @@ impl GetConsumerStatusBody {
 impl Default for GetConsumerStatusBody {
     fn default() -> Self {
         Self {
-            message_queue_table: Some(Vec::new()),
-            consumer_table: Some(std::collections::BTreeMap::new()),
+            message_queue_table: Some(SharedValue::new(Vec::new())),
+            consumer_table: Some(SharedValue::new(std::collections::BTreeMap::new())),
         }
     }
 }
@@ -3116,16 +3119,16 @@ impl Default for GetConsumerStatusBody {
 #[serde(default)]
 struct GetConsumerStatusBodyFields {
     #[serde(with = "message_queue_offset_table")]
-    message_queue_table: Option<QueueOffsetEntries>,
+    message_queue_table: Option<SharedQueueOffsetEntries>,
     #[serde(with = "nested_message_queue_offset_table")]
-    consumer_table: Option<ConsumerQueueOffsets>,
+    consumer_table: Option<SharedConsumerQueueOffsets>,
 }
 
 impl Default for GetConsumerStatusBodyFields {
     fn default() -> Self {
         Self {
-            message_queue_table: Some(Vec::new()),
-            consumer_table: Some(std::collections::BTreeMap::new()),
+            message_queue_table: Some(SharedValue::new(Vec::new())),
+            consumer_table: Some(SharedValue::new(std::collections::BTreeMap::new())),
         }
     }
 }
@@ -3321,7 +3324,7 @@ pub struct ResetOffsetBody {
         skip_serializing_if = "Option::is_none",
         with = "optional_message_queue_offset_table"
     )]
-    pub offset_table: Option<NullableQueueOffsetEntries>,
+    pub offset_table: Option<SharedQueueOffsetEntries>,
 }
 
 impl ResetOffsetBody {
@@ -3329,7 +3332,7 @@ impl ResetOffsetBody {
         let Some(entries) = &self.offset_table else {
             return Ok(b"{}".to_vec());
         };
-        let table = encode_java_queue_table_text(entries)?;
+        let table = entries.with(|entries| encode_java_queue_table_text(entries))?;
         Ok(format!("{{\"offsetTable\":{table}}}").into_bytes())
     }
 
@@ -3339,16 +3342,15 @@ impl ResetOffsetBody {
         serde_json::from_str(&normalized)
     }
 
-    pub fn get_offset_table(&self) -> Option<&[(MessageQueue, Option<i64>)]> {
-        self.offset_table.as_deref()
+    pub fn get_offset_table(&self) -> Option<SharedQueueOffsetEntries> {
+        self.offset_table.clone()
     }
 
-    /// Borrows the owned queue offset rows mutably for Java-compatible getter mutations.
-    pub fn get_offset_table_mut(&mut self) -> Option<&mut NullableQueueOffsetEntries> {
-        self.offset_table.as_mut()
+    pub fn get_offset_table_mut(&mut self) -> Option<SharedQueueOffsetEntries> {
+        self.get_offset_table()
     }
 
-    pub fn set_offset_table(&mut self, value: Option<NullableQueueOffsetEntries>) {
+    pub fn set_offset_table(&mut self, value: Option<SharedQueueOffsetEntries>) {
         self.offset_table = value;
     }
 }
@@ -3356,7 +3358,7 @@ impl ResetOffsetBody {
 impl Default for ResetOffsetBody {
     fn default() -> Self {
         Self {
-            offset_table: Some(Vec::new()),
+            offset_table: Some(SharedValue::new(Vec::new())),
         }
     }
 }
@@ -3365,13 +3367,13 @@ impl Default for ResetOffsetBody {
 #[serde(rename_all = "camelCase", default)]
 struct ResetOffsetBodyFields {
     #[serde(with = "optional_message_queue_offset_table")]
-    offset_table: Option<NullableQueueOffsetEntries>,
+    offset_table: Option<SharedQueueOffsetEntries>,
 }
 
 impl Default for ResetOffsetBodyFields {
     fn default() -> Self {
         Self {
-            offset_table: Some(Vec::new()),
+            offset_table: Some(SharedValue::new(Vec::new())),
         }
     }
 }
@@ -3423,7 +3425,26 @@ fn encode_java_queue_table_text(
 
 pub type QueueOffsetEntries = Vec<(MessageQueue, Option<i64>)>;
 pub type NullableQueueOffsetEntries = QueueOffsetEntries;
-pub type ConsumerQueueOffsets = std::collections::BTreeMap<String, Option<QueueOffsetEntries>>;
+pub type SharedQueueOffsetEntries = SharedValue<QueueOffsetEntries>;
+pub type ConsumerQueueOffsets =
+    std::collections::BTreeMap<String, Option<SharedQueueOffsetEntries>>;
+pub type SharedConsumerQueueOffsets = SharedValue<ConsumerQueueOffsets>;
+
+impl PartialEq for SharedValue<QueueOffsetEntries> {
+    fn eq(&self, other: &Self) -> bool {
+        self.snapshot() == other.snapshot()
+    }
+}
+
+impl Eq for SharedValue<QueueOffsetEntries> {}
+
+impl PartialEq for SharedValue<ConsumerQueueOffsets> {
+    fn eq(&self, other: &Self) -> bool {
+        self.snapshot() == other.snapshot()
+    }
+}
+
+impl Eq for SharedValue<ConsumerQueueOffsets> {}
 
 #[derive(Debug, Clone, Copy)]
 struct FastjsonLong(Option<i64>);
@@ -3516,35 +3537,39 @@ where
 
 mod message_queue_offset_table {
     use super::encode_table;
-    use super::{MessageQueue, QueueOffsetEntries};
+    use super::{MessageQueue, QueueOffsetEntries, SharedQueueOffsetEntries};
+    use crate::SharedValue;
     use serde::de::MapAccess;
     use serde::de::Visitor;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use std::fmt;
 
     pub fn serialize<S>(
-        entries: &Option<QueueOffsetEntries>,
+        entries: &Option<SharedQueueOffsetEntries>,
         serializer: S,
     ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         match entries {
-            Some(entries) => encode_table(entries)
+            Some(entries) => entries
+                .with(|entries| encode_table(entries))
                 .map_err(serde::ser::Error::custom)?
                 .serialize(serializer),
             None => serializer.serialize_none(),
         }
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<QueueOffsetEntries>, D::Error>
+    pub fn deserialize<'de, D>(
+        deserializer: D,
+    ) -> Result<Option<SharedQueueOffsetEntries>, D::Error>
     where
         D: Deserializer<'de>,
     {
         let Some(encoded) = Option::<RawQueueOffsetEntries>::deserialize(deserializer)? else {
             return Ok(None);
         };
-        decode_entries(encoded).map(Some)
+        decode_entries(encoded).map(SharedValue::new).map(Some)
     }
 
     pub(super) struct RawQueueOffsetEntries(Vec<(String, Option<i64>)>);
@@ -3605,38 +3630,41 @@ fn encode_table(
 }
 
 mod nested_message_queue_offset_table {
-    use super::ConsumerQueueOffsets;
+    use super::SharedConsumerQueueOffsets;
     use super::encode_table;
+    use crate::SharedValue;
     use serde::de::MapAccess;
     use serde::de::Visitor;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use std::fmt;
 
     pub fn serialize<S>(
-        entries: &Option<ConsumerQueueOffsets>,
+        entries: &Option<SharedConsumerQueueOffsets>,
         serializer: S,
     ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         match entries {
-            Some(entries) => {
+            Some(entries) => entries.with(|entries| {
                 let mut encoded = std::collections::BTreeMap::new();
                 for (key, values) in entries {
                     let values = values
                         .as_ref()
-                        .map(|values| encode_table(values))
+                        .map(|values| values.with(|values| encode_table(values)))
                         .transpose()
                         .map_err(serde::ser::Error::custom)?;
                     encoded.insert(key, values);
                 }
                 encoded.serialize(serializer)
-            }
+            }),
             None => serializer.serialize_none(),
         }
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<ConsumerQueueOffsets>, D::Error>
+    pub fn deserialize<'de, D>(
+        deserializer: D,
+    ) -> Result<Option<SharedConsumerQueueOffsets>, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -3647,10 +3675,11 @@ mod nested_message_queue_offset_table {
         for (consumer, table) in raw.0 {
             let table = table
                 .map(super::message_queue_offset_table::decode_entries::<D::Error>)
+                .map(|result| result.map(SharedValue::new))
                 .transpose()?;
             entries.insert(consumer, table);
         }
-        Ok(Some(entries))
+        Ok(Some(SharedValue::new(entries)))
     }
 
     struct RawConsumerQueueOffsets(
@@ -3699,20 +3728,21 @@ mod nested_message_queue_offset_table {
 }
 
 mod optional_message_queue_offset_table {
-    use super::{MessageQueue, NullableQueueOffsetEntries};
+    use super::{MessageQueue, SharedQueueOffsetEntries};
+    use crate::SharedValue;
     use serde::de::{MapAccess, Visitor};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use std::fmt;
 
     pub fn serialize<S>(
-        entries: &Option<NullableQueueOffsetEntries>,
+        entries: &Option<SharedQueueOffsetEntries>,
         serializer: S,
     ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         match entries {
-            Some(entries) => {
+            Some(entries) => entries.with(|entries| {
                 let mut table = std::collections::BTreeMap::new();
                 for (queue, offset) in entries {
                     table.insert(
@@ -3721,14 +3751,14 @@ mod optional_message_queue_offset_table {
                     );
                 }
                 table.serialize(serializer)
-            }
+            }),
             None => serializer.serialize_none(),
         }
     }
 
     pub fn deserialize<'de, D>(
         deserializer: D,
-    ) -> Result<Option<NullableQueueOffsetEntries>, D::Error>
+    ) -> Result<Option<SharedQueueOffsetEntries>, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -3741,7 +3771,7 @@ mod optional_message_queue_offset_table {
                 serde_json::from_str(&key).map_err(serde::de::Error::custom)?;
             table.insert(queue, offset);
         }
-        Ok(Some(table.into_iter().collect()))
+        Ok(Some(SharedValue::new(table.into_iter().collect())))
     }
 
     struct RawQueueOffsetTable(Vec<(String, Option<i64>)>);
@@ -5159,12 +5189,31 @@ mod tests {
             serde_json::to_value(status.get_consumer_table()).unwrap(),
             status_case["defaults"]["consumerTable"]
         );
-        let message_queue_table: QueueOffsetEntries =
-            serde_json::from_value(status_case["values"]["messageQueueTable"].clone()).unwrap();
-        let consumer_table: ConsumerQueueOffsets =
-            serde_json::from_value(status_case["values"]["consumerTable"].clone()).unwrap();
-        status.set_message_queue_table(Some(message_queue_table));
-        status.set_consumer_table(Some(consumer_table));
+        let message_queue_table = SharedValue::new(
+            serde_json::from_value::<QueueOffsetEntries>(
+                status_case["values"]["messageQueueTable"].clone(),
+            )
+            .unwrap(),
+        );
+        let consumer_table = SharedValue::new(
+            serde_json::from_value::<ConsumerQueueOffsets>(
+                status_case["values"]["consumerTable"].clone(),
+            )
+            .unwrap(),
+        );
+        let workers_table = consumer_table.with(|table| table["workers"].as_ref().unwrap().clone());
+        status.set_message_queue_table(Some(message_queue_table.clone()));
+        status.set_consumer_table(Some(consumer_table.clone()));
+        assert!(
+            status
+                .get_message_queue_table()
+                .unwrap()
+                .ptr_eq(&message_queue_table)
+        );
+        assert!(status.get_consumer_table().unwrap().ptr_eq(&consumer_table));
+        let nested_workers_table =
+            consumer_table.with(|table| table["workers"].as_ref().unwrap().clone());
+        assert!(workers_table.ptr_eq(&nested_workers_table));
         assert_eq!(
             serde_json::to_value(status.get_message_queue_table()).unwrap(),
             status_case["values"]["messageQueueTable"]
@@ -5173,32 +5222,37 @@ mod tests {
             serde_json::to_value(status.get_consumer_table()).unwrap(),
             status_case["values"]["consumerTable"]
         );
-        let message_queue_table_mut = status.get_message_queue_table_mut().unwrap();
-        message_queue_table_mut.push((MessageQueue::new("orders", "broker", 4), Some(99)));
+        message_queue_table.with_mut(|table| {
+            table.push((MessageQueue::new("orders", "broker", 4), Some(99)));
+        });
         assert_eq!(
-            message_queue_table_mut
+            status.get_message_queue_table().unwrap().with(|table| table
                 .iter()
-                .any(|(queue, offset)| queue.queue_id() == 4 && *offset == Some(99)),
+                .any(|(queue, offset)| queue.queue_id() == 4 && *offset == Some(99))),
             status_case["messageQueueTableExternalMutationVisible"]
         );
-        let consumer_table_mut = status.get_consumer_table_mut().unwrap();
-        consumer_table_mut.insert(
-            "getter-added".to_owned(),
-            Some(vec![(MessageQueue::new("orders", "broker", 5), Some(100))]),
-        );
+        status.get_consumer_table().unwrap().with_mut(|table| {
+            table.insert(
+                "getter-added".to_owned(),
+                Some(SharedValue::new(vec![(
+                    MessageQueue::new("orders", "broker", 5),
+                    Some(100),
+                )])),
+            );
+        });
         assert_eq!(
-            consumer_table_mut.contains_key("getter-added"),
+            consumer_table.with(|table| table.contains_key("getter-added")),
             status_case["consumerTableGetterMutationVisibleToAssignedMap"]
         );
-        let workers_mut = consumer_table_mut
-            .get_mut("workers")
-            .and_then(Option::as_mut)
-            .unwrap();
-        workers_mut.push((MessageQueue::new("orders", "broker", 6), Some(101)));
+        workers_table.with_mut(|table| {
+            table.push((MessageQueue::new("orders", "broker", 6), Some(101)));
+        });
         assert_eq!(
-            workers_mut
-                .iter()
-                .any(|(queue, offset)| queue.queue_id() == 6 && *offset == Some(101)),
+            consumer_table.with(
+                |table| table["workers"].as_ref().unwrap().with(|entries| entries
+                    .iter()
+                    .any(|(queue, offset)| queue.queue_id() == 6 && *offset == Some(101)))
+            ),
             status_case["nestedGetterMutationVisibleToAssignedTable"]
         );
         assert_eq!(
@@ -5224,9 +5278,12 @@ mod tests {
             serde_json::to_value(reset.get_offset_table()).unwrap(),
             reset_case["defaults"]
         );
-        let offset_table: NullableQueueOffsetEntries =
-            serde_json::from_value(reset_case["values"].clone()).unwrap();
-        reset.set_offset_table(Some(offset_table));
+        let offset_table = SharedValue::new(
+            serde_json::from_value::<NullableQueueOffsetEntries>(reset_case["values"].clone())
+                .unwrap(),
+        );
+        reset.set_offset_table(Some(offset_table.clone()));
+        assert!(reset.get_offset_table().unwrap().ptr_eq(&offset_table));
         assert_eq!(
             serde_json::to_value(reset.get_offset_table()).unwrap(),
             reset_case["values"]
@@ -5234,9 +5291,12 @@ mod tests {
         assert_eq!(reset_case["getterReturnsAssignedMap"], true);
         assert_eq!(reset_case["externalMutationVisible"], true);
         assert_eq!(reset_case["getterMutationVisibleToAssignedMap"], true);
-        let offset_table_mut = reset.get_offset_table_mut().unwrap();
-        offset_table_mut.push((MessageQueue::new("orders", "broker", 4), Some(99)));
-        offset_table_mut.push((MessageQueue::new("orders", "broker", 5), Some(100)));
+        offset_table.with_mut(|table| {
+            table.push((MessageQueue::new("orders", "broker", 4), Some(99)));
+        });
+        reset.get_offset_table().unwrap().with_mut(|table| {
+            table.push((MessageQueue::new("orders", "broker", 5), Some(100)));
+        });
         assert_eq!(
             serde_json::to_value(reset.get_offset_table()).unwrap(),
             reset_case["mutatedValues"]
@@ -5351,7 +5411,7 @@ mod tests {
     fn runtime_inbound_bodies_keep_map_and_optional_shapes() {
         let queue = MessageQueue::new("orders", "broker-a", 1);
         let reset = ResetOffsetBody {
-            offset_table: Some(vec![(queue.clone(), Some(7))]),
+            offset_table: Some(SharedValue::new(vec![(queue.clone(), Some(7))])),
         };
         let value = serde_json::to_value(reset).unwrap();
         let offset_table = value["offsetTable"].as_object().unwrap();
@@ -5361,11 +5421,11 @@ mod tests {
         assert_eq!(key["queueId"], 1);
 
         let status = GetConsumerStatusBody {
-            message_queue_table: Some(vec![(queue.clone(), Some(7))]),
-            consumer_table: Some(std::collections::BTreeMap::from([(
+            message_queue_table: Some(SharedValue::new(vec![(queue.clone(), Some(7))])),
+            consumer_table: Some(SharedValue::new(std::collections::BTreeMap::from([(
                 "consumer-a".into(),
-                Some(vec![(queue, Some(8))]),
-            )])),
+                Some(SharedValue::new(vec![(queue, Some(8))])),
+            )]))),
         };
         let value = serde_json::to_value(status).unwrap();
         let consumer_table = value["consumerTable"]["consumer-a"].as_object().unwrap();
@@ -5716,18 +5776,34 @@ mod tests {
                             case["encodedBody"]
                         ));
                     }
-                    if rows(decoded.message_queue_table.as_deref()) != case["messageQueueTable"] {
+                    let actual_message_queue_table = decoded
+                        .message_queue_table
+                        .as_ref()
+                        .map(|table| table.with(|table| rows(Some(table))))
+                        .unwrap_or(serde_json::Value::Null);
+                    if actual_message_queue_table != case["messageQueueTable"] {
                         mismatches.push(format!(
                             "{name}: messageQueueTable {} != Java {}",
-                            rows(decoded.message_queue_table.as_deref()),
-                            case["messageQueueTable"]
+                            actual_message_queue_table, case["messageQueueTable"]
                         ));
                     }
                     let actual_consumer_table = decoded.consumer_table.as_ref().map(|table| {
-                        table
-                            .iter()
-                            .map(|(consumer, entries)| (consumer, rows(entries.as_deref())))
-                            .collect::<std::collections::BTreeMap<_, _>>()
+                        table.with(|table| {
+                            table
+                                .iter()
+                                .map(|(consumer, entries)| {
+                                    (
+                                        consumer.clone(),
+                                        entries
+                                            .as_ref()
+                                            .map(|entries| {
+                                                entries.with(|entries| rows(Some(entries)))
+                                            })
+                                            .unwrap_or(serde_json::Value::Null),
+                                    )
+                                })
+                                .collect::<std::collections::BTreeMap<_, _>>()
+                        })
                     });
                     if serde_json::to_value(&actual_consumer_table).unwrap()
                         != case["consumerTable"]
@@ -5752,37 +5828,62 @@ mod tests {
     #[test]
     fn consumer_status_body_accessors_keep_java_null_and_empty_states() {
         let mut body = GetConsumerStatusBody::default();
-        assert!(body.get_message_queue_table().unwrap().is_empty());
-        assert!(body.get_consumer_table().unwrap().is_empty());
-
-        let queue = MessageQueue::new("orders", "broker-a", 1);
-        body.set_message_queue_table(Some(vec![(queue.clone(), Some(9))]));
-        body.set_consumer_table(Some(std::collections::BTreeMap::from([(
-            "consumer-a".to_owned(),
-            Some(vec![(queue.clone(), Some(8))]),
-        )])));
-        assert_eq!(
-            body.get_message_queue_table().unwrap(),
-            &[(queue.clone(), Some(9))]
-        );
-        assert_eq!(
-            body.get_consumer_table().unwrap()["consumer-a"],
-            Some(vec![(queue, Some(8))])
+        assert!(body.get_message_queue_table().unwrap().with(Vec::is_empty));
+        assert!(
+            body.get_consumer_table()
+                .unwrap()
+                .with(std::collections::BTreeMap::is_empty)
         );
 
         let queue = MessageQueue::new("orders", "broker-a", 1);
-        body.set_message_queue_table(Some(vec![(queue.clone(), None)]));
-        body.set_consumer_table(Some(std::collections::BTreeMap::from([(
+        let message_queue_table = SharedValue::new(vec![(queue.clone(), Some(9))]);
+        let consumer_queue_table = SharedValue::new(vec![(queue.clone(), Some(8))]);
+        let consumer_table = SharedValue::new(std::collections::BTreeMap::from([(
             "consumer-a".to_owned(),
-            Some(vec![(queue.clone(), None)]),
-        )])));
+            Some(consumer_queue_table.clone()),
+        )]));
+        body.set_message_queue_table(Some(message_queue_table.clone()));
+        body.set_consumer_table(Some(consumer_table.clone()));
+        assert!(
+            body.get_message_queue_table()
+                .unwrap()
+                .ptr_eq(&message_queue_table)
+        );
+        assert!(body.get_consumer_table().unwrap().ptr_eq(&consumer_table));
+        assert!(consumer_table.with(|table| {
+            table["consumer-a"]
+                .as_ref()
+                .unwrap()
+                .ptr_eq(&consumer_queue_table)
+        }));
         assert_eq!(
-            body.get_message_queue_table().unwrap(),
-            &[(queue.clone(), None)]
+            body.get_message_queue_table().unwrap().snapshot(),
+            vec![(queue.clone(), Some(9))]
         );
         assert_eq!(
-            body.get_consumer_table().unwrap()["consumer-a"],
-            Some(vec![(queue, None)])
+            body.get_consumer_table()
+                .unwrap()
+                .with(|table| table["consumer-a"].as_ref().unwrap().snapshot()),
+            vec![(queue, Some(8))]
+        );
+
+        let queue = MessageQueue::new("orders", "broker-a", 1);
+        body.set_message_queue_table(Some(SharedValue::new(vec![(queue.clone(), None)])));
+        body.set_consumer_table(Some(SharedValue::new(std::collections::BTreeMap::from([
+            (
+                "consumer-a".to_owned(),
+                Some(SharedValue::new(vec![(queue.clone(), None)])),
+            ),
+        ]))));
+        assert_eq!(
+            body.get_message_queue_table().unwrap().snapshot(),
+            vec![(queue.clone(), None)]
+        );
+        assert_eq!(
+            body.get_consumer_table()
+                .unwrap()
+                .with(|table| table["consumer-a"].as_ref().unwrap().snapshot()),
+            vec![(queue, None)]
         );
 
         body.set_message_queue_table(None);
@@ -5822,11 +5923,15 @@ mod tests {
             let java_accepts = case["outcome"] == "ACCEPTED";
             match (decoded, java_accepts) {
                 (Ok(decoded), true) => {
-                    if rows(decoded.offset_table.as_deref()) != case["offsetTable"] {
+                    let actual_offset_table = decoded
+                        .offset_table
+                        .as_ref()
+                        .map(|table| table.with(|table| rows(Some(table))))
+                        .unwrap_or(serde_json::Value::Null);
+                    if actual_offset_table != case["offsetTable"] {
                         mismatches.push(format!(
                             "{name}: offsetTable {} != Java {}",
-                            rows(decoded.offset_table.as_deref()),
-                            case["offsetTable"]
+                            actual_offset_table, case["offsetTable"]
                         ));
                     }
                     let encoded = String::from_utf8(decoded.encode_java_json().unwrap()).unwrap();
