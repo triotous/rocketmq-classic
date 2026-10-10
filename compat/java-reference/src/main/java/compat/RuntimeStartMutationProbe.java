@@ -113,6 +113,14 @@ public final class RuntimeStartMutationProbe {
         Map<String, Object> item = new TreeMap<>();
         item.put("nullToConfigured", runCase(true));
         item.put("configuredToNull", runCase(false));
+        for (Object value : item.values()) {
+            @SuppressWarnings("unchecked") Map<String, Object> result = (Map<String, Object>) value;
+            if (!"RUNNING".equals(result.get("startOutcome")) || !"OK".equals(result.get("shutdownOutcome"))) {
+                System.err.println("runtime start/shutdown probe failed: " + item);
+                System.err.flush();
+                Runtime.getRuntime().halt(1);
+            }
+        }
 
         String json = com.alibaba.fastjson2.JSON.toJSONString(item,
             com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
@@ -127,12 +135,6 @@ public final class RuntimeStartMutationProbe {
         } else {
             Files.createDirectories(file.getParent());
             Files.writeString(file, json);
-        }
-        for (Object value : item.values()) {
-            @SuppressWarnings("unchecked") Map<String, Object> result = (Map<String, Object>) value;
-            if (!"RUNNING".equals(result.get("startOutcome")) || !"OK".equals(result.get("shutdownOutcome"))) {
-            throw new IllegalStateException("runtime start/shutdown probe failed: " + item);
-            }
         }
         System.out.println("Runtime start mutation probe verified");
         System.out.flush();
