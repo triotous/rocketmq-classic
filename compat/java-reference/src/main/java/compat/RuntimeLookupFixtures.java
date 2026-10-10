@@ -1803,6 +1803,19 @@ public final class RuntimeLookupFixtures {
             "{\"acks\":[{\"b\":\"BQ==\"}]}"));
         cases.add(batchAckBodyInputCase("base64-empty-bits",
             "{\"acks\":[{\"b\":\"\"}]}"));
+        String[][] base64Inputs = {
+            {"base64-unpadded", "BQ"},
+            {"base64-single-character", "B"},
+            {"base64-extra-padding", "BQ==="},
+            {"base64-surrounding-spaces", " BQ== "},
+            {"base64-internal-space", "B Q=="},
+            {"base64-url-safe-alphabet", "-w=="},
+            {"base64-invalid-symbol", "B$=="}
+        };
+        for (String[] input : base64Inputs) {
+            cases.add(batchAckBodyInputCase(input[0],
+                "{\"acks\":[{\"b\":\"" + input[1] + "\"}]}"));
+        }
         cases.add(batchAckBodyInputCase("duplicate-body-field-last-wins",
             "{\"brokerName\":\"first\",\"brokerName\":\"last\"}"));
         cases.add(batchAckBodyInputCase("duplicate-ack-field-last-wins",
