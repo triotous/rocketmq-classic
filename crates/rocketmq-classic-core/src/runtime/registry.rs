@@ -253,10 +253,14 @@ impl GroupRegistry {
     }
 
     pub fn clear(&self) -> Result<(), RuntimeError> {
-        *self
-            .entries
-            .lock()
-            .map_err(|_| RuntimeError::RegistryPoisoned)? = Entries::default();
+        let previous = {
+            let mut entries = self
+                .entries
+                .lock()
+                .map_err(|_| RuntimeError::RegistryPoisoned)?;
+            std::mem::take(&mut *entries)
+        };
+        drop(previous);
         Ok(())
     }
     pub fn register_producer(
@@ -355,6 +359,8 @@ impl GroupRegistry {
             .lock()
             .map_err(|_| RuntimeError::RegistryPoisoned)?;
         if entries.admins.contains_key(group) {
+            drop(entries);
+            drop(owner);
             return Ok(false);
         }
         entries.admins.insert(
@@ -371,11 +377,14 @@ impl GroupRegistry {
         let Some(group) = group else {
             return Err(RuntimeError::InvalidRoute("null admin group"));
         };
-        self.entries
-            .lock()
-            .map_err(|_| RuntimeError::RegistryPoisoned)?
-            .admins
-            .remove(group);
+        let removed = {
+            self.entries
+                .lock()
+                .map_err(|_| RuntimeError::RegistryPoisoned)?
+                .admins
+                .remove(group)
+        };
+        drop(removed);
         Ok(())
     }
 
@@ -404,17 +413,19 @@ impl GroupRegistry {
         if !identity.is_some_and(|identity| Arc::ptr_eq(identity, &lease.identity)) {
             return Ok(false);
         }
-        match kind {
+        let removed_admin = match kind {
             GroupKind::Producer => {
                 entries.producers.remove(&lease.group);
+                None
             }
             GroupKind::Consumer => {
                 entries.consumers.remove(&lease.group);
+                None
             }
-            GroupKind::Admin => {
-                entries.admins.remove(&lease.group);
-            }
-        }
+            GroupKind::Admin => entries.admins.remove(&lease.group),
+        };
+        drop(entries);
+        drop(removed_admin);
         Ok(true)
     }
 
@@ -423,15 +434,22 @@ impl GroupRegistry {
         group: &str,
         kind: GroupKind,
     ) -> Result<bool, RuntimeError> {
-        let mut entries = self
-            .entries
-            .lock()
-            .map_err(|_| RuntimeError::RegistryPoisoned)?;
-        Ok(match kind {
-            GroupKind::Producer => entries.producers.remove(group).is_some(),
-            GroupKind::Consumer => entries.consumers.remove(group).is_some(),
-            GroupKind::Admin => entries.admins.remove(group).is_some(),
-        })
+        let (removed, removed_admin) = {
+            let mut entries = self
+                .entries
+                .lock()
+                .map_err(|_| RuntimeError::RegistryPoisoned)?;
+            match kind {
+                GroupKind::Producer => (entries.producers.remove(group).is_some(), None),
+                GroupKind::Consumer => (entries.consumers.remove(group).is_some(), None),
+                GroupKind::Admin => {
+                    let entry = entries.admins.remove(group);
+                    (entry.is_some(), entry)
+                }
+            }
+        };
+        drop(removed_admin);
+        Ok(removed)
     }
 
     pub fn snapshot(&self) -> Result<RegistrySnapshot, RuntimeError> {
@@ -570,4 +588,88 @@ fn mutate_map<T: ?Sized>(
         previous: previous.map(wrap),
         matched,
     })
+}
+
+#[cfg(test)]
+mod admin_owner_drop_tests {
+    use super::*;
+    use std::{
+        sync::{
+            atomic::{AtomicBool, Ordering},
+            mpsc,
+        },
+        thread,
+        time::Duration,
+    };
+
+    struct ReenterOnDrop {
+        registry: Weak<GroupRegistry>,
+        reentered: Arc<AtomicBool>,
+    }
+
+    impl Drop for ReenterOnDrop {
+        fn drop(&mut self) {
+            let Some(registry) = self.registry.upgrade() else {
+                return;
+            };
+            let owner: Arc<dyn std::any::Any + Send + Sync> = Arc::new(());
+            if matches!(
+                registry.register_admin_ext(Some("from-drop"), Some(owner)),
+                Ok(true)
+            ) {
+                self.reentered.store(true, Ordering::SeqCst);
+            }
+        }
+    }
+
+    fn assert_admin_owner_drop_can_reenter(
+        remove: impl FnOnce(&GroupRegistry) -> Result<(), RuntimeError> + Send + 'static,
+    ) {
+        let registry = Arc::new(GroupRegistry::default());
+        let reentered = Arc::new(AtomicBool::new(false));
+        let owner = Arc::new(ReenterOnDrop {
+            registry: Arc::downgrade(&registry),
+            reentered: reentered.clone(),
+        });
+        let erased_owner: Arc<dyn std::any::Any + Send + Sync> = owner.clone();
+        assert!(
+            registry
+                .register_admin_ext(Some("admin"), Some(erased_owner))
+                .unwrap()
+        );
+        drop(owner);
+
+        let (reply, receive) = mpsc::channel();
+        let worker_registry = registry.clone();
+        let worker = thread::spawn(move || {
+            remove(&worker_registry).unwrap();
+            let contains_reentered = worker_registry
+                .entries
+                .lock()
+                .unwrap()
+                .admins
+                .contains_key("from-drop");
+            let _ = reply.send(contains_reentered);
+        });
+
+        assert_eq!(
+            receive.recv_timeout(Duration::from_secs(2)),
+            Ok(true),
+            "admin owner destructor must be able to re-enter the registry"
+        );
+        worker.join().unwrap();
+        assert!(reentered.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn unconditional_admin_removal_drops_owner_after_unlock() {
+        assert_admin_owner_drop_can_reenter(|registry| {
+            registry.unregister_admin_ext(Some("admin"))
+        });
+    }
+
+    #[test]
+    fn registry_clear_drops_admin_owner_after_unlock() {
+        assert_admin_owner_drop_can_reenter(GroupRegistry::clear);
+    }
 }
