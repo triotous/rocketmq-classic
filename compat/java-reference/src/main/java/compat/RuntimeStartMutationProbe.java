@@ -15,48 +15,33 @@ import org.apache.rocketmq.client.impl.factory.MQClientInstance;
 import org.apache.rocketmq.remoting.netty.NettyClientConfig;
 
 /**
- * Fork-only probe for the post-construction NameServer startup branch. The
- * child halts after writing its observation because the pinned runtime starts
+ * Fork-only probe for post-construction NameServer startup branches. The child
+ * halts after writing its observation because the pinned runtime starts
  * process-lifetime worker threads that can outlive shutdown.
  */
 public final class RuntimeStartMutationProbe {
     private RuntimeStartMutationProbe() { }
 
-    private static final class StartProbeApi extends MQClientAPIImpl {
-        final AtomicInteger discoveryCalls = new AtomicInteger();
-
-        StartProbeApi(ClientConfig config) {
-            super(new NettyClientConfig(), null, null, config);
-        }
-
-        @Override
-        public String fetchNameServerAddr() {
-            discoveryCalls.incrementAndGet();
-            return null;
-        }
-
-        @Override
-        public void start() { }
-
-        @Override
-        public void shutdown() {
-            super.shutdown();
-        }
-    }
-
-    public static void main(String[] args) throws Exception {
-        if (args.length != 1) throw new IllegalArgumentException("expected fixture output path");
+    private static Map<String, Object> runCase(boolean nullAtConstruction) throws Exception {
         Map<String, Object> item = new TreeMap<>();
         ClientConfig config = new ClientConfig();
-        config.setClientIP("192.0.2.6");
-        MQClientInstance runtime = new MQClientInstance(config, 73, config.buildMQClientId());
-        StartProbeApi api = new StartProbeApi(config);
+        config.setClientIP(nullAtConstruction ? "192.0.2.6" : "192.0.2.7");
+        if (!nullAtConstruction) config.setNamesrvAddr("configured-at-construction:9876");
+        MQClientInstance runtime = new MQClientInstance(config, nullAtConstruction ? 73 : 74,
+            config.buildMQClientId());
         Field apiField = MQClientInstance.class.getDeclaredField("mQClientAPIImpl");
         apiField.setAccessible(true);
+        MQClientAPIImpl originalApi = (MQClientAPIImpl) apiField.get(runtime);
+        List<String> initialAddresses = originalApi.getNameServerAddressList();
+        StartProbeApi api = new StartProbeApi(config);
+        if (initialAddresses != null) api.updateNameServerAddressList(String.join(";", initialAddresses));
         apiField.set(runtime, api);
-        List<String> activeAddressesBefore = api.getNameServerAddressList();
-        item.put("activeAddressesBeforeMutation", activeAddressesBefore);
-        config.setNamesrvAddr("late-after-construction:9876");
+        item.put("activeAddressesBeforeMutation", api.getNameServerAddressList());
+        if (nullAtConstruction) {
+            config.setNamesrvAddr("late-after-construction:9876");
+        } else {
+            config.setNamesrvAddr(null);
+        }
         item.put("namesrvAddrAtStart", config.getNamesrvAddr());
         item.put("activeAddressesBeforeStart", api.getNameServerAddressList());
 
@@ -98,19 +83,56 @@ public final class RuntimeStartMutationProbe {
         } catch (Throwable error) {
             item.put("shutdownOutcome", error.getClass().getSimpleName());
         }
+        return item;
+    }
+
+    private static final class StartProbeApi extends MQClientAPIImpl {
+        final AtomicInteger discoveryCalls = new AtomicInteger();
+
+        StartProbeApi(ClientConfig config) {
+            super(new NettyClientConfig(), null, null, config);
+        }
+
+        @Override
+        public String fetchNameServerAddr() {
+            discoveryCalls.incrementAndGet();
+            return null;
+        }
+
+        @Override
+        public void start() { }
+
+        @Override
+        public void shutdown() {
+            super.shutdown();
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+        if (args.length != 1) throw new IllegalArgumentException("expected fixture output path");
+        Map<String, Object> item = new TreeMap<>();
+        item.put("nullToConfigured", runCase(true));
+        item.put("configuredToNull", runCase(false));
 
         String json = com.alibaba.fastjson2.JSON.toJSONString(item,
             com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
         boolean verify = Boolean.parseBoolean(System.getProperty("start.fixture.verify", "true"));
         if (verify) {
-            if (!json.equals(Files.readString(file))) throw new IllegalStateException("fixture drift: " + file);
+            if (!json.equals(Files.readString(file))) {
+                System.err.println("fixture drift: " + file + "\n" + json);
+                System.err.flush();
+                Runtime.getRuntime().halt(1);
+            }
         } else {
             Files.createDirectories(file.getParent());
             Files.writeString(file, json);
         }
-        if (!"RUNNING".equals(item.get("startOutcome")) || !"OK".equals(item.get("shutdownOutcome"))) {
+        for (Object value : item.values()) {
+            @SuppressWarnings("unchecked") Map<String, Object> result = (Map<String, Object>) value;
+            if (!"RUNNING".equals(result.get("startOutcome")) || !"OK".equals(result.get("shutdownOutcome"))) {
             throw new IllegalStateException("runtime start/shutdown probe failed: " + item);
+            }
         }
         System.out.println("Runtime start mutation probe verified");
         System.out.flush();
