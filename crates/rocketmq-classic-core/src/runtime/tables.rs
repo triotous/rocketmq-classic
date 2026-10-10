@@ -94,7 +94,7 @@ impl TableHandle {
 }
 
 macro_rules! table {
-    ($name:ident, $owner:ident, $kind:ident, $select:ident, $key_set:ident, $values_view:ident, $entry_set:ident) => {
+    ($name:ident, $owner:ident, $kind:ident, $select:ident, $null_group:literal, $key_set:ident, $values_view:ident, $entry_set:ident) => {
         /// Live registry mapping using the runtime's weak-owner contract.
         /// Callers retain owner Arcs; owner drop does not remove its key.
         /// Primitive writes neither unregister from Brokers nor stop owners.
@@ -117,6 +117,16 @@ macro_rules! table {
             }
             pub fn get(&self, key: &str) -> Result<Option<Arc<dyn $owner>>, RuntimeError> {
                 self.0.groups.$select(key)
+            }
+            /// Nullable Java-compatible `ConcurrentMap.get` boundary.
+            pub fn get_nullable(
+                &self,
+                key: Option<&str>,
+            ) -> Result<Option<Arc<dyn $owner>>, RuntimeError> {
+                let Some(key) = key else {
+                    return Err(RuntimeError::InvalidRoute($null_group));
+                };
+                self.get(key)
             }
             /// Map.getOrDefault counterpart; the default is used only when the key is absent.
             pub fn get_or_default(
@@ -849,6 +859,7 @@ table!(
     ProducerRuntime,
     Producer,
     select_producer,
+    "null producer group",
     ProducerKeySetView,
     ProducerValuesView,
     ProducerEntrySetView
@@ -858,6 +869,7 @@ table!(
     ConsumerRuntime,
     Consumer,
     select_consumer,
+    "null consumer group",
     ConsumerKeySetView,
     ConsumerValuesView,
     ConsumerEntrySetView

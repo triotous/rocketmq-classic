@@ -202,6 +202,43 @@ async fn nullable_runtime_selectors_match_invoked_java_null_key_failures() {
 }
 
 #[tokio::test]
+async fn nullable_registry_table_reads_match_invoked_java_null_key_failures() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let expected = &fixture["registryTables"]["nullableTableReads"];
+    assert_eq!(expected["producerNullKey"], "NullPointerException");
+    assert_eq!(expected["consumerNullKey"], "NullPointerException");
+
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&ClientConfig::new("nullable-table-reads"))
+        .await
+        .unwrap();
+    assert!(matches!(
+        runtime.producer_table().get_nullable(None),
+        Err(RuntimeError::InvalidRoute("null producer group"))
+    ));
+    assert!(matches!(
+        runtime.consumer_table().get_nullable(None),
+        Err(RuntimeError::InvalidRoute("null consumer group"))
+    ));
+    assert!(
+        runtime
+            .producer_table()
+            .get_nullable(Some("missing"))
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        runtime
+            .consumer_table()
+            .get_nullable(Some("missing"))
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(runtime.state(), RuntimeState::Created);
+}
+
+#[tokio::test]
 async fn conditional_registry_mutations_match_java_custom_value_equality() {
     struct EqualProducer(&'static str);
     impl ProducerRuntime for EqualProducer {
