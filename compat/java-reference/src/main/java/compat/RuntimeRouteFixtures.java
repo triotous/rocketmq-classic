@@ -9,7 +9,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
 import java.util.TreeMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.apache.rocketmq.client.impl.factory.MQClientInstance;
 import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.common.message.MessageQueue;
@@ -1716,6 +1719,17 @@ public final class RuntimeRouteFixtures {
         return item;
     }
 
+    private static void awaitUnchecked(CountDownLatch latch, String description) {
+        try {
+            if (!latch.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("timed out waiting for " + description);
+            }
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted while waiting for " + description, error);
+        }
+    }
+
     private static Map<String, Object> runtimeTopicRouteTable(Map<String, Object> initial) throws Exception {
         org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
         config.setClientIP("route-live-table");
@@ -1799,6 +1813,66 @@ public final class RuntimeRouteFixtures {
             table.replaceAll((key, value) -> key.equals("topic") ? second : first);
             primitives.put("replaceAllUpdatesMappings", table.size() == 5 && table.get("topic") == second
                 && table.get("bulk-a") == first && table.get("compute-a") == first && table.get("merge-new") == first);
+            table.put("remapping-race", first);
+            AtomicInteger remappingCalls = new AtomicInteger();
+            CountDownLatch remappingEntered = new CountDownLatch(1);
+            CountDownLatch releaseRemapping = new CountDownLatch(1);
+            CountDownLatch writerStarted = new CountDownLatch(1);
+            CountDownLatch writerFinished = new CountDownLatch(1);
+            AtomicReference<TopicRouteData> remappingRead = new AtomicReference<>();
+            AtomicReference<TopicRouteData> remappingResult = new AtomicReference<>();
+            AtomicReference<TopicRouteData> writerPrevious = new AtomicReference<>();
+            AtomicReference<Throwable> writerFailure = new AtomicReference<>();
+            Thread remappingThread = new Thread(() -> remappingResult.set(table.compute("remapping-race", (key, old) -> {
+                remappingCalls.incrementAndGet();
+                remappingRead.set(table.get(key));
+                remappingEntered.countDown();
+                awaitUnchecked(releaseRemapping, "raw route remapping release");
+                return second;
+            })), "java-raw-route-remapping-oracle");
+            Thread writerThread = new Thread(() -> {
+                writerStarted.countDown();
+                try {
+                    writerPrevious.set(table.put("remapping-race", first));
+                } catch (Throwable error) {
+                    writerFailure.set(error);
+                } finally {
+                    writerFinished.countDown();
+                }
+            }, "java-raw-route-remapping-writer");
+            remappingThread.setDaemon(true);
+            writerThread.setDaemon(true);
+            remappingThread.start();
+            try {
+                awaitUnchecked(remappingEntered, "raw route remapping callback");
+                writerThread.start();
+                awaitUnchecked(writerStarted, "raw route same-key writer");
+                primitives.put("remappingWriterWaitsForCallback",
+                    !writerFinished.await(100, TimeUnit.MILLISECONDS));
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("interrupted while checking raw route remapping", error);
+            } finally {
+                releaseRemapping.countDown();
+            }
+            try {
+                remappingThread.join(5000);
+                writerThread.join(5000);
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("interrupted while joining raw route remapping threads", error);
+            }
+            if (remappingThread.isAlive() || writerThread.isAlive()) {
+                throw new IllegalStateException("ConcurrentHashMap raw route remapping threads did not finish");
+            }
+            if (writerFailure.get() != null) {
+                throw new IllegalStateException("ConcurrentHashMap raw route writer failed", writerFailure.get());
+            }
+            primitives.put("remappingCallbackRunsOnce", remappingCalls.get() == 1);
+            primitives.put("remappingCallbackReadsCurrent", remappingRead.get() == first);
+            primitives.put("remappingReturnsAndKeepsWriterValue", remappingResult.get() == second
+                && writerPrevious.get() == second && table.get("remapping-race") == first);
+            table.remove("remapping-race");
             table.remove("compute-a");
             table.remove("merge-new");
             table.clear();

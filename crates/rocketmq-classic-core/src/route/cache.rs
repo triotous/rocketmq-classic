@@ -1,6 +1,9 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
-    sync::{Arc, RwLock},
+    collections::{BTreeMap, BTreeSet, HashMap},
+    marker::PhantomData,
+    rc::Rc,
+    sync::{Arc, Condvar, Mutex, MutexGuard, RwLock, Weak},
+    thread::ThreadId,
 };
 
 use rocketmq_classic_common::message::MessageQueue;
@@ -206,9 +209,103 @@ impl RouteSnapshot {
     }
 }
 
+#[derive(Default)]
+struct RawRouteMutationState {
+    owner: Option<ThreadId>,
+}
+
+#[derive(Default)]
+struct RawRouteMutationGate {
+    state: Mutex<RawRouteMutationState>,
+    available: Condvar,
+}
+
+impl RawRouteMutationGate {
+    fn lock(self: &Arc<Self>) -> Result<RawRouteMutationGuard, RuntimeError> {
+        let owner = std::thread::current().id();
+        let mut state = self.lock_state();
+        loop {
+            match state.owner.as_ref() {
+                Some(current) if *current == owner => {
+                    return Err(RuntimeError::RecursiveRouteTableMutation);
+                }
+                Some(_) => {
+                    state = match self.available.wait(state) {
+                        Ok(state) => state,
+                        Err(poisoned) => {
+                            self.state.clear_poison();
+                            poisoned.into_inner()
+                        }
+                    };
+                }
+                None => {
+                    state.owner = Some(owner);
+                    break;
+                }
+            }
+        }
+        drop(state);
+        Ok(RawRouteMutationGuard {
+            gate: self.clone(),
+            owner,
+            _not_send: PhantomData,
+        })
+    }
+
+    fn lock_state(&self) -> MutexGuard<'_, RawRouteMutationState> {
+        match self.state.lock() {
+            Ok(state) => state,
+            Err(poisoned) => {
+                self.state.clear_poison();
+                poisoned.into_inner()
+            }
+        }
+    }
+}
+
+pub(crate) struct RawRouteMutationGuard {
+    gate: Arc<RawRouteMutationGate>,
+    owner: ThreadId,
+    _not_send: PhantomData<Rc<()>>,
+}
+
+impl Drop for RawRouteMutationGuard {
+    fn drop(&mut self) {
+        let mut state = self.gate.lock_state();
+        if state.owner.as_ref() == Some(&self.owner) {
+            state.owner = None;
+            self.gate.available.notify_one();
+        }
+    }
+}
+
+#[derive(Default)]
+struct RawRouteMutationGates {
+    gates: Mutex<HashMap<String, Weak<RawRouteMutationGate>>>,
+}
+
+impl RawRouteMutationGates {
+    fn gate(&self, key: &str) -> Result<Arc<RawRouteMutationGate>, RuntimeError> {
+        let mut gates = self
+            .gates
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?;
+        if let Some(gate) = gates.get(key).and_then(Weak::upgrade) {
+            return Ok(gate);
+        }
+        let gate = Arc::new(RawRouteMutationGate::default());
+        gates.insert(key.to_owned(), Arc::downgrade(&gate));
+        if gates.len() >= 256 {
+            gates.retain(|_, gate| gate.strong_count() > 0);
+        }
+        Ok(gate)
+    }
+}
+
 #[derive(Clone, Default)]
 pub(crate) struct RouteCache {
     snapshot: Arc<RwLock<Arc<RouteSnapshot>>>,
+    raw_route_mutation_gates: Arc<RawRouteMutationGates>,
 }
 
 impl RouteCache {
@@ -226,6 +323,13 @@ impl RouteCache {
             *current = Arc::new(next);
         }
         Ok(result)
+    }
+
+    pub(crate) fn lock_raw_route_key(
+        &self,
+        key: &str,
+    ) -> Result<RawRouteMutationGuard, RuntimeError> {
+        self.raw_route_mutation_gates.gate(key)?.lock()
     }
 
     pub(crate) fn record_version(
@@ -344,6 +448,7 @@ impl RouteCache {
             return Ok(false);
         }
         let mut topic_snapshot = TopicSnapshot::from_route_data(topic, &route)?;
+        let _gate = self.lock_raw_route_key(topic)?;
         loop {
             let observed = self.snapshot()?.raw_routes.get(topic).cloned();
             let unchanged = match &observed {

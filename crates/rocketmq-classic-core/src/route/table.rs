@@ -152,7 +152,7 @@ impl TopicRouteTable {
         Ok(())
     }
 
-    fn replace_if_handle_same(
+    fn replace_if_handle_same_locked(
         &self,
         key: &str,
         expected: &TopicRouteDataHandle,
@@ -162,6 +162,15 @@ impl TopicRouteTable {
     }
 
     fn remove_if_handle_same(
+        &self,
+        key: &str,
+        expected: &TopicRouteDataHandle,
+    ) -> Result<bool, RuntimeError> {
+        let _gate = self.0.lock_raw_route_key(key)?;
+        self.remove_if_handle_same_locked(key, expected)
+    }
+
+    fn remove_if_handle_same_locked(
         &self,
         key: &str,
         expected: &TopicRouteDataHandle,
@@ -183,6 +192,7 @@ impl TopicRouteTable {
         value: TopicRouteDataHandle,
     ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
         let key = key.into();
+        let _gate = self.0.lock_raw_route_key(&key)?;
         self.0.update_raw(|map| (true, map.insert(key, value)))
     }
     /// Writes all entries into the raw table without converting route snapshots.
@@ -190,13 +200,14 @@ impl TopicRouteTable {
         &self,
         entries: BTreeMap<String, TopicRouteDataHandle>,
     ) -> Result<(), RuntimeError> {
-        if entries.is_empty() {
-            return Ok(());
+        for (key, value) in entries {
+            let _gate = self.0.lock_raw_route_key(&key)?;
+            self.0.update_raw(|map| {
+                map.insert(key, value);
+                (true, ())
+            })?;
         }
-        self.0.update_raw(|map| {
-            map.extend(entries);
-            (true, ())
-        })
+        Ok(())
     }
     pub fn put_if_absent(
         &self,
@@ -204,6 +215,7 @@ impl TopicRouteTable {
         value: TopicRouteDataHandle,
     ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
         let key = key.into();
+        let _gate = self.0.lock_raw_route_key(&key)?;
         self.0.update_raw(|map| {
             if let Some(previous) = map.get(&key) {
                 (false, Some(previous.clone()))
@@ -214,22 +226,30 @@ impl TopicRouteTable {
         })
     }
     /// Applies a Java-style ConcurrentMap remapping function. Conditional
-    /// updates use source route-content equality and may retry after a race.
+    /// Updates serialize by exact key while the callback runs, so it is called
+    /// once and ordinary same-key mutations wait.
     pub fn compute_if_absent(
         &self,
         key: impl Into<String>,
         mut mapping: impl FnMut(&str) -> Option<TopicRouteDataHandle>,
     ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
         let key = key.into();
+        let _gate = self.0.lock_raw_route_key(&key)?;
         if let Some(current) = self.get(&key)? {
             return Ok(Some(current));
         }
         let Some(value) = mapping(&key) else {
             return Ok(None);
         };
-        Ok(Some(
-            self.put_if_absent(&key, value.clone())?.unwrap_or(value),
-        ))
+        let previous = self.0.update_raw(|map| {
+            if let Some(current) = map.get(&key) {
+                (false, Some(current.clone()))
+            } else {
+                map.insert(key.clone(), value.clone());
+                (true, None)
+            }
+        })?;
+        Ok(Some(previous.unwrap_or(value)))
     }
 
     pub fn compute_if_present(
@@ -238,23 +258,20 @@ impl TopicRouteTable {
         mut remapping: impl FnMut(&str, &TopicRouteDataHandle) -> Option<TopicRouteDataHandle>,
     ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
         let key = key.into();
-        loop {
-            let Some(current) = self.get(&key)? else {
-                return Ok(None);
-            };
-            match remapping(&key, &current) {
-                Some(value) => {
-                    if self.replace_if_handle_same(&key, &current, value.clone())? {
-                        return Ok(Some(value));
-                    }
-                }
-                None => {
-                    if self.remove_if_handle_same(&key, &current)? {
-                        return Ok(None);
-                    }
-                }
+        let _gate = self.0.lock_raw_route_key(&key)?;
+        let Some(current) = self.get(&key)? else {
+            return Ok(None);
+        };
+        Ok(match remapping(&key, &current) {
+            Some(value) => {
+                self.replace_if_handle_same_locked(&key, &current, value.clone())?;
+                Some(value)
             }
-        }
+            None => {
+                self.remove_if_handle_same_locked(&key, &current)?;
+                None
+            }
+        })
     }
 
     pub fn compute(
@@ -263,26 +280,28 @@ impl TopicRouteTable {
         mut remapping: impl FnMut(&str, Option<&TopicRouteDataHandle>) -> Option<TopicRouteDataHandle>,
     ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
         let key = key.into();
-        loop {
-            let current = self.get(&key)?;
-            let value = remapping(&key, current.as_ref());
-            match (current.as_ref(), value) {
-                (None, None) => return Ok(None),
-                (None, Some(value)) => {
-                    if self.put_if_absent(&key, value.clone())?.is_none() {
-                        return Ok(Some(value));
+        let _gate = self.0.lock_raw_route_key(&key)?;
+        let current = self.get(&key)?;
+        match (current.as_ref(), remapping(&key, current.as_ref())) {
+            (None, None) => Ok(None),
+            (None, Some(value)) => {
+                let previous = self.0.update_raw(|map| {
+                    if let Some(current) = map.get(&key) {
+                        (false, Some(current.clone()))
+                    } else {
+                        map.insert(key.clone(), value.clone());
+                        (true, None)
                     }
-                }
-                (Some(current), Some(value)) => {
-                    if self.replace_if_handle_same(&key, current, value.clone())? {
-                        return Ok(Some(value));
-                    }
-                }
-                (Some(current), None) => {
-                    if self.remove_if_handle_same(&key, current)? {
-                        return Ok(None);
-                    }
-                }
+                })?;
+                Ok(Some(previous.unwrap_or(value)))
+            }
+            (Some(current), Some(value)) => {
+                self.replace_if_handle_same_locked(&key, current, value.clone())?;
+                Ok(Some(value))
+            }
+            (Some(current), None) => {
+                self.remove_if_handle_same_locked(&key, current)?;
+                Ok(None)
             }
         }
     }
@@ -297,26 +316,28 @@ impl TopicRouteTable {
         ) -> Option<TopicRouteDataHandle>,
     ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
         let key = key.into();
-        loop {
-            let Some(current) = self.get(&key)? else {
-                if self.put_if_absent(&key, value.clone())?.is_none() {
-                    return Ok(Some(value));
+        let _gate = self.0.lock_raw_route_key(&key)?;
+        let Some(current) = self.get(&key)? else {
+            let previous = self.0.update_raw(|map| {
+                if let Some(current) = map.get(&key) {
+                    (false, Some(current.clone()))
+                } else {
+                    map.insert(key.clone(), value.clone());
+                    (true, None)
                 }
-                continue;
-            };
-            match remapping(&current, &value) {
-                Some(next) => {
-                    if self.replace_if_handle_same(&key, &current, next.clone())? {
-                        return Ok(Some(next));
-                    }
-                }
-                None => {
-                    if self.remove_if_handle_same(&key, &current)? {
-                        return Ok(None);
-                    }
-                }
+            })?;
+            return Ok(Some(previous.unwrap_or(value)));
+        };
+        Ok(match remapping(&current, &value) {
+            Some(next) => {
+                self.replace_if_handle_same_locked(&key, &current, next.clone())?;
+                Some(next)
             }
-        }
+            None => {
+                self.remove_if_handle_same_locked(&key, &current)?;
+                None
+            }
+        })
     }
 
     /// Replaces values for keys in one detached key snapshot. The mapping
@@ -326,15 +347,12 @@ impl TopicRouteTable {
         mut remapping: impl FnMut(&str, &TopicRouteDataHandle) -> TopicRouteDataHandle,
     ) -> Result<(), RuntimeError> {
         for key in self.snapshot()?.into_keys() {
-            loop {
-                let Some(current) = self.get(&key)? else {
-                    break;
-                };
-                let value = remapping(&key, &current);
-                if self.replace_if_handle_same(&key, &current, value)? {
-                    break;
-                }
-            }
+            let _gate = self.0.lock_raw_route_key(&key)?;
+            let Some(current) = self.get(&key)? else {
+                continue;
+            };
+            let value = remapping(&key, &current);
+            self.replace_if_handle_same_locked(&key, &current, value)?;
         }
         Ok(())
     }
@@ -345,6 +363,7 @@ impl TopicRouteTable {
         value: TopicRouteDataHandle,
     ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
         let key = key.into();
+        let _gate = self.0.lock_raw_route_key(&key)?;
         self.0.update_raw(|map| {
             if let std::collections::btree_map::Entry::Occupied(mut entry) = map.entry(key) {
                 (true, Some(entry.insert(value)))
@@ -360,6 +379,7 @@ impl TopicRouteTable {
         value: TopicRouteDataHandle,
     ) -> Result<bool, RuntimeError> {
         let key = key.into();
+        let _gate = self.0.lock_raw_route_key(&key)?;
         loop {
             let Some(current) = self.get(&key)? else {
                 return Ok(false);
@@ -367,12 +387,13 @@ impl TopicRouteTable {
             if !route_values_equal(&current.snapshot()?, expected) {
                 return Ok(false);
             }
-            if self.0.replace_raw_if_same(&key, &current, value.clone())? {
+            if self.replace_if_handle_same_locked(&key, &current, value.clone())? {
                 return Ok(true);
             }
         }
     }
     pub fn remove(&self, key: &str) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
+        let _gate = self.0.lock_raw_route_key(key)?;
         self.0.update_raw(|map| {
             let previous = map.remove(key);
             (previous.is_some(), previous)
@@ -383,6 +404,7 @@ impl TopicRouteTable {
         key: &str,
         expected: &TopicRouteData,
     ) -> Result<bool, RuntimeError> {
+        let _gate = self.0.lock_raw_route_key(key)?;
         loop {
             let Some(current) = self.get(key)? else {
                 return Ok(false);
@@ -390,7 +412,7 @@ impl TopicRouteTable {
             if !route_values_equal(&current.snapshot()?, expected) {
                 return Ok(false);
             }
-            if self.0.remove_raw_if_same(key, &current)? {
+            if self.remove_if_handle_same_locked(key, &current)? {
                 return Ok(true);
             }
         }

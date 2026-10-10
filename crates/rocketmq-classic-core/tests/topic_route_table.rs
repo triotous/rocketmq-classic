@@ -7,7 +7,12 @@ use rocketmq_classic_core::{
 use rocketmq_classic_protocol::route::{SharedBrokerDataHandle, TopicRouteData};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        mpsc,
+    },
+    time::Duration,
 };
 
 fn broker_handle(route: &TopicRouteData, index: usize) -> SharedBrokerDataHandle {
@@ -589,6 +594,83 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
             && same(table.get("compute-a").unwrap(), &first)
             && same(table.get("merge-new").unwrap(), &first),
     );
+
+    table.put("remapping-race", first.clone()).unwrap();
+    let callback_calls = Arc::new(AtomicUsize::new(0));
+    let callback_read_current = Arc::new(AtomicBool::new(false));
+    let (callback_started_tx, callback_started_rx) = mpsc::channel();
+    let (release_callback_tx, release_callback_rx) = mpsc::channel();
+    let callback_table = table.clone();
+    let callback_read_table = callback_table.clone();
+    let callback_first = first.clone();
+    let callback_second = second.clone();
+    let callback_calls_for_task = callback_calls.clone();
+    let callback_read_for_task = callback_read_current.clone();
+    let remapping_thread = std::thread::spawn(move || {
+        callback_table.compute("remapping-race", move |key, old| {
+            callback_calls_for_task.fetch_add(1, Ordering::SeqCst);
+            callback_read_for_task.store(
+                old.zip(callback_read_table.get(key).ok().flatten().as_ref())
+                    .is_some_and(|(old, observed)| old.ptr_eq(observed))
+                    && old.is_some_and(|old| old.ptr_eq(&callback_first)),
+                Ordering::SeqCst,
+            );
+            callback_started_tx.send(()).unwrap();
+            release_callback_rx.recv().unwrap();
+            Some(callback_second.clone())
+        })
+    });
+    callback_started_rx
+        .recv_timeout(Duration::from_secs(5))
+        .unwrap();
+    let writer_table = table.clone();
+    let writer_first = first.clone();
+    let (writer_started_tx, writer_started_rx) = mpsc::channel();
+    let (writer_finished_tx, writer_finished_rx) = mpsc::channel();
+    let writer_thread = std::thread::spawn(move || {
+        writer_started_tx.send(()).unwrap();
+        let previous = writer_table.put("remapping-race", writer_first);
+        writer_finished_tx.send(()).unwrap();
+        previous
+    });
+    writer_started_rx
+        .recv_timeout(Duration::from_secs(5))
+        .unwrap();
+    let writer_waits = writer_finished_rx
+        .recv_timeout(Duration::from_millis(100))
+        .is_err();
+    release_callback_tx.send(()).unwrap();
+    let remapping_result = remapping_thread.join().unwrap().unwrap();
+    let writer_previous = writer_thread.join().unwrap().unwrap();
+    outcomes.insert("remappingWriterWaitsForCallback", writer_waits);
+    outcomes.insert(
+        "remappingCallbackRunsOnce",
+        callback_calls.load(Ordering::SeqCst) == 1,
+    );
+    outcomes.insert(
+        "remappingCallbackReadsCurrent",
+        callback_read_current.load(Ordering::SeqCst),
+    );
+    outcomes.insert(
+        "remappingReturnsAndKeepsWriterValue",
+        same(remapping_result, &second)
+            && same(writer_previous, &second)
+            && same(table.get("remapping-race").unwrap(), &first),
+    );
+    table.remove("remapping-race").unwrap();
+    table.put("recursive-write", first.clone()).unwrap();
+    let mut recursive_write_rejected = false;
+    table
+        .compute("recursive-write", |_, _| {
+            recursive_write_rejected = matches!(
+                table.put("recursive-write", second.clone()),
+                Err(RuntimeError::RecursiveRouteTableMutation)
+            );
+            Some(second.clone())
+        })
+        .unwrap();
+    assert!(recursive_write_rejected);
+    table.remove("recursive-write").unwrap();
 
     table.clear().unwrap();
     let key_view = table.key_set_view();

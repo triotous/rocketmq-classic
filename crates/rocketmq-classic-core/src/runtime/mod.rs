@@ -63,6 +63,8 @@ pub enum RuntimeError {
     DuplicateGroup { group: String },
     #[error("invalid topic route: {0}")]
     InvalidRoute(&'static str),
+    #[error("recursive update to a topic route table key during remapping")]
+    RecursiveRouteTableMutation,
     #[error("invalid broker offset table: {0}")]
     InvalidOffsetTable(&'static str),
     #[error("VIP broker address has no port separator")]
