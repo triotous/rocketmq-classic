@@ -9,7 +9,9 @@
 
 ## Decision
 
-Expose `entry_snapshots()` on producer, consumer, and factory entry-set views. Each `ProducerEntryHandle`, `ConsumerEntryHandle`, and `FactoryEntryHandle` carries its key and a private captured value. `set_value()` updates that capture, writes the mapping through the backing live table, and returns the value captured immediately before the call. Existing entry handles do not track later writes made directly through the table.
+Expose `entry_snapshots()` on producer, consumer, and factory entry-set views. Each `ProducerEntryHandle`, `ConsumerEntryHandle`, and `FactoryEntryHandle` carries its key and a private captured value. Calls through clones of the same handle are serialized. `set_value()` writes the mapping through the backing live table, then updates that capture and returns the value captured immediately before the call. Existing entry handles do not track later writes made directly through the table.
+
+Registry and factory writes are asynchronous in Rust. Do not update an entry's cached value before awaiting its table mutation: cancellation while a registry write waits behind unregister must leave the entry snapshot unchanged when no mapping write occurs. A successful `set_value()` preserves the Java-observed entry and backing-map results.
 
 Entry traversal remains a deterministic detached snapshot, one outcome permitted by Java's weakly consistent `ConcurrentHashMap` iterator contract. This API preserves the observed entry mutation while leaving Rust's owned runtime values and lifecycle handling intact.
 
@@ -20,7 +22,7 @@ Callers can use retained registry and manager entry handles to replace a mapping
 ## Evidence
 
 - Java oracle: `RuntimeConfigFixtures` producer-table, consumer-table, and manager-table cases.
-- Oracle and implementation commits: `a2dcae02` / `eca1d066`.
-- Native regressions: `retained_registry_collection_views_match_invoked_java` and `retained_factory_table_and_atomic_mutations_match_invoked_java`.
+- Oracle, base implementation, and async cancellation fix commits: `a2dcae02` / `eca1d066` / `cb42bee3`.
+- Native regressions: `retained_registry_collection_views_match_invoked_java`, `retained_factory_table_and_atomic_mutations_match_invoked_java`, and `running_table_writes_wait_for_unregister_and_cancelled_queue_writes_do_not_commit` (including canceled and subsequent successful entry replacement).
 - Current `fixtures/runtime/client-config.json` SHA-256: `172bf979f0f0aa5ee715c52064ebb6c90740d04fb4aa2b5d43eaab3c5d0437f6`.
 - Validation: full workspace tests; strict all-target/all-feature Clippy; pinned offline Maven verification (22 scenarios); comparator self-test and manifest validation (22 scenarios); formatting and diff checks.
