@@ -7,6 +7,7 @@ use rocketmq_classic_core::{
     error::RpcError,
 };
 use rocketmq_classic_protocol::{
+    SharedValue,
     body::{LockBatchRequestBody, UnlockBatchRequestBody},
     header::PullMessageRequestHeader,
 };
@@ -234,7 +235,9 @@ async fn java_invoked_consumer_more_requests_and_outcomes_match() {
             let body = LockBatchRequestBody {
                 consumer_group: Some("consumer".into()),
                 client_id: Some("client".into()),
-                mq_set: Some(std::collections::HashSet::from([Some(queue)])),
+                mq_set: Some(SharedValue::new(std::collections::HashSet::from([Some(
+                    queue,
+                )]))),
                 ..Default::default()
             };
             match api.lock_batch_mq(&addr, &body, deadline).await {
@@ -257,7 +260,9 @@ async fn java_invoked_consumer_more_requests_and_outcomes_match() {
             let body = UnlockBatchRequestBody {
                 consumer_group: Some("consumer".into()),
                 client_id: Some("client".into()),
-                mq_set: Some(std::collections::HashSet::from([Some(queue)])),
+                mq_set: Some(SharedValue::new(std::collections::HashSet::from([Some(
+                    queue,
+                )]))),
                 ..Default::default()
             };
             match api

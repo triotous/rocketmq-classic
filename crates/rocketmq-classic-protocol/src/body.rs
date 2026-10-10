@@ -2522,7 +2522,14 @@ impl<'de> Deserialize<'de> for MessageRequestModeSerializeWrapper {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+/// Java inherits identity-based equality and hashing for this DTO.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::LockBatchRequestBody;
+/// fn require_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
+/// fn main() { require_java_identity::<LockBatchRequestBody>(); }
+/// ```
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LockBatchRequestBody {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2532,7 +2539,7 @@ pub struct LockBatchRequestBody {
     #[serde(default)]
     pub only_this_broker: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub mq_set: Option<std::collections::HashSet<Option<MessageQueue>>>,
+    pub mq_set: Option<SharedValue<std::collections::HashSet<Option<MessageQueue>>>>,
 }
 
 #[derive(Deserialize)]
@@ -2568,7 +2575,7 @@ impl<'de> Deserialize<'de> for LockBatchRequestBody {
             consumer_group: fields.consumer_group,
             client_id: fields.client_id,
             only_this_broker: fields.only_this_broker,
-            mq_set: fields.mq_set,
+            mq_set: fields.mq_set.map(SharedValue::new),
         })
     }
 }
@@ -2579,7 +2586,7 @@ impl Default for LockBatchRequestBody {
             consumer_group: None,
             client_id: None,
             only_this_broker: false,
-            mq_set: default_message_queue_set(),
+            mq_set: default_message_queue_set().map(SharedValue::new),
         }
     }
 }
@@ -2609,18 +2616,17 @@ impl LockBatchRequestBody {
         self.only_this_broker = only_this_broker;
     }
 
-    pub fn get_mq_set(&self) -> Option<&std::collections::HashSet<Option<MessageQueue>>> {
-        self.mq_set.as_ref()
+    /// Returns a handle to the same mutable Set object assigned to the Java DTO.
+    pub fn get_mq_set(
+        &self,
+    ) -> Option<SharedValue<std::collections::HashSet<Option<MessageQueue>>>> {
+        self.mq_set.clone()
     }
 
-    /// Borrows the owned queue set mutably to allow Java-compatible getter mutations.
-    pub fn get_mq_set_mut(
+    pub fn set_mq_set(
         &mut self,
-    ) -> Option<&mut std::collections::HashSet<Option<MessageQueue>>> {
-        self.mq_set.as_mut()
-    }
-
-    pub fn set_mq_set(&mut self, mq_set: Option<std::collections::HashSet<Option<MessageQueue>>>) {
+        mq_set: Option<SharedValue<std::collections::HashSet<Option<MessageQueue>>>>,
+    ) {
         self.mq_set = mq_set;
     }
 }
@@ -2638,7 +2644,14 @@ impl std::fmt::Display for LockBatchRequestBody {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+/// Java inherits identity-based equality and hashing for this DTO.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::UnlockBatchRequestBody;
+/// fn require_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
+/// fn main() { require_java_identity::<UnlockBatchRequestBody>(); }
+/// ```
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UnlockBatchRequestBody {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2647,7 +2660,7 @@ pub struct UnlockBatchRequestBody {
     pub client_id: Option<String>,
     pub only_this_broker: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub mq_set: Option<std::collections::HashSet<Option<MessageQueue>>>,
+    pub mq_set: Option<SharedValue<std::collections::HashSet<Option<MessageQueue>>>>,
 }
 
 #[derive(Deserialize)]
@@ -2683,7 +2696,7 @@ impl<'de> Deserialize<'de> for UnlockBatchRequestBody {
             consumer_group: fields.consumer_group,
             client_id: fields.client_id,
             only_this_broker: fields.only_this_broker,
-            mq_set: fields.mq_set,
+            mq_set: fields.mq_set.map(SharedValue::new),
         })
     }
 }
@@ -2694,7 +2707,7 @@ impl Default for UnlockBatchRequestBody {
             consumer_group: None,
             client_id: None,
             only_this_broker: false,
-            mq_set: default_message_queue_set(),
+            mq_set: default_message_queue_set().map(SharedValue::new),
         }
     }
 }
@@ -2724,18 +2737,17 @@ impl UnlockBatchRequestBody {
         self.only_this_broker = only_this_broker;
     }
 
-    pub fn get_mq_set(&self) -> Option<&std::collections::HashSet<Option<MessageQueue>>> {
-        self.mq_set.as_ref()
+    /// Returns a handle to the same mutable Set object assigned to the Java DTO.
+    pub fn get_mq_set(
+        &self,
+    ) -> Option<SharedValue<std::collections::HashSet<Option<MessageQueue>>>> {
+        self.mq_set.clone()
     }
 
-    /// Borrows the owned queue set mutably to allow Java-compatible getter mutations.
-    pub fn get_mq_set_mut(
+    pub fn set_mq_set(
         &mut self,
-    ) -> Option<&mut std::collections::HashSet<Option<MessageQueue>>> {
-        self.mq_set.as_mut()
-    }
-
-    pub fn set_mq_set(&mut self, mq_set: Option<std::collections::HashSet<Option<MessageQueue>>>) {
+        mq_set: Option<SharedValue<std::collections::HashSet<Option<MessageQueue>>>>,
+    ) {
         self.mq_set = mq_set;
     }
 }
@@ -2754,29 +2766,38 @@ impl std::fmt::Display for UnlockBatchRequestBody {
 }
 
 fn java_message_queue_set_text(
-    queues: &Option<std::collections::HashSet<Option<MessageQueue>>>,
+    queues: &Option<SharedValue<std::collections::HashSet<Option<MessageQueue>>>>,
 ) -> String {
     match queues {
         None => "null".to_owned(),
-        Some(queues) => format!(
-            "[{}]",
-            queues
-                .iter()
-                .map(|queue| queue
-                    .as_ref()
-                    .map(ToString::to_string)
-                    .unwrap_or_else(|| "null".to_owned()))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
+        Some(queues) => queues.with(|queues| {
+            format!(
+                "[{}]",
+                queues
+                    .iter()
+                    .map(|queue| queue
+                        .as_ref()
+                        .map(ToString::to_string)
+                        .unwrap_or_else(|| "null".to_owned()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        }),
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+/// Java inherits identity-based equality and hashing for this DTO.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::LockBatchResponseBody;
+/// fn require_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
+/// fn main() { require_java_identity::<LockBatchResponseBody>(); }
+/// ```
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LockBatchResponseBody {
     #[serde(rename = "lockOKMQSet", skip_serializing_if = "Option::is_none")]
-    pub lock_okmq_set: Option<std::collections::HashSet<Option<MessageQueue>>>,
+    pub lock_okmq_set: Option<SharedValue<std::collections::HashSet<Option<MessageQueue>>>>,
 }
 
 #[derive(Deserialize)]
@@ -2798,7 +2819,7 @@ impl<'de> Deserialize<'de> for LockBatchResponseBody {
         let fields: LockBatchResponseBodyFields =
             serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
         Ok(Self {
-            lock_okmq_set: fields.lock_okmq_set,
+            lock_okmq_set: fields.lock_okmq_set.map(SharedValue::new),
         })
     }
 }
@@ -2806,26 +2827,22 @@ impl<'de> Deserialize<'de> for LockBatchResponseBody {
 impl Default for LockBatchResponseBody {
     fn default() -> Self {
         Self {
-            lock_okmq_set: default_message_queue_set(),
+            lock_okmq_set: default_message_queue_set().map(SharedValue::new),
         }
     }
 }
 
 impl LockBatchResponseBody {
-    pub fn get_lock_okmq_set(&self) -> Option<&std::collections::HashSet<Option<MessageQueue>>> {
-        self.lock_okmq_set.as_ref()
-    }
-
-    /// Borrows the owned queue set mutably to allow Java-compatible getter mutations.
-    pub fn get_lock_okmq_set_mut(
-        &mut self,
-    ) -> Option<&mut std::collections::HashSet<Option<MessageQueue>>> {
-        self.lock_okmq_set.as_mut()
+    /// Returns a handle to the same mutable Set object assigned to the Java DTO.
+    pub fn get_lock_okmq_set(
+        &self,
+    ) -> Option<SharedValue<std::collections::HashSet<Option<MessageQueue>>>> {
+        self.lock_okmq_set.clone()
     }
 
     pub fn set_lock_okmq_set(
         &mut self,
-        lock_okmq_set: Option<std::collections::HashSet<Option<MessageQueue>>>,
+        lock_okmq_set: Option<SharedValue<std::collections::HashSet<Option<MessageQueue>>>>,
     ) {
         self.lock_okmq_set = lock_okmq_set;
     }
@@ -4492,6 +4509,12 @@ mod tests {
     fn remaining_runtime_body_public_methods_match_invoked_java() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let assert_java_object_identity = |case: &serde_json::Value| {
+            assert_eq!(case["equalsDeclaringClass"], "java.lang.Object");
+            assert_eq!(case["hashCodeDeclaringClass"], "java.lang.Object");
+            assert_eq!(case["sameInstanceEquals"], true);
+            assert_eq!(case["equalValuesDistinctInstanceEquals"], false);
+        };
 
         let check_case = &fixture["checkClientBodyApiCase"];
         let mut check = CheckClientRequestBody::default();
@@ -4626,21 +4649,33 @@ mod tests {
         assert_eq!(lock.to_string(), lock_case["defaultText"].as_str().unwrap());
         let lock_queues: std::collections::HashSet<Option<MessageQueue>> =
             serde_json::from_value(lock_case["assignedValues"].clone()).unwrap();
+        let lock_caller = SharedValue::new(lock_queues);
+        let lock_assigned = lock_caller.clone();
         lock.set_consumer_group(Some("workers".into()));
         lock.set_client_id(Some("client-a".into()));
         lock.set_only_this_broker(true);
-        lock.set_mq_set(Some(lock_queues));
-        let lock_queues_mut = lock.get_mq_set_mut().unwrap();
-        lock_queues_mut.remove(&Some(MessageQueue::new("orders", "broker", 2)));
-        lock_queues_mut.insert(Some(MessageQueue::new("orders", "broker", 3)));
+        lock.set_mq_set(Some(lock_caller.clone()));
+        let lock_getter = lock.get_mq_set().unwrap();
         assert_eq!(
-            lock_queues_mut.contains(&Some(MessageQueue::new("orders", "broker", 3))),
+            lock_assigned.ptr_eq(&lock_getter),
+            lock_case["getterReturnsAssignedSet"]
+        );
+        lock_caller.with_mut(|queues| {
+            queues.remove(&Some(MessageQueue::new("orders", "broker", 2)));
+            queues.insert(Some(MessageQueue::new("orders", "broker", 3)));
+        });
+        assert_eq!(
+            lock_getter
+                .with(|queues| queues.contains(&Some(MessageQueue::new("orders", "broker", 3)))),
             lock_case["externalMutationVisible"]
         );
-        lock_queues_mut.remove(&Some(MessageQueue::new("orders", "broker", 3)));
-        lock_queues_mut.insert(Some(MessageQueue::new("orders", "broker", 4)));
+        lock_getter.with_mut(|queues| {
+            queues.remove(&Some(MessageQueue::new("orders", "broker", 3)));
+            queues.insert(Some(MessageQueue::new("orders", "broker", 4)));
+        });
         assert_eq!(
-            lock_queues_mut.contains(&Some(MessageQueue::new("orders", "broker", 4))),
+            lock_assigned
+                .with(|queues| queues.contains(&Some(MessageQueue::new("orders", "broker", 4)))),
             lock_case["getterMutationVisibleToAssignedSet"]
         );
         assert_eq!(
@@ -4648,12 +4683,12 @@ mod tests {
                 "consumerGroup": lock.get_consumer_group(),
                 "clientId": lock.get_client_id(),
                 "onlyThisBroker": lock.is_only_this_broker(),
-                "mqSet": lock.get_mq_set(),
+                "mqSet": lock_getter.snapshot(),
             }),
             lock_case["mutatedValues"]
         );
         assert_eq!(lock.to_string(), lock_case["text"].as_str().unwrap());
-        assert_eq!(lock_case["getterReturnsAssignedSet"], true);
+        assert_java_object_identity(lock_case);
         lock.set_consumer_group(None);
         lock.set_client_id(None);
         lock.set_only_this_broker(false);
@@ -4681,21 +4716,33 @@ mod tests {
         );
         let unlock_queues: std::collections::HashSet<Option<MessageQueue>> =
             serde_json::from_value(unlock_case["assignedValues"].clone()).unwrap();
+        let unlock_caller = SharedValue::new(unlock_queues);
+        let unlock_assigned = unlock_caller.clone();
         unlock.set_consumer_group(Some("workers".into()));
         unlock.set_client_id(Some("client-a".into()));
         unlock.set_only_this_broker(true);
-        unlock.set_mq_set(Some(unlock_queues));
-        let unlock_queues_mut = unlock.get_mq_set_mut().unwrap();
-        unlock_queues_mut.remove(&Some(MessageQueue::new("orders", "broker", 2)));
-        unlock_queues_mut.insert(Some(MessageQueue::new("orders", "broker", 3)));
+        unlock.set_mq_set(Some(unlock_caller.clone()));
+        let unlock_getter = unlock.get_mq_set().unwrap();
         assert_eq!(
-            unlock_queues_mut.contains(&Some(MessageQueue::new("orders", "broker", 3))),
+            unlock_assigned.ptr_eq(&unlock_getter),
+            unlock_case["getterReturnsAssignedSet"]
+        );
+        unlock_caller.with_mut(|queues| {
+            queues.remove(&Some(MessageQueue::new("orders", "broker", 2)));
+            queues.insert(Some(MessageQueue::new("orders", "broker", 3)));
+        });
+        assert_eq!(
+            unlock_getter
+                .with(|queues| queues.contains(&Some(MessageQueue::new("orders", "broker", 3)))),
             unlock_case["externalMutationVisible"]
         );
-        unlock_queues_mut.remove(&Some(MessageQueue::new("orders", "broker", 3)));
-        unlock_queues_mut.insert(Some(MessageQueue::new("orders", "broker", 4)));
+        unlock_getter.with_mut(|queues| {
+            queues.remove(&Some(MessageQueue::new("orders", "broker", 3)));
+            queues.insert(Some(MessageQueue::new("orders", "broker", 4)));
+        });
         assert_eq!(
-            unlock_queues_mut.contains(&Some(MessageQueue::new("orders", "broker", 4))),
+            unlock_assigned
+                .with(|queues| queues.contains(&Some(MessageQueue::new("orders", "broker", 4)))),
             unlock_case["getterMutationVisibleToAssignedSet"]
         );
         assert_eq!(
@@ -4703,12 +4750,12 @@ mod tests {
                 "consumerGroup": unlock.get_consumer_group(),
                 "clientId": unlock.get_client_id(),
                 "onlyThisBroker": unlock.is_only_this_broker(),
-                "mqSet": unlock.get_mq_set(),
+                "mqSet": unlock_getter.snapshot(),
             }),
             unlock_case["mutatedValues"]
         );
         assert_eq!(unlock.to_string(), unlock_case["text"].as_str().unwrap());
-        assert_eq!(unlock_case["getterReturnsAssignedSet"], true);
+        assert_java_object_identity(unlock_case);
         unlock.set_consumer_group(None);
         unlock.set_client_id(None);
         unlock.set_only_this_broker(false);
@@ -4727,25 +4774,37 @@ mod tests {
         );
         let lock_response_queues: std::collections::HashSet<Option<MessageQueue>> =
             serde_json::from_value(lock_response_case["assignedValues"].clone()).unwrap();
-        lock_response.set_lock_okmq_set(Some(lock_response_queues));
-        let lock_response_queues_mut = lock_response.get_lock_okmq_set_mut().unwrap();
-        lock_response_queues_mut.remove(&Some(MessageQueue::new("orders", "broker", 2)));
-        lock_response_queues_mut.insert(Some(MessageQueue::new("orders", "broker", 3)));
+        let lock_response_caller = SharedValue::new(lock_response_queues);
+        let lock_response_assigned = lock_response_caller.clone();
+        lock_response.set_lock_okmq_set(Some(lock_response_caller.clone()));
+        let lock_response_getter = lock_response.get_lock_okmq_set().unwrap();
         assert_eq!(
-            lock_response_queues_mut.contains(&Some(MessageQueue::new("orders", "broker", 3))),
+            lock_response_assigned.ptr_eq(&lock_response_getter),
+            lock_response_case["getterReturnsAssignedSet"]
+        );
+        lock_response_caller.with_mut(|queues| {
+            queues.remove(&Some(MessageQueue::new("orders", "broker", 2)));
+            queues.insert(Some(MessageQueue::new("orders", "broker", 3)));
+        });
+        assert_eq!(
+            lock_response_getter
+                .with(|queues| queues.contains(&Some(MessageQueue::new("orders", "broker", 3)))),
             lock_response_case["externalMutationVisible"]
         );
-        lock_response_queues_mut.remove(&Some(MessageQueue::new("orders", "broker", 3)));
-        lock_response_queues_mut.insert(Some(MessageQueue::new("orders", "broker", 4)));
+        lock_response_getter.with_mut(|queues| {
+            queues.remove(&Some(MessageQueue::new("orders", "broker", 3)));
+            queues.insert(Some(MessageQueue::new("orders", "broker", 4)));
+        });
         assert_eq!(
-            lock_response_queues_mut.contains(&Some(MessageQueue::new("orders", "broker", 4))),
+            lock_response_assigned
+                .with(|queues| queues.contains(&Some(MessageQueue::new("orders", "broker", 4)))),
             lock_response_case["getterMutationVisibleToAssignedSet"]
         );
         assert_eq!(
-            serde_json::to_value(lock_response.get_lock_okmq_set()).unwrap(),
+            serde_json::to_value(lock_response_getter.snapshot()).unwrap(),
             lock_response_case["mutatedValues"]
         );
-        assert_eq!(lock_response_case["getterReturnsAssignedSet"], true);
+        assert_java_object_identity(lock_response_case);
         lock_response.set_lock_okmq_set(None);
         assert!(lock_response.get_lock_okmq_set().is_none());
         assert_eq!(lock_response_case["nullSetterRemainsNull"], true);
@@ -4939,9 +4998,9 @@ mod tests {
             consumer_group: Some("workers".into()),
             client_id: Some("client".into()),
             only_this_broker: false,
-            mq_set: Some(std::collections::HashSet::from([Some(MessageQueue::new(
-                "orders", "broker-a", 0,
-            ))])),
+            mq_set: Some(SharedValue::new(std::collections::HashSet::from([Some(
+                MessageQueue::new("orders", "broker-a", 0),
+            )]))),
         };
         let unlock = UnlockBatchRequestBody {
             consumer_group: lock.consumer_group.clone(),
@@ -4949,11 +5008,12 @@ mod tests {
             mq_set: lock.mq_set.clone(),
             only_this_broker: true,
         };
-        assert_eq!(
+        let decoded =
             serde_json::from_value::<LockBatchRequestBody>(serde_json::to_value(&lock).unwrap())
-                .unwrap()
-                .mq_set,
-            lock.mq_set
+                .unwrap();
+        assert_eq!(
+            decoded.mq_set.as_ref().map(SharedValue::snapshot),
+            lock.mq_set.as_ref().map(SharedValue::snapshot)
         );
         let value = serde_json::to_value(unlock).unwrap();
         assert_eq!(value["onlyThisBroker"], true);
@@ -4981,9 +5041,9 @@ mod tests {
         let body = LockBatchRequestBody {
             consumer_group: Some("workers".into()),
             client_id: Some("client".into()),
-            mq_set: Some(std::collections::HashSet::from([Some(MessageQueue::new(
-                "orders", "broker-a", 0,
-            ))])),
+            mq_set: Some(SharedValue::new(std::collections::HashSet::from([Some(
+                MessageQueue::new("orders", "broker-a", 0),
+            )]))),
             ..LockBatchRequestBody::default()
         };
         let value = serde_json::to_value(body).unwrap();

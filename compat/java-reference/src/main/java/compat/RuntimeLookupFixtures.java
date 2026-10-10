@@ -1214,13 +1214,23 @@ public final class RuntimeLookupFixtures {
         return values;
     }
 
+    private static void recordObjectIdentity(Map<String, Object> item, Object body, Object equalValues)
+            throws Exception {
+        item.put("equalsDeclaringClass", body.getClass().getMethod("equals", Object.class)
+            .getDeclaringClass().getName());
+        item.put("hashCodeDeclaringClass", body.getClass().getMethod("hashCode")
+            .getDeclaringClass().getName());
+        item.put("sameInstanceEquals", body.equals(body));
+        item.put("equalValuesDistinctInstanceEquals", body.equals(equalValues));
+    }
+
     private static Set<org.apache.rocketmq.common.message.MessageQueue> oneQueueSet() {
         Set<org.apache.rocketmq.common.message.MessageQueue> queues = new java.util.LinkedHashSet<>();
         queues.add(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 2));
         return queues;
     }
 
-    private static Map<String, Object> lockBatchRequestApiCase() {
+    private static Map<String, Object> lockBatchRequestApiCase() throws Exception {
         org.apache.rocketmq.remoting.protocol.body.LockBatchRequestBody body =
             new org.apache.rocketmq.remoting.protocol.body.LockBatchRequestBody();
         Map<String, Object> item = new TreeMap<>();
@@ -1256,6 +1266,13 @@ public final class RuntimeLookupFixtures {
         values.put("mqSet", messageQueueApiValues(body.getMqSet()));
         item.put("mutatedValues", values);
         item.put("text", body.toString());
+        org.apache.rocketmq.remoting.protocol.body.LockBatchRequestBody equalValues =
+            new org.apache.rocketmq.remoting.protocol.body.LockBatchRequestBody();
+        equalValues.setConsumerGroup(body.getConsumerGroup());
+        equalValues.setClientId(body.getClientId());
+        equalValues.setOnlyThisBroker(body.isOnlyThisBroker());
+        equalValues.setMqSet(new java.util.HashSet<>(queues));
+        recordObjectIdentity(item, body, equalValues);
 
         body.setConsumerGroup(null);
         body.setClientId(null);
@@ -1266,7 +1283,7 @@ public final class RuntimeLookupFixtures {
         return item;
     }
 
-    private static Map<String, Object> unlockBatchRequestApiCase() {
+    private static Map<String, Object> unlockBatchRequestApiCase() throws Exception {
         org.apache.rocketmq.remoting.protocol.body.UnlockBatchRequestBody body =
             new org.apache.rocketmq.remoting.protocol.body.UnlockBatchRequestBody();
         Map<String, Object> item = new TreeMap<>();
@@ -1302,6 +1319,13 @@ public final class RuntimeLookupFixtures {
         values.put("mqSet", messageQueueApiValues(body.getMqSet()));
         item.put("mutatedValues", values);
         item.put("text", body.toString());
+        org.apache.rocketmq.remoting.protocol.body.UnlockBatchRequestBody equalValues =
+            new org.apache.rocketmq.remoting.protocol.body.UnlockBatchRequestBody();
+        equalValues.setConsumerGroup(body.getConsumerGroup());
+        equalValues.setClientId(body.getClientId());
+        equalValues.setOnlyThisBroker(body.isOnlyThisBroker());
+        equalValues.setMqSet(new java.util.HashSet<>(queues));
+        recordObjectIdentity(item, body, equalValues);
 
         body.setConsumerGroup(null);
         body.setClientId(null);
@@ -1312,7 +1336,7 @@ public final class RuntimeLookupFixtures {
         return item;
     }
 
-    private static Map<String, Object> lockBatchResponseApiCase() {
+    private static Map<String, Object> lockBatchResponseApiCase() throws Exception {
         org.apache.rocketmq.remoting.protocol.body.LockBatchResponseBody body =
             new org.apache.rocketmq.remoting.protocol.body.LockBatchResponseBody();
         Map<String, Object> item = new TreeMap<>();
@@ -1331,6 +1355,10 @@ public final class RuntimeLookupFixtures {
         item.put("getterMutationVisibleToAssignedSet", queues.contains(
             new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 4)));
         item.put("mutatedValues", messageQueueApiValues(body.getLockOKMQSet()));
+        org.apache.rocketmq.remoting.protocol.body.LockBatchResponseBody equalValues =
+            new org.apache.rocketmq.remoting.protocol.body.LockBatchResponseBody();
+        equalValues.setLockOKMQSet(new java.util.HashSet<>(queues));
+        recordObjectIdentity(item, body, equalValues);
         body.setLockOKMQSet(null);
         item.put("nullSetterRemainsNull", body.getLockOKMQSet() == null);
         return item;

@@ -722,7 +722,9 @@ fn generate_p4_bodies(output: &std::path::Path) {
             consumer_group: Some("workers".into()),
             client_id: Some("client".into()),
             only_this_broker: false,
-            mq_set: Some(std::collections::HashSet::from([Some(queue.clone())])),
+            mq_set: Some(SharedValue::new(std::collections::HashSet::from([Some(
+                queue.clone(),
+            )]))),
         },
     );
     write_body(
@@ -733,7 +735,9 @@ fn generate_p4_bodies(output: &std::path::Path) {
             consumer_group: Some("workers".into()),
             client_id: Some("client".into()),
             only_this_broker: true,
-            mq_set: Some(std::collections::HashSet::from([Some(queue.clone())])),
+            mq_set: Some(SharedValue::new(std::collections::HashSet::from([Some(
+                queue.clone(),
+            )]))),
         },
     );
     write_body(
@@ -741,7 +745,9 @@ fn generate_p4_bodies(output: &std::path::Path) {
         "body-lock-response.bin",
         41,
         &LockBatchResponseBody {
-            lock_okmq_set: Some(std::collections::HashSet::from([Some(queue.clone())])),
+            lock_okmq_set: Some(SharedValue::new(std::collections::HashSet::from([Some(
+                queue.clone(),
+            )]))),
         },
     );
     write_body(
@@ -749,7 +755,9 @@ fn generate_p4_bodies(output: &std::path::Path) {
         "body-unlock-response.bin",
         42,
         &LockBatchResponseBody {
-            lock_okmq_set: Some(std::collections::HashSet::from([Some(queue)])),
+            lock_okmq_set: Some(SharedValue::new(std::collections::HashSet::from([Some(
+                queue,
+            )]))),
         },
     );
 }
