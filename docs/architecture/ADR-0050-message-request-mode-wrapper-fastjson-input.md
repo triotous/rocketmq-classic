@@ -30,5 +30,9 @@ The pinned Java API returns its live nested map from `getMessageRequestModeMap()
 
 - Direct Java case: `messageRequestModeWrapperApiCase` in `fixtures/runtime/lookup.json`; Rust differential: `message_request_mode_wrapper_inputs_match_invoked_java_fastjson`.
 - Oracle/test commits: `94a0d62d`, `0614eda5`; implementation commit: `6c19de4c`.
-- Current aggregate `fixtures/runtime/lookup.json` SHA-256: `c0ba2b2cf51eb3c900a90e57a807edb25bda2cee0fed1b9e54a303680814c6bb`.
+- Current aggregate `fixtures/runtime/lookup.json` SHA-256: `1a0df76edff7063ea8790fc0cfbf0321eca6469c766a9be191e6596f7403d799`. Setter/getter identity for the outer map, nested group maps, and request-body values is now preserved by [ADR-0069](ADR-0069-shared-request-mode-wrapper-aliases.md).
 - Full workspace tests, strict Clippy, pinned offline Maven verify, comparator/manifest22, formatting, and diff checks pass. Phase 6 remains PARTIAL; P6-V04 stays PENDING_PHASE_19.
+
+## Nested Map and row alias correction
+
+The direct `messageRequestModeWrapperApiCase` now proves that Java retains the caller-supplied outer topic Map, each nested consumer-group Map, and each mutable request-body object. Rust uses shared handles at all three levels and wraps decoded values; getter-side and caller-side mutations are mutually visible. Java also confirms the wrapper inherits Object equality and hashing, so Rust removed structural equality traits. See [ADR-0069](ADR-0069-shared-request-mode-wrapper-aliases.md). The wire and 33-case input behavior above is unchanged.
