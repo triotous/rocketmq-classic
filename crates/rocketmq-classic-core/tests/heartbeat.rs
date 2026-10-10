@@ -136,9 +136,19 @@ async fn heartbeat_protocol_mode_reads_live_v2_setting_after_construction() {
         1
     );
     assert_eq!(runtime.route_snapshot().unwrap().broker_addresses.len(), 1);
-    assert!(runtime.send_heartbeat_to_all_brokers().await.unwrap());
+    assert!(
+        runtime
+            .send_heartbeat_to_broker(0, "broker", &address)
+            .await
+            .unwrap()
+    );
     runtime.config().write().unwrap().use_heartbeat_v2 = true;
-    assert!(runtime.send_heartbeat_to_all_brokers().await.unwrap());
+    assert!(
+        runtime
+            .send_heartbeat_to_broker(0, "broker", &address)
+            .await
+            .unwrap()
+    );
     peer.await.unwrap();
     runtime.remoting().shutdown().await;
 }
