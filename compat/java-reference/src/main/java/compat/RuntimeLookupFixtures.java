@@ -1950,6 +1950,20 @@ public final class RuntimeLookupFixtures {
             ack.getBitSet().get(0), ack.getBitSet().get(1), ack.getBitSet().get(2), ack.getBitSet().get(5)));
         item.put("values", values);
         item.put("toString", ack.toString());
+        org.apache.rocketmq.remoting.protocol.body.BatchAck equalAck =
+            new org.apache.rocketmq.remoting.protocol.body.BatchAck();
+        equalAck.setConsumerGroup(ack.getConsumerGroup());
+        equalAck.setTopic(ack.getTopic());
+        equalAck.setRetry(ack.getRetry());
+        equalAck.setStartOffset(ack.getStartOffset());
+        equalAck.setQueueId(ack.getQueueId());
+        equalAck.setReviveQueueId(ack.getReviveQueueId());
+        equalAck.setPopTime(ack.getPopTime());
+        equalAck.setInvisibleTime(ack.getInvisibleTime());
+        equalAck.setBitSet((java.util.BitSet) ack.getBitSet().clone());
+        Map<String, Object> ackIdentity = new TreeMap<>();
+        recordObjectIdentity(ackIdentity, ack, equalAck);
+        item.put("ackObjectIdentity", ackIdentity);
         item.put("bitSetGetterReturnsAssignedObject", ack.getBitSet() == bits);
         bits.set(5);
         item.put("bitSetMutationVisibleThroughGetter", ack.getBitSet().get(5));
@@ -2121,6 +2135,11 @@ public final class RuntimeLookupFixtures {
         item.put("bodyAckCount", body.getAcks().size());
         item.put("bodyReturnsAssignedList", body.getAcks() == acks);
         item.put("bodyAssignedQueueIds", java.util.List.of(body.getAcks().get(0).getQueueId()));
+        item.put("bodyContainsAssignedAck", body.getAcks().get(0) == ack);
+        ack.setQueueId(5);
+        item.put("externalAckObjectMutationVisible", body.getAcks().get(0).getQueueId() == 5);
+        body.getAcks().get(0).setQueueId(6);
+        item.put("ackObjectMutationVisibleThroughBody", ack.getQueueId() == 6);
         acks.clear();
         org.apache.rocketmq.remoting.protocol.body.BatchAck externalAck =
             new org.apache.rocketmq.remoting.protocol.body.BatchAck();

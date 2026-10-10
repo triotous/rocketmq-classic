@@ -2087,6 +2087,7 @@ impl BitSet {
 
 mod bitset_base64 {
     use super::BitSet;
+    use crate::SharedValue;
     use base64::{
         Engine as _, alphabet, engine::general_purpose::GeneralPurpose,
         engine::general_purpose::GeneralPurposeConfig, engine::general_purpose::NO_PAD,
@@ -2105,14 +2106,20 @@ mod bitset_base64 {
         NO_PAD.with_decode_allow_trailing_bits(true),
     );
 
-    pub fn serialize<S>(bit_set: &Option<BitSet>, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(
+        bit_set: &Option<SharedValue<BitSet>>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         match bit_set {
-            Some(bit_set) => serializer.serialize_str(
-                &STANDARD.encode(bit_set.to_byte_array().map_err(serde::ser::Error::custom)?),
-            ),
+            Some(bit_set) => {
+                let bytes = bit_set
+                    .with(BitSet::to_byte_array)
+                    .map_err(serde::ser::Error::custom)?;
+                serializer.serialize_str(&STANDARD.encode(bytes))
+            }
             None => serializer.serialize_none(),
         }
     }
@@ -2134,8 +2141,10 @@ mod bitset_base64 {
     }
 }
 
-fn is_empty_bitset(value: &Option<BitSet>) -> bool {
-    value.as_ref().is_none_or(BitSet::is_empty)
+fn is_empty_bitset(value: &Option<SharedValue<BitSet>>) -> bool {
+    value
+        .as_ref()
+        .is_none_or(|bit_set| bit_set.with(BitSet::is_empty))
 }
 
 fn deserialize_batch_ack_list<'de, D>(
@@ -2172,7 +2181,7 @@ pub struct BatchAckMessageRequestBody {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub broker_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub acks: Option<SharedValue<Vec<Option<BatchAck>>>>,
+    pub acks: Option<SharedValue<Vec<Option<SharedValue<BatchAck>>>>>,
 }
 
 #[derive(Deserialize)]
@@ -2196,7 +2205,13 @@ impl<'de> Deserialize<'de> for BatchAckMessageRequestBody {
             serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
         Ok(Self {
             broker_name: fields.broker_name,
-            acks: fields.acks.map(SharedValue::new),
+            acks: fields.acks.map(|acks| {
+                SharedValue::new(
+                    acks.into_iter()
+                        .map(|ack| ack.map(SharedValue::new))
+                        .collect(),
+                )
+            }),
         })
     }
 }
@@ -2211,16 +2226,23 @@ impl BatchAckMessageRequestBody {
     }
 
     /// Returns a handle to the same mutable List object assigned to the Java DTO.
-    pub fn get_acks(&self) -> Option<SharedValue<Vec<Option<BatchAck>>>> {
+    pub fn get_acks(&self) -> Option<SharedValue<Vec<Option<SharedValue<BatchAck>>>>> {
         self.acks.clone()
     }
 
-    pub fn set_acks(&mut self, acks: Option<SharedValue<Vec<Option<BatchAck>>>>) {
+    pub fn set_acks(&mut self, acks: Option<SharedValue<Vec<Option<SharedValue<BatchAck>>>>>) {
         self.acks = acks;
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
+/// Java inherits identity-based equality and hashing for this DTO.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::BatchAck;
+/// fn require_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
+/// fn main() { require_java_identity::<BatchAck>(); }
+/// ```
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct BatchAck {
     #[serde(
         rename = "c",
@@ -2248,7 +2270,7 @@ pub struct BatchAck {
         with = "bitset_base64",
         skip_serializing_if = "is_empty_bitset"
     )]
-    pub bit_set: Option<BitSet>,
+    pub bit_set: Option<SharedValue<BitSet>>,
 }
 
 #[derive(Deserialize)]
@@ -2329,7 +2351,7 @@ impl<'de> Deserialize<'de> for BatchAck {
             revive_queue_id: fields.revive_queue_id,
             pop_time: fields.pop_time,
             invisible_time: fields.invisible_time,
-            bit_set: fields.bit_set,
+            bit_set: fields.bit_set.map(SharedValue::new),
         })
     }
 }
@@ -2399,16 +2421,11 @@ impl BatchAck {
         self.invisible_time = invisible_time;
     }
 
-    pub fn get_bit_set(&self) -> Option<&BitSet> {
-        self.bit_set.as_ref()
+    pub fn get_bit_set(&self) -> Option<SharedValue<BitSet>> {
+        self.bit_set.clone()
     }
 
-    /// Borrows the owned Java-compatible bit set mutably.
-    pub fn get_bit_set_mut(&mut self) -> Option<&mut BitSet> {
-        self.bit_set.as_mut()
-    }
-
-    pub fn set_bit_set(&mut self, bit_set: Option<BitSet>) {
+    pub fn set_bit_set(&mut self, bit_set: Option<SharedValue<BitSet>>) {
         self.bit_set = bit_set;
     }
 }
@@ -2418,10 +2435,10 @@ impl std::fmt::Display for BatchAck {
         let consumer_group = self.consumer_group.as_deref().unwrap_or("null");
         let topic = self.topic.as_deref().unwrap_or("null");
         let retry = self.retry.as_deref().unwrap_or("null");
-        let bit_set = self
-            .bit_set
-            .as_ref()
-            .map_or_else(|| "null".to_owned(), BitSet::java_to_string);
+        let bit_set = self.bit_set.as_ref().map_or_else(
+            || "null".to_owned(),
+            |bit_set| bit_set.with(BitSet::java_to_string),
+        );
         write!(
             formatter,
             "BatchAck{{consumerGroup='{consumer_group}', topic='{topic}', retry='{retry}', startOffset={}, queueId={}, reviveQueueId={}, popTime={}, invisibleTime={}, bitSet={bit_set}}}",
@@ -3979,7 +3996,11 @@ mod tests {
                 "reviveQueueId": ack.get_revive_queue_id(),
                 "popTime": ack.get_pop_time(),
                 "invisibleTime": ack.get_invisible_time(),
-                "bitSet": ack.get_bit_set().map(BitSet::to_byte_array).transpose().unwrap(),
+                "bitSet": ack
+                    .get_bit_set()
+                    .map(|bit_set| bit_set.with(BitSet::to_byte_array))
+                    .transpose()
+                    .unwrap(),
             }),
             case["defaults"]
         );
@@ -3992,9 +4013,11 @@ mod tests {
         ack.set_revive_queue_id(2);
         ack.set_pop_time(10);
         ack.set_invisible_time(20);
-        ack.set_bit_set(Some(BitSet::from_byte_array(&[0b0000_0101, 0, 0])));
+        let assigned_bits = SharedValue::new(BitSet::from_byte_array(&[0b0000_0101, 0, 0]));
+        ack.set_bit_set(Some(assigned_bits.clone()));
         let bit_set_base64 = serde_json::to_value(&ack).unwrap()["b"].clone();
         let bits = ack.get_bit_set().unwrap();
+        assert!(bits.ptr_eq(&assigned_bits));
         assert_eq!(
             json!({
                 "consumerGroup": ack.get_consumer_group(),
@@ -4006,9 +4029,11 @@ mod tests {
                 "popTime": ack.get_pop_time(),
                 "invisibleTime": ack.get_invisible_time(),
                 "bitSetBase64": bit_set_base64,
-                "bitSetCardinality": bits.cardinality(),
-                "bitSetLength": bits.length(),
-                "bitSetQueries": [bits.get(0).unwrap(), bits.get(1).unwrap(), bits.get(2).unwrap(), bits.get(5).unwrap()],
+                "bitSetCardinality": bits.with(BitSet::cardinality),
+                "bitSetLength": bits.with(BitSet::length),
+                "bitSetQueries": bits.with(|bits| [
+                    bits.get(0).unwrap(), bits.get(1).unwrap(), bits.get(2).unwrap(), bits.get(5).unwrap(),
+                ]),
             }),
             case["values"]
         );
@@ -4016,24 +4041,24 @@ mod tests {
         assert_eq!(case["bitSetGetterReturnsAssignedObject"], true);
         assert_eq!(case["bitSetMutationVisibleThroughGetter"], true);
         assert_eq!(case["bitSetMutationVisibleThroughSetterObject"], true);
-        let bits = ack.get_bit_set_mut().unwrap();
-        bits.set(5).unwrap();
+        bits.with_mut(|bits| bits.set(5).unwrap());
+        assert!(assigned_bits.with(|bits| bits.get(5).unwrap()));
         assert_eq!(
             serde_json::to_value(&ack).unwrap()["b"],
             case["mutatedBitSetBase64"]
         );
-        let mut cloned_bits = ack.get_bit_set().unwrap().clone();
+        let mut cloned_bits = ack.get_bit_set().unwrap().snapshot();
         cloned_bits.clear(0).unwrap();
         cloned_bits.set(7).unwrap();
         let mut cloned_ack = BatchAck::default();
-        cloned_ack.set_bit_set(Some(cloned_bits));
+        cloned_ack.set_bit_set(Some(SharedValue::new(cloned_bits)));
         assert_eq!(
             json!({
                 "cloneIsDistinctObject": true,
                 "sourceBase64": serde_json::to_value(&ack).unwrap()["b"],
                 "cloneBase64": serde_json::to_value(&cloned_ack).unwrap()["b"],
-                "sourceRetainsClearedBit": ack.get_bit_set().unwrap().get(0).unwrap(),
-                "sourceExcludesCloneBit": !ack.get_bit_set().unwrap().get(7).unwrap(),
+                "sourceRetainsClearedBit": bits.with(|bits| bits.get(0).unwrap()),
+                "sourceExcludesCloneBit": !bits.with(|bits| bits.get(7).unwrap()),
             }),
             case["bitSetClone"]
         );
@@ -4051,11 +4076,11 @@ mod tests {
             }),
             case["bitSetPreallocatedClone"]
         );
-        let mut operations = ack.get_bit_set().unwrap().clone();
+        let mut operations = bits.snapshot();
         operations.clear(2).unwrap();
         operations.flip(7).unwrap();
         let mut operations_ack = BatchAck::default();
-        operations_ack.set_bit_set(Some(operations.clone()));
+        operations_ack.set_bit_set(Some(SharedValue::new(operations.clone())));
         assert_eq!(
             json!({
                 "base64": serde_json::to_value(operations_ack).unwrap()["b"],
@@ -4076,19 +4101,19 @@ mod tests {
             case["bitSetNegativeIndexErrors"]
         );
         assert_eq!(
-            ack.get_bit_set().unwrap().get(-1),
+            bits.with(|bits| bits.get(-1)),
             Err(BitSetError::NegativeIndex(-1))
         );
         assert_eq!(
-            ack.get_bit_set_mut().unwrap().set(-1),
+            bits.with_mut(|bits| bits.set(-1)),
             Err(BitSetError::NegativeIndex(-1))
         );
         assert_eq!(
-            ack.get_bit_set_mut().unwrap().clear(-1),
+            bits.with_mut(|bits| bits.clear(-1)),
             Err(BitSetError::NegativeIndex(-1))
         );
         assert_eq!(
-            ack.get_bit_set_mut().unwrap().flip(-1),
+            bits.with_mut(|bits| bits.flip(-1)),
             Err(BitSetError::NegativeIndex(-1))
         );
         let mut word_boundary_bits = BitSet::new();
@@ -4098,7 +4123,7 @@ mod tests {
         assert_eq!(word_boundary_bits.cardinality(), 5);
         assert_eq!(word_boundary_bits.length(), 128);
         let mut word_boundary_ack = BatchAck::default();
-        word_boundary_ack.set_bit_set(Some(word_boundary_bits));
+        word_boundary_ack.set_bit_set(Some(SharedValue::new(word_boundary_bits)));
         assert_eq!(
             json!({
                 "base64": serde_json::to_value(word_boundary_ack).unwrap()["b"],
@@ -4110,7 +4135,7 @@ mod tests {
 
         let bit_set_base64 = |bits: &BitSet| {
             let mut encoded_ack = BatchAck::default();
-            encoded_ack.set_bit_set(Some(bits.clone()));
+            encoded_ack.set_bit_set(Some(SharedValue::new(bits.clone())));
             serde_json::to_value(encoded_ack).unwrap()["b"]
                 .as_str()
                 .unwrap()
@@ -4322,7 +4347,8 @@ mod tests {
             case["bodyDefaults"]
         );
         body.set_broker_name(Some("broker-a".into()));
-        let caller_acks = SharedValue::new(vec![Some(ack.clone())]);
+        let caller_ack = SharedValue::new(ack.clone());
+        let caller_acks = SharedValue::new(vec![Some(caller_ack.clone())]);
         let assigned_acks = caller_acks.clone();
         body.set_acks(Some(caller_acks.clone()));
         let getter_acks = body.get_acks().unwrap();
@@ -4332,41 +4358,70 @@ mod tests {
         );
         assert_eq!(body.get_broker_name(), case["bodyBrokerName"].as_str());
         assert_eq!(getter_acks.with(|acks| acks.len()), case["bodyAckCount"]);
-        assert_eq!(getter_acks.with(|acks| acks[0].clone()), Some(ack));
+        assert!(getter_acks.with(|acks| acks[0].as_ref().unwrap().ptr_eq(&caller_ack)));
         assert_eq!(
             json!(
                 getter_acks
                     .snapshot()
                     .iter()
-                    .map(|ack| ack.as_ref().map(BatchAck::get_queue_id))
+                    .map(|ack| ack.as_ref().map(|ack| ack.with(BatchAck::get_queue_id)))
                     .collect::<Vec<_>>()
             ),
             case["bodyAssignedQueueIds"]
         );
+        caller_ack.with_mut(|ack| ack.set_queue_id(5));
+        assert_eq!(
+            getter_acks
+                .with(|acks| { acks[0].as_ref().unwrap().with(BatchAck::get_queue_id) == 5 }),
+            case["externalAckObjectMutationVisible"]
+        );
+        getter_acks.with(|acks| {
+            acks[0]
+                .as_ref()
+                .unwrap()
+                .with_mut(|ack| ack.set_queue_id(6))
+        });
+        assert_eq!(
+            caller_ack.with(|ack| ack.get_queue_id() == 6),
+            case["ackObjectMutationVisibleThroughBody"]
+        );
         caller_acks.with_mut(|acks| acks.clear());
         let mut external_ack = BatchAck::default();
         external_ack.set_queue_id(3);
-        caller_acks.with_mut(|acks| acks.push(Some(external_ack)));
+        caller_acks.with_mut(|acks| acks.push(Some(SharedValue::new(external_ack))));
         assert_eq!(
-            getter_acks.with(|acks| acks.iter().flatten().any(|ack| ack.get_queue_id() == 3)),
+            getter_acks.with(|acks| {
+                acks.iter()
+                    .flatten()
+                    .any(|ack| ack.with(BatchAck::get_queue_id) == 3)
+            }),
             case["externalMutationVisible"]
         );
         let mut getter_ack = BatchAck::default();
         getter_ack.set_queue_id(4);
         getter_acks.with_mut(|acks| {
             acks.clear();
-            acks.push(Some(getter_ack));
+            acks.push(Some(SharedValue::new(getter_ack)));
         });
         assert_eq!(
-            assigned_acks.with(|acks| acks.iter().flatten().any(|ack| ack.get_queue_id() == 4)),
+            assigned_acks.with(|acks| {
+                acks.iter()
+                    .flatten()
+                    .any(|ack| ack.with(BatchAck::get_queue_id) == 4)
+            }),
             case["getterMutationVisibleToAssignedList"]
         );
         let mutated_queue_ids = getter_acks
             .snapshot()
             .iter()
-            .map(|ack| ack.as_ref().map(BatchAck::get_queue_id))
+            .map(|ack| ack.as_ref().map(|ack| ack.with(BatchAck::get_queue_id)))
             .collect::<Vec<_>>();
         assert_eq!(json!(mutated_queue_ids), case["bodyMutatedQueueIds"]);
+        let ack_identity = &case["ackObjectIdentity"];
+        assert_eq!(ack_identity["equalsDeclaringClass"], "java.lang.Object");
+        assert_eq!(ack_identity["hashCodeDeclaringClass"], "java.lang.Object");
+        assert_eq!(ack_identity["sameInstanceEquals"], true);
+        assert_eq!(ack_identity["equalValuesDistinctInstanceEquals"], false);
         assert_eq!(case["equalsDeclaringClass"], "java.lang.Object");
         assert_eq!(case["hashCodeDeclaringClass"], "java.lang.Object");
         assert_eq!(case["sameInstanceEquals"], true);
@@ -5149,7 +5204,7 @@ mod tests {
 
         let body = BatchAckMessageRequestBody {
             broker_name: Some("broker-a".into()),
-            acks: Some(SharedValue::new(vec![Some(BatchAck {
+            acks: Some(SharedValue::new(vec![Some(SharedValue::new(BatchAck {
                 consumer_group: Some("workers".into()),
                 topic: Some("orders".into()),
                 retry: Some("0".into()),
@@ -5158,8 +5213,8 @@ mod tests {
                 revive_queue_id: 0,
                 pop_time: 10,
                 invisible_time: 20,
-                bit_set: Some(BitSet::from_byte_array(&[0b0000_0101])),
-            })])),
+                bit_set: Some(SharedValue::new(BitSet::from_byte_array(&[0b0000_0101]))),
+            }))])),
         };
         let value = serde_json::to_value(&body).unwrap();
         let ack = &value["acks"][0];
@@ -5171,8 +5226,8 @@ mod tests {
             round_trip.acks.unwrap().snapshot()[0]
                 .as_ref()
                 .unwrap()
-                .bit_set,
-            Some(BitSet::from_byte_array(&[0b0000_0101]))
+                .with(|ack| ack.bit_set.as_ref().unwrap().snapshot()),
+            BitSet::from_byte_array(&[0b0000_0101])
         );
     }
 

@@ -369,8 +369,8 @@ fn java_json_body_fixtures_decode_to_typed_assignment_lite_and_batch_models() {
         batch.acks.as_ref().unwrap().snapshot()[0]
             .as_ref()
             .unwrap()
-            .bit_set,
-        Some(BitSet::from_byte_array(&[0b0000_0101]))
+            .with(|ack| ack.bit_set.as_ref().unwrap().snapshot()),
+        BitSet::from_byte_array(&[0b0000_0101])
     );
 
     for name in ["body-reset-offset", "body-consumer-status"] {
