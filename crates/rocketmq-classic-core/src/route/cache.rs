@@ -207,6 +207,16 @@ impl RouteSnapshot {
             None => queue.broker_name(),
         })
     }
+
+    /// Null-tolerant entry for Java calls that may pass a null MessageQueue.
+    /// Java dereferences the argument immediately, so a null queue is an error.
+    pub fn broker_name_nullable<'a>(
+        &'a self,
+        queue: Option<&'a MessageQueue>,
+    ) -> Result<Option<&'a str>, RuntimeError> {
+        let queue = queue.ok_or(RuntimeError::InvalidRoute("null message queue"))?;
+        self.broker_name(queue)
+    }
 }
 
 #[derive(Default)]
@@ -886,6 +896,20 @@ pub fn broker_vip_channel(enabled: bool, address: &str) -> Result<String, Runtim
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn null_broker_name_queue_matches_invoked_java_failure() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        assert_eq!(
+            fixture["runtimeNullBrokerQueue"]["outcome"],
+            "NullPointerException"
+        );
+        assert!(matches!(
+            RouteSnapshot::default().broker_name_nullable(None),
+            Err(RuntimeError::InvalidRoute("null message queue"))
+        ));
+    }
     use rocketmq_classic_protocol::route::{
         BrokerData, QueueData, SharedBrokerDataHandle, SharedQueueDataHandle,
     };
