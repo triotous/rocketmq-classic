@@ -738,6 +738,19 @@ public final class RuntimeConfigFixtures {
             entryIterator.next();
             entryIterator.remove();
             result.put("entryIteratorRemove", live.isEmpty());
+            live.put("entry-set-value", first);
+            java.util.Iterator<Map.Entry<String, org.apache.rocketmq.client.impl.factory.MQClientInstance>> setValueIterator =
+                live.entrySet().iterator();
+            Map.Entry<String, org.apache.rocketmq.client.impl.factory.MQClientInstance> setValueEntry =
+                setValueIterator.next();
+            result.put("entrySetValueReturnsPrevious", setValueEntry.setValue(second) == first);
+            result.put("entrySetValueUpdatesEntry", setValueEntry.getValue() == second);
+            result.put("entrySetValueUpdatesTable", live.get("entry-set-value") == second);
+            live.put("entry-set-value", first);
+            result.put("entrySetValueEntryIsSnapshot", setValueEntry.getValue() == second);
+            result.put("entrySetValueReturnsCapturedPrevious", setValueEntry.setValue(second) == second);
+            result.put("entrySetValueReplacesCurrentMapping", live.get("entry-set-value") == second);
+            live.clear();
         } finally {
             live.remove(id);
             live.remove("");
@@ -919,6 +932,18 @@ public final class RuntimeConfigFixtures {
         result.put("entryViewRemoveAll", entries.removeAll(java.util.Collections.singleton(
             new java.util.AbstractMap.SimpleImmutableEntry<>("remove-all-entry", first)))
             && !table.containsKey("remove-all-entry"));
+
+        table.clear();
+        table.put("entry-set-value", first);
+        Map.Entry<String, T> setValueEntry = entries.iterator().next();
+        result.put("entrySetValueReturnsPrevious", setValueEntry.setValue(second) == first);
+        result.put("entrySetValueUpdatesEntry", setValueEntry.getValue() == second);
+        result.put("entrySetValueUpdatesTable", table.get("entry-set-value") == second);
+        table.put("entry-set-value", first);
+        result.put("entrySetValueEntryIsSnapshot", setValueEntry.getValue() == second);
+        result.put("entrySetValueReturnsCapturedPrevious", setValueEntry.setValue(first) == second);
+        result.put("entrySetValueReplacesCurrentMapping", table.get("entry-set-value") == first);
+        table.clear();
         return result;
     }
 

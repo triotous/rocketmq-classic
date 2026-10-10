@@ -72,3 +72,9 @@
 - Validation passed: focused route-table regression; full `cargo test --workspace --all-targets --locked` with reviewed loopback access; strict all-target/all-feature Clippy; pinned offline Maven verify (22 scenarios, Java cross-decodes 38 headers and 14 bodies); comparator self-test and manifest validation (22 scenarios); `cargo fmt --all -- --check`; and `git diff --check`.
 - Added ADR-0078 and updated the route/API/requirement audits. Current `fixtures/runtime/route.json` SHA-256: `35027b576c05eb456edd937f8475c121923c012c8297777a27e9657fbed3b116`.
 - This closes the invoked `Map.Entry.setValue` cases for `MQClientInstance.getTopicRouteTable()` only. The wider Phase 6 API/input/reverse-export reconciliation remains PARTIAL and P6-V04 remains `PENDING_PHASE_19`.
+
+## Registry and manager entry `setValue` oracles
+
+- Extended `RuntimeConfigFixtures` for `MQClientInstance.getProducerTable()`, `getConsumerTable()`, and `MQClientManager.getFactoryTable()`. Each direct Java `ConcurrentHashMap` case confirms the same six `Map.Entry.setValue` outcomes as the route table, including stale entry capture after independent replacement.
+- Pinned offline Java `compile exec:java` generation passed with reviewed local socket access. `fixtures/runtime/client-config.json` SHA-256 is `172bf979f0f0aa5ee715c52064ebb6c90740d04fb4aa2b5d43eaab3c5d0437f6`.
+- Native registry and manager entry-snapshot APIs and focused regressions are next; these Java map surfaces currently have put/replace behavior but do not expose entry snapshot handles.
