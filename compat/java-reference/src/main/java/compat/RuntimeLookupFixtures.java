@@ -92,6 +92,7 @@ public final class RuntimeLookupFixtures {
         fixture.put("setRequestModeRequestApiCase", setRequestModeRequestApiCase());
         fixture.put("checkClientBodyApiCase", checkClientBodyApiCase());
         fixture.put("consumerListApiCase", consumerListApiCase());
+        fixture.put("consumerListNullGroupApiCase", consumerListNullGroupApiCase());
         fixture.put("lockBatchRequestApiCase", lockBatchRequestApiCase());
         fixture.put("unlockBatchRequestApiCase", unlockBatchRequestApiCase());
         fixture.put("lockBatchResponseApiCase", lockBatchResponseApiCase());
@@ -1268,6 +1269,43 @@ public final class RuntimeLookupFixtures {
         body.setConsumerIdList(null);
         item.put("nullSetterRemainsNull", body.getConsumerIdList() == null);
         return item;
+    }
+
+    private static Map<String, Object> consumerListNullGroupApiCase() throws Exception {
+        ClientConfig config = new ClientConfig();
+        config.setClientIP("consumer-list-null-group-api");
+        Map<String, Object> result = new TreeMap<>();
+        org.apache.rocketmq.client.impl.MQClientAPIImpl api =
+            new org.apache.rocketmq.client.impl.MQClientAPIImpl(
+                new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null, config, null,
+                ignored -> (org.apache.rocketmq.remoting.RemotingClient) java.lang.reflect.Proxy.newProxyInstance(
+                    RuntimeLookupFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            result.put("address", values[0]);
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                            result.put("requestCode", request.getCode());
+                            Map<String, String> fields = request.getExtFields();
+                            result.put("consumerGroupFieldPresent",
+                                fields != null && fields.containsKey("consumerGroup"));
+                            result.put("consumerGroup", fields == null ? null : fields.get("consumerGroup"));
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand response =
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+                                    org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null);
+                            response.setBody("{\"consumerIdList\":[\"client\"]}"
+                                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                            return response;
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        try {
+            result.put("consumerIds", api.getConsumerIdListByGroup("broker:10911", null, 1000L));
+        } finally {
+            api.shutdown();
+        }
+        return result;
     }
 
     private static List<Object> messageQueueApiValues(Set<org.apache.rocketmq.common.message.MessageQueue> queues) {
@@ -2838,6 +2876,9 @@ public final class RuntimeLookupFixtures {
             List<String> consumerIds = runtime.findConsumerIdList("topic", "consumer");
             result.put("consumerOutcome", consumerIds);
             result.put("consumerCalls", new ArrayList<>(api.consumerCalls));
+            api.consumerCalls.clear();
+            result.put("nullGroupConsumerOutcome", runtime.findConsumerIdList("topic", null));
+            result.put("nullGroupConsumerCalls", new ArrayList<>(api.consumerCalls));
             api.consumerCalls.clear();
             config.setMqClientApiTimeout(150);
             runtime.findConsumerIdList("topic", "consumer");
