@@ -104,32 +104,6 @@ fn java_windows_interface_candidate_order(
     anycast
 }
 
-#[cfg(target_os = "macos")]
-fn java_candidate_order(mut addresses: Vec<Address>) -> Vec<Address> {
-    // Pinned Java's NetworkUtil returns IPv4 candidates in the opposite order
-    // from macOS getifaddrs; preserve that order because its private-address
-    // fallback selects the last IPv4 candidate. IPv6 candidate order is kept.
-    let mut ipv4 = addresses
-        .iter()
-        .filter(|address| address.ip.is_ipv4())
-        .cloned()
-        .collect::<Vec<_>>();
-    ipv4.reverse();
-    for (address, replacement) in addresses
-        .iter_mut()
-        .filter(|address| address.ip.is_ipv4())
-        .zip(ipv4)
-    {
-        *address = replacement;
-    }
-    addresses
-}
-
-#[cfg(not(target_os = "macos"))]
-fn java_candidate_order(addresses: Vec<Address>) -> Vec<Address> {
-    addresses
-}
-
 #[cfg(any(target_os = "linux", test))]
 fn java_linux_ipv6_scope(_native_scope: u32, interface_index: u32) -> u32 {
     // OpenJDK's Linux enumerator sets sin6_scope_id from /proc/net/if_inet6's
@@ -140,10 +114,9 @@ fn java_linux_ipv6_scope(_native_scope: u32, interface_index: u32) -> u32 {
 
 pub(super) fn get() -> io::Result<String> {
     let prefer_ipv4_stack = java_prefer_ipv4_stack();
-    resolve(
-        interfaces(prefer_ipv4_stack).map(java_candidate_order),
-        || local_host(prefer_ipv4_stack),
-    )
+    resolve(interfaces(prefer_ipv4_stack), || {
+        local_host(prefer_ipv4_stack)
+    })
 }
 
 fn java_prefer_ipv4_stack_property(value: Option<String>) -> bool {
@@ -215,7 +188,8 @@ fn java_unix_interface_root_name(name: &str, alias_parent_accessible: bool) -> O
     target_os = "freebsd",
     target_os = "openbsd",
     target_os = "netbsd",
-    target_os = "dragonfly"
+    target_os = "dragonfly",
+    target_os = "macos"
 ))]
 fn java_bsd_ipv6_scope(_native_scope: u32, interface_index: u32) -> u32 {
     // OpenJDK's BSD enumerator replaces the native scope on every IPv6
@@ -233,7 +207,8 @@ fn java_bsd_ipv6_scope(_native_scope: u32, interface_index: u32) -> u32 {
     target_os = "freebsd",
     target_os = "openbsd",
     target_os = "netbsd",
-    target_os = "dragonfly"
+    target_os = "dragonfly",
+    target_os = "macos"
 ))]
 #[derive(Debug)]
 struct UnixCandidate {
@@ -246,7 +221,8 @@ struct UnixCandidate {
     target_os = "freebsd",
     target_os = "openbsd",
     target_os = "netbsd",
-    target_os = "dragonfly"
+    target_os = "dragonfly",
+    target_os = "macos"
 ))]
 #[derive(Default)]
 struct UnixInterfaceAddresses {
@@ -260,7 +236,8 @@ struct UnixInterfaceAddresses {
     target_os = "freebsd",
     target_os = "openbsd",
     target_os = "netbsd",
-    target_os = "dragonfly"
+    target_os = "dragonfly",
+    target_os = "macos"
 ))]
 fn add_unix_candidate(interfaces: &mut Vec<UnixInterfaceAddresses>, candidate: UnixCandidate) {
     let index = interfaces
@@ -289,7 +266,8 @@ fn add_unix_candidate(interfaces: &mut Vec<UnixInterfaceAddresses>, candidate: U
     target_os = "freebsd",
     target_os = "openbsd",
     target_os = "netbsd",
-    target_os = "dragonfly"
+    target_os = "dragonfly",
+    target_os = "macos"
 ))]
 fn java_unix_candidate_order(ipv4: Vec<UnixCandidate>, ipv6: Vec<UnixCandidate>) -> Vec<Address> {
     let mut interfaces = Vec::new();
@@ -328,21 +306,24 @@ fn interfaces(prefer_ipv4_stack: bool) -> io::Result<Vec<Address>> {
         target_os = "freebsd",
         target_os = "openbsd",
         target_os = "netbsd",
-        target_os = "dragonfly"
+        target_os = "dragonfly",
+        target_os = "macos"
     )))]
     let mut addresses = Vec::new();
     #[cfg(any(
         target_os = "freebsd",
         target_os = "openbsd",
         target_os = "netbsd",
-        target_os = "dragonfly"
+        target_os = "dragonfly",
+        target_os = "macos"
     ))]
     let mut ipv4_candidates = Vec::new();
     #[cfg(any(
         target_os = "freebsd",
         target_os = "openbsd",
         target_os = "netbsd",
-        target_os = "dragonfly"
+        target_os = "dragonfly",
+        target_os = "macos"
     ))]
     let mut ipv6_candidates = Vec::new();
     while !current.is_null() {
@@ -404,7 +385,8 @@ fn interfaces(prefer_ipv4_stack: bool) -> io::Result<Vec<Address>> {
                     target_os = "freebsd",
                     target_os = "openbsd",
                     target_os = "netbsd",
-                    target_os = "dragonfly"
+                    target_os = "dragonfly",
+                    target_os = "macos"
                 ))]
                 let scope = {
                     let name = CString::new(name)
@@ -418,7 +400,8 @@ fn interfaces(prefer_ipv4_stack: bool) -> io::Result<Vec<Address>> {
                     target_os = "freebsd",
                     target_os = "openbsd",
                     target_os = "netbsd",
-                    target_os = "dragonfly"
+                    target_os = "dragonfly",
+                    target_os = "macos"
                 )))]
                 let scope = socket.sin6_scope_id;
                 Address {
@@ -435,14 +418,15 @@ fn interfaces(prefer_ipv4_stack: bool) -> io::Result<Vec<Address>> {
             target_os = "freebsd",
             target_os = "openbsd",
             target_os = "netbsd",
-            target_os = "dragonfly"
+            target_os = "dragonfly",
+            target_os = "macos"
         ))]
         {
             let candidate = UnixCandidate {
                 interface: name.to_owned(),
                 address,
             };
-            if family == libc::AF_INET as i32 {
+            if family == libc::AF_INET {
                 ipv4_candidates.push(candidate);
             } else {
                 ipv6_candidates.push(candidate);
@@ -452,7 +436,8 @@ fn interfaces(prefer_ipv4_stack: bool) -> io::Result<Vec<Address>> {
             target_os = "freebsd",
             target_os = "openbsd",
             target_os = "netbsd",
-            target_os = "dragonfly"
+            target_os = "dragonfly",
+            target_os = "macos"
         )))]
         addresses.push(address);
     }
@@ -460,14 +445,16 @@ fn interfaces(prefer_ipv4_stack: bool) -> io::Result<Vec<Address>> {
         target_os = "freebsd",
         target_os = "openbsd",
         target_os = "netbsd",
-        target_os = "dragonfly"
+        target_os = "dragonfly",
+        target_os = "macos"
     ))]
     return Ok(java_unix_candidate_order(ipv4_candidates, ipv6_candidates));
     #[cfg(not(any(
         target_os = "freebsd",
         target_os = "openbsd",
         target_os = "netbsd",
-        target_os = "dragonfly"
+        target_os = "dragonfly",
+        target_os = "macos"
     )))]
     Ok(addresses)
 }
@@ -933,7 +920,7 @@ mod tests {
                 scope_name: None,
             })
             .collect::<Vec<_>>();
-        let native_candidates = java_candidate_order(interfaces(false).unwrap());
+        let native_candidates = interfaces(false).unwrap();
         let java_v4 = java_candidates
             .iter()
             .filter(|address| address.ip.is_ipv4())
@@ -962,6 +949,13 @@ mod tests {
             .into_iter()
             .filter(|address| address.ip.is_ipv6())
             .collect::<Vec<_>>();
+        assert_eq!(
+            native_v6
+                .iter()
+                .map(|address| address.ip)
+                .collect::<Vec<_>>(),
+            java_v6.iter().map(|address| address.ip).collect::<Vec<_>>()
+        );
         assert_eq!(
             select(native_v6).map(|address| address.ip),
             select(java_v6).map(|address| address.ip)
@@ -1027,23 +1021,6 @@ mod tests {
                 scope_name: None,
             }),
             "[fe80:0:0:0:0:0:0:1%7]"
-        );
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn java_candidate_order_reverses_only_macos_ipv4_candidates() {
-        assert_eq!(
-            java_candidate_order(vec![
-                address("10.10.10.111"),
-                address("fe80::1"),
-                address("192.168.139.3"),
-            ]),
-            vec![
-                address("192.168.139.3"),
-                address("fe80::1"),
-                address("10.10.10.111"),
-            ]
         );
     }
 
