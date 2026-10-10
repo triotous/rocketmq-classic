@@ -2820,13 +2820,13 @@ public final class RuntimeLookupFixtures {
 
             List<String> consumerIds = runtime.findConsumerIdList("topic", "consumer");
             result.put("consumerOutcome", consumerIds);
-            result.put("consumerCalls", api.consumerCalls);
+            result.put("consumerCalls", new ArrayList<>(api.consumerCalls));
             java.util.Set<org.apache.rocketmq.common.message.MessageQueueAssignment> assignments =
                 runtime.queryAssignment("topic", "consumer", "strategy",
                     org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel.BROADCASTING, 3000);
             result.put("assignmentOutcome", assignments == null ? null : assignments.size());
-            result.put("assignmentCalls", api.assignmentCalls);
-            result.put("refreshTopics", api.refreshTopics);
+            result.put("assignmentCalls", new ArrayList<>(api.assignmentCalls));
+            result.put("refreshTopics", new ArrayList<>(api.refreshTopics));
 
             api.failConsumer = true;
             result.put("consumerFailureOutcome", runtime.findConsumerIdList("topic", "consumer"));
@@ -2838,6 +2838,20 @@ public final class RuntimeLookupFixtures {
             } catch (Exception error) {
                 result.put("assignmentFailureOutcome", error.getClass().getSimpleName());
             }
+
+            runtime.getTopicRouteTable().clear();
+            api.route = com.alibaba.fastjson2.JSON.parseObject(
+                "{\"queueDatas\":[],\"brokerDatas\":[],\"filterServerTable\":{}}",
+                TopicRouteData.class);
+            api.refreshTopics.clear();
+            api.consumerCalls.clear();
+            api.assignmentCalls.clear();
+            result.put("noBrokerConsumerOutcome", runtime.findConsumerIdList("topic", "consumer"));
+            result.put("noBrokerAssignmentOutcome", runtime.queryAssignment("topic", "consumer", "strategy",
+                org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel.BROADCASTING, 3000));
+            result.put("noBrokerRefreshTopics", new ArrayList<>(api.refreshTopics));
+            result.put("noBrokerConsumerCalls", new ArrayList<>(api.consumerCalls));
+            result.put("noBrokerAssignmentCalls", new ArrayList<>(api.assignmentCalls));
         } finally {
             Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
                 org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
