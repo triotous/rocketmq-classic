@@ -3023,6 +3023,18 @@ public final class RuntimeLookupFixtures {
             result.put("nonpositiveAssignmentCalls", new ArrayList<>(api.assignmentCalls));
             api.assignmentCalls.clear();
 
+            api.refreshTopics.clear();
+            api.consumerCalls.clear();
+            result.put("emptyTopicConsumerOutcome", runtime.findConsumerIdList("", "consumer"));
+            result.put("emptyTopicConsumerCalls", new ArrayList<>(api.consumerCalls));
+            api.consumerCalls.clear();
+            result.put("emptyTopicAssignmentOutcome", runtime.queryAssignment("", "consumer", "strategy",
+                org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel.BROADCASTING, 3000).size());
+            result.put("emptyTopicAssignmentCalls", new ArrayList<>(api.assignmentCalls));
+            result.put("emptyTopicRefreshTopics", new ArrayList<>(api.refreshTopics));
+            api.consumerCalls.clear();
+            api.assignmentCalls.clear();
+
             api.failConsumer = true;
             result.put("consumerFailureOutcome", runtime.findConsumerIdList("topic", "consumer"));
             api.failAssignment = true;
