@@ -752,6 +752,40 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
             .unwrap()
             && table.is_empty().unwrap(),
     );
+    table.put("entry-set-value", first.clone()).unwrap();
+    let entry = entry_view.entry_snapshots().unwrap().pop().unwrap();
+    outcomes.insert(
+        "entrySetValueReturnsPrevious",
+        entry.set_value(second.clone()).unwrap().ptr_eq(&first),
+    );
+    outcomes.insert(
+        "entrySetValueUpdatesEntry",
+        entry.value().unwrap().ptr_eq(&second),
+    );
+    outcomes.insert(
+        "entrySetValueUpdatesTable",
+        table
+            .get("entry-set-value")
+            .unwrap()
+            .is_some_and(|value| value.ptr_eq(&second)),
+    );
+    table.put("entry-set-value", equal_second.clone()).unwrap();
+    outcomes.insert(
+        "entrySetValueEntryIsSnapshot",
+        entry.value().unwrap().ptr_eq(&second),
+    );
+    outcomes.insert(
+        "entrySetValueReturnsCapturedPrevious",
+        entry.set_value(first.clone()).unwrap().ptr_eq(&second),
+    );
+    outcomes.insert(
+        "entrySetValueReplacesCurrentMapping",
+        table
+            .get("entry-set-value")
+            .unwrap()
+            .is_some_and(|value| value.ptr_eq(&first)),
+    );
+    table.clear().unwrap();
     // Rust uses explicit live-view removals in place of Java Iterator.remove; snapshot traversal
     // stays detached and does not claim Java's weakly consistent iteration contract.
     table.put("topic", second.clone()).unwrap();

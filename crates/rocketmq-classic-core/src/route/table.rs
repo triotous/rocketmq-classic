@@ -14,6 +14,46 @@ pub struct TopicRouteDataHandle(Arc<RwLock<TopicRouteData>>);
 #[derive(Clone)]
 pub struct WeakTopicRouteDataHandle(Weak<RwLock<TopicRouteData>>);
 
+/// Detached `Map.Entry`-like view over one raw route-table mapping.
+///
+/// The cached value stays detached from later map replacements. Calling
+/// `set_value` updates this entry's cached value and unconditionally writes
+/// the same value under its key in the backing route table.
+#[derive(Clone)]
+pub struct TopicRouteEntryHandle {
+    table: TopicRouteTable,
+    key: String,
+    value: Arc<RwLock<TopicRouteDataHandle>>,
+}
+
+impl TopicRouteEntryHandle {
+    pub fn key(&self) -> &str {
+        &self.key
+    }
+
+    pub fn value(&self) -> Result<TopicRouteDataHandle, RuntimeError> {
+        self.value
+            .read()
+            .map(|value| value.clone())
+            .map_err(|_| RuntimeError::RegistryPoisoned)
+    }
+
+    /// Replaces this entry's cached value and the current table mapping,
+    /// returning the value captured by this entry before replacement.
+    pub fn set_value(
+        &self,
+        value: TopicRouteDataHandle,
+    ) -> Result<TopicRouteDataHandle, RuntimeError> {
+        let mut current = self
+            .value
+            .write()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?;
+        let previous = std::mem::replace(&mut *current, value.clone());
+        self.table.put(self.key.clone(), value)?;
+        Ok(previous)
+    }
+}
+
 impl WeakTopicRouteDataHandle {
     pub fn upgrade(&self) -> Option<TopicRouteDataHandle> {
         self.0.upgrade().map(TopicRouteDataHandle)
@@ -530,6 +570,23 @@ impl TopicRouteEntrySetView {
     /// Returns a detached entry copy from the live view.
     pub fn snapshot(&self) -> Result<BTreeMap<String, TopicRouteDataHandle>, RuntimeError> {
         self.0.snapshot()
+    }
+
+    /// Returns detached entry handles in deterministic key order. Entry value
+    /// replacement follows Java `ConcurrentHashMap.MapEntry.setValue`: it
+    /// updates both the captured entry and the backing map without refreshing
+    /// other entry snapshots.
+    pub fn entry_snapshots(&self) -> Result<Vec<TopicRouteEntryHandle>, RuntimeError> {
+        Ok(self
+            .0
+            .snapshot()?
+            .into_iter()
+            .map(|(key, value)| TopicRouteEntryHandle {
+                table: self.0.clone(),
+                key,
+                value: Arc::new(RwLock::new(value)),
+            })
+            .collect())
     }
 
     pub fn remove(&self, key: &str, value: &TopicRouteData) -> Result<bool, RuntimeError> {
