@@ -1001,7 +1001,7 @@ async fn route_refresh_failure_preserves_last_coherent_snapshot() {
 }
 
 #[tokio::test]
-async fn registered_consumer_null_broker_map_failure_keeps_previous_route_and_callbacks() {
+async fn registered_clients_null_broker_map_failure_keeps_previous_route_and_callbacks() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/route.json")).unwrap();
     let java = &fixture["runtimeNullBrokerMap"];
@@ -1050,8 +1050,18 @@ async fn registered_consumer_null_broker_map_failure_keeps_previous_route_and_ca
         needed: AtomicBool::new(false),
         need_checks: AtomicUsize::new(0),
     });
+    let producer = Arc::new(RouteObserver {
+        runtime: Arc::downgrade(&runtime),
+        updates: AtomicUsize::new(0),
+        needed: AtomicBool::new(false),
+        need_checks: AtomicUsize::new(0),
+    });
     runtime
         .register_consumer("consumer", consumer.clone())
+        .await
+        .unwrap();
+    runtime
+        .register_producer("producer", producer.clone())
         .await
         .unwrap();
     runtime.remoting().start().unwrap();
@@ -1070,6 +1080,10 @@ async fn registered_consumer_null_broker_map_failure_keeps_previous_route_and_ca
         consumer.updates.load(Ordering::SeqCst),
         java["consumerUpdatesAfterInitial"]
     );
+    assert_eq!(
+        producer.updates.load(Ordering::SeqCst),
+        java["producerUpdatesAfterInitial"]
+    );
     let before = runtime.route_snapshot().unwrap();
 
     assert!(
@@ -1086,6 +1100,10 @@ async fn registered_consumer_null_broker_map_failure_keeps_previous_route_and_ca
     assert_eq!(
         consumer.updates.load(Ordering::SeqCst),
         java["consumerUpdatesAfterFailure"]
+    );
+    assert_eq!(
+        producer.updates.load(Ordering::SeqCst),
+        java["producerUpdatesAfterFailure"]
     );
     peer.await.unwrap();
     runtime.remoting().shutdown().await;
