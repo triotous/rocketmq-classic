@@ -1,5 +1,7 @@
 # Phase 6 API and configuration map
 
+Public enum variant reverse scan (`2026-10-10`): a variant-level pass over the core crate's 17 public enums found that several maps named the Java enum values or Rust enum type but omitted the exact Rust variants. The API map now records all 72 declared variants, including the Rust-only send selectors and lifecycle/error carriers; `RuntimeError::StartupFailure` is explicitly marked test-only. Existing invoked enum, RPC, lifecycle and inbound fixtures remain the behavior evidence. This closes the variant-name inventory only; broader input/source/platform reconciliation remains open and P6-V04 remains a Phase 19 handoff.
+
 Public `ConfigError` result mapping (`89e23102`, `c48db47d`, 2026-10-10): the Rust error carrier now lists only the four source-backed Java failure branches and maps each to its originating ClientConfig operation. The unused `LocalAddress` variant was removed because Java catches address-discovery failures and keeps the null `clientIP` default; a new pinned Java oracle records `changeInstanceNameToPID()` throwing `NullPointerException` for a null instance name, and the Rust differential maps it to `NullInstanceName`. The complete variant mapping and lazy queue short-circuit behavior are listed below. `client-config.json` SHA-256: `eb4028b6c5ce5cfce6e86ae0ec08110200c4d8bcebf67bcc2854b2e929d87ff0`. Focused Rust regression and full pinned offline Maven verify (22 scenarios and fixture checks) pass. Whole Phase 6 API/settings/source/input/platform reconciliation remains open; P6-V04 remains a Phase 19 handoff.
 
 Nullable raw route-map callback arguments (`7fafce29`, 2026-10-10): direct pinned Java calls show `forEach(null)`, `replaceAll(null)`, `computeIfAbsent(key, null)`, `computeIfPresent(key, null)`, `compute(key, null)`, and `merge(key, value, null)` each throw `NullPointerException` without changing the mapping. Rust adds nullable callback adapters for all six methods; `None` maps to `InvalidRoute("null topic route callback")`. The differential checks all failures and retained mapping, adding seven outcomes to reach 149 `runtimeTopicRouteTable.primitives`. `route.json` SHA-256: `2be7e35eea6de3a0b16eb04d18eb39e579dd8ad359002760c12e6bca0bbb84e9`. Full locked workspace tests, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios and cross-decodes), comparator self-test/manifest22, formatting, and diff checks pass. Full Phase 6 API/settings/source/input/platform reconciliation remains open; P6-V04 remains a Phase 19 handoff.
@@ -807,6 +809,32 @@ Outbound extension request serialization errors map to `RpcError::RequestSeriali
 | `compareTo(AccessChannel)` | `java_compare_to()` returns the Java ordinal difference; Rust `PartialEq` matches enum singleton equality |
 
 Java enum `hashCode()` is identity-based with no stable numeric oracle; Rust does not claim a matching Java hash code. See [ADR-0024](../architecture/ADR-0024-access-channel-enum-api.md).
+
+The exact Rust variants are `AccessChannel::Local` → Java `LOCAL` and `AccessChannel::Cloud` → Java `CLOUD`. The public lookup-result variants are `AccessChannelLookupError::NullName` for Java's null-name `NullPointerException`, and `AccessChannelLookupError::UnknownName(String)` for `IllegalArgumentException` with Java's enum-qualified message. `access_channel_enum_methods_match_invoked_java` compares both constants, order, null/unknown messages, and display behavior.
+
+### Public client RPC enum variants
+
+| Rust public enum | Rust variant → pinned Java value | Java/Rust evidence |
+| --- | --- | --- |
+| `api::consumer::PullStatus` | `Found` → `FOUND`; `NoNewMessage` → `NO_NEW_MSG`; `NoMatchedMessage` → `NO_MATCHED_MSG`; `OffsetIllegal` → `OFFSET_ILLEGAL` | Java status codes, declaration order, text and lookup outcomes are compared by the RPC fixture tests. |
+| `api::consumer::PullStatusLookupError` | `NullName`; `UnknownName(String)` | Null maps to Java `NullPointerException`; unknown names map to the exact `IllegalArgumentException` message. |
+| `api::extensions::PopStatus` | `Found` → `FOUND`; `NoNewMsg` → `NO_NEW_MSG`; `PollingFull` → `POLLING_FULL`; `PollingNotFound` → `POLLING_NOT_FOUND` | Java declaration order places `POLLING_FULL` before `POLLING_NOT_FOUND`; lookup and response-code cases are covered. |
+| `api::extensions::PopStatusLookupError` | `NullName`; `UnknownName(String)` | Null and unknown Java enum lookups retain their exception category/message in the invoked fixture. |
+| `api::extensions::AckStatus` | `Ok` → `OK`; `NoExist` → `NO_EXIST` | Direct Java ACK API fixtures compare returned status values. |
+| `api::extensions::AckStatusLookupError` | `NullName`; `UnknownName(String)` | Null and unknown Java enum lookups retain their exception category/message in the method oracle. |
+| `api::producer::SendStatus` | `SendOk` → `SEND_OK`; `FlushDiskTimeout` → `FLUSH_DISK_TIMEOUT`; `FlushSlaveTimeout` → `FLUSH_SLAVE_TIMEOUT`; `SlaveNotAvailable` → `SLAVE_NOT_AVAILABLE` | Direct API/status fixtures compare request results, enum declaration order and inherited enum methods. |
+| `api::producer::SendStatusLookupError` | `NullName`; `UnknownName(String)` | Null maps to Java `NullPointerException`; unknown names map to the exact `IllegalArgumentException` message. |
+| `api::producer::SendKind` | `V1` → `SEND_MESSAGE`; `V2` → `SEND_MESSAGE_V2`; `Batch` → `SEND_BATCH_MESSAGE`; `ReplyV1` → `SEND_REPLY_MESSAGE`; `ReplyV2` → `SEND_REPLY_MESSAGE_V2` | Rust request selector maps each public Java API method/request code; it is not a Java enum type. |
+| `api::producer::SendMode` | `Sync`; `Future`; `Oneway` | Rust invocation mode selects `invokeSync`, async/future and one-way transport behavior; Java exposes these operations as methods rather than this enum. |
+
+### Runtime selectors and public result variants
+
+| Rust public type | Exact Rust variants | Java-facing owner / scope |
+| --- | --- | --- |
+| `runtime::RuntimeState` | `Created`, `Starting`, `Running`, `ShuttingDown`, `Stopped`, `Failed` | Native observable lifecycle states; transitions and cancellation/rollback are mapped in the [lifecycle audit](PHASE_6_LIFECYCLE_AUDIT.md), not a Java enum API. |
+| `runtime::ConsumerOperation` | `ResetOffset` → code 220; `ConsumerStatus` → 221; `RunningInfo` → 307; `ConsumeDirectly` → 309 | Consumer-group-keyed inbound capability selectors; all four remain explicit inactive handoffs to Phase 17 in the [inbound matrix](PHASE_6_INBOUND_MATRIX.md). |
+| `runtime::RuntimeError` | `ClientCheck`, `AddressingCallbackFailed`, `HeartbeatEncoding`, `InvalidHeartbeatData`, `InvalidSchedule`, `TaskCallbackFailed`, `InvalidState`, `ControlTaskFailed`, `StartupFailure` (test-only), `DuplicateGroup`, `InvalidRoute`, `RecursiveRouteTableMutation`, `InvalidOffsetTable`, `InvalidBrokerAddress`, `InvalidBrokerPort`, `Rpc`, `RegistryPoisoned`, `Transport` | Native result carrier, not a Java enum. Call-site mappings cover check-client behavior, invalid heartbeat/offset/route inputs, schedule rejection, duplicate registration, recursive route mutation, VIP parsing, RPC responses, and transport failures; panic/lock/control-task errors are Rust execution failures. No one-to-one Java error class is claimed. |
+| `error::RpcError` | `Transport`, `Header`, `Unsupported`, `RequestSerialization`, `MalformedResponse`, `Response` | Native RPC result carrier. `MalformedResponse` preserves request code, peer and parse/missing-header/body reason; Java counterpart failures are surfaced by each call site's header/body decoder. `Response` retains the Broker code and remark. |
 
 ## Protocol enum API: LanguageCode
 
