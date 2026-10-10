@@ -119,3 +119,8 @@
 ## Route nested collection validation
 
 - Full local gates passed after the corrected oracle and native differential: `cargo test --workspace --all-targets --locked` (with reviewed loopback access); strict all-target/all-feature Clippy; pinned offline Maven verify (22 scenarios, 38 Java-decoded headers and 14 typed bodies); comparator self-test; manifest validation (22 scenarios); fmt and diff checks. The sandboxed Maven run stopped at RocketMQ's configured external log path; the reviewed local filesystem rerun passed.
+
+## Route nested collection audit documentation
+
+- Updated the route branch audit, P6-05 requirement row, route DTO API/input row, and ADR-0078 with the corrected current `route.json` hash and the 16-case nested-value matrix. The audit keeps broader malformed route/source/API/input reconciliation open and leaves P6-V04 `PENDING_PHASE_19`.
+- Documentation review and `git diff --check` pass.
