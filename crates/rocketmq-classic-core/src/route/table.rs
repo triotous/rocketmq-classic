@@ -740,9 +740,29 @@ impl TopicRouteKeySetView {
     pub fn remove_all(&self, keys: &BTreeSet<String>) -> Result<usize, RuntimeError> {
         self.remove_if(|key| keys.contains(key))
     }
+    /// Preserves Java collection-view `removeAll` null-collection rejection.
+    pub fn remove_all_nullable(
+        &self,
+        keys: Option<&BTreeSet<String>>,
+    ) -> Result<usize, RuntimeError> {
+        let Some(keys) = keys else {
+            return Err(RuntimeError::InvalidRoute("null topic route collection"));
+        };
+        self.remove_all(keys)
+    }
 
     pub fn retain_all(&self, keys: &BTreeSet<String>) -> Result<usize, RuntimeError> {
         self.remove_if(|key| !keys.contains(key))
+    }
+    /// Preserves Java collection-view `retainAll` null-collection rejection.
+    pub fn retain_all_nullable(
+        &self,
+        keys: Option<&BTreeSet<String>>,
+    ) -> Result<usize, RuntimeError> {
+        let Some(keys) = keys else {
+            return Err(RuntimeError::InvalidRoute("null topic route collection"));
+        };
+        self.retain_all(keys)
     }
 
     pub fn clear(&self) -> Result<(), RuntimeError> {
@@ -828,6 +848,16 @@ impl TopicRouteValuesView {
         }
         Ok(removed)
     }
+    /// Preserves Java collection-view `removeAll` null-collection rejection.
+    pub fn remove_all_nullable(
+        &self,
+        values: Option<&[TopicRouteDataHandle]>,
+    ) -> Result<usize, RuntimeError> {
+        let Some(values) = values else {
+            return Err(RuntimeError::InvalidRoute("null topic route collection"));
+        };
+        self.remove_all(values)
+    }
 
     pub fn retain_all(&self, values: &[TopicRouteDataHandle]) -> Result<usize, RuntimeError> {
         let mut removed = 0;
@@ -845,6 +875,16 @@ impl TopicRouteValuesView {
             }
         }
         Ok(removed)
+    }
+    /// Preserves Java collection-view `retainAll` null-collection rejection.
+    pub fn retain_all_nullable(
+        &self,
+        values: Option<&[TopicRouteDataHandle]>,
+    ) -> Result<usize, RuntimeError> {
+        let Some(values) = values else {
+            return Err(RuntimeError::InvalidRoute("null topic route collection"));
+        };
+        self.retain_all(values)
     }
 
     pub fn clear(&self) -> Result<(), RuntimeError> {
@@ -953,6 +993,16 @@ impl TopicRouteEntrySetView {
         }
         Ok(removed)
     }
+    /// Preserves Java collection-view `removeAll` null-collection rejection.
+    pub fn remove_all_nullable(
+        &self,
+        entries: Option<&BTreeMap<String, TopicRouteDataHandle>>,
+    ) -> Result<usize, RuntimeError> {
+        let Some(entries) = entries else {
+            return Err(RuntimeError::InvalidRoute("null topic route collection"));
+        };
+        self.remove_all(entries)
+    }
 
     pub fn retain_all(
         &self,
@@ -970,6 +1020,16 @@ impl TopicRouteEntrySetView {
             }
         }
         Ok(removed)
+    }
+    /// Preserves Java collection-view `retainAll` null-collection rejection.
+    pub fn retain_all_nullable(
+        &self,
+        entries: Option<&BTreeMap<String, TopicRouteDataHandle>>,
+    ) -> Result<usize, RuntimeError> {
+        let Some(entries) = entries else {
+            return Err(RuntimeError::InvalidRoute("null topic route collection"));
+        };
+        self.retain_all(entries)
     }
 
     pub fn clear(&self) -> Result<(), RuntimeError> {

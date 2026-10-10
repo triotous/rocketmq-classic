@@ -1928,6 +1928,20 @@ public final class RuntimeRouteFixtures {
                 !entryView.remove(nullValueEntry));
             primitives.put("nullCollectionViewArgumentsKeepMapping",
                 table.size() == 1 && table.get("topic") == first);
+            primitives.put("keyViewRemoveAllNullThrowsNullPointer",
+                throwsNullPointer(() -> keyView.removeAll(null)));
+            primitives.put("keyViewRetainAllNullThrowsNullPointer",
+                throwsNullPointer(() -> keyView.retainAll(null)));
+            primitives.put("valuesViewRemoveAllNullThrowsNullPointer",
+                throwsNullPointer(() -> valuesView.removeAll(null)));
+            primitives.put("valuesViewRetainAllNullThrowsNullPointer",
+                throwsNullPointer(() -> valuesView.retainAll(null)));
+            primitives.put("entryViewRemoveAllNullThrowsNullPointer",
+                throwsNullPointer(() -> entryView.removeAll(null)));
+            primitives.put("entryViewRetainAllNullThrowsNullPointer",
+                throwsNullPointer(() -> entryView.retainAll(null)));
+            primitives.put("nullViewCollectionArgumentsKeepMapping",
+                table.size() == 1 && table.get("topic") == first);
             AtomicInteger nullComputeCallbackCalls = new AtomicInteger();
             primitives.put("computeIfAbsentNullKeyThrowsNullPointer", throwsNullPointer(() ->
                 table.computeIfAbsent(null, key -> {

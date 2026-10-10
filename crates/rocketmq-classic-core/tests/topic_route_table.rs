@@ -469,6 +469,52 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
         "nullCollectionViewArgumentsKeepMapping",
         table.len().unwrap() == 1 && same(table.get("topic").unwrap(), &first),
     );
+    outcomes.insert(
+        "keyViewRemoveAllNullThrowsNullPointer",
+        matches!(
+            key_view.remove_all_nullable(None),
+            Err(RuntimeError::InvalidRoute("null topic route collection"))
+        ),
+    );
+    outcomes.insert(
+        "keyViewRetainAllNullThrowsNullPointer",
+        matches!(
+            key_view.retain_all_nullable(None),
+            Err(RuntimeError::InvalidRoute("null topic route collection"))
+        ),
+    );
+    outcomes.insert(
+        "valuesViewRemoveAllNullThrowsNullPointer",
+        matches!(
+            values_view.remove_all_nullable(None),
+            Err(RuntimeError::InvalidRoute("null topic route collection"))
+        ),
+    );
+    outcomes.insert(
+        "valuesViewRetainAllNullThrowsNullPointer",
+        matches!(
+            values_view.retain_all_nullable(None),
+            Err(RuntimeError::InvalidRoute("null topic route collection"))
+        ),
+    );
+    outcomes.insert(
+        "entryViewRemoveAllNullThrowsNullPointer",
+        matches!(
+            entry_view.remove_all_nullable(None),
+            Err(RuntimeError::InvalidRoute("null topic route collection"))
+        ),
+    );
+    outcomes.insert(
+        "entryViewRetainAllNullThrowsNullPointer",
+        matches!(
+            entry_view.retain_all_nullable(None),
+            Err(RuntimeError::InvalidRoute("null topic route collection"))
+        ),
+    );
+    outcomes.insert(
+        "nullViewCollectionArgumentsKeepMapping",
+        table.len().unwrap() == 1 && same(table.get("topic").unwrap(), &first),
+    );
     let mut null_compute_callback_calls = 0;
     outcomes.insert(
         "computeIfAbsentNullKeyThrowsNullPointer",
