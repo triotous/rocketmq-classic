@@ -129,6 +129,14 @@ fn java_candidate_order(addresses: Vec<Address>) -> Vec<Address> {
     addresses
 }
 
+#[cfg(any(target_os = "linux", test))]
+fn java_linux_ipv6_scope(_native_scope: u32, interface_index: u32) -> u32 {
+    // OpenJDK's Linux enumerator sets sin6_scope_id from /proc/net/if_inet6's
+    // interface index for every IPv6 address. glibc getifaddrs only supplies
+    // a scope for link-local and link-scoped multicast addresses.
+    interface_index
+}
+
 pub(super) fn get() -> io::Result<String> {
     resolve(interfaces().map(java_candidate_order), local_host)
 }
@@ -227,6 +235,11 @@ fn interfaces() -> io::Result<Vec<Address>> {
             }
             libc::AF_INET6 => {
                 let socket = unsafe { &*(interface.ifa_addr as *const libc::sockaddr_in6) };
+                #[cfg(target_os = "linux")]
+                let scope = java_linux_ipv6_scope(socket.sin6_scope_id, unsafe {
+                    libc::if_nametoindex(interface.ifa_name)
+                });
+                #[cfg(not(target_os = "linux"))]
                 let scope = socket.sin6_scope_id;
                 Address {
                     ip: IpAddr::V6(Ipv6Addr::from(socket.sin6_addr.s6_addr)),
@@ -726,5 +739,16 @@ mod tests {
                 address("10.10.10.111"),
             ]
         );
+    }
+
+    #[test]
+    fn linux_ipv6_scope_uses_interface_index_even_when_native_scope_is_zero() {
+        assert_eq!(java_linux_ipv6_scope(0, 7), 7);
+        let scoped = Address {
+            ip: "2001:db8::1".parse().unwrap(),
+            scope: java_linux_ipv6_scope(0, 7),
+            scope_name: Some("eth0".to_owned()),
+        };
+        assert_eq!(normalize(&scoped), "[2001:db8:0:0:0:0:0:1%eth0]");
     }
 }
