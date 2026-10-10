@@ -29,6 +29,19 @@ async fn boot_timestamp_does_not_follow_simulated_monotonic_clock() {
 
 #[tokio::test]
 async fn boot_timestamp_is_constructor_wall_clock_and_stable_across_shared_lifecycle() {
+    let java_fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+    assert!(
+        java_fixture["bootTimestampInsideConstructorWindow"]
+            .as_bool()
+            .unwrap()
+    );
+    assert!(
+        java_fixture["bootTimestampStableAfterFixtureCalls"]
+            .as_bool()
+            .unwrap()
+    );
+
     let manager = ClientRuntimeManager::new();
     let mut config = ClientConfig::new("metadata");
     config.namesrv_addr = Some(String::new());
