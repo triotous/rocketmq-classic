@@ -537,7 +537,7 @@ mod tests {
                     .producer_data_set
                     .as_ref()
                     .unwrap()
-                    .is_empty()
+                    .with(|producers| producers.is_empty())
             );
             let replacement = manager.get_or_create(&config).await.unwrap();
             assert!(!Arc::ptr_eq(&runtime, &replacement));
@@ -694,6 +694,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn p6_u01_periodic_subscription_wire_and_unregister_keep_shared_user_running() {
         use bytes::BytesMut;
+        use rocketmq_classic_protocol::SharedValue;
         use rocketmq_classic_protocol::{
             codes::{LanguageCode, request},
             heartbeat::{ConsumerData, HeartbeatData, ProducerData, SubscriptionData},
@@ -713,9 +714,9 @@ mod tests {
             fn heartbeat_data(&self) -> ConsumerData {
                 ConsumerData {
                     group_name: Some("consumer".into()),
-                    subscription_data_set: Some(HashSet::from([Some(
-                        self.0.lock().unwrap().clone(),
-                    )])),
+                    subscription_data_set: Some(SharedValue::from(HashSet::from([Some(
+                        SharedValue::from(self.0.lock().unwrap().clone()),
+                    )]))),
                     unit_mode: true,
                     ..Default::default()
                 }
@@ -754,40 +755,45 @@ mod tests {
         fn assert_heartbeat(command: &RemotingCommand, consumer: &Consumer, producers: &[&str]) {
             assert_eq!(command.code, request::HEART_BEAT);
             assert_eq!(command.language, Some(LanguageCode::Java));
-            let mut heartbeat: HeartbeatData =
+            let heartbeat: HeartbeatData =
                 serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
-            let mut expected = HeartbeatData {
+            let expected = HeartbeatData {
                 client_id: Some("p6-u01@DEFAULT".into()),
-                producer_data_set: Some(
+                producer_data_set: Some(SharedValue::from(
                     producers
                         .iter()
                         .map(|group| {
-                            Some(ProducerData {
+                            Some(SharedValue::from(ProducerData {
                                 group_name: Some((*group).into()),
-                            })
+                            }))
                         })
-                        .collect(),
-                ),
-                consumer_data_set: Some(vec![Some(consumer.heartbeat_data())]),
+                        .collect::<HashSet<_>>(),
+                )),
+                consumer_data_set: Some(SharedValue::from(HashSet::from([Some(
+                    SharedValue::from(consumer.heartbeat_data()),
+                )]))),
                 ..Default::default()
             };
-            let by_group = |left: &Option<ProducerData>, right: &Option<ProducerData>| {
-                left.as_ref()
-                    .and_then(|data| data.group_name.as_ref())
-                    .cmp(&right.as_ref().and_then(|data| data.group_name.as_ref()))
-            };
-            heartbeat
-                .producer_data_set
-                .as_mut()
-                .unwrap()
-                .sort_by(by_group);
-            expected
-                .producer_data_set
-                .as_mut()
-                .unwrap()
-                .sort_by(by_group);
-            let actual_json = serde_json::to_value(&heartbeat).unwrap();
-            let expected_json = serde_json::to_value(&expected).unwrap();
+            fn sort_json_arrays(value: &mut serde_json::Value) {
+                match value {
+                    serde_json::Value::Array(rows) => {
+                        for row in rows.iter_mut() {
+                            sort_json_arrays(row);
+                        }
+                        rows.sort_by_key(serde_json::Value::to_string);
+                    }
+                    serde_json::Value::Object(fields) => {
+                        for value in fields.values_mut() {
+                            sort_json_arrays(value);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let mut actual_json = serde_json::to_value(&heartbeat).unwrap();
+            let mut expected_json = serde_json::to_value(&expected).unwrap();
+            sort_json_arrays(&mut actual_json);
+            sort_json_arrays(&mut expected_json);
             assert_eq!(actual_json, expected_json);
             let json: serde_json::Value =
                 serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
@@ -854,8 +860,8 @@ mod tests {
             topic: Some("topic".into()),
             sub_string: Some("A".into()),
             sub_version: 41,
-            tags_set: Some(HashSet::from([Some("A".into())])),
-            code_set: Some(HashSet::from([Some(65)])),
+            tags_set: Some(SharedValue::from(HashSet::from([Some("A".into())]))),
+            code_set: Some(SharedValue::from(HashSet::from([Some(65)]))),
             ..Default::default()
         })));
         let producer_lease = frozen_io(runtime.register_producer("producer", producer.clone()))
@@ -910,8 +916,8 @@ mod tests {
             topic: Some("topic".into()),
             sub_string: Some("B".into()),
             sub_version: 42,
-            tags_set: Some(HashSet::from([Some("B".into())])),
-            code_set: Some(HashSet::from([Some(66)])),
+            tags_set: Some(SharedValue::from(HashSet::from([Some("B".into())]))),
+            code_set: Some(SharedValue::from(HashSet::from([Some(66)]))),
             ..Default::default()
         };
         tokio::time::advance(Duration::from_millis(29_999)).await;
@@ -991,7 +997,7 @@ mod tests {
                     .producer_data_set
                     .as_ref()
                     .unwrap()
-                    .is_empty()
+                    .with(|producers| producers.is_empty())
             );
             assert!(
                 !runtime

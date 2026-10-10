@@ -11,7 +11,10 @@ impl ClientRuntime {
     /// attempted here: absent Broker metadata skips the subscription check.
     pub async fn check_client_in_broker(&self) -> Result<(), RuntimeError> {
         for (group, consumer) in self.groups.consumer_entries()? {
-            let subscriptions = consumer.heartbeat_data().subscription_data_set;
+            let subscriptions = consumer
+                .heartbeat_data()
+                .subscription_data_set
+                .map(|subscriptions| subscriptions.snapshot());
             let Some(subscriptions) = subscriptions else {
                 return Ok(());
             };
@@ -22,6 +25,7 @@ impl ClientRuntime {
                 let Some(subscription) = subscription else {
                     return Err(RuntimeError::InvalidHeartbeatData("null subscription data"));
                 };
+                let subscription = subscription.snapshot();
                 if is_tag(subscription.expression_type.as_deref()) {
                     continue;
                 }

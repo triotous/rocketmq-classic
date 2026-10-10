@@ -318,16 +318,19 @@ async fn all_topic_refresh_unions_registered_topics_and_continues_after_rejectio
                     .is_some()
             );
             ConsumerData {
-                subscription_data_set: Some(
+                subscription_data_set: Some(rocketmq_classic_protocol::SharedValue::from(
                     [Some("common"), Some("consumer-only"), None]
                         .into_iter()
-                        .map(|topic| SubscriptionData {
-                            topic: topic.map(str::to_owned),
-                            ..Default::default()
+                        .map(|topic| {
+                            Some(rocketmq_classic_protocol::SharedValue::from(
+                                SubscriptionData {
+                                    topic: topic.map(str::to_owned),
+                                    ..Default::default()
+                                },
+                            ))
                         })
-                        .map(Some)
-                        .collect(),
-                ),
+                        .collect::<std::collections::HashSet<_>>(),
+                )),
                 ..Default::default()
             }
         }
@@ -435,9 +438,11 @@ async fn null_subscription_topic_success_route_fails_before_cache_publication() 
     impl ConsumerRuntime for NullTopic {
         fn heartbeat_data(&self) -> ConsumerData {
             ConsumerData {
-                subscription_data_set: Some(std::collections::HashSet::from([Some(
-                    SubscriptionData::default(),
-                )])),
+                subscription_data_set: Some(rocketmq_classic_protocol::SharedValue::from(
+                    std::collections::HashSet::from([Some(
+                        rocketmq_classic_protocol::SharedValue::from(SubscriptionData::default()),
+                    )]),
+                )),
                 ..Default::default()
             }
         }

@@ -2,11 +2,24 @@ use std::collections::HashSet;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::marker::PhantomData;
 
+use crate::SharedValue;
 use crate::codes::JavaEnumLookupError;
 use rocketmq_classic_common::serde_fastjson;
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, de};
 use std::fmt;
+
+pub type SubscriptionTagSet = HashSet<Option<String>>;
+pub type SubscriptionCodeSet = HashSet<Option<i32>>;
+pub type SharedSubscriptionTagSet = SharedValue<SubscriptionTagSet>;
+pub type SharedSubscriptionCodeSet = SharedValue<SubscriptionCodeSet>;
+pub type ConsumerSubscriptionDataSet = HashSet<Option<SharedValue<SubscriptionData>>>;
+pub type SharedConsumerSubscriptionDataSet = SharedValue<ConsumerSubscriptionDataSet>;
+pub type ProducerDataSet = HashSet<Option<SharedValue<ProducerData>>>;
+pub type SharedProducerDataSet = SharedValue<ProducerDataSet>;
+pub type HeartbeatConsumerDataSet = HashSet<Option<SharedValue<ConsumerData>>>;
+pub type SharedHeartbeatConsumerDataSet = SharedValue<HeartbeatConsumerDataSet>;
+type SharedIdentityNullableSet<T> = SharedValue<HashSet<Option<SharedValue<T>>>>;
 
 macro_rules! impl_java_enum_api {
     ($enum_type:ident, $java_class:literal, $count:literal, $($variant:ident => $name:literal = $ordinal:literal),+ $(,)?) => {
@@ -51,7 +64,7 @@ macro_rules! impl_java_enum_api {
     };
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SubscriptionData {
     #[serde(default, deserialize_with = "serde_fastjson::deserialize_bool")]
@@ -69,17 +82,17 @@ pub struct SubscriptionData {
     )]
     pub sub_string: Option<String>,
     #[serde(
-        default = "empty_tags",
+        default = "empty_shared_tags",
         deserialize_with = "serde_fastjson::deserialize_optional_nullable_string_set",
         skip_serializing_if = "Option::is_none"
     )]
-    pub tags_set: Option<HashSet<Option<String>>>,
+    pub tags_set: Option<SharedSubscriptionTagSet>,
     #[serde(
-        default = "empty_codes",
+        default = "empty_shared_codes",
         deserialize_with = "serde_fastjson::deserialize_optional_nullable_int_set",
         skip_serializing_if = "Option::is_none"
     )]
-    pub code_set: Option<HashSet<Option<i32>>>,
+    pub code_set: Option<SharedSubscriptionCodeSet>,
     #[serde(
         default = "current_subscription_version",
         deserialize_with = "serde_fastjson::deserialize_i64_reject_object"
@@ -154,8 +167,8 @@ impl<'de> Deserialize<'de> for SubscriptionData {
             class_filter_mode: fields.class_filter_mode,
             topic: fields.topic,
             sub_string: fields.sub_string,
-            tags_set: fields.tags_set,
-            code_set: fields.code_set,
+            tags_set: fields.tags_set.map(SharedValue::from),
+            code_set: fields.code_set.map(SharedValue::from),
             sub_version: fields.sub_version,
             expression_type: fields.expression_type,
             filter_class_source: fields.filter_class_source,
@@ -175,6 +188,27 @@ impl PartialEq for SubscriptionData {
     }
 }
 
+impl Clone for SubscriptionData {
+    fn clone(&self) -> Self {
+        Self {
+            class_filter_mode: self.class_filter_mode,
+            topic: self.topic.clone(),
+            sub_string: self.sub_string.clone(),
+            tags_set: self
+                .tags_set
+                .as_ref()
+                .map(|set| SharedValue::from(set.snapshot())),
+            code_set: self
+                .code_set
+                .as_ref()
+                .map(|set| SharedValue::from(set.snapshot())),
+            sub_version: self.sub_version,
+            expression_type: self.expression_type.clone(),
+            filter_class_source: self.filter_class_source.clone(),
+        }
+    }
+}
+
 impl Eq for SubscriptionData {}
 
 impl Default for SubscriptionData {
@@ -183,8 +217,8 @@ impl Default for SubscriptionData {
             class_filter_mode: false,
             topic: None,
             sub_string: None,
-            tags_set: empty_tags(),
-            code_set: empty_codes(),
+            tags_set: empty_shared_tags(),
+            code_set: empty_shared_codes(),
             sub_version: current_subscription_version(),
             expression_type: default_expression_type(),
             filter_class_source: None,
@@ -197,10 +231,44 @@ impl Hash for SubscriptionData {
         self.class_filter_mode.hash(state);
         self.topic.hash(state);
         self.sub_string.hash(state);
-        hash_optional_set(&self.tags_set, state);
-        hash_optional_set(&self.code_set, state);
+        hash_optional_shared_set(&self.tags_set, state);
+        hash_optional_shared_set(&self.code_set, state);
         self.sub_version.hash(state);
         self.expression_type.hash(state);
+    }
+}
+
+impl<T> PartialEq for SharedValue<HashSet<T>>
+where
+    T: Clone + Eq + Hash,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.snapshot() == other.snapshot()
+    }
+}
+
+impl<T> Eq for SharedValue<HashSet<T>> where T: Clone + Eq + Hash {}
+
+impl<T> Hash for SharedValue<HashSet<T>>
+where
+    T: Hash,
+{
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.with(|values| hash_set(values, state));
+    }
+}
+
+impl PartialEq for SharedValue<SubscriptionData> {
+    fn eq(&self, other: &Self) -> bool {
+        self.snapshot() == other.snapshot()
+    }
+}
+
+impl Eq for SharedValue<SubscriptionData> {}
+
+impl Hash for SharedValue<SubscriptionData> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.snapshot().hash(state);
     }
 }
 
@@ -231,17 +299,21 @@ impl SubscriptionData {
         self.sub_string = value;
     }
 
-    pub fn get_tags_set(&self) -> Option<&HashSet<Option<String>>> {
-        self.tags_set.as_ref()
+    pub fn get_tags_set(&self) -> Option<SharedSubscriptionTagSet> {
+        self.tags_set.clone()
     }
 
-    /// Borrows the owned tag Set mutably for Java-compatible getter mutations.
-    pub fn get_tags_set_mut(&mut self) -> Option<&mut HashSet<Option<String>>> {
-        self.tags_set.as_mut()
+    /// Returns a shared tag Set handle for Java-compatible getter mutations.
+    pub fn get_tags_set_mut(&mut self) -> Option<SharedSubscriptionTagSet> {
+        self.tags_set.clone()
     }
 
-    pub fn set_tags_set(&mut self, value: Option<HashSet<Option<String>>>) {
+    pub fn set_tags_set(&mut self, value: Option<SharedSubscriptionTagSet>) {
         self.tags_set = value;
+    }
+
+    pub fn set_tags_set_owned(&mut self, value: Option<SubscriptionTagSet>) {
+        self.tags_set = value.map(SharedValue::from);
     }
 
     pub fn get_sub_version(&self) -> i64 {
@@ -252,17 +324,21 @@ impl SubscriptionData {
         self.sub_version = value;
     }
 
-    pub fn get_code_set(&self) -> Option<&HashSet<Option<i32>>> {
-        self.code_set.as_ref()
+    pub fn get_code_set(&self) -> Option<SharedSubscriptionCodeSet> {
+        self.code_set.clone()
     }
 
-    /// Borrows the owned code Set mutably for Java-compatible getter mutations.
-    pub fn get_code_set_mut(&mut self) -> Option<&mut HashSet<Option<i32>>> {
-        self.code_set.as_mut()
+    /// Returns a shared code Set handle for Java-compatible getter mutations.
+    pub fn get_code_set_mut(&mut self) -> Option<SharedSubscriptionCodeSet> {
+        self.code_set.clone()
     }
 
-    pub fn set_code_set(&mut self, value: Option<HashSet<Option<i32>>>) {
+    pub fn set_code_set(&mut self, value: Option<SharedSubscriptionCodeSet>) {
         self.code_set = value;
+    }
+
+    pub fn set_code_set_owned(&mut self, value: Option<SubscriptionCodeSet>) {
+        self.code_set = value.map(SharedValue::from);
     }
 
     pub fn get_expression_type(&self) -> Option<&str> {
@@ -300,7 +376,7 @@ impl SubscriptionData {
             .wrapping_add(if self.class_filter_mode { 1231 } else { 1237 });
         hash = hash
             .wrapping_mul(31)
-            .wrapping_add(java_optional_set_hash(&self.code_set, |value| {
+            .wrapping_add(java_optional_shared_set_hash(&self.code_set, |value| {
                 value.unwrap_or(0)
             }));
         hash = hash.wrapping_mul(31).wrapping_add(
@@ -311,7 +387,7 @@ impl SubscriptionData {
         );
         hash = hash
             .wrapping_mul(31)
-            .wrapping_add(java_optional_set_hash(&self.tags_set, |value| {
+            .wrapping_add(java_optional_shared_set_hash(&self.tags_set, |value| {
                 value.as_deref().map(java_string_hash_code).unwrap_or(0)
             }));
         hash = hash.wrapping_mul(31).wrapping_add(
@@ -361,14 +437,16 @@ impl SubscriptionData {
     }
 }
 
-fn java_optional_set_hash<T>(
-    values: &Option<HashSet<T>>,
+fn java_optional_shared_set_hash<T>(
+    values: &Option<SharedValue<HashSet<T>>>,
     mut value_hash: impl FnMut(&T) -> i32,
 ) -> i32 {
     values.as_ref().map_or(0, |values| {
-        values
-            .iter()
-            .fold(0i32, |hash, value| hash.wrapping_add(value_hash(value)))
+        values.with(|values| {
+            values
+                .iter()
+                .fold(0i32, |hash, value| hash.wrapping_add(value_hash(value)))
+        })
     })
 }
 
@@ -398,11 +476,12 @@ fn java_string_compare(left: &str, right: &str) -> i32 {
     }
 }
 
-fn java_string_set_to_string(values: &Option<HashSet<Option<String>>>) -> String {
+fn java_string_set_to_string(values: &Option<SharedSubscriptionTagSet>) -> String {
     let Some(values) = values else {
         return "null".to_owned();
     };
-    let mut values = values
+    let snapshot = values.snapshot();
+    let mut values = snapshot
         .iter()
         .map(|value| value.as_deref())
         .collect::<Vec<_>>();
@@ -422,11 +501,12 @@ fn java_string_set_to_string(values: &Option<HashSet<Option<String>>>) -> String
     )
 }
 
-fn java_integer_set_to_string(values: &Option<HashSet<Option<i32>>>) -> String {
+fn java_integer_set_to_string(values: &Option<SharedSubscriptionCodeSet>) -> String {
     let Some(values) = values else {
         return "null".to_owned();
     };
-    let mut values = values.iter().copied().collect::<Vec<_>>();
+    let snapshot = values.snapshot();
+    let mut values = snapshot.iter().copied().collect::<Vec<_>>();
     values.sort_unstable();
     format!(
         "[{}]",
@@ -465,31 +545,14 @@ fn java_hash_set_to_string<T>(
     )
 }
 
-fn java_vec_to_string<T>(
-    values: &Option<Vec<Option<T>>>,
-    mut item_to_string: impl FnMut(&T) -> String,
+fn java_shared_hash_set_to_string<T: Clone>(
+    values: &Option<SharedValue<HashSet<Option<T>>>>,
+    item_to_string: impl FnMut(&T) -> String,
 ) -> String {
     let Some(values) = values else {
         return "null".to_owned();
     };
-    let mut values = values
-        .iter()
-        .map(|value| {
-            value.as_ref().map_or_else(
-                || (0, "null".to_owned()),
-                |value| (1, item_to_string(value)),
-            )
-        })
-        .collect::<Vec<_>>();
-    values.sort();
-    format!(
-        "[{}]",
-        values
-            .into_iter()
-            .map(|(_, value)| value)
-            .collect::<Vec<_>>()
-            .join(", ")
-    )
+    java_hash_set_to_string(&Some(values.snapshot()), item_to_string)
 }
 
 fn hash_set<T: Hash, H: Hasher>(values: &HashSet<T>, state: &mut H) {
@@ -505,11 +568,14 @@ fn hash_set<T: Hash, H: Hasher>(values: &HashSet<T>, state: &mut H) {
     hashes.hash(state);
 }
 
-fn hash_optional_set<T: Hash, H: Hasher>(values: &Option<HashSet<T>>, state: &mut H) {
+fn hash_optional_shared_set<T: Hash, H: Hasher>(
+    values: &Option<SharedValue<HashSet<T>>>,
+    state: &mut H,
+) {
     match values {
         Some(values) => {
             true.hash(state);
-            hash_set(values, state);
+            values.with(|values| hash_set(values, state));
         }
         None => false.hash(state),
     }
@@ -521,6 +587,14 @@ fn empty_tags() -> Option<HashSet<Option<String>>> {
 
 fn empty_codes() -> Option<HashSet<Option<i32>>> {
     Some(HashSet::new())
+}
+
+fn empty_shared_tags() -> Option<SharedSubscriptionTagSet> {
+    Some(SharedValue::default())
+}
+
+fn empty_shared_codes() -> Option<SharedSubscriptionCodeSet> {
+    Some(SharedValue::default())
 }
 
 fn current_subscription_version() -> i64 {
@@ -789,6 +863,20 @@ impl<'de> Deserialize<'de> for ProducerData {
     }
 }
 
+impl PartialEq for SharedValue<ProducerData> {
+    fn eq(&self, other: &Self) -> bool {
+        self.ptr_eq(other)
+    }
+}
+
+impl Eq for SharedValue<ProducerData> {}
+
+impl Hash for SharedValue<ProducerData> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.hash_identity(state);
+    }
+}
+
 impl ProducerData {
     pub fn get_group_name(&self) -> Option<&str> {
         self.group_name.as_deref()
@@ -814,7 +902,7 @@ impl ProducerData {
 /// fn require_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
 /// fn main() { require_java_identity::<ConsumerData>(); }
 /// ```
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsumerData {
     #[serde(
@@ -846,7 +934,7 @@ pub struct ConsumerData {
         deserialize_with = "deserialize_nullable_hash_set_with_null",
         skip_serializing_if = "Option::is_none"
     )]
-    pub subscription_data_set: Option<HashSet<Option<SubscriptionData>>>,
+    pub subscription_data_set: Option<SharedConsumerSubscriptionDataSet>,
     #[serde(default, deserialize_with = "serde_fastjson::deserialize_bool")]
     pub unit_mode: bool,
 }
@@ -886,9 +974,52 @@ impl<'de> Deserialize<'de> for ConsumerData {
             consume_type: fields.consume_type,
             message_model: fields.message_model,
             consume_from_where: fields.consume_from_where,
-            subscription_data_set: fields.subscription_data_set,
+            subscription_data_set: fields.subscription_data_set.map(|set| {
+                SharedValue::from(
+                    set.into_iter()
+                        .map(|subscription| subscription.map(SharedValue::from))
+                        .collect::<ConsumerSubscriptionDataSet>(),
+                )
+            }),
             unit_mode: fields.unit_mode,
         })
+    }
+}
+
+impl PartialEq for SharedValue<ConsumerData> {
+    fn eq(&self, other: &Self) -> bool {
+        self.ptr_eq(other)
+    }
+}
+
+impl Eq for SharedValue<ConsumerData> {}
+
+impl Hash for SharedValue<ConsumerData> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.hash_identity(state);
+    }
+}
+
+impl Clone for ConsumerData {
+    fn clone(&self) -> Self {
+        let subscription_data_set = self.subscription_data_set.as_ref().map(|set| {
+            SharedValue::from(
+                set.snapshot()
+                    .into_iter()
+                    .map(|subscription| {
+                        subscription.map(|subscription| SharedValue::from(subscription.snapshot()))
+                    })
+                    .collect::<ConsumerSubscriptionDataSet>(),
+            )
+        });
+        Self {
+            group_name: self.group_name.clone(),
+            consume_type: self.consume_type,
+            message_model: self.message_model,
+            consume_from_where: self.consume_from_where,
+            subscription_data_set,
+            unit_mode: self.unit_mode,
+        }
     }
 }
 
@@ -899,7 +1030,7 @@ impl Default for ConsumerData {
             consume_type: None,
             message_model: None,
             consume_from_where: None,
-            subscription_data_set: empty_subscriptions(),
+            subscription_data_set: empty_shared_subscriptions(),
             unit_mode: false,
         }
     }
@@ -938,19 +1069,30 @@ impl ConsumerData {
         self.consume_from_where = value;
     }
 
-    pub fn get_subscription_data_set(&self) -> Option<&HashSet<Option<SubscriptionData>>> {
-        self.subscription_data_set.as_ref()
+    pub fn get_subscription_data_set(&self) -> Option<SharedConsumerSubscriptionDataSet> {
+        self.subscription_data_set.clone()
     }
 
-    /// Borrows the owned subscription Set mutably for Java-compatible getter mutations.
-    pub fn get_subscription_data_set_mut(
-        &mut self,
-    ) -> Option<&mut HashSet<Option<SubscriptionData>>> {
-        self.subscription_data_set.as_mut()
+    /// Returns a shared subscription Set handle for Java-compatible getter mutations.
+    pub fn get_subscription_data_set_mut(&mut self) -> Option<SharedConsumerSubscriptionDataSet> {
+        self.subscription_data_set.clone()
     }
 
-    pub fn set_subscription_data_set(&mut self, value: Option<HashSet<Option<SubscriptionData>>>) {
+    pub fn set_subscription_data_set(&mut self, value: Option<SharedConsumerSubscriptionDataSet>) {
         self.subscription_data_set = value;
+    }
+
+    pub fn set_subscription_data_set_owned(
+        &mut self,
+        value: Option<HashSet<Option<SubscriptionData>>>,
+    ) {
+        self.subscription_data_set = value.map(|set| {
+            SharedValue::from(
+                set.into_iter()
+                    .map(|subscription| subscription.map(SharedValue::from))
+                    .collect::<ConsumerSubscriptionDataSet>(),
+            )
+        });
     }
 
     pub fn is_unit_mode(&self) -> bool {
@@ -975,8 +1117,8 @@ impl ConsumerData {
                 .map(consume_from_where_java_name)
                 .unwrap_or("null"),
             self.unit_mode,
-            java_hash_set_to_string(&self.subscription_data_set, |subscription| {
-                subscription.java_to_string()
+            java_shared_hash_set_to_string(&self.subscription_data_set, |subscription| {
+                subscription.with(SubscriptionData::java_to_string)
             }),
         )
     }
@@ -1015,6 +1157,10 @@ fn empty_subscriptions() -> Option<HashSet<Option<SubscriptionData>>> {
     Some(HashSet::new())
 }
 
+fn empty_shared_subscriptions() -> Option<SharedConsumerSubscriptionDataSet> {
+    Some(SharedValue::default())
+}
+
 /// Java inherits identity based `Object.equals`/`hashCode` for this DTO, so
 /// the native type intentionally has no structural equality or hash traits.
 ///
@@ -1023,7 +1169,7 @@ fn empty_subscriptions() -> Option<HashSet<Option<SubscriptionData>>> {
 /// fn require_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
 /// fn main() { require_java_identity::<HeartbeatData>(); }
 /// ```
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HeartbeatData {
     #[serde(
@@ -1036,13 +1182,13 @@ pub struct HeartbeatData {
     #[serde(default = "empty_producers", skip_serializing_if = "Option::is_none")]
     /// Java ProducerData inherits identity equality, so repeated equal wire
     /// rows must remain distinct after decoding.
-    #[serde(deserialize_with = "deserialize_identity_set_with_null")]
-    pub producer_data_set: Option<Vec<Option<ProducerData>>>,
+    #[serde(deserialize_with = "deserialize_identity_shared_hash_set_with_null")]
+    pub producer_data_set: Option<SharedProducerDataSet>,
     #[serde(default = "empty_consumers", skip_serializing_if = "Option::is_none")]
     /// Java ConsumerData has object identity equality. Preserve its wire
     /// multiplicity rather than deduplicating structurally equal metadata.
-    #[serde(deserialize_with = "deserialize_identity_set_with_null")]
-    pub consumer_data_set: Option<Vec<Option<ConsumerData>>>,
+    #[serde(deserialize_with = "deserialize_identity_shared_hash_set_with_null")]
+    pub consumer_data_set: Option<SharedHeartbeatConsumerDataSet>,
     #[serde(default, deserialize_with = "serde_fastjson::deserialize_i32")]
     pub heartbeat_fingerprint: i32,
     #[serde(
@@ -1064,14 +1210,14 @@ struct HeartbeatDataFields {
     client_id: Option<String>,
     #[serde(
         default = "empty_producers",
-        deserialize_with = "deserialize_identity_set_with_null"
+        deserialize_with = "deserialize_identity_shared_hash_set_with_null"
     )]
-    producer_data_set: Option<Vec<Option<ProducerData>>>,
+    producer_data_set: Option<SharedProducerDataSet>,
     #[serde(
         default = "empty_consumers",
-        deserialize_with = "deserialize_identity_set_with_null"
+        deserialize_with = "deserialize_identity_shared_hash_set_with_null"
     )]
-    consumer_data_set: Option<Vec<Option<ConsumerData>>>,
+    consumer_data_set: Option<SharedHeartbeatConsumerDataSet>,
     #[serde(default, deserialize_with = "serde_fastjson::deserialize_i32")]
     heartbeat_fingerprint: i32,
     #[serde(
@@ -1268,6 +1414,34 @@ impl Default for HeartbeatData {
     }
 }
 
+impl Clone for HeartbeatData {
+    fn clone(&self) -> Self {
+        let producer_data_set = self.producer_data_set.as_ref().map(|set| {
+            SharedValue::from(
+                set.snapshot()
+                    .into_iter()
+                    .map(|producer| producer.map(|producer| SharedValue::from(producer.snapshot())))
+                    .collect::<ProducerDataSet>(),
+            )
+        });
+        let consumer_data_set = self.consumer_data_set.as_ref().map(|set| {
+            SharedValue::from(
+                set.snapshot()
+                    .into_iter()
+                    .map(|consumer| consumer.map(|consumer| SharedValue::from(consumer.snapshot())))
+                    .collect::<HeartbeatConsumerDataSet>(),
+            )
+        });
+        Self {
+            client_id: self.client_id.clone(),
+            producer_data_set,
+            consumer_data_set,
+            heartbeat_fingerprint: self.heartbeat_fingerprint,
+            is_without_sub: self.is_without_sub,
+        }
+    }
+}
+
 impl HeartbeatData {
     pub fn get_client_id(&self) -> Option<&str> {
         self.client_id.as_deref()
@@ -1277,30 +1451,52 @@ impl HeartbeatData {
         self.client_id = value;
     }
 
-    pub fn get_producer_data_set(&self) -> Option<&[Option<ProducerData>]> {
-        self.producer_data_set.as_deref()
+    pub fn get_producer_data_set(&self) -> Option<SharedProducerDataSet> {
+        self.producer_data_set.clone()
     }
 
-    /// Borrows the owned producer rows mutably for Java-compatible getter mutations.
-    pub fn get_producer_data_set_mut(&mut self) -> Option<&mut Vec<Option<ProducerData>>> {
-        self.producer_data_set.as_mut()
+    /// Returns the shared producer Set handle for Java-compatible getter mutations.
+    pub fn get_producer_data_set_mut(&mut self) -> Option<SharedProducerDataSet> {
+        self.producer_data_set.clone()
     }
 
-    pub fn set_producer_data_set(&mut self, value: Option<Vec<Option<ProducerData>>>) {
+    pub fn set_producer_data_set(&mut self, value: Option<SharedProducerDataSet>) {
         self.producer_data_set = value;
     }
 
-    pub fn get_consumer_data_set(&self) -> Option<&[Option<ConsumerData>]> {
-        self.consumer_data_set.as_deref()
+    pub fn set_producer_data_set_owned(&mut self, value: Option<Vec<Option<ProducerData>>>) {
+        self.producer_data_set = value.map(|values| {
+            SharedValue::from(
+                values
+                    .into_iter()
+                    .map(|producer| producer.map(SharedValue::from))
+                    .collect::<ProducerDataSet>(),
+            )
+        });
     }
 
-    /// Borrows the owned consumer rows mutably for Java-compatible getter mutations.
-    pub fn get_consumer_data_set_mut(&mut self) -> Option<&mut Vec<Option<ConsumerData>>> {
-        self.consumer_data_set.as_mut()
+    pub fn get_consumer_data_set(&self) -> Option<SharedHeartbeatConsumerDataSet> {
+        self.consumer_data_set.clone()
     }
 
-    pub fn set_consumer_data_set(&mut self, value: Option<Vec<Option<ConsumerData>>>) {
+    /// Returns the shared consumer Set handle for Java-compatible getter mutations.
+    pub fn get_consumer_data_set_mut(&mut self) -> Option<SharedHeartbeatConsumerDataSet> {
+        self.consumer_data_set.clone()
+    }
+
+    pub fn set_consumer_data_set(&mut self, value: Option<SharedHeartbeatConsumerDataSet>) {
         self.consumer_data_set = value;
+    }
+
+    pub fn set_consumer_data_set_owned(&mut self, value: Option<Vec<Option<ConsumerData>>>) {
+        self.consumer_data_set = value.map(|values| {
+            SharedValue::from(
+                values
+                    .into_iter()
+                    .map(|consumer| consumer.map(SharedValue::from))
+                    .collect::<HeartbeatConsumerDataSet>(),
+            )
+        });
     }
 
     pub fn get_heartbeat_fingerprint(&self) -> i32 {
@@ -1376,8 +1572,12 @@ impl HeartbeatData {
         format!(
             "HeartbeatData [clientID={}, producerDataSet={}, consumerDataSet={}]",
             java_nullable_string(&self.client_id),
-            java_vec_to_string(&self.producer_data_set, ProducerData::java_to_string),
-            java_vec_to_string(&self.consumer_data_set, ConsumerData::java_to_string),
+            java_shared_hash_set_to_string(&self.producer_data_set, |producer| {
+                producer.with(ProducerData::java_to_string)
+            }),
+            java_shared_hash_set_to_string(&self.consumer_data_set, |consumer| {
+                consumer.with(ConsumerData::java_to_string)
+            }),
         )
     }
 
@@ -1518,6 +1718,26 @@ where
     deserializer.deserialize_any(IdentitySetVisitor(PhantomData))
 }
 
+fn deserialize_identity_shared_hash_set_with_null<'de, T, D>(
+    deserializer: D,
+) -> Result<Option<SharedIdentityNullableSet<T>>, D::Error>
+where
+    T: Deserialize<'de>,
+    SharedValue<T>: Eq + Hash,
+    D: Deserializer<'de>,
+{
+    deserialize_identity_set_with_null::<T, D>(deserializer).map(|values| {
+        values.map(|values| {
+            SharedValue::from(
+                values
+                    .into_iter()
+                    .map(|value| value.map(SharedValue::from))
+                    .collect::<HashSet<Option<SharedValue<T>>>>(),
+            )
+        })
+    })
+}
+
 fn deserialize_nullable_hash_set_with_null<'de, T, D>(
     deserializer: D,
 ) -> Result<Option<HashSet<Option<T>>>, D::Error>
@@ -1529,12 +1749,12 @@ where
         .map(|values| values.map(|values| values.into_iter().collect()))
 }
 
-fn empty_producers() -> Option<Vec<Option<ProducerData>>> {
-    Some(Vec::new())
+fn empty_producers() -> Option<SharedProducerDataSet> {
+    Some(SharedValue::default())
 }
 
-fn empty_consumers() -> Option<Vec<Option<ConsumerData>>> {
-    Some(Vec::new())
+fn empty_consumers() -> Option<SharedHeartbeatConsumerDataSet> {
+    Some(SharedValue::default())
 }
 
 #[cfg(test)]
@@ -1567,33 +1787,45 @@ mod tests {
                 case["filterClassSourceNull"]
             );
             assert_eq!(
-                value.tags_set.as_ref().is_some_and(HashSet::is_empty),
+                value
+                    .tags_set
+                    .as_ref()
+                    .is_some_and(|values| values.with(HashSet::is_empty)),
                 case["tagsEmpty"]
             );
             assert_eq!(
-                value.code_set.as_ref().is_some_and(HashSet::is_empty),
+                value
+                    .code_set
+                    .as_ref()
+                    .is_some_and(|values| values.with(HashSet::is_empty)),
                 case["codeEmpty"]
             );
             assert_eq!(
-                value.tags_set.as_ref().map(HashSet::len),
+                value
+                    .tags_set
+                    .as_ref()
+                    .map(|values| values.with(HashSet::len)),
                 case["tagsCount"].as_u64().map(|count| count as usize)
             );
             assert_eq!(
-                value.code_set.as_ref().map(HashSet::len),
+                value
+                    .code_set
+                    .as_ref()
+                    .map(|values| values.with(HashSet::len)),
                 case["codeCount"].as_u64().map(|count| count as usize)
             );
             assert_eq!(
                 value
                     .tags_set
                     .as_ref()
-                    .is_some_and(|values| values.contains(&None)),
+                    .is_some_and(|values| values.with(|values| values.contains(&None))),
                 case["tagsHasNull"]
             );
             assert_eq!(
                 value
                     .code_set
                     .as_ref()
-                    .is_some_and(|values| values.contains(&None)),
+                    .is_some_and(|values| values.with(|values| values.contains(&None))),
                 case["codeHasNull"]
             );
             if case["versionCurrent"] == true {
@@ -1665,11 +1897,17 @@ mod tests {
                 case["subString"].as_str().map(str::to_owned)
             );
             assert_eq!(
-                value.tags_set.as_ref().is_some_and(HashSet::is_empty),
+                value
+                    .tags_set
+                    .as_ref()
+                    .is_some_and(|values| values.with(HashSet::is_empty)),
                 case["tagsEmpty"]
             );
             assert_eq!(
-                value.code_set.as_ref().is_some_and(HashSet::is_empty),
+                value
+                    .code_set
+                    .as_ref()
+                    .is_some_and(|values| values.with(HashSet::is_empty)),
                 case["codeEmpty"]
             );
             assert_eq!(
@@ -1771,6 +2009,9 @@ mod tests {
     }
 
     #[test]
+    // Java HashSet stores mutable DTO references, so this test intentionally
+    // exercises interior-mutable structural keys after insertion.
+    #[allow(clippy::mutable_key_type)]
     fn heartbeat_dto_public_accessors_match_invoked_java() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
@@ -1801,10 +2042,12 @@ mod tests {
         subscription.set_sub_string(Some("*".to_owned()));
         let mut tags = HashSet::new();
         tags.insert(Some("gold".to_owned()));
-        subscription.set_tags_set(Some(tags));
+        let tags = SharedValue::from(tags);
+        subscription.set_tags_set(Some(tags.clone()));
         let mut codes = HashSet::new();
         codes.insert(Some(7));
-        subscription.set_code_set(Some(codes));
+        let codes = SharedValue::from(codes);
+        subscription.set_code_set(Some(codes.clone()));
         subscription.set_sub_version(42);
         subscription.set_expression_type(Some("SQL92".to_owned()));
         subscription.set_filter_class_source(Some("source-a".to_owned()));
@@ -1821,9 +2064,11 @@ mod tests {
             }),
             subscription_case["values"]
         );
-        // Java getters return the same mutable Sets; Rust owns them and lends borrows.
+        // The Rust handles preserve the same caller/getter Set alias Java exposes.
         assert_eq!(subscription_case["getterReturnsAssignedTagsSet"], true);
         assert_eq!(subscription_case["getterReturnsAssignedCodeSet"], true);
+        assert!(tags.ptr_eq(&subscription.get_tags_set().unwrap()));
+        assert!(codes.ptr_eq(&subscription.get_code_set().unwrap()));
         assert_eq!(subscription_case["externalTagMutationVisible"], true);
         assert_eq!(
             subscription_case["tagGetterMutationVisibleToAssignedSet"],
@@ -1834,16 +2079,22 @@ mod tests {
             subscription_case["codeGetterMutationVisibleToAssignedSet"],
             true
         );
-        let tags_mut = subscription.get_tags_set_mut().unwrap();
-        tags_mut.insert(Some("silver".to_owned()));
-        tags_mut.insert(Some("bronze".to_owned()));
-        let mut mutated_tags = tags_mut.iter().cloned().collect::<Vec<_>>();
+        tags.with_mut(|tags| {
+            tags.insert(Some("silver".to_owned()));
+        });
+        subscription.get_tags_set_mut().unwrap().with_mut(|tags| {
+            tags.insert(Some("bronze".to_owned()));
+        });
+        let mut mutated_tags = tags.snapshot().into_iter().collect::<Vec<_>>();
         mutated_tags.sort();
         assert_eq!(json!(mutated_tags), subscription_case["mutatedTags"]);
-        let codes_mut = subscription.get_code_set_mut().unwrap();
-        codes_mut.insert(Some(9));
-        codes_mut.insert(Some(11));
-        let mut mutated_codes = codes_mut.iter().copied().collect::<Vec<_>>();
+        codes.with_mut(|codes| {
+            codes.insert(Some(9));
+        });
+        subscription.get_code_set_mut().unwrap().with_mut(|codes| {
+            codes.insert(Some(11));
+        });
+        let mut mutated_codes = codes.snapshot().into_iter().collect::<Vec<_>>();
         mutated_codes.sort();
         assert_eq!(json!(mutated_codes), subscription_case["mutatedCodes"]);
         subscription.set_class_filter_mode(false);
@@ -1890,7 +2141,7 @@ mod tests {
         assert!(
             consumer
                 .get_subscription_data_set()
-                .is_some_and(HashSet::is_empty)
+                .is_some_and(|set| set.with(HashSet::is_empty))
         );
         assert!(!consumer.is_unit_mode());
         consumer.set_group_name(Some("workers".to_owned()));
@@ -1901,8 +2152,10 @@ mod tests {
         let mut subscription =
             SubscriptionData::new(Some("orders".to_owned()), Some("*".to_owned()));
         subscription.set_sub_version(42);
-        subscriptions.insert(Some(subscription));
-        consumer.set_subscription_data_set(Some(subscriptions));
+        let subscription = SharedValue::from(subscription);
+        subscriptions.insert(Some(subscription.clone()));
+        let subscriptions = SharedValue::from(subscriptions);
+        consumer.set_subscription_data_set(Some(subscriptions.clone()));
         consumer.set_unit_mode(true);
         assert_eq!(
             json!({
@@ -1915,22 +2168,55 @@ mod tests {
             }),
             consumer_case["values"]
         );
-        // Java returns the assigned mutable Set; Rust owns the Set value.
+        // Caller/getter Sets and nested DTO handles retain their Java aliases.
         assert_eq!(consumer_case["getterReturnsAssignedSubscriptionSet"], true);
+        assert_eq!(
+            consumer_case["getterReturnsAssignedSubscriptionElement"],
+            true
+        );
+        assert!(subscriptions.ptr_eq(&consumer.get_subscription_data_set().unwrap()));
+        let retained_subscription = consumer
+            .get_subscription_data_set()
+            .unwrap()
+            .with(|set| set.iter().flatten().next().unwrap().clone());
+        assert!(subscription.ptr_eq(&retained_subscription));
+        subscription.with_mut(|value| value.set_sub_version(43));
+        assert_eq!(
+            consumer_case["callerSubscriptionMutationVisibleThroughGetter"],
+            true
+        );
+        assert_eq!(
+            retained_subscription.with(|value| value.get_sub_version()),
+            43
+        );
+        retained_subscription.with_mut(|value| value.set_sub_version(44));
+        assert_eq!(
+            consumer_case["getterSubscriptionMutationVisibleToCaller"],
+            true
+        );
+        assert_eq!(subscription.with(|value| value.get_sub_version()), 44);
         assert_eq!(consumer_case["externalSubscriptionMutationVisible"], true);
         assert_eq!(
             consumer_case["subscriptionGetterMutationVisibleToAssignedSet"],
             true
         );
-        let subscription_set_mut = consumer.get_subscription_data_set_mut().unwrap();
-        for topic in ["payments", "refunds"] {
-            subscription_set_mut.insert(Some(SubscriptionData::new(
-                Some(topic.to_owned()),
-                Some("*".to_owned()),
-            )));
-        }
+        subscriptions.with_mut(|subscriptions| {
+            let mut payment =
+                SubscriptionData::new(Some("payments".to_owned()), Some("*".to_owned()));
+            payment.set_sub_version(43);
+            subscriptions.insert(Some(SharedValue::from(payment)));
+        });
+        consumer
+            .get_subscription_data_set_mut()
+            .unwrap()
+            .with_mut(|subscriptions| {
+                let mut refund =
+                    SubscriptionData::new(Some("refunds".to_owned()), Some("*".to_owned()));
+                refund.set_sub_version(44);
+                subscriptions.insert(Some(SharedValue::from(refund)));
+            });
         assert_eq!(
-            subscription_set_mut.len(),
+            subscriptions.with(HashSet::len),
             consumer_case["mutatedSubscriptionDataSetSize"]
                 .as_u64()
                 .unwrap() as usize
@@ -1955,22 +2241,26 @@ mod tests {
         assert!(
             heartbeat
                 .get_producer_data_set()
-                .is_some_and(<[_]>::is_empty)
+                .is_some_and(|set| set.with(HashSet::is_empty))
         );
         assert!(
             heartbeat
                 .get_consumer_data_set()
-                .is_some_and(<[_]>::is_empty)
+                .is_some_and(|set| set.with(HashSet::is_empty))
         );
         assert_eq!(heartbeat.get_heartbeat_fingerprint(), 0);
         assert!(!heartbeat.is_without_sub());
         heartbeat.set_client_id(Some("client-a".to_owned()));
         let mut producer = ProducerData::default();
         producer.set_group_name(Some("producers".to_owned()));
-        heartbeat.set_producer_data_set(Some(vec![Some(producer)]));
+        let producer = SharedValue::from(producer);
+        let producers = SharedValue::from(HashSet::from([Some(producer.clone())]));
+        heartbeat.set_producer_data_set(Some(producers.clone()));
         let mut consumer = ConsumerData::default();
         consumer.set_group_name(Some("workers".to_owned()));
-        heartbeat.set_consumer_data_set(Some(vec![Some(consumer)]));
+        let consumer = SharedValue::from(consumer);
+        let consumers = SharedValue::from(HashSet::from([Some(consumer.clone())]));
+        heartbeat.set_consumer_data_set(Some(consumers.clone()));
         heartbeat.set_heartbeat_fingerprint(7);
         heartbeat.set_without_sub(true);
         assert_eq!(
@@ -1983,9 +2273,59 @@ mod tests {
             }),
             heartbeat_case["values"]
         );
-        // Java returns the assigned mutable Sets; Rust owns vectors for identity-based rows.
+        // Caller/getter Sets and their identity-based elements retain aliases.
         assert_eq!(heartbeat_case["getterReturnsAssignedProducerSet"], true);
         assert_eq!(heartbeat_case["getterReturnsAssignedConsumerSet"], true);
+        assert_eq!(heartbeat_case["getterReturnsAssignedProducer"], true);
+        assert_eq!(heartbeat_case["getterReturnsAssignedConsumer"], true);
+        assert!(producers.ptr_eq(&heartbeat.get_producer_data_set().unwrap()));
+        assert!(consumers.ptr_eq(&heartbeat.get_consumer_data_set().unwrap()));
+        assert!(
+            producer.ptr_eq(&producers.with(|set| set.iter().flatten().next().unwrap().clone()))
+        );
+        assert!(
+            consumer.ptr_eq(&consumers.with(|set| set.iter().flatten().next().unwrap().clone()))
+        );
+        producer.with_mut(|value| value.set_group_name(Some("caller-producer-update".into())));
+        assert_eq!(
+            heartbeat_case["callerProducerMutationVisibleThroughGetter"],
+            true
+        );
+        let retained_producer = producers.with(|set| set.iter().flatten().next().unwrap().clone());
+        assert_eq!(
+            retained_producer.with(|value| value.get_group_name().map(str::to_owned)),
+            Some("caller-producer-update".to_owned())
+        );
+        retained_producer
+            .with_mut(|value| value.set_group_name(Some("getter-producer-update".into())));
+        assert_eq!(
+            heartbeat_case["getterProducerMutationVisibleToCaller"],
+            true
+        );
+        assert_eq!(
+            producer.with(|value| value.get_group_name().map(str::to_owned)),
+            Some("getter-producer-update".to_owned())
+        );
+        consumer.with_mut(|value| value.set_group_name(Some("caller-consumer-update".into())));
+        assert_eq!(
+            heartbeat_case["callerConsumerMutationVisibleThroughGetter"],
+            true
+        );
+        let retained_consumer = consumers.with(|set| set.iter().flatten().next().unwrap().clone());
+        assert_eq!(
+            retained_consumer.with(|value| value.get_group_name().map(str::to_owned)),
+            Some("caller-consumer-update".to_owned())
+        );
+        retained_consumer
+            .with_mut(|value| value.set_group_name(Some("getter-consumer-update".into())));
+        assert_eq!(
+            heartbeat_case["getterConsumerMutationVisibleToCaller"],
+            true
+        );
+        assert_eq!(
+            consumer.with(|value| value.get_group_name().map(str::to_owned)),
+            Some("getter-consumer-update".to_owned())
+        );
         assert_eq!(heartbeat_case["externalProducerMutationVisible"], true);
         assert_eq!(
             heartbeat_case["producerGetterMutationVisibleToAssignedSet"],
@@ -2001,18 +2341,22 @@ mod tests {
             for group in ["producers-b", "producers-c"] {
                 let mut extra = ProducerData::default();
                 extra.set_group_name(Some(group.to_owned()));
-                producer_data_set_mut.push(Some(extra));
+                producer_data_set_mut.with_mut(|set| {
+                    set.insert(Some(SharedValue::from(extra)));
+                });
             }
-            producer_data_set_mut.len()
+            producer_data_set_mut.with(HashSet::len)
         };
         let consumer_data_set_len = {
             let consumer_data_set_mut = heartbeat.get_consumer_data_set_mut().unwrap();
             for group in ["consumers", "admins"] {
                 let mut extra = ConsumerData::default();
                 extra.set_group_name(Some(group.to_owned()));
-                consumer_data_set_mut.push(Some(extra));
+                consumer_data_set_mut.with_mut(|set| {
+                    set.insert(Some(SharedValue::from(extra)));
+                });
             }
-            consumer_data_set_mut.len()
+            consumer_data_set_mut.with(HashSet::len)
         };
         assert_eq!(
             json!({
@@ -2277,7 +2621,7 @@ mod tests {
                 value
                     .subscription_data_set
                     .as_ref()
-                    .is_some_and(HashSet::is_empty),
+                    .is_some_and(|set| set.with(HashSet::is_empty)),
                 case["subscriptionsEmpty"]
             );
             assert_eq!(value.unit_mode, case["unitMode"]);
@@ -2310,7 +2654,7 @@ mod tests {
                 value
                     .producer_data_set
                     .as_ref()
-                    .map_or(-1, |set| set.len() as i64),
+                    .map_or(-1, |set| set.with(HashSet::len) as i64),
                 case["producerCount"]
             );
             assert_eq!(
@@ -2323,7 +2667,7 @@ mod tests {
                 value
                     .consumer_data_set
                     .as_ref()
-                    .map_or(-1, |set| set.len() as i64),
+                    .map_or(-1, |set| set.with(HashSet::len) as i64),
                 case["consumerCount"]
             );
             assert_eq!(value.heartbeat_fingerprint, case["fingerprint"]);
@@ -2370,45 +2714,59 @@ mod tests {
             let data: HeartbeatData =
                 serde_json::from_str(case["rawInput"].as_str().unwrap()).unwrap();
             assert_eq!(
-                data.producer_data_set.as_ref().map(Vec::len),
+                data.producer_data_set
+                    .as_ref()
+                    .map(|set| set.with(HashSet::len)),
                 case["producerCount"].as_u64().map(|count| count as usize),
                 "{} producer count",
                 case["case"]
             );
             assert_eq!(
-                data.producer_data_set
-                    .as_ref()
-                    .is_some_and(|values| values.iter().any(Option::is_none)),
+                data.producer_data_set.as_ref().is_some_and(|values| {
+                    values.with(|values| values.iter().any(Option::is_none))
+                }),
                 case["producerHasNull"],
                 "{} producer null",
                 case["case"]
             );
             assert_eq!(
-                data.consumer_data_set.as_ref().map(Vec::len),
+                data.consumer_data_set
+                    .as_ref()
+                    .map(|set| set.with(HashSet::len)),
                 case["consumerCount"].as_u64().map(|count| count as usize),
                 "{} consumer count",
                 case["case"]
             );
             assert_eq!(
-                data.consumer_data_set
-                    .as_ref()
-                    .is_some_and(|values| values.iter().any(Option::is_none)),
+                data.consumer_data_set.as_ref().is_some_and(|values| {
+                    values.with(|values| values.iter().any(Option::is_none))
+                }),
                 case["consumerHasNull"],
                 "{} consumer null",
                 case["case"]
             );
 
             if let Some(consumers) = data.consumer_data_set.as_ref() {
-                if let Some(consumer) = consumers.iter().flatten().next() {
-                    if case.get("subscriptionCount").is_some() {
-                        let subscriptions = consumer.subscription_data_set.as_ref().unwrap();
-                        assert_eq!(
-                            subscriptions.len(),
-                            case["subscriptionCount"].as_u64().unwrap() as usize
-                        );
-                        assert_eq!(subscriptions.contains(&None), case["subscriptionHasNull"]);
+                consumers.with(|consumers| {
+                    if let Some(consumer) = consumers.iter().flatten().next() {
+                        if case.get("subscriptionCount").is_some() {
+                            consumer.with(|consumer| {
+                                let subscriptions =
+                                    consumer.subscription_data_set.as_ref().unwrap();
+                                subscriptions.with(|subscriptions| {
+                                    assert_eq!(
+                                        subscriptions.len(),
+                                        case["subscriptionCount"].as_u64().unwrap() as usize
+                                    );
+                                    assert_eq!(
+                                        subscriptions.contains(&None),
+                                        case["subscriptionHasNull"]
+                                    );
+                                });
+                            });
+                        }
                     }
-                }
+                });
             }
 
             let encoded = serde_json::to_value(&data).unwrap();
@@ -2550,7 +2908,7 @@ mod tests {
             let expected = case["body"]["consumerDataSet"].as_array().unwrap();
             let data: HeartbeatData = serde_json::from_value(case["body"].clone()).unwrap();
             assert_eq!(
-                data.consumer_data_set.as_ref().unwrap().len(),
+                data.consumer_data_set.as_ref().unwrap().with(HashSet::len),
                 expected.len(),
                 "{}",
                 case["case"]
@@ -2569,21 +2927,22 @@ mod tests {
             client_id: Some("client".into()),
             ..HeartbeatData::default()
         };
-        heartbeat
-            .consumer_data_set
-            .as_mut()
-            .unwrap()
-            .push(Some(ConsumerData {
-                group_name: Some("group".into()),
-                consume_from_where: Some(ConsumeFromWhere::ConsumeFromLastOffset),
-                subscription_data_set: Some(HashSet::from([Some(SubscriptionData {
-                    topic: Some("topic".into()),
-                    sub_string: Some("*".into()),
-                    sub_version: i64::MAX,
-                    ..SubscriptionData::default()
-                })])),
-                ..ConsumerData::default()
-            }));
+        let subscriptions =
+            SharedValue::from(HashSet::from([Some(SharedValue::from(SubscriptionData {
+                topic: Some("topic".into()),
+                sub_string: Some("*".into()),
+                sub_version: i64::MAX,
+                ..SubscriptionData::default()
+            }))]));
+        let consumer = ConsumerData {
+            group_name: Some("group".into()),
+            consume_from_where: Some(ConsumeFromWhere::ConsumeFromLastOffset),
+            subscription_data_set: Some(subscriptions),
+            ..ConsumerData::default()
+        };
+        heartbeat.consumer_data_set = Some(SharedValue::from(HashSet::from([Some(
+            SharedValue::from(consumer),
+        )])));
         let value = serde_json::to_value(&heartbeat).unwrap();
         assert_eq!(value["clientID"], "client");
         assert_eq!(value["withoutSub"], false);

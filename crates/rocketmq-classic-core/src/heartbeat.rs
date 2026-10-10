@@ -1,5 +1,5 @@
 use crate::runtime::{ClientRuntime, RuntimeError};
-use rocketmq_classic_protocol::heartbeat::HeartbeatData;
+use rocketmq_classic_protocol::{SharedValue, heartbeat::HeartbeatData};
 use std::{
     collections::{HashMap, HashSet},
     future::Future,
@@ -70,6 +70,25 @@ struct PeerState {
 
 type PeerFuture<'a> = Pin<Box<dyn Future<Output = Result<bool, RuntimeError>> + Send + 'a>>;
 
+fn shared_set_is_empty<T>(values: &Option<SharedValue<HashSet<T>>>) -> bool {
+    values
+        .as_ref()
+        .is_none_or(|values| values.with(HashSet::is_empty))
+}
+
+fn clear_heartbeat_subscriptions(data: &HeartbeatData) {
+    let Some(consumers) = data.consumer_data_set.as_ref() else {
+        return;
+    };
+    for consumer in consumers.snapshot().into_iter().flatten() {
+        consumer.with_mut(|consumer| {
+            if let Some(subscriptions) = consumer.subscription_data_set.as_ref() {
+                subscriptions.with_mut(HashSet::clear);
+            }
+        });
+    }
+}
+
 /// The fingerprint is client-local change detection, not a server-computed
 /// checksum. Canonical set order is Rust-native; Java HashSet iteration is not
 /// part of the wire contract. Preserve Java's reset fields and UTF-16 hash.
@@ -115,8 +134,8 @@ impl ClientRuntime {
         let Some(mut full) = self.prepare_heartbeat_for_send()? else {
             return Ok(false);
         };
-        if full.producer_data_set.as_ref().is_none_or(Vec::is_empty)
-            && full.consumer_data_set.as_ref().is_none_or(Vec::is_empty)
+        if shared_set_is_empty(&full.producer_data_set)
+            && shared_set_is_empty(&full.consumer_data_set)
         {
             return Ok(false);
         }
@@ -126,13 +145,7 @@ impl ClientRuntime {
         }
         let mut simple = full.clone();
         simple.is_without_sub = true;
-        if let Some(consumers) = simple.consumer_data_set.as_mut() {
-            for consumer in consumers.iter_mut().flatten() {
-                if let Some(subscriptions) = consumer.subscription_data_set.as_mut() {
-                    subscriptions.clear();
-                }
-            }
-        }
+        clear_heartbeat_subscriptions(&simple);
         // Unlike the all-Broker round, the explicit single-peer method does not
         // skip a slave when only producers are registered (Java 5.5.1).
         self.send_heartbeat_peer(broker, address, &full, &simple, v2)
@@ -162,8 +175,8 @@ impl ClientRuntime {
         let Some(mut full) = self.prepare_heartbeat_for_send()? else {
             return Ok(false);
         };
-        if full.producer_data_set.as_ref().is_none_or(Vec::is_empty)
-            && full.consumer_data_set.as_ref().is_none_or(Vec::is_empty)
+        if shared_set_is_empty(&full.producer_data_set)
+            && shared_set_is_empty(&full.consumer_data_set)
         {
             return Ok(false);
         }
@@ -185,14 +198,8 @@ impl ClientRuntime {
         }
         let mut simple = full.clone();
         simple.is_without_sub = true;
-        if let Some(consumers) = simple.consumer_data_set.as_mut() {
-            for consumer in consumers.iter_mut().flatten() {
-                if let Some(subscriptions) = consumer.subscription_data_set.as_mut() {
-                    subscriptions.clear();
-                }
-            }
-        }
-        let has_consumers = !full.consumer_data_set.as_ref().is_none_or(Vec::is_empty);
+        clear_heartbeat_subscriptions(&simple);
+        let has_consumers = !shared_set_is_empty(&full.consumer_data_set);
         let mut peers = Vec::new();
         for (broker, addresses) in &routes.broker_addresses {
             for (id, address) in addresses {
@@ -356,13 +363,19 @@ mod tests {
         ));
         let simple = runtime.prepare_heartbeat_data(true).unwrap();
         assert!(
-            simple.consumer_data_set.as_ref().unwrap()[0]
+            simple
+                .consumer_data_set
                 .as_ref()
                 .unwrap()
-                .subscription_data_set
-                .as_ref()
-                .unwrap()
-                .is_empty()
+                .with(|consumers| {
+                    consumers.iter().flatten().next().unwrap().with(|consumer| {
+                        consumer
+                            .subscription_data_set
+                            .as_ref()
+                            .unwrap()
+                            .with(HashSet::is_empty)
+                    })
+                })
         );
         assert!(
             !runtime
@@ -397,10 +410,12 @@ mod tests {
                 "null-producers" => data.producer_data_set = None,
                 "null-consumers" => data.consumer_data_set = None,
                 "null-subscriptions" => {
-                    data.consumer_data_set.as_mut().unwrap()[0]
-                        .as_mut()
+                    let consumer = data
+                        .consumer_data_set
+                        .as_ref()
                         .unwrap()
-                        .subscription_data_set = None;
+                        .with(|consumers| consumers.iter().flatten().next().unwrap().clone());
+                    consumer.with_mut(|consumer| consumer.subscription_data_set = None);
                 }
                 _ => {}
             }
@@ -416,89 +431,54 @@ mod tests {
     #[test]
     fn fingerprint_ignores_identity_subscription_version_and_simple_flag() {
         let mut data = HeartbeatData::default();
-        data.consumer_data_set
-            .as_mut()
-            .unwrap()
-            .push(Some(ConsumerData {
-                group_name: Some("consumer".into()),
-                subscription_data_set: Some(std::collections::HashSet::from([Some(
-                    SubscriptionData {
-                        topic: Some("topic".into()),
-                        sub_string: Some("*".into()),
-                        sub_version: 1,
-                        ..Default::default()
-                    },
-                )])),
-                ..Default::default()
-            }));
+        let subscription = SharedValue::from(SubscriptionData {
+            topic: Some("topic".into()),
+            sub_string: Some("*".into()),
+            sub_version: 1,
+            ..Default::default()
+        });
+        let consumer = SharedValue::from(ConsumerData {
+            group_name: Some("consumer".into()),
+            subscription_data_set: Some(SharedValue::from(HashSet::from([Some(
+                subscription.clone(),
+            )]))),
+            ..Default::default()
+        });
+        data.consumer_data_set = Some(SharedValue::from(HashSet::from([Some(consumer.clone())])));
         let expected = fingerprint(&data).unwrap();
         data.client_id = Some("another".into());
         data.heartbeat_fingerprint = 42;
         data.is_without_sub = true;
-        let mut consumer = data
-            .consumer_data_set
-            .as_mut()
-            .unwrap()
-            .drain(..)
-            .next()
-            .unwrap()
-            .unwrap();
-        let mut sub = consumer
-            .subscription_data_set
-            .as_mut()
-            .unwrap()
-            .drain()
-            .next()
-            .unwrap()
-            .unwrap();
-        sub.sub_version = 99;
-        consumer
-            .subscription_data_set
-            .as_mut()
-            .unwrap()
-            .insert(Some(sub.clone()));
-        data.consumer_data_set
-            .as_mut()
-            .unwrap()
-            .push(Some(consumer.clone()));
+        subscription.with_mut(|subscription| subscription.sub_version = 99);
         assert_eq!(fingerprint(&data).unwrap(), expected);
-        consumer.subscription_data_set.as_mut().unwrap().clear();
-        sub.sub_string = Some("changed".into());
-        consumer
-            .subscription_data_set
-            .as_mut()
-            .unwrap()
-            .insert(Some(sub));
-        data.consumer_data_set.as_mut().unwrap().clear();
-        data.consumer_data_set
-            .as_mut()
-            .unwrap()
-            .push(Some(consumer));
+        subscription.with_mut(|subscription| subscription.sub_string = Some("changed".into()));
         assert_ne!(fingerprint(&data).unwrap(), expected);
     }
 
     #[test]
     fn fingerprint_preserves_duplicate_multiplicity_without_registration_order() {
-        let a = ConsumerData {
+        let a = SharedValue::from(ConsumerData {
             group_name: Some("a".into()),
             ..Default::default()
-        };
-        let b = ConsumerData {
+        });
+        let b = SharedValue::from(ConsumerData {
             group_name: Some("b".into()),
             ..Default::default()
-        };
-        let mut data = HeartbeatData {
-            consumer_data_set: Some(vec![Some(a.clone()), Some(b.clone())]),
+        });
+        let consumers = SharedValue::from(HashSet::from([Some(a.clone()), Some(b.clone())]));
+        let data = HeartbeatData {
+            consumer_data_set: Some(consumers.clone()),
             ..Default::default()
         };
         let expected = fingerprint(&data).unwrap();
-        data.consumer_data_set.as_mut().unwrap().reverse();
-        assert_eq!(fingerprint(&data).unwrap(), expected);
-        data.consumer_data_set.as_mut().unwrap().push(Some(a));
+        consumers.with_mut(|consumers| {
+            consumers.insert(Some(SharedValue::from(a.snapshot())));
+        });
         assert_ne!(fingerprint(&data).unwrap(), expected);
-        data.consumer_data_set.as_mut().unwrap().push(Some(b));
+        consumers.with_mut(|consumers| {
+            consumers.insert(Some(SharedValue::from(b.snapshot())));
+        });
         let duplicated = fingerprint(&data).unwrap();
-        data.consumer_data_set.as_mut().unwrap().reverse();
         assert_eq!(fingerprint(&data).unwrap(), duplicated);
     }
 }

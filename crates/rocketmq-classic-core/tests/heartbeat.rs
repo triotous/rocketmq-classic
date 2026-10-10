@@ -4,6 +4,7 @@ use rocketmq_classic_core::{
     runtime::{ClientRuntime, ClientRuntimeManager, ConsumerRuntime, ProducerRuntime},
 };
 use rocketmq_classic_protocol::{
+    SharedValue,
     codes::request,
     heartbeat::{ConsumerData, HeartbeatData, SubscriptionData},
 };
@@ -91,7 +92,9 @@ impl ConsumerRuntime for Consumer {
     fn heartbeat_data(&self) -> ConsumerData {
         ConsumerData {
             group_name: Some("consumer".into()),
-            subscription_data_set: Some(HashSet::from([Some(self.0.lock().unwrap().clone())])),
+            subscription_data_set: Some(SharedValue::from(HashSet::from([Some(
+                SharedValue::from(self.0.lock().unwrap().clone()),
+            )]))),
             ..Default::default()
         }
     }
@@ -217,7 +220,7 @@ async fn heartbeat_unboxes_nonnull_null_ids_and_skips_null_values() {
             .producer_data_set
             .as_ref()
             .unwrap()
-            .len(),
+            .with(|rows| rows.len()),
         1
     );
     assert!(runtime.route_snapshot().unwrap().broker_addresses["broker"].contains_key(&None));
@@ -266,7 +269,12 @@ async fn single_peer_sends_to_slave_for_producer_only_and_reports_wire_failure()
         let command = read(&mut stream).await;
         assert_eq!(command.code, request::HEART_BEAT);
         let body: HeartbeatData = serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
-        assert!(body.consumer_data_set.as_ref().unwrap().is_empty());
+        assert!(
+            body.consumer_data_set
+                .as_ref()
+                .unwrap()
+                .with(|rows| rows.is_empty())
+        );
         respond(&mut stream, &command, None, false, false).await;
         let command = read(&mut stream).await;
         let mut response = RemotingCommand {
@@ -515,17 +523,24 @@ async fn v2_negotiates_full_simple_subscription_change_version_and_rebalance() {
                 serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
             assert_eq!(body.client_id.as_deref(), Some("heartbeat@DEFAULT"));
             assert_eq!(body.is_without_sub, simple, "round {index}");
-            assert_eq!(body.producer_data_set.as_ref().unwrap().len(), 1);
+            assert_eq!(
+                body.producer_data_set
+                    .as_ref()
+                    .unwrap()
+                    .with(|rows| rows.len()),
+                1
+            );
             let consumer = body
                 .consumer_data_set
                 .as_ref()
                 .unwrap()
-                .first()
-                .unwrap()
-                .as_ref()
-                .unwrap();
+                .with(|rows| rows.iter().flatten().next().unwrap().snapshot());
             assert_eq!(
-                consumer.subscription_data_set.as_ref().unwrap().is_empty(),
+                consumer
+                    .subscription_data_set
+                    .as_ref()
+                    .unwrap()
+                    .with(|rows| rows.is_empty()),
                 simple
             );
             if !simple {
@@ -534,12 +549,12 @@ async fn v2_negotiates_full_simple_subscription_change_version_and_rebalance() {
                         .subscription_data_set
                         .as_ref()
                         .unwrap()
-                        .iter()
-                        .next()
-                        .unwrap()
-                        .as_ref()
-                        .unwrap()
-                        .sub_version,
+                        .with(|rows| rows
+                            .iter()
+                            .flatten()
+                            .next()
+                            .unwrap()
+                            .with(|row| row.sub_version)),
                     if index < 4 { 12 } else { 99 }
                 );
             }
@@ -621,8 +636,19 @@ async fn v1_producer_only_skips_slave_and_empty_registry_skips_all() {
         let command = read(&mut stream).await;
         let body: HeartbeatData = serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
         assert_eq!(command.code, request::HEART_BEAT);
-        assert!(body.consumer_data_set.as_ref().unwrap().is_empty());
-        assert_eq!(body.producer_data_set.as_ref().unwrap().len(), 1);
+        assert!(
+            body.consumer_data_set
+                .as_ref()
+                .unwrap()
+                .with(|rows| rows.is_empty())
+        );
+        assert_eq!(
+            body.producer_data_set
+                .as_ref()
+                .unwrap()
+                .with(|rows| rows.len()),
+            1
+        );
         assert_eq!(body.heartbeat_fingerprint, 0);
         assert!(!body.is_without_sub);
         respond(&mut stream, &command, None, false, false).await;
@@ -729,7 +755,13 @@ async fn concurrent_v1_uses_parallel_peers_and_busy_heartbeat_gate_skips_a_round
         let (mut stream, _) = slave.accept().await.unwrap();
         let command = read(&mut stream).await;
         let body: HeartbeatData = serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
-        assert_eq!(body.consumer_data_set.as_ref().unwrap().len(), 1);
+        assert_eq!(
+            body.consumer_data_set
+                .as_ref()
+                .unwrap()
+                .with(|rows| rows.len()),
+            1
+        );
         second.send(()).unwrap();
         respond(&mut stream, &command, None, false, false).await;
     });
@@ -947,7 +979,13 @@ async fn preparation_failure_returns_false_without_socket_and_releases_heartbeat
             let command = read(&mut stream).await;
             let body: HeartbeatData =
                 serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
-            assert_eq!(body.consumer_data_set.as_ref().unwrap().len(), 1);
+            assert_eq!(
+                body.consumer_data_set
+                    .as_ref()
+                    .unwrap()
+                    .with(|rows| rows.len()),
+                1
+            );
             assert!(!body.is_without_sub);
             respond(&mut stream, &command, None, v2, false).await;
         });

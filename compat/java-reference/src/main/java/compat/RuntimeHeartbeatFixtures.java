@@ -319,6 +319,13 @@ public final class RuntimeHeartbeatFixtures {
         value.setUnitMode(true);
         item.put("values", consumerDataApiValues(value));
         item.put("getterReturnsAssignedSubscriptionSet", value.getSubscriptionDataSet() == subscriptions);
+        item.put("getterReturnsAssignedSubscriptionElement",
+            value.getSubscriptionDataSet().iterator().next() == subscription);
+        subscription.setSubVersion(43L);
+        item.put("callerSubscriptionMutationVisibleThroughGetter",
+            value.getSubscriptionDataSet().iterator().next().getSubVersion() == 43L);
+        value.getSubscriptionDataSet().iterator().next().setSubVersion(44L);
+        item.put("getterSubscriptionMutationVisibleToCaller", subscription.getSubVersion() == 44L);
         SubscriptionData externalSubscription = new SubscriptionData();
         externalSubscription.setTopic("payments");
         externalSubscription.setSubString("*");
@@ -388,6 +395,20 @@ public final class RuntimeHeartbeatFixtures {
         item.put("values", heartbeatDataApiValues(value));
         item.put("getterReturnsAssignedProducerSet", value.getProducerDataSet() == producers);
         item.put("getterReturnsAssignedConsumerSet", value.getConsumerDataSet() == consumers);
+        item.put("getterReturnsAssignedProducer", value.getProducerDataSet().iterator().next() == producer);
+        item.put("getterReturnsAssignedConsumer", value.getConsumerDataSet().iterator().next() == consumer);
+        producer.setGroupName("caller-producer-update");
+        item.put("callerProducerMutationVisibleThroughGetter",
+            "caller-producer-update".equals(value.getProducerDataSet().iterator().next().getGroupName()));
+        value.getProducerDataSet().iterator().next().setGroupName("getter-producer-update");
+        item.put("getterProducerMutationVisibleToCaller",
+            "getter-producer-update".equals(producer.getGroupName()));
+        consumer.setGroupName("caller-consumer-update");
+        item.put("callerConsumerMutationVisibleThroughGetter",
+            "caller-consumer-update".equals(value.getConsumerDataSet().iterator().next().getGroupName()));
+        value.getConsumerDataSet().iterator().next().setGroupName("getter-consumer-update");
+        item.put("getterConsumerMutationVisibleToCaller",
+            "getter-consumer-update".equals(consumer.getGroupName()));
         ProducerData externalProducer = new ProducerData();
         externalProducer.setGroupName("producers-b");
         producers.add(externalProducer);

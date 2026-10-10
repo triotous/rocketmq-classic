@@ -582,11 +582,16 @@ impl ClientRuntime {
         let groups = self.groups.snapshot()?;
         let mut topics = std::collections::BTreeSet::new();
         for consumer in groups.consumers {
-            if let Some(subscriptions) = consumer.heartbeat_data().subscription_data_set {
+            if let Some(subscriptions) = consumer
+                .heartbeat_data()
+                .subscription_data_set
+                .map(|subscriptions| subscriptions.snapshot())
+            {
                 for subscription in subscriptions {
                     let Some(subscription) = subscription else {
                         return Err(RuntimeError::InvalidHeartbeatData("null subscription data"));
                     };
+                    let subscription = subscription.snapshot();
                     topics.insert(subscription.topic);
                 }
             }
@@ -820,9 +825,13 @@ impl ClientRuntime {
         &self,
         without_sub: bool,
     ) -> Result<rocketmq_classic_protocol::heartbeat::HeartbeatData, RuntimeError> {
-        use rocketmq_classic_protocol::heartbeat::{HeartbeatData, ProducerData};
+        use rocketmq_classic_protocol::{
+            SharedValue,
+            heartbeat::{HeartbeatData, ProducerData},
+        };
+        use std::collections::HashSet;
         let snapshot = self.groups.snapshot()?;
-        let mut heartbeat = HeartbeatData {
+        let heartbeat = HeartbeatData {
             client_id: Some(self.client_id.clone()),
             is_without_sub: without_sub,
             ..Default::default()
@@ -830,25 +839,29 @@ impl ClientRuntime {
         for (group, _) in snapshot.producers {
             heartbeat
                 .producer_data_set
-                .as_mut()
+                .as_ref()
                 .unwrap()
-                .push(Some(ProducerData {
-                    group_name: Some(group),
-                }));
+                .with_mut(|producers| {
+                    producers.insert(Some(SharedValue::from(ProducerData {
+                        group_name: Some(group),
+                    })));
+                });
         }
         for consumer in snapshot.consumers {
             let mut data = consumer.heartbeat_data();
             if without_sub {
-                data.subscription_data_set = Some(std::collections::HashSet::new());
+                data.subscription_data_set = Some(SharedValue::from(HashSet::new()));
             } else if data.subscription_data_set.is_none() {
                 // Java constructs a fresh ConsumerData and addAll(null) fails.
                 return Err(RuntimeError::InvalidHeartbeatData("null subscription set"));
             }
             heartbeat
                 .consumer_data_set
-                .as_mut()
+                .as_ref()
                 .unwrap()
-                .push(Some(data));
+                .with_mut(|consumers| {
+                    consumers.insert(Some(SharedValue::from(data)));
+                });
         }
         Ok(heartbeat)
     }

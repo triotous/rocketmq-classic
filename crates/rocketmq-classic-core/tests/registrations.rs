@@ -2,8 +2,12 @@ use rocketmq_classic_core::{
     config::ClientConfig,
     runtime::{ClientRuntimeManager, ConsumerRuntime, ProducerRuntime, RuntimeError},
 };
-use rocketmq_classic_protocol::heartbeat::{
-    ConsumeFromWhere, ConsumeType, ConsumerData, HeartbeatData, MessageModel, SubscriptionData,
+use rocketmq_classic_protocol::{
+    SharedValue,
+    heartbeat::{
+        ConsumeFromWhere, ConsumeType, ConsumerData, ConsumerSubscriptionDataSet, HeartbeatData,
+        MessageModel, SubscriptionData,
+    },
 };
 use std::{
     collections::HashSet,
@@ -28,6 +32,28 @@ fn java_registered_consumer_fields() -> ConsumerData {
         consume_from_where: Some(ConsumeFromWhere::ConsumeFromLastOffset),
         ..Default::default()
     }
+}
+
+fn shared_subscription_set(
+    values: impl IntoIterator<Item = SubscriptionData>,
+) -> SharedValue<ConsumerSubscriptionDataSet> {
+    SharedValue::from(
+        values
+            .into_iter()
+            .map(|value| Some(SharedValue::from(value)))
+            .collect::<ConsumerSubscriptionDataSet>(),
+    )
+}
+
+fn first_shared<T: Clone>(set: &SharedValue<HashSet<Option<SharedValue<T>>>>) -> T {
+    set.with(|values| {
+        values
+            .iter()
+            .flatten()
+            .next()
+            .expect("one set element")
+            .snapshot()
+    })
 }
 
 fn compare_java(name: &str, actual: &HeartbeatData) {
@@ -56,12 +82,12 @@ async fn distinct_registered_keys_preserve_equal_and_simple_consumer_metadata() 
         .unwrap();
     let first = Arc::new(Consumer(Mutex::new(ConsumerData {
         group_name: Some("consumer".into()),
-        subscription_data_set: Some(HashSet::from([Some(SubscriptionData {
+        subscription_data_set: Some(shared_subscription_set([SubscriptionData {
             topic: Some("other".into()),
             sub_string: Some("tag".into()),
             sub_version: 13,
             ..Default::default()
-        })])),
+        }])),
         ..java_registered_consumer_fields()
     })));
     let a = runtime
@@ -84,24 +110,24 @@ async fn distinct_registered_keys_preserve_equal_and_simple_consumer_metadata() 
         let actual = runtime.prepare_heartbeat_data(without_sub).unwrap();
         let expected: HeartbeatData = serde_json::from_value(case["body"].clone()).unwrap();
         assert_eq!(
-            actual.consumer_data_set.as_ref().unwrap().len(),
+            actual
+                .consumer_data_set
+                .as_ref()
+                .unwrap()
+                .with(|rows| rows.len()),
             case["body"]["consumerDataSet"].as_array().unwrap().len(),
             "{name}"
         );
-        let mut actual_rows: Vec<_> = actual
-            .consumer_data_set
-            .as_ref()
-            .unwrap()
-            .iter()
-            .map(|row| serde_json::to_string(row).unwrap())
-            .collect();
-        let mut expected_rows: Vec<_> = expected
-            .consumer_data_set
-            .as_ref()
-            .unwrap()
-            .iter()
-            .map(|row| serde_json::to_string(row).unwrap())
-            .collect();
+        let mut actual_rows: Vec<_> = actual.consumer_data_set.as_ref().unwrap().with(|rows| {
+            rows.iter()
+                .map(|row| serde_json::to_string(row).unwrap())
+                .collect()
+        });
+        let mut expected_rows: Vec<_> = expected.consumer_data_set.as_ref().unwrap().with(|rows| {
+            rows.iter()
+                .map(|row| serde_json::to_string(row).unwrap())
+                .collect()
+        });
         actual_rows.sort();
         expected_rows.sort();
         assert_eq!(actual_rows, expected_rows, "{name}");
@@ -113,12 +139,12 @@ async fn distinct_registered_keys_preserve_equal_and_simple_consumer_metadata() 
         .await
         .unwrap();
     let second = Arc::new(Consumer(Mutex::new(ConsumerData {
-        subscription_data_set: Some(HashSet::from([Some(SubscriptionData {
+        subscription_data_set: Some(shared_subscription_set([SubscriptionData {
             topic: Some("second".into()),
             sub_string: Some("*".into()),
             sub_version: 14,
             ..Default::default()
-        })])),
+        }])),
         ..first.0.lock().unwrap().clone()
     })));
     b = runtime
@@ -143,7 +169,7 @@ async fn distinct_registered_keys_preserve_equal_and_simple_consumer_metadata() 
             .consumer_data_set
             .as_ref()
             .unwrap()
-            .is_empty()
+            .with(|rows| rows.is_empty())
     );
 }
 
@@ -177,7 +203,7 @@ async fn duplicate_groups_and_stale_identity_tokens_cannot_remove_replacements()
             .producer_data_set
             .as_ref()
             .unwrap()
-            .len(),
+            .with(|rows| rows.len()),
         1
     );
     assert!(
@@ -193,7 +219,7 @@ async fn duplicate_groups_and_stale_identity_tokens_cannot_remove_replacements()
             .producer_data_set
             .as_ref()
             .unwrap()
-            .is_empty()
+            .with(|rows| rows.is_empty())
     );
 }
 
@@ -208,12 +234,12 @@ async fn heartbeat_snapshots_follow_consumer_versions_and_without_subscription_f
     compare_java("empty", &runtime.prepare_heartbeat_data(false).unwrap());
     let consumer = Arc::new(Consumer(Mutex::new(ConsumerData {
         group_name: Some("consumer".into()),
-        subscription_data_set: Some(HashSet::from([Some(SubscriptionData {
+        subscription_data_set: Some(shared_subscription_set([SubscriptionData {
             topic: Some("topic".into()),
             sub_string: Some("*".into()),
             sub_version: 12,
             ..Default::default()
-        })])),
+        }])),
         ..java_registered_consumer_fields()
     })));
     let producer_lease = runtime
@@ -231,34 +257,35 @@ async fn heartbeat_snapshots_follow_consumer_versions_and_without_subscription_f
     let first = runtime.prepare_heartbeat_data(false).unwrap();
     compare_java("both", &first);
     assert_eq!(first.client_id.as_deref(), Some("192.0.2.6@DEFAULT"));
-    assert_eq!(first.producer_data_set.as_ref().unwrap().len(), 1);
     assert_eq!(
         first
-            .consumer_data_set
+            .producer_data_set
             .as_ref()
             .unwrap()
-            .first()
-            .unwrap()
-            .as_ref()
-            .unwrap()
+            .with(|rows| rows.len()),
+        1
+    );
+    let first_consumer = first_shared(first.consumer_data_set.as_ref().unwrap());
+    assert_eq!(
+        first_consumer
             .subscription_data_set
             .as_ref()
             .unwrap()
-            .iter()
-            .next()
-            .unwrap()
-            .as_ref()
-            .unwrap()
-            .sub_version,
+            .with(|rows| rows
+                .iter()
+                .flatten()
+                .next()
+                .unwrap()
+                .with(|row| row.sub_version)),
         12
     );
     consumer.0.lock().unwrap().subscription_data_set =
-        Some(HashSet::from([Some(SubscriptionData {
+        Some(shared_subscription_set([SubscriptionData {
             topic: Some("other".into()),
             sub_string: Some("tag".into()),
             sub_version: 13,
             ..Default::default()
-        })]));
+        }]));
     let second = runtime.prepare_heartbeat_data(false).unwrap();
     compare_java("subscription-change", &second);
     assert_ne!(
@@ -269,18 +296,10 @@ async fn heartbeat_snapshots_follow_consumer_versions_and_without_subscription_f
     compare_java("without-sub", &without);
     assert!(without.is_without_sub);
     assert!(
-        without
-            .consumer_data_set
-            .as_ref()
-            .unwrap()
-            .first()
-            .unwrap()
-            .as_ref()
-            .unwrap()
+        first_shared(without.consumer_data_set.as_ref().unwrap())
             .subscription_data_set
-            .as_ref()
             .unwrap()
-            .is_empty()
+            .with(|rows| rows.is_empty())
     );
     let deadline = Instant::now() + Duration::from_secs(1);
     assert!(
@@ -300,7 +319,7 @@ async fn heartbeat_snapshots_follow_consumer_versions_and_without_subscription_f
             .consumer_data_set
             .as_ref()
             .unwrap()
-            .len(),
+            .with(|rows| rows.len()),
         1
     );
     assert!(
@@ -320,7 +339,7 @@ async fn heartbeat_snapshots_follow_consumer_versions_and_without_subscription_f
             .consumer_data_set
             .as_ref()
             .unwrap()
-            .is_empty()
+            .with(|rows| rows.is_empty())
     );
 }
 
@@ -348,7 +367,7 @@ async fn admin_leases_are_separate_from_heartbeat_groups_and_runtime_identity() 
             .producer_data_set
             .as_ref()
             .unwrap()
-            .is_empty()
+            .with(|rows| rows.is_empty())
     );
     assert!(runtime.unregister_admin(&lease).await.unwrap());
     assert!(!runtime.unregister_admin(&lease).await.unwrap());
@@ -405,7 +424,7 @@ async fn heartbeat_callbacks_can_reenter_registry_and_registries_do_not_create_o
             .consumer_data_set
             .as_ref()
             .unwrap()
-            .len(),
+            .with(|rows| rows.len()),
         1
     );
     thread.join().unwrap();

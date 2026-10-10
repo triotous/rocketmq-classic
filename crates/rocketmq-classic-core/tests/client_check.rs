@@ -5,6 +5,7 @@ use rocketmq_classic_core::{
     runtime::{ClientRuntimeManager, ConsumerRuntime, RuntimeError},
 };
 use rocketmq_classic_protocol::{
+    SharedValue,
     body::CheckClientRequestBody,
     codes::request,
     heartbeat::{ConsumerData, SubscriptionData},
@@ -25,7 +26,13 @@ impl ConsumerRuntime for Consumer {
     fn heartbeat_data(&self) -> ConsumerData {
         ConsumerData {
             group_name: Some("different-callback-group".into()),
-            subscription_data_set: Some(self.0.iter().cloned().map(Some).collect()),
+            subscription_data_set: Some(SharedValue::from(
+                self.0
+                    .iter()
+                    .cloned()
+                    .map(|row| Some(SharedValue::from(row)))
+                    .collect::<HashSet<_>>(),
+            )),
             ..Default::default()
         }
     }
