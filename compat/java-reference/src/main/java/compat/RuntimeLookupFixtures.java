@@ -23,7 +23,10 @@ public final class RuntimeLookupFixtures {
     public static void main(String[] args) throws Exception {
         ClientConfig config = new ClientConfig();
         config.setClientIP("192.0.2.6");
+        long bootTimestampWindowStart = System.currentTimeMillis();
         MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+        long bootTimestampWindowEnd = System.currentTimeMillis();
+        long bootTimestamp = runtime.getBootTimestamp();
         List<Object> cases = new ArrayList<>();
         try {
             add(cases, runtime, "missing-topic", null, new String[] {});
@@ -49,9 +52,12 @@ public final class RuntimeLookupFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "MQClientInstance.findBrokerAddrByTopic/findConsumerIdList/queryAssignment/startScheduledTask registration/BrokerData.selectBrokerAddr/QueryAssignmentResponseBody.decode/GetConsumerListByGroupResponseBody.decode/ResetOffsetBody.decode/encode/GetConsumerStatusBody.decode/encode/BatchAckMessageRequestBody.decode/encode and public DTO constructor/getter/setter/toString methods");
+        fixture.put("entrypoint", "MQClientInstance.findBrokerAddrByTopic/findConsumerIdList/queryAssignment/getBootTimestamp/startScheduledTask registration/BrokerData.selectBrokerAddr/QueryAssignmentResponseBody.decode/GetConsumerListByGroupResponseBody.decode/ResetOffsetBody.decode/encode/GetConsumerStatusBody.decode/encode/BatchAckMessageRequestBody.decode/encode and public DTO constructor/getter/setter/toString methods");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
+        fixture.put("bootTimestampInsideConstructorWindow",
+            bootTimestamp >= bootTimestampWindowStart && bootTimestamp <= bootTimestampWindowEnd);
+        fixture.put("bootTimestampStableAfterFixtureCalls", runtime.getBootTimestamp() == bootTimestamp);
         String assignment = "{\"messageQueue\":{\"topic\":\"topic\",\"brokerName\":\"broker\",\"queueId\":2},\"mode\":\"POP\",\"attachments\":{\"key\":\"value\"}}";
         org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody response =
             org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody.decode(
