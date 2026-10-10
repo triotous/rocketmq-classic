@@ -641,11 +641,12 @@ impl FactoryTable {
         self.put(key, value).await
     }
 
-    /// Applies each mapping independently, matching Map.putAll per-key writes.
-    pub async fn put_all(
-        &self,
-        entries: BTreeMap<String, Arc<ClientRuntime>>,
-    ) -> Result<(), RuntimeError> {
+    /// Applies mappings in source iteration order, matching Map.putAll's
+    /// independent per-key writes.
+    pub async fn put_all<I>(&self, entries: I) -> Result<(), RuntimeError>
+    where
+        I: IntoIterator<Item = (String, Arc<ClientRuntime>)>,
+    {
         for (key, value) in entries {
             self.put(&key, value).await?;
         }

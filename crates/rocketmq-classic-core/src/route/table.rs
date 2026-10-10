@@ -211,11 +211,11 @@ impl TopicRouteTable {
         let _gate = self.0.lock_raw_route_key(&key)?;
         self.0.update_raw(|map| (true, map.insert(key, value)))
     }
-    /// Writes all entries into the raw table without converting route snapshots.
-    pub fn put_all(
-        &self,
-        entries: BTreeMap<String, TopicRouteDataHandle>,
-    ) -> Result<(), RuntimeError> {
+    /// Writes entries in source iteration order without converting route snapshots.
+    pub fn put_all<I>(&self, entries: I) -> Result<(), RuntimeError>
+    where
+        I: IntoIterator<Item = (String, TopicRouteDataHandle)>,
+    {
         for (key, value) in entries {
             let _gate = self.0.lock_raw_route_key(&key)?;
             self.0.update_raw(|map| {

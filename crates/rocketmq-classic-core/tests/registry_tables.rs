@@ -4,7 +4,7 @@ use rocketmq_classic_core::{
 };
 use rocketmq_classic_protocol::heartbeat::ConsumerData;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     sync::{
         Arc, RwLock,
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -2221,7 +2221,7 @@ async fn registry_default_map_operations_match_invoked_java() {
             table
                 .for_each(|_, _| for_each_count += 1)
                 .unwrap();
-            let mut additions = BTreeMap::new();
+            let mut additions = HashMap::new();
             additions.insert("d".to_owned(), second.clone());
             additions.insert("e".to_owned(), first.clone());
             table.put_all(additions).await.unwrap();

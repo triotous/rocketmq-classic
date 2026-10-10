@@ -6,7 +6,7 @@ use rocketmq_classic_core::{
 };
 use rocketmq_classic_protocol::route::{SharedBrokerDataHandle, TopicRouteData};
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -429,7 +429,7 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
         table.put("topic", second.clone()).unwrap().is_none()
             && same(runtime.get_existing_topic_route("topic").unwrap(), &second),
     );
-    let bulk_values = BTreeMap::from([
+    let bulk_values = HashMap::from([
         ("bulk-a".to_owned(), first.clone()),
         ("bulk-b".to_owned(), second.clone()),
     ]);
