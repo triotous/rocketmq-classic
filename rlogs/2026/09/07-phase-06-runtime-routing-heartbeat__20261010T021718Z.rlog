@@ -1,0 +1,11 @@
+Session: 2026-10-10T02:17:18Z
+Plan: plan/2026/09/07-phase-06-runtime-routing-heartbeat.md
+Branch: 07-phase-06-runtime-routing-heartbeat
+
+Public API alias correction (`a732974a`): the current Phase 6 audit explicitly listed `CheckClientRequestBody.subscriptionData` as an unresolved Java/Rust ownership mismatch. Pinned Java 5.5.1 `RuntimeLookupFixtures.checkClientBodyApiCase` now records that the getter returns the exact assigned `SubscriptionData`, caller-side mutation is visible from the DTO, getter-side mutation is visible from the caller reference, and `equals`/`hashCode` are inherited from `java.lang.Object`. The requested checkout `/Users/nanashi07/Projects/3rd/rocketmq` is absent; evidence uses the pinned 5.5.1 Maven artifact in the offline repository.
+
+Added protocol `SharedValue<T>` (`Arc<RwLock<T>>`) and migrated only `CheckClientRequestBody.subscription_data`. Handle clones preserve object identity; `snapshot`, `with`, and `with_mut` provide safe Rust access; serde keeps the wire DTO shape. Removed structural equality/hash traits from `CheckClientRequestBody`. Core runtime/test constructors convert owned DTOs into a shared handle. Other DTO/list/set/map alias gaps remain open.
+
+The lookup fixture hash is `dcb46e55ac972d2d621585f61fb28cc67fd398d8d5ada31bd1586a5abe07a8b3`. Focused protocol tests (108) and doc tests pass; full `cargo test --workspace --all-targets --locked` passes with local socket access; strict workspace all-target/all-feature Clippy, fmt/diff checks, pinned offline Maven verify, differential comparator self-test, and 22-scenario manifest validation pass. Logs: `/private/tmp/p6-shared-check-client-final-workspace.log` and `/private/tmp/p6-shared-check-client-final-java-verify.log`. Maven used `/private/tmp/p6-maven-repository` and wrote RocketMQ logs under `/private/tmp/p6-rocketmq-logs`.
+
+Compatibility/API map, requirement audit, ADR-0060, and this session log are the separate documentation change. Phase 6 remains active: broader public method/field/source/input/reverse-export reconciliation, other DTO aliases, non-macOS and actual IPv6-only host evidence remain open. P6-V04 remains `PENDING_PHASE_19`.
