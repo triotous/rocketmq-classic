@@ -814,8 +814,8 @@ Current unregister update `3ccaf54`: `unregister_producer_by_group/unregister_co
 | --- | --- |
 | get/containsKey/containsValue/size/isEmpty/getOrDefault | `get/contains_key/contains_value/len/is_empty/get_or_default`, owned published values, Java identity equality and caller-owned default |
 | put/putIfAbsent/putAll | async `put/put_if_absent/put_all`, return preceding identity or None; putAll applies per-key writes, not a multi-key transaction |
-| computeIfAbsent/computeIfPresent/compute/merge | async `compute_if_absent`/`compute_if_present`/`compute`/`merge`; `Option::None` represents Java null-result/no mapping or removal; each callback runs once while a per-key gate serializes its read/callback/write sequence with FactoryTable mutations, matching Java `ConcurrentHashMap` same-key exclusion; callbacks run outside the entries mutex, and unrelated keys remain independently available (ADR-0080) |
-| replaceAll | async `replace_all`; snapshots keys, then visits each still-current mapping once under that key's mutation gate; this remains a per-key operation, not a whole-map transaction |
+| computeIfAbsent/computeIfPresent/compute/merge | async `compute_if_absent`/`compute_if_present`/`compute`/`merge`; `Option::None` represents Java null-result/no mapping or removal; each callback runs once while a mutation shard serializes its read/callback/write sequence with table mutations and synchronous identity-safe manager removal; callbacks run outside the entries mutex, ordinary reads continue, and hash-colliding keys share a shard (ADR-0080) |
+| replaceAll | async `replace_all`; snapshots keys, then visits each still-current mapping once under that key's mutation shard; this remains a per-key operation, not a whole-map transaction |
 | replace(key,value)/replace(key,expected,value) | async `replace/replace_if_same`; identity comparison, matching MQClientInstance Object equality |
 | remove(key)/remove(key,value) | async `remove/remove_if_same`; identity comparison, map changes only, no runtime shutdown |
 | clear | async `clear`, not a transaction against concurrent insertion |
