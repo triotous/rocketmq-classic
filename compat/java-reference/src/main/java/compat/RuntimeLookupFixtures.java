@@ -1398,6 +1398,7 @@ public final class RuntimeLookupFixtures {
                             result.put("address", values[0]);
                             org.apache.rocketmq.remoting.protocol.RemotingCommand request =
                                 (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                            request.makeCustomHeaderToNet();
                             result.put("requestCode", request.getCode());
                             Map<String, String> fields = request.getExtFields();
                             result.put("consumerGroupFieldPresent",
