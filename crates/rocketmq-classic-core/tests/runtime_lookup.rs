@@ -1,6 +1,7 @@
 use bytes::BytesMut;
 use rocketmq_classic_core::{
     config::ClientConfig,
+    route::RouteSnapshot,
     runtime::{ClientRuntime, ClientRuntimeManager, RuntimeError},
 };
 use rocketmq_classic_protocol::{
@@ -107,6 +108,27 @@ async fn null_topic_broker_selection_matches_invoked_java_failure() {
         runtime.find_broker_address_by_topic_nullable(None),
         Err(RuntimeError::InvalidRoute("null broker lookup topic"))
     ));
+}
+
+#[test]
+fn null_broker_address_lookups_match_invoked_java_results() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/route.json")).unwrap();
+    let java = &fixture["runtimeNullBrokerAddressLookups"];
+    for name in ["admin", "publish", "subscribe"] {
+        assert_eq!(java[name]["outcome"], "OK", "{name}");
+        assert!(java[name]["isNull"].as_bool().unwrap(), "{name}");
+    }
+
+    let snapshot = RouteSnapshot::default();
+    assert!(snapshot.admin_address_nullable(None).unwrap().is_none());
+    assert!(snapshot.publish_address_nullable(None).is_none());
+    assert!(
+        snapshot
+            .subscribe_address_nullable(None, 0, true)
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[tokio::test]

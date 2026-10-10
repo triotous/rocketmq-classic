@@ -116,6 +116,12 @@ impl RouteSnapshot {
             .and_then(Option::as_deref)
     }
 
+    /// Nullable Java entry point for `findBrokerAddressInPublish`; a null
+    /// broker name returns null before the address table is read.
+    pub fn publish_address_nullable(&self, broker: Option<&str>) -> Option<&str> {
+        self.publish_address(broker?)
+    }
+
     pub fn subscribe_address(
         &self,
         broker: &str,
@@ -166,6 +172,20 @@ impl RouteSnapshot {
         }))
     }
 
+    /// Nullable Java entry point for `findBrokerAddressInSubscribe`; a null
+    /// broker name returns null before broker ID/address selection.
+    pub fn subscribe_address_nullable(
+        &self,
+        broker: Option<&str>,
+        id: i64,
+        only_this_broker: bool,
+    ) -> Result<Option<BrokerAddress>, RuntimeError> {
+        let Some(broker) = broker else {
+            return Ok(None);
+        };
+        self.subscribe_address(broker, id, only_this_broker)
+    }
+
     pub fn admin_address(&self, broker: &str) -> Result<Option<BrokerAddress>, RuntimeError> {
         // Java iterates until it finds a nonnull value. HashMap order is not
         // observable when several valid entries exist. Long IDs are unboxed
@@ -189,6 +209,18 @@ impl RouteSnapshot {
             }));
         }
         Ok(None)
+    }
+
+    /// Nullable Java entry point for `findBrokerAddressInAdmin`; a null
+    /// broker name returns null before address-table traversal.
+    pub fn admin_address_nullable(
+        &self,
+        broker: Option<&str>,
+    ) -> Result<Option<BrokerAddress>, RuntimeError> {
+        let Some(broker) = broker else {
+            return Ok(None);
+        };
+        self.admin_address(broker)
     }
 
     /// Resolves a queue's broker through the cached static endpoints, falling
