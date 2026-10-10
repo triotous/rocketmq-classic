@@ -15,6 +15,8 @@ mod tasks;
 pub const REBALANCE_SERVICE_NAME: &str = "RebalanceService";
 /// Java 5.5.1 `PullMessageService.getServiceName()` result.
 pub const PULL_MESSAGE_SERVICE_NAME: &str = "PullMessageService";
+/// Java 5.5.1 `ServiceThread.getJoinTime()` result in milliseconds.
+pub const SERVICE_THREAD_JOIN_TIME_MILLIS: u64 = 90_000;
 
 pub use control::RuntimeState;
 pub use instance::ClientRuntime;

@@ -19,7 +19,7 @@ use rocketmq_classic_core::{
     config::ClientConfig,
     runtime::{
         ClientRuntime, ClientRuntimeManager, ConsumerRuntime, PULL_MESSAGE_SERVICE_NAME,
-        ProducerRuntime, REBALANCE_SERVICE_NAME, RuntimeError,
+        ProducerRuntime, REBALANCE_SERVICE_NAME, RuntimeError, SERVICE_THREAD_JOIN_TIME_MILLIS,
     },
 };
 
@@ -47,6 +47,14 @@ fn service_names_match_invoked_java_public_methods() {
 fn inherited_service_thread_oracle_records_java_thread_controls() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    for case in fixture["serviceThreadCases"].as_array().unwrap() {
+        assert_eq!(
+            case["joinTimeMillis"].as_u64().unwrap(),
+            SERVICE_THREAD_JOIN_TIME_MILLIS,
+            "{}",
+            case["class"]
+        );
+    }
     assert_eq!(
         fixture["serviceThreadCases"],
         serde_json::json!([
