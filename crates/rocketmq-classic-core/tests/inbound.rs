@@ -36,7 +36,7 @@ async fn write(stream: &mut TcpStream, command: &RemotingCommand) {
 }
 
 #[tokio::test]
-async fn inactive_runtime_slots_return_explicit_phase_error_and_oneway_has_no_reply() {
+async fn inactive_runtime_slots_match_phase_errors_and_no_dispatch_silence() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap().to_string();
     let peer = tokio::spawn(async move {
@@ -61,6 +61,15 @@ async fn inactive_runtime_slots_return_explicit_phase_error_and_oneway_has_no_re
                 ..Default::default()
             };
             write(&mut stream, &command).await;
+            if code == request::NOTIFY_UNSUBSCRIBE_LITE {
+                assert!(
+                    tokio::time::timeout(Duration::from_millis(20), read(&mut stream))
+                        .await
+                        .is_err(),
+                    "the registered but undispatched Java code must not reply"
+                );
+                continue;
+            }
             let reply = read(&mut stream).await;
             assert_eq!(reply.opaque, command.opaque);
             assert!(reply.is_response());

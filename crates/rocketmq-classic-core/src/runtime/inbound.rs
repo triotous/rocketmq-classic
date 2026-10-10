@@ -86,11 +86,9 @@ impl RuntimeProcessor {
                     .find_map(|(_, producer)| producer.reply_processor(correlation))
             }
             request::NOTIFY_UNSUBSCRIBE_LITE => {
-                // Registered by MQClientAPIImpl 5.5.1 but no Java processor switch branch.
-                return Ok(Some(unsupported(
-                    command.code,
-                    "Phase 13 source audit: no Java dispatch branch",
-                )));
+                // MQClientAPIImpl registers this code, but Java's
+                // ClientRemotingProcessor switch has no branch and returns null.
+                return Ok(None);
             }
             code => {
                 let (operation, key, phase) = match code {
