@@ -1129,6 +1129,7 @@ public final class RuntimeRouteFixtures {
                 input.put(fields[index], routeCollectionValue(fields[index], state));
             }
             String json = com.alibaba.fastjson2.JSON.toJSONString(input,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue,
                 com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringKeyAsString);
             org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
             config.setClientIP("route-nested-matrix-" + cases.size());

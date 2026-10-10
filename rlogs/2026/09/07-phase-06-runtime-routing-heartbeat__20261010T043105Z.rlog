@@ -106,3 +106,8 @@
 - Added `runtimeRouteNestedCollectionMatrix` to the pinned Java `RuntimeRouteFixtures`, invoking real unstarted `MQClientInstance.updateTopicRouteInfoFromNameServer` across all 16 combinations of populated or null nested values in `queueDatas`, `brokerDatas`, `filterServerTable`, and `topicQueueMappingByBroker`.
 - Java accepts null queue rows in ordinary/static route conversions, null filter lists, and null mapping values; null BrokerData rows fail before cache publication. Interactions are recorded with changed/cached state and all four cached collection sizes. Fixture SHA-256: `3ad583764e466bcfe1f827aad49a9e3207a1465f3adb44e7edaa48211b578fad`.
 - Generated with pinned offline Maven Java 5.5.1. The first `exec:java` invocation targeted the wrong entrypoint and was corrected to use `runtime-route-fixtures`; the generator then completed all runtime cases. Rust differential and full verification remain pending.
+
+## Route nested collection oracle correction
+
+- The first oracle fixture pass omitted map entries whose values were null because Fastjson serialization lacked `WriteMapNullValue`; its apparent acceptance of null mapping values was not valid evidence. Added that feature and regenerated the fixture. Current `route.json` SHA-256: `cde0010fa221bc97e11da23b872abe671fa96b4dfd610e75ec85796584901d49`.
+- Correct Java outcomes: null BrokerData rows and null static mapping values fail without publication; null filter lists publish; null QueueData rows publish in the cases with a valid static mapping. The corrected 16-case native differential passes all outcomes and four cached sizes. No production change was required.
