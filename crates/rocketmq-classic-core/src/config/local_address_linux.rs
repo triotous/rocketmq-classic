@@ -274,10 +274,14 @@ fn java_candidate_order(ipv4: Vec<Candidate>, ipv6: Vec<Candidate>) -> Vec<Inter
     interfaces
 }
 
-pub(super) fn interfaces() -> io::Result<Vec<Address>> {
+pub(super) fn interfaces(prefer_ipv4_stack: bool) -> io::Result<Vec<Address>> {
     let socket = open_ipv4_socket()?;
     let ipv4 = ipv4_table(socket.as_raw_fd())?;
-    let ipv6 = ipv6_table(socket.as_raw_fd());
+    let ipv6 = if prefer_ipv4_stack {
+        Vec::new()
+    } else {
+        ipv6_table(socket.as_raw_fd())
+    };
     let mut candidates = Vec::new();
     for interface in java_candidate_order(ipv4, ipv6) {
         let bridge = Path::new("/sys/class/net")

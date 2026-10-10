@@ -1,6 +1,7 @@
 use std::{
     io,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, ToSocketAddrs},
+    sync::OnceLock,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -138,7 +139,22 @@ fn java_linux_ipv6_scope(_native_scope: u32, interface_index: u32) -> u32 {
 }
 
 pub(super) fn get() -> io::Result<String> {
-    resolve(interfaces().map(java_candidate_order), local_host)
+    let prefer_ipv4_stack = java_prefer_ipv4_stack();
+    resolve(
+        interfaces(prefer_ipv4_stack).map(java_candidate_order),
+        || local_host(prefer_ipv4_stack),
+    )
+}
+
+fn java_prefer_ipv4_stack_property(value: Option<String>) -> bool {
+    super::java_boolean_property(value, false)
+}
+
+fn java_prefer_ipv4_stack() -> bool {
+    static PREFER_IPV4_STACK: OnceLock<bool> = OnceLock::new();
+    *PREFER_IPV4_STACK.get_or_init(|| {
+        java_prefer_ipv4_stack_property(std::env::var("java.net.preferIPv4Stack").ok())
+    })
 }
 
 fn resolve(
@@ -151,7 +167,7 @@ fn resolve(
     fallback().map(|address| normalize(&address))
 }
 
-fn local_host() -> io::Result<Address> {
+fn local_host(prefer_ipv4_stack: bool) -> io::Result<Address> {
     // Java InetAddress.getLocalHost resolves the OS host name, not a hardcoded
     // loopback or a UDP route probe to an unrelated Internet destination.
     let host = hostname::get()?
@@ -159,7 +175,7 @@ fn local_host() -> io::Result<Address> {
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "non-Unicode local host name"))?;
     let socket = (host.as_str(), 0)
         .to_socket_addrs()?
-        .next()
+        .find(|socket| !prefer_ipv4_stack || socket.is_ipv4())
         .ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::AddrNotAvailable,
@@ -287,7 +303,7 @@ fn java_unix_candidate_order(ipv4: Vec<UnixCandidate>, ipv6: Vec<UnixCandidate>)
 }
 
 #[cfg(all(unix, not(target_os = "linux")))]
-fn interfaces() -> io::Result<Vec<Address>> {
+fn interfaces(prefer_ipv4_stack: bool) -> io::Result<Vec<Address>> {
     use std::{
         ffi::{CStr, CString},
         ptr,
@@ -362,6 +378,9 @@ fn interfaces() -> io::Result<Vec<Address>> {
             continue;
         }
         let family = unsafe { (*interface.ifa_addr).sa_family } as i32;
+        if prefer_ipv4_stack && family == libc::AF_INET6 {
+            continue;
+        }
         let address = match family {
             libc::AF_INET => {
                 let socket = unsafe { &*(interface.ifa_addr as *const libc::sockaddr_in) };
@@ -454,8 +473,8 @@ fn interfaces() -> io::Result<Vec<Address>> {
 }
 
 #[cfg(target_os = "linux")]
-fn interfaces() -> io::Result<Vec<Address>> {
-    linux_interfaces::interfaces()
+fn interfaces(prefer_ipv4_stack: bool) -> io::Result<Vec<Address>> {
+    linux_interfaces::interfaces(prefer_ipv4_stack)
 }
 
 #[cfg(any(target_os = "linux", all(test, unix)))]
@@ -463,7 +482,7 @@ fn interfaces() -> io::Result<Vec<Address>> {
 mod linux_interfaces;
 
 #[cfg(windows)]
-fn interfaces() -> io::Result<Vec<Address>> {
+fn interfaces(prefer_ipv4_stack: bool) -> io::Result<Vec<Address>> {
     use windows_sys::Win32::{
         NetworkManagement::{
             IpHelper::{
@@ -598,11 +617,13 @@ fn interfaces() -> io::Result<Vec<Address>> {
                     && java_windows_unicast_address_is_usable(row.DadState)
             })
             .filter_map(|row| windows_address(row.Address, &interface_name))
+            .filter(|address| !prefer_ipv4_stack || address.ip.is_ipv4())
             .collect::<Vec<_>>();
         let interface_anycast = anycast
             .iter()
             .filter(|row| luid_value(&row.InterfaceLuid) == luid_value(&interface.InterfaceLuid))
             .filter_map(|row| windows_address(row.Address, &interface_name))
+            .filter(|address| !prefer_ipv4_stack || address.ip.is_ipv4())
             .collect::<Vec<_>>();
         addresses.extend(java_windows_interface_candidate_order(
             interface_unicast,
@@ -647,7 +668,7 @@ fn windows_address(
 }
 
 #[cfg(not(any(unix, windows)))]
-fn interfaces() -> io::Result<Vec<Address>> {
+fn interfaces(_prefer_ipv4_stack: bool) -> io::Result<Vec<Address>> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
         "native interface enumeration unavailable",
@@ -724,6 +745,38 @@ mod tests {
         assert_eq!(java_unix_interface_root_name("eth0:1", false), None);
         assert_eq!(java_unix_interface_root_name("eth0", false), Some("eth0"));
         assert_eq!(java_unix_interface_root_name(":1", true), None);
+    }
+    #[test]
+    fn prefer_ipv4_stack_property_uses_java_boolean_rules() {
+        assert!(java_prefer_ipv4_stack_property(Some("true".to_owned())));
+        assert!(java_prefer_ipv4_stack_property(Some("TrUe".to_owned())));
+        assert!(!java_prefer_ipv4_stack_property(Some(" true ".to_owned())));
+        assert!(!java_prefer_ipv4_stack_property(Some("false".to_owned())));
+        assert!(!java_prefer_ipv4_stack_property(None));
+    }
+    #[test]
+    fn prefer_ipv4_stack_process_property_is_snapshotted() {
+        const CHILD_MARKER: &str = "ROCKETMQ_P6_IPV4_STACK_TEST_CHILD";
+        if std::env::var_os(CHILD_MARKER).is_some() {
+            assert!(java_prefer_ipv4_stack());
+            return;
+        }
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "config::local_address::tests::prefer_ipv4_stack_process_property_is_snapshotted",
+                "--nocapture",
+            ])
+            .env(CHILD_MARKER, "1")
+            .env("java.net.preferIPv4Stack", "TRUE")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "child failed: {}\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout)
+        );
     }
     #[test]
     fn bsd_ipv6_scope_uses_interface_index() {
@@ -838,7 +891,7 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/address.json"))
                 .unwrap();
-        let addresses = interfaces().unwrap();
+        let addresses = interfaces(false).unwrap();
         for case in fixture["scopeCases"].as_array().unwrap() {
             let expected = Address {
                 ip: case["ip"].as_str().unwrap().parse().unwrap(),
@@ -880,7 +933,7 @@ mod tests {
                 scope_name: None,
             })
             .collect::<Vec<_>>();
-        let native_candidates = java_candidate_order(interfaces().unwrap());
+        let native_candidates = java_candidate_order(interfaces(false).unwrap());
         let java_v4 = java_candidates
             .iter()
             .filter(|address| address.ip.is_ipv4())
@@ -912,6 +965,16 @@ mod tests {
         assert_eq!(
             select(native_v6).map(|address| address.ip),
             select(java_v6).map(|address| address.ip)
+        );
+    }
+    #[cfg(unix)]
+    #[test]
+    fn prefer_ipv4_stack_excludes_ipv6_interface_candidates() {
+        assert!(
+            interfaces(true)
+                .unwrap()
+                .into_iter()
+                .all(|address| address.ip.is_ipv4())
         );
     }
     fn address(ip: &str) -> Address {
