@@ -1443,6 +1443,72 @@ public final class RuntimeRouteFixtures {
         return item;
     }
 
+    private static Map<String, Object> runtimeConsumerNeedUpdate() throws Exception {
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("route-consumer-need-update");
+        MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+        org.apache.rocketmq.client.impl.MQClientAPIImpl original = runtime.getMQClientAPIImpl();
+        RouteApi api = new RouteApi(config);
+        Map<String, Object> item = new TreeMap<>();
+        AtomicInteger consumerNeedChecks = new AtomicInteger();
+        AtomicInteger consumerUpdates = new AtomicInteger();
+        AtomicInteger producerUpdates = new AtomicInteger();
+        java.util.concurrent.atomic.AtomicBoolean needed = new java.util.concurrent.atomic.AtomicBoolean(false);
+        String input = "{\"queueDatas\":[{\"brokerName\":\"broker\",\"readQueueNums\":1,\"writeQueueNums\":1,\"perm\":6,\"topicSysFlag\":0}],"
+            + "\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"127.0.0.1:10911\"}}],"
+            + "\"filterServerTable\":{}}";
+        item.put("input", com.alibaba.fastjson2.JSON.parseObject(input));
+        try {
+            java.lang.reflect.Field field = MQClientInstance.class.getDeclaredField("mQClientAPIImpl");
+            field.setAccessible(true);
+            field.set(runtime, api);
+            org.apache.rocketmq.client.impl.consumer.MQConsumerInner consumer =
+                (org.apache.rocketmq.client.impl.consumer.MQConsumerInner) java.lang.reflect.Proxy.newProxyInstance(
+                    org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class},
+                    (proxy, method, values) -> {
+                        if ("isSubscribeTopicNeedUpdate".equals(method.getName())) {
+                            consumerNeedChecks.incrementAndGet();
+                            return needed.get();
+                        }
+                        if ("updateTopicSubscribeInfo".equals(method.getName())) consumerUpdates.incrementAndGet();
+                        return method.getReturnType() == boolean.class ? false : null;
+                    });
+            org.apache.rocketmq.client.impl.producer.MQProducerInner producer =
+                (org.apache.rocketmq.client.impl.producer.MQProducerInner) java.lang.reflect.Proxy.newProxyInstance(
+                    org.apache.rocketmq.client.impl.producer.MQProducerInner.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.client.impl.producer.MQProducerInner.class},
+                    (proxy, method, values) -> {
+                        if ("updateTopicPublishInfo".equals(method.getName())) producerUpdates.incrementAndGet();
+                        if ("getPublishTopicList".equals(method.getName())) return java.util.Collections.emptySet();
+                        return method.getReturnType() == boolean.class ? false : null;
+                    });
+            runtime.getConsumerTable().put("consumer", consumer);
+            runtime.getProducerTable().put("producer", producer);
+            api.route = com.alibaba.fastjson2.JSON.parseObject(input, TopicRouteData.class);
+            item.put("initialChanged", runtime.updateTopicRouteInfoFromNameServer("topic"));
+            item.put("consumerNeedChecksAfterInitial", consumerNeedChecks.get());
+            item.put("consumerUpdatesAfterInitial", consumerUpdates.get());
+            item.put("producerUpdatesAfterInitial", producerUpdates.get());
+            TopicRouteData before = runtime.getAnExistTopicRouteData("topic");
+            needed.set(true);
+            api.route = com.alibaba.fastjson2.JSON.parseObject(input, TopicRouteData.class);
+            item.put("secondChanged", runtime.updateTopicRouteInfoFromNameServer("topic"));
+            item.put("secondOutcome", "OK");
+            item.put("cachedRouteUnchanged", before.equals(runtime.getAnExistTopicRouteData("topic")));
+            item.put("consumerNeedChecksAfterSecond", consumerNeedChecks.get());
+            item.put("consumerUpdatesAfterSecond", consumerUpdates.get());
+            item.put("producerUpdatesAfterSecond", producerUpdates.get());
+        } finally {
+            java.lang.reflect.Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
+                org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
+            cleanup.setAccessible(true);
+            cleanup.invoke(runtime, original, new IllegalStateException("consumer need-update fixture teardown"));
+            api.shutdown();
+        }
+        return item;
+    }
+
     private static Map<String, Object> brokerNameOutcome(MQClientInstance runtime, MessageQueue queue) {
         Map<String, Object> item = new TreeMap<>();
         try {
@@ -2932,6 +2998,7 @@ public final class RuntimeRouteFixtures {
         }
         fixture.put("integers", integerCases);
         fixture.put("runtimeNullBrokerMap", runtimeNullBrokerMap());
+        fixture.put("runtimeConsumerNeedUpdate", runtimeConsumerNeedUpdate());
         fixture.put("runtimeNullBrokerValues", runtimeNullBrokerValues());
         fixture.put("runtimeNullNestedRouteElements", runtimeNullNestedRouteElements());
         fixture.put("nullSubscriptionTopicRefresh", nullSubscriptionTopicRefresh());
