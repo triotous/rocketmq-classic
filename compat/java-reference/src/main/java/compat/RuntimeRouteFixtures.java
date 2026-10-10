@@ -1070,6 +1070,105 @@ public final class RuntimeRouteFixtures {
         return cases;
     }
 
+    private static Object routeCollectionValue(String field, String state) {
+        if ("null".equals(state)) return null;
+        if ("empty".equals(state)) {
+            return "queueDatas".equals(field) || "brokerDatas".equals(field)
+                ? new ArrayList<>() : new TreeMap<>();
+        }
+        if ("populated".equals(state)) {
+            if ("queueDatas".equals(field)) {
+                Map<String, Object> queue = new TreeMap<>();
+                queue.put("brokerName", "broker");
+                queue.put("readQueueNums", 1);
+                queue.put("writeQueueNums", 1);
+                queue.put("perm", 6);
+                queue.put("topicSysFlag", 0);
+                return List.of(queue);
+            }
+            if ("brokerDatas".equals(field)) {
+                Map<String, Object> broker = new TreeMap<>();
+                broker.put("cluster", "cluster");
+                broker.put("brokerName", "broker");
+                broker.put("brokerAddrs", Map.of(0L, "127.0.0.1:10911"));
+                return List.of(broker);
+            }
+            if ("filterServerTable".equals(field)) {
+                return Map.of("broker", List.of("filter:10911"));
+            }
+            Map<String, Object> mapping = new TreeMap<>();
+            mapping.put("topic", "topic");
+            mapping.put("bname", "broker");
+            mapping.put("scope", "__global__");
+            mapping.put("totalQueues", 1);
+            mapping.put("currIdMap", Map.of("0", 0));
+            return Map.of("broker", mapping);
+        }
+        return null;
+    }
+
+    private static List<Object> runtimeRouteCollectionMatrix() throws Exception {
+        List<Object> cases = new ArrayList<>(256);
+        String[] fields = {"queueDatas", "brokerDatas", "filterServerTable", "topicQueueMappingByBroker"};
+        String[] states = {"absent", "null", "empty", "populated"};
+        for (String queueState : states) {
+            for (String brokerState : states) {
+                for (String filterState : states) {
+                    for (String mappingState : states) {
+                        String[] selected = {queueState, brokerState, filterState, mappingState};
+                        Map<String, Object> input = new TreeMap<>();
+                        Map<String, Object> state = new TreeMap<>();
+                        for (int index = 0; index < fields.length; index++) {
+                            state.put(fields[index], selected[index]);
+                            if (!"absent".equals(selected[index])) {
+                                input.put(fields[index], routeCollectionValue(fields[index], selected[index]));
+                            }
+                        }
+                        String json = com.alibaba.fastjson2.JSON.toJSONString(input,
+                            com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringKeyAsString);
+                        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+                        config.setClientIP("route-collection-matrix-" + cases.size());
+                        MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+                        org.apache.rocketmq.client.impl.MQClientAPIImpl original = runtime.getMQClientAPIImpl();
+                        RouteApi api = new RouteApi(config);
+                        Map<String, Object> item = new TreeMap<>();
+                        try {
+                            java.lang.reflect.Field field = MQClientInstance.class.getDeclaredField("mQClientAPIImpl");
+                            field.setAccessible(true);
+                            field.set(runtime, api);
+                            item.put("input", com.alibaba.fastjson2.JSON.parseObject(json));
+                            item.put("states", state);
+                            api.route = com.alibaba.fastjson2.JSON.parseObject(json, TopicRouteData.class);
+                            try {
+                                item.put("changed", runtime.updateTopicRouteInfoFromNameServer("topic"));
+                                item.put("outcome", "OK");
+                            } catch (RuntimeException error) {
+                                item.put("changed", null);
+                                item.put("outcome", error.getClass().getSimpleName());
+                            }
+                            TopicRouteData cached = runtime.getAnExistTopicRouteData("topic");
+                            item.put("cached", cached != null);
+                            if (cached != null) {
+                                item.put("cachedQueueCount", cached.getQueueDatas() == null ? -1 : cached.getQueueDatas().size());
+                                item.put("cachedBrokerCount", cached.getBrokerDatas() == null ? -1 : cached.getBrokerDatas().size());
+                                item.put("cachedFilterCount", cached.getFilterServerTable() == null ? -1 : cached.getFilterServerTable().size());
+                                item.put("cachedMappingCount", cached.getTopicQueueMappingByBroker() == null ? -1 : cached.getTopicQueueMappingByBroker().size());
+                            }
+                        } finally {
+                            java.lang.reflect.Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
+                                org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
+                            cleanup.setAccessible(true);
+                            try { cleanup.invoke(runtime, original, new IllegalStateException("route collection matrix teardown")); }
+                            finally { api.shutdown(); }
+                        }
+                        cases.add(item);
+                    }
+                }
+            }
+        }
+        return cases;
+    }
+
     private static Map<String, Object> runtimeNullBrokerMap() throws Exception {
         org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
         config.setClientIP("route-null-map");
@@ -2657,6 +2756,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("nullStaticMappingConversion", nullStaticMappingConversion());
         fixture.put("overlappingStaticMappingOwners", overlappingStaticMappingOwners());
         fixture.put("runtimeNullableCollections", runtimeNullableCollections());
+        fixture.put("runtimeRouteCollectionMatrix", runtimeRouteCollectionMatrix());
         fixture.put("runtimeEmptyEndpointTransition", runtimeEmptyEndpointTransition(staticInputs.get(0), inputs.get(0)));
         fixture.put("runtimeTopicRouteTable", runtimeTopicRouteTable(inputs.get(0)));
         fixture.put("runtimeRawOfflineCleanup", runtimeRawOfflineCleanup(inputs.get(0)));
