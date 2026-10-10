@@ -159,3 +159,9 @@
 - On Darwin 25.6.0 arm64, a live call to the pinned RocketMQ 5.5.1 `NetworkUtil.getLocalInetAddressList()` returned nine candidates matching `fixtures/runtime/client-config.json` exactly. Oracle JAR SHA-256: `6a15b581269c0e06d9508d284c84c05a8578ffa1b16db3e60ce837c97f684b97`.
 - `cargo test -p rocketmq-classic-core --locked local_address::tests::` passed all eight focused tests, including the macOS native `getifaddrs` candidate-order, selected-address, and IPv6 fallback comparison against that list.
 - This verifies the available macOS host path only. Windows runtime enumeration, non-macOS Unix enumeration, and behavior on an actual IPv6-only host remain open; the general Phase 6 source/API/input/reverse-export audit remains PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
+
+## Concurrent-heartbeat setting source map
+
+- Pinned `rocketmq-client-5.5.1.jar` bytecode shows the `MQClientInstance` constructor creates the concurrent fixed pool only when enabled and uses the configured thread count at that time; `sendHeartbeatToAllBrokerWithLock` reads the live enable flag on each call.
+- Focused tests passed: `concurrent_v1_uses_parallel_peers_and_busy_heartbeat_gate_skips_a_round`, `enabling_concurrent_heartbeat_after_construction_has_no_executor`, `rebalance_wrapper_uses_serial_v1_even_when_concurrent_heartbeat_is_enabled`, and `p6_v02_failed_construction_can_retry_and_stale_removal_preserves_replacement`. Together they exercise actual two-peer concurrency, constructor-snapshot width, late-enable no-send behavior, serial wrapper behavior, and nonpositive pool-size rejection/retry.
+- These cases close only the concurrent-heartbeat setting branches. Other settings activation paths and full Phase 6 source/API/input/reverse-export reconciliation remain open; P6-V04 stays `PENDING_PHASE_19`.
