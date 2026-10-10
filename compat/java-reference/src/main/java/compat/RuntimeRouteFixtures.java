@@ -1598,6 +1598,52 @@ public final class RuntimeRouteFixtures {
         return result;
     }
 
+    private static Map<String, Object> routeLookupOutcome(java.util.concurrent.Callable<?> lookup) {
+        Map<String, Object> result = new TreeMap<>();
+        try {
+            Object value = lookup.call();
+            result.put("outcome", "OK");
+            if (value instanceof Boolean) result.put("changed", value);
+            else result.put("isNull", value == null);
+        } catch (Exception error) {
+            result.put("outcome", error.getClass().getSimpleName());
+        }
+        return result;
+    }
+
+    private static Map<String, Object> runtimeNullTopicRouteLookups() throws Exception {
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("null-topic-route-lookups");
+        MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+        org.apache.rocketmq.client.impl.MQClientAPIImpl original = runtime.getMQClientAPIImpl();
+        RouteApi api = new RouteApi(config);
+        Map<String, Object> result = new TreeMap<>();
+        try {
+            java.lang.reflect.Field field = MQClientInstance.class.getDeclaredField("mQClientAPIImpl");
+            field.setAccessible(true);
+            field.set(runtime, api);
+            result.put("existing", routeLookupOutcome(() -> runtime.getAnExistTopicRouteData(null)));
+            result.put("query", routeLookupOutcome(() -> runtime.queryTopicRouteData(null)));
+            api.route = null;
+            result.put("updateMissing", routeLookupOutcome(
+                () -> runtime.updateTopicRouteInfoFromNameServer((String) null)));
+            result.put("requestsAfterMissing", api.requests);
+            api.route = new TopicRouteData();
+            result.put("updatePresent", routeLookupOutcome(
+                () -> runtime.updateTopicRouteInfoFromNameServer((String) null)));
+            result.put("requestsAfterPresent", api.requests);
+            result.put("requestedNullTopic", api.requestedTopics.stream().allMatch(value -> value == null));
+        } finally {
+            java.lang.reflect.Method cleanup = MQClientInstance.class.getDeclaredMethod(
+                "cleanupAfterConstructionFailure", org.apache.rocketmq.client.impl.MQClientAPIImpl.class,
+                Throwable.class);
+            cleanup.setAccessible(true);
+            try { cleanup.invoke(runtime, original, new IllegalStateException("null topic route fixture teardown")); }
+            finally { api.shutdown(); }
+        }
+        return result;
+    }
+
     private static List<Object> runtimeRawOfflineCleanup(Map<String, Object> initial) throws Exception {
         List<Object> cases = new ArrayList<>();
         for (boolean priorBroker : new boolean[] {false, true}) {
@@ -3238,6 +3284,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("runtimeNullBrokerQueue", runtimeNullBrokerQueue());
         fixture.put("runtimeNullTopicBrokerSelection", runtimeNullTopicBrokerSelection());
         fixture.put("runtimeNullBrokerAddressLookups", runtimeNullBrokerAddressLookups());
+        fixture.put("runtimeNullTopicRouteLookups", runtimeNullTopicRouteLookups());
         fixture.put("runtimeTopicRouteTable", runtimeTopicRouteTable(inputs.get(0)));
         fixture.put("runtimeRawOfflineCleanup", runtimeRawOfflineCleanup(inputs.get(0)));
         fixture.put("runtimeRawCleanupShapes", runtimeRawCleanupShapes(inputs.get(0)));
