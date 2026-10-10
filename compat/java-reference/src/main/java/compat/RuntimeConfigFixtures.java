@@ -1126,6 +1126,36 @@ public final class RuntimeConfigFixtures {
         result.put("secondRegistrationAcceptedAfterRemoval", runtime.registerAdminExt("admin", second));
         result.put("secondOwnerRetainedAfterRemoval", table.get("admin") == second);
         runtime.unregisterAdminExt("admin");
+        result.put("shutdownGate", adminShutdownGate());
+        return result;
+    }
+
+    private static Map<String, Object> adminShutdownGate() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        ClientConfig config = new ClientConfig();
+        config.setClientIP("admin-shutdown-gate");
+        config.setNamesrvAddr("");
+        org.apache.rocketmq.client.impl.MQClientManager manager =
+            org.apache.rocketmq.client.impl.MQClientManager.getInstance();
+        org.apache.rocketmq.client.impl.factory.MQClientInstance runtime =
+            manager.getOrCreateMQClientInstance(config);
+        org.apache.rocketmq.client.admin.MQAdminExtInner admin =
+            tableOwner(org.apache.rocketmq.client.admin.MQAdminExtInner.class, "shutdown-admin");
+        try {
+            runtime.start();
+            result.put("registrationAccepted", runtime.registerAdminExt("shutdown-admin", admin));
+            runtime.shutdown();
+            result.put("shutdownBlockedByAdmin",
+                manager.getFactoryTable().get(runtime.getClientId()) == runtime);
+            runtime.unregisterAdminExt("shutdown-admin");
+            runtime.shutdown();
+            result.put("shutdownAfterAdminRemoval",
+                !manager.getFactoryTable().containsKey(runtime.getClientId()));
+        } finally {
+            runtime.unregisterAdminExt("shutdown-admin");
+            runtime.shutdown();
+            manager.removeClientFactory(runtime.getClientId(), runtime);
+        }
         return result;
     }
 
