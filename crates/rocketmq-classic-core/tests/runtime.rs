@@ -1001,6 +1001,97 @@ async fn route_refresh_failure_preserves_last_coherent_snapshot() {
 }
 
 #[tokio::test]
+async fn registered_consumer_null_broker_map_failure_keeps_previous_route_and_callbacks() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/route.json")).unwrap();
+    let java = &fixture["runtimeNullBrokerMap"];
+    assert_eq!(java["initialChanged"], true);
+    assert_eq!(java["outcome"], "NullPointerException");
+    assert_eq!(java["cachedRouteUnchanged"], true);
+
+    let initial_body = serde_json::to_vec(&java["initialInput"]).unwrap();
+    let invalid_body = serde_json::to_vec(&java["input"]).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut config = ClientConfig::new("route-null-map-consumer");
+    config.namesrv_addr = Some(listener.local_addr().unwrap().to_string());
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        for body in [initial_body, invalid_body] {
+            let mut length = [0; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut bytes = BytesMut::from(&length[..]);
+            bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut bytes[4..]).await.unwrap();
+            let request = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
+                .unwrap()
+                .unwrap();
+            assert_eq!(request.code, request::GET_ROUTEINFO_BY_TOPIC);
+            let mut reply = RemotingCommand {
+                code: 0,
+                opaque: request.opaque,
+                body: Some(body),
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .await
+                .unwrap();
+        }
+    });
+
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+    let consumer = Arc::new(RouteObserver {
+        runtime: Arc::downgrade(&runtime),
+        updates: AtomicUsize::new(0),
+        needed: AtomicBool::new(false),
+        need_checks: AtomicUsize::new(0),
+    });
+    runtime
+        .register_consumer("consumer", consumer.clone())
+        .await
+        .unwrap();
+    runtime.remoting().start().unwrap();
+
+    assert!(
+        runtime
+            .update_topic_route("topic", Instant::now() + Duration::from_secs(2))
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        consumer.need_checks.load(Ordering::SeqCst),
+        java["consumerNeedChecksAfterInitial"]
+    );
+    assert_eq!(
+        consumer.updates.load(Ordering::SeqCst),
+        java["consumerUpdatesAfterInitial"]
+    );
+    let before = runtime.route_snapshot().unwrap();
+
+    assert!(
+        runtime
+            .update_topic_route("topic", Instant::now() + Duration::from_secs(2))
+            .await
+            .is_err()
+    );
+    assert!(Arc::ptr_eq(&before, &runtime.route_snapshot().unwrap()));
+    assert_eq!(
+        consumer.need_checks.load(Ordering::SeqCst),
+        java["consumerNeedChecksAfterFailure"]
+    );
+    assert_eq!(
+        consumer.updates.load(Ordering::SeqCst),
+        java["consumerUpdatesAfterFailure"]
+    );
+    peer.await.unwrap();
+    runtime.remoting().shutdown().await;
+}
+
+#[tokio::test]
 async fn different_topic_refreshes_serialize_wire_fetches_without_blocking_snapshot_readers() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut config = ClientConfig::new("192.0.2.6");
