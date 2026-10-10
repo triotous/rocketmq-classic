@@ -68,6 +68,52 @@ async fn shared_shutdown_uses_registration_identity_not_runtime_arc_counts() {
 }
 
 #[tokio::test]
+async fn admin_registration_blocks_shutdown_until_owner_is_unregistered() {
+    use std::any::Any;
+
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let expected = &fixture["registryTables"]["adminRegistration"]["shutdownGate"];
+    let mut config = explicit_config("admin-shutdown-gate");
+    config.namesrv_addr = Some(String::new());
+    let manager = ClientRuntimeManager::new();
+    let runtime = manager.get_or_create(&config).await.unwrap();
+
+    struct AdminOwner;
+    let owner = Arc::new(AdminOwner);
+    let owner_weak = Arc::downgrade(&owner);
+    let erased_owner: Arc<dyn Any + Send + Sync> = owner.clone();
+    runtime.start().await.unwrap();
+    assert_eq!(
+        runtime
+            .register_admin_ext(Some("shutdown-admin"), Some(erased_owner))
+            .unwrap(),
+        expected["registrationAccepted"].as_bool().unwrap()
+    );
+    drop(owner);
+    assert!(owner_weak.upgrade().is_some());
+
+    let stopped_while_registered = runtime.shutdown().await.unwrap();
+    assert_eq!(
+        !stopped_while_registered,
+        expected["shutdownBlockedByAdmin"].as_bool().unwrap()
+    );
+    assert_eq!(runtime.state(), RuntimeState::Running);
+    let same_runtime = manager.get_or_create(&config).await.unwrap();
+    assert!(Arc::ptr_eq(&runtime, &same_runtime));
+
+    runtime
+        .unregister_admin_ext(Some("shutdown-admin"))
+        .unwrap();
+    assert!(owner_weak.upgrade().is_none());
+    assert_eq!(
+        runtime.shutdown().await.unwrap(),
+        expected["shutdownAfterAdminRemoval"].as_bool().unwrap()
+    );
+    assert_eq!(runtime.state(), RuntimeState::Stopped);
+}
+
+#[tokio::test]
 async fn many_concurrent_start_calls_observe_one_serialized_transition() {
     let manager = ClientRuntimeManager::new();
     let runtime = manager
