@@ -85,6 +85,7 @@ public final class RuntimeLookupFixtures {
         fixture.put("queryAssignmentFieldCases", queryAssignmentFieldCases());
         fixture.put("queryAssignmentRootCases", queryAssignmentRootCases());
         fixture.put("queryAssignmentRequestApiCase", queryAssignmentRequestApiCase());
+        fixture.put("queryAssignmentNullInputsApiCase", queryAssignmentNullInputsApiCase());
         fixture.put("queryAssignmentResponseApiCase", queryAssignmentResponseApiCase());
         fixture.put("setRequestModeCases", setRequestModeCases());
         fixture.put("setRequestModeFieldCases", setRequestModeFieldCases());
@@ -1059,6 +1060,42 @@ public final class RuntimeLookupFixtures {
         item.put("nullSettersRemainNull", body.getTopic() == null && body.getConsumerGroup() == null
             && body.getClientId() == null && body.getStrategyName() == null && body.getMessageModel() == null);
         return item;
+    }
+
+    private static Map<String, Object> queryAssignmentNullInputsApiCase() throws Exception {
+        ClientConfig config = new ClientConfig();
+        config.setClientIP("query-assignment-null-inputs-api");
+        Map<String, Object> result = new TreeMap<>();
+        org.apache.rocketmq.client.impl.MQClientAPIImpl api =
+            new org.apache.rocketmq.client.impl.MQClientAPIImpl(
+                new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null, config, null,
+                ignored -> (org.apache.rocketmq.remoting.RemotingClient) java.lang.reflect.Proxy.newProxyInstance(
+                    RuntimeLookupFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            result.put("address", values[0]);
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                            result.put("requestCode", request.getCode());
+                            result.put("body", com.alibaba.fastjson2.JSON.parseObject(
+                                new String(request.getBody(), java.nio.charset.StandardCharsets.UTF_8)));
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand response =
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+                                    org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null);
+                            response.setBody("{\"messageQueueAssignments\":[]}"
+                                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                            return response;
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        try {
+            result.put("assignmentCount", api.queryAssignment("broker:10911", "topic", null, "client",
+                null, null, 1000L).size());
+        } finally {
+            api.shutdown();
+        }
+        return result;
     }
 
     private static Map<String, Object> queryAssignmentResponseApiCase() {
@@ -2850,7 +2887,7 @@ public final class RuntimeLookupFixtures {
             call.put("group", group);
             call.put("clientId", clientId);
             call.put("strategy", strategy);
-            call.put("messageModel", messageModel.name());
+            call.put("messageModel", messageModel == null ? null : messageModel.name());
             call.put("timeout", timeout);
             assignmentCalls.add(call);
             if (failAssignment) throw new org.apache.rocketmq.remoting.exception.RemotingConnectException("fixture");
@@ -2891,6 +2928,10 @@ public final class RuntimeLookupFixtures {
             result.put("assignmentCalls", new ArrayList<>(api.assignmentCalls));
             result.put("refreshTopics", new ArrayList<>(api.refreshTopics));
 
+            api.assignmentCalls.clear();
+            result.put("nullAssignmentFieldsOutcome",
+                runtime.queryAssignment("topic", null, null, null, 3000).size());
+            result.put("nullAssignmentFieldsCalls", new ArrayList<>(api.assignmentCalls));
             api.assignmentCalls.clear();
             for (int timeout : new int[] {0, -1}) {
                 runtime.queryAssignment("topic", "consumer", "strategy",
