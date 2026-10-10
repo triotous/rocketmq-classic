@@ -31,3 +31,4 @@
 - Differential adds seven outcomes; the route oracle has 122 primitive/view outcomes and `route.json` SHA-256 `9a4c8a5f5fa0f8cfdb42c0d620d4e8d470fdfc25535b7b1d78e9d39bdde1d0c6`.
 - Validation passed: focused route differential; full locked workspace/all-target tests with local socket access; strict all-target/all-feature Clippy; pinned offline Maven verify (22 scenarios, route fixture drift, Java cross-decodes); comparator self-test/manifest22; formatting and diff checks. POM restored after fixture regeneration.
 - Code/oracle/test/fixture commit pending. Phase 6 source/API/settings/input/platform reconciliation remains open; P6-V04 stays a Phase 19 handoff.
+- Code/oracle/test/fixture commit: `91edf0da` (`Cover nullable route remapping arguments`). The API map, requirement audit, and route audit now name all four nullable remapping adapters, record callback non-invocation, count 122 outcomes, and carry the current fixture SHA-256; documentation/log commit pending.
