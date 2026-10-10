@@ -377,6 +377,42 @@ async fn manager_configuration_copy_matches_invoked_java_without_mutating_caller
     ));
 }
 
+#[tokio::test]
+async fn runtime_client_id_remains_constructor_snapshot_after_config_mutation() {
+    use rocketmq_classic_core::runtime::ClientRuntimeManager;
+
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = &fixture["managerSharing"];
+    let mut config = ClientConfig::new("198.51.100.223");
+    config.instance_name = Some("phase6-manager-sharing".into());
+    config.namesrv_addr = Some(String::new());
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        runtime.client_id(),
+        java["clientIdBeforeConfigMutation"].as_str().unwrap()
+    );
+    {
+        let retained_config = runtime.config();
+        let mut retained = retained_config.write().unwrap();
+        retained.client_ip = Some("203.0.113.44".into());
+        retained.instance_name = Some("mutated-runtime-instance".into());
+        retained.unit_name = Some("mutated-runtime-unit".into());
+        assert_eq!(
+            retained.build_client_id(),
+            java["configDerivedClientIdAfterMutation"].as_str().unwrap()
+        );
+    }
+    assert_eq!(
+        runtime.client_id(),
+        java["clientIdAfterConfigMutation"].as_str().unwrap()
+    );
+}
+
 #[test]
 fn centralized_defaults_and_java_clone_copy_exact_fields() {
     let fixture: Value =
