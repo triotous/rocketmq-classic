@@ -336,6 +336,15 @@ mod tests {
             Some(self.handler.clone())
         }
     }
+    struct NoInboundConsumer;
+    impl ConsumerRuntime for NoInboundConsumer {
+        fn heartbeat_data(&self) -> ConsumerData {
+            ConsumerData {
+                group_name: Some("consumer-no-inbound".into()),
+                ..Default::default()
+            }
+        }
+    }
     fn handler(runtime: &Arc<ClientRuntime>, owner: &str) -> Arc<Handler> {
         Arc::new(Handler {
             owner: owner.into(),
@@ -548,5 +557,49 @@ mod tests {
         unregister(&other, &second_lease, false).await;
         assert!(runtime.shutdown().await.unwrap());
         assert!(other.shutdown().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn absent_consumer_group_and_handler_capabilities_return_phase_errors() {
+        let runtime = runtime("consumer-inactive-slots").await;
+        let consumer = Arc::new(NoInboundConsumer);
+        let lease = runtime
+            .register_consumer("consumer-no-inbound", consumer)
+            .await
+            .unwrap();
+        for (code, key, phase) in [
+            (
+                request::NOTIFY_CONSUMER_IDS_CHANGED,
+                "consumerGroup",
+                "Phase 9",
+            ),
+            (request::RESET_CONSUMER_CLIENT_OFFSET, "group", "Phase 17"),
+            (
+                request::GET_CONSUMER_STATUS_FROM_CLIENT,
+                "group",
+                "Phase 17",
+            ),
+            (
+                request::GET_CONSUMER_RUNNING_INFO,
+                "consumerGroup",
+                "Phase 17",
+            ),
+            (
+                request::CONSUME_MESSAGE_DIRECTLY,
+                "consumerGroup",
+                "Phase 17",
+            ),
+        ] {
+            let expected = format!("client request {code} has no active handler ({phase})");
+            let no_capability = dispatch(&runtime, code, &[(key, "consumer-no-inbound")], None);
+            assert_eq!(no_capability.code, response::REQUEST_CODE_NOT_SUPPORTED);
+            assert_eq!(no_capability.remark.as_deref(), Some(expected.as_str()));
+
+            let no_group = dispatch(&runtime, code, &[], None);
+            assert_eq!(no_group.code, response::REQUEST_CODE_NOT_SUPPORTED);
+            assert_eq!(no_group.remark.as_deref(), Some(expected.as_str()));
+        }
+        unregister(&runtime, &lease, false).await;
+        assert!(runtime.shutdown().await.unwrap());
     }
 }
