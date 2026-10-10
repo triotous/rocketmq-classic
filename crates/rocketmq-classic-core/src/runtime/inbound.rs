@@ -658,4 +658,30 @@ mod tests {
         unregister(&runtime, &lease, true).await;
         assert!(runtime.shutdown().await.unwrap());
     }
+
+    #[tokio::test]
+    async fn registered_but_undispatched_lite_code_matches_java_null_response() {
+        let case = fixtures()["undispatchedCases"][0].clone();
+        let code = case["requestCode"].as_i64().unwrap() as i32;
+        let runtime = runtime("undispatched-lite-request").await;
+        let response = runtime
+            .inbound
+            .process(RemotingCommand {
+                code,
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(
+            response.is_some(),
+            case["responsePresent"].as_bool().unwrap(),
+            "Java ClientRemotingProcessor.processRequest result for request code {code}"
+        );
+        if let (Some(response), Some(expected_code)) = (
+            response,
+            case.get("responseCode").and_then(serde_json::Value::as_i64),
+        ) {
+            assert_eq!(response.code, expected_code as i32);
+        }
+        assert!(runtime.shutdown().await.unwrap());
+    }
 }
