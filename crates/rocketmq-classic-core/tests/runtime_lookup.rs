@@ -362,7 +362,14 @@ async fn missing_broker_returns_none_and_expired_assignment_emits_no_frame() {
         .update_topic_route("topic", Instant::now() + Duration::from_secs(3))
         .await
         .unwrap();
-    for timeout in [0, -1] {
+    let java_timeouts = java_lookup["nonpositiveAssignmentCalls"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|call| call["timeout"].as_i64().unwrap() as i32)
+        .collect::<Vec<_>>();
+    assert_eq!(java_timeouts, [0, -1]);
+    for timeout in java_timeouts {
         assert!(matches!(
             runtime
                 .query_assignment(
