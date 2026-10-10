@@ -104,6 +104,69 @@ fn java_windows_interface_candidate_order(
     anycast
 }
 
+#[cfg(any(windows, test))]
+// The caller supplies IP Helper rows in native table order and snapshots the
+// two GetIfEntry2 predicates that Java queries separately.
+struct WindowsInterfaceRecord {
+    luid: u64,
+    name: String,
+    admin_up: bool,
+    operational_up: bool,
+    point_to_point: bool,
+}
+
+#[cfg(any(windows, test))]
+struct WindowsUnicastRecord {
+    luid: u64,
+    dad_state: i32,
+    address: windows_sys::Win32::Networking::WinSock::SOCKADDR_INET,
+}
+
+#[cfg(any(windows, test))]
+struct WindowsAnycastRecord {
+    luid: u64,
+    address: windows_sys::Win32::Networking::WinSock::SOCKADDR_INET,
+}
+
+#[cfg(any(windows, test))]
+fn windows_interface_candidates(
+    interfaces: &[WindowsInterfaceRecord],
+    unicast: &[WindowsUnicastRecord],
+    anycast: &[WindowsAnycastRecord],
+    prefer_ipv4_stack: bool,
+) -> Vec<Address> {
+    let mut addresses = Vec::new();
+    for interface in interfaces {
+        if !java_windows_interface_is_eligible(
+            interface.admin_up,
+            interface.operational_up,
+            interface.point_to_point,
+        ) {
+            continue;
+        }
+
+        let interface_unicast = unicast
+            .iter()
+            .filter(|row| {
+                row.luid == interface.luid && java_windows_unicast_address_is_usable(row.dad_state)
+            })
+            .filter_map(|row| windows_address(row.address, &interface.name))
+            .filter(|address| !prefer_ipv4_stack || address.ip.is_ipv4())
+            .collect::<Vec<_>>();
+        let interface_anycast = anycast
+            .iter()
+            .filter(|row| row.luid == interface.luid)
+            .filter_map(|row| windows_address(row.address, &interface.name))
+            .filter(|address| !prefer_ipv4_stack || address.ip.is_ipv4())
+            .collect::<Vec<_>>();
+        addresses.extend(java_windows_interface_candidate_order(
+            interface_unicast,
+            interface_anycast,
+        ));
+    }
+    addresses
+}
+
 #[cfg(any(target_os = "linux", test))]
 fn java_linux_ipv6_scope(_native_scope: u32, interface_index: u32) -> u32 {
     // OpenJDK's Linux enumerator sets sin6_scope_id from /proc/net/if_inet6's
@@ -582,42 +645,44 @@ fn interfaces(prefer_ipv4_stack: bool) -> io::Result<Vec<Address>> {
         std::slice::from_raw_parts((*anycast).Table.as_ptr(), (*anycast).NumEntries as usize)
     };
 
-    let mut addresses = Vec::new();
-    for interface in interfaces {
-        let interface_name = interface_name(&interface.InterfaceLuid)?;
-        // NetworkInterface.isUp() and isPointToPoint() each query the current
-        // interface row after Java has enumerated the interface table.
-        let up_state = interface_row(interface.InterfaceIndex)?;
-        let point_to_point_state = interface_row(interface.InterfaceIndex)?;
-        if !java_windows_interface_is_eligible(
-            up_state.AdminStatus == NET_IF_ADMIN_STATUS_UP,
-            up_state.OperStatus == IfOperStatusUp,
-            point_to_point_state.AccessType == NET_IF_ACCESS_POINT_TO_POINT,
-        ) {
-            continue;
-        }
-
-        let interface_unicast = unicast
-            .iter()
-            .filter(|row| {
-                luid_value(&row.InterfaceLuid) == luid_value(&interface.InterfaceLuid)
-                    && java_windows_unicast_address_is_usable(row.DadState)
+    let interfaces = interfaces
+        .iter()
+        .map(|interface| {
+            let name = interface_name(&interface.InterfaceLuid)?;
+            // NetworkInterface.isUp() and isPointToPoint() each query the
+            // current interface row after Java has enumerated the interface.
+            let up_state = interface_row(interface.InterfaceIndex)?;
+            let point_to_point_state = interface_row(interface.InterfaceIndex)?;
+            Ok(WindowsInterfaceRecord {
+                luid: luid_value(&interface.InterfaceLuid),
+                name,
+                admin_up: up_state.AdminStatus == NET_IF_ADMIN_STATUS_UP,
+                operational_up: up_state.OperStatus == IfOperStatusUp,
+                point_to_point: point_to_point_state.AccessType == NET_IF_ACCESS_POINT_TO_POINT,
             })
-            .filter_map(|row| windows_address(row.Address, &interface_name))
-            .filter(|address| !prefer_ipv4_stack || address.ip.is_ipv4())
-            .collect::<Vec<_>>();
-        let interface_anycast = anycast
-            .iter()
-            .filter(|row| luid_value(&row.InterfaceLuid) == luid_value(&interface.InterfaceLuid))
-            .filter_map(|row| windows_address(row.Address, &interface_name))
-            .filter(|address| !prefer_ipv4_stack || address.ip.is_ipv4())
-            .collect::<Vec<_>>();
-        addresses.extend(java_windows_interface_candidate_order(
-            interface_unicast,
-            interface_anycast,
-        ));
-    }
-    Ok(addresses)
+        })
+        .collect::<io::Result<Vec<_>>>()?;
+    let unicast = unicast
+        .iter()
+        .map(|row| WindowsUnicastRecord {
+            luid: luid_value(&row.InterfaceLuid),
+            dad_state: row.DadState,
+            address: row.Address,
+        })
+        .collect::<Vec<_>>();
+    let anycast = anycast
+        .iter()
+        .map(|row| WindowsAnycastRecord {
+            luid: luid_value(&row.InterfaceLuid),
+            address: row.Address,
+        })
+        .collect::<Vec<_>>();
+    Ok(windows_interface_candidates(
+        &interfaces,
+        &unicast,
+        &anycast,
+        prefer_ipv4_stack,
+    ))
 }
 
 #[cfg(any(windows, test))]
@@ -731,6 +796,149 @@ mod tests {
         assert_eq!(
             windows_address(SOCKADDR_INET::default(), "Ethernet 3"),
             None
+        );
+    }
+
+    #[test]
+    fn windows_interface_candidate_pipeline_joins_filters_and_orders_tables() {
+        use windows_sys::Win32::Networking::WinSock::{
+            AF_INET, AF_INET6, IN_ADDR, IN_ADDR_0, IN6_ADDR, IN6_ADDR_0, SOCKADDR_IN, SOCKADDR_IN6,
+            SOCKADDR_IN6_0, SOCKADDR_INET,
+        };
+
+        fn ipv4(octets: [u8; 4]) -> SOCKADDR_INET {
+            SOCKADDR_INET {
+                Ipv4: SOCKADDR_IN {
+                    sin_family: AF_INET,
+                    sin_addr: IN_ADDR {
+                        S_un: IN_ADDR_0 {
+                            S_addr: u32::from_ne_bytes(octets),
+                        },
+                    },
+                    ..Default::default()
+                },
+            }
+        }
+
+        fn ipv6(octets: [u8; 16], scope: u32) -> SOCKADDR_INET {
+            SOCKADDR_INET {
+                Ipv6: SOCKADDR_IN6 {
+                    sin6_family: AF_INET6,
+                    sin6_addr: IN6_ADDR {
+                        u: IN6_ADDR_0 { Byte: octets },
+                    },
+                    Anonymous: SOCKADDR_IN6_0 {
+                        sin6_scope_id: scope,
+                    },
+                    ..Default::default()
+                },
+            }
+        }
+
+        let interfaces = [
+            WindowsInterfaceRecord {
+                luid: 10,
+                name: "Ethernet 0".into(),
+                admin_up: true,
+                operational_up: true,
+                point_to_point: false,
+            },
+            WindowsInterfaceRecord {
+                luid: 20,
+                name: "Down".into(),
+                admin_up: false,
+                operational_up: true,
+                point_to_point: false,
+            },
+            WindowsInterfaceRecord {
+                luid: 30,
+                name: "Point-to-point".into(),
+                admin_up: true,
+                operational_up: true,
+                point_to_point: true,
+            },
+            WindowsInterfaceRecord {
+                luid: 40,
+                name: "Ethernet 1".into(),
+                admin_up: true,
+                operational_up: true,
+                point_to_point: false,
+            },
+        ];
+        let unicast = [
+            WindowsUnicastRecord {
+                luid: 10,
+                dad_state: 4,
+                address: ipv4([10, 0, 0, 1]),
+            },
+            WindowsUnicastRecord {
+                luid: 10,
+                dad_state: 2,
+                address: ipv4([10, 0, 0, 99]),
+            },
+            WindowsUnicastRecord {
+                luid: 10,
+                dad_state: 3,
+                address: ipv4([10, 0, 0, 2]),
+            },
+            WindowsUnicastRecord {
+                luid: 10,
+                dad_state: 4,
+                address: ipv6([0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], 12),
+            },
+            WindowsUnicastRecord {
+                luid: 20,
+                dad_state: 4,
+                address: ipv4([192, 0, 2, 20]),
+            },
+            WindowsUnicastRecord {
+                luid: 40,
+                dad_state: 4,
+                address: ipv6(
+                    [0x20, 1, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x40],
+                    0,
+                ),
+            },
+        ];
+        let anycast = [
+            WindowsAnycastRecord {
+                luid: 10,
+                address: ipv4([198, 51, 100, 1]),
+            },
+            WindowsAnycastRecord {
+                luid: 10,
+                address: ipv4([198, 51, 100, 2]),
+            },
+            WindowsAnycastRecord {
+                luid: 20,
+                address: ipv4([198, 51, 100, 20]),
+            },
+            WindowsAnycastRecord {
+                luid: 99,
+                address: ipv4([203, 0, 113, 99]),
+            },
+        ];
+
+        let render = |prefer_ipv4_stack| {
+            windows_interface_candidates(&interfaces, &unicast, &anycast, prefer_ipv4_stack)
+                .iter()
+                .map(normalize)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            render(false),
+            [
+                "198.51.100.2",
+                "198.51.100.1",
+                "[fe80:0:0:0:0:0:0:1%Ethernet 0]",
+                "10.0.0.2",
+                "10.0.0.1",
+                "[2001:db8:0:0:0:0:0:40]",
+            ]
+        );
+        assert_eq!(
+            render(true),
+            ["198.51.100.2", "198.51.100.1", "10.0.0.2", "10.0.0.1"]
         );
     }
 
