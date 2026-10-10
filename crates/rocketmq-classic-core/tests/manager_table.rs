@@ -108,6 +108,35 @@ async fn nullable_factory_table_get_matches_invoked_java_null_key_failure() {
 }
 
 #[tokio::test]
+async fn nullable_manager_removal_overloads_match_invoked_java_null_key_failures() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = &fixture["managerRemoval"];
+    assert_eq!(java["removeByNullId"], "NullPointerException");
+    assert_eq!(java["removeByNullIdAndInstance"], "NullPointerException");
+
+    let manager = ClientRuntimeManager::new();
+    let runtime = manager
+        .get_or_create(&ClientConfig::new("nullable-manager-removal"))
+        .await
+        .unwrap();
+    assert!(matches!(
+        manager.remove_client_factory_nullable(None, &runtime),
+        Err(RuntimeError::InvalidRoute("null client id"))
+    ));
+    assert!(matches!(
+        manager.remove_client_factory_by_id_nullable(None).await,
+        Err(RuntimeError::InvalidRoute("null client id"))
+    ));
+    let selected = manager
+        .factory_table()
+        .get_nullable(Some(runtime.client_id()))
+        .unwrap()
+        .unwrap();
+    assert!(Arc::ptr_eq(&selected, &runtime));
+}
+
+#[tokio::test]
 async fn concurrent_put_if_absent_publishes_one_identity_and_clear_releases_owners() {
     let source = ClientRuntimeManager::new();
     let first = source

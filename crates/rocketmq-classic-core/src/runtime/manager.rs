@@ -355,6 +355,18 @@ impl ClientRuntimeManager {
         Ok(matches)
     }
 
+    /// Nullable Java-compatible identity-aware removal boundary.
+    pub fn remove_client_factory_nullable(
+        &self,
+        client_id: Option<&str>,
+        expected: &Arc<ClientRuntime>,
+    ) -> Result<bool, RuntimeError> {
+        let Some(client_id) = client_id else {
+            return Err(RuntimeError::InvalidRoute("null client id"));
+        };
+        self.remove_client_factory(client_id, expected)
+    }
+
     /// Unconditional removal corresponding to Java removeClientFactory(id).
     /// Does not shut down the removed runtime. Lifecycle cleanup must continue
     /// to use the identity-aware overload to avoid removing replacements.
@@ -392,6 +404,17 @@ impl ClientRuntimeManager {
                 Some(_) => continue,
             }
         }
+    }
+
+    /// Nullable Java-compatible unconditional removal boundary.
+    pub async fn remove_client_factory_by_id_nullable(
+        &self,
+        client_id: Option<&str>,
+    ) -> Result<bool, RuntimeError> {
+        let Some(client_id) = client_id else {
+            return Err(RuntimeError::InvalidRoute("null client id"));
+        };
+        self.remove_client_factory_by_id(client_id).await
     }
 }
 
