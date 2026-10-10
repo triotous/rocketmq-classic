@@ -595,6 +595,65 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
             && same(table.get("merge-new").unwrap(), &first),
     );
 
+    table.put("replaceAll-race", first.clone()).unwrap();
+    let replace_all_calls = Arc::new(AtomicUsize::new(0));
+    let (replace_all_entered_tx, replace_all_entered_rx) = mpsc::channel();
+    let (release_replace_all_tx, release_replace_all_rx) = mpsc::channel();
+    let replace_all_table = table.clone();
+    let replace_all_second = second.clone();
+    let replace_all_calls_for_task = replace_all_calls.clone();
+    let replace_all_thread = std::thread::spawn(move || {
+        replace_all_table.replace_all(move |key, old| {
+            if key != "replaceAll-race" {
+                return old.clone();
+            }
+            if replace_all_calls_for_task.fetch_add(1, Ordering::SeqCst) == 0 {
+                replace_all_entered_tx.send(()).unwrap();
+                release_replace_all_rx.recv().unwrap();
+            }
+            replace_all_second.clone()
+        })
+    });
+    replace_all_entered_rx
+        .recv_timeout(Duration::from_secs(5))
+        .unwrap();
+    let replace_all_writer_table = table.clone();
+    let replace_all_writer_value = second.clone();
+    let (replace_all_writer_started_tx, replace_all_writer_started_rx) = mpsc::channel();
+    let (replace_all_writer_finished_tx, replace_all_writer_finished_rx) = mpsc::channel();
+    let replace_all_writer_thread = std::thread::spawn(move || {
+        replace_all_writer_started_tx.send(()).unwrap();
+        let previous = replace_all_writer_table.put("replaceAll-race", replace_all_writer_value);
+        replace_all_writer_finished_tx.send(()).unwrap();
+        previous
+    });
+    replace_all_writer_started_rx
+        .recv_timeout(Duration::from_secs(5))
+        .unwrap();
+    let replace_all_writer_runs = replace_all_writer_finished_rx
+        .recv_timeout(Duration::from_millis(100))
+        .is_ok();
+    release_replace_all_tx.send(()).unwrap();
+    replace_all_thread.join().unwrap().unwrap();
+    let replace_all_writer_previous = replace_all_writer_thread.join().unwrap().unwrap();
+    outcomes.insert(
+        "replaceAllWriterRunsDuringCallback",
+        replace_all_writer_runs,
+    );
+    outcomes.insert(
+        "replaceAllCallbackRetriesAfterWriter",
+        replace_all_calls.load(Ordering::SeqCst) == 2,
+    );
+    outcomes.insert(
+        "replaceAllWriterObservedOldValue",
+        same(Some(replace_all_writer_previous.unwrap()), &first),
+    );
+    outcomes.insert(
+        "replaceAllFinalValueIsComputed",
+        same(table.get("replaceAll-race").unwrap(), &second),
+    );
+    table.remove("replaceAll-race").unwrap();
+
     table.put("remapping-race", first.clone()).unwrap();
     let callback_calls = Arc::new(AtomicUsize::new(0));
     let callback_read_current = Arc::new(AtomicBool::new(false));

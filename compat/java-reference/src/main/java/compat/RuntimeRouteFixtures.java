@@ -1813,6 +1813,76 @@ public final class RuntimeRouteFixtures {
             table.replaceAll((key, value) -> key.equals("topic") ? second : first);
             primitives.put("replaceAllUpdatesMappings", table.size() == 5 && table.get("topic") == second
                 && table.get("bulk-a") == first && table.get("compute-a") == first && table.get("merge-new") == first);
+            table.put("replaceAll-race", first);
+            AtomicInteger replaceAllCalls = new AtomicInteger();
+            CountDownLatch replaceAllEntered = new CountDownLatch(1);
+            CountDownLatch releaseReplaceAll = new CountDownLatch(1);
+            CountDownLatch replaceAllWriterStarted = new CountDownLatch(1);
+            CountDownLatch replaceAllWriterFinished = new CountDownLatch(1);
+            AtomicReference<TopicRouteData> replaceAllWriterPrevious = new AtomicReference<>();
+            AtomicReference<Throwable> replaceAllFailure = new AtomicReference<>();
+            AtomicReference<Throwable> replaceAllWriterFailure = new AtomicReference<>();
+            Thread replaceAllThread = new Thread(() -> {
+                try {
+                    table.replaceAll((key, oldValue) -> {
+                        if (!key.equals("replaceAll-race")) {
+                            return oldValue;
+                        }
+                        if (replaceAllCalls.incrementAndGet() == 1) {
+                            replaceAllEntered.countDown();
+                            awaitUnchecked(releaseReplaceAll, "raw route replaceAll release");
+                        }
+                        return second;
+                    });
+                } catch (Throwable error) {
+                    replaceAllFailure.set(error);
+                }
+            }, "java-raw-route-replace-all-oracle");
+            Thread replaceAllWriterThread = new Thread(() -> {
+                replaceAllWriterStarted.countDown();
+                try {
+                    replaceAllWriterPrevious.set(table.put("replaceAll-race", second));
+                } catch (Throwable error) {
+                    replaceAllWriterFailure.set(error);
+                } finally {
+                    replaceAllWriterFinished.countDown();
+                }
+            }, "java-raw-route-replace-all-writer");
+            replaceAllThread.setDaemon(true);
+            replaceAllWriterThread.setDaemon(true);
+            replaceAllThread.start();
+            try {
+                awaitUnchecked(replaceAllEntered, "raw route replaceAll callback");
+                replaceAllWriterThread.start();
+                awaitUnchecked(replaceAllWriterStarted, "raw route replaceAll same-key writer");
+                primitives.put("replaceAllWriterRunsDuringCallback",
+                    replaceAllWriterFinished.await(100, TimeUnit.MILLISECONDS));
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("interrupted while checking raw route replaceAll", error);
+            } finally {
+                releaseReplaceAll.countDown();
+            }
+            try {
+                replaceAllThread.join(5000);
+                replaceAllWriterThread.join(5000);
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("interrupted while joining raw route replaceAll threads", error);
+            }
+            if (replaceAllThread.isAlive() || replaceAllWriterThread.isAlive()) {
+                throw new IllegalStateException("ConcurrentHashMap raw route replaceAll threads did not finish");
+            }
+            if (replaceAllFailure.get() != null) {
+                throw new IllegalStateException("ConcurrentHashMap raw route replaceAll failed", replaceAllFailure.get());
+            }
+            if (replaceAllWriterFailure.get() != null) {
+                throw new IllegalStateException("ConcurrentHashMap raw route replaceAll writer failed", replaceAllWriterFailure.get());
+            }
+            primitives.put("replaceAllCallbackRetriesAfterWriter", replaceAllCalls.get() == 2);
+            primitives.put("replaceAllWriterObservedOldValue", replaceAllWriterPrevious.get() == first);
+            primitives.put("replaceAllFinalValueIsComputed", table.get("replaceAll-race") == second);
+            table.remove("replaceAll-race");
             table.put("remapping-race", first);
             AtomicInteger remappingCalls = new AtomicInteger();
             CountDownLatch remappingEntered = new CountDownLatch(1);

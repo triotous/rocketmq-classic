@@ -161,6 +161,22 @@ impl TopicRouteTable {
         self.0.replace_raw_if_same(key, expected, value)
     }
 
+    fn replace_if_java_value_matches(
+        &self,
+        key: &str,
+        expected: &TopicRouteDataHandle,
+        value: TopicRouteDataHandle,
+    ) -> Result<bool, RuntimeError> {
+        let _gate = self.0.lock_raw_route_key(key)?;
+        let Some(current) = self.get(key)? else {
+            return Ok(false);
+        };
+        if !route_values_equal(&current.snapshot()?, &expected.snapshot()?) {
+            return Ok(false);
+        }
+        self.replace_if_handle_same_locked(key, &current, value)
+    }
+
     fn remove_if_handle_same(
         &self,
         key: &str,
@@ -340,19 +356,27 @@ impl TopicRouteTable {
         })
     }
 
-    /// Replaces values for keys in one detached key snapshot. The mapping
-    /// callback runs without a cache lock and may be retried after a race.
+    /// Replaces values for keys in one detached key snapshot. The callback
+    /// runs without a cache lock and may be retried if a concurrent write
+    /// changes that key before its conditional replacement.
     pub fn replace_all(
         &self,
         mut remapping: impl FnMut(&str, &TopicRouteDataHandle) -> TopicRouteDataHandle,
     ) -> Result<(), RuntimeError> {
         for key in self.snapshot()?.into_keys() {
-            let _gate = self.0.lock_raw_route_key(&key)?;
-            let Some(current) = self.get(&key)? else {
+            let Some(mut observed) = self.get(&key)? else {
                 continue;
             };
-            let value = remapping(&key, &current);
-            self.replace_if_handle_same_locked(&key, &current, value)?;
+            loop {
+                let value = remapping(&key, &observed);
+                if self.replace_if_java_value_matches(&key, &observed, value)? {
+                    break;
+                }
+                let Some(current) = self.get(&key)? else {
+                    break;
+                };
+                observed = current;
+            }
         }
         Ok(())
     }
