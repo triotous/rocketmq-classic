@@ -814,7 +814,9 @@ impl ClientRuntime {
 
     /// Retain an admin owner by group, matching Java `registerAdminExt`.
     /// Null group or owner inputs are rejected with `false`; duplicate groups
-    /// keep their first owner. Admin operations themselves belong to Phase 17.
+    /// keep their first owner. Use a `Weak<ClientRuntime>` for owner back-
+    /// references so the retained admin cannot form an `Arc` cycle. Admin
+    /// operations themselves belong to Phase 17.
     pub fn register_admin_ext(
         &self,
         group: Option<&str>,

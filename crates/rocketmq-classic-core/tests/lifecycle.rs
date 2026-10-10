@@ -1,14 +1,14 @@
 use bytes::BytesMut;
 use rocketmq_classic_core::{
     config::ClientConfig,
-    runtime::{ClientRuntimeManager, ProducerRuntime, RuntimeError, RuntimeState},
+    runtime::{ClientRuntime, ClientRuntimeManager, ProducerRuntime, RuntimeError, RuntimeState},
 };
 use rocketmq_classic_protocol::codes::request;
 use rocketmq_classic_remoting::{
     RemotingCommand,
     codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
 };
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use tokio::time::{Duration, Instant};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -79,8 +79,10 @@ async fn admin_registration_blocks_shutdown_until_owner_is_unregistered() {
     let manager = ClientRuntimeManager::new();
     let runtime = manager.get_or_create(&config).await.unwrap();
 
-    struct AdminOwner;
-    let owner = Arc::new(AdminOwner);
+    struct AdminOwner(Weak<ClientRuntime>);
+    let runtime_weak = Arc::downgrade(&runtime);
+    let owner = Arc::new(AdminOwner(Arc::downgrade(&runtime)));
+    assert!(owner.0.upgrade().is_some());
     let owner_weak = Arc::downgrade(&owner);
     let erased_owner: Arc<dyn Any + Send + Sync> = owner.clone();
     runtime.start().await.unwrap();
@@ -111,6 +113,10 @@ async fn admin_registration_blocks_shutdown_until_owner_is_unregistered() {
         expected["shutdownAfterAdminRemoval"].as_bool().unwrap()
     );
     assert_eq!(runtime.state(), RuntimeState::Stopped);
+    drop(same_runtime);
+    drop(runtime);
+    drop(manager);
+    assert!(runtime_weak.upgrade().is_none());
 }
 
 #[tokio::test]
