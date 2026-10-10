@@ -2699,14 +2699,23 @@ public final class RuntimeLookupFixtures {
 
     private static List<Object> runtimeScheduledTaskCases() throws Exception {
         List<Object> cases = new ArrayList<>();
-        for (String nameServer : new String[] {null, "127.0.0.1:9876"}) {
+        String[] nameServers = {null, "127.0.0.1:9876", null, "127.0.0.1:9876"};
+        String[] names = {"nameserver-absent", "nameserver-configured",
+            "nameserver-absent-mutated-configured", "nameserver-configured-mutated-absent"};
+        for (int index = 0; index < nameServers.length; index++) {
             ClientConfig config = new ClientConfig();
             config.setClientIP("192.0.2.6");
-            config.setNamesrvAddr(nameServer);
+            config.setNamesrvAddr(nameServers[index]);
             config.setPollNameServerInterval(23);
             config.setHeartbeatBrokerInterval(47);
             config.setPersistConsumerOffsetInterval(59);
             MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+            if (index >= 2) {
+                config.setNamesrvAddr(index == 2 ? "late-after-construction:9876" : null);
+                config.setPollNameServerInterval(71);
+                config.setHeartbeatBrokerInterval(83);
+                config.setPersistConsumerOffsetInterval(97);
+            }
             List<Object> calls = new ArrayList<>();
             try {
                 java.lang.reflect.Field executorField = MQClientInstance.class
@@ -2740,7 +2749,7 @@ public final class RuntimeLookupFixtures {
                 startScheduledTask.setAccessible(true);
                 startScheduledTask.invoke(runtime);
                 Map<String, Object> item = new TreeMap<>();
-                item.put("name", nameServer == null ? "nameserver-absent" : "nameserver-configured");
+                item.put("name", names[index]);
                 item.put("scheduleAtFixedRateCalls", calls);
                 cases.add(item);
             } finally {
