@@ -622,6 +622,17 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn consumer_ids_changed_wakes_runtime_wide_rebalance_and_returns_no_response() {
+        let java_fixture = fixtures();
+        let java_cases = java_fixture["consumerIdsChangedCases"]
+            .as_array()
+            .expect("invoked Java code 40 cases");
+        assert_eq!(java_cases.len(), 2);
+        for case in java_cases {
+            assert_eq!(case["wakeupBefore"], false);
+            assert_eq!(case["wakeupAfter"], true);
+            assert_eq!(case["responsePresent"], false);
+        }
+
         let runtime = runtime("consumer-ids-changed-runtime-wide").await;
         let first = Arc::new(RebalancingConsumer(AtomicUsize::new(0)));
         let second = Arc::new(RebalancingConsumer(AtomicUsize::new(0)));
@@ -637,7 +648,8 @@ mod tests {
         // The worker enforces the source minimum interval from construction.
         tokio::time::advance(std::time::Duration::from_secs(1)).await;
         settle().await;
-        assert!(dispatch_optional(&runtime, &[("consumerGroup", "consumer-a")]).is_none());
+        let first_response = dispatch_optional(&runtime, &[("consumerGroup", "consumer-a")]);
+        assert_eq!(first_response.is_some(), java_cases[0]["responsePresent"]);
         settle().await;
         assert_eq!(first.0.load(Ordering::SeqCst), 1);
         assert_eq!(second.0.load(Ordering::SeqCst), 1);
@@ -646,7 +658,8 @@ mod tests {
         // wakeup to a single registered group.
         tokio::time::advance(std::time::Duration::from_secs(1)).await;
         settle().await;
-        assert!(dispatch_optional(&runtime, &[]).is_none());
+        let second_response = dispatch_optional(&runtime, &[]);
+        assert_eq!(second_response.is_some(), java_cases[1]["responsePresent"]);
         settle().await;
         assert_eq!(first.0.load(Ordering::SeqCst), 2);
         assert_eq!(second.0.load(Ordering::SeqCst), 2);
