@@ -41,11 +41,14 @@ preserves the one-second scheduled-work grace before cancellation and join.
 Existing lifecycle, rebalance-wakeup, and pull-dispatch tests cover those
 owned-task paths.
 
-The Java daemon flag, `Thread.join` timeout getter, interrupt boolean, and
-started-but-not-joined `makeStop()` operation have no direct Rust counterpart.
-Rust tasks are explicitly owned and joined through the runtime control task;
-`RuntimeState` is richer than the per-thread `isStopped()` boolean. These are
-documented worker-model differences, not claims of JDK thread parity.
+`runtime::SERVICE_THREAD_JOIN_TIME_MILLIS` exposes the fixed 90,000ms value
+returned by Java's `getJoinTime()`, checked against both invoked worker cases.
+There is no per-worker getter or Java `Thread.join` window. The Java daemon
+flag, interrupt boolean, and started-but-not-joined `makeStop()` operation have
+no direct Rust counterpart. Rust tasks are explicitly owned and joined through
+the runtime control task; `RuntimeState` is richer than the per-thread
+`isStopped()` boolean. These are documented worker-model differences, not
+claims of JDK thread parity.
 `waitForRunning(long)` and `onWaitEnd()` are protected methods, so they remain
 implementation details rather than public API entries.
 
