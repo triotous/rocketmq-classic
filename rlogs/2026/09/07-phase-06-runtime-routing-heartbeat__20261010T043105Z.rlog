@@ -218,3 +218,9 @@
 - Added an actual pinned Java `MQClientInstance.getBootTimestamp()` invocation to `RuntimeLookupFixtures`. Its captured value falls between wall-clock samples immediately before and after runtime construction and remains stable after the fixture's route/API calls; nondeterministic epoch values are not persisted.
 - Java oracle commit `0b8ac492`; Rust differential commit `3ab4e236`. The existing constructor-window/lifecycle test now consumes both Java observations. Current `lookup.json` SHA-256: `19d33e027294c631b729b27a59ba8ec4099067a6117048818e041a797ab68fe7`.
 - Focused `boot_timestamp_is_constructor_wall_clock_and_stable_across_shared_lifecycle` passed. Full pinned offline Maven verify passed with all 22 scenarios, fixture drift and Java cross-decodes. Formatting and diff checks pass. This closes direct getter invocation evidence only; full Phase 6 source/API/input/platform reconciliation remains PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
+
+## Heartbeat listener setting activation
+
+- The direct pinned Java fixture now constructs `MQClientInstance` with `enableHeartbeatChannelEventListener` false and true, inspects the actual `NettyRemotingClient` listener, flips the same config afterward, and records that listener presence/identity does not change. Java oracle `27cb60bf`; `fixtures/runtime/heartbeat.json` SHA-256 `7ff0e28d36ed191002871ac36f00a60ecee5edc64f183565b93e4161fa71032b`.
+- Rust differential commit `ab1c3949` consumes those observations in `disabled_or_unknown_channel_does_not_send_unsolicited_heartbeat` and compares both listener presence and `Arc` identity across post-construction setting mutations. The focused test passed.
+- Full pinned offline Maven verify passed, including all 22 scenarios, fixture drift and Java cross-decodes; `cargo fmt --all -- --check` and `git diff --check` pass. The source-time listener setting boundary is covered; full Phase 6 reconciliation remains PARTIAL and P6-V04 stays `PENDING_PHASE_19`.

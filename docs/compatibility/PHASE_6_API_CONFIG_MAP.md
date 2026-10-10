@@ -446,7 +446,7 @@ Copy column: **C** means both `cloneClientConfig` and `resetClientConfig` copy t
 | enableStreamRequestType | enable_stream_request_type | bool; false | C | ID + K | STREAM suffix and pre-user `ReqT` hook from `RequestType::Stream.get_code()` (`0`) |
 | sendLatencyEnable | send_latency_enable | bool; `com.rocketmq.sendLatencyEnable`, false | C | owner | producer fault-tolerance selection Phase 7 |
 | startDetectorEnable | start_detector_enable | bool; `com.rocketmq.startDetectorEnable`, false | C | owner | producer fault detector Phase 7 |
-| enableHeartbeatChannelEventListener | enable_heartbeat_channel_event_listener | bool; true | C | K | weak active-channel listener; successful heartbeat wakes all consumers |
+| enableHeartbeatChannelEventListener | enable_heartbeat_channel_event_listener | bool; true | C | K | sampled at `MQClientInstance` construction to create or omit the weak active-channel listener; later `ClientConfig` mutation does not replace it; successful heartbeat wakes all consumers |
 | enableConcurrentHeartbeat | enable_concurrent_heartbeat | bool; false | C | K | concurrent V1 round, shared heartbeat lock |
 | concurrentHeartbeatThreadPoolSize | concurrent_heartbeat_thread_pool_size | i32; available processors | C | K | concurrent heartbeat capacity; positive when enabled |
 | enableTrace | enable_trace | bool; false | C | owner | trace lifecycle/hooks Phase 16 |
