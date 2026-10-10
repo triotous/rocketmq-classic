@@ -7,7 +7,10 @@ use tokio::sync::Mutex as AsyncMutex;
 
 use rocketmq_classic_remoting::client::RpcHook;
 
-use super::{ClientRuntime, RuntimeError};
+use super::{
+    ClientRuntime, RuntimeError, TableEntryViewPredicate, TableKeyViewPredicate,
+    TableValueViewPredicate,
+};
 use crate::config::ClientConfig;
 
 type Entries = HashMap<String, Arc<Entry>>;
@@ -955,6 +958,14 @@ impl FactoryKeySetView {
         self.0.contains_key(key)
     }
 
+    /// Nullable Java-compatible key-set membership boundary.
+    pub fn contains_nullable(&self, key: Option<&str>) -> Result<bool, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null factory key"));
+        };
+        self.contains(key)
+    }
+
     pub fn len(&self) -> Result<usize, RuntimeError> {
         self.0.len()
     }
@@ -972,6 +983,14 @@ impl FactoryKeySetView {
         self.0.remove(key).await.map(|value| value.is_some())
     }
 
+    /// Nullable Java-compatible key-set removal boundary.
+    pub async fn remove_nullable(&self, key: Option<&str>) -> Result<bool, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null factory key"));
+        };
+        self.remove(key).await
+    }
+
     /// Removes keys accepted by the predicate from a detached key snapshot.
     pub async fn remove_if(
         &self,
@@ -986,12 +1005,45 @@ impl FactoryKeySetView {
         Ok(removed)
     }
 
+    /// Nullable Java-compatible `removeIf` predicate boundary.
+    pub async fn remove_if_nullable(
+        &self,
+        predicate: Option<&mut TableKeyViewPredicate>,
+    ) -> Result<usize, RuntimeError> {
+        let Some(predicate) = predicate else {
+            return Err(RuntimeError::InvalidRoute("null factory view predicate"));
+        };
+        self.remove_if(|key| predicate(key)).await
+    }
+
     pub async fn remove_all(&self, keys: &BTreeSet<String>) -> Result<usize, RuntimeError> {
         self.remove_if(|key| keys.contains(key)).await
     }
 
+    /// Nullable Java-compatible collection argument boundary.
+    pub async fn remove_all_nullable(
+        &self,
+        keys: Option<&BTreeSet<String>>,
+    ) -> Result<usize, RuntimeError> {
+        let Some(keys) = keys else {
+            return Err(RuntimeError::InvalidRoute("null factory view collection"));
+        };
+        self.remove_all(keys).await
+    }
+
     pub async fn retain_all(&self, keys: &BTreeSet<String>) -> Result<usize, RuntimeError> {
         self.remove_if(|key| !keys.contains(key)).await
+    }
+
+    /// Nullable Java-compatible collection argument boundary.
+    pub async fn retain_all_nullable(
+        &self,
+        keys: Option<&BTreeSet<String>>,
+    ) -> Result<usize, RuntimeError> {
+        let Some(keys) = keys else {
+            return Err(RuntimeError::InvalidRoute("null factory view collection"));
+        };
+        self.retain_all(keys).await
     }
 
     pub async fn clear(&self) -> Result<(), RuntimeError> {
@@ -1006,6 +1058,17 @@ pub struct FactoryValuesView(FactoryTable);
 impl FactoryValuesView {
     pub fn contains(&self, value: &Arc<ClientRuntime>) -> Result<bool, RuntimeError> {
         self.0.contains_value(value)
+    }
+
+    /// Nullable Java-compatible values-view membership boundary.
+    pub fn contains_nullable(
+        &self,
+        value: Option<&Arc<ClientRuntime>>,
+    ) -> Result<bool, RuntimeError> {
+        let Some(value) = value else {
+            return Err(RuntimeError::InvalidRoute("null factory value"));
+        };
+        self.contains(value)
     }
 
     pub fn len(&self) -> Result<usize, RuntimeError> {
@@ -1031,6 +1094,17 @@ impl FactoryValuesView {
         Ok(false)
     }
 
+    /// Java `ConcurrentHashMap.values().remove(null)` returns false.
+    pub async fn remove_nullable(
+        &self,
+        value: Option<&Arc<ClientRuntime>>,
+    ) -> Result<bool, RuntimeError> {
+        let Some(value) = value else {
+            return Ok(false);
+        };
+        self.remove(value).await
+    }
+
     /// Removes values accepted by the predicate from a detached entry snapshot.
     pub async fn remove_if(
         &self,
@@ -1045,14 +1119,47 @@ impl FactoryValuesView {
         Ok(removed)
     }
 
+    /// Nullable Java-compatible `removeIf` predicate boundary.
+    pub async fn remove_if_nullable(
+        &self,
+        predicate: Option<&mut TableValueViewPredicate<Arc<ClientRuntime>>>,
+    ) -> Result<usize, RuntimeError> {
+        let Some(predicate) = predicate else {
+            return Err(RuntimeError::InvalidRoute("null factory view predicate"));
+        };
+        self.remove_if(|value| predicate(value)).await
+    }
+
     pub async fn remove_all(&self, values: &[Arc<ClientRuntime>]) -> Result<usize, RuntimeError> {
         self.remove_if(|value| values.iter().any(|candidate| Arc::ptr_eq(candidate, value)))
             .await
     }
 
+    /// Nullable Java-compatible collection argument boundary.
+    pub async fn remove_all_nullable(
+        &self,
+        values: Option<&[Arc<ClientRuntime>]>,
+    ) -> Result<usize, RuntimeError> {
+        let Some(values) = values else {
+            return Err(RuntimeError::InvalidRoute("null factory view collection"));
+        };
+        self.remove_all(values).await
+    }
+
     pub async fn retain_all(&self, values: &[Arc<ClientRuntime>]) -> Result<usize, RuntimeError> {
         self.remove_if(|value| !values.iter().any(|candidate| Arc::ptr_eq(candidate, value)))
             .await
+    }
+
+    /// Nullable Java-compatible collection argument boundary.
+    pub async fn retain_all_nullable(
+        &self,
+        values: Option<&[Arc<ClientRuntime>]>,
+    ) -> Result<usize, RuntimeError> {
+        let Some(values) = values else {
+            return Err(RuntimeError::InvalidRoute("null factory view collection"));
+        };
+        self.retain_all(values).await
     }
 
     pub async fn clear(&self) -> Result<(), RuntimeError> {
@@ -1108,6 +1215,29 @@ impl FactoryEntrySetView {
             .is_some_and(|current| Arc::ptr_eq(&current, value)))
     }
 
+    /// A null Java Map.Entry is not a member of this entry-set view.
+    pub fn contains_nullable(
+        &self,
+        entry: Option<(&str, &Arc<ClientRuntime>)>,
+    ) -> Result<bool, RuntimeError> {
+        let Some((key, value)) = entry else {
+            return Ok(false);
+        };
+        self.contains(key, value)
+    }
+
+    /// Null keys or values inside a Map.Entry do not match a CHM entry.
+    pub fn contains_entry_nullable(
+        &self,
+        key: Option<&str>,
+        value: Option<&Arc<ClientRuntime>>,
+    ) -> Result<bool, RuntimeError> {
+        match (key, value) {
+            (Some(key), Some(value)) => self.contains(key, value),
+            _ => Ok(false),
+        }
+    }
+
     pub fn len(&self) -> Result<usize, RuntimeError> {
         self.0.len()
     }
@@ -1144,6 +1274,29 @@ impl FactoryEntrySetView {
         self.0.remove_if_same(key, value).await
     }
 
+    /// A null Java Map.Entry is not removed from this entry-set view.
+    pub async fn remove_nullable(
+        &self,
+        entry: Option<(&str, &Arc<ClientRuntime>)>,
+    ) -> Result<bool, RuntimeError> {
+        let Some((key, value)) = entry else {
+            return Ok(false);
+        };
+        self.remove(key, value).await
+    }
+
+    /// Null keys or values inside a Map.Entry do not remove a CHM entry.
+    pub async fn remove_entry_nullable(
+        &self,
+        key: Option<&str>,
+        value: Option<&Arc<ClientRuntime>>,
+    ) -> Result<bool, RuntimeError> {
+        match (key, value) {
+            (Some(key), Some(value)) => self.remove(key, value).await,
+            _ => Ok(false),
+        }
+    }
+
     /// Removes entries accepted by the predicate from a detached entry snapshot.
     pub async fn remove_if(
         &self,
@@ -1158,6 +1311,17 @@ impl FactoryEntrySetView {
         Ok(removed)
     }
 
+    /// Nullable Java-compatible `removeIf` predicate boundary.
+    pub async fn remove_if_nullable(
+        &self,
+        predicate: Option<&mut TableEntryViewPredicate<Arc<ClientRuntime>>>,
+    ) -> Result<usize, RuntimeError> {
+        let Some(predicate) = predicate else {
+            return Err(RuntimeError::InvalidRoute("null factory view predicate"));
+        };
+        self.remove_if(|key, value| predicate(key, value)).await
+    }
+
     pub async fn remove_all(
         &self,
         entries: &BTreeMap<String, Arc<ClientRuntime>>,
@@ -1170,6 +1334,17 @@ impl FactoryEntrySetView {
         .await
     }
 
+    /// Nullable Java-compatible collection argument boundary.
+    pub async fn remove_all_nullable(
+        &self,
+        entries: Option<&BTreeMap<String, Arc<ClientRuntime>>>,
+    ) -> Result<usize, RuntimeError> {
+        let Some(entries) = entries else {
+            return Err(RuntimeError::InvalidRoute("null factory view collection"));
+        };
+        self.remove_all(entries).await
+    }
+
     pub async fn retain_all(
         &self,
         entries: &BTreeMap<String, Arc<ClientRuntime>>,
@@ -1180,6 +1355,17 @@ impl FactoryEntrySetView {
                 .is_some_and(|candidate| Arc::ptr_eq(candidate, value))
         })
         .await
+    }
+
+    /// Nullable Java-compatible collection argument boundary.
+    pub async fn retain_all_nullable(
+        &self,
+        entries: Option<&BTreeMap<String, Arc<ClientRuntime>>>,
+    ) -> Result<usize, RuntimeError> {
+        let Some(entries) = entries else {
+            return Err(RuntimeError::InvalidRoute("null factory view collection"));
+        };
+        self.retain_all(entries).await
     }
 
     pub async fn clear(&self) -> Result<(), RuntimeError> {

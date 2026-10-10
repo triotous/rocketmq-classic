@@ -253,6 +253,136 @@ async fn nullable_factory_table_mutations_match_invoked_java_null_failures() {
 }
 
 #[tokio::test]
+async fn nullable_factory_table_views_match_invoked_java_null_inputs() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = &fixture["managerTable"]["nullableTableViewInputs"];
+    for key in [
+        "factoryKeyContainsNull",
+        "factoryKeyRemoveNull",
+        "factoryValuesContainsNull",
+        "factoryKeyRemoveIfNull",
+        "factoryValuesRemoveIfNull",
+        "factoryEntriesRemoveIfNull",
+        "factoryKeyRemoveAllNull",
+        "factoryValuesRemoveAllNull",
+        "factoryEntriesRemoveAllNull",
+        "factoryKeyRetainAllNull",
+        "factoryValuesRetainAllNull",
+        "factoryEntriesRetainAllNull",
+    ] {
+        assert_eq!(java[key], "NullPointerException", "{key}");
+    }
+    for key in [
+        "factoryValuesRemoveNull",
+        "factoryEntriesContainsNull",
+        "factoryEntriesRemoveNull",
+        "factoryEntriesContainsNullKey",
+        "factoryEntriesRemoveNullKey",
+        "factoryEntriesContainsNullValue",
+        "factoryEntriesRemoveNullValue",
+    ] {
+        assert_eq!(java[key], false, "{key}");
+    }
+
+    let manager = ClientRuntimeManager::new();
+    let runtime = manager
+        .get_or_create(&ClientConfig::new("nullable-factory-view-inputs"))
+        .await
+        .unwrap();
+    let table = manager.factory_table();
+    let key_set = table.key_set_view();
+    let values = table.values_view();
+    let entries = table.entry_set_view();
+    let initial_keys: BTreeSet<_> = table.snapshot().unwrap().into_keys().collect();
+
+    assert!(matches!(
+        key_set.contains_nullable(None),
+        Err(RuntimeError::InvalidRoute("null factory key"))
+    ));
+    assert!(matches!(
+        key_set.remove_nullable(None).await,
+        Err(RuntimeError::InvalidRoute("null factory key"))
+    ));
+    assert!(matches!(
+        key_set.remove_if_nullable(None).await,
+        Err(RuntimeError::InvalidRoute("null factory view predicate"))
+    ));
+    assert!(matches!(
+        key_set.remove_all_nullable(None).await,
+        Err(RuntimeError::InvalidRoute("null factory view collection"))
+    ));
+    assert!(matches!(
+        key_set.retain_all_nullable(None).await,
+        Err(RuntimeError::InvalidRoute("null factory view collection"))
+    ));
+
+    assert!(matches!(
+        values.contains_nullable(None),
+        Err(RuntimeError::InvalidRoute("null factory value"))
+    ));
+    assert!(!values.remove_nullable(None).await.unwrap());
+    assert!(matches!(
+        values.remove_if_nullable(None).await,
+        Err(RuntimeError::InvalidRoute("null factory view predicate"))
+    ));
+    assert!(matches!(
+        values.remove_all_nullable(None).await,
+        Err(RuntimeError::InvalidRoute("null factory view collection"))
+    ));
+    assert!(matches!(
+        values.retain_all_nullable(None).await,
+        Err(RuntimeError::InvalidRoute("null factory view collection"))
+    ));
+
+    assert!(!entries.contains_nullable(None).unwrap());
+    assert!(!entries.remove_nullable(None).await.unwrap());
+    assert!(
+        !entries
+            .contains_entry_nullable(None, Some(&runtime))
+            .unwrap()
+    );
+    assert!(
+        !entries
+            .contains_entry_nullable(Some(runtime.client_id()), None)
+            .unwrap()
+    );
+    assert!(
+        !entries
+            .remove_entry_nullable(None, Some(&runtime))
+            .await
+            .unwrap()
+    );
+    assert!(
+        !entries
+            .remove_entry_nullable(Some(runtime.client_id()), None)
+            .await
+            .unwrap()
+    );
+    assert!(matches!(
+        entries.remove_if_nullable(None).await,
+        Err(RuntimeError::InvalidRoute("null factory view predicate"))
+    ));
+    assert!(matches!(
+        entries.remove_all_nullable(None).await,
+        Err(RuntimeError::InvalidRoute("null factory view collection"))
+    ));
+    assert!(matches!(
+        entries.retain_all_nullable(None).await,
+        Err(RuntimeError::InvalidRoute("null factory view collection"))
+    ));
+
+    assert_eq!(
+        table
+            .snapshot()
+            .unwrap()
+            .into_keys()
+            .collect::<BTreeSet<_>>(),
+        initial_keys
+    );
+}
+
+#[tokio::test]
 async fn nullable_manager_removal_overloads_match_invoked_java_null_key_failures() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();

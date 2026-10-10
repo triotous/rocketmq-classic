@@ -574,6 +574,174 @@ async fn nullable_registry_table_mutations_match_invoked_java_null_failures() {
 }
 
 #[tokio::test]
+async fn nullable_registry_table_views_match_invoked_java_null_inputs() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = &fixture["registryTables"]["nullableTableViewInputs"];
+
+    macro_rules! check_view_outcomes {
+        ($prefix:literal, $expected:expr) => {{
+            for suffix in [
+                "KeyContainsNull",
+                "KeyRemoveNull",
+                "ValuesContainsNull",
+                "KeyRemoveIfNull",
+                "ValuesRemoveIfNull",
+                "EntriesRemoveIfNull",
+                "KeyRemoveAllNull",
+                "ValuesRemoveAllNull",
+                "EntriesRemoveAllNull",
+                "KeyRetainAllNull",
+                "ValuesRetainAllNull",
+                "EntriesRetainAllNull",
+            ] {
+                let key = format!("{}{}", $prefix, suffix);
+                assert_eq!($expected[&key], "NullPointerException", "{key}");
+            }
+            for suffix in [
+                "ValuesRemoveNull",
+                "EntriesContainsNull",
+                "EntriesRemoveNull",
+                "EntriesContainsNullKey",
+                "EntriesRemoveNullKey",
+                "EntriesContainsNullValue",
+                "EntriesRemoveNullValue",
+            ] {
+                let key = format!("{}{}", $prefix, suffix);
+                assert_eq!($expected[&key], false, "{key}");
+            }
+        }};
+    }
+
+    macro_rules! check_view_adapters {
+        ($table:expr, $owner:expr, $key_message:literal, $value_message:literal) => {{
+            let table = $table;
+            let key_set = table.key_set_view();
+            let values = table.values_view();
+            let entries = table.entry_set_view();
+            let initial_keys = table.keys().unwrap();
+
+            assert!(matches!(
+                key_set.contains_nullable(None),
+                Err(RuntimeError::InvalidRoute($key_message))
+            ));
+            assert!(matches!(
+                key_set.remove_nullable(None).await,
+                Err(RuntimeError::InvalidRoute($key_message))
+            ));
+            assert!(matches!(
+                key_set.remove_if_nullable(None).await,
+                Err(RuntimeError::InvalidRoute("null table view predicate"))
+            ));
+            assert!(matches!(
+                key_set.remove_all_nullable(None).await,
+                Err(RuntimeError::InvalidRoute("null table view collection"))
+            ));
+            assert!(matches!(
+                key_set.retain_all_nullable(None).await,
+                Err(RuntimeError::InvalidRoute("null table view collection"))
+            ));
+
+            assert!(matches!(
+                values.contains_nullable(None),
+                Err(RuntimeError::InvalidRoute($value_message))
+            ));
+            assert!(!values.remove_nullable(None).await.unwrap());
+            assert!(matches!(
+                values.remove_if_nullable(None).await,
+                Err(RuntimeError::InvalidRoute("null table view predicate"))
+            ));
+            assert!(matches!(
+                values.remove_all_nullable(None).await,
+                Err(RuntimeError::InvalidRoute("null table view collection"))
+            ));
+            assert!(matches!(
+                values.retain_all_nullable(None).await,
+                Err(RuntimeError::InvalidRoute("null table view collection"))
+            ));
+
+            assert!(!entries.contains_nullable(None).unwrap());
+            assert!(!entries.remove_nullable(None).await.unwrap());
+            assert!(
+                !entries
+                    .contains_entry_nullable(None, Some(&$owner))
+                    .unwrap()
+            );
+            assert!(
+                !entries
+                    .contains_entry_nullable(Some("nullable-present"), None)
+                    .unwrap()
+            );
+            assert!(
+                !entries
+                    .remove_entry_nullable(None, Some(&$owner))
+                    .await
+                    .unwrap()
+            );
+            assert!(
+                !entries
+                    .remove_entry_nullable(Some("nullable-present"), None)
+                    .await
+                    .unwrap()
+            );
+            assert!(matches!(
+                entries.remove_if_nullable(None).await,
+                Err(RuntimeError::InvalidRoute("null table view predicate"))
+            ));
+            assert!(matches!(
+                entries.remove_all_nullable(None).await,
+                Err(RuntimeError::InvalidRoute("null table view collection"))
+            ));
+            assert!(matches!(
+                entries.retain_all_nullable(None).await,
+                Err(RuntimeError::InvalidRoute("null table view collection"))
+            ));
+            assert_eq!(table.keys().unwrap(), initial_keys);
+        }};
+    }
+
+    let expected = &java["producer"];
+    check_view_outcomes!("producer", expected);
+    let producer_runtime = ClientRuntimeManager::new()
+        .get_or_create(&ClientConfig::new("nullable-producer-view-inputs"))
+        .await
+        .unwrap();
+    let producer: Arc<dyn ProducerRuntime> = Arc::new(Producer);
+    producer_runtime
+        .producer_table()
+        .put("nullable-present", producer.clone())
+        .await
+        .unwrap();
+    check_view_adapters!(
+        producer_runtime.producer_table(),
+        producer,
+        "null producer group",
+        "null producer value"
+    );
+    assert_eq!(producer_runtime.state(), RuntimeState::Created);
+
+    let expected = &java["consumer"];
+    check_view_outcomes!("consumer", expected);
+    let consumer_runtime = ClientRuntimeManager::new()
+        .get_or_create(&ClientConfig::new("nullable-consumer-view-inputs"))
+        .await
+        .unwrap();
+    let consumer: Arc<dyn ConsumerRuntime> = Arc::new(Consumer);
+    consumer_runtime
+        .consumer_table()
+        .put("nullable-present", consumer.clone())
+        .await
+        .unwrap();
+    check_view_adapters!(
+        consumer_runtime.consumer_table(),
+        consumer,
+        "null consumer group",
+        "null consumer value"
+    );
+    assert_eq!(consumer_runtime.state(), RuntimeState::Created);
+}
+
+#[tokio::test]
 async fn conditional_registry_mutations_match_java_custom_value_equality() {
     struct EqualProducer(&'static str);
     impl ProducerRuntime for EqualProducer {

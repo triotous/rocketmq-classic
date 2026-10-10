@@ -713,6 +713,44 @@ public final class RuntimeConfigFixtures {
         }
     }
 
+    private static void captureBoolean(Map<String, Object> result, String key,
+        java.util.function.Supplier<Boolean> operation) {
+        try {
+            result.put(key, operation.get());
+        } catch (Throwable error) {
+            result.put(key, error.getClass().getSimpleName());
+        }
+    }
+
+    private static Map<String, Object> nullableTableViewInputs(String prefix, java.util.Set<?> keys,
+        Collection<?> values, java.util.Set<?> entries, Object presentKey, Object presentValue) {
+        Map<String, Object> result = new TreeMap<>();
+        captureBoolean(result, prefix + "KeyContainsNull", () -> keys.contains(null));
+        captureBoolean(result, prefix + "KeyRemoveNull", () -> keys.remove(null));
+        captureBoolean(result, prefix + "ValuesContainsNull", () -> values.contains(null));
+        captureBoolean(result, prefix + "ValuesRemoveNull", () -> values.remove(null));
+        captureBoolean(result, prefix + "EntriesContainsNull", () -> entries.contains(null));
+        captureBoolean(result, prefix + "EntriesRemoveNull", () -> entries.remove(null));
+        captureBoolean(result, prefix + "EntriesContainsNullKey",
+            () -> entries.contains(new java.util.AbstractMap.SimpleImmutableEntry<>(null, presentValue)));
+        captureBoolean(result, prefix + "EntriesRemoveNullKey",
+            () -> entries.remove(new java.util.AbstractMap.SimpleImmutableEntry<>(null, presentValue)));
+        captureBoolean(result, prefix + "EntriesContainsNullValue",
+            () -> entries.contains(new java.util.AbstractMap.SimpleImmutableEntry<>(presentKey, null)));
+        captureBoolean(result, prefix + "EntriesRemoveNullValue",
+            () -> entries.remove(new java.util.AbstractMap.SimpleImmutableEntry<>(presentKey, null)));
+        captureThrowable(result, prefix + "KeyRemoveIfNull", () -> keys.removeIf(null));
+        captureThrowable(result, prefix + "ValuesRemoveIfNull", () -> values.removeIf(null));
+        captureThrowable(result, prefix + "EntriesRemoveIfNull", () -> entries.removeIf(null));
+        captureThrowable(result, prefix + "KeyRemoveAllNull", () -> keys.removeAll(null));
+        captureThrowable(result, prefix + "ValuesRemoveAllNull", () -> values.removeAll(null));
+        captureThrowable(result, prefix + "EntriesRemoveAllNull", () -> entries.removeAll(null));
+        captureThrowable(result, prefix + "KeyRetainAllNull", () -> keys.retainAll(null));
+        captureThrowable(result, prefix + "ValuesRetainAllNull", () -> values.retainAll(null));
+        captureThrowable(result, prefix + "EntriesRetainAllNull", () -> entries.retainAll(null));
+        return result;
+    }
+
     private static Map<String, Object> managerTable(ClientConfig config) throws Exception {
         org.apache.rocketmq.client.impl.MQClientManager manager = org.apache.rocketmq.client.impl.MQClientManager.getInstance();
         java.util.concurrent.ConcurrentMap<String, org.apache.rocketmq.client.impl.factory.MQClientInstance> live = manager.getFactoryTable();
@@ -752,6 +790,8 @@ public final class RuntimeConfigFixtures {
             result.put("nullDefaultOnPresent", live.getOrDefault(id, null) == second ? "MAPPED" : "OTHER");
             result.put("nullDefaultOnMissing",
                 live.getOrDefault("missing-null-default", null) == null ? "NULL" : "OTHER");
+            result.put("nullableTableViewInputs", nullableTableViewInputs("factory", keyView,
+                valuesView, entryView, id, second));
             Map<String, Object> nullableTableMutations = new TreeMap<>();
             captureThrowable(nullableTableMutations, "factoryPutNullKey", () -> live.put(null, first));
             captureThrowable(nullableTableMutations, "factoryPutNullValue", () -> live.put("null-put-value", null));
@@ -1503,6 +1543,13 @@ public final class RuntimeConfigFixtures {
             nullableTableReads.put("consumerNullDefaultOnPresent",
                 runtime.getConsumerTable().getOrDefault("nullable-default-present", null) == consumerA ? "MAPPED" : "OTHER");
             result.put("nullableTableReads", nullableTableReads);
+            result.put("nullableTableViewInputs", Map.of(
+                "producer", nullableTableViewInputs("producer", runtime.getProducerTable().keySet(),
+                    runtime.getProducerTable().values(), runtime.getProducerTable().entrySet(),
+                    "nullable-default-present", producerA),
+                "consumer", nullableTableViewInputs("consumer", runtime.getConsumerTable().keySet(),
+                    runtime.getConsumerTable().values(), runtime.getConsumerTable().entrySet(),
+                    "nullable-default-present", consumerA)));
             Map<String, Object> nullableTableMutations = new TreeMap<>();
             captureThrowable(nullableTableMutations, "producerPutNullKey",
                 () -> runtime.getProducerTable().put(null, producerA));

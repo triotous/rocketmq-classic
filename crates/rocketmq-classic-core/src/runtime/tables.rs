@@ -1,5 +1,6 @@
 use super::{
     ClientRuntime, ConsumerRuntime, ProducerRuntime, RuntimeError, RuntimeState,
+    TableEntryViewPredicate, TableKeyViewPredicate, TableValueViewPredicate,
     registry::GroupRegistry,
 };
 use std::{
@@ -660,12 +661,19 @@ macro_rules! table {
     };
 }
 macro_rules! table_views {
-    ($table:ident, $owner:ident, $kind:ident, $key_set:ident, $values_view:ident, $entry_set:ident, $entry_handle:ident) => {
+    ($table:ident, $owner:ident, $kind:ident, $null_group:literal, $null_value:literal, $key_set:ident, $values_view:ident, $entry_set:ident, $entry_handle:ident) => {
         #[derive(Clone)]
         pub struct $key_set(TableHandle);
         impl $key_set {
             pub fn contains(&self, key: &str) -> Result<bool, RuntimeError> {
                 self.0.groups.table_contains_key(self.0.kind, key)
+            }
+            /// Nullable Java-compatible key-set membership boundary.
+            pub fn contains_nullable(&self, key: Option<&str>) -> Result<bool, RuntimeError> {
+                let Some(key) = key else {
+                    return Err(RuntimeError::InvalidRoute($null_group));
+                };
+                self.contains(key)
             }
             pub fn len(&self) -> Result<usize, RuntimeError> {
                 self.0.groups.table_len(self.0.kind)
@@ -692,6 +700,13 @@ macro_rules! table_views {
                     .await
                     .map(|change| change.matched)
             }
+            /// Nullable Java-compatible key-set removal boundary.
+            pub async fn remove_nullable(&self, key: Option<&str>) -> Result<bool, RuntimeError> {
+                let Some(key) = key else {
+                    return Err(RuntimeError::InvalidRoute($null_group));
+                };
+                self.remove(key).await
+            }
             /// Removes keys accepted by the predicate, visiting a detached key copy.
             pub async fn remove_if(
                 &self,
@@ -704,6 +719,16 @@ macro_rules! table_views {
                     }
                 }
                 Ok(removed)
+            }
+            /// Nullable Java-compatible `removeIf` predicate boundary.
+            pub async fn remove_if_nullable(
+                &self,
+                predicate: Option<&mut TableKeyViewPredicate>,
+            ) -> Result<usize, RuntimeError> {
+                let Some(predicate) = predicate else {
+                    return Err(RuntimeError::InvalidRoute("null table view predicate"));
+                };
+                self.remove_if(|key| predicate(key)).await
             }
             /// Removes keys rejected by the predicate, visiting a detached key copy.
             pub async fn retain(
@@ -721,8 +746,28 @@ macro_rules! table_views {
             pub async fn remove_all(&self, keys: &BTreeSet<String>) -> Result<usize, RuntimeError> {
                 self.remove_if(|key| keys.contains(key)).await
             }
+            /// Nullable Java-compatible collection argument boundary.
+            pub async fn remove_all_nullable(
+                &self,
+                keys: Option<&BTreeSet<String>>,
+            ) -> Result<usize, RuntimeError> {
+                let Some(keys) = keys else {
+                    return Err(RuntimeError::InvalidRoute("null table view collection"));
+                };
+                self.remove_all(keys).await
+            }
             pub async fn retain_all(&self, keys: &BTreeSet<String>) -> Result<usize, RuntimeError> {
                 self.retain(|key| keys.contains(key)).await
+            }
+            /// Nullable Java-compatible collection argument boundary.
+            pub async fn retain_all_nullable(
+                &self,
+                keys: Option<&BTreeSet<String>>,
+            ) -> Result<usize, RuntimeError> {
+                let Some(keys) = keys else {
+                    return Err(RuntimeError::InvalidRoute("null table view collection"));
+                };
+                self.retain_all(keys).await
             }
             pub async fn clear(&self) -> Result<(), RuntimeError> {
                 self.0.mutate(TableMutation::Clear).await.map(|_| ())
@@ -737,6 +782,16 @@ macro_rules! table_views {
             }
             pub fn contains(&self, value: &Arc<dyn $owner>) -> Result<bool, RuntimeError> {
                 self.table().contains_value(value)
+            }
+            /// Nullable Java-compatible values-view membership boundary.
+            pub fn contains_nullable(
+                &self,
+                value: Option<&Arc<dyn $owner>>,
+            ) -> Result<bool, RuntimeError> {
+                let Some(value) = value else {
+                    return Err(RuntimeError::InvalidRoute($null_value));
+                };
+                self.contains(value)
             }
             pub fn len(&self) -> Result<usize, RuntimeError> {
                 self.0.groups.table_len(self.0.kind)
@@ -756,6 +811,16 @@ macro_rules! table_views {
                 }
                 Ok(false)
             }
+            /// Java `ConcurrentHashMap.values().remove(null)` returns false.
+            pub async fn remove_nullable(
+                &self,
+                value: Option<&Arc<dyn $owner>>,
+            ) -> Result<bool, RuntimeError> {
+                let Some(value) = value else {
+                    return Ok(false);
+                };
+                self.remove(value).await
+            }
             /// Removes values accepted by the predicate from a detached entry copy.
             pub async fn remove_if(
                 &self,
@@ -769,6 +834,16 @@ macro_rules! table_views {
                     }
                 }
                 Ok(removed)
+            }
+            /// Nullable Java-compatible `removeIf` predicate boundary.
+            pub async fn remove_if_nullable(
+                &self,
+                predicate: Option<&mut TableValueViewPredicate<Arc<dyn $owner>>>,
+            ) -> Result<usize, RuntimeError> {
+                let Some(predicate) = predicate else {
+                    return Err(RuntimeError::InvalidRoute("null table view predicate"));
+                };
+                self.remove_if(|value| predicate(value)).await
             }
             /// Removes values rejected by the predicate from a detached entry copy.
             pub async fn retain(
@@ -790,11 +865,31 @@ macro_rules! table_views {
             ) -> Result<usize, RuntimeError> {
                 self.mutate_membership(values, false).await
             }
+            /// Nullable Java-compatible collection argument boundary.
+            pub async fn remove_all_nullable(
+                &self,
+                values: Option<&[Arc<dyn $owner>]>,
+            ) -> Result<usize, RuntimeError> {
+                let Some(values) = values else {
+                    return Err(RuntimeError::InvalidRoute("null table view collection"));
+                };
+                self.remove_all(values).await
+            }
             pub async fn retain_all(
                 &self,
                 values: &[Arc<dyn $owner>],
             ) -> Result<usize, RuntimeError> {
                 self.mutate_membership(values, true).await
+            }
+            /// Nullable Java-compatible collection argument boundary.
+            pub async fn retain_all_nullable(
+                &self,
+                values: Option<&[Arc<dyn $owner>]>,
+            ) -> Result<usize, RuntimeError> {
+                let Some(values) = values else {
+                    return Err(RuntimeError::InvalidRoute("null table view collection"));
+                };
+                self.retain_all(values).await
             }
             async fn mutate_membership(
                 &self,
@@ -873,6 +968,27 @@ macro_rules! table_views {
                     .get(key)?
                     .is_some_and(|current| $table::owners_equal(value, &current)))
             }
+            /// A null Java Map.Entry is not a member of this entry-set view.
+            pub fn contains_nullable(
+                &self,
+                entry: Option<(&str, &Arc<dyn $owner>)>,
+            ) -> Result<bool, RuntimeError> {
+                let Some((key, value)) = entry else {
+                    return Ok(false);
+                };
+                self.contains(key, value)
+            }
+            /// Null keys or values inside a Map.Entry do not match a CHM entry.
+            pub fn contains_entry_nullable(
+                &self,
+                key: Option<&str>,
+                value: Option<&Arc<dyn $owner>>,
+            ) -> Result<bool, RuntimeError> {
+                match (key, value) {
+                    (Some(key), Some(value)) => self.contains(key, value),
+                    _ => Ok(false),
+                }
+            }
             pub fn len(&self) -> Result<usize, RuntimeError> {
                 self.0.groups.table_len(self.0.kind)
             }
@@ -904,6 +1020,27 @@ macro_rules! table_views {
             ) -> Result<bool, RuntimeError> {
                 self.table().remove_if_equal(key, value).await
             }
+            /// A null Java Map.Entry is not removed from this entry-set view.
+            pub async fn remove_nullable(
+                &self,
+                entry: Option<(&str, &Arc<dyn $owner>)>,
+            ) -> Result<bool, RuntimeError> {
+                let Some((key, value)) = entry else {
+                    return Ok(false);
+                };
+                self.remove(key, value).await
+            }
+            /// Null keys or values inside a Map.Entry do not remove a CHM entry.
+            pub async fn remove_entry_nullable(
+                &self,
+                key: Option<&str>,
+                value: Option<&Arc<dyn $owner>>,
+            ) -> Result<bool, RuntimeError> {
+                match (key, value) {
+                    (Some(key), Some(value)) => self.remove(key, value).await,
+                    _ => Ok(false),
+                }
+            }
             /// Removes entries accepted by the predicate from a detached entry copy.
             pub async fn remove_if(
                 &self,
@@ -917,6 +1054,16 @@ macro_rules! table_views {
                     }
                 }
                 Ok(removed)
+            }
+            /// Nullable Java-compatible `removeIf` predicate boundary.
+            pub async fn remove_if_nullable(
+                &self,
+                predicate: Option<&mut TableEntryViewPredicate<Arc<dyn $owner>>>,
+            ) -> Result<usize, RuntimeError> {
+                let Some(predicate) = predicate else {
+                    return Err(RuntimeError::InvalidRoute("null table view predicate"));
+                };
+                self.remove_if(|key, value| predicate(key, value)).await
             }
             /// Removes entries rejected by the predicate from a detached entry copy.
             pub async fn retain(
@@ -938,11 +1085,31 @@ macro_rules! table_views {
             ) -> Result<usize, RuntimeError> {
                 self.mutate_membership(entries, false).await
             }
+            /// Nullable Java-compatible collection argument boundary.
+            pub async fn remove_all_nullable(
+                &self,
+                entries: Option<&BTreeMap<String, Arc<dyn $owner>>>,
+            ) -> Result<usize, RuntimeError> {
+                let Some(entries) = entries else {
+                    return Err(RuntimeError::InvalidRoute("null table view collection"));
+                };
+                self.remove_all(entries).await
+            }
             pub async fn retain_all(
                 &self,
                 entries: &BTreeMap<String, Arc<dyn $owner>>,
             ) -> Result<usize, RuntimeError> {
                 self.mutate_membership(entries, true).await
+            }
+            /// Nullable Java-compatible collection argument boundary.
+            pub async fn retain_all_nullable(
+                &self,
+                entries: Option<&BTreeMap<String, Arc<dyn $owner>>>,
+            ) -> Result<usize, RuntimeError> {
+                let Some(entries) = entries else {
+                    return Err(RuntimeError::InvalidRoute("null table view collection"));
+                };
+                self.retain_all(entries).await
             }
             async fn mutate_membership(
                 &self,
@@ -994,6 +1161,8 @@ table_views!(
     ProducerTable,
     ProducerRuntime,
     Producer,
+    "null producer group",
+    "null producer value",
     ProducerKeySetView,
     ProducerValuesView,
     ProducerEntrySetView,
@@ -1003,6 +1172,8 @@ table_views!(
     ConsumerTable,
     ConsumerRuntime,
     Consumer,
+    "null consumer group",
+    "null consumer value",
     ConsumerKeySetView,
     ConsumerValuesView,
     ConsumerEntrySetView,
