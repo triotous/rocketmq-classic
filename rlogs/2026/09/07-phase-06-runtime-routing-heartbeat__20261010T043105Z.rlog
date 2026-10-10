@@ -111,3 +111,11 @@
 
 - The first oracle fixture pass omitted map entries whose values were null because Fastjson serialization lacked `WriteMapNullValue`; its apparent acceptance of null mapping values was not valid evidence. Added that feature and regenerated the fixture. Current `route.json` SHA-256: `cde0010fa221bc97e11da23b872abe671fa96b4dfd610e75ec85796584901d49`.
 - Correct Java outcomes: null BrokerData rows and null static mapping values fail without publication; null filter lists publish; null QueueData rows publish in the cases with a valid static mapping. The corrected 16-case native differential passes all outcomes and four cached sizes. No production change was required.
+
+## Route nested collection native differential
+
+- Added `route_nested_collection_state_product_matches_invoked_unstarted_java` in `route/cache.rs` against all 16 corrected Java cases. It compares success/failure, changed state, raw cache publication, and all four cached collection sizes. The focused Rust test passes; no production conversion change was needed. Formatting and `git diff --check` pass. Full local gates remain pending.
+
+## Route nested collection validation
+
+- Full local gates passed after the corrected oracle and native differential: `cargo test --workspace --all-targets --locked` (with reviewed loopback access); strict all-target/all-feature Clippy; pinned offline Maven verify (22 scenarios, 38 Java-decoded headers and 14 typed bodies); comparator self-test; manifest validation (22 scenarios); fmt and diff checks. The sandboxed Maven run stopped at RocketMQ's configured external log path; the reviewed local filesystem rerun passed.
