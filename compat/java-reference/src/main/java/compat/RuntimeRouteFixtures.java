@@ -1524,6 +1524,22 @@ public final class RuntimeRouteFixtures {
         return item;
     }
 
+    private static Map<String, Object> runtimeNullBrokerQueue() throws Exception {
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("null-broker-name-queue");
+        MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+        try {
+            return brokerNameOutcome(runtime, null);
+        } finally {
+            java.lang.reflect.Method cleanup = MQClientInstance.class.getDeclaredMethod(
+                "cleanupAfterConstructionFailure", org.apache.rocketmq.client.impl.MQClientAPIImpl.class,
+                Throwable.class);
+            cleanup.setAccessible(true);
+            cleanup.invoke(runtime, runtime.getMQClientAPIImpl(),
+                new IllegalStateException("null broker-name queue fixture teardown"));
+        }
+    }
+
     private static List<Object> runtimeRawOfflineCleanup(Map<String, Object> initial) throws Exception {
         List<Object> cases = new ArrayList<>();
         for (boolean priorBroker : new boolean[] {false, true}) {
@@ -3161,6 +3177,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("runtimeRouteNestedCollectionMatrix", runtimeRouteNestedCollectionMatrix());
         fixture.put("runtimeRouteNestedCollectionConsumers", runtimeRouteNestedCollectionConsumers());
         fixture.put("runtimeEmptyEndpointTransition", runtimeEmptyEndpointTransition(staticInputs.get(0), inputs.get(0)));
+        fixture.put("runtimeNullBrokerQueue", runtimeNullBrokerQueue());
         fixture.put("runtimeTopicRouteTable", runtimeTopicRouteTable(inputs.get(0)));
         fixture.put("runtimeRawOfflineCleanup", runtimeRawOfflineCleanup(inputs.get(0)));
         fixture.put("runtimeRawCleanupShapes", runtimeRawCleanupShapes(inputs.get(0)));
