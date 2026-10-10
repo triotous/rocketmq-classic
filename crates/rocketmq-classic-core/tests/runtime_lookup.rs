@@ -301,17 +301,45 @@ async fn consumer_lookup_swallows_rpc_errors_but_assignment_propagates_them() {
 
 #[tokio::test]
 async fn missing_broker_returns_none_and_expired_assignment_emits_no_frame() {
-    let (runtime, name_peer) = setup(None, false).await;
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+    let java_lookup = fixture["runtimeLookupInvocation"].clone();
+    assert!(java_lookup["noBrokerConsumerOutcome"].is_null());
+    assert!(java_lookup["noBrokerAssignmentOutcome"].is_null());
+    assert_eq!(
+        java_lookup["noBrokerRefreshTopics"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
     assert!(
+        java_lookup["noBrokerConsumerCalls"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        java_lookup["noBrokerAssignmentCalls"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+
+    let (runtime, name_peer) = setup(None, false).await;
+    let java_consumer_result: Option<Vec<Option<String>>> =
+        serde_json::from_value(java_lookup["noBrokerConsumerOutcome"].clone()).unwrap();
+    assert_eq!(
         runtime
             .find_consumer_id_list("topic", "consumer")
             .await
-            .unwrap()
-            .is_none()
+            .unwrap(),
+        java_consumer_result
     );
     runtime.remoting().shutdown().await;
     name_peer.await.unwrap();
     let (runtime, name_peer) = setup(None, false).await;
+    let java_assignment_result = java_lookup["noBrokerAssignmentOutcome"].clone();
     assert!(
         runtime
             .query_assignment(
@@ -325,6 +353,7 @@ async fn missing_broker_returns_none_and_expired_assignment_emits_no_frame() {
             .unwrap()
             .is_none()
     );
+    assert!(java_assignment_result.is_null());
     runtime.remoting().shutdown().await;
     name_peer.await.unwrap();
     let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
