@@ -83,6 +83,26 @@ fn java_windows_interface_is_eligible(
     admin_up && operational_up && !point_to_point
 }
 
+#[cfg(any(windows, test))]
+fn java_windows_unicast_address_is_usable(dad_state: i32) -> bool {
+    // Windows NL_DAD_STATE values are 3 for deprecated and 4 for preferred.
+    matches!(dad_state, 3 | 4)
+}
+
+#[cfg(any(windows, test))]
+fn java_windows_interface_candidate_order(
+    mut unicast: Vec<Address>,
+    mut anycast: Vec<Address>,
+) -> Vec<Address> {
+    // OpenJDK prepends each table row to its native address list, so the
+    // resulting enumeration is reverse table order, with anycast before
+    // unicast because its rows are prepended second.
+    unicast.reverse();
+    anycast.reverse();
+    anycast.extend(unicast);
+    anycast
+}
+
 #[cfg(target_os = "macos")]
 fn java_candidate_order(mut addresses: Vec<Address>) -> Vec<Address> {
     // Pinned Java's NetworkUtil returns IPv4 candidates in the opposite order
@@ -227,13 +247,26 @@ fn interfaces() -> io::Result<Vec<Address>> {
 fn interfaces() -> io::Result<Vec<Address>> {
     use windows_sys::Win32::{
         NetworkManagement::{
-            IpHelper::*,
+            IpHelper::{
+                ConvertInterfaceLuidToNameW, FreeMibTable, GetAnycastIpAddressTable, GetIfEntry2,
+                GetIfTable2, GetUnicastIpAddressTable, MIB_ANYCASTIPADDRESS_TABLE, MIB_IF_ROW2,
+                MIB_IF_TABLE2, MIB_UNICASTIPADDRESS_TABLE,
+            },
             Ndis::{
                 IfOperStatusUp, NET_IF_ACCESS_POINT_TO_POINT, NET_IF_ADMIN_STATUS_UP, NET_LUID_LH,
             },
         },
-        Networking::WinSock::*,
+        Networking::WinSock::AF_UNSPEC,
     };
+
+    struct MibTable(*const std::ffi::c_void);
+    impl Drop for MibTable {
+        fn drop(&mut self) {
+            // SAFETY: each pointer is returned by an IP Helper table API and
+            // remains owned by this guard until FreeMibTable is called.
+            unsafe { FreeMibTable(self.0) };
+        }
+    }
 
     fn interface_name(luid: &NET_LUID_LH) -> io::Result<String> {
         // OpenJDK obtains NetworkInterface.getName() from this LUID conversion.
@@ -252,101 +285,146 @@ fn interfaces() -> io::Result<Vec<Address>> {
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
     }
 
-    let mut length = 15_000u32;
-    for _ in 0..3 {
-        // u64 storage supplies adapter structure alignment and a bounded buffer.
-        let mut storage = vec![0u64; (length as usize).div_ceil(8)];
-        let first = storage.as_mut_ptr().cast::<IP_ADAPTER_ADDRESSES_LH>();
-        // SAFETY: storage has 8-byte alignment and at least `length` bytes;
-        // the synchronous API retains no pointers after returning.
-        let result = unsafe {
-            GetAdaptersAddresses(
-                AF_UNSPEC as u32,
-                GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER,
-                std::ptr::null(),
-                first,
-                &mut length,
-            )
+    fn luid_value(luid: &NET_LUID_LH) -> u64 {
+        // SAFETY: the IP Helper APIs initialize the canonical 64-bit view of
+        // every NET_LUID_LH value returned in these tables.
+        unsafe { luid.Value }
+    }
+
+    fn interface_row(index: u32) -> io::Result<MIB_IF_ROW2> {
+        let mut row = MIB_IF_ROW2 {
+            InterfaceIndex: index,
+            ..Default::default()
         };
-        if result == 111 {
-            continue;
-        } // ERROR_BUFFER_OVERFLOW, retry new size.
-        if result == 232 {
-            return Ok(Vec::new()); // ERROR_NO_DATA: permit hostname fallback.
-        }
+        let result = unsafe { GetIfEntry2(&mut row) };
         if result != 0 {
             return Err(io::Error::from_raw_os_error(result as i32));
         }
-        let mut current = first;
-        let mut addresses = Vec::new();
-        while !current.is_null() {
-            // SAFETY: on success the API initializes this linked list entirely
-            // inside storage, which remains owned through traversal.
-            let adapter = unsafe { &*current };
-            current = adapter.Next;
-            let mut row = MIB_IF_ROW2 {
-                InterfaceLuid: adapter.Luid,
-                ..Default::default()
-            };
-            let result = unsafe { GetIfEntry2(&mut row) };
-            if result != 0 {
-                return Err(io::Error::from_raw_os_error(result as i32));
-            }
-            if !java_windows_interface_is_eligible(
-                row.AdminStatus == NET_IF_ADMIN_STATUS_UP,
-                row.OperStatus == IfOperStatusUp,
-                row.AccessType == NET_IF_ACCESS_POINT_TO_POINT,
-            ) {
-                continue;
-            }
-            let interface_name = interface_name(&adapter.Luid)?;
-            let mut unicast = adapter.FirstUnicastAddress;
-            while !unicast.is_null() {
-                // SAFETY: this entry and its sockaddr are owned by storage.
-                let entry = unsafe { &*unicast };
-                unicast = entry.Next;
-                let pointer = entry.Address.lpSockaddr;
-                if pointer.is_null()
-                    || entry.Address.iSockaddrLength < std::mem::size_of::<SOCKADDR>() as i32
-                {
-                    continue;
-                }
-                let address = match unsafe { (*pointer).sa_family } {
-                    AF_INET
-                        if entry.Address.iSockaddrLength
-                            >= std::mem::size_of::<SOCKADDR_IN>() as i32 =>
-                    {
-                        let socket = unsafe { &*pointer.cast::<SOCKADDR_IN>() };
-                        Address {
-                            ip: IpAddr::V4(Ipv4Addr::from(
-                                unsafe { socket.sin_addr.S_un.S_addr }.to_ne_bytes(),
-                            )),
-                            scope: 0,
-                            scope_name: None,
-                        }
-                    }
-                    AF_INET6
-                        if entry.Address.iSockaddrLength
-                            >= std::mem::size_of::<SOCKADDR_IN6>() as i32 =>
-                    {
-                        let socket = unsafe { &*pointer.cast::<SOCKADDR_IN6>() };
-                        let scope = unsafe { socket.Anonymous.sin6_scope_id };
-                        Address {
-                            ip: IpAddr::V6(Ipv6Addr::from(unsafe { socket.sin6_addr.u.Byte })),
-                            scope,
-                            scope_name: (scope != 0).then(|| interface_name.clone()),
-                        }
-                    }
-                    _ => continue,
-                };
-                addresses.push(address);
-            }
-        }
-        return Ok(addresses);
+        Ok(row)
     }
-    Err(io::Error::other(
-        "interface list changed during enumeration",
-    ))
+
+    let mut interfaces = std::ptr::null_mut::<MIB_IF_TABLE2>();
+    let result = unsafe { GetIfTable2(&mut interfaces) };
+    if result != 0 {
+        return Err(io::Error::from_raw_os_error(result as i32));
+    }
+    if interfaces.is_null() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "GetIfTable2 returned a null table",
+        ));
+    }
+    let _interfaces_guard = MibTable(interfaces.cast());
+
+    let mut unicast = std::ptr::null_mut::<MIB_UNICASTIPADDRESS_TABLE>();
+    let result = unsafe { GetUnicastIpAddressTable(AF_UNSPEC, &mut unicast) };
+    if result != 0 {
+        return Err(io::Error::from_raw_os_error(result as i32));
+    }
+    if unicast.is_null() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "GetUnicastIpAddressTable returned a null table",
+        ));
+    }
+    let _unicast_guard = MibTable(unicast.cast());
+
+    let mut anycast = std::ptr::null_mut::<MIB_ANYCASTIPADDRESS_TABLE>();
+    let result = unsafe { GetAnycastIpAddressTable(AF_UNSPEC, &mut anycast) };
+    if result != 0 {
+        return Err(io::Error::from_raw_os_error(result as i32));
+    }
+    if anycast.is_null() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "GetAnycastIpAddressTable returned a null table",
+        ));
+    }
+    let _anycast_guard = MibTable(anycast.cast());
+
+    // SAFETY: the IP Helper APIs allocate each flexible table with at least
+    // `NumEntries` initialized rows, and all guards outlive these slices.
+    let interfaces = unsafe {
+        std::slice::from_raw_parts(
+            (*interfaces).Table.as_ptr(),
+            (*interfaces).NumEntries as usize,
+        )
+    };
+    let unicast = unsafe {
+        std::slice::from_raw_parts((*unicast).Table.as_ptr(), (*unicast).NumEntries as usize)
+    };
+    let anycast = unsafe {
+        std::slice::from_raw_parts((*anycast).Table.as_ptr(), (*anycast).NumEntries as usize)
+    };
+
+    let mut addresses = Vec::new();
+    for interface in interfaces {
+        let interface_name = interface_name(&interface.InterfaceLuid)?;
+        // NetworkInterface.isUp() and isPointToPoint() each query the current
+        // interface row after Java has enumerated the interface table.
+        let up_state = interface_row(interface.InterfaceIndex)?;
+        let point_to_point_state = interface_row(interface.InterfaceIndex)?;
+        if !java_windows_interface_is_eligible(
+            up_state.AdminStatus == NET_IF_ADMIN_STATUS_UP,
+            up_state.OperStatus == IfOperStatusUp,
+            point_to_point_state.AccessType == NET_IF_ACCESS_POINT_TO_POINT,
+        ) {
+            continue;
+        }
+
+        let interface_unicast = unicast
+            .iter()
+            .filter(|row| {
+                luid_value(&row.InterfaceLuid) == luid_value(&interface.InterfaceLuid)
+                    && java_windows_unicast_address_is_usable(row.DadState)
+            })
+            .filter_map(|row| windows_address(row.Address, &interface_name))
+            .collect::<Vec<_>>();
+        let interface_anycast = anycast
+            .iter()
+            .filter(|row| luid_value(&row.InterfaceLuid) == luid_value(&interface.InterfaceLuid))
+            .filter_map(|row| windows_address(row.Address, &interface_name))
+            .collect::<Vec<_>>();
+        addresses.extend(java_windows_interface_candidate_order(
+            interface_unicast,
+            interface_anycast,
+        ));
+    }
+    Ok(addresses)
+}
+
+#[cfg(windows)]
+fn windows_address(
+    address: windows_sys::Win32::Networking::WinSock::SOCKADDR_INET,
+    interface_name: &str,
+) -> Option<Address> {
+    use windows_sys::Win32::Networking::WinSock::{AF_INET, AF_INET6};
+
+    // SAFETY: `si_family` is the active discriminator for this union.
+    match unsafe { address.si_family } {
+        AF_INET => {
+            // SAFETY: AF_INET identifies the IPv4 member of SOCKADDR_INET.
+            let socket = unsafe { address.Ipv4 };
+            Some(Address {
+                ip: IpAddr::V4(Ipv4Addr::from(
+                    unsafe { socket.sin_addr.S_un.S_addr }.to_ne_bytes(),
+                )),
+                scope: 0,
+                scope_name: None,
+            })
+        }
+        AF_INET6 => {
+            // SAFETY: AF_INET6 identifies the IPv6 member of SOCKADDR_INET.
+            let socket = unsafe { address.Ipv6 };
+            let scope = unsafe { socket.Anonymous.sin6_scope_id };
+            Some(Address {
+                ip: IpAddr::V6(Ipv6Addr::from(unsafe { socket.sin6_addr.u.Byte })),
+                scope,
+                scope_name: (scope != 0).then(|| interface_name.to_owned()),
+            })
+        }
+        _ => None,
+    }
 }
 
 #[cfg(not(any(unix, windows)))]
@@ -366,6 +444,34 @@ mod tests {
         assert!(!java_windows_interface_is_eligible(false, true, false));
         assert!(!java_windows_interface_is_eligible(true, false, false));
         assert!(!java_windows_interface_is_eligible(true, true, true));
+    }
+    #[test]
+    fn windows_unicast_address_state_matches_java_preferred_and_deprecated_filter() {
+        assert!(!java_windows_unicast_address_is_usable(0)); // invalid
+        assert!(!java_windows_unicast_address_is_usable(1)); // tentative
+        assert!(!java_windows_unicast_address_is_usable(2)); // duplicate
+        assert!(java_windows_unicast_address_is_usable(3)); // deprecated
+        assert!(java_windows_unicast_address_is_usable(4)); // preferred
+    }
+    #[test]
+    fn windows_candidate_order_matches_java_native_address_list() {
+        assert_eq!(
+            java_windows_interface_candidate_order(
+                vec![
+                    address("10.0.0.1"),
+                    address("10.0.0.2"),
+                    address("10.0.0.3"),
+                ],
+                vec![address("192.0.2.1"), address("192.0.2.2")],
+            ),
+            vec![
+                address("192.0.2.2"),
+                address("192.0.2.1"),
+                address("10.0.0.3"),
+                address("10.0.0.2"),
+                address("10.0.0.1"),
+            ]
+        );
     }
     #[cfg(unix)]
     #[test]
