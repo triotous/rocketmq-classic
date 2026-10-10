@@ -114,6 +114,11 @@ async fn nullable_manager_removal_overloads_match_invoked_java_null_key_failures
     let java = &fixture["managerRemoval"];
     assert_eq!(java["removeByNullId"], "NullPointerException");
     assert_eq!(java["removeByNullIdAndInstance"], "NullPointerException");
+    assert_eq!(java["removeByNullInstance"], "RETURNED");
+    assert_eq!(
+        java["removeByNullIdAndNullInstance"],
+        "NullPointerException"
+    );
 
     let manager = ClientRuntimeManager::new();
     let runtime = manager
@@ -121,9 +126,18 @@ async fn nullable_manager_removal_overloads_match_invoked_java_null_key_failures
         .await
         .unwrap();
     assert!(matches!(
-        manager.remove_client_factory_nullable(None, &runtime),
+        manager.remove_client_factory_nullable(None, Some(&runtime)),
         Err(RuntimeError::InvalidRoute("null client id"))
     ));
+    assert!(matches!(
+        manager.remove_client_factory_nullable(None, None),
+        Err(RuntimeError::InvalidRoute("null client id"))
+    ));
+    assert!(
+        !manager
+            .remove_client_factory_nullable(Some(runtime.client_id()), None)
+            .unwrap()
+    );
     assert!(matches!(
         manager.remove_client_factory_by_id_nullable(None).await,
         Err(RuntimeError::InvalidRoute("null client id"))

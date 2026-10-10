@@ -359,10 +359,13 @@ impl ClientRuntimeManager {
     pub fn remove_client_factory_nullable(
         &self,
         client_id: Option<&str>,
-        expected: &Arc<ClientRuntime>,
+        expected: Option<&Arc<ClientRuntime>>,
     ) -> Result<bool, RuntimeError> {
         let Some(client_id) = client_id else {
             return Err(RuntimeError::InvalidRoute("null client id"));
+        };
+        let Some(expected) = expected else {
+            return Ok(false);
         };
         self.remove_client_factory(client_id, expected)
     }
