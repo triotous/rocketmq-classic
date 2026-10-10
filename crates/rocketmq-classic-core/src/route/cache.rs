@@ -889,7 +889,7 @@ mod tests {
         let cases = fixture["runtimeRouteNestedCollectionMatrix"]
             .as_array()
             .unwrap();
-        assert_eq!(cases.len(), 16);
+        assert_eq!(cases.len(), 625);
         for (index, case) in cases.iter().enumerate() {
             let route: TopicRouteData = serde_json::from_value(case["input"].clone()).unwrap();
             let cache = RouteCache::default();

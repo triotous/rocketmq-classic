@@ -129,3 +129,7 @@
 
 - Expanded `runtimeRouteNestedCollectionMatrix` to the complete 5^4 product for `queueDatas`, `brokerDatas`, `filterServerTable`, and `topicQueueMappingByBroker`: absent, explicit null, empty, populated, or the field-appropriate null nested element/value. The pinned Java runtime produced 625 outcomes: 210 successful publications and 415 `NullPointerException` failures without cache publication. Fixture SHA-256: `0039e6b09608894bd1d0d6f4d9192ad58539bc73f3f4c88701510a9130c373f5`.
 - Expanded the Rust differential to all 625 cases. Focused test passes, comparing publication outcome, changed state, cache state, and all collection sizes. Full gates remain pending for this expansion.
+
+## Route collection nested product validation
+
+- Expanded 625-case native differential passes within `cargo test --workspace --all-targets --locked` with reviewed loopback access. Strict workspace/all-target/all-feature Clippy passes. Pinned offline Maven verify passes (22 scenarios; 38 Java-decoded headers and 14 typed bodies); comparator self-test and manifest validation (22 scenarios) pass; fmt and diff checks pass.
