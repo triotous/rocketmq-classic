@@ -441,12 +441,15 @@ impl TopicRouteTable {
             }
         }
     }
+    /// Removes the keys observed at traversal start one at a time. Per-key
+    /// gates order clear with compute-style mutations without making a
+    /// whole-table transaction.
     pub fn clear(&self) -> Result<(), RuntimeError> {
-        self.0.update_raw(|map| {
-            let changed = !map.is_empty();
-            map.clear();
-            (changed, ())
-        })
+        for key in self.snapshot()?.into_keys() {
+            let _gate = self.0.lock_raw_route_key(&key)?;
+            self.0.update_raw(|map| (map.remove(&key).is_some(), ()))?;
+        }
+        Ok(())
     }
 }
 

@@ -2063,6 +2063,63 @@ public final class RuntimeRouteFixtures {
             primitives.put("remappingReturnsAndKeepsWriterValue", remappingResult.get() == second
                 && writerPrevious.get() == second && table.get("remapping-race") == first);
             table.remove("remapping-race");
+
+            table.put("clear-race", first);
+            AtomicInteger clearComputeCalls = new AtomicInteger();
+            CountDownLatch clearComputeEntered = new CountDownLatch(1);
+            CountDownLatch releaseClearCompute = new CountDownLatch(1);
+            CountDownLatch clearStarted = new CountDownLatch(1);
+            CountDownLatch clearFinished = new CountDownLatch(1);
+            AtomicReference<TopicRouteData> clearComputeResult = new AtomicReference<>();
+            AtomicReference<Throwable> clearFailure = new AtomicReference<>();
+            Thread clearComputeThread = new Thread(() -> clearComputeResult.set(table.compute("clear-race", (key, old) -> {
+                clearComputeCalls.incrementAndGet();
+                clearComputeEntered.countDown();
+                awaitUnchecked(releaseClearCompute, "raw route clear-race compute release");
+                return second;
+            })), "java-raw-route-clear-compute");
+            Thread clearThread = new Thread(() -> {
+                clearStarted.countDown();
+                try {
+                    table.clear();
+                } catch (Throwable error) {
+                    clearFailure.set(error);
+                } finally {
+                    clearFinished.countDown();
+                }
+            }, "java-raw-route-clear");
+            clearComputeThread.setDaemon(true);
+            clearThread.setDaemon(true);
+            clearComputeThread.start();
+            try {
+                awaitUnchecked(clearComputeEntered, "raw route clear-race compute callback");
+                clearThread.start();
+                awaitUnchecked(clearStarted, "raw route clear thread");
+                primitives.put("clearWaitsForCompute",
+                    !clearFinished.await(100, TimeUnit.MILLISECONDS));
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("interrupted while checking raw route clear", error);
+            } finally {
+                releaseClearCompute.countDown();
+            }
+            try {
+                clearComputeThread.join(5000);
+                clearThread.join(5000);
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("interrupted while joining raw route clear threads", error);
+            }
+            if (clearComputeThread.isAlive() || clearThread.isAlive()) {
+                throw new IllegalStateException("ConcurrentHashMap raw route clear threads did not finish");
+            }
+            if (clearFailure.get() != null) {
+                throw new IllegalStateException("ConcurrentHashMap raw route clear failed", clearFailure.get());
+            }
+            primitives.put("clearComputeRunsOnce", clearComputeCalls.get() == 1);
+            primitives.put("clearComputeReturnsValue", clearComputeResult.get() == second);
+            primitives.put("clearRemovesComputedValue", !table.containsKey("clear-race"));
+
             table.remove("compute-a");
             table.remove("merge-new");
             table.clear();

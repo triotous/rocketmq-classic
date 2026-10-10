@@ -717,6 +717,56 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
             && same(table.get("remapping-race").unwrap(), &first),
     );
     table.remove("remapping-race").unwrap();
+
+    table.put("clear-race", first.clone()).unwrap();
+    let clear_compute_calls = Arc::new(AtomicUsize::new(0));
+    let (clear_compute_entered_tx, clear_compute_entered_rx) = mpsc::channel();
+    let (release_clear_compute_tx, release_clear_compute_rx) = mpsc::channel();
+    let clear_compute_table = table.clone();
+    let clear_compute_calls_for_task = clear_compute_calls.clone();
+    let clear_compute_second = second.clone();
+    let clear_compute_thread = std::thread::spawn(move || {
+        clear_compute_table.compute("clear-race", move |_, _| {
+            clear_compute_calls_for_task.fetch_add(1, Ordering::SeqCst);
+            clear_compute_entered_tx.send(()).unwrap();
+            release_clear_compute_rx.recv().unwrap();
+            Some(clear_compute_second.clone())
+        })
+    });
+    clear_compute_entered_rx
+        .recv_timeout(Duration::from_secs(5))
+        .unwrap();
+    let clear_table = table.clone();
+    let (clear_started_tx, clear_started_rx) = mpsc::channel();
+    let (clear_finished_tx, clear_finished_rx) = mpsc::channel();
+    let clear_thread = std::thread::spawn(move || {
+        clear_started_tx.send(()).unwrap();
+        clear_table.clear().unwrap();
+        clear_finished_tx.send(()).unwrap();
+    });
+    clear_started_rx
+        .recv_timeout(Duration::from_secs(5))
+        .unwrap();
+    let clear_waits_for_compute = clear_finished_rx
+        .recv_timeout(Duration::from_millis(100))
+        .is_err();
+    release_clear_compute_tx.send(()).unwrap();
+    let clear_compute_result = clear_compute_thread.join().unwrap().unwrap();
+    clear_thread.join().unwrap();
+    outcomes.insert("clearWaitsForCompute", clear_waits_for_compute);
+    outcomes.insert(
+        "clearComputeRunsOnce",
+        clear_compute_calls.load(Ordering::SeqCst) == 1,
+    );
+    outcomes.insert(
+        "clearComputeReturnsValue",
+        same(clear_compute_result, &second),
+    );
+    outcomes.insert(
+        "clearRemovesComputedValue",
+        !table.contains_key("clear-race").unwrap(),
+    );
+
     table.put("recursive-write", first.clone()).unwrap();
     let mut recursive_write_rejected = false;
     table
