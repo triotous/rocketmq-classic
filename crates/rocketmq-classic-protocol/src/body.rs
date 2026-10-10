@@ -441,6 +441,12 @@ pub struct OffsetOption {
     pub value: i64,
 }
 
+/// Shared handle for a Java `LiteSubscriptionDTO` lite topic set.
+pub type SharedLiteSubscriptionTopicSet = SharedValue<std::collections::BTreeSet<Option<String>>>;
+
+/// Shared handle for the mutable `OffsetOption` nested in a lite subscription DTO.
+pub type SharedOffsetOption = SharedValue<OffsetOption>;
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OffsetOptionFields {
@@ -542,9 +548,9 @@ pub struct LiteSubscriptionDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub topic: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub lite_topic_set: Option<std::collections::BTreeSet<Option<String>>>,
+    pub lite_topic_set: Option<SharedLiteSubscriptionTopicSet>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub offset_option: Option<OffsetOption>,
+    pub offset_option: Option<SharedOffsetOption>,
     #[serde(
         default,
         deserialize_with = "serde_fastjson::deserialize_i64_reject_object"
@@ -649,8 +655,8 @@ impl<'de> Deserialize<'de> for LiteSubscriptionDto {
             client_id: fields.client_id,
             group: fields.group,
             topic: fields.topic,
-            lite_topic_set: fields.lite_topic_set,
-            offset_option: fields.offset_option,
+            lite_topic_set: fields.lite_topic_set.map(SharedValue::new),
+            offset_option: fields.offset_option.map(SharedValue::new),
             version: fields.version,
         })
     }
@@ -693,34 +699,31 @@ impl LiteSubscriptionDto {
         self
     }
 
-    pub fn lite_topic_set(&self) -> Option<&std::collections::BTreeSet<Option<String>>> {
-        self.lite_topic_set.as_ref()
+    pub fn lite_topic_set(&self) -> Option<SharedLiteSubscriptionTopicSet> {
+        self.lite_topic_set.clone()
     }
 
-    pub fn lite_topic_set_mut(
-        &mut self,
-    ) -> Option<&mut std::collections::BTreeSet<Option<String>>> {
+    pub fn lite_topic_set_mut(&mut self) -> Option<&mut SharedLiteSubscriptionTopicSet> {
         self.lite_topic_set.as_mut()
     }
 
     pub fn set_lite_topic_set(
         &mut self,
-        lite_topic_set: Option<std::collections::BTreeSet<Option<String>>>,
+        lite_topic_set: Option<SharedLiteSubscriptionTopicSet>,
     ) -> &mut Self {
         self.lite_topic_set = lite_topic_set;
         self
     }
 
-    pub fn offset_option(&self) -> Option<&OffsetOption> {
-        self.offset_option.as_ref()
+    pub fn offset_option(&self) -> Option<SharedOffsetOption> {
+        self.offset_option.clone()
     }
 
-    /// Borrows the owned offset option mutably for Java-compatible getter mutations.
-    pub fn offset_option_mut(&mut self) -> Option<&mut OffsetOption> {
+    pub fn offset_option_mut(&mut self) -> Option<&mut SharedOffsetOption> {
         self.offset_option.as_mut()
     }
 
-    pub fn set_offset_option(&mut self, offset_option: Option<OffsetOption>) {
+    pub fn set_offset_option(&mut self, offset_option: Option<SharedOffsetOption>) {
         self.offset_option = offset_option;
     }
 
@@ -747,20 +750,22 @@ impl std::fmt::Display for LiteSubscriptionDto {
             .lite_topic_set
             .as_ref()
             .map(|topics| {
-                format!(
-                    "[{}]",
-                    topics
-                        .iter()
-                        .map(|topic| topic.as_deref().unwrap_or("null"))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
+                topics.with(|topics| {
+                    format!(
+                        "[{}]",
+                        topics
+                            .iter()
+                            .map(|topic| topic.as_deref().unwrap_or("null"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                })
             })
             .unwrap_or_else(|| "null".to_owned());
         let offset_option = self
             .offset_option
             .as_ref()
-            .map(ToString::to_string)
+            .map(|option| option.with(ToString::to_string))
             .unwrap_or_else(|| "null".to_owned());
         write!(
             formatter,
@@ -5384,13 +5389,13 @@ mod tests {
             client_id: Some("client".into()),
             group: Some("workers".into()),
             topic: Some("orders".into()),
-            lite_topic_set: Some(std::collections::BTreeSet::from([Some(
+            lite_topic_set: Some(SharedValue::new(std::collections::BTreeSet::from([Some(
                 "lite-orders".into(),
-            )])),
-            offset_option: Some(OffsetOption {
+            )]))),
+            offset_option: Some(SharedValue::new(OffsetOption {
                 option_type: Some(OffsetOptionType::Timestamp),
                 value: 99,
-            }),
+            })),
             version: 2,
         };
         let value = serde_json::to_value(lite).unwrap();
@@ -6372,20 +6377,24 @@ mod tests {
             dto.set_topic(Some("orders".into())) as *mut LiteSubscriptionDto,
             dto_ptr
         );
-        let lite_topics = std::collections::BTreeSet::from([Some("lite-a".into())]);
+        let lite_topics =
+            SharedValue::new(std::collections::BTreeSet::from([Some("lite-a".into())]));
         assert_eq!(
             dto.set_lite_topic_set(Some(lite_topics.clone())) as *mut LiteSubscriptionDto,
             dto_ptr
         );
-        let mut option = OffsetOption::new(Some(OffsetOptionType::Policy), 11);
-        dto.set_offset_option(Some(option.clone()));
+        let assigned_option =
+            SharedValue::new(OffsetOption::new(Some(OffsetOptionType::Policy), 11));
+        dto.set_offset_option(Some(assigned_option.clone()));
         assert_eq!(dto.set_version(9) as *mut LiteSubscriptionDto, dto_ptr);
         assert_eq!(dto.action(), Some(LiteSubscriptionAction::CompleteAdd));
         assert_eq!(dto.client_id(), Some("client"));
         assert_eq!(dto.group(), Some("workers"));
         assert_eq!(dto.topic(), Some("orders"));
-        assert_eq!(dto.lite_topic_set(), Some(&lite_topics));
-        assert_eq!(dto.offset_option(), Some(&option));
+        let getter_topics = dto.lite_topic_set().unwrap();
+        let getter_option = dto.offset_option().unwrap();
+        assert!(lite_topics.ptr_eq(&getter_topics));
+        assert!(assigned_option.ptr_eq(&getter_option));
         assert_eq!(dto.version(), 9);
         assert!(dto_case["actionSetterReturnsThis"].as_bool().unwrap());
         assert!(dto_case["clientIdSetterReturnsThis"].as_bool().unwrap());
@@ -6402,11 +6411,14 @@ mod tests {
             dto_case["liteTopicSetGetterMutationVisibleToAssignedSet"],
             true
         );
-        let lite_topics_mut = dto.lite_topic_set_mut().unwrap();
-        lite_topics_mut.insert(Some("setter-added".into()));
-        lite_topics_mut.insert(Some("getter-added".into()));
+        lite_topics.with_mut(|topics| {
+            topics.insert(Some("setter-added".into()));
+        });
+        getter_topics.with_mut(|topics| {
+            topics.insert(Some("getter-added".into()));
+        });
         assert_eq!(
-            serde_json::to_value(dto.lite_topic_set()).unwrap(),
+            serde_json::to_value(getter_topics.snapshot()).unwrap(),
             dto_case["mutatedLiteTopicSet"]
         );
         assert!(
@@ -6415,13 +6427,19 @@ mod tests {
                 .unwrap()
         );
         assert_eq!(dto_case["offsetOptionExternalMutationVisible"], true);
+        assigned_option.with_mut(|option| option.set_value(12));
+        assert_eq!(getter_option.with(|option| option.value()), 12);
         assert_eq!(
             dto_case["offsetOptionGetterMutationVisibleToAssignedObject"],
             true
         );
-        dto.offset_option_mut().unwrap().set_value(13);
+        getter_option.with_mut(|option| option.set_value(13));
         assert_eq!(
-            dto.offset_option().unwrap().value(),
+            getter_option.with(|option| option.value()),
+            dto_case["mutatedOffsetOptionValue"].as_i64().unwrap()
+        );
+        assert_eq!(
+            assigned_option.with(|option| option.value()),
             dto_case["mutatedOffsetOptionValue"].as_i64().unwrap()
         );
         assert_eq!(dto.to_string(), dto_case["toString"].as_str().unwrap());
@@ -6435,6 +6453,7 @@ mod tests {
         assert_eq!(dto_case["offsetOptionValue"], 11);
         assert_eq!(dto_case["version"], 9);
 
+        let mut option = OffsetOption::default();
         option.set_option_type(Some(OffsetOptionType::TailN));
         option.set_value(23);
         let option_case = &fixture["offsetOptionApiCase"];
@@ -7026,11 +7045,13 @@ mod tests {
             client_id: Some("client".into()),
             group: Some("workers".into()),
             topic: Some("orders".into()),
-            lite_topic_set: Some(std::collections::BTreeSet::from([Some("shard-a".into())])),
-            offset_option: Some(OffsetOption {
+            lite_topic_set: Some(SharedValue::new(std::collections::BTreeSet::from([Some(
+                "shard-a".into(),
+            )]))),
+            offset_option: Some(SharedValue::new(OffsetOption {
                 option_type: Some(OffsetOptionType::Policy),
                 value: 1,
-            }),
+            })),
             version: 99,
         };
         let ctl = LiteSubscriptionCtlRequestBody {

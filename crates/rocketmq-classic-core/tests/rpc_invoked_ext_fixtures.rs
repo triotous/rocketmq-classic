@@ -2,6 +2,7 @@ use std::{fs, path::PathBuf, time::Duration};
 
 use bytes::BytesMut;
 use rocketmq_classic_core::{api::MQClientApi, error::RpcError};
+use rocketmq_classic_protocol::SharedValue;
 use rocketmq_classic_protocol::body::{
     LiteSubscriptionAction, LiteSubscriptionCtlRequestBody, LiteSubscriptionDto,
 };
@@ -106,9 +107,9 @@ async fn invoked_lite_subscription_extension_matches_rust() {
                 client_id: Some("client".into()),
                 group: Some("workers".into()),
                 topic: Some("orders".into()),
-                lite_topic_set: Some(std::collections::BTreeSet::from([Some(
+                lite_topic_set: Some(SharedValue::new(std::collections::BTreeSet::from([Some(
                     "lite-orders".into(),
-                )])),
+                )]))),
                 version: 0,
                 ..Default::default()
             })]),

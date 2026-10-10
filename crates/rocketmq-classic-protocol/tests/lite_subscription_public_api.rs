@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use rocketmq_classic_protocol::SharedValue;
 use rocketmq_classic_protocol::body::{
     LiteSubscription, LiteSubscriptionAction, LiteSubscriptionCtlRequestBody, LiteSubscriptionDTO,
     OffsetOption, OffsetOptionType,
@@ -22,14 +23,14 @@ fn lite_subscription_java_accessors_are_public_and_chain_like_java() {
         .set_client_id(Some("client".into()))
         .set_group(Some("workers".into()))
         .set_topic(Some("orders".into()))
-        .set_lite_topic_set(Some(std::collections::BTreeSet::from([Some(
-            "lite-a".into(),
-        )])))
+        .set_lite_topic_set(Some(SharedValue::new(std::collections::BTreeSet::from([
+            Some("lite-a".into()),
+        ]))))
         .set_version(9);
-    dto.set_offset_option(Some(OffsetOption::new(
+    dto.set_offset_option(Some(SharedValue::new(OffsetOption::new(
         Some(OffsetOptionType::Policy),
         OffsetOption::POLICY_MIN_VALUE,
-    )));
+    ))));
     assert_eq!(dto.action(), Some(LiteSubscriptionAction::CompleteAdd));
     assert_eq!(dto.client_id(), Some("client"));
     assert_eq!(dto.version(), 9);

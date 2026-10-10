@@ -360,7 +360,13 @@ fn java_json_body_fixtures_decode_to_typed_assignment_lite_and_batch_models() {
         .as_ref()
         .expect("Java fixture subscription entries are non-null");
     assert_eq!(dto.action, Some(LiteSubscriptionAction::CompleteAdd));
-    assert_eq!(dto.offset_option.as_ref().unwrap().value, 1);
+    assert_eq!(
+        dto.offset_option
+            .as_ref()
+            .unwrap()
+            .with(|option| option.value),
+        1
+    );
 
     let batch: BatchAckMessageRequestBody =
         serde_json::from_slice(&java_body("body-batch-ack")).unwrap();
