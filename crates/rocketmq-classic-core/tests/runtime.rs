@@ -763,6 +763,7 @@ async fn admin_registration_retains_owner_and_matches_invoked_java() {
             .register_admin_ext(Some("admin"), Some(first_owner))
             .unwrap(),
         expected["firstRegistrationAccepted"].as_bool().unwrap()
+            && expected["emptyAfterNullRejected"].as_bool().unwrap()
     );
     drop(first);
     assert_eq!(
