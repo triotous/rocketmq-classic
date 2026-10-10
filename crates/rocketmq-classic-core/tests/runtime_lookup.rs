@@ -317,6 +317,68 @@ async fn null_assignment_fields_match_java_request_body() {
     name_peer.await.unwrap();
 }
 
+#[tokio::test]
+async fn empty_assignment_fields_match_java_request_body() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+    let java_runtime = &fixture["runtimeLookupInvocation"]["emptyAssignmentFieldsCalls"][0];
+    assert_eq!(java_runtime["topic"], "topic");
+    assert_eq!(java_runtime["group"], "");
+    assert_eq!(java_runtime["strategy"], "");
+    assert_eq!(java_runtime["messageModel"], "BROADCASTING");
+    let java_api = &fixture["queryAssignmentEmptyInputsApiCase"];
+    assert_eq!(java_api["requestCode"], request::QUERY_ASSIGNMENT);
+    assert_eq!(java_api["assignmentCount"], 0);
+    assert_eq!(java_api["body"]["topic"], "topic");
+    assert_eq!(java_api["body"]["clientId"], "client");
+    assert_eq!(java_api["body"]["consumerGroup"], "");
+    assert_eq!(java_api["body"]["strategyName"], "");
+    assert_eq!(java_api["body"]["messageModel"], "BROADCASTING");
+
+    let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let broker_address = broker.local_addr().unwrap().to_string();
+    let (runtime, name_peer) = setup(Some(broker_address), false).await;
+    let broker_peer = tokio::spawn(async move {
+        let (mut socket, _) = broker.accept().await.unwrap();
+        let command = read(&mut socket).await;
+        assert_eq!(command.code, request::QUERY_ASSIGNMENT);
+        let body: serde_json::Value =
+            serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
+        assert_eq!(body["topic"], "topic");
+        assert_eq!(body["clientId"].as_str().unwrap(), "192.0.2.6@DEFAULT");
+        assert_eq!(body["consumerGroup"], "");
+        assert_eq!(body["strategyName"], "");
+        assert_eq!(body["messageModel"], "BROADCASTING");
+        reply(
+            &mut socket,
+            &command,
+            0,
+            Some(br#"{"messageQueueAssignments":[]}"#.to_vec()),
+        )
+        .await;
+        let mut byte = [0];
+        assert_eq!(socket.read(&mut byte).await.unwrap(), 0);
+    });
+
+    assert!(
+        runtime
+            .query_assignment_nullable(
+                Some("topic"),
+                Some(""),
+                Some(""),
+                Some(MessageModel::Broadcasting),
+                3000,
+            )
+            .await
+            .unwrap()
+            .unwrap()
+            .is_empty()
+    );
+    runtime.remoting().shutdown().await;
+    broker_peer.await.unwrap();
+    name_peer.await.unwrap();
+}
+
 #[test]
 fn null_broker_address_lookups_match_invoked_java_results() {
     let fixture: serde_json::Value =
