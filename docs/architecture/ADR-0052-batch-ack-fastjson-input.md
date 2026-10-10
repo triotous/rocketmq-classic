@@ -15,7 +15,7 @@ The 111-case Java corpus invokes BatchAckMessageRequestBody.decode and encode. I
 
 ## Consequences
 
-The tested Java 5.5.1 input and encode behavior now matches the native body DTO. `BatchAckMessageRequestBody.acks` uses `Option<SharedValue<Vec<Option<BatchAck>>>>` to preserve Java null list members and the assigned List alias; SharedValue serialization preserves the existing JSON array/null wire shape. This DTO boundary does not change the Phase 6 PARTIAL status or P6-V04 ownership.
+The tested Java 5.5.1 input and encode behavior now matches the native body DTO. `BatchAckMessageRequestBody.acks` uses `Option<SharedValue<Vec<Option<SharedValue<BatchAck>>>>>` to preserve Java null List members, the assigned List alias, and each contained BatchAck object alias. `BatchAck.bit_set` is also a shared handle. SharedValue serialization preserves the existing JSON array/null and Base64 wire shapes. This DTO boundary does not change the Phase 6 PARTIAL status or P6-V04 ownership.
 
 ## Evidence
 
