@@ -1001,6 +1001,117 @@ async fn route_refresh_failure_preserves_last_coherent_snapshot() {
 }
 
 #[tokio::test]
+async fn registered_consumer_need_update_republishes_unchanged_route_like_java() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/route.json")).unwrap();
+    let java = &fixture["runtimeConsumerNeedUpdate"];
+    assert_eq!(java["initialChanged"], true);
+    assert_eq!(java["secondChanged"], true);
+    assert_eq!(java["secondOutcome"], "OK");
+    assert_eq!(java["cachedRouteUnchanged"], true);
+
+    let body = serde_json::to_vec(&java["input"]).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut config = ClientConfig::new("route-consumer-need-update");
+    config.namesrv_addr = Some(listener.local_addr().unwrap().to_string());
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        for _ in 0..2 {
+            let mut length = [0; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut bytes = BytesMut::from(&length[..]);
+            bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut bytes[4..]).await.unwrap();
+            let request = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
+                .unwrap()
+                .unwrap();
+            assert_eq!(request.code, request::GET_ROUTEINFO_BY_TOPIC);
+            let mut reply = RemotingCommand {
+                code: 0,
+                opaque: request.opaque,
+                body: Some(body.clone()),
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .await
+                .unwrap();
+        }
+    });
+
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+    let consumer = Arc::new(RouteObserver {
+        runtime: Arc::downgrade(&runtime),
+        updates: AtomicUsize::new(0),
+        needed: AtomicBool::new(false),
+        need_checks: AtomicUsize::new(0),
+    });
+    let producer = Arc::new(RouteObserver {
+        runtime: Arc::downgrade(&runtime),
+        updates: AtomicUsize::new(0),
+        needed: AtomicBool::new(false),
+        need_checks: AtomicUsize::new(0),
+    });
+    runtime
+        .register_consumer("consumer", consumer.clone())
+        .await
+        .unwrap();
+    runtime
+        .register_producer("producer", producer.clone())
+        .await
+        .unwrap();
+    runtime.remoting().start().unwrap();
+
+    assert_eq!(
+        runtime
+            .update_topic_route("topic", Instant::now() + Duration::from_secs(2))
+            .await
+            .unwrap(),
+        java["initialChanged"]
+    );
+    assert_eq!(
+        consumer.updates.load(Ordering::SeqCst),
+        java["consumerUpdatesAfterInitial"]
+    );
+    assert_eq!(
+        producer.updates.load(Ordering::SeqCst),
+        java["producerUpdatesAfterInitial"]
+    );
+    let before = runtime.route_snapshot().unwrap().raw_routes["topic"]
+        .snapshot()
+        .unwrap();
+
+    consumer.needed.store(true, Ordering::SeqCst);
+    assert_eq!(
+        runtime
+            .update_topic_route("topic", Instant::now() + Duration::from_secs(2))
+            .await
+            .unwrap(),
+        java["secondChanged"]
+    );
+    let after = runtime.route_snapshot().unwrap();
+    assert_eq!(before, after.raw_routes["topic"].snapshot().unwrap());
+    assert_eq!(
+        consumer.need_checks.load(Ordering::SeqCst),
+        java["consumerNeedChecksAfterSecond"]
+    );
+    assert_eq!(
+        consumer.updates.load(Ordering::SeqCst),
+        java["consumerUpdatesAfterSecond"]
+    );
+    assert_eq!(
+        producer.updates.load(Ordering::SeqCst),
+        java["producerUpdatesAfterSecond"]
+    );
+    peer.await.unwrap();
+    runtime.remoting().shutdown().await;
+}
+
+#[tokio::test]
 async fn registered_clients_route_refresh_recovers_after_null_broker_map_failure() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/route.json")).unwrap();
