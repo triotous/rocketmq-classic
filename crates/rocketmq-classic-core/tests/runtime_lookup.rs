@@ -54,17 +54,29 @@ async fn setup(
     broker: Option<String>,
     vip: bool,
 ) -> (Arc<ClientRuntime>, tokio::task::JoinHandle<()>) {
+    setup_for_topic(broker, vip, "topic").await
+}
+
+async fn setup_for_topic(
+    broker: Option<String>,
+    vip: bool,
+    expected_topic: &str,
+) -> (Arc<ClientRuntime>, tokio::task::JoinHandle<()>) {
     let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut config = ClientConfig::new("lookup");
     config.client_ip = Some("192.0.2.6".into());
     config.namesrv_addr = Some(nameserver.local_addr().unwrap().to_string());
     config.vip_channel_enabled = vip;
     config.enable_heartbeat_channel_event_listener = false;
+    let expected_topic = expected_topic.to_owned();
     let peer = tokio::spawn(async move {
         let (mut socket, _) = nameserver.accept().await.unwrap();
         let command = read(&mut socket).await;
         assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
-        assert_eq!(command.ext_fields.as_ref().unwrap()["topic"], "topic");
+        assert_eq!(
+            command.ext_fields.as_ref().unwrap()["topic"],
+            expected_topic
+        );
         let brokers = broker.map_or_else(Vec::new, |address| {
             vec![serde_json::json!({
                 "cluster":"cluster","brokerName":"broker","brokerAddrs":{"0":address}
@@ -309,6 +321,92 @@ async fn empty_consumer_group_matches_java_rpc_and_preserves_blank_header_field(
             .await
             .unwrap(),
         Some(vec![Some("client".into())])
+    );
+    runtime.remoting().shutdown().await;
+    broker_peer.await.unwrap();
+    name_peer.await.unwrap();
+}
+
+#[tokio::test]
+async fn empty_topic_uses_normal_route_refresh_and_broker_lookup_flow() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+    let java = &fixture["runtimeLookupInvocation"];
+    assert_eq!(
+        java["emptyTopicConsumerOutcome"],
+        serde_json::json!(["b", "a", "b"])
+    );
+    assert_eq!(java["emptyTopicConsumerCalls"][0]["group"], "consumer");
+    assert_eq!(java["emptyTopicConsumerCalls"][0]["timeout"], 150);
+    assert_eq!(java["emptyTopicAssignmentOutcome"], 0);
+    assert_eq!(java["emptyTopicAssignmentCalls"][0]["topic"], "");
+    assert_eq!(java["emptyTopicRefreshTopics"], serde_json::json!([""]));
+
+    let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let (runtime, name_peer) =
+        setup_for_topic(Some(broker.local_addr().unwrap().to_string()), false, "").await;
+    runtime.config().write().unwrap().mq_client_api_timeout = 150;
+    let broker_peer = tokio::spawn(async move {
+        let (mut socket, _) = broker.accept().await.unwrap();
+
+        let consumer = read(&mut socket).await;
+        assert_eq!(consumer.code, request::GET_CONSUMER_LIST_BY_GROUP);
+        assert_eq!(
+            consumer
+                .ext_fields
+                .as_ref()
+                .unwrap()
+                .get("consumerGroup")
+                .map(String::as_str),
+            Some("consumer")
+        );
+        reply(
+            &mut socket,
+            &consumer,
+            0,
+            Some(br#"{"consumerIdList":["client"]}"#.to_vec()),
+        )
+        .await;
+
+        let assignment = read(&mut socket).await;
+        assert_eq!(assignment.code, request::QUERY_ASSIGNMENT);
+        let body: serde_json::Value =
+            serde_json::from_slice(assignment.body.as_ref().unwrap()).unwrap();
+        assert_eq!(body["topic"], "");
+        assert_eq!(body["consumerGroup"], "consumer");
+        assert_eq!(body["strategyName"], "strategy");
+        assert_eq!(body["messageModel"], "BROADCASTING");
+        reply(
+            &mut socket,
+            &assignment,
+            0,
+            Some(br#"{"messageQueueAssignments":[]}"#.to_vec()),
+        )
+        .await;
+        let mut byte = [0];
+        assert_eq!(socket.read(&mut byte).await.unwrap(), 0);
+    });
+
+    assert_eq!(
+        runtime
+            .find_consumer_id_list_nullable(Some(""), Some("consumer"))
+            .await
+            .unwrap(),
+        Some(vec![Some("client".into())])
+    );
+    assert!(
+        runtime
+            .query_assignment_nullable(
+                Some(""),
+                Some("consumer"),
+                Some("strategy"),
+                Some(MessageModel::Broadcasting),
+                3000,
+            )
+            .await
+            .unwrap()
+            .unwrap()
+            .is_empty()
     );
     runtime.remoting().shutdown().await;
     broker_peer.await.unwrap();
