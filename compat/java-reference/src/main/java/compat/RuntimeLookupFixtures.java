@@ -1809,6 +1809,10 @@ public final class RuntimeLookupFixtures {
             {"base64-extra-padding", "BQ==="},
             {"base64-surrounding-spaces", " BQ== "},
             {"base64-internal-space", "B Q=="},
+            {"base64-tab-escape", "\tBQ=="},
+            {"base64-newline-escape", "\nBQ=="},
+            {"base64-carriage-return-escape", "\rBQ=="},
+            {"base64-nonbreaking-space", "\u00a0BQ=="},
             {"base64-url-safe-alphabet", "-w=="},
             {"base64-invalid-symbol", "B$=="}
         };
