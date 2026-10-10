@@ -130,6 +130,17 @@ macro_rules! table {
                 };
                 self.get(key)
             }
+            /// Nullable Java-compatible `ConcurrentMap.getOrDefault` boundary.
+            pub fn get_or_default_nullable(
+                &self,
+                key: Option<&str>,
+                default: Arc<dyn $owner>,
+            ) -> Result<Arc<dyn $owner>, RuntimeError> {
+                let Some(key) = key else {
+                    return Err(RuntimeError::InvalidRoute($null_group));
+                };
+                self.get_or_default(key, default)
+            }
             /// Map.getOrDefault counterpart; the default is used only when the key is absent.
             pub fn get_or_default(
                 &self,
@@ -140,6 +151,13 @@ macro_rules! table {
             }
             pub fn contains_key(&self, key: &str) -> Result<bool, RuntimeError> {
                 self.0.groups.table_contains_key(self.0.kind, key)
+            }
+            /// Nullable Java-compatible `ConcurrentMap.containsKey` boundary.
+            pub fn contains_key_nullable(&self, key: Option<&str>) -> Result<bool, RuntimeError> {
+                let Some(key) = key else {
+                    return Err(RuntimeError::InvalidRoute($null_group));
+                };
+                self.contains_key(key)
             }
             pub fn contains_value(
                 &self,

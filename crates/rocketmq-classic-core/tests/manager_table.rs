@@ -90,13 +90,13 @@ async fn live_table_keeps_sharing_hooks_and_identity_cleanup_across_explicit_man
 }
 
 #[tokio::test]
-async fn nullable_factory_table_get_matches_invoked_java_null_key_failure() {
+async fn nullable_factory_table_reads_match_invoked_java_null_key_failures() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
-    assert_eq!(
-        fixture["managerTable"]["nullKeyGet"],
-        "NullPointerException"
-    );
+    let java = &fixture["managerTable"];
+    assert_eq!(java["nullKeyGet"], "NullPointerException");
+    assert_eq!(java["nullKeyContainsKey"], "NullPointerException");
+    assert_eq!(java["nullKeyGetOrDefault"], "NullPointerException");
 
     let manager = ClientRuntimeManager::new();
     let table = manager.factory_table();
@@ -104,7 +104,21 @@ async fn nullable_factory_table_get_matches_invoked_java_null_key_failure() {
         table.get_nullable(None),
         Err(RuntimeError::InvalidRoute("null factory key"))
     ));
+    assert!(matches!(
+        table.contains_key_nullable(None),
+        Err(RuntimeError::InvalidRoute("null factory key"))
+    ));
+    let default_manager = ClientRuntimeManager::new();
+    let default = default_manager
+        .get_or_create(&ClientConfig::new("factory-null-read-default"))
+        .await
+        .unwrap();
+    assert!(matches!(
+        table.get_or_default_nullable(None, default),
+        Err(RuntimeError::InvalidRoute("null factory key"))
+    ));
     assert!(table.get_nullable(Some("missing")).unwrap().is_none());
+    assert!(!table.contains_key_nullable(Some("missing")).unwrap());
 }
 
 #[tokio::test]

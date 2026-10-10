@@ -722,6 +722,18 @@ public final class RuntimeConfigFixtures {
             } catch (Throwable error) {
                 result.put("nullKeyGet", error.getClass().getSimpleName());
             }
+            try {
+                live.containsKey(null);
+                result.put("nullKeyContainsKey", "RETURNED");
+            } catch (Throwable error) {
+                result.put("nullKeyContainsKey", error.getClass().getSimpleName());
+            }
+            try {
+                live.getOrDefault(null, first);
+                result.put("nullKeyGetOrDefault", "RETURNED");
+            } catch (Throwable error) {
+                result.put("nullKeyGetOrDefault", error.getClass().getSimpleName());
+            }
             result.put("retainedViewSeesSecond", live.get(id) == second);
             result.put("containsValueSecond", live.containsValue(second));
             result.put("containsValueAbsent", !live.containsValue(first));
@@ -1402,6 +1414,30 @@ public final class RuntimeConfigFixtures {
                 nullableTableReads.put("consumerNullKey", "RETURNED");
             } catch (Throwable error) {
                 nullableTableReads.put("consumerNullKey", error.getClass().getSimpleName());
+            }
+            try {
+                runtime.getProducerTable().containsKey(null);
+                nullableTableReads.put("producerNullContainsKey", "RETURNED");
+            } catch (Throwable error) {
+                nullableTableReads.put("producerNullContainsKey", error.getClass().getSimpleName());
+            }
+            try {
+                runtime.getConsumerTable().containsKey(null);
+                nullableTableReads.put("consumerNullContainsKey", "RETURNED");
+            } catch (Throwable error) {
+                nullableTableReads.put("consumerNullContainsKey", error.getClass().getSimpleName());
+            }
+            try {
+                runtime.getProducerTable().getOrDefault(null, producerA);
+                nullableTableReads.put("producerNullGetOrDefault", "RETURNED");
+            } catch (Throwable error) {
+                nullableTableReads.put("producerNullGetOrDefault", error.getClass().getSimpleName());
+            }
+            try {
+                runtime.getConsumerTable().getOrDefault(null, consumerA);
+                nullableTableReads.put("consumerNullGetOrDefault", "RETURNED");
+            } catch (Throwable error) {
+                nullableTableReads.put("consumerNullGetOrDefault", error.getClass().getSimpleName());
             }
             result.put("nullableTableReads", nullableTableReads);
             result.put("producerDefaultOperations",

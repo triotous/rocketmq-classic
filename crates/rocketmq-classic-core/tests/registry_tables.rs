@@ -262,6 +262,10 @@ async fn nullable_registry_table_reads_match_invoked_java_null_key_failures() {
     let expected = &fixture["registryTables"]["nullableTableReads"];
     assert_eq!(expected["producerNullKey"], "NullPointerException");
     assert_eq!(expected["consumerNullKey"], "NullPointerException");
+    assert_eq!(expected["producerNullContainsKey"], "NullPointerException");
+    assert_eq!(expected["consumerNullContainsKey"], "NullPointerException");
+    assert_eq!(expected["producerNullGetOrDefault"], "NullPointerException");
+    assert_eq!(expected["consumerNullGetOrDefault"], "NullPointerException");
 
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&ClientConfig::new("nullable-table-reads"))
@@ -273,6 +277,28 @@ async fn nullable_registry_table_reads_match_invoked_java_null_key_failures() {
     ));
     assert!(matches!(
         runtime.consumer_table().get_nullable(None),
+        Err(RuntimeError::InvalidRoute("null consumer group"))
+    ));
+    assert!(matches!(
+        runtime.producer_table().contains_key_nullable(None),
+        Err(RuntimeError::InvalidRoute("null producer group"))
+    ));
+    assert!(matches!(
+        runtime.consumer_table().contains_key_nullable(None),
+        Err(RuntimeError::InvalidRoute("null consumer group"))
+    ));
+    let producer_default: Arc<dyn ProducerRuntime> = Arc::new(Producer);
+    let consumer_default: Arc<dyn ConsumerRuntime> = Arc::new(Consumer);
+    assert!(matches!(
+        runtime
+            .producer_table()
+            .get_or_default_nullable(None, producer_default),
+        Err(RuntimeError::InvalidRoute("null producer group"))
+    ));
+    assert!(matches!(
+        runtime
+            .consumer_table()
+            .get_or_default_nullable(None, consumer_default),
         Err(RuntimeError::InvalidRoute("null consumer group"))
     ));
     assert!(
@@ -288,6 +314,18 @@ async fn nullable_registry_table_reads_match_invoked_java_null_key_failures() {
             .get_nullable(Some("missing"))
             .unwrap()
             .is_none()
+    );
+    assert!(
+        !runtime
+            .producer_table()
+            .contains_key_nullable(Some("missing"))
+            .unwrap()
+    );
+    assert!(
+        !runtime
+            .consumer_table()
+            .contains_key_nullable(Some("missing"))
+            .unwrap()
     );
     assert_eq!(runtime.state(), RuntimeState::Created);
 }

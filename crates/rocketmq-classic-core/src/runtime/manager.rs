@@ -466,6 +466,14 @@ impl FactoryTable {
         self.get(key).map(|value| value.is_some())
     }
 
+    /// Nullable Java-compatible `ConcurrentMap.containsKey` boundary.
+    pub fn contains_key_nullable(&self, key: Option<&str>) -> Result<bool, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null factory key"));
+        };
+        self.contains_key(key)
+    }
+
     /// Uses MQClientInstance's inherited Java Object identity equality.
     pub fn contains_value(&self, value: &Arc<ClientRuntime>) -> Result<bool, RuntimeError> {
         let entries = self
@@ -486,6 +494,18 @@ impl FactoryTable {
         default: Arc<ClientRuntime>,
     ) -> Result<Arc<ClientRuntime>, RuntimeError> {
         Ok(self.get(key)?.unwrap_or(default))
+    }
+
+    /// Nullable Java-compatible `ConcurrentMap.getOrDefault` boundary.
+    pub fn get_or_default_nullable(
+        &self,
+        key: Option<&str>,
+        default: Arc<ClientRuntime>,
+    ) -> Result<Arc<ClientRuntime>, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null factory key"));
+        };
+        self.get_or_default(key, default)
     }
 
     pub fn len(&self) -> Result<usize, RuntimeError> {
