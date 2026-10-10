@@ -35,6 +35,7 @@ public final class RuntimeClientCheckFixtures {
             record(cases, expression, true, true, 0, false);
         }
         record(cases, "SQL92", true, false, 0, false);
+        record(cases, "SQL92", false, null, 0, false);
         record(cases, "SQL92", true, true, 44, false);
         record(cases, "SQL92", true, true, 0, true);
         record(cases, "SQL92", true, true, 0, false, null);
@@ -139,11 +140,11 @@ public final class RuntimeClientCheckFixtures {
         return cases;
     }
 
-    private static void record(List<Object> cases, String expression, boolean route, boolean subscriptions, int code, boolean transportFailure) throws Exception {
+    private static void record(List<Object> cases, String expression, boolean route, Boolean subscriptions, int code, boolean transportFailure) throws Exception {
         record(cases, expression, route, subscriptions, code, transportFailure, "topic");
     }
 
-    private static void record(List<Object> cases, String expression, boolean route, boolean subscriptions,
+    private static void record(List<Object> cases, String expression, boolean route, Boolean subscriptions,
         int code, boolean transportFailure, String topic) throws Exception {
         ClientConfig config = new ClientConfig(); config.setClientIP("check-client");
         config.setVipChannelEnabled(true); config.setMqClientApiTimeout(1234);
@@ -176,7 +177,7 @@ public final class RuntimeClientCheckFixtures {
             subscription.setSubString("a > 1"); subscription.setSubVersion(42); subscription.setExpressionType(expression);
             MQConsumerInner consumer = (MQConsumerInner) Proxy.newProxyInstance(MQConsumerInner.class.getClassLoader(),
                 new Class<?>[] {MQConsumerInner.class}, (proxy, method, values) -> {
-                    if (method.getName().equals("subscriptions")) return subscriptions ? Collections.singleton(subscription) : Collections.emptySet();
+                    if (method.getName().equals("subscriptions")) return subscriptions == null ? null : subscriptions ? Collections.singleton(subscription) : Collections.emptySet();
                     if (method.getName().equals("groupName")) return "different-callback-group";
                     return method.getReturnType() == boolean.class ? false : null;
                 });

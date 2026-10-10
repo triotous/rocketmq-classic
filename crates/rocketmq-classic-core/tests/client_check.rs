@@ -21,18 +21,20 @@ use tokio::{
     time::{Duration, Instant},
 };
 
-struct Consumer(Vec<SubscriptionData>);
+struct Consumer(Option<Vec<SubscriptionData>>);
 impl ConsumerRuntime for Consumer {
     fn heartbeat_data(&self) -> ConsumerData {
         ConsumerData {
             group_name: Some("different-callback-group".into()),
-            subscription_data_set: Some(SharedValue::from(
-                self.0
-                    .iter()
-                    .cloned()
-                    .map(|row| Some(SharedValue::from(row)))
-                    .collect::<HashSet<_>>(),
-            )),
+            subscription_data_set: self.0.as_ref().map(|subscriptions| {
+                SharedValue::from(
+                    subscriptions
+                        .iter()
+                        .cloned()
+                        .map(|row| Some(SharedValue::from(row)))
+                        .collect::<HashSet<_>>(),
+                )
+            }),
             ..Default::default()
         }
     }
@@ -110,11 +112,11 @@ async fn tags_empty_subscriptions_and_missing_route_do_not_fetch_or_send() {
         .await
         .unwrap();
     runtime.remoting().start().unwrap();
-    let consumer = Arc::new(Consumer(vec![
+    let consumer = Arc::new(Consumer(Some(vec![
         subscription("TAG"),
         subscription(""),
         subscription("SQL92"),
-    ]));
+    ])));
     let lease = runtime
         .register_consumer("registered-group", consumer.clone())
         .await
@@ -124,7 +126,7 @@ async fn tags_empty_subscriptions_and_missing_route_do_not_fetch_or_send() {
         .unregister_consumer(&lease, Instant::now())
         .await
         .unwrap();
-    let empty = Arc::new(Consumer(vec![]));
+    let empty = Arc::new(Consumer(Some(vec![])));
     runtime
         .register_consumer("empty", empty.clone())
         .await
@@ -198,7 +200,10 @@ async fn non_tag_check_uses_registered_key_vip_and_source_error_boundaries() {
             .await
             .unwrap();
         runtime.remoting().start().unwrap();
-        let consumer = Arc::new(Consumer(vec![subscription("TAG"), subscription("SQL92")]));
+        let consumer = Arc::new(Consumer(Some(vec![
+            subscription("TAG"),
+            subscription("SQL92"),
+        ])));
         runtime
             .register_consumer("registered-group", consumer.clone())
             .await
@@ -218,7 +223,7 @@ async fn non_tag_check_uses_registered_key_vip_and_source_error_boundaries() {
             );
         } else {
             result.unwrap();
-            let empty = Arc::new(Consumer(vec![]));
+            let empty = Arc::new(Consumer(Some(vec![])));
             runtime
                 .register_consumer("a-empty", empty.clone())
                 .await
@@ -248,6 +253,30 @@ async fn non_tag_check_uses_registered_key_vip_and_source_error_boundaries() {
 }
 
 #[tokio::test]
+async fn null_subscription_set_matches_invoked_java_whole_round_return() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-check.json")).unwrap();
+    let case = fixture["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["subscriptions"].is_null() && case["expression"] == "SQL92")
+        .unwrap();
+    assert_eq!(case["outcome"], "OK");
+    assert_eq!(case["invocations"], 0);
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&ClientConfig::new("null-subscriptions-check"))
+        .await
+        .unwrap();
+    let consumer = Arc::new(Consumer(None));
+    let _lease = runtime
+        .register_consumer("registered-group", consumer)
+        .await
+        .unwrap();
+    runtime.check_client_in_broker().await.unwrap();
+}
+
+#[tokio::test]
 async fn non_tag_null_topic_matches_invoked_java_failure_without_rpc() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-check.json")).unwrap();
@@ -263,11 +292,11 @@ async fn non_tag_null_topic_matches_invoked_java_failure_without_rpc() {
         .get_or_create(&ClientConfig::new("null-check-topic"))
         .await
         .unwrap();
-    let owner = Arc::new(Consumer(vec![SubscriptionData {
+    let owner = Arc::new(Consumer(Some(vec![SubscriptionData {
         topic: None,
         expression_type: Some("SQL92".into()),
         ..Default::default()
-    }]));
+    }])));
     let _lease = runtime
         .register_consumer("registered-group", owner.clone())
         .await
