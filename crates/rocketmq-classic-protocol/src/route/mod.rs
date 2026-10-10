@@ -1793,7 +1793,80 @@ mod topic_route_data_changed_method_tests {
 
 #[cfg(test)]
 mod topic_route_data_clone_method_tests {
-    use super::TopicRouteData;
+    use super::{SharedFilterServerList, SharedTopicQueueMappingInfoHandle, TopicRouteData};
+    use serde_json::{Value, json};
+
+    fn first_queue_alias(source: &TopicRouteData, copy: &TopicRouteData) -> bool {
+        let (Some(source), Some(copy)) = (&source.queue_datas, &copy.queue_datas) else {
+            return false;
+        };
+        source.with(|source| {
+            copy.with(|copy| match (source.first(), copy.first()) {
+                (Some(None), Some(None)) => true,
+                (Some(Some(source)), Some(Some(copy))) => source.ptr_eq(copy),
+                _ => false,
+            })
+        })
+    }
+
+    fn first_broker_alias(source: &TopicRouteData, copy: &TopicRouteData) -> bool {
+        let (Some(source), Some(copy)) = (&source.broker_datas, &copy.broker_datas) else {
+            return false;
+        };
+        source.with(|source| {
+            copy.with(|copy| match (source.first(), copy.first()) {
+                (Some(None), Some(None)) => true,
+                (Some(Some(source)), Some(Some(copy))) => source.ptr_eq(copy),
+                _ => false,
+            })
+        })
+    }
+
+    fn broker_filter_list(route: &TopicRouteData) -> Option<SharedFilterServerList> {
+        route
+            .filter_server_table
+            .as_ref()?
+            .with(|filters| filters.get("broker").and_then(Clone::clone))
+    }
+
+    fn broker_mapping(route: &TopicRouteData) -> Option<SharedTopicQueueMappingInfoHandle> {
+        route
+            .topic_queue_mapping_by_broker
+            .as_ref()?
+            .with(|mappings| mappings.get("broker").and_then(Clone::clone))
+    }
+
+    fn collection_aliases(source: &TopicRouteData, copy: Option<&TopicRouteData>) -> Value {
+        let Some(copy) = copy else {
+            return json!({
+                "queueList": false,
+                "queueElement": false,
+                "brokerList": false,
+                "brokerElement": false,
+                "filterTable": false,
+                "filterList": false,
+                "mappingTable": false,
+                "mappingValue": false,
+            });
+        };
+        json!({
+            "queueList": source.queue_datas.as_ref().zip(copy.queue_datas.as_ref())
+                .is_some_and(|(left, right)| left.ptr_eq(right)),
+            "queueElement": first_queue_alias(source, copy),
+            "brokerList": source.broker_datas.as_ref().zip(copy.broker_datas.as_ref())
+                .is_some_and(|(left, right)| left.ptr_eq(right)),
+            "brokerElement": first_broker_alias(source, copy),
+            "filterTable": source.filter_server_table.as_ref().zip(copy.filter_server_table.as_ref())
+                .is_some_and(|(left, right)| left.ptr_eq(right)),
+            "filterList": broker_filter_list(source).zip(broker_filter_list(copy))
+                .is_some_and(|(left, right)| left.ptr_eq(&right)),
+            "mappingTable": source.topic_queue_mapping_by_broker.as_ref()
+                .zip(copy.topic_queue_mapping_by_broker.as_ref())
+                .is_some_and(|(left, right)| left.ptr_eq(right)),
+            "mappingValue": broker_mapping(source).zip(broker_mapping(copy))
+                .is_some_and(|(left, right)| left.ptr_eq(&right)),
+        })
+    }
 
     #[test]
     fn topic_route_data_copy_and_clone_methods_match_invoked_java_values_and_failures() {
@@ -1809,6 +1882,13 @@ mod topic_route_data_clone_method_tests {
                 "{}",
                 case["id"]
             );
+            let copy = source.java_copy_constructed();
+            assert_eq!(
+                collection_aliases(&source, Some(&copy)),
+                case["copyCollectionAliases"],
+                "{} copy aliases",
+                case["id"]
+            );
 
             let clone = source.clone_topic_route_data();
             assert_eq!(
@@ -1821,6 +1901,19 @@ mod topic_route_data_clone_method_tests {
                 let expected: TopicRouteData =
                     serde_json::from_value(case["clone"].clone()).unwrap();
                 assert_eq!(clone, expected, "{}", case["id"]);
+                assert_eq!(
+                    collection_aliases(&source, Some(&clone)),
+                    case["cloneCollectionAliases"],
+                    "{} clone aliases",
+                    case["id"]
+                );
+            } else {
+                assert_eq!(
+                    collection_aliases(&source, None),
+                    case["cloneCollectionAliases"],
+                    "{} clone aliases",
+                    case["id"]
+                );
             }
 
             let deep_clone = source.deep_clone_topic_route_data();
@@ -1834,6 +1927,19 @@ mod topic_route_data_clone_method_tests {
                 let expected: TopicRouteData =
                     serde_json::from_value(case["deepClone"].clone()).unwrap();
                 assert_eq!(deep_clone, expected, "{}", case["id"]);
+                assert_eq!(
+                    collection_aliases(&source, Some(&deep_clone)),
+                    case["deepCloneCollectionAliases"],
+                    "{} deep clone aliases",
+                    case["id"]
+                );
+            } else {
+                assert_eq!(
+                    collection_aliases(&source, None),
+                    case["deepCloneCollectionAliases"],
+                    "{} deep clone aliases",
+                    case["id"]
+                );
             }
         }
     }
@@ -2555,25 +2661,42 @@ impl TopicRouteData {
     /// collection defaults. Explicit null queue, broker and filter collections
     /// become empty containers; the mapping table remains nullable.
     ///
-    /// Rust owns nested values, so this copy is structurally independent even
-    /// where Java's copied collection elements retain object identity.
+    /// Like Java, the new outer collections are independent while nested DTO
+    /// elements and filter lists retain their shared object identities.
     pub fn java_copy_constructed(&self) -> Self {
-        let mut copy = self.clone();
-        copy.queue_datas
-            .get_or_insert_with(|| SharedValue::new(Vec::new()));
-        copy.broker_datas
-            .get_or_insert_with(|| SharedValue::new(Vec::new()));
-        copy.filter_server_table
-            .get_or_insert_with(|| SharedValue::new(BTreeMap::new()));
-        copy
+        Self {
+            order_topic_conf: self.order_topic_conf.clone(),
+            queue_datas: Some(SharedValue::new(
+                self.queue_datas
+                    .as_ref()
+                    .map(|queues| queues.with(Clone::clone))
+                    .unwrap_or_default(),
+            )),
+            broker_datas: Some(SharedValue::new(
+                self.broker_datas
+                    .as_ref()
+                    .map(|brokers| brokers.with(Clone::clone))
+                    .unwrap_or_default(),
+            )),
+            filter_server_table: Some(SharedValue::new(
+                self.filter_server_table
+                    .as_ref()
+                    .map(|filters| filters.with(Clone::clone))
+                    .unwrap_or_default(),
+            )),
+            topic_queue_mapping_by_broker: self
+                .topic_queue_mapping_by_broker
+                .as_ref()
+                .map(|mappings| SharedValue::new(mappings.with(Clone::clone))),
+        }
     }
 
     /// Copies the route using Java's `cloneTopicRouteData` container checks.
     ///
     /// Java shallow-clones the outer containers and shares mutable nested DTOs.
-    /// Rust owns those nested DTO values, so this returns a structural value
-    /// copy. The runtime's raw table separately preserves aliases with
-    /// `TopicRouteDataHandle`.
+    /// Rust creates new outer shared containers that retain the same nested
+    /// element handles. The runtime's raw table separately preserves aliases
+    /// with `TopicRouteDataHandle`.
     pub fn clone_topic_route_data(&self) -> Result<Self, TopicRouteDataCloneError> {
         let queue_datas = self
             .queue_datas
