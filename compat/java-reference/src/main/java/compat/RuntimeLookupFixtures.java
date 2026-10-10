@@ -1168,7 +1168,7 @@ public final class RuntimeLookupFixtures {
         return item;
     }
 
-    private static Map<String, Object> consumerListApiCase() {
+    private static Map<String, Object> consumerListApiCase() throws Exception {
         org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody body =
             new org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody();
         Map<String, Object> item = new TreeMap<>();
@@ -1183,6 +1183,15 @@ public final class RuntimeLookupFixtures {
         body.getConsumerIdList().add("client-d");
         item.put("getterMutationVisibleToAssignedList", consumerIds.contains("client-d"));
         item.put("mutatedValues", body.getConsumerIdList());
+        item.put("equalsDeclaringClass", body.getClass().getMethod("equals", Object.class)
+            .getDeclaringClass().getName());
+        item.put("hashCodeDeclaringClass", body.getClass().getMethod("hashCode")
+            .getDeclaringClass().getName());
+        item.put("sameInstanceEquals", body.equals(body));
+        org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody equalValues =
+            new org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody();
+        equalValues.setConsumerIdList(new ArrayList<>(body.getConsumerIdList()));
+        item.put("equalValuesDistinctInstanceEquals", body.equals(equalValues));
         body.setConsumerIdList(null);
         item.put("nullSetterRemainsNull", body.getConsumerIdList() == null);
         return item;

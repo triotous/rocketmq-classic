@@ -435,11 +435,14 @@ fn java_consumer_list_and_lock_bodies_preserve_optional_and_collection_semantics
         serde_json::from_slice(&read_body("body-consumer-list-empty")).unwrap();
     let populated: ConsumerListByGroupResponseBody =
         serde_json::from_slice(&read_body("body-consumer-list-populated")).unwrap();
-    assert_eq!(absent.consumer_id_list, None);
-    assert_eq!(empty.consumer_id_list, Some(vec![]));
+    assert!(absent.get_consumer_id_list().is_none());
     assert_eq!(
-        populated.consumer_id_list,
-        Some(vec![Some("client-a".into()), Some("client-b".into())])
+        empty.get_consumer_id_list().unwrap().snapshot(),
+        Vec::<Option<String>>::new()
+    );
+    assert_eq!(
+        populated.get_consumer_id_list().unwrap().snapshot(),
+        vec![Some("client-a".into()), Some("client-b".into())]
     );
 
     let lock: LockBatchRequestBody =

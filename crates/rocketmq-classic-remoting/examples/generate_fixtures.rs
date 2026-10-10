@@ -1,6 +1,7 @@
 use std::{env, fs, path::PathBuf};
 
 use rocketmq_classic_protocol::{
+    SharedValue,
     body::{
         BatchAck, BatchAckMessageRequestBody, ConsumeMessageDirectlyResult, ConsumeMessageResult,
         ConsumerListByGroupResponseBody, GetConsumerStatusBody, LiteSubscriptionAction,
@@ -698,13 +699,16 @@ fn generate_p4_bodies(output: &std::path::Path) {
         (
             "body-consumer-list-empty.bin",
             ConsumerListByGroupResponseBody {
-                consumer_id_list: Some(vec![]),
+                consumer_id_list: Some(SharedValue::new(vec![])),
             },
         ),
         (
             "body-consumer-list-populated.bin",
             ConsumerListByGroupResponseBody {
-                consumer_id_list: Some(vec![Some("client-a".into()), Some("client-b".into())]),
+                consumer_id_list: Some(SharedValue::new(vec![
+                    Some("client-a".into()),
+                    Some("client-b".into()),
+                ])),
             },
         ),
     ] {

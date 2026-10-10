@@ -2831,11 +2831,18 @@ impl LockBatchResponseBody {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
+/// Java inherits identity-based equality and hashing for this DTO.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::ConsumerListByGroupResponseBody;
+/// fn require_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
+/// fn main() { require_java_identity::<ConsumerListByGroupResponseBody>(); }
+/// ```
+#[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsumerListByGroupResponseBody {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub consumer_id_list: Option<Vec<Option<String>>>,
+    pub consumer_id_list: Option<SharedValue<Vec<Option<String>>>>,
 }
 
 impl<'de> Deserialize<'de> for ConsumerListByGroupResponseBody {
@@ -2880,7 +2887,9 @@ impl<'de> Deserialize<'de> for ConsumerListByGroupResponseBody {
                     None => None,
                 };
 
-                Ok(ConsumerListByGroupResponseBody { consumer_id_list })
+                Ok(ConsumerListByGroupResponseBody {
+                    consumer_id_list: consumer_id_list.map(SharedValue::new),
+                })
             }
         }
 
@@ -2889,17 +2898,15 @@ impl<'de> Deserialize<'de> for ConsumerListByGroupResponseBody {
 }
 
 impl ConsumerListByGroupResponseBody {
-    pub fn get_consumer_id_list(&self) -> Option<&[Option<String>]> {
-        self.consumer_id_list.as_deref()
+    /// Returns a handle to the same mutable List object assigned to the Java DTO.
+    pub fn get_consumer_id_list(&self) -> Option<SharedValue<Vec<Option<String>>>> {
+        self.consumer_id_list.clone()
     }
 
-    /// Borrows the owned Java-compatible list mutably so callers can perform
-    /// the mutations available through Java's mutable `List` getter.
-    pub fn get_consumer_id_list_mut(&mut self) -> Option<&mut Vec<Option<String>>> {
-        self.consumer_id_list.as_mut()
-    }
-
-    pub fn set_consumer_id_list(&mut self, consumer_id_list: Option<Vec<Option<String>>>) {
+    pub fn set_consumer_id_list(
+        &mut self,
+        consumer_id_list: Option<SharedValue<Vec<Option<String>>>>,
+    ) {
         self.consumer_id_list = consumer_id_list;
     }
 }
@@ -4575,27 +4582,35 @@ mod tests {
         );
         let consumer_ids: Vec<Option<String>> =
             serde_json::from_value(list_case["assignedValues"].clone()).unwrap();
-        consumer_list.set_consumer_id_list(Some(consumer_ids));
-        let consumer_ids_mut = consumer_list.get_consumer_id_list_mut().unwrap();
-        consumer_ids_mut.push(Some("client-c".into()));
+        let caller_alias = SharedValue::new(consumer_ids);
+        let assigned_alias = caller_alias.clone();
+        consumer_list.set_consumer_id_list(Some(caller_alias.clone()));
+        let getter_alias = consumer_list.get_consumer_id_list().unwrap();
         assert_eq!(
-            consumer_ids_mut.contains(&Some("client-c".into())),
+            assigned_alias.ptr_eq(&getter_alias),
+            list_case["getterReturnsAssignedList"]
+        );
+        caller_alias.with_mut(|ids| ids.push(Some("client-c".into())));
+        assert_eq!(
+            getter_alias.with(|ids| ids.contains(&Some("client-c".into()))),
             list_case["externalMutationVisible"]
         );
-        consumer_ids_mut.push(Some("client-d".into()));
+        getter_alias.with_mut(|ids| ids.push(Some("client-d".into())));
         assert_eq!(
-            consumer_ids_mut.contains(&Some("client-d".into())),
+            assigned_alias.with(|ids| ids.contains(&Some("client-d".into()))),
             list_case["getterMutationVisibleToAssignedList"]
         );
         assert_eq!(
-            serde_json::to_value(consumer_list.get_consumer_id_list()).unwrap(),
+            serde_json::to_value(getter_alias.snapshot()).unwrap(),
             list_case["mutatedValues"]
         );
-        // Java shares List identity; Rust moves the Vec into the body and lends mutable access through its owner.
-        assert_eq!(list_case["getterReturnsAssignedList"], true);
         consumer_list.set_consumer_id_list(None);
         assert!(consumer_list.get_consumer_id_list().is_none());
         assert_eq!(list_case["nullSetterRemainsNull"], true);
+        assert_eq!(list_case["equalsDeclaringClass"], "java.lang.Object");
+        assert_eq!(list_case["hashCodeDeclaringClass"], "java.lang.Object");
+        assert_eq!(list_case["sameInstanceEquals"], true);
+        assert_eq!(list_case["equalValuesDistinctInstanceEquals"], false);
 
         let lock_case = &fixture["lockBatchRequestApiCase"];
         let mut lock = LockBatchRequestBody::default();
@@ -4956,8 +4971,8 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(
-            populated.consumer_id_list,
-            Some(vec![Some("client".into())])
+            populated.consumer_id_list.unwrap().snapshot(),
+            vec![Some("client".into())]
         );
     }
 
