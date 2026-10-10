@@ -478,6 +478,21 @@ mod tests {
         }
     }
 
+    #[test]
+    fn empty_nameserver_start_schedule_count_matches_java_probe() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/start.json")).unwrap();
+        let java_case = &fixture["configuredToEmpty"];
+        let mut config = ClientConfig::new("empty-nameserver-start");
+        config.namesrv_addr = Some(String::new());
+
+        assert_eq!(java_case["discoveryCalls"], 0);
+        assert_eq!(
+            schedules(&config).unwrap().len(),
+            java_case["scheduledTaskCount"].as_u64().unwrap() as usize
+        );
+    }
+
     #[tokio::test(start_paused = true)]
     async fn slow_callback_serializes_jobs_then_catches_up_from_prior_deadlines() {
         let runtime = runtime();
