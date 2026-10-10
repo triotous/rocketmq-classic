@@ -807,15 +807,15 @@ Current unregister update `3ccaf54`: `unregister_producer_by_group/unregister_co
 | getOrCreateMQClientInstance(config[,hook]) | `get_or_create/get_or_create_with_hook`; same-ID calls reuse the first runtime and its cloned config/property/hook snapshot even when later inputs differ, matching Java `get`/`computeIfAbsent`; concurrency/cancellation evidence |
 | removeClientFactory(id,instance) | `remove_client_factory`; exact identity-safe removal, stale-replacement checks |
 | removeClientFactory(id) | async `remove_client_factory_by_id`; source removal/replacement oracle, per-key initializer wait/cancel tests; does not replace identity-safe lifecycle cleanup |
-| getFactoryTable | `factory_table` returns live clonable FactoryTable; actual retained map/view mutations, value-membership, default-helper, remapping, `forEach`, and six entry `setValue` outcomes oracle; `FactoryEntryHandle` retains its captured value and writes replacement mappings; concurrent/ownership/property tests; published reads exclude private initializer reservations |
+| getFactoryTable | `factory_table` returns live clonable FactoryTable; actual retained map/view mutations, value-membership, default-helper, remapping, `forEach`, six entry `setValue` outcomes, and a same-key remapping/writer race oracle; `FactoryEntryHandle` retains its captured value and writes replacement mappings; concurrent/ownership/property tests; published reads exclude private initializer reservations |
 | getOrCreateProduceAccumulator | producer batching owner Phase7; no fake accumulator in Phase6 |
 
 | Source returned ConcurrentMap capability | Native FactoryTable API |
 | --- | --- |
 | get/containsKey/containsValue/size/isEmpty/getOrDefault | `get/contains_key/contains_value/len/is_empty/get_or_default`, owned published values, Java identity equality and caller-owned default |
 | put/putIfAbsent/putAll | async `put/put_if_absent/put_all`, return preceding identity or None; putAll applies per-key writes, not a multi-key transaction |
-| computeIfAbsent/computeIfPresent/compute/merge | async `compute_if_absent`/`compute_if_present`/`compute`/`merge`; `Option::None` represents Java null-result/no mapping or removal; callbacks run outside locks and may be retried after a conflicting write |
-| replaceAll | async `replace_all`; snapshots keys, then conditionally replaces each current mapping; callback runs outside locks |
+| computeIfAbsent/computeIfPresent/compute/merge | async `compute_if_absent`/`compute_if_present`/`compute`/`merge`; `Option::None` represents Java null-result/no mapping or removal; each callback runs once while a per-key gate serializes its read/callback/write sequence with FactoryTable mutations, matching Java `ConcurrentHashMap` same-key exclusion; callbacks run outside the entries mutex, and unrelated keys remain independently available (ADR-0080) |
+| replaceAll | async `replace_all`; snapshots keys, then visits each still-current mapping once under that key's mutation gate; this remains a per-key operation, not a whole-map transaction |
 | replace(key,value)/replace(key,expected,value) | async `replace/replace_if_same`; identity comparison, matching MQClientInstance Object equality |
 | remove(key)/remove(key,value) | async `remove/remove_if_same`; identity comparison, map changes only, no runtime shutdown |
 | clear | async `clear`, not a transaction against concurrent insertion |
