@@ -2079,10 +2079,22 @@ impl BitSet {
 mod bitset_base64 {
     use super::BitSet;
     use base64::{
-        Engine as _, engine::general_purpose::STANDARD, engine::general_purpose::STANDARD_NO_PAD,
+        Engine as _, alphabet, engine::general_purpose::GeneralPurpose,
+        engine::general_purpose::GeneralPurposeConfig, engine::general_purpose::NO_PAD,
+        engine::general_purpose::STANDARD,
     };
     use rocketmq_classic_common::serde_fastjson;
     use serde::{Deserializer, Serializer};
+
+    // Java's Basic decoder ignores unused low bits in the final Base64 symbol.
+    const JAVA_STANDARD: GeneralPurpose = GeneralPurpose::new(
+        &alphabet::STANDARD,
+        GeneralPurposeConfig::new().with_decode_allow_trailing_bits(true),
+    );
+    const JAVA_STANDARD_NO_PAD: GeneralPurpose = GeneralPurpose::new(
+        &alphabet::STANDARD,
+        NO_PAD.with_decode_allow_trailing_bits(true),
+    );
 
     pub fn serialize<S>(bit_set: &Option<BitSet>, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -2103,9 +2115,9 @@ mod bitset_base64 {
         let value = serde_fastjson::deserialize_nullable_string(deserializer)?;
         value
             .map(|text| {
-                STANDARD
+                JAVA_STANDARD
                     .decode(&text)
-                    .or_else(|_| STANDARD_NO_PAD.decode(&text))
+                    .or_else(|_| JAVA_STANDARD_NO_PAD.decode(&text))
                     .map(|bytes| BitSet::from_byte_array(&bytes))
                     .map_err(serde::de::Error::custom)
             })
