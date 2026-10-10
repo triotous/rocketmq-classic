@@ -553,6 +553,17 @@ impl ClientRuntime {
             .unwrap_or(None))
     }
 
+    /// Nullable Java entry point for `findConsumerIdList`; the source resolves
+    /// the topic's broker before entering its best-effort Broker RPC branch.
+    pub async fn find_consumer_id_list_nullable(
+        &self,
+        topic: Option<&str>,
+        group: &str,
+    ) -> Result<Option<Vec<Option<String>>>, RuntimeError> {
+        let topic = topic.ok_or(RuntimeError::InvalidRoute("null broker lookup topic"))?;
+        self.find_consumer_id_list(topic, group).await
+    }
+
     /// Assignment keeps Java's explicit signed millisecond timeout and
     /// propagates Broker/transport errors, unlike consumer-list lookup.
     pub async fn query_assignment(
@@ -596,6 +607,34 @@ impl ClientRuntime {
                     .map(|assignment| assignment.map(|assignment| assignment.snapshot()))
                     .collect()
             }))
+    }
+
+    /// Nullable Java entry point for `queryAssignment`; the source resolves
+    /// the topic's broker before constructing or sending the assignment body.
+    pub async fn query_assignment_nullable(
+        &self,
+        topic: Option<&str>,
+        consumer_group: &str,
+        strategy_name: &str,
+        message_model: rocketmq_classic_protocol::heartbeat::MessageModel,
+        timeout_millis: i32,
+    ) -> Result<
+        Option<
+            std::collections::HashSet<
+                Option<rocketmq_classic_protocol::body::MessageQueueAssignment>,
+            >,
+        >,
+        RuntimeError,
+    > {
+        let topic = topic.ok_or(RuntimeError::InvalidRoute("null broker lookup topic"))?;
+        self.query_assignment(
+            topic,
+            consumer_group,
+            strategy_name,
+            message_model,
+            timeout_millis,
+        )
+        .await
     }
 
     pub async fn update_topic_route(

@@ -173,6 +173,40 @@ async fn null_topic_route_lookups_match_invoked_java_control_flow() {
     runtime.remoting().shutdown().await;
 }
 
+#[tokio::test]
+async fn null_topic_consumer_and_assignment_lookups_match_invoked_java() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+    let java = &fixture["runtimeNullBrokerLookupRpcTopics"];
+    assert_eq!(java["consumerList"]["outcome"], "NullPointerException");
+    assert_eq!(java["assignment"]["outcome"], "NullPointerException");
+
+    let mut config = ClientConfig::new("null-broker-lookup-rpc-topics");
+    config.namesrv_addr = Some(String::new());
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+    assert!(matches!(
+        runtime
+            .find_consumer_id_list_nullable(None, "consumer")
+            .await,
+        Err(RuntimeError::InvalidRoute("null broker lookup topic"))
+    ));
+    assert!(matches!(
+        runtime
+            .query_assignment_nullable(
+                None,
+                "consumer",
+                "strategy",
+                MessageModel::Broadcasting,
+                3000
+            )
+            .await,
+        Err(RuntimeError::InvalidRoute("null broker lookup topic"))
+    ));
+}
+
 #[test]
 fn null_broker_address_lookups_match_invoked_java_results() {
     let fixture: serde_json::Value =
