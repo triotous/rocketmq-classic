@@ -321,6 +321,54 @@ async fn consumer_lookup_swallows_rpc_errors_but_assignment_propagates_them() {
 }
 
 #[tokio::test]
+async fn consumer_lookup_uses_timeout_mutated_after_runtime_construction() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+    let java_call = &fixture["runtimeLookupInvocation"]["consumerCallsAfterTimeoutMutation"][0];
+    let timeout_ms = java_call["timeout"].as_u64().unwrap();
+    let group = java_call["group"].as_str().unwrap().to_owned();
+    assert_eq!(timeout_ms, 150);
+
+    let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let (runtime, name_peer) = setup(Some(broker.local_addr().unwrap().to_string()), false).await;
+    assert_eq!(runtime.config().read().unwrap().mq_client_api_timeout, 3000);
+    runtime.config().write().unwrap().mq_client_api_timeout = timeout_ms as i32;
+    let peer_group = group.clone();
+    let peer = tokio::spawn(async move {
+        let (mut socket, _) = broker.accept().await.unwrap();
+        let command = read(&mut socket).await;
+        assert_eq!(command.code, request::GET_CONSUMER_LIST_BY_GROUP);
+        assert_eq!(
+            command.ext_fields.as_ref().unwrap()["consumerGroup"],
+            peer_group
+        );
+        tokio::time::sleep(Duration::from_millis(timeout_ms * 3)).await;
+        let mut response = RemotingCommand {
+            opaque: command.opaque,
+            code: 0,
+            body: Some(br#"{"consumerIdList":["late"]}"#.to_vec()),
+            ..Default::default()
+        };
+        response.mark_response();
+        if let Ok(bytes) = frame::encode(&response, DEFAULT_MAX_FRAME_SIZE) {
+            let _ = socket.write_all(&bytes).await;
+        }
+    });
+
+    assert!(
+        runtime
+            .find_consumer_id_list("topic", &group)
+            .await
+            .unwrap()
+            .is_none(),
+        "the late Broker response must miss the Java-recorded live timeout"
+    );
+    runtime.remoting().shutdown().await;
+    peer.await.unwrap();
+    name_peer.await.unwrap();
+}
+
+#[tokio::test]
 async fn missing_broker_returns_none_and_expired_assignment_emits_no_frame() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
