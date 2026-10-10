@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     sync::{Arc, Mutex, RwLockReadGuard},
 };
 
@@ -249,31 +249,43 @@ impl ClientRuntime {
         }
     }
 
-    /// Consumes source keys and rebuilds them using the explicit namespace,
-    /// representing Java's mutable queue-key operation with Rust value ownership.
+    /// Converts broker offset-table queue keys using the explicit namespace.
+    ///
+    /// The optional table, keys, and offsets represent Java's nullable map,
+    /// `MessageQueue` keys, and `Long` values. Rust consumes the table, so the
+    /// caller cannot observe Java's in-place mutation of queue keys.
     pub fn parse_offset_table_from_broker(
         &self,
-        offset_table: std::collections::BTreeMap<
-            rocketmq_classic_common::message::MessageQueue,
-            i64,
+        offset_table: Option<
+            BTreeMap<Option<rocketmq_classic_common::message::MessageQueue>, Option<i64>>,
         >,
         namespace: Option<&str>,
-    ) -> std::collections::BTreeMap<rocketmq_classic_common::message::MessageQueue, i64> {
+    ) -> Result<
+        BTreeMap<Option<rocketmq_classic_common::message::MessageQueue>, Option<i64>>,
+        RuntimeError,
+    > {
+        let offset_table =
+            offset_table.ok_or(RuntimeError::InvalidOffsetTable("null offset table"))?;
         let Some(namespace) = namespace.filter(|value| !value.is_empty()) else {
-            return offset_table;
+            return Ok(offset_table);
         };
         offset_table
             .into_iter()
             .map(|(queue, offset)| {
+                let queue = queue.ok_or(RuntimeError::InvalidOffsetTable(
+                    "null queue key with namespace",
+                ))?;
                 let topic = crate::config::namespace::unwrap(Some(namespace), queue.topic());
-                (
-                    rocketmq_classic_common::message::MessageQueue::new_nullable(
-                        topic,
-                        queue.broker_name().map(str::to_owned),
-                        queue.queue_id(),
+                Ok((
+                    Some(
+                        rocketmq_classic_common::message::MessageQueue::new_nullable(
+                            topic,
+                            queue.broker_name().map(str::to_owned),
+                            queue.queue_id(),
+                        ),
                     ),
                     offset,
-                )
+                ))
             })
             .collect()
     }

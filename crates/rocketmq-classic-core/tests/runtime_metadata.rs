@@ -55,6 +55,7 @@ async fn boot_timestamp_is_constructor_wall_clock_and_stable_across_shared_lifec
 #[tokio::test]
 async fn explicit_offset_namespace_conversion_matches_invoked_java() {
     use rocketmq_classic_common::message::MessageQueue;
+    use rocketmq_classic_core::runtime::RuntimeError;
     use std::collections::BTreeMap;
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/offsets.json")).unwrap();
@@ -65,30 +66,58 @@ async fn explicit_offset_namespace_conversion_matches_invoked_java() {
         .get_or_create(&config)
         .await
         .unwrap();
-    for case in fixture["cases"].as_array().unwrap() {
-        let rows = |name: &str| {
-            case[name]
+    let rows = |value: &serde_json::Value| {
+        if value.is_null() {
+            return None;
+        }
+        Some(
+            value
                 .as_array()
                 .unwrap()
                 .iter()
                 .map(|row| {
-                    (
-                        MessageQueue::new(
-                            row["topic"].as_str().unwrap(),
-                            row["brokerName"].as_str().unwrap(),
-                            row["queueId"].as_i64().unwrap() as i32,
-                        ),
-                        row["offset"].as_i64().unwrap(),
-                    )
+                    let nested_queue = row.get("queue");
+                    let queue = nested_queue.unwrap_or(row);
+                    let queue = if nested_queue.is_some() && queue.is_null() {
+                        None
+                    } else {
+                        Some(MessageQueue::new_nullable(
+                            queue["topic"].as_str().map(str::to_owned),
+                            queue["brokerName"].as_str().map(str::to_owned),
+                            queue["queueId"].as_i64().unwrap() as i32,
+                        ))
+                    };
+                    (queue, row["offset"].as_i64())
                 })
-                .collect::<BTreeMap<_, _>>()
-        };
-        let output =
-            runtime.parse_offset_table_from_broker(rows("input"), case["namespace"].as_str());
-        assert_eq!(output, rows("output"));
+                .collect::<BTreeMap<_, _>>(),
+        )
+    };
+    for case in fixture["cases"].as_array().unwrap() {
+        let output = runtime
+            .parse_offset_table_from_broker(rows(&case["input"]), case["namespace"].as_str())
+            .unwrap();
+        assert_eq!(Some(output), rows(&case["output"]));
         assert_eq!(
             runtime.config().read().unwrap().namespace.as_deref(),
             Some("ignored-config-namespace")
         );
+    }
+    for case in fixture["nullableCases"].as_array().unwrap() {
+        let result = runtime
+            .parse_offset_table_from_broker(rows(&case["input"]), case["namespace"].as_str());
+        if case["error"].is_null() {
+            assert_eq!(
+                result.unwrap(),
+                rows(&case["output"]).unwrap(),
+                "{}",
+                case["name"]
+            );
+        } else {
+            assert!(
+                matches!(result, Err(RuntimeError::InvalidOffsetTable(_))),
+                "{}: {result:?}",
+                case["name"]
+            );
+        }
     }
 }

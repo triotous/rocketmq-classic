@@ -59,6 +59,8 @@ pub enum RuntimeError {
     DuplicateGroup { group: String },
     #[error("invalid topic route: {0}")]
     InvalidRoute(&'static str),
+    #[error("invalid broker offset table: {0}")]
+    InvalidOffsetTable(&'static str),
     #[error("VIP broker address has no port separator")]
     InvalidBrokerAddress,
     #[error("VIP broker port is not a Java signed integer")]
