@@ -1554,6 +1554,122 @@ async fn accepted_empty_route_keeps_route_presence_separate_from_publish_queue_o
 }
 
 #[tokio::test]
+async fn callback_executor_capacity_stays_at_its_construction_value_after_config_mutation() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = &fixture["callbackThreadsMutation"];
+    assert_eq!(java["configIdentity"], true);
+    assert_eq!(java["configuredAtConstruction"], 1);
+    assert_eq!(java["nettyAtConstruction"], 1);
+    assert_eq!(java["executorCapacityAtConstruction"], 1);
+    assert_eq!(java["configAfterMutation"], 2);
+    assert_eq!(java["nettyAfterMutation"], 1);
+    assert_eq!(java["executorCapacityAfterMutation"], 1);
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    let mut config = ClientConfig::new("callback-threads-mutation");
+    config.namesrv_addr = Some(String::new());
+    config.client_callback_executor_threads = 1;
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+    assert_eq!(
+        runtime
+            .config()
+            .read()
+            .unwrap()
+            .client_callback_executor_threads,
+        java["configuredAtConstruction"].as_i64().unwrap() as i32
+    );
+    runtime
+        .config()
+        .write()
+        .unwrap()
+        .client_callback_executor_threads = 2;
+    assert_eq!(
+        runtime
+            .config()
+            .read()
+            .unwrap()
+            .client_callback_executor_threads,
+        java["configAfterMutation"].as_i64().unwrap() as i32
+    );
+
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut requests = Vec::new();
+        for _ in 0..2 {
+            let mut length = [0; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut bytes = BytesMut::from(&length[..]);
+            bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut bytes[4..]).await.unwrap();
+            requests.push(
+                frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
+                    .unwrap()
+                    .unwrap(),
+            );
+        }
+        let mut replies = BytesMut::new();
+        for request in requests {
+            let mut reply = RemotingCommand {
+                opaque: request.opaque,
+                ..Default::default()
+            };
+            reply.mark_response();
+            replies.extend_from_slice(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap());
+        }
+        stream.write_all(&replies).await.unwrap();
+    });
+
+    runtime.remoting().start().unwrap();
+    let active = Arc::new(AtomicUsize::new(0));
+    let max_active = Arc::new(AtomicUsize::new(0));
+    let completed = Arc::new(AtomicUsize::new(0));
+    for code in [1, 2] {
+        let active = active.clone();
+        let max_active = max_active.clone();
+        let completed = completed.clone();
+        runtime
+            .remoting()
+            .invoke_async(
+                address.clone(),
+                RemotingCommand {
+                    code,
+                    ..Default::default()
+                },
+                Instant::now() + Duration::from_secs(2),
+                Arc::new(
+                    move |result: Result<
+                        RemotingCommand,
+                        rocketmq_classic_remoting::error::TransportError,
+                    >| {
+                        assert!(result.is_ok());
+                        let running = active.fetch_add(1, Ordering::SeqCst) + 1;
+                        max_active.fetch_max(running, Ordering::SeqCst);
+                        std::thread::sleep(std::time::Duration::from_millis(40));
+                        active.fetch_sub(1, Ordering::SeqCst);
+                        completed.fetch_add(1, Ordering::SeqCst);
+                    },
+                ),
+            )
+            .unwrap();
+    }
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while completed.load(Ordering::SeqCst) != 2 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(max_active.load(Ordering::SeqCst), 1);
+    peer.await.unwrap();
+    runtime.remoting().shutdown().await;
+}
+
+#[tokio::test]
 async fn default_route_fetch_uses_auto_create_topic_and_clamps_both_counts_from_read_count() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut config = ClientConfig::new("192.0.2.6");
