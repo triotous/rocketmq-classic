@@ -209,6 +209,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("socksCidr", socksCidr());
         fixture.put("socksProxySelection", socksProxySelection());
         fixture.put("callbackThreadsConstruction", callbackThreadsConstruction());
+        fixture.put("callbackThreadsMutation", callbackThreadsMutation());
         fixture.put("registryTables", registryTables());
         fixture.put("endpoints", endpoints);
         fixture.put("resources", resources);
@@ -1596,6 +1597,37 @@ public final class RuntimeConfigFixtures {
             cases.add(item);
         }
         return cases;
+    }
+
+    private static Map<String, Object> callbackThreadsMutation() throws Exception {
+        ClientConfig config = new ClientConfig();
+        config.setClientIP("callback-threads-mutation");
+        config.setNamesrvAddr("");
+        config.setClientCallbackExecutorThreads(1);
+        org.apache.rocketmq.client.impl.factory.MQClientInstance runtime = null;
+        Map<String, Object> result = new TreeMap<>();
+        try {
+            runtime = new org.apache.rocketmq.client.impl.factory.MQClientInstance(
+                config, 0, config.buildMQClientId());
+            org.apache.rocketmq.remoting.netty.NettyRemotingClient remoting =
+                (org.apache.rocketmq.remoting.netty.NettyRemotingClient)
+                    runtime.getMQClientAPIImpl().getRemotingClient();
+            java.lang.reflect.Field field = remoting.getClass().getDeclaredField("publicExecutor");
+            field.setAccessible(true);
+            java.util.concurrent.ThreadPoolExecutor executor =
+                (java.util.concurrent.ThreadPoolExecutor) field.get(remoting);
+            result.put("configIdentity", runtime.getClientConfig() == config);
+            result.put("configuredAtConstruction", config.getClientCallbackExecutorThreads());
+            result.put("nettyAtConstruction", runtime.getNettyClientConfig().getClientCallbackExecutorThreads());
+            result.put("executorCapacityAtConstruction", executor.getCorePoolSize());
+            runtime.getClientConfig().setClientCallbackExecutorThreads(2);
+            result.put("configAfterMutation", runtime.getClientConfig().getClientCallbackExecutorThreads());
+            result.put("nettyAfterMutation", runtime.getNettyClientConfig().getClientCallbackExecutorThreads());
+            result.put("executorCapacityAfterMutation", executor.getCorePoolSize());
+        } finally {
+            if (runtime != null) cleanupRuntime(runtime);
+        }
+        return result;
     }
 
     /** Direct Fastjson 2.0.63 source-path probe for every possible leading UTF-16 unit. */
