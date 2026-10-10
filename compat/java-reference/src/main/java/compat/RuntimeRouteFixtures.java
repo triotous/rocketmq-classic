@@ -1180,15 +1180,18 @@ public final class RuntimeRouteFixtures {
     private static List<Object> runtimeRouteNestedCollectionConsumers() throws Exception {
         List<Object> cases = new ArrayList<>();
         String[] ids = {"populated-control", "null-queue-row-static", "null-broker-row",
-            "null-filter-list", "null-static-mapping"};
-        String[] fields = {null, "queueDatas", "brokerDatas", "filterServerTable", "topicQueueMappingByBroker"};
+            "null-filter-list", "null-static-mapping", "null-queue-list-static"};
+        String[] fields = {null, "queueDatas", "brokerDatas", "filterServerTable",
+            "topicQueueMappingByBroker", null};
         Map<String, Object> base = new TreeMap<>();
         for (String field : new String[] {"queueDatas", "brokerDatas", "filterServerTable", "topicQueueMappingByBroker"}) {
             base.put(field, routeCollectionValue(field, "populated"));
         }
         for (int index = 0; index < ids.length; index++) {
             Map<String, Object> input = new TreeMap<>(base);
-            if (fields[index] != null) {
+            if ("null-queue-list-static".equals(ids[index])) {
+                input.put("queueDatas", null);
+            } else if (fields[index] != null) {
                 input.put(fields[index], routeCollectionValue(fields[index], "nullNested"));
             }
             String json = com.alibaba.fastjson2.JSON.toJSONString(input,
