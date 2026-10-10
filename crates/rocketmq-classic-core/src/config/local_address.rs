@@ -194,6 +194,98 @@ fn java_unix_interface_root_name(name: &str, alias_parent_accessible: bool) -> O
     }
 }
 
+#[cfg(any(
+    test,
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd",
+    target_os = "dragonfly"
+))]
+fn java_bsd_ipv6_scope(_native_scope: u32, interface_index: u32) -> u32 {
+    // OpenJDK's BSD enumerator replaces the native scope on every IPv6
+    // candidate with the interface index. Its failed lookup is -1, whose
+    // unsigned bit pattern is u32::MAX here so the named scope is retained.
+    if interface_index == 0 {
+        u32::MAX
+    } else {
+        interface_index
+    }
+}
+
+#[cfg(any(
+    test,
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd",
+    target_os = "dragonfly"
+))]
+#[derive(Debug)]
+struct UnixCandidate {
+    interface: String,
+    address: Address,
+}
+
+#[cfg(any(
+    test,
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd",
+    target_os = "dragonfly"
+))]
+#[derive(Default)]
+struct UnixInterfaceAddresses {
+    name: String,
+    ipv4: Vec<Address>,
+    ipv6: Vec<Address>,
+}
+
+#[cfg(any(
+    test,
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd",
+    target_os = "dragonfly"
+))]
+fn add_unix_candidate(interfaces: &mut Vec<UnixInterfaceAddresses>, candidate: UnixCandidate) {
+    let index = interfaces
+        .iter()
+        .position(|interface| interface.name == candidate.interface)
+        .unwrap_or_else(|| {
+            interfaces.insert(
+                0,
+                UnixInterfaceAddresses {
+                    name: candidate.interface.clone(),
+                    ..UnixInterfaceAddresses::default()
+                },
+            );
+            0
+        });
+    let interface = &mut interfaces[index];
+    if candidate.address.ip.is_ipv4() {
+        interface.ipv4.insert(0, candidate.address);
+    } else {
+        interface.ipv6.insert(0, candidate.address);
+    }
+}
+
+#[cfg(any(
+    test,
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd",
+    target_os = "dragonfly"
+))]
+fn java_unix_candidate_order(ipv4: Vec<UnixCandidate>, ipv6: Vec<UnixCandidate>) -> Vec<Address> {
+    let mut interfaces = Vec::new();
+    for candidate in ipv4.into_iter().chain(ipv6) {
+        add_unix_candidate(&mut interfaces, candidate);
+    }
+    interfaces
+        .into_iter()
+        .flat_map(|interface| interface.ipv6.into_iter().chain(interface.ipv4))
+        .collect()
+}
+
 #[cfg(all(unix, not(target_os = "linux")))]
 fn interfaces() -> io::Result<Vec<Address>> {
     use std::{
@@ -216,7 +308,27 @@ fn interfaces() -> io::Result<Vec<Address>> {
     }
     let _guard = List(first);
     let mut current = first;
+    #[cfg(not(any(
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "dragonfly"
+    )))]
     let mut addresses = Vec::new();
+    #[cfg(any(
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "dragonfly"
+    ))]
+    let mut ipv4_candidates = Vec::new();
+    #[cfg(any(
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "dragonfly"
+    ))]
+    let mut ipv6_candidates = Vec::new();
     while !current.is_null() {
         // SAFETY: nodes/names/sockaddrs live until the list guard is dropped.
         let interface = unsafe { &*current };
@@ -269,7 +381,26 @@ fn interfaces() -> io::Result<Vec<Address>> {
                         libc::if_nametoindex(name.as_ptr())
                     })
                 };
+                #[cfg(any(
+                    target_os = "freebsd",
+                    target_os = "openbsd",
+                    target_os = "netbsd",
+                    target_os = "dragonfly"
+                ))]
+                let scope = {
+                    let name = CString::new(name)
+                        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+                    java_bsd_ipv6_scope(socket.sin6_scope_id, unsafe {
+                        libc::if_nametoindex(name.as_ptr())
+                    })
+                };
                 #[cfg(not(target_os = "linux"))]
+                #[cfg(not(any(
+                    target_os = "freebsd",
+                    target_os = "openbsd",
+                    target_os = "netbsd",
+                    target_os = "dragonfly"
+                )))]
                 let scope = socket.sin6_scope_id;
                 Address {
                     ip: IpAddr::V6(Ipv6Addr::from(socket.sin6_addr.s6_addr)),
@@ -281,8 +412,44 @@ fn interfaces() -> io::Result<Vec<Address>> {
             }
             _ => continue,
         };
+        #[cfg(any(
+            target_os = "freebsd",
+            target_os = "openbsd",
+            target_os = "netbsd",
+            target_os = "dragonfly"
+        ))]
+        {
+            let candidate = UnixCandidate {
+                interface: name.to_owned(),
+                address,
+            };
+            if family == libc::AF_INET as i32 {
+                ipv4_candidates.push(candidate);
+            } else {
+                ipv6_candidates.push(candidate);
+            }
+        }
+        #[cfg(not(any(
+            target_os = "freebsd",
+            target_os = "openbsd",
+            target_os = "netbsd",
+            target_os = "dragonfly"
+        )))]
         addresses.push(address);
     }
+    #[cfg(any(
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "dragonfly"
+    ))]
+    return Ok(java_unix_candidate_order(ipv4_candidates, ipv6_candidates));
+    #[cfg(not(any(
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "dragonfly"
+    )))]
     Ok(addresses)
 }
 
@@ -557,6 +724,41 @@ mod tests {
         assert_eq!(java_unix_interface_root_name("eth0:1", false), None);
         assert_eq!(java_unix_interface_root_name("eth0", false), Some("eth0"));
         assert_eq!(java_unix_interface_root_name(":1", true), None);
+    }
+    #[test]
+    fn bsd_ipv6_scope_uses_interface_index() {
+        assert_eq!(java_bsd_ipv6_scope(0, 7), 7);
+        assert_eq!(java_bsd_ipv6_scope(3, 11), 11);
+        assert_eq!(java_bsd_ipv6_scope(5, 0), u32::MAX);
+    }
+    #[test]
+    fn bsd_candidate_order_matches_family_passes_and_java_head_insertion() {
+        let candidate = |interface: &str, ip: &str| UnixCandidate {
+            interface: interface.to_owned(),
+            address: address(ip),
+        };
+        assert_eq!(
+            java_unix_candidate_order(
+                vec![
+                    candidate("en0", "10.0.0.1"),
+                    candidate("en0", "10.0.0.2"),
+                    candidate("wlan0", "192.0.2.1"),
+                ],
+                vec![
+                    candidate("en0", "fe80::1"),
+                    candidate("v6only0", "2001:db8::1"),
+                    candidate("en0", "fe80::2"),
+                ],
+            ),
+            vec![
+                address("2001:db8::1"),
+                address("192.0.2.1"),
+                address("fe80::2"),
+                address("fe80::1"),
+                address("10.0.0.2"),
+                address("10.0.0.1"),
+            ]
+        );
     }
     #[test]
     fn fallback_only_runs_for_successful_empty_or_loopback_only_enumeration() {
