@@ -381,6 +381,45 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn offset_persistence_skips_missing_capabilities_and_continues_ticking() {
+        struct NoPersistence(AtomicUsize);
+        impl ConsumerRuntime for NoPersistence {
+            fn heartbeat_data(&self) -> ConsumerData {
+                ConsumerData::default()
+            }
+            fn persist_consumer_offset(
+                &self,
+            ) -> Option<Pin<Box<dyn Future<Output = ()> + Send + '_>>> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                None
+            }
+        }
+
+        let runtime = runtime();
+        let no_capability = Arc::new(NoPersistence(AtomicUsize::new(0)));
+        let capable = Arc::new(Consumer::default());
+        runtime
+            .groups
+            .register_consumer("a-no-persistence", no_capability.clone())
+            .unwrap();
+        runtime
+            .groups
+            .register_consumer("z-persistence", capable.clone())
+            .unwrap();
+        let mut tasks = tasks(&runtime);
+        settle().await;
+
+        advance(10_000).await;
+        assert_eq!(no_capability.0.load(Ordering::SeqCst), 1);
+        assert_eq!(capable.persistence.load(Ordering::SeqCst), 1);
+
+        advance(5_000).await;
+        assert_eq!(no_capability.0.load(Ordering::SeqCst), 2);
+        assert_eq!(capable.persistence.load(Ordering::SeqCst), 2);
+        tasks.stop().await;
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn slow_callback_serializes_jobs_then_catches_up_from_prior_deadlines() {
         let runtime = runtime();
         let consumer = Arc::new(Consumer::default());
