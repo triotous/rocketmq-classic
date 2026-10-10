@@ -1589,6 +1589,7 @@ public final class RuntimeConfigFixtures {
                 field.setAccessible(true);
                 java.util.concurrent.ThreadPoolExecutor executor = (java.util.concurrent.ThreadPoolExecutor) field.get(remoting);
                 item.put("effective", executor.getCorePoolSize());
+                item.put("activeAtConstruction", executor.getPoolSize());
             } catch (RuntimeException error) {
                 item.put("outcome", error.getClass().getSimpleName());
             } finally {
