@@ -1325,15 +1325,29 @@ public final class RuntimeRouteFixtures {
         org.apache.rocketmq.client.impl.MQClientAPIImpl original = runtime.getMQClientAPIImpl();
         RouteApi api = new RouteApi(config);
         Map<String, Object> item = new TreeMap<>();
+        AtomicInteger consumerNeedChecks = new AtomicInteger();
+        AtomicInteger consumerUpdates = new AtomicInteger();
         try {
             java.lang.reflect.Field field = MQClientInstance.class.getDeclaredField("mQClientAPIImpl");
             field.setAccessible(true); field.set(runtime, api);
+            org.apache.rocketmq.client.impl.consumer.MQConsumerInner consumer =
+                (org.apache.rocketmq.client.impl.consumer.MQConsumerInner) java.lang.reflect.Proxy.newProxyInstance(
+                    org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class},
+                    (proxy, method, values) -> {
+                        if ("isSubscribeTopicNeedUpdate".equals(method.getName())) consumerNeedChecks.incrementAndGet();
+                        if ("updateTopicSubscribeInfo".equals(method.getName())) consumerUpdates.incrementAndGet();
+                        return method.getReturnType() == boolean.class ? false : null;
+                    });
+            runtime.getConsumerTable().put("consumer", consumer);
             String initial = "{\"queueDatas\":[],\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"old:10911\"}}],\"filterServerTable\":{}}";
             String invalid = "{\"queueDatas\":[],\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":null}],\"filterServerTable\":{}}";
             item.put("initialInput", com.alibaba.fastjson2.JSON.parseObject(initial));
             item.put("input", com.alibaba.fastjson2.JSON.parseObject(invalid));
             api.route = com.alibaba.fastjson2.JSON.parseObject(initial, TopicRouteData.class);
             item.put("initialChanged", runtime.updateTopicRouteInfoFromNameServer("topic"));
+            item.put("consumerNeedChecksAfterInitial", consumerNeedChecks.get());
+            item.put("consumerUpdatesAfterInitial", consumerUpdates.get());
             TopicRouteData before = runtime.getAnExistTopicRouteData("topic");
             api.route = com.alibaba.fastjson2.JSON.parseObject(invalid, TopicRouteData.class);
             try {
@@ -1343,6 +1357,8 @@ public final class RuntimeRouteFixtures {
                 item.put("outcome", error.getClass().getSimpleName());
             }
             item.put("cachedRouteUnchanged", before.equals(runtime.getAnExistTopicRouteData("topic")));
+            item.put("consumerNeedChecksAfterFailure", consumerNeedChecks.get());
+            item.put("consumerUpdatesAfterFailure", consumerUpdates.get());
         } finally {
             java.lang.reflect.Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
                 org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
