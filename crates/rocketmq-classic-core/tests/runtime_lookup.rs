@@ -1,6 +1,7 @@
 use bytes::BytesMut;
 use rocketmq_classic_core::{
     config::ClientConfig,
+    error::RpcError,
     route::RouteSnapshot,
     runtime::{ClientRuntime, ClientRuntimeManager, RuntimeError},
 };
@@ -943,4 +944,87 @@ async fn query_topic_route_refreshes_only_missing_cache_even_for_empty_brokers()
     assert!(first.ptr_eq(&queried));
     runtime.remoting().shutdown().await;
     name_peer.await.unwrap();
+}
+
+#[tokio::test]
+async fn default_topic_route_api_matches_invoked_java_api_fixture() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+    let java = &fixture["defaultTopicRouteApiCase"];
+    let java_requests = java["requests"].as_array().unwrap();
+    assert_eq!(java_requests.len(), 2);
+    let request_code = java_requests[0]["requestCode"].as_i64().unwrap() as i32;
+    let topic = java_requests[0]["topic"].as_str().unwrap().to_owned();
+    assert_eq!(request_code, request::GET_ROUTEINFO_BY_TOPIC);
+    assert_eq!(topic, "TBW102");
+    assert_eq!(java_requests[0]["timeoutMillis"].as_i64(), Some(1234));
+    assert_eq!(java_requests[1], java_requests[0]);
+
+    let route_fixture = &java["successRoute"];
+    let expected_queue_count = route_fixture["queueDataCount"].as_u64().unwrap() as usize;
+    let expected_broker = route_fixture["brokerName"].as_str().unwrap().to_owned();
+    let expected_read_queues = route_fixture["readQueueNums"].as_i64().unwrap() as i32;
+    let expected_write_queues = route_fixture["writeQueueNums"].as_i64().unwrap() as i32;
+    let response_body = java["responseBody"].as_str().unwrap().as_bytes().to_vec();
+    let error_code = java["topicNotExistResponseCode"].as_i64().unwrap() as i32;
+    let error_message = java["topicNotExistMessage"].as_str().unwrap().to_owned();
+    let expected_error_message = error_message.clone();
+    assert_eq!(java["topicNotExistOutcome"], "MQClientException");
+
+    let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut config = ClientConfig::new("default-topic-route-api");
+    config.namesrv_addr = Some(nameserver.local_addr().unwrap().to_string());
+    config.enable_heartbeat_channel_event_listener = false;
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+    runtime.remoting().start().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut socket, _) = nameserver.accept().await.unwrap();
+        for (code, body, remark) in [
+            (0, Some(response_body), None),
+            (error_code, None, Some(error_message)),
+        ] {
+            let command = read(&mut socket).await;
+            assert_eq!(command.code, request_code);
+            assert_eq!(command.ext_fields.as_ref().unwrap()["topic"], topic);
+            let mut response = RemotingCommand {
+                code,
+                opaque: command.opaque,
+                remark,
+                body,
+                ..Default::default()
+            };
+            response.mark_response();
+            socket
+                .write_all(&frame::encode(&response, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .await
+                .unwrap();
+        }
+    });
+
+    let route = runtime
+        .api()
+        .get_default_topic_route(Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap()
+        .unwrap();
+    let queue_datas = route.queue_datas_snapshot().unwrap();
+    assert_eq!(queue_datas.len(), expected_queue_count);
+    let queue = queue_datas[0].as_ref().unwrap();
+    assert_eq!(queue.broker_name.as_deref(), Some(expected_broker.as_str()));
+    assert_eq!(queue.read_queue_nums, expected_read_queues);
+    assert_eq!(queue.write_queue_nums, expected_write_queues);
+
+    assert!(matches!(
+        runtime
+            .api()
+            .get_default_topic_route(Instant::now() + Duration::from_secs(2))
+            .await,
+        Err(RpcError::Response { code, remark: Some(remark), .. })
+            if code == error_code && remark == expected_error_message
+    ));
+    peer.await.unwrap();
+    runtime.remoting().shutdown().await;
 }
