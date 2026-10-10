@@ -89,3 +89,7 @@
 - Follow-up implementation commit: `cb42bee3` (`Keep async entry updates cancellation safe`). The scoped API audit remains in the separate docs commit `2e002baa` and was amended for this cancellation result.
 - Reverification passed: full `cargo test --workspace --all-targets --locked` with reviewed loopback access; strict all-target/all-feature Clippy; pinned offline Maven verify (22 scenarios; 38 Java-decoded headers and 14 typed bodies); comparator self-test; manifest validation (22 scenarios); formatting; and `git diff --check`.
 - Phase 6 source/API/input/reverse-export reconciliation remains active. P6-V04 remains `PENDING_PHASE_19`.
+
+## Route audit consistency pass
+
+- Updated the route audit summary row to use the current 65-outcome raw-table oracle (including `Map.Entry.setValue`) and narrowed a stale generic "enum/model fields" statement to the verified remaining route gap: uninvoked malformed input combinations and source branches. No implementation or fixture changed; P6-V04 remains `PENDING_PHASE_19`.
