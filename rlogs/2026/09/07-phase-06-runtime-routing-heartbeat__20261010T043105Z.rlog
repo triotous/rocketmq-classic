@@ -58,3 +58,9 @@
 - The Java checkout `/Users/nanashi07/Projects/3rd/rocketmq` remains absent; evidence comes from locally cached pinned 5.5.1 artifacts and direct fixture invocations. These route alias rows are closed only; the Phase 6 matrix remains PARTIAL and P6-V04 remains `PENDING_PHASE_19`.
 - A broader route-audit reread found the earlier blanket “immutable publication” wording still conflicted with the new nested alias oracle. Updated it to distinguish coherent Arc-level generation replacement/no partial cache publication from intentionally shared mutable nested Java DTO handles.
 - Marked the earlier collection-alias fixture digest as historical in the route and requirement audits; `d01c51ec40fdcf96931dd0191271a2b23fc396ec00f18f949aa629e678172e2b` is the current whole-file route fixture digest.
+
+## ConcurrentMap entry `setValue` oracle
+
+- Extended `RuntimeRouteFixtures.runtimeTopicRouteTable` to invoke `Map.Entry.setValue` on entries obtained from the real Java route table. All six outcomes are true: return the captured previous value, update the entry's own value, update the table, retain the entry's value after a separate map replacement, return that entry-local captured value on a second set, and overwrite the current mapping unconditionally.
+- Regenerated `fixtures/runtime/route.json`; whole-file SHA-256 is `35027b576c05eb456edd937f8475c121923c012c8297777a27e9657fbed3b116`. Pinned offline Java `compile exec:java` generation and `--verify` both pass.
+- The existing `retained_raw_topic_table_matches_invoked_java_primitives_and_cached_queries` Rust differential now fails on exactly the six newly added Java outcomes because the native entry-set API has no entry value replacement representation yet. Other recorded raw table outcomes remain true.

@@ -1530,6 +1530,17 @@ public final class RuntimeRouteFixtures {
             entryIterator.next();
             entryIterator.remove();
             primitives.put("entryIteratorRemove", table.isEmpty());
+            table.put("entry-set-value", first);
+            java.util.Iterator<java.util.Map.Entry<String, TopicRouteData>> setValueIterator =
+                table.entrySet().iterator();
+            java.util.Map.Entry<String, TopicRouteData> setValueEntry = setValueIterator.next();
+            primitives.put("entrySetValueReturnsPrevious", setValueEntry.setValue(second) == first);
+            primitives.put("entrySetValueUpdatesEntry", setValueEntry.getValue() == second);
+            primitives.put("entrySetValueUpdatesTable", table.get("entry-set-value") == second);
+            table.put("entry-set-value", equalSecond);
+            primitives.put("entrySetValueEntryIsSnapshot", setValueEntry.getValue() == second);
+            primitives.put("entrySetValueReturnsCapturedPrevious", setValueEntry.setValue(first) == second);
+            primitives.put("entrySetValueReplacesCurrentMapping", table.get("entry-set-value") == first);
             table.clear();
             result.put("primitives", primitives);
 
