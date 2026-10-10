@@ -1980,6 +1980,38 @@ public final class RuntimeRouteFixtures {
         return result;
     }
 
+    private static Map<String, Object> routeDtoReferenceAliasCases() {
+        Map<String, Object> result = new TreeMap<>();
+
+        org.apache.rocketmq.remoting.protocol.route.BrokerData broker =
+            new org.apache.rocketmq.remoting.protocol.route.BrokerData();
+        HashMap<Long, String> addresses = new HashMap<>();
+        addresses.put(0L, "master:10911");
+        broker.setBrokerAddrs(addresses);
+        result.put("brokerSetterRetainsMap", broker.getBrokerAddrs() == addresses);
+        result.put("brokerGetterIsStable", broker.getBrokerAddrs() == broker.getBrokerAddrs());
+        addresses.put(2L, "caller-slave:10911");
+        result.put("brokerCallerMutationVisible", "caller-slave:10911".equals(
+            broker.getBrokerAddrs().get(2L)));
+        broker.getBrokerAddrs().put(3L, "getter-slave:10911");
+        result.put("brokerGetterMutationVisible", "getter-slave:10911".equals(addresses.get(3L)));
+
+        org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo mapping =
+            new org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo();
+        java.util.concurrent.ConcurrentMap<Integer, Integer> ids =
+            new java.util.concurrent.ConcurrentHashMap<>();
+        ids.put(0, 4);
+        mapping.setCurrIdMap(ids);
+        result.put("mappingSetterRetainsMap", mapping.getCurrIdMap() == ids);
+        result.put("mappingGetterIsStable", mapping.getCurrIdMap() == mapping.getCurrIdMap());
+        ids.put(1, 7);
+        result.put("mappingCallerMutationVisible", Integer.valueOf(7).equals(
+            mapping.getCurrIdMap().get(1)));
+        mapping.getCurrIdMap().put(2, 9);
+        result.put("mappingGetterMutationVisible", Integer.valueOf(9).equals(ids.get(2)));
+        return result;
+    }
+
     private static List<Object> topicRouteDataToStringCases() {
         String populated = "{\"orderTopicConf\":\"broker:1\",\"queueDatas\":[{\"brokerName\":\"broker\","
             + "\"readQueueNums\":1,\"writeQueueNums\":2,\"perm\":6,\"topicSysFlag\":0}],"
@@ -2473,6 +2505,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("topicQueueMappingMethods", topicQueueMappingMethodsCases());
         fixture.put("topicRouteDataMethods", topicRouteDataMethodCases());
         fixture.put("routeDtoAccessors", routeDtoAccessorCases());
+        fixture.put("routeDtoReferenceAliases", routeDtoReferenceAliasCases());
         fixture.put("topicRouteDataToString", topicRouteDataToStringCases());
         fixture.put("inheritedSerializationCases", inheritedSerializationCases());
         fixture.put("inheritedSerializationNullUtilities", inheritedSerializationNullUtilities());

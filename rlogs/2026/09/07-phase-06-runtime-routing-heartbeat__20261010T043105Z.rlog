@@ -1,0 +1,20 @@
+# Phase 6 execution log — 2026-10-10T04:31:05Z
+
+## Session start and authoritative state
+
+- Objective remains full Phase 6 completion on the existing phase branch, with one branch per phase and independently committed changes.
+- Current branch `07-phase-06-runtime-routing-heartbeat`; worktree clean at `f908130d` with the prior heartbeat Set alias code/docs commits present.
+- Re-read both Phase 6 plans, the `coding-general` workflow, execution index, and current requirement/API audit. P6-V01/V02/V03/U01 have unit gates, P6-V04 correctly remains `PENDING_PHASE_19`; full public API/config/source/input/reverse-export reconciliation still explicitly blocks Phase 6 acceptance.
+- The requested Java checkout `/Users/nanashi07/Projects/3rd/rocketmq` is absent in this environment. The repository-pinned 5.5.1 Maven artifacts and invoked Java fixture remain available; preserve that provenance and do not claim checkout-based source inspection.
+- A concrete API audit candidate is mutable reference aliasing in route DTO collection fields. The existing route fixture invokes getters/setters by value but currently records no identity/mutation checks for `TopicQueueMappingInfo.currIdMap` and other route collections. Inspect pinned Java behavior first, then correct native API if confirmed.
+
+## Current work
+
+- No Phase 6 acceptance claim. Continue to append commands/results, findings, and independently committed code/documentation checkpoints in this file.
+
+## Route DTO alias evidence
+
+- The pinned Java artifact's public APIs expose `BrokerData.setBrokerAddrs/getBrokerAddrs` and `TopicQueueMappingInfo.setCurrIdMap/getCurrIdMap`. New direct invoked cases establish both setter-to-getter identity, stable getter identity, caller-side mutation visibility, and getter-side mutation visibility for each mutable map.
+- Added `routeDtoReferenceAliases` to `RuntimeRouteFixtures` and regenerated `fixtures/runtime/route.json`; SHA-256 is `bf3ce0cb617989cf7e331dabfd738b8fc5a650cdc4b36037eae30f8add8960d3`.
+- Pinned Java compile and direct fixture regeneration passed. The explicit `--verify` route-fixture invocation passed. Maven's default RocketMQ log target was initially outside the writable roots; reran with `-Drocketmq.log.root=/private/tmp/p6-rocketmq-logs`, and subsequent Java invocations used that writable target.
+- These source-backed cases reveal two mutable route-map API alias gaps in native route DTOs; implementation and Rust regression coverage are next. This is not a full route DTO alias audit or Phase 6 completion.
