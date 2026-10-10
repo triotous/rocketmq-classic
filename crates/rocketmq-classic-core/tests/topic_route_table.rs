@@ -1115,6 +1115,24 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
             .unwrap()
             .is_some_and(|value| value.ptr_eq(&first)),
     );
+    outcomes.insert(
+        "entrySetValueNullThrowsNullPointer",
+        matches!(
+            entry.set_value_nullable(None),
+            Err(RuntimeError::InvalidRoute("null topic route value"))
+        ),
+    );
+    outcomes.insert(
+        "entrySetValueNullLeavesEntry",
+        entry.value().unwrap().ptr_eq(&first),
+    );
+    outcomes.insert(
+        "entrySetValueNullLeavesMapping",
+        table
+            .get("entry-set-value")
+            .unwrap()
+            .is_some_and(|value| value.ptr_eq(&first)),
+    );
     table.clear().unwrap();
     // Rust uses explicit live-view removals in place of Java Iterator.remove; snapshot traversal
     // stays detached and does not claim Java's weakly consistent iteration contract.

@@ -52,6 +52,18 @@ impl TopicRouteEntryHandle {
         self.table.put(self.key.clone(), value)?;
         Ok(previous)
     }
+
+    /// Applies Java `Map.Entry.setValue` null rejection without changing the
+    /// captured entry or its backing route-table mapping.
+    pub fn set_value_nullable(
+        &self,
+        value: Option<TopicRouteDataHandle>,
+    ) -> Result<TopicRouteDataHandle, RuntimeError> {
+        let Some(value) = value else {
+            return Err(RuntimeError::InvalidRoute("null topic route value"));
+        };
+        self.set_value(value)
+    }
 }
 
 impl WeakTopicRouteDataHandle {

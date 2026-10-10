@@ -2300,6 +2300,15 @@ public final class RuntimeRouteFixtures {
             primitives.put("entrySetValueEntryIsSnapshot", setValueEntry.getValue() == second);
             primitives.put("entrySetValueReturnsCapturedPrevious", setValueEntry.setValue(first) == second);
             primitives.put("entrySetValueReplacesCurrentMapping", table.get("entry-set-value") == first);
+            String nullSetValueError = "OK";
+            try {
+                setValueEntry.setValue(null);
+            } catch (Throwable error) {
+                nullSetValueError = error.getClass().getSimpleName();
+            }
+            primitives.put("entrySetValueNullThrowsNullPointer", "NullPointerException".equals(nullSetValueError));
+            primitives.put("entrySetValueNullLeavesEntry", setValueEntry.getValue() == first);
+            primitives.put("entrySetValueNullLeavesMapping", table.get("entry-set-value") == first);
             table.clear();
             result.put("primitives", primitives);
 
