@@ -224,3 +224,9 @@
 - The direct pinned Java fixture now constructs `MQClientInstance` with `enableHeartbeatChannelEventListener` false and true, inspects the actual `NettyRemotingClient` listener, flips the same config afterward, and records that listener presence/identity does not change. Java oracle `27cb60bf`; `fixtures/runtime/heartbeat.json` SHA-256 `7ff0e28d36ed191002871ac36f00a60ecee5edc64f183565b93e4161fa71032b`.
 - Rust differential commit `ab1c3949` consumes those observations in `disabled_or_unknown_channel_does_not_send_unsolicited_heartbeat` and compares both listener presence and `Arc` identity across post-construction setting mutations. The focused test passed.
 - Full pinned offline Maven verify passed, including all 22 scenarios, fixture drift and Java cross-decodes; `cargo fmt --all -- --check` and `git diff --check` pass. The source-time listener setting boundary is covered; full Phase 6 reconciliation remains PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
+
+## Runtime client-ID snapshot
+
+- `RuntimeConfigFixtures.managerSharing` now records `MQClientInstance.getClientId()` before and after mutating the runtime's retained ClientConfig client IP, instance name and unit name. The Java runtime ID stays at its construction value while `buildMQClientId()` reflects the new config. Java fixture commit `6c58ec1d`; `client-config.json` SHA-256 `cf4d7191c787efa2f08afb956ee456368d35159c1766b6c79006a43e43fcd4ce`.
+- Native differential commit `dc79903d`; `runtime_client_id_remains_constructor_snapshot_after_config_mutation` consumes both Java IDs and passed. Full workspace all-target tests and strict all-target/all-feature Clippy passed.
+- Pinned offline Maven verify passed all 22 scenarios, fixture drift and Java cross-decodes. Differential comparator self-test/manifest22, formatting and diff checks pass. This closes the runtime identity mutation boundary only; whole Phase 6 remains PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
