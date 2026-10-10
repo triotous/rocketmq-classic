@@ -471,27 +471,39 @@ macro_rules! table {
                 self.0.mutate_with_gate(mutation, Some(gate)).await?;
                 Ok(result)
             }
+            /// Visits the keys in a detached snapshot and applies the
+            /// ConcurrentHashMap.replaceAll callback contract. The callback
+            /// runs outside the key gate and may be retried if a concurrent
+            /// write changes the mapping before the conditional update.
             pub async fn replace_all(
                 &self,
                 mut remapping: impl FnMut(&str, &Arc<dyn $owner>) -> Arc<dyn $owner>,
             ) -> Result<(), RuntimeError> {
                 for key in self.keys()? {
-                    let gate = self.0.key_gate(&key).await?;
-                    let Some(current) = self.get(&key)? else {
-                        continue;
-                    };
-                    let value = remapping(&key, &current);
-                    self.0
-                        .mutate_with_gate(
-                            TableMutation::Replace {
-                                key,
-                                value: TableValue::$kind(value),
-                                expected: Some(TableValue::$kind(current)),
-                                comparison: Some(ValueComparison::Identity),
-                            },
-                            Some(gate),
-                        )
-                        .await?;
+                    loop {
+                        let Some(current) = self.get(&key)? else {
+                            break;
+                        };
+                        // ConcurrentHashMap.replaceAll invokes the function
+                        // outside its bin lock and retries after a lost CAS.
+                        let value = remapping(&key, &current);
+                        let gate = self.0.key_gate(&key).await?;
+                        let change = self
+                            .0
+                            .mutate_with_gate(
+                                TableMutation::Replace {
+                                    key: key.clone(),
+                                    value: TableValue::$kind(value),
+                                    expected: Some(TableValue::$kind(current)),
+                                    comparison: Some(ValueComparison::Identity),
+                                },
+                                Some(gate),
+                            )
+                            .await?;
+                        if change.matched {
+                            break;
+                        }
+                    }
                 }
                 Ok(())
             }

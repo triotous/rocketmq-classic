@@ -642,16 +642,28 @@ impl FactoryTable {
         }
     }
 
+    /// Visits the keys in a detached snapshot with Java
+    /// ConcurrentHashMap.replaceAll semantics. Callbacks run outside the key
+    /// gate and may be retried after a concurrent mapping change.
     pub async fn replace_all(
         &self,
         mut remapping: impl FnMut(&str, &Arc<ClientRuntime>) -> Arc<ClientRuntime>,
     ) -> Result<(), RuntimeError> {
         for key in self.snapshot()?.into_keys() {
-            let _key_mutation = self.manager.mutation_locks.lock(&key).await?;
-            let _synchronous_mutation = _key_mutation.lock_synchronous();
-            if let Some(current) = self.get(&key)? {
+            loop {
+                let Some(current) = self.get(&key)? else {
+                    break;
+                };
+                // ConcurrentHashMap.replaceAll invokes the function outside
+                // its bin lock and retries after a lost conditional replace.
                 let value = remapping(&key, &current);
-                self.mutate_locked(&key, TableMutation::ReplaceIfSame(current, value))?;
+                let _key_mutation = self.manager.mutation_locks.lock(&key).await?;
+                let _synchronous_mutation = _key_mutation.lock_synchronous();
+                let (_, changed) =
+                    self.mutate_locked(&key, TableMutation::ReplaceIfSame(current, value))?;
+                if changed {
+                    break;
+                }
             }
         }
         Ok(())

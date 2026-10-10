@@ -870,6 +870,7 @@ public final class RuntimeConfigFixtures {
             live.put("merge-remove", second);
             result.put("mergeNullRemoves", live.merge("merge-remove", first, (oldValue, newValue) -> null) == null
                 && !live.containsKey("merge-remove"));
+            result.putAll(replaceAllRace(live, first, second));
             live.replaceAll((key, value) -> second);
             result.put("replaceAllUpdatesMappings", live.size() == 3
                 && live.values().stream().allMatch(value -> value == second));
@@ -994,6 +995,7 @@ public final class RuntimeConfigFixtures {
         result.put("mergeUpdate", table.merge("c", second, (old, value) -> second) == second);
         table.replaceAll((key, old) -> first);
         result.put("replaceAll", table.get("a") == first && table.get("c") == first);
+        result.putAll(replaceAllRace(table, first, second));
         java.util.concurrent.atomic.AtomicInteger visited = new java.util.concurrent.atomic.AtomicInteger();
         table.forEach((key, value) -> visited.incrementAndGet());
         result.put("forEachCount", visited.get());
@@ -1064,6 +1066,87 @@ public final class RuntimeConfigFixtures {
             && writerPrevious.get() == second && table.get("remapping-race") == first);
         table.remove("remapping-race");
         table.clear();
+        return result;
+    }
+
+    private static <T> Map<String, Object> replaceAllRace(
+        java.util.concurrent.ConcurrentMap<String, T> table, T first, T second) {
+        Map<String, Object> result = new TreeMap<>();
+        String key = "replace-all-race";
+        table.put(key, first);
+        AtomicInteger callbackCalls = new AtomicInteger();
+        AtomicReference<T> initialCallbackValue = new AtomicReference<>();
+        AtomicReference<T> retryCallbackValue = new AtomicReference<>();
+        AtomicReference<T> writerPrevious = new AtomicReference<>();
+        AtomicReference<Throwable> callbackFailure = new AtomicReference<>();
+        AtomicReference<Throwable> writerFailure = new AtomicReference<>();
+        CountDownLatch callbackEntered = new CountDownLatch(1);
+        CountDownLatch releaseCallback = new CountDownLatch(1);
+        CountDownLatch writerStarted = new CountDownLatch(1);
+        CountDownLatch writerFinished = new CountDownLatch(1);
+        Thread replaceAllThread = new Thread(() -> {
+            try {
+                table.replaceAll((currentKey, oldValue) -> {
+                    if (!currentKey.equals(key)) {
+                        return oldValue;
+                    }
+                    int call = callbackCalls.incrementAndGet();
+                    if (call == 1) {
+                        initialCallbackValue.set(oldValue);
+                        callbackEntered.countDown();
+                        awaitUnchecked(releaseCallback, "replaceAll callback release");
+                    } else if (call == 2) {
+                        retryCallbackValue.set(oldValue);
+                    }
+                    return first;
+                });
+            } catch (Throwable error) {
+                callbackFailure.set(error);
+            }
+        }, "java-replace-all-oracle");
+        Thread writerThread = new Thread(() -> {
+            writerStarted.countDown();
+            try {
+                writerPrevious.set(table.put(key, second));
+            } catch (Throwable error) {
+                writerFailure.set(error);
+            } finally {
+                writerFinished.countDown();
+            }
+        }, "java-replace-all-writer");
+        replaceAllThread.setDaemon(true);
+        writerThread.setDaemon(true);
+        replaceAllThread.start();
+        try {
+            awaitUnchecked(callbackEntered, "replaceAll callback");
+            writerThread.start();
+            awaitUnchecked(writerStarted, "replaceAll same-key writer");
+            result.put("replaceAllWriterRunsDuringCallback", writerFinished.await(100, TimeUnit.MILLISECONDS));
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted while checking replaceAll", error);
+        } finally {
+            releaseCallback.countDown();
+        }
+        try {
+            replaceAllThread.join(5000);
+            writerThread.join(5000);
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted while joining replaceAll fixture threads", error);
+        }
+        if (replaceAllThread.isAlive() || writerThread.isAlive()) {
+            throw new IllegalStateException("ConcurrentHashMap replaceAll fixture threads did not finish");
+        }
+        if (callbackFailure.get() != null || writerFailure.get() != null) {
+            throw new IllegalStateException("ConcurrentHashMap replaceAll fixture failed",
+                callbackFailure.get() != null ? callbackFailure.get() : writerFailure.get());
+        }
+        result.put("replaceAllCallbackRetriesAfterWriter", callbackCalls.get() == 2
+            && initialCallbackValue.get() == first && retryCallbackValue.get() == second);
+        result.put("replaceAllWriterObservedOldValue", writerPrevious.get() == first);
+        result.put("replaceAllFinalValueIsComputed", table.get(key) == first);
+        table.remove(key);
         return result;
     }
 

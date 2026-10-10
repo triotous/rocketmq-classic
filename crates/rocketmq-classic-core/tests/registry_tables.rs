@@ -487,6 +487,76 @@ async fn registry_default_map_operations_match_invoked_java() {
                 .replace_all(|_, _| first.clone())
                 .await
                 .unwrap();
+            table
+                .put("replace-all-race", first.clone())
+                .await
+                .unwrap();
+            let replace_all_calls = Arc::new(AtomicUsize::new(0));
+            let replace_all_initial_is_first = Arc::new(AtomicBool::new(false));
+            let replace_all_retry_is_second = Arc::new(AtomicBool::new(false));
+            let (replace_all_started_tx, replace_all_started_rx) = mpsc::channel();
+            let (release_replace_all_tx, release_replace_all_rx) = mpsc::channel();
+            let replace_all_table = table.clone();
+            let first_for_replace_all = first.clone();
+            let second_for_replace_all = second.clone();
+            let calls_for_replace_all = replace_all_calls.clone();
+            let initial_for_replace_all = replace_all_initial_is_first.clone();
+            let retry_for_replace_all = replace_all_retry_is_second.clone();
+            let replacing = tokio::spawn(async move {
+                replace_all_table
+                    .replace_all(move |key, current| {
+                        if key != "replace-all-race" {
+                            return current.clone();
+                        }
+                        let call = calls_for_replace_all.fetch_add(1, Ordering::SeqCst);
+                        if call == 0 {
+                            initial_for_replace_all
+                                .store(Arc::ptr_eq(current, &first_for_replace_all), Ordering::SeqCst);
+                            replace_all_started_tx.send(()).unwrap();
+                            release_replace_all_rx.recv().unwrap();
+                        } else if call == 1 {
+                            retry_for_replace_all
+                                .store(Arc::ptr_eq(current, &second_for_replace_all), Ordering::SeqCst);
+                        }
+                        first_for_replace_all.clone()
+                    })
+                    .await
+                    .unwrap()
+            });
+            tokio::task::spawn_blocking(move || replace_all_started_rx.recv().unwrap())
+                .await
+                .unwrap();
+            let replace_all_writer_table = table.clone();
+            let writer_value = second.clone();
+            let (replace_all_writer_started_tx, replace_all_writer_started_rx) =
+                tokio::sync::oneshot::channel();
+            let mut replace_all_writer = tokio::spawn(async move {
+                replace_all_writer_started_tx.send(()).unwrap();
+                replace_all_writer_table
+                    .put("replace-all-race", writer_value)
+                    .await
+                    .unwrap()
+            });
+            replace_all_writer_started_rx.await.unwrap();
+            let replace_all_writer_result =
+                tokio::time::timeout(Duration::from_millis(100), &mut replace_all_writer).await;
+            let replace_all_writer_runs = replace_all_writer_result.is_ok();
+            release_replace_all_tx.send(()).unwrap();
+            replacing.await.unwrap();
+            let replace_all_writer_previous = match replace_all_writer_result {
+                Ok(result) => result.unwrap(),
+                Err(_) => replace_all_writer.await.unwrap(),
+            };
+            let replace_all_retry_outcome = replace_all_calls.load(Ordering::SeqCst) == 2
+                && replace_all_initial_is_first.load(Ordering::SeqCst)
+                && replace_all_retry_is_second.load(Ordering::SeqCst);
+            let replace_all_writer_observed_old =
+                replace_all_writer_previous.is_some_and(|previous| Arc::ptr_eq(&previous, &first));
+            let replace_all_final_is_computed = table
+                .get("replace-all-race")
+                .unwrap()
+                .is_some_and(|current| Arc::ptr_eq(&current, &first));
+            table.remove("replace-all-race").await.unwrap();
             let mut for_each_count = 0;
             table
                 .for_each(|_, _| for_each_count += 1)
@@ -559,6 +629,10 @@ async fn registry_default_map_operations_match_invoked_java() {
                 "mergeUpdate": same(merge_update, &second),
                 "replaceAll": same(table.get("a").unwrap(), &first)
                     && same(table.get("c").unwrap(), &first),
+                "replaceAllWriterRunsDuringCallback": replace_all_writer_runs,
+                "replaceAllCallbackRetriesAfterWriter": replace_all_retry_outcome,
+                "replaceAllWriterObservedOldValue": replace_all_writer_observed_old,
+                "replaceAllFinalValueIsComputed": replace_all_final_is_computed,
                 "forEachCount": for_each_count,
                 "putAllAdds": same(table.get("d").unwrap(), &second)
                     && same(table.get("e").unwrap(), &first)

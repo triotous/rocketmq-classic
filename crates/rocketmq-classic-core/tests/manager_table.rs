@@ -644,6 +644,107 @@ async fn concurrent_factory_table_remapping_serializes_same_key_callback_like_ja
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+async fn factory_table_replace_all_retries_after_concurrent_same_key_write() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = &fixture["managerTable"];
+    let manager = ClientRuntimeManager::new();
+    let live = manager.factory_table();
+    let first = manager
+        .get_or_create(&ClientConfig::new("factory-replace-all-race"))
+        .await
+        .unwrap();
+    let second = manager
+        .get_or_create(&ClientConfig::new("factory-replace-all-race-next"))
+        .await
+        .unwrap();
+    let key = first.client_id().to_owned();
+
+    let callback_calls = Arc::new(AtomicUsize::new(0));
+    let initial_callback_is_first = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let retry_callback_is_second = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let calls_for_task = callback_calls.clone();
+    let initial_for_task = initial_callback_is_first.clone();
+    let retry_for_task = retry_callback_is_second.clone();
+    let callback_key = key.clone();
+    let callback_first = first.clone();
+    let callback_second = second.clone();
+    let table_for_replace_all = live.clone();
+    let (entered_tx, entered_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let replacing = tokio::spawn(async move {
+        table_for_replace_all
+            .replace_all(move |key, current| {
+                if key != callback_key {
+                    return current.clone();
+                }
+                let call = calls_for_task.fetch_add(1, Ordering::SeqCst);
+                if call == 0 {
+                    initial_for_task.store(Arc::ptr_eq(current, &callback_first), Ordering::SeqCst);
+                    entered_tx.send(()).unwrap();
+                    release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+                } else if call == 1 {
+                    retry_for_task.store(Arc::ptr_eq(current, &callback_second), Ordering::SeqCst);
+                }
+                callback_first.clone()
+            })
+            .await
+            .unwrap()
+    });
+    tokio::task::spawn_blocking(move || entered_rx.recv_timeout(Duration::from_secs(5)).unwrap())
+        .await
+        .unwrap();
+
+    let table_for_writer = live.clone();
+    let writer_value = second.clone();
+    let writer_key = key.clone();
+    let (writer_started_tx, writer_started_rx) = tokio::sync::oneshot::channel();
+    let mut writer = tokio::spawn(async move {
+        writer_started_tx.send(()).unwrap();
+        table_for_writer
+            .put(&writer_key, writer_value)
+            .await
+            .unwrap()
+    });
+    writer_started_rx.await.unwrap();
+    let writer_result = tokio::time::timeout(Duration::from_millis(100), &mut writer).await;
+    let writer_runs_during_callback = writer_result.is_ok();
+    release_tx.send(()).unwrap();
+
+    replacing.await.unwrap();
+    let writer_previous = match writer_result {
+        Ok(result) => result.unwrap(),
+        Err(_) => writer.await.unwrap(),
+    };
+    let callback_retries_after_writer = callback_calls.load(Ordering::SeqCst) == 2
+        && initial_callback_is_first.load(Ordering::SeqCst)
+        && retry_callback_is_second.load(Ordering::SeqCst);
+    let writer_observed_old_value =
+        writer_previous.is_some_and(|value| Arc::ptr_eq(&value, &first));
+    let final_value_is_computed = live
+        .get(&key)
+        .unwrap()
+        .is_some_and(|value| Arc::ptr_eq(&value, &first));
+    assert_eq!(
+        writer_runs_during_callback,
+        java["replaceAllWriterRunsDuringCallback"]
+    );
+    assert_eq!(
+        callback_retries_after_writer,
+        java["replaceAllCallbackRetriesAfterWriter"]
+    );
+    assert_eq!(
+        writer_observed_old_value,
+        java["replaceAllWriterObservedOldValue"]
+    );
+    assert_eq!(
+        final_value_is_computed,
+        java["replaceAllFinalValueIsComputed"]
+    );
+    live.remove(&key).await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 3)]
 async fn identity_safe_manager_removal_waits_for_factory_table_remapping() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
