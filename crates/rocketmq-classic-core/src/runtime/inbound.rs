@@ -322,6 +322,8 @@ mod tests {
                 .then(|| self.handler.clone() as Arc<dyn RequestProcessor>)
         }
     }
+    struct NoInboundProducer;
+    impl ProducerRuntime for NoInboundProducer {}
     struct Consumer {
         handler: Arc<Handler>,
     }
@@ -600,6 +602,44 @@ mod tests {
             assert_eq!(no_group.remark.as_deref(), Some(expected.as_str()));
         }
         unregister(&runtime, &lease, false).await;
+        assert!(runtime.shutdown().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn registered_producer_without_transaction_or_reply_capability_returns_phase_errors() {
+        let runtime = runtime("producer-inactive-slots").await;
+        let producer = Arc::new(NoInboundProducer);
+        let lease = runtime
+            .register_producer("producer-no-inbound", producer)
+            .await
+            .unwrap();
+
+        let transaction = dispatch(&runtime, request::CHECK_TRANSACTION_STATE, &[], None);
+        assert_eq!(transaction.code, response::REQUEST_CODE_NOT_SUPPORTED);
+        assert_eq!(
+            transaction.remark.as_deref(),
+            Some("client request 39 has no active handler (Phase 14)")
+        );
+
+        for properties in [None, Some("CORRELATION_ID\u{1}missing\u{2}")] {
+            let reply = if let Some(value) = properties {
+                dispatch(
+                    &runtime,
+                    request::PUSH_REPLY_MESSAGE_TO_CLIENT,
+                    &[("properties", value)],
+                    None,
+                )
+            } else {
+                dispatch(&runtime, request::PUSH_REPLY_MESSAGE_TO_CLIENT, &[], None)
+            };
+            assert_eq!(reply.code, response::REQUEST_CODE_NOT_SUPPORTED);
+            assert_eq!(
+                reply.remark.as_deref(),
+                Some("client request 326 has no active handler (Phase 15)")
+            );
+        }
+
+        unregister(&runtime, &lease, true).await;
         assert!(runtime.shutdown().await.unwrap());
     }
 }
