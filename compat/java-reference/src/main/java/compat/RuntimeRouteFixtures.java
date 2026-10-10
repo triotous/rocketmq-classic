@@ -1920,6 +1920,34 @@ public final class RuntimeRouteFixtures {
             primitives.put("treeMapPutAllKeepsBeforeRow", table.get(beforeNullRoute) == first);
             primitives.put("treeMapPutAllSkipsAfterRow", !table.containsKey(afterNullRoute));
             table.remove(beforeNullRoute);
+            String beforeNullKeyRoute = "a-route-put-all-before-null-key";
+            String nullKeyBoundary = "m-route-put-all-null-key";
+            String afterNullKeyRoute = "z-route-put-all-after-null-key";
+            Map<String, TopicRouteData> treeNullKeyInputs = new TreeMap<>((left, right) -> {
+                if (left == right) return 0;
+                if (left == null) return right.compareTo(nullKeyBoundary) >= 0 ? -1 : 1;
+                if (right == null) return left.compareTo(nullKeyBoundary) >= 0 ? 1 : -1;
+                return left.compareTo(right);
+            });
+            treeNullKeyInputs.put(afterNullKeyRoute, second);
+            treeNullKeyInputs.put(null, first);
+            treeNullKeyInputs.put(beforeNullKeyRoute, first);
+            Map<String, Object> treeNullKeyOutcome = new TreeMap<>();
+            treeNullKeyOutcome.put("visitOrder", new ArrayList<>(treeNullKeyInputs.keySet()));
+            treeNullKeyOutcome.put("nullKey", null);
+            String treeNullKeyError = "OK";
+            try {
+                table.putAll(treeNullKeyInputs);
+            } catch (Throwable error) {
+                treeNullKeyError = error.getClass().getSimpleName();
+            }
+            treeNullKeyOutcome.put("outcome", treeNullKeyError);
+            treeNullKeyOutcome.put("keysAfter", new ArrayList<>(new java.util.TreeSet<>(table.keySet())));
+            result.put("treeMapPutAllNullKey", treeNullKeyOutcome);
+            primitives.put("treeMapPutAllThrowsNullKey", "NullPointerException".equals(treeNullKeyError));
+            primitives.put("treeMapPutAllNullKeyKeepsBeforeRow", table.get(beforeNullKeyRoute) == first);
+            primitives.put("treeMapPutAllNullKeySkipsAfterRow", !table.containsKey(afterNullKeyRoute));
+            table.remove(beforeNullKeyRoute);
             TopicRouteData absentValue = com.alibaba.fastjson2.JSON.parseObject(
                 com.alibaba.fastjson2.JSON.toJSONString(second), TopicRouteData.class);
             absentValue.getBrokerDatas().get(0).setBrokerName("absent-broker");

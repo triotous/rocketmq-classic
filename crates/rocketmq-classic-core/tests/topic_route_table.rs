@@ -493,6 +493,51 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
     actual_keys.sort();
     assert_eq!(actual_keys, expected_keys);
     table.remove(before_null_value).unwrap();
+    let tree_null_key_oracle = &case["treeMapPutAllNullKey"];
+    assert_eq!(tree_null_key_oracle["outcome"], "NullPointerException");
+    let tree_null_key_order: Vec<Option<String>> =
+        serde_json::from_value(tree_null_key_oracle["visitOrder"].clone()).unwrap();
+    assert_eq!(
+        tree_null_key_order,
+        [
+            Some("a-route-put-all-before-null-key".to_owned()),
+            None,
+            Some("z-route-put-all-after-null-key".to_owned())
+        ]
+    );
+    let tree_null_key_rows = tree_null_key_order.into_iter().map(|key| {
+        let value = match key.as_deref() {
+            Some(key) if key.starts_with('a') => Some(first.clone()),
+            Some(key) if key.starts_with('z') => Some(second.clone()),
+            None => Some(first.clone()),
+            _ => unreachable!("fixture only contains the expected three keys"),
+        };
+        (key, value)
+    });
+    let tree_null_key_result = table.put_all_nullable_iter(tree_null_key_rows);
+    outcomes.insert(
+        "treeMapPutAllThrowsNullKey",
+        matches!(
+            tree_null_key_result,
+            Err(RuntimeError::InvalidRoute("null topic route key"))
+        ),
+    );
+    let before_null_key = "a-route-put-all-before-null-key";
+    let after_null_key = "z-route-put-all-after-null-key";
+    outcomes.insert(
+        "treeMapPutAllNullKeyKeepsBeforeRow",
+        same(table.get(before_null_key).unwrap(), &first),
+    );
+    outcomes.insert(
+        "treeMapPutAllNullKeySkipsAfterRow",
+        table.get(after_null_key).unwrap().is_none(),
+    );
+    let expected_keys: Vec<String> =
+        serde_json::from_value(tree_null_key_oracle["keysAfter"].clone()).unwrap();
+    let mut actual_keys: Vec<_> = table.snapshot().unwrap().into_keys().collect();
+    actual_keys.sort();
+    assert_eq!(actual_keys, expected_keys);
+    table.remove(before_null_key).unwrap();
     outcomes.insert(
         "containsValueEqualCopy",
         table
