@@ -156,6 +156,13 @@ impl TopicRouteTable {
     pub fn contains_key(&self, key: &str) -> Result<bool, RuntimeError> {
         Ok(self.0.snapshot()?.raw_routes.contains_key(key))
     }
+    /// Preserves Java `ConcurrentMap.containsKey`'s null-key rejection.
+    pub fn contains_key_nullable(&self, key: Option<&str>) -> Result<bool, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null topic route key"));
+        };
+        self.contains_key(key)
+    }
     /// Uses the source route-content equality used by map-value comparisons.
     pub fn contains_value(&self, value: &TopicRouteData) -> Result<bool, RuntimeError> {
         for current in self.0.snapshot()?.raw_routes.values() {
@@ -498,6 +505,16 @@ impl TopicRouteTable {
             let previous = map.remove(key);
             (previous.is_some(), previous)
         })
+    }
+    /// Preserves Java `ConcurrentMap.remove`'s null-key rejection.
+    pub fn remove_nullable(
+        &self,
+        key: Option<&str>,
+    ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null topic route key"));
+        };
+        self.remove(key)
     }
     pub fn remove_if_equal(
         &self,

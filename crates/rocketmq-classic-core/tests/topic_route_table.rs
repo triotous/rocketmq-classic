@@ -378,6 +378,28 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
         ),
     );
     outcomes.insert(
+        "containsKeyNullKeyThrowsNullPointer",
+        matches!(
+            table.contains_key_nullable(None),
+            Err(RuntimeError::InvalidRoute("null topic route key"))
+        ),
+    );
+    outcomes.insert(
+        "containsKeyNullKeyKeepsMapping",
+        same(table.get("topic").unwrap(), &first),
+    );
+    outcomes.insert(
+        "removeNullKeyThrowsNullPointer",
+        matches!(
+            table.remove_nullable(None),
+            Err(RuntimeError::InvalidRoute("null topic route key"))
+        ),
+    );
+    outcomes.insert(
+        "removeNullKeyKeepsMapping",
+        same(table.get("topic").unwrap(), &first),
+    );
+    outcomes.insert(
         "getterSeesFirst",
         same(runtime.get_existing_topic_route("topic").unwrap(), &first),
     );

@@ -1891,6 +1891,24 @@ public final class RuntimeRouteFixtures {
             }
             primitives.put("getNullKeyThrowsNullPointer",
                 "NullPointerException".equals(nullGetKeyError));
+            String nullContainsKeyError = "OK";
+            try {
+                table.containsKey(null);
+            } catch (Throwable error) {
+                nullContainsKeyError = error.getClass().getSimpleName();
+            }
+            primitives.put("containsKeyNullKeyThrowsNullPointer",
+                "NullPointerException".equals(nullContainsKeyError));
+            primitives.put("containsKeyNullKeyKeepsMapping", table.get("topic") == first);
+            String nullRemoveKeyError = "OK";
+            try {
+                table.remove(null);
+            } catch (Throwable error) {
+                nullRemoveKeyError = error.getClass().getSimpleName();
+            }
+            primitives.put("removeNullKeyThrowsNullPointer",
+                "NullPointerException".equals(nullRemoveKeyError));
+            primitives.put("removeNullKeyKeepsMapping", table.get("topic") == first);
             primitives.put("getterSeesFirst", runtime.getAnExistTopicRouteData("topic") == first);
             primitives.put("putReturnsFirst", table.put("topic", second) == first);
             primitives.put("retainedGetterSeesReplacement", runtime.getTopicRouteTable() == table && runtime.getAnExistTopicRouteData("topic") == second);
