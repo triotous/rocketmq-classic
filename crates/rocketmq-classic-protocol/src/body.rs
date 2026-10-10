@@ -2159,13 +2159,20 @@ where
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
+/// Java inherits identity-based equality and hashing for this DTO.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::BatchAckMessageRequestBody;
+/// fn require_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
+/// fn main() { require_java_identity::<BatchAckMessageRequestBody>(); }
+/// ```
+#[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct BatchAckMessageRequestBody {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub broker_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub acks: Option<Vec<Option<BatchAck>>>,
+    pub acks: Option<SharedValue<Vec<Option<BatchAck>>>>,
 }
 
 #[derive(Deserialize)]
@@ -2189,7 +2196,7 @@ impl<'de> Deserialize<'de> for BatchAckMessageRequestBody {
             serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
         Ok(Self {
             broker_name: fields.broker_name,
-            acks: fields.acks,
+            acks: fields.acks.map(SharedValue::new),
         })
     }
 }
@@ -2203,16 +2210,12 @@ impl BatchAckMessageRequestBody {
         self.broker_name = broker_name;
     }
 
-    pub fn get_acks(&self) -> Option<&[Option<BatchAck>]> {
-        self.acks.as_deref()
+    /// Returns a handle to the same mutable List object assigned to the Java DTO.
+    pub fn get_acks(&self) -> Option<SharedValue<Vec<Option<BatchAck>>>> {
+        self.acks.clone()
     }
 
-    /// Borrows the owned acknowledgement list mutably for Java-compatible getter mutations.
-    pub fn get_acks_mut(&mut self) -> Option<&mut Vec<Option<BatchAck>>> {
-        self.acks.as_mut()
-    }
-
-    pub fn set_acks(&mut self, acks: Option<Vec<Option<BatchAck>>>) {
+    pub fn set_acks(&mut self, acks: Option<SharedValue<Vec<Option<BatchAck>>>>) {
         self.acks = acks;
     }
 }
@@ -4319,36 +4322,55 @@ mod tests {
             case["bodyDefaults"]
         );
         body.set_broker_name(Some("broker-a".into()));
-        body.set_acks(Some(vec![Some(ack.clone())]));
+        let caller_acks = SharedValue::new(vec![Some(ack.clone())]);
+        let assigned_acks = caller_acks.clone();
+        body.set_acks(Some(caller_acks.clone()));
+        let getter_acks = body.get_acks().unwrap();
+        assert_eq!(
+            assigned_acks.ptr_eq(&getter_acks),
+            case["bodyReturnsAssignedList"]
+        );
         assert_eq!(body.get_broker_name(), case["bodyBrokerName"].as_str());
-        assert_eq!(body.get_acks().unwrap().len(), case["bodyAckCount"]);
-        assert_eq!(body.get_acks().unwrap()[0], Some(ack));
-        let acks_mut = body.get_acks_mut().unwrap();
-        acks_mut.clear();
+        assert_eq!(getter_acks.with(|acks| acks.len()), case["bodyAckCount"]);
+        assert_eq!(getter_acks.with(|acks| acks[0].clone()), Some(ack));
+        assert_eq!(
+            json!(
+                getter_acks
+                    .snapshot()
+                    .iter()
+                    .map(|ack| ack.as_ref().map(BatchAck::get_queue_id))
+                    .collect::<Vec<_>>()
+            ),
+            case["bodyAssignedQueueIds"]
+        );
+        caller_acks.with_mut(|acks| acks.clear());
         let mut external_ack = BatchAck::default();
         external_ack.set_queue_id(3);
-        acks_mut.push(Some(external_ack));
+        caller_acks.with_mut(|acks| acks.push(Some(external_ack)));
         assert_eq!(
-            acks_mut.iter().flatten().any(|ack| ack.get_queue_id() == 3),
+            getter_acks.with(|acks| acks.iter().flatten().any(|ack| ack.get_queue_id() == 3)),
             case["externalMutationVisible"]
         );
-        acks_mut.clear();
         let mut getter_ack = BatchAck::default();
         getter_ack.set_queue_id(4);
-        acks_mut.push(Some(getter_ack));
+        getter_acks.with_mut(|acks| {
+            acks.clear();
+            acks.push(Some(getter_ack));
+        });
         assert_eq!(
-            acks_mut.iter().flatten().any(|ack| ack.get_queue_id() == 4),
+            assigned_acks.with(|acks| acks.iter().flatten().any(|ack| ack.get_queue_id() == 4)),
             case["getterMutationVisibleToAssignedList"]
         );
-        let mutated_queue_ids = body
-            .get_acks()
-            .unwrap()
+        let mutated_queue_ids = getter_acks
+            .snapshot()
             .iter()
             .map(|ack| ack.as_ref().map(BatchAck::get_queue_id))
             .collect::<Vec<_>>();
         assert_eq!(json!(mutated_queue_ids), case["bodyMutatedQueueIds"]);
-        // Java retains the same mutable List; this Rust DTO owns its Vec and lends a slice.
-        assert_eq!(case["bodyReturnsAssignedList"], true);
+        assert_eq!(case["equalsDeclaringClass"], "java.lang.Object");
+        assert_eq!(case["hashCodeDeclaringClass"], "java.lang.Object");
+        assert_eq!(case["sameInstanceEquals"], true);
+        assert_eq!(case["equalValuesDistinctInstanceEquals"], false);
         body.set_acks(None);
         assert!(body.get_acks().is_none());
         assert_eq!(case["bodyNullAcks"], true);
@@ -5127,7 +5149,7 @@ mod tests {
 
         let body = BatchAckMessageRequestBody {
             broker_name: Some("broker-a".into()),
-            acks: Some(vec![Some(BatchAck {
+            acks: Some(SharedValue::new(vec![Some(BatchAck {
                 consumer_group: Some("workers".into()),
                 topic: Some("orders".into()),
                 retry: Some("0".into()),
@@ -5137,7 +5159,7 @@ mod tests {
                 pop_time: 10,
                 invisible_time: 20,
                 bit_set: Some(BitSet::from_byte_array(&[0b0000_0101])),
-            })]),
+            })])),
         };
         let value = serde_json::to_value(&body).unwrap();
         let ack = &value["acks"][0];
@@ -5146,7 +5168,10 @@ mod tests {
         assert_eq!(ack["b"], "BQ==");
         let round_trip: BatchAckMessageRequestBody = serde_json::from_value(value).unwrap();
         assert_eq!(
-            round_trip.acks.unwrap()[0].as_ref().unwrap().bit_set,
+            round_trip.acks.unwrap().snapshot()[0]
+                .as_ref()
+                .unwrap()
+                .bit_set,
             Some(BitSet::from_byte_array(&[0b0000_0101]))
         );
     }

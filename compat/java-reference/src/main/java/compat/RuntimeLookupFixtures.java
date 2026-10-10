@@ -1905,7 +1905,7 @@ public final class RuntimeLookupFixtures {
         return item;
     }
 
-    private static Map<String, Object> batchAckApiCase() {
+    private static Map<String, Object> batchAckApiCase() throws Exception {
         org.apache.rocketmq.remoting.protocol.body.BatchAck ack =
             new org.apache.rocketmq.remoting.protocol.body.BatchAck();
         Map<String, Object> item = new TreeMap<>();
@@ -2134,6 +2134,11 @@ public final class RuntimeLookupFixtures {
         body.getAcks().add(getterAck);
         item.put("getterMutationVisibleToAssignedList", acks.get(0).getQueueId() == 4);
         item.put("bodyMutatedQueueIds", java.util.List.of(body.getAcks().get(0).getQueueId()));
+        org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody equalValues =
+            new org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody();
+        equalValues.setBrokerName(body.getBrokerName());
+        equalValues.setAcks(new ArrayList<>(acks));
+        recordObjectIdentity(item, body, equalValues);
         body.setAcks(null);
         item.put("bodyNullAcks", body.getAcks() == null);
         return item;

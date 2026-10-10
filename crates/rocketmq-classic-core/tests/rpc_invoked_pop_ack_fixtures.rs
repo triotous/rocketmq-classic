@@ -6,6 +6,7 @@ use rocketmq_classic_core::{
     error::RpcError,
 };
 use rocketmq_classic_protocol::{
+    SharedValue,
     body::BatchAckMessageRequestBody,
     header::{
         AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader, PopLiteMessageRequestHeader,
@@ -215,7 +216,7 @@ async fn invoked_pop_ack_callbacks_match_rust_domain_outcomes() {
                     &addr,
                     &BatchAckMessageRequestBody {
                         broker_name: Some("broker".into()),
-                        acks: Some(vec![]),
+                        acks: Some(SharedValue::new(vec![])),
                     },
                     deadline,
                 )
