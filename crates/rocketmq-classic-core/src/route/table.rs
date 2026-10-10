@@ -737,6 +737,17 @@ impl TopicRouteKeySetView {
         Ok(removed)
     }
 
+    /// Preserves Java collection-view `removeIf(null)` rejection.
+    pub fn remove_if_nullable(
+        &self,
+        predicate: Option<&mut crate::runtime::TableKeyViewPredicate<'_>>,
+    ) -> Result<usize, RuntimeError> {
+        let Some(predicate) = predicate else {
+            return Err(RuntimeError::InvalidRoute("null topic route predicate"));
+        };
+        self.remove_if(|key| predicate(key))
+    }
+
     pub fn remove_all(&self, keys: &BTreeSet<String>) -> Result<usize, RuntimeError> {
         self.remove_if(|key| keys.contains(key))
     }
@@ -829,6 +840,17 @@ impl TopicRouteValuesView {
             }
         }
         Ok(removed)
+    }
+
+    /// Preserves Java collection-view `removeIf(null)` rejection.
+    pub fn remove_if_nullable(
+        &self,
+        predicate: Option<&mut crate::runtime::TableValueViewPredicate<'_, TopicRouteData>>,
+    ) -> Result<usize, RuntimeError> {
+        let Some(predicate) = predicate else {
+            return Err(RuntimeError::InvalidRoute("null topic route predicate"));
+        };
+        self.remove_if(|value| predicate(value))
     }
 
     pub fn remove_all(&self, values: &[TopicRouteDataHandle]) -> Result<usize, RuntimeError> {
@@ -973,6 +995,17 @@ impl TopicRouteEntrySetView {
             }
         }
         Ok(removed)
+    }
+
+    /// Preserves Java collection-view `removeIf(null)` rejection.
+    pub fn remove_if_nullable(
+        &self,
+        predicate: Option<&mut crate::runtime::TableEntryViewPredicate<'_, TopicRouteData>>,
+    ) -> Result<usize, RuntimeError> {
+        let Some(predicate) = predicate else {
+            return Err(RuntimeError::InvalidRoute("null topic route predicate"));
+        };
+        self.remove_if(|key, value| predicate(key, value))
     }
 
     pub fn remove_all(

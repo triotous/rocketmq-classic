@@ -515,6 +515,31 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
         "nullViewCollectionArgumentsKeepMapping",
         table.len().unwrap() == 1 && same(table.get("topic").unwrap(), &first),
     );
+    outcomes.insert(
+        "keyViewRemoveIfNullThrowsNullPointer",
+        matches!(
+            key_view.remove_if_nullable(None),
+            Err(RuntimeError::InvalidRoute("null topic route predicate"))
+        ),
+    );
+    outcomes.insert(
+        "valuesViewRemoveIfNullThrowsNullPointer",
+        matches!(
+            values_view.remove_if_nullable(None),
+            Err(RuntimeError::InvalidRoute("null topic route predicate"))
+        ),
+    );
+    outcomes.insert(
+        "entryViewRemoveIfNullThrowsNullPointer",
+        matches!(
+            entry_view.remove_if_nullable(None),
+            Err(RuntimeError::InvalidRoute("null topic route predicate"))
+        ),
+    );
+    outcomes.insert(
+        "nullViewPredicateArgumentsKeepMapping",
+        table.len().unwrap() == 1 && same(table.get("topic").unwrap(), &first),
+    );
     let mut null_compute_callback_calls = 0;
     outcomes.insert(
         "computeIfAbsentNullKeyThrowsNullPointer",

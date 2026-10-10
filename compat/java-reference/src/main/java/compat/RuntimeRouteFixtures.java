@@ -1942,6 +1942,14 @@ public final class RuntimeRouteFixtures {
                 throwsNullPointer(() -> entryView.retainAll(null)));
             primitives.put("nullViewCollectionArgumentsKeepMapping",
                 table.size() == 1 && table.get("topic") == first);
+            primitives.put("keyViewRemoveIfNullThrowsNullPointer",
+                throwsNullPointer(() -> keyView.removeIf(null)));
+            primitives.put("valuesViewRemoveIfNullThrowsNullPointer",
+                throwsNullPointer(() -> valuesView.removeIf(null)));
+            primitives.put("entryViewRemoveIfNullThrowsNullPointer",
+                throwsNullPointer(() -> entryView.removeIf(null)));
+            primitives.put("nullViewPredicateArgumentsKeepMapping",
+                table.size() == 1 && table.get("topic") == first);
             AtomicInteger nullComputeCallbackCalls = new AtomicInteger();
             primitives.put("computeIfAbsentNullKeyThrowsNullPointer", throwsNullPointer(() ->
                 table.computeIfAbsent(null, key -> {
