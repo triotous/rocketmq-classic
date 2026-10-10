@@ -979,11 +979,35 @@ impl ClientRuntime {
         self.groups.select_producer(group)
     }
 
+    /// Nullable Java-compatible selector. A null group matches the
+    /// `ConcurrentHashMap.get(null)` failure in `MQClientInstance`.
+    pub fn select_producer_nullable(
+        &self,
+        group: Option<&str>,
+    ) -> Result<Option<Arc<dyn ProducerRuntime>>, RuntimeError> {
+        let Some(group) = group else {
+            return Err(RuntimeError::InvalidRoute("null producer group"));
+        };
+        self.select_producer(group)
+    }
+
     pub fn select_consumer(
         &self,
         group: &str,
     ) -> Result<Option<Arc<dyn ConsumerRuntime>>, RuntimeError> {
         self.groups.select_consumer(group)
+    }
+
+    /// Nullable Java-compatible selector. A null group matches the
+    /// `ConcurrentHashMap.get(null)` failure in `MQClientInstance`.
+    pub fn select_consumer_nullable(
+        &self,
+        group: Option<&str>,
+    ) -> Result<Option<Arc<dyn ConsumerRuntime>>, RuntimeError> {
+        let Some(group) = group else {
+            return Err(RuntimeError::InvalidRoute("null consumer group"));
+        };
+        self.select_consumer(group)
     }
 
     pub fn prepare_heartbeat_data(

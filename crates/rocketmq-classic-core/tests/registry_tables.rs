@@ -1,6 +1,6 @@
 use rocketmq_classic_core::{
     config::ClientConfig,
-    runtime::{ClientRuntimeManager, ConsumerRuntime, ProducerRuntime, RuntimeError},
+    runtime::{ClientRuntimeManager, ConsumerRuntime, ProducerRuntime, RuntimeError, RuntimeState},
 };
 use rocketmq_classic_protocol::heartbeat::ConsumerData;
 use std::{
@@ -164,6 +164,41 @@ async fn retained_registry_tables_match_every_invoked_java_primitive_outcome() {
         select_consumer,
         fixture["registryTables"]["consumer"]
     );
+}
+
+#[tokio::test]
+async fn nullable_runtime_selectors_match_invoked_java_null_key_failures() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let expected = &fixture["registryTables"]["nullableSelectors"];
+    assert_eq!(expected["producerNullGroup"], "NullPointerException");
+    assert_eq!(expected["consumerNullGroup"], "NullPointerException");
+
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&ClientConfig::new("nullable-selectors"))
+        .await
+        .unwrap();
+    assert!(matches!(
+        runtime.select_producer_nullable(None),
+        Err(RuntimeError::InvalidRoute("null producer group"))
+    ));
+    assert!(matches!(
+        runtime.select_consumer_nullable(None),
+        Err(RuntimeError::InvalidRoute("null consumer group"))
+    ));
+    assert!(
+        runtime
+            .select_producer_nullable(Some("missing"))
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        runtime
+            .select_consumer_nullable(Some("missing"))
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(runtime.state(), RuntimeState::Created);
 }
 
 #[tokio::test]
