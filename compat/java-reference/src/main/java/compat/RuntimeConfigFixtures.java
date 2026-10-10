@@ -266,6 +266,19 @@ public final class RuntimeConfigFixtures {
             } catch (Throwable error) {
                 result.put("removeByNullIdAndInstance", error.getClass().getSimpleName());
             }
+            try {
+                manager.removeClientFactory(id, (org.apache.rocketmq.client.impl.factory.MQClientInstance) null);
+                result.put("removeByNullInstance", "RETURNED");
+            } catch (Throwable error) {
+                result.put("removeByNullInstance", error.getClass().getSimpleName());
+            }
+            try {
+                manager.removeClientFactory((String) null,
+                    (org.apache.rocketmq.client.impl.factory.MQClientInstance) null);
+                result.put("removeByNullIdAndNullInstance", "RETURNED");
+            } catch (Throwable error) {
+                result.put("removeByNullIdAndNullInstance", error.getClass().getSimpleName());
+            }
             result.put("liveSeesFirst", live.get(id) == first);
             manager.removeClientFactory(id);
             result.put("absentAfterUnconditional", !live.containsKey(id));
