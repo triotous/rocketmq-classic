@@ -178,17 +178,28 @@ fn local_host() -> io::Result<Address> {
 }
 
 #[cfg(unix)]
-fn eligible(name: &str, flags: u32, bridge: bool) -> bool {
+fn eligible(_name: &str, flags: u32, bridge: bool) -> bool {
     flags & libc::IFF_UP as u32 != 0
         && flags & libc::IFF_RUNNING as u32 != 0
         && flags & libc::IFF_POINTOPOINT as u32 == 0
-        && !name.contains(':')
         && !bridge
+}
+
+#[cfg(any(unix, test))]
+fn java_unix_interface_root_name(name: &str, alias_parent_accessible: bool) -> Option<&str> {
+    match name.split_once(':') {
+        Some((parent, _)) if !parent.is_empty() && alias_parent_accessible => Some(parent),
+        Some(_) => None,
+        None => Some(name),
+    }
 }
 
 #[cfg(unix)]
 fn interfaces() -> io::Result<Vec<Address>> {
-    use std::{ffi::CStr, ptr};
+    use std::{
+        ffi::{CStr, CString},
+        ptr,
+    };
     let mut first = ptr::null_mut();
     // SAFETY: getifaddrs writes an owned linked list; the guard releases it once.
     if unsafe { libc::getifaddrs(&mut first) } != 0 {
@@ -213,14 +224,29 @@ fn interfaces() -> io::Result<Vec<Address>> {
         if interface.ifa_addr.is_null() || interface.ifa_name.is_null() {
             continue;
         }
-        let name = unsafe { CStr::from_ptr(interface.ifa_name) }.to_string_lossy();
+        let native_name = unsafe { CStr::from_ptr(interface.ifa_name) }
+            .to_string_lossy()
+            .into_owned();
+        let alias_parent_accessible = if let Some((parent, _)) = native_name.split_once(':') {
+            let parent = CString::new(parent)
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+            // Java checks the parent with getFlags before attaching a logical
+            // alias address to its physical NetworkInterface.
+            (unsafe { libc::if_nametoindex(parent.as_ptr()) }) != 0
+        } else {
+            true
+        };
+        let Some(name) = java_unix_interface_root_name(&native_name, alias_parent_accessible)
+        else {
+            continue;
+        };
         let flags = interface.ifa_flags;
         let bridge = cfg!(target_os = "linux")
             && std::path::Path::new("/sys/class/net")
-                .join(name.as_ref())
+                .join(name)
                 .join("bridge")
                 .exists();
-        if !eligible(&name, flags, bridge) {
+        if !eligible(name, flags, bridge) {
             continue;
         }
         let family = unsafe { (*interface.ifa_addr).sa_family } as i32;
@@ -236,9 +262,13 @@ fn interfaces() -> io::Result<Vec<Address>> {
             libc::AF_INET6 => {
                 let socket = unsafe { &*(interface.ifa_addr as *const libc::sockaddr_in6) };
                 #[cfg(target_os = "linux")]
-                let scope = java_linux_ipv6_scope(socket.sin6_scope_id, unsafe {
-                    libc::if_nametoindex(interface.ifa_name)
-                });
+                let scope = {
+                    let name = CString::new(name)
+                        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+                    java_linux_ipv6_scope(socket.sin6_scope_id, unsafe {
+                        libc::if_nametoindex(name.as_ptr())
+                    })
+                };
                 #[cfg(not(target_os = "linux"))]
                 let scope = socket.sin6_scope_id;
                 Address {
@@ -246,7 +276,7 @@ fn interfaces() -> io::Result<Vec<Address>> {
                     scope,
                     // Java's Inet6Address stores the NetworkInterface itself
                     // for scoped addresses, so getHostAddress prints its name.
-                    scope_name: (scope != 0).then(|| name.to_string()),
+                    scope_name: (scope != 0).then(|| name.to_owned()),
                 }
             }
             _ => continue,
@@ -502,11 +532,6 @@ mod tests {
         assert!(!eligible("eth0", libc::IFF_UP as u32, false));
         assert!(!eligible("eth0", libc::IFF_RUNNING as u32, false));
         assert!(!eligible(
-            "eth0:1",
-            (libc::IFF_UP | libc::IFF_RUNNING) as u32,
-            false
-        ));
-        assert!(!eligible(
             "br0",
             (libc::IFF_UP | libc::IFF_RUNNING) as u32,
             true
@@ -516,6 +541,13 @@ mod tests {
             (libc::IFF_UP | libc::IFF_RUNNING | libc::IFF_POINTOPOINT) as u32,
             false
         ));
+    }
+    #[test]
+    fn unix_logical_alias_matches_java_parent_and_virtual_fallback() {
+        assert_eq!(java_unix_interface_root_name("eth0:1", true), Some("eth0"));
+        assert_eq!(java_unix_interface_root_name("eth0:1", false), None);
+        assert_eq!(java_unix_interface_root_name("eth0", false), Some("eth0"));
+        assert_eq!(java_unix_interface_root_name(":1", true), None);
     }
     #[test]
     fn fallback_only_runs_for_successful_empty_or_loopback_only_enumeration() {
