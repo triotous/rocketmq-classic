@@ -1353,8 +1353,10 @@ public final class RuntimeRouteFixtures {
             runtime.getProducerTable().put("producer", producer);
             String initial = "{\"queueDatas\":[],\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"old:10911\"}}],\"filterServerTable\":{}}";
             String invalid = "{\"queueDatas\":[],\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":null}],\"filterServerTable\":{}}";
+            String recovery = "{\"queueDatas\":[],\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"recovery-broker\",\"brokerAddrs\":{\"0\":\"recovered:10911\"}}],\"filterServerTable\":{}}";
             item.put("initialInput", com.alibaba.fastjson2.JSON.parseObject(initial));
             item.put("input", com.alibaba.fastjson2.JSON.parseObject(invalid));
+            item.put("recoveryInput", com.alibaba.fastjson2.JSON.parseObject(recovery));
             api.route = com.alibaba.fastjson2.JSON.parseObject(initial, TopicRouteData.class);
             item.put("initialChanged", runtime.updateTopicRouteInfoFromNameServer("topic"));
             item.put("consumerNeedChecksAfterInitial", consumerNeedChecks.get());
@@ -1372,6 +1374,14 @@ public final class RuntimeRouteFixtures {
             item.put("consumerNeedChecksAfterFailure", consumerNeedChecks.get());
             item.put("consumerUpdatesAfterFailure", consumerUpdates.get());
             item.put("producerUpdatesAfterFailure", producerUpdates.get());
+            api.route = com.alibaba.fastjson2.JSON.parseObject(recovery, TopicRouteData.class);
+            item.put("recoveryChanged", runtime.updateTopicRouteInfoFromNameServer("topic"));
+            item.put("recoveryOutcome", "OK");
+            item.put("recoveredRouteChanged", !before.equals(runtime.getAnExistTopicRouteData("topic")));
+            item.put("consumerNeedChecksAfterRecovery", consumerNeedChecks.get());
+            item.put("consumerUpdatesAfterRecovery", consumerUpdates.get());
+            item.put("producerUpdatesAfterRecovery", producerUpdates.get());
+            item.put("recoveredPublishAddress", runtime.findBrokerAddressInPublish("recovery-broker"));
         } finally {
             java.lang.reflect.Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
                 org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
