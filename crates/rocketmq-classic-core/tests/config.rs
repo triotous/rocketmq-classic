@@ -463,7 +463,25 @@ async fn active_nameserver_addresses_remain_constructor_snapshot_after_config_mu
 
 #[tokio::test]
 async fn start_uses_live_nameserver_null_check_but_keeps_constructor_address_snapshot() {
-    use rocketmq_classic_core::runtime::ClientRuntimeManager;
+    use rocketmq_classic_core::{namesrv::TopAddressing, runtime::ClientRuntimeManager};
+    use std::{
+        future::Future,
+        pin::Pin,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+    };
+
+    struct CountingAddressing(Arc<AtomicUsize>);
+    impl TopAddressing for CountingAddressing {
+        fn fetch_ns_addr(&self) -> Pin<Box<dyn Future<Output = Option<String>> + Send + '_>> {
+            Box::pin(async move {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                None
+            })
+        }
+    }
 
     let fixture: Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/start.json")).unwrap();
@@ -479,10 +497,13 @@ async fn start_uses_live_nameserver_null_check_but_keeps_constructor_address_sna
     config.instance_name = Some("phase6-start-nameserver-mutation".into());
     config.namesrv_addr = None;
     config.enable_heartbeat_channel_event_listener = false;
-    let runtime = ClientRuntimeManager::new()
-        .get_or_create(&config)
-        .await
-        .unwrap();
+    let fetch_calls = Arc::new(AtomicUsize::new(0));
+    let runtime = ClientRuntimeManager::with_top_addressing(Arc::new(CountingAddressing(
+        fetch_calls.clone(),
+    )))
+    .get_or_create(&config)
+    .await
+    .unwrap();
     assert_eq!(runtime.remoting().get_name_server_address_list(), None);
     runtime.config().write().unwrap().set_namesrv_addr(Some(
         java_case["namesrvAddrAtStart"].as_str().unwrap().to_owned(),
@@ -493,6 +514,10 @@ async fn start_uses_live_nameserver_null_check_but_keeps_constructor_address_sna
     );
 
     runtime.start().await.unwrap();
+    assert_eq!(
+        fetch_calls.load(Ordering::SeqCst),
+        java_case["discoveryCalls"]
+    );
     assert!(runtime.name_server_addr().is_none());
     assert_eq!(runtime.remoting().get_name_server_address_list(), None);
     assert!(runtime.shutdown().await.unwrap());
