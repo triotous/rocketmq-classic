@@ -83,7 +83,7 @@ Write the failing check/oracle fixture before its implementation. The cases belo
 
 ### 5.1 Local commands after implementation
 
-Verified 2026-10-09. The first sandboxed full-workspace run was blocked only on three loopback binds; rerunning with local socket access passed. See the [requirement audit](../../docs/compatibility/PHASE_6_REQUIREMENT_AUDIT.md) for per-ID evidence and fixture provenance.
+Verified 2026-10-10 after the result API parity corrections. The full locked workspace/all-target suite, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios and cross-decodes), comparator self-test/manifest22, formatting, and diff checks pass. These are local-only checks; **P6-V04 remains a Phase 19 handoff**, not a Phase 6 gate. See the [requirement audit](../../docs/compatibility/PHASE_6_REQUIREMENT_AUDIT.md) for per-ID evidence and fixture provenance.
 
 ```bash
 cargo test --workspace --all-targets --locked

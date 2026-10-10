@@ -2669,8 +2669,8 @@ Before claiming v1.0 compatibility, all of the following must be true:
 - [ ] Orderly consumption lock lifecycle passes multi-consumer tests.
 - [ ] Transaction commit/rollback/check works against Broker 5.3.4.
 - [ ] Request/reply completes exactly once under timeout races.
-- [ ] Runtime concurrent construction regression test passes.
-- [ ] start/shutdown stress tests show no owned-task/connection leaks.
+- [x] Runtime concurrent construction regression test passes.
+- [x] start/shutdown stress tests show no owned-task/connection leaks.
 - [ ] Every Java TLS/auth path has source/unit coverage and applicable Phase 19 interoperability evidence.
 - [ ] Every Java 5.5.1 public client setting/feature/flow is implemented with complete evidence; reverse audit finds no extra Rust public setting/feature.
 - [ ] All locally executable tests ran in Phase 19; required non-local manual evidence passed and no unresolved parity gap remains.
