@@ -8,8 +8,8 @@ use tokio::sync::Mutex as AsyncMutex;
 use rocketmq_classic_remoting::client::RpcHook;
 
 use super::{
-    ClientRuntime, RuntimeError, TableEntryViewPredicate, TableKeyViewPredicate,
-    TableValueViewPredicate,
+    ClientRuntime, RuntimeError, TableCompute, TableComputeIfAbsent, TableComputeIfPresent,
+    TableEntryViewPredicate, TableKeyViewPredicate, TableMerge, TableValueViewPredicate,
 };
 use crate::config::ClientConfig;
 
@@ -665,6 +665,23 @@ impl FactoryTable {
         Ok(Some(previous.unwrap_or(value)))
     }
 
+    /// Nullable Java-compatible `computeIfAbsent` key/function boundary.
+    pub async fn compute_if_absent_nullable(
+        &self,
+        key: Option<&str>,
+        mapping: Option<&mut TableComputeIfAbsent<'_, Arc<ClientRuntime>>>,
+    ) -> Result<Option<Arc<ClientRuntime>>, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null factory key"));
+        };
+        let Some(mapping) = mapping else {
+            return Err(RuntimeError::InvalidRoute(
+                "null factory remapping function",
+            ));
+        };
+        self.compute_if_absent(key, |key| mapping(key)).await
+    }
+
     pub async fn compute_if_present(
         &self,
         key: impl Into<String>,
@@ -686,6 +703,24 @@ impl FactoryTable {
                 Ok(None)
             }
         }
+    }
+
+    /// Nullable Java-compatible `computeIfPresent` key/function boundary.
+    pub async fn compute_if_present_nullable(
+        &self,
+        key: Option<&str>,
+        remapping: Option<&mut TableComputeIfPresent<'_, Arc<ClientRuntime>>>,
+    ) -> Result<Option<Arc<ClientRuntime>>, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null factory key"));
+        };
+        let Some(remapping) = remapping else {
+            return Err(RuntimeError::InvalidRoute(
+                "null factory remapping function",
+            ));
+        };
+        self.compute_if_present(key, |key, value| remapping(key, value))
+            .await
     }
 
     pub async fn compute(
@@ -715,6 +750,24 @@ impl FactoryTable {
         }
     }
 
+    /// Nullable Java-compatible `compute` key/function boundary.
+    pub async fn compute_nullable(
+        &self,
+        key: Option<&str>,
+        remapping: Option<&mut TableCompute<'_, Arc<ClientRuntime>>>,
+    ) -> Result<Option<Arc<ClientRuntime>>, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null factory key"));
+        };
+        let Some(remapping) = remapping else {
+            return Err(RuntimeError::InvalidRoute(
+                "null factory remapping function",
+            ));
+        };
+        self.compute(key, |key, current| remapping(key, current))
+            .await
+    }
+
     pub async fn merge(
         &self,
         key: impl Into<String>,
@@ -741,6 +794,28 @@ impl FactoryTable {
                 Ok(None)
             }
         }
+    }
+
+    /// Nullable Java-compatible `merge` key/value/function boundary.
+    pub async fn merge_nullable(
+        &self,
+        key: Option<&str>,
+        value: Option<Arc<ClientRuntime>>,
+        remapping: Option<&mut TableMerge<'_, Arc<ClientRuntime>>>,
+    ) -> Result<Option<Arc<ClientRuntime>>, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null factory key"));
+        };
+        let Some(value) = value else {
+            return Err(RuntimeError::InvalidRoute("null factory value"));
+        };
+        let Some(remapping) = remapping else {
+            return Err(RuntimeError::InvalidRoute(
+                "null factory remapping function",
+            ));
+        };
+        self.merge(key, value, |current, next| remapping(current, next))
+            .await
     }
 
     /// Visits the keys in a detached snapshot with Java
@@ -1008,7 +1083,7 @@ impl FactoryKeySetView {
     /// Nullable Java-compatible `removeIf` predicate boundary.
     pub async fn remove_if_nullable(
         &self,
-        predicate: Option<&mut TableKeyViewPredicate>,
+        predicate: Option<&mut TableKeyViewPredicate<'_>>,
     ) -> Result<usize, RuntimeError> {
         let Some(predicate) = predicate else {
             return Err(RuntimeError::InvalidRoute("null factory view predicate"));
@@ -1122,7 +1197,7 @@ impl FactoryValuesView {
     /// Nullable Java-compatible `removeIf` predicate boundary.
     pub async fn remove_if_nullable(
         &self,
-        predicate: Option<&mut TableValueViewPredicate<Arc<ClientRuntime>>>,
+        predicate: Option<&mut TableValueViewPredicate<'_, Arc<ClientRuntime>>>,
     ) -> Result<usize, RuntimeError> {
         let Some(predicate) = predicate else {
             return Err(RuntimeError::InvalidRoute("null factory view predicate"));
@@ -1314,7 +1389,7 @@ impl FactoryEntrySetView {
     /// Nullable Java-compatible `removeIf` predicate boundary.
     pub async fn remove_if_nullable(
         &self,
-        predicate: Option<&mut TableEntryViewPredicate<Arc<ClientRuntime>>>,
+        predicate: Option<&mut TableEntryViewPredicate<'_, Arc<ClientRuntime>>>,
     ) -> Result<usize, RuntimeError> {
         let Some(predicate) = predicate else {
             return Err(RuntimeError::InvalidRoute("null factory view predicate"));

@@ -32,10 +32,14 @@ pub use tables::{
     ProducerTable, ProducerValuesView,
 };
 
-/// Nullable collection-view callback types used by the live runtime tables.
-pub type TableKeyViewPredicate = dyn FnMut(&str) -> bool;
-pub type TableValueViewPredicate<T> = dyn FnMut(&T) -> bool;
-pub type TableEntryViewPredicate<T> = dyn FnMut(&str, &T) -> bool;
+/// Callback aliases used by nullable live runtime table adapters.
+pub type TableKeyViewPredicate<'a> = dyn FnMut(&str) -> bool + 'a;
+pub type TableValueViewPredicate<'a, T> = dyn FnMut(&T) -> bool + 'a;
+pub type TableEntryViewPredicate<'a, T> = dyn FnMut(&str, &T) -> bool + 'a;
+pub type TableComputeIfAbsent<'a, T> = dyn FnMut(&str) -> Option<T> + 'a;
+pub type TableComputeIfPresent<'a, T> = dyn FnMut(&str, &T) -> Option<T> + 'a;
+pub type TableCompute<'a, T> = dyn FnMut(&str, Option<&T>) -> Option<T> + 'a;
+pub type TableMerge<'a, T> = dyn FnMut(&T, &T) -> Option<T> + 'a;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RuntimeError {

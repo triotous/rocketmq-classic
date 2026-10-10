@@ -1,7 +1,7 @@
 use super::{
-    ClientRuntime, ConsumerRuntime, ProducerRuntime, RuntimeError, RuntimeState,
-    TableEntryViewPredicate, TableKeyViewPredicate, TableValueViewPredicate,
-    registry::GroupRegistry,
+    ClientRuntime, ConsumerRuntime, ProducerRuntime, RuntimeError, RuntimeState, TableCompute,
+    TableComputeIfAbsent, TableComputeIfPresent, TableEntryViewPredicate, TableKeyViewPredicate,
+    TableMerge, TableValueViewPredicate, registry::GroupRegistry,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -477,6 +477,20 @@ macro_rules! table {
                     .await?;
                 Ok(Some(Self::previous(change).unwrap_or(value)))
             }
+            /// Nullable Java-compatible `computeIfAbsent` key/function boundary.
+            pub async fn compute_if_absent_nullable(
+                &self,
+                key: Option<&str>,
+                mapping: Option<&mut TableComputeIfAbsent<'_, Arc<dyn $owner>>>,
+            ) -> Result<Option<Arc<dyn $owner>>, RuntimeError> {
+                let Some(key) = key else {
+                    return Err(RuntimeError::InvalidRoute($null_group));
+                };
+                let Some(mapping) = mapping else {
+                    return Err(RuntimeError::InvalidRoute("null table remapping function"));
+                };
+                self.compute_if_absent(key, |key| mapping(key)).await
+            }
             pub async fn compute_if_present(
                 &self,
                 key: impl Into<String>,
@@ -508,6 +522,21 @@ macro_rules! table {
                 };
                 self.0.mutate_with_gate(mutation, Some(gate)).await?;
                 Ok(result)
+            }
+            /// Nullable Java-compatible `computeIfPresent` key/function boundary.
+            pub async fn compute_if_present_nullable(
+                &self,
+                key: Option<&str>,
+                remapping: Option<&mut TableComputeIfPresent<'_, Arc<dyn $owner>>>,
+            ) -> Result<Option<Arc<dyn $owner>>, RuntimeError> {
+                let Some(key) = key else {
+                    return Err(RuntimeError::InvalidRoute($null_group));
+                };
+                let Some(remapping) = remapping else {
+                    return Err(RuntimeError::InvalidRoute("null table remapping function"));
+                };
+                self.compute_if_present(key, |key, value| remapping(key, value))
+                    .await
             }
             pub async fn compute(
                 &self,
@@ -552,6 +581,21 @@ macro_rules! table {
                 self.0.mutate_with_gate(mutation, Some(gate)).await?;
                 Ok(result)
             }
+            /// Nullable Java-compatible `compute` key/function boundary.
+            pub async fn compute_nullable(
+                &self,
+                key: Option<&str>,
+                remapping: Option<&mut TableCompute<'_, Arc<dyn $owner>>>,
+            ) -> Result<Option<Arc<dyn $owner>>, RuntimeError> {
+                let Some(key) = key else {
+                    return Err(RuntimeError::InvalidRoute($null_group));
+                };
+                let Some(remapping) = remapping else {
+                    return Err(RuntimeError::InvalidRoute("null table remapping function"));
+                };
+                self.compute(key, |key, current| remapping(key, current))
+                    .await
+            }
             pub async fn merge(
                 &self,
                 key: impl Into<String>,
@@ -595,6 +639,25 @@ macro_rules! table {
                 };
                 self.0.mutate_with_gate(mutation, Some(gate)).await?;
                 Ok(result)
+            }
+            /// Nullable Java-compatible `merge` key/value/function boundary.
+            pub async fn merge_nullable(
+                &self,
+                key: Option<&str>,
+                value: Option<Arc<dyn $owner>>,
+                remapping: Option<&mut TableMerge<'_, Arc<dyn $owner>>>,
+            ) -> Result<Option<Arc<dyn $owner>>, RuntimeError> {
+                let Some(key) = key else {
+                    return Err(RuntimeError::InvalidRoute($null_group));
+                };
+                let Some(value) = value else {
+                    return Err(RuntimeError::InvalidRoute($null_value));
+                };
+                let Some(remapping) = remapping else {
+                    return Err(RuntimeError::InvalidRoute("null table remapping function"));
+                };
+                self.merge(key, value, |current, next| remapping(current, next))
+                    .await
             }
             /// Visits the keys in a detached snapshot and applies the
             /// ConcurrentHashMap.replaceAll callback contract. The callback
@@ -723,7 +786,7 @@ macro_rules! table_views {
             /// Nullable Java-compatible `removeIf` predicate boundary.
             pub async fn remove_if_nullable(
                 &self,
-                predicate: Option<&mut TableKeyViewPredicate>,
+                predicate: Option<&mut TableKeyViewPredicate<'_>>,
             ) -> Result<usize, RuntimeError> {
                 let Some(predicate) = predicate else {
                     return Err(RuntimeError::InvalidRoute("null table view predicate"));
@@ -838,7 +901,7 @@ macro_rules! table_views {
             /// Nullable Java-compatible `removeIf` predicate boundary.
             pub async fn remove_if_nullable(
                 &self,
-                predicate: Option<&mut TableValueViewPredicate<Arc<dyn $owner>>>,
+                predicate: Option<&mut TableValueViewPredicate<'_, Arc<dyn $owner>>>,
             ) -> Result<usize, RuntimeError> {
                 let Some(predicate) = predicate else {
                     return Err(RuntimeError::InvalidRoute("null table view predicate"));
@@ -1058,7 +1121,7 @@ macro_rules! table_views {
             /// Nullable Java-compatible `removeIf` predicate boundary.
             pub async fn remove_if_nullable(
                 &self,
-                predicate: Option<&mut TableEntryViewPredicate<Arc<dyn $owner>>>,
+                predicate: Option<&mut TableEntryViewPredicate<'_, Arc<dyn $owner>>>,
             ) -> Result<usize, RuntimeError> {
                 let Some(predicate) = predicate else {
                     return Err(RuntimeError::InvalidRoute("null table view predicate"));

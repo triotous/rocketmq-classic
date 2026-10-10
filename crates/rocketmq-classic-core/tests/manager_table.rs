@@ -383,6 +383,139 @@ async fn nullable_factory_table_views_match_invoked_java_null_inputs() {
 }
 
 #[tokio::test]
+async fn nullable_factory_remapping_inputs_match_invoked_java_null_failures() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = &fixture["managerTable"]["nullableRemappingInputs"];
+    for key in [
+        "factoryComputeIfAbsentNullKey",
+        "factoryComputeIfAbsentNullFunction",
+        "factoryComputeIfPresentNullKey",
+        "factoryComputeIfPresentNullFunction",
+        "factoryComputeNullKey",
+        "factoryComputeNullFunction",
+        "factoryMergeNullKey",
+        "factoryMergeNullValue",
+        "factoryMergeNullFunction",
+    ] {
+        assert_eq!(java[key], "NullPointerException", "{key}");
+    }
+
+    macro_rules! assert_null {
+        ($operation:expr, $message:literal) => {
+            assert!(matches!(
+                $operation,
+                Err(RuntimeError::InvalidRoute($message))
+            ));
+        };
+    }
+
+    let manager = ClientRuntimeManager::new();
+    let table = manager.factory_table();
+    let first = manager
+        .get_or_create(&ClientConfig::new("nullable-factory-remapping-first"))
+        .await
+        .unwrap();
+    let second = manager
+        .get_or_create(&ClientConfig::new("nullable-factory-remapping-second"))
+        .await
+        .unwrap();
+    let initial_keys: BTreeSet<_> = table.snapshot().unwrap().into_keys().collect();
+    let mut if_absent = |_: &str| Some(first.clone());
+    let mut if_present = |_: &str, _: &Arc<_>| Some(second.clone());
+    let mut compute = |_: &str, _: Option<&Arc<_>>| Some(first.clone());
+    let mut merge = |_: &Arc<_>, _: &Arc<_>| Some(second.clone());
+
+    assert_null!(
+        table
+            .compute_if_absent_nullable(None, Some(&mut if_absent))
+            .await,
+        "null factory key"
+    );
+    assert_null!(
+        table.compute_if_absent_nullable(Some("key"), None).await,
+        "null factory remapping function"
+    );
+    assert_null!(
+        table
+            .compute_if_present_nullable(None, Some(&mut if_present))
+            .await,
+        "null factory key"
+    );
+    assert_null!(
+        table.compute_if_present_nullable(Some("key"), None).await,
+        "null factory remapping function"
+    );
+    assert_null!(
+        table.compute_nullable(None, Some(&mut compute)).await,
+        "null factory key"
+    );
+    assert_null!(
+        table.compute_nullable(Some("key"), None).await,
+        "null factory remapping function"
+    );
+    assert_null!(
+        table
+            .merge_nullable(None, Some(first.clone()), Some(&mut merge))
+            .await,
+        "null factory key"
+    );
+    assert_null!(
+        table
+            .merge_nullable(Some("key"), None, Some(&mut merge))
+            .await,
+        "null factory value"
+    );
+    assert_null!(
+        table
+            .merge_nullable(Some("key"), Some(first.clone()), None)
+            .await,
+        "null factory remapping function"
+    );
+    assert_eq!(
+        table
+            .snapshot()
+            .unwrap()
+            .into_keys()
+            .collect::<BTreeSet<_>>(),
+        initial_keys
+    );
+
+    assert!(Arc::ptr_eq(
+        &table
+            .compute_if_absent_nullable(Some("remapping"), Some(&mut if_absent))
+            .await
+            .unwrap()
+            .unwrap(),
+        &first
+    ));
+    assert!(Arc::ptr_eq(
+        &table
+            .compute_if_present_nullable(Some("remapping"), Some(&mut if_present))
+            .await
+            .unwrap()
+            .unwrap(),
+        &second
+    ));
+    assert!(Arc::ptr_eq(
+        &table
+            .compute_nullable(Some("remapping"), Some(&mut compute))
+            .await
+            .unwrap()
+            .unwrap(),
+        &first
+    ));
+    assert!(Arc::ptr_eq(
+        &table
+            .merge_nullable(Some("remapping"), Some(second.clone()), Some(&mut merge))
+            .await
+            .unwrap()
+            .unwrap(),
+        &second
+    ));
+}
+
+#[tokio::test]
 async fn nullable_manager_removal_overloads_match_invoked_java_null_key_failures() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();

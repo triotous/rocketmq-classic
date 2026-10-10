@@ -751,6 +751,30 @@ public final class RuntimeConfigFixtures {
         return result;
     }
 
+    private static <T> Map<String, Object> nullableRemappingInputs(String prefix,
+        java.util.concurrent.ConcurrentMap<String, T> table, T value) {
+        Map<String, Object> result = new TreeMap<>();
+        captureThrowable(result, prefix + "ComputeIfAbsentNullKey",
+            () -> table.computeIfAbsent(null, key -> value));
+        captureThrowable(result, prefix + "ComputeIfAbsentNullFunction",
+            () -> table.computeIfAbsent("null-compute-if-absent-function", null));
+        captureThrowable(result, prefix + "ComputeIfPresentNullKey",
+            () -> table.computeIfPresent(null, (key, current) -> value));
+        captureThrowable(result, prefix + "ComputeIfPresentNullFunction",
+            () -> table.computeIfPresent("null-compute-if-present-function", null));
+        captureThrowable(result, prefix + "ComputeNullKey",
+            () -> table.compute(null, (key, current) -> value));
+        captureThrowable(result, prefix + "ComputeNullFunction",
+            () -> table.compute("null-compute-function", null));
+        captureThrowable(result, prefix + "MergeNullKey",
+            () -> table.merge(null, value, (current, next) -> next));
+        captureThrowable(result, prefix + "MergeNullValue",
+            () -> table.merge("null-merge-value", null, (current, next) -> next));
+        captureThrowable(result, prefix + "MergeNullFunction",
+            () -> table.merge("null-merge-function", value, null));
+        return result;
+    }
+
     private static Map<String, Object> managerTable(ClientConfig config) throws Exception {
         org.apache.rocketmq.client.impl.MQClientManager manager = org.apache.rocketmq.client.impl.MQClientManager.getInstance();
         java.util.concurrent.ConcurrentMap<String, org.apache.rocketmq.client.impl.factory.MQClientInstance> live = manager.getFactoryTable();
@@ -792,6 +816,7 @@ public final class RuntimeConfigFixtures {
                 live.getOrDefault("missing-null-default", null) == null ? "NULL" : "OTHER");
             result.put("nullableTableViewInputs", nullableTableViewInputs("factory", keyView,
                 valuesView, entryView, id, second));
+            result.put("nullableRemappingInputs", nullableRemappingInputs("factory", live, first));
             Map<String, Object> nullableTableMutations = new TreeMap<>();
             captureThrowable(nullableTableMutations, "factoryPutNullKey", () -> live.put(null, first));
             captureThrowable(nullableTableMutations, "factoryPutNullValue", () -> live.put("null-put-value", null));
@@ -1550,6 +1575,9 @@ public final class RuntimeConfigFixtures {
                 "consumer", nullableTableViewInputs("consumer", runtime.getConsumerTable().keySet(),
                     runtime.getConsumerTable().values(), runtime.getConsumerTable().entrySet(),
                     "nullable-default-present", consumerA)));
+            result.put("nullableRemappingInputs", Map.of(
+                "producer", nullableRemappingInputs("producer", runtime.getProducerTable(), producerA),
+                "consumer", nullableRemappingInputs("consumer", runtime.getConsumerTable(), consumerA)));
             Map<String, Object> nullableTableMutations = new TreeMap<>();
             captureThrowable(nullableTableMutations, "producerPutNullKey",
                 () -> runtime.getProducerTable().put(null, producerA));

@@ -742,6 +742,240 @@ async fn nullable_registry_table_views_match_invoked_java_null_inputs() {
 }
 
 #[tokio::test]
+async fn nullable_registry_remapping_inputs_match_invoked_java_null_failures() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = &fixture["registryTables"]["nullableRemappingInputs"];
+
+    macro_rules! check_java {
+        ($prefix:literal, $expected:expr) => {{
+            for suffix in [
+                "ComputeIfAbsentNullKey",
+                "ComputeIfAbsentNullFunction",
+                "ComputeIfPresentNullKey",
+                "ComputeIfPresentNullFunction",
+                "ComputeNullKey",
+                "ComputeNullFunction",
+                "MergeNullKey",
+                "MergeNullValue",
+                "MergeNullFunction",
+            ] {
+                let key = format!("{}{}", $prefix, suffix);
+                assert_eq!($expected[&key], "NullPointerException", "{key}");
+            }
+        }};
+    }
+    macro_rules! assert_null {
+        ($operation:expr, $message:literal) => {
+            assert!(matches!(
+                $operation,
+                Err(RuntimeError::InvalidRoute($message))
+            ));
+        };
+    }
+
+    check_java!("producer", &java["producer"]);
+    check_java!("consumer", &java["consumer"]);
+
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&ClientConfig::new("nullable-registry-remapping-inputs"))
+        .await
+        .unwrap();
+    let producer_table = runtime.producer_table();
+    let consumer_table = runtime.consumer_table();
+    let producer_a: Arc<dyn ProducerRuntime> = Arc::new(Producer);
+    let producer_b: Arc<dyn ProducerRuntime> = Arc::new(Producer);
+    let consumer_a: Arc<dyn ConsumerRuntime> = Arc::new(Consumer);
+    let consumer_b: Arc<dyn ConsumerRuntime> = Arc::new(Consumer);
+
+    let mut producer_if_absent = |_: &str| Some(producer_a.clone());
+    let mut producer_if_present = |_: &str, _: &Arc<dyn ProducerRuntime>| Some(producer_b.clone());
+    let mut producer_compute =
+        |_: &str, _: Option<&Arc<dyn ProducerRuntime>>| Some(producer_a.clone());
+    let mut producer_merge =
+        |_: &Arc<dyn ProducerRuntime>, _: &Arc<dyn ProducerRuntime>| Some(producer_b.clone());
+    assert_null!(
+        producer_table
+            .compute_if_absent_nullable(None, Some(&mut producer_if_absent))
+            .await,
+        "null producer group"
+    );
+    assert_null!(
+        producer_table
+            .compute_if_absent_nullable(Some("key"), None)
+            .await,
+        "null table remapping function"
+    );
+    assert_null!(
+        producer_table
+            .compute_if_present_nullable(None, Some(&mut producer_if_present))
+            .await,
+        "null producer group"
+    );
+    assert_null!(
+        producer_table
+            .compute_if_present_nullable(Some("key"), None)
+            .await,
+        "null table remapping function"
+    );
+    assert_null!(
+        producer_table
+            .compute_nullable(None, Some(&mut producer_compute))
+            .await,
+        "null producer group"
+    );
+    assert_null!(
+        producer_table.compute_nullable(Some("key"), None).await,
+        "null table remapping function"
+    );
+    assert_null!(
+        producer_table
+            .merge_nullable(None, Some(producer_a.clone()), Some(&mut producer_merge))
+            .await,
+        "null producer group"
+    );
+    assert_null!(
+        producer_table
+            .merge_nullable(Some("key"), None, Some(&mut producer_merge))
+            .await,
+        "null producer value"
+    );
+    assert_null!(
+        producer_table
+            .merge_nullable(Some("key"), Some(producer_a.clone()), None)
+            .await,
+        "null table remapping function"
+    );
+
+    let mut consumer_if_absent = |_: &str| Some(consumer_a.clone());
+    let mut consumer_if_present = |_: &str, _: &Arc<dyn ConsumerRuntime>| Some(consumer_b.clone());
+    let mut consumer_compute =
+        |_: &str, _: Option<&Arc<dyn ConsumerRuntime>>| Some(consumer_a.clone());
+    let mut consumer_merge =
+        |_: &Arc<dyn ConsumerRuntime>, _: &Arc<dyn ConsumerRuntime>| Some(consumer_b.clone());
+    assert_null!(
+        consumer_table
+            .compute_if_absent_nullable(None, Some(&mut consumer_if_absent))
+            .await,
+        "null consumer group"
+    );
+    assert_null!(
+        consumer_table
+            .compute_if_absent_nullable(Some("key"), None)
+            .await,
+        "null table remapping function"
+    );
+    assert_null!(
+        consumer_table
+            .compute_if_present_nullable(None, Some(&mut consumer_if_present))
+            .await,
+        "null consumer group"
+    );
+    assert_null!(
+        consumer_table
+            .compute_if_present_nullable(Some("key"), None)
+            .await,
+        "null table remapping function"
+    );
+    assert_null!(
+        consumer_table
+            .compute_nullable(None, Some(&mut consumer_compute))
+            .await,
+        "null consumer group"
+    );
+    assert_null!(
+        consumer_table.compute_nullable(Some("key"), None).await,
+        "null table remapping function"
+    );
+    assert_null!(
+        consumer_table
+            .merge_nullable(None, Some(consumer_a.clone()), Some(&mut consumer_merge))
+            .await,
+        "null consumer group"
+    );
+    assert_null!(
+        consumer_table
+            .merge_nullable(Some("key"), None, Some(&mut consumer_merge))
+            .await,
+        "null consumer value"
+    );
+    assert_null!(
+        consumer_table
+            .merge_nullable(Some("key"), Some(consumer_a.clone()), None)
+            .await,
+        "null table remapping function"
+    );
+
+    assert!(producer_table.is_empty().unwrap());
+    assert!(consumer_table.is_empty().unwrap());
+    assert!(same(
+        producer_table
+            .compute_if_absent_nullable(Some("remapping"), Some(&mut producer_if_absent))
+            .await
+            .unwrap(),
+        &producer_a
+    ));
+    assert!(same(
+        producer_table
+            .compute_if_present_nullable(Some("remapping"), Some(&mut producer_if_present))
+            .await
+            .unwrap(),
+        &producer_b
+    ));
+    assert!(same(
+        producer_table
+            .compute_nullable(Some("remapping"), Some(&mut producer_compute))
+            .await
+            .unwrap(),
+        &producer_a
+    ));
+    assert!(same(
+        producer_table
+            .merge_nullable(
+                Some("remapping"),
+                Some(producer_b.clone()),
+                Some(&mut producer_merge)
+            )
+            .await
+            .unwrap(),
+        &producer_b
+    ));
+    assert!(same(
+        consumer_table
+            .compute_if_absent_nullable(Some("remapping"), Some(&mut consumer_if_absent))
+            .await
+            .unwrap(),
+        &consumer_a
+    ));
+    assert!(same(
+        consumer_table
+            .compute_if_present_nullable(Some("remapping"), Some(&mut consumer_if_present))
+            .await
+            .unwrap(),
+        &consumer_b
+    ));
+    assert!(same(
+        consumer_table
+            .compute_nullable(Some("remapping"), Some(&mut consumer_compute))
+            .await
+            .unwrap(),
+        &consumer_a
+    ));
+    assert!(same(
+        consumer_table
+            .merge_nullable(
+                Some("remapping"),
+                Some(consumer_b.clone()),
+                Some(&mut consumer_merge)
+            )
+            .await
+            .unwrap(),
+        &consumer_b
+    ));
+    assert_eq!(runtime.state(), RuntimeState::Created);
+}
+
+#[tokio::test]
 async fn conditional_registry_mutations_match_java_custom_value_equality() {
     struct EqualProducer(&'static str);
     impl ProducerRuntime for EqualProducer {
