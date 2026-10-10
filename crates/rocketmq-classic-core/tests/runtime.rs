@@ -290,6 +290,121 @@ async fn registered_consumer_accepts_null_static_route_queue_list_like_java() {
 }
 
 #[tokio::test]
+async fn registered_consumer_nested_route_collection_outcomes_match_invoked_java() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/route.json")).unwrap();
+    let cases = fixture["runtimeRouteNestedCollectionConsumers"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 5);
+
+    for case in cases {
+        let id = case["id"].as_str().unwrap().to_owned();
+        let body = serde_json::to_vec(&case["input"]).unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mut config = ClientConfig::new(format!("route-nested-consumer-{id}"));
+        config.namesrv_addr = Some(listener.local_addr().unwrap().to_string());
+        let runtime = ClientRuntimeManager::new()
+            .get_or_create(&config)
+            .await
+            .unwrap();
+        let consumer = Arc::new(RouteObserver {
+            runtime: Arc::downgrade(&runtime),
+            updates: AtomicUsize::new(0),
+            needed: AtomicBool::new(false),
+            need_checks: AtomicUsize::new(0),
+        });
+        runtime
+            .register_consumer("consumer", consumer.clone())
+            .await
+            .unwrap();
+        runtime.remoting().start().unwrap();
+        let peer_id = id.clone();
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut length = [0; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut bytes = BytesMut::from(&length[..]);
+            bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut bytes[4..]).await.unwrap();
+            let request = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
+                .unwrap()
+                .unwrap();
+            assert_eq!(request.code, request::GET_ROUTEINFO_BY_TOPIC, "{peer_id}");
+            let mut reply = RemotingCommand {
+                code: 0,
+                opaque: request.opaque,
+                body: Some(body),
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .await
+                .unwrap();
+        });
+
+        let result = runtime
+            .update_topic_route("topic", Instant::now() + Duration::from_secs(2))
+            .await;
+        assert_eq!(result.is_ok(), case["outcome"] == "OK", "{id}: {result:?}");
+        if let Ok(changed) = result {
+            assert_eq!(changed, case["changed"], "{id}");
+        }
+
+        let snapshot = runtime.route_snapshot().unwrap();
+        assert_eq!(
+            snapshot.raw_routes.contains_key("topic"),
+            case["cached"],
+            "{id}"
+        );
+        if let Some(cached) = snapshot.raw_routes.get("topic") {
+            let cached = cached.snapshot().unwrap();
+            assert_eq!(
+                cached
+                    .queue_datas_snapshot()
+                    .map_or(-1, |rows| rows.len() as i64),
+                case["cachedQueueCount"],
+                "{id}"
+            );
+            assert_eq!(
+                cached
+                    .broker_datas_snapshot()
+                    .map_or(-1, |rows| rows.len() as i64),
+                case["cachedBrokerCount"],
+                "{id}"
+            );
+            assert_eq!(
+                cached
+                    .filter_server_table_snapshot()
+                    .map_or(-1, |rows| rows.len() as i64),
+                case["cachedFilterCount"],
+                "{id}"
+            );
+            assert_eq!(
+                cached
+                    .topic_queue_mapping_by_broker_snapshot()
+                    .map_or(-1, |rows| rows.len() as i64),
+                case["cachedMappingCount"],
+                "{id}"
+            );
+        }
+        assert_eq!(
+            consumer.need_checks.load(Ordering::SeqCst),
+            case["consumerNeedChecks"],
+            "{id}"
+        );
+        assert_eq!(
+            consumer.updates.load(Ordering::SeqCst),
+            case["consumerUpdates"],
+            "{id}"
+        );
+        peer.await.unwrap();
+        runtime.remoting().shutdown().await;
+    }
+}
+
+#[tokio::test]
 async fn all_topic_refresh_unions_registered_topics_and_continues_after_rejection() {
     use rocketmq_classic_protocol::heartbeat::{ConsumerData, SubscriptionData};
     use std::collections::BTreeSet;
