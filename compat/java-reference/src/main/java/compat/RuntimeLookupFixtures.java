@@ -49,7 +49,7 @@ public final class RuntimeLookupFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "MQClientInstance.findBrokerAddrByTopic/BrokerData.selectBrokerAddr/QueryAssignmentResponseBody.decode/GetConsumerListByGroupResponseBody.decode/ResetOffsetBody.decode/encode/GetConsumerStatusBody.decode/encode/BatchAckMessageRequestBody.decode/encode and public DTO constructor/getter/setter/toString methods");
+        fixture.put("entrypoint", "MQClientInstance.findBrokerAddrByTopic/MQClientInstance.startScheduledTask registration/BrokerData.selectBrokerAddr/QueryAssignmentResponseBody.decode/GetConsumerListByGroupResponseBody.decode/ResetOffsetBody.decode/encode/GetConsumerStatusBody.decode/encode/BatchAckMessageRequestBody.decode/encode and public DTO constructor/getter/setter/toString methods");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
         String assignment = "{\"messageQueue\":{\"topic\":\"topic\",\"brokerName\":\"broker\",\"queueId\":2},\"mode\":\"POP\",\"attachments\":{\"key\":\"value\"}}";
@@ -107,6 +107,7 @@ public final class RuntimeLookupFixtures {
         fixture.put("batchAckBodyInputCases", batchAckBodyInputCases());
         fixture.put("batchAckApiCase", batchAckApiCase());
         fixture.put("batchAckBitSetCapacityCase", batchAckBitSetCapacityCase());
+        fixture.put("runtimeScheduledTaskCases", runtimeScheduledTaskCases());
         fixture.put("resetOffsetBodyInputCases", resetOffsetBodyInputCases());
         fixture.put("consumerStatusBodyInputCases", consumerStatusBodyInputCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
@@ -2526,5 +2527,61 @@ public final class RuntimeLookupFixtures {
         item.put("name", name); item.put("input", input == null ? null : com.alibaba.fastjson2.JSON.parseObject(input));
         item.put("candidates", Arrays.asList(candidates)); item.put("outcome", outcome);
         cases.add(item);
+    }
+
+    private static List<Object> runtimeScheduledTaskCases() throws Exception {
+        List<Object> cases = new ArrayList<>();
+        for (String nameServer : new String[] {null, "127.0.0.1:9876"}) {
+            ClientConfig config = new ClientConfig();
+            config.setClientIP("192.0.2.6");
+            config.setNamesrvAddr(nameServer);
+            config.setPollNameServerInterval(23);
+            config.setHeartbeatBrokerInterval(47);
+            config.setPersistConsumerOffsetInterval(59);
+            MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+            List<Object> calls = new ArrayList<>();
+            try {
+                java.lang.reflect.Field executorField = MQClientInstance.class
+                    .getDeclaredField("scheduledExecutorService");
+                executorField.setAccessible(true);
+                ((java.util.concurrent.ScheduledExecutorService) executorField.get(runtime)).shutdownNow();
+                java.util.concurrent.ScheduledExecutorService recorder =
+                    (java.util.concurrent.ScheduledExecutorService) java.lang.reflect.Proxy.newProxyInstance(
+                        RuntimeLookupFixtures.class.getClassLoader(),
+                        new Class<?>[] {java.util.concurrent.ScheduledExecutorService.class},
+                        (proxy, method, arguments) -> {
+                            if ("scheduleAtFixedRate".equals(method.getName())) {
+                                Map<String, Object> call = new TreeMap<>();
+                                call.put("initialDelay", ((Number) arguments[1]).longValue());
+                                call.put("period", ((Number) arguments[2]).longValue());
+                                call.put("unit", arguments[3].toString());
+                                calls.add(call);
+                                return null;
+                            }
+                            if ("shutdownNow".equals(method.getName())) return new ArrayList<>();
+                            if ("isShutdown".equals(method.getName())
+                                || "isTerminated".equals(method.getName())) return false;
+                            if ("awaitTermination".equals(method.getName())) return true;
+                            if ("equals".equals(method.getName())) return proxy == arguments[0];
+                            if ("hashCode".equals(method.getName())) return System.identityHashCode(proxy);
+                            if ("toString".equals(method.getName())) return "recording scheduled executor";
+                            return null;
+                        });
+                executorField.set(runtime, recorder);
+                Method startScheduledTask = MQClientInstance.class.getDeclaredMethod("startScheduledTask");
+                startScheduledTask.setAccessible(true);
+                startScheduledTask.invoke(runtime);
+                Map<String, Object> item = new TreeMap<>();
+                item.put("name", nameServer == null ? "nameserver-absent" : "nameserver-configured");
+                item.put("scheduleAtFixedRateCalls", calls);
+                cases.add(item);
+            } finally {
+                Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
+                    org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
+                cleanup.setAccessible(true);
+                cleanup.invoke(runtime, runtime.getMQClientAPIImpl(), new IllegalStateException("fixture teardown"));
+            }
+        }
+        return cases;
     }
 }
