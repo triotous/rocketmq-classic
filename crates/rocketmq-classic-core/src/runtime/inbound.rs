@@ -39,18 +39,19 @@ impl RuntimeProcessor {
                 "client runtime is unavailable",
             )));
         };
+        if command.code == request::NOTIFY_CONSUMER_IDS_CHANGED {
+            // Java decodes this header for logging only, then wakes the
+            // runtime-wide rebalance service and returns null. The group does
+            // not constrain which consumers are rebalanced. Java does this
+            // before the service starts as well; the wakeup remains sticky.
+            runtime.rebalance_immediately();
+            return Ok(None);
+        }
         if runtime.state() != RuntimeState::Running {
             return Ok(Some(error(
                 response::SYSTEM_ERROR,
                 "client runtime is not running",
             )));
-        }
-        if command.code == request::NOTIFY_CONSUMER_IDS_CHANGED {
-            // Java decodes this header for logging only, then wakes the
-            // runtime-wide rebalance service and returns null. The group does
-            // not constrain which consumers are rebalanced.
-            runtime.rebalance_immediately();
-            return Ok(None);
         }
         let groups = runtime
             .groups
@@ -388,6 +389,12 @@ mod tests {
             ..Default::default()
         }
     }
+    fn inactive_request() -> RemotingCommand {
+        RemotingCommand {
+            code: request::RESET_CONSUMER_CLIENT_OFFSET,
+            ..Default::default()
+        }
+    }
     fn dispatch(
         runtime: &Arc<ClientRuntime>,
         code: i32,
@@ -454,9 +461,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unbound_and_non_running_states_return_system_error() {
+    async fn unbound_and_non_running_feature_slots_return_system_error_but_code_40_is_silent() {
         let unbound = RuntimeProcessor::default()
-            .process(notify_request())
+            .process(inactive_request())
             .unwrap()
             .unwrap();
         assert_eq!(unbound.code, response::SYSTEM_ERROR);
@@ -471,7 +478,12 @@ mod tests {
             .get_or_create(&config)
             .await
             .unwrap();
-        let created = runtime.inbound.process(notify_request()).unwrap().unwrap();
+        assert!(runtime.inbound.process(notify_request()).unwrap().is_none());
+        let created = runtime
+            .inbound
+            .process(inactive_request())
+            .unwrap()
+            .unwrap();
         assert_eq!(created.code, response::SYSTEM_ERROR);
         assert_eq!(
             created.remark.as_deref(),
@@ -480,7 +492,12 @@ mod tests {
 
         runtime.start().await.unwrap();
         assert!(runtime.shutdown().await.unwrap());
-        let stopped = runtime.inbound.process(notify_request()).unwrap().unwrap();
+        assert!(runtime.inbound.process(notify_request()).unwrap().is_none());
+        let stopped = runtime
+            .inbound
+            .process(inactive_request())
+            .unwrap()
+            .unwrap();
         assert_eq!(stopped.code, response::SYSTEM_ERROR);
         assert_eq!(
             stopped.remark.as_deref(),
@@ -496,7 +513,8 @@ mod tests {
             .unwrap();
         assert!(failed.start().await.is_err());
         assert_eq!(failed.state(), RuntimeState::Failed);
-        let failure = failed.inbound.process(notify_request()).unwrap().unwrap();
+        assert!(failed.inbound.process(notify_request()).unwrap().is_none());
+        let failure = failed.inbound.process(inactive_request()).unwrap().unwrap();
         assert_eq!(failure.code, response::SYSTEM_ERROR);
         assert_eq!(
             failure.remark.as_deref(),
@@ -633,7 +651,12 @@ mod tests {
             assert_eq!(case["responsePresent"], false);
         }
 
-        let runtime = runtime("consumer-ids-changed-runtime-wide").await;
+        let mut config = ClientConfig::new("consumer-ids-changed-runtime-wide");
+        config.namesrv_addr = Some(String::new());
+        let runtime = ClientRuntimeManager::new()
+            .get_or_create(&config)
+            .await
+            .unwrap();
         let first = Arc::new(RebalancingConsumer(AtomicUsize::new(0)));
         let second = Arc::new(RebalancingConsumer(AtomicUsize::new(0)));
         let first_lease = runtime
@@ -645,11 +668,13 @@ mod tests {
             .await
             .unwrap();
 
-        // The worker enforces the source minimum interval from construction.
-        tokio::time::advance(std::time::Duration::from_secs(1)).await;
-        settle().await;
+        // Java leaves a sticky wakeup before the owned worker exists. Advance
+        // the source minimum interval, then start that worker.
         let first_response = dispatch_optional(&runtime, &[("consumerGroup", "consumer-a")]);
         assert_eq!(first_response.is_some(), java_cases[0]["responsePresent"]);
+        tokio::time::advance(std::time::Duration::from_secs(1)).await;
+        settle().await;
+        runtime.start().await.unwrap();
         settle().await;
         assert_eq!(first.0.load(Ordering::SeqCst), 1);
         assert_eq!(second.0.load(Ordering::SeqCst), 1);
