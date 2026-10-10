@@ -40,3 +40,11 @@ The Phase 6 plans and broad audit still list other API/alias/input/source reconc
 - Fixture `lookup.json` SHA-256: `1a0df76edff7063ea8790fc0cfbf0321eca6469c766a9be191e6596f7403d799`.
 - Passed focused wrapper differential, full workspace/all-target tests with local socket access, strict all-target/all-feature Clippy, workspace doctests (15 protocol doctests), pinned offline Maven verify (22 scenarios and Java cross-decodes), comparator self-test, manifest validation (22 scenarios), formatting, and diff checks.
 - ADR-0069 and Phase 6 API/runtime/audit updates are prepared for a separate documentation commit. Overall Phase 6 reconciliation and final plan verification remain open; P6-V04 stays `PENDING_PHASE_19`.
+
+## Additional Phase 6 LiteSubscriptionDTO alias correction
+
+- Code commit `60251cee` — Preserve Lite subscription DTO aliases.
+- The existing pinned Java 5.5.1 `liteSubscriptionDtoApiCase` directly verifies setter/getter identity and mutation in both directions for `LiteSubscriptionDTO.liteTopicSet` and `offsetOption`; no Java fixture change was needed. Rust now uses `SharedLiteSubscriptionTopicSet` and `SharedOffsetOption`, wraps decoded values, and leaves JSON/`Display` shape unchanged.
+- `fixtures/runtime/lookup.json` SHA-256 remains `1a0df76edff7063ea8790fc0cfbf0321eca6469c766a9be191e6596f7403d799`.
+- The focused DTO differential, Lite public API test, header/wire tests, `cargo test --workspace --all-targets --locked` with local socket access, strict all-target/all-feature Clippy, workspace doctests (15 protocol doctests), pinned offline Maven `verify` (22 scenarios and Java cross-decodes), comparator self-test, manifest validation (22 scenarios), formatting, and diff checks passed. The sandboxed workspace test attempt alone was denied for three existing local-socket lifecycle tests; the full rerun with local socket access passed.
+- Added ADR-0070, updated ADR-0060 and the Phase 6 API map/runtime inventory/requirement audit. The documentation commit is pending separate validation/commit. Other DTO aliases and whole Phase 6 source/API/input reconciliation remain open; P6-V04 stays `PENDING_PHASE_19`.
