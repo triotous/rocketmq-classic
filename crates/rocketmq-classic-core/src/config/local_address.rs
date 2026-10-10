@@ -695,22 +695,36 @@ mod tests {
         );
 
         let ipv6_octets = [0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9];
-        let ipv6 = SOCKADDR_INET {
-            Ipv6: SOCKADDR_IN6 {
-                sin6_family: AF_INET6,
-                sin6_addr: IN6_ADDR {
-                    u: IN6_ADDR_0 { Byte: ipv6_octets },
-                },
-                Anonymous: SOCKADDR_IN6_0 { sin6_scope_id: 11 },
-                ..Default::default()
+        let ipv6_socket = SOCKADDR_IN6 {
+            sin6_family: AF_INET6,
+            sin6_addr: IN6_ADDR {
+                u: IN6_ADDR_0 { Byte: ipv6_octets },
             },
+            Anonymous: SOCKADDR_IN6_0 { sin6_scope_id: 11 },
+            ..Default::default()
         };
+        let ipv6 = SOCKADDR_INET { Ipv6: ipv6_socket };
         assert_eq!(
             windows_address(ipv6, "Ethernet 3"),
             Some(Address {
                 ip: IpAddr::V6("2001:db8::9".parse().unwrap()),
                 scope: 11,
                 scope_name: Some("Ethernet 3".to_owned()),
+            })
+        );
+
+        let ipv6_without_scope = SOCKADDR_INET {
+            Ipv6: SOCKADDR_IN6 {
+                Anonymous: SOCKADDR_IN6_0 { sin6_scope_id: 0 },
+                ..ipv6_socket
+            },
+        };
+        assert_eq!(
+            windows_address(ipv6_without_scope, "Ethernet 3"),
+            Some(Address {
+                ip: IpAddr::V6("2001:db8::9".parse().unwrap()),
+                scope: 0,
+                scope_name: None,
             })
         );
 
