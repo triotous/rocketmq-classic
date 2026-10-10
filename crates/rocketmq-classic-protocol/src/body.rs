@@ -1,4 +1,4 @@
-use crate::codes::JavaEnumLookupError;
+use crate::{SharedValue, codes::JavaEnumLookupError};
 use rocketmq_classic_common::{message::MessageQueue, serde_fastjson};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
@@ -45,7 +45,14 @@ macro_rules! impl_java_enum_api {
     };
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
+/// Java inherits identity-based equality and hashing for this DTO.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::CheckClientRequestBody;
+/// fn require_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
+/// fn main() { require_java_identity::<CheckClientRequestBody>(); }
+/// ```
+#[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct CheckClientRequestBody {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -53,7 +60,7 @@ pub struct CheckClientRequestBody {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub subscription_data: Option<super::heartbeat::SubscriptionData>,
+    pub subscription_data: Option<SharedValue<super::heartbeat::SubscriptionData>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub namespace: Option<String>,
 }
@@ -89,7 +96,7 @@ impl<'de> Deserialize<'de> for CheckClientRequestBody {
         Ok(Self {
             client_id: fields.client_id,
             group: fields.group,
-            subscription_data: fields.subscription_data,
+            subscription_data: fields.subscription_data.map(SharedValue::new),
             namespace: fields.namespace,
         })
     }
@@ -112,18 +119,20 @@ impl CheckClientRequestBody {
         self.group = group;
     }
 
-    pub fn get_subscription_data(&self) -> Option<&super::heartbeat::SubscriptionData> {
-        self.subscription_data.as_ref()
+    pub fn get_subscription_data(&self) -> Option<SharedValue<super::heartbeat::SubscriptionData>> {
+        self.subscription_data.clone()
     }
 
-    /// Borrows the owned subscription data mutably for Java-compatible getter mutations.
-    pub fn get_subscription_data_mut(&mut self) -> Option<&mut super::heartbeat::SubscriptionData> {
-        self.subscription_data.as_mut()
+    /// Returns the same shared object used by the Java DTO setter/getter pair.
+    pub fn get_subscription_data_mut(
+        &self,
+    ) -> Option<SharedValue<super::heartbeat::SubscriptionData>> {
+        self.subscription_data.clone()
     }
 
     pub fn set_subscription_data(
         &mut self,
-        subscription_data: Option<super::heartbeat::SubscriptionData>,
+        subscription_data: Option<SharedValue<super::heartbeat::SubscriptionData>>,
     ) {
         self.subscription_data = subscription_data;
     }
@@ -4479,6 +4488,10 @@ mod tests {
 
         let check_case = &fixture["checkClientBodyApiCase"];
         let mut check = CheckClientRequestBody::default();
+        assert_eq!(check_case["equalsSameInstance"], true);
+        assert_eq!(check_case["equalsEqualFieldsDistinctInstance"], false);
+        assert_eq!(check_case["equalsDeclaringClass"], "java.lang.Object");
+        assert_eq!(check_case["hashCodeDeclaringClass"], "java.lang.Object");
         assert_eq!(
             json!({
                 "clientId": check.get_client_id(),
@@ -4488,20 +4501,23 @@ mod tests {
             }),
             check_case["defaults"]
         );
-        let subscription: super::super::heartbeat::SubscriptionData =
-            serde_json::from_value(check_case["values"]["subscriptionData"].clone()).unwrap();
+        let subscription = SharedValue::new(
+            serde_json::from_value(check_case["values"]["subscriptionData"].clone()).unwrap(),
+        );
         check.set_client_id(Some("client-a".into()));
         check.set_group(Some("workers".into()));
-        check.set_subscription_data(Some(subscription));
+        check.set_subscription_data(Some(subscription.clone()));
         check.set_namespace(Some("tenant".into()));
         let subscription_values = check.get_subscription_data().map(|value| {
-            json!({
-                "topic": value.topic.as_deref(),
-                "subString": value.sub_string.as_deref(),
-                "subVersion": value.sub_version,
-                "classFilterMode": value.class_filter_mode,
-                "expressionType": value.expression_type.as_deref(),
-                "tagsSet": value.tags_set.as_ref(),
+            value.with(|value| {
+                json!({
+                    "topic": value.topic.as_deref(),
+                    "subString": value.sub_string.as_deref(),
+                    "subVersion": value.sub_version,
+                    "classFilterMode": value.class_filter_mode,
+                    "expressionType": value.expression_type.as_deref(),
+                    "tagsSet": value.tags_set.as_ref(),
+                })
             })
         });
         assert_eq!(
@@ -4513,28 +4529,32 @@ mod tests {
             }),
             check_case["values"]
         );
-        // Java returns the same mutable SubscriptionData object; Rust moves and lends the value.
-        assert_eq!(check_case["getterReturnsAssignedSubscription"], true);
         let subscription_mut = check.get_subscription_data_mut().unwrap();
-        subscription_mut.set_sub_version(43);
         assert_eq!(
-            subscription_mut.get_sub_version() == 43,
+            subscription_mut.ptr_eq(&subscription),
+            check_case["getterReturnsAssignedSubscription"]
+        );
+        // Mutations through the original setter handle are visible through the body getter.
+        subscription.with_mut(|value| value.set_sub_version(43));
+        assert_eq!(
+            subscription_mut.with(|value| value.get_sub_version() == 43),
             check_case["externalMutationVisible"]
         );
-        subscription_mut.set_sub_string(Some("orders*".into()));
+        // Mutations through the getter handle are visible through the original setter handle.
+        subscription_mut.with_mut(|value| value.set_sub_string(Some("orders*".into())));
         assert_eq!(
-            subscription_mut.get_sub_string() == Some("orders*"),
+            subscription.with(|value| value.get_sub_string() == Some("orders*")),
             check_case["getterMutationVisibleToAssignedSubscription"]
         );
         assert_eq!(
-            json!({
-                "topic": subscription_mut.get_topic(),
-                "subString": subscription_mut.get_sub_string(),
-                "subVersion": subscription_mut.get_sub_version(),
-                "classFilterMode": subscription_mut.is_class_filter_mode(),
-                "expressionType": subscription_mut.get_expression_type(),
-                "tagsSet": subscription_mut.get_tags_set(),
-            }),
+            subscription_mut.with(|value| json!({
+                "topic": value.get_topic(),
+                "subString": value.get_sub_string(),
+                "subVersion": value.get_sub_version(),
+                "classFilterMode": value.is_class_filter_mode(),
+                "expressionType": value.get_expression_type(),
+                "tagsSet": value.get_tags_set(),
+            })),
             check_case["mutatedSubscriptionData"]
         );
         check.set_client_id(None);

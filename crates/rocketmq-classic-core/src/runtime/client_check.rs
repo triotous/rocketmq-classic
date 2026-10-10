@@ -44,7 +44,7 @@ impl ClientRuntime {
                             &CheckClientRequestBody {
                                 client_id: Some(self.client_id().into()),
                                 group: Some(group.clone()),
-                                subscription_data: Some(subscription),
+                                subscription_data: Some(subscription.into()),
                                 namespace: None,
                             },
                             tokio::time::Instant::now() + self.rpc_timeout(),

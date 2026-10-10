@@ -1103,7 +1103,7 @@ public final class RuntimeLookupFixtures {
         return item;
     }
 
-    private static Map<String, Object> checkClientBodyApiCase() {
+    private static Map<String, Object> checkClientBodyApiCase() throws Exception {
         org.apache.rocketmq.remoting.protocol.body.CheckClientRequestBody body =
             new org.apache.rocketmq.remoting.protocol.body.CheckClientRequestBody();
         Map<String, Object> item = new TreeMap<>();
@@ -1113,6 +1113,12 @@ public final class RuntimeLookupFixtures {
         defaults.put("subscriptionData", body.getSubscriptionData());
         defaults.put("namespace", body.getNamespace());
         item.put("defaults", defaults);
+        item.put("equalsSameInstance", body.equals(body));
+        item.put("equalsEqualFieldsDistinctInstance", body.equals(new org.apache.rocketmq.remoting.protocol.body.CheckClientRequestBody()));
+        item.put("equalsDeclaringClass", body.getClass().getMethod("equals", Object.class)
+            .getDeclaringClass().getName());
+        item.put("hashCodeDeclaringClass", body.getClass().getMethod("hashCode")
+            .getDeclaringClass().getName());
 
         org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData subscription =
             new org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData("orders", "*");

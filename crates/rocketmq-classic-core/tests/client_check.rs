@@ -82,7 +82,7 @@ fn check_client_body_matches_actual_java_api_payload() {
         let body = CheckClientRequestBody {
             client_id: Some("check-client@DEFAULT".into()),
             group: Some("registered-group".into()),
-            subscription_data: Some(subscription(case["expression"].as_str().unwrap())),
+            subscription_data: Some(subscription(case["expression"].as_str().unwrap()).into()),
             namespace: None,
         };
         assert_eq!(serde_json::to_value(body).unwrap(), case["body"]);
