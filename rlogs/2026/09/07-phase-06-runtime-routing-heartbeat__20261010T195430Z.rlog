@@ -37,3 +37,4 @@
 - Differential adds nine outcomes; route oracle count is 131 and `route.json` SHA-256 is `625af93e11f18a2391bce16cf2f1188e7e3fc66f2c8988da420d49550ea634ba`.
 - Validation passed: focused route differential; full locked workspace/all-target tests with local socket access; strict workspace/all-target/all-feature Clippy; pinned offline Maven verify (22 scenarios, route fixture drift and Java cross-decodes); comparator self-test/manifest22; formatting and diff checks. POM restored after fixture generation.
 - Code/oracle/test/fixture commit pending. API/requirement/route audits and ADR-0010 need the new view methods and count in a separate docs commit.
+- Code/oracle/test/fixture commit: `8a0dedb0` (`Cover nullable raw route view operations`). API map, requirement audit, route audit, and ADR-0010 now record each live view's null outcomes, the 131-outcome count, and current fixture hash; documentation/log commit pending.
