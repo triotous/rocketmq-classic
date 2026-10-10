@@ -19,7 +19,7 @@ The tested Java 5.5.1 input and encode behavior now matches the native body DTO.
 
 ## Evidence
 
-- Direct Java input corpus: `batchAckBodyInputCases` in `fixtures/runtime/lookup.json` (111 cases); SHA-256 at this continuation `e364ce565615327672ddacc78b05c1aa94322095fdba5ef78388605e5ff435ec`. The later `batchAckApiCase` extends the aggregate lookup fixture; its current public-method evidence is recorded in [ADR-0053](ADR-0053-batch-ack-public-api.md).
+- Direct Java input corpus: `batchAckBodyInputCases` in `fixtures/runtime/lookup.json` (111 cases); SHA-256 at this continuation `98bc999e3880f25eefc1980ff55eeec7dac9264ddbec98c7b0db669fd6cdce82`. The later `batchAckApiCase` extends the aggregate lookup fixture; its current public-method evidence is recorded in [ADR-0053](ADR-0053-batch-ack-public-api.md).
 - Oracle and fixture commit: 58ad8480; implementation and Rust differential: 381b6edf.
 - Base64 continuation: Java oracle/fixture `c34f9dba`; red native regression `0350546f`; decoder fix `cc3ebc70`. Whitespace boundary extension: Java oracle/fixture `32ce689a`; native corpus assertion `238923da`. Pad-bit/padding extension: Java oracle/fixture `63dfa47f`; red native regression `ff888cff`; decoder fix `2677a08b`.
 - Continuation validation: focused Java fixture verification via pinned offline Maven; `batch_ack_body_inputs_match_invoked_java_fastjson` and all three focused BatchAck tests; strict protocol-crate Clippy. The complete workspace and Phase 6 remain under the broader audit.
