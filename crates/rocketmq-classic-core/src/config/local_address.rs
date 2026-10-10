@@ -194,7 +194,7 @@ fn java_unix_interface_root_name(name: &str, alias_parent_accessible: bool) -> O
     }
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "linux")))]
 fn interfaces() -> io::Result<Vec<Address>> {
     use std::{
         ffi::{CStr, CString},
@@ -285,6 +285,15 @@ fn interfaces() -> io::Result<Vec<Address>> {
     }
     Ok(addresses)
 }
+
+#[cfg(target_os = "linux")]
+fn interfaces() -> io::Result<Vec<Address>> {
+    linux_interfaces::interfaces()
+}
+
+#[cfg(any(target_os = "linux", all(test, unix)))]
+#[path = "local_address_linux.rs"]
+mod linux_interfaces;
 
 #[cfg(windows)]
 fn interfaces() -> io::Result<Vec<Address>> {
