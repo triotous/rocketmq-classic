@@ -620,7 +620,7 @@ fn interfaces(prefer_ipv4_stack: bool) -> io::Result<Vec<Address>> {
     Ok(addresses)
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, test))]
 fn windows_address(
     address: windows_sys::Win32::Networking::WinSock::SOCKADDR_INET,
     interface_name: &str,
@@ -665,6 +665,61 @@ fn interfaces(_prefer_ipv4_stack: bool) -> io::Result<Vec<Address>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn windows_sockaddr_conversion_preserves_address_bytes_and_scope() {
+        use windows_sys::Win32::Networking::WinSock::{
+            AF_INET, AF_INET6, IN_ADDR, IN_ADDR_0, IN6_ADDR, IN6_ADDR_0, SOCKADDR_IN, SOCKADDR_IN6,
+            SOCKADDR_IN6_0, SOCKADDR_INET,
+        };
+
+        let ipv4_octets = [192, 0, 2, 17];
+        let ipv4 = SOCKADDR_INET {
+            Ipv4: SOCKADDR_IN {
+                sin_family: AF_INET,
+                sin_addr: IN_ADDR {
+                    S_un: IN_ADDR_0 {
+                        S_addr: u32::from_ne_bytes(ipv4_octets),
+                    },
+                },
+                ..Default::default()
+            },
+        };
+        assert_eq!(
+            windows_address(ipv4, "Ethernet 3"),
+            Some(Address {
+                ip: IpAddr::V4(Ipv4Addr::new(192, 0, 2, 17)),
+                scope: 0,
+                scope_name: None,
+            })
+        );
+
+        let ipv6_octets = [0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9];
+        let ipv6 = SOCKADDR_INET {
+            Ipv6: SOCKADDR_IN6 {
+                sin6_family: AF_INET6,
+                sin6_addr: IN6_ADDR {
+                    u: IN6_ADDR_0 { Byte: ipv6_octets },
+                },
+                Anonymous: SOCKADDR_IN6_0 { sin6_scope_id: 11 },
+                ..Default::default()
+            },
+        };
+        assert_eq!(
+            windows_address(ipv6, "Ethernet 3"),
+            Some(Address {
+                ip: IpAddr::V6("2001:db8::9".parse().unwrap()),
+                scope: 11,
+                scope_name: Some("Ethernet 3".to_owned()),
+            })
+        );
+
+        assert_eq!(
+            windows_address(SOCKADDR_INET::default(), "Ethernet 3"),
+            None
+        );
+    }
+
     #[test]
     fn windows_interface_filter_matches_java_admin_oper_and_access_checks() {
         assert!(java_windows_interface_is_eligible(true, true, false));
