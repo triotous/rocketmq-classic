@@ -384,7 +384,7 @@ Copy column: **C** means both `cloneClientConfig` and `resetClientConfig` copy t
 | accessChannel | access_channel | nullable Option; Some(Local), Java LOCAL | O | owner | clone resets toSome(Local), reset retains nullable receiver; trace/hook context Phase16 |
 | pollNameServerInterval | poll_name_server_interval | i32 milliseconds; 30000 | C | K | route periodic task; positive period required |
 | heartbeatBrokerInterval | heartbeat_broker_interval | i32 milliseconds; 30000 | C | K | heartbeat periodic task; positive period required (Java comment says microseconds, actual scheduler uses milliseconds) |
-| persistConsumerOffsetInterval | persist_consumer_offset_interval | i32 milliseconds; 5000 | C | K | optional consumer persistence; actual offset stores Phase 9 |
+| persistConsumerOffsetInterval | persist_consumer_offset_interval | i32 milliseconds; 5000 | C | K | optional consumer persistence; paused-time scheduler regression verifies absent capability skipping and successive 10s/15s ticks; actual offset stores Phase 9 |
 | pullTimeDelayMillsWhenException | pull_time_delay_millis_when_exception | i64 milliseconds; 1000 | C | owner | push exception retry Phase 10; not a new runtime timer |
 | traceMsgBatchNum | trace_msg_batch_num | i32; 10 | O | owner | AsyncTraceDispatcher batching Phase 16 |
 | unitMode | unit_mode | bool; false | C | owner | producer/consumer request owners; heartbeat uses each registered consumer's data, not runtime config |
