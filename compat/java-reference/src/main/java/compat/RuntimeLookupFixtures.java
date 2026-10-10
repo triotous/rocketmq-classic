@@ -86,6 +86,7 @@ public final class RuntimeLookupFixtures {
         fixture.put("queryAssignmentRootCases", queryAssignmentRootCases());
         fixture.put("queryAssignmentRequestApiCase", queryAssignmentRequestApiCase());
         fixture.put("queryAssignmentNullInputsApiCase", queryAssignmentNullInputsApiCase());
+        fixture.put("queryAssignmentEmptyInputsApiCase", queryAssignmentEmptyInputsApiCase());
         fixture.put("queryAssignmentResponseApiCase", queryAssignmentResponseApiCase());
         fixture.put("setRequestModeCases", setRequestModeCases());
         fixture.put("setRequestModeFieldCases", setRequestModeFieldCases());
@@ -1092,6 +1093,42 @@ public final class RuntimeLookupFixtures {
         try {
             result.put("assignmentCount", api.queryAssignment("broker:10911", "topic", null, "client",
                 null, null, 1000L).size());
+        } finally {
+            api.shutdown();
+        }
+        return result;
+    }
+
+    private static Map<String, Object> queryAssignmentEmptyInputsApiCase() throws Exception {
+        ClientConfig config = new ClientConfig();
+        config.setClientIP("query-assignment-empty-inputs-api");
+        Map<String, Object> result = new TreeMap<>();
+        org.apache.rocketmq.client.impl.MQClientAPIImpl api =
+            new org.apache.rocketmq.client.impl.MQClientAPIImpl(
+                new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null, config, null,
+                ignored -> (org.apache.rocketmq.remoting.RemotingClient) java.lang.reflect.Proxy.newProxyInstance(
+                    RuntimeLookupFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            result.put("address", values[0]);
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                            result.put("requestCode", request.getCode());
+                            result.put("body", com.alibaba.fastjson2.JSON.parseObject(
+                                new String(request.getBody(), java.nio.charset.StandardCharsets.UTF_8)));
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand response =
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+                                    org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null);
+                            response.setBody("{\"messageQueueAssignments\":[]}"
+                                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                            return response;
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        try {
+            result.put("assignmentCount", api.queryAssignment("broker:10911", "topic", "", "client",
+                "", org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel.BROADCASTING, 1000L).size());
         } finally {
             api.shutdown();
         }
@@ -2932,6 +2969,10 @@ public final class RuntimeLookupFixtures {
             result.put("nullAssignmentFieldsOutcome",
                 runtime.queryAssignment("topic", null, null, null, 3000).size());
             result.put("nullAssignmentFieldsCalls", new ArrayList<>(api.assignmentCalls));
+            api.assignmentCalls.clear();
+            result.put("emptyAssignmentFieldsOutcome", runtime.queryAssignment("topic", "", "",
+                org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel.BROADCASTING, 3000).size());
+            result.put("emptyAssignmentFieldsCalls", new ArrayList<>(api.assignmentCalls));
             api.assignmentCalls.clear();
             for (int timeout : new int[] {0, -1}) {
                 runtime.queryAssignment("topic", "consumer", "strategy",
