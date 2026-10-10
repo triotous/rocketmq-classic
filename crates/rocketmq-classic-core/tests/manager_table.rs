@@ -569,17 +569,26 @@ async fn concurrent_factory_table_remapping_serializes_same_key_callback_like_ja
         .get_or_create(&ClientConfig::new("factory-remap-race-next"))
         .await
         .unwrap();
-    live.put("same-key", first).await.unwrap();
+    live.put("same-key", first.clone()).await.unwrap();
 
     let callback_calls = Arc::new(AtomicUsize::new(0));
     let callback_calls_for_task = callback_calls.clone();
+    let callback_read_current = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let callback_read_for_task = callback_read_current.clone();
     let replacement = second.clone();
+    let current = first.clone();
     let table_for_compute = live.clone();
+    let table_for_callback = live.clone();
     let (entered_tx, entered_rx) = mpsc::channel();
     let (release_tx, release_rx) = mpsc::channel();
     let computation = tokio::spawn(async move {
         table_for_compute
-            .compute("same-key", move |_, _| {
+            .compute("same-key", move |key, _| {
+                let observed = table_for_callback.get(key).unwrap();
+                callback_read_for_task.store(
+                    observed.is_some_and(|value| Arc::ptr_eq(&value, &current)),
+                    Ordering::SeqCst,
+                );
                 if callback_calls_for_task.fetch_add(1, Ordering::SeqCst) == 0 {
                     entered_tx.send(()).unwrap();
                     release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
@@ -618,6 +627,10 @@ async fn concurrent_factory_table_remapping_serializes_same_key_callback_like_ja
     assert_eq!(
         callback_calls.load(Ordering::SeqCst) == 1,
         java["remappingCallbackRunsOnce"]
+    );
+    assert_eq!(
+        callback_read_current.load(Ordering::SeqCst),
+        java["remappingCallbackReadsCurrent"]
     );
     assert_eq!(
         Arc::ptr_eq(&computed, &second)
