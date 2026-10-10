@@ -998,15 +998,34 @@ impl ClientRuntime {
     }
 
     pub async fn start(self: &Arc<Self>) -> Result<(), RuntimeError> {
-        if matches!(self.state(), RuntimeState::Failed | RuntimeState::Stopped) {
+        if self.state() == RuntimeState::Stopped {
+            self.control.join_terminal().await?;
+            return Ok(());
+        }
+        if self.state() == RuntimeState::Failed {
             return Err(RuntimeError::InvalidState(self.state()));
         }
         let (reply, receive) = tokio::sync::oneshot::channel();
-        self.control
+        if self
+            .control
             .sender(self)?
             .send(Command::Start { reply })
-            .map_err(|_| self.control_error())?;
-        let result = receive.await.map_err(|_| self.control_error())?;
+            .is_err()
+        {
+            if self.state() == RuntimeState::Stopped {
+                self.control.join_terminal().await?;
+                return Ok(());
+            }
+            return Err(self.control_error());
+        }
+        let result = match receive.await {
+            Ok(result) => result,
+            // Java start() is a no-op once shutdown has completed. A Start
+            // queued behind Shutdown can observe the actor exit without a
+            // reply, so preserve that same terminal-state outcome.
+            Err(_) if self.state() == RuntimeState::Stopped => Ok(()),
+            Err(_) => Err(self.control_error()),
+        };
         self.control.join_terminal().await?;
         result
     }

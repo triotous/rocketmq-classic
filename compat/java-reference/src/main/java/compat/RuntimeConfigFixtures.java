@@ -182,6 +182,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("serviceLifecycleCases", serviceLifecycleCases());
         fixture.put("concurrentHeartbeatConstructionCases", concurrentHeartbeatConstructionCases());
         fixture.put("runtimeStartScheduleCases", runtimeStartScheduleCases());
+        fixture.put("runtimeRestartAfterShutdown", runtimeRestartAfterShutdown());
         fixture.put("languageCodeMethodCases", languageCodeMethodCases());
         fixture.put("serializeTypeMethodCases", serializeTypeMethodCases());
         fixture.put("compressionTypeMethodCases", compressionTypeMethodCases());
@@ -2924,6 +2925,45 @@ public final class RuntimeConfigFixtures {
             cases.add(item);
         }
         return cases;
+    }
+
+    private static Map<String, Object> runtimeRestartAfterShutdown() throws Exception {
+        ClientConfig config = new ClientConfig();
+        config.setClientIP("runtime-restart-after-shutdown");
+        config.setInstanceName("fixture");
+        config.setNamesrvAddr("");
+        config.setPollNameServerInterval(60_000);
+        config.setHeartbeatBrokerInterval(60_000);
+        config.setPersistConsumerOffsetInterval(60_000);
+        org.apache.rocketmq.client.impl.factory.MQClientInstance runtime =
+            new org.apache.rocketmq.client.impl.factory.MQClientInstance(
+                config, 0, config.buildMQClientId());
+        Map<String, Object> result = new TreeMap<>();
+        try {
+            java.lang.reflect.Field stateField = runtime.getClass().getDeclaredField("serviceState");
+            stateField.setAccessible(true);
+            stateField.set(runtime, Enum.valueOf((Class) stateField.getType(), "RUNNING"));
+            result.put("stateBeforeShutdown", stateField.get(runtime).toString());
+            runtime.shutdown();
+            result.put("shutdownCall", "OK");
+            result.put("stateAfterShutdown", stateField.get(runtime).toString());
+            result.put("schedulerShutdownAfterShutdown",
+                runtime.getScheduledExecutorService().isShutdown());
+            try {
+                runtime.start();
+                result.put("secondStart", "OK");
+            } catch (RuntimeException error) {
+                result.put("secondStart", error.getClass().getSimpleName());
+            }
+            result.put("stateAfterSecondStart", stateField.get(runtime).toString());
+            result.put("schedulerShutdownAfterSecondStart",
+                runtime.getScheduledExecutorService().isShutdown());
+        } finally {
+            // Only the state-machine terminal branch is started here; lower
+            // workers were never activated, so this also guarantees teardown.
+            cleanupRuntime(runtime);
+        }
+        return result;
     }
 
     private static List<Object> serviceLifecycleCases() throws InterruptedException {

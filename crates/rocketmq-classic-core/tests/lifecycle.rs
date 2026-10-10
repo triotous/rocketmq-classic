@@ -1,7 +1,7 @@
 use bytes::BytesMut;
 use rocketmq_classic_core::{
     config::ClientConfig,
-    runtime::{ClientRuntime, ClientRuntimeManager, ProducerRuntime, RuntimeError, RuntimeState},
+    runtime::{ClientRuntime, ClientRuntimeManager, ProducerRuntime, RuntimeState},
 };
 use rocketmq_classic_protocol::codes::request;
 use rocketmq_classic_remoting::{
@@ -56,10 +56,18 @@ async fn shared_shutdown_uses_registration_identity_not_runtime_arc_counts() {
     assert!(runtime.shutdown().await.unwrap());
     assert_eq!(extra_owner.state(), RuntimeState::Stopped);
     assert!(!runtime.shutdown().await.unwrap());
-    assert!(matches!(
-        runtime.start().await,
-        Err(RuntimeError::InvalidState(RuntimeState::Stopped))
-    ));
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = &fixture["runtimeRestartAfterShutdown"];
+    assert_eq!(java["stateBeforeShutdown"], "RUNNING");
+    assert_eq!(java["shutdownCall"], "OK");
+    assert_eq!(java["stateAfterShutdown"], "SHUTDOWN_ALREADY");
+    assert_eq!(java["schedulerShutdownAfterShutdown"], true);
+    assert_eq!(java["secondStart"], "OK");
+    assert_eq!(java["stateAfterSecondStart"], "SHUTDOWN_ALREADY");
+    assert_eq!(java["schedulerShutdownAfterSecondStart"], true);
+    runtime.start().await.unwrap();
+    assert_eq!(runtime.state(), RuntimeState::Stopped);
     let replacement = manager
         .get_or_create(&explicit_config("192.0.2.6"))
         .await
