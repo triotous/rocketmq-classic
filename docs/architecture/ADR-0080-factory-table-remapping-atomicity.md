@@ -17,7 +17,7 @@ Callbacks run without holding the manager's entries mutex, so ordinary reads can
 
 ## Consequences
 
-FactoryTable remapping callbacks are invoked once per eligible operation; same-key table writers and synchronous identity-safe manager removal wait until the callback's mapping result is published. Ordinary reads continue during the callback. The callback tests use the actual manager factory table and pinned Java fixture, including identity-safe removal contention, read visibility and panic recovery. The manager rendezvous test also proves two distinct keys that collided under the prior shard mask initialize concurrently. This decision covers `FactoryTable`; equivalent callback concurrency in producer/consumer registry tables and the raw route table remains a separate audit item. Phase 6 source/API/input reconciliation remains open, and P6-V04 remains `PENDING_PHASE_19`.
+FactoryTable remapping callbacks are invoked once per eligible operation; same-key table writers and synchronous identity-safe manager removal wait until the callback's mapping result is published. Ordinary reads continue during the callback. The callback tests use the actual manager factory table and pinned Java fixture, including identity-safe removal contention, read visibility and panic recovery. The manager rendezvous test also proves two distinct keys that collided under the prior shard mask initialize concurrently. Producer/consumer registry-table callback concurrency is covered separately by [ADR-0081](ADR-0081-registry-table-remapping-atomicity.md); raw route table callback concurrency remains open. Phase 6 source/API/input reconciliation remains open, and P6-V04 remains `PENDING_PHASE_19`.
 
 ## Evidence
 
