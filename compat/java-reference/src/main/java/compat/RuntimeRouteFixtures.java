@@ -2009,6 +2009,78 @@ public final class RuntimeRouteFixtures {
             mapping.getCurrIdMap().get(1)));
         mapping.getCurrIdMap().put(2, 9);
         result.put("mappingGetterMutationVisible", Integer.valueOf(9).equals(ids.get(2)));
+
+        org.apache.rocketmq.remoting.protocol.route.TopicRouteData route =
+            new org.apache.rocketmq.remoting.protocol.route.TopicRouteData();
+        org.apache.rocketmq.remoting.protocol.route.QueueData queue =
+            queueData("queue-broker", 1, 2, 6, 0);
+        List<org.apache.rocketmq.remoting.protocol.route.QueueData> queues = new ArrayList<>();
+        queues.add(queue);
+        route.setQueueDatas(queues);
+        result.put("routeQueueSetterRetainsList", route.getQueueDatas() == queues);
+        result.put("routeQueueGetterIsStable", route.getQueueDatas() == route.getQueueDatas());
+        result.put("routeQueueElementIdentityRetained", route.getQueueDatas().get(0) == queue);
+        queues.add(queueData("second-queue-broker", 1, 1, 6, 0));
+        result.put("routeQueueCallerMutationVisible", route.getQueueDatas().size() == 2);
+        org.apache.rocketmq.remoting.protocol.route.QueueData getterQueue = route.getQueueDatas().get(0);
+        getterQueue.setPerm(5);
+        result.put("routeQueueGetterElementMutationVisible", queue.getPerm() == 5);
+        route.getQueueDatas().add(queueData("getter-queue-broker", 1, 1, 6, 0));
+        result.put("routeQueueGetterMutationVisible", queues.size() == 3);
+
+        org.apache.rocketmq.remoting.protocol.route.BrokerData routeBroker =
+            new org.apache.rocketmq.remoting.protocol.route.BrokerData();
+        routeBroker.setBrokerName("route-broker");
+        List<org.apache.rocketmq.remoting.protocol.route.BrokerData> brokers = new ArrayList<>();
+        brokers.add(routeBroker);
+        route.setBrokerDatas(brokers);
+        result.put("routeBrokerSetterRetainsList", route.getBrokerDatas() == brokers);
+        result.put("routeBrokerGetterIsStable", route.getBrokerDatas() == route.getBrokerDatas());
+        result.put("routeBrokerElementIdentityRetained", route.getBrokerDatas().get(0) == routeBroker);
+        brokers.add(new org.apache.rocketmq.remoting.protocol.route.BrokerData());
+        result.put("routeBrokerCallerMutationVisible", route.getBrokerDatas().size() == 2);
+        route.getBrokerDatas().get(0).setBrokerName("getter-broker");
+        result.put("routeBrokerGetterElementMutationVisible", "getter-broker".equals(routeBroker.getBrokerName()));
+        route.getBrokerDatas().add(new org.apache.rocketmq.remoting.protocol.route.BrokerData());
+        result.put("routeBrokerGetterMutationVisible", brokers.size() == 3);
+
+        List<String> brokerFilters = new ArrayList<>();
+        brokerFilters.add("filter-a");
+        HashMap<String, List<String>> filters = new HashMap<>();
+        filters.put("filter-broker", brokerFilters);
+        route.setFilterServerTable(filters);
+        result.put("routeFilterSetterRetainsMap", route.getFilterServerTable() == filters);
+        result.put("routeFilterGetterIsStable", route.getFilterServerTable() == route.getFilterServerTable());
+        result.put("routeFilterNestedListIdentityRetained",
+            route.getFilterServerTable().get("filter-broker") == brokerFilters);
+        brokerFilters.add("caller-filter");
+        result.put("routeFilterCallerMutationVisible",
+            route.getFilterServerTable().get("filter-broker").size() == 2);
+        route.getFilterServerTable().put("getter-broker", new ArrayList<>(List.of("getter-filter")));
+        result.put("routeFilterGetterMutationVisible", filters.containsKey("getter-broker"));
+        route.getFilterServerTable().get("filter-broker").add("getter-filter");
+        result.put("routeFilterGetterNestedMutationVisible", brokerFilters.size() == 3);
+
+        org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo routeMapping =
+            new org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo(
+                "route-topic", 2, "mapping-broker", 4L);
+        Map<String, org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo> routeMappings =
+            new HashMap<>();
+        routeMappings.put("mapping-broker", routeMapping);
+        route.setTopicQueueMappingByBroker(routeMappings);
+        result.put("routeMappingSetterRetainsMap", route.getTopicQueueMappingByBroker() == routeMappings);
+        result.put("routeMappingGetterIsStable",
+            route.getTopicQueueMappingByBroker() == route.getTopicQueueMappingByBroker());
+        result.put("routeMappingElementIdentityRetained",
+            route.getTopicQueueMappingByBroker().get("mapping-broker") == routeMapping);
+        routeMappings.put("caller-broker",
+            new org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo());
+        result.put("routeMappingCallerMutationVisible", route.getTopicQueueMappingByBroker().size() == 2);
+        route.getTopicQueueMappingByBroker().get("mapping-broker").setDirty(true);
+        result.put("routeMappingGetterElementMutationVisible", routeMapping.isDirty());
+        route.getTopicQueueMappingByBroker().put("getter-broker",
+            new org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo());
+        result.put("routeMappingGetterMutationVisible", routeMappings.size() == 3);
         return result;
     }
 
