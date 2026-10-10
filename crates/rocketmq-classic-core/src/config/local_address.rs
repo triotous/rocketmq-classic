@@ -152,6 +152,7 @@ fn local_host() -> io::Result<Address> {
 #[cfg(unix)]
 fn eligible(name: &str, flags: u32, bridge: bool) -> bool {
     flags & libc::IFF_UP as u32 != 0
+        && flags & libc::IFF_RUNNING as u32 != 0
         && flags & libc::IFF_POINTOPOINT as u32 == 0
         && !name.contains(':')
         && !bridge
@@ -368,15 +369,32 @@ mod tests {
     }
     #[cfg(unix)]
     #[test]
-    fn interface_filter_uses_up_not_running_and_only_excludes_subinterfaces() {
-        assert!(eligible("veth0", libc::IFF_UP as u32, false));
-        assert!(eligible("eth0", libc::IFF_UP as u32, false));
+    fn interface_filter_matches_java_up_running_and_exclusions() {
+        assert!(eligible(
+            "veth0",
+            (libc::IFF_UP | libc::IFF_RUNNING) as u32,
+            false
+        ));
+        assert!(eligible(
+            "eth0",
+            (libc::IFF_UP | libc::IFF_RUNNING) as u32,
+            false
+        ));
+        assert!(!eligible("eth0", libc::IFF_UP as u32, false));
         assert!(!eligible("eth0", libc::IFF_RUNNING as u32, false));
-        assert!(!eligible("eth0:1", libc::IFF_UP as u32, false));
-        assert!(!eligible("br0", libc::IFF_UP as u32, true));
+        assert!(!eligible(
+            "eth0:1",
+            (libc::IFF_UP | libc::IFF_RUNNING) as u32,
+            false
+        ));
+        assert!(!eligible(
+            "br0",
+            (libc::IFF_UP | libc::IFF_RUNNING) as u32,
+            true
+        ));
         assert!(!eligible(
             "ppp0",
-            (libc::IFF_UP | libc::IFF_POINTOPOINT) as u32,
+            (libc::IFF_UP | libc::IFF_RUNNING | libc::IFF_POINTOPOINT) as u32,
             false
         ));
     }
