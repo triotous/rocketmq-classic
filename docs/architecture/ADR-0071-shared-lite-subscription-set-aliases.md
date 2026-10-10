@@ -19,7 +19,7 @@ Represent nullable DTO elements with `LiteSubscriptionDtoSet = HashSet<Option<Sh
 
 ## Consequences and remaining boundary
 
-Rust callers supply `SharedLiteSubscriptionSet` handles containing shared DTO handles; HashSet membership uses object identity and is stable when DTO fields change. The collection alias is closed for the Lite control body. `LiteSubscription.liteTopicSet`, heartbeat collection aliases, runtime status/reset Map aliases, and whole Phase 6 source/API/input reconciliation remain open. P6-V04 stays `PENDING_PHASE_19`.
+Rust callers supply `SharedLiteSubscriptionSet` handles containing shared DTO handles; HashSet membership uses object identity and is stable when DTO fields change. The collection alias is closed for the Lite control body. At this ADR checkpoint, `LiteSubscription.liteTopicSet`, heartbeat collection aliases, and runtime status/reset Map aliases remained open; they were later closed by ADR-0072, ADR-0074, and ADR-0073 respectively. Whole Phase 6 source/API/input reconciliation remains open. P6-V04 stays `PENDING_PHASE_19`.
 
 ## Validation
 

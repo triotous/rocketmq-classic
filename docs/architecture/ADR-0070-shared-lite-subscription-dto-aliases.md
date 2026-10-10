@@ -19,7 +19,7 @@ The direct Java `liteSubscriptionDtoApiCase` records Set/object `==` identity, s
 
 ## Consequences and remaining boundary
 
-Callers use `SharedValue::new` when supplying either mutable nested object and can update it with `with_mut`; DTO decode/encode remains transparent. This closes only `LiteSubscriptionDTO.liteTopicSet` and `offsetOption`. `LiteSubscription.liteTopicSet`, `LiteSubscriptionCtlRequestBody.subscriptionSet`, heartbeat Sets, and runtime status/reset Maps still require separate alias review. Whole Phase 6 reconciliation remains open and P6-V04 stays `PENDING_PHASE_19`.
+Callers use `SharedValue::new` when supplying either mutable nested object and can update it with `with_mut`; DTO decode/encode remains transparent. This closes only `LiteSubscriptionDTO.liteTopicSet` and `offsetOption`. At this ADR checkpoint, `LiteSubscription.liteTopicSet`, `LiteSubscriptionCtlRequestBody.subscriptionSet`, heartbeat Sets, and runtime status/reset Maps still required separate review; later checkpoints closed them in ADR-0072, ADR-0071, ADR-0074, and ADR-0073 respectively. Whole Phase 6 reconciliation remains open and P6-V04 stays `PENDING_PHASE_19`.
 
 ## Validation
 

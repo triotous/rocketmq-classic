@@ -21,7 +21,7 @@ Store `LiteSubscription.lite_topic_set` as `SharedLiteSubscriptionTopicNames`, a
 
 ## Consequences and remaining boundary
 
-Rust callers retain the getter result as a `SharedValue` and access its contents through `with`/`with_mut`. Setter input ownership remains independent, and the setter preserves Java's additive behavior. This closes the `LiteSubscription.liteTopicSet` getter alias; heartbeat collection aliases, runtime status/reset Map aliases, and whole Phase 6 source/API/input reconciliation remain open. P6-V04 stays `PENDING_PHASE_19`.
+Rust callers retain the getter result as a `SharedValue` and access its contents through `with`/`with_mut`. Setter input ownership remains independent, and the setter preserves Java's additive behavior. This closes the `LiteSubscription.liteTopicSet` getter alias. Heartbeat collection aliases and runtime status/reset Map aliases were open at this ADR checkpoint and were later closed by ADR-0074 and ADR-0073. Whole Phase 6 source/API/input reconciliation remains open. P6-V04 stays `PENDING_PHASE_19`.
 
 ## Validation
 

@@ -5,26 +5,26 @@
 
 ## Context
 
-Pinned RocketMQ 5.5.1 declares Java bean getters and setters for all fields on `SubscriptionData`, `ProducerData`, `ConsumerData`, and `HeartbeatData`. Rust represented most of these DTO values as public fields, so the declared Java method surface had not been directly checked.
+Pinned RocketMQ 5.5.1 declares Java bean getters and setters for all fields on `SubscriptionData`, `ProducerData`, `ConsumerData`, and `HeartbeatData`. Rust represents scalar DTO values as public fields and now exposes Rust-idiomatic methods for each declared Java accessor.
 
 ## Decision
 
-Expose Rust-idiomatic accessors for every declared getter/setter on the four DTOs, with mutable borrows for each collection field. Keep nullable strings, enums, and collections explicit with `Option`; preserve Java Set contents and null-member behavior in the existing native collection representations.
+Keep nullable scalar fields explicit with `Option`; preserve Java enum names and existing JSON field shapes. The collection alias behavior is now recorded separately in [ADR-0074](ADR-0074-shared-heartbeat-set-aliases.md): getters return shared handles for all five Set fields, and setters retain the supplied handle. Rust's `_owned` setter helpers remain available for callers that want to transfer an owned collection without constructing a handle.
 
-Direct Java calls and Rust comparisons cover constructor defaults, every property after assignment, null setter results, and mutation through the collection getters on `SubscriptionData`, `ConsumerData`, and `HeartbeatData`. `SubscriptionData.subVersion` uses a time-window assertion for its constructor-time value. Java getters return the same mutable Set assigned by a setter. Rust exposes mutable borrows of its owned HashSets/vectors and matches getter-side mutation, but does not preserve identity with the caller-owned Java Set.
+Direct Java cases and Rust comparisons cover constructor defaults, assigned property values, null setter results, and mutations through caller-held and getter-held collection references. `SubscriptionData.subVersion` uses a time-window assertion for its constructor-time value.
 
 ## Consequences
 
-Callers can use named methods that correspond to Java's public bean API while Rust retains owned collection semantics. `HeartbeatData` producer and consumer vectors continue to preserve identity-distinct rows and multiplicity; the new accessors do not change serialization or runtime preparation.
+The four DTO bean method surfaces map to Rust accessors without changing serialized JSON. Java caller/getter Set identity and mutation are preserved for `SubscriptionData.tagsSet/codeSet`, `ConsumerData.subscriptionDataSet`, and `HeartbeatData.producerDataSet/consumerDataSet`. ADR-0074 defines the collection value-versus-identity equality boundaries and the deep-clone behavior.
 
-This closes the four heartbeat DTO getter/setter method surfaces and matches mutation through the collection getters. Caller-owned Set alias identity and the wider Phase 6 source/API/input audit remain open; Phase 6 stays PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
+These bounded DTO method and collection alias rows are closed. Broader Phase 6 source/API/input and reverse-export reconciliation remains PARTIAL; P6-V04 stays `PENDING_PHASE_19`.
 
 ## Evidence
 
 - Pinned `javap -public` signatures for `SubscriptionData`, `ProducerData`, `ConsumerData`, and `HeartbeatData` in RocketMQ 5.5.1.
 - Java direct cases: `subscriptionDataApiCase`, `producerDataApiCase`, `consumerDataApiCase`, and `heartbeatDataApiCase` in `fixtures/runtime/heartbeat.json`.
 - Rust differential: `heartbeat_dto_public_accessors_match_invoked_java`.
-- Original API oracle/implementation: `21591fc7`; mutable Set mutation oracle/implementation: `33829680` / `5151a308`.
-- Current heartbeat fixture SHA-256: `a03cd054471d1782251f8635adcc35d6da29f67f9900c215eadf67f76f5d9c30`.
-- Validation: full workspace/all-target tests, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios, fixture drift and Java cross-decodes), comparator self-test/manifest22, formatting, and diff checks.
+- Original API oracle/implementation: `21591fc7`; mutable Set mutation oracle/implementation: `33829680` / `5151a308`; alias continuation: `7e5b3fa6` / ADR-0074.
+- Current heartbeat fixture SHA-256: `7c50b6ff17d46cc6659ab69e75a69c56d28a7a187ea198440c093acefa1f39b3`.
+- Current full validation is recorded in [ADR-0074](ADR-0074-shared-heartbeat-set-aliases.md) and the Phase 6 execution log.
 - Oracle uses pinned RocketMQ 5.5.1 artifacts; the requested alternate Java source checkout was unavailable.
