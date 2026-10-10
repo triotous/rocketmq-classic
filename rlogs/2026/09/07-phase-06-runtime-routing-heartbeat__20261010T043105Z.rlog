@@ -37,3 +37,14 @@
 - All recorded identity and mutation effects are true: queue/broker list identity and element identity; filter map and nested filter-list identity; mapping map and mapping-object identity; stable getter identity; caller-side and getter-side container mutations; and nested DTO/list mutations visible through caller-held values.
 - Pinned Java compile and direct route-fixture generation plus explicit `--verify` pass. Updated `fixtures/runtime/route.json` SHA-256: `960d8c5d82cefa1a4dc0eeddfee74693ea64e2d7ac679f396e06a20c3dfadd4b`.
 - Rust parity has not yet been changed or validated for these four `TopicRouteData` collections. Continue from this oracle; the previous `BrokerData.brokerAddrs` and `TopicQueueMappingInfo.currIdMap` alias correction remains independently committed.
+
+## TopicRouteData collection alias implementation and validation
+
+- Implemented the four `TopicRouteData` collection alias corrections in `45b8a5fc` (`Preserve TopicRouteData collection aliases`): queue/broker list elements, filter-server nested lists, and mapping DTO values now preserve Java-style identity through shared handles. DTO `Clone` remains deep; cache/conversion read paths take owned snapshots.
+- Direct pinned Java oracle is `e47f4517`; `routeDtoReferenceAliasCases` verifies setter/getter identity and caller/getter mutation visibility for each collection and nested value. Updated `fixtures/runtime/route.json` SHA-256: `960d8c5d82cefa1a4dc0eeddfee74693ea64e2d7ac679f396e06a20c3dfadd4b`.
+- `cargo test --workspace --all-targets --locked`: passed, including core/protocol integration cases and loopback suites.
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`: passed after replacing two boolean `assert_eq!` calls with `assert!`.
+- Pinned offline Maven `verify` initially passed the route fixture then failed at the config fixture with sandbox `Operation not permitted`. The same command with reviewed escalation completed successfully: 22 scenarios verified; invoked route/VIP fixture cases and Java cross-decodes passed, including 38 P4 headers and 14 typed body fixtures.
+- `python3 tests/differential/compare.py --self-test` and `--validate-manifest`: passed; manifest validated 22 scenarios. `cargo fmt --all -- --check` and `git diff --check`: passed.
+- Added ADR-0076 and updated route/API/requirement audits. `TopicSnapshot.route` receives a deep copy detached from raw DTO aliases, but nested shared handles are locally mutable; documentation now calls out that callers should treat it as a value snapshot and not mutate route handles after publication.
+- The Java source checkout `/Users/nanashi07/Projects/3rd/rocketmq` remains absent; evidence is from locally cached pinned 5.5.1 artifacts and actual fixture invocations. This correction closes only these four alias rows. Full Phase 6 API/config/source/input/reverse-export reconciliation is still open, the audit remains PARTIAL, and P6-V04 remains `PENDING_PHASE_19`.
