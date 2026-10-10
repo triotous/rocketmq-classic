@@ -24,3 +24,11 @@ The requested source checkout `/Users/nanashi07/Projects/3rd/rocketmq` is unavai
 ## Remaining work and status
 
 The Phase 6 plans and broad audit still list other API/alias/input/source reconciliation gaps. No phase acceptance is claimed. The documentation and this log are committed separately from code; final plan-wide verification remains outstanding.
+
+## Additional Phase 6 alias correction
+
+- Code commit `d312bb6c` — Preserve QueryAssignment Set element aliases.
+- The Java oracle now asserts setter-supplied assignment element `==` getter iteration identity and mode mutation in both directions. Rust decodes each Set object into `SharedQueryAssignment`; shared-handle `Eq`/`Hash` delegates to assignment snapshots, preserving the pre-existing Rust value membership contract. `ClientRuntime::query_assignment` snapshots both the Set and its elements at the established owned return boundary.
+- Updated `fixtures/runtime/lookup.json`; SHA-256 `a4d4c85dc1ab17a240906f0e48348ebf2644c31bfcdd987d958fc1368b0e20de`.
+- Focused runtime-body Java differential passed. Full workspace/all-target tests passed after rerunning with approved local socket access; strict all-target/all-feature Clippy passed; pinned offline Maven verify passed 22 scenarios and Java cross-decodes; comparator self-test, manifest validation (22 scenarios), formatting, and diff checks passed.
+- Added ADR-0068 and reconciled ADR-0020/0054/0055/0065/0066 plus Phase 6 compatibility maps and requirement audit. Documentation commit is pending separate review/commit. Whole Phase 6 reconciliation and final plan verification remain open; P6-V04 stays `PENDING_PHASE_19`.

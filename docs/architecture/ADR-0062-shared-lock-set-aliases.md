@@ -25,5 +25,5 @@ Protocol DTO callers retain or receive a cloned handle for the same Set and the 
 - Native differential: `remaining_runtime_body_public_methods_match_invoked_java`.
 - Implementation/oracle commit: `045b46e7`.
 - Fixture SHA-256 at the outer-Set checkpoint: `07fb5f45492598ce7ca844903bd0440bbbaabd7baddb9bdfbbb5c96a5b39a7ad`.
-- Nested element alias implementation: `625122ee`; current `lookup.json` SHA-256: `4b4d410671a673533e1238a8bcf8e939134884296610ec6d1045c1022c6818c6`; [ADR-0067](ADR-0067-shared-lock-set-element-aliases.md).
+- Nested element alias implementation: `625122ee`; `lookup.json` SHA-256 at the nested lock-element correction: `4b4d410671a673533e1238a8bcf8e939134884296610ec6d1045c1022c6818c6`; [ADR-0067](ADR-0067-shared-lock-set-element-aliases.md).
 - Validation for the nested alias correction: protocol tests/doc tests, full workspace/all-target tests, strict all-feature Clippy, pinned offline Maven verify, comparator self-test, 22-scenario manifest validation, format, and diff checks.

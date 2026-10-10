@@ -17,11 +17,11 @@ These nested values participate in a `HashSet` when contained by `QueryAssignmen
 
 ## Evidence
 
-The direct `assignmentMethodCases` oracle checks setter/getter identity and mutation visibility in both directions for a populated queue and attachments map. Rust verifies cloned-handle `ptr_eq` and the same two mutation paths. The current combined fixture is `fixtures/runtime/lookup.json`, SHA-256 `cf03a6b58e3f312d8f1a4bc95a0384bc004338bc2d529141694bbf1810b63a71`.
+The direct `assignmentMethodCases` oracle checks setter/getter identity and mutation visibility in both directions for a populated queue and attachments map. Rust verifies cloned-handle `ptr_eq` and the same two mutation paths. Fixture SHA-256 at this nested-field checkpoint: `cf03a6b58e3f312d8f1a4bc95a0384bc004338bc2d529141694bbf1810b63a71`. The assignment element alias is subsequently closed by `d312bb6c` and [ADR-0068](ADR-0068-shared-query-assignment-elements.md).
 
 ## Consequences and remaining boundary
 
-Nested queue and map aliases are preserved for each `MessageQueueAssignment`. Identity of the `MessageQueueAssignment` object itself as an element of the response Set is still not preserved; the outer Set alias and nested queue/map aliases are separate layers. The core runtime continues returning its existing owned Set result by snapshotting the shared response Set. Phase 6 remains partial and P6-V04 remains `PENDING_PHASE_19`.
+Nested queue and map aliases are preserved for each `MessageQueueAssignment`. The `MessageQueueAssignment` element identity was a separate layer from the outer Set and nested queue/map aliases; it is now preserved by `d312bb6c` and [ADR-0068](ADR-0068-shared-query-assignment-elements.md). The core runtime continues returning its existing owned Set result by snapshotting the shared response Set. Phase 6 remains partial and P6-V04 remains `PENDING_PHASE_19`.
 
 ## Validation
 

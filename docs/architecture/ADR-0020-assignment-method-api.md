@@ -38,4 +38,4 @@ The pinned Java getter returns the same `MessageQueue` assigned with `setMessage
 
 ## Nested caller/getter alias correction
 
-ADR-0066 closes the nested queue and attachments identity gap. Getter calls return cloned shared handles; setter calls retain the same handles; `with`/`with_mut` mutate the referenced Java-compatible value in either direction. The response Set's assignment element object identity remains a distinct open surface.
+ADR-0066 closes the nested queue and attachments identity gap. Getter calls return cloned shared handles; setter calls retain the same handles; `with`/`with_mut` mutate the referenced Java-compatible value in either direction. The response Set's assignment element object identity is now preserved by [ADR-0068](ADR-0068-shared-query-assignment-elements.md).

@@ -17,7 +17,7 @@ Because `MessageQueue` fields affect its value hash, changing a queue after inse
 
 ## Evidence
 
-The direct `lockBatchRequestApiCase`, `unlockBatchRequestApiCase`, and `lockBatchResponseApiCase` Java cases now record element `==` identity plus caller-to-getter and getter-to-caller mutation visibility. Rust verifies those observations with handle `ptr_eq` and both mutation directions for all three DTOs. `fixtures/runtime/lookup.json` SHA-256: `4b4d410671a673533e1238a8bcf8e939134884296610ec6d1045c1022c6818c6`.
+The direct `lockBatchRequestApiCase`, `unlockBatchRequestApiCase`, and `lockBatchResponseApiCase` Java cases now record element `==` identity plus caller-to-getter and getter-to-caller mutation visibility. Rust verifies those observations with handle `ptr_eq` and both mutation directions for all three DTOs. `fixtures/runtime/lookup.json` SHA-256 at this correction: `4b4d410671a673533e1238a8bcf8e939134884296610ec6d1045c1022c6818c6`.
 
 ## Consequences and remaining boundary
 
