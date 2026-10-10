@@ -94,7 +94,7 @@ impl TableHandle {
 }
 
 macro_rules! table {
-    ($name:ident, $owner:ident, $kind:ident, $select:ident, $null_group:literal, $key_set:ident, $values_view:ident, $entry_set:ident) => {
+    ($name:ident, $owner:ident, $kind:ident, $select:ident, $null_group:literal, $null_value:literal, $key_set:ident, $values_view:ident, $entry_set:ident) => {
         /// Live registry mapping that strongly retains each mapped owner until
         /// replacement, removal, or clear, matching Java ConcurrentMap values.
         /// Owner implementations that refer back to `ClientRuntime` must use a
@@ -134,12 +134,12 @@ macro_rules! table {
             pub fn get_or_default_nullable(
                 &self,
                 key: Option<&str>,
-                default: Arc<dyn $owner>,
-            ) -> Result<Arc<dyn $owner>, RuntimeError> {
+                default: Option<Arc<dyn $owner>>,
+            ) -> Result<Option<Arc<dyn $owner>>, RuntimeError> {
                 let Some(key) = key else {
                     return Err(RuntimeError::InvalidRoute($null_group));
                 };
-                self.get_or_default(key, default)
+                Ok(self.get(key)?.or(default))
             }
             /// Map.getOrDefault counterpart; the default is used only when the key is absent.
             pub fn get_or_default(
@@ -167,6 +167,16 @@ macro_rules! table {
                     .snapshot()?
                     .values()
                     .any(|current| Self::owners_equal(value, current)))
+            }
+            /// Nullable Java-compatible `ConcurrentMap.containsValue` boundary.
+            pub fn contains_value_nullable(
+                &self,
+                value: Option<&Arc<dyn $owner>>,
+            ) -> Result<bool, RuntimeError> {
+                let Some(value) = value else {
+                    return Err(RuntimeError::InvalidRoute($null_value));
+                };
+                self.contains_value(value)
             }
             pub fn len(&self) -> Result<usize, RuntimeError> {
                 self.0.groups.table_len(self.0.kind)
@@ -880,6 +890,7 @@ table!(
     Producer,
     select_producer,
     "null producer group",
+    "null producer value",
     ProducerKeySetView,
     ProducerValuesView,
     ProducerEntrySetView
@@ -890,6 +901,7 @@ table!(
     Consumer,
     select_consumer,
     "null consumer group",
+    "null consumer value",
     ConsumerKeySetView,
     ConsumerValuesView,
     ConsumerEntrySetView

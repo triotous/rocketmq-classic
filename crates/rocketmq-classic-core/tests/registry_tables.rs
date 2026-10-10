@@ -266,6 +266,18 @@ async fn nullable_registry_table_reads_match_invoked_java_null_key_failures() {
     assert_eq!(expected["consumerNullContainsKey"], "NullPointerException");
     assert_eq!(expected["producerNullGetOrDefault"], "NullPointerException");
     assert_eq!(expected["consumerNullGetOrDefault"], "NullPointerException");
+    assert_eq!(
+        expected["producerNullContainsValue"],
+        "NullPointerException"
+    );
+    assert_eq!(
+        expected["consumerNullContainsValue"],
+        "NullPointerException"
+    );
+    assert_eq!(expected["producerNullDefaultOnMissing"], "NULL");
+    assert_eq!(expected["consumerNullDefaultOnMissing"], "NULL");
+    assert_eq!(expected["producerNullDefaultOnPresent"], "MAPPED");
+    assert_eq!(expected["consumerNullDefaultOnPresent"], "MAPPED");
 
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&ClientConfig::new("nullable-table-reads"))
@@ -292,15 +304,73 @@ async fn nullable_registry_table_reads_match_invoked_java_null_key_failures() {
     assert!(matches!(
         runtime
             .producer_table()
-            .get_or_default_nullable(None, producer_default),
+            .get_or_default_nullable(None, Some(producer_default.clone())),
         Err(RuntimeError::InvalidRoute("null producer group"))
     ));
     assert!(matches!(
         runtime
             .consumer_table()
-            .get_or_default_nullable(None, consumer_default),
+            .get_or_default_nullable(None, Some(consumer_default.clone())),
         Err(RuntimeError::InvalidRoute("null consumer group"))
     ));
+    assert!(
+        runtime
+            .producer_table()
+            .get_or_default_nullable(Some("missing"), None)
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        runtime
+            .consumer_table()
+            .get_or_default_nullable(Some("missing"), None)
+            .unwrap()
+            .is_none()
+    );
+    assert!(matches!(
+        runtime.producer_table().contains_value_nullable(None),
+        Err(RuntimeError::InvalidRoute("null producer value"))
+    ));
+    assert!(matches!(
+        runtime.consumer_table().contains_value_nullable(None),
+        Err(RuntimeError::InvalidRoute("null consumer value"))
+    ));
+    runtime
+        .producer_table()
+        .put("nullable-present", producer_default.clone())
+        .await
+        .unwrap();
+    runtime
+        .consumer_table()
+        .put("nullable-present", consumer_default.clone())
+        .await
+        .unwrap();
+    assert!(
+        runtime
+            .producer_table()
+            .contains_value_nullable(Some(&producer_default))
+            .unwrap()
+    );
+    assert!(
+        runtime
+            .consumer_table()
+            .contains_value_nullable(Some(&consumer_default))
+            .unwrap()
+    );
+    assert!(
+        runtime
+            .producer_table()
+            .get_or_default_nullable(Some("nullable-present"), None)
+            .unwrap()
+            .is_some_and(|mapped| Arc::ptr_eq(&mapped, &producer_default))
+    );
+    assert!(
+        runtime
+            .consumer_table()
+            .get_or_default_nullable(Some("nullable-present"), None)
+            .unwrap()
+            .is_some_and(|mapped| Arc::ptr_eq(&mapped, &consumer_default))
+    );
     assert!(
         runtime
             .producer_table()

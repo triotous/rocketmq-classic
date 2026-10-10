@@ -487,6 +487,17 @@ impl FactoryTable {
             .any(|current| Arc::ptr_eq(current, value)))
     }
 
+    /// Nullable Java-compatible `ConcurrentMap.containsValue` boundary.
+    pub fn contains_value_nullable(
+        &self,
+        value: Option<&Arc<ClientRuntime>>,
+    ) -> Result<bool, RuntimeError> {
+        let Some(value) = value else {
+            return Err(RuntimeError::InvalidRoute("null factory value"));
+        };
+        self.contains_value(value)
+    }
+
     /// Returns the mapped runtime, or the supplied value when the key is absent.
     pub fn get_or_default(
         &self,
@@ -500,12 +511,12 @@ impl FactoryTable {
     pub fn get_or_default_nullable(
         &self,
         key: Option<&str>,
-        default: Arc<ClientRuntime>,
-    ) -> Result<Arc<ClientRuntime>, RuntimeError> {
+        default: Option<Arc<ClientRuntime>>,
+    ) -> Result<Option<Arc<ClientRuntime>>, RuntimeError> {
         let Some(key) = key else {
             return Err(RuntimeError::InvalidRoute("null factory key"));
         };
-        self.get_or_default(key, default)
+        Ok(self.get(key)?.or(default))
     }
 
     pub fn len(&self) -> Result<usize, RuntimeError> {

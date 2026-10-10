@@ -734,6 +734,15 @@ public final class RuntimeConfigFixtures {
             } catch (Throwable error) {
                 result.put("nullKeyGetOrDefault", error.getClass().getSimpleName());
             }
+            try {
+                live.containsValue(null);
+                result.put("nullValueContainsValue", "RETURNED");
+            } catch (Throwable error) {
+                result.put("nullValueContainsValue", error.getClass().getSimpleName());
+            }
+            result.put("nullDefaultOnPresent", live.getOrDefault(id, null) == second ? "MAPPED" : "OTHER");
+            result.put("nullDefaultOnMissing",
+                live.getOrDefault("missing-null-default", null) == null ? "NULL" : "OTHER");
             result.put("retainedViewSeesSecond", live.get(id) == second);
             result.put("containsValueSecond", live.containsValue(second));
             result.put("containsValueAbsent", !live.containsValue(first));
@@ -1439,6 +1448,28 @@ public final class RuntimeConfigFixtures {
             } catch (Throwable error) {
                 nullableTableReads.put("consumerNullGetOrDefault", error.getClass().getSimpleName());
             }
+            try {
+                runtime.getProducerTable().containsValue(null);
+                nullableTableReads.put("producerNullContainsValue", "RETURNED");
+            } catch (Throwable error) {
+                nullableTableReads.put("producerNullContainsValue", error.getClass().getSimpleName());
+            }
+            try {
+                runtime.getConsumerTable().containsValue(null);
+                nullableTableReads.put("consumerNullContainsValue", "RETURNED");
+            } catch (Throwable error) {
+                nullableTableReads.put("consumerNullContainsValue", error.getClass().getSimpleName());
+            }
+            nullableTableReads.put("producerNullDefaultOnMissing",
+                runtime.getProducerTable().getOrDefault("missing-null-default", null) == null ? "NULL" : "OTHER");
+            nullableTableReads.put("consumerNullDefaultOnMissing",
+                runtime.getConsumerTable().getOrDefault("missing-null-default", null) == null ? "NULL" : "OTHER");
+            runtime.getProducerTable().put("nullable-default-present", producerA);
+            runtime.getConsumerTable().put("nullable-default-present", consumerA);
+            nullableTableReads.put("producerNullDefaultOnPresent",
+                runtime.getProducerTable().getOrDefault("nullable-default-present", null) == producerA ? "MAPPED" : "OTHER");
+            nullableTableReads.put("consumerNullDefaultOnPresent",
+                runtime.getConsumerTable().getOrDefault("nullable-default-present", null) == consumerA ? "MAPPED" : "OTHER");
             result.put("nullableTableReads", nullableTableReads);
             result.put("producerDefaultOperations",
                 tableDefaultOperations(runtime.getProducerTable(), producerA, producerB));

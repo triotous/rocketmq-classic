@@ -97,6 +97,9 @@ async fn nullable_factory_table_reads_match_invoked_java_null_key_failures() {
     assert_eq!(java["nullKeyGet"], "NullPointerException");
     assert_eq!(java["nullKeyContainsKey"], "NullPointerException");
     assert_eq!(java["nullKeyGetOrDefault"], "NullPointerException");
+    assert_eq!(java["nullValueContainsValue"], "NullPointerException");
+    assert_eq!(java["nullDefaultOnPresent"], "MAPPED");
+    assert_eq!(java["nullDefaultOnMissing"], "NULL");
 
     let manager = ClientRuntimeManager::new();
     let table = manager.factory_table();
@@ -108,15 +111,33 @@ async fn nullable_factory_table_reads_match_invoked_java_null_key_failures() {
         table.contains_key_nullable(None),
         Err(RuntimeError::InvalidRoute("null factory key"))
     ));
+    assert!(matches!(
+        table.contains_value_nullable(None),
+        Err(RuntimeError::InvalidRoute("null factory value"))
+    ));
     let default_manager = ClientRuntimeManager::new();
     let default = default_manager
         .get_or_create(&ClientConfig::new("factory-null-read-default"))
         .await
         .unwrap();
     assert!(matches!(
-        table.get_or_default_nullable(None, default),
+        table.get_or_default_nullable(None, Some(default.clone())),
         Err(RuntimeError::InvalidRoute("null factory key"))
     ));
+    assert!(
+        table
+            .get_or_default_nullable(Some("missing"), None)
+            .unwrap()
+            .is_none()
+    );
+    table.put("present", default.clone()).await.unwrap();
+    assert!(table.contains_value_nullable(Some(&default)).unwrap());
+    assert!(
+        table
+            .get_or_default_nullable(Some("present"), None)
+            .unwrap()
+            .is_some_and(|mapped| Arc::ptr_eq(&mapped, &default))
+    );
     assert!(table.get_nullable(Some("missing")).unwrap().is_none());
     assert!(!table.contains_key_nullable(Some("missing")).unwrap());
 }
