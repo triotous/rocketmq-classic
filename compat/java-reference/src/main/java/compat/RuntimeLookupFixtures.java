@@ -2828,6 +2828,11 @@ public final class RuntimeLookupFixtures {
             List<String> consumerIds = runtime.findConsumerIdList("topic", "consumer");
             result.put("consumerOutcome", consumerIds);
             result.put("consumerCalls", new ArrayList<>(api.consumerCalls));
+            api.consumerCalls.clear();
+            config.setMqClientApiTimeout(150);
+            runtime.findConsumerIdList("topic", "consumer");
+            result.put("consumerCallsAfterTimeoutMutation", new ArrayList<>(api.consumerCalls));
+            api.consumerCalls.clear();
             java.util.Set<org.apache.rocketmq.common.message.MessageQueueAssignment> assignments =
                 runtime.queryAssignment("topic", "consumer", "strategy",
                     org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel.BROADCASTING, 3000);
