@@ -868,6 +868,9 @@ impl ClientRuntime {
         Ok(())
     }
 
+    /// Register a producer group and retain its owner until the mapping is
+    /// replaced, removed, or cleared. Owners that refer back to this runtime
+    /// must hold a `Weak<ClientRuntime>` to avoid an `Arc` cycle.
     pub async fn register_producer(
         self: &Arc<Self>,
         group: &str,
@@ -904,6 +907,9 @@ impl ClientRuntime {
         self.register_producer(group, handle).await.map(Some)
     }
 
+    /// Register a consumer group and retain its owner until the mapping is
+    /// replaced, removed, or cleared. Owners that refer back to this runtime
+    /// must hold a `Weak<ClientRuntime>` to avoid an `Arc` cycle.
     pub async fn register_consumer(
         self: &Arc<Self>,
         group: &str,
