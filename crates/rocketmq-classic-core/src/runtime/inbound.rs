@@ -353,6 +353,12 @@ mod tests {
         runtime.start().await.unwrap();
         runtime
     }
+    fn notify_request() -> RemotingCommand {
+        RemotingCommand {
+            code: request::NOTIFY_CONSUMER_IDS_CHANGED,
+            ..Default::default()
+        }
+    }
     fn dispatch(
         runtime: &Arc<ClientRuntime>,
         code: i32,
@@ -390,6 +396,41 @@ mod tests {
                 .await
                 .unwrap();
         }
+    }
+
+    #[tokio::test]
+    async fn unbound_created_and_stopped_processors_return_system_error() {
+        let unbound = RuntimeProcessor::default()
+            .process(notify_request())
+            .unwrap()
+            .unwrap();
+        assert_eq!(unbound.code, response::SYSTEM_ERROR);
+        assert_eq!(
+            unbound.remark.as_deref(),
+            Some("client runtime is unavailable")
+        );
+
+        let mut config = ClientConfig::new("inbound-not-running");
+        config.namesrv_addr = Some(String::new());
+        let runtime = ClientRuntimeManager::new()
+            .get_or_create(&config)
+            .await
+            .unwrap();
+        let created = runtime.inbound.process(notify_request()).unwrap().unwrap();
+        assert_eq!(created.code, response::SYSTEM_ERROR);
+        assert_eq!(
+            created.remark.as_deref(),
+            Some("client runtime is not running")
+        );
+
+        runtime.start().await.unwrap();
+        assert!(runtime.shutdown().await.unwrap());
+        let stopped = runtime.inbound.process(notify_request()).unwrap().unwrap();
+        assert_eq!(stopped.code, response::SYSTEM_ERROR);
+        assert_eq!(
+            stopped.remark.as_deref(),
+            Some("client runtime is not running")
+        );
     }
 
     #[tokio::test]
