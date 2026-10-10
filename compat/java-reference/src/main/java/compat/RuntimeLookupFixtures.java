@@ -96,6 +96,7 @@ public final class RuntimeLookupFixtures {
         fixture.put("consumerListApiCase", consumerListApiCase());
         fixture.put("consumerListNullGroupApiCase", consumerListNullGroupApiCase());
         fixture.put("consumerListEmptyGroupApiCase", consumerListEmptyGroupApiCase());
+        fixture.put("defaultTopicRouteApiCase", defaultTopicRouteApiCase());
         fixture.put("lockBatchRequestApiCase", lockBatchRequestApiCase());
         fixture.put("unlockBatchRequestApiCase", unlockBatchRequestApiCase());
         fixture.put("lockBatchResponseApiCase", lockBatchResponseApiCase());
@@ -1344,6 +1345,70 @@ public final class RuntimeLookupFixtures {
         body.setConsumerIdList(null);
         item.put("nullSetterRemainsNull", body.getConsumerIdList() == null);
         return item;
+    }
+
+    private static Map<String, Object> defaultTopicRouteApiCase() throws Exception {
+        ClientConfig config = new ClientConfig();
+        config.setClientIP("default-topic-route-api");
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        String routeJson = "{\"queueDatas\":[{\"brokerName\":\"broker\",\"readQueueNums\":3,\"writeQueueNums\":4,\"perm\":6,\"topicSysFlag\":0}],\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"127.0.0.1:10911\"}}],\"filterServerTable\":{}}";
+        int[] invocation = {0};
+        org.apache.rocketmq.client.impl.MQClientAPIImpl api =
+            new org.apache.rocketmq.client.impl.MQClientAPIImpl(
+                new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null, config, null,
+                ignored -> (org.apache.rocketmq.remoting.RemotingClient) java.lang.reflect.Proxy.newProxyInstance(
+                    RuntimeLookupFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                            request.makeCustomHeaderToNet();
+                            Map<String, Object> call = new TreeMap<>();
+                            call.put("address", values[0]);
+                            call.put("requestCode", request.getCode());
+                            call.put("topic", request.getExtFields() == null ? null
+                                : request.getExtFields().get("topic"));
+                            call.put("timeoutMillis", values[2]);
+                            requests.add(call);
+                            int current = invocation[0]++;
+                            int responseCode = current == 0
+                                ? org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS
+                                : org.apache.rocketmq.remoting.protocol.ResponseCode.TOPIC_NOT_EXIST;
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand response =
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+                                    responseCode, current == 0 ? null : "topic not exist");
+                            if (current == 0) {
+                                response.setBody(routeJson.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                            }
+                            return response;
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        try {
+            org.apache.rocketmq.remoting.protocol.route.TopicRouteData route =
+                api.getDefaultTopicRouteInfoFromNameServer(1234L);
+            Map<String, Object> decoded = new TreeMap<>();
+            decoded.put("queueDataCount", route.getQueueDatas().size());
+            decoded.put("readQueueNums", route.getQueueDatas().get(0).getReadQueueNums());
+            decoded.put("writeQueueNums", route.getQueueDatas().get(0).getWriteQueueNums());
+            decoded.put("brokerName", route.getQueueDatas().get(0).getBrokerName());
+            result.put("successRoute", decoded);
+            try {
+                api.getDefaultTopicRouteInfoFromNameServer(1234L);
+                result.put("topicNotExistOutcome", "returned");
+            } catch (org.apache.rocketmq.client.exception.MQClientException error) {
+                result.put("topicNotExistOutcome", error.getClass().getSimpleName());
+                result.put("topicNotExistResponseCode", error.getResponseCode());
+                result.put("topicNotExistMessage", error.getErrorMessage());
+            }
+        } finally {
+            api.shutdown();
+        }
+        result.put("responseBody", routeJson);
+        result.put("requests", requests);
+        return result;
     }
 
     private static Map<String, Object> consumerListNullGroupApiCase() throws Exception {
