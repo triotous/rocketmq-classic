@@ -12,6 +12,7 @@ import org.apache.rocketmq.client.ClientConfig;
 import org.apache.rocketmq.client.impl.factory.MQClientInstance;
 import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.common.namesrv.DefaultTopAddressing;
+import org.apache.rocketmq.common.namesrv.TopAddressing;
 
 /** Actual pinned URL/normalization/callback methods; no external network. */
 public final class RuntimeDiscoveryFixtures {
@@ -57,11 +58,47 @@ public final class RuntimeDiscoveryFixtures {
         fixture.put("sourceCommit","efa1be59d6fc747ad220f036c86030f05f0419f9");
         fixture.put("entrypoint","DefaultTopAddressing.clearNewLine; MixAll.getWSAddr; MQClientAPIImpl.onNameServerAddressChange");
         fixture.put("serverBaselineContacted",false); fixture.put("normalization",normalization); fixture.put("urls",urls); fixture.put("callbacks",callbacks);
+        fixture.put("providerSequence", providerSequence());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
         if (args.length > 1 && "--verify".equals(args[1])) {
             if (!json.equals(Files.readString(file))) throw new IllegalStateException("fixture drift: " + file);
         } else { Files.createDirectories(file.getParent()); Files.writeString(file,json); }
-        System.out.println("Runtime discovery invoked cases verified: " + (normalization.size()+urls.size()+callbacks.size()));
+        System.out.println("Runtime discovery invoked cases verified: " + (normalization.size()+urls.size()+callbacks.size()+1));
+    }
+
+    private static Map<String, Object> providerSequence() throws Exception {
+        List<String> fetchCalls = new ArrayList<>();
+        List<String> callbackCalls = new ArrayList<>();
+        String[] names = {"first", "second", "third"};
+        String[] addresses = {null, "second:9876", "third:9876"};
+        List<TopAddressing> providers = new ArrayList<>();
+        for (int index = 0; index < names.length; index++) {
+            String name = names[index];
+            String address = addresses[index];
+            providers.add((TopAddressing) java.lang.reflect.Proxy.newProxyInstance(
+                RuntimeDiscoveryFixtures.class.getClassLoader(),
+                new Class<?>[] {TopAddressing.class},
+                (proxy, method, arguments) -> {
+                    if ("fetchNSAddr".equals(method.getName())) {
+                        fetchCalls.add(name);
+                        return address;
+                    }
+                    if ("registerChangeCallBack".equals(method.getName())) {
+                        callbackCalls.add(name);
+                    }
+                    return null;
+                }));
+        }
+        DefaultTopAddressing addressing = new DefaultTopAddressing("http://unused.invalid", null);
+        java.lang.reflect.Field field = DefaultTopAddressing.class.getDeclaredField("topAddressingList");
+        field.setAccessible(true);
+        field.set(addressing, providers);
+        Map<String, Object> result = new TreeMap<>();
+        result.put("fetchResult", addressing.fetchNSAddr());
+        result.put("fetchCalls", fetchCalls);
+        addressing.registerChangeCallBack(changed -> changed);
+        result.put("callbackCalls", callbackCalls);
+        return result;
     }
 }
