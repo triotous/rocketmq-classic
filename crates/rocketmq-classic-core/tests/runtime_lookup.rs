@@ -55,6 +55,7 @@ async fn setup(
 ) -> (Arc<ClientRuntime>, tokio::task::JoinHandle<()>) {
     let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut config = ClientConfig::new("lookup");
+    config.client_ip = Some("192.0.2.6".into());
     config.namesrv_addr = Some(nameserver.local_addr().unwrap().to_string());
     config.vip_channel_enabled = vip;
     config.enable_heartbeat_channel_event_listener = false;
@@ -90,37 +91,51 @@ async fn setup(
 
 #[tokio::test]
 async fn uncached_consumer_lookup_refreshes_once_and_assignment_reuses_raw_topic_broker() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+    let java_lookup = fixture["runtimeLookupInvocation"].clone();
+    let java_consumer_call = java_lookup["consumerCalls"][0].clone();
+    let java_assignment_call = java_lookup["assignmentCalls"][0].clone();
+    let java_consumer_ids: Vec<Option<String>> =
+        serde_json::from_value(java_lookup["consumerOutcome"].clone()).unwrap();
     let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let (runtime, name_peer) = setup(Some(broker.local_addr().unwrap().to_string()), false).await;
+    let peer_java_consumer_call = java_consumer_call.clone();
+    let peer_java_assignment_call = java_assignment_call.clone();
+    let peer_java_consumer_ids = java_consumer_ids.clone();
     let peer = tokio::spawn(async move {
         let (mut socket, _) = broker.accept().await.unwrap();
         let command = read(&mut socket).await;
         assert_eq!(command.code, request::GET_CONSUMER_LIST_BY_GROUP);
         assert_eq!(
             command.ext_fields.as_ref().unwrap()["consumerGroup"],
-            "consumer"
+            peer_java_consumer_call["group"].as_str().unwrap()
         );
         reply(
             &mut socket,
             &command,
             0,
-            Some(br#"{"consumerIdList":["b","a","b"]}"#.to_vec()),
+            Some(
+                serde_json::to_vec(&serde_json::json!({
+                    "consumerIdList": peer_java_consumer_ids
+                }))
+                .unwrap(),
+            ),
         )
         .await;
         let command = read(&mut socket).await;
         assert_eq!(command.code, request::QUERY_ASSIGNMENT);
         let body: QueryAssignmentRequestBody =
             serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
-        assert_eq!(
-            body,
-            QueryAssignmentRequestBody {
-                topic: Some("topic".into()),
-                consumer_group: Some("consumer".into()),
-                client_id: Some("lookup@DEFAULT".into()),
-                strategy_name: Some("strategy".into()),
-                message_model: Some(MessageModel::Broadcasting),
-            }
-        );
+        let java_body: QueryAssignmentRequestBody = serde_json::from_value(serde_json::json!({
+            "topic": peer_java_assignment_call["topic"],
+            "consumerGroup": peer_java_assignment_call["group"],
+            "clientId": peer_java_assignment_call["clientId"],
+            "strategyName": peer_java_assignment_call["strategy"],
+            "messageModel": peer_java_assignment_call["messageModel"],
+        }))
+        .unwrap();
+        assert_eq!(body, java_body);
         let assignment = serde_json::json!({"messageQueue":{"topic":"topic","brokerName":"broker","queueId":2},"mode":"POP","attachments":{"key":"value"}});
         reply(
             &mut socket,
@@ -140,26 +155,24 @@ async fn uncached_consumer_lookup_refreshes_once_and_assignment_reuses_raw_topic
     assert_eq!(runtime.find_broker_address_by_topic("topic").unwrap(), None);
     assert_eq!(
         runtime
-            .find_consumer_id_list("topic", "consumer")
+            .find_consumer_id_list("topic", java_consumer_call["group"].as_str().unwrap())
             .await
             .unwrap(),
-        Some(vec![Some("b".into()), Some("a".into()), Some("b".into())])
+        Some(java_consumer_ids)
     );
     let assignments = runtime
         .query_assignment(
-            "topic",
-            "consumer",
-            "strategy",
+            java_assignment_call["topic"].as_str().unwrap(),
+            java_assignment_call["group"].as_str().unwrap(),
+            java_assignment_call["strategy"].as_str().unwrap(),
             MessageModel::Broadcasting,
-            3000,
+            java_assignment_call["timeout"].as_i64().unwrap() as i32,
         )
         .await
         .unwrap()
         .unwrap()
         .into_iter()
         .collect::<Vec<_>>();
-    let fixture: serde_json::Value =
-        serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
     assert_eq!(
         assignments.len(),
         fixture["assignmentDuplicateCount"].as_u64().unwrap() as usize + 1
