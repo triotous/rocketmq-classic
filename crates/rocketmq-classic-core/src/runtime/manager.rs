@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     future::Future,
-    sync::{Arc, Mutex, OnceLock, Weak},
+    sync::{Arc, Mutex, OnceLock, RwLock, Weak},
 };
 
 use rocketmq_classic_remoting::client::RpcHook;
@@ -760,6 +760,42 @@ impl FactoryValuesView {
 #[derive(Clone)]
 pub struct FactoryEntrySetView(FactoryTable);
 
+/// Detached `Map.Entry`-like snapshot over one factory-table mapping.
+#[derive(Clone)]
+pub struct FactoryEntryHandle {
+    table: FactoryTable,
+    key: String,
+    value: Arc<RwLock<Arc<ClientRuntime>>>,
+}
+
+impl FactoryEntryHandle {
+    pub fn key(&self) -> &str {
+        &self.key
+    }
+
+    pub fn value(&self) -> Result<Arc<ClientRuntime>, RuntimeError> {
+        self.value
+            .read()
+            .map(|value| value.clone())
+            .map_err(|_| RuntimeError::RegistryPoisoned)
+    }
+
+    pub async fn set_value(
+        &self,
+        value: Arc<ClientRuntime>,
+    ) -> Result<Arc<ClientRuntime>, RuntimeError> {
+        let previous = {
+            let mut current = self
+                .value
+                .write()
+                .map_err(|_| RuntimeError::RegistryPoisoned)?;
+            std::mem::replace(&mut *current, value.clone())
+        };
+        self.table.put(&self.key, value).await?;
+        Ok(previous)
+    }
+}
+
 impl FactoryEntrySetView {
     pub fn contains(&self, key: &str, value: &Arc<ClientRuntime>) -> Result<bool, RuntimeError> {
         Ok(self
@@ -779,6 +815,20 @@ impl FactoryEntrySetView {
     /// Returns a detached entry copy from the live view.
     pub fn snapshot(&self) -> Result<BTreeMap<String, Arc<ClientRuntime>>, RuntimeError> {
         Ok(self.0.snapshot()?.into_iter().collect())
+    }
+
+    /// Returns detached entry snapshots in deterministic key order.
+    pub fn entry_snapshots(&self) -> Result<Vec<FactoryEntryHandle>, RuntimeError> {
+        Ok(self
+            .0
+            .snapshot()?
+            .into_iter()
+            .map(|(key, value)| FactoryEntryHandle {
+                table: self.0.clone(),
+                key,
+                value: Arc::new(RwLock::new(value)),
+            })
+            .collect())
     }
 
     pub async fn remove(

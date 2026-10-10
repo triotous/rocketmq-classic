@@ -4,7 +4,7 @@ use super::{
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
-    sync::{Arc, Weak},
+    sync::{Arc, RwLock, Weak},
 };
 
 #[derive(Clone, Copy)]
@@ -441,7 +441,7 @@ macro_rules! table {
     };
 }
 macro_rules! table_views {
-    ($table:ident, $owner:ident, $kind:ident, $key_set:ident, $values_view:ident, $entry_set:ident) => {
+    ($table:ident, $owner:ident, $kind:ident, $key_set:ident, $values_view:ident, $entry_set:ident, $entry_handle:ident) => {
         #[derive(Clone)]
         pub struct $key_set(TableHandle);
         impl $key_set {
@@ -604,6 +604,40 @@ macro_rules! table_views {
             }
         }
 
+        /// Detached `Map.Entry`-like snapshot whose value can be replaced in
+        /// both the entry and its backing live table.
+        #[derive(Clone)]
+        pub struct $entry_handle {
+            table: $table,
+            key: String,
+            value: Arc<RwLock<Arc<dyn $owner>>>,
+        }
+        impl $entry_handle {
+            pub fn key(&self) -> &str {
+                &self.key
+            }
+            pub fn value(&self) -> Result<Arc<dyn $owner>, RuntimeError> {
+                self.value
+                    .read()
+                    .map(|value| value.clone())
+                    .map_err(|_| RuntimeError::RegistryPoisoned)
+            }
+            pub async fn set_value(
+                &self,
+                value: Arc<dyn $owner>,
+            ) -> Result<Arc<dyn $owner>, RuntimeError> {
+                let previous = {
+                    let mut current = self
+                        .value
+                        .write()
+                        .map_err(|_| RuntimeError::RegistryPoisoned)?;
+                    std::mem::replace(&mut *current, value.clone())
+                };
+                self.table.put(self.key.clone(), value).await?;
+                Ok(previous)
+            }
+        }
+
         #[derive(Clone)]
         pub struct $entry_set(TableHandle);
         impl $entry_set {
@@ -629,6 +663,19 @@ macro_rules! table_views {
             /// Detached iteration copy from this live view.
             pub fn snapshot(&self) -> Result<BTreeMap<String, Arc<dyn $owner>>, RuntimeError> {
                 self.table().snapshot()
+            }
+            /// Returns detached entry snapshots in deterministic key order.
+            pub fn entry_snapshots(&self) -> Result<Vec<$entry_handle>, RuntimeError> {
+                let table = self.table();
+                Ok(table
+                    .snapshot()?
+                    .into_iter()
+                    .map(|(key, value)| $entry_handle {
+                        table: table.clone(),
+                        key,
+                        value: Arc::new(RwLock::new(value)),
+                    })
+                    .collect())
             }
             pub async fn remove(
                 &self,
@@ -725,7 +772,8 @@ table_views!(
     Producer,
     ProducerKeySetView,
     ProducerValuesView,
-    ProducerEntrySetView
+    ProducerEntrySetView,
+    ProducerEntryHandle
 );
 table_views!(
     ConsumerTable,
@@ -733,7 +781,8 @@ table_views!(
     Consumer,
     ConsumerKeySetView,
     ConsumerValuesView,
-    ConsumerEntrySetView
+    ConsumerEntrySetView,
+    ConsumerEntryHandle
 );
 
 #[cfg(test)]

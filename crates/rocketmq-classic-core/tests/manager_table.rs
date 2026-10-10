@@ -506,6 +506,34 @@ async fn retained_factory_table_and_atomic_mutations_match_invoked_java() {
         entry_view.remove("iterator-entry", &first).await.unwrap() && live.is_empty().unwrap(),
         java["entryIteratorRemove"]
     );
+    live.put("entry-set-value", first.clone()).await.unwrap();
+    let entry = entry_view.entry_snapshots().unwrap().pop().unwrap();
+    assert_eq!(
+        Arc::ptr_eq(&entry.set_value(second.clone()).await.unwrap(), &first),
+        java["entrySetValueReturnsPrevious"]
+    );
+    assert_eq!(
+        Arc::ptr_eq(&entry.value().unwrap(), &second),
+        java["entrySetValueUpdatesEntry"]
+    );
+    assert_eq!(
+        Arc::ptr_eq(&live.get("entry-set-value").unwrap().unwrap(), &second),
+        java["entrySetValueUpdatesTable"]
+    );
+    live.put("entry-set-value", first.clone()).await.unwrap();
+    assert_eq!(
+        Arc::ptr_eq(&entry.value().unwrap(), &second),
+        java["entrySetValueEntryIsSnapshot"]
+    );
+    assert_eq!(
+        Arc::ptr_eq(&entry.set_value(second.clone()).await.unwrap(), &second),
+        java["entrySetValueReturnsCapturedPrevious"]
+    );
+    assert_eq!(
+        Arc::ptr_eq(&live.get("entry-set-value").unwrap().unwrap(), &second),
+        java["entrySetValueReplacesCurrentMapping"]
+    );
+    live.clear().await.unwrap();
     assert_eq!(
         first.state(),
         rocketmq_classic_core::runtime::RuntimeState::Created

@@ -657,6 +657,26 @@ async fn retained_registry_collection_views_match_invoked_java() {
                 .unwrap()
                 == 1
                 && !table.contains_key("remove-all-entry").unwrap();
+
+            table.clear().await.unwrap();
+            table.put("entry-set-value", first.clone()).await.unwrap();
+            let entry = entries.entry_snapshots().unwrap().pop().unwrap();
+            let entry_set_value_returns_previous =
+                Arc::ptr_eq(&entry.set_value(second.clone()).await.unwrap(), &first);
+            let entry_set_value_updates_entry = Arc::ptr_eq(&entry.value().unwrap(), &second);
+            let entry_set_value_updates_table = table
+                .get("entry-set-value")
+                .unwrap()
+                .is_some_and(|value| Arc::ptr_eq(&value, &second));
+            table.put("entry-set-value", first.clone()).await.unwrap();
+            let entry_set_value_entry_is_snapshot =
+                Arc::ptr_eq(&entry.value().unwrap(), &second);
+            let entry_set_value_returns_captured_previous =
+                Arc::ptr_eq(&entry.set_value(second.clone()).await.unwrap(), &second);
+            let entry_set_value_replaces_current_mapping = table
+                .get("entry-set-value")
+                .unwrap()
+                .is_some_and(|value| Arc::ptr_eq(&value, &second));
             assert_eq!(
                 serde_json::json!({
                     "retainedViewsSeeInitialPut": retained_views_see_initial_put,
@@ -677,9 +697,16 @@ async fn retained_registry_collection_views_match_invoked_java() {
                     "keyViewRemoveAll": key_view_remove_all,
                     "valueViewRemoveAll": value_view_remove_all,
                     "entryViewRemoveAll": entry_view_remove_all,
+                    "entrySetValueReturnsPrevious": entry_set_value_returns_previous,
+                    "entrySetValueUpdatesEntry": entry_set_value_updates_entry,
+                    "entrySetValueUpdatesTable": entry_set_value_updates_table,
+                    "entrySetValueEntryIsSnapshot": entry_set_value_entry_is_snapshot,
+                    "entrySetValueReturnsCapturedPrevious": entry_set_value_returns_captured_previous,
+                    "entrySetValueReplacesCurrentMapping": entry_set_value_replaces_current_mapping,
                 }),
                 $expected
             );
+            table.clear().await.unwrap();
         }};
     }
     exercise_live_views!(

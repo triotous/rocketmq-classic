@@ -21,13 +21,15 @@ pub const SERVICE_THREAD_JOIN_TIME_MILLIS: u64 = 90_000;
 pub use control::RuntimeState;
 pub use instance::ClientRuntime;
 pub use manager::{
-    ClientRuntimeManager, FactoryEntrySetView, FactoryKeySetView, FactoryTable, FactoryValuesView,
+    ClientRuntimeManager, FactoryEntryHandle, FactoryEntrySetView, FactoryKeySetView, FactoryTable,
+    FactoryValuesView,
 };
 pub use pull::MessageRequest;
 pub use registry::{ConsumerOperation, ConsumerRuntime, GroupLease, ProducerRuntime};
 pub use tables::{
-    ConsumerEntrySetView, ConsumerKeySetView, ConsumerTable, ConsumerValuesView,
-    ProducerEntrySetView, ProducerKeySetView, ProducerTable, ProducerValuesView,
+    ConsumerEntryHandle, ConsumerEntrySetView, ConsumerKeySetView, ConsumerTable,
+    ConsumerValuesView, ProducerEntryHandle, ProducerEntrySetView, ProducerKeySetView,
+    ProducerTable, ProducerValuesView,
 };
 
 #[derive(Debug, thiserror::Error)]
