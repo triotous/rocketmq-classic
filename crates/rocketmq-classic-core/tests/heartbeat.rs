@@ -239,6 +239,51 @@ impl ConsumerRuntime for Consumer {
     }
 }
 
+#[tokio::test]
+async fn enabled_vip_does_not_rewrite_an_explicit_heartbeat_address() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/heartbeat.json")).unwrap();
+    let java = &fixture["heartbeatVipAddress"];
+    assert_eq!(java["vipEnabled"], true);
+    assert_eq!(java["inputAddress"], java["apiAddress"]);
+    assert_eq!(java["mode"], "V1");
+    assert_eq!(java["outcome"], true);
+
+    let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = broker.local_addr().unwrap().to_string();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = broker.accept().await.unwrap();
+        let command = read(&mut stream).await;
+        assert_eq!(command.code, request::HEART_BEAT);
+        respond(&mut stream, &command, None, false, false).await;
+    });
+    let mut config = ClientConfig::new("heartbeat-vip-address");
+    config.namesrv_addr = Some(String::new());
+    config.vip_channel_enabled = true;
+    config.enable_heartbeat_channel_event_listener = false;
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+    runtime.remoting().start().unwrap();
+    let producer = Arc::new(Producer);
+    let _lease = runtime
+        .register_producer("heartbeat-vip-address", producer.clone())
+        .await
+        .unwrap();
+    assert!(
+        runtime
+            .send_heartbeat_to_broker(0, "broker", &address)
+            .await
+            .unwrap()
+    );
+    tokio::time::timeout(Duration::from_secs(2), peer)
+        .await
+        .unwrap()
+        .unwrap();
+    runtime.remoting().shutdown().await;
+}
+
 async fn read(stream: &mut TcpStream) -> RemotingCommand {
     let mut length = [0; 4];
     stream.read_exact(&mut length).await.unwrap();
