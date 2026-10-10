@@ -1252,7 +1252,7 @@ public final class RuntimeHeartbeatFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "MQClientInstance.registerProducer/registerConsumer/prepareHeartbeatData/unregisterProducer/unregisterConsumer; HeartbeatData/ConsumerData/ProducerData/SubscriptionData Fastjson scalar inputs; HeartbeatData.computeHeartbeatFingerprint/toString/duplicate-ProducerData decode/nullable producer-consumer-subscription set elements; ProducerData.toString; ConsumerData enum JSON names/toString; ConsumeType.getTypeCN/MessageModel.getModeCN; SubscriptionData.SUB_ALL/constructors/equals/hashCode/compareTo/toString; ProducerData/ConsumerData/HeartbeatData inherited Object equals/hashCode; HeartbeatData inherited RemotingSerializable encode/toJson/decode/decodeList/fromJson methods");
+        fixture.put("entrypoint", "MQClientInstance constructor heartbeat ChannelEventListener selection/registerProducer/registerConsumer/prepareHeartbeatData/unregisterProducer/unregisterConsumer; HeartbeatData/ConsumerData/ProducerData/SubscriptionData Fastjson scalar inputs; HeartbeatData.computeHeartbeatFingerprint/toString/duplicate-ProducerData decode/nullable producer-consumer-subscription set elements; ProducerData.toString; ConsumerData enum JSON names/toString; ConsumeType.getTypeCN/MessageModel.getModeCN; SubscriptionData.SUB_ALL/constructors/equals/hashCode/compareTo/toString; ProducerData/ConsumerData/HeartbeatData inherited Object equals/hashCode; HeartbeatData inherited RemotingSerializable encode/toJson/decode/decodeList/fromJson methods");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
         fixture.put("multiplicityCases", multiplicityCases);
@@ -1276,6 +1276,7 @@ public final class RuntimeHeartbeatFixtures {
         fixture.put("primitiveNullCases", primitiveNullCases());
         fixture.put("heartbeatDtoInputCases", heartbeatDtoInputCases());
         fixture.put("nullOwnerSubscriptionPreparation", nullOwnerSubscriptionPreparation());
+        fixture.put("channelEventListenerCases", channelEventListenerCases());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture) + "\n";
         Path file = Path.of(args[0]);
         if (args.length > 1 && "--verify".equals(args[1])) {
@@ -1302,5 +1303,35 @@ public final class RuntimeHeartbeatFixtures {
             throw new IllegalStateException("unexpected Java multiplicity: " + name);
         body.getJSONArray("consumerDataSet").sort(java.util.Comparator.comparing(
             com.alibaba.fastjson2.JSON::toJSONString)); // Preserve every duplicate.
+    }
+
+    private static List<Object> channelEventListenerCases() throws Exception {
+        List<Object> cases = new ArrayList<>();
+        for (boolean enabled : new boolean[] {false, true}) {
+            ClientConfig config = new ClientConfig();
+            config.setClientIP("192.0.2.6");
+            config.setEnableHeartbeatChannelEventListener(enabled);
+            MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+            try {
+                Object remoting = runtime.getMQClientAPIImpl().getRemotingClient();
+                Method listenerGetter = remoting.getClass().getMethod("getChannelEventListener");
+                Object beforeMutation = listenerGetter.invoke(remoting);
+                config.setEnableHeartbeatChannelEventListener(!enabled);
+                Object afterMutation = listenerGetter.invoke(remoting);
+                Map<String, Object> item = new TreeMap<>();
+                item.put("configured", enabled);
+                item.put("configAfterMutation", !enabled);
+                item.put("listenerInitiallyPresent", beforeMutation != null);
+                item.put("listenerAfterMutationPresent", afterMutation != null);
+                item.put("sameListenerAfterMutation", beforeMutation == afterMutation);
+                cases.add(item);
+            } finally {
+                Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
+                    org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
+                cleanup.setAccessible(true);
+                cleanup.invoke(runtime, runtime.getMQClientAPIImpl(), new IllegalStateException("listener fixture teardown"));
+            }
+        }
+        return cases;
     }
 }
