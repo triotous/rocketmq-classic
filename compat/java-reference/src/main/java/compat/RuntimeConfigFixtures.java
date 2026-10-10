@@ -1152,6 +1152,12 @@ public final class RuntimeConfigFixtures {
 
     private static <T> Map<String, Object> replaceAllEquivalentValueRace(
         java.util.concurrent.ConcurrentMap<String, T> table, T first, T equalWriter, T computed, String prefix) {
+        return replaceAllEquivalentValueRace(table, first, equalWriter, computed, prefix, () -> { });
+    }
+
+    private static <T> Map<String, Object> replaceAllEquivalentValueRace(
+        java.util.concurrent.ConcurrentMap<String, T> table, T first, T equalWriter, T computed, String prefix,
+        Runnable beforeCallbackBlocks) {
         Map<String, Object> result = new TreeMap<>();
         String key = "replace-all-equal-race";
         table.put(key, first);
@@ -1172,6 +1178,7 @@ public final class RuntimeConfigFixtures {
                     }
                     if (callbackCalls.incrementAndGet() == 1) {
                         initialCallbackValue.set(oldValue);
+                        beforeCallbackBlocks.run();
                         callbackEntered.countDown();
                         awaitUnchecked(releaseCallback, "equal-value replaceAll callback release");
                     }
@@ -1352,6 +1359,14 @@ public final class RuntimeConfigFixtures {
                 tableOwner(org.apache.rocketmq.client.impl.producer.MQProducerInner.class, "producer-other");
             equalValues.putAll(replaceAllEquivalentValueRace(runtime.getProducerTable(), producerEqualA,
                 producerEqualB, producerReplacement, "producer"));
+            AtomicReference<Object> producerMutableEqualityKey = new AtomicReference<>("producer-mutable-before");
+            equalValues.putAll(replaceAllEquivalentValueRace(runtime.getProducerTable(),
+                tableOwner(org.apache.rocketmq.client.impl.producer.MQProducerInner.class,
+                    producerMutableEqualityKey),
+                tableOwner(org.apache.rocketmq.client.impl.producer.MQProducerInner.class,
+                    "producer-mutable-after"),
+                producerReplacement, "producerMutable",
+                () -> producerMutableEqualityKey.set("producer-mutable-after")));
             runtime.getProducerTable().put("equal-replace", producerEqualA);
             equalValues.put("producerContainsEqualValue", runtime.getProducerTable().containsValue(producerEqualB));
             equalValues.put("producerReplaceByEqualValue",
@@ -1393,6 +1408,14 @@ public final class RuntimeConfigFixtures {
                 tableOwner(org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class, "consumer-other");
             equalValues.putAll(replaceAllEquivalentValueRace(runtime.getConsumerTable(), consumerEqualA,
                 consumerEqualB, consumerReplacement, "consumer"));
+            AtomicReference<Object> consumerMutableEqualityKey = new AtomicReference<>("consumer-mutable-before");
+            equalValues.putAll(replaceAllEquivalentValueRace(runtime.getConsumerTable(),
+                tableOwner(org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class,
+                    consumerMutableEqualityKey),
+                tableOwner(org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class,
+                    "consumer-mutable-after"),
+                consumerReplacement, "consumerMutable",
+                () -> consumerMutableEqualityKey.set("consumer-mutable-after")));
             runtime.getConsumerTable().put("equal-replace", consumerEqualA);
             equalValues.put("consumerContainsEqualValue", runtime.getConsumerTable().containsValue(consumerEqualB));
             equalValues.put("consumerReplaceByEqualValue",

@@ -442,6 +442,12 @@ async fn registry_replace_all_uses_java_value_equality_for_concurrent_update() {
             Some(self.0.to_owned())
         }
     }
+    struct DynamicProducer(Arc<RwLock<String>>);
+    impl ProducerRuntime for DynamicProducer {
+        fn map_value_equality_key(&self) -> Option<String> {
+            Some(self.0.read().unwrap().clone())
+        }
+    }
     struct EqualConsumer(&'static str);
     impl ConsumerRuntime for EqualConsumer {
         fn heartbeat_data(&self) -> ConsumerData {
@@ -449,6 +455,15 @@ async fn registry_replace_all_uses_java_value_equality_for_concurrent_update() {
         }
         fn map_value_equality_key(&self) -> Option<String> {
             Some(self.0.to_owned())
+        }
+    }
+    struct DynamicConsumer(Arc<RwLock<String>>);
+    impl ConsumerRuntime for DynamicConsumer {
+        fn heartbeat_data(&self) -> ConsumerData {
+            ConsumerData::default()
+        }
+        fn map_value_equality_key(&self) -> Option<String> {
+            Some(self.0.read().unwrap().clone())
         }
     }
     let fixture: serde_json::Value =
@@ -460,7 +475,14 @@ async fn registry_replace_all_uses_java_value_equality_for_concurrent_update() {
         .unwrap();
 
     macro_rules! check_equal_writer {
-        ($table:expr, $first:expr, $equal_writer:expr, $computed:expr, $prefix:literal) => {{
+        (
+            $table:expr,
+            $first:expr,
+            $equal_writer:expr,
+            $computed:expr,
+            $prefix:literal,
+            $before_callback_blocks:expr
+        ) => {{
             let table = $table;
             let first = $first;
             let equal_writer = $equal_writer;
@@ -485,6 +507,7 @@ async fn registry_replace_all_uses_java_value_equality_for_concurrent_update() {
                         if calls_for_task.fetch_add(1, Ordering::SeqCst) == 0 {
                             initial_for_task
                                 .store(Arc::ptr_eq(current, &first_for_task), Ordering::SeqCst);
+                            ($before_callback_blocks)();
                             entered_tx.send(()).unwrap();
                             release_rx.recv().unwrap();
                         }
@@ -545,14 +568,42 @@ async fn registry_replace_all_uses_java_value_equality_for_concurrent_update() {
         Arc::new(EqualProducer("producer-equal")) as Arc<dyn ProducerRuntime>,
         Arc::new(EqualProducer("producer-equal")) as Arc<dyn ProducerRuntime>,
         Arc::new(EqualProducer("producer-replacement")) as Arc<dyn ProducerRuntime>,
-        "producer"
+        "producer",
+        || {}
     );
     check_equal_writer!(
         runtime.consumer_table(),
         Arc::new(EqualConsumer("consumer-equal")) as Arc<dyn ConsumerRuntime>,
         Arc::new(EqualConsumer("consumer-equal")) as Arc<dyn ConsumerRuntime>,
         Arc::new(EqualConsumer("consumer-replacement")) as Arc<dyn ConsumerRuntime>,
-        "consumer"
+        "consumer",
+        || {}
+    );
+    let producer_mutable_key = Arc::new(RwLock::new("producer-mutable-before".to_owned()));
+    let producer_mutable_key_for_callback = producer_mutable_key.clone();
+    check_equal_writer!(
+        runtime.producer_table(),
+        Arc::new(DynamicProducer(producer_mutable_key)) as Arc<dyn ProducerRuntime>,
+        Arc::new(EqualProducer("producer-mutable-after")) as Arc<dyn ProducerRuntime>,
+        Arc::new(EqualProducer("producer-mutable-replacement")) as Arc<dyn ProducerRuntime>,
+        "producerMutable",
+        || {
+            *producer_mutable_key_for_callback.write().unwrap() =
+                "producer-mutable-after".to_owned();
+        }
+    );
+    let consumer_mutable_key = Arc::new(RwLock::new("consumer-mutable-before".to_owned()));
+    let consumer_mutable_key_for_callback = consumer_mutable_key.clone();
+    check_equal_writer!(
+        runtime.consumer_table(),
+        Arc::new(DynamicConsumer(consumer_mutable_key)) as Arc<dyn ConsumerRuntime>,
+        Arc::new(EqualConsumer("consumer-mutable-after")) as Arc<dyn ConsumerRuntime>,
+        Arc::new(EqualConsumer("consumer-mutable-replacement")) as Arc<dyn ConsumerRuntime>,
+        "consumerMutable",
+        || {
+            *consumer_mutable_key_for_callback.write().unwrap() =
+                "consumer-mutable-after".to_owned();
+        }
     );
 }
 
