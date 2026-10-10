@@ -428,7 +428,7 @@ The pinned common `NetworkUtil` also exposes `string2SocketAddress`, `socketAddr
 
 ## ClientConfig: forward and reverse field inventory
 
-Every row maps the Java getter/setter pair to a Rust field. Java plain setters do not validate; Rust retains signed widths and validates at the owning operation. Strings, including SOCKS, are nullable `Option<String>`; AccessChannel and LanguageCode are also nullable. Namespace and NameServer transitions require the named Rust methods, not direct field assignment. `namespaceInitialized` remains private.
+Every row maps the Java getter/setter pair to a Rust field. A reverse scan of `ClientConfig` confirms all 33 public Rust fields correspond one-to-one with the 33 public field rows; `namespace_initialized` is the sole private Rust field and maps Java's private `namespaceInitialized` cache. Java plain setters do not validate; Rust retains signed widths and validates at the owning operation. Strings, including SOCKS, are nullable `Option<String>`; AccessChannel and LanguageCode are also nullable. Namespace and NameServer transitions require the named Rust methods, not direct field assignment. `namespaceInitialized` remains private.
 
 Copy column: **C** means both `cloneClientConfig` and `resetClientConfig` copy the field; **O** means Java omits it (clone constructor default, reset receiver retained). Manager column: **K** means the value belongs to the first runtime's retained construction/behavior snapshot for that client ID; later same-ID calls do not compare or replace it. **ID** marks a client-ID component; **owner** means retained for its owning component, not promoted to a runtime construction key. `MQClientManager` is not a global configuration compatibility checker.
 
