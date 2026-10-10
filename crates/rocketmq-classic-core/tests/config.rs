@@ -413,6 +413,53 @@ async fn runtime_client_id_remains_constructor_snapshot_after_config_mutation() 
     );
 }
 
+#[tokio::test]
+async fn active_nameserver_addresses_remain_constructor_snapshot_after_config_mutation() {
+    use rocketmq_classic_core::runtime::ClientRuntimeManager;
+
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    for (index, case) in fixture["nameServerAddressSnapshotCases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+    {
+        let mut config = ClientConfig::new("192.0.2.80");
+        config.instance_name = Some(format!("phase6-nameserver-snapshot-{index}"));
+        config.namesrv_addr = case["configuredAtConstruction"].as_str().map(str::to_owned);
+        let runtime = ClientRuntimeManager::new()
+            .get_or_create(&config)
+            .await
+            .unwrap();
+        let java_addresses = |value: &Value| {
+            value.as_array().map(|addresses| {
+                addresses
+                    .iter()
+                    .map(|address| address.as_str().unwrap().to_owned())
+                    .collect::<Vec<_>>()
+            })
+        };
+        assert_eq!(
+            runtime.remoting().get_name_server_address_list(),
+            java_addresses(&case["activeAddressesBeforeMutation"]),
+            "before mutation, case {index}"
+        );
+
+        let changed = case["configAfterMutation"].as_str().unwrap().to_owned();
+        runtime
+            .config()
+            .write()
+            .unwrap()
+            .set_namesrv_addr(Some(changed));
+        assert_eq!(
+            runtime.remoting().get_name_server_address_list(),
+            java_addresses(&case["activeAddressesAfterMutation"]),
+            "after mutation, case {index}"
+        );
+    }
+}
+
 #[test]
 fn centralized_defaults_and_java_clone_copy_exact_fields() {
     let fixture: Value =
