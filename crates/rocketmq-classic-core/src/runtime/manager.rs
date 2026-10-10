@@ -10,7 +10,7 @@ use rocketmq_classic_remoting::client::RpcHook;
 use super::{
     ClientRuntime, NullableTableEntry, RuntimeError, TableCompute, TableComputeIfAbsent,
     TableComputeIfPresent, TableEntryViewPredicate, TableForEach, TableKeyViewPredicate,
-    TableMerge, TableReplaceAll, TableValueViewPredicate,
+    TableMerge, TableReplaceAll, TableReplaceAllOptionalResult, TableValueViewPredicate,
 };
 use crate::config::ClientConfig;
 
@@ -903,6 +903,37 @@ impl FactoryTable {
             ));
         };
         self.replace_all(|key, value| remapping(key, value)).await
+    }
+
+    /// Applies Java-compatible `replaceAll` callbacks whose result may be
+    /// null. A null result fails at that key; earlier replacements remain.
+    pub async fn replace_all_with_nullable_results(
+        &self,
+        mut remapping: Option<&mut TableReplaceAllOptionalResult<'_, Arc<ClientRuntime>>>,
+    ) -> Result<(), RuntimeError> {
+        let Some(remapping) = remapping.as_mut() else {
+            return Err(RuntimeError::InvalidRoute(
+                "null factory replaceAll function",
+            ));
+        };
+        for key in self.snapshot()?.into_keys() {
+            loop {
+                let Some(current) = self.get(&key)? else {
+                    break;
+                };
+                let Some(value) = remapping(&key, &current) else {
+                    return Err(RuntimeError::InvalidRoute("null factory replaceAll result"));
+                };
+                let _key_mutation = self.manager.mutation_locks.lock(&key).await?;
+                let _synchronous_mutation = _key_mutation.lock_synchronous();
+                let (_, changed) =
+                    self.mutate_locked(&key, TableMutation::ReplaceIfSame(current, value))?;
+                if changed {
+                    break;
+                }
+            }
+        }
+        Ok(())
     }
 
     pub async fn replace(

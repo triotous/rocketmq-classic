@@ -42,6 +42,7 @@ pub type TableCompute<'a, T> = dyn FnMut(&str, Option<&T>) -> Option<T> + 'a;
 pub type TableMerge<'a, T> = dyn FnMut(&T, &T) -> Option<T> + 'a;
 pub type TableForEach<'a, T> = dyn FnMut(&str, &T) + 'a;
 pub type TableReplaceAll<'a, T> = dyn FnMut(&str, &T) -> T + 'a;
+pub type TableReplaceAllOptionalResult<'a, T> = dyn FnMut(&str, &T) -> Option<T> + 'a;
 /// Nullable key/value fields supplied as one candidate to a live table view.
 pub type NullableTableEntry<T> = (Option<String>, Option<std::sync::Arc<T>>);
 

@@ -2,7 +2,7 @@ use super::{
     ClientRuntime, ConsumerRuntime, NullableTableEntry, ProducerRuntime, RuntimeError,
     RuntimeState, TableCompute, TableComputeIfAbsent, TableComputeIfPresent,
     TableEntryViewPredicate, TableForEach, TableKeyViewPredicate, TableMerge, TableReplaceAll,
-    TableValueViewPredicate, registry::GroupRegistry,
+    TableReplaceAllOptionalResult, TableValueViewPredicate, registry::GroupRegistry,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -758,6 +758,51 @@ macro_rules! table {
                     return Err(RuntimeError::InvalidRoute("null table replaceAll function"));
                 };
                 self.replace_all(|key, value| remapping(key, value)).await
+            }
+            /// Applies `replaceAll` callbacks with nullable Java results. A
+            /// null result fails at that key while prior updates remain.
+            pub async fn replace_all_with_nullable_results(
+                &self,
+                mut remapping: Option<&mut TableReplaceAllOptionalResult<'_, Arc<dyn $owner>>>,
+            ) -> Result<(), RuntimeError> {
+                let Some(remapping) = remapping.as_mut() else {
+                    return Err(RuntimeError::InvalidRoute("null table replaceAll function"));
+                };
+                for key in self.keys()? {
+                    loop {
+                        let Some(current) = self.get(&key)? else {
+                            break;
+                        };
+                        let Some(value) = remapping(&key, &current) else {
+                            return Err(RuntimeError::InvalidRoute(
+                                "null table replaceAll result",
+                            ));
+                        };
+                        let gate = self.0.key_gate(&key).await?;
+                        let Some(latest) = self.get(&key)? else {
+                            break;
+                        };
+                        if !Self::owners_equal(&current, &latest) {
+                            continue;
+                        }
+                        let change = self
+                            .0
+                            .mutate_with_gate(
+                                TableMutation::Replace {
+                                    key: key.clone(),
+                                    value: TableValue::$kind(value),
+                                    expected: Some(TableValue::$kind(latest)),
+                                    comparison: Some(ValueComparison::Identity),
+                                },
+                                Some(gate),
+                            )
+                            .await?;
+                        if change.matched {
+                            break;
+                        }
+                    }
+                }
+                Ok(())
             }
             pub async fn clear(&self) -> Result<(), RuntimeError> {
                 self.0.mutate(TableMutation::Clear).await.map(|_| ())

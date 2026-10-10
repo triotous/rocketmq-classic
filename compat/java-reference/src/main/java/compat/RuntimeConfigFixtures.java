@@ -882,6 +882,23 @@ public final class RuntimeConfigFixtures {
         return result;
     }
 
+    private static <T> Map<String, Object> nullableReplaceAllResults(String prefix,
+        T original, T replacement) {
+        Map<String, Object> result = new TreeMap<>();
+        java.util.concurrent.ConcurrentHashMap<String, T> table = new java.util.concurrent.ConcurrentHashMap<>();
+        table.put("a", original);
+        table.put("b", original);
+        List<String> visited = new ArrayList<>();
+        captureThrowable(result, prefix + "ReplaceAllNullResult", () -> table.replaceAll((key, current) -> {
+            visited.add(key);
+            return visited.size() == 1 ? replacement : null;
+        }));
+        result.put(prefix + "ReplaceAllNullResultVisited", visited);
+        result.put(prefix + "ReplaceAllNullResultAUpdated", table.get("a") == replacement);
+        result.put(prefix + "ReplaceAllNullResultBOriginal", table.get("b") == original);
+        return result;
+    }
+
     private static Map<String, Object> managerTable(ClientConfig config) throws Exception {
         org.apache.rocketmq.client.impl.MQClientManager manager = org.apache.rocketmq.client.impl.MQClientManager.getInstance();
         java.util.concurrent.ConcurrentMap<String, org.apache.rocketmq.client.impl.factory.MQClientInstance> live = manager.getFactoryTable();
@@ -927,6 +944,7 @@ public final class RuntimeConfigFixtures {
             result.put("nullableTableViewNullElements", nullableTableViewNullElements("factory", live));
             result.put("nullableRemappingInputs", nullableRemappingInputs("factory", live, first));
             result.put("nullableBulkInputs", nullableTableBulkInputs("factory", live));
+            result.put("nullableReplaceAllResults", nullableReplaceAllResults("factory", first, second));
             Map<String, Object> nullableTableMutations = new TreeMap<>();
             captureThrowable(nullableTableMutations, "factoryPutNullKey", () -> live.put(null, first));
             captureThrowable(nullableTableMutations, "factoryPutNullValue", () -> live.put("null-put-value", null));
@@ -1708,6 +1726,10 @@ public final class RuntimeConfigFixtures {
             nullableBulkInputs.put("producer", nullableTableBulkInputs("producer", runtime.getProducerTable()));
             nullableBulkInputs.put("consumer", nullableTableBulkInputs("consumer", runtime.getConsumerTable()));
             result.put("nullableBulkInputs", nullableBulkInputs);
+            Map<String, Object> nullableReplaceAllResults = new TreeMap<>();
+            nullableReplaceAllResults.put("producer", nullableReplaceAllResults("producer", producerA, producerB));
+            nullableReplaceAllResults.put("consumer", nullableReplaceAllResults("consumer", consumerA, consumerB));
+            result.put("nullableReplaceAllResults", nullableReplaceAllResults);
             Map<String, Object> nullableTableMutations = new TreeMap<>();
             captureThrowable(nullableTableMutations, "producerPutNullKey",
                 () -> runtime.getProducerTable().put(null, producerA));

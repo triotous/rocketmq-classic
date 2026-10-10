@@ -844,6 +844,66 @@ async fn nullable_factory_bulk_and_traversal_callbacks_match_invoked_java() {
 }
 
 #[tokio::test]
+async fn nullable_factory_replace_all_results_match_invoked_java_partial_updates() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = &fixture["managerTable"]["nullableReplaceAllResults"];
+    assert_eq!(java["factoryReplaceAllNullResult"], "NullPointerException");
+    let java_visited: Vec<String> =
+        serde_json::from_value(java["factoryReplaceAllNullResultVisited"].clone()).unwrap();
+    assert_eq!(java_visited.len(), 2);
+    assert!(java_visited.contains(&"a".to_owned()));
+    assert!(java_visited.contains(&"b".to_owned()));
+    assert_eq!(
+        java["factoryReplaceAllNullResultAUpdated"],
+        java_visited[0] == "a"
+    );
+    assert_eq!(
+        java["factoryReplaceAllNullResultBOriginal"],
+        java_visited[0] == "a"
+    );
+
+    let table_manager = ClientRuntimeManager::new();
+    let table = table_manager.factory_table();
+    let first = ClientRuntimeManager::new()
+        .get_or_create(&ClientConfig::new("replace-all-null-result-first"))
+        .await
+        .unwrap();
+    let replacement = ClientRuntimeManager::new()
+        .get_or_create(&ClientConfig::new("replace-all-null-result-replacement"))
+        .await
+        .unwrap();
+    table.put("a", first.clone()).await.unwrap();
+    table.put("b", first.clone()).await.unwrap();
+
+    let mut visited = Vec::new();
+    {
+        let replacement_for_callback = replacement.clone();
+        let mut remapping = |key: &str, _current: &Arc<_>| {
+            visited.push(key.to_owned());
+            (visited.len() == 1).then(|| replacement_for_callback.clone())
+        };
+        assert!(matches!(
+            table
+                .replace_all_with_nullable_results(Some(&mut remapping))
+                .await,
+            Err(RuntimeError::InvalidRoute("null factory replaceAll result"))
+        ));
+    }
+    assert_eq!(visited.len(), 2);
+    assert!(visited.contains(&"a".to_owned()));
+    assert!(visited.contains(&"b".to_owned()));
+    assert!(Arc::ptr_eq(
+        &table.get(&visited[0]).unwrap().unwrap(),
+        &replacement
+    ));
+    assert!(Arc::ptr_eq(
+        &table.get(&visited[1]).unwrap().unwrap(),
+        &first
+    ));
+}
+
+#[tokio::test]
 async fn nullable_manager_removal_overloads_match_invoked_java_null_key_failures() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();

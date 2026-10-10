@@ -799,6 +799,86 @@ async fn nullable_registry_entry_set_value_rejects_null_without_mutation() {
 }
 
 #[tokio::test]
+async fn nullable_registry_replace_all_results_match_invoked_java_partial_updates() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let expected = &fixture["registryTables"]["nullableReplaceAllResults"];
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&ClientConfig::new("registry-replace-all-null-result"))
+        .await
+        .unwrap();
+
+    macro_rules! check_nullable_result {
+        ($table:expr, $first:expr, $replacement:expr, $family:literal, $null_result:literal) => {{
+            let table = $table;
+            let family = &expected[$family];
+            let first = $first;
+            let replacement = $replacement;
+            table.put("a", first.clone()).await.unwrap();
+            table.put("b", first.clone()).await.unwrap();
+
+            let outcome = format!("{}ReplaceAllNullResult", $family);
+            assert_eq!(family[&outcome], "NullPointerException");
+            let java_visited: Vec<String> = serde_json::from_value(
+                family[format!("{}ReplaceAllNullResultVisited", $family)].clone(),
+            )
+            .unwrap();
+            assert_eq!(java_visited.len(), 2);
+            assert!(java_visited.contains(&"a".to_owned()));
+            assert!(java_visited.contains(&"b".to_owned()));
+            assert_eq!(
+                family[format!("{}ReplaceAllNullResultAUpdated", $family)],
+                java_visited[0] == "a"
+            );
+            assert_eq!(
+                family[format!("{}ReplaceAllNullResultBOriginal", $family)],
+                java_visited[0] == "a"
+            );
+
+            let mut visited = Vec::new();
+            {
+                let replacement_for_callback = replacement.clone();
+                let mut remapping = |key: &str, _current: &Arc<_>| {
+                    visited.push(key.to_owned());
+                    (visited.len() == 1).then(|| replacement_for_callback.clone())
+                };
+                assert!(matches!(
+                    table
+                        .replace_all_with_nullable_results(Some(&mut remapping))
+                        .await,
+                    Err(RuntimeError::InvalidRoute($null_result))
+                ));
+            }
+            assert_eq!(visited.len(), 2);
+            assert!(visited.contains(&"a".to_owned()));
+            assert!(visited.contains(&"b".to_owned()));
+            assert!(same(table.get(&visited[0]).unwrap(), &replacement));
+            assert!(same(table.get(&visited[1]).unwrap(), &first));
+        }};
+    }
+
+    let producer_first: Arc<dyn ProducerRuntime> = Arc::new(Producer);
+    let producer_replacement: Arc<dyn ProducerRuntime> = Arc::new(Producer);
+    check_nullable_result!(
+        runtime.producer_table(),
+        producer_first,
+        producer_replacement,
+        "producer",
+        "null table replaceAll result"
+    );
+    let consumer_first: Arc<dyn ConsumerRuntime> = Arc::new(Consumer);
+    let consumer_replacement: Arc<dyn ConsumerRuntime> = Arc::new(Consumer);
+    check_nullable_result!(
+        runtime.consumer_table(),
+        consumer_first,
+        consumer_replacement,
+        "consumer",
+        "null table replaceAll result"
+    );
+    assert_eq!(runtime.state(), RuntimeState::Created);
+}
+
+#[tokio::test]
 async fn nullable_registry_table_view_elements_match_invoked_java_collections() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
