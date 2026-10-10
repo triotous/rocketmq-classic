@@ -1,5 +1,7 @@
 use rocketmq_classic_common::message::MessageQueue;
-use rocketmq_classic_core::config::{AccessChannel, AccessChannelLookupError, ClientConfig};
+use rocketmq_classic_core::config::{
+    AccessChannel, AccessChannelLookupError, ClientConfig, ConfigError,
+};
 use rocketmq_classic_protocol::codes::LanguageCode;
 use serde_json::Value;
 
@@ -170,6 +172,16 @@ fn endpoint_namespace_and_resource_helpers_match_invoked_java() {
     for outcome in fixture["pid"].as_object().unwrap().values() {
         assert_eq!(outcome, true);
     }
+    assert_eq!(
+        fixture["instanceNameNullPidOutcome"],
+        "NullPointerException"
+    );
+    let mut null_instance = ClientConfig::new("null-instance");
+    null_instance.instance_name = None;
+    assert_eq!(
+        null_instance.change_instance_name_to_pid(),
+        Err(ConfigError::NullInstanceName)
+    );
 }
 
 #[tokio::test]

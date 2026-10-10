@@ -140,6 +140,14 @@ public final class RuntimeConfigFixtures {
             String changed = c.getInstanceName(); c.changeInstanceNameToPID();
             pid.put(instance, instance.equals("DEFAULT") ? changed.matches(org.apache.rocketmq.common.UtilAll.getPid() + "#-?\\d+") && changed.equals(c.getInstanceName()) : instance.equals(changed));
         }
+        ClientConfig nullPidConfig = new ClientConfig();
+        nullPidConfig.setInstanceName(null);
+        String nullInstancePidOutcome = "OK";
+        try {
+            nullPidConfig.changeInstanceNameToPID();
+        } catch (Throwable error) {
+            nullInstancePidOutcome = error.getClass().getSimpleName();
+        }
         Map<String, Object> fixture = new TreeMap<>();
         List<Object> rebalanceLongs = new ArrayList<>();
         for (String input : new String[] {"٢٠٠٠٠", "+１２３４", "-١", "1٢3", "०", "9223372036854775807",
@@ -216,6 +224,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("endpoints", endpoints);
         fixture.put("resources", resources);
         fixture.put("pid", pid);
+        fixture.put("instanceNameNullPidOutcome", nullInstancePidOutcome);
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,
             com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
