@@ -417,6 +417,58 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
         "nullMapOperationArgumentsKeepMapping",
         table.len().unwrap() == 1 && same(table.get("topic").unwrap(), &first),
     );
+    let key_view = table.key_set_view();
+    let values_view = table.values_view();
+    let entry_view = table.entry_set_view();
+    outcomes.insert(
+        "keyViewNullContainsThrowsNullPointer",
+        matches!(
+            key_view.contains_nullable(None),
+            Err(RuntimeError::InvalidRoute("null topic route key"))
+        ),
+    );
+    outcomes.insert(
+        "keyViewNullRemoveThrowsNullPointer",
+        matches!(
+            key_view.remove_nullable(None),
+            Err(RuntimeError::InvalidRoute("null topic route key"))
+        ),
+    );
+    outcomes.insert(
+        "valuesViewNullContainsThrowsNullPointer",
+        matches!(
+            values_view.contains_nullable(None),
+            Err(RuntimeError::InvalidRoute("null topic route value"))
+        ),
+    );
+    outcomes.insert(
+        "valuesViewNullRemoveReturnsFalse",
+        !values_view.remove_nullable(None).unwrap(),
+    );
+    outcomes.insert(
+        "entryViewNullKeyContainsReturnsFalse",
+        !entry_view
+            .contains_nullable(None, Some(&first.snapshot().unwrap()))
+            .unwrap(),
+    );
+    outcomes.insert(
+        "entryViewNullKeyRemoveReturnsFalse",
+        !entry_view
+            .remove_nullable(None, Some(&first.snapshot().unwrap()))
+            .unwrap(),
+    );
+    outcomes.insert(
+        "entryViewNullValueContainsReturnsFalse",
+        !entry_view.contains_nullable(Some("topic"), None).unwrap(),
+    );
+    outcomes.insert(
+        "entryViewNullValueRemoveReturnsFalse",
+        !entry_view.remove_nullable(Some("topic"), None).unwrap(),
+    );
+    outcomes.insert(
+        "nullCollectionViewArgumentsKeepMapping",
+        table.len().unwrap() == 1 && same(table.get("topic").unwrap(), &first),
+    );
     let mut null_compute_callback_calls = 0;
     outcomes.insert(
         "computeIfAbsentNullKeyThrowsNullPointer",

@@ -697,6 +697,10 @@ impl TopicRouteKeySetView {
     pub fn contains(&self, key: &str) -> Result<bool, RuntimeError> {
         self.0.contains_key(key)
     }
+    /// Preserves Java key-view null-key rejection.
+    pub fn contains_nullable(&self, key: Option<&str>) -> Result<bool, RuntimeError> {
+        self.0.contains_key_nullable(key)
+    }
 
     pub fn len(&self) -> Result<usize, RuntimeError> {
         self.0.len()
@@ -713,6 +717,10 @@ impl TopicRouteKeySetView {
 
     pub fn remove(&self, key: &str) -> Result<bool, RuntimeError> {
         self.0.remove(key).map(|value| value.is_some())
+    }
+    /// Preserves Java key-view null-key rejection.
+    pub fn remove_nullable(&self, key: Option<&str>) -> Result<bool, RuntimeError> {
+        self.0.remove_nullable(key).map(|value| value.is_some())
     }
 
     /// Removes matching keys while visiting a detached entry snapshot.
@@ -750,6 +758,10 @@ impl TopicRouteValuesView {
     pub fn contains(&self, value: &TopicRouteData) -> Result<bool, RuntimeError> {
         self.0.contains_value(value)
     }
+    /// Preserves Java values-view null-value rejection.
+    pub fn contains_nullable(&self, value: Option<&TopicRouteData>) -> Result<bool, RuntimeError> {
+        self.0.contains_value_nullable(value)
+    }
 
     pub fn len(&self) -> Result<usize, RuntimeError> {
         self.0.len()
@@ -774,6 +786,14 @@ impl TopicRouteValuesView {
             }
         }
         Ok(false)
+    }
+    /// Java's values view rejects null for `contains`, while `remove(null)`
+    /// returns false because ConcurrentHashMap cannot contain null values.
+    pub fn remove_nullable(&self, value: Option<&TopicRouteData>) -> Result<bool, RuntimeError> {
+        let Some(value) = value else {
+            return Ok(false);
+        };
+        self.remove(value)
     }
 
     /// Removes matching values while visiting a detached entry snapshot.
@@ -843,6 +863,17 @@ impl TopicRouteEntrySetView {
             None => Ok(false),
         }
     }
+    /// Preserves Java entry-view null-entry mismatch behavior.
+    pub fn contains_nullable(
+        &self,
+        key: Option<&str>,
+        value: Option<&TopicRouteData>,
+    ) -> Result<bool, RuntimeError> {
+        let (Some(key), Some(value)) = (key, value) else {
+            return Ok(false);
+        };
+        self.contains(key, value)
+    }
 
     pub fn len(&self) -> Result<usize, RuntimeError> {
         self.0.len()
@@ -876,6 +907,17 @@ impl TopicRouteEntrySetView {
 
     pub fn remove(&self, key: &str, value: &TopicRouteData) -> Result<bool, RuntimeError> {
         self.0.remove_if_equal(key, value)
+    }
+    /// Preserves Java entry-view null-entry mismatch behavior.
+    pub fn remove_nullable(
+        &self,
+        key: Option<&str>,
+        value: Option<&TopicRouteData>,
+    ) -> Result<bool, RuntimeError> {
+        let (Some(key), Some(value)) = (key, value) else {
+            return Ok(false);
+        };
+        self.remove(key, value)
     }
 
     /// Removes matching entries while visiting a detached entry snapshot.

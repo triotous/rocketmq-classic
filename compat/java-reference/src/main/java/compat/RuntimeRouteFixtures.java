@@ -1904,6 +1904,30 @@ public final class RuntimeRouteFixtures {
                 !table.remove("topic", null));
             primitives.put("nullMapOperationArgumentsKeepMapping",
                 table.size() == 1 && table.get("topic") == first);
+            java.util.Set<String> keyView = table.keySet();
+            java.util.Collection<TopicRouteData> valuesView = table.values();
+            java.util.Set<Map.Entry<String, TopicRouteData>> entryView = table.entrySet();
+            primitives.put("keyViewNullContainsThrowsNullPointer",
+                throwsNullPointer(() -> keyView.contains(null)));
+            primitives.put("keyViewNullRemoveThrowsNullPointer",
+                throwsNullPointer(() -> keyView.remove(null)));
+            primitives.put("valuesViewNullContainsThrowsNullPointer",
+                throwsNullPointer(() -> valuesView.contains(null)));
+            primitives.put("valuesViewNullRemoveReturnsFalse", !valuesView.remove(null));
+            Map.Entry<String, TopicRouteData> nullKeyEntry =
+                new java.util.AbstractMap.SimpleImmutableEntry<>(null, first);
+            primitives.put("entryViewNullKeyContainsReturnsFalse",
+                !entryView.contains(nullKeyEntry));
+            primitives.put("entryViewNullKeyRemoveReturnsFalse",
+                !entryView.remove(nullKeyEntry));
+            Map.Entry<String, TopicRouteData> nullValueEntry =
+                new java.util.AbstractMap.SimpleImmutableEntry<>("topic", null);
+            primitives.put("entryViewNullValueContainsReturnsFalse",
+                !entryView.contains(nullValueEntry));
+            primitives.put("entryViewNullValueRemoveReturnsFalse",
+                !entryView.remove(nullValueEntry));
+            primitives.put("nullCollectionViewArgumentsKeepMapping",
+                table.size() == 1 && table.get("topic") == first);
             AtomicInteger nullComputeCallbackCalls = new AtomicInteger();
             primitives.put("computeIfAbsentNullKeyThrowsNullPointer", throwsNullPointer(() ->
                 table.computeIfAbsent(null, key -> {
