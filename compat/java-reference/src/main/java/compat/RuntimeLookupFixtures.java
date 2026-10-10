@@ -934,10 +934,17 @@ public final class RuntimeLookupFixtures {
         return item;
     }
 
-    private static Map<String, Object> messageRequestModeWrapperApiCase() {
+    private static Map<String, Object> messageRequestModeWrapperApiCase() throws Exception {
         org.apache.rocketmq.remoting.protocol.body.MessageRequestModeSerializeWrapper wrapper =
             new org.apache.rocketmq.remoting.protocol.body.MessageRequestModeSerializeWrapper();
         Map<String, Object> item = new TreeMap<>();
+        item.put("equalsDeclaringClass", wrapper.getClass().getMethod("equals", Object.class)
+            .getDeclaringClass().getName());
+        item.put("hashCodeDeclaringClass", wrapper.getClass().getMethod("hashCode")
+            .getDeclaringClass().getName());
+        item.put("sameInstanceEquals", wrapper.equals(wrapper));
+        item.put("equalValuesDistinctInstanceEquals",
+            wrapper.equals(new org.apache.rocketmq.remoting.protocol.body.MessageRequestModeSerializeWrapper()));
         item.put("defaultMapNonNull", wrapper.getMessageRequestModeMap() != null);
         item.put("defaultMapSize", wrapper.getMessageRequestModeMap().size());
         wrapper.setMessageRequestModeMap(null);
@@ -960,11 +967,28 @@ public final class RuntimeLookupFixtures {
         map.put("orders", groups);
         wrapper.setMessageRequestModeMap(map);
         item.put("setterRetainsMapIdentity", wrapper.getMessageRequestModeMap() == map);
-        item.put("populatedMap", com.alibaba.fastjson2.JSON.parseObject(
-            com.alibaba.fastjson2.JSON.toJSONString(wrapper.getMessageRequestModeMap())));
         Map<String, java.util.concurrent.ConcurrentHashMap<String,
             org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody>> getterMap =
                 wrapper.getMessageRequestModeMap();
+        item.put("setterRetainsGroupMapIdentity", getterMap.get("orders") == groups);
+        item.put("getterReturnsAssignedBody", getterMap.get("orders").get("workers") == body);
+        map.put("caller-topic", new java.util.concurrent.ConcurrentHashMap<>());
+        item.put("callerOuterMutationVisible", getterMap.containsKey("caller-topic"));
+        map.remove("caller-topic");
+        groups.put("caller-group", body);
+        item.put("callerGroupMutationVisible", getterMap.get("orders").containsKey("caller-group"));
+        groups.remove("caller-group");
+        body.setMode(org.apache.rocketmq.common.message.MessageRequestMode.PULL);
+        item.put("callerBodyMutationVisible", getterMap.get("orders").get("workers").getMode()
+            == org.apache.rocketmq.common.message.MessageRequestMode.PULL);
+        body.setMode(org.apache.rocketmq.common.message.MessageRequestMode.POP);
+        getterMap.get("orders").get("workers")
+            .setMode(org.apache.rocketmq.common.message.MessageRequestMode.PULL);
+        item.put("getterBodyMutationVisibleToSetterObject",
+            body.getMode() == org.apache.rocketmq.common.message.MessageRequestMode.PULL);
+        body.setMode(org.apache.rocketmq.common.message.MessageRequestMode.POP);
+        item.put("populatedMap", com.alibaba.fastjson2.JSON.parseObject(
+            com.alibaba.fastjson2.JSON.toJSONString(wrapper.getMessageRequestModeMap())));
         getterMap.put("archive", new java.util.concurrent.ConcurrentHashMap<>());
         getterMap.get("orders").put("readers", body);
         item.put("getterMutationVisible", wrapper.getMessageRequestModeMap().get("archive")

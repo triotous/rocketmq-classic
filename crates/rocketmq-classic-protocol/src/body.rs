@@ -2521,58 +2521,46 @@ impl std::fmt::Display for BatchAck {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub type MessageRequestModeGroup =
+    std::collections::BTreeMap<String, SharedValue<SetMessageRequestModeRequestBody>>;
+pub type SharedMessageRequestModeGroup = SharedValue<MessageRequestModeGroup>;
+pub type MessageRequestModeMap = std::collections::BTreeMap<String, SharedMessageRequestModeGroup>;
+pub type SharedMessageRequestModeMap = SharedValue<MessageRequestModeMap>;
+
+#[derive(Debug, Clone, Serialize)]
+/// Java inherits identity-based equality and hashing for this DTO.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::MessageRequestModeSerializeWrapper;
+/// fn require_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
+/// fn main() { require_java_identity::<MessageRequestModeSerializeWrapper>(); }
+/// ```
 #[serde(rename_all = "camelCase")]
 pub struct MessageRequestModeSerializeWrapper {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub message_request_mode_map: Option<
-        std::collections::BTreeMap<
-            String,
-            std::collections::BTreeMap<String, SetMessageRequestModeRequestBody>,
-        >,
-    >,
+    pub message_request_mode_map: Option<SharedMessageRequestModeMap>,
 }
 
 impl Default for MessageRequestModeSerializeWrapper {
     fn default() -> Self {
         Self {
-            message_request_mode_map: Some(std::collections::BTreeMap::new()),
+            message_request_mode_map: Some(SharedValue::new(std::collections::BTreeMap::new())),
         }
     }
 }
 
 impl MessageRequestModeSerializeWrapper {
-    pub fn get_message_request_mode_map(
-        &self,
-    ) -> Option<
-        &std::collections::BTreeMap<
-            String,
-            std::collections::BTreeMap<String, SetMessageRequestModeRequestBody>,
-        >,
-    > {
-        self.message_request_mode_map.as_ref()
+    pub fn get_message_request_mode_map(&self) -> Option<SharedMessageRequestModeMap> {
+        self.message_request_mode_map.clone()
     }
 
-    /// Borrows the owned nested map mutably for Java-compatible getter mutations.
-    pub fn get_message_request_mode_map_mut(
-        &mut self,
-    ) -> Option<
-        &mut std::collections::BTreeMap<
-            String,
-            std::collections::BTreeMap<String, SetMessageRequestModeRequestBody>,
-        >,
-    > {
+    pub fn get_message_request_mode_map_mut(&mut self) -> Option<&mut SharedMessageRequestModeMap> {
         self.message_request_mode_map.as_mut()
     }
 
     pub fn set_message_request_mode_map(
         &mut self,
-        message_request_mode_map: Option<
-            std::collections::BTreeMap<
-                String,
-                std::collections::BTreeMap<String, SetMessageRequestModeRequestBody>,
-            >,
-        >,
+        message_request_mode_map: Option<SharedMessageRequestModeMap>,
     ) {
         self.message_request_mode_map = message_request_mode_map;
     }
@@ -2606,8 +2594,24 @@ impl<'de> Deserialize<'de> for MessageRequestModeSerializeWrapper {
     {
         let fields: MessageRequestModeSerializeWrapperFields =
             serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        let message_request_mode_map = fields.message_request_mode_map.map(|topics| {
+            SharedValue::new(
+                topics
+                    .into_iter()
+                    .map(|(topic, groups)| {
+                        let groups = SharedValue::new(
+                            groups
+                                .into_iter()
+                                .map(|(group, body)| (group, SharedValue::new(body)))
+                                .collect(),
+                        );
+                        (topic, groups)
+                    })
+                    .collect(),
+            )
+        });
         Ok(Self {
-            message_request_mode_map: fields.message_request_mode_map,
+            message_request_mode_map,
         })
     }
 }
@@ -6028,35 +6032,97 @@ mod tests {
 
         let api = &fixture["messageRequestModeWrapperApiCase"];
         let mut wrapper = MessageRequestModeSerializeWrapper::default();
+        assert_eq!(api["equalsDeclaringClass"], "java.lang.Object");
+        assert_eq!(api["hashCodeDeclaringClass"], "java.lang.Object");
+        assert_eq!(api["sameInstanceEquals"], true);
+        assert_eq!(api["equalValuesDistinctInstanceEquals"], false);
         assert_eq!(api["defaultMapNonNull"], true);
         assert_eq!(api["defaultMapSize"], 0);
-        assert_eq!(wrapper.get_message_request_mode_map().unwrap().len(), 0);
+        assert_eq!(
+            wrapper
+                .get_message_request_mode_map()
+                .unwrap()
+                .with(std::collections::BTreeMap::len),
+            0
+        );
         wrapper.set_message_request_mode_map(None);
         assert_eq!(api["nullSetterRemainsNull"], true);
-        assert_eq!(wrapper.get_message_request_mode_map(), None);
-        wrapper.set_message_request_mode_map(Some(std::collections::BTreeMap::from([(
+        assert!(wrapper.get_message_request_mode_map().is_none());
+        let assigned_body = SharedValue::new(SetMessageRequestModeRequestBody {
+            topic: Some("orders".into()),
+            consumer_group: Some("workers".into()),
+            mode: Some(MessageRequestMode::Pop),
+            pop_share_queue_num: 2,
+        });
+        let assigned_group = SharedValue::new(std::collections::BTreeMap::from([(
+            "workers".into(),
+            assigned_body.clone(),
+        )]));
+        let assigned_map = SharedValue::new(std::collections::BTreeMap::from([(
             "orders".into(),
-            std::collections::BTreeMap::from([(
-                "workers".into(),
-                SetMessageRequestModeRequestBody {
-                    topic: Some("orders".into()),
-                    consumer_group: Some("workers".into()),
-                    mode: Some(MessageRequestMode::Pop),
-                    pop_share_queue_num: 2,
-                },
-            )]),
-        )])));
+            assigned_group.clone(),
+        )]));
+        wrapper.set_message_request_mode_map(Some(assigned_map.clone()));
+        let getter_map = wrapper.get_message_request_mode_map().unwrap();
+        let getter_group = getter_map.with(|map| map.get("orders").unwrap().clone());
+        let getter_body = getter_group.with(|groups| groups.get("workers").unwrap().clone());
+        assert!(assigned_map.ptr_eq(&getter_map));
+        assert!(assigned_group.ptr_eq(&getter_group));
+        assert!(assigned_body.ptr_eq(&getter_body));
+        assert_eq!(api["setterRetainsMapIdentity"], true);
+        assert_eq!(api["setterRetainsGroupMapIdentity"], true);
+        assert_eq!(api["getterReturnsAssignedBody"], true);
+
+        assigned_map.with_mut(|map| {
+            map.insert(
+                "caller-topic".into(),
+                SharedValue::new(std::collections::BTreeMap::new()),
+            );
+        });
+        assert!(getter_map.with(|map| map.contains_key("caller-topic")));
+        assigned_map.with_mut(|map| {
+            map.remove("caller-topic");
+        });
+        assigned_group.with_mut(|groups| {
+            groups.insert("caller-group".into(), assigned_body.clone());
+        });
+        assert!(getter_group.with(|groups| groups.contains_key("caller-group")));
+        assigned_group.with_mut(|groups| {
+            groups.remove("caller-group");
+        });
+        assigned_body.with_mut(|body| body.set_mode(Some(MessageRequestMode::Pull)));
+        assert_eq!(
+            getter_body.with(SetMessageRequestModeRequestBody::get_mode),
+            Some(MessageRequestMode::Pull)
+        );
+        assigned_body.with_mut(|body| body.set_mode(Some(MessageRequestMode::Pop)));
+        getter_body.with_mut(|body| body.set_mode(Some(MessageRequestMode::Pull)));
+        assert_eq!(
+            assigned_body.with(SetMessageRequestModeRequestBody::get_mode),
+            Some(MessageRequestMode::Pull)
+        );
+        getter_body.with_mut(|body| body.set_mode(Some(MessageRequestMode::Pop)));
+        assert_eq!(api["callerOuterMutationVisible"], true);
+        assert_eq!(api["callerGroupMutationVisible"], true);
+        assert_eq!(api["callerBodyMutationVisible"], true);
+        assert_eq!(api["getterBodyMutationVisibleToSetterObject"], true);
         assert_eq!(
             serde_json::to_value(&wrapper).unwrap()["messageRequestModeMap"],
             api["populatedMap"]
         );
         assert_eq!(api["getterMutationVisible"], true);
         let map = wrapper.get_message_request_mode_map_mut().unwrap();
-        map.entry("archive".into()).or_default();
-        let readers = map.get("orders").unwrap().get("workers").unwrap().clone();
-        map.get_mut("orders")
-            .unwrap()
-            .insert("readers".into(), readers);
+        map.with_mut(|map| {
+            map.entry("archive".into())
+                .or_insert_with(|| SharedValue::new(std::collections::BTreeMap::new()));
+            let readers = map
+                .get("orders")
+                .unwrap()
+                .with(|groups| groups.get("workers").unwrap().clone());
+            map.get("orders")
+                .unwrap()
+                .with_mut(|groups| groups.insert("readers".into(), readers));
+        });
         assert_eq!(
             serde_json::to_value(wrapper).unwrap()["messageRequestModeMap"],
             api["getterMutatedMap"]
@@ -6981,18 +7047,18 @@ mod tests {
         assert_eq!(serde_json::to_value(round_tripped).unwrap(), value);
 
         let wrapper = MessageRequestModeSerializeWrapper {
-            message_request_mode_map: Some(std::collections::BTreeMap::from([(
+            message_request_mode_map: Some(SharedValue::new(std::collections::BTreeMap::from([(
                 "orders".into(),
-                std::collections::BTreeMap::from([(
+                SharedValue::new(std::collections::BTreeMap::from([(
                     "workers".into(),
-                    SetMessageRequestModeRequestBody {
+                    SharedValue::new(SetMessageRequestModeRequestBody {
                         topic: Some("orders".into()),
                         consumer_group: Some("workers".into()),
                         mode: Some(MessageRequestMode::Pop),
                         pop_share_queue_num: 2,
-                    },
-                )]),
-            )])),
+                    }),
+                )])),
+            )]))),
         };
         let value = serde_json::to_value(wrapper).unwrap();
         assert_eq!(
