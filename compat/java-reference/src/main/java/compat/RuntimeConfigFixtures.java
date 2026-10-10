@@ -810,6 +810,59 @@ public final class RuntimeConfigFixtures {
             result.put("remappingCallbackRunsOnce", concurrentRemappingCalls.get() == 1);
             result.put("remappingReturnsAndKeepsSecond", remappingResult.get() == second
                 && live.get("compute-a") == second);
+            live.put(id, first);
+            AtomicInteger removalRemappingCalls = new AtomicInteger();
+            CountDownLatch removalRemappingEntered = new CountDownLatch(1);
+            CountDownLatch releaseRemovalRemapping = new CountDownLatch(1);
+            CountDownLatch identityRemovalStarted = new CountDownLatch(1);
+            CountDownLatch identityRemovalFinished = new CountDownLatch(1);
+            AtomicReference<Throwable> identityRemovalFailure = new AtomicReference<>();
+            AtomicReference<org.apache.rocketmq.client.impl.factory.MQClientInstance> removalRemappingResult =
+                new AtomicReference<>();
+            Thread removalRemappingThread = new Thread(() -> removalRemappingResult.set(
+                live.computeIfPresent(id, (key, oldValue) -> {
+                    removalRemappingCalls.incrementAndGet();
+                    if (oldValue != first) {
+                        throw new IllegalStateException("unexpected mapping before identity-removal race");
+                    }
+                    removalRemappingEntered.countDown();
+                    awaitUnchecked(releaseRemovalRemapping, "identity-removal remapping release");
+                    return second;
+                })), "java-factory-table-identity-removal-remapping");
+            Thread identityRemovalThread = new Thread(() -> {
+                identityRemovalStarted.countDown();
+                try {
+                    manager.removeClientFactory(id, first);
+                } catch (Throwable error) {
+                    identityRemovalFailure.set(error);
+                } finally {
+                    identityRemovalFinished.countDown();
+                }
+            }, "java-factory-table-identity-removal");
+            removalRemappingThread.setDaemon(true);
+            identityRemovalThread.setDaemon(true);
+            removalRemappingThread.start();
+            try {
+                awaitUnchecked(removalRemappingEntered, "identity-removal remapping callback");
+                identityRemovalThread.start();
+                awaitUnchecked(identityRemovalStarted, "identity-safe manager removal");
+                result.put("managerIdentityRemovalWaitsForRemapping",
+                    !identityRemovalFinished.await(100, TimeUnit.MILLISECONDS));
+            } finally {
+                releaseRemovalRemapping.countDown();
+            }
+            removalRemappingThread.join(5000);
+            identityRemovalThread.join(5000);
+            if (removalRemappingThread.isAlive() || identityRemovalThread.isAlive()) {
+                throw new IllegalStateException("ConcurrentHashMap manager-removal fixture threads did not finish");
+            }
+            if (identityRemovalFailure.get() != null) {
+                throw new IllegalStateException("ConcurrentHashMap identity-safe removal failed",
+                    identityRemovalFailure.get());
+            }
+            result.put("managerIdentityRemovalRemappingRunsOnce", removalRemappingCalls.get() == 1);
+            result.put("managerIdentityRemovalKeepsRemappingResult",
+                removalRemappingResult.get() == second && live.get(id) == second);
             live.put("merge-remove", second);
             result.put("mergeNullRemoves", live.merge("merge-remove", first, (oldValue, newValue) -> null) == null
                 && !live.containsKey("merge-remove"));
