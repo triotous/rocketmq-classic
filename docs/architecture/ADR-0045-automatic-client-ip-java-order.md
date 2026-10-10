@@ -16,6 +16,8 @@ On macOS, reverse only the IPv4 candidate sequence returned by `getifaddrs` befo
 
 The Java fixture directly records `NetworkUtil.getLocalAddress()`, ordered eligible candidates, and the no-argument `ClientConfig.getClientIP()`. The native `automatic_client_ip_matches_invoked_java_network_util_and_constructor` regression failed with `192.168.139.3` before implementation `5791e28`; oracle/test commit `482e02d`. A macOS-only unit test verifies that the adapter reverses IPv4 candidates while leaving IPv6 entries in place. Fixture `client-config.json` SHA-256: `138164047171a6e1bb649d3b70239a023245341852cd4036148d80d3c722b5ea`.
 
+The pinned `NetworkUtil.getLocalInetAddress()` bytecode catches exceptions from interface enumeration, selection, and `InetAddress.getLocalHost()`, logs the failure, and returns `null`; the no-argument `ClientConfig` constructor stores that return value directly in `clientIP`. `ClientConfig::new_auto` now preserves its Rust `Result` signature but builds a configuration with `client_ip: None` when native enumeration or hostname resolution fails. `automatic_client_ip_failure_preserves_java_null_default` injects that failure and checks the resulting null-valued setting and `null@DEFAULT` client ID.
+
 Full workspace/all-target tests, strict all-target/all-feature Clippy, pinned offline Maven verify (22 scenarios and deterministic fixture checks), comparator self-test/manifest validation (22 scenarios), formatting, and diff checks pass. This closes the observed pinned macOS IPv4 case. Non-macOS enumeration and IPv6-only fallback remain under reconciliation; this is not Phase 6 acceptance, and P6-V04 remains `PENDING_PHASE_19`.
 
 ## Candidate-list selection audit (2026-10-09)

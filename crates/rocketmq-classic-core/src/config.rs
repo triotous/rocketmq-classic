@@ -223,10 +223,21 @@ impl ClientConfig {
 
     /// Automatic IP initialization corresponding to Java's no-argument constructor.
     pub fn new_auto() -> Result<Self, ConfigError> {
-        Ok(Self::new(local_address::get().map_err(|error| {
-            ConfigError::LocalAddress(error.to_string())
-        })?))
+        Ok(Self::from_auto_client_ip_result(local_address::get()))
     }
+
+    fn from_auto_client_ip_result(address: std::io::Result<String>) -> Self {
+        let tls_enable = *JAVA_TLS_ENABLE
+            .get_or_init(|| java_boolean_property(std::env::var("tls.enable").ok(), false));
+        // NetworkUtil.getLocalAddress catches interface/DNS failures and returns
+        // null; ClientConfig stores that null rather than failing construction.
+        Self::with_properties_and_tls_enable(
+            address.ok(),
+            |key| std::env::var(key).ok(),
+            tls_enable,
+        )
+    }
+
     /// Explicit client-IP selection, corresponding to Java `setClientIP`.
     /// Known Java system-property keys are read from the process environment;
     /// NAMESRV_ADDR remains the Java environment fallback.
@@ -234,7 +245,7 @@ impl ClientConfig {
         let tls_enable = *JAVA_TLS_ENABLE
             .get_or_init(|| java_boolean_property(std::env::var("tls.enable").ok(), false));
         Self::with_properties_and_tls_enable(
-            client_ip.into(),
+            Some(client_ip.into()),
             |key| std::env::var(key).ok(),
             tls_enable,
         )
@@ -246,11 +257,11 @@ impl ClientConfig {
             property(key).map_or(default, |value| value.eq_ignore_ascii_case("true"))
         };
         let tls_enable = boolean("tls.enable", false);
-        Self::with_properties_and_tls_enable(client_ip, property, tls_enable)
+        Self::with_properties_and_tls_enable(Some(client_ip), property, tls_enable)
     }
 
     fn with_properties_and_tls_enable(
-        client_ip: String,
+        client_ip: Option<String>,
         property: impl Fn(&str) -> Option<String>,
         tls_enable: bool,
     ) -> Self {
@@ -263,7 +274,7 @@ impl ClientConfig {
             .unwrap_or(1);
         Self {
             namesrv_addr: property("rocketmq.namesrv.addr").or_else(|| property("NAMESRV_ADDR")),
-            client_ip: Some(client_ip),
+            client_ip,
             instance_name: Some(
                 property("rocketmq.client.name").unwrap_or_else(|| "DEFAULT".into()),
             ),
@@ -942,6 +953,15 @@ mod tests {
         assert_eq!(java_client_address, java_network_address);
         let config = ClientConfig::new_auto().expect("automatic client-IP initialization");
         assert_eq!(config.client_ip.as_deref(), Some(java_client_address));
+    }
+
+    #[test]
+    fn automatic_client_ip_failure_preserves_java_null_default() {
+        let config = ClientConfig::from_auto_client_ip_result(Err(std::io::Error::from(
+            std::io::ErrorKind::AddrNotAvailable,
+        )));
+        assert_eq!(config.client_ip, None);
+        assert_eq!(config.build_client_id(), "null@DEFAULT");
     }
 
     fn client_property_snapshot(config: &ClientConfig) -> serde_json::Value {
