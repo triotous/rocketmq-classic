@@ -690,6 +690,12 @@ public final class RuntimeConfigFixtures {
         java.util.Set<Map.Entry<String, org.apache.rocketmq.client.impl.factory.MQClientInstance>> entryView = live.entrySet();
         Map<String, Object> result = new TreeMap<>();
         try {
+            try {
+                live.get(null);
+                result.put("nullKeyGet", "RETURNED");
+            } catch (Throwable error) {
+                result.put("nullKeyGet", error.getClass().getSimpleName());
+            }
             result.put("retainedViewSeesSecond", live.get(id) == second);
             result.put("containsValueSecond", live.containsValue(second));
             result.put("containsValueAbsent", !live.containsValue(first));
