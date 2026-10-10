@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
 import java.util.TreeMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.rocketmq.client.impl.factory.MQClientInstance;
 import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.common.message.MessageQueue;
@@ -1169,6 +1170,77 @@ public final class RuntimeRouteFixtures {
                     org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
                 cleanup.setAccessible(true);
                 cleanup.invoke(runtime, original, new IllegalStateException("route nested collection fixture teardown"));
+                api.shutdown();
+            }
+            cases.add(item);
+        }
+        return cases;
+    }
+
+    private static List<Object> runtimeRouteNestedCollectionConsumers() throws Exception {
+        List<Object> cases = new ArrayList<>();
+        String[] ids = {"populated-control", "null-queue-row-static", "null-broker-row",
+            "null-filter-list", "null-static-mapping"};
+        String[] fields = {null, "queueDatas", "brokerDatas", "filterServerTable", "topicQueueMappingByBroker"};
+        Map<String, Object> base = new TreeMap<>();
+        for (String field : new String[] {"queueDatas", "brokerDatas", "filterServerTable", "topicQueueMappingByBroker"}) {
+            base.put(field, routeCollectionValue(field, "populated"));
+        }
+        for (int index = 0; index < ids.length; index++) {
+            Map<String, Object> input = new TreeMap<>(base);
+            if (fields[index] != null) {
+                input.put(fields[index], routeCollectionValue(fields[index], "nullNested"));
+            }
+            String json = com.alibaba.fastjson2.JSON.toJSONString(input,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringKeyAsString);
+            org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+            config.setClientIP("route-nested-consumer-" + ids[index]);
+            MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+            org.apache.rocketmq.client.impl.MQClientAPIImpl original = runtime.getMQClientAPIImpl();
+            RouteApi api = new RouteApi(config);
+            AtomicInteger needChecks = new AtomicInteger();
+            AtomicInteger updates = new AtomicInteger();
+            Map<String, Object> item = new TreeMap<>();
+            try {
+                java.lang.reflect.Field field = MQClientInstance.class.getDeclaredField("mQClientAPIImpl");
+                field.setAccessible(true);
+                field.set(runtime, api);
+                org.apache.rocketmq.client.impl.consumer.MQConsumerInner consumer =
+                    (org.apache.rocketmq.client.impl.consumer.MQConsumerInner) java.lang.reflect.Proxy.newProxyInstance(
+                        org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class.getClassLoader(),
+                        new Class<?>[] {org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class},
+                        (proxy, method, values) -> {
+                            if ("isSubscribeTopicNeedUpdate".equals(method.getName())) needChecks.incrementAndGet();
+                            if ("updateTopicSubscribeInfo".equals(method.getName())) updates.incrementAndGet();
+                            return method.getReturnType() == boolean.class ? false : null;
+                        });
+                runtime.getConsumerTable().put("consumer", consumer);
+                item.put("id", ids[index]);
+                item.put("input", com.alibaba.fastjson2.JSON.parseObject(json));
+                api.route = com.alibaba.fastjson2.JSON.parseObject(json, TopicRouteData.class);
+                try {
+                    item.put("changed", runtime.updateTopicRouteInfoFromNameServer("topic"));
+                    item.put("outcome", "OK");
+                } catch (RuntimeException error) {
+                    item.put("changed", null);
+                    item.put("outcome", error.getClass().getSimpleName());
+                }
+                TopicRouteData cached = runtime.getAnExistTopicRouteData("topic");
+                item.put("cached", cached != null);
+                item.put("consumerNeedChecks", needChecks.get());
+                item.put("consumerUpdates", updates.get());
+                if (cached != null) {
+                    item.put("cachedQueueCount", cached.getQueueDatas() == null ? -1 : cached.getQueueDatas().size());
+                    item.put("cachedBrokerCount", cached.getBrokerDatas() == null ? -1 : cached.getBrokerDatas().size());
+                    item.put("cachedFilterCount", cached.getFilterServerTable() == null ? -1 : cached.getFilterServerTable().size());
+                    item.put("cachedMappingCount", cached.getTopicQueueMappingByBroker() == null ? -1 : cached.getTopicQueueMappingByBroker().size());
+                }
+            } finally {
+                java.lang.reflect.Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
+                    org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
+                cleanup.setAccessible(true);
+                cleanup.invoke(runtime, original, new IllegalStateException("route nested consumer fixture teardown"));
                 api.shutdown();
             }
             cases.add(item);
@@ -2827,6 +2899,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("runtimeNullableCollections", runtimeNullableCollections());
         fixture.put("runtimeRouteCollectionMatrix", runtimeRouteCollectionMatrix());
         fixture.put("runtimeRouteNestedCollectionMatrix", runtimeRouteNestedCollectionMatrix());
+        fixture.put("runtimeRouteNestedCollectionConsumers", runtimeRouteNestedCollectionConsumers());
         fixture.put("runtimeEmptyEndpointTransition", runtimeEmptyEndpointTransition(staticInputs.get(0), inputs.get(0)));
         fixture.put("runtimeTopicRouteTable", runtimeTopicRouteTable(inputs.get(0)));
         fixture.put("runtimeRawOfflineCleanup", runtimeRawOfflineCleanup(inputs.get(0)));

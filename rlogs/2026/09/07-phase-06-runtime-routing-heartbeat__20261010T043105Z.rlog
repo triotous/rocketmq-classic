@@ -138,3 +138,8 @@
 
 - Updated the route branch audit, P6-05 requirement row, route DTO API/input row, and ADR-0078 to report the 625-case five-state product and current `route.json` SHA-256. The Phase 6 audit remains PARTIAL; broader malformed route/source/API/input reconciliation remains open and P6-V04 stays `PENDING_PHASE_19`.
 - Documentation diff and stale-hash checks pass.
+
+## Registered-consumer nested route oracle
+
+- Added `runtimeRouteNestedCollectionConsumers` to invoke real Java route refresh with a registered `MQConsumerInner` for a populated control and null queue-row, broker-row, filter-list, and static-mapping-value cases.
+- Java publishes the populated, null-queue-row static, and null-filter-list routes and calls `updateTopicSubscribeInfo` once in each; null BrokerData rows and null static-mapping values fail before caching or consumer callbacks. Every case records `isSubscribeTopicNeedUpdate` and update callback counts. Fixture SHA-256: `d342d5b80077220113b89415d722a55350e7d6f5d316c5e8cbac3f7e8ddf265e`. Native real-RPC differential remains pending.
