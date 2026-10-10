@@ -3,6 +3,8 @@
 - Status: Accepted
 - Date: 2026-10-09
 
+Historical implementation status: the caller-owned outer and nested Map alias gap described below was closed by `2f07fe94`; see [ADR-0073](ADR-0073-shared-runtime-map-body-aliases.md). The observations and Java API contract recorded here remain valid.
+
 ## Context
 
 Pinned RocketMQ 5.5.1 `GetConsumerStatusBody` exposes getters and setters for `messageQueueTable` and `consumerTable`. `ResetOffsetBody` exposes getters and setters for `offsetTable`. Existing direct inputs exercised their Fastjson behavior but did not invoke these public methods on constructed objects.
