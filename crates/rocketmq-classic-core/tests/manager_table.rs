@@ -916,6 +916,53 @@ async fn hash_map_nullable_put_all_order_matches_invoked_java() {
 }
 
 #[tokio::test]
+async fn tree_map_nullable_put_all_accepts_generic_source_iteration() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = &fixture["managerTable"]["nullableBulkInputs"];
+    assert_eq!(
+        java["factoryTreeMapPutAllNullValue"],
+        "NullPointerException"
+    );
+    let visit_order: Vec<String> =
+        serde_json::from_value(java["factoryTreeMapPutAllNullValueVisitOrder"].clone()).unwrap();
+    assert_eq!(
+        visit_order,
+        [
+            "a-put-all-before-null-value",
+            "m-put-all-null-value",
+            "z-put-all-after-null-value"
+        ]
+    );
+    let null_value_key = java["factoryTreeMapPutAllNullValueKey"].as_str().unwrap();
+
+    let table_manager = ClientRuntimeManager::new();
+    let table = table_manager.factory_table();
+    let value = ClientRuntimeManager::new()
+        .get_or_create(&ClientConfig::new("tree-map-put-all-value"))
+        .await
+        .unwrap();
+    table.put("seed", value.clone()).await.unwrap();
+    let source: BTreeMap<_, _> = visit_order
+        .into_iter()
+        .map(|key| {
+            let mapped = (key != null_value_key).then(|| value.clone());
+            (key, mapped)
+        })
+        .collect();
+    let entries = source.into_iter().map(|(key, value)| (Some(key), value));
+    assert!(matches!(
+        table.put_all_nullable_iter(entries).await,
+        Err(RuntimeError::InvalidRoute("null factory value"))
+    ));
+    let expected: Vec<String> =
+        serde_json::from_value(java["factoryTreeMapPutAllNullValueKeysAfter"].clone()).unwrap();
+    let mut actual: Vec<_> = table.snapshot().unwrap().into_keys().collect();
+    actual.sort();
+    assert_eq!(actual, expected);
+}
+
+#[tokio::test]
 async fn nullable_factory_replace_all_results_match_invoked_java_partial_updates() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();

@@ -909,6 +909,27 @@ public final class RuntimeConfigFixtures {
         captureThrowable(result, prefix + "HashMapPutAllNullValue", () -> target.putAll(source));
         result.put(prefix + "HashMapPutAllNullValueKeysAfter",
             new ArrayList<>(new java.util.TreeSet<>(target.keySet())));
+        result.putAll(nullableTreeMapPutAllInputs(prefix, value));
+        return result;
+    }
+
+    private static <T> Map<String, Object> nullableTreeMapPutAllInputs(String prefix, T value) {
+        Map<String, Object> result = new TreeMap<>();
+        String beforeNullValue = "a-put-all-before-null-value";
+        String nullValueKey = "m-put-all-null-value";
+        String afterNullValue = "z-put-all-after-null-value";
+        Map<String, T> source = new java.util.TreeMap<>();
+        source.put(afterNullValue, value);
+        source.put(nullValueKey, null);
+        source.put(beforeNullValue, value);
+        result.put(prefix + "TreeMapPutAllNullValueVisitOrder", new ArrayList<>(source.keySet()));
+        result.put(prefix + "TreeMapPutAllNullValueKey", nullValueKey);
+
+        java.util.concurrent.ConcurrentHashMap<String, T> target = new java.util.concurrent.ConcurrentHashMap<>();
+        target.put("seed", value);
+        captureThrowable(result, prefix + "TreeMapPutAllNullValue", () -> target.putAll(source));
+        result.put(prefix + "TreeMapPutAllNullValueKeysAfter",
+            new ArrayList<>(new java.util.TreeSet<>(target.keySet())));
         return result;
     }
 

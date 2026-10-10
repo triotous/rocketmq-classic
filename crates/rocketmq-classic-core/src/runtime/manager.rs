@@ -676,6 +676,15 @@ impl FactoryTable {
         let Some(entries) = entries else {
             return Err(RuntimeError::InvalidRoute("null factory putAll map"));
         };
+        self.put_all_nullable_iter(entries.iter().cloned()).await
+    }
+
+    /// Applies nullable entries from any source iterator in its traversal
+    /// order, preserving Java `Map.putAll` partial writes before null errors.
+    pub async fn put_all_nullable_iter<I>(&self, entries: I) -> Result<(), RuntimeError>
+    where
+        I: IntoIterator<Item = NullableTableEntry<ClientRuntime>>,
+    {
         for (key, value) in entries {
             let Some(key) = key.as_deref() else {
                 return Err(RuntimeError::InvalidRoute("null factory key"));

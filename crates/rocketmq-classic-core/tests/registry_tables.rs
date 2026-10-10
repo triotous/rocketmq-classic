@@ -864,6 +864,76 @@ async fn hash_map_nullable_registry_put_all_order_matches_invoked_java() {
 }
 
 #[tokio::test]
+async fn tree_map_nullable_registry_put_all_accepts_generic_source_iteration() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let expected = &fixture["registryTables"]["nullableBulkInputs"];
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&ClientConfig::new("tree-map-registry-put-all"))
+        .await
+        .unwrap();
+
+    macro_rules! check_tree_map_order {
+        ($table:expr, $value:expr, $family:literal, $null_value:literal) => {{
+            let table = $table;
+            let java = &expected[$family];
+            let outcome = format!("{}TreeMapPutAllNullValue", $family);
+            assert_eq!(java[&outcome], "NullPointerException");
+            let order_field = format!("{}TreeMapPutAllNullValueVisitOrder", $family);
+            let visit_order: Vec<String> =
+                serde_json::from_value(java[&order_field].clone()).unwrap();
+            assert_eq!(
+                visit_order,
+                [
+                    "a-put-all-before-null-value",
+                    "m-put-all-null-value",
+                    "z-put-all-after-null-value"
+                ]
+            );
+            let null_key_field = format!("{}TreeMapPutAllNullValueKey", $family);
+            let null_value_key = java[&null_key_field].as_str().unwrap();
+
+            let value = $value;
+            table.put("seed", value.clone()).await.unwrap();
+            let source: BTreeMap<_, _> = visit_order
+                .into_iter()
+                .map(|key| {
+                    let mapped = (key != null_value_key).then(|| value.clone());
+                    (key, mapped)
+                })
+                .collect();
+            let entries = source.into_iter().map(|(key, value)| (Some(key), value));
+            assert!(matches!(
+                table.put_all_nullable_iter(entries).await,
+                Err(RuntimeError::InvalidRoute($null_value))
+            ));
+            let after_field = format!("{}TreeMapPutAllNullValueKeysAfter", $family);
+            let expected_keys: Vec<String> =
+                serde_json::from_value(java[&after_field].clone()).unwrap();
+            let mut actual_keys: Vec<_> = table.snapshot().unwrap().into_keys().collect();
+            actual_keys.sort();
+            assert_eq!(actual_keys, expected_keys);
+        }};
+    }
+
+    let producer: Arc<dyn ProducerRuntime> = Arc::new(Producer);
+    check_tree_map_order!(
+        runtime.producer_table(),
+        producer,
+        "producer",
+        "null producer value"
+    );
+    let consumer: Arc<dyn ConsumerRuntime> = Arc::new(Consumer);
+    check_tree_map_order!(
+        runtime.consumer_table(),
+        consumer,
+        "consumer",
+        "null consumer value"
+    );
+    assert_eq!(runtime.state(), RuntimeState::Created);
+}
+
+#[tokio::test]
 async fn nullable_registry_replace_all_results_match_invoked_java_partial_updates() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
