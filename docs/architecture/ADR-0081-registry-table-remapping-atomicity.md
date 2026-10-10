@@ -1,31 +1,31 @@
-# ADR-0081: Serialize registry table remapping per key
+# ADR-0081: Serialize registry compute remapping per key
 
 - Status: Accepted
 - Date: 2026-10-10
 
 ## Context
 
-`MQClientInstance.getProducerTable()` and `getConsumerTable()` expose Java `ConcurrentMap` instances backed by `ConcurrentHashMap`. For an eligible `computeIfAbsent`, `computeIfPresent`, `compute`, `merge`, or `replaceAll` operation, a conflicting same-key writer waits for the remapping callback. The callback runs once, and a read of the key inside the callback can still observe the mapping that existed before the remap.
+`MQClientInstance.getProducerTable()` and `getConsumerTable()` expose Java `ConcurrentMap` instances backed by `ConcurrentHashMap`. For an eligible `computeIfAbsent`, `computeIfPresent`, `compute`, or `merge`, a conflicting same-key writer waits for the callback and that writer race does not rerun it. `replaceAll` differs: its callback runs outside the bin lock, a same-key writer can finish during it, and a failed conditional replacement retries the callback with the writer's current value.
 
-Rust registry remapping originally read a value, ran the callback, then sent a conditional mutation. A same-key write could land between those steps and make the callback run again. The native public table also shares its map with registration and unregister lifecycle operations, which are ordered by the runtime control actor.
+Rust registry compute-family remapping originally read a value, ran the callback, then sent a conditional mutation. A same-key write could land between those steps and make a compute callback run again, unlike Java. The native public table also shares its map with registration and unregister lifecycle operations, which are ordered by the runtime control actor. Applying the same gate across `replaceAll` callbacks would be incorrect because Java permits a writer to run during them.
 
 ## Decision
 
-Use weakly retained async gates indexed by `(table kind, exact key)`. Producer and consumer maps have separate key spaces. All public table writes, remapping callbacks, producer/consumer registration and unregister operations, and pending registration cleanup use the same key gate.
+Use weakly retained async gates indexed by `(table kind, exact key)`. Producer and consumer maps have separate key spaces. Ordinary public writes, compute-family callbacks, producer/consumer registration and unregister operations, and pending registration cleanup use the same key gate. `replaceAll` invokes its callback before acquiring the gate, then attempts an identity-conditional write under the gate.
 
-Remapping keeps the gate while it reads the mapping and runs the callback. Table mutations keep the gate until the control actor confirms the backing-map update. Registration and unregister commands carry their owned gate into the actor; the actor releases it immediately after changing the registry map, before any Broker unregister RPC. If an undelivered registration must be rolled back while its key is busy, cleanup waits outside the actor before it enqueues the unregister command. This keeps the actor free to apply the remapping mutation and avoids a same-key wait cycle.
+Compute-family remapping keeps the gate while it reads the mapping and runs the callback. `replaceAll` reads and calls its function without a gate, then acquires the gate and sends an identity-conditional write; on a miss it rereads and retries, and it stops if the mapping disappeared. Table mutations keep the gate until the control actor confirms the backing-map update. Registration and unregister commands carry their owned gate into the actor; the actor releases it immediately after changing the registry map, before any Broker unregister RPC. If an undelivered registration must be rolled back while its key is busy, cleanup waits outside the actor before it enqueues the unregister command. This keeps the actor free to apply the mutation and avoids a same-key wait cycle.
 
-Reads do not acquire the mutation gate or the registry entries mutex for the duration of a callback, so the callback can read the current mapping. Different table keys can proceed independently. Weak gate entries are pruned as the registry grows. `replaceAll` snapshots keys and remaps each still-present key under its own gate; it is not an all-map transaction. `clear` remains a direct map operation rather than an all-key transaction.
+Reads do not acquire the mutation gate or the registry entries mutex for the duration of a callback, so the callback can read the current mapping. Different table keys can proceed independently. Weak gate entries are pruned as the registry grows. `replaceAll` snapshots keys and conditionally updates each still-present key; it is not an all-map transaction. `clear` remains a direct map operation rather than an all-key transaction.
 
 ## Consequences
 
-Each eligible registry remapping callback runs once. Same-key table writes and lifecycle changes wait until the callback's map update is applied. The actor continues to define mutation order against unregister work, and Broker network waits do not hold the table key gate.
+Compute-family remapping callbacks run once for their eligible mapping. Same-key table writes and lifecycle changes wait until those callbacks' map updates are applied. `replaceAll` callbacks can retry after a concurrent write, which can complete while the callback is running. The actor continues to define mutation order against unregister work, and Broker network waits do not hold the table key gate.
 
-The producer and consumer Java oracle runs a blocked `compute` callback with a concurrent same-key writer. It records that the writer waits, the callback runs once, the callback reads the old mapping, and the remapping result is observed by the writer before its value becomes current. Native integration tests compare those four outcomes for both table types. Other registry map behaviors remain covered by the existing invoked fixtures. Raw route table callback concurrency is a separate scope.
+The producer and consumer Java oracle runs both a blocked `compute` callback and a blocked `replaceAll` callback with a concurrent same-key writer. Native tests compare the compute-family serialization outcomes and, separately, the `replaceAll` writer completion, callback retry input/count, writer previous value and final mapping for both table types. Raw route map ordering is covered by [ADR-0082](ADR-0082-raw-route-table-remapping-atomicity.md).
 
 ## Evidence
 
 - Pinned Java 5.5.1 oracle: `RuntimeConfigFixtures.tableDefaultOperations`, invoked on both producer and consumer tables.
-- Fixture: `fixtures/runtime/client-config.json`, SHA-256 `807ad17c66ba5e775e141630744209ac129be897977879d1af616d652979fe6b`.
-- Native regression: `registry_default_map_operations_match_invoked_java` in `crates/rocketmq-classic-core/tests/registry_tables.rs`.
-- Validation: full `cargo test --workspace --all-targets --locked`, strict workspace/all-target/all-feature Clippy, focused registry table tests, pinned offline Maven verify (22 scenarios), comparator self-test and manifest validation (22 scenarios), formatting, and diff checks pass. Whole Phase 6 API/source/input/platform reconciliation remains open; P6-V04 remains `PENDING_PHASE_19`.
+- Fixture: `fixtures/runtime/client-config.json`, SHA-256 `2cf1a273a3276010ec117e7a8e68b6216ac5c7403999b02da05c5a8d2f9510b2`.
+- Native regression: `registry_default_map_operations_match_invoked_java` in `crates/rocketmq-classic-core/tests/registry_tables.rs` compares both callback contracts for producer and consumer maps.
+- Validation: the new focused registry-table cases pass; full workspace, strict Clippy, Maven, comparator and manifest checks for this correction are recorded in the Phase 6 execution log. Whole Phase 6 API/source/input/platform reconciliation remains open; P6-V04 remains `PENDING_PHASE_19`.
