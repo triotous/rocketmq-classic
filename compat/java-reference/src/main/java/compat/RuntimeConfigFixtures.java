@@ -1357,6 +1357,20 @@ public final class RuntimeConfigFixtures {
                 nullableSelectors.put("consumerNullGroup", error.getClass().getSimpleName());
             }
             result.put("nullableSelectors", nullableSelectors);
+            Map<String, Object> nullableTableReads = new TreeMap<>();
+            try {
+                runtime.getProducerTable().get(null);
+                nullableTableReads.put("producerNullKey", "RETURNED");
+            } catch (Throwable error) {
+                nullableTableReads.put("producerNullKey", error.getClass().getSimpleName());
+            }
+            try {
+                runtime.getConsumerTable().get(null);
+                nullableTableReads.put("consumerNullKey", "RETURNED");
+            } catch (Throwable error) {
+                nullableTableReads.put("consumerNullKey", error.getClass().getSimpleName());
+            }
+            result.put("nullableTableReads", nullableTableReads);
             result.put("producerDefaultOperations",
                 tableDefaultOperations(runtime.getProducerTable(), producerA, producerB));
             result.put("consumerDefaultOperations",
