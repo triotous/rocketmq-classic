@@ -1575,9 +1575,11 @@ public final class RuntimeHeartbeatFixtures {
             apiField.setAccessible(true);
             apiField.set(runtime, api);
             result.put("v1WrapperOutcome", runtime.sendHeartbeatToAllBrokerWithLock());
+            result.put("v1WithLockV2Outcome", runtime.sendHeartbeatToAllBrokerWithLockV2(false));
             config.setUseHeartbeatV2(true);
             result.put("configuredAfterMutation", config.isUseHeartbeatV2());
             result.put("v2WrapperOutcome", runtime.sendHeartbeatToAllBrokerWithLock());
+            result.put("v2WithLockV2Outcome", runtime.sendHeartbeatToAllBrokerWithLockV2(false));
             result.put("sendModes", new ArrayList<>(modes));
             result.put("sendOnConcurrentExecutor", new ArrayList<>(sendOnConcurrentExecutor));
         } finally {

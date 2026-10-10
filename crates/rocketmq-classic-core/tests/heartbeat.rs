@@ -166,18 +166,23 @@ async fn all_broker_wrapper_reads_live_v2_before_concurrent_v1_setting() {
     assert!(java_case["executorPresent"].as_bool().unwrap());
     assert!(java_case["configuredAfterMutation"].as_bool().unwrap());
     assert!(java_case["v1WrapperOutcome"].as_bool().unwrap());
+    assert!(java_case["v1WithLockV2Outcome"].as_bool().unwrap());
     assert!(java_case["v2WrapperOutcome"].as_bool().unwrap());
-    assert_eq!(java_case["sendModes"], serde_json::json!(["V1", "V2"]));
+    assert!(java_case["v2WithLockV2Outcome"].as_bool().unwrap());
+    assert_eq!(
+        java_case["sendModes"],
+        serde_json::json!(["V1", "V1", "V2", "V2"])
+    );
     assert_eq!(
         java_case["sendOnConcurrentExecutor"],
-        serde_json::json!([true, false])
+        serde_json::json!([true, false, false, false])
     );
 
     let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = broker.local_addr().unwrap().to_string();
     let peer = tokio::spawn(async move {
         let (mut stream, _) = broker.accept().await.unwrap();
-        for expected_v2 in [false, true] {
+        for expected_v2 in [false, false, true, true] {
             let command = read(&mut stream).await;
             assert_eq!(command.code, request::HEART_BEAT);
             let body: HeartbeatData =
@@ -198,8 +203,20 @@ async fn all_broker_wrapper_reads_live_v2_before_concurrent_v1_setting() {
         .await
         .unwrap();
     assert!(runtime.send_heartbeat_to_all_brokers().await.unwrap());
+    assert!(
+        runtime
+            .send_heartbeat_to_all_brokers_with_rebalance(false)
+            .await
+            .unwrap()
+    );
     runtime.config().write().unwrap().use_heartbeat_v2 = true;
     assert!(runtime.send_heartbeat_to_all_brokers().await.unwrap());
+    assert!(
+        runtime
+            .send_heartbeat_to_all_brokers_with_rebalance(false)
+            .await
+            .unwrap()
+    );
 
     tokio::time::timeout(Duration::from_secs(2), peer)
         .await
