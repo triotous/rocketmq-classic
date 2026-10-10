@@ -414,7 +414,8 @@ async fn route_success_unknown_status_and_malformed_success() {
     assert_eq!(queues[0].broker_name(), Some("broker"));
     assert_eq!(queues[0].queue_id(), 0);
     assert_eq!(queues[1].queue_id(), 1);
-    let broker = route.broker_datas.as_ref().unwrap()[0].as_ref().unwrap();
+    let brokers = route.broker_datas_snapshot().unwrap();
+    let broker = brokers[0].as_ref().unwrap();
     assert_eq!(
         broker
             .broker_addrs
@@ -423,9 +424,8 @@ async fn route_success_unknown_status_and_malformed_success() {
             .with(|addresses| addresses.get(&Some(0)).cloned().flatten()),
         Some("master:10911".to_owned())
     );
-    let mapping = route.topic_queue_mapping_by_broker.as_ref().unwrap()["broker"]
-        .as_ref()
-        .unwrap();
+    let mappings = route.topic_queue_mapping_by_broker_snapshot().unwrap();
+    let mapping = mappings["broker"].as_ref().unwrap();
     assert_eq!(
         mapping
             .curr_id_map

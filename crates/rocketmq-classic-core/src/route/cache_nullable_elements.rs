@@ -20,8 +20,7 @@ fn null_nested_route_values_match_invoked_runtime_failure_without_publication() 
             let snapshot = cache.snapshot().unwrap();
             let filter_table = snapshot.topics["topic"]
                 .route
-                .filter_server_table
-                .as_ref()
+                .filter_server_table_snapshot()
                 .unwrap();
             assert!(filter_table.contains_key("broker"), "{}", case["id"]);
             assert!(filter_table["broker"].is_none(), "{}", case["id"]);

@@ -74,8 +74,8 @@ impl RouteSnapshot {
             return Ok(None);
         };
         let route = route.snapshot()?;
-        let brokers = route
-            .broker_datas
+        let broker_snapshot = route.broker_datas_snapshot();
+        let brokers = broker_snapshot
             .as_deref()
             .ok_or(RuntimeError::InvalidRoute("null broker data list"))?;
         if brokers.is_empty() {
@@ -379,9 +379,8 @@ impl RouteCache {
             );
             for broker in topic_snapshot
                 .route
-                .broker_datas
-                .as_deref()
-                .unwrap_or(&[])
+                .broker_datas_snapshot()
+                .unwrap_or_default()
                 .iter()
                 .flatten()
             {
@@ -440,14 +439,16 @@ fn convert_topic_route_data(
 ) -> Result<TopicSnapshot, RuntimeError> {
     let route = route.ok_or(RuntimeError::InvalidRoute("null topic route data"))?;
     let queue_topic = topic.unwrap_or_default();
+    let broker_datas = route.broker_datas_snapshot();
+    let queue_datas = route.queue_datas_snapshot();
+    let topic_queue_mapping_by_broker = route.topic_queue_mapping_by_broker_snapshot();
     // Java's brokerAddrTable is a ConcurrentHashMap: publishing a null
     // address map fails, it is not a valid empty Broker. Validate before
     // any conversion/publication to preserve the coherent native snapshot.
-    if route.broker_datas.is_none() {
+    if broker_datas.is_none() {
         return Err(RuntimeError::InvalidRoute("null broker data list"));
     }
-    if route
-        .broker_datas
+    if broker_datas
         .as_deref()
         .unwrap_or(&[])
         .iter()
@@ -455,8 +456,7 @@ fn convert_topic_route_data(
     {
         return Err(RuntimeError::InvalidRoute("null broker data"));
     }
-    if route
-        .broker_datas
+    if broker_datas
         .as_deref()
         .unwrap_or(&[])
         .iter()
@@ -470,16 +470,14 @@ fn convert_topic_route_data(
         .as_deref()
         .is_some_and(|value| !value.is_empty());
     let static_route = route.order_topic_conf.is_none()
-        && route
-            .topic_queue_mapping_by_broker
+        && topic_queue_mapping_by_broker
             .as_ref()
             .is_some_and(|mappings| !mappings.is_empty());
-    if route.queue_datas.is_none() && !ordered && !static_route {
+    if queue_datas.is_none() && !ordered && !static_route {
         return Err(RuntimeError::InvalidRoute("null queue data list"));
     }
     if !static_route
-        && route
-            .queue_datas
+        && queue_datas
             .as_deref()
             .unwrap_or(&[])
             .iter()
@@ -489,9 +487,8 @@ fn convert_topic_route_data(
     }
     if !ordered
         && !static_route
-        && route.queue_datas.as_deref().unwrap_or(&[]).len() > 1
-        && route
-            .queue_datas
+        && queue_datas.as_deref().unwrap_or(&[]).len() > 1
+        && queue_datas
             .as_deref()
             .unwrap_or(&[])
             .iter()
@@ -502,7 +499,7 @@ fn convert_topic_route_data(
             "null queue broker name during sort",
         ));
     }
-    if let Some(mappings) = &route.topic_queue_mapping_by_broker {
+    if let Some(mappings) = &topic_queue_mapping_by_broker {
         if mappings.values().any(Option::is_none) {
             return Err(RuntimeError::InvalidRoute("null static mapping"));
         }
@@ -524,8 +521,7 @@ fn convert_topic_route_data(
             }
         }
     }
-    if route
-        .broker_datas
+    if broker_datas
         .as_deref()
         .unwrap_or(&[])
         .iter()
@@ -609,8 +605,8 @@ fn broker_address_exists_in_raw_routes(
 ) -> Result<bool, RuntimeError> {
     for route in routes {
         let route = route.snapshot()?;
-        let broker_datas = route
-            .broker_datas
+        let broker_snapshot = route.broker_datas_snapshot();
+        let broker_datas = broker_snapshot
             .as_deref()
             .ok_or(RuntimeError::InvalidRoute(
                 "null broker data list during cleanup",
@@ -635,6 +631,9 @@ fn broker_address_exists_in_raw_routes(
 
 // Bound expansion of compact routes before invoking collection converters.
 fn validate_conversion_size(topic: &str, route: &TopicRouteData) -> Result<(), RuntimeError> {
+    let broker_datas = route.broker_datas_snapshot();
+    let queue_datas = route.queue_datas_snapshot();
+    let topic_queue_mapping_by_broker = route.topic_queue_mapping_by_broker_snapshot();
     let mut estimated = 0usize;
     let mut add = |count: i32, broker: &str| -> Result<(), RuntimeError> {
         let size = std::mem::size_of::<MessageQueue>()
@@ -654,8 +653,7 @@ fn validate_conversion_size(topic: &str, route: &TopicRouteData) -> Result<(), R
         .order_topic_conf
         .as_deref()
         .filter(|value| !value.is_empty());
-    let mappings = route
-        .topic_queue_mapping_by_broker
+    let mappings = topic_queue_mapping_by_broker
         .as_ref()
         .filter(|value| !value.is_empty());
     if let Some(ordered) = ordered {
@@ -693,7 +691,7 @@ fn validate_conversion_size(topic: &str, route: &TopicRouteData) -> Result<(), R
         }
     }
     let mut read_counts = BTreeMap::<Option<&str>, i32>::new();
-    for queue in route.queue_datas.as_deref().unwrap_or(&[]).iter().flatten() {
+    for queue in queue_datas.as_deref().unwrap_or(&[]).iter().flatten() {
         if mappings.is_none() && queue.perm & 4 != 0 {
             let count = read_counts.entry(queue.broker_name.as_deref()).or_default();
             *count = (*count).max(queue.read_queue_nums);
@@ -702,8 +700,7 @@ fn validate_conversion_size(topic: &str, route: &TopicRouteData) -> Result<(), R
             && !(route.order_topic_conf.is_none() && mappings.is_some())
             && queue.perm & 2 != 0
         {
-            let master = route
-                .broker_datas
+            let master = broker_datas
                 .as_deref()
                 .unwrap_or(&[])
                 .iter()
@@ -760,10 +757,11 @@ fn routes_equal(left: &TopicRouteData, right: &TopicRouteData) -> Result<bool, R
 // and addresses. BrokerData::PartialEq carries that source behavior.
 pub(super) fn route_values_equal(left: &TopicRouteData, right: &TopicRouteData) -> bool {
     left.order_topic_conf == right.order_topic_conf
-        && left.queue_datas == right.queue_datas
-        && left.filter_server_table == right.filter_server_table
-        && left.topic_queue_mapping_by_broker == right.topic_queue_mapping_by_broker
-        && left.broker_datas == right.broker_datas
+        && left.queue_datas_snapshot() == right.queue_datas_snapshot()
+        && left.filter_server_table_snapshot() == right.filter_server_table_snapshot()
+        && left.topic_queue_mapping_by_broker_snapshot()
+            == right.topic_queue_mapping_by_broker_snapshot()
+        && left.broker_datas_snapshot() == right.broker_datas_snapshot()
 }
 
 /// Java MixAll.brokerVIPChannel's last-colon split and signed-int port offset.
@@ -783,6 +781,25 @@ pub fn broker_vip_channel(enabled: bool, address: &str) -> Result<String, Runtim
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rocketmq_classic_protocol::route::{
+        BrokerData, QueueData, SharedBrokerDataHandle, SharedQueueDataHandle,
+    };
+
+    fn broker_handle(route: &TopicRouteData, index: usize) -> SharedBrokerDataHandle {
+        route
+            .broker_datas
+            .as_ref()
+            .expect("broker list")
+            .with(|brokers| brokers[index].clone().expect("broker row"))
+    }
+
+    fn queue_handle(route: &TopicRouteData, index: usize) -> SharedQueueDataHandle {
+        route
+            .queue_datas
+            .as_ref()
+            .expect("queue list")
+            .with(|queues| queues[index].clone().expect("queue row"))
+    }
 
     #[test]
     fn nullable_route_collection_refresh_matches_invoked_unstarted_java() {
@@ -829,15 +846,15 @@ mod tests {
             let route: TopicRouteData = serde_json::from_value(case["input"].clone()).unwrap();
             let copy = route.java_copy_constructed();
             assert_eq!(
-                copy.queue_datas.as_ref().unwrap().is_empty(),
+                copy.queue_datas_snapshot().unwrap().is_empty(),
                 case["copyQueueEmpty"]
             );
             assert_eq!(
-                copy.broker_datas.as_ref().unwrap().is_empty(),
+                copy.broker_datas_snapshot().unwrap().is_empty(),
                 case["copyBrokerEmpty"]
             );
             assert_eq!(
-                copy.filter_server_table.as_ref().unwrap().is_empty(),
+                copy.filter_server_table_snapshot().unwrap().is_empty(),
                 case["copyFilterEmpty"]
             );
             assert!(routes_equal(&route, &copy).unwrap());
@@ -903,7 +920,7 @@ mod tests {
                 after.raw_routes["raw"]
                     .snapshot()
                     .unwrap()
-                    .broker_datas
+                    .broker_datas_snapshot()
                     .unwrap()[0]
                     .as_ref()
                     .unwrap()
@@ -1160,11 +1177,8 @@ mod tests {
         assert!(cache.replace("topic", first).unwrap());
         assert!(table.contains_key("topic").unwrap());
         assert_eq!(before.publish_address("broker"), Some("master:10911"));
-        let mut invalid = before.raw_routes["topic"].snapshot().unwrap();
-        invalid.broker_datas.as_mut().unwrap()[0]
-            .as_mut()
-            .unwrap()
-            .broker_addrs = None;
+        let invalid = before.raw_routes["topic"].snapshot().unwrap();
+        broker_handle(&invalid, 0).with_mut(|broker| broker.broker_addrs = None);
         let invalid = TopicRouteDataHandle::new(invalid);
         table.put("invalid", invalid.clone()).unwrap();
         assert_eq!(
@@ -1376,11 +1390,10 @@ mod tests {
     #[test]
     fn offline_cleanup_preserves_live_null_values_but_removes_stale_ones() {
         let cache = RouteCache::default();
-        let mut route = route(1);
-        route.broker_datas.as_mut().unwrap()[0]
-            .as_mut()
-            .unwrap()
-            .broker_addrs = Some(BTreeMap::from([(Some(0), None)]).into());
+        let route = route(1);
+        broker_handle(&route, 0).with_mut(|broker| {
+            broker.broker_addrs = Some(BTreeMap::from([(Some(0), None)]).into());
+        });
         cache.replace("topic", route).unwrap();
         cache.clean_offline().unwrap();
         assert_eq!(
@@ -1415,11 +1428,10 @@ mod tests {
         ));
         assert!(Arc::ptr_eq(&before, &cache.snapshot().unwrap()));
         // A legitimate empty map remains distinct from null and is accepted.
-        let mut empty = route;
-        empty.broker_datas.as_mut().unwrap()[0]
-            .as_mut()
-            .unwrap()
-            .broker_addrs = Some(BTreeMap::new().into());
+        let empty = route;
+        broker_handle(&empty, 0).with_mut(|broker| {
+            broker.broker_addrs = Some(BTreeMap::new().into());
+        });
         assert!(cache.replace("topic", empty).unwrap());
     }
 
@@ -1496,27 +1508,28 @@ mod tests {
                 .is_none()
         );
     }
-    use rocketmq_classic_protocol::route::{BrokerData, QueueData};
-
     #[test]
     fn topic_selection_uses_raw_route_and_selected_empty_broker_is_not_skipped() {
         let cache = RouteCache::default();
-        let mut original = route(1);
-        original.broker_datas.as_mut().unwrap()[0]
-            .as_mut()
+        let original = route(1);
+        broker_handle(&original, 0).with_mut(|broker| {
+            broker.broker_addrs = Some(
+                BTreeMap::from([
+                    (Some(2), Some("slave-a:10911".into())),
+                    (Some(3), Some("slave-b:10911".into())),
+                ])
+                .into(),
+            );
+        });
+        let other_broker = route(2)
+            .broker_datas
             .unwrap()
-            .broker_addrs = Some(
-            BTreeMap::from([
-                (Some(2), Some("slave-a:10911".into())),
-                (Some(3), Some("slave-b:10911".into())),
-            ])
-            .into(),
-        );
+            .with_mut(|brokers| brokers.remove(0).unwrap());
         original
             .broker_datas
-            .as_mut()
+            .as_ref()
             .unwrap()
-            .push(route(2).broker_datas.unwrap().remove(0));
+            .with_mut(|brokers| brokers.push(Some(other_broker)));
         cache.replace("original", original.clone()).unwrap();
         cache.replace("overwriter", route(9)).unwrap();
         let snapshot = cache.snapshot().unwrap();
@@ -1535,10 +1548,8 @@ mod tests {
             snapshot.select_topic_broker("original", |_| 1).unwrap(),
             Some("master-2:10911".to_owned())
         );
-        original.broker_datas.as_mut().unwrap()[0]
-            .as_mut()
-            .unwrap()
-            .broker_addrs = Some(BTreeMap::new().into());
+        broker_handle(&original, 0)
+            .with_mut(|broker| broker.broker_addrs = Some(BTreeMap::new().into()));
         cache.replace("original", original).unwrap();
         assert!(matches!(
             cache
@@ -1620,24 +1631,30 @@ mod tests {
 
     fn route(count: i32) -> TopicRouteData {
         TopicRouteData {
-            queue_datas: Some(vec![Some(QueueData {
-                broker_name: Some("broker".into()),
-                read_queue_nums: count,
-                write_queue_nums: count,
-                perm: 6,
-                ..Default::default()
-            })]),
-            broker_datas: Some(vec![Some(BrokerData {
-                broker_name: Some("broker".into()),
-                broker_addrs: Some(
-                    BTreeMap::from([
-                        (Some(0), Some(format!("master-{count}:10911"))),
-                        (Some(2), Some("slave:10911".into())),
-                    ])
-                    .into(),
-                ),
-                ..Default::default()
-            })]),
+            queue_datas: Some(
+                vec![Some(QueueData {
+                    broker_name: Some("broker".into()),
+                    read_queue_nums: count,
+                    write_queue_nums: count,
+                    perm: 6,
+                    ..Default::default()
+                })]
+                .into(),
+            ),
+            broker_datas: Some(
+                vec![Some(BrokerData {
+                    broker_name: Some("broker".into()),
+                    broker_addrs: Some(
+                        BTreeMap::from([
+                            (Some(0), Some(format!("master-{count}:10911"))),
+                            (Some(2), Some("slave:10911".into())),
+                        ])
+                        .into(),
+                    ),
+                    ..Default::default()
+                })]
+                .into(),
+            ),
             ..Default::default()
         }
     }
@@ -1801,7 +1818,7 @@ mod tests {
                     for _ in 0..1000 {
                         let snapshot = cache.snapshot().unwrap();
                         let topic = &snapshot.topics["topic"];
-                        let count = topic.route.queue_datas.as_ref().unwrap()[0]
+                        let count = topic.route.queue_datas_snapshot().unwrap()[0]
                             .as_ref()
                             .unwrap()
                             .read_queue_nums as usize;
@@ -1907,10 +1924,7 @@ mod tests {
         use rocketmq_classic_protocol::route::TopicQueueMappingInfo;
         let cache = RouteCache::default();
         let mut ordered = route(0);
-        ordered.queue_datas.as_mut().unwrap()[0]
-            .as_mut()
-            .unwrap()
-            .write_queue_nums = i32::MAX;
+        queue_handle(&ordered, 0).with_mut(|queue| queue.write_queue_nums = i32::MAX);
         ordered.order_topic_conf = Some(";;".into());
         cache.replace("topic", ordered).unwrap();
         assert!(
@@ -1933,7 +1947,8 @@ mod tests {
                         }),
                     )
                 })
-                .collect(),
+                .collect::<BTreeMap<_, _>>()
+                .into(),
         );
         cache.replace("topic", repeated.clone()).unwrap();
         assert_eq!(
@@ -1948,13 +1963,10 @@ mod tests {
         );
         repeated
             .topic_queue_mapping_by_broker
-            .as_mut()
+            .as_ref()
             .unwrap()
-            .get_mut("0")
-            .unwrap()
-            .as_mut()
-            .unwrap()
-            .total_queues = i32::MAX;
+            .with(|mappings| mappings["0"].as_ref().unwrap().clone())
+            .with_mut(|mapping| mapping.total_queues = i32::MAX);
         let before = cache.snapshot().unwrap();
         assert!(cache.replace("topic", repeated).is_err());
         assert!(Arc::ptr_eq(&before, &cache.snapshot().unwrap()));

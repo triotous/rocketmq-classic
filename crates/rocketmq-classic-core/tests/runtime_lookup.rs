@@ -348,7 +348,14 @@ async fn query_topic_route_refreshes_only_missing_cache_even_for_empty_brokers()
     let (runtime, name_peer) = setup(None, false).await;
     assert!(runtime.get_existing_topic_route("topic").unwrap().is_none());
     let first = runtime.query_topic_route("topic").await.unwrap().unwrap();
-    assert!(first.snapshot().unwrap().broker_datas.unwrap().is_empty());
+    assert!(
+        first
+            .snapshot()
+            .unwrap()
+            .broker_datas_snapshot()
+            .unwrap()
+            .is_empty()
+    );
     let cached = runtime.get_existing_topic_route("topic").unwrap().unwrap();
     assert!(first.ptr_eq(&cached));
     let queried = runtime.query_topic_route("topic").await.unwrap().unwrap();

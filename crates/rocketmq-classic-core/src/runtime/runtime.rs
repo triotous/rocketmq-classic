@@ -650,7 +650,7 @@ impl ClientRuntime {
         } else {
             self.api.get_topic_route(topic, deadline).await
         };
-        let Some(mut route) = (match fetched {
+        let Some(route) = (match fetched {
             Ok(route) => route,
             // Java catches MQClientException and returns false, but propagates
             // transport failure. Rejection must not discard an existing route.
@@ -660,18 +660,23 @@ impl ClientRuntime {
             return Ok(false);
         };
         if let Some(limit) = default_topic_queue_nums {
-            for data in route
+            route
                 .queue_datas
-                .as_mut()
+                .as_ref()
                 .ok_or(RuntimeError::InvalidRoute("null queue data list"))?
-            {
-                let data = data
-                    .as_mut()
-                    .ok_or(RuntimeError::InvalidRoute("null queue data"))?;
-                let count = limit.min(data.read_queue_nums);
-                data.read_queue_nums = count;
-                data.write_queue_nums = count;
-            }
+                .with_mut(|queues| {
+                    for data in queues {
+                        let data = data
+                            .as_ref()
+                            .ok_or(RuntimeError::InvalidRoute("null queue data"))?;
+                        data.with_mut(|data| {
+                            let count = limit.min(data.read_queue_nums);
+                            data.read_queue_nums = count;
+                            data.write_queue_nums = count;
+                        });
+                    }
+                    Ok::<_, RuntimeError>(())
+                })?;
         }
         let groups = self.groups.snapshot()?;
         let changed = self.routes.route_changed(topic, &route)?;
@@ -688,7 +693,7 @@ impl ClientRuntime {
             && route
                 .topic_queue_mapping_by_broker
                 .as_ref()
-                .is_some_and(|mappings| !mappings.is_empty());
+                .is_some_and(|mappings| mappings.with(|mappings| !mappings.is_empty()));
         if (changed || needed)
             && !groups.consumers.is_empty()
             && route.queue_datas.is_none()

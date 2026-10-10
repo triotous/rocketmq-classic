@@ -283,7 +283,7 @@ async fn registered_consumer_accepts_null_static_route_queue_list_like_java() {
     );
     let snapshot = runtime.route_snapshot().unwrap();
     let route = snapshot.raw_routes["topic"].snapshot().unwrap();
-    assert!(route.queue_datas.as_ref().unwrap().is_empty());
+    assert!(route.queue_datas_snapshot().unwrap().is_empty());
     assert_eq!(consumer.updates.load(Ordering::SeqCst), 1);
     peer.await.unwrap();
     runtime.remoting().shutdown().await;
@@ -942,7 +942,7 @@ async fn accepted_empty_route_keeps_route_presence_separate_from_publish_queue_o
         .get("topic")
         .expect("published route snapshot");
     assert!(topic.publish_queues.is_empty());
-    assert_eq!(topic.route.queue_datas.as_ref().unwrap().len(), 1);
+    assert_eq!(topic.route.queue_datas_snapshot().unwrap().len(), 1);
     assert!(!snapshot.topics.contains_key("missing"));
     assert_eq!(producer.updates.load(Ordering::SeqCst), 1);
     peer.await.unwrap();
@@ -1007,8 +1007,7 @@ async fn default_route_fetch_uses_auto_create_topic_and_clamps_both_counts_from_
     let info = &before.topics["created"];
     assert_eq!(
         info.route
-            .queue_datas
-            .as_ref()
+            .queue_datas_snapshot()
             .unwrap()
             .iter()
             .map(|data| {
@@ -1041,8 +1040,7 @@ async fn default_route_fetch_uses_auto_create_topic_and_clamps_both_counts_from_
     assert!(
         negative.topics["negative"]
             .route
-            .queue_datas
-            .as_ref()
+            .queue_datas_snapshot()
             .unwrap()
             .iter()
             .all(|data| {

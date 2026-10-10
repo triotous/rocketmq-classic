@@ -4,11 +4,19 @@ use rocketmq_classic_core::{
     config::ClientConfig,
     runtime::{ClientRuntimeManager, RuntimeError},
 };
-use rocketmq_classic_protocol::route::TopicRouteData;
+use rocketmq_classic_protocol::route::{SharedBrokerDataHandle, TopicRouteData};
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
 };
+
+fn broker_handle(route: &TopicRouteData, index: usize) -> SharedBrokerDataHandle {
+    route
+        .broker_datas
+        .as_ref()
+        .expect("broker list")
+        .with(|brokers| brokers[index].clone().expect("broker row"))
+}
 
 #[test]
 fn public_topic_snapshot_factory_matches_invoked_java_route_conversions() {
@@ -93,7 +101,7 @@ fn public_nullable_route_conversion_arguments_match_invoked_java() {
                     route
                         .topic_queue_mapping_by_broker
                         .as_ref()
-                        .is_some_and(|mappings| !mappings.is_empty())
+                        .is_some_and(|mappings| mappings.with(|mappings| !mappings.is_empty()))
                 }) {
                     assert!(!snapshot.endpoints.is_empty(), "{}", case["id"]);
                     assert!(
@@ -225,7 +233,11 @@ async fn raw_clear_query_refetches_once_and_retained_table_observes_wire_refresh
             .unwrap();
     assert!(table.get("topic").unwrap().unwrap().ptr_eq(&refreshed));
     assert_eq!(
-        refreshed.snapshot().unwrap().broker_datas.unwrap()[0]
+        refreshed
+            .snapshot()
+            .unwrap()
+            .broker_datas_snapshot()
+            .unwrap()[0]
             .as_ref()
             .unwrap()
             .broker_addrs
@@ -429,11 +441,9 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
             .contains_value(&equal_second.snapshot().unwrap())
             .unwrap(),
     );
-    let mut absent_route = second.snapshot().unwrap();
-    absent_route.broker_datas.as_mut().unwrap()[0]
-        .as_mut()
-        .unwrap()
-        .broker_name = Some("absent-broker".into());
+    let absent_route = second.snapshot().unwrap();
+    broker_handle(&absent_route, 0)
+        .with_mut(|broker| broker.broker_name = Some("absent-broker".into()));
     outcomes.insert(
         "containsValueAbsent",
         !table.contains_value(&absent_route).unwrap(),
@@ -780,11 +790,8 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
             .unwrap(),
         case["metadataEqualConditionalRemoveAccepted"]
     );
-    let mut invalid = first.snapshot().unwrap();
-    invalid.broker_datas.as_mut().unwrap()[0]
-        .as_mut()
-        .unwrap()
-        .broker_addrs = None;
+    let invalid = first.snapshot().unwrap();
+    broker_handle(&invalid, 0).with_mut(|broker| broker.broker_addrs = None);
     let invalid = TopicRouteDataHandle::new(invalid);
     table.put("invalid", invalid.clone()).unwrap();
     assert!(same(
