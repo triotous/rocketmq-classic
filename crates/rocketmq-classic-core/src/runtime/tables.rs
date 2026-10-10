@@ -1122,6 +1122,16 @@ macro_rules! table_views {
                     .map_err(|_| RuntimeError::RegistryPoisoned)? = value;
                 Ok(previous)
             }
+            /// Nullable Java-compatible `Map.Entry.setValue` boundary.
+            pub async fn set_value_nullable(
+                &self,
+                value: Option<Arc<dyn $owner>>,
+            ) -> Result<Arc<dyn $owner>, RuntimeError> {
+                let Some(value) = value else {
+                    return Err(RuntimeError::InvalidRoute($null_value));
+                };
+                self.set_value(value).await
+            }
         }
 
         #[derive(Clone)]

@@ -742,6 +742,63 @@ async fn nullable_registry_table_views_match_invoked_java_null_inputs() {
 }
 
 #[tokio::test]
+async fn nullable_registry_entry_set_value_rejects_null_without_mutation() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let expected = &fixture["registryTables"]["nullableEntrySetValueInputs"];
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&ClientConfig::new("nullable-entry-set-value"))
+        .await
+        .unwrap();
+
+    macro_rules! check_entry_set_value {
+        ($table:expr, $value:expr, $family:literal, $null_value:literal) => {{
+            let table = $table;
+            let family_expected = &expected[$family];
+            table.put("entry-set-value", $value.clone()).await.unwrap();
+            let entry = table
+                .entry_set_view()
+                .entry_snapshots()
+                .unwrap()
+                .into_iter()
+                .next()
+                .unwrap();
+            let key = entry.key().to_owned();
+            let before = entry.value().unwrap();
+
+            let outcome = format!("{}EntrySetValueNull", $family);
+            assert_eq!(family_expected[&outcome], "NullPointerException");
+            let unchanged_entry = format!("{}EntrySetValueNullEntryUnchanged", $family);
+            assert_eq!(family_expected[&unchanged_entry], true);
+            let unchanged_table = format!("{}EntrySetValueNullTableUnchanged", $family);
+            assert_eq!(family_expected[&unchanged_table], true);
+            assert!(matches!(
+                entry.set_value_nullable(None).await,
+                Err(RuntimeError::InvalidRoute($null_value))
+            ));
+            assert!(Arc::ptr_eq(&entry.value().unwrap(), &before));
+            assert!(Arc::ptr_eq(&table.get(&key).unwrap().unwrap(), &before));
+        }};
+    }
+
+    let producer: Arc<dyn ProducerRuntime> = Arc::new(Producer);
+    check_entry_set_value!(
+        runtime.producer_table(),
+        producer,
+        "producer",
+        "null producer value"
+    );
+    let consumer: Arc<dyn ConsumerRuntime> = Arc::new(Consumer);
+    check_entry_set_value!(
+        runtime.consumer_table(),
+        consumer,
+        "consumer",
+        "null consumer value"
+    );
+    assert_eq!(runtime.state(), RuntimeState::Created);
+}
+
+#[tokio::test]
 async fn nullable_registry_table_view_elements_match_invoked_java_collections() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();

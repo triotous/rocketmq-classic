@@ -372,6 +372,28 @@ async fn nullable_factory_table_views_match_invoked_java_null_inputs() {
         Err(RuntimeError::InvalidRoute("null factory view collection"))
     ));
 
+    let java = &fixture["managerTable"]["nullableEntrySetValueInputs"];
+    assert_eq!(java["factoryEntrySetValueNull"], "NullPointerException");
+    assert_eq!(java["factoryEntrySetValueNullEntryUnchanged"], true);
+    assert_eq!(java["factoryEntrySetValueNullTableUnchanged"], true);
+    let entry = entries
+        .entry_snapshots()
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+    let entry_key = entry.key().to_owned();
+    let entry_value = entry.value().unwrap();
+    assert!(matches!(
+        entry.set_value_nullable(None).await,
+        Err(RuntimeError::InvalidRoute("null factory value"))
+    ));
+    assert!(Arc::ptr_eq(&entry.value().unwrap(), &entry_value));
+    assert!(Arc::ptr_eq(
+        &table.get(&entry_key).unwrap().unwrap(),
+        &entry_value
+    ));
+
     assert_eq!(
         table
             .snapshot()
