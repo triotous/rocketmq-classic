@@ -1,0 +1,26 @@
+# Phase 6 execution log — 2026-10-10T03:18:33Z
+
+## Scope and decision
+
+Closed the audited nested `MessageQueue` object alias gap in `LockBatchRequestBody.mqSet`, `UnlockBatchRequestBody.mqSet`, and `LockBatchResponseBody.lockOKMQSet`. The direct pinned Java 5.5.1 oracle confirms getter elements are the caller-assigned objects and mutations are visible in both directions. Rust uses shared queue handles with value-based equality and hashing so Set membership follows Java; the existing owned core RPC result snapshots those handles at its boundary. Mutable Set key behavior remains the Java-compatible hash hazard.
+
+The requested source checkout `/Users/nanashi07/Projects/3rd/rocketmq` is unavailable in this environment. Validation used the pinned RocketMQ 5.5.1 Maven artifacts and the repository's Java oracle. P6-V04 remains `PENDING_PHASE_19`; broader Phase 6 audit remains partial.
+
+## Commits
+
+- Code: `625122ee` — Preserve lock set message queue aliases.
+- Documentation: pending separate commit after review.
+
+## Evidence and validation
+
+- `fixtures/runtime/lookup.json` SHA-256: `4b4d410671a673533e1238a8bcf8e939134884296610ec6d1045c1022c6818c6`.
+- Passed `cargo test --workspace --all-targets --locked`.
+- Passed `cargo check --workspace --all-targets --locked`.
+- Passed `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`.
+- Passed pinned offline Maven `verify` (22 scenarios and Java cross-decodes).
+- Passed the focused invoked-Java runtime-body differential, comparator self-test, 22-scenario manifest validation, `cargo fmt --all -- --check`, and `git diff --check`.
+- Documentation updates add ADR-0067 and reconcile ADR-0055/0062 plus the Phase 6 API map, runtime inventory, and requirement audit. Local Markdown links in all six changed documents validate.
+
+## Remaining work and status
+
+The Phase 6 plans and broad audit still list other API/alias/input/source reconciliation gaps. No phase acceptance is claimed. The documentation and this log are committed separately from code; final plan-wide verification remains outstanding.
