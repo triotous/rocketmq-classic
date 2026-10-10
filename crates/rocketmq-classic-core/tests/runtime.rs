@@ -1001,7 +1001,7 @@ async fn route_refresh_failure_preserves_last_coherent_snapshot() {
 }
 
 #[tokio::test]
-async fn registered_clients_null_broker_map_failure_keeps_previous_route_and_callbacks() {
+async fn registered_clients_route_refresh_recovers_after_null_broker_map_failure() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/route.json")).unwrap();
     let java = &fixture["runtimeNullBrokerMap"];
@@ -1011,12 +1011,13 @@ async fn registered_clients_null_broker_map_failure_keeps_previous_route_and_cal
 
     let initial_body = serde_json::to_vec(&java["initialInput"]).unwrap();
     let invalid_body = serde_json::to_vec(&java["input"]).unwrap();
+    let recovery_body = serde_json::to_vec(&java["recoveryInput"]).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut config = ClientConfig::new("route-null-map-consumer");
     config.namesrv_addr = Some(listener.local_addr().unwrap().to_string());
     let peer = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
-        for body in [initial_body, invalid_body] {
+        for body in [initial_body, invalid_body, recovery_body] {
             let mut length = [0; 4];
             stream.read_exact(&mut length).await.unwrap();
             let mut bytes = BytesMut::from(&length[..]);
@@ -1104,6 +1105,33 @@ async fn registered_clients_null_broker_map_failure_keeps_previous_route_and_cal
     assert_eq!(
         producer.updates.load(Ordering::SeqCst),
         java["producerUpdatesAfterFailure"]
+    );
+    assert_eq!(
+        runtime
+            .update_topic_route("topic", Instant::now() + Duration::from_secs(2))
+            .await
+            .unwrap(),
+        java["recoveryChanged"]
+    );
+    assert_eq!(java["recoveryOutcome"], "OK");
+    assert_eq!(java["recoveredRouteChanged"], true);
+    let recovered = runtime.route_snapshot().unwrap();
+    assert!(!Arc::ptr_eq(&before, &recovered));
+    assert_eq!(
+        recovered.publish_address("recovery-broker"),
+        java["recoveredPublishAddress"].as_str()
+    );
+    assert_eq!(
+        consumer.need_checks.load(Ordering::SeqCst),
+        java["consumerNeedChecksAfterRecovery"]
+    );
+    assert_eq!(
+        consumer.updates.load(Ordering::SeqCst),
+        java["consumerUpdatesAfterRecovery"]
+    );
+    assert_eq!(
+        producer.updates.load(Ordering::SeqCst),
+        java["producerUpdatesAfterRecovery"]
     );
     peer.await.unwrap();
     runtime.remoting().shutdown().await;
