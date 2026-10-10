@@ -466,12 +466,13 @@ async fn start_uses_live_nameserver_null_check_but_keeps_constructor_address_sna
 
     let fixture: Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/start.json")).unwrap();
-    assert!(fixture["activeAddressesBeforeMutation"].is_null());
-    assert!(fixture["activeAddressesBeforeStart"].is_null());
-    assert_eq!(fixture["discoveryCalls"], 0);
-    assert_eq!(fixture["startOutcome"], "RUNNING");
-    assert!(fixture["activeAddressesAfterStart"].is_null());
-    assert_eq!(fixture["shutdownOutcome"], "OK");
+    let java_case = &fixture["nullToConfigured"];
+    assert!(java_case["activeAddressesBeforeMutation"].is_null());
+    assert!(java_case["activeAddressesBeforeStart"].is_null());
+    assert_eq!(java_case["discoveryCalls"], 0);
+    assert_eq!(java_case["startOutcome"], "RUNNING");
+    assert!(java_case["activeAddressesAfterStart"].is_null());
+    assert_eq!(java_case["shutdownOutcome"], "OK");
 
     let mut config = ClientConfig::new("192.0.2.80");
     config.instance_name = Some("phase6-start-nameserver-mutation".into());
@@ -483,16 +484,96 @@ async fn start_uses_live_nameserver_null_check_but_keeps_constructor_address_sna
         .unwrap();
     assert_eq!(runtime.remoting().get_name_server_address_list(), None);
     runtime.config().write().unwrap().set_namesrv_addr(Some(
-        fixture["namesrvAddrAtStart"].as_str().unwrap().to_owned(),
+        java_case["namesrvAddrAtStart"].as_str().unwrap().to_owned(),
     ));
     assert_eq!(
         runtime.config().read().unwrap().namesrv_addr.as_deref(),
-        fixture["namesrvAddrAtStart"].as_str()
+        java_case["namesrvAddrAtStart"].as_str()
     );
 
     runtime.start().await.unwrap();
     assert!(runtime.name_server_addr().is_none());
     assert_eq!(runtime.remoting().get_name_server_address_list(), None);
+    assert!(runtime.shutdown().await.unwrap());
+}
+
+#[tokio::test]
+async fn start_fetches_nameserver_after_live_address_is_cleared_but_keeps_active_snapshot() {
+    use rocketmq_classic_core::{namesrv::TopAddressing, runtime::ClientRuntimeManager};
+    use std::{
+        future::Future,
+        pin::Pin,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+    };
+
+    struct CountingAddressing(Arc<AtomicUsize>);
+    impl TopAddressing for CountingAddressing {
+        fn fetch_ns_addr(&self) -> Pin<Box<dyn Future<Output = Option<String>> + Send + '_>> {
+            Box::pin(async move {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                // A Java-blank result is ignored by the runtime after the
+                // provider call, matching the null result recorded by Java.
+                Some(" \t".into())
+            })
+        }
+    }
+
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/start.json")).unwrap();
+    let java_case = &fixture["configuredToNull"];
+    assert!(java_case["namesrvAddrAtStart"].is_null());
+    assert_eq!(java_case["discoveryCalls"], 1);
+    assert_eq!(java_case["startOutcome"], "RUNNING");
+    assert_eq!(java_case["shutdownOutcome"], "OK");
+    let java_addresses = java_case["activeAddressesBeforeMutation"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|address| address.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(java_addresses, ["configured-at-construction:9876"]);
+    assert_eq!(
+        java_case["activeAddressesBeforeStart"],
+        java_case["activeAddressesBeforeMutation"]
+    );
+    assert_eq!(
+        java_case["activeAddressesAfterStart"],
+        java_case["activeAddressesBeforeMutation"]
+    );
+
+    let fetch_calls = Arc::new(AtomicUsize::new(0));
+    let manager = ClientRuntimeManager::with_top_addressing(Arc::new(CountingAddressing(
+        fetch_calls.clone(),
+    )));
+    let mut config = ClientConfig::new("192.0.2.81");
+    config.instance_name = Some("phase6-start-nameserver-clear".into());
+    config.namesrv_addr = Some(java_addresses[0].clone());
+    config.enable_heartbeat_channel_event_listener = false;
+    let runtime = manager.get_or_create(&config).await.unwrap();
+    assert_eq!(
+        runtime.remoting().get_name_server_address_list(),
+        Some(java_addresses.clone())
+    );
+    runtime.config().write().unwrap().set_namesrv_addr(None);
+    assert!(runtime.config().read().unwrap().namesrv_addr.is_none());
+    assert_eq!(
+        runtime.remoting().get_name_server_address_list(),
+        Some(java_addresses.clone())
+    );
+
+    runtime.start().await.unwrap();
+    assert_eq!(
+        fetch_calls.load(Ordering::SeqCst),
+        java_case["discoveryCalls"]
+    );
+    assert!(runtime.name_server_addr().is_none());
+    assert_eq!(
+        runtime.remoting().get_name_server_address_list(),
+        Some(java_addresses)
+    );
     assert!(runtime.shutdown().await.unwrap());
 }
 
