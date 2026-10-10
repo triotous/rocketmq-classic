@@ -15,8 +15,6 @@ pub(crate) mod namespace;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ConfigError {
-    #[error("local client address selection failed: {0}")]
-    LocalAddress(String),
     #[error("instance endpoint path precedes its instance boundary")]
     InvalidInstanceEndpoint,
     #[error("instance name is null")]
