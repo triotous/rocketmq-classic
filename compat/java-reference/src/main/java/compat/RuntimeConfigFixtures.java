@@ -772,8 +772,11 @@ public final class RuntimeConfigFixtures {
             AtomicReference<Throwable> writerFailure = new AtomicReference<>();
             AtomicReference<org.apache.rocketmq.client.impl.factory.MQClientInstance> remappingResult =
                 new AtomicReference<>();
+            AtomicReference<org.apache.rocketmq.client.impl.factory.MQClientInstance> remappingReadResult =
+                new AtomicReference<>();
             Thread remappingThread = new Thread(() -> remappingResult.set(live.compute("compute-a", (key, oldValue) -> {
                 concurrentRemappingCalls.incrementAndGet();
+                remappingReadResult.set(live.get(key));
                 remappingEntered.countDown();
                 awaitUnchecked(releaseRemapping, "remapping release");
                 return second;
@@ -808,6 +811,7 @@ public final class RuntimeConfigFixtures {
                 throw new IllegalStateException("ConcurrentHashMap same-key writer failed", writerFailure.get());
             }
             result.put("remappingCallbackRunsOnce", concurrentRemappingCalls.get() == 1);
+            result.put("remappingCallbackReadsCurrent", remappingReadResult.get() == first);
             result.put("remappingReturnsAndKeepsSecond", remappingResult.get() == second
                 && live.get("compute-a") == second);
             live.put(id, first);
