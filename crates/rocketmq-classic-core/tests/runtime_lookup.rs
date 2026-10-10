@@ -197,9 +197,9 @@ async fn null_topic_consumer_and_assignment_lookups_match_invoked_java() {
         runtime
             .query_assignment_nullable(
                 None,
-                "consumer",
-                "strategy",
-                MessageModel::Broadcasting,
+                Some("consumer"),
+                Some("strategy"),
+                Some(MessageModel::Broadcasting),
                 3000
             )
             .await,
@@ -255,6 +255,62 @@ async fn null_consumer_group_matches_java_rpc_and_omits_header_field() {
             .await
             .unwrap(),
         Some(vec![Some("client".into())])
+    );
+    runtime.remoting().shutdown().await;
+    broker_peer.await.unwrap();
+    name_peer.await.unwrap();
+}
+
+#[tokio::test]
+async fn null_assignment_fields_match_java_request_body() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+    let java_runtime = &fixture["runtimeLookupInvocation"]["nullAssignmentFieldsCalls"][0];
+    assert_eq!(java_runtime["topic"], "topic");
+    assert_eq!(java_runtime["group"], serde_json::Value::Null);
+    assert_eq!(java_runtime["strategy"], serde_json::Value::Null);
+    assert_eq!(java_runtime["messageModel"], serde_json::Value::Null);
+    let java_api = &fixture["queryAssignmentNullInputsApiCase"];
+    assert_eq!(java_api["requestCode"], request::QUERY_ASSIGNMENT);
+    assert_eq!(java_api["assignmentCount"], 0);
+    assert_eq!(java_api["body"]["topic"], "topic");
+    assert_eq!(java_api["body"]["clientId"], "client");
+    for key in ["consumerGroup", "strategyName", "messageModel"] {
+        assert!(java_api["body"].get(key).is_none(), "{key}");
+    }
+
+    let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let broker_address = broker.local_addr().unwrap().to_string();
+    let (runtime, name_peer) = setup(Some(broker_address), false).await;
+    let broker_peer = tokio::spawn(async move {
+        let (mut socket, _) = broker.accept().await.unwrap();
+        let command = read(&mut socket).await;
+        assert_eq!(command.code, request::QUERY_ASSIGNMENT);
+        let body: serde_json::Value =
+            serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
+        assert_eq!(body["topic"], "topic");
+        assert_eq!(body["clientId"].as_str().unwrap(), "192.0.2.6@DEFAULT");
+        for key in ["consumerGroup", "strategyName", "messageModel"] {
+            assert!(body.get(key).is_none(), "{key}");
+        }
+        reply(
+            &mut socket,
+            &command,
+            0,
+            Some(br#"{"messageQueueAssignments":[]}"#.to_vec()),
+        )
+        .await;
+        let mut byte = [0];
+        assert_eq!(socket.read(&mut byte).await.unwrap(), 0);
+    });
+
+    assert!(
+        runtime
+            .query_assignment_nullable(Some("topic"), None, None, None, 3000)
+            .await
+            .unwrap()
+            .unwrap()
+            .is_empty()
     );
     runtime.remoting().shutdown().await;
     broker_peer.await.unwrap();

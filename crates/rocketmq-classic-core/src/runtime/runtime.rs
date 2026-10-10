@@ -582,6 +582,34 @@ impl ClientRuntime {
         >,
         RuntimeError,
     > {
+        self.query_assignment_nullable(
+            Some(topic),
+            Some(consumer_group),
+            Some(strategy_name),
+            Some(message_model),
+            timeout_millis,
+        )
+        .await
+    }
+
+    /// Nullable Java entry point for `queryAssignment`; the source resolves
+    /// the topic's broker before constructing or sending the assignment body.
+    pub async fn query_assignment_nullable(
+        &self,
+        topic: Option<&str>,
+        consumer_group: Option<&str>,
+        strategy_name: Option<&str>,
+        message_model: Option<rocketmq_classic_protocol::heartbeat::MessageModel>,
+        timeout_millis: i32,
+    ) -> Result<
+        Option<
+            std::collections::HashSet<
+                Option<rocketmq_classic_protocol::body::MessageQueueAssignment>,
+            >,
+        >,
+        RuntimeError,
+    > {
+        let topic = topic.ok_or(RuntimeError::InvalidRoute("null broker lookup topic"))?;
         let Some(address) = self.lookup_broker_with_route_refresh(topic).await? else {
             return Ok(None);
         };
@@ -589,10 +617,10 @@ impl ClientRuntime {
             crate::route::broker_vip_channel(self.config_read().vip_channel_enabled, &address)?;
         let body = rocketmq_classic_protocol::body::QueryAssignmentRequestBody {
             topic: Some(topic.into()),
-            consumer_group: Some(consumer_group.into()),
+            consumer_group: consumer_group.map(str::to_owned),
             client_id: Some(self.client_id.clone()),
-            strategy_name: Some(strategy_name.into()),
-            message_model: Some(message_model),
+            strategy_name: strategy_name.map(str::to_owned),
+            message_model,
         };
         let deadline = tokio::time::Instant::now()
             + tokio::time::Duration::from_millis(timeout_millis.max(0) as u64);
@@ -608,34 +636,6 @@ impl ClientRuntime {
                     .map(|assignment| assignment.map(|assignment| assignment.snapshot()))
                     .collect()
             }))
-    }
-
-    /// Nullable Java entry point for `queryAssignment`; the source resolves
-    /// the topic's broker before constructing or sending the assignment body.
-    pub async fn query_assignment_nullable(
-        &self,
-        topic: Option<&str>,
-        consumer_group: &str,
-        strategy_name: &str,
-        message_model: rocketmq_classic_protocol::heartbeat::MessageModel,
-        timeout_millis: i32,
-    ) -> Result<
-        Option<
-            std::collections::HashSet<
-                Option<rocketmq_classic_protocol::body::MessageQueueAssignment>,
-            >,
-        >,
-        RuntimeError,
-    > {
-        let topic = topic.ok_or(RuntimeError::InvalidRoute("null broker lookup topic"))?;
-        self.query_assignment(
-            topic,
-            consumer_group,
-            strategy_name,
-            message_model,
-            timeout_millis,
-        )
-        .await
     }
 
     pub async fn update_topic_route(
