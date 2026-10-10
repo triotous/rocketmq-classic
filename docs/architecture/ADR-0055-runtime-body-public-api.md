@@ -13,7 +13,7 @@ Add Rust snake_case accessors for `CheckClientRequestBody`, `GetConsumerListByGr
 
 Keep Java constructor defaults: nullable check-client fields; nullable consumer IDs; empty lock/unlock queue Sets with false `onlyThisBroker`; an empty lock response Set; and direct-consume defaults of `order=false`, `autoCommit=true`, null result/remark, and zero elapsed milliseconds. Preserve the invoked Java strings for the three `Display` implementations, including nested `MessageQueue` text.
 
-This ADR's initial accessors used owned values plus mutable borrows. The alias status has since been superseded for `CheckClientRequestBody.subscriptionData` by [ADR-0060](ADR-0060-shared-java-dto-reference-aliases.md) and for `GetConsumerListByGroupResponseBody.consumerIdList` by [ADR-0061](ADR-0061-shared-consumer-list-alias.md). The two DTOs now use shared handles to preserve caller/getter identity. Lock request/response Sets and other alias-bearing DTO fields still need direct Java evidence and separate parity work.
+This ADR's initial accessors used owned values plus mutable borrows. The alias status has since been superseded for `CheckClientRequestBody.subscriptionData` by [ADR-0060](ADR-0060-shared-java-dto-reference-aliases.md) and for `GetConsumerListByGroupResponseBody.consumerIdList` by [ADR-0061](ADR-0061-shared-consumer-list-alias.md). The two DTOs now use shared handles to preserve caller/getter identity. The three lock Set containers now use shared handles under [ADR-0062](ADR-0062-shared-lock-set-aliases.md); aliases to mutable `MessageQueue` elements within those Sets and other DTO fields remain under audit.
 
 ## Consequences
 

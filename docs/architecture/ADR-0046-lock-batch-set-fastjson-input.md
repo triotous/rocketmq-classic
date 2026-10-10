@@ -10,11 +10,11 @@ Fastjson accepts an object as a singleton Set, retains one null member, and coll
 
 ## Decision
 
-Represent the three Java Set fields as `Option<HashSet<Option<MessageQueue>>>`. This preserves a null Set and nullable member while enforcing Java queue equality and duplicate collapse. Request DTO defaults contain an empty HashSet; response DTO defaults do too. Keep serde's HashSet array encoding as the wire representation; Java HashSet iteration order is unspecified.
+Preserve the Java nullable Set and nullable-member shapes with `SharedValue<HashSet<Option<MessageQueue>>>`. The wrapped HashSet enforces Java queue equality and duplicate collapse, while cloned handles keep caller/getter identity. Request DTO defaults contain an empty shared HashSet; the response DTO default does too. The wire encoder still serializes the contained HashSet as the same JSON array. Alias parity is detailed in [ADR-0062](ADR-0062-shared-lock-set-aliases.md). Keep serde's HashSet array encoding as the wire representation; Java HashSet iteration order is unspecified.
 
 Decode request string and boolean fields with the shared Fastjson adapters and process objects with last-wins decoding. `MQClientApi::lock_batch_mq` returns `Option<HashSet<Option<MessageQueue>>>` to preserve Java's Set, nullable field, and nullable member outcomes.
 
-The pinned 5.5.1 client/common/remoting artifacts contain `LockBatchResponseBody` but no `UnlockBatchResponseBody`. At this ADR checkpoint the unused Rust-only `UnlockBatchResponseBody` was still exported; it was later removed after confirming both response paths use the shared Java DTO. See [ADR-0056](ADR-0056-remove-non-java-unlock-response-body.md).
+The pinned 5.5.1 client/common/remoting artifacts contain `LockBatchResponseBody` but no `UnlockBatchResponseBody`. At this ADR checkpoint the DTOs were still represented as owned Rust HashSets, and the unused Rust-only `UnlockBatchResponseBody` was still exported; it was later removed after confirming both response paths use the shared Java DTO. See [ADR-0056](ADR-0056-remove-non-java-unlock-response-body.md).
 
 ## Evidence
 
