@@ -16,7 +16,18 @@ fn lite_subscription_java_accessors_are_public_and_chain_like_java() {
         .set_lite_topic_set(["lite-a"]);
     assert_eq!(subscription.group(), Some("workers"));
     assert_eq!(subscription.topic(), Some("orders"));
+    let lite_topics = subscription.lite_topic_set();
+    assert!(lite_topics.ptr_eq(&subscription.lite_topic_set()));
     assert!(subscription.add_lite_topic("lite-b"));
+    assert!(lite_topics.with(|topics| topics.contains("lite-b")));
+    lite_topics.with_mut(|topics| {
+        topics.insert("external-topic".into());
+    });
+    assert!(
+        subscription
+            .lite_topic_set()
+            .with(|topics| topics.contains("external-topic"))
+    );
     assert!(subscription.remove_lite_topic("lite-b"));
 
     let mut dto = LiteSubscriptionDTO::default();

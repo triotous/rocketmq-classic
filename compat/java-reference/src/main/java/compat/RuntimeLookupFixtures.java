@@ -412,12 +412,17 @@ public final class RuntimeLookupFixtures {
         item.put("topicSetterReturnsThis", subscription.setTopic("orders") == subscription);
         subscription.setUpdateTime(7L);
         item.put("initialTime", subscription.getUpdateTime());
+        Set<String> setterSet = new java.util.TreeSet<>(Set.of("lite-a"));
         item.put("setLiteTopicSetReturnsThis",
-            subscription.setLiteTopicSet(Set.of("lite-a")) == subscription);
+            subscription.setLiteTopicSet(setterSet) == subscription);
+        item.put("setLiteTopicSetRetainsInputSet", subscription.getLiteTopicSet() == setterSet);
         item.put("setLiteTopicSetKeepsExisting", subscription.getLiteTopicSet().contains("lite-a"));
         item.put("setLiteTopicSetLeavesUpdateTime", subscription.getUpdateTime() == 7L);
+        setterSet.add("setter-only");
+        item.put("setterInputMutationVisible", subscription.getLiteTopicSet().contains("setter-only"));
 
         Set<String> liveSet = subscription.getLiteTopicSet();
+        item.put("getterReturnsSameSetObject", liveSet == subscription.getLiteTopicSet());
         item.put("singleAddResult", subscription.addLiteTopic("lite-b"));
         item.put("duplicateAddResult", subscription.addLiteTopic("lite-b"));
         item.put("singleAddUpdatesTime", subscription.getUpdateTime() > 7L);
@@ -429,6 +434,10 @@ public final class RuntimeLookupFixtures {
         item.put("collectionRemoveClearsMembers",
             !subscription.getLiteTopicSet().contains("lite-c")
                 && !subscription.getLiteTopicSet().contains("lite-d"));
+        liveSet.add("getter-added");
+        item.put("getterMutationVisibleToSubscription",
+            subscription.getLiteTopicSet().contains("getter-added"));
+        liveSet.remove("getter-added");
 
         long beforeSetLiteTopicSet = subscription.getUpdateTime();
         subscription.setLiteTopicSet(Set.of("lite-e"));

@@ -782,6 +782,9 @@ pub type LiteSubscriptionDtoSet =
 /// Shared handle for the subscription Set stored by `LiteSubscriptionCtlRequestBody`.
 pub type SharedLiteSubscriptionSet = SharedValue<LiteSubscriptionDtoSet>;
 
+/// Shared mutable topic names returned by `LiteSubscription.getLiteTopicSet`.
+pub type SharedLiteSubscriptionTopicNames = SharedValue<std::collections::BTreeSet<String>>;
+
 impl PartialEq for SharedValue<LiteSubscriptionDto> {
     fn eq(&self, other: &Self) -> bool {
         self.ptr_eq(other)
@@ -882,7 +885,7 @@ pub struct LiteSubscription {
     pub group: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub topic: Option<String>,
-    pub lite_topic_set: std::collections::BTreeSet<String>,
+    pub lite_topic_set: SharedLiteSubscriptionTopicNames,
     pub update_time: i64,
 }
 
@@ -899,7 +902,7 @@ impl Default for LiteSubscription {
         Self {
             group: None,
             topic: None,
-            lite_topic_set: std::collections::BTreeSet::new(),
+            lite_topic_set: SharedValue::new(std::collections::BTreeSet::new()),
             update_time: current_lite_subscription_time_millis(),
         }
     }
@@ -928,11 +931,11 @@ impl LiteSubscription {
         self
     }
 
-    pub fn lite_topic_set(&self) -> &std::collections::BTreeSet<String> {
-        &self.lite_topic_set
+    pub fn lite_topic_set(&self) -> SharedLiteSubscriptionTopicNames {
+        self.lite_topic_set.clone()
     }
 
-    pub fn lite_topic_set_mut(&mut self) -> &mut std::collections::BTreeSet<String> {
+    pub fn lite_topic_set_mut(&mut self) -> &mut SharedLiteSubscriptionTopicNames {
         &mut self.lite_topic_set
     }
 
@@ -941,8 +944,9 @@ impl LiteSubscription {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        self.lite_topic_set
-            .extend(topics.into_iter().map(|topic| topic.as_ref().to_owned()));
+        self.lite_topic_set.with_mut(|topic_set| {
+            topic_set.extend(topics.into_iter().map(|topic| topic.as_ref().to_owned()));
+        });
         self
     }
 
@@ -956,7 +960,8 @@ impl LiteSubscription {
 
     pub fn add_lite_topic(&mut self, topic: impl Into<String>) -> bool {
         self.update_time = current_lite_subscription_time_millis();
-        self.lite_topic_set.insert(topic.into())
+        self.lite_topic_set
+            .with_mut(|topic_set| topic_set.insert(topic.into()))
     }
 
     pub fn add_lite_topics<I, S>(&mut self, topics: I)
@@ -965,13 +970,15 @@ impl LiteSubscription {
         S: AsRef<str>,
     {
         self.update_time = current_lite_subscription_time_millis();
-        self.lite_topic_set
-            .extend(topics.into_iter().map(|topic| topic.as_ref().to_owned()));
+        self.lite_topic_set.with_mut(|topic_set| {
+            topic_set.extend(topics.into_iter().map(|topic| topic.as_ref().to_owned()));
+        });
     }
 
     pub fn remove_lite_topic(&mut self, topic: impl AsRef<str>) -> bool {
         self.update_time = current_lite_subscription_time_millis();
-        self.lite_topic_set.remove(topic.as_ref())
+        self.lite_topic_set
+            .with_mut(|topic_set| topic_set.remove(topic.as_ref()))
     }
 
     pub fn remove_lite_topics<I, S>(&mut self, topics: I)
@@ -981,7 +988,8 @@ impl LiteSubscription {
     {
         self.update_time = current_lite_subscription_time_millis();
         for topic in topics {
-            self.lite_topic_set.remove(topic.as_ref());
+            self.lite_topic_set
+                .with_mut(|topic_set| topic_set.remove(topic.as_ref()));
         }
     }
 }
@@ -990,12 +998,13 @@ impl std::fmt::Display for LiteSubscription {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let group = self.group.as_deref().unwrap_or("null");
         let topic = self.topic.as_deref().unwrap_or("null");
-        let lite_topic_set = self
-            .lite_topic_set
-            .iter()
-            .map(String::as_str)
-            .collect::<Vec<_>>()
-            .join(", ");
+        let lite_topic_set = self.lite_topic_set.with(|topics| {
+            topics
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+                .join(", ")
+        });
         write!(
             formatter,
             "LiteSubscription{{group='{group}', topic='{topic}', liteTopicSet=[{lite_topic_set}], updateTime={}}}",
@@ -1090,7 +1099,9 @@ impl<'de> Deserialize<'de> for LiteSubscription {
                 "liteTopicSet" => {
                     let topics =
                         parse_lite_subscription_topic_set(raw.get()).map_err(de::Error::custom)?;
-                    subscription.lite_topic_set.extend(topics);
+                    subscription
+                        .lite_topic_set
+                        .with_mut(|topic_set| topic_set.extend(topics));
                 }
                 "updateTime" => {
                     subscription.update_time = parse_lite_subscription_update_time(raw.get())
@@ -6266,25 +6277,49 @@ mod tests {
         assert_eq!(subscription.topic(), Some("orders"));
         subscription.set_update_time(case["initialTime"].as_i64().unwrap());
 
+        let mut setter_input = std::collections::BTreeSet::from(["lite-a".to_owned()]);
         assert_eq!(
-            subscription.set_lite_topic_set(["lite-a"]) as *mut LiteSubscription,
+            subscription.set_lite_topic_set(&setter_input) as *mut LiteSubscription,
             subscription_ptr
         );
         assert_eq!(subscription.update_time(), 7);
-        assert!(subscription.lite_topic_set().contains("lite-a"));
+        setter_input.insert("setter-only".into());
+        assert!(
+            subscription
+                .lite_topic_set()
+                .with(|topics| topics.contains("lite-a"))
+        );
+        assert!(
+            !subscription
+                .lite_topic_set()
+                .with(|topics| topics.contains("setter-only"))
+        );
+        let live_topics = subscription.lite_topic_set();
+        assert!(live_topics.ptr_eq(&subscription.lite_topic_set()));
         assert!(subscription.add_lite_topic("lite-b"));
         assert!(!subscription.add_lite_topic("lite-b"));
         assert!(subscription.update_time() > 7);
         subscription.add_lite_topics(["lite-c", "lite-d"]);
         assert!(subscription.update_time() > 7);
-        assert!(subscription.lite_topic_set().contains("lite-c"));
+        assert!(live_topics.with(|topics| topics.contains("lite-c")));
         assert!(subscription.remove_lite_topic("lite-b"));
         subscription.remove_lite_topics(["lite-c", "lite-d"]);
+        live_topics.with_mut(|topics| {
+            topics.insert("getter-added".into());
+        });
+        assert!(
+            subscription
+                .lite_topic_set()
+                .with(|topics| topics.contains("getter-added"))
+        );
+        live_topics.with_mut(|topics| {
+            topics.remove("getter-added");
+        });
 
         let before_set_lite_topic_set = subscription.update_time();
         subscription.set_lite_topic_set(["lite-e"]);
-        assert!(subscription.lite_topic_set().contains("lite-a"));
-        assert!(subscription.lite_topic_set().contains("lite-e"));
+        assert!(live_topics.with(|topics| topics.contains("lite-a")));
+        assert!(live_topics.with(|topics| topics.contains("lite-e")));
         assert_eq!(subscription.update_time(), before_set_lite_topic_set);
         subscription.remove_lite_topic("lite-e");
         subscription.set_update_time(7);
@@ -6292,8 +6327,16 @@ mod tests {
         assert!(case["groupSetterReturnsThis"].as_bool().unwrap());
         assert!(case["topicSetterReturnsThis"].as_bool().unwrap());
         assert!(case["setLiteTopicSetReturnsThis"].as_bool().unwrap());
+        assert!(!case["setLiteTopicSetRetainsInputSet"].as_bool().unwrap());
+        assert!(!case["setterInputMutationVisible"].as_bool().unwrap());
         assert!(case["setLiteTopicSetKeepsExisting"].as_bool().unwrap());
         assert!(case["setLiteTopicSetLeavesUpdateTime"].as_bool().unwrap());
+        assert!(case["getterReturnsSameSetObject"].as_bool().unwrap());
+        assert!(
+            case["getterMutationVisibleToSubscription"]
+                .as_bool()
+                .unwrap()
+        );
         assert!(case["singleAddResult"].as_bool().unwrap());
         assert!(!case["duplicateAddResult"].as_bool().unwrap());
         assert!(case["singleAddUpdatesTime"].as_bool().unwrap());
@@ -6346,7 +6389,11 @@ mod tests {
                 "{}",
                 case["name"]
             );
-            let lite_topics = decoded.lite_topic_set.into_iter().collect::<Vec<_>>();
+            let lite_topics = decoded
+                .lite_topic_set
+                .snapshot()
+                .into_iter()
+                .collect::<Vec<_>>();
             assert_eq!(
                 serde_json::to_value(lite_topics).unwrap(),
                 case["liteTopicSet"],
