@@ -254,6 +254,18 @@ public final class RuntimeConfigFixtures {
         Map<String, Object> result = new TreeMap<>();
         String id = first.getClientId();
         try {
+            try {
+                manager.removeClientFactory((String) null);
+                result.put("removeByNullId", "RETURNED");
+            } catch (Throwable error) {
+                result.put("removeByNullId", error.getClass().getSimpleName());
+            }
+            try {
+                manager.removeClientFactory((String) null, first);
+                result.put("removeByNullIdAndInstance", "RETURNED");
+            } catch (Throwable error) {
+                result.put("removeByNullIdAndInstance", error.getClass().getSimpleName());
+            }
             result.put("liveSeesFirst", live.get(id) == first);
             manager.removeClientFactory(id);
             result.put("absentAfterUnconditional", !live.containsKey(id));
