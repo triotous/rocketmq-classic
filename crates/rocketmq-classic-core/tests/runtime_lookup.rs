@@ -110,6 +110,69 @@ async fn null_topic_broker_selection_matches_invoked_java_failure() {
     ));
 }
 
+#[tokio::test]
+async fn null_topic_route_lookups_match_invoked_java_control_flow() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/route.json")).unwrap();
+    let java = &fixture["runtimeNullTopicRouteLookups"];
+    assert_eq!(java["existing"]["outcome"], "NullPointerException");
+    assert_eq!(java["query"]["outcome"], "NullPointerException");
+    assert_eq!(java["updateMissing"]["outcome"], "OK");
+    assert_eq!(java["updateMissing"]["changed"], false);
+    assert_eq!(java["updatePresent"]["outcome"], "NullPointerException");
+    assert_eq!(java["requestsAfterMissing"], 1);
+    assert_eq!(java["requestsAfterPresent"], 2);
+    assert!(java["requestedNullTopic"].as_bool().unwrap());
+
+    let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut config = ClientConfig::new("null-topic-route-lookups");
+    config.namesrv_addr = Some(nameserver.local_addr().unwrap().to_string());
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+    runtime.remoting().start().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut socket, _) = nameserver.accept().await.unwrap();
+        for body in [Some(b"null".to_vec()), Some(b"{}".to_vec())] {
+            let command = read(&mut socket).await;
+            assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
+            assert!(
+                !command
+                    .ext_fields
+                    .as_ref()
+                    .is_some_and(|fields| fields.contains_key("topic"))
+            );
+            reply(&mut socket, &command, 0, body).await;
+        }
+    });
+
+    assert!(matches!(
+        runtime.get_existing_topic_route_nullable(None),
+        Err(RuntimeError::InvalidRoute("null route lookup topic"))
+    ));
+    assert!(matches!(
+        runtime.query_topic_route_nullable(None).await,
+        Err(RuntimeError::InvalidRoute("null route lookup topic"))
+    ));
+    let deadline = Instant::now() + Duration::from_secs(2);
+    assert!(
+        !runtime
+            .update_topic_route_nullable(None, deadline)
+            .await
+            .unwrap()
+    );
+    assert!(matches!(
+        runtime
+            .update_topic_route_nullable(None, Instant::now() + Duration::from_secs(2))
+            .await,
+        Err(RuntimeError::InvalidRoute("null topic route key"))
+    ));
+    assert!(runtime.route_snapshot().unwrap().raw_routes.is_empty());
+    peer.await.unwrap();
+    runtime.remoting().shutdown().await;
+}
+
 #[test]
 fn null_broker_address_lookups_match_invoked_java_results() {
     let fixture: serde_json::Value =

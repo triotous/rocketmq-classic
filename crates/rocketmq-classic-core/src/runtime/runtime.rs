@@ -483,6 +483,16 @@ impl ClientRuntime {
         Ok(self.route_snapshot()?.raw_routes.get(topic).cloned())
     }
 
+    /// Nullable Java entry point for `getAnExistTopicRouteData`; Java's
+    /// concurrent route map rejects a null topic key.
+    pub fn get_existing_topic_route_nullable(
+        &self,
+        topic: Option<&str>,
+    ) -> Result<Option<crate::route::TopicRouteDataHandle>, RuntimeError> {
+        let topic = topic.ok_or(RuntimeError::InvalidRoute("null route lookup topic"))?;
+        self.get_existing_topic_route(topic)
+    }
+
     pub async fn query_topic_route(
         &self,
         topic: &str,
@@ -493,6 +503,16 @@ impl ClientRuntime {
         self.update_topic_route(topic, tokio::time::Instant::now() + self.rpc_timeout())
             .await?;
         self.get_existing_topic_route(topic)
+    }
+
+    /// Nullable Java entry point for `queryTopicRouteData`; the source first
+    /// performs the same null-rejecting cached-route lookup.
+    pub async fn query_topic_route_nullable(
+        &self,
+        topic: Option<&str>,
+    ) -> Result<Option<crate::route::TopicRouteDataHandle>, RuntimeError> {
+        let topic = topic.ok_or(RuntimeError::InvalidRoute("null route lookup topic"))?;
+        self.query_topic_route(topic).await
     }
 
     async fn lookup_broker_with_route_refresh(
@@ -584,6 +604,37 @@ impl ClientRuntime {
         deadline: tokio::time::Instant,
     ) -> Result<bool, RuntimeError> {
         self.update_route(topic, None, deadline).await
+    }
+
+    /// Nullable Java entry point for `updateTopicRouteInfoFromNameServer`.
+    /// Java sends the null topic to NameServer first: a missing route returns
+    /// false, while a returned route reaches the null-key map lookup and fails.
+    pub async fn update_topic_route_nullable(
+        &self,
+        topic: Option<&str>,
+        deadline: tokio::time::Instant,
+    ) -> Result<bool, RuntimeError> {
+        let Some(topic) = topic else {
+            let Ok(_gate) = tokio::time::timeout(
+                tokio::time::Duration::from_millis(3000),
+                self.namesrv_gate.lock(),
+            )
+            .await
+            else {
+                return Ok(false);
+            };
+            let Some(_route) = (match self.api.get_topic_route_nullable(None, deadline).await {
+                Ok(route) => route,
+                Err(error) if MQClientApi::route_error_is_client_exception(&error) => {
+                    return Ok(false);
+                }
+                Err(error) => return Err(error.into()),
+            }) else {
+                return Ok(false);
+            };
+            return Err(RuntimeError::InvalidRoute("null topic route key"));
+        };
+        self.update_topic_route(topic, deadline).await
     }
 
     /// Refresh the union of current consumer subscriptions and producer
