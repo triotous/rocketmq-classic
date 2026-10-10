@@ -706,6 +706,13 @@ Pinned `javap -p` on `MQClientManager`, `MQClientInstance`, `ClientConfig`, `Top
 
 This is a method-name/source-owner inventory, not a claim that later-phase methods are implemented here or that each Java private branch has full input parity. It closes the bounded non-public declaration scan for these reference classes; behavior evidence and downstream ownership remain as stated per row.
 
+## RPC API methods consumed by the runtime
+
+| Rust public API | Pinned Java API / behavior | Evidence / boundary |
+| --- | --- | --- |
+| `MQClientApi::get_default_topic_route(deadline)` | `MQClientAPIImpl.getDefaultTopicRouteInfoFromNameServer(timeoutMillis)` queries the fixed auto-create topic `TBW102`; Rust uses the shared route RPC path and an absolute deadline | `default_route_fetch_uses_auto_create_topic_and_clamps_both_counts_from_read_count` asserts the request code/topic and accepted, rejected, missing-body, invalid-JSON, and route-publication behavior. The higher-level Java `MQClientInstance.updateTopicRouteInfoFromNameServer(topic, isDefault, producer)` and producer fallback clamp are mapped in the runtime inventory; queue fallback/selection remains Phase 7-owned. |
+| `MQClientApi::get_consumer_list_by_group_nullable(addr, Option<&str>, deadline)` | Java `MQClientAPIImpl.getConsumerIdListByGroup(addr, consumerGroup, timeoutMillis)` has one nullable String parameter, not a separate overload. A null group is omitted from ext fields by the Java request-header encoder; empty string remains explicitly encoded. | Direct Java API/runtime cases plus the Rust lookup/wire differential cover null versus empty group, request fields, response DTO decoding, and VIP/timeout behavior. This is a Rust nullable-argument adapter for the Java method, not an additional client capability; non-null callers use `get_consumer_list_by_group`. |
+
 ## `ClientRemotingProcessor` public methods
 
 Pinned Java 5.5.1 declares one constructor and five public methods. The constructor is privately owned by `ClientRuntime` and registered with the remoting client; the methods map as follows:
