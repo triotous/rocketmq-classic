@@ -142,7 +142,8 @@ public final class RuntimeRouteFixtures {
         Map<String, Object> result = new TreeMap<>();
         Map<String, org.apache.rocketmq.client.impl.producer.TopicPublishInfo> published = new HashMap<>();
         String input = "{\"queueDatas\":[{\"brokerName\":\"broker\",\"readQueueNums\":0,\"writeQueueNums\":0,\"perm\":6,\"topicSysFlag\":0}],"
-            + "\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"127.0.0.1:10911\"}}],\"filterServerTable\":{}}";
+            + "\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"127.0.0.1:10911\"}}],"
+            + "\"filterServerTable\":{\"broker\":[\"filter:10911\"]}}";
         result.put("input", com.alibaba.fastjson2.JSON.parseObject(input));
         try {
             java.lang.reflect.Field field = MQClientInstance.class.getDeclaredField("mQClientAPIImpl");
@@ -173,6 +174,44 @@ public final class RuntimeRouteFixtures {
             result.put("ok", info != null && info.ok());
             result.put("publishQueueCount", info == null ? null : info.getMessageQueueList().size());
             result.put("topicRouteDataPresent", info != null && info.getTopicRouteData() != null);
+            TopicRouteData rawRoute = runtime.getTopicRouteTable().get("topic");
+            TopicRouteData publishedRoute = info == null ? null : info.getTopicRouteData();
+            result.put("rawRouteQueueListSameAsApiRoute", rawRoute != null && api.route != null
+                && rawRoute.getQueueDatas() == api.route.getQueueDatas());
+            result.put("rawRouteQueueElementSameAsApiRoute", rawRoute != null && api.route != null
+                && rawRoute.getQueueDatas() != null && api.route.getQueueDatas() != null
+                && !rawRoute.getQueueDatas().isEmpty() && !api.route.getQueueDatas().isEmpty()
+                && rawRoute.getQueueDatas().get(0) == api.route.getQueueDatas().get(0));
+            result.put("publishedQueueListSameAsRaw", rawRoute != null && publishedRoute != null
+                && rawRoute.getQueueDatas() == publishedRoute.getQueueDatas());
+            result.put("publishedQueueElementSameAsRaw", rawRoute != null && publishedRoute != null
+                && rawRoute.getQueueDatas() != null && publishedRoute.getQueueDatas() != null
+                && !rawRoute.getQueueDatas().isEmpty() && !publishedRoute.getQueueDatas().isEmpty()
+                && rawRoute.getQueueDatas().get(0) == publishedRoute.getQueueDatas().get(0));
+            result.put("publishedBrokerListSameAsRaw", rawRoute != null && publishedRoute != null
+                && rawRoute.getBrokerDatas() == publishedRoute.getBrokerDatas());
+            result.put("rawRouteBrokerElementSameAsApiRoute", rawRoute != null && api.route != null
+                && rawRoute.getBrokerDatas() != null && api.route.getBrokerDatas() != null
+                && !rawRoute.getBrokerDatas().isEmpty() && !api.route.getBrokerDatas().isEmpty()
+                && rawRoute.getBrokerDatas().get(0) == api.route.getBrokerDatas().get(0));
+            result.put("publishedBrokerElementSameAsRaw", rawRoute != null && publishedRoute != null
+                && rawRoute.getBrokerDatas() != null && publishedRoute.getBrokerDatas() != null
+                && !rawRoute.getBrokerDatas().isEmpty() && !publishedRoute.getBrokerDatas().isEmpty()
+                && rawRoute.getBrokerDatas().get(0) == publishedRoute.getBrokerDatas().get(0));
+            result.put("publishedFilterTableSameAsRaw", rawRoute != null && publishedRoute != null
+                && rawRoute.getFilterServerTable() == publishedRoute.getFilterServerTable());
+            result.put("rawRouteFilterTableSameAsApiRoute", rawRoute != null && api.route != null
+                && rawRoute.getFilterServerTable() == api.route.getFilterServerTable());
+            result.put("publishedFilterListSameAsRaw", rawRoute != null && publishedRoute != null
+                && rawRoute.getFilterServerTable() != null && publishedRoute.getFilterServerTable() != null
+                && rawRoute.getFilterServerTable().get("broker") != null
+                && rawRoute.getFilterServerTable().get("broker")
+                    == publishedRoute.getFilterServerTable().get("broker"));
+            result.put("rawRouteFilterListSameAsApiRoute", rawRoute != null && api.route != null
+                && rawRoute.getFilterServerTable() != null && api.route.getFilterServerTable() != null
+                && rawRoute.getFilterServerTable().get("broker") != null
+                && rawRoute.getFilterServerTable().get("broker")
+                    == api.route.getFilterServerTable().get("broker"));
             api.route = null;
             result.put("missingRouteChanged", runtime.updateTopicRouteInfoFromNameServer("missing"));
             result.put("missingRouteCallbackDelivered", published.containsKey("missing"));
