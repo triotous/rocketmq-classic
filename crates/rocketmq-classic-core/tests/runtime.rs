@@ -19,7 +19,8 @@ use rocketmq_classic_core::{
     config::ClientConfig,
     runtime::{
         ClientRuntime, ClientRuntimeManager, ConsumerRuntime, PULL_MESSAGE_SERVICE_NAME,
-        ProducerRuntime, REBALANCE_SERVICE_NAME, RuntimeError, SERVICE_THREAD_JOIN_TIME_MILLIS,
+        ProducerRuntime, REBALANCE_SERVICE_NAME, RuntimeError, RuntimeState,
+        SERVICE_THREAD_JOIN_TIME_MILLIS,
     },
 };
 
@@ -724,6 +725,81 @@ async fn p6_v02_failed_construction_can_retry_and_stale_removal_preserves_replac
         &replacement,
         &manager.get_or_create(&config).await.unwrap()
     ));
+}
+
+#[tokio::test]
+async fn concurrent_heartbeat_pool_constructor_matches_pinned_java_boundaries() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let cases = fixture["concurrentHeartbeatConstructionCases"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 3);
+    let manager = ClientRuntimeManager::new();
+
+    for case in cases {
+        let pool_size = case["poolSize"].as_i64().unwrap() as i32;
+        let mut config = ClientConfig::new(format!("heartbeat-pool-{pool_size}"));
+        config.enable_concurrent_heartbeat = true;
+        config.concurrent_heartbeat_thread_pool_size = pool_size;
+        match case["outcome"].as_str().unwrap() {
+            "OK" => {
+                let runtime = manager.get_or_create(&config).await.unwrap();
+                assert_eq!(
+                    runtime
+                        .config()
+                        .read()
+                        .unwrap()
+                        .concurrent_heartbeat_thread_pool_size,
+                    pool_size
+                );
+                assert_eq!(
+                    case["executorCorePoolSize"].as_i64().unwrap(),
+                    i64::from(pool_size)
+                );
+                runtime.remoting().shutdown().await;
+            }
+            "IllegalArgumentException" => {
+                assert!(manager.get_or_create(&config).await.is_err(), "{case}");
+            }
+            outcome => panic!("unexpected Java constructor result {outcome}: {case}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn invalid_periodic_intervals_match_java_start_failure_and_rollback() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let cases = fixture["runtimeStartScheduleCases"].as_array().unwrap();
+    assert_eq!(cases.len(), 3);
+    let manager = ClientRuntimeManager::new();
+
+    for case in cases {
+        assert_eq!(case["outcome"], "IllegalArgumentException");
+        assert_eq!(case["serviceState"], "START_FAILED");
+        assert_eq!(case["scheduledExecutorShutdown"], true);
+        let field = case["field"].as_str().unwrap();
+        let interval = case["interval"].as_i64().unwrap() as i32;
+        let mut config = ClientConfig::new(format!("invalid-schedule-{field}"));
+        config.namesrv_addr = Some(String::new());
+        match field {
+            "pollNameServerInterval" => config.poll_name_server_interval = interval,
+            "heartbeatBrokerInterval" => config.heartbeat_broker_interval = interval,
+            "persistConsumerOffsetInterval" => {
+                config.persist_consumer_offset_interval = interval;
+            }
+            field => panic!("unexpected Java scheduled field {field}"),
+        }
+        let runtime = manager.get_or_create(&config).await.unwrap();
+        assert!(matches!(
+            runtime.start().await,
+            Err(RuntimeError::InvalidSchedule)
+        ));
+        assert_eq!(runtime.state(), RuntimeState::Failed);
+        let replacement = manager.get_or_create(&config).await.unwrap();
+        assert!(!Arc::ptr_eq(&runtime, &replacement));
+    }
 }
 
 #[tokio::test]

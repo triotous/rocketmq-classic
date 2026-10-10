@@ -180,6 +180,8 @@ public final class RuntimeConfigFixtures {
         fixture.put("serviceNameCases", serviceNameCases());
         fixture.put("serviceThreadCases", serviceThreadCases());
         fixture.put("serviceLifecycleCases", serviceLifecycleCases());
+        fixture.put("concurrentHeartbeatConstructionCases", concurrentHeartbeatConstructionCases());
+        fixture.put("runtimeStartScheduleCases", runtimeStartScheduleCases());
         fixture.put("languageCodeMethodCases", languageCodeMethodCases());
         fixture.put("serializeTypeMethodCases", serializeTypeMethodCases());
         fixture.put("compressionTypeMethodCases", compressionTypeMethodCases());
@@ -2843,6 +2845,83 @@ public final class RuntimeConfigFixtures {
                 row.put("scheduledExecutorShutdown", pull.getScheduledExecutorService().isShutdown());
             }
             cases.add(row);
+        }
+        return cases;
+    }
+
+    private static List<Object> concurrentHeartbeatConstructionCases() throws Exception {
+        List<Object> cases = new ArrayList<>();
+        for (int poolSize : new int[] {0, -1, 1}) {
+            ClientConfig config = new ClientConfig();
+            config.setClientIP("concurrent-heartbeat-pool-" + poolSize);
+            config.setInstanceName("fixture");
+            config.setNamesrvAddr("");
+            config.setEnableConcurrentHeartbeat(true);
+            config.setConcurrentHeartbeatThreadPoolSize(poolSize);
+            Map<String, Object> item = new TreeMap<>();
+            item.put("poolSize", poolSize);
+            org.apache.rocketmq.client.impl.factory.MQClientInstance runtime = null;
+            try {
+                runtime = new org.apache.rocketmq.client.impl.factory.MQClientInstance(
+                    config, 0, config.buildMQClientId());
+                java.lang.reflect.Field executorField = runtime.getClass()
+                    .getDeclaredField("concurrentHeartbeatExecutor");
+                executorField.setAccessible(true);
+                java.util.concurrent.ThreadPoolExecutor executor =
+                    (java.util.concurrent.ThreadPoolExecutor) executorField.get(runtime);
+                item.put("outcome", "OK");
+                item.put("executorCorePoolSize", executor.getCorePoolSize());
+            } catch (RuntimeException error) {
+                item.put("outcome", error.getClass().getSimpleName());
+            } finally {
+                if (runtime != null) cleanupRuntime(runtime);
+            }
+            cases.add(item);
+        }
+        return cases;
+    }
+
+    private static List<Object> runtimeStartScheduleCases() throws Exception {
+        List<Object> cases = new ArrayList<>();
+        Object[][] invalidIntervals = {
+            {"pollNameServerInterval", 0},
+            {"heartbeatBrokerInterval", -1},
+            {"persistConsumerOffsetInterval", 0}
+        };
+        for (Object[] invalid : invalidIntervals) {
+            String fieldName = (String) invalid[0];
+            int interval = (Integer) invalid[1];
+            ClientConfig config = new ClientConfig();
+            config.setClientIP("invalid-runtime-schedule-" + fieldName);
+            config.setInstanceName("fixture");
+            config.setNamesrvAddr("");
+            switch (fieldName) {
+                case "pollNameServerInterval": config.setPollNameServerInterval(interval); break;
+                case "heartbeatBrokerInterval": config.setHeartbeatBrokerInterval(interval); break;
+                case "persistConsumerOffsetInterval": config.setPersistConsumerOffsetInterval(interval); break;
+                default: throw new IllegalArgumentException("unknown scheduled interval " + fieldName);
+            }
+            org.apache.rocketmq.client.impl.factory.MQClientInstance runtime =
+                new org.apache.rocketmq.client.impl.factory.MQClientInstance(
+                    config, 0, config.buildMQClientId());
+            Map<String, Object> item = new TreeMap<>();
+            item.put("field", fieldName);
+            item.put("interval", interval);
+            try {
+                runtime.start();
+                item.put("outcome", "OK");
+            } catch (RuntimeException error) {
+                item.put("outcome", error.getClass().getSimpleName());
+            }
+            java.lang.reflect.Field stateField = runtime.getClass().getDeclaredField("serviceState");
+            stateField.setAccessible(true);
+            item.put("serviceState", stateField.get(runtime).toString());
+            java.lang.reflect.Field schedulerField = runtime.getClass()
+                .getDeclaredField("scheduledExecutorService");
+            schedulerField.setAccessible(true);
+            item.put("scheduledExecutorShutdown",
+                ((java.util.concurrent.ScheduledExecutorService) schedulerField.get(runtime)).isShutdown());
+            cases.add(item);
         }
         return cases;
     }
