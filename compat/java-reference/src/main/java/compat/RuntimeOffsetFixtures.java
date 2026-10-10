@@ -55,6 +55,8 @@ public final class RuntimeOffsetFixtures {
                 nullKeyAfterValidQueue);
 
             recordNullable(nullableCases, runtime, "null-input-map", null, null);
+            recordNullable(nullableCases, runtime, "null-input-map-empty-namespace", "", null);
+            recordNullable(nullableCases, runtime, "null-input-map-nonempty-namespace", "ns", null);
         } finally {
             Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure", MQClientAPIImpl.class, Throwable.class);
             cleanup.setAccessible(true); cleanup.invoke(runtime, runtime.getMQClientAPIImpl(), new IllegalStateException("fixture teardown"));
@@ -70,7 +72,8 @@ public final class RuntimeOffsetFixtures {
         if (args.length > 1 && "--verify".equals(args[1])) {
             if (!json.equals(Files.readString(file))) throw new IllegalStateException("fixture drift: " + file);
         } else { Files.createDirectories(file.getParent()); Files.writeString(file, json); }
-        System.out.println("Runtime offset conversion verified: " + cases.size());
+        System.out.println("Runtime offset conversion verified: " + cases.size()
+            + "; nullable cases: " + nullableCases.size());
     }
     private static void record(List<Object> cases, MQClientInstance runtime, String namespace, Map<MessageQueue, Long> input) {
         Map<String, Object> item = new TreeMap<>(); item.put("namespace", namespace); item.put("input", rows(input));
