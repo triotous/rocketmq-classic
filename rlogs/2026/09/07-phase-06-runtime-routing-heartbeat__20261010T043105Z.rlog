@@ -93,3 +93,10 @@
 ## Route audit consistency pass
 
 - Updated the route audit summary row to use the current 65-outcome raw-table oracle (including `Map.Entry.setValue`) and narrowed a stale generic "enum/model fields" statement to the verified remaining route gap: uninvoked malformed input combinations and source branches. No implementation or fixture changed; P6-V04 remains `PENDING_PHASE_19`.
+
+## Route outer-collection interaction matrix
+
+- Added `runtimeRouteCollectionMatrix` to the pinned Java `RuntimeRouteFixtures`: all 4^4 combinations of absent, null, empty, and populated `queueDatas`, `brokerDatas`, `filterServerTable`, and `topicQueueMappingByBroker`, each invoked through an unstarted real `MQClientInstance.updateTopicRouteInfoFromNameServer`. All 256 calls succeed and record changed/cached status plus normalized cached collection sizes. Oracle commit: `9ddbacaf`; `fixtures/runtime/route.json` SHA-256: `50a6a0220141c81a78fa3fdd67d0ad328c97e38c260dea1680cc2953cf60ebd3`.
+- Added `route_collection_state_product_matches_invoked_unstarted_java` in `route/cache.rs`; it checks all 256 outcomes and collection sizes. Focused differential passes. Native regression commit: `9630f66e`.
+- Full verification passed: `cargo test --workspace --all-targets --locked` with reviewed loopback access; strict workspace/all-target/all-feature Clippy; pinned offline Maven verify (22 scenarios; 38 Java-decoded headers and 14 typed bodies); comparator self-test; manifest validation (22 scenarios); formatting; and `git diff --check`.
+- Updated the route/API/requirement audits and ADR-0078's current whole-file hash reference. This closes the four outer-collection state combinations for runtime publication; nested malformed combinations and full Phase 6 source/API/input/reverse-export reconciliation remain open. P6-V04 remains `PENDING_PHASE_19`.
