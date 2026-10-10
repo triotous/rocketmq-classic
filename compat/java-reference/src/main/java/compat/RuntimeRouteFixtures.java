@@ -1897,6 +1897,29 @@ public final class RuntimeRouteFixtures {
             table.putAll(bulkValues);
             primitives.put("putAllAdds", table.get("bulk-a") == first && table.get("bulk-b") == second
                 && table.size() == 3);
+            String beforeNullRoute = "a-route-put-all-before-null-value";
+            String nullRouteValue = "m-route-put-all-null-value";
+            String afterNullRoute = "z-route-put-all-after-null-value";
+            Map<String, TopicRouteData> treeRouteInputs = new TreeMap<>();
+            treeRouteInputs.put(afterNullRoute, second);
+            treeRouteInputs.put(nullRouteValue, null);
+            treeRouteInputs.put(beforeNullRoute, first);
+            Map<String, Object> treeRouteOutcome = new TreeMap<>();
+            treeRouteOutcome.put("visitOrder", new ArrayList<>(treeRouteInputs.keySet()));
+            treeRouteOutcome.put("nullValueKey", nullRouteValue);
+            String treeRouteError = "OK";
+            try {
+                table.putAll(treeRouteInputs);
+            } catch (Throwable error) {
+                treeRouteError = error.getClass().getSimpleName();
+            }
+            treeRouteOutcome.put("outcome", treeRouteError);
+            treeRouteOutcome.put("keysAfter", new ArrayList<>(new java.util.TreeSet<>(table.keySet())));
+            result.put("treeMapPutAllNullValue", treeRouteOutcome);
+            primitives.put("treeMapPutAllThrowsNullValue", "NullPointerException".equals(treeRouteError));
+            primitives.put("treeMapPutAllKeepsBeforeRow", table.get(beforeNullRoute) == first);
+            primitives.put("treeMapPutAllSkipsAfterRow", !table.containsKey(afterNullRoute));
+            table.remove(beforeNullRoute);
             TopicRouteData absentValue = com.alibaba.fastjson2.JSON.parseObject(
                 com.alibaba.fastjson2.JSON.toJSONString(second), TopicRouteData.class);
             absentValue.getBrokerDatas().get(0).setBrokerName("absent-broker");

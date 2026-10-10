@@ -440,6 +440,59 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
             && same(table.get("bulk-b").unwrap(), &second)
             && table.len().unwrap() == 3,
     );
+    let tree_map_oracle = &case["treeMapPutAllNullValue"];
+    assert_eq!(tree_map_oracle["outcome"], "NullPointerException");
+    let tree_map_order: Vec<String> =
+        serde_json::from_value(tree_map_oracle["visitOrder"].clone()).unwrap();
+    assert_eq!(
+        tree_map_order,
+        [
+            "a-route-put-all-before-null-value",
+            "m-route-put-all-null-value",
+            "z-route-put-all-after-null-value"
+        ]
+    );
+    let null_value_key = tree_map_oracle["nullValueKey"].as_str().unwrap();
+    let tree_map_inputs: BTreeMap<_, _> = tree_map_order
+        .into_iter()
+        .map(|key| {
+            let value = if key == null_value_key {
+                None
+            } else if key.starts_with('a') {
+                Some(first.clone())
+            } else {
+                Some(second.clone())
+            };
+            (key, value)
+        })
+        .collect();
+    let tree_map_rows = tree_map_inputs
+        .into_iter()
+        .map(|(key, value)| (Some(key), value));
+    let tree_map_result = table.put_all_nullable_iter(tree_map_rows);
+    outcomes.insert(
+        "treeMapPutAllThrowsNullValue",
+        matches!(
+            tree_map_result,
+            Err(RuntimeError::InvalidRoute("null topic route value"))
+        ),
+    );
+    let before_null_value = "a-route-put-all-before-null-value";
+    let after_null_value = "z-route-put-all-after-null-value";
+    outcomes.insert(
+        "treeMapPutAllKeepsBeforeRow",
+        same(table.get(before_null_value).unwrap(), &first),
+    );
+    outcomes.insert(
+        "treeMapPutAllSkipsAfterRow",
+        table.get(after_null_value).unwrap().is_none(),
+    );
+    let expected_keys: Vec<String> =
+        serde_json::from_value(tree_map_oracle["keysAfter"].clone()).unwrap();
+    let mut actual_keys: Vec<_> = table.snapshot().unwrap().into_keys().collect();
+    actual_keys.sort();
+    assert_eq!(actual_keys, expected_keys);
+    table.remove(before_null_value).unwrap();
     outcomes.insert(
         "containsValueEqualCopy",
         table

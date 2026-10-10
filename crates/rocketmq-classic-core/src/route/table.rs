@@ -225,6 +225,35 @@ impl TopicRouteTable {
         }
         Ok(())
     }
+    /// Applies nullable source-map rows in iterator order, leaving prior rows
+    /// applied when Java `ConcurrentMap.putAll` would reject a null key/value.
+    pub fn put_all_nullable_rows(
+        &self,
+        entries: Option<&[(Option<String>, Option<TopicRouteDataHandle>)]>,
+    ) -> Result<(), RuntimeError> {
+        let Some(entries) = entries else {
+            return Err(RuntimeError::InvalidRoute("null topic route putAll map"));
+        };
+        self.put_all_nullable_iter(entries.iter().cloned())
+    }
+
+    /// Applies nullable route rows from any source iterator, preserving its
+    /// traversal order and `ConcurrentMap.putAll` partial-write behavior.
+    pub fn put_all_nullable_iter<I>(&self, entries: I) -> Result<(), RuntimeError>
+    where
+        I: IntoIterator<Item = (Option<String>, Option<TopicRouteDataHandle>)>,
+    {
+        for (key, value) in entries {
+            let Some(key) = key else {
+                return Err(RuntimeError::InvalidRoute("null topic route key"));
+            };
+            let Some(value) = value else {
+                return Err(RuntimeError::InvalidRoute("null topic route value"));
+            };
+            self.put(key, value)?;
+        }
+        Ok(())
+    }
     pub fn put_if_absent(
         &self,
         key: impl Into<String>,
