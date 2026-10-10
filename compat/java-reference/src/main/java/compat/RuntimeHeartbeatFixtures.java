@@ -1259,7 +1259,7 @@ public final class RuntimeHeartbeatFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "MQClientInstance constructor heartbeat ChannelEventListener selection/registerProducer/registerConsumer/prepareHeartbeatData/unregisterProducer/unregisterConsumer/sendHeartbeatToAllBrokerWithLock and both concurrent-heartbeat flag and pool-size mutation directions; HeartbeatData/ConsumerData/ProducerData/SubscriptionData Fastjson scalar inputs; HeartbeatData.computeHeartbeatFingerprint/toString/duplicate-ProducerData decode/nullable producer-consumer-subscription set elements; ProducerData.toString; ConsumerData enum JSON names/toString; ConsumeType.getTypeCN/MessageModel.getModeCN; SubscriptionData.SUB_ALL/constructors/equals/hashCode/compareTo/toString; ProducerData/ConsumerData/HeartbeatData inherited Object equals/hashCode; HeartbeatData inherited RemotingSerializable encode/toJson/decode/decodeList/fromJson methods");
+        fixture.put("entrypoint", "MQClientInstance constructor heartbeat ChannelEventListener selection/registerProducer/registerConsumer/prepareHeartbeatData/unregisterProducer/unregisterConsumer/sendHeartbeatToAllBrokerWithLock and live V2/concurrent-heartbeat flag selection plus concurrent flag and pool-size mutations; HeartbeatData/ConsumerData/ProducerData/SubscriptionData Fastjson scalar inputs; HeartbeatData.computeHeartbeatFingerprint/toString/duplicate-ProducerData decode/nullable producer-consumer-subscription set elements; ProducerData.toString; ConsumerData enum JSON names/toString; ConsumeType.getTypeCN/MessageModel.getModeCN; SubscriptionData.SUB_ALL/constructors/equals/hashCode/compareTo/toString; ProducerData/ConsumerData/HeartbeatData inherited Object equals/hashCode; HeartbeatData inherited RemotingSerializable encode/toJson/decode/decodeList/fromJson methods");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
         fixture.put("multiplicityCases", multiplicityCases);
@@ -1288,6 +1288,7 @@ public final class RuntimeHeartbeatFixtures {
         fixture.put("concurrentHeartbeatExecutorMutation", concurrentHeartbeatExecutorMutation());
         fixture.put("concurrentHeartbeatFlagMutationToSerial", concurrentHeartbeatFlagMutationToSerial());
         fixture.put("concurrentHeartbeatPoolSizeMutation", concurrentHeartbeatPoolSizeMutation());
+        fixture.put("heartbeatV2WrapperSettingMutation", heartbeatV2WrapperSettingMutation());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture) + "\n";
         Path file = Path.of(args[0]);
         if (args.length > 1 && "--verify".equals(args[1])) {
@@ -1348,26 +1349,39 @@ public final class RuntimeHeartbeatFixtures {
 
     private static final class HeartbeatModeApi extends org.apache.rocketmq.client.impl.MQClientAPIImpl {
         private final List<String> modes;
+        private final List<Boolean> concurrentExecutorThreads;
 
         HeartbeatModeApi(ClientConfig config, List<String> modes) {
+            this(config, modes, null);
+        }
+
+        HeartbeatModeApi(ClientConfig config, List<String> modes, List<Boolean> concurrentExecutorThreads) {
             super(new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null, config, null,
                 ignored -> (org.apache.rocketmq.remoting.RemotingClient) Proxy.newProxyInstance(
                     RuntimeHeartbeatFixtures.class.getClassLoader(),
                     new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
                     (proxy, method, values) -> method.getReturnType() == boolean.class ? false : null));
             this.modes = modes;
+            this.concurrentExecutorThreads = concurrentExecutorThreads;
+        }
+
+        private void record(String mode) {
+            modes.add(mode);
+            if (concurrentExecutorThreads != null) {
+                concurrentExecutorThreads.add(Thread.currentThread().getName().startsWith("MQClientConcurrentHeartbeatThread_"));
+            }
         }
 
         @Override
         public int sendHeartbeat(String address, HeartbeatData heartbeat, long timeout) {
-            modes.add("V1");
+            record("V1");
             return 551;
         }
 
         @Override
         public org.apache.rocketmq.remoting.common.HeartbeatV2Result sendHeartbeatV2(
             String address, HeartbeatData heartbeat, long timeout) {
-            modes.add("V2");
+            record("V2");
             return new org.apache.rocketmq.remoting.common.HeartbeatV2Result(551, false, true);
         }
     }
@@ -1521,6 +1535,60 @@ public final class RuntimeHeartbeatFixtures {
                 org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
             cleanup.setAccessible(true);
             cleanup.invoke(runtime, runtime.getMQClientAPIImpl(), new IllegalStateException("heartbeat pool-size fixture teardown"));
+        }
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> heartbeatV2WrapperSettingMutation() throws Exception {
+        ClientConfig config = new ClientConfig();
+        config.setClientIP("heartbeat-v2-wrapper-mutation");
+        config.setUseHeartbeatV2(false);
+        config.setEnableConcurrentHeartbeat(true);
+        config.setConcurrentHeartbeatThreadPoolSize(2);
+        MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+        org.apache.rocketmq.client.impl.MQClientAPIImpl original = runtime.getMQClientAPIImpl();
+        List<String> modes = new ArrayList<>();
+        List<Boolean> sendOnConcurrentExecutor = new ArrayList<>();
+        HeartbeatModeApi api = new HeartbeatModeApi(config, modes, sendOnConcurrentExecutor);
+        DefaultMQProducer producer = new DefaultMQProducer("fixture-producer");
+        Map<String, Object> result = new TreeMap<>();
+        try {
+            if (!runtime.registerProducer("fixture-producer", producer.getDefaultMQProducerImpl()))
+                throw new IllegalStateException("V2 wrapper fixture producer registration");
+
+            java.lang.reflect.Field brokerField = MQClientInstance.class.getDeclaredField("brokerAddrTable");
+            brokerField.setAccessible(true);
+            Map<String, java.util.HashMap<Long, String>> brokerTable =
+                (Map<String, java.util.HashMap<Long, String>>) brokerField.get(runtime);
+            java.util.HashMap<Long, String> addresses = new java.util.HashMap<>();
+            addresses.put(0L, "127.0.0.1:10911");
+            brokerTable.put("fixture-broker", addresses);
+
+            java.lang.reflect.Field executorField = MQClientInstance.class.getDeclaredField("concurrentHeartbeatExecutor");
+            executorField.setAccessible(true);
+            result.put("configuredBeforeMutation", config.isUseHeartbeatV2());
+            result.put("concurrentConfigured", config.isEnableConcurrentHeartbeat());
+            result.put("executorPresent", executorField.get(runtime) != null);
+
+            java.lang.reflect.Field apiField = MQClientInstance.class.getDeclaredField("mQClientAPIImpl");
+            apiField.setAccessible(true);
+            apiField.set(runtime, api);
+            result.put("v1WrapperOutcome", runtime.sendHeartbeatToAllBrokerWithLock());
+            config.setUseHeartbeatV2(true);
+            result.put("configuredAfterMutation", config.isUseHeartbeatV2());
+            result.put("v2WrapperOutcome", runtime.sendHeartbeatToAllBrokerWithLock());
+            result.put("sendModes", new ArrayList<>(modes));
+            result.put("sendOnConcurrentExecutor", new ArrayList<>(sendOnConcurrentExecutor));
+        } finally {
+            Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
+                org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
+            cleanup.setAccessible(true);
+            try { cleanup.invoke(runtime, original, new IllegalStateException("V2 wrapper mutation fixture teardown")); }
+            finally {
+                try { api.shutdown(); }
+                finally { producer.shutdown(); }
+            }
         }
         return result;
     }

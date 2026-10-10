@@ -156,6 +156,58 @@ async fn heartbeat_protocol_mode_reads_live_v2_setting_after_construction() {
     runtime.remoting().shutdown().await;
 }
 
+#[tokio::test]
+async fn all_broker_wrapper_reads_live_v2_before_concurrent_v1_setting() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/heartbeat.json")).unwrap();
+    let java_case = &fixture["heartbeatV2WrapperSettingMutation"];
+    assert!(!java_case["configuredBeforeMutation"].as_bool().unwrap());
+    assert!(java_case["concurrentConfigured"].as_bool().unwrap());
+    assert!(java_case["executorPresent"].as_bool().unwrap());
+    assert!(java_case["configuredAfterMutation"].as_bool().unwrap());
+    assert!(java_case["v1WrapperOutcome"].as_bool().unwrap());
+    assert!(java_case["v2WrapperOutcome"].as_bool().unwrap());
+    assert_eq!(java_case["sendModes"], serde_json::json!(["V1", "V2"]));
+    assert_eq!(
+        java_case["sendOnConcurrentExecutor"],
+        serde_json::json!([true, false])
+    );
+
+    let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = broker.local_addr().unwrap().to_string();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = broker.accept().await.unwrap();
+        for expected_v2 in [false, true] {
+            let command = read(&mut stream).await;
+            assert_eq!(command.code, request::HEART_BEAT);
+            let body: HeartbeatData =
+                serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
+            assert_eq!(body.heartbeat_fingerprint != 0, expected_v2);
+            respond(&mut stream, &command, None, true, false).await;
+        }
+    });
+
+    let mut config = ClientConfig::new("all-broker-v2-mode");
+    config.use_heartbeat_v2 = false;
+    config.enable_concurrent_heartbeat = true;
+    config.concurrent_heartbeat_thread_pool_size = 2;
+    let runtime = runtime(config, &[address]).await;
+    let producer = Arc::new(Producer);
+    let _lease = runtime
+        .register_producer("producer", producer.clone())
+        .await
+        .unwrap();
+    assert!(runtime.send_heartbeat_to_all_brokers().await.unwrap());
+    runtime.config().write().unwrap().use_heartbeat_v2 = true;
+    assert!(runtime.send_heartbeat_to_all_brokers().await.unwrap());
+
+    tokio::time::timeout(Duration::from_secs(2), peer)
+        .await
+        .unwrap()
+        .unwrap();
+    runtime.remoting().shutdown().await;
+}
+
 impl ProducerRuntime for Producer {}
 struct Consumer(Mutex<SubscriptionData>);
 impl ConsumerRuntime for Consumer {
