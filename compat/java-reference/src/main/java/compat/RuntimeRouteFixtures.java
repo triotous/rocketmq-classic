@@ -1883,6 +1883,14 @@ public final class RuntimeRouteFixtures {
             }
             primitives.put("getOrDefaultNullKeyThrowsNullPointer",
                 "NullPointerException".equals(nullGetOrDefaultKeyError));
+            String nullGetKeyError = "OK";
+            try {
+                table.get(null);
+            } catch (Throwable error) {
+                nullGetKeyError = error.getClass().getSimpleName();
+            }
+            primitives.put("getNullKeyThrowsNullPointer",
+                "NullPointerException".equals(nullGetKeyError));
             primitives.put("getterSeesFirst", runtime.getAnExistTopicRouteData("topic") == first);
             primitives.put("putReturnsFirst", table.put("topic", second) == first);
             primitives.put("retainedGetterSeesReplacement", runtime.getTopicRouteTable() == table && runtime.getAnExistTopicRouteData("topic") == second);

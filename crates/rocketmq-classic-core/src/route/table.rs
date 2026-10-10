@@ -121,6 +121,16 @@ impl TopicRouteTable {
     pub fn get(&self, key: &str) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
         Ok(self.0.snapshot()?.raw_routes.get(key).cloned())
     }
+    /// Preserves Java `ConcurrentMap.get`'s null-key rejection.
+    pub fn get_nullable(
+        &self,
+        key: Option<&str>,
+    ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null topic route key"));
+        };
+        self.get(key)
+    }
     /// Map.getOrDefault counterpart using raw-table presence only.
     pub fn get_or_default(
         &self,
