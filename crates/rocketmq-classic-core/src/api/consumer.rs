@@ -270,7 +270,14 @@ impl MQClientApi {
             .await?;
         let reply = classify(reply, code, addr)?;
         let body: LockBatchResponseBody = decode_body(&reply, code, addr)?;
-        Ok(body.lock_okmq_set.map(|queues| queues.snapshot()))
+        Ok(body.lock_okmq_set.map(|queues| {
+            queues.with(|queues| {
+                queues
+                    .iter()
+                    .map(|queue| queue.as_ref().map(|queue| queue.snapshot()))
+                    .collect()
+            })
+        }))
     }
 
     pub async fn unlock_batch_mq(

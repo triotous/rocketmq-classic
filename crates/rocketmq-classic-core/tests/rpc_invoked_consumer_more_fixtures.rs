@@ -236,7 +236,7 @@ async fn java_invoked_consumer_more_requests_and_outcomes_match() {
                 consumer_group: Some("consumer".into()),
                 client_id: Some("client".into()),
                 mq_set: Some(SharedValue::new(std::collections::HashSet::from([Some(
-                    queue,
+                    SharedValue::new(queue),
                 )]))),
                 ..Default::default()
             };
@@ -261,7 +261,7 @@ async fn java_invoked_consumer_more_requests_and_outcomes_match() {
                 consumer_group: Some("consumer".into()),
                 client_id: Some("client".into()),
                 mq_set: Some(SharedValue::new(std::collections::HashSet::from([Some(
-                    queue,
+                    SharedValue::new(queue),
                 )]))),
                 ..Default::default()
             };

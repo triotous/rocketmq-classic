@@ -1241,6 +1241,25 @@ public final class RuntimeLookupFixtures {
         return queues;
     }
 
+    private static Map<String, Object> messageQueueSetElementAliasCase(
+            Set<org.apache.rocketmq.common.message.MessageQueue> setterSet,
+            Set<org.apache.rocketmq.common.message.MessageQueue> getterSet) {
+        Map<String, Object> result = new TreeMap<>();
+        org.apache.rocketmq.common.message.MessageQueue setterQueue = setterSet.iterator().next();
+        org.apache.rocketmq.common.message.MessageQueue getterQueue = getterSet.iterator().next();
+        int originalQueueId = setterQueue.getQueueId();
+        result.put("getterReturnsAssignedElement", setterQueue == getterQueue);
+        setterQueue.setQueueId(originalQueueId + 5);
+        result.put("setterElementMutationVisibleToGetter",
+            getterSet.iterator().next().getQueueId() == originalQueueId + 5);
+        setterQueue.setQueueId(originalQueueId);
+        getterQueue.setQueueId(originalQueueId + 6);
+        result.put("getterElementMutationVisibleToSetterObject",
+            setterQueue.getQueueId() == originalQueueId + 6);
+        setterQueue.setQueueId(originalQueueId);
+        return result;
+    }
+
     private static Map<String, Object> lockBatchRequestApiCase() throws Exception {
         org.apache.rocketmq.remoting.protocol.body.LockBatchRequestBody body =
             new org.apache.rocketmq.remoting.protocol.body.LockBatchRequestBody();
@@ -1266,6 +1285,7 @@ public final class RuntimeLookupFixtures {
         item.put("values", values);
         item.put("getterReturnsAssignedSet", body.getMqSet() == queues);
         item.put("assignedValues", messageQueueApiValues(body.getMqSet()));
+        item.putAll(messageQueueSetElementAliasCase(queues, body.getMqSet()));
         queues.remove(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 2));
         queues.add(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 3));
         item.put("externalMutationVisible", body.getMqSet().contains(
@@ -1319,6 +1339,7 @@ public final class RuntimeLookupFixtures {
         item.put("values", values);
         item.put("getterReturnsAssignedSet", body.getMqSet() == queues);
         item.put("assignedValues", messageQueueApiValues(body.getMqSet()));
+        item.putAll(messageQueueSetElementAliasCase(queues, body.getMqSet()));
         queues.remove(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 2));
         queues.add(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 3));
         item.put("externalMutationVisible", body.getMqSet().contains(
@@ -1357,6 +1378,7 @@ public final class RuntimeLookupFixtures {
         item.put("values", messageQueueApiValues(body.getLockOKMQSet()));
         item.put("getterReturnsAssignedSet", body.getLockOKMQSet() == queues);
         item.put("assignedValues", messageQueueApiValues(body.getLockOKMQSet()));
+        item.putAll(messageQueueSetElementAliasCase(queues, body.getLockOKMQSet()));
         queues.remove(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 2));
         queues.add(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 3));
         item.put("externalMutationVisible", body.getLockOKMQSet().contains(

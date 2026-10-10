@@ -182,6 +182,25 @@ pub type SharedQueryAssignmentSet = SharedValue<QueryAssignmentSet>;
 pub type AssignmentAttachments = std::collections::BTreeMap<String, Option<String>>;
 pub type SharedAssignmentAttachments = SharedValue<AssignmentAttachments>;
 pub type SharedAssignmentMessageQueue = SharedValue<MessageQueue>;
+pub type MessageQueueSet = std::collections::HashSet<Option<SharedAssignmentMessageQueue>>;
+pub type SharedMessageQueueSet = SharedValue<MessageQueueSet>;
+
+// Java MessageQueue implements value equality/hash and remains mutable when it
+// is stored as a HashSet key. This handle keeps those Set semantics while
+// retaining the exact nested MessageQueue object.
+impl PartialEq for SharedValue<MessageQueue> {
+    fn eq(&self, other: &Self) -> bool {
+        self.ptr_eq(other) || self.snapshot() == other.snapshot()
+    }
+}
+
+impl Eq for SharedValue<MessageQueue> {}
+
+impl std::hash::Hash for SharedValue<MessageQueue> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.with(|message_queue| message_queue.hash(state));
+    }
+}
 
 fn deserialize_optional_assignment_set<'de, D>(
     deserializer: D,
@@ -222,13 +241,13 @@ where
     Ok(Some(SharedValue::new(assignments)))
 }
 
-fn default_message_queue_set() -> Option<std::collections::HashSet<Option<MessageQueue>>> {
+fn default_message_queue_set() -> Option<MessageQueueSet> {
     Some(std::collections::HashSet::new())
 }
 
 fn deserialize_optional_message_queue_set<'de, D>(
     deserializer: D,
-) -> Result<Option<std::collections::HashSet<Option<MessageQueue>>>, D::Error>
+) -> Result<Option<MessageQueueSet>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -251,19 +270,20 @@ where
         ));
     };
 
-    values
+    #[allow(clippy::mutable_key_type)]
+    let queues = values
         .into_iter()
         .map(|value| {
             if value.get().trim() == "null" {
                 Ok(None)
             } else {
                 serde_json::from_str::<MessageQueue>(value.get())
-                    .map(Some)
+                    .map(|message_queue| Some(SharedValue::new(message_queue)))
                     .map_err(de::Error::custom)
             }
         })
-        .collect::<Result<std::collections::HashSet<_>, _>>()
-        .map(Some)
+        .collect::<Result<std::collections::HashSet<_>, _>>()?;
+    Ok(Some(queues))
 }
 
 /// Java's default JSON writer omits null-valued entries in this map.
@@ -2590,7 +2610,7 @@ pub struct LockBatchRequestBody {
     #[serde(default)]
     pub only_this_broker: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub mq_set: Option<SharedValue<std::collections::HashSet<Option<MessageQueue>>>>,
+    pub mq_set: Option<SharedMessageQueueSet>,
 }
 
 #[derive(Deserialize)]
@@ -2612,7 +2632,7 @@ struct LockBatchRequestBodyFields {
         default = "default_message_queue_set",
         deserialize_with = "deserialize_optional_message_queue_set"
     )]
-    mq_set: Option<std::collections::HashSet<Option<MessageQueue>>>,
+    mq_set: Option<MessageQueueSet>,
 }
 
 impl<'de> Deserialize<'de> for LockBatchRequestBody {
@@ -2668,16 +2688,11 @@ impl LockBatchRequestBody {
     }
 
     /// Returns a handle to the same mutable Set object assigned to the Java DTO.
-    pub fn get_mq_set(
-        &self,
-    ) -> Option<SharedValue<std::collections::HashSet<Option<MessageQueue>>>> {
+    pub fn get_mq_set(&self) -> Option<SharedMessageQueueSet> {
         self.mq_set.clone()
     }
 
-    pub fn set_mq_set(
-        &mut self,
-        mq_set: Option<SharedValue<std::collections::HashSet<Option<MessageQueue>>>>,
-    ) {
+    pub fn set_mq_set(&mut self, mq_set: Option<SharedMessageQueueSet>) {
         self.mq_set = mq_set;
     }
 }
@@ -2711,7 +2726,7 @@ pub struct UnlockBatchRequestBody {
     pub client_id: Option<String>,
     pub only_this_broker: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub mq_set: Option<SharedValue<std::collections::HashSet<Option<MessageQueue>>>>,
+    pub mq_set: Option<SharedMessageQueueSet>,
 }
 
 #[derive(Deserialize)]
@@ -2733,7 +2748,7 @@ struct UnlockBatchRequestBodyFields {
         default = "default_message_queue_set",
         deserialize_with = "deserialize_optional_message_queue_set"
     )]
-    mq_set: Option<std::collections::HashSet<Option<MessageQueue>>>,
+    mq_set: Option<MessageQueueSet>,
 }
 
 impl<'de> Deserialize<'de> for UnlockBatchRequestBody {
@@ -2789,16 +2804,11 @@ impl UnlockBatchRequestBody {
     }
 
     /// Returns a handle to the same mutable Set object assigned to the Java DTO.
-    pub fn get_mq_set(
-        &self,
-    ) -> Option<SharedValue<std::collections::HashSet<Option<MessageQueue>>>> {
+    pub fn get_mq_set(&self) -> Option<SharedMessageQueueSet> {
         self.mq_set.clone()
     }
 
-    pub fn set_mq_set(
-        &mut self,
-        mq_set: Option<SharedValue<std::collections::HashSet<Option<MessageQueue>>>>,
-    ) {
+    pub fn set_mq_set(&mut self, mq_set: Option<SharedMessageQueueSet>) {
         self.mq_set = mq_set;
     }
 }
@@ -2816,9 +2826,7 @@ impl std::fmt::Display for UnlockBatchRequestBody {
     }
 }
 
-fn java_message_queue_set_text(
-    queues: &Option<SharedValue<std::collections::HashSet<Option<MessageQueue>>>>,
-) -> String {
+fn java_message_queue_set_text(queues: &Option<SharedMessageQueueSet>) -> String {
     match queues {
         None => "null".to_owned(),
         Some(queues) => queues.with(|queues| {
@@ -2828,7 +2836,7 @@ fn java_message_queue_set_text(
                     .iter()
                     .map(|queue| queue
                         .as_ref()
-                        .map(ToString::to_string)
+                        .map(|message_queue| message_queue.with(ToString::to_string))
                         .unwrap_or_else(|| "null".to_owned()))
                     .collect::<Vec<_>>()
                     .join(", ")
@@ -2848,7 +2856,7 @@ fn java_message_queue_set_text(
 #[serde(rename_all = "camelCase")]
 pub struct LockBatchResponseBody {
     #[serde(rename = "lockOKMQSet", skip_serializing_if = "Option::is_none")]
-    pub lock_okmq_set: Option<SharedValue<std::collections::HashSet<Option<MessageQueue>>>>,
+    pub lock_okmq_set: Option<SharedMessageQueueSet>,
 }
 
 #[derive(Deserialize)]
@@ -2859,7 +2867,7 @@ struct LockBatchResponseBodyFields {
         rename = "lockOKMQSet",
         deserialize_with = "deserialize_optional_message_queue_set"
     )]
-    lock_okmq_set: Option<std::collections::HashSet<Option<MessageQueue>>>,
+    lock_okmq_set: Option<MessageQueueSet>,
 }
 
 impl<'de> Deserialize<'de> for LockBatchResponseBody {
@@ -2885,16 +2893,11 @@ impl Default for LockBatchResponseBody {
 
 impl LockBatchResponseBody {
     /// Returns a handle to the same mutable Set object assigned to the Java DTO.
-    pub fn get_lock_okmq_set(
-        &self,
-    ) -> Option<SharedValue<std::collections::HashSet<Option<MessageQueue>>>> {
+    pub fn get_lock_okmq_set(&self) -> Option<SharedMessageQueueSet> {
         self.lock_okmq_set.clone()
     }
 
-    pub fn set_lock_okmq_set(
-        &mut self,
-        lock_okmq_set: Option<SharedValue<std::collections::HashSet<Option<MessageQueue>>>>,
-    ) {
+    pub fn set_lock_okmq_set(&mut self, lock_okmq_set: Option<SharedMessageQueueSet>) {
         self.lock_okmq_set = lock_okmq_set;
     }
 }
@@ -3903,6 +3906,51 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    #[allow(clippy::mutable_key_type)]
+    fn message_queue_set_element_aliases_match(
+        case: &serde_json::Value,
+        assigned_set: &SharedMessageQueueSet,
+        getter_set: &SharedMessageQueueSet,
+    ) {
+        let assigned_queue = assigned_set.with(|queues| {
+            queues
+                .iter()
+                .find_map(Clone::clone)
+                .expect("fixture Set contains a non-null MessageQueue")
+        });
+        let getter_queue = getter_set.with(|queues| {
+            queues
+                .iter()
+                .find_map(Clone::clone)
+                .expect("fixture Set contains a non-null MessageQueue")
+        });
+        assert_eq!(
+            assigned_queue.ptr_eq(&getter_queue),
+            case["getterReturnsAssignedElement"]
+        );
+
+        let original_queue_id = assigned_queue.with(MessageQueue::queue_id);
+        assigned_queue.with_mut(|queue| queue.set_queue_id(original_queue_id + 5));
+        assert_eq!(
+            getter_set.with(|queues| {
+                queues.iter().find_map(|queue| {
+                    queue
+                        .as_ref()
+                        .map(|queue| queue.with(MessageQueue::queue_id))
+                }) == Some(original_queue_id + 5)
+            }),
+            case["setterElementMutationVisibleToGetter"]
+        );
+        assigned_queue.with_mut(|queue| queue.set_queue_id(original_queue_id));
+
+        getter_queue.with_mut(|queue| queue.set_queue_id(original_queue_id + 6));
+        assert_eq!(
+            assigned_queue.with(|queue| queue.queue_id() == original_queue_id + 6),
+            case["getterElementMutationVisibleToSetterObject"]
+        );
+        getter_queue.with_mut(|queue| queue.set_queue_id(original_queue_id));
+    }
+
     fn normalize_batch_body_value(value: &mut serde_json::Value) {
         match value {
             serde_json::Value::Array(values) => {
@@ -4769,7 +4817,8 @@ mod tests {
             lock_case["defaults"]
         );
         assert_eq!(lock.to_string(), lock_case["defaultText"].as_str().unwrap());
-        let lock_queues: std::collections::HashSet<Option<MessageQueue>> =
+        #[allow(clippy::mutable_key_type)]
+        let lock_queues: MessageQueueSet =
             serde_json::from_value(lock_case["assignedValues"].clone()).unwrap();
         let lock_caller = SharedValue::new(lock_queues);
         let lock_assigned = lock_caller.clone();
@@ -4782,22 +4831,35 @@ mod tests {
             lock_assigned.ptr_eq(&lock_getter),
             lock_case["getterReturnsAssignedSet"]
         );
+        message_queue_set_element_aliases_match(lock_case, &lock_caller, &lock_getter);
         lock_caller.with_mut(|queues| {
-            queues.remove(&Some(MessageQueue::new("orders", "broker", 2)));
-            queues.insert(Some(MessageQueue::new("orders", "broker", 3)));
+            queues.remove(&Some(SharedValue::new(MessageQueue::new(
+                "orders", "broker", 2,
+            ))));
+            queues.insert(Some(SharedValue::new(MessageQueue::new(
+                "orders", "broker", 3,
+            ))));
         });
         assert_eq!(
-            lock_getter
-                .with(|queues| queues.contains(&Some(MessageQueue::new("orders", "broker", 3)))),
+            lock_getter.with(
+                |queues| queues.contains(&Some(SharedValue::new(MessageQueue::new(
+                    "orders", "broker", 3
+                ))))
+            ),
             lock_case["externalMutationVisible"]
         );
         lock_getter.with_mut(|queues| {
-            queues.remove(&Some(MessageQueue::new("orders", "broker", 3)));
-            queues.insert(Some(MessageQueue::new("orders", "broker", 4)));
+            queues.remove(&Some(SharedValue::new(MessageQueue::new(
+                "orders", "broker", 3,
+            ))));
+            queues.insert(Some(SharedValue::new(MessageQueue::new(
+                "orders", "broker", 4,
+            ))));
         });
         assert_eq!(
-            lock_assigned
-                .with(|queues| queues.contains(&Some(MessageQueue::new("orders", "broker", 4)))),
+            lock_assigned.with(|queues| queues.contains(&Some(SharedValue::new(
+                MessageQueue::new("orders", "broker", 4)
+            )))),
             lock_case["getterMutationVisibleToAssignedSet"]
         );
         assert_eq!(
@@ -4836,7 +4898,8 @@ mod tests {
             unlock.to_string(),
             unlock_case["defaultText"].as_str().unwrap()
         );
-        let unlock_queues: std::collections::HashSet<Option<MessageQueue>> =
+        #[allow(clippy::mutable_key_type)]
+        let unlock_queues: MessageQueueSet =
             serde_json::from_value(unlock_case["assignedValues"].clone()).unwrap();
         let unlock_caller = SharedValue::new(unlock_queues);
         let unlock_assigned = unlock_caller.clone();
@@ -4849,22 +4912,33 @@ mod tests {
             unlock_assigned.ptr_eq(&unlock_getter),
             unlock_case["getterReturnsAssignedSet"]
         );
+        message_queue_set_element_aliases_match(unlock_case, &unlock_caller, &unlock_getter);
         unlock_caller.with_mut(|queues| {
-            queues.remove(&Some(MessageQueue::new("orders", "broker", 2)));
-            queues.insert(Some(MessageQueue::new("orders", "broker", 3)));
+            queues.remove(&Some(SharedValue::new(MessageQueue::new(
+                "orders", "broker", 2,
+            ))));
+            queues.insert(Some(SharedValue::new(MessageQueue::new(
+                "orders", "broker", 3,
+            ))));
         });
         assert_eq!(
-            unlock_getter
-                .with(|queues| queues.contains(&Some(MessageQueue::new("orders", "broker", 3)))),
+            unlock_getter.with(|queues| queues.contains(&Some(SharedValue::new(
+                MessageQueue::new("orders", "broker", 3)
+            )))),
             unlock_case["externalMutationVisible"]
         );
         unlock_getter.with_mut(|queues| {
-            queues.remove(&Some(MessageQueue::new("orders", "broker", 3)));
-            queues.insert(Some(MessageQueue::new("orders", "broker", 4)));
+            queues.remove(&Some(SharedValue::new(MessageQueue::new(
+                "orders", "broker", 3,
+            ))));
+            queues.insert(Some(SharedValue::new(MessageQueue::new(
+                "orders", "broker", 4,
+            ))));
         });
         assert_eq!(
-            unlock_assigned
-                .with(|queues| queues.contains(&Some(MessageQueue::new("orders", "broker", 4)))),
+            unlock_assigned.with(|queues| queues.contains(&Some(SharedValue::new(
+                MessageQueue::new("orders", "broker", 4)
+            )))),
             unlock_case["getterMutationVisibleToAssignedSet"]
         );
         assert_eq!(
@@ -4894,7 +4968,8 @@ mod tests {
             serde_json::to_value(lock_response.get_lock_okmq_set()).unwrap(),
             lock_response_case["defaultLockOKMQSet"]
         );
-        let lock_response_queues: std::collections::HashSet<Option<MessageQueue>> =
+        #[allow(clippy::mutable_key_type)]
+        let lock_response_queues: MessageQueueSet =
             serde_json::from_value(lock_response_case["assignedValues"].clone()).unwrap();
         let lock_response_caller = SharedValue::new(lock_response_queues);
         let lock_response_assigned = lock_response_caller.clone();
@@ -4904,22 +4979,37 @@ mod tests {
             lock_response_assigned.ptr_eq(&lock_response_getter),
             lock_response_case["getterReturnsAssignedSet"]
         );
+        message_queue_set_element_aliases_match(
+            lock_response_case,
+            &lock_response_caller,
+            &lock_response_getter,
+        );
         lock_response_caller.with_mut(|queues| {
-            queues.remove(&Some(MessageQueue::new("orders", "broker", 2)));
-            queues.insert(Some(MessageQueue::new("orders", "broker", 3)));
+            queues.remove(&Some(SharedValue::new(MessageQueue::new(
+                "orders", "broker", 2,
+            ))));
+            queues.insert(Some(SharedValue::new(MessageQueue::new(
+                "orders", "broker", 3,
+            ))));
         });
         assert_eq!(
-            lock_response_getter
-                .with(|queues| queues.contains(&Some(MessageQueue::new("orders", "broker", 3)))),
+            lock_response_getter.with(|queues| queues.contains(&Some(SharedValue::new(
+                MessageQueue::new("orders", "broker", 3)
+            )))),
             lock_response_case["externalMutationVisible"]
         );
         lock_response_getter.with_mut(|queues| {
-            queues.remove(&Some(MessageQueue::new("orders", "broker", 3)));
-            queues.insert(Some(MessageQueue::new("orders", "broker", 4)));
+            queues.remove(&Some(SharedValue::new(MessageQueue::new(
+                "orders", "broker", 3,
+            ))));
+            queues.insert(Some(SharedValue::new(MessageQueue::new(
+                "orders", "broker", 4,
+            ))));
         });
         assert_eq!(
-            lock_response_assigned
-                .with(|queues| queues.contains(&Some(MessageQueue::new("orders", "broker", 4)))),
+            lock_response_assigned.with(|queues| queues.contains(&Some(SharedValue::new(
+                MessageQueue::new("orders", "broker", 4)
+            )))),
             lock_response_case["getterMutationVisibleToAssignedSet"]
         );
         assert_eq!(
@@ -5121,7 +5211,7 @@ mod tests {
             client_id: Some("client".into()),
             only_this_broker: false,
             mq_set: Some(SharedValue::new(std::collections::HashSet::from([Some(
-                MessageQueue::new("orders", "broker-a", 0),
+                SharedValue::new(MessageQueue::new("orders", "broker-a", 0)),
             )]))),
         };
         let unlock = UnlockBatchRequestBody {
@@ -5164,7 +5254,7 @@ mod tests {
             consumer_group: Some("workers".into()),
             client_id: Some("client".into()),
             mq_set: Some(SharedValue::new(std::collections::HashSet::from([Some(
-                MessageQueue::new("orders", "broker-a", 0),
+                SharedValue::new(MessageQueue::new("orders", "broker-a", 0)),
             )]))),
             ..LockBatchRequestBody::default()
         };

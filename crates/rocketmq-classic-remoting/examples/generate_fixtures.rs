@@ -723,7 +723,7 @@ fn generate_p4_bodies(output: &std::path::Path) {
             client_id: Some("client".into()),
             only_this_broker: false,
             mq_set: Some(SharedValue::new(std::collections::HashSet::from([Some(
-                queue.clone(),
+                SharedValue::new(queue.clone()),
             )]))),
         },
     );
@@ -736,7 +736,7 @@ fn generate_p4_bodies(output: &std::path::Path) {
             client_id: Some("client".into()),
             only_this_broker: true,
             mq_set: Some(SharedValue::new(std::collections::HashSet::from([Some(
-                queue.clone(),
+                SharedValue::new(queue.clone()),
             )]))),
         },
     );
@@ -746,7 +746,7 @@ fn generate_p4_bodies(output: &std::path::Path) {
         41,
         &LockBatchResponseBody {
             lock_okmq_set: Some(SharedValue::new(std::collections::HashSet::from([Some(
-                queue.clone(),
+                SharedValue::new(queue.clone()),
             )]))),
         },
     );
@@ -756,7 +756,7 @@ fn generate_p4_bodies(output: &std::path::Path) {
         42,
         &LockBatchResponseBody {
             lock_okmq_set: Some(SharedValue::new(std::collections::HashSet::from([Some(
-                queue,
+                SharedValue::new(queue),
             )]))),
         },
     );
