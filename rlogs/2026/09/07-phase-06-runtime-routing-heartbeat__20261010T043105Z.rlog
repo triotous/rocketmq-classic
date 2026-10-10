@@ -188,3 +188,8 @@
 - A new red/green private registry test makes the final retained admin owner re-enter `register_admin_ext` from its Rust `Drop`. Before the fix, both direct unregister and startup-failure `GroupRegistry::clear` timed out because the destructor ran while the registry mutex was held.
 - Implemented in `bbc05ff9` (`Drop admin owners outside registry locks`): `unregister_admin_ext`, lease/group removal paths, duplicate-owner rejection and `clear` release admin values only after unlocking. The two re-entry tests now pass.
 - Full workspace all-target tests pass (core unit module now 109 tests); strict workspace all-target/all-feature Clippy, fmt, and diff checks pass. The Java fixture did not change; pinned Maven verify for oracle `18fc5709` already passed. This closes a Rust-specific P6-04 ownership edge; broader Phase 6 reconciliation remains PARTIAL and P6-V04 remains `PENDING_PHASE_19`.
+
+## Admin owner back-reference cycle guidance
+
+- Updated `ClientRuntime::register_admin_ext` docs to require a `Weak<ClientRuntime>` for owner back-references. The started-runtime differential now uses an admin owner holding only a Weak handle and proves the runtime's Weak becomes un-upgradeable after admin removal, shutdown and dropping manager/runtime handles.
+- Commit `bcc98f46`; focused `admin_registration_blocks_shutdown_until_owner_is_unregistered` and strict core Clippy pass, along with formatting/diff checks. The registry still retains the admin owner strongly as Java does; caller-provided owner types must avoid strong back-reference cycles. Full Phase 6 remains PARTIAL; P6-V04 stays `PENDING_PHASE_19`.
