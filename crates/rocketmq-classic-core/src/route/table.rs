@@ -404,12 +404,23 @@ impl TopicRouteTable {
         &self,
         mut remapping: impl FnMut(&str, &TopicRouteDataHandle) -> TopicRouteDataHandle,
     ) -> Result<(), RuntimeError> {
+        self.replace_all_with_nullable_results(|key, observed| Some(remapping(key, observed)))
+    }
+
+    /// Applies a Java-style `replaceAll` callback that can return null.
+    /// Earlier replacements remain applied if a later callback returns `None`.
+    pub fn replace_all_with_nullable_results(
+        &self,
+        mut remapping: impl FnMut(&str, &TopicRouteDataHandle) -> Option<TopicRouteDataHandle>,
+    ) -> Result<(), RuntimeError> {
         for key in self.snapshot()?.into_keys() {
             let Some(mut observed) = self.get(&key)? else {
                 continue;
             };
             loop {
-                let value = remapping(&key, &observed);
+                let Some(value) = remapping(&key, &observed) else {
+                    return Err(RuntimeError::InvalidRoute("null topic route value"));
+                };
                 if self.replace_if_java_value_matches(&key, &observed, value)? {
                     break;
                 }

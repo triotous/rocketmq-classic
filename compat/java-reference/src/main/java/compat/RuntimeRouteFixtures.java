@@ -2067,6 +2067,42 @@ public final class RuntimeRouteFixtures {
             primitives.put("replaceAllWriterObservedOldValue", replaceAllWriterPrevious.get() == first);
             primitives.put("replaceAllFinalValueIsComputed", table.get("replaceAll-race") == second);
             table.remove("replaceAll-race");
+            Map<String, TopicRouteData> beforeNullReplaceAll = new HashMap<>(table);
+            table.clear();
+            String nullReplaceAllBefore = "a-route-replace-all-before-null";
+            String nullReplaceAllFailure = "m-route-replace-all-null-result";
+            String nullReplaceAllAfter = "z-route-replace-all-after-null";
+            table.put(nullReplaceAllAfter, first);
+            table.put(nullReplaceAllFailure, first);
+            table.put(nullReplaceAllBefore, first);
+            List<String> nullReplaceAllVisitOrder = new ArrayList<>();
+            String nullReplaceAllError = "OK";
+            try {
+                table.replaceAll((key, oldValue) -> {
+                    nullReplaceAllVisitOrder.add(key);
+                    return nullReplaceAllVisitOrder.size() == 2 ? null : second;
+                });
+            } catch (Throwable error) {
+                nullReplaceAllError = error.getClass().getSimpleName();
+            }
+            Map<String, Object> nullReplaceAllOutcome = new TreeMap<>();
+            nullReplaceAllOutcome.put("outcome", nullReplaceAllError);
+            nullReplaceAllOutcome.put("visitOrder", new ArrayList<>(nullReplaceAllVisitOrder));
+            List<String> nullReplaceAllUpdatedKeys = new ArrayList<>();
+            for (String key : table.keySet()) {
+                if (table.get(key) == second) nullReplaceAllUpdatedKeys.add(key);
+            }
+            nullReplaceAllUpdatedKeys.sort(String::compareTo);
+            nullReplaceAllOutcome.put("updatedKeys", nullReplaceAllUpdatedKeys);
+            result.put("replaceAllNullResult", nullReplaceAllOutcome);
+            primitives.put("replaceAllNullResultThrowsNullPointer",
+                "NullPointerException".equals(nullReplaceAllError));
+            primitives.put("replaceAllNullResultVisitsPrefixOnly", nullReplaceAllVisitOrder.size() == 2
+                && table.get(nullReplaceAllVisitOrder.get(0)) == second
+                && table.get(nullReplaceAllVisitOrder.get(1)) == first);
+            primitives.put("replaceAllNullResultStopsBeforeSuffix", nullReplaceAllVisitOrder.size() == 2);
+            table.clear();
+            table.putAll(beforeNullReplaceAll);
             table.put("remapping-race", first);
             AtomicInteger remappingCalls = new AtomicInteger();
             CountDownLatch remappingEntered = new CountDownLatch(1);

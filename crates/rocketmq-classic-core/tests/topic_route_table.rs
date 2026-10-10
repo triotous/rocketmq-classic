@@ -768,6 +768,73 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
     );
     table.remove("replaceAll-race").unwrap();
 
+    let before_nullable_replace_all = table.snapshot().unwrap();
+    table.clear().unwrap();
+    table
+        .put("a-route-replace-all-before-null", first.clone())
+        .unwrap();
+    table
+        .put("m-route-replace-all-null-result", first.clone())
+        .unwrap();
+    table
+        .put("z-route-replace-all-after-null", first.clone())
+        .unwrap();
+    let null_replace_all_oracle = &case["replaceAllNullResult"];
+    assert_eq!(null_replace_all_oracle["outcome"], "NullPointerException");
+    let java_visit_order: Vec<String> =
+        serde_json::from_value(null_replace_all_oracle["visitOrder"].clone()).unwrap();
+    assert_eq!(java_visit_order.len(), 2);
+    let native_order: Vec<String> = table.snapshot().unwrap().into_keys().collect();
+    let failing_key = native_order[1].clone();
+    let mut native_visit_order = Vec::new();
+    let null_replace_all_result = table.replace_all_with_nullable_results(|key, _| {
+        native_visit_order.push(key.to_owned());
+        (key != failing_key).then(|| second.clone())
+    });
+    outcomes.insert(
+        "replaceAllNullResultThrowsNullPointer",
+        matches!(
+            null_replace_all_result,
+            Err(RuntimeError::InvalidRoute("null topic route value"))
+        ),
+    );
+    outcomes.insert(
+        "replaceAllNullResultVisitsPrefixOnly",
+        native_visit_order == native_order[..2]
+            && native_order.first().is_some_and(|key| {
+                table
+                    .get(key)
+                    .unwrap()
+                    .is_some_and(|value| value.ptr_eq(&second))
+            })
+            && table
+                .get(&failing_key)
+                .unwrap()
+                .is_some_and(|value| value.ptr_eq(&first)),
+    );
+    outcomes.insert(
+        "replaceAllNullResultStopsBeforeSuffix",
+        native_visit_order.len() == 2 && !native_visit_order.contains(&native_order[2]),
+    );
+    let expected_updated_keys: Vec<String> =
+        serde_json::from_value(null_replace_all_oracle["updatedKeys"].clone()).unwrap();
+    assert_eq!(expected_updated_keys, [java_visit_order[0].clone()]);
+    assert_ne!(java_visit_order[0], java_visit_order[1]);
+    let native_updated_keys: Vec<String> = native_order
+        .iter()
+        .filter(|key| {
+            table
+                .get(key)
+                .unwrap()
+                .is_some_and(|value| value.ptr_eq(&second))
+        })
+        .cloned()
+        .collect();
+    assert_eq!(expected_updated_keys.len(), 1);
+    assert_eq!(native_updated_keys.len(), 1);
+    table.clear().unwrap();
+    table.put_all(before_nullable_replace_all).unwrap();
+
     table.put("remapping-race", first.clone()).unwrap();
     let callback_calls = Arc::new(AtomicUsize::new(0));
     let callback_read_current = Arc::new(AtomicBool::new(false));
