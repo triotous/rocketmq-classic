@@ -1,5 +1,7 @@
 # Phase 6 API and configuration map
 
+ServiceThread fixed join interval continuation (2026-10-10): `runtime::SERVICE_THREAD_JOIN_TIME_MILLIS` now exposes the 90,000ms result returned by both pinned workers' inherited Java `getJoinTime()` method; the existing direct Java fixture asserts this value against the Rust constant. This is a fixed module constant, not a per-worker getter or a Java thread-join implementation. The focused native fixture test, formatting check, and strict all-target/all-feature Clippy pass; implementation/test commit `5ce83461`. Whole Phase 6 API/input/reverse-export reconciliation remains open; P6-V04 stays `PENDING_PHASE_19`.
+
 Null-topic runtime broker lookup continuation (2026-10-09): pinned 5.5.1 bytecode and a direct invocation show `MQClientInstance.getBrokerNameFromMessageQueue` looks up `topicEndPointsTable` with the queue topic before applying fallback; a null topic throws `NullPointerException` both before and after the retained-static-endpoint refresh. The red native regression showed Rust incorrectly returned `fallback-broker`; `RouteSnapshot::broker_name` now returns `Result<Option<&str>, RuntimeError>` and maps this input to `InvalidRoute("null message queue topic")`. Oracle/fixture `5125b311`; fix/regression `e323c8da`; current `route.json` SHA-256 `780023c54340d92c538a3b106affdafb657c88378c221add2dd224faa0fc8fb1`. Full workspace tests (with loopback access), strict all-target/all-feature Clippy, pinned offline Maven verify (25 route inputs, 22 scenarios), comparator self-test/manifest22, formatting, and diff checks pass. Whole Phase 6 source/API/input/reverse-export reconciliation remains open; P6-V04 stays `PENDING_PHASE_19`.
 
 
@@ -720,7 +722,7 @@ The pinned fixture directly calls both enum APIs, unknown byte lookups, `Remotin
 | inherited `wakeup()` | `rebalance_immediately` maps to the sticky/coalescing rebalance signal; pull/pop immediate methods enqueue work. Tokio notification/queue behavior does not expose `LockSupport.unpark`. |
 | inherited `isStopped()` | `ClientRuntime::state()` exposes the richer runtime enum; it is not a direct per-service stopped flag. |
 | inherited `shutdown(boolean)` | A controlled Java fixture verifies `shutdown(true)` joins each test worker; managed shutdown stops and joins owned tasks, and PullMessageService's one-second scheduled-work grace maps to `OwnedPullWorker::finish_gracefully`. The Java thread-interrupt boolean has no counterpart. |
-| inherited `getJoinTime()` | Java returns 90,000ms; Rust has no per-worker join-time getter or fixed Java `Thread.join` window. |
+| inherited `getJoinTime()` | `runtime::SERVICE_THREAD_JOIN_TIME_MILLIS` exposes Java's fixed 90,000ms result and is checked against the invoked Java fixture. Rust has no per-worker getter or Java `Thread.join` window. |
 | inherited `makeStop()` | Java pre-start no-op and started-but-not-joined behavior are invoked in fixtures. Its stop-flag-only operation has no separate public Rust counterpart; `ClientRuntime::shutdown` performs managed cleanup and joins. |
 | inherited `isDaemon()` / `setDaemon(boolean)` | Java defaults to false and the setter changes the per-thread flag; Tokio tasks have no Java daemon setting. |
 
