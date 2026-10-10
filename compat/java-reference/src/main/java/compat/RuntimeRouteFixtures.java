@@ -2232,6 +2232,7 @@ public final class RuntimeRouteFixtures {
             org.apache.rocketmq.remoting.protocol.route.TopicRouteData copy =
                 new org.apache.rocketmq.remoting.protocol.route.TopicRouteData(source);
             item.put("copyConstructor", routeJson(copy));
+            item.put("copyCollectionAliases", topicRouteDataCollectionAliases(source, copy));
             item.put("copyQueueElementShared", source.getQueueDatas() != null && !source.getQueueDatas().isEmpty()
                 && source.getQueueDatas().get(0) == copy.getQueueDatas().get(0));
             try {
@@ -2239,11 +2240,13 @@ public final class RuntimeRouteFixtures {
                     source.cloneTopicRouteData();
                 item.put("cloneOutcome", "OK");
                 item.put("clone", routeJson(clone));
+                item.put("cloneCollectionAliases", topicRouteDataCollectionAliases(source, clone));
                 item.put("cloneQueueElementShared", source.getQueueDatas() != null && !source.getQueueDatas().isEmpty()
                     && source.getQueueDatas().get(0) == clone.getQueueDatas().get(0));
             } catch (NullPointerException error) {
                 item.put("cloneOutcome", "NullPointerException");
                 item.put("clone", null);
+                item.put("cloneCollectionAliases", topicRouteDataCollectionAliases(source, null));
                 item.put("cloneQueueElementShared", false);
             }
             try {
@@ -2251,16 +2254,55 @@ public final class RuntimeRouteFixtures {
                     source.deepCloneTopicRouteData();
                 item.put("deepCloneOutcome", "OK");
                 item.put("deepClone", routeJson(clone));
+                item.put("deepCloneCollectionAliases", topicRouteDataCollectionAliases(source, clone));
                 item.put("deepCloneQueueElementShared", source.getQueueDatas() != null && !source.getQueueDatas().isEmpty()
                     && source.getQueueDatas().get(0) == clone.getQueueDatas().get(0));
             } catch (NullPointerException error) {
                 item.put("deepCloneOutcome", "NullPointerException");
                 item.put("deepClone", null);
+                item.put("deepCloneCollectionAliases", topicRouteDataCollectionAliases(source, null));
                 item.put("deepCloneQueueElementShared", false);
             }
             cases.add(item);
         }
         return cases;
+    }
+
+    private static Map<String, Object> topicRouteDataCollectionAliases(
+        org.apache.rocketmq.remoting.protocol.route.TopicRouteData source,
+        org.apache.rocketmq.remoting.protocol.route.TopicRouteData copy) {
+        Map<String, Object> aliases = new TreeMap<>();
+        aliases.put("queueList", copy != null && source.getQueueDatas() != null
+            && source.getQueueDatas() == copy.getQueueDatas());
+        aliases.put("queueElement", copy != null && source.getQueueDatas() != null
+            && !source.getQueueDatas().isEmpty() && copy.getQueueDatas() != null
+            && !copy.getQueueDatas().isEmpty()
+            && source.getQueueDatas().get(0) == copy.getQueueDatas().get(0));
+        aliases.put("brokerList", copy != null && source.getBrokerDatas() != null
+            && source.getBrokerDatas() == copy.getBrokerDatas());
+        aliases.put("brokerElement", copy != null && source.getBrokerDatas() != null
+            && !source.getBrokerDatas().isEmpty() && copy.getBrokerDatas() != null
+            && !copy.getBrokerDatas().isEmpty()
+            && source.getBrokerDatas().get(0) == copy.getBrokerDatas().get(0));
+        aliases.put("filterTable", copy != null && source.getFilterServerTable() != null
+            && source.getFilterServerTable() == copy.getFilterServerTable());
+        aliases.put("filterList", copy != null && source.getFilterServerTable() != null
+            && source.getFilterServerTable().containsKey("broker")
+            && source.getFilterServerTable().get("broker") != null
+            && copy.getFilterServerTable() != null
+            && copy.getFilterServerTable().containsKey("broker")
+            && source.getFilterServerTable().get("broker")
+                == copy.getFilterServerTable().get("broker"));
+        aliases.put("mappingTable", copy != null && source.getTopicQueueMappingByBroker() != null
+            && source.getTopicQueueMappingByBroker() == copy.getTopicQueueMappingByBroker());
+        aliases.put("mappingValue", copy != null && source.getTopicQueueMappingByBroker() != null
+            && source.getTopicQueueMappingByBroker().containsKey("broker")
+            && source.getTopicQueueMappingByBroker().get("broker") != null
+            && copy.getTopicQueueMappingByBroker() != null
+            && copy.getTopicQueueMappingByBroker().containsKey("broker")
+            && source.getTopicQueueMappingByBroker().get("broker")
+                == copy.getTopicQueueMappingByBroker().get("broker"));
+        return aliases;
     }
 
     private static Map<String, Object> routeJson(org.apache.rocketmq.remoting.protocol.route.TopicRouteData route) {
