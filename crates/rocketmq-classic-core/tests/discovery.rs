@@ -58,6 +58,39 @@ impl TopAddressing for PanickingRegistration {
     }
 }
 
+struct OrderedProvider {
+    name: &'static str,
+    address: Option<String>,
+    fetch_calls: Arc<Mutex<Vec<String>>>,
+    callback_calls: Arc<Mutex<Vec<String>>>,
+    callback: Mutex<Option<Arc<dyn NameServerUpdateCallback>>>,
+}
+
+impl TopAddressing for OrderedProvider {
+    fn fetch_ns_addr(&self) -> Pin<Box<dyn Future<Output = Option<String>> + Send + '_>> {
+        Box::pin(async move {
+            self.fetch_calls.lock().unwrap().push(self.name.to_owned());
+            self.address.clone()
+        })
+    }
+
+    fn register_change_callback(&self, callback: Arc<dyn NameServerUpdateCallback>) {
+        self.callback_calls
+            .lock()
+            .unwrap()
+            .push(self.name.to_owned());
+        *self.callback.lock().unwrap() = Some(callback);
+    }
+}
+
+struct EchoCallback;
+
+impl NameServerUpdateCallback for EchoCallback {
+    fn on_name_server_address_change(&self, addresses: Option<&str>) -> Option<String> {
+        addresses.map(str::to_owned)
+    }
+}
+
 #[tokio::test]
 async fn failed_provider_registration_is_not_published_and_can_retry() {
     let manager = ClientRuntimeManager::with_top_addressing(Arc::new(PanickingRegistration));
@@ -171,6 +204,62 @@ async fn explicit_nameserver_skips_fetch_but_provider_callbacks_update_like_java
         [""]
     );
     assert!(runtime.shutdown().await.unwrap());
+}
+
+#[tokio::test]
+async fn chained_addressing_providers_match_java_service_loader_order() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/discovery.json")).unwrap();
+    let java = &fixture["providerSequence"];
+    let names = |key: &str| {
+        java[key]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_str().unwrap().to_owned())
+            .collect::<Vec<_>>()
+    };
+    let fetch_calls = Arc::new(Mutex::new(Vec::new()));
+    let callback_calls = Arc::new(Mutex::new(Vec::new()));
+    let first = Arc::new(OrderedProvider {
+        name: "first",
+        address: None,
+        fetch_calls: fetch_calls.clone(),
+        callback_calls: callback_calls.clone(),
+        callback: Mutex::new(None),
+    });
+    let second = Arc::new(OrderedProvider {
+        name: "second",
+        address: Some("second:9876".into()),
+        fetch_calls: fetch_calls.clone(),
+        callback_calls: callback_calls.clone(),
+        callback: Mutex::new(None),
+    });
+    let third = Arc::new(OrderedProvider {
+        name: "third",
+        address: Some("third:9876".into()),
+        fetch_calls: fetch_calls.clone(),
+        callback_calls: callback_calls.clone(),
+        callback: Mutex::new(None),
+    });
+    let addressing = DefaultTopAddressing::new("http://127.0.0.1:1/ns", None)
+        .with_provider(first.clone())
+        .with_provider(second.clone())
+        .with_provider(third.clone());
+
+    assert_eq!(
+        addressing.fetch_ns_addr().await.as_deref(),
+        java["fetchResult"].as_str()
+    );
+    assert_eq!(*fetch_calls.lock().unwrap(), names("fetchCalls"));
+
+    let callback: Arc<dyn NameServerUpdateCallback> = Arc::new(EchoCallback);
+    addressing.register_change_callback(callback.clone());
+    assert_eq!(*callback_calls.lock().unwrap(), names("callbackCalls"));
+    for provider in [first, second, third] {
+        let registered = provider.callback.lock().unwrap().clone().unwrap();
+        assert!(Arc::ptr_eq(&callback, &registered));
+    }
 }
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},

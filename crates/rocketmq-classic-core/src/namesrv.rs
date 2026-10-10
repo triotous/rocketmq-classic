@@ -22,7 +22,7 @@ pub struct DefaultTopAddressing {
     ws_addr: String,
     unit_name: Option<String>,
     parameters: BTreeMap<String, String>,
-    provider: Option<Arc<dyn TopAddressing>>,
+    providers: Vec<Arc<dyn TopAddressing>>,
     ns_addr: Mutex<Option<String>>,
 }
 
@@ -32,7 +32,7 @@ impl DefaultTopAddressing {
             ws_addr: ws_addr.into(),
             unit_name,
             parameters: BTreeMap::new(),
-            provider: None,
+            providers: Vec::new(),
             ns_addr: Mutex::new(None),
         }
     }
@@ -47,10 +47,10 @@ impl DefaultTopAddressing {
         result
     }
 
-    /// Java loads the first ServiceLoader provider. Rust supplies that same
-    /// optional capability explicitly rather than using a process singleton.
+    /// Add a provider in Java ServiceLoader order without using a process
+    /// singleton. Chained calls retain each provider in insertion order.
     pub fn with_provider(mut self, provider: Arc<dyn TopAddressing>) -> Self {
-        self.provider = Some(provider);
+        self.providers.push(provider);
         self
     }
 
@@ -152,7 +152,7 @@ impl DefaultTopAddressing {
 impl TopAddressing for DefaultTopAddressing {
     fn fetch_ns_addr(&self) -> Pin<Box<dyn Future<Output = Option<String>> + Send + '_>> {
         Box::pin(async move {
-            if let Some(provider) = &self.provider {
+            for provider in &self.providers {
                 if let Some(address) = provider
                     .fetch_ns_addr()
                     .await
@@ -165,8 +165,8 @@ impl TopAddressing for DefaultTopAddressing {
         })
     }
     fn register_change_callback(&self, callback: Arc<dyn NameServerUpdateCallback>) {
-        if let Some(provider) = &self.provider {
-            provider.register_change_callback(callback);
+        for provider in &self.providers {
+            provider.register_change_callback(callback.clone());
         }
     }
 }

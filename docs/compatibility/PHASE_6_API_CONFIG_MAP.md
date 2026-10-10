@@ -990,7 +990,7 @@ A follow-up exact-name scan across all 16 `runtime/*.rs` and `route/*.rs` source
 | `NameServerUpdateCallback::on_name_server_address_change` | Java `NameServerUpdateCallback.onNameServerAddressChange(String)`; null input/result are represented as `Option`, and callback-driven address changes update the shared remoting NameServer list. |
 | `DefaultTopAddressing::new(ws_addr, unit_name)` | Java one- and two-argument constructors; passing `None` represents the no-unit overload. |
 | `DefaultTopAddressing::with_parameters(ws_addr, unit_name, parameters)` | Java three-argument constructor `(wsAddr, parameters, unitName)`; Rust argument order follows its builder signature while retaining the same URL composition. |
-| `DefaultTopAddressing::with_provider` | Rust explicit provider injection for the first Java `ServiceLoader` `TopAddressing` provider; it adds no client setting or new addressing behavior. |
+| `DefaultTopAddressing::with_provider` | Rust explicit `ServiceLoader` provider injection; chained calls retain Java iteration order, fetch returns the first non-null/non-empty address, and callback registration reaches every provider. |
 | `DefaultTopAddressing::fetch_ns_addr_with_timeout(verbose, timeout_millis)` | Java `DefaultTopAddressing.fetchNSAddr(boolean, long)`; Rust retains the timeout unit and nullable failure result while performing the HTTP call asynchronously. |
 | `DefaultTopAddressing::ns_addr` / `set_ns_addr` | Java `getNsAddr()` / `setNsAddr(String)`; nullable address state is retained and observed through the accessor. |
 
