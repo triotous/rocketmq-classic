@@ -1,0 +1,9 @@
+Session: 2026-10-10T01:03:59Z
+Plan: plan/2026/09/07-phase-06-runtime-routing-heartbeat.md
+Branch: 07-phase-06-runtime-routing-heartbeat
+
+BatchAck BitSet Base64 boundary: seven direct Java 5.5.1 `decode/encode` cases show unpadded standard Base64 `BQ` is accepted and encoded as `BQ==`, while one-character, excess-padding, whitespace, URL-safe, and invalid-symbol forms reject. The previous native `STANDARD` decoder failed on Java's accepted unpadded case. Added a strict `STANDARD_NO_PAD` fallback; the full 102-case Java/native corpus passes. Fixture SHA-256: `b403bee9204f0adb029bb0be52320c542739612dabfc883621b8908b3b525440`.
+
+Separate commits: Java oracle/fixture `c34f9dba`; red native regression `0350546f`; implementation `cc3ebc70`; ADR/API-map/audit `95bca7e2`. Pinned offline Maven verify passed against the regenerated fixture. `cargo test --workspace --all-targets --locked` passed with localhost access; strict all-target/all-feature Clippy, three focused BatchAck tests, formatter, comparator self-test, manifest validation (22 scenarios), and diff check pass. The default sandbox does not permit three scripted localhost binds; the approved local-socket run passed.
+
+Phase 6 source/API/input/reverse-export reconciliation remains open, as do non-macOS and real IPv6-only host evidence. P6-V04 stays `PENDING_PHASE_19`.
