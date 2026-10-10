@@ -666,6 +666,17 @@ public final class RuntimeConfigFixtures {
         cleanup.invoke(runtime, runtime.getMQClientAPIImpl(), new IllegalStateException("manager removal fixture teardown"));
     }
 
+    private static void awaitUnchecked(CountDownLatch latch, String description) {
+        try {
+            if (!latch.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("timed out waiting for " + description);
+            }
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted while waiting for " + description, error);
+        }
+    }
+
     private static Map<String, Object> managerTable(ClientConfig config) throws Exception {
         org.apache.rocketmq.client.impl.MQClientManager manager = org.apache.rocketmq.client.impl.MQClientManager.getInstance();
         java.util.concurrent.ConcurrentMap<String, org.apache.rocketmq.client.impl.factory.MQClientInstance> live = manager.getFactoryTable();
@@ -752,6 +763,53 @@ public final class RuntimeConfigFixtures {
                 && !live.containsKey("compute-null-absent"));
             result.put("mergeCombines", live.merge("compute-a", second, (oldValue, newValue) -> newValue) == second);
             result.put("mergeAbsentInserts", live.merge("merge-new", first, (oldValue, newValue) -> null) == first);
+            live.put("compute-a", first);
+            AtomicInteger concurrentRemappingCalls = new AtomicInteger();
+            CountDownLatch remappingEntered = new CountDownLatch(1);
+            CountDownLatch releaseRemapping = new CountDownLatch(1);
+            CountDownLatch writerStarted = new CountDownLatch(1);
+            CountDownLatch writerFinished = new CountDownLatch(1);
+            AtomicReference<Throwable> writerFailure = new AtomicReference<>();
+            AtomicReference<org.apache.rocketmq.client.impl.factory.MQClientInstance> remappingResult =
+                new AtomicReference<>();
+            Thread remappingThread = new Thread(() -> remappingResult.set(live.compute("compute-a", (key, oldValue) -> {
+                concurrentRemappingCalls.incrementAndGet();
+                remappingEntered.countDown();
+                awaitUnchecked(releaseRemapping, "remapping release");
+                return second;
+            })), "java-factory-table-remapping-oracle");
+            Thread writerThread = new Thread(() -> {
+                writerStarted.countDown();
+                try {
+                    live.put("compute-a", second);
+                } catch (Throwable error) {
+                    writerFailure.set(error);
+                } finally {
+                    writerFinished.countDown();
+                }
+            }, "java-factory-table-remapping-writer");
+            remappingThread.setDaemon(true);
+            writerThread.setDaemon(true);
+            remappingThread.start();
+            try {
+                awaitUnchecked(remappingEntered, "remapping callback");
+                writerThread.start();
+                awaitUnchecked(writerStarted, "same-key writer");
+                result.put("remappingWriterWaitsForCallback", !writerFinished.await(100, TimeUnit.MILLISECONDS));
+            } finally {
+                releaseRemapping.countDown();
+            }
+            remappingThread.join(5000);
+            writerThread.join(5000);
+            if (remappingThread.isAlive() || writerThread.isAlive()) {
+                throw new IllegalStateException("ConcurrentHashMap remapping fixture threads did not finish");
+            }
+            if (writerFailure.get() != null) {
+                throw new IllegalStateException("ConcurrentHashMap same-key writer failed", writerFailure.get());
+            }
+            result.put("remappingCallbackRunsOnce", concurrentRemappingCalls.get() == 1);
+            result.put("remappingReturnsAndKeepsSecond", remappingResult.get() == second
+                && live.get("compute-a") == second);
             live.put("merge-remove", second);
             result.put("mergeNullRemoves", live.merge("merge-remove", first, (oldValue, newValue) -> null) == null
                 && !live.containsKey("merge-remove"));
