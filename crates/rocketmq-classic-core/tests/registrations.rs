@@ -1,6 +1,6 @@
 use rocketmq_classic_core::{
     config::ClientConfig,
-    runtime::{ClientRuntimeManager, ConsumerRuntime, ProducerRuntime, RuntimeError},
+    runtime::{ClientRuntimeManager, ConsumerRuntime, ProducerRuntime, RuntimeError, RuntimeState},
 };
 use rocketmq_classic_protocol::{
     SharedValue,
@@ -71,6 +71,94 @@ fn compare_java(name: &str, actual: &HeartbeatData) {
         serde_json::to_value(expected).unwrap(),
         "{name}"
     );
+}
+
+#[tokio::test]
+async fn nullable_registration_and_group_removal_match_invoked_java() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+    let java = &fixture["runtimeLookupInvocation"];
+    for field in [
+        "nullGroupConsumerRegistrationAccepted",
+        "nullOwnerConsumerRegistrationAccepted",
+        "nullGroupProducerRegistrationAccepted",
+        "nullOwnerProducerRegistrationAccepted",
+    ] {
+        assert_eq!(java[field], false, "{field}");
+    }
+    assert_eq!(java["registrationTablesRemainEmpty"], true);
+    assert_eq!(
+        java["nullConsumerUnregisterOutcome"],
+        "NullPointerException"
+    );
+    assert_eq!(
+        java["nullProducerUnregisterOutcome"],
+        "NullPointerException"
+    );
+
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&ClientConfig::new("null-registration"))
+        .await
+        .unwrap();
+    let consumer: Arc<dyn ConsumerRuntime> =
+        Arc::new(Consumer(Mutex::new(ConsumerData::default())));
+    let producer: Arc<dyn ProducerRuntime> = Arc::new(Producer);
+
+    assert!(
+        runtime
+            .register_consumer_nullable(None, Some(consumer.clone()))
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        runtime
+            .register_consumer_nullable(Some("null-owner"), None)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        runtime
+            .register_consumer_nullable(None, None)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        runtime
+            .register_producer_nullable(None, Some(producer.clone()))
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        runtime
+            .register_producer_nullable(Some("null-owner"), None)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        runtime
+            .register_producer_nullable(None, None)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(matches!(
+        runtime
+            .unregister_consumer_by_group_nullable(None, Instant::now())
+            .await,
+        Err(RuntimeError::InvalidRoute("null consumer group"))
+    ));
+    assert!(matches!(
+        runtime
+            .unregister_producer_by_group_nullable(None, Instant::now())
+            .await,
+        Err(RuntimeError::InvalidRoute("null producer group"))
+    ));
+    assert_eq!(runtime.state(), RuntimeState::Created);
 }
 
 #[tokio::test]

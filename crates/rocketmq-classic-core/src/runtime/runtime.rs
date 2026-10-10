@@ -891,6 +891,19 @@ impl ClientRuntime {
         receive.await.map_err(|_| self.control_error())??.accept()
     }
 
+    /// Nullable Java-compatible registration boundary. A null group or owner
+    /// matches `MQClientInstance.registerProducer` returning false.
+    pub async fn register_producer_nullable(
+        self: &Arc<Self>,
+        group: Option<&str>,
+        handle: Option<Arc<dyn ProducerRuntime>>,
+    ) -> Result<Option<GroupLease>, RuntimeError> {
+        let (Some(group), Some(handle)) = (group, handle) else {
+            return Ok(None);
+        };
+        self.register_producer(group, handle).await.map(Some)
+    }
+
     pub async fn register_consumer(
         self: &Arc<Self>,
         group: &str,
@@ -912,6 +925,19 @@ impl ClientRuntime {
             })
             .map_err(|_| self.control_error())?;
         receive.await.map_err(|_| self.control_error())??.accept()
+    }
+
+    /// Nullable Java-compatible registration boundary. A null group or owner
+    /// matches `MQClientInstance.registerConsumer` returning false.
+    pub async fn register_consumer_nullable(
+        self: &Arc<Self>,
+        group: Option<&str>,
+        handle: Option<Arc<dyn ConsumerRuntime>>,
+    ) -> Result<Option<GroupLease>, RuntimeError> {
+        let (Some(group), Some(handle)) = (group, handle) else {
+            return Ok(None);
+        };
+        self.register_consumer(group, handle).await.map(Some)
     }
 
     pub async fn register_admin(self: &Arc<Self>, group: &str) -> Result<GroupLease, RuntimeError> {
@@ -1035,6 +1061,19 @@ impl ClientRuntime {
             .await
     }
 
+    /// Nullable Java-compatible group removal. Java's concurrent table
+    /// rejects a null key before attempting Broker unregister.
+    pub async fn unregister_producer_by_group_nullable(
+        self: &Arc<Self>,
+        group: Option<&str>,
+        deadline: tokio::time::Instant,
+    ) -> Result<bool, RuntimeError> {
+        let Some(group) = group else {
+            return Err(RuntimeError::InvalidRoute("null producer group"));
+        };
+        self.unregister_producer_by_group(group, deadline).await
+    }
+
     /// Consumer counterpart of unregister_producer_by_group. This explicit
     /// source capability does not replace identity-safe owner cleanup.
     pub async fn unregister_consumer_by_group(
@@ -1044,6 +1083,19 @@ impl ClientRuntime {
     ) -> Result<bool, RuntimeError> {
         self.request_unregister_by_group(group, GroupKind::Consumer, deadline)
             .await
+    }
+
+    /// Nullable Java-compatible group removal. Java's concurrent table
+    /// rejects a null key before attempting Broker unregister.
+    pub async fn unregister_consumer_by_group_nullable(
+        self: &Arc<Self>,
+        group: Option<&str>,
+        deadline: tokio::time::Instant,
+    ) -> Result<bool, RuntimeError> {
+        let Some(group) = group else {
+            return Err(RuntimeError::InvalidRoute("null consumer group"));
+        };
+        self.unregister_consumer_by_group(group, deadline).await
     }
 
     pub async fn unregister_admin(
