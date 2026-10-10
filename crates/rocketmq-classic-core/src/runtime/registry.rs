@@ -2,11 +2,12 @@ use super::RuntimeError;
 use rocketmq_classic_common::message::MessageQueue;
 use rocketmq_classic_protocol::heartbeat::ConsumerData;
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     future::Future,
     pin::Pin,
     sync::{Arc, Mutex, Weak},
 };
+use tokio::sync::Mutex as AsyncMutex;
 
 /// Narrow MQProducerInner contract consumed by the shared runtime. Actual send
 /// and transaction behavior belongs to the producer's owning implementation.
@@ -136,9 +137,14 @@ struct Entries {
     admins: BTreeMap<String, AdminEntry>,
 }
 
+pub(super) type TableMutationGate = AsyncMutex<()>;
+type TableMutationGates =
+    Mutex<HashMap<(super::tables::TableKind, String), Weak<TableMutationGate>>>;
+
 #[derive(Default)]
 pub(super) struct GroupRegistry {
     entries: Mutex<Entries>,
+    table_mutation_gates: TableMutationGates,
 }
 
 pub(super) struct RegistrySnapshot {
@@ -149,6 +155,27 @@ pub(super) struct RegistrySnapshot {
 pub(super) type ConsumerEntries = Vec<(String, Arc<dyn ConsumerRuntime>)>;
 
 impl GroupRegistry {
+    pub(super) fn table_mutation_gate(
+        &self,
+        kind: super::tables::TableKind,
+        key: &str,
+    ) -> Result<Arc<TableMutationGate>, RuntimeError> {
+        let mut gates = self
+            .table_mutation_gates
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?;
+        let identity = (kind, key.to_owned());
+        if let Some(gate) = gates.get(&identity).and_then(Weak::upgrade) {
+            return Ok(gate);
+        }
+        let gate = Arc::new(AsyncMutex::new(()));
+        gates.insert(identity, Arc::downgrade(&gate));
+        if gates.len() >= 256 {
+            gates.retain(|_, gate| gate.strong_count() > 0);
+        }
+        Ok(gate)
+    }
+
     pub(super) fn table_len(&self, kind: super::tables::TableKind) -> Result<usize, RuntimeError> {
         let entries = self
             .entries

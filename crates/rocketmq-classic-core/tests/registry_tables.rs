@@ -5,7 +5,12 @@ use rocketmq_classic_core::{
 use rocketmq_classic_protocol::heartbeat::ConsumerData;
 use std::{
     collections::BTreeMap,
-    sync::{Arc, RwLock},
+    sync::{
+        Arc, RwLock,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        mpsc,
+    },
+    time::Duration,
 };
 
 struct Producer;
@@ -425,7 +430,7 @@ async fn conditional_registry_mutations_match_java_custom_value_equality() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn registry_default_map_operations_match_invoked_java() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
@@ -490,6 +495,57 @@ async fn registry_default_map_operations_match_invoked_java() {
             additions.insert("d".to_owned(), second.clone());
             additions.insert("e".to_owned(), first.clone());
             table.put_all(additions).await.unwrap();
+            table.put("remapping-race", first.clone()).await.unwrap();
+            let callback_calls = Arc::new(AtomicUsize::new(0));
+            let callback_read_current = Arc::new(AtomicBool::new(false));
+            let (callback_started_tx, callback_started_rx) = mpsc::channel();
+            let (release_callback_tx, release_callback_rx) = mpsc::channel();
+            let callback_table = table.clone();
+            let callback_read_table = callback_table.clone();
+            let callback_first = first.clone();
+            let callback_second = second.clone();
+            let callback_calls_for_task = callback_calls.clone();
+            let callback_read_for_task = callback_read_current.clone();
+            let remapping = tokio::spawn(async move {
+                callback_table
+                    .compute("remapping-race", move |key, old| {
+                        callback_calls_for_task.fetch_add(1, Ordering::SeqCst);
+                        callback_read_for_task.store(
+                            old
+                                .zip(callback_read_table.get(key).ok().flatten().as_ref())
+                                .is_some_and(|(old, observed)| Arc::ptr_eq(old, observed))
+                                && old
+                                    .is_some_and(|old| Arc::ptr_eq(old, &callback_first)),
+                            Ordering::SeqCst,
+                        );
+                        callback_started_tx.send(()).unwrap();
+                        release_callback_rx.recv().unwrap();
+                        Some(callback_second.clone())
+                    })
+                    .await
+                    .unwrap()
+            });
+            tokio::task::spawn_blocking(move || callback_started_rx.recv().unwrap())
+                .await
+                .unwrap();
+            let writer_table = table.clone();
+            let writer_first = first.clone();
+            let mut writer = tokio::spawn(async move {
+                writer_table
+                    .put("remapping-race", writer_first)
+                    .await
+                    .unwrap()
+            });
+            let writer_waits = tokio::time::timeout(Duration::from_millis(100), &mut writer)
+                .await
+                .is_err();
+            release_callback_tx.send(()).unwrap();
+            let remapping_result = remapping.await.unwrap();
+            let writer_previous = writer.await.unwrap();
+            let remapping_returns_and_keeps_writer_value = same(remapping_result, &second)
+                && same(table.get("remapping-race").unwrap(), &first)
+                && same(writer_previous, &second);
+            table.remove("remapping-race").await.unwrap();
             let actual = serde_json::json!({
                 "computeIfAbsentInsert": same(compute_if_absent, &first),
                 "computeIfAbsentNoRemap": same(compute_if_absent_again, &first) && calls == 1,
@@ -507,6 +563,10 @@ async fn registry_default_map_operations_match_invoked_java() {
                 "putAllAdds": same(table.get("d").unwrap(), &second)
                     && same(table.get("e").unwrap(), &first)
                     && table.len().unwrap() == 4,
+                "remappingWriterWaitsForCallback": writer_waits,
+                "remappingCallbackRunsOnce": callback_calls.load(Ordering::SeqCst) == 1,
+                "remappingCallbackReadsCurrent": callback_read_current.load(Ordering::SeqCst),
+                "remappingReturnsAndKeepsWriterValue": remapping_returns_and_keeps_writer_value,
                 "keys": table.keys().unwrap(),
                 "valuesCount": table.values().unwrap().len()
             });

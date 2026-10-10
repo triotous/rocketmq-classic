@@ -226,19 +226,21 @@ impl ClientRuntime {
         self: &Arc<Self>,
         kind: super::tables::TableKind,
         mutation: super::tables::TableMutation,
+        gate: Option<tokio::sync::OwnedMutexGuard<()>>,
     ) -> Result<super::tables::TableChange, RuntimeError> {
+        let _gate = gate;
         let (reply, receive) = tokio::sync::oneshot::channel();
         let Some(sender) = self.control.existing_sender()? else {
             return self.groups.mutate_table(kind, &mutation);
         };
-        if sender
-            .send(Command::MutateTable {
-                kind,
-                mutation: mutation.clone(),
-                reply,
-            })
-            .is_err()
-        {
+        if let Err(error) = sender.send(Command::MutateTable {
+            kind,
+            mutation: mutation.clone(),
+            reply,
+        }) {
+            let Command::MutateTable { mutation, .. } = error.0 else {
+                unreachable!("failed registry mutation send returns the sent command")
+            };
             return self.groups.mutate_table(kind, &mutation);
         }
         match receive.await {
@@ -771,12 +773,18 @@ impl ClientRuntime {
         group: &str,
         handle: Arc<dyn ProducerRuntime>,
     ) -> Result<GroupLease, RuntimeError> {
+        let gate = self
+            .groups
+            .table_mutation_gate(super::tables::TableKind::Producer, group)?
+            .lock_owned()
+            .await;
         let (reply, receive) = tokio::sync::oneshot::channel();
         self.control
             .sender(self)?
             .send(Command::RegisterProducer {
                 group: group.into(),
                 handle,
+                gate,
                 reply,
             })
             .map_err(|_| self.control_error())?;
@@ -788,12 +796,18 @@ impl ClientRuntime {
         group: &str,
         handle: Arc<dyn ConsumerRuntime>,
     ) -> Result<GroupLease, RuntimeError> {
+        let gate = self
+            .groups
+            .table_mutation_gate(super::tables::TableKind::Consumer, group)?
+            .lock_owned()
+            .await;
         let (reply, receive) = tokio::sync::oneshot::channel();
         self.control
             .sender(self)?
             .send(Command::RegisterConsumer {
                 group: group.into(),
                 handle,
+                gate,
                 reply,
             })
             .map_err(|_| self.control_error())?;
@@ -945,10 +959,13 @@ impl ClientRuntime {
         lease: &GroupLease,
         kind: GroupKind,
         deadline: tokio::time::Instant,
+        gate: Option<tokio::sync::OwnedMutexGuard<()>>,
     ) -> Result<bool, RuntimeError> {
         if !self.groups.unregister(lease, kind)? {
+            drop(gate);
             return Ok(false);
         }
+        drop(gate);
         if kind == GroupKind::Admin {
             return Ok(true);
         }
@@ -962,8 +979,10 @@ impl ClientRuntime {
         group: &str,
         kind: GroupKind,
         deadline: tokio::time::Instant,
+        gate: Option<tokio::sync::OwnedMutexGuard<()>>,
     ) -> Result<bool, RuntimeError> {
         let removed = self.groups.remove_by_group(group, kind)?;
+        drop(gate);
         self.unregister_brokers(group, kind, deadline).await?;
         Ok(removed)
     }
@@ -1063,24 +1082,40 @@ impl ClientRuntime {
         kind: GroupKind,
         deadline: tokio::time::Instant,
     ) -> Result<bool, RuntimeError> {
+        let table_kind = match kind {
+            GroupKind::Producer => Some(super::tables::TableKind::Producer),
+            GroupKind::Consumer => Some(super::tables::TableKind::Consumer),
+            GroupKind::Admin => None,
+        };
+        let gate = match table_kind {
+            Some(table_kind) => Some(
+                self.groups
+                    .table_mutation_gate(table_kind, group)?
+                    .lock_owned()
+                    .await,
+            ),
+            None => None,
+        };
         if matches!(self.state(), RuntimeState::Stopped | RuntimeState::Failed) {
             // Retained maps can still be mutated, but terminal transport must
             // not be restarted for best-effort source unregister attempts.
+            let _gate = gate;
             return self.groups.remove_by_group(group, kind);
         }
         let (reply, receive) = tokio::sync::oneshot::channel();
-        if self
-            .control
-            .sender(self)?
-            .send(Command::UnregisterByGroup {
-                group: group.to_owned(),
-                kind,
-                deadline,
-                reply,
-            })
-            .is_err()
-        {
+        let sender = self.control.sender(self)?;
+        if let Err(error) = sender.send(Command::UnregisterByGroup {
+            group: group.to_owned(),
+            kind,
+            deadline,
+            gate,
+            reply,
+        }) {
+            let Command::UnregisterByGroup { gate, .. } = error.0 else {
+                unreachable!("failed unregister send returns the sent command")
+            };
             if matches!(self.state(), RuntimeState::Stopped | RuntimeState::Failed) {
+                let _gate = gate;
                 return self.groups.remove_by_group(group, kind);
             }
             return Err(self.control_error());
@@ -1088,6 +1123,20 @@ impl ClientRuntime {
         match receive.await {
             Ok(result) => result,
             Err(_) if matches!(self.state(), RuntimeState::Stopped | RuntimeState::Failed) => {
+                let table_kind = match kind {
+                    GroupKind::Producer => Some(super::tables::TableKind::Producer),
+                    GroupKind::Consumer => Some(super::tables::TableKind::Consumer),
+                    GroupKind::Admin => None,
+                };
+                let _gate = match table_kind {
+                    Some(table_kind) => Some(
+                        self.groups
+                            .table_mutation_gate(table_kind, group)?
+                            .lock_owned()
+                            .await,
+                    ),
+                    None => None,
+                };
                 self.groups.remove_by_group(group, kind)
             }
             Err(_) => Err(self.control_error()),
@@ -1100,6 +1149,20 @@ impl ClientRuntime {
         kind: GroupKind,
         deadline: tokio::time::Instant,
     ) -> Result<bool, RuntimeError> {
+        let table_kind = match kind {
+            GroupKind::Producer => Some(super::tables::TableKind::Producer),
+            GroupKind::Consumer => Some(super::tables::TableKind::Consumer),
+            GroupKind::Admin => None,
+        };
+        let gate = match table_kind {
+            Some(table_kind) => Some(
+                self.groups
+                    .table_mutation_gate(table_kind, &lease.group)?
+                    .lock_owned()
+                    .await,
+            ),
+            None => None,
+        };
         if matches!(self.state(), RuntimeState::Stopped | RuntimeState::Failed) {
             return Ok(false);
         }
@@ -1110,6 +1173,7 @@ impl ClientRuntime {
                 lease: lease.clone(),
                 kind,
                 deadline,
+                gate,
                 reply: Some(reply),
             })
             .map_err(|_| self.control_error())?;

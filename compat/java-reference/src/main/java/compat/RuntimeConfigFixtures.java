@@ -1004,6 +1004,65 @@ public final class RuntimeConfigFixtures {
         result.put("putAllAdds", table.get("d") == second && table.get("e") == first && table.size() == 4);
         result.put("keys", new java.util.TreeSet<>(table.keySet()));
         result.put("valuesCount", table.values().size());
+        table.put("remapping-race", first);
+        AtomicInteger remappingCalls = new AtomicInteger();
+        CountDownLatch remappingEntered = new CountDownLatch(1);
+        CountDownLatch releaseRemapping = new CountDownLatch(1);
+        CountDownLatch writerStarted = new CountDownLatch(1);
+        CountDownLatch writerFinished = new CountDownLatch(1);
+        AtomicReference<T> remappingRead = new AtomicReference<>();
+        AtomicReference<T> remappingResult = new AtomicReference<>();
+        AtomicReference<T> writerPrevious = new AtomicReference<>();
+        AtomicReference<Throwable> writerFailure = new AtomicReference<>();
+        Thread remappingThread = new Thread(() -> remappingResult.set(table.compute("remapping-race", (key, old) -> {
+            remappingCalls.incrementAndGet();
+            remappingRead.set(table.get(key));
+            remappingEntered.countDown();
+            awaitUnchecked(releaseRemapping, "registry remapping release");
+            return second;
+        })), "java-registry-table-remapping-oracle");
+        Thread writerThread = new Thread(() -> {
+            writerStarted.countDown();
+            try {
+                writerPrevious.set(table.put("remapping-race", first));
+            } catch (Throwable error) {
+                writerFailure.set(error);
+            } finally {
+                writerFinished.countDown();
+            }
+        }, "java-registry-table-remapping-writer");
+        remappingThread.setDaemon(true);
+        writerThread.setDaemon(true);
+        remappingThread.start();
+        try {
+            awaitUnchecked(remappingEntered, "registry remapping callback");
+            writerThread.start();
+            awaitUnchecked(writerStarted, "registry same-key writer");
+            result.put("remappingWriterWaitsForCallback", !writerFinished.await(100, TimeUnit.MILLISECONDS));
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted while checking registry remapping", error);
+        } finally {
+            releaseRemapping.countDown();
+        }
+        try {
+            remappingThread.join(5000);
+            writerThread.join(5000);
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted while joining registry remapping fixture threads", error);
+        }
+        if (remappingThread.isAlive() || writerThread.isAlive()) {
+            throw new IllegalStateException("ConcurrentHashMap registry remapping fixture threads did not finish");
+        }
+        if (writerFailure.get() != null) {
+            throw new IllegalStateException("ConcurrentHashMap registry same-key writer failed", writerFailure.get());
+        }
+        result.put("remappingCallbackRunsOnce", remappingCalls.get() == 1);
+        result.put("remappingCallbackReadsCurrent", remappingRead.get() == first);
+        result.put("remappingReturnsAndKeepsWriterValue", remappingResult.get() == second
+            && writerPrevious.get() == second && table.get("remapping-race") == first);
+        table.remove("remapping-race");
         table.clear();
         return result;
     }

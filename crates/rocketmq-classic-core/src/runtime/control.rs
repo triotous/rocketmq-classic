@@ -33,11 +33,13 @@ pub(super) enum Command {
     RegisterProducer {
         group: String,
         handle: Arc<dyn ProducerRuntime>,
+        gate: tokio::sync::OwnedMutexGuard<()>,
         reply: oneshot::Sender<Result<PendingLease, RuntimeError>>,
     },
     RegisterConsumer {
         group: String,
         handle: Arc<dyn ConsumerRuntime>,
+        gate: tokio::sync::OwnedMutexGuard<()>,
         reply: oneshot::Sender<Result<PendingLease, RuntimeError>>,
     },
     RegisterAdmin {
@@ -48,12 +50,14 @@ pub(super) enum Command {
         group: String,
         kind: GroupKind,
         deadline: Instant,
+        gate: Option<tokio::sync::OwnedMutexGuard<()>>,
         reply: oneshot::Sender<Result<bool, RuntimeError>>,
     },
     Unregister {
         lease: GroupLease,
         kind: GroupKind,
         deadline: Instant,
+        gate: Option<tokio::sync::OwnedMutexGuard<()>>,
         reply: Option<oneshot::Sender<Result<bool, RuntimeError>>>,
     },
     Start {
@@ -70,6 +74,8 @@ pub(super) enum Command {
 pub(super) struct PendingLease {
     lease: Option<GroupLease>,
     sender: mpsc::UnboundedSender<Command>,
+    groups: Arc<super::registry::GroupRegistry>,
+    runtime_handle: tokio::runtime::Handle,
     timeout: Duration,
 }
 
@@ -83,12 +89,52 @@ impl Drop for PendingLease {
     fn drop(&mut self) {
         if let Some(lease) = self.lease.take() {
             let kind = lease.kind;
-            let _ = self.sender.send(Command::Unregister {
-                lease,
-                kind,
-                deadline: Instant::now() + self.timeout,
-                reply: None,
+            let deadline = Instant::now() + self.timeout;
+            let table_kind = match kind {
+                GroupKind::Producer => Some(super::tables::TableKind::Producer),
+                GroupKind::Consumer => Some(super::tables::TableKind::Consumer),
+                GroupKind::Admin => None,
+            };
+            let gate = table_kind.and_then(|table_kind| {
+                self.groups
+                    .table_mutation_gate(table_kind, &lease.group)
+                    .ok()
             });
+            let Some(gate) = gate else {
+                let _ = self.sender.send(Command::Unregister {
+                    lease,
+                    kind,
+                    deadline,
+                    gate: None,
+                    reply: None,
+                });
+                return;
+            };
+            match gate.clone().try_lock_owned() {
+                Ok(gate) => {
+                    let _ = self.sender.send(Command::Unregister {
+                        lease,
+                        kind,
+                        deadline,
+                        gate: Some(gate),
+                        reply: None,
+                    });
+                }
+                Err(_) => {
+                    let wait_gate = gate;
+                    let sender = self.sender.clone();
+                    self.runtime_handle.spawn(async move {
+                        let gate = wait_gate.lock_owned().await;
+                        let _ = sender.send(Command::Unregister {
+                            lease,
+                            kind,
+                            deadline,
+                            gate: Some(gate),
+                            reply: None,
+                        });
+                    });
+                }
+            }
         }
     }
 }
@@ -259,6 +305,7 @@ async fn run(
             Command::RegisterProducer {
                 group,
                 handle,
+                gate: _gate,
                 reply,
             } => {
                 if reply.is_closed() {
@@ -274,6 +321,7 @@ async fn run(
             Command::RegisterConsumer {
                 group,
                 handle,
+                gate: _gate,
                 reply,
             } => {
                 if reply.is_closed() {
@@ -301,11 +349,12 @@ async fn run(
                 group,
                 kind,
                 deadline,
+                gate,
                 reply,
             } => {
                 if !reply.is_closed() {
                     let result = runtime
-                        .unregister_current_group(&group, kind, deadline)
+                        .unregister_current_group(&group, kind, deadline, gate)
                         .await;
                     let _ = reply.send(result);
                 }
@@ -314,9 +363,10 @@ async fn run(
                 lease,
                 kind,
                 deadline,
+                gate,
                 reply,
             } => {
-                let result = runtime.unregister_group(&lease, kind, deadline).await;
+                let result = runtime.unregister_group(&lease, kind, deadline, gate).await;
                 if let Some(reply) = reply {
                     let _ = reply.send(result);
                 }
@@ -457,7 +507,7 @@ async fn run(
                 if let Some(lease) = inner_lease.take() {
                     let deadline = Instant::now() + runtime.rpc_timeout();
                     let _ = runtime
-                        .unregister_group(&lease, GroupKind::Producer, deadline)
+                        .unregister_group(&lease, GroupKind::Producer, deadline, None)
                         .await;
                 }
                 inner_producer.take();
@@ -483,6 +533,8 @@ fn deliver(
         Ok(PendingLease {
             lease: Some(lease),
             sender,
+            groups: runtime.groups.clone(),
+            runtime_handle: tokio::runtime::Handle::current(),
             timeout: runtime.rpc_timeout(),
         })
     });
@@ -1211,6 +1263,12 @@ mod tests {
             .send(Command::RegisterProducer {
                 group: "producer".into(),
                 handle: producer.clone(),
+                gate: runtime
+                    .groups
+                    .table_mutation_gate(super::super::tables::TableKind::Producer, "producer")
+                    .unwrap()
+                    .lock_owned()
+                    .await,
                 reply,
             })
             .unwrap_or_else(|_| panic!("owned worker must be available"));

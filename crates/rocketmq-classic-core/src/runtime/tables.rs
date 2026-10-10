@@ -6,9 +6,9 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     sync::{Arc, RwLock, Weak},
 };
-use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::{Mutex as AsyncMutex, OwnedMutexGuard};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub(super) enum TableKind {
     Producer,
     Consumer,
@@ -54,13 +54,37 @@ struct TableHandle {
     runtime: Weak<ClientRuntime>,
 }
 impl TableHandle {
+    async fn key_gate(&self, key: &str) -> Result<OwnedMutexGuard<()>, RuntimeError> {
+        Ok(self
+            .groups
+            .table_mutation_gate(self.kind, key)?
+            .lock_owned()
+            .await)
+    }
+
     async fn mutate(&self, mutation: TableMutation) -> Result<TableChange, RuntimeError> {
+        let gate = match &mutation {
+            TableMutation::Put { key, .. }
+            | TableMutation::Replace { key, .. }
+            | TableMutation::Remove { key, .. } => Some(self.key_gate(key).await?),
+            TableMutation::Clear => None,
+        };
+        self.mutate_with_gate(mutation, gate).await
+    }
+
+    async fn mutate_with_gate(
+        &self,
+        mutation: TableMutation,
+        gate: Option<OwnedMutexGuard<()>>,
+    ) -> Result<TableChange, RuntimeError> {
         if let Some(runtime) = self.runtime.upgrade() {
             // Starting can invoke addressing capabilities that reenter the raw
             // maps; no unregister transaction is active in that state. All
             // other live actor states serialize against pending unregisters.
             if runtime.state() != RuntimeState::Starting {
-                return runtime.mutate_registry_table(self.kind, mutation).await;
+                return runtime
+                    .mutate_registry_table(self.kind, mutation, gate)
+                    .await;
             }
         }
         // Raw maps remain available before start and after stop. Do not create
@@ -299,25 +323,34 @@ macro_rules! table {
                     }
                 }
             }
-            /// ConcurrentMap-style remapping operations use conditional table
-            /// mutations and may call the closure again after a concurrent write.
+            /// ConcurrentMap-style remapping operations serialize same-key
+            /// table mutations while the closure runs, so the closure is called
+            /// once for this operation.
             pub async fn compute_if_absent(
                 &self,
                 key: impl Into<String>,
                 mut mapping: impl FnMut(&str) -> Option<Arc<dyn $owner>>,
             ) -> Result<Option<Arc<dyn $owner>>, RuntimeError> {
                 let key = key.into();
+                let gate = self.0.key_gate(&key).await?;
                 if let Some(current) = self.get(&key)? {
                     return Ok(Some(current));
                 }
                 let Some(value) = mapping(&key) else {
                     return Ok(None);
                 };
-                Ok(Some(
-                    self.put_if_absent(key, value.clone())
-                        .await?
-                        .unwrap_or(value),
-                ))
+                let change = self
+                    .0
+                    .mutate_with_gate(
+                        TableMutation::Put {
+                            key,
+                            value: TableValue::$kind(value.clone()),
+                            only_absent: true,
+                        },
+                        Some(gate),
+                    )
+                    .await?;
+                Ok(Some(Self::previous(change).unwrap_or(value)))
             }
             pub async fn compute_if_present(
                 &self,
@@ -325,23 +358,31 @@ macro_rules! table {
                 mut remapping: impl FnMut(&str, &Arc<dyn $owner>) -> Option<Arc<dyn $owner>>,
             ) -> Result<Option<Arc<dyn $owner>>, RuntimeError> {
                 let key = key.into();
-                loop {
-                    let Some(current) = self.get(&key)? else {
-                        return Ok(None);
-                    };
-                    match remapping(&key, &current) {
-                        Some(value) => {
-                            if self.replace_if_equal(&key, &current, value.clone()).await? {
-                                return Ok(Some(value));
-                            }
-                        }
-                        None => {
-                            if self.remove_if_equal(&key, &current).await? {
-                                return Ok(None);
-                            }
-                        }
-                    }
-                }
+                let gate = self.0.key_gate(&key).await?;
+                let Some(current) = self.get(&key)? else {
+                    return Ok(None);
+                };
+                let (mutation, result) = match remapping(&key, &current) {
+                    Some(value) => (
+                        TableMutation::Replace {
+                            key,
+                            value: TableValue::$kind(value.clone()),
+                            expected: Some(TableValue::$kind(current)),
+                            comparison: Some(ValueComparison::Identity),
+                        },
+                        Some(value),
+                    ),
+                    None => (
+                        TableMutation::Remove {
+                            key,
+                            expected: Some(TableValue::$kind(current)),
+                            comparison: Some(ValueComparison::Identity),
+                        },
+                        None,
+                    ),
+                };
+                self.0.mutate_with_gate(mutation, Some(gate)).await?;
+                Ok(result)
             }
             pub async fn compute(
                 &self,
@@ -352,28 +393,39 @@ macro_rules! table {
                 ) -> Option<Arc<dyn $owner>>,
             ) -> Result<Option<Arc<dyn $owner>>, RuntimeError> {
                 let key = key.into();
-                loop {
-                    let current = self.get(&key)?;
-                    let value = remapping(&key, current.as_ref());
-                    match (current.as_ref(), value) {
-                        (None, None) => return Ok(None),
-                        (None, Some(value)) => {
-                            if self.put_if_absent(&key, value.clone()).await?.is_none() {
-                                return Ok(Some(value));
-                            }
-                        }
-                        (Some(current), Some(value)) => {
-                            if self.replace_if_equal(&key, current, value.clone()).await? {
-                                return Ok(Some(value));
-                            }
-                        }
-                        (Some(current), None) => {
-                            if self.remove_if_equal(&key, current).await? {
-                                return Ok(None);
-                            }
-                        }
-                    }
-                }
+                let gate = self.0.key_gate(&key).await?;
+                let current = self.get(&key)?;
+                let value = remapping(&key, current.as_ref());
+                let (mutation, result) = match (current, value) {
+                    (None, None) => return Ok(None),
+                    (None, Some(value)) => (
+                        TableMutation::Put {
+                            key,
+                            value: TableValue::$kind(value.clone()),
+                            only_absent: true,
+                        },
+                        Some(value),
+                    ),
+                    (Some(current), Some(value)) => (
+                        TableMutation::Replace {
+                            key,
+                            value: TableValue::$kind(value.clone()),
+                            expected: Some(TableValue::$kind(current)),
+                            comparison: Some(ValueComparison::Identity),
+                        },
+                        Some(value),
+                    ),
+                    (Some(current), None) => (
+                        TableMutation::Remove {
+                            key,
+                            expected: Some(TableValue::$kind(current)),
+                            comparison: Some(ValueComparison::Identity),
+                        },
+                        None,
+                    ),
+                };
+                self.0.mutate_with_gate(mutation, Some(gate)).await?;
+                Ok(result)
             }
             pub async fn merge(
                 &self,
@@ -385,41 +437,61 @@ macro_rules! table {
                 ) -> Option<Arc<dyn $owner>>,
             ) -> Result<Option<Arc<dyn $owner>>, RuntimeError> {
                 let key = key.into();
-                loop {
-                    let Some(current) = self.get(&key)? else {
-                        if self.put_if_absent(&key, value.clone()).await?.is_none() {
-                            return Ok(Some(value));
-                        }
-                        continue;
-                    };
-                    match remapping(&current, &value) {
-                        Some(next) => {
-                            if self.replace_if_equal(&key, &current, next.clone()).await? {
-                                return Ok(Some(next));
-                            }
-                        }
-                        None => {
-                            if self.remove_if_equal(&key, &current).await? {
-                                return Ok(None);
-                            }
-                        }
-                    }
-                }
+                let gate = self.0.key_gate(&key).await?;
+                let current = self.get(&key)?;
+                let (mutation, result) = match current {
+                    None => (
+                        TableMutation::Put {
+                            key,
+                            value: TableValue::$kind(value.clone()),
+                            only_absent: true,
+                        },
+                        Some(value.clone()),
+                    ),
+                    Some(current) => match remapping(&current, &value) {
+                        Some(next) => (
+                            TableMutation::Replace {
+                                key,
+                                value: TableValue::$kind(next.clone()),
+                                expected: Some(TableValue::$kind(current)),
+                                comparison: Some(ValueComparison::Identity),
+                            },
+                            Some(next),
+                        ),
+                        None => (
+                            TableMutation::Remove {
+                                key,
+                                expected: Some(TableValue::$kind(current)),
+                                comparison: Some(ValueComparison::Identity),
+                            },
+                            None,
+                        ),
+                    },
+                };
+                self.0.mutate_with_gate(mutation, Some(gate)).await?;
+                Ok(result)
             }
             pub async fn replace_all(
                 &self,
                 mut remapping: impl FnMut(&str, &Arc<dyn $owner>) -> Arc<dyn $owner>,
             ) -> Result<(), RuntimeError> {
                 for key in self.keys()? {
-                    loop {
-                        let Some(current) = self.get(&key)? else {
-                            break;
-                        };
-                        let value = remapping(&key, &current);
-                        if self.replace_if_equal(&key, &current, value).await? {
-                            break;
-                        }
-                    }
+                    let gate = self.0.key_gate(&key).await?;
+                    let Some(current) = self.get(&key)? else {
+                        continue;
+                    };
+                    let value = remapping(&key, &current);
+                    self.0
+                        .mutate_with_gate(
+                            TableMutation::Replace {
+                                key,
+                                value: TableValue::$kind(value),
+                                expected: Some(TableValue::$kind(current)),
+                                comparison: Some(ValueComparison::Identity),
+                            },
+                            Some(gate),
+                        )
+                        .await?;
                 }
                 Ok(())
             }
