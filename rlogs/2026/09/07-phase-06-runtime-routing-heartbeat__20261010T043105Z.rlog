@@ -133,3 +133,8 @@
 ## Route collection nested product validation
 
 - Expanded 625-case native differential passes within `cargo test --workspace --all-targets --locked` with reviewed loopback access. Strict workspace/all-target/all-feature Clippy passes. Pinned offline Maven verify passes (22 scenarios; 38 Java-decoded headers and 14 typed bodies); comparator self-test and manifest validation (22 scenarios) pass; fmt and diff checks pass.
+
+## Route collection five-state audit documentation
+
+- Updated the route branch audit, P6-05 requirement row, route DTO API/input row, and ADR-0078 to report the 625-case five-state product and current `route.json` SHA-256. The Phase 6 audit remains PARTIAL; broader malformed route/source/API/input reconciliation remains open and P6-V04 stays `PENDING_PHASE_19`.
+- Documentation diff and stale-hash checks pass.
