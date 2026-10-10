@@ -425,14 +425,28 @@ mod tests {
             serde_json::from_str(include_str!("../../../../fixtures/runtime/lookup.json")).unwrap();
         for case in fixture["runtimeScheduledTaskCases"].as_array().unwrap() {
             let mut config = ClientConfig::new("scheduled-task-oracle");
-            config.namesrv_addr = match case["name"].as_str().unwrap() {
-                "nameserver-absent" => None,
-                "nameserver-configured" => Some("127.0.0.1:9876".into()),
+            let mutated = match case["name"].as_str().unwrap() {
+                "nameserver-absent" => {
+                    config.namesrv_addr = None;
+                    false
+                }
+                "nameserver-configured" => {
+                    config.namesrv_addr = Some("127.0.0.1:9876".into());
+                    false
+                }
+                "nameserver-absent-mutated-configured" => {
+                    config.namesrv_addr = Some("late-after-construction:9876".into());
+                    true
+                }
+                "nameserver-configured-mutated-absent" => {
+                    config.namesrv_addr = None;
+                    true
+                }
                 other => panic!("unexpected Java scheduler case {other}"),
             };
-            config.poll_name_server_interval = 23;
-            config.heartbeat_broker_interval = 47;
-            config.persist_consumer_offset_interval = 59;
+            config.poll_name_server_interval = if mutated { 71 } else { 23 };
+            config.heartbeat_broker_interval = if mutated { 83 } else { 47 };
+            config.persist_consumer_offset_interval = if mutated { 97 } else { 59 };
 
             let actual: Vec<_> = schedules(&config)
                 .unwrap()
