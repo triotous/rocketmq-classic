@@ -18,3 +18,15 @@
 - Added `routeDtoReferenceAliases` to `RuntimeRouteFixtures` and regenerated `fixtures/runtime/route.json`; SHA-256 is `bf3ce0cb617989cf7e331dabfd738b8fc5a650cdc4b36037eae30f8add8960d3`.
 - Pinned Java compile and direct fixture regeneration passed. The explicit `--verify` route-fixture invocation passed. Maven's default RocketMQ log target was initially outside the writable roots; reran with `-Drocketmq.log.root=/private/tmp/p6-rocketmq-logs`, and subsequent Java invocations used that writable target.
 - These source-backed cases reveal two mutable route-map API alias gaps in native route DTOs; implementation and Rust regression coverage are next. This is not a full route DTO alias audit or Phase 6 completion.
+
+## Route DTO alias implementation and validation
+
+- Implemented in `65cdabce` (`Preserve route DTO map aliases`) on `07-phase-06-runtime-routing-heartbeat`. `BrokerData.broker_addrs` and `TopicQueueMappingInfo.curr_id_map` now use `SharedValue` map handles; named getters/setters preserve caller/getter identity, while `_owned` setters retain an owned-map path. DTO clone remains deep and equality remains content-based. Runtime route cache and DTO consumers were adapted to shared map reads/snapshots.
+- Java oracle commit `eaccafe0`; direct `RuntimeRouteFixtures` verification confirms setter retention, stable getter identity, and caller/getter mutation in both directions for both map fields. `fixtures/runtime/route.json` SHA-256: `bf3ce0cb617989cf7e331dabfd738b8fc5a650cdc4b36037eae30f8add8960d3`.
+- `cargo test --workspace --all-targets --locked`: passed (including runtime lookup loopback tests); run with reviewed network/socket permission after the sandbox-only run denied bind access.
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`: passed.
+- `mvn -o -q -Dmaven.repo.local=/private/tmp/p6-maven-repository -Drocketmq.log.root=/private/tmp/p6-rocketmq-logs -f compat/java-reference/pom.xml verify`: initial sandbox run reached and verified the updated route fixture but the config fixture then returned `Operation not permitted`; rerun with reviewed permission completed exit 0, verified all runtime fixtures and 22 scenarios, and Java cross-decoded Rust-generated fixtures.
+- `python3 tests/differential/compare.py --self-test` and `--validate-manifest`: passed; manifest retains 22 scenarios and P6-V04 as `PENDING_PHASE_19`.
+- `cargo fmt --all -- --check` and `git diff --check`: passed after implementation and audit edits.
+- Added ADR-0075 and updated the route/API/requirement audits. Only the two map alias findings close here; full Phase 6 method/field/branch/reverse-export reconciliation remains open, the general matrix is PARTIAL, and P6-V04 remains `PENDING_PHASE_19`.
+- The requested source checkout `/Users/nanashi07/Projects/3rd/rocketmq` remains absent; Java evidence continues to come from the locally cached pinned 5.5.1 artifacts and direct invocations.
