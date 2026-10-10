@@ -175,6 +175,7 @@ async fn java_invoked_producer_more_requests_and_outcomes_match() {
             {
                 Ok(None) => "ok".into(),
                 Ok(Some(result)) => {
+                    assert_eq!(result.raw_resp_body, None, "{name}");
                     let status = match result.status {
                         SendStatus::SendOk => "SEND_OK",
                         SendStatus::FlushDiskTimeout => "FLUSH_DISK_TIMEOUT",

@@ -113,8 +113,8 @@ fn assert_send_result(
     assert_eq!(result.queue_id, 2);
     assert_eq!(result.queue_offset, 17);
     assert_eq!(result.transaction_id.as_deref(), Some("tx"));
-    assert_eq!(result.batch_uniq_id.as_deref(), Some("batch-id"));
     assert_eq!(result.recall_handle.as_deref(), Some("recall"));
+    assert_eq!(result.raw_resp_body, None);
     assert_eq!(result.region_id, "europe");
     assert!(!result.trace_on);
 }
@@ -156,10 +156,10 @@ async fn send_statuses_errors_and_malformed_headers() {
             let result = result.unwrap().unwrap();
             assert_eq!(result.status, expected);
             assert_eq!(result.msg_id, "uniq");
-            assert_eq!(result.batch_uniq_id.as_deref(), Some("batch-id"));
             assert_eq!(result.offset_msg_id, "offset-id");
             assert_eq!(result.transaction_id.as_deref(), Some("tx"));
             assert_eq!(result.recall_handle.as_deref(), Some("recall"));
+            assert_eq!(result.raw_resp_body, None);
             assert_eq!(result.region_id, "europe");
             assert!(!result.trace_on);
         } else {

@@ -164,6 +164,8 @@ public final class ProducerMoreInvokedFixtures {
                         capture.response.makeCustomHeaderToNet();
                         SendResult result = send(capture, api, current, header, mode);
                         check(mode != CommunicationMode.ONEWAY || result == null, "oneway result");
+                        check(mode == CommunicationMode.ONEWAY || result.getRawRespBody() == null,
+                            "raw response body default");
                         String outcome = mode == CommunicationMode.ONEWAY ? "ok"
                             : result.getSendStatus().name() + ";queueOffset=" + result.getQueueOffset()
                                 + ";offsetMsgId=" + result.getOffsetMsgId();
@@ -182,6 +184,8 @@ public final class ProducerMoreInvokedFixtures {
                     capture.response.makeCustomHeaderToNet();
                     SendResult result = send(capture, api, batch, header, mode);
                     check(mode != CommunicationMode.ONEWAY || result == null, "batch oneway result");
+                    check(mode == CommunicationMode.ONEWAY || result.getRawRespBody() == null,
+                        "batch raw response body default");
                     record(output, verify, capture, "send-batch-" + variant + "-" + mode.name().toLowerCase(),
                         RequestCode.SEND_BATCH_MESSAGE, mode == CommunicationMode.ONEWAY ? "ok"
                             : result.getSendStatus().name() + ";queueOffset=" + result.getQueueOffset()

@@ -115,8 +115,8 @@ pub struct SendResult {
     pub queue_id: i32,
     pub queue_offset: i64,
     pub transaction_id: Option<String>,
-    pub batch_uniq_id: Option<String>,
     pub recall_handle: Option<String>,
+    pub raw_resp_body: Option<Vec<u8>>,
     pub region_id: String,
     pub trace_on: bool,
 }
@@ -207,8 +207,8 @@ impl MQClientApi {
             queue_id: result.queue_id,
             queue_offset: result.queue_offset,
             transaction_id: result.transaction_id,
-            batch_uniq_id: result.batch_uniq_id,
             recall_handle: result.recall_handle,
+            raw_resp_body: None,
             region_id: ext
                 .get("MSG_REGION")
                 .filter(|s| !s.is_empty())
