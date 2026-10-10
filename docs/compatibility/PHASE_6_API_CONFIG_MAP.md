@@ -1,5 +1,7 @@
 # Phase 6 API and configuration map
 
+Change-invisible-time callback result (`4da236e1`, 2026-10-10): Java `MQClientAPIImpl.changeInvisibleTimeAsync` builds `AckResult.extraInfo` from the request offset/topic/queue, broker name, and response pop/invisible/revive fields. Rust's `change_invisible_time` now accepts the broker name and returns nullable `extra_info` alongside the parsed response metadata. It matches the Java retry discriminator (`0` ordinary, `1` `%RETRY%group`, `2` `%RETRY%group+...`), and leaves status/error results without extra info. Java invoked callbacks cover ordinary and both retry-topic forms; the existing response fixture differential checks success and malformed primitive defaults. Focused extension (14), POP/ACK differential (1), RPC (11), helper unit and pinned offline Maven verify (22 scenarios) pass. This closes the change-invisibility result branch only; wider result-layer and source/input/platform reconciliation remains open, and P6-V04 stays a Phase 19 handoff.
+
 `SendResult` public field alignment (`b2a00689`, 2026-10-10): the pinned Java 5.5.1 result has public getter/setter pairs for send status, IDs, message queue, queue offset, transaction ID, recall handle, raw response body, region and trace flag. Rust now exposes nullable `raw_resp_body: Option<Vec<u8>>` and initializes it to `None`, as the Java `MQClientAPIImpl` send path does. Rust's former `batch_uniq_id` result field was removed: `batchUniqId` belongs to `SendMessageResponseHeader`, not Java `SendResult`; the protocol header mapping remains. A direct Java invoked fixture checks null raw-body defaults for sync, async and batch sends; Rust producer regressions assert the same. Producer loopback tests and pinned offline Maven verify pass. This reconciles this result type only; broader public-struct field and Phase 6 source/input/platform scans remain open, and P6-V04 remains a Phase 19 handoff.
 
 Public enum variant reverse scan (`2026-10-10`): a variant-level pass over the core crate's 17 public enums found that several maps named the Java enum values or Rust enum type but omitted the exact Rust variants. The API map now records all 72 declared variants, including the Rust-only send selectors and lifecycle/error carriers; `RuntimeError::StartupFailure` is explicitly marked test-only. Existing invoked enum, RPC, lifecycle and inbound fixtures remain the behavior evidence. This closes the variant-name inventory only; broader input/source/platform reconciliation remains open and P6-V04 remains a Phase 19 handoff.
@@ -968,6 +970,28 @@ This inventory identifies source/public boundaries still requiring work; it does
 | `SendMessageResponseHeader.getBatchUniqId` | `SendMessageResponseHeader::batch_uniq_id` only; Java `SendResult` has no `batchUniqId` accessor or field |
 
 Pinned `javap -public` on Java `SendResult` and `SendMessageResponseHeader` establishes the accessor boundary. `ProducerMoreInvokedFixtures` invokes the result getter on ordinary and batch sync/async sends and checks that raw response body remains null; the Rust producer tests and invoked-request differential assert the same value. Request/response command fixtures continue to cover `batchUniqId` as a response-header input. This table records result-object field/API correspondence and the explicit flattened queue carrier; it does not claim producer-owner or send-retry parity (Phase 7).
+
+## Other core response and route snapshot fields
+
+| Rust public result/field | Pinned Java API / behavior mapping |
+| --- | --- |
+| `PullResultExt.status` | `PullResult.getPullStatus()`; response-code mapping to the four `PullStatus` values is fixture-backed |
+| `PullResultExt.next_begin_offset`, `min_offset`, `max_offset` | `PullResult.getNextBeginOffset()`, `getMinOffset()`, and `getMaxOffset()` |
+| `PullResultExt.suggest_which_broker_id` | `PullResultExt.getSuggestWhichBrokerId()` |
+| `PullResultExt.offset_delta: Option<i64>` | `PullResultExt.getOffsetDelta(): Long`; preserves nullable extension-header value |
+| `PullResultExt.raw_messages: Option<Vec<u8>>` | `PullResultExt.getMessageBinary(): byte[]`; Rust retains the wire body at the RPC boundary. Java `getMsgFoundList()` is populated by a later message-decoding step; Rust's consumer owner remains a later phase. |
+| `HeartbeatV2Result.version`, `is_sub_change`, `is_support_heartbeat_v2` | `HeartbeatV2Result.getVersion()`, `isSubChange()`, and `isSupportV2()`; exact Java bean names are retained in this map despite the Rust field spelling |
+| `PopReply<H>.status` | Java `PopCallback.onSuccess(PopResult).getPopStatus()`; request-code/status mappings and callback errors are invoked and fixture-backed |
+| `PopReply<H>.header` | Parsed POP or POP Lite response header, including `popTime`, `invisibleTime`, `reviveQid`, and ordinary POP `restNum` |
+| `PopReply<H>.raw_messages` | Raw wire message body returned before Java's `PopResult.getMsgFoundList()` decode; Rust message decoding belongs to its later consumer layer |
+| `ChangeInvisibleTimeResult.status` | `AckResult.getStatus()` (`OK`/`NO_EXIST`) |
+| `ChangeInvisibleTimeResult.pop_time`, `invisible_time`, `revive_qid` | `ChangeInvisibleTimeResponseHeader` getters; success exposes parsed values, and missing/invalid primitive values retain zero defaults |
+| `ChangeInvisibleTimeResult.extra_info` | `AckResult.getExtraInfo()`; built from request offset, response values, topic retry class, broker name and queue ID; null on non-success |
+| `TopicSnapshot.route` | Copied Java `TopicRouteData` as exposed by `TopicPublishInfo.getTopicRouteData()` |
+| `TopicSnapshot.publish_queues`, `subscribe_queues` | Results of `MQClientInstance.topicRouteData2TopicPublishInfo/SubscribeInfo`; same route conversion and queue content, with Rust-native collection types |
+| `TopicSnapshot.order_topic`, `endpoints` | Java ordered-route flag and static-topic endpoint conversion; queue/endpoint fixture cases are mapped in the route-conversion row above |
+
+The pinned public API scan used `javap -public` on `PullResult`, `PullResultExt`, `HeartbeatV2Result`, `PopResult`, `AckResult`, and `ChangeInvisibleTimeResponseHeader`. Pull/POP Java and Rust invoked RPC fixtures compare response values; extension fixtures compare heartbeat and acknowledgement outcomes; route fixtures cover `TopicSnapshot` publication. `PopReply` and `PullResultExt` deliberately expose pre-decode bytes at the RPC boundary, so the high-level Java message-list carrier is owned by later consumer work.
 
 ## Remoting Netty event enum API: NettyEventType
 
