@@ -704,6 +704,15 @@ public final class RuntimeConfigFixtures {
         }
     }
 
+    private static void captureThrowable(Map<String, Object> result, String key, Runnable operation) {
+        try {
+            operation.run();
+            result.put(key, "RETURNED");
+        } catch (Throwable error) {
+            result.put(key, error.getClass().getSimpleName());
+        }
+    }
+
     private static Map<String, Object> managerTable(ClientConfig config) throws Exception {
         org.apache.rocketmq.client.impl.MQClientManager manager = org.apache.rocketmq.client.impl.MQClientManager.getInstance();
         java.util.concurrent.ConcurrentMap<String, org.apache.rocketmq.client.impl.factory.MQClientInstance> live = manager.getFactoryTable();
@@ -743,6 +752,29 @@ public final class RuntimeConfigFixtures {
             result.put("nullDefaultOnPresent", live.getOrDefault(id, null) == second ? "MAPPED" : "OTHER");
             result.put("nullDefaultOnMissing",
                 live.getOrDefault("missing-null-default", null) == null ? "NULL" : "OTHER");
+            Map<String, Object> nullableTableMutations = new TreeMap<>();
+            captureThrowable(nullableTableMutations, "factoryPutNullKey", () -> live.put(null, first));
+            captureThrowable(nullableTableMutations, "factoryPutNullValue", () -> live.put("null-put-value", null));
+            captureThrowable(nullableTableMutations, "factoryPutIfAbsentNullKey",
+                () -> live.putIfAbsent(null, first));
+            captureThrowable(nullableTableMutations, "factoryPutIfAbsentNullValue",
+                () -> live.putIfAbsent("null-put-if-absent-value", null));
+            captureThrowable(nullableTableMutations, "factoryReplaceNullKey",
+                () -> live.replace(null, first));
+            captureThrowable(nullableTableMutations, "factoryReplaceNullValue",
+                () -> live.replace("null-replace-value", null));
+            captureThrowable(nullableTableMutations, "factoryConditionalReplaceNullKey",
+                () -> live.replace(null, first, second));
+            captureThrowable(nullableTableMutations, "factoryConditionalReplaceNullExpected",
+                () -> live.replace("null-replace-expected", null, second));
+            captureThrowable(nullableTableMutations, "factoryConditionalReplaceNullValue",
+                () -> live.replace("null-replace-new-value", first, null));
+            captureThrowable(nullableTableMutations, "factoryRemoveNullKey", () -> live.remove(null));
+            captureThrowable(nullableTableMutations, "factoryConditionalRemoveNullKey",
+                () -> live.remove(null, first));
+            nullableTableMutations.put("factoryConditionalRemoveNullValue",
+                live.remove("null-remove-value", null));
+            result.put("nullableTableMutations", nullableTableMutations);
             result.put("retainedViewSeesSecond", live.get(id) == second);
             result.put("containsValueSecond", live.containsValue(second));
             result.put("containsValueAbsent", !live.containsValue(first));
@@ -1471,6 +1503,56 @@ public final class RuntimeConfigFixtures {
             nullableTableReads.put("consumerNullDefaultOnPresent",
                 runtime.getConsumerTable().getOrDefault("nullable-default-present", null) == consumerA ? "MAPPED" : "OTHER");
             result.put("nullableTableReads", nullableTableReads);
+            Map<String, Object> nullableTableMutations = new TreeMap<>();
+            captureThrowable(nullableTableMutations, "producerPutNullKey",
+                () -> runtime.getProducerTable().put(null, producerA));
+            captureThrowable(nullableTableMutations, "producerPutNullValue",
+                () -> runtime.getProducerTable().put("null-put-value", null));
+            captureThrowable(nullableTableMutations, "producerPutIfAbsentNullKey",
+                () -> runtime.getProducerTable().putIfAbsent(null, producerA));
+            captureThrowable(nullableTableMutations, "producerPutIfAbsentNullValue",
+                () -> runtime.getProducerTable().putIfAbsent("null-put-if-absent-value", null));
+            captureThrowable(nullableTableMutations, "producerReplaceNullKey",
+                () -> runtime.getProducerTable().replace(null, producerA));
+            captureThrowable(nullableTableMutations, "producerReplaceNullValue",
+                () -> runtime.getProducerTable().replace("null-replace-value", null));
+            captureThrowable(nullableTableMutations, "producerConditionalReplaceNullKey",
+                () -> runtime.getProducerTable().replace(null, producerA, producerB));
+            captureThrowable(nullableTableMutations, "producerConditionalReplaceNullExpected",
+                () -> runtime.getProducerTable().replace("null-replace-expected", null, producerB));
+            captureThrowable(nullableTableMutations, "producerConditionalReplaceNullValue",
+                () -> runtime.getProducerTable().replace("null-replace-new-value", producerA, null));
+            captureThrowable(nullableTableMutations, "producerRemoveNullKey",
+                () -> runtime.getProducerTable().remove(null));
+            captureThrowable(nullableTableMutations, "producerConditionalRemoveNullKey",
+                () -> runtime.getProducerTable().remove(null, producerA));
+            nullableTableMutations.put("producerConditionalRemoveNullValue",
+                runtime.getProducerTable().remove("null-remove-value", null));
+            captureThrowable(nullableTableMutations, "consumerPutNullKey",
+                () -> runtime.getConsumerTable().put(null, consumerA));
+            captureThrowable(nullableTableMutations, "consumerPutNullValue",
+                () -> runtime.getConsumerTable().put("null-put-value", null));
+            captureThrowable(nullableTableMutations, "consumerPutIfAbsentNullKey",
+                () -> runtime.getConsumerTable().putIfAbsent(null, consumerA));
+            captureThrowable(nullableTableMutations, "consumerPutIfAbsentNullValue",
+                () -> runtime.getConsumerTable().putIfAbsent("null-put-if-absent-value", null));
+            captureThrowable(nullableTableMutations, "consumerReplaceNullKey",
+                () -> runtime.getConsumerTable().replace(null, consumerA));
+            captureThrowable(nullableTableMutations, "consumerReplaceNullValue",
+                () -> runtime.getConsumerTable().replace("null-replace-value", null));
+            captureThrowable(nullableTableMutations, "consumerConditionalReplaceNullKey",
+                () -> runtime.getConsumerTable().replace(null, consumerA, consumerB));
+            captureThrowable(nullableTableMutations, "consumerConditionalReplaceNullExpected",
+                () -> runtime.getConsumerTable().replace("null-replace-expected", null, consumerB));
+            captureThrowable(nullableTableMutations, "consumerConditionalReplaceNullValue",
+                () -> runtime.getConsumerTable().replace("null-replace-new-value", consumerA, null));
+            captureThrowable(nullableTableMutations, "consumerRemoveNullKey",
+                () -> runtime.getConsumerTable().remove(null));
+            captureThrowable(nullableTableMutations, "consumerConditionalRemoveNullKey",
+                () -> runtime.getConsumerTable().remove(null, consumerA));
+            nullableTableMutations.put("consumerConditionalRemoveNullValue",
+                runtime.getConsumerTable().remove("null-remove-value", null));
+            result.put("nullableTableMutations", nullableTableMutations);
             result.put("producerDefaultOperations",
                 tableDefaultOperations(runtime.getProducerTable(), producerA, producerB));
             result.put("consumerDefaultOperations",

@@ -237,6 +237,20 @@ macro_rules! table {
                 })
                 .await
             }
+            /// Nullable Java-compatible `ConcurrentMap.put` boundary.
+            pub async fn put_nullable(
+                &self,
+                key: Option<&str>,
+                value: Option<Arc<dyn $owner>>,
+            ) -> Result<Option<Arc<dyn $owner>>, RuntimeError> {
+                let Some(key) = key else {
+                    return Err(RuntimeError::InvalidRoute($null_group));
+                };
+                let Some(value) = value else {
+                    return Err(RuntimeError::InvalidRoute($null_value));
+                };
+                self.put(key, value).await
+            }
             pub async fn put_if_absent(
                 &self,
                 key: impl Into<String>,
@@ -248,6 +262,20 @@ macro_rules! table {
                     only_absent: true,
                 })
                 .await
+            }
+            /// Nullable Java-compatible `ConcurrentMap.putIfAbsent` boundary.
+            pub async fn put_if_absent_nullable(
+                &self,
+                key: Option<&str>,
+                value: Option<Arc<dyn $owner>>,
+            ) -> Result<Option<Arc<dyn $owner>>, RuntimeError> {
+                let Some(key) = key else {
+                    return Err(RuntimeError::InvalidRoute($null_group));
+                };
+                let Some(value) = value else {
+                    return Err(RuntimeError::InvalidRoute($null_value));
+                };
+                self.put_if_absent(key, value).await
             }
             /// Inserts each entry independently, matching Map.putAll's per-entry writes.
             pub async fn put_all(
@@ -278,6 +306,20 @@ macro_rules! table {
                 } else {
                     None
                 })
+            }
+            /// Nullable Java-compatible `ConcurrentMap.replace(key, value)` boundary.
+            pub async fn replace_nullable(
+                &self,
+                key: Option<&str>,
+                value: Option<Arc<dyn $owner>>,
+            ) -> Result<Option<Arc<dyn $owner>>, RuntimeError> {
+                let Some(key) = key else {
+                    return Err(RuntimeError::InvalidRoute($null_group));
+                };
+                let Some(value) = value else {
+                    return Err(RuntimeError::InvalidRoute($null_value));
+                };
+                self.replace(key, value).await
             }
             pub async fn replace_if_same(
                 &self,
@@ -317,6 +359,24 @@ macro_rules! table {
                     }
                 }
             }
+            /// Nullable Java-compatible conditional replacement using owner value equality.
+            pub async fn replace_if_equal_nullable(
+                &self,
+                key: Option<&str>,
+                expected: Option<&Arc<dyn $owner>>,
+                value: Option<Arc<dyn $owner>>,
+            ) -> Result<bool, RuntimeError> {
+                let Some(key) = key else {
+                    return Err(RuntimeError::InvalidRoute($null_group));
+                };
+                let Some(expected) = expected else {
+                    return Err(RuntimeError::InvalidRoute($null_value));
+                };
+                let Some(value) = value else {
+                    return Err(RuntimeError::InvalidRoute($null_value));
+                };
+                self.replace_if_equal(key, expected, value).await
+            }
             pub async fn remove(
                 &self,
                 key: impl Into<String>,
@@ -327,6 +387,16 @@ macro_rules! table {
                     comparison: None,
                 })
                 .await
+            }
+            /// Nullable Java-compatible `ConcurrentMap.remove(key)` boundary.
+            pub async fn remove_nullable(
+                &self,
+                key: Option<&str>,
+            ) -> Result<Option<Arc<dyn $owner>>, RuntimeError> {
+                let Some(key) = key else {
+                    return Err(RuntimeError::InvalidRoute($null_group));
+                };
+                self.remove(key).await
             }
             pub async fn remove_if_same(
                 &self,
@@ -362,6 +432,20 @@ macro_rules! table {
                         return Ok(true);
                     }
                 }
+            }
+            /// Nullable Java-compatible conditional removal using owner value equality.
+            pub async fn remove_if_equal_nullable(
+                &self,
+                key: Option<&str>,
+                expected: Option<&Arc<dyn $owner>>,
+            ) -> Result<bool, RuntimeError> {
+                let Some(key) = key else {
+                    return Err(RuntimeError::InvalidRoute($null_group));
+                };
+                let Some(expected) = expected else {
+                    return Ok(false);
+                };
+                self.remove_if_equal(key, expected).await
             }
             /// ConcurrentMap-style remapping operations serialize same-key
             /// table mutations while the closure runs, so the closure is called

@@ -401,6 +401,179 @@ async fn nullable_registry_table_reads_match_invoked_java_null_key_failures() {
 }
 
 #[tokio::test]
+async fn nullable_registry_table_mutations_match_invoked_java_null_failures() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = &fixture["registryTables"]["nullableTableMutations"];
+    for prefix in ["producer", "consumer"] {
+        for operation in [
+            "PutNullKey",
+            "PutNullValue",
+            "PutIfAbsentNullKey",
+            "PutIfAbsentNullValue",
+            "ReplaceNullKey",
+            "ReplaceNullValue",
+            "ConditionalReplaceNullKey",
+            "ConditionalReplaceNullExpected",
+            "ConditionalReplaceNullValue",
+            "RemoveNullKey",
+            "ConditionalRemoveNullKey",
+        ] {
+            let key = format!("{prefix}{operation}");
+            assert_eq!(java[&key], "NullPointerException", "{key}");
+        }
+        assert_eq!(java[format!("{prefix}ConditionalRemoveNullValue")], false);
+    }
+
+    macro_rules! assert_null {
+        ($operation:expr, $message:literal) => {
+            assert!(matches!(
+                $operation,
+                Err(RuntimeError::InvalidRoute($message))
+            ));
+        };
+    }
+
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&ClientConfig::new("nullable-registry-mutations"))
+        .await
+        .unwrap();
+    let producers = runtime.producer_table();
+    let consumers = runtime.consumer_table();
+    let producer_a: Arc<dyn ProducerRuntime> = Arc::new(Producer);
+    let producer_b: Arc<dyn ProducerRuntime> = Arc::new(Producer);
+    let consumer_a: Arc<dyn ConsumerRuntime> = Arc::new(Consumer);
+    let consumer_b: Arc<dyn ConsumerRuntime> = Arc::new(Consumer);
+
+    assert_null!(
+        producers.put_nullable(None, Some(producer_a.clone())).await,
+        "null producer group"
+    );
+    assert_null!(
+        producers.put_nullable(Some("put"), None).await,
+        "null producer value"
+    );
+    assert_null!(
+        producers
+            .put_if_absent_nullable(None, Some(producer_a.clone()))
+            .await,
+        "null producer group"
+    );
+    assert_null!(
+        producers
+            .put_if_absent_nullable(Some("put-if-absent"), None)
+            .await,
+        "null producer value"
+    );
+    assert_null!(
+        producers
+            .replace_nullable(None, Some(producer_a.clone()))
+            .await,
+        "null producer group"
+    );
+    assert_null!(
+        producers.replace_nullable(Some("replace"), None).await,
+        "null producer value"
+    );
+    assert_null!(
+        producers
+            .replace_if_equal_nullable(None, Some(&producer_a), Some(producer_b.clone()))
+            .await,
+        "null producer group"
+    );
+    assert_null!(
+        producers
+            .replace_if_equal_nullable(Some("replace-old"), None, Some(producer_b.clone()))
+            .await,
+        "null producer value"
+    );
+    assert_null!(
+        producers
+            .replace_if_equal_nullable(Some("replace-new"), Some(&producer_a), None)
+            .await,
+        "null producer value"
+    );
+    assert_null!(producers.remove_nullable(None).await, "null producer group");
+    assert_null!(
+        producers
+            .remove_if_equal_nullable(None, Some(&producer_a))
+            .await,
+        "null producer group"
+    );
+    assert!(
+        !producers
+            .remove_if_equal_nullable(Some("remove"), None)
+            .await
+            .unwrap()
+    );
+
+    assert_null!(
+        consumers.put_nullable(None, Some(consumer_a.clone())).await,
+        "null consumer group"
+    );
+    assert_null!(
+        consumers.put_nullable(Some("put"), None).await,
+        "null consumer value"
+    );
+    assert_null!(
+        consumers
+            .put_if_absent_nullable(None, Some(consumer_a.clone()))
+            .await,
+        "null consumer group"
+    );
+    assert_null!(
+        consumers
+            .put_if_absent_nullable(Some("put-if-absent"), None)
+            .await,
+        "null consumer value"
+    );
+    assert_null!(
+        consumers
+            .replace_nullable(None, Some(consumer_a.clone()))
+            .await,
+        "null consumer group"
+    );
+    assert_null!(
+        consumers.replace_nullable(Some("replace"), None).await,
+        "null consumer value"
+    );
+    assert_null!(
+        consumers
+            .replace_if_equal_nullable(None, Some(&consumer_a), Some(consumer_b.clone()))
+            .await,
+        "null consumer group"
+    );
+    assert_null!(
+        consumers
+            .replace_if_equal_nullable(Some("replace-old"), None, Some(consumer_b.clone()))
+            .await,
+        "null consumer value"
+    );
+    assert_null!(
+        consumers
+            .replace_if_equal_nullable(Some("replace-new"), Some(&consumer_a), None)
+            .await,
+        "null consumer value"
+    );
+    assert_null!(consumers.remove_nullable(None).await, "null consumer group");
+    assert_null!(
+        consumers
+            .remove_if_equal_nullable(None, Some(&consumer_a))
+            .await,
+        "null consumer group"
+    );
+    assert!(
+        !consumers
+            .remove_if_equal_nullable(Some("remove"), None)
+            .await
+            .unwrap()
+    );
+    assert!(producers.is_empty().unwrap());
+    assert!(consumers.is_empty().unwrap());
+    assert_eq!(runtime.state(), RuntimeState::Created);
+}
+
+#[tokio::test]
 async fn conditional_registry_mutations_match_java_custom_value_equality() {
     struct EqualProducer(&'static str);
     impl ProducerRuntime for EqualProducer {

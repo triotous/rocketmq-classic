@@ -143,6 +143,116 @@ async fn nullable_factory_table_reads_match_invoked_java_null_key_failures() {
 }
 
 #[tokio::test]
+async fn nullable_factory_table_mutations_match_invoked_java_null_failures() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = &fixture["managerTable"]["nullableTableMutations"];
+    for key in [
+        "factoryPutNullKey",
+        "factoryPutNullValue",
+        "factoryPutIfAbsentNullKey",
+        "factoryPutIfAbsentNullValue",
+        "factoryReplaceNullKey",
+        "factoryReplaceNullValue",
+        "factoryConditionalReplaceNullKey",
+        "factoryConditionalReplaceNullExpected",
+        "factoryConditionalReplaceNullValue",
+        "factoryRemoveNullKey",
+        "factoryConditionalRemoveNullKey",
+    ] {
+        assert_eq!(java[key], "NullPointerException", "{key}");
+    }
+    assert_eq!(java["factoryConditionalRemoveNullValue"], false);
+
+    macro_rules! assert_null {
+        ($operation:expr, $message:literal) => {
+            assert!(matches!(
+                $operation,
+                Err(RuntimeError::InvalidRoute($message))
+            ));
+        };
+    }
+
+    let manager = ClientRuntimeManager::new();
+    let table = manager.factory_table();
+    let first = manager
+        .get_or_create(&ClientConfig::new("nullable-factory-mutation-first"))
+        .await
+        .unwrap();
+    let second = manager
+        .get_or_create(&ClientConfig::new("nullable-factory-mutation-second"))
+        .await
+        .unwrap();
+    let initial_keys: BTreeSet<_> = table.snapshot().unwrap().into_keys().collect();
+
+    assert_null!(
+        table.put_nullable(None, Some(first.clone())).await,
+        "null factory key"
+    );
+    assert_null!(
+        table.put_nullable(Some("put"), None).await,
+        "null factory value"
+    );
+    assert_null!(
+        table
+            .put_if_absent_nullable(None, Some(first.clone()))
+            .await,
+        "null factory key"
+    );
+    assert_null!(
+        table
+            .put_if_absent_nullable(Some("put-if-absent"), None)
+            .await,
+        "null factory value"
+    );
+    assert_null!(
+        table.replace_nullable(None, Some(first.clone())).await,
+        "null factory key"
+    );
+    assert_null!(
+        table.replace_nullable(Some("replace"), None).await,
+        "null factory value"
+    );
+    assert_null!(
+        table
+            .replace_if_equal_nullable(None, Some(&first), Some(second.clone()))
+            .await,
+        "null factory key"
+    );
+    assert_null!(
+        table
+            .replace_if_equal_nullable(Some("replace-old"), None, Some(second.clone()))
+            .await,
+        "null factory value"
+    );
+    assert_null!(
+        table
+            .replace_if_equal_nullable(Some("replace-new"), Some(&first), None)
+            .await,
+        "null factory value"
+    );
+    assert_null!(table.remove_nullable(None).await, "null factory key");
+    assert_null!(
+        table.remove_if_equal_nullable(None, Some(&first)).await,
+        "null factory key"
+    );
+    assert!(
+        !table
+            .remove_if_equal_nullable(Some("remove"), None)
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        table
+            .snapshot()
+            .unwrap()
+            .into_keys()
+            .collect::<BTreeSet<_>>(),
+        initial_keys
+    );
+}
+
+#[tokio::test]
 async fn nullable_manager_removal_overloads_match_invoked_java_null_key_failures() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();

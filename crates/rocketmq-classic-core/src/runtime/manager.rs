@@ -590,6 +590,21 @@ impl FactoryTable {
             .map(|(previous, _)| previous)
     }
 
+    /// Nullable Java-compatible `ConcurrentMap.put` boundary.
+    pub async fn put_nullable(
+        &self,
+        key: Option<&str>,
+        value: Option<Arc<ClientRuntime>>,
+    ) -> Result<Option<Arc<ClientRuntime>>, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null factory key"));
+        };
+        let Some(value) = value else {
+            return Err(RuntimeError::InvalidRoute("null factory value"));
+        };
+        self.put(key, value).await
+    }
+
     /// Applies each mapping independently, matching Map.putAll per-key writes.
     pub async fn put_all(
         &self,
@@ -609,6 +624,21 @@ impl FactoryTable {
         self.mutate(key, TableMutation::PutIfAbsent(value))
             .await
             .map(|(previous, _)| previous)
+    }
+
+    /// Nullable Java-compatible `ConcurrentMap.putIfAbsent` boundary.
+    pub async fn put_if_absent_nullable(
+        &self,
+        key: Option<&str>,
+        value: Option<Arc<ClientRuntime>>,
+    ) -> Result<Option<Arc<ClientRuntime>>, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null factory key"));
+        };
+        let Some(value) = value else {
+            return Err(RuntimeError::InvalidRoute("null factory value"));
+        };
+        self.put_if_absent(key, value).await
     }
 
     /// Runs the mapping callback at most once for this invocation. A per-key
@@ -747,6 +777,21 @@ impl FactoryTable {
             .map(|(previous, _)| previous)
     }
 
+    /// Nullable Java-compatible `ConcurrentMap.replace(key, value)` boundary.
+    pub async fn replace_nullable(
+        &self,
+        key: Option<&str>,
+        value: Option<Arc<ClientRuntime>>,
+    ) -> Result<Option<Arc<ClientRuntime>>, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null factory key"));
+        };
+        let Some(value) = value else {
+            return Err(RuntimeError::InvalidRoute("null factory value"));
+        };
+        self.replace(key, value).await
+    }
+
     pub async fn replace_if_same(
         &self,
         key: &str,
@@ -758,10 +803,41 @@ impl FactoryTable {
             .map(|(_, changed)| changed)
     }
 
+    /// Nullable Java-compatible conditional replacement. Runtime equality is
+    /// identity equality, matching `MQClientInstance`'s inherited `Object.equals`.
+    pub async fn replace_if_equal_nullable(
+        &self,
+        key: Option<&str>,
+        expected: Option<&Arc<ClientRuntime>>,
+        value: Option<Arc<ClientRuntime>>,
+    ) -> Result<bool, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null factory key"));
+        };
+        let Some(expected) = expected else {
+            return Err(RuntimeError::InvalidRoute("null factory value"));
+        };
+        let Some(value) = value else {
+            return Err(RuntimeError::InvalidRoute("null factory value"));
+        };
+        self.replace_if_same(key, expected, value).await
+    }
+
     pub async fn remove(&self, key: &str) -> Result<Option<Arc<ClientRuntime>>, RuntimeError> {
         self.mutate(key, TableMutation::Remove)
             .await
             .map(|(previous, _)| previous)
+    }
+
+    /// Nullable Java-compatible `ConcurrentMap.remove(key)` boundary.
+    pub async fn remove_nullable(
+        &self,
+        key: Option<&str>,
+    ) -> Result<Option<Arc<ClientRuntime>>, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null factory key"));
+        };
+        self.remove(key).await
     }
 
     pub async fn remove_if_same(
@@ -772,6 +848,21 @@ impl FactoryTable {
         self.mutate(key, TableMutation::RemoveIfSame(expected.clone()))
             .await
             .map(|(_, changed)| changed)
+    }
+
+    /// Nullable Java-compatible conditional removal using runtime identity equality.
+    pub async fn remove_if_equal_nullable(
+        &self,
+        key: Option<&str>,
+        expected: Option<&Arc<ClientRuntime>>,
+    ) -> Result<bool, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null factory key"));
+        };
+        let Some(expected) = expected else {
+            return Ok(false);
+        };
+        self.remove_if_same(key, expected).await
     }
 
     /// Like ConcurrentMap.clear, not a transaction against concurrent inserts.
