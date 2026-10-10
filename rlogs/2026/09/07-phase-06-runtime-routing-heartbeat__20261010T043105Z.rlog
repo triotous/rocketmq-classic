@@ -204,11 +204,17 @@
 ## Runtime lookup no-Broker branch
 
 - Extended the same direct Java runtime oracle with an empty `brokerDatas` route. Each method refreshes the route, returns null and makes no Broker API call; added independent snapshots so later setup changes cannot rewrite earlier call evidence.
-- Oracle extension `7c7965ba`; Rust differential `8a9fe417`. `missing_broker_returns_none_and_expired_assignment_emits_no_frame` now consumes the Java null results and verifies the Java two-refresh/no-call observation alongside the existing native peers. Current `lookup.json` SHA-256: `e7e1e0c7ccde975ad7af491caafefba0b4bc4ad0f78c812273233a1df943b2dc`.
+- Oracle extension `7c7965ba`; Rust differential `8a9fe417`. `missing_broker_returns_none_and_expired_assignment_emits_no_frame` now consumes the Java null results and verifies the Java two-refresh/no-call observation alongside the existing native peers. `lookup.json` SHA-256 at that checkpoint: `e7e1e0c7ccde975ad7af491caafefba0b4bc4ad0f78c812273233a1df943b2dc`.
 - All five `runtime_lookup` integration tests pass. Direct RuntimeLookup fixture drift verification and full pinned offline Maven verify pass, including all 22 scenarios and Rust/Java cross-decodes. Formatting and diff checks pass. The whole Phase 6 source/API/input/reverse-export audit remains PARTIAL; P6-V04 stays `PENDING_PHASE_19`.
 
 ## Signed assignment timeout forwarding
 
 - Extended the Java direct runtime oracle to call `MQClientInstance.queryAssignment` with `0` and `-1`; the injected API recorder observes both signed values unchanged. Rust uses those Java-recorded values in its expired-deadline cases and confirms neither reaches the Broker socket.
-- Java oracle commit `c3c71d04`; Rust differential commit `16e6f153`; current `lookup.json` SHA-256 `b133d3cd549191797c205d410e61d4928f2c922e33bd8fbeb8bf0a9cf993b6bf`.
+- Java oracle commit `c3c71d04`; Rust differential commit `16e6f153`; `lookup.json` SHA-256 at that checkpoint `b133d3cd549191797c205d410e61d4928f2c922e33bd8fbeb8bf0a9cf993b6bf`.
 - All five `runtime_lookup` integration tests pass. Direct RuntimeLookup fixture drift verification and full pinned offline Maven verify pass, including all 22 scenarios and Java cross-decodes. Formatting and diff checks pass. The entire Phase 6 matrix remains PARTIAL; P6-V04 remains `PENDING_PHASE_19`.
+
+## Java boot timestamp getter oracle
+
+- Added an actual pinned Java `MQClientInstance.getBootTimestamp()` invocation to `RuntimeLookupFixtures`. Its captured value falls between wall-clock samples immediately before and after runtime construction and remains stable after the fixture's route/API calls; nondeterministic epoch values are not persisted.
+- Java oracle commit `0b8ac492`; Rust differential commit `3ab4e236`. The existing constructor-window/lifecycle test now consumes both Java observations. Current `lookup.json` SHA-256: `19d33e027294c631b729b27a59ba8ec4099067a6117048818e041a797ab68fe7`.
+- Focused `boot_timestamp_is_constructor_wall_clock_and_stable_across_shared_lifecycle` passed. Full pinned offline Maven verify passed with all 22 scenarios, fixture drift and Java cross-decodes. Formatting and diff checks pass. This closes direct getter invocation evidence only; full Phase 6 source/API/input/platform reconciliation remains PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
