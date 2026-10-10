@@ -5,3 +5,7 @@
 - Code/oracle/test commit: `c179246f` (`Match nullable raw route replaceAll results`). Route primitive count is 95; `fixtures/runtime/route.json` SHA-256 is `2779d3c69caa8c7e03a4b096aa1bbb447c65735a65f55a52998b142d05c0e525`.
 - Validation passed: focused route-table differential; full `cargo test --workspace --all-targets --locked`; strict all-target/all-feature Clippy; pinned offline `mvn -o verify` (22 scenarios, fixture drift and Java cross-decodes); comparator self-test and 22-scenario manifest validation; formatting and diff checks.
 - Updated the API/config map, requirement audit, route audit, and this log. Whole Phase 6 public API/settings/source/input/platform reconciliation remains open; P6-V04 stays a Phase 19 handoff.
+
+- Added pinned nullable `ConcurrentHashMap.getOrDefault` coverage: present key with null default returns the mapped handle, absent key with null default returns `None`, and null key fails before lookup. `TopicRouteTable::get_or_default_nullable` maps these cases; fixture count is 98 and route SHA-256 is `451afcb6ca7fab4d332dc4a95f07afc6138c311a96b6623e555246d998c53ffd` (code/oracle commit `a7d4b3e0`).
+- Updated the API/config map, requirement audit, and route audit with the new outcomes and current count. Reviewed the public counterpart row and P6-05 requirement summary; `git diff --check` passes.
+- Documentation/log commit pending at this entry. Whole Phase 6 public API/settings/source/input/platform reconciliation remains open; P6-V04 remains a Phase 19 handoff.
