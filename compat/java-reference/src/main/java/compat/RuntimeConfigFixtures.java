@@ -1343,6 +1343,20 @@ public final class RuntimeConfigFixtures {
             org.apache.rocketmq.client.impl.consumer.MQConsumerInner consumerB = tableOwner(org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class);
             result.put("producer", tableMutations(runtime.getProducerTable(), producerA, producerB, runtime::selectProducer));
             result.put("consumer", tableMutations(runtime.getConsumerTable(), consumerA, consumerB, runtime::selectConsumer));
+            Map<String, Object> nullableSelectors = new TreeMap<>();
+            try {
+                runtime.selectProducer(null);
+                nullableSelectors.put("producerNullGroup", "RETURNED");
+            } catch (Throwable error) {
+                nullableSelectors.put("producerNullGroup", error.getClass().getSimpleName());
+            }
+            try {
+                runtime.selectConsumer(null);
+                nullableSelectors.put("consumerNullGroup", "RETURNED");
+            } catch (Throwable error) {
+                nullableSelectors.put("consumerNullGroup", error.getClass().getSimpleName());
+            }
+            result.put("nullableSelectors", nullableSelectors);
             result.put("producerDefaultOperations",
                 tableDefaultOperations(runtime.getProducerTable(), producerA, producerB));
             result.put("consumerDefaultOperations",
