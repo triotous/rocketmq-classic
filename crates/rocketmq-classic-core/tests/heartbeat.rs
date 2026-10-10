@@ -835,6 +835,14 @@ async fn failed_peer_does_not_prevent_heartbeat_to_other_brokers() {
 
 #[tokio::test]
 async fn concurrent_v1_uses_parallel_peers_and_busy_heartbeat_gate_skips_a_round() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/heartbeat.json")).unwrap();
+    let java_case = &fixture["concurrentHeartbeatPoolSizeMutation"];
+    assert_eq!(java_case["configuredBeforeMutation"], 2);
+    assert_eq!(java_case["executorCoreSizeBeforeMutation"], 2);
+    assert_eq!(java_case["configuredAfterMutation"], 1);
+    assert_eq!(java_case["executorCoreSizeAfterMutation"], 2);
+
     let master = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let slave = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addresses = [
