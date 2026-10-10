@@ -411,4 +411,35 @@
       </plugin>
     </plugins>
   </build>
+  <profiles>
+    <profile>
+      <id>linux-runtime-address-oracle</id>
+      <activation>
+        <os><name>Linux</name></os>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <version>3.5.0</version>
+            <executions>
+              <execution>
+                <id>verify-runtime-linux-address-fixture</id>
+                <phase>verify</phase>
+                <goals><goal>java</goal></goals>
+                <configuration>
+                  <mainClass>compat.RuntimeLinuxAddressFixtures</mainClass>
+                  <arguments>
+                    <argument>${project.basedir}/../../fixtures/runtime/address-linux.json</argument>
+                    <argument>--verify</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>

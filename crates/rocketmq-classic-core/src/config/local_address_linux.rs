@@ -338,6 +338,39 @@ mod tests {
     }
 
     #[test]
+    fn linux_loopback_proc_scope_matches_invoked_java_551() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/address-linux.json"
+        ))
+        .unwrap();
+        let cases = fixture["linuxIpv6LoopbackCandidates"].as_array().unwrap();
+        assert!(
+            !cases.is_empty(),
+            "pinned Linux JDK did not expose IPv6 loopback"
+        );
+        for case in cases {
+            let candidate = parse_ipv6_row(case["procRow"].as_str().unwrap()).unwrap();
+            assert_eq!(candidate.interface, case["interfaceName"].as_str().unwrap());
+            assert_eq!(
+                candidate.address.ip,
+                case["ip"].as_str().unwrap().parse::<IpAddr>().unwrap()
+            );
+            assert_eq!(
+                candidate.address.scope,
+                case["scopeId"].as_u64().unwrap() as u32
+            );
+            assert_eq!(
+                candidate.address.scope_name.as_deref(),
+                Some(case["interfaceName"].as_str().unwrap())
+            );
+            assert_eq!(
+                super::super::normalize(&candidate.address),
+                case["normalized"].as_str().unwrap()
+            );
+        }
+    }
+
+    #[test]
     fn candidate_lists_match_openjdk_table_and_head_insertion_order() {
         let ordered = java_candidate_order(
             vec![
