@@ -20,7 +20,7 @@ use rocketmq_classic_protocol::codes::JavaEnumLookupError;
 use std::task::{Context, Poll, Waker};
 use tokio::{
     sync::{mpsc, oneshot},
-    task::JoinHandle,
+    task::{JoinHandle, JoinSet},
     time::{self, Instant},
 };
 
@@ -2090,36 +2090,64 @@ fn start_callback_workers(
     shutdown: tokio::sync::watch::Receiver<bool>,
     worker_count: usize,
 ) -> Vec<JoinHandle<()>> {
-    let receiver = Arc::new(tokio::sync::Mutex::new(receiver));
-    (0..worker_count)
-        .map(|_| {
-            let receiver = receiver.clone();
-            let mut shutdown = shutdown.clone();
-            tokio::spawn(async move {
-                loop {
-                    let job = {
-                        let mut receiver = receiver.lock().await;
-                        tokio::select! {
-                            job = receiver.recv() => job,
-                            changed = shutdown.changed() => {
-                                if changed.is_err() || *shutdown.borrow() {
-                                    let queued = std::iter::from_fn(|| receiver.try_recv().ok()).collect::<Vec<_>>();
-                                    drop(receiver);
-                                    for task in queued {
-                                        let _ = tokio::task::spawn_blocking(task).await;
-                                    }
-                                    return;
-                                }
-                                continue;
-                            }
-                        }
-                    };
-                    let Some(task) = job else { return };
-                    let _ = tokio::task::spawn_blocking(task).await;
+    // Keep the configured value as a concurrency limit, not an eager allocation
+    // count; Java accepts i32::MAX core threads without prestarting them.
+    let worker_count = worker_count.max(1);
+    let worker = tokio::spawn(async move {
+        let mut receiver = receiver;
+        let mut shutdown = shutdown;
+        let mut callbacks = JoinSet::new();
+        let mut stopping = false;
+        loop {
+            if stopping {
+                if callbacks.len() >= worker_count {
+                    let _ = callbacks.join_next().await;
+                    continue;
                 }
-            })
-        })
-        .collect()
+                match receiver.try_recv() {
+                    Ok(task) => {
+                        callbacks.spawn_blocking(task);
+                    }
+                    Err(
+                        mpsc::error::TryRecvError::Empty | mpsc::error::TryRecvError::Disconnected,
+                    ) => {
+                        if callbacks.join_next().await.is_none() {
+                            return;
+                        }
+                    }
+                }
+                continue;
+            }
+            if callbacks.len() >= worker_count {
+                tokio::select! {
+                    biased;
+                    changed = shutdown.changed() => {
+                        if changed.is_err() || *shutdown.borrow() {
+                            stopping = true;
+                        }
+                    }
+                    Some(_) = callbacks.join_next() => {}
+                }
+                continue;
+            }
+            tokio::select! {
+                biased;
+                changed = shutdown.changed() => {
+                    if changed.is_err() || *shutdown.borrow() {
+                        stopping = true;
+                    }
+                }
+                Some(_) = callbacks.join_next(), if !callbacks.is_empty() => {}
+                task = receiver.recv() => match task {
+                    Some(task) => {
+                        callbacks.spawn_blocking(task);
+                    }
+                    None => stopping = true,
+                }
+            }
+        }
+    });
+    vec![worker]
 }
 
 fn name_server_scan_batch(

@@ -2569,6 +2569,58 @@ async fn p3_callback_executor_runs_callbacks_on_bounded_workers() {
     peer.await.unwrap();
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn p3_java_max_callback_capacity_starts_and_grows_on_demand() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = fixture["callbackThreadsConstruction"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["input"] == i32::MAX)
+        .unwrap();
+    assert_eq!(java["effective"], i32::MAX);
+    assert_eq!(java["activeAtConstruction"], 0);
+
+    let client = RemotingClient::with_config(ClientConfig {
+        callback_executor_threads: i32::MAX as usize,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    client.start().unwrap();
+    let active = Arc::new(AtomicUsize::new(0));
+    let max_active = Arc::new(AtomicUsize::new(0));
+    let completed = Arc::new(AtomicUsize::new(0));
+    for code in [1, 2] {
+        let active = active.clone();
+        let max_active = max_active.clone();
+        let completed = completed.clone();
+        client
+            .invoke_async(
+                "127.0.0.1:1",
+                command(code),
+                Instant::now() - Duration::from_millis(1),
+                Arc::new(move |_: Result<RemotingCommand, TransportError>| {
+                    let running = active.fetch_add(1, Ordering::SeqCst) + 1;
+                    max_active.fetch_max(running, Ordering::SeqCst);
+                    std::thread::sleep(Duration::from_millis(30));
+                    active.fetch_sub(1, Ordering::SeqCst);
+                    completed.fetch_add(1, Ordering::SeqCst);
+                }),
+            )
+            .unwrap();
+    }
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while completed.load(Ordering::SeqCst) != 2 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(max_active.load(Ordering::SeqCst), 2);
+    client.shutdown().await;
+}
+
 #[tokio::test]
 async fn p3_caller_callback_executor_routes_callbacks_to_owned_executor() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

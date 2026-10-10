@@ -236,6 +236,7 @@ async fn callback_thread_constructor_acceptance_and_raw_values_match_invoked_jav
             .get_or_create(&config)
             .await;
         assert_eq!(result.is_ok(), java["outcome"] == "OK", "{java}");
+        assert_eq!(java["activeAtConstruction"], 0, "{java}");
         assert_eq!(
             i64::from(
                 result
