@@ -11,6 +11,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.lang.ref.WeakReference;
 import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.client.ClientConfig;
 
@@ -153,7 +154,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("rebalanceLongs", rebalanceLongs);
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "ClientConfig.buildMQClientId/toString/cloneClientConfig/resetClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/queuesWithNamespace/changeInstanceNameToPID; MessageQueue.setTopic/setBrokerName/setQueueId; MQClientManager.getOrCreateMQClientInstance/removeClientFactory/getFactoryTable; MQClientInstance.constructor/getClientConfig/getNettyClientConfig/getProducerTable/getConsumerTable/selectProducer/selectConsumer/registerConsumer/unregisterConsumer; MQClientAPIImpl.getRemotingClient/getNameServerAddressList/NettyRemotingClient.publicExecutor (reflective capacity observation); NettyRemotingClient.start/invokeSync (local authenticated and no-auth SOCKS5 round trips); RemotingCommand.encode/getType (null language JSON/ROCKETMQ); LanguageCode/SerializeType/TlsMode/RequestType/RemotingCommandType/NettyEventType generated enum and custom value lookups; Long.parseLong (RebalanceService property parser)");
+        fixture.put("entrypoint", "ClientConfig.buildMQClientId/toString/cloneClientConfig/resetClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/queuesWithNamespace/changeInstanceNameToPID; MessageQueue.setTopic/setBrokerName/setQueueId; MQClientManager.getOrCreateMQClientInstance/removeClientFactory/getFactoryTable; MQClientInstance.constructor/getClientConfig/getNettyClientConfig/getProducerTable/getConsumerTable/selectProducer/selectConsumer/registerProducer/registerConsumer/unregisterConsumer; MQClientAPIImpl.getRemotingClient/getNameServerAddressList/NettyRemotingClient.publicExecutor (reflective capacity observation); NettyRemotingClient.start/invokeSync (local authenticated and no-auth SOCKS5 round trips); RemotingCommand.encode/getType (null language JSON/ROCKETMQ); LanguageCode/SerializeType/TlsMode/RequestType/RemotingCommandType/NettyEventType generated enum and custom value lookups; Long.parseLong (RebalanceService property parser)");
         fixture.put("serverBaselineContacted", false);
         fixture.put("networkUtilLocalAddress", org.apache.rocketmq.common.utils.NetworkUtil.getLocalAddress());
         List<String> localAddressCandidates = new ArrayList<>();
@@ -1374,6 +1375,7 @@ public final class RuntimeConfigFixtures {
             org.apache.rocketmq.client.impl.consumer.MQConsumerInner consumerB = tableOwner(org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class);
             result.put("producer", tableMutations(runtime.getProducerTable(), producerA, producerB, runtime::selectProducer));
             result.put("consumer", tableMutations(runtime.getConsumerTable(), consumerA, consumerB, runtime::selectConsumer));
+            result.put("registrationRetainsOwners", registrationRetainsOwners(runtime));
             Map<String, Object> nullableSelectors = new TreeMap<>();
             try {
                 runtime.selectProducer(null);
@@ -1550,6 +1552,48 @@ public final class RuntimeConfigFixtures {
             result.put("adminRegistration", adminRegistration(runtime));
         } finally { cleanupRuntime(runtime); }
         return result;
+    }
+
+    private static Map<String, Object> registrationRetainsOwners(
+        org.apache.rocketmq.client.impl.factory.MQClientInstance runtime) {
+        Map<String, Object> result = new TreeMap<>();
+        WeakReference<org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl> producer =
+            registerProducerWithoutRetaining(runtime);
+        org.apache.rocketmq.client.impl.producer.MQProducerInner selectedProducer =
+            runtime.selectProducer("strong-producer");
+        result.put("producerWeakReferenceStillLive", producer.get() != null);
+        result.put("producerSelectorReturnsRegisteredOwner", selectedProducer != null && selectedProducer == producer.get());
+
+        WeakReference<org.apache.rocketmq.client.impl.consumer.MQConsumerInner> consumer =
+            registerConsumerWithoutRetaining(runtime);
+        org.apache.rocketmq.client.impl.consumer.MQConsumerInner selectedConsumer =
+            runtime.selectConsumer("strong-consumer");
+        result.put("consumerWeakReferenceStillLive", consumer.get() != null);
+        result.put("consumerSelectorReturnsRegisteredOwner", selectedConsumer != null && selectedConsumer == consumer.get());
+        return result;
+    }
+
+    private static WeakReference<org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl>
+        registerProducerWithoutRetaining(
+            org.apache.rocketmq.client.impl.factory.MQClientInstance runtime) {
+        org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl owner =
+            new org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl(
+                new org.apache.rocketmq.client.producer.DefaultMQProducer("strong-producer"));
+        if (!runtime.registerProducer("strong-producer", owner)) {
+            throw new IllegalStateException("producer registration rejected");
+        }
+        return new WeakReference<>(owner);
+    }
+
+    private static WeakReference<org.apache.rocketmq.client.impl.consumer.MQConsumerInner>
+        registerConsumerWithoutRetaining(
+            org.apache.rocketmq.client.impl.factory.MQClientInstance runtime) {
+        org.apache.rocketmq.client.impl.consumer.MQConsumerInner owner =
+            tableOwner(org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class);
+        if (!runtime.registerConsumer("strong-consumer", owner)) {
+            throw new IllegalStateException("consumer registration rejected");
+        }
+        return new WeakReference<>(owner);
     }
 
     private static Map<String, Object> adminRegistration(
