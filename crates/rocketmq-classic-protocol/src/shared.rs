@@ -1,6 +1,7 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{
     fmt,
+    hash::Hash,
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
@@ -38,6 +39,11 @@ impl<T> SharedValue<T> {
 
     pub fn ptr_eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
+    }
+
+    /// Feeds this handle's stable process-local identity into a hash builder.
+    pub(crate) fn hash_identity<H: std::hash::Hasher>(&self, state: &mut H) {
+        Arc::as_ptr(&self.0).hash(state);
     }
 
     fn read(&self) -> RwLockReadGuard<'_, T> {

@@ -775,6 +775,27 @@ impl std::fmt::Display for LiteSubscriptionDto {
     }
 }
 
+/// Nullable DTO elements in Java's identity-based subscription Set.
+pub type LiteSubscriptionDtoSet =
+    std::collections::HashSet<Option<SharedValue<LiteSubscriptionDto>>>;
+
+/// Shared handle for the subscription Set stored by `LiteSubscriptionCtlRequestBody`.
+pub type SharedLiteSubscriptionSet = SharedValue<LiteSubscriptionDtoSet>;
+
+impl PartialEq for SharedValue<LiteSubscriptionDto> {
+    fn eq(&self, other: &Self) -> bool {
+        self.ptr_eq(other)
+    }
+}
+
+impl Eq for SharedValue<LiteSubscriptionDto> {}
+
+impl std::hash::Hash for SharedValue<LiteSubscriptionDto> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.hash_identity(state);
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 /// Java `LiteSubscriptionCtlRequestBody` inherits identity-based equality.
@@ -787,7 +808,7 @@ impl std::fmt::Display for LiteSubscriptionDto {
 /// ```
 pub struct LiteSubscriptionCtlRequestBody {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub subscription_set: Option<Vec<Option<LiteSubscriptionDto>>>,
+    pub subscription_set: Option<SharedLiteSubscriptionSet>,
 }
 
 #[derive(Deserialize)]
@@ -801,6 +822,9 @@ struct LiteSubscriptionCtlRequestBodyFields {
 }
 
 impl<'de> Deserialize<'de> for LiteSubscriptionCtlRequestBody {
+    // The Set key hash uses the SharedValue allocation identity, which remains
+    // stable when the Java DTO's mutable fields change.
+    #[allow(clippy::mutable_key_type)]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -809,7 +833,7 @@ impl<'de> Deserialize<'de> for LiteSubscriptionCtlRequestBody {
             serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
         let mut null_seen = false;
         let subscription_set = fields.subscription_set.map(|items| {
-            items
+            let items = items
                 .into_iter()
                 .filter(|item| {
                     if item.is_some() {
@@ -821,41 +845,25 @@ impl<'de> Deserialize<'de> for LiteSubscriptionCtlRequestBody {
                         true
                     }
                 })
-                .collect()
+                .map(|item| item.map(SharedValue::new))
+                .collect::<LiteSubscriptionDtoSet>();
+            SharedValue::new(items)
         });
         Ok(Self { subscription_set })
     }
 }
 
 impl LiteSubscriptionCtlRequestBody {
-    pub fn subscription_set(&self) -> Option<&[Option<LiteSubscriptionDto>]> {
-        self.subscription_set.as_deref()
+    pub fn subscription_set(&self) -> Option<SharedLiteSubscriptionSet> {
+        self.subscription_set.clone()
     }
 
-    pub fn subscription_set_mut(&mut self) -> Option<&mut Vec<Option<LiteSubscriptionDto>>> {
+    pub fn subscription_set_mut(&mut self) -> Option<&mut SharedLiteSubscriptionSet> {
         self.subscription_set.as_mut()
     }
 
-    pub fn set_subscription_set(
-        &mut self,
-        subscription_set: Option<Vec<Option<LiteSubscriptionDto>>>,
-    ) {
-        let mut null_seen = false;
-        self.subscription_set = subscription_set.map(|items| {
-            items
-                .into_iter()
-                .filter(|item| {
-                    if item.is_some() {
-                        true
-                    } else if null_seen {
-                        false
-                    } else {
-                        null_seen = true;
-                        true
-                    }
-                })
-                .collect()
-        });
+    pub fn set_subscription_set(&mut self, subscription_set: Option<SharedLiteSubscriptionSet>) {
+        self.subscription_set = subscription_set;
     }
 }
 
@@ -5371,6 +5379,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::mutable_key_type)]
     fn assignment_request_mode_lite_and_batch_ack_match_java_json_shapes() {
         let assignment = MessageQueueAssignment {
             message_queue: Some(SharedValue::new(MessageQueue::new("orders", "broker-a", 1))),
@@ -6354,6 +6363,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::mutable_key_type)]
     fn lite_subscription_related_dto_apis_match_invoked_java() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
@@ -6508,22 +6518,54 @@ mod tests {
         let control_case = &fixture["liteSubscriptionControlApiCase"];
         let mut control = LiteSubscriptionCtlRequestBody::default();
         assert!(control.subscription_set().is_none());
-        control.set_subscription_set(Some(vec![Some(dto)]));
-        assert_eq!(control.subscription_set().unwrap().len(), 1);
+        let worker = SharedValue::new(dto);
+        let assigned_subscriptions =
+            SharedValue::new(std::collections::HashSet::from([Some(worker.clone())]));
+        let repeated_reference_set =
+            std::collections::HashSet::from([Some(worker.clone()), Some(worker.clone())]);
+        assert_eq!(repeated_reference_set.len(), 1);
+        let equal_content_distinct = SharedValue::new(worker.snapshot());
+        let identity_distinct_set =
+            std::collections::HashSet::from([Some(worker.clone()), Some(equal_content_distinct)]);
+        assert_eq!(identity_distinct_set.len(), 2);
+        control.set_subscription_set(Some(assigned_subscriptions.clone()));
+        let getter_subscriptions = control.subscription_set().unwrap();
+        assert!(assigned_subscriptions.ptr_eq(&getter_subscriptions));
+        assert_eq!(getter_subscriptions.with(std::collections::HashSet::len), 1);
+        assert!(
+            getter_subscriptions
+                .with(|subscriptions| subscriptions.contains(&Some(worker.clone())))
+        );
         assert!(
             control_case["defaultSubscriptionSetIsNull"]
                 .as_bool()
                 .unwrap()
         );
         assert!(control_case["setterStoresSameSet"].as_bool().unwrap());
+        assert!(control_case["setterElementIdentity"].as_bool().unwrap());
         assert_eq!(control_case["size"], 1);
         assert_eq!(control_case["externalMutationVisible"], true);
         assert_eq!(control_case["getterMutationVisibleToAssignedSet"], true);
-        let subscription_set_mut = control.subscription_set_mut().unwrap();
-        subscription_set_mut.push(Some(LiteSubscriptionDto::default()));
-        subscription_set_mut.push(Some(LiteSubscriptionDto::default()));
+        assert!(control_case["externalElementIdentity"].as_bool().unwrap());
+        assert!(control_case["getterElementIdentity"].as_bool().unwrap());
+        let consumer = SharedValue::new(LiteSubscriptionDto::default());
+        assigned_subscriptions.with_mut(|subscriptions| {
+            subscriptions.insert(Some(consumer.clone()));
+        });
+        assert!(
+            getter_subscriptions
+                .with(|subscriptions| subscriptions.contains(&Some(consumer.clone())))
+        );
+        let admin = SharedValue::new(LiteSubscriptionDto::default());
+        getter_subscriptions.with_mut(|subscriptions| {
+            subscriptions.insert(Some(admin.clone()));
+        });
+        assert!(
+            assigned_subscriptions
+                .with(|subscriptions| subscriptions.contains(&Some(admin.clone())))
+        );
         assert_eq!(
-            subscription_set_mut.len(),
+            getter_subscriptions.with(std::collections::HashSet::len),
             control_case["mutatedSize"].as_u64().unwrap() as usize
         );
     }
@@ -7039,6 +7081,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::mutable_key_type)]
     fn lite_subscription_control_and_wrapper_preserve_nested_wire_shape() {
         let lite = LiteSubscriptionDto {
             action: Some(LiteSubscriptionAction::CompleteAdd),
@@ -7055,7 +7098,9 @@ mod tests {
             version: 99,
         };
         let ctl = LiteSubscriptionCtlRequestBody {
-            subscription_set: Some(vec![Some(lite)]),
+            subscription_set: Some(SharedValue::new(std::collections::HashSet::from([Some(
+                SharedValue::new(lite),
+            )]))),
         };
         let value = serde_json::to_value(&ctl).unwrap();
         assert_eq!(value["subscriptionSet"][0]["action"], "COMPLETE_ADD");

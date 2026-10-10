@@ -577,14 +577,23 @@ public final class RuntimeLookupFixtures {
         item.put("defaultSubscriptionSetIsNull", body.getSubscriptionSet() == null);
         Set<org.apache.rocketmq.common.lite.LiteSubscriptionDTO> subscriptions =
             new java.util.LinkedHashSet<>();
-        subscriptions.add(new org.apache.rocketmq.common.lite.LiteSubscriptionDTO().setGroup("workers"));
+        org.apache.rocketmq.common.lite.LiteSubscriptionDTO worker =
+            new org.apache.rocketmq.common.lite.LiteSubscriptionDTO().setGroup("workers");
+        subscriptions.add(worker);
         body.setSubscriptionSet(subscriptions);
         item.put("setterStoresSameSet", body.getSubscriptionSet() == subscriptions);
+        item.put("setterElementIdentity", body.getSubscriptionSet().iterator().next() == worker);
         item.put("size", body.getSubscriptionSet().size());
-        subscriptions.add(new org.apache.rocketmq.common.lite.LiteSubscriptionDTO().setGroup("consumers"));
+        org.apache.rocketmq.common.lite.LiteSubscriptionDTO consumer =
+            new org.apache.rocketmq.common.lite.LiteSubscriptionDTO().setGroup("consumers");
+        subscriptions.add(consumer);
         item.put("externalMutationVisible", body.getSubscriptionSet().size() == 2);
-        body.getSubscriptionSet().add(new org.apache.rocketmq.common.lite.LiteSubscriptionDTO().setGroup("admins"));
+        item.put("externalElementIdentity", body.getSubscriptionSet().contains(consumer));
+        org.apache.rocketmq.common.lite.LiteSubscriptionDTO admin =
+            new org.apache.rocketmq.common.lite.LiteSubscriptionDTO().setGroup("admins");
+        body.getSubscriptionSet().add(admin);
         item.put("getterMutationVisibleToAssignedSet", subscriptions.size() == 3);
+        item.put("getterElementIdentity", subscriptions.contains(admin));
         item.put("mutatedSize", body.getSubscriptionSet().size());
         return item;
     }

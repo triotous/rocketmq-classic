@@ -40,6 +40,7 @@ fn decode_base64(value: &Value) -> Option<Vec<u8>> {
 }
 
 #[tokio::test]
+#[allow(clippy::mutable_key_type)] // This differential exercises Java identity-hashed Set entries.
 async fn invoked_lite_subscription_extension_matches_rust() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/rpc-invoked-ext");
     assert_eq!(fs::read_dir(&dir).unwrap().count(), 3);
@@ -102,17 +103,19 @@ async fn invoked_lite_subscription_extension_matches_rust() {
         client.start().unwrap();
         let api = MQClientApi::new(client.clone());
         let body = LiteSubscriptionCtlRequestBody {
-            subscription_set: Some(vec![Some(LiteSubscriptionDto {
-                action: Some(LiteSubscriptionAction::CompleteAdd),
-                client_id: Some("client".into()),
-                group: Some("workers".into()),
-                topic: Some("orders".into()),
-                lite_topic_set: Some(SharedValue::new(std::collections::BTreeSet::from([Some(
-                    "lite-orders".into(),
-                )]))),
-                version: 0,
-                ..Default::default()
-            })]),
+            subscription_set: Some(SharedValue::new(std::collections::HashSet::from([Some(
+                SharedValue::new(LiteSubscriptionDto {
+                    action: Some(LiteSubscriptionAction::CompleteAdd),
+                    client_id: Some("client".into()),
+                    group: Some("workers".into()),
+                    topic: Some("orders".into()),
+                    lite_topic_set: Some(SharedValue::new(std::collections::BTreeSet::from([
+                        Some("lite-orders".into()),
+                    ]))),
+                    version: 0,
+                    ..Default::default()
+                }),
+            )]))),
         };
         let outcome = match api
             .lite_subscription_ctl(&addr, &body, Instant::now() + Duration::from_secs(3))

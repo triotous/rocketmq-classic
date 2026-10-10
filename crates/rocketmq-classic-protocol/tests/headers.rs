@@ -356,15 +356,24 @@ fn java_json_body_fixtures_decode_to_typed_assignment_lite_and_batch_models() {
 
     let lite: LiteSubscriptionCtlRequestBody =
         serde_json::from_slice(&java_body("body-lite-subscription")).unwrap();
-    let dto = lite.subscription_set.as_ref().unwrap()[0]
-        .as_ref()
-        .expect("Java fixture subscription entries are non-null");
-    assert_eq!(dto.action, Some(LiteSubscriptionAction::CompleteAdd));
+    let dto = lite.subscription_set.as_ref().unwrap().with(|items| {
+        items
+            .iter()
+            .next()
+            .and_then(Option::as_ref)
+            .expect("Java fixture subscription entries are non-null")
+            .clone()
+    });
     assert_eq!(
-        dto.offset_option
+        dto.with(|dto| dto.action),
+        Some(LiteSubscriptionAction::CompleteAdd)
+    );
+    assert_eq!(
+        dto.with(|dto| dto
+            .offset_option
             .as_ref()
             .unwrap()
-            .with(|option| option.value),
+            .with(|option| option.value)),
         1
     );
 

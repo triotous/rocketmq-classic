@@ -7,6 +7,7 @@ use rocketmq_classic_protocol::body::{
 };
 
 #[test]
+#[allow(clippy::mutable_key_type)] // Java DTO Set elements use stable object-identity hashes.
 fn lite_subscription_java_accessors_are_public_and_chain_like_java() {
     let mut subscription = LiteSubscription::new();
     subscription
@@ -36,8 +37,13 @@ fn lite_subscription_java_accessors_are_public_and_chain_like_java() {
     assert_eq!(dto.version(), 9);
 
     let mut control = LiteSubscriptionCtlRequestBody::default();
-    control.set_subscription_set(Some(vec![Some(dto)]));
-    assert_eq!(control.subscription_set().unwrap().len(), 1);
+    let shared_dto = SharedValue::new(dto);
+    let subscriptions = SharedValue::new(HashSet::from([Some(shared_dto.clone())]));
+    control.set_subscription_set(Some(subscriptions.clone()));
+    let getter_subscriptions = control.subscription_set().unwrap();
+    assert!(subscriptions.ptr_eq(&getter_subscriptions));
+    assert!(getter_subscriptions.with(|set| set.contains(&Some(shared_dto))));
+    assert_eq!(getter_subscriptions.with(HashSet::len), 1);
 
     let equal_options = HashSet::from([
         OffsetOption::new(Some(OffsetOptionType::TailN), 23),

@@ -583,6 +583,7 @@ fn write_body_bytes(output: &std::path::Path, name: &str, code: i32, body: Vec<u
     .expect("write typed body fixture");
 }
 
+#[allow(clippy::mutable_key_type)] // Java DTO Set keys hash by stable object identity.
 fn generate_p4_bodies(output: &std::path::Path) {
     write_body(
         output,
@@ -612,20 +613,22 @@ fn generate_p4_bodies(output: &std::path::Path) {
         "body-lite-subscription.bin",
         200071,
         &LiteSubscriptionCtlRequestBody {
-            subscription_set: Some(vec![Some(LiteSubscriptionDto {
-                action: Some(LiteSubscriptionAction::CompleteAdd),
-                client_id: Some("client".into()),
-                group: Some("workers".into()),
-                topic: Some("orders".into()),
-                lite_topic_set: Some(SharedValue::new(std::collections::BTreeSet::from([Some(
-                    "lite-orders".into(),
-                )]))),
-                offset_option: Some(SharedValue::new(OffsetOption {
-                    option_type: Some(OffsetOptionType::Policy),
-                    value: 1,
-                })),
-                version: 2,
-            })]),
+            subscription_set: Some(SharedValue::new(std::collections::HashSet::from([Some(
+                SharedValue::new(LiteSubscriptionDto {
+                    action: Some(LiteSubscriptionAction::CompleteAdd),
+                    client_id: Some("client".into()),
+                    group: Some("workers".into()),
+                    topic: Some("orders".into()),
+                    lite_topic_set: Some(SharedValue::new(std::collections::BTreeSet::from([
+                        Some("lite-orders".into()),
+                    ]))),
+                    offset_option: Some(SharedValue::new(OffsetOption {
+                        option_type: Some(OffsetOptionType::Policy),
+                        value: 1,
+                    })),
+                    version: 2,
+                }),
+            )]))),
         },
     );
     write_body(
