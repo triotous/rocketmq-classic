@@ -90,6 +90,26 @@ async fn setup(
 }
 
 #[tokio::test]
+async fn null_topic_broker_selection_matches_invoked_java_failure() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/route.json")).unwrap();
+    assert_eq!(
+        fixture["runtimeNullTopicBrokerSelection"]["outcome"],
+        "NullPointerException"
+    );
+    let mut config = ClientConfig::new("null-broker-topic");
+    config.namesrv_addr = Some(String::new());
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+    assert!(matches!(
+        runtime.find_broker_address_by_topic_nullable(None),
+        Err(RuntimeError::InvalidRoute("null broker lookup topic"))
+    ));
+}
+
+#[tokio::test]
 async fn uncached_consumer_lookup_refreshes_once_and_assignment_reuses_raw_topic_broker() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();

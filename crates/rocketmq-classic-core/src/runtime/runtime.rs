@@ -467,6 +467,15 @@ impl ClientRuntime {
         self.route_snapshot()?.broker_address_by_topic(topic)
     }
 
+    /// Null-tolerant Java entry point for `findBrokerAddrByTopic`.
+    pub fn find_broker_address_by_topic_nullable(
+        &self,
+        topic: Option<&str>,
+    ) -> Result<Option<String>, RuntimeError> {
+        let topic = topic.ok_or(RuntimeError::InvalidRoute("null broker lookup topic"))?;
+        self.find_broker_address_by_topic(topic)
+    }
+
     pub fn get_existing_topic_route(
         &self,
         topic: &str,
