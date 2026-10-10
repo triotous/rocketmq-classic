@@ -113,11 +113,19 @@ async fn explicit_offset_namespace_conversion_matches_invoked_java() {
                 case["name"]
             );
         } else {
-            assert!(
-                matches!(result, Err(RuntimeError::InvalidOffsetTable(_))),
-                "{}: {result:?}",
-                case["name"]
-            );
+            let expected_reason = match case["name"].as_str().unwrap() {
+                "null-input-map"
+                | "null-input-map-empty-namespace"
+                | "null-input-map-nonempty-namespace" => "null offset table",
+                "namespace-null-key-after-valid-queue" => "null queue key with namespace",
+                name => panic!("unexpected Java offset-table error case {name}"),
+            };
+            match result {
+                Err(RuntimeError::InvalidOffsetTable(reason)) => {
+                    assert_eq!(reason, expected_reason, "{}", case["name"])
+                }
+                other => panic!("{}: {other:?}", case["name"]),
+            }
         }
     }
 }
