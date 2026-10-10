@@ -1033,6 +1033,17 @@ public final class RuntimeLookupFixtures {
         assignments.add(assignment);
         body.setMessageQueueAssignments(assignments);
         item.put("setterRetainsSetIdentity", body.getMessageQueueAssignments() == assignments);
+        org.apache.rocketmq.common.message.MessageQueueAssignment getterElement =
+            body.getMessageQueueAssignments().iterator().next();
+        item.put("getterReturnsAssignedElement", assignment == getterElement);
+        assignment.setMode(org.apache.rocketmq.common.message.MessageRequestMode.PULL);
+        item.put("setterElementMutationVisibleToGetter",
+            getterElement.getMode() == org.apache.rocketmq.common.message.MessageRequestMode.PULL);
+        assignment.setMode(org.apache.rocketmq.common.message.MessageRequestMode.POP);
+        getterElement.setMode(org.apache.rocketmq.common.message.MessageRequestMode.PULL);
+        item.put("getterElementMutationVisibleToSetterObject",
+            assignment.getMode() == org.apache.rocketmq.common.message.MessageRequestMode.PULL);
+        getterElement.setMode(org.apache.rocketmq.common.message.MessageRequestMode.POP);
         item.put("valueCount", body.getMessageQueueAssignments().size());
         item.put("values", messageQueueAssignmentApiValues(body.getMessageQueueAssignments()));
         item.put("assignedValues", messageQueueAssignmentApiValues(body.getMessageQueueAssignments()));

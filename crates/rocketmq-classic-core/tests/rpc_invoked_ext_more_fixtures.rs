@@ -173,7 +173,11 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
                         .map(|assignments| assignments.snapshot().into_iter().collect::<Vec<_>>())
                         .unwrap_or_default();
                     if name == "assignment-populated" {
-                        let item = assignments.first().and_then(Option::as_ref).unwrap();
+                        let item = assignments
+                            .first()
+                            .and_then(Option::as_ref)
+                            .unwrap()
+                            .snapshot();
                         let queue = item.message_queue.as_ref().unwrap().snapshot();
                         let attachments = item.attachments.as_ref().unwrap().snapshot();
                         format!(

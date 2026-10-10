@@ -177,7 +177,8 @@ fn default_assignment_mode() -> Option<MessageRequestMode> {
     Some(MessageRequestMode::Pull)
 }
 
-pub type QueryAssignmentSet = std::collections::HashSet<Option<MessageQueueAssignment>>;
+pub type SharedQueryAssignment = SharedValue<MessageQueueAssignment>;
+pub type QueryAssignmentSet = std::collections::HashSet<Option<SharedQueryAssignment>>;
 pub type SharedQueryAssignmentSet = SharedValue<QueryAssignmentSet>;
 pub type AssignmentAttachments = std::collections::BTreeMap<String, Option<String>>;
 pub type SharedAssignmentAttachments = SharedValue<AssignmentAttachments>;
@@ -234,7 +235,9 @@ where
         let assignment = if value.get().trim() == "null" {
             None
         } else {
-            Some(serde_json::from_str(value.get()).map_err(de::Error::custom)?)
+            Some(SharedValue::new(
+                serde_json::from_str(value.get()).map_err(de::Error::custom)?,
+            ))
         };
         assignments.insert(assignment);
     }
@@ -1271,6 +1274,22 @@ impl std::hash::Hash for MessageQueueAssignment {
             .as_ref()
             .map(SharedValue::snapshot)
             .hash(state);
+    }
+}
+
+// Keep Java DTO object aliases while retaining the existing value-based Set
+// membership used by this Rust response DTO.
+impl PartialEq for SharedValue<MessageQueueAssignment> {
+    fn eq(&self, other: &Self) -> bool {
+        self.ptr_eq(other) || self.snapshot() == other.snapshot()
+    }
+}
+
+impl Eq for SharedValue<MessageQueueAssignment> {}
+
+impl std::hash::Hash for SharedValue<MessageQueueAssignment> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.snapshot().hash(state);
     }
 }
 
@@ -4579,44 +4598,79 @@ mod tests {
         #[allow(clippy::mutable_key_type)]
         let assignments: QueryAssignmentSet =
             serde_json::from_value(response_case["assignedValues"].clone()).unwrap();
+        let assigned_element = assignments
+            .iter()
+            .next()
+            .and_then(Option::as_ref)
+            .unwrap()
+            .clone();
         let assigned_alias = SharedValue::new(assignments);
         let caller_alias = assigned_alias.clone();
         response.set_message_queue_assignments(Some(assigned_alias.clone()));
         let getter_alias = response.get_message_queue_assignments().unwrap();
         assert!(assigned_alias.ptr_eq(&getter_alias));
         assert!(caller_alias.ptr_eq(&getter_alias));
+        let getter_element = getter_alias.with(|assignments| {
+            assignments
+                .iter()
+                .next()
+                .and_then(Option::as_ref)
+                .unwrap()
+                .clone()
+        });
+        assert!(assigned_element.ptr_eq(&getter_element));
+        assert_eq!(response_case["getterReturnsAssignedElement"], true);
+        assigned_element.with_mut(|assignment| assignment.set_mode(Some(MessageRequestMode::Pull)));
+        assert_eq!(
+            getter_element.with(MessageQueueAssignment::mode),
+            Some(MessageRequestMode::Pull)
+        );
+        assigned_element.with_mut(|assignment| assignment.set_mode(Some(MessageRequestMode::Pop)));
+        getter_element.with_mut(|assignment| assignment.set_mode(Some(MessageRequestMode::Pull)));
+        assert_eq!(
+            assigned_element.with(MessageQueueAssignment::mode),
+            Some(MessageRequestMode::Pull)
+        );
+        getter_element.with_mut(|assignment| assignment.set_mode(Some(MessageRequestMode::Pop)));
+        assert_eq!(response_case["setterElementMutationVisibleToGetter"], true);
+        assert_eq!(
+            response_case["getterElementMutationVisibleToSetterObject"],
+            true
+        );
         assert_eq!(
             getter_alias.with(std::collections::HashSet::len),
             response_case["valueCount"]
         );
         caller_alias.with_mut(|assignments_mut| {
             assignments_mut.clear();
-            assignments_mut.insert(Some(MessageQueueAssignment {
+            assignments_mut.insert(Some(SharedValue::new(MessageQueueAssignment {
                 message_queue: Some(SharedValue::new(MessageQueue::new("orders", "broker", 3))),
                 mode: Some(MessageRequestMode::Pull),
                 attachments: None,
-            }));
+            })));
         });
         assert_eq!(
             getter_alias.with(|assignments| assignments.iter().any(|assignment| assignment
                 .as_ref()
-                .and_then(MessageQueueAssignment::message_queue)
-                .is_some_and(|queue| queue.with(|queue| queue.queue_id() == 3)))),
+                .is_some_and(|assignment| assignment.with(|assignment| assignment
+                    .message_queue()
+                    .is_some_and(|queue| queue.with(|queue| queue.queue_id() == 3)))))),
             response_case["externalMutationVisible"]
         );
         getter_alias.with_mut(|assignments_mut| {
             assignments_mut.clear();
-            assignments_mut.insert(Some(MessageQueueAssignment {
+            assignments_mut.insert(Some(SharedValue::new(MessageQueueAssignment {
                 message_queue: Some(SharedValue::new(MessageQueue::new("orders", "broker", 4))),
                 mode: Some(MessageRequestMode::Pop),
                 attachments: None,
-            }));
+            })));
         });
         assert_eq!(
             caller_alias.with(|assignments| assignments.iter().any(|assignment| assignment
                 .as_ref()
-                .and_then(MessageQueueAssignment::message_queue)
-                .is_some_and(|queue| queue.with(|queue| queue.queue_id() == 4)))),
+                .is_some_and(|assignment| assignment.with(|assignment| assignment
+                    .message_queue()
+                    .is_some_and(|queue| queue.with(|queue| queue.queue_id() == 4)))))),
             response_case["getterMutationVisibleToAssignedSet"]
         );
         let mutated_values = getter_alias.with(|assignments| {
@@ -4624,10 +4678,12 @@ mod tests {
                 .iter()
                 .map(|assignment| {
                     assignment.as_ref().map(|assignment| {
-                        json!({
-                            "messageQueue": assignment.message_queue(),
-                            "mode": assignment.mode(),
-                            "attachments": assignment.attachments(),
+                        assignment.with(|assignment| {
+                            json!({
+                                "messageQueue": assignment.message_queue(),
+                                "mode": assignment.mode(),
+                                "attachments": assignment.attachments(),
+                            })
                         })
                     })
                 })
@@ -5425,7 +5481,8 @@ mod tests {
                     .as_ref()
                     .and_then(|assignments| assignments.snapshot().into_iter().next())
                     .flatten()
-                    .unwrap();
+                    .unwrap()
+                    .snapshot();
                 let mode = assignment
                     .mode
                     .map(serde_json::to_value)
@@ -5496,7 +5553,8 @@ mod tests {
                     .as_ref()
                     .and_then(|assignments| assignments.snapshot().into_iter().next())
                     .flatten()
-                    .unwrap();
+                    .unwrap()
+                    .snapshot();
                 assert_eq!(
                     serde_json::to_value(&assignment.attachments).unwrap(),
                     case["attachments"],
@@ -5843,17 +5901,20 @@ mod tests {
                         .snapshot()
                         .iter()
                         .map(|item| match item {
-                            Some(item) => serde_json::json!({
-                                "attachments": item.attachments.as_ref().map(SharedValue::snapshot),
-                                "messageQueue": item.message_queue.as_ref().map(|queue| queue.with(|queue| {
-                                    serde_json::json!({
-                                        "topic": queue.topic(),
-                                        "brokerName": queue.broker_name(),
-                                        "queueId": queue.queue_id(),
-                                    })
-                                })),
-                                "mode": item.mode,
-                            }),
+                            Some(item) => {
+                                let item = item.snapshot();
+                                serde_json::json!({
+                                    "attachments": item.attachments.as_ref().map(SharedValue::snapshot),
+                                    "messageQueue": item.message_queue.as_ref().map(|queue| queue.with(|queue| {
+                                        serde_json::json!({
+                                            "topic": queue.topic(),
+                                            "brokerName": queue.broker_name(),
+                                            "queueId": queue.queue_id(),
+                                        })
+                                    })),
+                                    "mode": item.mode,
+                                })
+                            },
                             None => serde_json::Value::Null,
                         })
                         .collect::<Vec<_>>()
@@ -5913,17 +5974,20 @@ mod tests {
                         .snapshot()
                         .iter()
                         .map(|item| match item {
-                            Some(item) => serde_json::json!({
-                                "attachments": item.attachments.as_ref().map(SharedValue::snapshot),
-                                "messageQueue": item.message_queue.as_ref().map(|queue| queue.with(|queue| {
-                                    serde_json::json!({
-                                        "topic": queue.topic(),
-                                        "brokerName": queue.broker_name(),
-                                        "queueId": queue.queue_id(),
-                                    })
-                                })),
-                                "mode": item.mode,
-                            }),
+                            Some(item) => {
+                                let item = item.snapshot();
+                                serde_json::json!({
+                                    "attachments": item.attachments.as_ref().map(SharedValue::snapshot),
+                                    "messageQueue": item.message_queue.as_ref().map(|queue| queue.with(|queue| {
+                                        serde_json::json!({
+                                            "topic": queue.topic(),
+                                            "brokerName": queue.broker_name(),
+                                            "queueId": queue.queue_id(),
+                                        })
+                                    })),
+                                    "mode": item.mode,
+                                })
+                            },
                             None => serde_json::Value::Null,
                         })
                         .collect::<Vec<_>>()
