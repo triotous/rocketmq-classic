@@ -24,5 +24,5 @@ This closes the invoked `Map.Entry.setValue` behavior for the raw topic route ta
 - Java oracle: `RuntimeRouteFixtures.runtimeTopicRouteTable` entry-set cases.
 - Oracle and implementation commits: `306950d2` / `7832c140`.
 - Native regression: `retained_raw_topic_table_matches_invoked_java_primitives_and_cached_queries`.
-- `fixtures/runtime/route.json` SHA-256 when this route-only checkpoint was recorded: `35027b576c05eb456edd937f8475c121923c012c8297777a27e9657fbed3b116`; current whole-file SHA-256 is `0039e6b09608894bd1d0d6f4d9192ad58539bc73f3f4c88701510a9130c373f5` after the route outer-collection and five-state nested-value matrices.
+- `fixtures/runtime/route.json` SHA-256 when this route-only checkpoint was recorded: `35027b576c05eb456edd937f8475c121923c012c8297777a27e9657fbed3b116`; current whole-file SHA-256 is `d342d5b80077220113b89415d722a55350e7d6f5d316c5e8cbac3f7e8ddf265e` after the route outer-collection, five-state nested-value, and registered-consumer callback matrices.
 - Validation: pinned Java fixture generation/verification; focused Rust differential; full workspace tests; strict Clippy; Maven verify; comparator/manifest checks; formatting and diff checks.
