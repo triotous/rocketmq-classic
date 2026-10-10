@@ -9,8 +9,8 @@ use rocketmq_classic_remoting::client::RpcHook;
 
 use super::{
     ClientRuntime, NullableTableEntry, RuntimeError, TableCompute, TableComputeIfAbsent,
-    TableComputeIfPresent, TableEntryViewPredicate, TableKeyViewPredicate, TableMerge,
-    TableValueViewPredicate,
+    TableComputeIfPresent, TableEntryViewPredicate, TableForEach, TableKeyViewPredicate,
+    TableMerge, TableReplaceAll, TableValueViewPredicate,
 };
 use crate::config::ClientConfig;
 
@@ -572,6 +572,17 @@ impl FactoryTable {
         Ok(())
     }
 
+    /// Nullable Java-compatible `ConcurrentHashMap.forEach` callback boundary.
+    pub fn for_each_nullable(
+        &self,
+        action: Option<&mut TableForEach<'_, Arc<ClientRuntime>>>,
+    ) -> Result<(), RuntimeError> {
+        let Some(action) = action else {
+            return Err(RuntimeError::InvalidRoute("null factory forEach action"));
+        };
+        self.for_each(|key, value| action(key, value))
+    }
+
     pub fn key_set_view(&self) -> FactoryKeySetView {
         FactoryKeySetView(self.clone())
     }
@@ -616,6 +627,20 @@ impl FactoryTable {
     ) -> Result<(), RuntimeError> {
         for (key, value) in entries {
             self.put(&key, value).await?;
+        }
+        Ok(())
+    }
+
+    /// Nullable Java-compatible `Map.putAll` source-map boundary.
+    pub async fn put_all_nullable(
+        &self,
+        entries: Option<&BTreeMap<String, Arc<ClientRuntime>>>,
+    ) -> Result<(), RuntimeError> {
+        let Some(entries) = entries else {
+            return Err(RuntimeError::InvalidRoute("null factory putAll map"));
+        };
+        for (key, value) in entries {
+            self.put(key, value.clone()).await?;
         }
         Ok(())
     }
@@ -844,6 +869,19 @@ impl FactoryTable {
             }
         }
         Ok(())
+    }
+
+    /// Nullable Java-compatible `ConcurrentHashMap.replaceAll` callback boundary.
+    pub async fn replace_all_nullable(
+        &self,
+        remapping: Option<&mut TableReplaceAll<'_, Arc<ClientRuntime>>>,
+    ) -> Result<(), RuntimeError> {
+        let Some(remapping) = remapping else {
+            return Err(RuntimeError::InvalidRoute(
+                "null factory replaceAll function",
+            ));
+        };
+        self.replace_all(|key, value| remapping(key, value)).await
     }
 
     pub async fn replace(

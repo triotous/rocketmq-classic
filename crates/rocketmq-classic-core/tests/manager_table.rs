@@ -694,6 +694,74 @@ async fn nullable_factory_remapping_inputs_match_invoked_java_null_failures() {
 }
 
 #[tokio::test]
+async fn nullable_factory_bulk_and_traversal_callbacks_match_invoked_java() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = &fixture["managerTable"]["nullableBulkInputs"];
+    assert_eq!(java["factoryPutAllNullMap"], "NullPointerException");
+    assert_eq!(java["factoryForEachNullAction"], "NullPointerException");
+    assert_eq!(
+        java["factoryReplaceAllNullFunction"],
+        "NullPointerException"
+    );
+
+    let manager = ClientRuntimeManager::new();
+    let table = manager.factory_table();
+    let first = manager
+        .get_or_create(&ClientConfig::new("nullable-factory-bulk-first"))
+        .await
+        .unwrap();
+    let second = manager
+        .get_or_create(&ClientConfig::new("nullable-factory-bulk-second"))
+        .await
+        .unwrap();
+    table.put("existing", first.clone()).await.unwrap();
+    let initial_keys: BTreeSet<_> = table.snapshot().unwrap().into_keys().collect();
+    assert!(matches!(
+        table.put_all_nullable(None).await,
+        Err(RuntimeError::InvalidRoute("null factory putAll map"))
+    ));
+    assert!(matches!(
+        table.for_each_nullable(None),
+        Err(RuntimeError::InvalidRoute("null factory forEach action"))
+    ));
+    assert!(matches!(
+        table.replace_all_nullable(None).await,
+        Err(RuntimeError::InvalidRoute(
+            "null factory replaceAll function"
+        ))
+    ));
+    assert_eq!(
+        table
+            .snapshot()
+            .unwrap()
+            .into_keys()
+            .collect::<BTreeSet<_>>(),
+        initial_keys
+    );
+
+    let mut visited = 0;
+    let mut action = |_: &str, _: &Arc<_>| visited += 1;
+    table.for_each_nullable(Some(&mut action)).unwrap();
+    assert_eq!(visited, initial_keys.len());
+    let entries = BTreeMap::from([("added".to_owned(), second.clone())]);
+    table.put_all_nullable(Some(&entries)).await.unwrap();
+    assert!(Arc::ptr_eq(&table.get("added").unwrap().unwrap(), &second));
+    let mut replace = |_: &str, _: &Arc<_>| second.clone();
+    table
+        .replace_all_nullable(Some(&mut replace))
+        .await
+        .unwrap();
+    assert!(
+        table
+            .snapshot()
+            .unwrap()
+            .values()
+            .all(|value| Arc::ptr_eq(value, &second))
+    );
+}
+
+#[tokio::test]
 async fn nullable_manager_removal_overloads_match_invoked_java_null_key_failures() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();

@@ -1028,6 +1028,110 @@ async fn nullable_registry_table_view_elements_match_invoked_java_collections() 
 }
 
 #[tokio::test]
+async fn nullable_registry_bulk_and_traversal_callbacks_match_invoked_java() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = &fixture["registryTables"]["nullableBulkInputs"];
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&ClientConfig::new("nullable-registry-bulk-inputs"))
+        .await
+        .unwrap();
+
+    macro_rules! check_bulk_inputs {
+        ($table:ident, $expected:expr, $prefix:literal, $owner:path, $first:ident, $second:ident) => {{
+            for suffix in [
+                "PutAllNullMap",
+                "ForEachNullAction",
+                "ReplaceAllNullFunction",
+            ] {
+                let key = format!("{}{}", $prefix, suffix);
+                assert_eq!(
+                    $expected.get(key.as_str()).unwrap(),
+                    "NullPointerException",
+                    "{key}"
+                );
+            }
+            let initial_keys: std::collections::BTreeSet<_> =
+                $table.snapshot().unwrap().into_keys().collect();
+            assert!(matches!(
+                $table.put_all_nullable(None).await,
+                Err(RuntimeError::InvalidRoute("null table putAll map"))
+            ));
+            assert!(matches!(
+                $table.for_each_nullable(None),
+                Err(RuntimeError::InvalidRoute("null table forEach action"))
+            ));
+            assert!(matches!(
+                $table.replace_all_nullable(None).await,
+                Err(RuntimeError::InvalidRoute("null table replaceAll function"))
+            ));
+            assert_eq!(
+                $table
+                    .snapshot()
+                    .unwrap()
+                    .into_keys()
+                    .collect::<std::collections::BTreeSet<_>>(),
+                initial_keys
+            );
+
+            let mut visited = 0;
+            let mut action = |_: &str, _: &Arc<dyn $owner>| visited += 1;
+            $table.for_each_nullable(Some(&mut action)).unwrap();
+            assert_eq!(visited, initial_keys.len());
+
+            let additions = BTreeMap::from([("added".to_owned(), $second.clone())]);
+            $table.put_all_nullable(Some(&additions)).await.unwrap();
+            let mut replace = |_: &str, _: &Arc<dyn $owner>| $second.clone();
+            $table
+                .replace_all_nullable(Some(&mut replace))
+                .await
+                .unwrap();
+            assert!(
+                $table
+                    .snapshot()
+                    .unwrap()
+                    .values()
+                    .all(|value| Arc::ptr_eq(value, &$second))
+            );
+            let _ = &$first;
+        }};
+    }
+
+    let producer_table = runtime.producer_table();
+    let producer_a: Arc<dyn ProducerRuntime> = Arc::new(Producer);
+    let producer_b: Arc<dyn ProducerRuntime> = Arc::new(Producer);
+    producer_table
+        .put("existing", producer_a.clone())
+        .await
+        .unwrap();
+    check_bulk_inputs!(
+        producer_table,
+        &java["producer"],
+        "producer",
+        ProducerRuntime,
+        producer_a,
+        producer_b
+    );
+
+    let consumer_table = runtime.consumer_table();
+    let consumer_a: Arc<dyn ConsumerRuntime> = Arc::new(Consumer);
+    let consumer_b: Arc<dyn ConsumerRuntime> = Arc::new(Consumer);
+    consumer_table
+        .put("existing", consumer_a.clone())
+        .await
+        .unwrap();
+    check_bulk_inputs!(
+        consumer_table,
+        &java["consumer"],
+        "consumer",
+        ConsumerRuntime,
+        consumer_a,
+        consumer_b
+    );
+    assert_eq!(runtime.state(), RuntimeState::Created);
+}
+
+#[tokio::test]
 async fn nullable_registry_remapping_inputs_match_invoked_java_null_failures() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();

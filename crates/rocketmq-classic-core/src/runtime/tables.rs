@@ -1,8 +1,8 @@
 use super::{
     ClientRuntime, ConsumerRuntime, NullableTableEntry, ProducerRuntime, RuntimeError,
     RuntimeState, TableCompute, TableComputeIfAbsent, TableComputeIfPresent,
-    TableEntryViewPredicate, TableKeyViewPredicate, TableMerge, TableValueViewPredicate,
-    registry::GroupRegistry,
+    TableEntryViewPredicate, TableForEach, TableKeyViewPredicate, TableMerge, TableReplaceAll,
+    TableValueViewPredicate, registry::GroupRegistry,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -227,6 +227,16 @@ macro_rules! table {
                 }
                 Ok(())
             }
+            /// Nullable Java-compatible `ConcurrentHashMap.forEach` callback boundary.
+            pub fn for_each_nullable(
+                &self,
+                action: Option<&mut TableForEach<'_, Arc<dyn $owner>>>,
+            ) -> Result<(), RuntimeError> {
+                let Some(action) = action else {
+                    return Err(RuntimeError::InvalidRoute("null table forEach action"));
+                };
+                self.for_each(|key, value| action(key, value))
+            }
             pub async fn put(
                 &self,
                 key: impl Into<String>,
@@ -286,6 +296,19 @@ macro_rules! table {
             ) -> Result<(), RuntimeError> {
                 for (key, value) in entries {
                     self.put(key, value).await?;
+                }
+                Ok(())
+            }
+            /// Nullable Java-compatible `Map.putAll` source-map boundary.
+            pub async fn put_all_nullable(
+                &self,
+                entries: Option<&BTreeMap<String, Arc<dyn $owner>>>,
+            ) -> Result<(), RuntimeError> {
+                let Some(entries) = entries else {
+                    return Err(RuntimeError::InvalidRoute("null table putAll map"));
+                };
+                for (key, value) in entries {
+                    self.put(key, value.clone()).await?;
                 }
                 Ok(())
             }
@@ -705,6 +728,16 @@ macro_rules! table {
                     }
                 }
                 Ok(())
+            }
+            /// Nullable Java-compatible `ConcurrentHashMap.replaceAll` callback boundary.
+            pub async fn replace_all_nullable(
+                &self,
+                remapping: Option<&mut TableReplaceAll<'_, Arc<dyn $owner>>>,
+            ) -> Result<(), RuntimeError> {
+                let Some(remapping) = remapping else {
+                    return Err(RuntimeError::InvalidRoute("null table replaceAll function"));
+                };
+                self.replace_all(|key, value| remapping(key, value)).await
             }
             pub async fn clear(&self) -> Result<(), RuntimeError> {
                 self.0.mutate(TableMutation::Clear).await.map(|_| ())
