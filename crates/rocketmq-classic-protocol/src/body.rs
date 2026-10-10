@@ -1,6 +1,7 @@
 use crate::{SharedValue, codes::JavaEnumLookupError};
 use rocketmq_classic_common::{message::MessageQueue, serde_fastjson};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
+use std::hash::Hash;
 
 macro_rules! impl_java_enum_api {
     ($enum_type:ident, $java_class:literal, $count:literal, $($variant:ident => $name:literal = $ordinal:literal),+ $(,)?) => {
@@ -178,6 +179,9 @@ fn default_assignment_mode() -> Option<MessageRequestMode> {
 
 pub type QueryAssignmentSet = std::collections::HashSet<Option<MessageQueueAssignment>>;
 pub type SharedQueryAssignmentSet = SharedValue<QueryAssignmentSet>;
+pub type AssignmentAttachments = std::collections::BTreeMap<String, Option<String>>;
+pub type SharedAssignmentAttachments = SharedValue<AssignmentAttachments>;
+pub type SharedAssignmentMessageQueue = SharedValue<MessageQueue>;
 
 fn deserialize_optional_assignment_set<'de, D>(
     deserializer: D,
@@ -203,6 +207,9 @@ where
             "expected a JSON assignment array, object, or null",
         ));
     };
+    // Java stores these mutable DTO keys in a HashSet; changing a nested queue or
+    // attachment can likewise leave the Java entry in its original bucket.
+    #[allow(clippy::mutable_key_type)]
     let mut assignments = QueryAssignmentSet::with_capacity(values.len());
     for value in values {
         let assignment = if value.get().trim() == "null" {
@@ -261,7 +268,7 @@ where
 
 /// Java's default JSON writer omits null-valued entries in this map.
 fn serialize_assignment_attachments<S>(
-    attachments: &Option<std::collections::BTreeMap<String, Option<String>>>,
+    attachments: &Option<SharedAssignmentAttachments>,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
 where
@@ -272,9 +279,10 @@ where
     let Some(attachments) = attachments else {
         return serializer.serialize_none();
     };
+    let attachments = attachments.snapshot();
     let non_null_count = attachments.values().filter(|value| value.is_some()).count();
     let mut map = serializer.serialize_map(Some(non_null_count))?;
-    for (key, value) in attachments {
+    for (key, value) in &attachments {
         if let Some(value) = value {
             map.serialize_entry(key, value)?;
         }
@@ -1167,11 +1175,11 @@ impl QueryAssignmentRequestBody {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageQueueAssignment {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub message_queue: Option<MessageQueue>,
+    pub message_queue: Option<SharedAssignmentMessageQueue>,
     /// Java defaults this field to PULL but Fastjson may set it to null.
     #[serde(
         default = "default_assignment_mode",
@@ -1186,7 +1194,7 @@ pub struct MessageQueueAssignment {
         serialize_with = "serialize_assignment_attachments",
         skip_serializing_if = "Option::is_none"
     )]
-    pub attachments: Option<std::collections::BTreeMap<String, Option<String>>>,
+    pub attachments: Option<SharedAssignmentAttachments>,
 }
 
 #[derive(Deserialize)]
@@ -1202,7 +1210,7 @@ struct MessageQueueAssignmentFields {
         default,
         deserialize_with = "serde_fastjson::deserialize_optional_nullable_string_map"
     )]
-    attachments: Option<std::collections::BTreeMap<String, Option<String>>>,
+    attachments: Option<AssignmentAttachments>,
 }
 
 impl<'de> Deserialize<'de> for MessageQueueAssignment {
@@ -1213,10 +1221,36 @@ impl<'de> Deserialize<'de> for MessageQueueAssignment {
         let fields: MessageQueueAssignmentFields =
             serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
         Ok(Self {
-            message_queue: fields.message_queue,
+            message_queue: fields.message_queue.map(SharedValue::new),
             mode: fields.mode,
-            attachments: fields.attachments,
+            attachments: fields.attachments.map(SharedValue::new),
         })
+    }
+}
+
+impl PartialEq for MessageQueueAssignment {
+    fn eq(&self, other: &Self) -> bool {
+        self.message_queue.as_ref().map(SharedValue::snapshot)
+            == other.message_queue.as_ref().map(SharedValue::snapshot)
+            && self.mode == other.mode
+            && self.attachments.as_ref().map(SharedValue::snapshot)
+                == other.attachments.as_ref().map(SharedValue::snapshot)
+    }
+}
+
+impl Eq for MessageQueueAssignment {}
+
+impl std::hash::Hash for MessageQueueAssignment {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.message_queue
+            .as_ref()
+            .map(SharedValue::snapshot)
+            .hash(state);
+        self.mode.hash(state);
+        self.attachments
+            .as_ref()
+            .map(SharedValue::snapshot)
+            .hash(state);
     }
 }
 
@@ -1227,16 +1261,16 @@ pub enum MessageQueueAssignmentEqualsError {
 }
 
 impl MessageQueueAssignment {
-    pub fn message_queue(&self) -> Option<&MessageQueue> {
-        self.message_queue.as_ref()
+    pub fn message_queue(&self) -> Option<SharedAssignmentMessageQueue> {
+        self.message_queue.clone()
     }
 
-    /// Borrows the owned queue mutably for Java-compatible getter mutations.
-    pub fn message_queue_mut(&mut self) -> Option<&mut MessageQueue> {
+    /// Provides direct access to the assigned queue handle for replacement.
+    pub fn message_queue_mut(&mut self) -> Option<&mut SharedAssignmentMessageQueue> {
         self.message_queue.as_mut()
     }
 
-    pub fn set_message_queue(&mut self, message_queue: Option<MessageQueue>) {
+    pub fn set_message_queue(&mut self, message_queue: Option<SharedAssignmentMessageQueue>) {
         self.message_queue = message_queue;
     }
 
@@ -1248,20 +1282,15 @@ impl MessageQueueAssignment {
         self.mode = mode;
     }
 
-    pub fn attachments(&self) -> Option<&std::collections::BTreeMap<String, Option<String>>> {
-        self.attachments.as_ref()
+    pub fn attachments(&self) -> Option<SharedAssignmentAttachments> {
+        self.attachments.clone()
     }
 
-    pub fn attachments_mut(
-        &mut self,
-    ) -> Option<&mut std::collections::BTreeMap<String, Option<String>>> {
+    pub fn attachments_mut(&mut self) -> Option<&mut SharedAssignmentAttachments> {
         self.attachments.as_mut()
     }
 
-    pub fn set_attachments(
-        &mut self,
-        attachments: Option<std::collections::BTreeMap<String, Option<String>>>,
-    ) {
+    pub fn set_attachments(&mut self, attachments: Option<SharedAssignmentAttachments>) {
         self.attachments = attachments;
     }
 
@@ -1279,10 +1308,9 @@ impl MessageQueueAssignment {
         let Some(message_queue) = self.message_queue.as_ref() else {
             return Err(MessageQueueAssignmentEqualsError::NullMessageQueue);
         };
-        Ok(other
-            .message_queue
-            .as_ref()
-            .is_some_and(|other_queue| message_queue == other_queue))
+        Ok(other.message_queue.as_ref().is_some_and(|other_queue| {
+            message_queue.ptr_eq(other_queue) || message_queue.snapshot() == other_queue.snapshot()
+        }))
     }
 
     pub fn java_to_string(&self) -> String {
@@ -1295,7 +1323,7 @@ impl std::fmt::Display for MessageQueueAssignment {
         let message_queue = self
             .message_queue
             .as_ref()
-            .map(ToString::to_string)
+            .map(|message_queue| message_queue.with(ToString::to_string))
             .unwrap_or_else(|| "null".into());
         let mode = match self.mode {
             Some(MessageRequestMode::Pull) => "PULL",
@@ -4499,7 +4527,9 @@ mod tests {
             serde_json::to_value(response.get_message_queue_assignments()).unwrap(),
             response_case["defaultAssignments"]
         );
-        let assignments: std::collections::HashSet<Option<MessageQueueAssignment>> =
+        // This fixture intentionally exercises Java's mutable Set element objects.
+        #[allow(clippy::mutable_key_type)]
+        let assignments: QueryAssignmentSet =
             serde_json::from_value(response_case["assignedValues"].clone()).unwrap();
         let assigned_alias = SharedValue::new(assignments);
         let caller_alias = assigned_alias.clone();
@@ -4514,7 +4544,7 @@ mod tests {
         caller_alias.with_mut(|assignments_mut| {
             assignments_mut.clear();
             assignments_mut.insert(Some(MessageQueueAssignment {
-                message_queue: Some(MessageQueue::new("orders", "broker", 3)),
+                message_queue: Some(SharedValue::new(MessageQueue::new("orders", "broker", 3))),
                 mode: Some(MessageRequestMode::Pull),
                 attachments: None,
             }));
@@ -4523,13 +4553,13 @@ mod tests {
             getter_alias.with(|assignments| assignments.iter().any(|assignment| assignment
                 .as_ref()
                 .and_then(MessageQueueAssignment::message_queue)
-                .is_some_and(|queue| queue.queue_id() == 3))),
+                .is_some_and(|queue| queue.with(|queue| queue.queue_id() == 3)))),
             response_case["externalMutationVisible"]
         );
         getter_alias.with_mut(|assignments_mut| {
             assignments_mut.clear();
             assignments_mut.insert(Some(MessageQueueAssignment {
-                message_queue: Some(MessageQueue::new("orders", "broker", 4)),
+                message_queue: Some(SharedValue::new(MessageQueue::new("orders", "broker", 4))),
                 mode: Some(MessageRequestMode::Pop),
                 attachments: None,
             }));
@@ -4538,7 +4568,7 @@ mod tests {
             caller_alias.with(|assignments| assignments.iter().any(|assignment| assignment
                 .as_ref()
                 .and_then(MessageQueueAssignment::message_queue)
-                .is_some_and(|queue| queue.queue_id() == 4))),
+                .is_some_and(|queue| queue.with(|queue| queue.queue_id() == 4)))),
             response_case["getterMutationVisibleToAssignedSet"]
         );
         let mutated_values = getter_alias.with(|assignments| {
@@ -5188,12 +5218,12 @@ mod tests {
     #[test]
     fn assignment_request_mode_lite_and_batch_ack_match_java_json_shapes() {
         let assignment = MessageQueueAssignment {
-            message_queue: Some(MessageQueue::new("orders", "broker-a", 1)),
+            message_queue: Some(SharedValue::new(MessageQueue::new("orders", "broker-a", 1))),
             mode: Some(MessageRequestMode::Pop),
-            attachments: Some(std::collections::BTreeMap::from([(
+            attachments: Some(SharedValue::new(std::collections::BTreeMap::from([(
                 "zone".into(),
                 Some("z1".into()),
-            )])),
+            )]))),
         };
         let value = serde_json::to_value(assignment).unwrap();
         assert_eq!(value["mode"], "POP");
@@ -5724,14 +5754,14 @@ mod tests {
                         .iter()
                         .map(|item| match item {
                             Some(item) => serde_json::json!({
-                                "attachments": &item.attachments,
-                                "messageQueue": item.message_queue.as_ref().map(|queue| {
+                                "attachments": item.attachments.as_ref().map(SharedValue::snapshot),
+                                "messageQueue": item.message_queue.as_ref().map(|queue| queue.with(|queue| {
                                     serde_json::json!({
                                         "topic": queue.topic(),
                                         "brokerName": queue.broker_name(),
                                         "queueId": queue.queue_id(),
                                     })
-                                }),
+                                })),
                                 "mode": item.mode,
                             }),
                             None => serde_json::Value::Null,
@@ -5794,14 +5824,14 @@ mod tests {
                         .iter()
                         .map(|item| match item {
                             Some(item) => serde_json::json!({
-                                "attachments": &item.attachments,
-                                "messageQueue": item.message_queue.as_ref().map(|queue| {
+                                "attachments": item.attachments.as_ref().map(SharedValue::snapshot),
+                                "messageQueue": item.message_queue.as_ref().map(|queue| queue.with(|queue| {
                                     serde_json::json!({
                                         "topic": queue.topic(),
                                         "brokerName": queue.broker_name(),
                                         "queueId": queue.queue_id(),
                                     })
-                                }),
+                                })),
                                 "mode": item.mode,
                             }),
                             None => serde_json::Value::Null,
@@ -6649,30 +6679,37 @@ mod tests {
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
         for case in fixture["assignmentMethodCases"].as_array().unwrap() {
             let mut assignment = MessageQueueAssignment::default();
-            assignment.set_message_queue(
+            let queue_alias =
                 serde_json::from_value::<Option<MessageQueue>>(case["messageQueue"].clone())
-                    .unwrap(),
-            );
+                    .unwrap()
+                    .map(SharedValue::new);
+            let caller_queue_alias = queue_alias.clone();
+            assignment.set_message_queue(queue_alias);
             assignment.set_mode(
                 serde_json::from_value::<Option<MessageRequestMode>>(case["mode"].clone()).unwrap(),
             );
-            assignment.set_attachments(
-                serde_json::from_value::<Option<
-                    std::collections::BTreeMap<String, Option<String>>,
-                >>(case["attachments"].clone())
-                .unwrap(),
-            );
+            let attachment_alias = serde_json::from_value::<
+                Option<std::collections::BTreeMap<String, Option<String>>>,
+            >(case["attachments"].clone())
+            .unwrap()
+            .map(SharedValue::new);
+            let caller_attachment_alias = attachment_alias.clone();
+            assignment.set_attachments(attachment_alias);
 
             assert_eq!(
-                assignment.message_queue(),
-                assignment.message_queue.as_ref(),
+                assignment.message_queue().map(|queue| queue.snapshot()),
+                serde_json::from_value::<Option<MessageQueue>>(case["messageQueue"].clone())
+                    .unwrap(),
                 "{}",
                 case["name"]
             );
             assert_eq!(assignment.mode(), assignment.mode, "{}", case["name"]);
             assert_eq!(
-                assignment.attachments(),
-                assignment.attachments.as_ref(),
+                assignment.attachments().map(|attachments| attachments.snapshot()),
+                serde_json::from_value::<Option<
+                    std::collections::BTreeMap<String, Option<String>>,
+                >>(case["attachments"].clone())
+                .unwrap(),
                 "{}",
                 case["name"]
             );
@@ -6701,28 +6738,49 @@ mod tests {
                 );
 
                 let mut different_queue = same_queue.clone();
-                different_queue.set_message_queue(Some(MessageQueue::new("orders", "broker", 3)));
+                different_queue.set_message_queue(Some(SharedValue::new(MessageQueue::new(
+                    "orders", "broker", 3,
+                ))));
                 assert_eq!(
                     assignment.java_equals(Some(&different_queue)),
                     Ok(case["equalsDifferentQueue"].as_bool().unwrap())
                 );
                 if case["name"] == "populated" {
                     assert_eq!(case["attachmentsGetterReturnsSetterMap"], true);
-                    let attachments = assignment.attachments_mut().unwrap();
-                    attachments.insert("getter".into(), Some("visible".into()));
+                    let caller_attachments = caller_attachment_alias.as_ref().unwrap();
+                    let getter_attachments = assignment.attachments().unwrap();
+                    assert!(caller_attachments.ptr_eq(&getter_attachments));
+                    assert_eq!(case["attachmentsSetterMutationVisibleToGetter"], true);
+                    caller_attachments.with_mut(|attachments| {
+                        attachments.insert("caller".into(), Some("visible".into()));
+                    });
+                    assert_eq!(
+                        getter_attachments.with(|attachments| attachments.get("caller").cloned()),
+                        Some(Some("visible".into()))
+                    );
+                    getter_attachments.with_mut(|attachments| {
+                        attachments.insert("getter".into(), Some("visible".into()));
+                    });
                     assert_eq!(case["attachmentsGetterMutationVisibleToSetterMap"], true);
                     assert_eq!(
-                        serde_json::to_value(assignment.attachments().unwrap()).unwrap(),
+                        serde_json::to_value(getter_attachments.snapshot()).unwrap(),
                         case["mutatedAttachments"]
                     );
                     assert_eq!(case["messageQueueGetterReturnsSetterObject"], true);
-                    assignment.message_queue_mut().unwrap().set_queue_id(4);
+                    let caller_queue = caller_queue_alias.as_ref().unwrap();
+                    let getter_queue = assignment.message_queue().unwrap();
+                    assert!(caller_queue.ptr_eq(&getter_queue));
+                    caller_queue.with_mut(|queue| queue.set_queue_id(3));
+                    assert_eq!(getter_queue.with(|queue| queue.queue_id()), 3);
+                    assert_eq!(case["messageQueueSetterMutationVisibleToGetter"], true);
+                    caller_queue.with_mut(|queue| queue.set_queue_id(2));
+                    getter_queue.with_mut(|queue| queue.set_queue_id(4));
                     assert_eq!(
                         case["messageQueueGetterMutationVisibleToSetterObject"],
-                        true
+                        caller_queue.with(|queue| queue.queue_id() == 4)
                     );
                     assert_eq!(
-                        serde_json::to_value(assignment.message_queue().unwrap()).unwrap(),
+                        serde_json::to_value(getter_queue.snapshot()).unwrap(),
                         case["mutatedMessageQueue"]
                     );
                 }

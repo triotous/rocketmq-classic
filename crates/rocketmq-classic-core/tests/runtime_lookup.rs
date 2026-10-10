@@ -155,7 +155,9 @@ async fn uncached_consumer_lookup_refreshes_once_and_assignment_reuses_raw_topic
         )
         .await
         .unwrap()
-        .unwrap();
+        .unwrap()
+        .into_iter()
+        .collect::<Vec<_>>();
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
     assert_eq!(
@@ -165,9 +167,16 @@ async fn uncached_consumer_lookup_refreshes_once_and_assignment_reuses_raw_topic
     assert!(assignments.contains(&None));
     let assignment = assignments.iter().find_map(Option::as_ref).unwrap();
     assert_eq!(assignment.mode, Some(MessageRequestMode::Pop));
-    assert_eq!(assignment.message_queue.as_ref().unwrap().queue_id(), 2);
     assert_eq!(
-        assignment.attachments.as_ref().unwrap()["key"],
+        assignment
+            .message_queue
+            .as_ref()
+            .unwrap()
+            .with(|queue| queue.queue_id()),
+        2
+    );
+    assert_eq!(
+        assignment.attachments.as_ref().unwrap().snapshot()["key"],
         Some("value".into())
     );
     runtime.remoting().shutdown().await;

@@ -170,20 +170,19 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
                 Ok(v) => {
                     let assignments = v
                         .message_queue_assignments
-                        .map(|assignments| assignments.snapshot())
+                        .map(|assignments| assignments.snapshot().into_iter().collect::<Vec<_>>())
                         .unwrap_or_default();
                     if name == "assignment-populated" {
-                        let item = assignments.iter().next().and_then(Option::as_ref).unwrap();
-                        let queue = item.message_queue.as_ref().unwrap();
+                        let item = assignments.first().and_then(Option::as_ref).unwrap();
+                        let queue = item.message_queue.as_ref().unwrap().snapshot();
+                        let attachments = item.attachments.as_ref().unwrap().snapshot();
                         format!(
                             "assignments={};topic={};broker={};queue={};mode=POP;source={}",
                             assignments.len(),
                             queue.topic().unwrap_or_default(),
                             queue.broker_name().unwrap_or_default(),
                             queue.queue_id(),
-                            item.attachments.as_ref().unwrap()["source"]
-                                .as_deref()
-                                .unwrap_or_default()
+                            attachments["source"].as_deref().unwrap_or_default()
                         )
                     } else {
                         format!("assignments={}", assignments.len())

@@ -1708,6 +1708,14 @@ public final class RuntimeLookupFixtures {
         populated.setAttachments(attachments);
         Map<String, Object> populatedCase = new TreeMap<>();
         populatedCase.put("name", "populated");
+        attachments.put("caller", "visible");
+        populatedCase.put("attachmentsSetterMutationVisibleToGetter",
+            "visible".equals(populated.getAttachments().get("caller")));
+        Map<String, String> getterAttachments = populated.getAttachments();
+        getterAttachments.put("getter", "visible");
+        populatedCase.put("attachmentsGetterMutationVisibleToSetterMap",
+            "visible".equals(attachments.get("getter")));
+        populatedCase.put("attachmentsGetterReturnsSetterMap", getterAttachments == attachments);
         Map<String, Object> messageQueue = new TreeMap<>();
         messageQueue.put("topic", populated.getMessageQueue().getTopic());
         messageQueue.put("brokerName", populated.getMessageQueue().getBrokerName());
@@ -1716,11 +1724,6 @@ public final class RuntimeLookupFixtures {
         populatedCase.put("mode", populated.getMode().name());
         populatedCase.put("attachments", new TreeMap<>(populated.getAttachments()));
         populatedCase.put("text", populated.toString());
-        Map<String, String> getterAttachments = populated.getAttachments();
-        populatedCase.put("attachmentsGetterReturnsSetterMap", getterAttachments == attachments);
-        getterAttachments.put("getter", "visible");
-        populatedCase.put("attachmentsGetterMutationVisibleToSetterMap",
-            "visible".equals(attachments.get("getter")));
         populatedCase.put("mutatedAttachments", new TreeMap<>(populated.getAttachments()));
         org.apache.rocketmq.common.message.MessageQueueAssignment sameQueueDifferentMetadata =
             new org.apache.rocketmq.common.message.MessageQueueAssignment();
@@ -1733,6 +1736,10 @@ public final class RuntimeLookupFixtures {
         differentQueue.setMessageQueue(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker", 3));
         populatedCase.put("equalsDifferentQueue", populated.equals(differentQueue));
         populatedCase.put("messageQueueGetterReturnsSetterObject", populated.getMessageQueue() == queue);
+        queue.setQueueId(3);
+        populatedCase.put("messageQueueSetterMutationVisibleToGetter",
+            populated.getMessageQueue().getQueueId() == 3);
+        queue.setQueueId(2);
         populated.getMessageQueue().setQueueId(4);
         populatedCase.put("messageQueueGetterMutationVisibleToSetterObject", queue.getQueueId() == 4);
         Map<String, Object> mutatedQueue = new TreeMap<>();
