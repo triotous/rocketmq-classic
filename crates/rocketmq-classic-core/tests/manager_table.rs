@@ -1,6 +1,13 @@
 use rocketmq_classic_core::{config::ClientConfig, runtime::ClientRuntimeManager};
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+        mpsc,
+    },
+    time::Duration,
+};
 
 #[tokio::test]
 async fn live_table_keeps_sharing_hooks_and_identity_cleanup_across_explicit_managers() {
@@ -542,4 +549,80 @@ async fn retained_factory_table_and_atomic_mutations_match_invoked_java() {
         second.state(),
         rocketmq_classic_core::runtime::RuntimeState::Created
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn concurrent_factory_table_remapping_serializes_same_key_callback_like_java() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = &fixture["managerTable"];
+    let manager = ClientRuntimeManager::new();
+    let live = manager.factory_table();
+    let first = manager
+        .get_or_create(&ClientConfig::new("factory-remap-race-current"))
+        .await
+        .unwrap();
+    let second = manager
+        .get_or_create(&ClientConfig::new("factory-remap-race-next"))
+        .await
+        .unwrap();
+    live.put("same-key", first).await.unwrap();
+
+    let callback_calls = Arc::new(AtomicUsize::new(0));
+    let callback_calls_for_task = callback_calls.clone();
+    let replacement = second.clone();
+    let table_for_compute = live.clone();
+    let (entered_tx, entered_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let computation = tokio::spawn(async move {
+        table_for_compute
+            .compute("same-key", move |_, _| {
+                if callback_calls_for_task.fetch_add(1, Ordering::SeqCst) == 0 {
+                    entered_tx.send(()).unwrap();
+                    release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+                }
+                Some(replacement.clone())
+            })
+            .await
+            .unwrap()
+            .unwrap()
+    });
+    tokio::task::spawn_blocking(move || entered_rx.recv_timeout(Duration::from_secs(5)).unwrap())
+        .await
+        .unwrap();
+
+    let table_for_writer = live.clone();
+    let writer_value = second.clone();
+    let (writer_started_tx, writer_started_rx) = tokio::sync::oneshot::channel();
+    let writer = tokio::spawn(async move {
+        writer_started_tx.send(()).unwrap();
+        table_for_writer
+            .put("same-key", writer_value)
+            .await
+            .unwrap();
+    });
+    writer_started_rx.await.unwrap();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let writer_waits_for_callback = !writer.is_finished();
+    release_tx.send(()).unwrap();
+
+    let computed = computation.await.unwrap();
+    writer.await.unwrap();
+    assert_eq!(
+        writer_waits_for_callback,
+        java["remappingWriterWaitsForCallback"]
+    );
+    assert_eq!(
+        callback_calls.load(Ordering::SeqCst) == 1,
+        java["remappingCallbackRunsOnce"]
+    );
+    assert_eq!(
+        Arc::ptr_eq(&computed, &second)
+            && live
+                .get("same-key")
+                .unwrap()
+                .is_some_and(|value| Arc::ptr_eq(&value, &second)),
+        java["remappingReturnsAndKeepsSecond"]
+    );
+    live.remove("same-key").await.unwrap();
 }

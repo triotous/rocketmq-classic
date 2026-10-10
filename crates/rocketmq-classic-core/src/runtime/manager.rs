@@ -20,28 +20,65 @@ struct Entry {
     runtime: OnceLock<Arc<ClientRuntime>>,
 }
 
+#[derive(Default)]
+struct KeyMutationLocks {
+    // Weak gates avoid retaining arbitrary Java-compatible table alias keys.
+    gates: Mutex<HashMap<String, Weak<AsyncMutex<()>>>>,
+}
+
+impl KeyMutationLocks {
+    async fn lock(&self, key: &str) -> Result<tokio::sync::OwnedMutexGuard<()>, RuntimeError> {
+        let gate = {
+            let mut gates = self
+                .gates
+                .lock()
+                .map_err(|_| RuntimeError::RegistryPoisoned)?;
+            if gates.len() >= 256 {
+                gates.retain(|_, gate| gate.strong_count() > 0);
+            }
+            match gates.get(key).and_then(Weak::upgrade) {
+                Some(gate) => gate,
+                None => {
+                    let gate = Arc::new(AsyncMutex::new(()));
+                    gates.insert(key.to_owned(), Arc::downgrade(&gate));
+                    gate
+                }
+            }
+        };
+        Ok(gate.lock_owned().await)
+    }
+}
+
 /// Explicit sharing boundary corresponding to MQClientManager's factory table.
 /// Keys are installed before any resource construction. Each key initializes
 /// independently; a failed entry may be retried by a subsequent lookup.
 #[derive(Clone, Default)]
 pub struct ClientRuntimeManager {
     entries: Arc<Mutex<Entries>>,
+    mutation_locks: Arc<KeyMutationLocks>,
     top_addressing: Option<Arc<dyn crate::namesrv::TopAddressing>>,
 }
 
 #[derive(Clone)]
-pub(super) struct ManagerLink(Weak<Mutex<Entries>>);
+pub(super) struct ManagerLink {
+    entries: Weak<Mutex<Entries>>,
+    mutation_locks: Weak<KeyMutationLocks>,
+}
 
 impl ManagerLink {
     pub fn same_table(&self, other: &Self) -> bool {
-        Weak::ptr_eq(&self.0, &other.0)
+        Weak::ptr_eq(&self.entries, &other.entries)
     }
     pub fn remove(&self, runtime: &Arc<ClientRuntime>) -> Result<bool, RuntimeError> {
-        let Some(entries) = self.0.upgrade() else {
+        let Some(entries) = self.entries.upgrade() else {
+            return Ok(false);
+        };
+        let Some(mutation_locks) = self.mutation_locks.upgrade() else {
             return Ok(false);
         };
         ClientRuntimeManager {
             entries,
+            mutation_locks,
             top_addressing: None,
         }
         .remove_client_factory(runtime.client_id(), runtime)
@@ -55,6 +92,7 @@ impl ClientRuntimeManager {
         FactoryTable {
             manager: Self {
                 entries: self.entries.clone(),
+                mutation_locks: self.mutation_locks.clone(),
                 top_addressing: None,
             },
         }
@@ -66,6 +104,7 @@ impl ClientRuntimeManager {
     pub fn with_top_addressing(provider: Arc<dyn crate::namesrv::TopAddressing>) -> Self {
         Self {
             entries: Arc::default(),
+            mutation_locks: Arc::default(),
             top_addressing: Some(provider),
         }
     }
@@ -108,6 +147,7 @@ impl ClientRuntimeManager {
         Fut: Future<Output = Result<ClientRuntime, RuntimeError>>,
     {
         let client_id = config.build_client_id();
+        let _key_mutation = self.mutation_locks.lock(&client_id).await?;
         loop {
             let entry = {
                 let mut entries = self
@@ -152,7 +192,10 @@ impl ClientRuntimeManager {
             match construct(entry.clone()).await {
                 Ok(created) => {
                     let created = Arc::new(created);
-                    created.attach_manager(ManagerLink(Arc::downgrade(&self.entries)))?;
+                    created.attach_manager(ManagerLink {
+                        entries: Arc::downgrade(&self.entries),
+                        mutation_locks: Arc::downgrade(&self.mutation_locks),
+                    })?;
                     // The key lock guarantees a sole publisher. Removal reads
                     // this immutable cell without contending with lookup locks.
                     let _ = entry.runtime.set(created.clone());
@@ -210,6 +253,7 @@ impl ClientRuntimeManager {
     /// Await only this key's initializer, as ConcurrentHashMap removal does for
     /// an in-progress mapping; unrelated keys remain independently available.
     pub async fn remove_client_factory_by_id(&self, client_id: &str) -> Result<bool, RuntimeError> {
+        let _key_mutation = self.mutation_locks.lock(client_id).await?;
         loop {
             let entry = {
                 let entries = self
@@ -389,25 +433,26 @@ impl FactoryTable {
             .map(|(previous, _)| previous)
     }
 
-    /// ConcurrentMap remapping uses conditional writes; a closure may be
-    /// invoked again if another writer changes the same mapping.
+    /// Runs the mapping callback at most once for this invocation. A per-key
+    /// gate serializes its read/callback/write sequence with table mutations;
+    /// other keys remain independently available.
     pub async fn compute_if_absent(
         &self,
         key: impl Into<String>,
         mut mapping: impl FnMut(&str) -> Option<Arc<ClientRuntime>>,
     ) -> Result<Option<Arc<ClientRuntime>>, RuntimeError> {
         let key = key.into();
+        let _key_mutation = self.manager.mutation_locks.lock(&key).await?;
         if let Some(current) = self.get(&key)? {
             return Ok(Some(current));
         }
         let Some(value) = mapping(&key) else {
             return Ok(None);
         };
-        Ok(Some(
-            self.put_if_absent(&key, value.clone())
-                .await?
-                .unwrap_or(value),
-        ))
+        let (previous, _) = self
+            .mutate_locked(&key, TableMutation::PutIfAbsent(value.clone()))
+            .await?;
+        Ok(Some(previous.unwrap_or(value)))
     }
 
     pub async fn compute_if_present(
@@ -416,21 +461,20 @@ impl FactoryTable {
         mut remapping: impl FnMut(&str, &Arc<ClientRuntime>) -> Option<Arc<ClientRuntime>>,
     ) -> Result<Option<Arc<ClientRuntime>>, RuntimeError> {
         let key = key.into();
-        loop {
-            let Some(current) = self.get(&key)? else {
-                return Ok(None);
-            };
-            match remapping(&key, &current) {
-                Some(value) => {
-                    if self.replace_if_same(&key, &current, value.clone()).await? {
-                        return Ok(Some(value));
-                    }
-                }
-                None => {
-                    if self.remove_if_same(&key, &current).await? {
-                        return Ok(None);
-                    }
-                }
+        let _key_mutation = self.manager.mutation_locks.lock(&key).await?;
+        let Some(current) = self.get(&key)? else {
+            return Ok(None);
+        };
+        match remapping(&key, &current) {
+            Some(value) => {
+                self.mutate_locked(&key, TableMutation::ReplaceIfSame(current, value.clone()))
+                    .await?;
+                Ok(Some(value))
+            }
+            None => {
+                self.mutate_locked(&key, TableMutation::RemoveIfSame(current))
+                    .await?;
+                Ok(None)
             }
         }
     }
@@ -441,26 +485,25 @@ impl FactoryTable {
         mut remapping: impl FnMut(&str, Option<&Arc<ClientRuntime>>) -> Option<Arc<ClientRuntime>>,
     ) -> Result<Option<Arc<ClientRuntime>>, RuntimeError> {
         let key = key.into();
-        loop {
-            let current = self.get(&key)?;
-            let value = remapping(&key, current.as_ref());
-            match (current.as_ref(), value) {
-                (None, None) => return Ok(None),
-                (None, Some(value)) => {
-                    if self.put_if_absent(&key, value.clone()).await?.is_none() {
-                        return Ok(Some(value));
-                    }
-                }
-                (Some(current), Some(value)) => {
-                    if self.replace_if_same(&key, current, value.clone()).await? {
-                        return Ok(Some(value));
-                    }
-                }
-                (Some(current), None) => {
-                    if self.remove_if_same(&key, current).await? {
-                        return Ok(None);
-                    }
-                }
+        let _key_mutation = self.manager.mutation_locks.lock(&key).await?;
+        let current = self.get(&key)?;
+        let value = remapping(&key, current.as_ref());
+        match (current, value) {
+            (None, None) => Ok(None),
+            (None, Some(value)) => {
+                self.mutate_locked(&key, TableMutation::PutIfAbsent(value.clone()))
+                    .await?;
+                Ok(Some(value))
+            }
+            (Some(current), Some(value)) => {
+                self.mutate_locked(&key, TableMutation::ReplaceIfSame(current, value.clone()))
+                    .await?;
+                Ok(Some(value))
+            }
+            (Some(current), None) => {
+                self.mutate_locked(&key, TableMutation::RemoveIfSame(current))
+                    .await?;
+                Ok(None)
             }
         }
     }
@@ -475,24 +518,22 @@ impl FactoryTable {
         ) -> Option<Arc<ClientRuntime>>,
     ) -> Result<Option<Arc<ClientRuntime>>, RuntimeError> {
         let key = key.into();
-        loop {
-            let Some(current) = self.get(&key)? else {
-                if self.put_if_absent(&key, value.clone()).await?.is_none() {
-                    return Ok(Some(value));
-                }
-                continue;
-            };
-            match remapping(&current, &value) {
-                Some(next) => {
-                    if self.replace_if_same(&key, &current, next.clone()).await? {
-                        return Ok(Some(next));
-                    }
-                }
-                None => {
-                    if self.remove_if_same(&key, &current).await? {
-                        return Ok(None);
-                    }
-                }
+        let _key_mutation = self.manager.mutation_locks.lock(&key).await?;
+        let Some(current) = self.get(&key)? else {
+            self.mutate_locked(&key, TableMutation::PutIfAbsent(value.clone()))
+                .await?;
+            return Ok(Some(value));
+        };
+        match remapping(&current, &value) {
+            Some(next) => {
+                self.mutate_locked(&key, TableMutation::ReplaceIfSame(current, next.clone()))
+                    .await?;
+                Ok(Some(next))
+            }
+            None => {
+                self.mutate_locked(&key, TableMutation::RemoveIfSame(current))
+                    .await?;
+                Ok(None)
             }
         }
     }
@@ -502,14 +543,11 @@ impl FactoryTable {
         mut remapping: impl FnMut(&str, &Arc<ClientRuntime>) -> Arc<ClientRuntime>,
     ) -> Result<(), RuntimeError> {
         for key in self.snapshot()?.into_keys() {
-            loop {
-                let Some(current) = self.get(&key)? else {
-                    break;
-                };
+            let _key_mutation = self.manager.mutation_locks.lock(&key).await?;
+            if let Some(current) = self.get(&key)? {
                 let value = remapping(&key, &current);
-                if self.replace_if_same(&key, &current, value).await? {
-                    break;
-                }
+                self.mutate_locked(&key, TableMutation::ReplaceIfSame(current, value))
+                    .await?;
             }
         }
         Ok(())
@@ -569,6 +607,15 @@ impl FactoryTable {
     }
 
     async fn mutate(
+        &self,
+        key: &str,
+        operation: TableMutation,
+    ) -> Result<(Option<Arc<ClientRuntime>>, bool), RuntimeError> {
+        let _key_mutation = self.manager.mutation_locks.lock(key).await?;
+        self.mutate_locked(key, operation).await
+    }
+
+    async fn mutate_locked(
         &self,
         key: &str,
         operation: TableMutation,
@@ -633,7 +680,10 @@ impl FactoryTable {
                     runtime: OnceLock::from(value.clone()),
                 };
                 if key == value.client_id() {
-                    value.attach_manager(ManagerLink(Arc::downgrade(&self.manager.entries)))?;
+                    value.attach_manager(ManagerLink {
+                        entries: Arc::downgrade(&self.manager.entries),
+                        mutation_locks: Arc::downgrade(&self.manager.mutation_locks),
+                    })?;
                 }
                 entries.insert(key.into(), Arc::new(entry));
                 return Ok((previous, true));
