@@ -557,7 +557,8 @@ impl ClientRuntime {
             .api
             .query_assignment(&address, &body, deadline)
             .await?
-            .message_queue_assignments)
+            .message_queue_assignments
+            .map(|assignments| assignments.snapshot()))
     }
 
     pub async fn update_topic_route(

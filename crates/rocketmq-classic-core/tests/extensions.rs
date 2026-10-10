@@ -170,7 +170,15 @@ async fn assignment_and_request_mode_shapes() {
             .await;
         match (status, body) {
             (response::SUCCESS, Some(_)) => {
-                assert_eq!(result.unwrap().message_queue_assignments.unwrap().len(), 0)
+                assert_eq!(
+                    result
+                        .unwrap()
+                        .message_queue_assignments
+                        .unwrap()
+                        .snapshot()
+                        .len(),
+                    0
+                )
             }
             (response::SUCCESS, None) => {
                 assert!(matches!(result, Err(RpcError::MalformedResponse { .. })))
@@ -567,7 +575,7 @@ async fn populated_assignment_and_pop_replies_preserve_domain_data() {
         .query_assignment(&addr, &Default::default(), deadline())
         .await
         .unwrap();
-    let assignments = result.message_queue_assignments.unwrap();
+    let assignments = result.message_queue_assignments.unwrap().snapshot();
     assert_eq!(assignments.len(), 1);
     let assignment = assignments.iter().next().unwrap().as_ref().unwrap();
     let queue = assignment.message_queue.as_ref().unwrap();

@@ -1013,6 +1013,17 @@ public final class RuntimeLookupFixtures {
         org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody body =
             new org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody();
         Map<String, Object> item = new TreeMap<>();
+        try {
+            item.put("equalsDeclaringClass", body.getClass().getMethod("equals", Object.class)
+                .getDeclaringClass().getName());
+            item.put("hashCodeDeclaringClass", body.getClass().getMethod("hashCode")
+                .getDeclaringClass().getName());
+        } catch (NoSuchMethodException error) {
+            throw new IllegalStateException(error);
+        }
+        item.put("sameInstanceEquals", body.equals(body));
+        item.put("equalValuesDistinctInstanceEquals",
+            body.equals(new org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody()));
         item.put("defaultAssignments", body.getMessageQueueAssignments());
 
         org.apache.rocketmq.common.message.MessageQueueAssignment assignment = messageQueueAssignment(

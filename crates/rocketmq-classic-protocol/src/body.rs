@@ -176,9 +176,12 @@ fn default_assignment_mode() -> Option<MessageRequestMode> {
     Some(MessageRequestMode::Pull)
 }
 
+pub type QueryAssignmentSet = std::collections::HashSet<Option<MessageQueueAssignment>>;
+pub type SharedQueryAssignmentSet = SharedValue<QueryAssignmentSet>;
+
 fn deserialize_optional_assignment_set<'de, D>(
     deserializer: D,
-) -> Result<Option<std::collections::HashSet<Option<MessageQueueAssignment>>>, D::Error>
+) -> Result<Option<SharedQueryAssignmentSet>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -200,7 +203,7 @@ where
             "expected a JSON assignment array, object, or null",
         ));
     };
-    let mut assignments = std::collections::HashSet::with_capacity(values.len());
+    let mut assignments = QueryAssignmentSet::with_capacity(values.len());
     for value in values {
         let assignment = if value.get().trim() == "null" {
             None
@@ -209,7 +212,7 @@ where
         };
         assignments.insert(assignment);
     }
-    Ok(Some(assignments))
+    Ok(Some(SharedValue::new(assignments)))
 }
 
 fn default_message_queue_set() -> Option<std::collections::HashSet<Option<MessageQueue>>> {
@@ -1316,7 +1319,14 @@ impl Default for MessageQueueAssignment {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
+/// Java inherits identity-based equality and hashing for this response DTO.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::QueryAssignmentResponseBody;
+/// fn require_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
+/// fn main() { require_java_identity::<QueryAssignmentResponseBody>(); }
+/// ```
+#[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryAssignmentResponseBody {
     #[serde(
@@ -1324,15 +1334,14 @@ pub struct QueryAssignmentResponseBody {
         deserialize_with = "deserialize_optional_assignment_set",
         skip_serializing_if = "Option::is_none"
     )]
-    pub message_queue_assignments:
-        Option<std::collections::HashSet<Option<MessageQueueAssignment>>>,
+    pub message_queue_assignments: Option<SharedQueryAssignmentSet>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct QueryAssignmentResponseBodyFields {
     #[serde(default, deserialize_with = "deserialize_optional_assignment_set")]
-    message_queue_assignments: Option<std::collections::HashSet<Option<MessageQueueAssignment>>>,
+    message_queue_assignments: Option<SharedQueryAssignmentSet>,
 }
 
 impl<'de> Deserialize<'de> for QueryAssignmentResponseBody {
@@ -1349,24 +1358,18 @@ impl<'de> Deserialize<'de> for QueryAssignmentResponseBody {
 }
 
 impl QueryAssignmentResponseBody {
-    pub fn get_message_queue_assignments(
-        &self,
-    ) -> Option<&std::collections::HashSet<Option<MessageQueueAssignment>>> {
-        self.message_queue_assignments.as_ref()
+    pub fn get_message_queue_assignments(&self) -> Option<SharedQueryAssignmentSet> {
+        self.message_queue_assignments.clone()
     }
 
-    /// Borrows the owned assignment set mutably for Java-compatible getter mutations.
-    pub fn get_message_queue_assignments_mut(
-        &mut self,
-    ) -> Option<&mut std::collections::HashSet<Option<MessageQueueAssignment>>> {
+    /// Provides direct access to the assigned identity handle for replacement.
+    pub fn get_message_queue_assignments_mut(&mut self) -> Option<&mut SharedQueryAssignmentSet> {
         self.message_queue_assignments.as_mut()
     }
 
     pub fn set_message_queue_assignments(
         &mut self,
-        message_queue_assignments: Option<
-            std::collections::HashSet<Option<MessageQueueAssignment>>,
-        >,
+        message_queue_assignments: Option<SharedQueryAssignmentSet>,
     ) {
         self.message_queue_assignments = message_queue_assignments;
     }
@@ -4487,6 +4490,10 @@ mod tests {
         );
 
         let response_case = &fixture["queryAssignmentResponseApiCase"];
+        assert_eq!(response_case["equalsDeclaringClass"], "java.lang.Object");
+        assert_eq!(response_case["hashCodeDeclaringClass"], "java.lang.Object");
+        assert_eq!(response_case["sameInstanceEquals"], true);
+        assert_eq!(response_case["equalValuesDistinctInstanceEquals"], false);
         let mut response = QueryAssignmentResponseBody::default();
         assert_eq!(
             serde_json::to_value(response.get_message_queue_assignments()).unwrap(),
@@ -4494,54 +4501,62 @@ mod tests {
         );
         let assignments: std::collections::HashSet<Option<MessageQueueAssignment>> =
             serde_json::from_value(response_case["assignedValues"].clone()).unwrap();
-        response.set_message_queue_assignments(Some(assignments));
+        let assigned_alias = SharedValue::new(assignments);
+        let caller_alias = assigned_alias.clone();
+        response.set_message_queue_assignments(Some(assigned_alias.clone()));
+        let getter_alias = response.get_message_queue_assignments().unwrap();
+        assert!(assigned_alias.ptr_eq(&getter_alias));
+        assert!(caller_alias.ptr_eq(&getter_alias));
         assert_eq!(
-            response.get_message_queue_assignments().unwrap().len(),
+            getter_alias.with(std::collections::HashSet::len),
             response_case["valueCount"]
         );
-        let assignments_mut = response.get_message_queue_assignments_mut().unwrap();
-        assignments_mut.clear();
-        assignments_mut.insert(Some(MessageQueueAssignment {
-            message_queue: Some(MessageQueue::new("orders", "broker", 3)),
-            mode: Some(MessageRequestMode::Pull),
-            attachments: None,
-        }));
+        caller_alias.with_mut(|assignments_mut| {
+            assignments_mut.clear();
+            assignments_mut.insert(Some(MessageQueueAssignment {
+                message_queue: Some(MessageQueue::new("orders", "broker", 3)),
+                mode: Some(MessageRequestMode::Pull),
+                attachments: None,
+            }));
+        });
         assert_eq!(
-            assignments_mut.iter().any(|assignment| assignment
+            getter_alias.with(|assignments| assignments.iter().any(|assignment| assignment
                 .as_ref()
                 .and_then(MessageQueueAssignment::message_queue)
-                .is_some_and(|queue| queue.queue_id() == 3)),
+                .is_some_and(|queue| queue.queue_id() == 3))),
             response_case["externalMutationVisible"]
         );
-        assignments_mut.clear();
-        assignments_mut.insert(Some(MessageQueueAssignment {
-            message_queue: Some(MessageQueue::new("orders", "broker", 4)),
-            mode: Some(MessageRequestMode::Pop),
-            attachments: None,
-        }));
+        getter_alias.with_mut(|assignments_mut| {
+            assignments_mut.clear();
+            assignments_mut.insert(Some(MessageQueueAssignment {
+                message_queue: Some(MessageQueue::new("orders", "broker", 4)),
+                mode: Some(MessageRequestMode::Pop),
+                attachments: None,
+            }));
+        });
         assert_eq!(
-            assignments_mut.iter().any(|assignment| assignment
+            caller_alias.with(|assignments| assignments.iter().any(|assignment| assignment
                 .as_ref()
                 .and_then(MessageQueueAssignment::message_queue)
-                .is_some_and(|queue| queue.queue_id() == 4)),
+                .is_some_and(|queue| queue.queue_id() == 4))),
             response_case["getterMutationVisibleToAssignedSet"]
         );
-        let mutated_values = response
-            .get_message_queue_assignments()
-            .unwrap()
-            .iter()
-            .map(|assignment| {
-                assignment.as_ref().map(|assignment| {
-                    json!({
-                        "messageQueue": assignment.message_queue(),
-                        "mode": assignment.mode(),
-                        "attachments": assignment.attachments(),
+        let mutated_values = getter_alias.with(|assignments| {
+            assignments
+                .iter()
+                .map(|assignment| {
+                    assignment.as_ref().map(|assignment| {
+                        json!({
+                            "messageQueue": assignment.message_queue(),
+                            "mode": assignment.mode(),
+                            "attachments": assignment.attachments(),
+                        })
                     })
                 })
-            })
-            .collect::<Vec<_>>();
+                .collect::<Vec<_>>()
+        });
         assert_eq!(json!(mutated_values), response_case["mutatedValues"]);
-        // Java returns the same mutable Set. Rust moves the HashSet into the DTO and lends it.
+        // Java returns the same mutable Set; the shared handle keeps its identity on both sides.
         assert_eq!(response_case["setterRetainsSetIdentity"], true);
         response.set_message_queue_assignments(None);
         assert!(response.get_message_queue_assignments().is_none());
@@ -5288,8 +5303,8 @@ mod tests {
                 let assignment = decoded
                     .message_queue_assignments
                     .as_ref()
-                    .and_then(|assignments| assignments.iter().next())
-                    .and_then(Option::as_ref)
+                    .and_then(|assignments| assignments.snapshot().into_iter().next())
+                    .flatten()
                     .unwrap();
                 let mode = assignment
                     .mode
@@ -5359,8 +5374,8 @@ mod tests {
                 let assignment = decoded
                     .message_queue_assignments
                     .as_ref()
-                    .and_then(|assignments| assignments.iter().next())
-                    .and_then(Option::as_ref)
+                    .and_then(|assignments| assignments.snapshot().into_iter().next())
+                    .flatten()
                     .unwrap();
                 assert_eq!(
                     serde_json::to_value(&assignment.attachments).unwrap(),
@@ -5705,6 +5720,7 @@ mod tests {
             if let Ok(decoded) = decoded {
                 let actual_assignments = decoded.message_queue_assignments.as_ref().map(|items| {
                     items
+                        .snapshot()
                         .iter()
                         .map(|item| match item {
                             Some(item) => serde_json::json!({
@@ -5774,6 +5790,7 @@ mod tests {
             if let Ok(decoded) = decoded {
                 let actual_assignments = decoded.message_queue_assignments.as_ref().map(|items| {
                     items
+                        .snapshot()
                         .iter()
                         .map(|item| match item {
                             Some(item) => serde_json::json!({

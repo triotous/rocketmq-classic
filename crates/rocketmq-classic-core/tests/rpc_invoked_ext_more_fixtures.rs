@@ -168,7 +168,10 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
             };
             match api.query_assignment(&addr, &request, deadline).await {
                 Ok(v) => {
-                    let assignments = v.message_queue_assignments.unwrap_or_default();
+                    let assignments = v
+                        .message_queue_assignments
+                        .map(|assignments| assignments.snapshot())
+                        .unwrap_or_default();
                     if name == "assignment-populated" {
                         let item = assignments.iter().next().and_then(Option::as_ref).unwrap();
                         let queue = item.message_queue.as_ref().unwrap();
