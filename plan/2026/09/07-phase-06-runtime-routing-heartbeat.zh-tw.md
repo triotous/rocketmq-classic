@@ -69,7 +69,7 @@ fetch 時不持有 cache lock，先完整轉換 route，再替換 topic/broker/p
 
 ### 4.5 P6-09 / P6-10 — 註冊 inbound slot 並處理 failure rollback
 
-依 group/client identity 路由 inbound check-transaction、consumer-change、reset-offset、consumer-status、direct-consume 與 reply-push。負責 phase 啟用 handler 前回明確 protocol error，不能假裝成功。在 registration、transport start 及各 task start 後注入 failure，反向撤回已取得資源並 join。最後一個 registration shutdown 應在有界 deadline 內，先向 Broker unregister 再關 transport。
+依來源流程路由 inbound：check-transaction 依 producer/body group；consumer-change notification 喚醒整個 runtime 的 rebalance（header group 僅供記錄）；reset-offset、consumer-status、running-info、direct-consume 依 consumer group；reply-push 依 correlation identity。負責 phase 啟用 feature handler 前回傳明確 protocol error，不能假裝成功。在 registration、transport start 及各 task start 後注入 failure，反向撤回已取得資源並 join。最後一個 registration shutdown 應在有界 deadline 內，先向 Broker unregister 再關 transport。
 
 ## 5. 驗證
 

@@ -69,7 +69,7 @@ Use centralized defaults: route poll 30000 ms, heartbeat 30000 ms, offset persis
 
 ### 4.5 P6-09 / P6-10 — Register inbound slots and roll back failures
 
-Route inbound check-transaction, consumer-change, reset-offset, consumer-status, direct-consume and reply-push by group/client identity. Until an owning phase activates a handler, return an explicit supported-protocol error, never fake success. Inject failures after registration, transport start and each task start; reverse owned effects and join all work. Last-registration shutdown unregisters from Brokers before closing transport within a bounded deadline.
+Route inbound check-transaction by producer/body group; consumer-change notifications wake runtime-wide rebalance (the header group is only logged); reset-offset, consumer-status, running-info and direct-consume by consumer group; and reply-push by correlation identity. Until an owning phase activates a feature handler, return an explicit supported-protocol error, never fake success. Inject failures after registration, transport start and each task start; reverse owned effects and join all work. Last-registration shutdown unregisters from Brokers before closing transport within a bounded deadline.
 
 ## 5. Verification
 
