@@ -751,6 +751,65 @@ public final class RuntimeConfigFixtures {
         return result;
     }
 
+    private static <T> void captureTableViewCollectionCase(Map<String, Object> result, String caseName,
+        java.util.concurrent.ConcurrentMap<String, T> source, String viewName, String operation,
+        Collection<?> members) {
+        java.util.concurrent.ConcurrentMap<String, T> table = new java.util.concurrent.ConcurrentHashMap<>(source);
+        Collection<?> view;
+        if ("Key".equals(viewName)) {
+            view = table.keySet();
+        } else if ("Values".equals(viewName)) {
+            view = table.values();
+        } else {
+            view = table.entrySet();
+        }
+        captureBoolean(result, caseName, () -> "RemoveAll".equals(operation)
+            ? view.removeAll(members) : view.retainAll(members));
+        result.put(caseName + "KeysAfter", new ArrayList<>(new java.util.TreeSet<>(table.keySet())));
+    }
+
+    private static <T> Map<String, Object> nullableTableViewNullElements(String prefix,
+        java.util.concurrent.ConcurrentMap<String, T> source) {
+        Map<String, Object> result = new TreeMap<>();
+        java.util.concurrent.ConcurrentMap<String, T> probe = new java.util.concurrent.ConcurrentHashMap<>();
+        if ("factory".equals(prefix)) {
+            probe.put("manager-copy@DEFAULT", source.get("manager-copy@DEFAULT"));
+        } else {
+            probe.put("nullable-default-present", source.get("nullable-default-present"));
+            String otherKey = "producer".equals(prefix) ? "strong-producer" : "strong-consumer";
+            probe.put(otherKey, source.get(otherKey));
+        }
+        for (String viewName : List.of("Key", "Values", "Entries")) {
+            Object matchedMember;
+            if ("Key".equals(viewName)) {
+                matchedMember = probe.keySet().iterator().next();
+            } else if ("Values".equals(viewName)) {
+                matchedMember = probe.values().iterator().next();
+            } else {
+                matchedMember = probe.entrySet().iterator().next();
+            }
+            List<Object> nullOnly = new ArrayList<>();
+            nullOnly.add(null);
+            captureTableViewCollectionCase(result, prefix + viewName + "RemoveAllNullElement", probe,
+                viewName, "RemoveAll", nullOnly);
+            captureTableViewCollectionCase(result, prefix + viewName + "RetainAllNullElement", probe,
+                viewName, "RetainAll", nullOnly);
+            List<Object> nullThenMatch = new ArrayList<>();
+            nullThenMatch.add(null);
+            nullThenMatch.add(matchedMember);
+            captureTableViewCollectionCase(result, prefix + viewName + "RemoveAllNullThenMatch", probe,
+                viewName, "RemoveAll", nullThenMatch);
+            List<Object> matchThenNull = new ArrayList<>();
+            matchThenNull.add(matchedMember);
+            matchThenNull.add(null);
+            captureTableViewCollectionCase(result, prefix + viewName + "RemoveAllMatchThenNull", probe,
+                viewName, "RemoveAll", matchThenNull);
+            captureTableViewCollectionCase(result, prefix + viewName + "RetainAllNullAndMatch", probe,
+                viewName, "RetainAll", nullThenMatch);
+        }
+        return result;
+    }
+
     private static <T> Map<String, Object> nullableRemappingInputs(String prefix,
         java.util.concurrent.ConcurrentMap<String, T> table, T value) {
         Map<String, Object> result = new TreeMap<>();
@@ -816,6 +875,7 @@ public final class RuntimeConfigFixtures {
                 live.getOrDefault("missing-null-default", null) == null ? "NULL" : "OTHER");
             result.put("nullableTableViewInputs", nullableTableViewInputs("factory", keyView,
                 valuesView, entryView, id, second));
+            result.put("nullableTableViewNullElements", nullableTableViewNullElements("factory", live));
             result.put("nullableRemappingInputs", nullableRemappingInputs("factory", live, first));
             Map<String, Object> nullableTableMutations = new TreeMap<>();
             captureThrowable(nullableTableMutations, "factoryPutNullKey", () -> live.put(null, first));
@@ -1568,16 +1628,26 @@ public final class RuntimeConfigFixtures {
             nullableTableReads.put("consumerNullDefaultOnPresent",
                 runtime.getConsumerTable().getOrDefault("nullable-default-present", null) == consumerA ? "MAPPED" : "OTHER");
             result.put("nullableTableReads", nullableTableReads);
-            result.put("nullableTableViewInputs", Map.of(
-                "producer", nullableTableViewInputs("producer", runtime.getProducerTable().keySet(),
-                    runtime.getProducerTable().values(), runtime.getProducerTable().entrySet(),
-                    "nullable-default-present", producerA),
-                "consumer", nullableTableViewInputs("consumer", runtime.getConsumerTable().keySet(),
-                    runtime.getConsumerTable().values(), runtime.getConsumerTable().entrySet(),
-                    "nullable-default-present", consumerA)));
-            result.put("nullableRemappingInputs", Map.of(
-                "producer", nullableRemappingInputs("producer", runtime.getProducerTable(), producerA),
-                "consumer", nullableRemappingInputs("consumer", runtime.getConsumerTable(), consumerA)));
+            Map<String, Object> nullableTableViewInputs = new TreeMap<>();
+            nullableTableViewInputs.put("producer", nullableTableViewInputs("producer",
+                runtime.getProducerTable().keySet(), runtime.getProducerTable().values(),
+                runtime.getProducerTable().entrySet(), "nullable-default-present", producerA));
+            nullableTableViewInputs.put("consumer", nullableTableViewInputs("consumer",
+                runtime.getConsumerTable().keySet(), runtime.getConsumerTable().values(),
+                runtime.getConsumerTable().entrySet(), "nullable-default-present", consumerA));
+            result.put("nullableTableViewInputs", nullableTableViewInputs);
+            Map<String, Object> nullableTableViewNullElements = new TreeMap<>();
+            nullableTableViewNullElements.put("producer",
+                nullableTableViewNullElements("producer", runtime.getProducerTable()));
+            nullableTableViewNullElements.put("consumer",
+                nullableTableViewNullElements("consumer", runtime.getConsumerTable()));
+            result.put("nullableTableViewNullElements", nullableTableViewNullElements);
+            Map<String, Object> nullableRemappingInputs = new TreeMap<>();
+            nullableRemappingInputs.put("producer",
+                nullableRemappingInputs("producer", runtime.getProducerTable(), producerA));
+            nullableRemappingInputs.put("consumer",
+                nullableRemappingInputs("consumer", runtime.getConsumerTable(), consumerA));
+            result.put("nullableRemappingInputs", nullableRemappingInputs);
             Map<String, Object> nullableTableMutations = new TreeMap<>();
             captureThrowable(nullableTableMutations, "producerPutNullKey",
                 () -> runtime.getProducerTable().put(null, producerA));

@@ -742,6 +742,292 @@ async fn nullable_registry_table_views_match_invoked_java_null_inputs() {
 }
 
 #[tokio::test]
+async fn nullable_registry_table_view_elements_match_invoked_java_collections() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = &fixture["registryTables"]["nullableTableViewNullElements"];
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&ClientConfig::new("nullable-registry-view-elements"))
+        .await
+        .unwrap();
+
+    macro_rules! check_view_elements {
+        ($table:ident, $owner:ident, $java:expr, $prefix:literal, $null_key:literal) => {{
+            let initial = $table.snapshot().unwrap();
+            let assert_keys = |suffix: &str| {
+                let field = format!("{}{}KeysAfter", $prefix, suffix);
+                let expected: Vec<String> =
+                    serde_json::from_value($java.get(field.as_str()).unwrap().clone()).unwrap();
+                let actual: Vec<_> = $table.snapshot().unwrap().into_keys().collect();
+                assert_eq!(actual, expected, "{field}");
+            };
+            let field = format!("{}KeyRemoveAllNullElement", $prefix);
+            assert_eq!($java.get(field.as_str()).unwrap(), "NullPointerException");
+            assert!(matches!(
+                $table
+                    .key_set_view()
+                    .remove_all_with_nullable_elements(Some(&[None]))
+                    .await,
+                Err(RuntimeError::InvalidRoute($null_key))
+            ));
+            assert_keys("KeyRemoveAllNullElement");
+
+            let field = format!("{}KeyRemoveAllNullThenMatch", $prefix);
+            assert_eq!($java.get(field.as_str()).unwrap(), "NullPointerException");
+            let target_after: Vec<String> = serde_json::from_value(
+                $java
+                    .get(format!("{}KeyRemoveAllMatchThenNullKeysAfter", $prefix).as_str())
+                    .unwrap()
+                    .clone(),
+            )
+            .unwrap();
+            let removed_key = initial
+                .keys()
+                .find(|key| !target_after.contains(key))
+                .unwrap()
+                .clone();
+            assert!(matches!(
+                $table
+                    .key_set_view()
+                    .remove_all_with_nullable_elements(Some(&[None, Some(removed_key.clone())]))
+                    .await,
+                Err(RuntimeError::InvalidRoute($null_key))
+            ));
+            assert_keys("KeyRemoveAllNullThenMatch");
+
+            let field = format!("{}KeyRemoveAllMatchThenNull", $prefix);
+            assert_eq!($java.get(field.as_str()).unwrap(), "NullPointerException");
+            assert!(matches!(
+                $table
+                    .key_set_view()
+                    .remove_all_with_nullable_elements(Some(&[Some(removed_key), None]))
+                    .await,
+                Err(RuntimeError::InvalidRoute($null_key))
+            ));
+            assert_keys("KeyRemoveAllMatchThenNull");
+
+            block_on_restore!($table, &initial);
+            let field = format!("{}KeyRetainAllNullElement", $prefix);
+            assert_eq!($java.get(field.as_str()).unwrap(), true);
+            assert_eq!(
+                $table
+                    .key_set_view()
+                    .retain_all_with_nullable_elements(Some(&[None]))
+                    .await
+                    .unwrap(),
+                initial.len()
+            );
+            assert_keys("KeyRetainAllNullElement");
+            block_on_restore!($table, &initial);
+            let field = format!("{}KeyRetainAllNullAndMatch", $prefix);
+            assert_eq!($java.get(field.as_str()).unwrap(), true);
+            let retained_key: Vec<String> = serde_json::from_value(
+                $java
+                    .get(format!("{}KeyRetainAllNullAndMatchKeysAfter", $prefix).as_str())
+                    .unwrap()
+                    .clone(),
+            )
+            .unwrap();
+            let matching_key = retained_key.first().cloned();
+            let input = [None, matching_key];
+            assert_eq!(
+                $table
+                    .key_set_view()
+                    .retain_all_with_nullable_elements(Some(&input))
+                    .await
+                    .unwrap(),
+                initial.len() - retained_key.len()
+            );
+            assert_keys("KeyRetainAllNullAndMatch");
+            block_on_restore!($table, &initial);
+
+            let values = $table.values_view();
+            let field = format!("{}ValuesRemoveAllNullElement", $prefix);
+            assert_eq!($java.get(field.as_str()).unwrap(), false);
+            assert_eq!(
+                values
+                    .remove_all_with_nullable_elements(Some(&[None]))
+                    .await
+                    .unwrap(),
+                0
+            );
+            assert_keys("ValuesRemoveAllNullElement");
+            let field = format!("{}ValuesRemoveAllNullThenMatch", $prefix);
+            assert_eq!($java.get(field.as_str()).unwrap(), true);
+            let after: Vec<String> = serde_json::from_value(
+                $java
+                    .get(format!("{}ValuesRemoveAllNullThenMatchKeysAfter", $prefix).as_str())
+                    .unwrap()
+                    .clone(),
+            )
+            .unwrap();
+            let removed_key = initial.keys().find(|key| !after.contains(key)).unwrap();
+            let matching_value = initial[removed_key].clone();
+            assert_eq!(
+                values
+                    .remove_all_with_nullable_elements(Some(&[None, Some(matching_value)]))
+                    .await
+                    .unwrap(),
+                1
+            );
+            assert_keys("ValuesRemoveAllNullThenMatch");
+            block_on_restore!($table, &initial);
+            let field = format!("{}ValuesRetainAllNullElement", $prefix);
+            assert_eq!($java.get(field.as_str()).unwrap(), true);
+            assert_eq!(
+                values
+                    .retain_all_with_nullable_elements(Some(&[None]))
+                    .await
+                    .unwrap(),
+                initial.len()
+            );
+            assert_keys("ValuesRetainAllNullElement");
+            block_on_restore!($table, &initial);
+            let field = format!("{}ValuesRetainAllNullAndMatch", $prefix);
+            assert_eq!($java.get(field.as_str()).unwrap(), true);
+            let retained_key: Vec<String> = serde_json::from_value(
+                $java
+                    .get(format!("{}ValuesRetainAllNullAndMatchKeysAfter", $prefix).as_str())
+                    .unwrap()
+                    .clone(),
+            )
+            .unwrap();
+            let matching_value = initial[&retained_key[0]].clone();
+            let input = [None, Some(matching_value)];
+            assert_eq!(
+                values
+                    .retain_all_with_nullable_elements(Some(&input))
+                    .await
+                    .unwrap(),
+                initial.len() - retained_key.len()
+            );
+            assert_keys("ValuesRetainAllNullAndMatch");
+            block_on_restore!($table, &initial);
+
+            let entries = $table.entry_set_view();
+            let field = format!("{}EntriesRemoveAllNullElement", $prefix);
+            assert_eq!($java.get(field.as_str()).unwrap(), false);
+            assert_eq!(
+                entries
+                    .remove_all_with_nullable_elements(Some(&[None]))
+                    .await
+                    .unwrap(),
+                0
+            );
+            assert_keys("EntriesRemoveAllNullElement");
+            let field = format!("{}EntriesRemoveAllNullThenMatch", $prefix);
+            assert_eq!($java.get(field.as_str()).unwrap(), true);
+            let after: Vec<String> = serde_json::from_value(
+                $java
+                    .get(format!("{}EntriesRemoveAllNullThenMatchKeysAfter", $prefix).as_str())
+                    .unwrap()
+                    .clone(),
+            )
+            .unwrap();
+            let removed_key = initial
+                .keys()
+                .find(|key| !after.contains(key))
+                .unwrap()
+                .clone();
+            let matching_value = initial[&removed_key].clone();
+            let matching_entry = Some((Some(removed_key), Some(matching_value)));
+            let input = [None, matching_entry];
+            assert_eq!(
+                entries
+                    .remove_all_with_nullable_elements(Some(&input))
+                    .await
+                    .unwrap(),
+                1
+            );
+            assert_keys("EntriesRemoveAllNullThenMatch");
+            block_on_restore!($table, &initial);
+            let field = format!("{}EntriesRetainAllNullElement", $prefix);
+            assert_eq!($java.get(field.as_str()).unwrap(), true);
+            assert_eq!(
+                entries
+                    .retain_all_with_nullable_elements(Some(&[None]))
+                    .await
+                    .unwrap(),
+                initial.len()
+            );
+            assert_keys("EntriesRetainAllNullElement");
+            block_on_restore!($table, &initial);
+            let field = format!("{}EntriesRetainAllNullAndMatch", $prefix);
+            assert_eq!($java.get(field.as_str()).unwrap(), true);
+            let retained_key: Vec<String> = serde_json::from_value(
+                $java
+                    .get(format!("{}EntriesRetainAllNullAndMatchKeysAfter", $prefix).as_str())
+                    .unwrap()
+                    .clone(),
+            )
+            .unwrap();
+            let retained_entry = Some((
+                Some(retained_key[0].clone()),
+                Some(initial[&retained_key[0]].clone()),
+            ));
+            let input = [None, retained_entry];
+            assert_eq!(
+                entries
+                    .retain_all_with_nullable_elements(Some(&input))
+                    .await
+                    .unwrap(),
+                initial.len() - retained_key.len()
+            );
+            assert_keys("EntriesRetainAllNullAndMatch");
+            assert_eq!($table.len().unwrap(), 1);
+            let _ = stringify!($owner);
+        }};
+    }
+
+    macro_rules! block_on_restore {
+        ($table:ident, $initial:expr) => {
+            for (key, value) in $initial {
+                $table.put(key.clone(), value.clone()).await.unwrap();
+            }
+        };
+    }
+
+    let producer_table = runtime.producer_table();
+    let producer_a: Arc<dyn ProducerRuntime> = Arc::new(Producer);
+    let producer_b: Arc<dyn ProducerRuntime> = Arc::new(Producer);
+    producer_table
+        .put("nullable-default-present", producer_a)
+        .await
+        .unwrap();
+    producer_table
+        .put("strong-producer", producer_b)
+        .await
+        .unwrap();
+    check_view_elements!(
+        producer_table,
+        ProducerRuntime,
+        &java["producer"],
+        "producer",
+        "null producer group"
+    );
+
+    let consumer_table = runtime.consumer_table();
+    let consumer_a: Arc<dyn ConsumerRuntime> = Arc::new(Consumer);
+    let consumer_b: Arc<dyn ConsumerRuntime> = Arc::new(Consumer);
+    consumer_table
+        .put("nullable-default-present", consumer_a)
+        .await
+        .unwrap();
+    consumer_table
+        .put("strong-consumer", consumer_b)
+        .await
+        .unwrap();
+    check_view_elements!(
+        consumer_table,
+        ConsumerRuntime,
+        &java["consumer"],
+        "consumer",
+        "null consumer group"
+    );
+    assert_eq!(runtime.state(), RuntimeState::Created);
+}
+
+#[tokio::test]
 async fn nullable_registry_remapping_inputs_match_invoked_java_null_failures() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();

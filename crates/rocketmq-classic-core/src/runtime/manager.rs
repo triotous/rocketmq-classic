@@ -8,8 +8,9 @@ use tokio::sync::Mutex as AsyncMutex;
 use rocketmq_classic_remoting::client::RpcHook;
 
 use super::{
-    ClientRuntime, RuntimeError, TableCompute, TableComputeIfAbsent, TableComputeIfPresent,
-    TableEntryViewPredicate, TableKeyViewPredicate, TableMerge, TableValueViewPredicate,
+    ClientRuntime, NullableTableEntry, RuntimeError, TableCompute, TableComputeIfAbsent,
+    TableComputeIfPresent, TableEntryViewPredicate, TableKeyViewPredicate, TableMerge,
+    TableValueViewPredicate,
 };
 use crate::config::ClientConfig;
 
@@ -1106,6 +1107,24 @@ impl FactoryKeySetView {
         self.remove_all(keys).await
     }
 
+    /// Java `KeySetView.removeAll` removes candidates in collection order;
+    /// a null key fails at its position and earlier removals remain visible.
+    pub async fn remove_all_with_nullable_elements(
+        &self,
+        keys: Option<&[Option<String>]>,
+    ) -> Result<usize, RuntimeError> {
+        let Some(keys) = keys else {
+            return Err(RuntimeError::InvalidRoute("null factory view collection"));
+        };
+        let mut removed = 0;
+        for key in keys {
+            if self.remove_nullable(key.as_deref()).await? {
+                removed += 1;
+            }
+        }
+        Ok(removed)
+    }
+
     pub async fn retain_all(&self, keys: &BTreeSet<String>) -> Result<usize, RuntimeError> {
         self.remove_if(|key| !keys.contains(key)).await
     }
@@ -1119,6 +1138,18 @@ impl FactoryKeySetView {
             return Err(RuntimeError::InvalidRoute("null factory view collection"));
         };
         self.retain_all(keys).await
+    }
+
+    /// Null collection elements do not match keys during Java `retainAll`.
+    pub async fn retain_all_with_nullable_elements(
+        &self,
+        keys: Option<&[Option<String>]>,
+    ) -> Result<usize, RuntimeError> {
+        let Some(keys) = keys else {
+            return Err(RuntimeError::InvalidRoute("null factory view collection"));
+        };
+        self.remove_if(|key| !keys.iter().flatten().any(|candidate| candidate == key))
+            .await
     }
 
     pub async fn clear(&self) -> Result<(), RuntimeError> {
@@ -1221,6 +1252,23 @@ impl FactoryValuesView {
         self.remove_all(values).await
     }
 
+    /// Null candidates are ignored by the Java values view.
+    pub async fn remove_all_with_nullable_elements(
+        &self,
+        values: Option<&[Option<Arc<ClientRuntime>>]>,
+    ) -> Result<usize, RuntimeError> {
+        let Some(values) = values else {
+            return Err(RuntimeError::InvalidRoute("null factory view collection"));
+        };
+        let mut removed = 0;
+        for value in values.iter().flatten() {
+            if self.remove(value).await? {
+                removed += 1;
+            }
+        }
+        Ok(removed)
+    }
+
     pub async fn retain_all(&self, values: &[Arc<ClientRuntime>]) -> Result<usize, RuntimeError> {
         self.remove_if(|value| !values.iter().any(|candidate| Arc::ptr_eq(candidate, value)))
             .await
@@ -1235,6 +1283,23 @@ impl FactoryValuesView {
             return Err(RuntimeError::InvalidRoute("null factory view collection"));
         };
         self.retain_all(values).await
+    }
+
+    /// Null candidates do not match a non-null ConcurrentHashMap value.
+    pub async fn retain_all_with_nullable_elements(
+        &self,
+        values: Option<&[Option<Arc<ClientRuntime>>]>,
+    ) -> Result<usize, RuntimeError> {
+        let Some(values) = values else {
+            return Err(RuntimeError::InvalidRoute("null factory view collection"));
+        };
+        self.remove_if(|value| {
+            !values
+                .iter()
+                .flatten()
+                .any(|candidate| Arc::ptr_eq(candidate, value))
+        })
+        .await
     }
 
     pub async fn clear(&self) -> Result<(), RuntimeError> {
@@ -1420,6 +1485,25 @@ impl FactoryEntrySetView {
         self.remove_all(entries).await
     }
 
+    /// Null entries and entries with null fields do not match a CHM entry.
+    pub async fn remove_all_with_nullable_elements(
+        &self,
+        entries: Option<&[Option<NullableTableEntry<ClientRuntime>>]>,
+    ) -> Result<usize, RuntimeError> {
+        let Some(entries) = entries else {
+            return Err(RuntimeError::InvalidRoute("null factory view collection"));
+        };
+        let mut removed = 0;
+        for entry in entries.iter().flatten() {
+            if let (Some(key), Some(value)) = entry {
+                if self.remove(key, value).await? {
+                    removed += 1;
+                }
+            }
+        }
+        Ok(removed)
+    }
+
     pub async fn retain_all(
         &self,
         entries: &BTreeMap<String, Arc<ClientRuntime>>,
@@ -1441,6 +1525,25 @@ impl FactoryEntrySetView {
             return Err(RuntimeError::InvalidRoute("null factory view collection"));
         };
         self.retain_all(entries).await
+    }
+
+    /// Null entries and entries with null fields do not match a CHM entry.
+    pub async fn retain_all_with_nullable_elements(
+        &self,
+        entries: Option<&[Option<NullableTableEntry<ClientRuntime>>]>,
+    ) -> Result<usize, RuntimeError> {
+        let Some(entries) = entries else {
+            return Err(RuntimeError::InvalidRoute("null factory view collection"));
+        };
+        self.remove_if(|key, value| {
+            !entries.iter().flatten().any(|entry| match entry {
+                (Some(candidate_key), Some(candidate_value)) => {
+                    candidate_key == key && Arc::ptr_eq(candidate_value, value)
+                }
+                _ => false,
+            })
+        })
+        .await
     }
 
     pub async fn clear(&self) -> Result<(), RuntimeError> {

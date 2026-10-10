@@ -40,6 +40,8 @@ pub type TableComputeIfAbsent<'a, T> = dyn FnMut(&str) -> Option<T> + 'a;
 pub type TableComputeIfPresent<'a, T> = dyn FnMut(&str, &T) -> Option<T> + 'a;
 pub type TableCompute<'a, T> = dyn FnMut(&str, Option<&T>) -> Option<T> + 'a;
 pub type TableMerge<'a, T> = dyn FnMut(&T, &T) -> Option<T> + 'a;
+/// Nullable key/value fields supplied as one candidate to a live table view.
+pub type NullableTableEntry<T> = (Option<String>, Option<std::sync::Arc<T>>);
 
 #[derive(Debug, thiserror::Error)]
 pub enum RuntimeError {

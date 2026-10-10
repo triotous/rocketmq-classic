@@ -383,6 +383,184 @@ async fn nullable_factory_table_views_match_invoked_java_null_inputs() {
 }
 
 #[tokio::test]
+async fn nullable_factory_table_view_elements_match_invoked_java_collections() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = &fixture["managerTable"]["nullableTableViewNullElements"];
+    let manager = ClientRuntimeManager::new();
+    let table = manager.factory_table();
+    let config = ClientConfig::new("nullable-factory-view-elements");
+    let key = config.build_client_id();
+    let value = manager.get_or_create(&config).await.unwrap();
+    table.put(&key, value.clone()).await.unwrap();
+    let assert_keys = |fixture_field: &str| {
+        let mut expected: Vec<String> =
+            serde_json::from_value(java[fixture_field].clone()).unwrap();
+        for expected_key in &mut expected {
+            if expected_key == "manager-copy@DEFAULT" {
+                *expected_key = key.clone();
+            }
+        }
+        let actual: Vec<_> = table.snapshot().unwrap().into_keys().collect();
+        assert_eq!(actual, expected, "{fixture_field}");
+    };
+
+    assert_eq!(
+        java["factoryKeyRemoveAllNullElement"],
+        "NullPointerException"
+    );
+    assert!(matches!(
+        table
+            .key_set_view()
+            .remove_all_with_nullable_elements(Some(&[None]))
+            .await,
+        Err(RuntimeError::InvalidRoute("null factory key"))
+    ));
+    assert_keys("factoryKeyRemoveAllNullElementKeysAfter");
+
+    assert_eq!(
+        java["factoryKeyRemoveAllNullThenMatch"],
+        "NullPointerException"
+    );
+    assert!(matches!(
+        table
+            .key_set_view()
+            .remove_all_with_nullable_elements(Some(&[None, Some(key.clone())]))
+            .await,
+        Err(RuntimeError::InvalidRoute("null factory key"))
+    ));
+    assert_keys("factoryKeyRemoveAllNullThenMatchKeysAfter");
+
+    assert_eq!(
+        java["factoryKeyRemoveAllMatchThenNull"],
+        "NullPointerException"
+    );
+    assert!(matches!(
+        table
+            .key_set_view()
+            .remove_all_with_nullable_elements(Some(&[Some(key.clone()), None]))
+            .await,
+        Err(RuntimeError::InvalidRoute("null factory key"))
+    ));
+    assert_keys("factoryKeyRemoveAllMatchThenNullKeysAfter");
+
+    table.put(&key, value.clone()).await.unwrap();
+    assert_eq!(java["factoryKeyRetainAllNullElement"], true);
+    assert_eq!(
+        table
+            .key_set_view()
+            .retain_all_with_nullable_elements(Some(&[None]))
+            .await
+            .unwrap(),
+        1
+    );
+    assert_keys("factoryKeyRetainAllNullElementKeysAfter");
+    table.put(&key, value.clone()).await.unwrap();
+    assert_eq!(java["factoryKeyRetainAllNullAndMatch"], false);
+    assert_eq!(
+        table
+            .key_set_view()
+            .retain_all_with_nullable_elements(Some(&[None, Some(key.clone())]))
+            .await
+            .unwrap(),
+        0
+    );
+    assert_keys("factoryKeyRetainAllNullAndMatchKeysAfter");
+
+    let values = table.values_view();
+    assert_eq!(java["factoryValuesRemoveAllNullElement"], false);
+    assert_eq!(
+        values
+            .remove_all_with_nullable_elements(Some(&[None]))
+            .await
+            .unwrap(),
+        0
+    );
+    assert_keys("factoryValuesRemoveAllNullElementKeysAfter");
+    assert_eq!(java["factoryValuesRemoveAllNullThenMatch"], true);
+    assert_eq!(
+        values
+            .remove_all_with_nullable_elements(Some(&[None, Some(value.clone())]))
+            .await
+            .unwrap(),
+        1
+    );
+    assert_keys("factoryValuesRemoveAllNullThenMatchKeysAfter");
+
+    table.put(&key, value.clone()).await.unwrap();
+    assert_eq!(java["factoryValuesRetainAllNullElement"], true);
+    assert_eq!(
+        values
+            .retain_all_with_nullable_elements(Some(&[None]))
+            .await
+            .unwrap(),
+        1
+    );
+    assert_keys("factoryValuesRetainAllNullElementKeysAfter");
+    table.put(&key, value.clone()).await.unwrap();
+    assert_eq!(java["factoryValuesRetainAllNullAndMatch"], false);
+    assert_eq!(
+        values
+            .retain_all_with_nullable_elements(Some(&[None, Some(value.clone())]))
+            .await
+            .unwrap(),
+        0
+    );
+    assert_keys("factoryValuesRetainAllNullAndMatchKeysAfter");
+
+    let entries = table.entry_set_view();
+    let null_entry: Option<(Option<String>, Option<Arc<_>>)> = None;
+    let matching_entry = Some((Some(key.clone()), Some(value.clone())));
+    assert_eq!(java["factoryEntriesRemoveAllNullElement"], false);
+    assert_eq!(
+        entries
+            .remove_all_with_nullable_elements(Some(&[null_entry.clone()]))
+            .await
+            .unwrap(),
+        0
+    );
+    assert_keys("factoryEntriesRemoveAllNullElementKeysAfter");
+    assert_eq!(java["factoryEntriesRemoveAllNullThenMatch"], true);
+    assert_eq!(
+        entries
+            .remove_all_with_nullable_elements(Some(&[null_entry.clone(), matching_entry.clone()]))
+            .await
+            .unwrap(),
+        1
+    );
+    assert_keys("factoryEntriesRemoveAllNullThenMatchKeysAfter");
+
+    table.put(&key, value.clone()).await.unwrap();
+    assert_eq!(java["factoryEntriesRetainAllNullElement"], true);
+    assert_eq!(
+        entries
+            .retain_all_with_nullable_elements(Some(&[null_entry.clone()]))
+            .await
+            .unwrap(),
+        1
+    );
+    assert_keys("factoryEntriesRetainAllNullElementKeysAfter");
+    table.put(&key, value.clone()).await.unwrap();
+    assert_eq!(java["factoryEntriesRetainAllNullAndMatch"], false);
+    assert_eq!(
+        entries
+            .retain_all_with_nullable_elements(Some(&[null_entry, matching_entry]))
+            .await
+            .unwrap(),
+        0
+    );
+    assert_keys("factoryEntriesRetainAllNullAndMatchKeysAfter");
+    assert_eq!(
+        table
+            .snapshot()
+            .unwrap()
+            .into_keys()
+            .collect::<BTreeSet<_>>(),
+        [key].into()
+    );
+}
+
+#[tokio::test]
 async fn nullable_factory_remapping_inputs_match_invoked_java_null_failures() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();

@@ -1,7 +1,8 @@
 use super::{
-    ClientRuntime, ConsumerRuntime, ProducerRuntime, RuntimeError, RuntimeState, TableCompute,
-    TableComputeIfAbsent, TableComputeIfPresent, TableEntryViewPredicate, TableKeyViewPredicate,
-    TableMerge, TableValueViewPredicate, registry::GroupRegistry,
+    ClientRuntime, ConsumerRuntime, NullableTableEntry, ProducerRuntime, RuntimeError,
+    RuntimeState, TableCompute, TableComputeIfAbsent, TableComputeIfPresent,
+    TableEntryViewPredicate, TableKeyViewPredicate, TableMerge, TableValueViewPredicate,
+    registry::GroupRegistry,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -819,6 +820,23 @@ macro_rules! table_views {
                 };
                 self.remove_all(keys).await
             }
+            /// Java key-set bulk removal processes collection entries in order;
+            /// a null key fails at its position and earlier removals remain.
+            pub async fn remove_all_with_nullable_elements(
+                &self,
+                keys: Option<&[Option<String>]>,
+            ) -> Result<usize, RuntimeError> {
+                let Some(keys) = keys else {
+                    return Err(RuntimeError::InvalidRoute("null table view collection"));
+                };
+                let mut removed = 0;
+                for key in keys {
+                    if self.remove_nullable(key.as_deref()).await? {
+                        removed += 1;
+                    }
+                }
+                Ok(removed)
+            }
             pub async fn retain_all(&self, keys: &BTreeSet<String>) -> Result<usize, RuntimeError> {
                 self.retain(|key| keys.contains(key)).await
             }
@@ -831,6 +849,17 @@ macro_rules! table_views {
                     return Err(RuntimeError::InvalidRoute("null table view collection"));
                 };
                 self.retain_all(keys).await
+            }
+            /// Null collection elements do not match keys during Java `retainAll`.
+            pub async fn retain_all_with_nullable_elements(
+                &self,
+                keys: Option<&[Option<String>]>,
+            ) -> Result<usize, RuntimeError> {
+                let Some(keys) = keys else {
+                    return Err(RuntimeError::InvalidRoute("null table view collection"));
+                };
+                self.retain(|key| keys.iter().flatten().any(|candidate| candidate == key))
+                    .await
             }
             pub async fn clear(&self) -> Result<(), RuntimeError> {
                 self.0.mutate(TableMutation::Clear).await.map(|_| ())
@@ -938,6 +967,22 @@ macro_rules! table_views {
                 };
                 self.remove_all(values).await
             }
+            /// Null candidates are ignored by the Java values view.
+            pub async fn remove_all_with_nullable_elements(
+                &self,
+                values: Option<&[Option<Arc<dyn $owner>>]>,
+            ) -> Result<usize, RuntimeError> {
+                let Some(values) = values else {
+                    return Err(RuntimeError::InvalidRoute("null table view collection"));
+                };
+                let mut removed = 0;
+                for value in values.iter().flatten() {
+                    if self.remove(value).await? {
+                        removed += 1;
+                    }
+                }
+                Ok(removed)
+            }
             pub async fn retain_all(
                 &self,
                 values: &[Arc<dyn $owner>],
@@ -953,6 +998,17 @@ macro_rules! table_views {
                     return Err(RuntimeError::InvalidRoute("null table view collection"));
                 };
                 self.retain_all(values).await
+            }
+            /// Null candidates do not match a non-null ConcurrentHashMap value.
+            pub async fn retain_all_with_nullable_elements(
+                &self,
+                values: Option<&[Option<Arc<dyn $owner>>]>,
+            ) -> Result<usize, RuntimeError> {
+                let Some(values) = values else {
+                    return Err(RuntimeError::InvalidRoute("null table view collection"));
+                };
+                let candidates: Vec<_> = values.iter().flatten().cloned().collect();
+                self.retain_all(&candidates).await
             }
             async fn mutate_membership(
                 &self,
@@ -1158,6 +1214,24 @@ macro_rules! table_views {
                 };
                 self.remove_all(entries).await
             }
+            /// Null entries and entries with null fields do not match a CHM entry.
+            pub async fn remove_all_with_nullable_elements(
+                &self,
+                entries: Option<&[Option<NullableTableEntry<dyn $owner>>]>,
+            ) -> Result<usize, RuntimeError> {
+                let Some(entries) = entries else {
+                    return Err(RuntimeError::InvalidRoute("null table view collection"));
+                };
+                let mut removed = 0;
+                for entry in entries.iter().flatten() {
+                    if let (Some(key), Some(value)) = entry {
+                        if self.remove(key, value).await? {
+                            removed += 1;
+                        }
+                    }
+                }
+                Ok(removed)
+            }
             pub async fn retain_all(
                 &self,
                 entries: &BTreeMap<String, Arc<dyn $owner>>,
@@ -1173,6 +1247,29 @@ macro_rules! table_views {
                     return Err(RuntimeError::InvalidRoute("null table view collection"));
                 };
                 self.retain_all(entries).await
+            }
+            /// Null entries and entries with null fields do not match a CHM entry.
+            pub async fn retain_all_with_nullable_elements(
+                &self,
+                entries: Option<&[Option<NullableTableEntry<dyn $owner>>]>,
+            ) -> Result<usize, RuntimeError> {
+                let Some(entries) = entries else {
+                    return Err(RuntimeError::InvalidRoute("null table view collection"));
+                };
+                let table = self.table();
+                let mut removed = 0;
+                for (key, value) in table.snapshot()? {
+                    let matches = entries.iter().flatten().any(|entry| match entry {
+                        (Some(candidate_key), Some(candidate_value)) => {
+                            candidate_key == &key && $table::owners_equal(candidate_value, &value)
+                        }
+                        _ => false,
+                    });
+                    if !matches && table.remove_if_equal(&key, &value).await? {
+                        removed += 1;
+                    }
+                }
+                Ok(removed)
             }
             async fn mutate_membership(
                 &self,
