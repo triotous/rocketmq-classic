@@ -83,12 +83,12 @@ fetch 時不持有 cache lock，先完整轉換 route，再替換 topic/broker/p
 
 ### 5.1 實作完成後的本機命令
 
-已於 2026-10-10 在結果 API 對齊修正後重驗。locked workspace/all-target tests、strict all-target/all-feature Clippy、pinned offline Maven verify（22 個場景與 cross-decodes）、comparator self-test/manifest22、format 與 diff checks 均通過。這些是本機檢查；**P6-V04 仍是 Phase 19 handoff**，不是 Phase 6 gate。各 ID 證據與 fixture provenance 見[需求稽核](../../docs/compatibility/PHASE_6_REQUIREMENT_AUDIT.md)。
+已於 2026-10-10 在 default-topic route API 直接 differential、有序 NameServer provider 對齊及 nullable NameServer address accessor oracle 後重驗。locked workspace/all-target tests、strict all-target/all-feature Clippy、pinned offline Maven verify（22 個場景與 cross-decodes）、comparator self-test/manifest22、format 與 diff checks 均通過。這些是本機檢查，不含 live Broker 執行；**P6-V04 仍是 Phase 19 handoff**，不是 Phase 6 gate。較廣的 compatibility audit 仍將 Linux/Windows/BSD 實際 runtime address enumeration 及剩餘 source/input branches 列為 open。各 ID 證據與 fixture provenance 見[需求稽核](../../docs/compatibility/PHASE_6_REQUIREMENT_AUDIT.md)。
 
 ```bash
 cargo test --workspace --all-targets --locked
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-mvn -o -q -f compat/java-reference/pom.xml verify
+mvn -o -q -Dmaven.repo.local=/private/tmp/p6-maven-repository -f compat/java-reference/pom.xml verify
 python3 tests/differential/compare.py --self-test
 python3 tests/differential/compare.py --validate-manifest
 cargo fmt --all -- --check
