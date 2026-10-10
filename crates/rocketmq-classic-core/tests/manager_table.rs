@@ -473,6 +473,9 @@ async fn retained_factory_table_and_atomic_mutations_match_invoked_java() {
             && !live.contains_key("merge-remove").unwrap(),
         java["mergeNullRemoves"]
     );
+    // The Java fixture also retains the manager ID mapping from its preceding
+    // identity-removal contention case, so replaceAll observes four entries.
+    live.put(&id, first.clone()).await.unwrap();
     live.replace_all(|_, _| second.clone()).await.unwrap();
     assert_eq!(
         live.len().unwrap() == 3
@@ -625,4 +628,117 @@ async fn concurrent_factory_table_remapping_serializes_same_key_callback_like_ja
         java["remappingReturnsAndKeepsSecond"]
     );
     live.remove("same-key").await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+async fn identity_safe_manager_removal_waits_for_factory_table_remapping() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = &fixture["managerTable"];
+    let manager = ClientRuntimeManager::new();
+    let live = manager.factory_table();
+    let config = ClientConfig::new("factory-remap-manager-remove");
+    let id = config.build_client_id();
+    let first = manager.get_or_create(&config).await.unwrap();
+    let second = manager
+        .get_or_create(&ClientConfig::new("factory-remap-manager-remove-next"))
+        .await
+        .unwrap();
+
+    let callback_calls = Arc::new(AtomicUsize::new(0));
+    let callback_calls_for_task = callback_calls.clone();
+    let expected_first = first.clone();
+    let replacement = second.clone();
+    let table_for_compute = live.clone();
+    let compute_key = id.clone();
+    let (entered_tx, entered_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let computation = tokio::spawn(async move {
+        table_for_compute
+            .compute_if_present(compute_key, move |_, current| {
+                assert!(Arc::ptr_eq(current, &expected_first));
+                if callback_calls_for_task.fetch_add(1, Ordering::SeqCst) == 0 {
+                    entered_tx.send(()).unwrap();
+                    release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+                }
+                Some(replacement.clone())
+            })
+            .await
+            .unwrap()
+            .unwrap()
+    });
+    tokio::task::spawn_blocking(move || entered_rx.recv_timeout(Duration::from_secs(5)).unwrap())
+        .await
+        .unwrap();
+
+    let manager_for_removal = manager.clone();
+    let id_for_removal = id.clone();
+    let expected_for_removal = first.clone();
+    let (removal_started_tx, removal_started_rx) = tokio::sync::oneshot::channel();
+    let removal = tokio::task::spawn_blocking(move || {
+        removal_started_tx.send(()).unwrap();
+        manager_for_removal
+            .remove_client_factory(&id_for_removal, &expected_for_removal)
+            .unwrap()
+    });
+    removal_started_rx.await.unwrap();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let removal_waits_for_remapping = !removal.is_finished();
+    release_tx.send(()).unwrap();
+
+    let computed = computation.await.unwrap();
+    let removed_first = removal.await.unwrap();
+    assert_eq!(
+        removal_waits_for_remapping,
+        java["managerIdentityRemovalWaitsForRemapping"]
+    );
+    assert_eq!(
+        callback_calls.load(Ordering::SeqCst) == 1,
+        java["managerIdentityRemovalRemappingRunsOnce"]
+    );
+    assert_eq!(
+        !removed_first
+            && Arc::ptr_eq(&computed, &second)
+            && live
+                .get(&id)
+                .unwrap()
+                .is_some_and(|value| Arc::ptr_eq(&value, &second)),
+        java["managerIdentityRemovalKeepsRemappingResult"]
+    );
+    live.remove(&id).await.unwrap();
+}
+
+#[tokio::test]
+async fn remapping_callback_panic_does_not_poison_factory_table_mutations() {
+    let manager = ClientRuntimeManager::new();
+    let live = manager.factory_table();
+    let first = manager
+        .get_or_create(&ClientConfig::new("factory-remap-panic-current"))
+        .await
+        .unwrap();
+    let second = manager
+        .get_or_create(&ClientConfig::new("factory-remap-panic-next"))
+        .await
+        .unwrap();
+    let key = first.client_id().to_owned();
+    live.put(&key, first.clone()).await.unwrap();
+
+    let table_for_compute = live.clone();
+    let compute_key = key.clone();
+    let compute = tokio::spawn(async move {
+        table_for_compute
+            .compute(&compute_key, |_, _| -> Option<Arc<_>> {
+                panic!("mapping callback failed")
+            })
+            .await
+    });
+    let error = match compute.await {
+        Ok(_) => panic!("mapping callback unexpectedly completed"),
+        Err(error) => error,
+    };
+    assert!(error.is_panic());
+
+    let previous = live.put(&key, second.clone()).await.unwrap().unwrap();
+    assert!(Arc::ptr_eq(&previous, &first));
+    assert!(Arc::ptr_eq(&live.get(&key).unwrap().unwrap(), &second));
 }
