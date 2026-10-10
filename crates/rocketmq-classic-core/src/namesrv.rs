@@ -324,4 +324,17 @@ mod tests {
         assert!(split_addresses(";;").is_empty());
         assert_eq!(split_addresses(""), [""]);
     }
+
+    #[test]
+    fn nameserver_address_property_matches_invoked_java_accessors() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/discovery.json")).unwrap();
+        let java = &fixture["nsAddrProperty"];
+        let addressing = DefaultTopAddressing::new("http://unused.invalid", None);
+        assert_eq!(addressing.ns_addr().as_deref(), java["initial"].as_str());
+        addressing.set_ns_addr(Some("discovered:9876".into()));
+        assert_eq!(addressing.ns_addr().as_deref(), java["afterSet"].as_str());
+        addressing.set_ns_addr(None);
+        assert_eq!(addressing.ns_addr().as_deref(), java["afterClear"].as_str());
+    }
 }

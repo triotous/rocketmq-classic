@@ -59,12 +59,13 @@ public final class RuntimeDiscoveryFixtures {
         fixture.put("entrypoint","DefaultTopAddressing.clearNewLine; MixAll.getWSAddr; MQClientAPIImpl.onNameServerAddressChange");
         fixture.put("serverBaselineContacted",false); fixture.put("normalization",normalization); fixture.put("urls",urls); fixture.put("callbacks",callbacks);
         fixture.put("providerSequence", providerSequence());
+        fixture.put("nsAddrProperty", nsAddrProperty());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture,com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
         if (args.length > 1 && "--verify".equals(args[1])) {
             if (!json.equals(Files.readString(file))) throw new IllegalStateException("fixture drift: " + file);
         } else { Files.createDirectories(file.getParent()); Files.writeString(file,json); }
-        System.out.println("Runtime discovery invoked cases verified: " + (normalization.size()+urls.size()+callbacks.size()+1));
+        System.out.println("Runtime discovery invoked cases verified: " + (normalization.size()+urls.size()+callbacks.size()+2));
     }
 
     private static Map<String, Object> providerSequence() throws Exception {
@@ -99,6 +100,17 @@ public final class RuntimeDiscoveryFixtures {
         result.put("fetchCalls", fetchCalls);
         addressing.registerChangeCallBack(changed -> changed);
         result.put("callbackCalls", callbackCalls);
+        return result;
+    }
+
+    private static Map<String, Object> nsAddrProperty() {
+        DefaultTopAddressing addressing = new DefaultTopAddressing("http://unused.invalid", null);
+        Map<String, Object> result = new TreeMap<>();
+        result.put("initial", addressing.getNsAddr());
+        addressing.setNsAddr("discovered:9876");
+        result.put("afterSet", addressing.getNsAddr());
+        addressing.setNsAddr(null);
+        result.put("afterClear", addressing.getNsAddr());
         return result;
     }
 }
