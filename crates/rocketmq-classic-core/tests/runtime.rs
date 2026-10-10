@@ -1086,6 +1086,10 @@ async fn registered_clients_route_refresh_recovers_after_null_broker_map_failure
         java["producerUpdatesAfterInitial"]
     );
     let before = runtime.route_snapshot().unwrap();
+    assert_eq!(
+        before.publish_address("broker"),
+        java["priorBrokerPublishAddressAfterFailure"].as_str()
+    );
 
     assert!(
         runtime
@@ -1120,6 +1124,10 @@ async fn registered_clients_route_refresh_recovers_after_null_broker_map_failure
     assert_eq!(
         recovered.publish_address("recovery-broker"),
         java["recoveredPublishAddress"].as_str()
+    );
+    assert_eq!(
+        recovered.publish_address("broker"),
+        java["priorBrokerPublishAddressAfterRecovery"].as_str()
     );
     assert_eq!(
         consumer.need_checks.load(Ordering::SeqCst),
