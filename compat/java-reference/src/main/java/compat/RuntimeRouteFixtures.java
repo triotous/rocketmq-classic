@@ -1873,6 +1873,16 @@ public final class RuntimeRouteFixtures {
             primitives.put("firstPutAbsent", table.put("topic", first) == null);
             primitives.put("getOrDefaultPresent", table.getOrDefault("topic", second) == first);
             primitives.put("getOrDefaultAbsent", table.getOrDefault("missing", second) == second);
+            primitives.put("getOrDefaultNullDefaultPresent", table.getOrDefault("topic", null) == first);
+            primitives.put("getOrDefaultNullDefaultAbsent", table.getOrDefault("missing", null) == null);
+            String nullGetOrDefaultKeyError = "OK";
+            try {
+                table.getOrDefault(null, null);
+            } catch (Throwable error) {
+                nullGetOrDefaultKeyError = error.getClass().getSimpleName();
+            }
+            primitives.put("getOrDefaultNullKeyThrowsNullPointer",
+                "NullPointerException".equals(nullGetOrDefaultKeyError));
             primitives.put("getterSeesFirst", runtime.getAnExistTopicRouteData("topic") == first);
             primitives.put("putReturnsFirst", table.put("topic", second) == first);
             primitives.put("retainedGetterSeesReplacement", runtime.getTopicRouteTable() == table && runtime.getAnExistTopicRouteData("topic") == second);

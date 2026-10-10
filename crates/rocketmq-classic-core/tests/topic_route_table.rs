@@ -350,6 +350,27 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
             .ptr_eq(&second),
     );
     outcomes.insert(
+        "getOrDefaultNullDefaultPresent",
+        table
+            .get_or_default_nullable(Some("topic"), None)
+            .unwrap()
+            .is_some_and(|value| value.ptr_eq(&first)),
+    );
+    outcomes.insert(
+        "getOrDefaultNullDefaultAbsent",
+        table
+            .get_or_default_nullable(Some("missing"), None)
+            .unwrap()
+            .is_none(),
+    );
+    outcomes.insert(
+        "getOrDefaultNullKeyThrowsNullPointer",
+        matches!(
+            table.get_or_default_nullable(None, None),
+            Err(RuntimeError::InvalidRoute("null topic route key"))
+        ),
+    );
+    outcomes.insert(
         "getterSeesFirst",
         same(runtime.get_existing_topic_route("topic").unwrap(), &first),
     );

@@ -129,6 +129,20 @@ impl TopicRouteTable {
     ) -> Result<TopicRouteDataHandle, RuntimeError> {
         Ok(self.get(key)?.unwrap_or(default))
     }
+
+    /// Preserves Java `Map.getOrDefault`'s nullable default value while
+    /// rejecting a null route key like `ConcurrentHashMap`.
+    pub fn get_or_default_nullable(
+        &self,
+        key: Option<&str>,
+        default: Option<TopicRouteDataHandle>,
+    ) -> Result<Option<TopicRouteDataHandle>, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null topic route key"));
+        };
+        Ok(self.get(key)?.or(default))
+    }
+
     pub fn contains_key(&self, key: &str) -> Result<bool, RuntimeError> {
         Ok(self.0.snapshot()?.raw_routes.contains_key(key))
     }
