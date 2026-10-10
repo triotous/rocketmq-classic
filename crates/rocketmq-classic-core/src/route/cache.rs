@@ -375,7 +375,7 @@ impl RouteCache {
             let mut next = current.as_ref().clone();
             next.raw_routes.insert(
                 topic.to_owned(),
-                TopicRouteDataHandle::new((*topic_snapshot.route).clone()),
+                TopicRouteDataHandle::new(topic_snapshot.route.java_copy_constructed()),
             );
             for broker in topic_snapshot
                 .route

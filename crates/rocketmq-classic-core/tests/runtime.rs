@@ -868,6 +868,17 @@ async fn accepted_empty_route_keeps_route_presence_separate_from_publish_queue_o
     assert_eq!(java["ok"], false);
     assert_eq!(java["publishQueueCount"], 0);
     assert_eq!(java["topicRouteDataPresent"], true);
+    assert_eq!(java["rawRouteQueueListSameAsApiRoute"], false);
+    assert_eq!(java["rawRouteQueueElementSameAsApiRoute"], true);
+    assert_eq!(java["publishedQueueListSameAsRaw"], false);
+    assert_eq!(java["publishedQueueElementSameAsRaw"], true);
+    assert_eq!(java["publishedBrokerListSameAsRaw"], false);
+    assert_eq!(java["rawRouteBrokerElementSameAsApiRoute"], true);
+    assert_eq!(java["publishedBrokerElementSameAsRaw"], true);
+    assert_eq!(java["publishedFilterTableSameAsRaw"], false);
+    assert_eq!(java["rawRouteFilterTableSameAsApiRoute"], false);
+    assert_eq!(java["publishedFilterListSameAsRaw"], true);
+    assert_eq!(java["rawRouteFilterListSameAsApiRoute"], true);
     assert_eq!(java["missingRouteChanged"], false);
     assert_eq!(java["missingRouteCallbackDelivered"], false);
 
@@ -943,6 +954,36 @@ async fn accepted_empty_route_keeps_route_presence_separate_from_publish_queue_o
         .expect("published route snapshot");
     assert!(topic.publish_queues.is_empty());
     assert_eq!(topic.route.queue_datas_snapshot().unwrap().len(), 1);
+    let raw_route = runtime
+        .topic_route_table()
+        .get("topic")
+        .unwrap()
+        .expect("cached raw route");
+    let (raw_queues, raw_brokers, raw_filters) = raw_route
+        .with_mut(|route| {
+            (
+                route.queue_datas.as_ref().unwrap().clone(),
+                route.broker_datas.as_ref().unwrap().clone(),
+                route.filter_server_table.as_ref().unwrap().clone(),
+            )
+        })
+        .unwrap();
+    let published_queues = topic.route.queue_datas.as_ref().unwrap();
+    let published_brokers = topic.route.broker_datas.as_ref().unwrap();
+    let published_filters = topic.route.filter_server_table.as_ref().unwrap();
+    assert!(!raw_queues.ptr_eq(published_queues));
+    assert!(!raw_brokers.ptr_eq(published_brokers));
+    assert!(!raw_filters.ptr_eq(published_filters));
+    let raw_queue = raw_queues.with(|rows| rows[0].as_ref().unwrap().clone());
+    let published_queue = published_queues.with(|rows| rows[0].as_ref().unwrap().clone());
+    assert!(raw_queue.ptr_eq(&published_queue));
+    let raw_broker = raw_brokers.with(|rows| rows[0].as_ref().unwrap().clone());
+    let published_broker = published_brokers.with(|rows| rows[0].as_ref().unwrap().clone());
+    assert!(raw_broker.ptr_eq(&published_broker));
+    let raw_filter_list = raw_filters.with(|rows| rows["broker"].as_ref().unwrap().clone());
+    let published_filter_list =
+        published_filters.with(|rows| rows["broker"].as_ref().unwrap().clone());
+    assert!(raw_filter_list.ptr_eq(&published_filter_list));
     assert!(!snapshot.topics.contains_key("missing"));
     assert_eq!(producer.updates.load(Ordering::SeqCst), 1);
     peer.await.unwrap();
