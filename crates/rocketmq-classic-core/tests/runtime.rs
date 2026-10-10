@@ -296,7 +296,7 @@ async fn registered_consumer_nested_route_collection_outcomes_match_invoked_java
     let cases = fixture["runtimeRouteNestedCollectionConsumers"]
         .as_array()
         .unwrap();
-    assert_eq!(cases.len(), 6);
+    assert_eq!(cases.len(), 7);
 
     for case in cases {
         let id = case["id"].as_str().unwrap().to_owned();
