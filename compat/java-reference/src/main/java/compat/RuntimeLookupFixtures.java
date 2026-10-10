@@ -1805,6 +1805,11 @@ public final class RuntimeLookupFixtures {
             "{\"acks\":[{\"b\":\"\"}]}"));
         String[][] base64Inputs = {
             {"base64-unpadded", "BQ"},
+            {"base64-unpadded-three-sextets", "BQE"},
+            {"base64-partial-padding", "BQ="},
+            {"base64-noncanonical-two-sextet-pad-bits", "BR=="},
+            {"base64-noncanonical-three-sextet-pad-bits", "BFB="},
+            {"base64-internal-tab", "B\tQ=="},
             {"base64-single-character", "B"},
             {"base64-extra-padding", "BQ==="},
             {"base64-surrounding-spaces", " BQ== "},
