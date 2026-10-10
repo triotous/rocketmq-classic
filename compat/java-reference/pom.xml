@@ -9,6 +9,8 @@
     <maven.compiler.release>11</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <rocketmq.client.version>5.5.1</rocketmq.client.version>
+    <!-- Set false only when regenerating the forked runtime-start fixture. -->
+    <start.fixture.verify>true</start.fixture.verify>
   </properties>
   <dependencies>
     <dependency>
@@ -139,6 +141,20 @@
               <arguments>
                 <argument>${project.basedir}/../../fixtures/runtime/address.json</argument>
                 <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>verify-runtime-start-mutation-fixture</id>
+            <phase>verify</phase>
+            <goals><goal>exec</goal></goals>
+            <configuration>
+              <executable>${java.home}/bin/java</executable>
+              <arguments>
+                <argument>-Dstart.fixture.verify=${start.fixture.verify}</argument>
+                <argument>-cp</argument><classpath/>
+                <argument>compat.RuntimeStartMutationProbe</argument>
+                <argument>${project.basedir}/../../fixtures/runtime/start.json</argument>
               </arguments>
             </configuration>
           </execution>
