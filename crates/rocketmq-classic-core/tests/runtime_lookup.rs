@@ -262,6 +262,60 @@ async fn null_consumer_group_matches_java_rpc_and_omits_header_field() {
 }
 
 #[tokio::test]
+async fn empty_consumer_group_matches_java_rpc_and_preserves_blank_header_field() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+    let java_lookup = &fixture["runtimeLookupInvocation"];
+    let api_case = &fixture["consumerListEmptyGroupApiCase"];
+    assert_eq!(
+        java_lookup["emptyGroupConsumerOutcome"],
+        serde_json::json!(["b", "a", "b"])
+    );
+    assert_eq!(java_lookup["emptyGroupConsumerCalls"][0]["group"], "");
+    assert_eq!(api_case["requestCode"], request::GET_CONSUMER_LIST_BY_GROUP);
+    assert_eq!(api_case["consumerGroupFieldPresent"], true);
+    assert_eq!(api_case["consumerGroup"], "");
+    assert_eq!(api_case["consumerIds"], serde_json::json!(["client"]));
+
+    let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let broker_address = broker.local_addr().unwrap().to_string();
+    let (runtime, name_peer) = setup(Some(broker_address), false).await;
+    let broker_peer = tokio::spawn(async move {
+        let (mut socket, _) = broker.accept().await.unwrap();
+        let command = read(&mut socket).await;
+        assert_eq!(command.code, request::GET_CONSUMER_LIST_BY_GROUP);
+        assert_eq!(
+            command
+                .ext_fields
+                .as_ref()
+                .and_then(|fields| fields.get("consumerGroup"))
+                .map(String::as_str),
+            Some("")
+        );
+        reply(
+            &mut socket,
+            &command,
+            0,
+            Some(br#"{"consumerIdList":["client"]}"#.to_vec()),
+        )
+        .await;
+        let mut byte = [0];
+        assert_eq!(socket.read(&mut byte).await.unwrap(), 0);
+    });
+
+    assert_eq!(
+        runtime
+            .find_consumer_id_list_nullable(Some("topic"), Some(""))
+            .await
+            .unwrap(),
+        Some(vec![Some("client".into())])
+    );
+    runtime.remoting().shutdown().await;
+    broker_peer.await.unwrap();
+    name_peer.await.unwrap();
+}
+
+#[tokio::test]
 async fn null_assignment_fields_match_java_request_body() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
