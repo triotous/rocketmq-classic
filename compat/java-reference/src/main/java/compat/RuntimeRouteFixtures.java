@@ -1180,9 +1180,10 @@ public final class RuntimeRouteFixtures {
     private static List<Object> runtimeRouteNestedCollectionConsumers() throws Exception {
         List<Object> cases = new ArrayList<>();
         String[] ids = {"populated-control", "null-queue-row-static", "null-broker-row",
-            "null-filter-list", "null-static-mapping", "null-queue-list-static"};
+            "null-filter-list", "null-static-mapping", "null-queue-list-static",
+            "null-broker-address-map"};
         String[] fields = {null, "queueDatas", "brokerDatas", "filterServerTable",
-            "topicQueueMappingByBroker", null};
+            "topicQueueMappingByBroker", null, null};
         Map<String, Object> base = new TreeMap<>();
         for (String field : new String[] {"queueDatas", "brokerDatas", "filterServerTable", "topicQueueMappingByBroker"}) {
             base.put(field, routeCollectionValue(field, "populated"));
@@ -1191,6 +1192,10 @@ public final class RuntimeRouteFixtures {
             Map<String, Object> input = new TreeMap<>(base);
             if ("null-queue-list-static".equals(ids[index])) {
                 input.put("queueDatas", null);
+            } else if ("null-broker-address-map".equals(ids[index])) {
+                @SuppressWarnings("unchecked") List<Map<String, Object>> brokers =
+                    (List<Map<String, Object>>) input.get("brokerDatas");
+                brokers.get(0).put("brokerAddrs", null);
             } else if (fields[index] != null) {
                 input.put(fields[index], routeCollectionValue(fields[index], "nullNested"));
             }
