@@ -2078,7 +2078,9 @@ impl BitSet {
 
 mod bitset_base64 {
     use super::BitSet;
-    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    use base64::{
+        Engine as _, engine::general_purpose::STANDARD, engine::general_purpose::STANDARD_NO_PAD,
+    };
     use rocketmq_classic_common::serde_fastjson;
     use serde::{Deserializer, Serializer};
 
@@ -2102,7 +2104,8 @@ mod bitset_base64 {
         value
             .map(|text| {
                 STANDARD
-                    .decode(text)
+                    .decode(&text)
+                    .or_else(|_| STANDARD_NO_PAD.decode(&text))
                     .map(|bytes| BitSet::from_byte_array(&bytes))
                     .map_err(serde::de::Error::custom)
             })
