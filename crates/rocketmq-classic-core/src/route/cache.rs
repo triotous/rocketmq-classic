@@ -828,6 +828,61 @@ mod tests {
     }
 
     #[test]
+    fn route_collection_state_product_matches_invoked_unstarted_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        let cases = fixture["runtimeRouteCollectionMatrix"].as_array().unwrap();
+        assert_eq!(cases.len(), 256);
+        for (index, case) in cases.iter().enumerate() {
+            let route: TopicRouteData = serde_json::from_value(case["input"].clone()).unwrap();
+            let cache = RouteCache::default();
+            let changed = cache.replace("topic", route);
+            assert!(
+                changed.is_ok(),
+                "case {index} failed for {}: {changed:?}",
+                case["states"]
+            );
+            assert_eq!(changed.unwrap(), case["changed"], "case {index}");
+
+            let snapshot = cache.snapshot().unwrap();
+            assert_eq!(
+                snapshot.raw_routes.contains_key("topic"),
+                case["cached"],
+                "case {index}"
+            );
+            let cached = snapshot.raw_routes["topic"].snapshot().unwrap();
+            assert_eq!(
+                cached
+                    .queue_datas_snapshot()
+                    .map_or(-1, |rows| rows.len() as i64),
+                case["cachedQueueCount"],
+                "case {index}"
+            );
+            assert_eq!(
+                cached
+                    .broker_datas_snapshot()
+                    .map_or(-1, |rows| rows.len() as i64),
+                case["cachedBrokerCount"],
+                "case {index}"
+            );
+            assert_eq!(
+                cached
+                    .filter_server_table_snapshot()
+                    .map_or(-1, |rows| rows.len() as i64),
+                case["cachedFilterCount"],
+                "case {index}"
+            );
+            assert_eq!(
+                cached
+                    .topic_queue_mapping_by_broker_snapshot()
+                    .map_or(-1, |rows| rows.len() as i64),
+                case["cachedMappingCount"],
+                "case {index}"
+            );
+        }
+    }
+
+    #[test]
     fn nullable_static_mapping_conversion_matches_invoked_java_failures() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
