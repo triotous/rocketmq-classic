@@ -1277,6 +1277,7 @@ public final class RuntimeHeartbeatFixtures {
         fixture.put("heartbeatDtoInputCases", heartbeatDtoInputCases());
         fixture.put("nullOwnerSubscriptionPreparation", nullOwnerSubscriptionPreparation());
         fixture.put("channelEventListenerCases", channelEventListenerCases());
+        fixture.put("heartbeatV2SettingMutation", heartbeatV2SettingMutation());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture) + "\n";
         Path file = Path.of(args[0]);
         if (args.length > 1 && "--verify".equals(args[1])) {
@@ -1333,5 +1334,66 @@ public final class RuntimeHeartbeatFixtures {
             }
         }
         return cases;
+    }
+
+    private static final class HeartbeatModeApi extends org.apache.rocketmq.client.impl.MQClientAPIImpl {
+        private final List<String> modes;
+
+        HeartbeatModeApi(ClientConfig config, List<String> modes) {
+            super(new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null, config, null,
+                ignored -> (org.apache.rocketmq.remoting.RemotingClient) Proxy.newProxyInstance(
+                    RuntimeHeartbeatFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> method.getReturnType() == boolean.class ? false : null));
+            this.modes = modes;
+        }
+
+        @Override
+        public int sendHeartbeat(String address, HeartbeatData heartbeat, long timeout) {
+            modes.add("V1");
+            return 551;
+        }
+
+        @Override
+        public org.apache.rocketmq.remoting.common.HeartbeatV2Result sendHeartbeatV2(
+            String address, HeartbeatData heartbeat, long timeout) {
+            modes.add("V2");
+            return new org.apache.rocketmq.remoting.common.HeartbeatV2Result(551, false, true);
+        }
+    }
+
+    private static Map<String, Object> heartbeatV2SettingMutation() throws Exception {
+        ClientConfig config = new ClientConfig();
+        config.setClientIP("192.0.2.6");
+        config.setUseHeartbeatV2(false);
+        MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+        org.apache.rocketmq.client.impl.MQClientAPIImpl original = runtime.getMQClientAPIImpl();
+        List<String> modes = new ArrayList<>();
+        HeartbeatModeApi api = new HeartbeatModeApi(config, modes);
+        DefaultMQProducer producer = new DefaultMQProducer("heartbeat-mode");
+        Map<String, Object> result = new TreeMap<>();
+        try {
+            if (!runtime.registerProducer("heartbeat-mode", producer.getDefaultMQProducerImpl()))
+                throw new IllegalStateException("producer registration");
+            java.lang.reflect.Field field = MQClientInstance.class.getDeclaredField("mQClientAPIImpl");
+            field.setAccessible(true);
+            field.set(runtime, api);
+            result.put("configuredBefore", config.isUseHeartbeatV2());
+            result.put("v1Outcome", runtime.sendHeartbeatToBroker(0, "broker", "127.0.0.1:10911"));
+            config.setUseHeartbeatV2(true);
+            result.put("configuredAfterMutation", config.isUseHeartbeatV2());
+            result.put("v2Outcome", runtime.sendHeartbeatToBroker(0, "broker", "127.0.0.1:10911"));
+            result.put("modeCalls", new ArrayList<>(modes));
+        } finally {
+            Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
+                org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
+            cleanup.setAccessible(true);
+            try { cleanup.invoke(runtime, original, new IllegalStateException("heartbeat mode fixture teardown")); }
+            finally {
+                api.shutdown();
+                producer.shutdown();
+            }
+        }
+        return result;
     }
 }
