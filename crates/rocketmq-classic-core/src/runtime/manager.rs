@@ -1,7 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     future::Future,
-    hash::{DefaultHasher, Hash, Hasher},
     sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, RwLock, Weak},
 };
 use tokio::sync::Mutex as AsyncMutex;
@@ -21,10 +20,8 @@ struct Entry {
     runtime: OnceLock<Arc<ClientRuntime>>,
 }
 
-const KEY_MUTATION_SHARDS: usize = 256;
-
 struct KeyMutationGate {
-    asynchronous: AsyncMutex<()>,
+    asynchronous: Arc<AsyncMutex<()>>,
     synchronous: SynchronousMutationGate,
 }
 
@@ -41,7 +38,7 @@ struct SynchronousMutationState {
 }
 
 impl SynchronousMutationGate {
-    fn lock(&self) -> SynchronousMutationGuard<'_> {
+    fn lock(&self, gate: Arc<KeyMutationGate>) -> SynchronousMutationGuard {
         let owner = std::thread::current().id();
         let mut state = self.lock_state();
         loop {
@@ -67,7 +64,7 @@ impl SynchronousMutationGate {
             }
         }
         drop(state);
-        SynchronousMutationGuard { gate: self, owner }
+        SynchronousMutationGuard { gate, owner }
     }
 
     fn lock_state(&self) -> MutexGuard<'_, SynchronousMutationState> {
@@ -81,19 +78,19 @@ impl SynchronousMutationGate {
     }
 }
 
-struct SynchronousMutationGuard<'a> {
-    gate: &'a SynchronousMutationGate,
+struct SynchronousMutationGuard {
+    gate: Arc<KeyMutationGate>,
     owner: std::thread::ThreadId,
 }
 
-impl Drop for SynchronousMutationGuard<'_> {
+impl Drop for SynchronousMutationGuard {
     fn drop(&mut self) {
-        let mut state = self.gate.lock_state();
+        let mut state = self.gate.synchronous.lock_state();
         debug_assert_eq!(state.owner, Some(self.owner));
         state.depth -= 1;
         if state.depth == 0 {
             state.owner = None;
-            self.gate.available.notify_one();
+            self.gate.synchronous.available.notify_one();
         }
     }
 }
@@ -101,53 +98,59 @@ impl Drop for SynchronousMutationGuard<'_> {
 impl Default for KeyMutationGate {
     fn default() -> Self {
         Self {
-            asynchronous: AsyncMutex::new(()),
+            asynchronous: Arc::new(AsyncMutex::new(())),
             synchronous: SynchronousMutationGate::default(),
         }
     }
 }
 
-struct KeyMutationGuard<'a> {
-    gate: &'a KeyMutationGate,
-    _asynchronous: tokio::sync::MutexGuard<'a, ()>,
+struct KeyMutationGuard {
+    gate: Arc<KeyMutationGate>,
+    _asynchronous: tokio::sync::OwnedMutexGuard<()>,
 }
 
-impl KeyMutationGuard<'_> {
-    fn lock_synchronous(&self) -> SynchronousMutationGuard<'_> {
-        self.gate.synchronous.lock()
+impl KeyMutationGuard {
+    fn lock_synchronous(&self) -> SynchronousMutationGuard {
+        self.gate.synchronous.lock(self.gate.clone())
     }
 }
 
+#[derive(Default)]
 struct KeyMutationLocks {
-    gates: [KeyMutationGate; KEY_MUTATION_SHARDS],
-}
-
-impl Default for KeyMutationLocks {
-    fn default() -> Self {
-        Self {
-            gates: std::array::from_fn(|_| KeyMutationGate::default()),
-        }
-    }
+    gates: Mutex<HashMap<String, Weak<KeyMutationGate>>>,
 }
 
 impl KeyMutationLocks {
-    fn gate(&self, key: &str) -> &KeyMutationGate {
-        let mut hasher = DefaultHasher::new();
-        key.hash(&mut hasher);
-        &self.gates[(hasher.finish() as usize) & (KEY_MUTATION_SHARDS - 1)]
+    fn gate(&self, key: &str) -> Result<Arc<KeyMutationGate>, RuntimeError> {
+        let mut gates = self
+            .gates
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?;
+        if gates.len() >= 256 {
+            gates.retain(|_, gate| gate.strong_count() > 0);
+        }
+        match gates.get(key).and_then(Weak::upgrade) {
+            Some(gate) => Ok(gate),
+            None => {
+                let gate = Arc::new(KeyMutationGate::default());
+                gates.insert(key.to_owned(), Arc::downgrade(&gate));
+                Ok(gate)
+            }
+        }
     }
 
-    async fn lock(&self, key: &str) -> Result<KeyMutationGuard<'_>, RuntimeError> {
-        let gate = self.gate(key);
-        let asynchronous = gate.asynchronous.lock().await;
+    async fn lock(&self, key: &str) -> Result<KeyMutationGuard, RuntimeError> {
+        let gate = self.gate(key)?;
+        let asynchronous = gate.asynchronous.clone().lock_owned().await;
         Ok(KeyMutationGuard {
             gate,
             _asynchronous: asynchronous,
         })
     }
 
-    fn lock_synchronous(&self, key: &str) -> SynchronousMutationGuard<'_> {
-        self.gate(key).synchronous.lock()
+    fn lock_synchronous(&self, key: &str) -> Result<SynchronousMutationGuard, RuntimeError> {
+        let gate = self.gate(key)?;
+        Ok(gate.synchronous.lock(gate.clone()))
     }
 }
 
@@ -335,7 +338,7 @@ impl ClientRuntimeManager {
         client_id: &str,
         expected: &Arc<ClientRuntime>,
     ) -> Result<bool, RuntimeError> {
-        let _synchronous_mutation = self.mutation_locks.lock_synchronous(client_id);
+        let _synchronous_mutation = self.mutation_locks.lock_synchronous(client_id)?;
         let mut entries = self
             .entries
             .lock()
@@ -1016,6 +1019,7 @@ impl FactoryEntrySetView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::hash::{DefaultHasher, Hash, Hasher};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tokio::sync::Barrier;
 
@@ -1251,8 +1255,23 @@ mod tests {
                 ClientRuntime::construct(entry.config.clone(), &entry.properties, None)
             }
         };
-        let first = ClientConfig::new("first");
-        let second = ClientConfig::new("second");
+        // Choose IDs that collide in the prior 256-shard scheme. Exact-key
+        // gates must still let these distinct runtimes initialize together.
+        let mut old_shards = HashMap::<usize, ClientConfig>::new();
+        let mut collision = None;
+        for index in 0..=256 {
+            let config = ClientConfig::new(format!("same-old-shard-{index}"));
+            let mut hasher = DefaultHasher::new();
+            config.build_client_id().hash(&mut hasher);
+            let shard = (hasher.finish() as usize) & 255;
+            if let Some(previous) = old_shards.insert(shard, config.clone()) {
+                collision = Some((previous, config));
+                break;
+            }
+        }
+        let (first, second) = collision.expect("257 IDs must collide in the old 256-shard scheme");
+        assert_ne!(first.build_client_id(), second.build_client_id());
+        let same_key_config = first.clone();
         let (first, second) = tokio::time::timeout(std::time::Duration::from_secs(1), async {
             tokio::join!(
                 manager.get_or_create_inner(&first, None, &construct),
@@ -1263,9 +1282,8 @@ mod tests {
         .unwrap();
         assert!(!Arc::ptr_eq(&first.unwrap(), &second.unwrap()));
         assert_eq!(count.load(Ordering::SeqCst), 2);
-        let config = ClientConfig::new("first");
         manager
-            .get_or_create_inner(&config, None, &construct)
+            .get_or_create_inner(&same_key_config, None, &construct)
             .await
             .unwrap();
         assert_eq!(count.load(Ordering::SeqCst), 2);
