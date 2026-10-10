@@ -1,4 +1,7 @@
-use rocketmq_classic_core::{config::ClientConfig, runtime::ClientRuntimeManager};
+use rocketmq_classic_core::{
+    config::ClientConfig,
+    runtime::{ClientRuntimeManager, RuntimeError},
+};
 use std::collections::{BTreeMap, BTreeSet};
 use std::{
     sync::{
@@ -84,6 +87,24 @@ async fn live_table_keeps_sharing_hooks_and_identity_cleanup_across_explicit_man
     live.put(&id, first.clone()).await.unwrap();
     assert!(live.contains_key(&id).unwrap());
     live.clear().await.unwrap();
+}
+
+#[tokio::test]
+async fn nullable_factory_table_get_matches_invoked_java_null_key_failure() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    assert_eq!(
+        fixture["managerTable"]["nullKeyGet"],
+        "NullPointerException"
+    );
+
+    let manager = ClientRuntimeManager::new();
+    let table = manager.factory_table();
+    assert!(matches!(
+        table.get_nullable(None),
+        Err(RuntimeError::InvalidRoute("null factory key"))
+    ));
+    assert!(table.get_nullable(Some("missing")).unwrap().is_none());
 }
 
 #[tokio::test]

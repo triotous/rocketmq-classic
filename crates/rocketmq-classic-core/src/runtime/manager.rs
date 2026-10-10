@@ -425,6 +425,17 @@ impl FactoryTable {
             .cloned())
     }
 
+    /// Nullable Java-compatible `ConcurrentMap.get` boundary.
+    pub fn get_nullable(
+        &self,
+        key: Option<&str>,
+    ) -> Result<Option<Arc<ClientRuntime>>, RuntimeError> {
+        let Some(key) = key else {
+            return Err(RuntimeError::InvalidRoute("null factory key"));
+        };
+        self.get(key)
+    }
+
     pub fn contains_key(&self, key: &str) -> Result<bool, RuntimeError> {
         self.get(key).map(|value| value.is_some())
     }
