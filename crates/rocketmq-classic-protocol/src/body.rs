@@ -3889,7 +3889,7 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
         let cases = fixture["batchAckBodyInputCases"].as_array().unwrap();
-        assert_eq!(cases.len(), 102);
+        assert_eq!(cases.len(), 106);
         for case in cases {
             let decoded = serde_json::from_str::<Option<BatchAckMessageRequestBody>>(
                 case["rawInput"].as_str().unwrap(),
