@@ -199,10 +199,31 @@ async fn uncached_consumer_lookup_refreshes_once_and_assignment_reuses_raw_topic
 
 #[tokio::test]
 async fn query_first_refreshes_and_both_lookup_rpcs_apply_vip_port() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+    let java_vip = &fixture["runtimeLookupVipMutation"];
+    assert_eq!(
+        java_vip["consumerAddressVipDisabled"],
+        serde_json::json!(["127.0.0.1:10913"])
+    );
+    assert_eq!(
+        java_vip["assignmentAddressVipDisabled"],
+        serde_json::json!(["127.0.0.1:10913"])
+    );
+    assert_eq!(
+        java_vip["consumerAddressVipEnabled"],
+        serde_json::json!(["127.0.0.1:10911"])
+    );
+    assert_eq!(
+        java_vip["assignmentAddressVipEnabled"],
+        serde_json::json!(["127.0.0.1:10911"])
+    );
+
     let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = broker.local_addr().unwrap();
     let (runtime, name_peer) =
         setup(Some(format!("127.0.0.1:{}", address.port() + 2)), false).await;
+    assert!(!runtime.config().read().unwrap().vip_channel_enabled);
     runtime.config().write().unwrap().vip_channel_enabled = true;
     let peer = tokio::spawn(async move {
         let (mut socket, _) = broker.accept().await.unwrap();
