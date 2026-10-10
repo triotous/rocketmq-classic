@@ -1,8 +1,23 @@
 use std::collections::BTreeMap;
 
+use crate::SharedValue;
 use rocketmq_classic_common::message::MessageQueue;
 use rocketmq_classic_common::serde_fastjson;
-use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::DeserializeOwned};
+
+pub type SharedBrokerAddressMap = SharedValue<serde_fastjson::NullableLongStringMap>;
+pub type SharedTopicQueueMappingIds = SharedValue<BTreeMap<i32, i32>>;
+
+fn serialize_shared_nullable_long_string_map<S>(
+    value: &Option<SharedBrokerAddressMap>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let snapshot = value.as_ref().map(SharedValue::snapshot);
+    serde_fastjson::serialize_nullable_long_string_map(&snapshot, serializer)
+}
 
 fn java_route_json<T: Serialize>(
     value: &T,
@@ -554,7 +569,7 @@ impl QueueData {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct BrokerData {
     #[serde(
@@ -570,12 +585,10 @@ pub struct BrokerData {
     )]
     pub broker_name: Option<String>,
     #[serde(
-        default,
-        serialize_with = "serde_fastjson::serialize_nullable_long_string_map",
-        deserialize_with = "serde_fastjson::deserialize_optional_long_string_map",
+        serialize_with = "serialize_shared_nullable_long_string_map",
         skip_serializing_if = "Option::is_none"
     )]
-    pub broker_addrs: Option<serde_fastjson::NullableLongStringMap>,
+    pub broker_addrs: Option<SharedBrokerAddressMap>,
     #[serde(
         default,
         deserialize_with = "serde_fastjson::deserialize_nullable_string",
@@ -584,6 +597,21 @@ pub struct BrokerData {
     pub zone_name: Option<String>,
     #[serde(default, deserialize_with = "serde_fastjson::deserialize_bool")]
     pub enable_acting_master: bool,
+}
+
+impl Clone for BrokerData {
+    fn clone(&self) -> Self {
+        Self {
+            cluster: self.cluster.clone(),
+            broker_name: self.broker_name.clone(),
+            broker_addrs: self
+                .broker_addrs
+                .as_ref()
+                .map(|addresses| SharedValue::new(addresses.snapshot())),
+            zone_name: self.zone_name.clone(),
+            enable_acting_master: self.enable_acting_master,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -623,7 +651,7 @@ impl<'de> Deserialize<'de> for BrokerData {
         Ok(Self {
             cluster: fields.cluster,
             broker_name: fields.broker_name,
-            broker_addrs: fields.broker_addrs,
+            broker_addrs: fields.broker_addrs.map(SharedValue::new),
             zone_name: fields.zone_name,
             enable_acting_master: fields.enable_acting_master,
         })
@@ -632,7 +660,9 @@ impl<'de> Deserialize<'de> for BrokerData {
 
 impl PartialEq for BrokerData {
     fn eq(&self, other: &Self) -> bool {
-        self.broker_name == other.broker_name && self.broker_addrs == other.broker_addrs
+        self.broker_name == other.broker_name
+            && self.broker_addrs.as_ref().map(SharedValue::snapshot)
+                == other.broker_addrs.as_ref().map(SharedValue::snapshot)
     }
 }
 
@@ -655,6 +685,18 @@ pub enum BrokerDataSelectAddrError {
 }
 
 impl BrokerData {
+    pub fn get_broker_addrs(&self) -> Option<SharedBrokerAddressMap> {
+        self.broker_addrs.clone()
+    }
+
+    pub fn set_broker_addrs(&mut self, value: Option<SharedBrokerAddressMap>) {
+        self.broker_addrs = value;
+    }
+
+    pub fn set_broker_addrs_owned(&mut self, value: Option<serde_fastjson::NullableLongStringMap>) {
+        self.broker_addrs = value.map(SharedValue::new);
+    }
+
     /// Selects the master address when present; otherwise randomly selects one
     /// value, matching pinned Java 5.5.1 `BrokerData.selectBrokerAddr`.
     ///
@@ -673,14 +715,16 @@ impl BrokerData {
             .broker_addrs
             .as_ref()
             .ok_or(BrokerDataSelectAddrError::NullAddressMap)?;
-        if let Some(Some(master)) = addresses.get(&Some(0)) {
-            return Ok(Some(master.clone()));
-        }
-        if addresses.is_empty() {
-            return Err(BrokerDataSelectAddrError::NoAddressCandidates);
-        }
-        let index = select(addresses.len());
-        Ok(addresses.values().nth(index).cloned().flatten())
+        addresses.with(|addresses| {
+            if let Some(Some(master)) = addresses.get(&Some(0)) {
+                return Ok(Some(master.clone()));
+            }
+            if addresses.is_empty() {
+                return Err(BrokerDataSelectAddrError::NoAddressCandidates);
+            }
+            let index = select(addresses.len());
+            Ok(addresses.values().nth(index).cloned().flatten())
+        })
     }
 
     /// Returns the pinned Java 5.5.1 `BrokerData.hashCode` result.
@@ -692,11 +736,14 @@ impl BrokerData {
             .broker_addrs
             .as_ref()
             .map(|addresses| {
-                addresses.iter().fold(0i32, |hash, (broker_id, address)| {
-                    let address_hash = address.as_deref().map(java_string_hash_code).unwrap_or(0);
-                    hash.wrapping_add(
-                        java_long_hash_code(broker_id.unwrap_or_default()) ^ address_hash,
-                    )
+                addresses.with(|addresses| {
+                    addresses.iter().fold(0i32, |hash, (broker_id, address)| {
+                        let address_hash =
+                            address.as_deref().map(java_string_hash_code).unwrap_or(0);
+                        hash.wrapping_add(
+                            java_long_hash_code(broker_id.unwrap_or_default()) ^ address_hash,
+                        )
+                    })
                 })
             })
             .unwrap_or(0);
@@ -735,18 +782,20 @@ impl BrokerData {
         let broker_addrs = self.broker_addrs.as_ref().map_or_else(
             || "null".to_owned(),
             |addresses| {
-                let entries = addresses
-                    .iter()
-                    .map(|(broker_id, address)| {
-                        format!(
-                            "{}={}",
-                            broker_id.map_or_else(|| "null".to_owned(), |id| id.to_string()),
-                            address.as_deref().unwrap_or("null")
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!("{{{entries}}}")
+                addresses.with(|addresses| {
+                    let entries = addresses
+                        .iter()
+                        .map(|(broker_id, address)| {
+                            format!(
+                                "{}={}",
+                                broker_id.map_or_else(|| "null".to_owned(), |id| id.to_string()),
+                                address.as_deref().unwrap_or("null")
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!("{{{entries}}}")
+                })
             },
         );
         format!(
@@ -872,6 +921,7 @@ mod broker_data_to_string_tests {
 #[cfg(test)]
 mod broker_data_select_addr_tests {
     use super::{BrokerData, BrokerDataSelectAddrError};
+    use std::collections::BTreeMap;
 
     #[test]
     fn broker_data_select_addr_matches_invoked_java_outcomes() {
@@ -906,7 +956,7 @@ mod broker_data_select_addr_tests {
                 ),
                 None => assert_eq!(case["nullAddress"], true, "{}", case["id"]),
             }
-            for index in 0..broker.broker_addrs.as_ref().unwrap().len() {
+            for index in 0..broker.broker_addrs.as_ref().unwrap().with(BTreeMap::len) {
                 match broker.java_select_broker_addr_with(|_| index).unwrap() {
                     Some(address) => assert!(
                         case["addresses"]
@@ -954,12 +1004,14 @@ mod nullable_broker_address_tests {
         let value = serde_json::json!({"cluster":"c","brokerName":"b","brokerAddrs":{"0":null,"1":"slave:10911"}});
         let broker: BrokerData = serde_json::from_value(value.clone()).unwrap();
         let addresses = broker.broker_addrs.as_ref().unwrap();
-        assert_eq!(addresses.get(&Some(0)), Some(&None));
-        assert!(!addresses.contains_key(&Some(2)));
-        assert_eq!(
-            addresses.get(&Some(1)).and_then(Option::as_deref),
-            Some("slave:10911")
-        );
+        addresses.with(|addresses| {
+            assert_eq!(addresses.get(&Some(0)), Some(&None));
+            assert!(!addresses.contains_key(&Some(2)));
+            assert_eq!(
+                addresses.get(&Some(1)).and_then(Option::as_deref),
+                Some("slave:10911")
+            );
+        });
         assert_eq!(
             serde_json::to_value(&broker).unwrap()["brokerAddrs"],
             value["brokerAddrs"]
@@ -1197,6 +1249,7 @@ mod nullable_route_collection_tests {
 #[cfg(test)]
 mod nullable_static_mapping_tests {
     use super::TopicQueueMappingInfo;
+    use std::collections::BTreeMap;
 
     #[test]
     fn static_mapping_optional_fields_match_invoked_java_decode_and_json() {
@@ -1219,7 +1272,7 @@ mod nullable_static_mapping_tests {
                 mapping
                     .curr_id_map
                     .as_ref()
-                    .is_some_and(|map| map.is_empty()),
+                    .is_some_and(|map| map.with(BTreeMap::is_empty)),
                 case["currIdMapEmpty"]
             );
         }
@@ -1242,22 +1295,24 @@ mod nullable_static_mapping_tests {
             );
             if let Ok(mapping) = mapping {
                 assert_eq!(
-                    mapping.curr_id_map.as_ref().map(|values| values.len()),
+                    mapping
+                        .curr_id_map
+                        .as_ref()
+                        .map(|values| values.with(BTreeMap::len)),
                     case["mapSize"].as_u64().map(|size| size as usize)
                 );
                 assert_eq!(
                     mapping
                         .curr_id_map
                         .as_ref()
-                        .is_some_and(|values| values.contains_key(&0)),
+                        .is_some_and(|values| values.with(|values| values.contains_key(&0))),
                     case["hasKeyZero"]
                 );
                 assert_eq!(
                     mapping
                         .curr_id_map
                         .as_ref()
-                        .and_then(|values| values.get(&0))
-                        .copied(),
+                        .and_then(|values| { values.with(|values| values.get(&0).copied()) }),
                     case["keyZeroValue"].as_i64().map(|value| value as i32)
                 );
             }
@@ -1294,7 +1349,7 @@ mod overlapping_static_mapping_tests {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TopicQueueMappingInfo {
     #[serde(
@@ -1324,12 +1379,8 @@ pub struct TopicQueueMappingInfo {
         skip_serializing_if = "Option::is_none"
     )]
     pub scope: Option<String>,
-    #[serde(
-        default = "default_mapping_ids",
-        deserialize_with = "serde_fastjson::deserialize_optional_int_map",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub curr_id_map: Option<BTreeMap<i32, i32>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub curr_id_map: Option<SharedTopicQueueMappingIds>,
 }
 
 #[derive(Deserialize)]
@@ -1382,10 +1433,42 @@ impl<'de> Deserialize<'de> for TopicQueueMappingInfo {
             epoch: fields.epoch,
             dirty: fields.dirty,
             scope: fields.scope,
-            curr_id_map: fields.curr_id_map,
+            curr_id_map: fields.curr_id_map.map(SharedValue::new),
         })
     }
 }
+
+impl Clone for TopicQueueMappingInfo {
+    fn clone(&self) -> Self {
+        Self {
+            topic: self.topic.clone(),
+            total_queues: self.total_queues,
+            bname: self.bname.clone(),
+            epoch: self.epoch,
+            dirty: self.dirty,
+            scope: self.scope.clone(),
+            curr_id_map: self
+                .curr_id_map
+                .as_ref()
+                .map(|ids| SharedValue::new(ids.snapshot())),
+        }
+    }
+}
+
+impl PartialEq for TopicQueueMappingInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.topic == other.topic
+            && self.total_queues == other.total_queues
+            && self.bname == other.bname
+            && self.epoch == other.epoch
+            && self.dirty == other.dirty
+            && self.scope == other.scope
+            && self.curr_id_map.as_ref().map(SharedValue::snapshot)
+                == other.curr_id_map.as_ref().map(SharedValue::snapshot)
+    }
+}
+
+impl Eq for TopicQueueMappingInfo {}
 
 fn default_mapping_ids() -> Option<BTreeMap<i32, i32>> {
     Some(BTreeMap::new())
@@ -1400,12 +1483,24 @@ impl Default for TopicQueueMappingInfo {
             epoch: 0,
             dirty: false,
             scope: default_mapping_scope(),
-            curr_id_map: default_mapping_ids(),
+            curr_id_map: Some(SharedValue::new(BTreeMap::new())),
         }
     }
 }
 
 impl TopicQueueMappingInfo {
+    pub fn get_curr_id_map(&self) -> Option<SharedTopicQueueMappingIds> {
+        self.curr_id_map.clone()
+    }
+
+    pub fn set_curr_id_map(&mut self, value: Option<SharedTopicQueueMappingIds>) {
+        self.curr_id_map = value;
+    }
+
+    pub fn set_curr_id_map_owned(&mut self, value: Option<BTreeMap<i32, i32>>) {
+        self.curr_id_map = value.map(SharedValue::new);
+    }
+
     /// Encodes the inherited Java `RemotingSerializable.toJson(boolean)` form.
     /// Bean fields are key-sorted and integer map keys remain unquoted as in Fastjson2.
     pub fn java_to_json(&self, pretty_format: bool) -> Result<String, serde_json::Error> {
@@ -1480,8 +1575,10 @@ impl TopicQueueMappingInfo {
             self.curr_id_map
                 .as_ref()
                 .map(|ids| {
-                    ids.iter().fold(0i32, |hash, (logical, physical)| {
-                        hash.wrapping_add(*logical ^ *physical)
+                    ids.with(|ids| {
+                        ids.iter().fold(0i32, |hash, (logical, physical)| {
+                            hash.wrapping_add(*logical ^ *physical)
+                        })
                     })
                 })
                 .unwrap_or(0),
@@ -1496,12 +1593,14 @@ impl TopicQueueMappingInfo {
         let curr_id_map = self.curr_id_map.as_ref().map_or_else(
             || "null".to_owned(),
             |ids| {
-                let entries = ids
-                    .iter()
-                    .map(|(logical, physical)| format!("{logical}={physical}"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!("{{{entries}}}")
+                ids.with(|ids| {
+                    let entries = ids
+                        .iter()
+                        .map(|(logical, physical)| format!("{logical}={physical}"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!("{{{entries}}}")
+                })
             },
         );
         format!(
@@ -2018,8 +2117,10 @@ mod route_dto_input_cases_tests {
             let broker: BrokerData = parse_java_route_json(case["rawInput"].as_str().unwrap())
                 .expect("pinned Java accepts nullable Long map keys");
             let addresses = broker.broker_addrs.unwrap();
-            assert!(addresses.contains_key(&None), "{id}");
-            assert_eq!(addresses.len(), 1, "{id}");
+            addresses.with(|addresses| {
+                assert!(addresses.contains_key(&None), "{id}");
+                assert_eq!(addresses.len(), 1, "{id}");
+            });
         }
         for case in cases {
             let raw_input = case["rawInput"].as_str().unwrap();
@@ -2264,12 +2365,11 @@ impl TopicRouteData {
                         let mapping = mapping
                             .as_ref()
                             .ok_or(TopicRouteDataCloneError::NullTopicQueueMappingInfo)?;
-                        let curr_id_map = mapping
+                        mapping
                             .curr_id_map
                             .as_ref()
                             .ok_or(TopicRouteDataCloneError::NullMappingIdMap)?;
-                        let mut copy = mapping.clone();
-                        copy.curr_id_map = Some(curr_id_map.clone());
+                        let copy = mapping.clone();
                         Ok((broker.clone(), Some(copy)))
                     })
                     .collect::<Result<BTreeMap<_, _>, TopicRouteDataCloneError>>()
@@ -2540,10 +2640,9 @@ impl TopicRouteData {
             masters
                 .entry(broker.broker_name.as_deref())
                 .or_insert_with(|| {
-                    broker
-                        .broker_addrs
-                        .as_ref()
-                        .is_some_and(|addresses| addresses.contains_key(&Some(0)))
+                    broker.broker_addrs.as_ref().is_some_and(|addresses| {
+                        addresses.with(|addresses| addresses.contains_key(&Some(0)))
+                    })
                 });
         }
         let mut queue_data = self
@@ -2614,15 +2713,17 @@ impl TopicRouteData {
             .flatten()
         {
             if let (Some(scope), Some(ids)) = (&mapping.scope, &mapping.curr_id_map) {
-                for id in ids.keys() {
-                    let key = (logical_broker(scope), *id);
-                    if owners
-                        .get(&key)
-                        .is_none_or(|old| old.epoch <= mapping.epoch)
-                    {
-                        owners.insert(key, mapping);
+                ids.with(|ids| {
+                    for id in ids.keys() {
+                        let key = (logical_broker(scope), *id);
+                        if owners
+                            .get(&key)
+                            .is_none_or(|old| old.epoch <= mapping.epoch)
+                        {
+                            owners.insert(key, mapping);
+                        }
                     }
-                }
+                });
             }
         }
         let mut endpoints = BTreeMap::new();
@@ -2731,11 +2832,12 @@ mod tests {
             .as_ref()
             .unwrap()
             .clone();
-        duplicate.broker_addrs = Some(BTreeMap::from([(Some(0), Some("other-master".into()))]));
+        duplicate.broker_addrs =
+            Some(BTreeMap::from([(Some(0), Some("other-master".into()))]).into());
         route.broker_datas.as_mut().unwrap()[0]
             .as_mut()
             .unwrap()
-            .broker_addrs = Some(BTreeMap::from([(Some(1), Some("slave".into()))]));
+            .broker_addrs = Some(BTreeMap::from([(Some(1), Some("slave".into()))]).into());
         route.broker_datas.as_mut().unwrap().push(Some(duplicate));
         assert!(route.publish_queues("topic").is_empty());
         route.topic_queue_mapping_by_broker = Some(BTreeMap::from([
@@ -2745,7 +2847,7 @@ mod tests {
                     total_queues: 2,
                     epoch: 0,
                     scope: Some("a".into()),
-                    curr_id_map: Some(BTreeMap::new()),
+                    curr_id_map: Some(BTreeMap::new().into()),
                     ..Default::default()
                 }),
             ),
@@ -2755,7 +2857,7 @@ mod tests {
                     total_queues: 2,
                     epoch: 0,
                     scope: Some("b".into()),
-                    curr_id_map: Some(BTreeMap::new()),
+                    curr_id_map: Some(BTreeMap::new().into()),
                     ..Default::default()
                 }),
             ),
@@ -2776,7 +2878,7 @@ mod tests {
         route.broker_datas.as_mut().unwrap()[0]
             .as_mut()
             .unwrap()
-            .broker_addrs = Some(BTreeMap::from([(Some(0), Some("master".into()))]));
+            .broker_addrs = Some(BTreeMap::from([(Some(0), Some("master".into()))]).into());
         route.queue_datas.as_mut().unwrap().retain(|queue| {
             queue
                 .as_ref()
@@ -2852,7 +2954,7 @@ mod tests {
         route.broker_datas.as_mut().unwrap()[0]
             .as_mut()
             .unwrap()
-            .broker_addrs = Some(BTreeMap::from([(Some(0), Some("b1-master".into()))]));
+            .broker_addrs = Some(BTreeMap::from([(Some(0), Some("b1-master".into()))]).into());
         assert_eq!(route.publish_queues("t").len(), 3);
         assert_eq!(route.subscribe_queues("t").len(), 15);
     }
@@ -2879,7 +2981,7 @@ mod tests {
                 epoch: 0,
                 dirty: false,
                 scope: Some("__global__".into()),
-                curr_id_map: Some(BTreeMap::from([(0, 0)])),
+                curr_id_map: Some(BTreeMap::from([(0, 0)]).into()),
             }),
         )]));
         let queues = route.publish_queues("t");
@@ -2903,7 +3005,7 @@ mod tests {
                 epoch: i64::MAX,
                 dirty: true,
                 scope: Some("global".into()),
-                curr_id_map: Some(BTreeMap::from([(0, 2)])),
+                curr_id_map: Some(BTreeMap::from([(0, 2)]).into()),
             }),
         )]));
         let json = serde_json::to_value(&route).unwrap();

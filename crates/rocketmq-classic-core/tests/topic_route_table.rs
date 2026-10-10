@@ -230,7 +230,8 @@ async fn raw_clear_query_refetches_once_and_retained_table_observes_wire_refresh
             .unwrap()
             .broker_addrs
             .as_ref()
-            .unwrap()[&Some(0)],
+            .unwrap()
+            .with(|addresses| addresses.get(&Some(0)).cloned().flatten()),
         Some("master:10911".to_owned())
     );
     assert!(

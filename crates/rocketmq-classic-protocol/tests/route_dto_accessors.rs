@@ -1,5 +1,6 @@
 use rocketmq_classic_protocol::route::{
-    BrokerData, QueueData, TopicQueueMappingInfo, TopicRouteData,
+    BrokerData, QueueData, SharedBrokerAddressMap, SharedTopicQueueMappingIds,
+    TopicQueueMappingInfo, TopicRouteData,
 };
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -15,15 +16,17 @@ fn route_dto_public_fields_match_invoked_java_getter_setter_values() {
 
     let broker: BrokerData = serde_json::from_value(java["brokerData"].clone()).unwrap();
     let broker_addrs = broker.broker_addrs.as_ref().map(|values| {
-        values
-            .iter()
-            .map(|(key, value)| {
-                (
-                    key.map_or_else(|| "null".to_owned(), |id| id.to_string()),
-                    value.as_deref(),
-                )
-            })
-            .collect::<BTreeMap<_, _>>()
+        values.with(|values| {
+            values
+                .iter()
+                .map(|(key, value)| {
+                    (
+                        key.map_or_else(|| "null".to_owned(), |id| id.to_string()),
+                        value.clone(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>()
+        })
     });
     assert_eq!(
         json!({
@@ -74,10 +77,12 @@ fn route_dto_public_fields_match_invoked_java_getter_setter_values() {
     let mapping: TopicQueueMappingInfo =
         serde_json::from_value(java["topicQueueMappingInfo"].clone()).unwrap();
     let mapping_ids = mapping.curr_id_map.as_ref().map(|values| {
-        values
-            .iter()
-            .map(|(key, value)| (key.to_string(), *value))
-            .collect::<BTreeMap<_, _>>()
+        values.with(|values| {
+            values
+                .iter()
+                .map(|(key, value)| (key.to_string(), *value))
+                .collect::<BTreeMap<_, _>>()
+        })
     });
     assert_eq!(
         json!({
@@ -187,4 +192,63 @@ fn route_dto_public_fields_match_invoked_java_getter_setter_values() {
         }),
         java["topicRouteDataNulls"]
     );
+}
+
+#[test]
+fn route_dto_mutable_map_accessors_preserve_java_aliases() {
+    let fixture = route_fixture();
+    let java = &fixture["routeDtoReferenceAliases"];
+
+    let mut broker = BrokerData::default();
+    let caller_addresses: SharedBrokerAddressMap =
+        BTreeMap::from([(Some(0), Some("master:10911".to_owned()))]).into();
+    broker.set_broker_addrs(Some(caller_addresses.clone()));
+    let getter_addresses = broker.get_broker_addrs().unwrap();
+    assert_eq!(
+        caller_addresses.ptr_eq(&getter_addresses),
+        java["brokerSetterRetainsMap"]
+    );
+    assert_eq!(
+        getter_addresses.ptr_eq(&broker.get_broker_addrs().unwrap()),
+        java["brokerGetterIsStable"]
+    );
+    caller_addresses.with_mut(|addresses| {
+        addresses.insert(Some(2), Some("caller-slave:10911".to_owned()));
+    });
+    assert_eq!(
+        getter_addresses.with(|addresses| addresses.get(&Some(2)).cloned().flatten()),
+        Some("caller-slave:10911".to_owned())
+    );
+    assert_eq!(java["brokerCallerMutationVisible"], true);
+    getter_addresses.with_mut(|addresses| {
+        addresses.insert(Some(3), Some("getter-slave:10911".to_owned()));
+    });
+    assert_eq!(
+        caller_addresses.with(|addresses| addresses.get(&Some(3)).cloned().flatten()),
+        Some("getter-slave:10911".to_owned())
+    );
+    assert_eq!(java["brokerGetterMutationVisible"], true);
+
+    let mut mapping = TopicQueueMappingInfo::default();
+    let caller_ids: SharedTopicQueueMappingIds = BTreeMap::from([(0, 4)]).into();
+    mapping.set_curr_id_map(Some(caller_ids.clone()));
+    let getter_ids = mapping.get_curr_id_map().unwrap();
+    assert_eq!(
+        caller_ids.ptr_eq(&getter_ids),
+        java["mappingSetterRetainsMap"]
+    );
+    assert_eq!(
+        getter_ids.ptr_eq(&mapping.get_curr_id_map().unwrap()),
+        java["mappingGetterIsStable"]
+    );
+    caller_ids.with_mut(|ids| {
+        ids.insert(1, 7);
+    });
+    assert_eq!(getter_ids.with(|ids| ids.get(&1).copied()), Some(7));
+    assert_eq!(java["mappingCallerMutationVisible"], true);
+    getter_ids.with_mut(|ids| {
+        ids.insert(2, 9);
+    });
+    assert_eq!(caller_ids.with(|ids| ids.get(&2).copied()), Some(9));
+    assert_eq!(java["mappingGetterMutationVisible"], true);
 }

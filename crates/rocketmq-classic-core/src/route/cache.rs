@@ -90,18 +90,20 @@ impl RouteSnapshot {
             .ok_or(RuntimeError::InvalidRoute(
                 "selected broker has null address map",
             ))?;
-        if let Some(master) = addresses.get(&Some(0)).and_then(Option::as_deref) {
-            return Ok(Some(master.to_owned()));
-        }
-        if addresses.is_empty() {
-            return Err(RuntimeError::InvalidRoute(
-                "selected broker has no addresses",
-            ));
-        }
-        Ok(addresses
-            .values()
-            .nth(select(addresses.len()))
-            .and_then(Option::clone))
+        addresses.with(|addresses| {
+            if let Some(master) = addresses.get(&Some(0)).and_then(Option::as_deref) {
+                return Ok(Some(master.to_owned()));
+            }
+            if addresses.is_empty() {
+                return Err(RuntimeError::InvalidRoute(
+                    "selected broker has no addresses",
+                ));
+            }
+            Ok(addresses
+                .values()
+                .nth(select(addresses.len()))
+                .and_then(Option::clone))
+        })
     }
 
     pub fn publish_address(&self, broker: &str) -> Option<&str> {
@@ -386,8 +388,14 @@ impl RouteCache {
                 let Some(name) = broker.broker_name.clone() else {
                     continue;
                 };
-                next.broker_addresses
-                    .insert(name, broker.broker_addrs.clone().unwrap_or_default());
+                next.broker_addresses.insert(
+                    name,
+                    broker
+                        .broker_addrs
+                        .as_ref()
+                        .map(|addresses| addresses.snapshot())
+                        .unwrap_or_default(),
+                );
             }
             next.topics
                 .insert(topic.to_owned(), Arc::new(topic_snapshot));
@@ -508,7 +516,7 @@ fn convert_topic_route_data(
                 .as_ref()
                 .ok_or(RuntimeError::InvalidRoute("null static mapping id map"))?;
             if mapping.bname.is_none()
-                && ids.keys().any(|id| *id >= 0 && *id < mapping.total_queues)
+                && ids.with(|ids| ids.keys().any(|id| *id >= 0 && *id < mapping.total_queues))
             {
                 return Err(RuntimeError::InvalidRoute(
                     "null static mapping broker name",
@@ -612,9 +620,11 @@ fn broker_address_exists_in_raw_routes(
                 "null broker data during cleanup",
             ))?;
             if broker.broker_addrs.as_ref().is_some_and(|addresses| {
-                addresses
-                    .values()
-                    .any(|candidate| candidate.as_deref() == address)
+                addresses.with(|addresses| {
+                    addresses
+                        .values()
+                        .any(|candidate| candidate.as_deref() == address)
+                })
             }) {
                 return Ok(true);
             }
@@ -700,7 +710,9 @@ fn validate_conversion_size(topic: &str, route: &TopicRouteData) -> Result<(), R
                 .flatten()
                 .find(|broker| broker.broker_name == queue.broker_name)
                 .and_then(|broker| broker.broker_addrs.as_ref())
-                .is_some_and(|addresses| addresses.contains_key(&Some(0)));
+                .is_some_and(|addresses| {
+                    addresses.with(|addresses| addresses.contains_key(&Some(0)))
+                });
             if master {
                 add(
                     queue.write_queue_nums,
@@ -1368,7 +1380,7 @@ mod tests {
         route.broker_datas.as_mut().unwrap()[0]
             .as_mut()
             .unwrap()
-            .broker_addrs = Some(BTreeMap::from([(Some(0), None)]));
+            .broker_addrs = Some(BTreeMap::from([(Some(0), None)]).into());
         cache.replace("topic", route).unwrap();
         cache.clean_offline().unwrap();
         assert_eq!(
@@ -1407,7 +1419,7 @@ mod tests {
         empty.broker_datas.as_mut().unwrap()[0]
             .as_mut()
             .unwrap()
-            .broker_addrs = Some(BTreeMap::new());
+            .broker_addrs = Some(BTreeMap::new().into());
         assert!(cache.replace("topic", empty).unwrap());
     }
 
@@ -1493,10 +1505,13 @@ mod tests {
         original.broker_datas.as_mut().unwrap()[0]
             .as_mut()
             .unwrap()
-            .broker_addrs = Some(BTreeMap::from([
-            (Some(2), Some("slave-a:10911".into())),
-            (Some(3), Some("slave-b:10911".into())),
-        ]));
+            .broker_addrs = Some(
+            BTreeMap::from([
+                (Some(2), Some("slave-a:10911".into())),
+                (Some(3), Some("slave-b:10911".into())),
+            ])
+            .into(),
+        );
         original
             .broker_datas
             .as_mut()
@@ -1523,7 +1538,7 @@ mod tests {
         original.broker_datas.as_mut().unwrap()[0]
             .as_mut()
             .unwrap()
-            .broker_addrs = Some(BTreeMap::new());
+            .broker_addrs = Some(BTreeMap::new().into());
         cache.replace("original", original).unwrap();
         assert!(matches!(
             cache
@@ -1614,10 +1629,13 @@ mod tests {
             })]),
             broker_datas: Some(vec![Some(BrokerData {
                 broker_name: Some("broker".into()),
-                broker_addrs: Some(BTreeMap::from([
-                    (Some(0), Some(format!("master-{count}:10911"))),
-                    (Some(2), Some("slave:10911".into())),
-                ])),
+                broker_addrs: Some(
+                    BTreeMap::from([
+                        (Some(0), Some(format!("master-{count}:10911"))),
+                        (Some(2), Some("slave:10911".into())),
+                    ])
+                    .into(),
+                ),
                 ..Default::default()
             })]),
             ..Default::default()
@@ -1910,7 +1928,7 @@ mod tests {
                             total_queues: 1_000,
                             epoch: 0,
                             scope: Some("__global__".into()),
-                            curr_id_map: Some(BTreeMap::new()),
+                            curr_id_map: Some(BTreeMap::new().into()),
                             ..Default::default()
                         }),
                     )
