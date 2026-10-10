@@ -246,6 +246,27 @@ impl ClientRuntimeManager {
         .await
     }
 
+    /// Nullable Java-compatible `MQClientManager.getOrCreateMQClientInstance`
+    /// configuration boundary.
+    pub async fn get_or_create_nullable(
+        &self,
+        config: Option<&ClientConfig>,
+    ) -> Result<Arc<ClientRuntime>, RuntimeError> {
+        self.get_or_create_with_hook_nullable(config, None).await
+    }
+
+    /// Nullable Java-compatible configuration boundary for the hook overload.
+    pub async fn get_or_create_with_hook_nullable(
+        &self,
+        config: Option<&ClientConfig>,
+        hook: Option<Arc<dyn RpcHook>>,
+    ) -> Result<Arc<ClientRuntime>, RuntimeError> {
+        let Some(config) = config else {
+            return Err(RuntimeError::InvalidRoute("null client config"));
+        };
+        self.get_or_create_with_hook(config, hook).await
+    }
+
     async fn get_or_create_inner<F, Fut>(
         &self,
         config: &ClientConfig,

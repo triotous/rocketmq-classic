@@ -911,6 +911,12 @@ public final class RuntimeConfigFixtures {
         java.util.Set<Map.Entry<String, org.apache.rocketmq.client.impl.factory.MQClientInstance>> entryView = live.entrySet();
         Map<String, Object> result = new TreeMap<>();
         try {
+            Map<String, Object> nullableGetOrCreateInputs = new TreeMap<>();
+            captureThrowable(nullableGetOrCreateInputs, "nullConfig",
+                () -> manager.getOrCreateMQClientInstance(null));
+            captureThrowable(nullableGetOrCreateInputs, "nullConfigWithNullHook",
+                () -> manager.getOrCreateMQClientInstance(null, null));
+            result.put("nullableGetOrCreateInputs", nullableGetOrCreateInputs);
             try {
                 live.get(null);
                 result.put("nullKeyGet", "RETURNED");

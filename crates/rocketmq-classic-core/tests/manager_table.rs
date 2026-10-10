@@ -143,6 +143,37 @@ async fn nullable_factory_table_reads_match_invoked_java_null_key_failures() {
 }
 
 #[tokio::test]
+async fn nullable_get_or_create_config_inputs_match_invoked_java() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
+    let java = &fixture["managerTable"]["nullableGetOrCreateInputs"];
+    assert_eq!(java["nullConfig"], "NullPointerException");
+    assert_eq!(java["nullConfigWithNullHook"], "NullPointerException");
+
+    let manager = ClientRuntimeManager::new();
+    let table = manager.factory_table();
+    assert!(table.is_empty().unwrap());
+    assert!(matches!(
+        manager.get_or_create_nullable(None).await,
+        Err(RuntimeError::InvalidRoute("null client config"))
+    ));
+    assert!(matches!(
+        manager.get_or_create_with_hook_nullable(None, None).await,
+        Err(RuntimeError::InvalidRoute("null client config"))
+    ));
+    assert!(table.is_empty().unwrap());
+
+    let config = ClientConfig::new("nullable-get-or-create-valid");
+    let first = manager.get_or_create_nullable(Some(&config)).await.unwrap();
+    let repeated = manager
+        .get_or_create_with_hook_nullable(Some(&config), None)
+        .await
+        .unwrap();
+    assert!(Arc::ptr_eq(&first, &repeated));
+    assert_eq!(table.len().unwrap(), 1);
+}
+
+#[tokio::test]
 async fn nullable_factory_table_mutations_match_invoked_java_null_failures() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
