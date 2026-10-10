@@ -9,9 +9,11 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import org.apache.rocketmq.client.impl.ClientRemotingProcessor;
 import org.apache.rocketmq.common.message.MessageDecoder;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.sysflag.MessageSysFlag;
+import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 
 /** Routing metadata only; payload decoding/transaction handling belongs to later phases. */
 public final class RuntimeInboundRoutingFixtures {
@@ -57,9 +59,17 @@ public final class RuntimeInboundRoutingFixtures {
             item.put("properties", MessageDecoder.string2messageProperties(input));
             propertyCases.add(item);
         }
+        RemotingCommand undispatched = new ClientRemotingProcessor(null).processRequest(
+            null,
+            RemotingCommand.createRequestCommand(200073, null));
+        Map<String,Object> undispatchedCase = new TreeMap<>();
+        undispatchedCase.put("requestCode", 200073);
+        undispatchedCase.put("responsePresent", undispatched != null);
+        if (undispatched != null) undispatchedCase.put("responseCode", undispatched.getCode());
         Map<String,Object> fixture = new TreeMap<>(); fixture.put("client","org.apache.rocketmq:rocketmq-client:5.5.1");
-        fixture.put("sourceCommit","efa1be59d6fc747ad220f036c86030f05f0419f9"); fixture.put("entrypoint","MessageDecoder.encode/decodeProperties/string2messageProperties; MessageVersion");
+        fixture.put("sourceCommit","efa1be59d6fc747ad220f036c86030f05f0419f9"); fixture.put("entrypoint","MessageDecoder.encode/decodeProperties/string2messageProperties; MessageVersion; ClientRemotingProcessor.processRequest");
         fixture.put("serverBaselineContacted",false); fixture.put("cases",cases); fixture.put("propertyCases",propertyCases);
+        fixture.put("undispatchedCases",List.of(undispatchedCase));
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture) + "\n"; Path file = Path.of(args[0]);
         if (args.length > 1 && "--verify".equals(args[1])) {
             if (!json.equals(Files.readString(file))) throw new IllegalStateException("fixture drift: " + file);
