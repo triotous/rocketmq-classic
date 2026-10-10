@@ -419,6 +419,51 @@ mod tests {
         tasks.stop().await;
     }
 
+    #[test]
+    fn scheduled_task_delays_and_periods_match_invoked_java_registration() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/lookup.json")).unwrap();
+        for case in fixture["runtimeScheduledTaskCases"].as_array().unwrap() {
+            let mut config = ClientConfig::new("scheduled-task-oracle");
+            config.namesrv_addr = match case["name"].as_str().unwrap() {
+                "nameserver-absent" => None,
+                "nameserver-configured" => Some("127.0.0.1:9876".into()),
+                other => panic!("unexpected Java scheduler case {other}"),
+            };
+            config.poll_name_server_interval = 23;
+            config.heartbeat_broker_interval = 47;
+            config.persist_consumer_offset_interval = 59;
+
+            let actual: Vec<_> = schedules(&config)
+                .unwrap()
+                .iter()
+                .map(|schedule| {
+                    serde_json::json!({
+                        "initialDelayMillis": schedule.delay.as_millis(),
+                        "periodMillis": schedule.period.as_millis(),
+                    })
+                })
+                .collect();
+            let expected: Vec<_> = case["scheduleAtFixedRateCalls"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|call| {
+                    let multiplier = match call["unit"].as_str().unwrap() {
+                        "MILLISECONDS" => 1,
+                        "MINUTES" => 60_000,
+                        unit => panic!("unexpected Java scheduler unit {unit}"),
+                    };
+                    serde_json::json!({
+                        "initialDelayMillis": call["initialDelay"].as_u64().unwrap() * multiplier,
+                        "periodMillis": call["period"].as_u64().unwrap() * multiplier,
+                    })
+                })
+                .collect();
+            assert_eq!(actual, expected, "{}", case["name"]);
+        }
+    }
+
     #[tokio::test(start_paused = true)]
     async fn slow_callback_serializes_jobs_then_catches_up_from_prior_deadlines() {
         let runtime = runtime();
