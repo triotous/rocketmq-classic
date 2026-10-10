@@ -1,0 +1,8 @@
+# Phase 6 execution session — 2026-10-10T11:35Z
+
+- Continued the active Phase 6 goal on `07-phase-06-runtime-routing-heartbeat`; starting worktree was clean. Read and applied `coding-general`; Phase 6 plan files remain read-only. No repository code or fixtures have changed in this session so far.
+- Re-read the Phase 6 plan and requirement-audit summary. P6-V01/V02/V03/U01 and listed local validation gates are checked, but the audit explicitly leaves source/API/input/reverse-export reconciliation PARTIAL. P6-V04 is still a Phase 19 handoff, not a Phase 6 pass condition.
+- The configured Java checkout `/Users/nanashi07/Projects/3rd/rocketmq` is unavailable in this environment. The pinned 5.5.1 Maven artifacts and in-repository invoked fixtures remain available.
+- Reconfirmed platform limits: host Darwin; installed targets are `aarch64-apple-darwin` and `x86_64-pc-windows-gnu`. No OrbStack Linux machine is configured (`orb uname -a` reports that a machine must first be created); the cached disposable RocketMQ image runs Ubuntu 24.04/aarch64 but has no Rust toolchain. No Linux production runtime test was performed.
+- Identified a candidate public-map semantic gap for follow-up: `FactoryTable` remapping loops retry callbacks after a conflicting write, and the API map documents this. Java fixtures currently cover ordinary callback outcomes, not concurrent callback count/atomicity. Need an invoked Java race oracle and native regression before changing behavior; inspect the other map wrappers before deciding scope.
+- Docker image metadata/ephemeral `uname` checks were read-only; no service was started with persistent state and no files outside the workspace were edited.
