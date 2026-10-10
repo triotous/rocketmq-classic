@@ -460,6 +460,42 @@ async fn active_nameserver_addresses_remain_constructor_snapshot_after_config_mu
     }
 }
 
+#[tokio::test]
+async fn start_uses_live_nameserver_null_check_but_keeps_constructor_address_snapshot() {
+    use rocketmq_classic_core::runtime::ClientRuntimeManager;
+
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/start.json")).unwrap();
+    assert!(fixture["activeAddressesBeforeMutation"].is_null());
+    assert!(fixture["activeAddressesBeforeStart"].is_null());
+    assert_eq!(fixture["discoveryCalls"], 0);
+    assert_eq!(fixture["startOutcome"], "RUNNING");
+    assert!(fixture["activeAddressesAfterStart"].is_null());
+    assert_eq!(fixture["shutdownOutcome"], "OK");
+
+    let mut config = ClientConfig::new("192.0.2.80");
+    config.instance_name = Some("phase6-start-nameserver-mutation".into());
+    config.namesrv_addr = None;
+    config.enable_heartbeat_channel_event_listener = false;
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+    assert_eq!(runtime.remoting().get_name_server_address_list(), None);
+    runtime.config().write().unwrap().set_namesrv_addr(Some(
+        fixture["namesrvAddrAtStart"].as_str().unwrap().to_owned(),
+    ));
+    assert_eq!(
+        runtime.config().read().unwrap().namesrv_addr.as_deref(),
+        fixture["namesrvAddrAtStart"].as_str()
+    );
+
+    runtime.start().await.unwrap();
+    assert!(runtime.name_server_addr().is_none());
+    assert_eq!(runtime.remoting().get_name_server_address_list(), None);
+    assert!(runtime.shutdown().await.unwrap());
+}
+
 #[test]
 fn centralized_defaults_and_java_clone_copy_exact_fields() {
     let fixture: Value =
