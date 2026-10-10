@@ -410,7 +410,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unbound_created_and_stopped_processors_return_system_error() {
+    async fn unbound_and_non_running_states_return_system_error() {
         let unbound = RuntimeProcessor::default()
             .process(notify_request())
             .unwrap()
@@ -440,6 +440,22 @@ mod tests {
         assert_eq!(stopped.code, response::SYSTEM_ERROR);
         assert_eq!(
             stopped.remark.as_deref(),
+            Some("client runtime is not running")
+        );
+
+        let mut failed_config = ClientConfig::new("inbound-failed");
+        failed_config.namesrv_addr = Some(String::new());
+        failed_config.poll_name_server_interval = 0;
+        let failed = ClientRuntimeManager::new()
+            .get_or_create(&failed_config)
+            .await
+            .unwrap();
+        assert!(failed.start().await.is_err());
+        assert_eq!(failed.state(), RuntimeState::Failed);
+        let failure = failed.inbound.process(notify_request()).unwrap().unwrap();
+        assert_eq!(failure.code, response::SYSTEM_ERROR);
+        assert_eq!(
+            failure.remark.as_deref(),
             Some("client runtime is not running")
         );
     }
