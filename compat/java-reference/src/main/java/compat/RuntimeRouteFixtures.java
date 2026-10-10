@@ -1948,6 +1948,19 @@ public final class RuntimeRouteFixtures {
             primitives.put("treeMapPutAllNullKeyKeepsBeforeRow", table.get(beforeNullKeyRoute) == first);
             primitives.put("treeMapPutAllNullKeySkipsAfterRow", !table.containsKey(afterNullKeyRoute));
             table.remove(beforeNullKeyRoute);
+            Map<String, Object> nullPutAllOutcome = new TreeMap<>();
+            String nullPutAllError = "OK";
+            try {
+                table.putAll(null);
+            } catch (Throwable error) {
+                nullPutAllError = error.getClass().getSimpleName();
+            }
+            nullPutAllOutcome.put("outcome", nullPutAllError);
+            nullPutAllOutcome.put("keysAfter", new ArrayList<>(new java.util.TreeSet<>(table.keySet())));
+            result.put("nullPutAll", nullPutAllOutcome);
+            primitives.put("nullPutAllThrowsNullPointer", "NullPointerException".equals(nullPutAllError));
+            primitives.put("nullPutAllKeepsMappings", table.size() == 3
+                && table.get("topic") == second && table.get("bulk-a") == first && table.get("bulk-b") == second);
             TopicRouteData absentValue = com.alibaba.fastjson2.JSON.parseObject(
                 com.alibaba.fastjson2.JSON.toJSONString(second), TopicRouteData.class);
             absentValue.getBrokerDatas().get(0).setBrokerName("absent-broker");

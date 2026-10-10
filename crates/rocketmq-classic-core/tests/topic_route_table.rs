@@ -538,6 +538,22 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
     actual_keys.sort();
     assert_eq!(actual_keys, expected_keys);
     table.remove(before_null_key).unwrap();
+    let null_put_all_oracle = &case["nullPutAll"];
+    assert_eq!(null_put_all_oracle["outcome"], "NullPointerException");
+    let null_put_all_result = table.put_all_nullable_rows(None);
+    outcomes.insert(
+        "nullPutAllThrowsNullPointer",
+        matches!(
+            null_put_all_result,
+            Err(RuntimeError::InvalidRoute("null topic route putAll map"))
+        ),
+    );
+    let expected_keys: Vec<String> =
+        serde_json::from_value(null_put_all_oracle["keysAfter"].clone()).unwrap();
+    let mut actual_keys: Vec<_> = table.snapshot().unwrap().into_keys().collect();
+    actual_keys.sort();
+    assert_eq!(actual_keys, expected_keys);
+    outcomes.insert("nullPutAllKeepsMappings", actual_keys.len() == 3);
     outcomes.insert(
         "containsValueEqualCopy",
         table
