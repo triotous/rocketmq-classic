@@ -114,6 +114,7 @@ public final class RuntimeLookupFixtures {
         fixture.put("batchAckApiCase", batchAckApiCase());
         fixture.put("batchAckBitSetCapacityCase", batchAckBitSetCapacityCase());
         fixture.put("runtimeScheduledTaskCases", runtimeScheduledTaskCases());
+        fixture.put("runtimeNullBrokerLookupRpcTopics", runtimeNullBrokerLookupRpcTopics());
         fixture.put("runtimeLookupInvocation", runtimeLookupInvocation());
         fixture.put("runtimeLookupVipMutation", runtimeLookupVipMutation());
         fixture.put("resetOffsetBodyInputCases", resetOffsetBodyInputCases());
@@ -2887,6 +2888,38 @@ public final class RuntimeLookupFixtures {
             cleanup.setAccessible(true);
             try { cleanup.invoke(runtime, original, new IllegalStateException("lookup invocation fixture teardown")); }
             finally { api.shutdown(); }
+        }
+        return result;
+    }
+
+    private static Map<String, Object> nullTopicLookupOutcome(java.util.concurrent.Callable<?> call) {
+        Map<String, Object> result = new TreeMap<>();
+        try {
+            Object value = call.call();
+            result.put("outcome", "OK");
+            result.put("isNull", value == null);
+        } catch (Exception error) {
+            result.put("outcome", error.getClass().getSimpleName());
+        }
+        return result;
+    }
+
+    private static Map<String, Object> runtimeNullBrokerLookupRpcTopics() throws Exception {
+        ClientConfig config = new ClientConfig();
+        config.setClientIP("null-broker-lookup-rpc-topics");
+        MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+        Map<String, Object> result = new TreeMap<>();
+        try {
+            result.put("consumerList", nullTopicLookupOutcome(
+                () -> runtime.findConsumerIdList(null, "consumer")));
+            result.put("assignment", nullTopicLookupOutcome(() -> runtime.queryAssignment(null, "consumer",
+                "strategy", org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel.BROADCASTING, 3000)));
+        } finally {
+            Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
+                org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
+            cleanup.setAccessible(true);
+            cleanup.invoke(runtime, runtime.getMQClientAPIImpl(),
+                new IllegalStateException("null broker lookup RPC topic fixture teardown"));
         }
         return result;
     }
