@@ -153,3 +153,9 @@
 
 - Updated the route branch audit, P6-05 requirement row, route DTO API/input row, and ADR-0078 for the five registered-consumer cases and current fixture hash. This narrows only the documented route callback boundary; broader Phase 6 reconciliation remains open and P6-V04 stays `PENDING_PHASE_19`.
 - Documentation diff and stale-hash checks pass.
+
+## macOS address-enumeration check
+
+- On Darwin 25.6.0 arm64, a live call to the pinned RocketMQ 5.5.1 `NetworkUtil.getLocalInetAddressList()` returned nine candidates matching `fixtures/runtime/client-config.json` exactly. Oracle JAR SHA-256: `6a15b581269c0e06d9508d284c84c05a8578ffa1b16db3e60ce837c97f684b97`.
+- `cargo test -p rocketmq-classic-core --locked local_address::tests::` passed all eight focused tests, including the macOS native `getifaddrs` candidate-order, selected-address, and IPv6 fallback comparison against that list.
+- This verifies the available macOS host path only. Windows runtime enumeration, non-macOS Unix enumeration, and behavior on an actual IPv6-only host remain open; the general Phase 6 source/API/input/reverse-export audit remains PARTIAL and P6-V04 stays `PENDING_PHASE_19`.
