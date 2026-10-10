@@ -452,7 +452,7 @@ Copy column: **C** means both `cloneClientConfig` and `resetClientConfig` copy t
 | startDetectorEnable | start_detector_enable | bool; `com.rocketmq.startDetectorEnable`, false | C | owner | producer fault detector Phase 7 |
 | enableHeartbeatChannelEventListener | enable_heartbeat_channel_event_listener | bool; true | C | K | sampled at `MQClientInstance` construction to create or omit the weak active-channel listener; later `ClientConfig` mutation does not replace it; successful heartbeat wakes all consumers |
 | enableConcurrentHeartbeat | enable_concurrent_heartbeat | bool; false | C | K | wrapper reads the retained setting live, while executor presence/width are captured at construction; `false→true` with no executor returns `false`, and `true→false` uses serial V1 while retaining the executor; both actual Java fixture cases and paired Rust loopback tests are in `heartbeat.rs` |
-| concurrentHeartbeatThreadPoolSize | concurrent_heartbeat_thread_pool_size | i32; available processors | C | K | concurrent heartbeat capacity; positive when enabled |
+| concurrentHeartbeatThreadPoolSize | concurrent_heartbeat_thread_pool_size | i32; available processors | C | K | constructor creates a fixed executor; changing retained config 2→1 leaves Java core size 2, and the native parallel-peer regression confirms the original width remains active |
 | enableTrace | enable_trace | bool; false | C | owner | trace lifecycle/hooks Phase 16 |
 | traceTopic | trace_topic | nullable String; null | C | owner | trace topic Phase 16 |
 | maxPageSizeInGetMetadata | max_page_size_in_get_metadata | i32; 2000 | O | owner | metadata pagination in MQClientAPIImpl Phase 17 |
