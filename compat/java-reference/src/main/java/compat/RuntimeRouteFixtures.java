@@ -1371,6 +1371,7 @@ public final class RuntimeRouteFixtures {
                 item.put("outcome", error.getClass().getSimpleName());
             }
             item.put("cachedRouteUnchanged", before.equals(runtime.getAnExistTopicRouteData("topic")));
+            item.put("priorBrokerPublishAddressAfterFailure", runtime.findBrokerAddressInPublish("broker"));
             item.put("consumerNeedChecksAfterFailure", consumerNeedChecks.get());
             item.put("consumerUpdatesAfterFailure", consumerUpdates.get());
             item.put("producerUpdatesAfterFailure", producerUpdates.get());
@@ -1382,6 +1383,7 @@ public final class RuntimeRouteFixtures {
             item.put("consumerUpdatesAfterRecovery", consumerUpdates.get());
             item.put("producerUpdatesAfterRecovery", producerUpdates.get());
             item.put("recoveredPublishAddress", runtime.findBrokerAddressInPublish("recovery-broker"));
+            item.put("priorBrokerPublishAddressAfterRecovery", runtime.findBrokerAddressInPublish("broker"));
         } finally {
             java.lang.reflect.Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
                 org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
