@@ -129,6 +129,10 @@ public final class Main {
             ProducerCoreFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;
         }
+        if (args.length > 0 && "message-decode-fixtures".equals(args[0])) {
+            MessageDecodeFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "rpc-invoked-ext-fixtures".equals(args[0])) {
             InvokedExtFixtures.run(option(args, "--output"), java.util.Arrays.asList(args).contains("--verify"));
             return;

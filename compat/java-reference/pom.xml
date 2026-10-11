@@ -299,6 +299,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-java-message-decode-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.MessageDecodeFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/messages/records.json</argument>
+                <argument>true</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-java-invoked-ext-more-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>
