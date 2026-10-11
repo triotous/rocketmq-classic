@@ -63,3 +63,49 @@ pub enum PullConsumerError {
         topic: String,
     },
 }
+
+#[derive(Debug, thiserror::Error)]
+pub enum PushConsumerError {
+    #[error(transparent)]
+    Config(#[from] ConfigError),
+    #[error(transparent)]
+    Runtime(#[from] RuntimeError),
+    #[error(transparent)]
+    Rpc(#[from] RpcError),
+    #[error(transparent)]
+    OffsetStore(#[from] OffsetStoreError),
+    #[error("consumer group is blank or contains characters not accepted by RocketMQ")]
+    InvalidConsumerGroup,
+    #[error("consumer group must not be DEFAULT_CONSUMER")]
+    DefaultConsumerGroup,
+    #[error("consumeTimestamp must be a valid yyyyMMddHHmmss date/time")]
+    InvalidConsumeTimestamp,
+    #[error("{name} value {value} is outside [{minimum}, {maximum}]")]
+    InvalidSetting {
+        name: &'static str,
+        value: i64,
+        minimum: i64,
+        maximum: i64,
+    },
+    #[error("consumeThreadMin ({minimum}) is larger than consumeThreadMax ({maximum})")]
+    InvalidThreadBounds { minimum: i32, maximum: i32 },
+    #[error("invalid subscription: {0}")]
+    InvalidSubscription(String),
+    #[error("a concurrent or orderly message listener must be registered before startup")]
+    MissingMessageListener,
+    #[error("orderly message listeners are not supported until Phase 12")]
+    UnsupportedListenerMode,
+    #[error("push consumer has already been started")]
+    AlreadyStarted,
+    #[error("push consumer has been shut down")]
+    Shutdown,
+    #[error("offset store must be configured before startup")]
+    OffsetStoreAfterStartup,
+    #[error("push consumer has not been started")]
+    NotStarted,
+    #[error("operation requires the push consumer to be created or stopped")]
+    ConfigurationAfterStartup,
+    #[cfg(test)]
+    #[error("test injected startup failure at {0}")]
+    TestStartupFault(&'static str),
+}

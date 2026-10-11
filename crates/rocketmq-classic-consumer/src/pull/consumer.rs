@@ -830,7 +830,7 @@ fn subscription_all(topic: &str) -> SubscriptionData {
     subscription
 }
 
-fn build_subscription(
+pub(crate) fn build_subscription(
     topic: &str,
     expression: Option<&str>,
     expression_type: Option<&str>,

@@ -1,6 +1,7 @@
 mod consumer;
 mod result;
 
+pub(crate) use consumer::build_subscription;
 pub use consumer::{MessageSelector, PullConsumer};
 pub(crate) use result::resolve_pull_broker_address;
 pub use result::{
