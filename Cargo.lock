@@ -994,6 +994,7 @@ name = "rocketmq-classic"
 version = "0.1.0"
 dependencies = [
  "rocketmq-classic-common",
+ "rocketmq-classic-consumer",
  "rocketmq-classic-core",
  "rocketmq-classic-producer",
  "tokio",

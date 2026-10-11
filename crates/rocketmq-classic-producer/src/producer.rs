@@ -37,8 +37,6 @@ pub(crate) struct ScriptedTransport {
 }
 use tokio::{sync::Semaphore, task::JoinHandle};
 
-static DEFAULT_MANAGER: OnceLock<ClientRuntimeManager> = OnceLock::new();
-
 enum State {
     Created,
     Started {
@@ -69,9 +67,7 @@ pub struct Producer {
 
 impl Producer {
     pub fn new(config: ProducerConfig) -> Self {
-        let manager = DEFAULT_MANAGER
-            .get_or_init(ClientRuntimeManager::new)
-            .clone();
+        let manager = ClientRuntimeManager::shared_default();
         Self::with_runtime_manager(config, manager)
     }
 

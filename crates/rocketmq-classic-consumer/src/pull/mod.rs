@@ -1,5 +1,8 @@
+mod consumer;
 mod result;
 
+pub use consumer::{MessageSelector, PullConsumer};
+pub(crate) use result::resolve_pull_broker_address;
 pub use result::{
     FilterMessageContext, FilterMessageHook, ProcessPullError, ProcessedPullResult, PullAPIWrapper,
     build_class_filter_subscription_data,

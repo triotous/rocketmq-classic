@@ -24,7 +24,7 @@ impl CommandHeader for QueryConsumerOffsetRequestHeader {
         fields.insert("topic".into(), self.topic.clone());
         fields.insert("queueId".into(), self.queue_id.to_string());
         put_optional(fields, "setZeroIfNotFound", self.set_zero_if_not_found);
-        put_optional(fields, "brokerName", self.broker_name.as_deref());
+        put_optional(fields, "bname", self.broker_name.as_deref());
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
@@ -33,7 +33,7 @@ impl CommandHeader for QueryConsumerOffsetRequestHeader {
             topic: required_string(fields, "topic")?.to_owned(),
             queue_id: required_i32(fields, "queueId")?,
             set_zero_if_not_found: optional_java_boolean(fields, "setZeroIfNotFound"),
-            broker_name: optional_string(fields, "brokerName"),
+            broker_name: optional_string(fields, "bname"),
         })
     }
 }
@@ -53,7 +53,7 @@ impl CommandHeader for UpdateConsumerOffsetRequestHeader {
         fields.insert("topic".into(), self.topic.clone());
         fields.insert("queueId".into(), self.queue_id.to_string());
         fields.insert("commitOffset".into(), self.commit_offset.to_string());
-        put_optional(fields, "brokerName", self.broker_name.as_deref());
+        put_optional(fields, "bname", self.broker_name.as_deref());
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
@@ -62,7 +62,7 @@ impl CommandHeader for UpdateConsumerOffsetRequestHeader {
             topic: required_string(fields, "topic")?.to_owned(),
             queue_id: required_i32(fields, "queueId")?,
             commit_offset: required_i64(fields, "commitOffset")?,
-            broker_name: optional_string(fields, "brokerName"),
+            broker_name: optional_string(fields, "bname"),
         })
     }
 }
@@ -101,6 +101,7 @@ pub struct PullMessageRequestHeader {
     pub max_msg_bytes: Option<i32>,
     pub request_source: Option<i32>,
     pub proxy_forward_client_id: Option<String>,
+    pub broker_name: Option<String>,
 }
 
 impl CommandHeader for PullMessageRequestHeader {
@@ -127,6 +128,7 @@ impl CommandHeader for PullMessageRequestHeader {
             "proxyFrowardClientId",
             self.proxy_forward_client_id.as_deref(),
         );
+        put_optional(fields, "bname", self.broker_name.as_deref());
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
@@ -146,6 +148,7 @@ impl CommandHeader for PullMessageRequestHeader {
             max_msg_bytes: optional_i32(fields, "maxMsgBytes")?,
             request_source: optional_i32(fields, "requestSource")?,
             proxy_forward_client_id: optional_string(fields, "proxyFrowardClientId"),
+            broker_name: optional_string(fields, "bname"),
         })
     }
 }
@@ -1211,6 +1214,7 @@ mod tests {
             suspend_timeout_millis: 15_000,
             sub_version: i64::MAX,
             proxy_forward_client_id: Some("proxy".into()),
+            broker_name: Some("broker-a".into()),
             ..PullMessageRequestHeader::default()
         };
         let mut fields = HeaderMap::new();
@@ -1218,6 +1222,7 @@ mod tests {
         assert_eq!(PullMessageRequestHeader::decode_fields(&fields), Ok(header));
         assert!(!fields.contains_key("subscription"));
         assert_eq!(fields["proxyFrowardClientId"], "proxy");
+        assert_eq!(fields["bname"], "broker-a");
     }
 
     #[test]

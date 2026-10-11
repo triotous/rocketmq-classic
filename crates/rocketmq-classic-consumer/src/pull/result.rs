@@ -66,6 +66,17 @@ impl PullAPIWrapper {
         self.hooks.write().unwrap().push(hook);
     }
 
+    /// Returns the Broker ID most recently suggested for this queue, defaulting
+    /// to the master before the first pull response.
+    pub fn recalculate_pull_from_which_node(&self, queue: &MessageQueue) -> i64 {
+        self.suggested_broker_ids
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(queue)
+            .copied()
+            .unwrap_or(0)
+    }
+
     pub fn process_pull_result(
         &self,
         queue: &MessageQueue,

@@ -196,6 +196,13 @@ impl ManagerLink {
 }
 
 impl ClientRuntimeManager {
+    /// Shared default manager used by the public Producer and Consumer facades.
+    #[doc(hidden)]
+    pub fn shared_default() -> Self {
+        static MANAGER: OnceLock<ClientRuntimeManager> = OnceLock::new();
+        MANAGER.get_or_init(Self::new).clone()
+    }
+
     /// A retained live view, corresponding to MQClientManager.getFactoryTable.
     /// Reads observe published runtimes; mutations wait for their key's shard.
     pub fn factory_table(&self) -> FactoryTable {
