@@ -11,6 +11,8 @@
     <rocketmq.client.version>5.5.1</rocketmq.client.version>
     <!-- Set false only when regenerating the forked runtime-start fixture. -->
     <start.fixture.verify>true</start.fixture.verify>
+    <!-- Set false only when regenerating the producer core fixture. -->
+    <producer.core.fixture.verify>true</producer.core.fixture.verify>
   </properties>
   <dependencies>
     <dependency>
@@ -281,6 +283,18 @@
               <arguments>
                 <argument>${project.basedir}/../../fixtures/rpc-invoked-producer-more</argument>
                 <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>verify-java-producer-core-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.ProducerCoreFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/producer/core.json</argument>
+                <argument>${producer.core.fixture.verify}</argument>
               </arguments>
             </configuration>
           </execution>

@@ -1,0 +1,366 @@
+package compat;
+
+import com.alibaba.fastjson2.JSON;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.TreeSet;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import org.apache.rocketmq.client.Validators;
+import org.apache.rocketmq.client.producer.DefaultMQProducer;
+import org.apache.rocketmq.common.message.Message;
+import org.apache.rocketmq.common.message.MessageBatch;
+import org.apache.rocketmq.common.message.MessageAccessor;
+import org.apache.rocketmq.common.message.MessageClientIDSetter;
+import org.apache.rocketmq.common.message.MessageConst;
+import org.apache.rocketmq.common.MixAll;
+import org.apache.rocketmq.common.topic.TopicValidator;
+import org.apache.rocketmq.remoting.protocol.RequestCode;
+
+/** Offline Java 5.5.1 producer defaults and pre-I/O validation oracle. */
+public final class ProducerCoreFixtures {
+    private ProducerCoreFixtures() { }
+
+    @FunctionalInterface
+    private interface Check { void run() throws Exception; }
+
+    private static Map<String, Object> row(Object input, boolean valid) {
+        Map<String, Object> row = new TreeMap<>();
+        row.put("input", input);
+        row.put("valid", valid);
+        return row;
+    }
+
+    private static boolean accepts(Check check) {
+        try {
+            check.run();
+            return true;
+        } catch (Exception expected) {
+            return false;
+        }
+    }
+
+    private static long totalAccumulatorHoldBytes(DefaultMQProducer producer) {
+        try {
+            Field producerAccumulator = DefaultMQProducer.class.getDeclaredField("produceAccumulator");
+            producerAccumulator.setAccessible(true);
+            Object accumulator = producerAccumulator.get(producer);
+            Field totalHoldSize = accumulator.getClass().getDeclaredField("totalHoldSize");
+            totalHoldSize.setAccessible(true);
+            return totalHoldSize.getLong(accumulator);
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalStateException("Could not inspect pinned accumulator limit", error);
+        }
+    }
+
+    private static boolean isBatchable(DefaultMQProducer producer, Message message) {
+        try {
+            Method canBatch = DefaultMQProducer.class.getDeclaredMethod("canBatch", Message.class);
+            canBatch.setAccessible(true);
+            return (Boolean) canBatch.invoke(producer, message);
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalStateException("Could not invoke pinned auto-batch eligibility", error);
+        }
+    }
+
+    private static boolean acceptsMessage(DefaultMQProducer producer, String topic, byte[] body,
+        String multiDispatch) {
+        Message message = new Message();
+        message.setTopic(topic);
+        message.setBody(body);
+        if (multiDispatch != null) {
+            MessageAccessor.putProperty(message, MessageConst.PROPERTY_INNER_MULTI_DISPATCH, multiDispatch);
+        }
+        return accepts(() -> Validators.checkMessage(message, producer));
+    }
+
+    private static Map<String, Object> produce() {
+        DefaultMQProducer producer = new DefaultMQProducer();
+        Map<String, Object> result = new TreeMap<>();
+        Map<String, Object> provenance = new TreeMap<>();
+        provenance.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
+        provenance.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
+        provenance.put("entrypoints", List.of("DefaultMQProducer", "Validators", "TopicValidator",
+            "DefaultMQProducerImpl.tryToCompressMessage", "MessageClientIDSetter.createUniqID",
+            "MessageBatch.generateFromList", "MessageBatch.encode", "MQFaultStrategy",
+            "LatencyFaultToleranceImpl.detectByOneRound", "MQClientAPIImpl.getMaxOffset"));
+        provenance.put("serverContacted", false);
+        result.put("provenance", provenance);
+
+        Map<String, Object> defaults = new TreeMap<>();
+        defaults.put("producerGroup", producer.getProducerGroup());
+        defaults.put("createTopicKey", producer.getCreateTopicKey());
+        defaults.put("defaultTopicQueueNums", producer.getDefaultTopicQueueNums());
+        defaults.put("sendMsgTimeout", producer.getSendMsgTimeout());
+        defaults.put("sendMsgMaxTimeoutPerRequest", producer.getSendMsgMaxTimeoutPerRequest());
+        defaults.put("compressMsgBodyOverHowmuch", producer.getCompressMsgBodyOverHowmuch());
+        defaults.put("compressType", producer.getCompressType().name());
+        defaults.put("compressLevel", producer.getCompressLevel());
+        defaults.put("retryTimesWhenSendFailed", producer.getRetryTimesWhenSendFailed());
+        defaults.put("retryTimesWhenSendAsyncFailed", producer.getRetryTimesWhenSendAsyncFailed());
+        defaults.put("retryAnotherBrokerWhenNotStoreOK", producer.isRetryAnotherBrokerWhenNotStoreOK());
+        defaults.put("maxMessageSize", producer.getMaxMessageSize());
+        defaults.put("sendMessageWithVIPChannel", producer.isSendMessageWithVIPChannel());
+        defaults.put("autoBatch", producer.getAutoBatch());
+        defaults.put("batchMaxDelayMs", producer.getBatchMaxDelayMs());
+        defaults.put("batchMaxBytes", producer.getBatchMaxBytes());
+        defaults.put("totalBatchMaxBytes", producer.getTotalBatchMaxBytes());
+        defaults.put("enableBackpressureForAsyncMode", producer.isEnableBackpressureForAsyncMode());
+        defaults.put("backPressureForAsyncSendNum", producer.getBackPressureForAsyncSendNum());
+        defaults.put("backPressureForAsyncSendSize", producer.getBackPressureForAsyncSendSize());
+        defaults.put("retryResponseCodes", new TreeSet<>(producer.getRetryResponseCodes()));
+        result.put("defaults", defaults);
+
+        Map<String, Object> batchSettings = new TreeMap<>();
+        DefaultMQProducer configuredBatch = new DefaultMQProducer("batch-settings");
+        configuredBatch.setInstanceName("configured-batch-settings");
+        configuredBatch.batchMaxDelayMs(25);
+        configuredBatch.batchMaxBytes(65_536);
+        configuredBatch.totalBatchMaxBytes(1_048_576);
+        configuredBatch.initProduceAccumulator();
+        batchSettings.put("configuredBatchMaxDelayMs", configuredBatch.getBatchMaxDelayMs());
+        batchSettings.put("configuredBatchMaxBytes", configuredBatch.getBatchMaxBytes());
+        batchSettings.put("configuredTotalBatchMaxBytes", configuredBatch.getTotalBatchMaxBytes());
+        batchSettings.put("configuredTotalBatchHoldBytes", totalAccumulatorHoldBytes(configuredBatch));
+        result.put("batchSettings", batchSettings);
+
+        DefaultMQProducer initializedAccumulator = new DefaultMQProducer("accumulator-defaults");
+        initializedAccumulator.setInstanceName("accumulator-defaults");
+        initializedAccumulator.initProduceAccumulator();
+        Map<String, Object> accumulatorDefaults = new TreeMap<>();
+        accumulatorDefaults.put("batchMaxDelayMs", initializedAccumulator.getBatchMaxDelayMs());
+        accumulatorDefaults.put("batchMaxBytes", initializedAccumulator.getBatchMaxBytes());
+        accumulatorDefaults.put("totalBatchMaxBytes", initializedAccumulator.getTotalBatchMaxBytes());
+        accumulatorDefaults.put("totalBatchHoldBytes", totalAccumulatorHoldBytes(initializedAccumulator));
+        result.put("accumulatorDefaults", accumulatorDefaults);
+
+        DefaultMQProducer autoBatchLifecycle = new DefaultMQProducer("auto-batch-lifecycle");
+        autoBatchLifecycle.setInstanceName("auto-batch-lifecycle");
+        boolean autoBatchBeforeAccumulator = autoBatchLifecycle.getAutoBatch();
+        autoBatchLifecycle.setAutoBatch(true);
+        autoBatchLifecycle.initProduceAccumulator();
+        Map<String, Object> autoBatch = new TreeMap<>();
+        autoBatch.put("enabledBeforeAccumulator", autoBatchBeforeAccumulator);
+        autoBatch.put("enabledAfterAccumulator", autoBatchLifecycle.getAutoBatch());
+        result.put("autoBatchLifecycle", autoBatch);
+
+        DefaultMQProducer autoBatchEligibility = new DefaultMQProducer("auto-batch-eligibility");
+        autoBatchEligibility.setInstanceName("auto-batch-eligibility");
+        autoBatchEligibility.initProduceAccumulator();
+        List<Map<String, Object>> autoBatchCases = new ArrayList<>();
+        autoBatchCases.add(row("regular", isBatchable(autoBatchEligibility,
+            new Message("orders", new byte[] {1}))));
+        Message delayedAutoBatch = new Message("orders", new byte[] {1});
+        MessageAccessor.putProperty(delayedAutoBatch, MessageConst.PROPERTY_TIMER_DELAY_MS, "100");
+        autoBatchCases.add(row("delayed", isBatchable(autoBatchEligibility, delayedAutoBatch)));
+        autoBatchCases.add(row("retry-topic", isBatchable(autoBatchEligibility,
+            new Message("%RETRY%workers", new byte[] {1}))));
+        Message groupedAutoBatch = new Message("orders", new byte[] {1});
+        MessageAccessor.putProperty(groupedAutoBatch, MessageConst.PROPERTY_PRODUCER_GROUP, "transaction-producer");
+        autoBatchCases.add(row("producer-group", isBatchable(autoBatchEligibility, groupedAutoBatch)));
+        result.put("autoBatchEligibility", autoBatchCases);
+
+        DefaultMQProducer backpressureSettings = new DefaultMQProducer("backpressure-settings");
+        backpressureSettings.setBackPressureForAsyncSendNum(1);
+        backpressureSettings.setBackPressureForAsyncSendSize(1);
+        Map<String, Object> backpressure = new TreeMap<>();
+        backpressure.put("clampedSendNum", backpressureSettings.getBackPressureForAsyncSendNum());
+        backpressure.put("clampedSendSize", backpressureSettings.getBackPressureForAsyncSendSize());
+        result.put("backpressureSettings", backpressure);
+
+        List<Map<String, Object>> groups = new ArrayList<>();
+        for (String value : Arrays.asList(" ", "g".repeat(120), "g".repeat(121), "bad.group", "a|b_%")) {
+            groups.add(row(value, accepts(() -> Validators.checkGroup(value))));
+        }
+        result.put("groups", groups);
+
+        List<Map<String, Object>> topics = new ArrayList<>();
+        for (String value : Arrays.asList(" ", "t".repeat(127), "t".repeat(128), "bad.topic",
+            "bad." + "t".repeat(124), "%RETRY%" + "t".repeat(121))) {
+            topics.add(row(value, accepts(() -> Validators.checkTopic(value))));
+        }
+        result.put("topics", topics);
+
+        List<Map<String, Object>> systemTopics = new ArrayList<>();
+        for (String value : Arrays.asList("TBW102", "RMQ_SYS_TRACE_TOPIC", "SCHEDULE_TOPIC_XXXX", "rmq_sys_custom")) {
+            Map<String, Object> row = new TreeMap<>();
+            row.put("topic", value);
+            row.put("system", TopicValidator.isSystemTopic(value));
+            row.put("sendAllowed", accepts(() -> Validators.isNotAllowedSendTopic(value))
+                && !TopicValidator.isNotAllowedSendTopic(value));
+            // isNotAllowedSendTopic returns normally for both allowed and forbidden topics.
+            row.put("sendForbidden", TopicValidator.isNotAllowedSendTopic(value));
+            systemTopics.add(row);
+        }
+        result.put("systemTopics", systemTopics);
+
+        List<Map<String, Object>> messages = new ArrayList<>();
+        messages.add(row("null-message", accepts(() -> Validators.checkMessage(null, producer))));
+        messages.add(row("null-body", accepts(() -> Validators.checkMessage(new Message("orders", (byte[]) null), producer))));
+        messages.add(row("empty-body", accepts(() -> Validators.checkMessage(new Message("orders", new byte[0]), producer))));
+        messages.add(row("body-max", acceptsMessage(producer, "orders", new byte[producer.getMaxMessageSize()], null)));
+        messages.add(row("body-max-plus-one", acceptsMessage(producer, "orders", new byte[producer.getMaxMessageSize() + 1], null)));
+        messages.add(row("multi-dispatch-separator", acceptsMessage(producer, "orders", new byte[] {1}, "a/b")));
+        result.put("messages", messages);
+
+        Map<String, Object> compression = new TreeMap<>();
+        int threshold = producer.getCompressMsgBodyOverHowmuch();
+        compression.put("threshold", threshold);
+        compression.put("cases", compressionCases(producer, threshold));
+        result.put("compression", compression);
+        result.put("compressionProperties", compressionProperties());
+
+        Map<String, Object> faultStrategy = new TreeMap<>();
+        faultStrategy.put("latencyMaxMillis", longs(producer.getLatencyMax()));
+        faultStrategy.put("notAvailableDurationMillis", longs(producer.getNotAvailableDuration()));
+        faultStrategy.put("sendLatencyFaultEnable", producer.isSendLatencyFaultEnable());
+        faultStrategy.put("startDetectorEnable", producer.isStartDetectorEnable());
+        faultStrategy.put("detectTimeoutMillis", producer.getDetectTimeout());
+        faultStrategy.put("detectIntervalMillis", producer.getDetectInterval());
+        faultStrategy.put("scheduleInitialDelaySeconds", 3);
+        faultStrategy.put("schedulePeriodSeconds", 3);
+        faultStrategy.put("probeRequestCode", RequestCode.GET_MAX_OFFSET);
+        faultStrategy.put("probeQueueId", 0);
+        faultStrategy.put("probeCommitted", true);
+        result.put("faultStrategy", faultStrategy);
+
+        String uniqueId = MessageClientIDSetter.createUniqID();
+        int ipBytes = MessageClientIDSetter.getIPFromID(uniqueId).length;
+        Map<String, Object> uniqueIdShape = new TreeMap<>();
+        uniqueIdShape.put("hexUppercase", uniqueId.matches("[0-9A-F]+"));
+        uniqueIdShape.put("length", uniqueId.length());
+        uniqueIdShape.put("ipBytes", ipBytes);
+        uniqueIdShape.put("processIdBytes", 2);
+        uniqueIdShape.put("processIdentityBytes", 4);
+        uniqueIdShape.put("monthTimestampBytes", 4);
+        uniqueIdShape.put("counterBytes", 2);
+        result.put("uniqueId", uniqueIdShape);
+
+        result.put("batchValidation", batchCases());
+        result.put("batchEncoding", batchEncoding());
+        return result;
+    }
+
+    private static List<Long> longs(long[] values) {
+        List<Long> result = new ArrayList<>(values.length);
+        for (long value : values) result.add(value);
+        return result;
+    }
+
+    private static List<Map<String, Object>> compressionCases(DefaultMQProducer producer, int threshold) {
+        try {
+            Field implementationField = DefaultMQProducer.class.getDeclaredField("defaultMQProducerImpl");
+            implementationField.setAccessible(true);
+            Object implementation = implementationField.get(producer);
+            Method compress = implementation.getClass().getDeclaredMethod("tryToCompressMessage", Message.class);
+            compress.setAccessible(true);
+            List<Map<String, Object>> cases = new ArrayList<>();
+            for (int size : new int[] {threshold - 1, threshold, threshold + 1}) {
+                Message message = new Message("orders", new byte[size]);
+                Map<String, Object> row = new TreeMap<>();
+                row.put("bodyLength", size);
+                row.put("compressed", compress.invoke(implementation, message));
+                cases.add(row);
+            }
+            return cases;
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalStateException("cannot invoke pinned producer compression method", error);
+        }
+    }
+
+    private static Map<String, Object> compressionProperties() {
+        Map<String, Object> result = new TreeMap<>();
+        String previousType = System.getProperty(MixAll.MESSAGE_COMPRESS_TYPE);
+        String previousLevel = System.getProperty(MixAll.MESSAGE_COMPRESS_LEVEL);
+        try {
+            System.setProperty(MixAll.MESSAGE_COMPRESS_TYPE, " lz4 ");
+            System.setProperty(MixAll.MESSAGE_COMPRESS_LEVEL, "7");
+            DefaultMQProducer configured = new DefaultMQProducer();
+            result.put("inputType", " lz4 ");
+            result.put("inputLevel", "7");
+            result.put("parsedType", configured.getCompressType().name());
+            result.put("parsedLevel", configured.getCompressLevel());
+
+            System.setProperty(MixAll.MESSAGE_COMPRESS_TYPE, "unsupported");
+            result.put("invalidTypeAccepted", accepts(() -> new DefaultMQProducer()));
+            System.setProperty(MixAll.MESSAGE_COMPRESS_TYPE, "ZLIB");
+            System.setProperty(MixAll.MESSAGE_COMPRESS_LEVEL, "invalid");
+            result.put("invalidLevelAccepted", accepts(() -> new DefaultMQProducer()));
+        } finally {
+            restoreProperty(MixAll.MESSAGE_COMPRESS_TYPE, previousType);
+            restoreProperty(MixAll.MESSAGE_COMPRESS_LEVEL, previousLevel);
+        }
+        return result;
+    }
+
+    private static void restoreProperty(String key, String value) {
+        if (value == null) System.clearProperty(key);
+        else System.setProperty(key, value);
+    }
+
+    private static List<Map<String, Object>> batchCases() {
+        List<Map<String, Object>> cases = new ArrayList<>();
+        cases.add(row("empty", accepts(() -> MessageBatch.generateFromList(List.of()))));
+        cases.add(row("mixed-topics", accepts(() -> MessageBatch.generateFromList(List.of(
+            new Message("orders", new byte[] {1}), new Message("payments", new byte[] {2}))))));
+        cases.add(row("wait-store-mismatch", accepts(() -> {
+            Message first = new Message("orders", new byte[] {1});
+            Message second = new Message("orders", new byte[] {2});
+            second.setWaitStoreMsgOK(false);
+            MessageBatch.generateFromList(List.of(first, second));
+        })));
+        cases.add(row("delayed", accepts(() -> {
+            Message message = new Message("orders", new byte[] {1});
+            message.setDelayTimeLevel(1);
+            MessageBatch.generateFromList(List.of(message));
+        })));
+        cases.add(row("retry-topic", accepts(() -> MessageBatch.generateFromList(List.of(
+            new Message("%RETRY%workers", new byte[] {1}))))));
+        cases.add(row("different-tags-allowed", accepts(() -> {
+            Message first = new Message("orders", new byte[] {1});
+            Message second = new Message("orders", new byte[] {2});
+            first.setTags("one");
+            second.setTags("two");
+            MessageBatch.generateFromList(List.of(first, second));
+        })));
+        return cases;
+    }
+
+    private static Map<String, Object> batchEncoding() {
+        MessageBatch batch = MessageBatch.generateFromList(List.of(
+            new Message("orders", "first".getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+            new Message("orders", "second".getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+        byte[] body = batch.encode();
+        Map<String, Object> result = new TreeMap<>();
+        result.put("bodyHex", toHex(body));
+        result.put("length", body.length);
+        return result;
+    }
+
+    private static String toHex(byte[] bytes) {
+        StringBuilder result = new StringBuilder(bytes.length * 2);
+        for (byte value : bytes) result.append(String.format("%02X", value & 0xFF));
+        return result.toString();
+    }
+
+    public static void main(String[] args) throws Exception {
+        if (args.length == 0) throw new IllegalArgumentException("expected fixture path");
+        Path path = Path.of(args[0]);
+        boolean verify = args.length > 1
+            && (Boolean.parseBoolean(args[1]) || "--verify".equals(args[1]));
+        String json = JSON.toJSONString(produce()) + "\n";
+        if (verify) {
+            if (!Files.exists(path) || !json.equals(Files.readString(path))) {
+                throw new IllegalStateException("Java producer fixture drift: " + path);
+            }
+        } else {
+            Files.createDirectories(path.getParent());
+            Files.writeString(path, json);
+        }
+    }
+}
