@@ -5,6 +5,8 @@ members = [
     "crates/rocketmq-classic-core",
     "crates/rocketmq-classic-protocol",
     "crates/rocketmq-classic-remoting",
+    "crates/rocketmq-classic-producer",
+    "crates/rocketmq-classic",
 ]
 
 [workspace.package]
@@ -36,3 +38,7 @@ md-5 = "0.10.6"
 base64 = "0.22.1"
 cbc = { version = "0.1.2", features = ["alloc", "block-padding"] }
 cipher = "0.4.4"
+flate2 = "1.1.9"
+lz4_flex = { version = "0.12.2", default-features = false, features = ["std", "safe-encode", "safe-decode"] }
+xxhash-rust = { version = "0.8.18", features = ["xxh32"] }
+zstd = "0.13.3"
