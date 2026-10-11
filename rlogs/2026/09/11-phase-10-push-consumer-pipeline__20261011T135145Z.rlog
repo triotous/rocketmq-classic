@@ -1,0 +1,18 @@
+Phase 10 implementation session started (2026-10-11 UTC).
+
+Baseline revalidation
+- Branch: `phase/11-phase-10-push-consumer-pipeline`, based at Phase 9 commit `9b4ccb6d`; worktree was clean.
+- Read English/Traditional Chinese Phase 10 plans, shared implementation index, and coding-general workflow. Phase 10 implementation/tests are absent; plan is unchanged.
+- Java reference checkout is on a different commit with a pre-existing untracked `broker/.../aaaa.java`; it remains untouched. Audit reads the required pinned commit `efa1be59d6fc747ad220f036c86030f05f0419f9` with `git show`.
+- Confirmed owning boundaries: Phase 10 owns Push queue/pull/consume pipeline; private assignment seam and test-only fixed assignment only. Real allocation remains Phase 11; orderly callback execution remains Phase 12; P10-V03 belongs to Phase 19.
+
+Source audit started
+- Read Java `DefaultMQPushConsumerImpl.start/checkConfig/copySubscription/pullMessage`, `PullMessageService`, and `PullRequest` from the pinned source.
+- Confirmed Rust consumer crate currently contains only Pull consumer, offsets and pull-result modules. Existing core exposes consumer registration/runtime, async pull RPC, typed send-back RPC, route/subscription/heartbeat APIs.
+- Next: finish pinned `ProcessQueue` and concurrent-service audit, map Phase 10 public settings and source/test IDs, then implement P10-01/02.
+
+Java source mapping
+- Completed pinned-source mapping for `DefaultMQPushConsumer` settings/defaults; `DefaultMQPushConsumerImpl` startup, validation, pull outcomes, send-back fallback and shutdown; `PullMessageService`; `PullRequest`; `ProcessQueue`; and `ConsumeMessageConcurrentlyService`.
+- Recorded Phase 10 Java method/config-to-Rust owners, boundary values/defaults, unit case IDs, fixture provenance rule and explicit Phase 11/12/13/16 ownership in `docs/compatibility/PHASE_10_OFFLINE_METHOD_MATRIX.md`.
+- Added Phase 10 source rows to the Java compatibility matrix. All implementation rows remain TODO; P10-V03 remains PENDING_PHASE_19.
+- No Java checkout files changed. Documentation-only diff; no tests run.
