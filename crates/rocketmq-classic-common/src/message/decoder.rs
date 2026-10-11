@@ -13,6 +13,7 @@ pub const BLANK_MAGIC_CODE: i32 = -875_286_124;
 pub struct DecodeOptions {
     pub read_body: bool,
     pub decompress_body: bool,
+    pub set_properties_string: bool,
     pub verify_crc: bool,
 }
 
@@ -21,6 +22,7 @@ impl Default for DecodeOptions {
         Self {
             read_body: true,
             decompress_body: true,
+            set_properties_string: false,
             verify_crc: false,
         }
     }
@@ -29,9 +31,6 @@ impl Default for DecodeOptions {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DecodeLimits {
     pub max_record_bytes: usize,
-    pub max_body_bytes: usize,
-    pub max_topic_bytes: usize,
-    pub max_properties_bytes: usize,
     pub max_decompressed_body_bytes: usize,
     pub max_total_decoded_bytes: usize,
 }
@@ -40,9 +39,6 @@ impl Default for DecodeLimits {
     fn default() -> Self {
         Self {
             max_record_bytes: 16 * 1024 * 1024,
-            max_body_bytes: 16 * 1024 * 1024,
-            max_topic_bytes: 32 * 1024,
-            max_properties_bytes: i16::MAX as usize,
             max_decompressed_body_bytes: 64 * 1024 * 1024,
             max_total_decoded_bytes: 64 * 1024 * 1024,
         }
@@ -150,23 +146,24 @@ pub fn decode_one(
     let body_length_offset = input.position();
     let body_length = input.i32("body length")?;
     let body_length = nonnegative_length(body_length_offset, "body", body_length)?;
-    if body_length > limits.max_body_bytes {
-        return Err(DecodeError::LimitExceeded {
-            field: "body",
-            length: body_length,
-            limit: limits.max_body_bytes,
-        });
-    }
     let encoded_body = input.bytes(body_length, "body")?;
     let mut body = if options.read_body {
         encoded_body.to_vec()
     } else {
         Vec::new()
     };
-    if options.verify_crc && options.read_body && crc32(&body) & 0x7fff_ffff != body_crc as u32 {
+    if options.verify_crc
+        && options.read_body
+        && body_length > 0
+        && crc32(&body) & 0x7fff_ffff != body_crc as u32
+    {
         return Err(DecodeError::CrcMismatch);
     }
-    if options.read_body && options.decompress_body && sys_flag & message::COMPRESSED_FLAG != 0 {
+    if options.read_body
+        && options.decompress_body
+        && body_length > 0
+        && sys_flag & message::COMPRESSED_FLAG != 0
+    {
         let compression_type = message::compression_type(sys_flag)
             .map_err(|error| DecodeError::CompressionType(error.to_string()))?;
         body = decompress_limited(compression_type, &body, limits.max_decompressed_body_bytes)
@@ -193,26 +190,12 @@ pub fn decode_one(
         input.i16("topic length")? as i32
     };
     let topic_length = nonnegative_length(topic_length_offset, "topic", topic_length)?;
-    if topic_length > limits.max_topic_bytes {
-        return Err(DecodeError::LimitExceeded {
-            field: "topic",
-            length: topic_length,
-            limit: limits.max_topic_bytes,
-        });
-    }
     let topic = String::from_utf8_lossy(input.bytes(topic_length, "topic")?).into_owned();
 
     let properties_length_offset = input.position();
     let properties_length = input.i16("properties length")? as i32;
     let properties_length =
         nonnegative_length(properties_length_offset, "properties", properties_length)?;
-    if properties_length > limits.max_properties_bytes {
-        return Err(DecodeError::LimitExceeded {
-            field: "properties",
-            length: properties_length,
-            limit: limits.max_properties_bytes,
-        });
-    }
     let properties = String::from_utf8_lossy(input.bytes(properties_length, "properties")?);
     if input.remaining() != 0 {
         return Err(DecodeError::TrailingBytes {
@@ -220,8 +203,15 @@ pub fn decode_one(
         });
     }
 
-    let properties = decode_properties(&properties);
-    let mut message = MessageExt::new(super::Message::from_decoded(topic, body, properties));
+    let mut decoded_properties = decode_properties(&properties);
+    if options.set_properties_string && properties_length > 0 {
+        decoded_properties.insert("propertiesString".to_owned(), properties.into_owned());
+    }
+    let mut message = MessageExt::new(super::Message::from_decoded(
+        topic,
+        body,
+        decoded_properties,
+    ));
     message.message_mut().set_flag(flag);
     message.set_queue_id(queue_id);
     message.set_queue_offset(queue_offset);

@@ -181,6 +181,8 @@ pub struct MessageExt {
     store_host: Option<String>,
     #[serde(rename = "msgId", skip_serializing_if = "Option::is_none")]
     message_id: Option<String>,
+    #[serde(rename = "offsetMsgId", skip_serializing_if = "Option::is_none")]
+    offset_message_id: Option<String>,
     #[serde(rename = "commitLogOffset")]
     commit_log_offset: i64,
     #[serde(rename = "bodyCRC")]
@@ -246,6 +248,9 @@ impl MessageExt {
     pub fn message_id(&self) -> Option<&str> {
         self.message_id.as_deref()
     }
+    pub fn offset_message_id(&self) -> Option<&str> {
+        self.offset_message_id.as_deref()
+    }
     pub fn prepared_transaction_offset(&self) -> i64 {
         self.prepared_transaction_offset
     }
@@ -287,6 +292,9 @@ impl MessageExt {
     }
     pub fn set_message_id(&mut self, value: Option<String>) {
         self.message_id = value;
+    }
+    pub fn set_offset_message_id(&mut self, value: Option<String>) {
+        self.offset_message_id = value;
     }
     pub fn set_prepared_transaction_offset(&mut self, value: i64) {
         self.prepared_transaction_offset = value;

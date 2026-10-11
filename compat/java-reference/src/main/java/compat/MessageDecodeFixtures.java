@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import org.apache.rocketmq.common.message.Message;
 import org.apache.rocketmq.common.message.MessageDecoder;
+import org.apache.rocketmq.common.message.MessageClientExt;
 import org.apache.rocketmq.common.message.MessageAccessor;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.sysflag.MessageSysFlag;
@@ -185,11 +186,39 @@ public final class MessageDecodeFixtures {
         expected.put("properties", decoded.getProperties() == null
             ? Map.of() : new TreeMap<>(decoded.getProperties()));
 
+        MessageExt propertiesStringDecoded = MessageDecoder.decode(
+            ByteBuffer.wrap(encoded), true, true, false, true, true);
+        expected.put("propertiesWithString", propertiesStringDecoded.getProperties() == null
+            ? Map.of() : new TreeMap<>(propertiesStringDecoded.getProperties()));
+
+        MessageClientExt clientDecoded = (MessageClientExt) MessageDecoder.decode(
+            ByteBuffer.wrap(encoded), true, true, true, false, true);
+        Map<String, Object> expectedClientIds = new TreeMap<>();
+        expectedClientIds.put("msgId", clientDecoded.getMsgId());
+        expectedClientIds.put("offsetMsgId", clientDecoded.getOffsetMsgId());
+
+        List<Map<String, Object>> bodyOptions = new ArrayList<>();
+        for (boolean readBody : new boolean[] {false, true}) {
+            for (boolean decompressBody : new boolean[] {false, true}) {
+                MessageExt optionDecoded = MessageDecoder.decode(
+                    ByteBuffer.wrap(encoded), readBody, decompressBody, true, false, true);
+                Map<String, Object> option = new TreeMap<>();
+                option.put("readBody", readBody);
+                option.put("decompressBody", decompressBody);
+                option.put("bodyBase64", optionDecoded.getBody() == null ? null
+                    : Base64.getEncoder().encodeToString(optionDecoded.getBody()));
+                option.put("sysFlag", optionDecoded.getSysFlag());
+                bodyOptions.add(option);
+            }
+        }
+
         Map<String, Object> result = new TreeMap<>();
         result.put("name", name);
         result.put("recordBase64", Base64.getEncoder().encodeToString(encoded));
         result.put("sha256", hex(MessageDigest.getInstance("SHA-256").digest(encoded)));
         result.put("decoded", expected);
+        result.put("clientDecoded", expectedClientIds);
+        result.put("decodeOptions", bodyOptions);
         return result;
     }
 

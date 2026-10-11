@@ -66,14 +66,6 @@ impl PullAPIWrapper {
         self.hooks.write().unwrap().push(hook);
     }
 
-    pub fn suggested_broker_id(&self, queue: &MessageQueue) -> Option<i64> {
-        self.suggested_broker_ids
-            .lock()
-            .unwrap()
-            .get(queue)
-            .copied()
-    }
-
     pub fn process_pull_result(
         &self,
         queue: &MessageQueue,
@@ -101,6 +93,8 @@ impl PullAPIWrapper {
                     messages = unwrapped;
                 }
             }
+
+            attach_client_message_ids(&mut messages);
 
             filter_tags(&mut messages, subscription);
             let mut context = FilterMessageContext {
@@ -135,7 +129,8 @@ pub fn build_class_filter_subscription_data(
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
-pub enum FilterServerError {
+#[allow(dead_code)] // Used by the pull request path added in the following consumer phase.
+pub(crate) enum FilterServerError {
     #[error("Find Filter Server Failed, Broker Addr: {broker_address} topic: {topic}")]
     NotFound {
         broker_address: String,
@@ -144,7 +139,8 @@ pub enum FilterServerError {
 }
 
 /// Choose a filter server using the broker address keys carried by route data.
-pub fn select_filter_server(
+#[allow(dead_code)] // Kept crate-internal for the pull request path added in the following consumer phase.
+pub(crate) fn select_filter_server(
     route: &TopicRouteData,
     topic: &str,
     broker_address: &str,
@@ -166,7 +162,8 @@ pub fn select_filter_server(
 }
 
 /// Apply class-filter routing only when the Java pull class-filter bit is set.
-pub fn resolve_pull_broker_address(
+#[allow(dead_code)] // Kept crate-internal for the pull request path added in the following consumer phase.
+pub(crate) fn resolve_pull_broker_address(
     route: &TopicRouteData,
     topic: &str,
     broker_address: &str,
@@ -196,6 +193,22 @@ fn filter_tags(messages: &mut Vec<MessageExt>, subscription: &SubscriptionData) 
             .tags()
             .is_some_and(|tag| tags.contains(&Some(tag.to_owned())))
     });
+}
+
+fn attach_client_message_ids(messages: &mut [MessageExt]) {
+    for message in messages {
+        let offset_message_id = message.message_id().map(str::to_owned);
+        let message_id = message
+            .message()
+            .properties()
+            .get(
+                rocketmq_classic_common::message::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX,
+            )
+            .cloned()
+            .or_else(|| offset_message_id.clone());
+        message.set_offset_message_id(offset_message_id);
+        message.set_message_id(message_id);
+    }
 }
 
 fn enrich_messages(messages: &mut [MessageExt], queue: &MessageQueue, result: &PullResultExt) {
@@ -294,11 +307,6 @@ fn decode_inner_batch(
             offset,
             reason: "negative body size",
         })?;
-        if body_size > limits.max_body_bytes {
-            return Err(ProcessPullError::InnerBatchLimitExceeded {
-                limit: limits.max_body_bytes,
-            });
-        }
         let body_start = 20usize;
         let body_end = body_start
             .checked_add(body_size)
@@ -318,11 +326,6 @@ fn decode_inner_batch(
                 reason: "negative properties size",
             }
         })?;
-        if properties_size > limits.max_properties_bytes {
-            return Err(ProcessPullError::InnerBatchLimitExceeded {
-                limit: limits.max_properties_bytes,
-            });
-        }
         let properties_start = body_end + 2;
         let properties_end = properties_start
             .checked_add(properties_size)
@@ -375,4 +378,104 @@ fn read_i32(bytes: &[u8], offset: usize) -> Option<i32> {
     Some(i32::from_be_bytes(
         bytes.get(offset..offset.checked_add(4)?)?.try_into().ok()?,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::*;
+
+    fn empty_pull_result(status: PullStatus) -> PullResultExt {
+        PullResultExt {
+            status,
+            next_begin_offset: 100,
+            min_offset: 20,
+            max_offset: 160,
+            suggest_which_broker_id: 7,
+            offset_delta: None,
+            raw_messages: None,
+        }
+    }
+
+    #[test]
+    fn pull_processing_retains_suggested_broker_for_non_found_statuses() {
+        let queue = MessageQueue::new("orders", "broker-a", 2);
+        let wrapper = PullAPIWrapper::default();
+        let processed = wrapper
+            .process_pull_result(
+                &queue,
+                empty_pull_result(PullStatus::NoNewMessage),
+                &SubscriptionData::default(),
+                DecodeOptions::default(),
+                DecodeLimits::default(),
+            )
+            .unwrap();
+        assert_eq!(processed.result.next_begin_offset, 100);
+        assert_eq!(
+            wrapper.suggested_broker_ids.lock().unwrap().get(&queue),
+            Some(&7)
+        );
+    }
+
+    #[test]
+    fn found_decode_error_still_retains_the_suggested_broker() {
+        let queue = MessageQueue::new("orders", "broker-a", 2);
+        let wrapper = PullAPIWrapper::default();
+        assert!(matches!(
+            wrapper.process_pull_result(
+                &queue,
+                empty_pull_result(PullStatus::Found),
+                &SubscriptionData::default(),
+                DecodeOptions::default(),
+                DecodeLimits::default(),
+            ),
+            Err(ProcessPullError::MissingMessageBinary)
+        ));
+        assert_eq!(
+            wrapper.suggested_broker_ids.lock().unwrap().get(&queue),
+            Some(&7)
+        );
+    }
+
+    #[test]
+    fn class_filter_routing_uses_the_broker_address_route_entry() {
+        let mut route = TopicRouteData::default();
+        route.set_filter_server_table_owned(Some(BTreeMap::from([(
+            "192.0.2.9:10911".to_owned(),
+            Some(vec![
+                Some("192.0.2.20:10911".to_owned()),
+                Some("192.0.2.21:10911".to_owned()),
+            ]),
+        )])));
+        let selected = select_filter_server(&route, "orders", "192.0.2.9:10911").unwrap();
+        assert!(matches!(
+            selected.as_deref(),
+            Some("192.0.2.20:10911" | "192.0.2.21:10911")
+        ));
+        assert!(matches!(
+            select_filter_server(&route, "orders", "missing"),
+            Err(FilterServerError::NotFound { .. })
+        ));
+        assert_eq!(
+            resolve_pull_broker_address(&route, "orders", "192.0.2.9:10911", 0).unwrap(),
+            Some("192.0.2.9:10911".to_owned())
+        );
+        let filter_flag = rocketmq_classic_common::sysflag::pull::FLAG_CLASS_FILTER;
+        let routed = resolve_pull_broker_address(&route, "orders", "192.0.2.9:10911", filter_flag)
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            routed.as_str(),
+            "192.0.2.20:10911" | "192.0.2.21:10911"
+        ));
+        route.set_filter_server_table_owned(Some(BTreeMap::from([(
+            "empty".to_owned(),
+            Some(Vec::new()),
+        )])));
+        assert!(matches!(
+            select_filter_server(&route, "orders", "empty"),
+            Err(FilterServerError::NotFound { .. })
+        ));
+    }
 }

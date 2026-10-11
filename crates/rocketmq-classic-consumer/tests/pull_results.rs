@@ -6,13 +6,11 @@ use std::sync::{
 use base64::Engine;
 use rocketmq_classic_common::message::{DecodeLimits, DecodeOptions, MessageQueue};
 use rocketmq_classic_consumer::pull::{
-    FilterMessageContext, FilterMessageHook, FilterServerError, PullAPIWrapper,
-    build_class_filter_subscription_data, resolve_pull_broker_address, select_filter_server,
+    FilterMessageContext, FilterMessageHook, PullAPIWrapper, build_class_filter_subscription_data,
 };
 use rocketmq_classic_core::api::consumer::{PullResultExt, PullStatus};
-use rocketmq_classic_protocol::{heartbeat::SubscriptionData, route::TopicRouteData};
+use rocketmq_classic_protocol::heartbeat::SubscriptionData;
 use serde_json::Value;
-use std::collections::BTreeMap;
 
 fn fixture() -> Value {
     serde_json::from_str(include_str!("../../../fixtures/messages/records.json")).unwrap()
@@ -29,6 +27,18 @@ fn record(name: &str) -> Vec<u8> {
     base64::engine::general_purpose::STANDARD
         .decode(case["recordBase64"].as_str().unwrap())
         .unwrap()
+}
+
+fn client_id(name: &str, key: &str) -> String {
+    fixture()["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["name"] == name)
+        .unwrap()["clientDecoded"][key]
+        .as_str()
+        .unwrap()
+        .to_owned()
 }
 
 fn result(status: PullStatus, raw_messages: Option<Vec<u8>>) -> PullResultExt {
@@ -78,12 +88,19 @@ fn found_results_filter_enrich_run_hooks_and_drop_raw_bytes() {
             DecodeLimits::default(),
         )
         .unwrap();
-    assert_eq!(wrapper.suggested_broker_id(&queue), Some(7));
     assert!(processed.result.raw_messages.is_none());
     assert_eq!(processed.result.next_begin_offset, 100);
     let messages = processed.messages.unwrap();
     assert_eq!(messages.len(), 1);
     let message = &messages[0];
+    assert_eq!(
+        message.message_id(),
+        Some(client_id("ipv4-v1", "msgId").as_str())
+    );
+    assert_eq!(
+        message.offset_message_id(),
+        Some(client_id("ipv4-v1", "offsetMsgId").as_str())
+    );
     assert_eq!(message.broker_name(), Some("broker-a"));
     assert_eq!(message.queue_id(), 9);
     assert_eq!(message.queue_offset(), 46);
@@ -133,6 +150,11 @@ fn prepared_transactions_get_the_producer_unique_id_as_transaction_id() {
         messages[0].message().transaction_id(),
         Some("producer-unique-2")
     );
+    assert_eq!(messages[0].message_id(), Some("producer-unique-2"));
+    assert_eq!(
+        messages[0].offset_message_id(),
+        Some(client_id("store-ipv6-v2", "offsetMsgId").as_str())
+    );
     assert_eq!(messages[0].queue_offset(), 48);
 }
 
@@ -162,7 +184,15 @@ fn tag_filter_discards_messages_without_a_tag_and_empty_tag_filters_keep_them() 
             DecodeLimits::default(),
         )
         .unwrap();
-    assert_eq!(unfiltered.messages.unwrap().len(), 1);
+    let unfiltered_message = unfiltered.messages.unwrap().into_iter().next().unwrap();
+    assert_eq!(
+        unfiltered_message.message_id(),
+        Some(client_id("no-tags-v1", "msgId").as_str())
+    );
+    assert_eq!(
+        unfiltered_message.offset_message_id(),
+        Some(client_id("no-tags-v1", "offsetMsgId").as_str())
+    );
 }
 
 #[test]
@@ -227,6 +257,10 @@ fn inner_batches_unwrap_when_both_flags_are_set_and_fall_back_as_a_unit() {
     assert_eq!(messages[0].queue_offset(), 53);
     assert_eq!(messages[1].queue_offset(), 54);
     assert_eq!(messages[0].message().flag(), 301);
+    assert_eq!(messages[0].message_id(), Some("inner-unique-1"));
+    assert_eq!(messages[0].offset_message_id(), None);
+    assert_eq!(messages[1].message_id(), None);
+    assert_eq!(messages[1].offset_message_id(), None);
     assert_eq!(
         messages[0]
             .message()
@@ -277,7 +311,6 @@ fn non_found_statuses_preserve_offsets_update_broker_and_release_raw_bytes() {
         assert_eq!(processed.result.suggest_which_broker_id, 7);
         assert!(processed.result.raw_messages.is_none());
         assert!(processed.messages.is_none());
-        assert_eq!(wrapper.suggested_broker_id(&queue), Some(7));
     }
 }
 
@@ -295,46 +328,4 @@ fn found_without_message_binary_returns_an_error_after_suggested_broker_update()
         )
         .unwrap_err();
     assert_eq!(error.to_string(), "FOUND pull result has no message binary");
-    assert_eq!(wrapper.suggested_broker_id(&queue), Some(7));
-}
-
-#[test]
-fn class_filter_routing_uses_the_broker_address_route_entry() {
-    let mut route = TopicRouteData::default();
-    route.set_filter_server_table_owned(Some(BTreeMap::from([(
-        "192.0.2.9:10911".to_owned(),
-        Some(vec![
-            Some("192.0.2.20:10911".to_owned()),
-            Some("192.0.2.21:10911".to_owned()),
-        ]),
-    )])));
-    let selected = select_filter_server(&route, "orders", "192.0.2.9:10911").unwrap();
-    assert!(matches!(
-        selected.as_deref(),
-        Some("192.0.2.20:10911" | "192.0.2.21:10911")
-    ));
-    assert!(matches!(
-        select_filter_server(&route, "orders", "missing"),
-        Err(FilterServerError::NotFound { .. })
-    ));
-    assert_eq!(
-        resolve_pull_broker_address(&route, "orders", "192.0.2.9:10911", 0).unwrap(),
-        Some("192.0.2.9:10911".to_owned())
-    );
-    let filter_flag = rocketmq_classic_common::sysflag::pull::FLAG_CLASS_FILTER;
-    let routed = resolve_pull_broker_address(&route, "orders", "192.0.2.9:10911", filter_flag)
-        .unwrap()
-        .unwrap();
-    assert!(matches!(
-        routed.as_str(),
-        "192.0.2.20:10911" | "192.0.2.21:10911"
-    ));
-    route.set_filter_server_table_owned(Some(BTreeMap::from([(
-        "empty".to_owned(),
-        Some(Vec::new()),
-    )])));
-    assert!(matches!(
-        select_filter_server(&route, "orders", "empty"),
-        Err(FilterServerError::NotFound { .. })
-    ));
 }

@@ -120,6 +120,65 @@ fn decode_many_handles_concatenated_records_and_requires_complete_progress() {
 fn body_decode_options_match_java_and_limits_reject_oversized_fields() {
     let fixture = fixture();
     let cases = fixture["cases"].as_array().unwrap();
+    for case in cases {
+        let bytes = record(case);
+        for option in case["decodeOptions"].as_array().unwrap() {
+            let decoded = decode_one(
+                &bytes,
+                DecodeOptions {
+                    read_body: option["readBody"].as_bool().unwrap(),
+                    decompress_body: option["decompressBody"].as_bool().unwrap(),
+                    set_properties_string: false,
+                    verify_crc: true,
+                },
+                DecodeLimits::default(),
+            )
+            .unwrap_or_else(|error| panic!("{}: {error}", case["name"]))
+            .0;
+            if let Some(expected_body) = option["bodyBase64"].as_str() {
+                assert_eq!(
+                    decoded.message().body(),
+                    base64::engine::general_purpose::STANDARD
+                        .decode(expected_body)
+                        .unwrap(),
+                    "{} readBody={} decompressBody={}",
+                    case["name"],
+                    option["readBody"],
+                    option["decompressBody"]
+                );
+            } else {
+                assert!(
+                    decoded.message().body().is_empty(),
+                    "{} readBody={} decompressBody={}",
+                    case["name"],
+                    option["readBody"],
+                    option["decompressBody"]
+                );
+            }
+            assert_eq!(
+                decoded.sys_flag(),
+                option["sysFlag"].as_i64().unwrap() as i32
+            );
+        }
+        let with_properties_string = decode_one(
+            &bytes,
+            DecodeOptions {
+                set_properties_string: true,
+                verify_crc: true,
+                ..DecodeOptions::default()
+            },
+            DecodeLimits::default(),
+        )
+        .unwrap_or_else(|error| panic!("{}: {error}", case["name"]))
+        .0;
+        assert_eq!(
+            serde_json::to_value(with_properties_string.message().properties()).unwrap(),
+            case["decoded"]["propertiesWithString"],
+            "{} propertiesString",
+            case["name"]
+        );
+    }
+
     for case in cases.iter().filter(|case| {
         case["name"]
             .as_str()
@@ -131,6 +190,7 @@ fn body_decode_options_match_java_and_limits_reject_oversized_fields() {
             DecodeOptions {
                 read_body: true,
                 decompress_body: false,
+                set_properties_string: false,
                 verify_crc: true,
             },
             DecodeLimits::default(),
@@ -145,6 +205,7 @@ fn body_decode_options_match_java_and_limits_reject_oversized_fields() {
                 DecodeOptions {
                     read_body: false,
                     decompress_body,
+                    set_properties_string: false,
                     verify_crc: true,
                 },
                 DecodeLimits::default(),
@@ -156,13 +217,35 @@ fn body_decode_options_match_java_and_limits_reject_oversized_fields() {
         }
     }
 
-    let limits = DecodeLimits {
-        max_topic_bytes: 4,
-        ..DecodeLimits::default()
+    let topic_record = record(&cases[0]);
+    let sys_flag = i32::from_be_bytes(topic_record[36..40].try_into().unwrap());
+    let born_host_length = if sys_flag & message::BORNHOST_V6_FLAG == 0 {
+        8
+    } else {
+        20
     };
+    let store_host_length = if sys_flag & message::STOREHOSTADDRESS_V6_FLAG == 0 {
+        8
+    } else {
+        20
+    };
+    let body_length_offset =
+        4 + 4 + 4 + 4 + 4 + 8 + 8 + 4 + 8 + born_host_length + 8 + store_host_length + 4 + 8;
+    let body_length = i32::from_be_bytes(
+        topic_record[body_length_offset..body_length_offset + 4]
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    let topic_length_offset = body_length_offset + 4 + body_length;
+    let mut invalid_topic_size = topic_record;
+    invalid_topic_size[topic_length_offset] = i8::MAX as u8;
     assert!(matches!(
-        decode_one(&record(&cases[0]), DecodeOptions::default(), limits),
-        Err(DecodeError::LimitExceeded { field: "topic", .. })
+        decode_one(
+            &invalid_topic_size,
+            DecodeOptions::default(),
+            DecodeLimits::default()
+        ),
+        Err(DecodeError::Truncated { field: "topic", .. })
     ));
     let limits = DecodeLimits {
         max_decompressed_body_bytes: 12,
@@ -185,6 +268,38 @@ fn body_decode_options_match_java_and_limits_reject_oversized_fields() {
             case["name"]
         );
     }
+
+    let mut empty_compressed = record(
+        cases
+            .iter()
+            .find(|case| case["name"] == "compressed-zlib-v1")
+            .unwrap(),
+    );
+    let body_length_offset = 4 + 4 + 4 + 4 + 4 + 8 + 8 + 4 + 8 + 8 + 8 + 8 + 4 + 8;
+    let body_length = i32::from_be_bytes(
+        empty_compressed[body_length_offset..body_length_offset + 4]
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    empty_compressed.drain(body_length_offset + 4..body_length_offset + 4 + body_length);
+    let empty_record_size = empty_compressed.len() as i32;
+    empty_compressed[0..4].copy_from_slice(&empty_record_size.to_be_bytes());
+    empty_compressed[body_length_offset..body_length_offset + 4]
+        .copy_from_slice(&0_i32.to_be_bytes());
+    empty_compressed[8..12].copy_from_slice(&123_i32.to_be_bytes());
+    let decoded_empty = decode_one(
+        &empty_compressed,
+        DecodeOptions {
+            verify_crc: true,
+            ..DecodeOptions::default()
+        },
+        DecodeLimits::default(),
+    )
+    .unwrap()
+    .0;
+    assert!(decoded_empty.message().body().is_empty());
+    assert_ne!(decoded_empty.sys_flag() & message::COMPRESSED_FLAG, 0);
+
     let limits = DecodeLimits {
         max_total_decoded_bytes: 16,
         ..DecodeLimits::default()
@@ -296,6 +411,7 @@ fn malformed_magic_lengths_and_crc_fail_as_structured_errors() {
             DecodeOptions {
                 read_body: true,
                 decompress_body: true,
+                set_properties_string: false,
                 verify_crc: true
             },
             DecodeLimits::default()
