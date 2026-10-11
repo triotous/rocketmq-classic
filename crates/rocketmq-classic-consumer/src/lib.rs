@@ -2,6 +2,7 @@ pub mod config;
 mod consume;
 pub mod error;
 pub mod offset;
+mod process_queue;
 pub mod pull;
 pub mod push;
 
