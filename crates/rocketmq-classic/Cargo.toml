@@ -1,0 +1,17 @@
+[package]
+name = "rocketmq-classic"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+rocketmq-classic-common = { path = "../rocketmq-classic-common" }
+rocketmq-classic-core = { path = "../rocketmq-classic-core" }
+rocketmq-classic-producer = { path = "../rocketmq-classic-producer" }
+tokio.workspace = true
+
+[[example]]
+name = "producer"
+path = "../../examples/producer.rs"

@@ -32,7 +32,7 @@ impl SendKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SendMode {
     Sync,
     Future,
@@ -122,6 +122,51 @@ pub struct SendResult {
 }
 
 impl MQClientApi {
+    /// Java's optional latency detector probes a broker with GET_MAX_OFFSET
+    /// for queue zero of one cached producer topic. The caller only needs the
+    /// result's validity to restore broker reachability.
+    #[doc(hidden)]
+    pub async fn probe_broker(
+        &self,
+        addr: &str,
+        topic: &str,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        let mut fields = HeaderMap::new();
+        fields.insert("topic".into(), topic.into());
+        fields.insert("queueId".into(), "0".into());
+        fields.insert("committed".into(), "true".into());
+        let code = request::GET_MAX_OFFSET;
+        let reply = self
+            .request_fields_with_mode(addr, code, fields, None, deadline, true)
+            .await?;
+        if reply.code != response::SUCCESS {
+            return Err(RpcError::Response {
+                request_code: code,
+                peer: addr.to_owned(),
+                code: reply.code,
+                remark: reply.remark,
+            });
+        }
+        let offset = reply
+            .ext_fields
+            .as_ref()
+            .and_then(|fields| fields.get("offset"))
+            .ok_or_else(|| RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: "missing max offset".into(),
+            })?;
+        offset
+            .parse::<i64>()
+            .map_err(|error| RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: format!("invalid max offset: {error}"),
+            })?;
+        Ok(())
+    }
+
     /// Performs exactly one Broker attempt; queue selection and retries belong to the producer.
     #[allow(clippy::too_many_arguments)]
     pub async fn send_message(
