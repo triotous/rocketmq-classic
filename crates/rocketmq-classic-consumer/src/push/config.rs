@@ -478,6 +478,9 @@ mod tests {
         config.set_consume_thread_min(1);
         config.set_consume_thread_max(1);
         assert!(config.validate("orders").is_ok());
+        config.set_consume_thread_min(1_000);
+        config.set_consume_thread_max(1_000);
+        assert!(config.validate("orders").is_ok());
         config.set_consume_thread_min(1_001);
         assert!(config.validate("orders").is_err());
         config.set_consume_thread_min(20);
@@ -550,6 +553,11 @@ mod tests {
         assert!(config.validate("orders").is_ok());
         config.set_pull_batch_size(1_025);
         assert!(config.validate("orders").is_err());
+
+        // Java checkConfig intentionally does not range-check this byte limit.
+        config.set_pull_batch_size(32);
+        config.set_pull_batch_size_in_bytes(-1);
+        assert!(config.validate("orders").is_ok());
     }
 
     #[test]
