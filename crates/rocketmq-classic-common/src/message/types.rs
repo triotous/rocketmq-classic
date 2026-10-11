@@ -28,6 +28,20 @@ pub struct Message {
 }
 
 impl Message {
+    pub(crate) fn from_decoded(
+        topic: String,
+        body: Vec<u8>,
+        properties: MessageProperties,
+    ) -> Self {
+        Self {
+            topic,
+            body,
+            flag: 0,
+            properties,
+            transaction_id: None,
+        }
+    }
+
     pub fn new(topic: impl Into<String>, body: impl Into<Vec<u8>>) -> Self {
         Self {
             topic: topic.into(),

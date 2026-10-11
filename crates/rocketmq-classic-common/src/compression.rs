@@ -28,16 +28,41 @@ pub fn compress(compression_type: CompressionType, body: &[u8], level: i32) -> i
 
 /// Decompress the RocketMQ message body according to its compression type.
 pub fn decompress(compression_type: CompressionType, body: &[u8]) -> io::Result<Vec<u8>> {
+    decompress_limited(compression_type, body, usize::MAX)
+}
+
+/// Decompress a message body while capping the decoded bytes.
+pub fn decompress_limited(
+    compression_type: CompressionType,
+    body: &[u8],
+    max_output_bytes: usize,
+) -> io::Result<Vec<u8>> {
     match compression_type {
         CompressionType::Zlib => {
-            let mut decoder = flate2::read::ZlibDecoder::new(body);
-            let mut result = Vec::new();
-            decoder.read_to_end(&mut result)?;
-            Ok(result)
+            let decoder = flate2::read::ZlibDecoder::new(body);
+            read_limited(decoder, max_output_bytes)
         }
-        CompressionType::Lz4 => decompress_lz4_frame(body),
-        CompressionType::Zstd => zstd::stream::decode_all(body),
+        CompressionType::Lz4 => decompress_lz4_frame_limited(body, max_output_bytes),
+        CompressionType::Zstd => {
+            let decoder = zstd::stream::read::Decoder::new(body)?;
+            read_limited(decoder, max_output_bytes)
+        }
     }
+}
+
+fn read_limited(reader: impl Read, max_output_bytes: usize) -> io::Result<Vec<u8>> {
+    let read_limit = u64::try_from(max_output_bytes)
+        .unwrap_or(u64::MAX)
+        .saturating_add(1);
+    let mut result = Vec::with_capacity(max_output_bytes.min(64 * 1024));
+    reader.take(read_limit).read_to_end(&mut result)?;
+    if result.len() > max_output_bytes {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "decompressed message body exceeds configured limit",
+        ));
+    }
+    Ok(result)
 }
 
 const LZ4_FRAME_MAGIC: u32 = 0x184d_2204;
@@ -72,7 +97,7 @@ fn compress_lz4_frame(body: &[u8]) -> io::Result<Vec<u8>> {
     Ok(result)
 }
 
-fn decompress_lz4_frame(frame: &[u8]) -> io::Result<Vec<u8>> {
+fn decompress_lz4_frame_limited(frame: &[u8], max_output_bytes: usize) -> io::Result<Vec<u8>> {
     fn invalid_frame() -> io::Error {
         io::Error::new(io::ErrorKind::InvalidData, "invalid LZ4 frame")
     }
@@ -145,16 +170,39 @@ fn decompress_lz4_frame(frame: &[u8]) -> io::Result<Vec<u8>> {
         let encoded = take(frame, &mut cursor, size)?;
         let old_len = result.len();
         if raw {
-            result.len().checked_add(size).ok_or_else(invalid_frame)?;
+            let new_len = result.len().checked_add(size).ok_or_else(invalid_frame)?;
+            if new_len > max_output_bytes {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "decompressed message body exceeds configured limit",
+                ));
+            }
             result.extend_from_slice(encoded);
         } else {
-            let mut decoded = vec![0; max_block];
-            let written = lz4_flex::block::decompress_into(encoded, &mut decoded)
-                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-            result
+            let remaining = max_output_bytes.saturating_sub(result.len());
+            let mut decoded = vec![0; max_block.min(remaining.saturating_add(1))];
+            let written = match lz4_flex::block::decompress_into(encoded, &mut decoded) {
+                Ok(written) => written,
+                Err(lz4_flex::block::DecompressError::OutputTooSmall { expected, .. })
+                    if expected > remaining =>
+                {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "decompressed message body exceeds configured limit",
+                    ));
+                }
+                Err(error) => return Err(io::Error::new(io::ErrorKind::InvalidData, error)),
+            };
+            let new_len = result
                 .len()
                 .checked_add(written)
                 .ok_or_else(invalid_frame)?;
+            if new_len > max_output_bytes {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "decompressed message body exceeds configured limit",
+                ));
+            }
             result.extend_from_slice(&decoded[..written]);
         }
         if block_checksum {

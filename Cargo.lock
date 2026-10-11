@@ -1003,6 +1003,7 @@ dependencies = [
 name = "rocketmq-classic-common"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "flate2",
  "lz4_flex",
  "serde",
@@ -1010,6 +1011,19 @@ dependencies = [
  "thiserror 2.0.21",
  "xxhash-rust",
  "zstd",
+]
+
+[[package]]
+name = "rocketmq-classic-consumer"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "rand",
+ "rocketmq-classic-common",
+ "rocketmq-classic-core",
+ "rocketmq-classic-protocol",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

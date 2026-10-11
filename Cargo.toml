@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/rocketmq-classic-common",
+    "crates/rocketmq-classic-consumer",
     "crates/rocketmq-classic-core",
     "crates/rocketmq-classic-protocol",
     "crates/rocketmq-classic-remoting",
