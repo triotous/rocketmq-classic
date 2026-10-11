@@ -6,7 +6,11 @@ use std::{
     time::Duration,
 };
 
-use tokio::{sync::mpsc, task::JoinHandle, time::Instant};
+use tokio::{
+    sync::{mpsc, oneshot},
+    task::JoinHandle,
+    time::Instant,
+};
 
 use crate::{
     process_queue::{ConsumeBatch, ProcessQueue},
@@ -27,7 +31,15 @@ pub(crate) enum ConsumeSubmitError {
 
 struct ConsumeWorkerSet {
     sender: Option<mpsc::Sender<ConsumeRequest>>,
-    workers: Vec<JoinHandle<()>>,
+    receiver: Arc<tokio::sync::Mutex<mpsc::Receiver<ConsumeRequest>>>,
+    consumer: std::sync::Weak<crate::push::PushConsumer>,
+    workers: Vec<ConsumeWorker>,
+    retiring: Vec<JoinHandle<()>>,
+}
+
+struct ConsumeWorker {
+    stop: Option<oneshot::Sender<()>>,
+    handle: JoinHandle<()>,
 }
 
 /// Owns a bounded set of concurrent-listener workers and their pending work.
@@ -63,31 +75,60 @@ impl ConcurrentConsumeService {
         let receiver = Arc::new(tokio::sync::Mutex::new(receiver));
         let mut workers = Vec::with_capacity(worker_count);
         for _ in 0..worker_count {
-            let receiver = receiver.clone();
-            let consumer = consumer.clone();
-            let listener = self.listener.clone();
-            workers.push(tokio::spawn(async move {
-                loop {
-                    let request = receiver.lock().await.recv().await;
-                    let Some(request) = request else {
-                        break;
-                    };
-                    let Some(consumer) = consumer.upgrade() else {
-                        continue;
-                    };
-                    consumer
-                        .run_consume_request(request, listener.clone())
-                        .await;
-                }
-            }));
+            workers.push(spawn_worker(
+                receiver.clone(),
+                consumer.clone(),
+                self.listener.clone(),
+            ));
         }
         *self
             .workers
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(ConsumeWorkerSet {
             sender: Some(sender),
+            receiver,
+            consumer,
             workers,
+            retiring: Vec::new(),
         });
+    }
+
+    /// Changes the active worker count using the pinned Java client's
+    /// `updateCorePoolSize` acceptance rules.
+    pub fn update_core_pool_size(&self, core_pool_size: i32) -> bool {
+        if core_pool_size <= 0
+            || core_pool_size > i16::MAX as i32
+            || core_pool_size >= self.maximum_threads as i32
+        {
+            return false;
+        }
+        let mut worker_set = self
+            .workers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(worker_set) = worker_set.as_mut() else {
+            return false;
+        };
+        worker_set.retiring.retain(|worker| !worker.is_finished());
+
+        let target = core_pool_size as usize;
+        while worker_set.workers.len() < target {
+            worker_set.workers.push(spawn_worker(
+                worker_set.receiver.clone(),
+                worker_set.consumer.clone(),
+                self.listener.clone(),
+            ));
+        }
+        while worker_set.workers.len() > target {
+            let Some(mut worker) = worker_set.workers.pop() else {
+                break;
+            };
+            if let Some(stop) = worker.stop.take() {
+                let _ = stop.send(());
+            }
+            worker_set.retiring.push(worker.handle);
+        }
+        true
     }
 
     pub(crate) fn try_submit(&self, request: ConsumeRequest) -> Result<(), ConsumeSubmitError> {
@@ -119,7 +160,13 @@ impl ConcurrentConsumeService {
         workers.sender.take();
         let deadline =
             Instant::now() + Duration::from_millis(await_termination_millis.max(0) as u64);
-        for mut worker in workers.workers.drain(..) {
+        let mut handles = workers
+            .workers
+            .drain(..)
+            .map(|worker| worker.handle)
+            .chain(workers.retiring.drain(..))
+            .collect::<Vec<_>>();
+        for mut worker in handles.drain(..) {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() || tokio::time::timeout(remaining, &mut worker).await.is_err() {
                 worker.abort();
@@ -148,9 +195,45 @@ impl Drop for ConcurrentConsumeService {
         {
             workers.sender.take();
             for worker in workers.workers.drain(..) {
+                worker.handle.abort();
+            }
+            for worker in workers.retiring.drain(..) {
                 worker.abort();
             }
         }
+    }
+}
+
+fn spawn_worker(
+    receiver: Arc<tokio::sync::Mutex<mpsc::Receiver<ConsumeRequest>>>,
+    consumer: std::sync::Weak<crate::push::PushConsumer>,
+    listener: Arc<dyn MessageListenerConcurrently>,
+) -> ConsumeWorker {
+    let (stop, mut stop_receiver) = oneshot::channel();
+    let handle = tokio::spawn(async move {
+        loop {
+            let request = tokio::select! {
+                biased;
+                _ = &mut stop_receiver => break,
+                request = async {
+                    let mut receiver = receiver.lock().await;
+                    receiver.recv().await
+                } => request,
+            };
+            let Some(request) = request else {
+                break;
+            };
+            let Some(consumer) = consumer.upgrade() else {
+                continue;
+            };
+            consumer
+                .run_consume_request(request, listener.clone())
+                .await;
+        }
+    });
+    ConsumeWorker {
+        stop: Some(stop),
+        handle,
     }
 }
 
@@ -172,6 +255,30 @@ mod tests {
             .start(std::sync::Weak::<crate::push::PushConsumer>::new())
             .await;
         assert_eq!(service.worker_count(), 3);
+        service.shutdown(100).await;
+        assert_eq!(service.worker_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn core_pool_update_obeys_java_bounds_and_resizes_owned_workers() {
+        let listener: Arc<dyn MessageListenerConcurrently> = Arc::new(
+            |_messages: Vec<MessageExt>, context: ConsumeConcurrentlyContext| async move {
+                (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+            },
+        );
+        let service = ConcurrentConsumeService::new(2, 5, listener);
+        assert!(!service.update_core_pool_size(3));
+        service
+            .start(std::sync::Weak::<crate::push::PushConsumer>::new())
+            .await;
+        assert_eq!(service.worker_count(), 2);
+        assert!(service.update_core_pool_size(1));
+        assert_eq!(service.worker_count(), 1);
+        assert!(service.update_core_pool_size(4));
+        assert_eq!(service.worker_count(), 4);
+        assert!(!service.update_core_pool_size(0));
+        assert!(!service.update_core_pool_size(5));
+        assert!(!service.update_core_pool_size(i16::MAX as i32 + 1));
         service.shutdown(100).await;
         assert_eq!(service.worker_count(), 0);
     }

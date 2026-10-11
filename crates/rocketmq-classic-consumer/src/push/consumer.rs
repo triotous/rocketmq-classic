@@ -14,7 +14,8 @@ use std::collections::VecDeque;
 
 use rocketmq_classic_common::{
     message::{
-        DecodeLimits, DecodeOptions, Message, MessageQueue, constants::*, encode_properties,
+        DecodeLimits, DecodeOptions, Message, MessageExt, MessageQueue, constants::*,
+        encode_properties,
     },
     sysflag::pull::{build_pull_sys_flag, clear_commit_offset_flag},
 };
@@ -68,6 +69,7 @@ struct ScriptedRetryTransport {
     broker_results: VecDeque<Result<(), String>>,
     retry_results: VecDeque<Result<(), String>>,
     broker_headers: Vec<ConsumerSendMsgBackRequestHeader>,
+    broker_targets: Vec<(Option<String>, Option<String>)>,
     retry_messages: Vec<Message>,
 }
 
@@ -197,6 +199,7 @@ pub struct PushConsumer {
     state: tokio::sync::Mutex<State>,
     offset_store: std::sync::Mutex<Option<Arc<dyn OffsetStore>>>,
     listener: RwLock<Option<PushMessageListener>>,
+    subscription_config: RwLock<HashMap<String, String>>,
     subscriptions: Arc<RwLock<HashMap<String, SubscriptionData>>>,
     topic_queues: Arc<RwLock<HashMap<String, BTreeSet<MessageQueue>>>>,
     process_queues: Arc<RwLock<HashMap<MessageQueue, Arc<ProcessQueue>>>>,
@@ -205,6 +208,7 @@ pub struct PushConsumer {
     next_retry_message_id: AtomicU64,
     pull_api: PullAPIWrapper,
     paused: AtomicBool,
+    consume_orderly: AtomicBool,
     #[cfg(test)]
     startup_failure: Mutex<Option<StartupStage>>,
     #[cfg(test)]
@@ -224,6 +228,7 @@ impl PushConsumer {
             state: tokio::sync::Mutex::new(State::Created),
             offset_store: std::sync::Mutex::new(None),
             listener: RwLock::new(None),
+            subscription_config: RwLock::new(HashMap::new()),
             subscriptions: Arc::new(RwLock::new(HashMap::new())),
             topic_queues: Arc::new(RwLock::new(HashMap::new())),
             process_queues: Arc::new(RwLock::new(HashMap::new())),
@@ -232,6 +237,7 @@ impl PushConsumer {
             next_retry_message_id: AtomicU64::new(0),
             pull_api,
             paused: AtomicBool::new(false),
+            consume_orderly: AtomicBool::new(false),
             #[cfg(test)]
             startup_failure: Mutex::new(None),
             #[cfg(test)]
@@ -271,14 +277,23 @@ impl PushConsumer {
         &self,
         listener: PushMessageListener,
     ) -> Result<(), PushConsumerError> {
-        let state = self.state.lock().await;
-        match &*state {
-            State::Created => {}
-            State::Started { .. } => return Err(PushConsumerError::ConfigurationAfterStartup),
-            State::Shutdown => return Err(PushConsumerError::Shutdown),
-        }
+        // Java updates the facade and implementation listener references even
+        // after startup; already-created consume workers retain their listener.
         *write_lock(&self.listener) = Some(listener);
         Ok(())
+    }
+
+    /// Sets the configured message listener. This mirrors Java's
+    /// `DefaultMQPushConsumer.setMessageListener` entry point.
+    pub async fn set_message_listener(
+        &self,
+        listener: PushMessageListener,
+    ) -> Result<(), PushConsumerError> {
+        self.register_message_listener(listener).await
+    }
+
+    pub fn get_message_listener(&self) -> Option<PushMessageListener> {
+        read_lock(&self.listener).clone()
     }
 
     pub async fn subscribe(
@@ -296,12 +311,16 @@ impl PushConsumer {
         expression_type: Option<&str>,
         expression: &str,
     ) -> Result<(), PushConsumerError> {
-        let state = self.state.lock().await;
-        match &*state {
-            State::Created => {}
-            State::Started { .. } => return Err(PushConsumerError::ConfigurationAfterStartup),
-            State::Shutdown => return Err(PushConsumerError::Shutdown),
-        }
+        let runtime = {
+            let state = self.state.lock().await;
+            match &*state {
+                State::Created => None,
+                State::Started { runtime, .. } => {
+                    Some(runtime.upgrade().ok_or(PushConsumerError::NotStarted)?)
+                }
+                State::Shutdown => return Err(PushConsumerError::Shutdown),
+            }
+        };
         let mut client_config = self.config.client_config().clone();
         let topic = client_config.with_namespace(Some(topic))?.ok_or(
             PushConsumerError::InvalidSubscription("topic is empty".to_owned()),
@@ -309,25 +328,48 @@ impl PushConsumer {
         let subscription = build_subscription(&topic, Some(expression), expression_type)
             .map_err(|error| PushConsumerError::InvalidSubscription(error.to_string()))?;
         write_lock(&self.subscriptions).insert(topic, subscription);
+        if let Some(runtime) = runtime {
+            runtime.send_heartbeat_to_all_brokers().await?;
+        }
         Ok(())
     }
 
     pub async fn unsubscribe(&self, topic: &str) -> Result<bool, PushConsumerError> {
         let state = self.state.lock().await;
         match &*state {
-            State::Created => {}
-            State::Started { .. } => return Err(PushConsumerError::ConfigurationAfterStartup),
+            State::Created | State::Started { .. } => {}
             State::Shutdown => return Err(PushConsumerError::Shutdown),
         }
-        let mut client_config = self.config.client_config().clone();
-        let topic = client_config.with_namespace(Some(topic))?.ok_or(
-            PushConsumerError::InvalidSubscription("topic is empty".to_owned()),
-        )?;
-        Ok(write_lock(&self.subscriptions).remove(&topic).is_some())
+        // Java's facade passes the argument through without applying the
+        // namespace here, unlike subscribe().
+        Ok(write_lock(&self.subscriptions).remove(topic).is_some())
     }
 
     pub fn subscriptions(&self) -> HashMap<String, SubscriptionData> {
         read_lock(&self.subscriptions).clone()
+    }
+
+    /// Returns the legacy `topic -> tag expression` configuration map.
+    pub fn get_subscription(&self) -> HashMap<String, String> {
+        read_lock(&self.subscription_config).clone()
+    }
+
+    /// Replaces the legacy subscription configuration map, applying the
+    /// consumer namespace to each topic as the Java setter does.
+    pub async fn set_subscription(
+        &self,
+        subscriptions: HashMap<String, String>,
+    ) -> Result<(), PushConsumerError> {
+        let mut client_config = self.config.client_config().clone();
+        let mut namespaced = HashMap::with_capacity(subscriptions.len());
+        for (topic, expression) in subscriptions {
+            let topic = client_config.with_namespace(Some(&topic))?.ok_or_else(|| {
+                PushConsumerError::InvalidSubscription("topic is empty".to_owned())
+            })?;
+            namespaced.insert(topic, expression);
+        }
+        *write_lock(&self.subscription_config) = namespaced;
+        Ok(())
     }
 
     pub async fn suspend(&self) {
@@ -354,6 +396,90 @@ impl PushConsumer {
             if let Some(runtime) = runtime.upgrade() {
                 runtime.rebalance_immediately();
             }
+        }
+    }
+
+    pub fn is_pause(&self) -> bool {
+        self.paused.load(Ordering::Acquire)
+    }
+
+    pub fn is_consume_orderly(&self) -> bool {
+        self.consume_orderly.load(Ordering::Acquire)
+    }
+
+    /// Updates the active concurrent-consume worker count when the requested
+    /// value satisfies Java 5.5.1's `updateCorePoolSize` bounds.
+    pub async fn update_core_pool_size(&self, core_pool_size: i32) -> bool {
+        let state = self.state.lock().await;
+        match &*state {
+            State::Started {
+                consume_service, ..
+            } => consume_service.update_core_pool_size(core_pool_size),
+            State::Created | State::Shutdown => false,
+        }
+    }
+
+    /// Sends a consumed message back to its originating Broker and uses the
+    /// Java-compatible retry-topic fallback if the Broker rejects the request.
+    pub async fn send_message_back(
+        &self,
+        message: &MessageExt,
+        delay_level: i32,
+    ) -> Result<(), PushConsumerError> {
+        self.send_message_back_with_broker(message, delay_level, None)
+            .await
+    }
+
+    /// Sends a consumed message back to the named Broker, matching Java's
+    /// three-argument `sendMessageBack` overload.
+    pub async fn send_message_back_to_broker(
+        &self,
+        message: &MessageExt,
+        delay_level: i32,
+        broker_name: Option<&str>,
+    ) -> Result<(), PushConsumerError> {
+        self.send_message_back_with_broker(message, delay_level, Some(broker_name))
+            .await
+    }
+
+    async fn send_message_back_with_broker(
+        &self,
+        message: &MessageExt,
+        delay_level: i32,
+        broker_name_override: Option<Option<&str>>,
+    ) -> Result<(), PushConsumerError> {
+        let runtime = {
+            let state = self.state.lock().await;
+            match &*state {
+                State::Started { runtime, .. } => {
+                    runtime.upgrade().ok_or(PushConsumerError::NotStarted)?
+                }
+                State::Created => return Err(PushConsumerError::NotStarted),
+                State::Shutdown => return Err(PushConsumerError::Shutdown),
+            }
+        };
+        let effective_broker = match broker_name_override {
+            Some(broker_name) => broker_name.map(str::to_owned),
+            None => message.broker_name().map(str::to_owned),
+        };
+        let queue = MessageQueue::new_nullable_broker(
+            message.message().topic().to_owned(),
+            effective_broker,
+            message.queue_id(),
+        );
+        if self
+            .send_message_back_for_consume(
+                &runtime,
+                &queue,
+                message,
+                delay_level,
+                broker_name_override,
+            )
+            .await
+        {
+            Ok(())
+        } else {
+            Err(PushConsumerError::SendMessageBackFailed)
         }
     }
 
@@ -992,11 +1118,12 @@ impl PushConsumer {
                     return;
                 }
                 if self
-                    .send_message_back(
+                    .send_message_back_for_consume(
                         &context.runtime,
                         &queue,
                         message.as_ref(),
                         callback_context.delay_level_when_next_consume(),
+                        None,
                     )
                     .await
                 {
@@ -1039,12 +1166,13 @@ impl PushConsumer {
         }
     }
 
-    async fn send_message_back(
+    async fn send_message_back_for_consume(
         &self,
         runtime: &Arc<ClientRuntime>,
         queue: &MessageQueue,
         message: &rocketmq_classic_common::message::MessageExt,
         delay_level: i32,
+        broker_name_override: Option<Option<&str>>,
     ) -> bool {
         let mut client_config = self.config.client_config().clone();
         let consumer_group = client_config
@@ -1063,10 +1191,11 @@ impl PushConsumer {
             tracing::error!("push send-back has no origin topic");
             return false;
         };
-        let broker_name = message
-            .broker_name()
-            .or(queue.broker_name())
-            .map(str::to_owned);
+        let broker_name = match broker_name_override {
+            Some(broker_name) => broker_name,
+            None => message.broker_name().or(queue.broker_name()),
+        }
+        .map(str::to_owned);
         let header = ConsumerSendMsgBackRequestHeader {
             group: consumer_group.clone(),
             broker_name: broker_name.clone(),
@@ -1079,7 +1208,12 @@ impl PushConsumer {
         };
 
         match self
-            .try_send_message_back_to_broker(runtime, &header, broker_name.as_deref())
+            .try_send_message_back_to_broker(
+                runtime,
+                &header,
+                broker_name.as_deref(),
+                message.store_host(),
+            )
             .await
         {
             Ok(()) => return true,
@@ -1116,6 +1250,7 @@ impl PushConsumer {
         runtime: &Arc<ClientRuntime>,
         header: &ConsumerSendMsgBackRequestHeader,
         broker_name: Option<&str>,
+        store_host: Option<&str>,
     ) -> Result<(), String> {
         #[cfg(test)]
         {
@@ -1124,29 +1259,38 @@ impl PushConsumer {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             scripted.broker_headers.push(header.clone());
+            scripted.broker_targets.push((
+                broker_name.map(str::to_owned),
+                store_host.map(str::to_owned),
+            ));
             if let Some(result) = scripted.broker_results.pop_front() {
                 return result;
             }
         }
 
-        let broker_name = broker_name.ok_or_else(|| "message has no broker name".to_owned())?;
         let deadline = Instant::now() + Duration::from_millis(CONSUMER_SEND_BACK_TIMEOUT_MILLIS);
-        let mut route = runtime
-            .route_snapshot()
-            .map_err(|error| error.to_string())?;
-        let mut address = route.publish_address(broker_name).map(str::to_owned);
-        if address.is_none() {
-            runtime
-                .update_topic_route(&header.origin_topic, deadline)
-                .await
-                .map_err(|error| error.to_string())?;
-            route = runtime
+        let address = if let Some(broker_name) = broker_name {
+            let mut route = runtime
                 .route_snapshot()
                 .map_err(|error| error.to_string())?;
-            address = route.publish_address(broker_name).map(str::to_owned);
-        }
-        let address =
-            address.ok_or_else(|| format!("broker {broker_name} has no master address"))?;
+            let mut address = route.publish_address(broker_name).map(str::to_owned);
+            if address.is_none() {
+                runtime
+                    .update_topic_route(&header.origin_topic, deadline)
+                    .await
+                    .map_err(|error| error.to_string())?;
+                route = runtime
+                    .route_snapshot()
+                    .map_err(|error| error.to_string())?;
+                address = route.publish_address(broker_name).map(str::to_owned);
+            }
+            address.ok_or_else(|| format!("broker {broker_name} has no master address"))?
+        } else {
+            store_host
+                .filter(|address| !address.trim().is_empty())
+                .map(str::to_owned)
+                .ok_or_else(|| "message has no broker name or store host".to_owned())?
+        };
         let address =
             broker_vip_channel(self.config.client_config().vip_channel_enabled(), &address)
                 .map_err(|error| error.to_string())?;
@@ -1455,7 +1599,7 @@ impl PushConsumer {
         let pull_scheduler = Arc::new(PullScheduler::new());
         let pull_rpc_workers = Arc::new(PullRpcWorkers::new());
 
-        self.copy_subscriptions(&consumer_group);
+        self.copy_subscriptions(&consumer_group)?;
 
         let runtime = self.manager.get_or_create(&client_config).await?;
         if let Err(error) = self.checkpoint(StartupStage::RuntimeCreated) {
@@ -1610,7 +1754,18 @@ impl PushConsumer {
         Ok(())
     }
 
-    fn copy_subscriptions(&self, consumer_group: &str) {
+    fn copy_subscriptions(&self, consumer_group: &str) -> Result<(), PushConsumerError> {
+        let configured = read_lock(&self.subscription_config).clone();
+        let configured = configured
+            .iter()
+            .map(|(topic, expression)| {
+                build_subscription(topic, Some(expression), Some("TAG"))
+                    .map(|subscription| (topic.clone(), subscription))
+                    .map_err(|error| PushConsumerError::InvalidSubscription(error.to_string()))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut subscriptions = write_lock(&self.subscriptions);
+        subscriptions.extend(configured);
         if self.config.message_model()
             != rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting
         {
@@ -1618,8 +1773,9 @@ impl PushConsumer {
             let mut subscription =
                 SubscriptionData::new(Some(retry_topic.clone()), Some("*".to_owned()));
             subscription.set_sub_version(epoch_millis());
-            write_lock(&self.subscriptions).insert(retry_topic, subscription);
+            subscriptions.insert(retry_topic, subscription);
         }
+        Ok(())
     }
 
     fn select_offset_store(
@@ -2361,6 +2517,65 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn public_send_back_overloads_use_message_and_explicit_broker_names() {
+        let config = PushConsumerConfig::new("public-send-back").unwrap();
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let offset_store: Arc<dyn OffsetStore> = Arc::new(RecordingOffsetStore::default());
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            offset_store,
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+        {
+            let mut scripted = consumer.scripted_retry_transport.lock().unwrap();
+            scripted.broker_results.extend([Ok(()), Ok(()), Ok(())]);
+        }
+
+        let message = retry_test_message(7);
+        consumer.send_message_back(&message, 2).await.unwrap();
+        consumer
+            .send_message_back_to_broker(&message, 3, Some("broker-override"))
+            .await
+            .unwrap();
+        let mut store_host_message = retry_test_message(8);
+        store_host_message.set_broker_name(None);
+        store_host_message.set_store_host(Some("127.0.0.1:10911".to_owned()));
+        consumer
+            .send_message_back_to_broker(&store_host_message, 4, None)
+            .await
+            .unwrap();
+
+        {
+            let scripted = consumer.scripted_retry_transport.lock().unwrap();
+            assert_eq!(scripted.broker_headers.len(), 3);
+            assert_eq!(
+                scripted.broker_headers[0].broker_name.as_deref(),
+                Some("broker-a")
+            );
+            assert_eq!(scripted.broker_headers[0].delay_level, 2);
+            assert_eq!(
+                scripted.broker_headers[1].broker_name.as_deref(),
+                Some("broker-override")
+            );
+            assert_eq!(scripted.broker_headers[1].delay_level, 3);
+            assert_eq!(scripted.broker_headers[2].broker_name, None);
+            assert_eq!(scripted.broker_headers[2].delay_level, 4);
+            assert_eq!(
+                scripted.broker_targets[2],
+                (None, Some("127.0.0.1:10911".to_owned()))
+            );
+            assert!(scripted.retry_messages.is_empty());
+        }
+        consumer.shutdown().await.unwrap();
+        let _ = runtime.shutdown().await;
+    }
+
+    #[tokio::test]
     async fn failed_send_back_retains_and_increments_messages_for_redelivery() {
         let config = PushConsumerConfig::new("consume-retry-retention").unwrap();
         let manager = ClientRuntimeManager::new();
@@ -2726,8 +2941,9 @@ mod tests {
             .unwrap();
         consumer.subscribe("orders", "*").await.unwrap();
         consumer.subscribe("temporary", "*").await.unwrap();
-        assert!(consumer.unsubscribe("temporary").await.unwrap());
         assert!(!consumer.unsubscribe("temporary").await.unwrap());
+        assert!(consumer.unsubscribe("tenant%temporary").await.unwrap());
+        assert!(!consumer.unsubscribe("tenant%temporary").await.unwrap());
         let subscriptions = consumer.subscriptions();
         assert_eq!(
             subscriptions
@@ -2755,6 +2971,9 @@ mod tests {
         assert_eq!(consume_service.worker_count(), 20);
         assert_eq!(pull_scheduler.worker_count(), 1);
         assert_eq!(pull_rpc_workers.worker_count(), 4);
+        assert!(consumer.update_core_pool_size(4).await);
+        assert_eq!(consume_service.worker_count(), 4);
+        assert!(!consumer.update_core_pool_size(20).await);
         let runtime = manager
             .get_or_create(consumer.config().client_config())
             .await
@@ -2774,6 +2993,23 @@ mod tests {
             .collect::<std::collections::BTreeSet<_>>();
         assert!(heartbeat_topics.contains("tenant%orders"));
         assert!(heartbeat_topics.contains("%RETRY%tenant%push-lifecycle"));
+        consumer.subscribe("late", "*").await.unwrap();
+        assert!(
+            runtime
+                .select_consumer("tenant%push-lifecycle")
+                .unwrap()
+                .unwrap()
+                .heartbeat_data()
+                .subscription_data_set
+                .unwrap()
+                .snapshot()
+                .iter()
+                .any(|subscription| {
+                    subscription.as_ref().is_some_and(|subscription| {
+                        subscription.snapshot().topic.as_deref() == Some("tenant%late")
+                    })
+                })
+        );
         assert!(consumer.get_offset_store().is_some());
         assert!(matches!(
             consumer.start().await,
@@ -2783,10 +3019,7 @@ mod tests {
             consumer.set_offset_store(None).await,
             Err(PushConsumerError::OffsetStoreAfterStartup)
         ));
-        assert!(matches!(
-            consumer.unsubscribe("orders").await,
-            Err(PushConsumerError::ConfigurationAfterStartup)
-        ));
+        assert!(consumer.unsubscribe("tenant%orders").await.unwrap());
 
         consumer.shutdown().await.unwrap();
         assert!(!consumer.is_running().await);
@@ -2897,18 +3130,47 @@ mod tests {
             PushConsumerConfig::new("orders").unwrap(),
             ClientRuntimeManager::new(),
         );
-        clustering.copy_subscriptions("orders");
+        clustering.copy_subscriptions("orders").unwrap();
         assert!(clustering.subscriptions().contains_key("%RETRY%orders"));
 
         let mut config = PushConsumerConfig::new("broadcast-orders").unwrap();
         config.set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting);
         let broadcasting = PushConsumer::with_manager(config, ClientRuntimeManager::new());
-        broadcasting.copy_subscriptions("broadcast-orders");
+        broadcasting.copy_subscriptions("broadcast-orders").unwrap();
         assert!(
             !broadcasting
                 .subscriptions()
                 .keys()
                 .any(|topic| topic.starts_with("%RETRY%"))
+        );
+    }
+
+    #[tokio::test]
+    async fn legacy_subscription_map_is_namespaced_and_copied_into_heartbeat_state() {
+        let mut config = PushConsumerConfig::new("orders").unwrap();
+        config
+            .client_config_mut()
+            .set_namespace(Some("tenant".to_owned()));
+        let consumer = PushConsumer::with_manager(config, ClientRuntimeManager::new());
+        consumer
+            .set_subscription(HashMap::from([(
+                "orders".to_owned(),
+                "gold || silver".to_owned(),
+            )]))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            consumer.get_subscription().get("tenant%orders"),
+            Some(&"gold || silver".to_owned())
+        );
+        consumer.copy_subscriptions("tenant%orders").unwrap();
+        assert_eq!(
+            consumer
+                .subscriptions()
+                .get("tenant%orders")
+                .and_then(SubscriptionData::get_sub_string),
+            Some("gold || silver")
         );
     }
 

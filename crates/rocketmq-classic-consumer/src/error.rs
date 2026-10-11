@@ -119,6 +119,8 @@ pub enum PushConsumerError {
     NotStarted,
     #[error("operation requires the push consumer to be created or stopped")]
     ConfigurationAfterStartup,
+    #[error("push message send-back and retry-topic fallback both failed")]
+    SendMessageBackFailed,
     #[cfg(test)]
     #[error("test injected startup failure at {0}")]
     TestStartupFault(&'static str),
