@@ -66,3 +66,13 @@ Verification
 - Updated the Phase 10 offline method matrix and Java compatibility rows. P10-V03 remains PENDING_PHASE_19; no live Broker/DLQ result is claimed.
 - Implementation commits: `229bdfb2 feat(consumer): implement concurrent consume retries`; `d7ca6032 fix(consumer): quiesce push shutdown safely`.
 - Documentation and this execution-log update are pending their own commit.
+
+P10 public API audit and final verification (2026-10-11 15:38 UTC)
+- Completed the Java 5.5.1 facade audit for listener/subscription getters and setters, direct `sendMessageBack` overloads, `updateCorePoolSize`, pause state and orderly-mode state. Added the missing Rust APIs and retained Java's distinct legacy subscription map behavior.
+- Push subscribe now applies the namespace and sends a heartbeat after startup; unsubscribe removes the exact supplied topic without wrapping it in the namespace or sending an immediate heartbeat, matching the pinned Java facade.
+- Direct pool updates accept only values greater than zero, no larger than `Short.MAX_VALUE`, and strictly less than `consumeThreadMax`. The bounded worker owner grows and retires tasks safely and joins retired tasks during shutdown. Java's scheduled automatic adjustment remains a no-op because its `incCorePoolSize` and `decCorePoolSize` methods are empty.
+- Public send-back overloads now share the consume retry path, including explicit Broker selection, `storeHost` fallback, VIP-channel routing, and retry-topic fallback. Added `tests/push_pipeline.rs`; private fixed assignment remains internal.
+- Updated the offline method matrix and top-level Java compatibility row. The implementation plan and Java checkout were not modified.
+- Verification passed: `cargo test -p rocketmq-classic-consumer --test push_pipeline --locked` (1 passed); `cargo test -p rocketmq-classic-consumer --all-targets --locked` (62 unit + 13 integration passed); `cargo fmt --check`; `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`; `cargo test --workspace --locked` (exit 0).
+- Remaining ownership is unchanged: actual queue assignment and normal Push startup hand off to Phase 11; orderly execution is Phase 12; live Broker DLQ case P10-V03 is `PENDING_PHASE_19`.
+- Commits: `2f18bbd7 feat(consumer): complete push control APIs and resize workers`; `1fddf76b test(consumer): add push pipeline public API target`; `7fb5ac1d docs(consumer): reconcile phase 10 compatibility matrix`.
