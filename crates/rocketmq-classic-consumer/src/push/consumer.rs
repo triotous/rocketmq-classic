@@ -1679,14 +1679,19 @@ impl PushConsumer {
         consume_service
             .shutdown(self.config.await_termination_millis_when_shutdown())
             .await;
-        let Some(runtime) = runtime else {
-            return Ok(());
-        };
+        for (queue, process_queue) in std::mem::take(&mut *write_lock(&self.process_queues)) {
+            let generation = process_queue.generation();
+            let _ = process_queue.drop_assignment(generation);
+            pull_scheduler.cancel(&queue, generation);
+        }
         let queues = offset_store
             .clone_offset_table(None)
             .into_keys()
             .collect::<Vec<_>>();
         let _ = offset_store.persist_all(&queues).await;
+        let Some(runtime) = runtime else {
+            return Ok(());
+        };
         let unregister = runtime
             .unregister_consumer(&lease, self.unregister_deadline())
             .await;
@@ -2905,5 +2910,84 @@ mod tests {
                 .keys()
                 .any(|topic| topic.starts_with("%RETRY%"))
         );
+    }
+
+    #[tokio::test]
+    async fn shutdown_aborts_a_slow_listener_without_committing_its_batch() {
+        struct NotifyOnDrop(Arc<tokio::sync::Notify>);
+        impl Drop for NotifyOnDrop {
+            fn drop(&mut self) {
+                self.0.notify_one();
+            }
+        }
+
+        let started = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        let cancelled = Arc::new(tokio::sync::Notify::new());
+        let listener: Arc<dyn MessageListenerConcurrently> = {
+            let started = started.clone();
+            let release = release.clone();
+            let cancelled = cancelled.clone();
+            Arc::new(
+                move |_messages: Vec<MessageExt>, context: ConsumeConcurrentlyContext| {
+                    let started = started.clone();
+                    let release = release.clone();
+                    let cancelled = cancelled.clone();
+                    async move {
+                        let _drop_signal = NotifyOnDrop(cancelled);
+                        started.notify_one();
+                        release.notified().await;
+                        (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+                    }
+                },
+            )
+        };
+        let mut config = PushConsumerConfig::new("slow-consumer-shutdown").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        config.set_consume_thread_min(1);
+        config.set_consume_thread_max(1);
+        config.set_await_termination_millis_when_shutdown(10);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let offset_store = Arc::new(RecordingOffsetStore::default());
+        let offset_store_dyn: Arc<dyn OffsetStore> = offset_store.clone();
+        let consume_service = Arc::new(ConcurrentConsumeService::new(1, 1, listener));
+        let scheduler = Arc::new(PullScheduler::new());
+        let pull_rpc_workers = Arc::new(PullRpcWorkers::new());
+        let _runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            offset_store_dyn,
+            consume_service.clone(),
+            scheduler.clone(),
+            pull_rpc_workers.clone(),
+        )
+        .await;
+
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 40));
+        process_queue
+            .insert_messages(40, vec![retry_test_message(50)])
+            .unwrap();
+        write_lock(&consumer.process_queues).insert(queue.clone(), process_queue.clone());
+        offset_store.update_offset(&queue, 50, false);
+        let context = consumer.pull_context().await.unwrap();
+        consumer.submit_consume_batch(&context, process_queue.clone(), 40);
+        tokio::time::timeout(Duration::from_secs(1), started.notified())
+            .await
+            .unwrap();
+
+        consumer.shutdown().await.unwrap();
+        tokio::time::timeout(Duration::from_secs(1), cancelled.notified())
+            .await
+            .unwrap();
+        let snapshot = process_queue.snapshot(40).unwrap();
+        assert!(snapshot.dropped);
+        assert_eq!(snapshot.cached_count, 1);
+        assert_eq!(snapshot.in_flight_count, 1);
+        assert_eq!(offset_store.values.lock().unwrap().get(&queue), Some(&50));
+        assert_eq!(consume_service.worker_count(), 0);
+        assert_eq!(scheduler.worker_count(), 0);
+        assert_eq!(pull_rpc_workers.worker_count(), 0);
     }
 }
