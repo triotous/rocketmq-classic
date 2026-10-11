@@ -4,19 +4,20 @@ Java behavior source: RocketMQ client 5.5.1, commit
 `efa1be59d6fc747ad220f036c86030f05f0419f9`. The source files below were read
 from that commit with `git show`; the separate Java checkout was not changed.
 
-This is the Phase 10 slice of the bidirectional compatibility inventory. Rust
-status remains `TODO` until implementation and executable checks are complete.
-Phase 11 owns real queue allocation/rebalance; Phase 12 owns orderly callback
-execution; Phase 13 owns POP; Phase 16 owns tracing and public consume hooks.
+This is the Phase 10 slice of the bidirectional compatibility inventory. Each
+row records its current evidence; `PARTIAL` means required behavior remains
+without implementation or executable coverage. Phase 11 owns real queue
+allocation/rebalance; Phase 12 owns orderly callback execution; Phase 13 owns
+POP; Phase 16 owns tracing and public consume hooks.
 
 ## Java method to Rust implementation and check
 
 | Java 5.5.1 source and method/call site | Rust owner and check | Status |
 | --- | --- | --- |
-| `DefaultMQPushConsumer` fields/getters/setters: group, model, consume-from policy/timestamp, thread bounds, concurrent max span, pull thresholds/interval/batches, unit mode, retry limit, consume timeout and shutdown wait | `push::PushConsumerConfig`; P10-01 configuration/default/range tests | TODO |
-| `DefaultMQPushConsumer.subscribe/unsubscribe/getSubscription`; `DefaultMQPushConsumerImpl.copySubscription` | `PushConsumer::{subscribe,unsubscribe}` and heartbeat registration; P10-01 subscription validation and heartbeat tests | TODO |
-| `DefaultMQPushConsumerImpl.start`: `checkConfig`, `copySubscription`, runtime selection, rebalance wiring, offset-store selection/load, consume-service start, consumer registration, runtime start, route update, Broker check, heartbeat and immediate-rebalance request | `push::PushConsumer::{start,shutdown}` with rollback; P10-V04 startup fault-injection tests | TODO |
-| `DefaultMQPushConsumerImpl.checkConfig`: group validation; non-null model/from-policy/strategy/subscriptions/listener; timestamp format; thread range `[1,1000]` and min<=max; max span `[1,65535]`; queue count `[1,65535]`; topic count `-1` or `[1,6553500]`; queue MiB `[1,1024]`; topic MiB `-1` or `[1,102400]`; interval `[0,65535]`; consume/pull batch `[1,1024]` | `PushConsumerConfig::validate` and `PushConsumer::start`; P10-01 boundary tests | TODO |
+| `DefaultMQPushConsumer` fields/getters/setters: group, model, consume-from policy/timestamp, thread bounds, concurrent max span, pull thresholds/interval/batches, unit mode, retry limit, consume timeout and shutdown wait | `push::PushConsumerConfig`; P10-01 configuration/default/range tests | UNIT_VERIFIED — Java defaults, typed accessors and checked ranges are implemented; runtime effects remain in later P10 rows |
+| `DefaultMQPushConsumer.subscribe/unsubscribe/getSubscription`; `DefaultMQPushConsumerImpl.copySubscription` | `PushConsumer::{subscribe,unsubscribe}` and heartbeat registration; P10-01 namespace, subscription and retry-topic tests | UNIT_VERIFIED — subscription add/remove and clustering retry subscription appear in heartbeat data |
+| `DefaultMQPushConsumerImpl.start`: `checkConfig`, `copySubscription`, runtime selection, rebalance wiring, offset-store selection/load, consume-service start, consumer registration, runtime start, route update, Broker check, heartbeat and immediate-rebalance request | `push::PushConsumer::{start,shutdown}` with rollback; P10-V04 startup fault-injection tests | PARTIAL — offset loading, worker lifecycle, registration/runtime/routes/check/heartbeat and rollback are covered; ProcessQueue assignment and pull activation remain pending |
+| `DefaultMQPushConsumerImpl.checkConfig`: group validation; non-null model/from-policy/strategy/subscriptions/listener; timestamp format; thread range `[1,1000]` and min<=max; max span `[1,65535]`; queue count `[1,65535]`; topic count `-1` or `[1,6553500]`; queue MiB `[1,1024]`; topic MiB `-1` or `[1,102400]`; interval `[0,65535]`; consume/pull batch `[1,1024]` | `PushConsumerConfig::validate` and `PushConsumer::start`; P10-01 boundary tests | UNIT_VERIFIED — Java-owned group, listener and setting checks are covered; enum types make null model/from-policy states unrepresentable |
 | `PullRequest` and `PullMessageService.executePullRequestImmediately/Later`; `DefaultMQPushConsumerImpl.executePullRequestImmediately/Later` | `push::pull_service::PullRequest` and bounded owner scheduler; P10-V02 paused-time task-bound/delay/cancel tests | TODO |
 | `DefaultMQPushConsumerImpl.pullMessage`: dropped/pause/state checks; queue count/size/span flow control; locked-queue gate; subscription and pull header construction; clustering commit offset; async response callback | `push::pull_service`; P10-V02 scripted pull/flow-control tests | TODO |
 | `DefaultMQPushConsumerImpl` pull callback: FOUND insert/consume/reschedule; NO_NEW/NO_MATCHED next-offset and safe tag-offset correction; OFFSET_ILLEGAL drop/freeze/persist/remove/rebalance; Broker flow-control vs ordinary failure delays; `correctTagsOffset` | `push::pull_service` and `ProcessQueue`; P10-V01/V02 scripted outcome tests | TODO |
@@ -62,13 +63,13 @@ is minutes; pull interval and shutdown wait are milliseconds.
 
 ## Case ownership and status
 
-| Case | Check required here | Execution boundary |
-| --- | --- | --- |
-| P10-V01 | Ordered queue ownership, duplicate accounting, gaps, out-of-order completion, stale generation | Local unit tests |
-| P10-V02 | Bounded scheduler, pause/flow-control thresholds, delayed retry, dropped generation, send-back failure retention | Local paused-time/scripted tests |
-| P10-V04 | Startup rollback at every acquisition step; slow callback shutdown preserves unresolved work and joins owned tasks | Local fault-injection tests |
-| P10-U01 | Private fixed assignment with Java-produced message fixtures and scripted send-back results for concurrent listener/retry decisions | Local unit tests; no production fixed-assignment API |
-| P10-V03 | Live 5.3.4 Broker retry/DLQ transition | `PENDING_PHASE_19`; not run or passed by Phase 10 |
+| Case | Check required here | Execution boundary | Status |
+| --- | --- | --- | --- |
+| P10-V01 | Ordered queue ownership, duplicate accounting, gaps, out-of-order completion, stale generation | Local unit tests | TODO |
+| P10-V02 | Bounded scheduler, pause/flow-control thresholds, delayed retry, dropped generation, send-back failure retention | Local paused-time/scripted tests | TODO |
+| P10-V04 | Startup rollback at every acquisition step; slow callback shutdown preserves unresolved work and joins owned tasks | Local fault-injection tests | PARTIAL — startup-stage rollback and idle-worker shutdown pass; slow callback/unresolved-work behavior is pending |
+| P10-U01 | Private fixed assignment with Java-produced message fixtures and scripted send-back results for concurrent listener/retry decisions | Local unit tests; no production fixed-assignment API | TODO |
+| P10-V03 | Live 5.3.4 Broker retry/DLQ transition | Phase 19; not run or passed by Phase 10 | PENDING_PHASE_19 |
 
 Fixture provenance for newly added cases must name the pinned Java source or
 Java-produced fixture and its SHA-256 in the test/fixture metadata. The matrix

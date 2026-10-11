@@ -16,3 +16,12 @@ Java source mapping
 - Recorded Phase 10 Java method/config-to-Rust owners, boundary values/defaults, unit case IDs, fixture provenance rule and explicit Phase 11/12/13/16 ownership in `docs/compatibility/PHASE_10_OFFLINE_METHOD_MATRIX.md`.
 - Added Phase 10 source rows to the Java compatibility matrix. All implementation rows remain TODO; P10-V03 remains PENDING_PHASE_19.
 - No Java checkout files changed. Documentation-only diff; no tests run.
+
+P10-01 / P10-02 implementation
+- Added Java-compatible Push settings, validation, TAG subscription entry points, concurrent/orderly listener contracts, offset-store selection, runtime registration and startup rollback. Orderly startup is rejected until Phase 12; real queue assignment and pull activation remain pending.
+- Started the bounded concurrent-consume worker owner after offset-store load and before registration. Startup failures stop/join it before unregistering/shutting down; normal shutdown quiesces it before offset persistence and unregister.
+- Added a startup fault point after worker startup and tests for all eight startup stages. The lifecycle test verifies the default 20 workers start, namespaced subscriptions and retry-topic subscriptions reach heartbeat data, and workers are gone after shutdown.
+- The first worker shutdown test exposed a double-poll of completed Tokio `JoinHandle`s. The shutdown path now awaits the handle only after timeout/abort; the focused test passes.
+- Checks passed: `cargo fmt --check`; `cargo test -p rocketmq-classic-consumer --locked` (36 unit, 12 integration, 0 doc tests failed); `cargo clippy -p rocketmq-classic-consumer --all-targets --all-features --locked -- -D warnings`.
+- Commits: `766153f7 feat(consumer): add push config and startup lifecycle`; `7e406250 test(consumer): verify Java push config boundaries`.
+- Matrix status: configuration and checkConfig rows UNIT_VERIFIED; subscription row UNIT_VERIFIED; startup row and P10-V04 PARTIAL. P10-V01/V02/U01 remain TODO; P10-V03 remains PENDING_PHASE_19.
