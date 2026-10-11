@@ -76,6 +76,18 @@ pub enum PushConsumerError {
     OffsetStore(#[from] OffsetStoreError),
     #[error("push pull scheduler error: {0}")]
     PullScheduler(String),
+    #[error(transparent)]
+    PullProcessing(#[from] ProcessPullError),
+    #[error("push consumer requires a message queue with a topic and broker name")]
+    InvalidQueue,
+    #[error("push pull offset must be nonnegative")]
+    InvalidOffset,
+    #[error("queue topic `{0}` has no registered subscription")]
+    MissingSubscriptionForQueue(String),
+    #[error("queue `{0}` is waiting for corrected offset persistence")]
+    OffsetCorrectionPending(String),
+    #[error("push consumer assignment generation counter is exhausted")]
+    GenerationExhausted,
     #[error("consumer group is blank or contains characters not accepted by RocketMQ")]
     InvalidConsumerGroup,
     #[error("consumer group must not be DEFAULT_CONSUMER")]

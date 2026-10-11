@@ -11,7 +11,7 @@ use rocketmq_classic_common::message::MessageQueue;
 use rocketmq_classic_core::runtime::{ClientRuntime, MessageRequest};
 use rocketmq_classic_protocol::body::MessageRequestMode;
 use tokio::{
-    sync::{Notify, watch},
+    sync::{Notify, mpsc, watch},
     task::JoinHandle,
     time::{Duration, Instant, sleep_until},
 };
@@ -30,14 +30,17 @@ const MEBIBYTE: u64 = 1024 * 1024;
 
 /// One logical fetch request tied to a queue assignment. The cursor is mutable
 /// because Java reuses its PullRequest after each completed response.
+#[derive(Clone)]
 pub(crate) struct PullRequest {
     consumer_group: String,
     process_queue: Arc<ProcessQueue>,
-    next_offset: Mutex<i64>,
-    previously_locked: AtomicBool,
+    next_offset: Arc<Mutex<i64>>,
+    #[allow(dead_code)] // Orderly queue locking is owned by Phase 12.
+    previously_locked: Arc<AtomicBool>,
 }
 
 impl PullRequest {
+    #[allow(dead_code)] // Constructed by the private Phase 11 assignment activation path.
     pub(crate) fn new(
         consumer_group: impl Into<String>,
         process_queue: Arc<ProcessQueue>,
@@ -46,13 +49,17 @@ impl PullRequest {
         Self {
             consumer_group: consumer_group.into(),
             process_queue,
-            next_offset: Mutex::new(next_offset),
-            previously_locked: AtomicBool::new(false),
+            next_offset: Arc::new(Mutex::new(next_offset)),
+            previously_locked: Arc::new(AtomicBool::new(false)),
         }
     }
 
     pub(crate) fn process_queue(&self) -> Arc<ProcessQueue> {
         self.process_queue.clone()
+    }
+
+    pub(crate) fn consumer_group(&self) -> &str {
+        &self.consumer_group
     }
 
     pub(crate) fn queue(&self) -> &MessageQueue {
@@ -77,10 +84,12 @@ impl PullRequest {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = offset;
     }
 
+    #[allow(dead_code)] // Orderly queue locking is owned by Phase 12.
     pub(crate) fn previously_locked(&self) -> bool {
         self.previously_locked.load(Ordering::Acquire)
     }
 
+    #[allow(dead_code)] // Orderly queue locking is owned by Phase 12.
     pub(crate) fn set_previously_locked(&self, value: bool) {
         self.previously_locked.store(value, Ordering::Release);
     }
@@ -92,10 +101,151 @@ impl PullRequest {
         }
     }
 
-    fn is_current(&self) -> bool {
+    pub(crate) fn is_current(&self) -> bool {
         self.process_queue
             .snapshot(self.generation())
             .is_ok_and(|snapshot| !snapshot.dropped)
+    }
+}
+
+const PULL_RPC_WORKER_COUNT: usize = 4;
+const PULL_RPC_QUEUE_CAPACITY: usize = 64;
+
+struct PullRpcWorkerSet {
+    sender: Option<mpsc::Sender<Arc<PullRequest>>>,
+    cancellation: watch::Sender<bool>,
+    workers: Vec<JoinHandle<()>>,
+}
+
+/// Bounded pull-RPC workers keep long broker suspends off the shared runtime
+/// PullMessageService worker. A queue assignment still has at most one pull in
+/// flight because PullScheduler owns that invariant.
+pub(crate) struct PullRpcWorkers {
+    state: Mutex<Option<PullRpcWorkerSet>>,
+}
+
+impl PullRpcWorkers {
+    pub(crate) fn new() -> Self {
+        Self {
+            state: Mutex::new(None),
+        }
+    }
+
+    pub(crate) fn start(
+        &self,
+        consumer: Weak<crate::push::PushConsumer>,
+        scheduler: Arc<PullScheduler>,
+    ) -> Result<(), PullSchedulerError> {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if state.is_some() {
+            return Err(PullSchedulerError::AlreadyStarted);
+        }
+        let (sender, receiver) = mpsc::channel::<Arc<PullRequest>>(PULL_RPC_QUEUE_CAPACITY);
+        let receiver = Arc::new(tokio::sync::Mutex::new(receiver));
+        let (cancellation, initial_receiver) = watch::channel(false);
+        let mut workers = Vec::with_capacity(PULL_RPC_WORKER_COUNT);
+        for _ in 0..PULL_RPC_WORKER_COUNT {
+            let mut cancellation = initial_receiver.clone();
+            let receiver = receiver.clone();
+            let consumer = consumer.clone();
+            let scheduler = scheduler.clone();
+            workers.push(tokio::spawn(async move {
+                loop {
+                    if *cancellation.borrow() {
+                        break;
+                    }
+                    let request = tokio::select! {
+                        biased;
+                        _ = cancellation.changed() => break,
+                        request = async { receiver.lock().await.recv().await } => request,
+                    };
+                    let Some(request) = request else {
+                        break;
+                    };
+                    let Some(consumer) = consumer.upgrade() else {
+                        scheduler.finish(&request);
+                        continue;
+                    };
+                    let finish_request = request.clone();
+                    tokio::select! {
+                        biased;
+                        _ = cancellation.changed() => {
+                            scheduler.finish(&finish_request);
+                            break;
+                        }
+                        _ = consumer.clone().run_pull_worker_request(request) => {}
+                    }
+                    scheduler.finish(&finish_request);
+                }
+            }));
+        }
+        *state = Some(PullRpcWorkerSet {
+            sender: Some(sender),
+            cancellation,
+            workers,
+        });
+        Ok(())
+    }
+
+    pub(crate) fn try_submit(&self, request: Arc<PullRequest>) -> Result<(), Arc<PullRequest>> {
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(sender) = state.as_ref().and_then(|workers| workers.sender.as_ref()) else {
+            return Err(request);
+        };
+        sender.try_send(request).map_err(|error| error.into_inner())
+    }
+
+    pub(crate) async fn stop(&self, wait_millis: i64) {
+        let Some(mut workers) = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+        else {
+            return;
+        };
+        workers.cancellation.send_replace(true);
+        workers.sender.take();
+        let deadline = Instant::now() + Duration::from_millis(wait_millis.max(0) as u64);
+        for mut worker in workers.workers.drain(..) {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() || tokio::time::timeout(remaining, &mut worker).await.is_err() {
+                worker.abort();
+                let _ = worker.await;
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn worker_count(&self) -> usize {
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .map_or(0, |workers| workers.workers.len())
+    }
+}
+
+impl Drop for PullRpcWorkers {
+    fn drop(&mut self) {
+        if let Some(mut workers) = self
+            .state
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+        {
+            workers.cancellation.send_replace(true);
+            workers.sender.take();
+            for worker in workers.workers.drain(..) {
+                worker.abort();
+            }
+        }
     }
 }
 
@@ -148,6 +298,7 @@ struct DeferredPull {
 #[derive(Default)]
 struct ScheduleState {
     stopped: bool,
+    all_paused: bool,
     sequence: u64,
     scheduled: BTreeMap<ScheduledAt, ScheduledPull>,
     scheduled_by_key: HashMap<PullIdentity, ScheduledAt>,
@@ -254,7 +405,7 @@ impl PullScheduler {
                         );
                     }
                 }
-            } else if state.paused.contains(&key) {
+            } else if state.all_paused || state.paused.contains(&key) {
                 Self::insert_paused(&mut state, key.clone(), request.clone(), requested_deadline);
             } else {
                 let previous_schedule = state.scheduled_by_key.remove(&key);
@@ -295,6 +446,7 @@ impl PullScheduler {
         );
     }
 
+    #[allow(dead_code)] // Used by Phase 11 assignment transitions.
     pub(crate) fn pause(&self, queue: &MessageQueue, generation: u64) {
         let key = PullIdentity {
             queue: queue.clone(),
@@ -312,6 +464,7 @@ impl PullScheduler {
         self.inner.changed.notify_one();
     }
 
+    #[allow(dead_code)] // Used by Phase 11 assignment transitions.
     pub(crate) fn resume(&self, queue: &MessageQueue, generation: u64) {
         let key = PullIdentity {
             queue: queue.clone(),
@@ -320,13 +473,45 @@ impl PullScheduler {
         {
             let mut state = self.lock_state();
             state.paused.remove(&key);
-            if !state.in_flight.contains(&key) {
+            if !state.all_paused && !state.in_flight.contains(&key) {
                 if let Some(paused) = state.paused_scheduled.remove(&key) {
                     Self::insert_scheduled(&mut state, key, paused.request, paused.deadline);
                 }
             }
         }
         self.inner.changed.notify_one();
+    }
+
+    pub(crate) fn pause_all(&self) {
+        {
+            let mut state = self.lock_state();
+            state.all_paused = true;
+            let scheduled = std::mem::take(&mut state.scheduled);
+            state.scheduled_by_key.clear();
+            for (scheduled_at, pull) in scheduled {
+                state.paused.insert(pull.key.clone());
+                Self::insert_paused(&mut state, pull.key, pull.request, scheduled_at.deadline);
+            }
+            let in_flight = state.in_flight.iter().cloned().collect::<Vec<_>>();
+            state.paused.extend(in_flight);
+        }
+        self.inner.changed.notify_waiters();
+    }
+
+    pub(crate) fn resume_all(&self) {
+        {
+            let mut state = self.lock_state();
+            state.all_paused = false;
+            let paused = std::mem::take(&mut state.paused);
+            for key in paused {
+                if !state.in_flight.contains(&key) {
+                    if let Some(request) = state.paused_scheduled.remove(&key) {
+                        Self::insert_scheduled(&mut state, key, request.request, Instant::now());
+                    }
+                }
+            }
+        }
+        self.inner.changed.notify_waiters();
     }
 
     pub(crate) fn finish(&self, request: &PullRequest) {
@@ -345,20 +530,20 @@ impl PullScheduler {
             cancellation.send_replace(true);
         }
         self.inner.changed.notify_waiters();
-        if let Some(worker) = self
+        let worker = self
             .inner
             .worker
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take()
-        {
+            .take();
+        if let Some(worker) = worker {
             let _ = worker.await;
         }
         self.inner.started.store(false, Ordering::Release);
     }
 
     #[cfg(test)]
-    fn take_due(&self) -> Option<Arc<PullRequest>> {
+    pub(crate) fn take_due(&self) -> Option<Arc<PullRequest>> {
         Self::take_due_inner(&self.inner)
     }
 
@@ -398,52 +583,50 @@ impl PullScheduler {
         )
     }
 
-    fn run(
+    async fn run(
         inner: Arc<PullSchedulerInner>,
         runtime: Weak<ClientRuntime>,
         mut cancellation: watch::Receiver<bool>,
-    ) -> impl std::future::Future<Output = ()> + Send {
-        async move {
-            loop {
-                if *cancellation.borrow() {
-                    break;
+    ) {
+        loop {
+            if *cancellation.borrow() {
+                break;
+            }
+            let deadline = inner
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .scheduled
+                .first_key_value()
+                .map(|(scheduled_at, _)| scheduled_at.deadline);
+            if deadline.is_none() {
+                tokio::select! {
+                    biased;
+                    _ = cancellation.changed() => break,
+                    _ = inner.changed.notified() => continue,
                 }
-                let deadline = inner
-                    .state
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .scheduled
-                    .first_key_value()
-                    .map(|(scheduled_at, _)| scheduled_at.deadline);
-                if deadline.is_none() {
-                    tokio::select! {
-                        biased;
-                        _ = cancellation.changed() => break,
-                        _ = inner.changed.notified() => continue,
-                    }
-                } else {
-                    let deadline = deadline.unwrap_or_else(Instant::now);
-                    tokio::select! {
-                        biased;
-                        _ = cancellation.changed() => break,
-                        _ = inner.changed.notified() => continue,
-                        _ = sleep_until(deadline) => {},
-                    }
+            } else {
+                let deadline = deadline.unwrap_or_else(Instant::now);
+                tokio::select! {
+                    biased;
+                    _ = cancellation.changed() => break,
+                    _ = inner.changed.notified() => continue,
+                    _ = sleep_until(deadline) => {},
                 }
+            }
 
-                while !*cancellation.borrow() {
-                    let Some(request) = Self::take_due_inner(&inner) else {
-                        break;
-                    };
-                    let key = request.key();
-                    let Some(runtime) = runtime.upgrade() else {
-                        Self::finish_inner(&inner, &key);
-                        return;
-                    };
-                    let request: Arc<dyn MessageRequest> = request.clone();
-                    if runtime.execute_pull_request_immediately(request).is_err() {
-                        Self::finish_inner(&inner, &key);
-                    }
+            while !*cancellation.borrow() {
+                let Some(request) = Self::take_due_inner(&inner) else {
+                    break;
+                };
+                let key = request.key();
+                let Some(runtime) = runtime.upgrade() else {
+                    Self::finish_inner(&inner, &key);
+                    return;
+                };
+                let request: Arc<dyn MessageRequest> = request.clone();
+                if runtime.execute_pull_request_immediately(request).is_err() {
+                    Self::finish_inner(&inner, &key);
                 }
             }
         }
@@ -459,19 +642,14 @@ impl PullScheduler {
                 if state.stopped {
                     return None;
                 }
-                let Some((scheduled_at, _)) = state.scheduled.first_key_value() else {
-                    return None;
-                };
+                let (scheduled_at, _) = state.scheduled.first_key_value()?;
                 if scheduled_at.deadline > Instant::now() {
                     return None;
                 }
-                let Some((scheduled_at, scheduled)) = state.scheduled.pop_first() else {
-                    return None;
-                };
+                let (_, scheduled) = state.scheduled.pop_first()?;
                 let key = scheduled.key;
                 state.scheduled_by_key.remove(&key);
                 state.in_flight.insert(key.clone());
-                let _ = scheduled_at;
                 (key, scheduled.request)
             };
             if request.is_current() {
@@ -496,7 +674,7 @@ impl PullScheduler {
                 return;
             }
             if let Some(deferred) = state.deferred.remove(key) {
-                if state.paused.contains(key) {
+                if state.all_paused || state.paused.contains(key) {
                     Self::insert_paused(
                         &mut state,
                         key.clone(),
@@ -545,6 +723,7 @@ impl PullScheduler {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             state.stopped = true;
+            state.all_paused = false;
             state.scheduled_by_key.clear();
             state.in_flight.clear();
             state.cancelled_in_flight.clear();
@@ -640,9 +819,9 @@ pub(crate) struct EffectiveQueueThresholds {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PullFlowControlReason {
-    QueueMessageCount,
-    QueueMessageBytes,
-    QueueMaxSpan,
+    MessageCount,
+    MessageBytes,
+    MaxSpan,
 }
 
 pub(crate) fn effective_queue_thresholds(
@@ -675,13 +854,13 @@ pub(crate) fn flow_control_reason(
     thresholds: EffectiveQueueThresholds,
 ) -> Option<PullFlowControlReason> {
     if queue.cached_count > thresholds.message_count as usize {
-        return Some(PullFlowControlReason::QueueMessageCount);
+        return Some(PullFlowControlReason::MessageCount);
     }
     if queue.cached_bytes / MEBIBYTE > thresholds.size_mib as u64 {
-        return Some(PullFlowControlReason::QueueMessageBytes);
+        return Some(PullFlowControlReason::MessageBytes);
     }
     if queue.max_span > i64::from(thresholds.max_span) {
-        return Some(PullFlowControlReason::QueueMaxSpan);
+        return Some(PullFlowControlReason::MaxSpan);
     }
     None
 }
@@ -729,6 +908,26 @@ mod tests {
             scheduler.start(Weak::<ClientRuntime>::new()),
             Err(PullSchedulerError::Stopped)
         );
+    }
+
+    #[tokio::test]
+    async fn pull_rpc_workers_have_a_fixed_owned_set_and_join_on_stop() {
+        let workers = PullRpcWorkers::new();
+        let scheduler = Arc::new(PullScheduler::new());
+        workers
+            .start(Weak::<crate::push::PushConsumer>::new(), scheduler)
+            .unwrap();
+        assert_eq!(workers.worker_count(), PULL_RPC_WORKER_COUNT);
+        assert_eq!(
+            workers.start(
+                Weak::<crate::push::PushConsumer>::new(),
+                Arc::new(PullScheduler::new())
+            ),
+            Err(PullSchedulerError::AlreadyStarted)
+        );
+
+        workers.stop(100).await;
+        assert_eq!(workers.worker_count(), 0);
     }
 
     #[tokio::test(start_paused = true)]
@@ -813,6 +1012,18 @@ mod tests {
         assert_eq!(scheduler.take_due().unwrap().next_offset(), 71);
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn global_suspend_holds_pending_requests_and_resume_wakes_them() {
+        let scheduler = PullScheduler::new();
+        let request = request(7, 17, 80);
+        scheduler.schedule(request.clone(), 10).unwrap();
+        scheduler.pause_all();
+        tokio::time::advance(Duration::from_millis(10)).await;
+        assert!(scheduler.take_due().is_none());
+        scheduler.resume_all();
+        assert_eq!(scheduler.take_due().unwrap().next_offset(), 80);
+    }
+
     #[test]
     fn topic_thresholds_scale_to_assigned_queues_and_queue_backlog_includes_in_flight() {
         let mut config = PushConsumerConfig::new("orders-consumer").unwrap();
@@ -837,7 +1048,7 @@ mod tests {
         queue.insert_messages(12, vec![message(12, 0)]).unwrap();
         assert_eq!(
             flow_control_reason(&queue.snapshot(12).unwrap(), thresholds),
-            Some(PullFlowControlReason::QueueMessageCount)
+            Some(PullFlowControlReason::MessageCount)
         );
         assert_eq!(queue.snapshot(12).unwrap().in_flight_count, 2);
         queue.complete_batch(12, batch.id(), &[10, 11]).unwrap();
@@ -853,7 +1064,7 @@ mod tests {
                 &bytes_queue.snapshot(13).unwrap(),
                 effective_queue_thresholds(&config, 0)
             ),
-            Some(PullFlowControlReason::QueueMessageBytes)
+            Some(PullFlowControlReason::MessageBytes)
         );
 
         config.set_pull_threshold_size_for_queue_mib(100);
@@ -867,7 +1078,7 @@ mod tests {
                 &span_queue.snapshot(14).unwrap(),
                 effective_queue_thresholds(&config, 0)
             ),
-            Some(PullFlowControlReason::QueueMaxSpan)
+            Some(PullFlowControlReason::MaxSpan)
         );
     }
 }

@@ -1,5 +1,5 @@
-// P10-04/P10-06 attach these queue operations to the pull scheduler and
-// consume service. Keep this owner private until those lifecycle paths exist.
+// P10-06 attaches these queue operations to bounded consume requests. Keep
+// this owner private until the callback lifecycle is complete.
 #![allow(dead_code)]
 
 use std::{
