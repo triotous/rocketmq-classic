@@ -474,6 +474,11 @@ mod tests {
                 .unwrap(),
             1_048_576
         );
+        assert_eq!(
+            fixture["batchSettings"]["configuredTotalBatchMaxBytes"].as_i64(),
+            fixture["batchSettings"]["configuredBatchMaxBytes"].as_i64(),
+            "Java's getTotalBatchMaxBytes reports the per-batch hold size; its same-named setter configures the accumulator-wide hold cap"
+        );
         assert!(config.enable_backpressure_for_async_mode());
         assert_eq!(
             config.backpressure_async_send_num(),
