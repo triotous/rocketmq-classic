@@ -39,6 +39,8 @@ pub enum PullConsumerError {
     InvalidOffset,
     #[error("max message count must be positive")]
     InvalidMaxMessageCount,
+    #[error("max message bytes must be positive")]
+    InvalidMaxMessageBytes,
     #[error("pull timeout must be nonnegative and representable")]
     InvalidTimeout,
     #[error("SQL92 pull expression must not be empty")]

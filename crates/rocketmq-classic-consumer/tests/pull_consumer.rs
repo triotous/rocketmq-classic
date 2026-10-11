@@ -8,7 +8,7 @@ use base64::Engine;
 use bytes::BytesMut;
 use rocketmq_classic_common::message::MessageQueue;
 use rocketmq_classic_consumer::{
-    PullConsumerConfig,
+    PullConsumerConfig, PullConsumerError,
     offset::{OffsetRead, OffsetStore, OffsetStoreFuture, ReadOffsetType},
     pull::{FilterMessageContext, FilterMessageHook, PullConsumer},
 };
@@ -265,7 +265,7 @@ async fn pull_routes_per_queue_returns_decoded_messages_and_only_explicitly_pers
 
     let master_peer = tokio::spawn(async move {
         let mut stream = None;
-        for expected_queue_id in [0, 1, 2] {
+        for (request_index, expected_queue_id) in [0, 1, 2].into_iter().enumerate() {
             let command = read_pull_command(&master_listener, &mut stream).await;
             assert_eq!(command.code, request::PULL_MESSAGE);
             let fields = command.ext_fields.as_ref().unwrap();
@@ -281,6 +281,16 @@ async fn pull_routes_per_queue_returns_decoded_messages_and_only_explicitly_pers
             assert_eq!(fields.get("subVersion"), Some(&"0".to_owned()));
             assert_eq!(fields.get("bname"), Some(&"broker".to_owned()));
             assert!(!fields.contains_key("brokerName"));
+            assert_eq!(
+                fields.get("maxMsgBytes"),
+                Some(
+                    &(if request_index == 0 {
+                        "4096".to_owned()
+                    } else {
+                        i32::MAX.to_string()
+                    })
+                )
+            );
             if expected_queue_id == 0 {
                 respond(
                     stream.as_mut().unwrap(),
@@ -328,6 +338,10 @@ async fn pull_routes_per_queue_returns_decoded_messages_and_only_explicitly_pers
         assert_eq!(
             command.ext_fields.as_ref().unwrap().get("queueId"),
             Some(&"0".to_owned())
+        );
+        assert_eq!(
+            command.ext_fields.as_ref().unwrap().get("maxMsgBytes"),
+            Some(&i32::MAX.to_string())
         );
         respond(
             current.as_mut().unwrap(),
@@ -377,7 +391,14 @@ async fn pull_routes_per_queue_returns_decoded_messages_and_only_explicitly_pers
 
     let queue0 = MessageQueue::new("orders", "broker", 0);
     let queue1 = MessageQueue::new("orders", "broker", 1);
-    let found = consumer.pull(&queue0, None, 100, 16).await.unwrap();
+    assert!(matches!(
+        consumer.pull_with_max_size(&queue0, None, 100, 16, 0).await,
+        Err(PullConsumerError::InvalidMaxMessageBytes)
+    ));
+    let found = consumer
+        .pull_with_max_size(&queue0, None, 100, 16, 4096)
+        .await
+        .unwrap();
     assert_eq!(
         found.result.status,
         rocketmq_classic_core::api::consumer::PullStatus::Found

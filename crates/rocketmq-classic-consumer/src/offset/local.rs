@@ -24,9 +24,9 @@ static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 /// Stores offsets in Java 5.5.1 `OffsetSerializeWrapper` JSON format.
 ///
 /// One writer may own a given path in this process at a time. The storage root
-/// can be supplied explicitly for managed deployments and tests; the default
-/// honors Java's `rocketmq.client.localOffsetStoreDir` property name when it is
-/// present in the process environment.
+/// honors Java's `rocketmq.client.localOffsetStoreDir` property through the
+/// same-named process environment variable, then falls back to the user's home
+/// directory plus `.rocketmq_offsets`.
 pub struct LocalFileOffsetStore {
     group_name: String,
     path: PathBuf,
@@ -86,11 +86,10 @@ impl LocalFileOffsetStore {
                     .map(|home| PathBuf::from(home).join(".rocketmq_offsets"))
             })
             .ok_or_else(|| OffsetStoreError::Runtime("home directory is not configured".into()))?;
-        Self::with_storage_dir(root, client_id, group_name)
+        Self::with_root(root, client_id, group_name)
     }
 
-    /// Uses an explicit root with the same `{clientId}/{group}/offsets.json` layout.
-    pub fn with_storage_dir(
+    fn with_root(
         root: impl AsRef<Path>,
         client_id: impl AsRef<str>,
         group_name: impl AsRef<str>,
@@ -754,7 +753,7 @@ mod tests {
     #[tokio::test]
     async fn fixture_load_read_modes_and_restart_persist_match_java_layout() {
         let root = temporary_root();
-        let store = LocalFileOffsetStore::with_storage_dir(&root, "client", "group").unwrap();
+        let store = LocalFileOffsetStore::with_root(&root, "client", "group").unwrap();
         fs::create_dir_all(store.storage_path().parent().unwrap()).unwrap();
         fs::write(store.storage_path(), fixture()).unwrap();
         store.load().await.unwrap();
@@ -770,13 +769,55 @@ mod tests {
         store.update_offset(&orders, 42, false);
         store.persist(&orders).await.unwrap();
         drop(store);
-        let restarted = LocalFileOffsetStore::with_storage_dir(&root, "client", "group").unwrap();
+        let restarted = LocalFileOffsetStore::with_root(&root, "client", "group").unwrap();
         assert_eq!(
             restarted
                 .read_offset(&orders, ReadOffsetType::ReadFromStore)
                 .await
                 .unwrap(),
             OffsetRead::Found(42)
+        );
+        drop(restarted);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn persist_all_writes_only_selected_queues_and_restores_after_restart() {
+        let root = temporary_root();
+        let orders = MessageQueue::new("orders", "broker", 0);
+        let events = MessageQueue::new("events", "broker", 1);
+        let store = LocalFileOffsetStore::with_root(&root, "client", "group").unwrap();
+        store.update_offset(&orders, 51, false);
+        store.update_offset(&events, 92, false);
+        store
+            .persist_all(std::slice::from_ref(&orders))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            store
+                .read_offset(&events, ReadOffsetType::ReadFromMemory)
+                .await
+                .unwrap(),
+            OffsetRead::Found(92)
+        );
+        drop(store);
+
+        let restarted = LocalFileOffsetStore::with_root(&root, "client", "group").unwrap();
+        restarted.load().await.unwrap();
+        assert_eq!(
+            restarted
+                .read_offset(&orders, ReadOffsetType::ReadFromMemory)
+                .await
+                .unwrap(),
+            OffsetRead::Found(51)
+        );
+        assert_eq!(
+            restarted
+                .read_offset(&events, ReadOffsetType::ReadFromMemory)
+                .await
+                .unwrap(),
+            OffsetRead::NotFound
         );
         drop(restarted);
         fs::remove_dir_all(root).unwrap();
@@ -819,13 +860,13 @@ mod tests {
     #[test]
     fn only_one_store_in_process_can_own_a_file_path() {
         let root = temporary_root();
-        let first = LocalFileOffsetStore::with_storage_dir(&root, "client", "group").unwrap();
+        let first = LocalFileOffsetStore::with_root(&root, "client", "group").unwrap();
         assert!(matches!(
-            LocalFileOffsetStore::with_storage_dir(&root, "client", "group"),
+            LocalFileOffsetStore::with_root(&root, "client", "group"),
             Err(OffsetStoreError::AlreadyOpen)
         ));
         drop(first);
-        let reopened = LocalFileOffsetStore::with_storage_dir(&root, "client", "group").unwrap();
+        let reopened = LocalFileOffsetStore::with_root(&root, "client", "group").unwrap();
         drop(reopened);
         fs::remove_dir_all(root).unwrap();
     }

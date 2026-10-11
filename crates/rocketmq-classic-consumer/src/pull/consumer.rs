@@ -83,7 +83,7 @@ pub struct PullConsumer {
     manager: ClientRuntimeManager,
     state: tokio::sync::Mutex<State>,
     pull_api: PullAPIWrapper,
-    offset_store_override: Mutex<Option<Arc<dyn OffsetStore>>>,
+    offset_store: Mutex<Option<Arc<dyn OffsetStore>>>,
     subscriptions: Arc<RwLock<HashMap<String, SubscriptionData>>>,
     topic_queues: Arc<RwLock<HashMap<String, BTreeSet<MessageQueue>>>>,
 }
@@ -100,7 +100,7 @@ impl PullConsumer {
             manager,
             state: tokio::sync::Mutex::new(State::Created),
             pull_api,
-            offset_store_override: Mutex::new(None),
+            offset_store: Mutex::new(None),
             subscriptions: Arc::new(RwLock::new(HashMap::new())),
             topic_queues: Arc::new(RwLock::new(HashMap::new())),
         }
@@ -112,6 +112,16 @@ impl PullConsumer {
 
     pub fn register_filter_message_hook(&self, hook: Arc<dyn FilterMessageHook>) {
         self.pull_api.register_filter_message_hook(hook);
+    }
+
+    /// Returns the configured or model-selected offset store, if available.
+    /// Like Java `getOffsetStore`, this is `None` until a store is configured
+    /// or startup selects the default implementation.
+    pub fn get_offset_store(&self) -> Option<Arc<dyn OffsetStore>> {
+        self.offset_store
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 
     /// Select a user-supplied OffsetStore before startup. `None` restores the
@@ -129,7 +139,7 @@ impl PullConsumer {
             });
         }
         *self
-            .offset_store_override
+            .offset_store
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = offset_store;
         Ok(())
@@ -260,6 +270,52 @@ impl PullConsumer {
             Some("TAG"),
             offset,
             max_message_count,
+            MAX_PULL_MESSAGE_BYTES,
+            timeout_millis,
+            false,
+        )
+        .await
+    }
+
+    /// Pull with a caller-selected maximum response size, in bytes.
+    ///
+    /// The default pull methods use `i32::MAX`, matching Java's unbounded
+    /// `maxSizeInBytes` default. A custom size must be positive.
+    pub async fn pull_with_max_size(
+        &self,
+        queue: &MessageQueue,
+        subscription: Option<&str>,
+        offset: i64,
+        max_message_count: i32,
+        max_size_in_bytes: i32,
+    ) -> Result<ProcessedPullResult, PullConsumerError> {
+        self.pull_with_max_size_and_timeout(
+            queue,
+            subscription,
+            offset,
+            max_message_count,
+            max_size_in_bytes,
+            self.config.consumer_pull_timeout_millis(),
+        )
+        .await
+    }
+
+    pub async fn pull_with_max_size_and_timeout(
+        &self,
+        queue: &MessageQueue,
+        subscription: Option<&str>,
+        offset: i64,
+        max_message_count: i32,
+        max_size_in_bytes: i32,
+        timeout_millis: i64,
+    ) -> Result<ProcessedPullResult, PullConsumerError> {
+        self.pull_with_expression(
+            queue,
+            subscription,
+            Some("TAG"),
+            offset,
+            max_message_count,
+            max_size_in_bytes,
             timeout_millis,
             false,
         )
@@ -297,6 +353,7 @@ impl PullConsumer {
             Some(&selector.expression_type),
             offset,
             max_message_count,
+            MAX_PULL_MESSAGE_BYTES,
             timeout_millis,
             false,
         )
@@ -316,6 +373,7 @@ impl PullConsumer {
             Some("TAG"),
             offset,
             max_message_count,
+            MAX_PULL_MESSAGE_BYTES,
             self.config.consumer_pull_timeout_millis(),
             true,
         )
@@ -335,6 +393,7 @@ impl PullConsumer {
             Some(&selector.expression_type),
             offset,
             max_message_count,
+            MAX_PULL_MESSAGE_BYTES,
             self.config.consumer_pull_timeout_millis(),
             true,
         )
@@ -454,11 +513,18 @@ impl PullConsumer {
         expression_type: Option<&str>,
         offset: i64,
         max_message_count: i32,
+        max_size_in_bytes: i32,
         timeout_millis: i64,
         suspend: bool,
     ) -> Result<ProcessedPullResult, PullConsumerError> {
         let (runtime, _) = self.started_runtime().await?;
-        validate_pull_request(input_queue, offset, max_message_count, timeout_millis)?;
+        validate_pull_request(
+            input_queue,
+            offset,
+            max_message_count,
+            max_size_in_bytes,
+            timeout_millis,
+        )?;
 
         let mut client_config = self.config.client_config().clone();
         let queue = client_config.queue_with_namespace(input_queue)?;
@@ -540,7 +606,7 @@ impl PullConsumer {
             subscription: subscription.get_sub_string().map(str::to_owned),
             sub_version,
             expression_type: subscription.get_expression_type().map(str::to_owned),
-            max_msg_bytes: Some(MAX_PULL_MESSAGE_BYTES),
+            max_msg_bytes: Some(max_size_in_bytes),
             broker_name: Some(broker_name),
             ..PullMessageRequestHeader::default()
         };
@@ -633,12 +699,11 @@ impl PullConsumer {
         runtime: &Arc<ClientRuntime>,
         consumer_group: &str,
     ) -> Result<Arc<dyn OffsetStore>, PullConsumerError> {
-        if let Some(store) = self
-            .offset_store_override
+        let mut selected_store = self
+            .offset_store
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone()
-        {
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(store) = selected_store.clone() {
             return Ok(store);
         }
         let store: Arc<dyn OffsetStore> = match self.config.message_model() {
@@ -650,6 +715,7 @@ impl PullConsumer {
                 RemoteBrokerOffsetStore::new(runtime.clone(), consumer_group),
             ),
         };
+        *selected_store = Some(store.clone());
         Ok(store)
     }
 
@@ -814,6 +880,7 @@ fn validate_pull_request(
     queue: &MessageQueue,
     offset: i64,
     max_message_count: i32,
+    max_size_in_bytes: i32,
     timeout_millis: i64,
 ) -> Result<(), PullConsumerError> {
     if queue.topic().is_none_or(str::is_empty) || queue.broker_name().is_none_or(str::is_empty) {
@@ -824,6 +891,9 @@ fn validate_pull_request(
     }
     if max_message_count <= 0 {
         return Err(PullConsumerError::InvalidMaxMessageCount);
+    }
+    if max_size_in_bytes <= 0 {
+        return Err(PullConsumerError::InvalidMaxMessageBytes);
     }
     request_deadline(timeout_millis)?;
     Ok(())
@@ -975,22 +1045,30 @@ mod tests {
     #[test]
     fn pull_input_validation_rejects_invalid_queue_offset_count_and_timeout() {
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        assert!(validate_pull_request(&queue, 0, 1, 0).is_ok());
+        assert!(validate_pull_request(&queue, 0, 1, 1, 0).is_ok());
         assert!(matches!(
-            validate_pull_request(&queue, -1, 1, 0),
+            validate_pull_request(&queue, -1, 1, 1, 0),
             Err(PullConsumerError::InvalidOffset)
         ));
         assert!(matches!(
-            validate_pull_request(&queue, 0, 0, 0),
+            validate_pull_request(&queue, 0, 0, 1, 0),
             Err(PullConsumerError::InvalidMaxMessageCount)
         ));
         assert!(matches!(
-            validate_pull_request(&queue, 0, 1, -1),
+            validate_pull_request(&queue, 0, 1, 0, 0),
+            Err(PullConsumerError::InvalidMaxMessageBytes)
+        ));
+        assert!(matches!(
+            validate_pull_request(&queue, 0, 1, -1, 0),
+            Err(PullConsumerError::InvalidMaxMessageBytes)
+        ));
+        assert!(matches!(
+            validate_pull_request(&queue, 0, 1, 1, -1),
             Err(PullConsumerError::InvalidTimeout)
         ));
         let invalid_queue = MessageQueue::new("", "broker-a", 0);
         assert!(matches!(
-            validate_pull_request(&invalid_queue, 0, 1, 0),
+            validate_pull_request(&invalid_queue, 0, 1, 1, 0),
             Err(PullConsumerError::InvalidQueue)
         ));
     }
@@ -1004,9 +1082,11 @@ mod tests {
             ClientRuntimeManager::new(),
         ));
 
+        assert!(consumer.get_offset_store().is_none());
         consumer.set_offset_store(None).await.unwrap();
         consumer.register_topic("orders").unwrap();
         consumer.start().await.unwrap();
+        assert!(consumer.get_offset_store().is_some());
         assert!(consumer.is_running().await);
         assert!(matches!(
             consumer.start().await,
@@ -1018,6 +1098,7 @@ mod tests {
         ));
 
         consumer.shutdown().await.unwrap();
+        assert!(consumer.get_offset_store().is_some());
         assert!(!consumer.is_running().await);
         assert!(matches!(
             consumer
