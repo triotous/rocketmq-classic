@@ -11,8 +11,11 @@ rand.workspace = true
 rocketmq-classic-common = { path = "../rocketmq-classic-common" }
 rocketmq-classic-core = { path = "../rocketmq-classic-core" }
 rocketmq-classic-protocol = { path = "../rocketmq-classic-protocol" }
+serde_json.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
 base64.workspace = true
-serde_json.workspace = true
+bytes.workspace = true
+rocketmq-classic-remoting = { path = "../rocketmq-classic-remoting" }

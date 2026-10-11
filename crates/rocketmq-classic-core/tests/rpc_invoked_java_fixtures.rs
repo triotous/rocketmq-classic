@@ -213,6 +213,7 @@ async fn java_invoked_cases_match_rust_requests_and_outcomes() {
                     topic: "oracle-topic".into(),
                     queue_id: 2,
                     commit_offset: 42,
+                    broker_name: None,
                 };
                 match api
                     .update_consumer_offset(&addr, &header, name == "update-oneway", deadline)
@@ -234,6 +235,7 @@ async fn java_invoked_cases_match_rust_requests_and_outcomes() {
                 };
                 match api.query_consumer_offset(&addr, &header, deadline).await {
                     Ok(Some(offset)) => format!("offset={offset}"),
+                    Ok(None) => "OffsetNotFoundException;code=22".into(),
                     Err(RpcError::Response { code, .. }) => {
                         if code == 22 {
                             format!("OffsetNotFoundException;code={code}")

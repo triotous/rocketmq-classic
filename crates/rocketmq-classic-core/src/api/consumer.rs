@@ -183,6 +183,9 @@ impl MQClientApi {
     ) -> Result<Option<i64>, RpcError> {
         let code = request::QUERY_CONSUMER_OFFSET;
         let reply = self.request(addr, code, header, None, deadline).await?;
+        if reply.code == response::QUERY_NOT_FOUND {
+            return Ok(None);
+        }
         let reply = classify(reply, code, addr)?;
         let fields: QueryConsumerOffsetResponseHeader = decode_header(&reply, code, addr)?;
         Ok(Some(fields.offset))

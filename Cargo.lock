@@ -1018,12 +1018,15 @@ name = "rocketmq-classic-consumer"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "bytes",
  "rand",
  "rocketmq-classic-common",
  "rocketmq-classic-core",
  "rocketmq-classic-protocol",
+ "rocketmq-classic-remoting",
  "serde_json",
  "thiserror 2.0.21",
+ "tokio",
 ]
 
 [[package]]

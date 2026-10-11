@@ -271,6 +271,7 @@ fn generate_p4_headers(output: &std::path::Path) {
             topic: "orders".into(),
             queue_id: 1,
             commit_offset: 9,
+            broker_name: None,
         },
     );
     write_typed(

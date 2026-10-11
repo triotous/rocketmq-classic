@@ -184,13 +184,7 @@ async fn offset_lookup_and_update_modes() {
             .await;
         match code {
             response::SUCCESS => assert_eq!(result.unwrap(), Some(7)),
-            response::QUERY_NOT_FOUND => assert!(matches!(
-                result,
-                Err(RpcError::Response {
-                    code: response::QUERY_NOT_FOUND,
-                    ..
-                })
-            )),
+            response::QUERY_NOT_FOUND => assert_eq!(result.unwrap(), None),
             _ => assert!(matches!(result, Err(RpcError::Response { .. }))),
         }
         client.shutdown().await;
@@ -428,17 +422,18 @@ async fn every_consumer_rpc_rejects_unexpected_status_before_decoding() {
 
         let (api, client, addr) =
             scripted(code, None, None, request::QUERY_CONSUMER_OFFSET, false).await;
-        rejected(
-            api.query_consumer_offset(
+        let query_result = api
+            .query_consumer_offset(
                 &addr,
                 &QueryConsumerOffsetRequestHeader::default(),
                 deadline(),
             )
-            .await,
-            request::QUERY_CONSUMER_OFFSET,
-            &addr,
-            code,
-        );
+            .await;
+        if code == response::QUERY_NOT_FOUND {
+            assert_eq!(query_result.unwrap(), None);
+        } else {
+            rejected(query_result, request::QUERY_CONSUMER_OFFSET, &addr, code);
+        }
         client.shutdown().await;
 
         let (api, client, addr) =

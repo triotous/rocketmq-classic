@@ -15,6 +15,7 @@ pub struct QueryConsumerOffsetRequestHeader {
     pub topic: String,
     pub queue_id: i32,
     pub set_zero_if_not_found: Option<bool>,
+    pub broker_name: Option<String>,
 }
 
 impl CommandHeader for QueryConsumerOffsetRequestHeader {
@@ -23,6 +24,7 @@ impl CommandHeader for QueryConsumerOffsetRequestHeader {
         fields.insert("topic".into(), self.topic.clone());
         fields.insert("queueId".into(), self.queue_id.to_string());
         put_optional(fields, "setZeroIfNotFound", self.set_zero_if_not_found);
+        put_optional(fields, "brokerName", self.broker_name.as_deref());
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
@@ -31,6 +33,7 @@ impl CommandHeader for QueryConsumerOffsetRequestHeader {
             topic: required_string(fields, "topic")?.to_owned(),
             queue_id: required_i32(fields, "queueId")?,
             set_zero_if_not_found: optional_java_boolean(fields, "setZeroIfNotFound"),
+            broker_name: optional_string(fields, "brokerName"),
         })
     }
 }
@@ -41,6 +44,7 @@ pub struct UpdateConsumerOffsetRequestHeader {
     pub topic: String,
     pub queue_id: i32,
     pub commit_offset: i64,
+    pub broker_name: Option<String>,
 }
 
 impl CommandHeader for UpdateConsumerOffsetRequestHeader {
@@ -49,6 +53,7 @@ impl CommandHeader for UpdateConsumerOffsetRequestHeader {
         fields.insert("topic".into(), self.topic.clone());
         fields.insert("queueId".into(), self.queue_id.to_string());
         fields.insert("commitOffset".into(), self.commit_offset.to_string());
+        put_optional(fields, "brokerName", self.broker_name.as_deref());
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
@@ -57,6 +62,7 @@ impl CommandHeader for UpdateConsumerOffsetRequestHeader {
             topic: required_string(fields, "topic")?.to_owned(),
             queue_id: required_i32(fields, "queueId")?,
             commit_offset: required_i64(fields, "commitOffset")?,
+            broker_name: optional_string(fields, "brokerName"),
         })
     }
 }

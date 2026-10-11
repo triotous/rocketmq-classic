@@ -8,3 +8,11 @@ P9-01 — offset transition contract:
 - Added tests for memory absence, topic snapshots, stale increase-only writes, reset behavior, freeze ordering, reloading, removing a frozen entry, and update/freeze concurrency.
 - `cargo test -p rocketmq-classic-consumer --lib --locked`: PASS (9 tests). An initial test assertion expected an existing reinserted row to be absent; corrected the assertion order and reran successfully.
 - `cargo fmt --all` completed; formatting check and complete workspace lint/test gates remain scheduled for phase closeout.
+
+P9-02 — remote Broker offset store:
+- Added `RemoteBrokerOffsetStore` with memory, Broker-only, and memory-first reads; master lookup followed by route refresh/fallback; query result caching; sync/oneway update support; and snapshot-based `persist_all` cleanup. Failed individual persistence does not delete selected offsets.
+- Mapped Broker `QUERY_NOT_FOUND` to `Ok(None)` in the core RPC API, preserving the distinction between an absent offset and transport/RPC errors. Added optional `brokerName` encoding to both query and update headers.
+- Added controlled NameServer/Broker integration cases for a route refresh with slave fallback, successful query and oneway persistence, typed missing offsets, and retaining selected memory offsets while clearing stale queues after a persistence failure.
+- The first locked integration build identified a stale lockfile after adding test dependencies; an unlocked offline build then exposed `serde_json` used by the library but only listed as a dev dependency. Moved `serde_json` to regular dependencies and refreshed `Cargo.lock` offline.
+- PASS: `cargo test -p rocketmq-classic-consumer --test offset_remote --locked --offline` (3 tests); `cargo test -p rocketmq-classic-consumer --lib --locked --offline` (9 tests); `cargo test -p rocketmq-classic-core --test consumer --locked --offline` (7 tests); `cargo test -p rocketmq-classic-core --test rpc_invoked_java_fixtures --locked --offline` (1 test).
+- `cargo fmt --all` and `git diff --check` pass. The library still reports the planned `OffsetTable::replace` as unused until P9-03 implements local loading.

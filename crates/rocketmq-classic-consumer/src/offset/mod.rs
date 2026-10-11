@@ -1,9 +1,13 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     future::Future,
     pin::Pin,
     sync::{Arc, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
+
+mod remote;
+
+pub use remote::RemoteBrokerOffsetStore;
 
 use rocketmq_classic_common::message::MessageQueue;
 use thiserror::Error;
@@ -161,6 +165,11 @@ impl OffsetTable {
             })
             .collect();
     }
+
+    fn remove_unselected(&self, selected: &HashSet<MessageQueue>) {
+        self.write_entries()
+            .retain(|queue, _| selected.contains(queue));
+    }
 }
 
 /// A pluggable offset store. The boxed futures keep this API object-safe so a
@@ -169,21 +178,21 @@ pub trait OffsetStore: Send + Sync {
     fn load(&self) -> OffsetStoreFuture<'_, ()>;
     fn update_offset(&self, queue: &MessageQueue, offset: i64, increase_only: bool);
     fn update_and_freeze_offset(&self, queue: &MessageQueue, offset: i64);
-    fn read_offset(
-        &self,
-        queue: &MessageQueue,
+    fn read_offset<'a>(
+        &'a self,
+        queue: &'a MessageQueue,
         mode: ReadOffsetType,
-    ) -> OffsetStoreFuture<'_, OffsetRead>;
-    fn persist(&self, queue: &MessageQueue) -> OffsetStoreFuture<'_, ()>;
-    fn persist_all(&self, queues: &[MessageQueue]) -> OffsetStoreFuture<'_, ()>;
+    ) -> OffsetStoreFuture<'a, OffsetRead>;
+    fn persist<'a>(&'a self, queue: &'a MessageQueue) -> OffsetStoreFuture<'a, ()>;
+    fn persist_all<'a>(&'a self, queues: &'a [MessageQueue]) -> OffsetStoreFuture<'a, ()>;
     fn remove_offset(&self, queue: &MessageQueue);
     fn clone_offset_table(&self, topic: Option<&str>) -> HashMap<MessageQueue, i64>;
-    fn update_consume_offset_to_broker(
-        &self,
-        queue: &MessageQueue,
+    fn update_consume_offset_to_broker<'a>(
+        &'a self,
+        queue: &'a MessageQueue,
         offset: i64,
         oneway: bool,
-    ) -> OffsetStoreFuture<'_, ()>;
+    ) -> OffsetStoreFuture<'a, ()>;
 }
 
 #[cfg(test)]
