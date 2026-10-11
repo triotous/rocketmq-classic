@@ -33,3 +33,10 @@ P10-03 ProcessQueue
 - Checks passed: `cargo fmt --check`; `cargo test -p rocketmq-classic-consumer --locked` (40 unit, 12 integration, 0 doc tests failed); `cargo clippy -p rocketmq-classic-consumer --all-targets --all-features --locked -- -D warnings`.
 - Commit: `94e7c1eb feat(consumer): add generation-safe process queue`.
 - Matrix status: ProcessQueue and P10-V01 UNIT_VERIFIED. P10-V02/U01 remain TODO; P10-V04 PARTIAL; P10-V03 remains PENDING_PHASE_19.
+
+P10-04 bounded pull scheduler foundation
+- Added one owned due-time scheduler worker to Push startup, startup rollback and shutdown. Its pending work is keyed by queue plus assignment generation and coalesces to one scheduled/in-flight request with at most one follow-up.
+- Added immediate/delayed scheduling, pause/resume, cancellation, stale-generation rejection, Java count/MiB/span threshold calculation, delayed-pull/backlog tracing, and Java-confirmed retry-delay constants. No pull response handling or fixed-assignment production API is claimed here.
+- Added paused-time tests for coalescing, single follow-up, pause/resume, cancellation, stale generation, flow-control inputs and worker start/stop. Push lifecycle tests now confirm the worker starts once, stops on shutdown, and startup fault injection includes the scheduler stage.
+- Checks passed: `cargo fmt --all`; `cargo test -p rocketmq-classic-consumer push::pull_service::tests --offline` (5 passed); `cargo test -p rocketmq-classic-consumer push::consumer::tests --offline` (5 passed). The interim build emits expected dead-code warnings for PullRequest/flow-control functions that P10-05 will attach; strict Clippy is deferred until the pipeline uses them.
+- Matrix status: PullRequest/PullMessageService P10-04/08 PARTIAL; P10-V02 PARTIAL pending outcome retry and send-back retention; P10-V04 startup lifecycle PARTIAL pending callback shutdown. P10-V03 remains PENDING_PHASE_19.

@@ -74,6 +74,8 @@ pub enum PushConsumerError {
     Rpc(#[from] RpcError),
     #[error(transparent)]
     OffsetStore(#[from] OffsetStoreError),
+    #[error("push pull scheduler error: {0}")]
+    PullScheduler(String),
     #[error("consumer group is blank or contains characters not accepted by RocketMQ")]
     InvalidConsumerGroup,
     #[error("consumer group must not be DEFAULT_CONSUMER")]

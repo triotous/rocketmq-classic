@@ -26,7 +26,9 @@ use crate::{
     pull::build_subscription,
 };
 
-use super::{config::PushConsumerConfig, listener::PushMessageListener};
+use super::{
+    config::PushConsumerConfig, listener::PushMessageListener, pull_service::PullScheduler,
+};
 
 type ConsumerFuture<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 
@@ -37,6 +39,7 @@ enum State {
         lease: GroupLease,
         offset_store: Arc<dyn OffsetStore>,
         consume_service: Arc<ConcurrentConsumeService>,
+        pull_scheduler: Arc<PullScheduler>,
     },
     Shutdown,
 }
@@ -46,6 +49,7 @@ enum StartupStage {
     RuntimeCreated,
     OffsetStoreLoaded,
     ConsumeServiceStarted,
+    PullSchedulerStarted,
     ConsumerRegistered,
     RuntimeStarted,
     RoutesUpdated,
@@ -60,6 +64,7 @@ impl StartupStage {
             Self::RuntimeCreated => "runtime-created",
             Self::OffsetStoreLoaded => "offset-store-loaded",
             Self::ConsumeServiceStarted => "consume-service-started",
+            Self::PullSchedulerStarted => "pull-scheduler-started",
             Self::ConsumerRegistered => "consumer-registered",
             Self::RuntimeStarted => "runtime-started",
             Self::RoutesUpdated => "routes-updated",
@@ -69,11 +74,12 @@ impl StartupStage {
     }
 
     #[cfg(test)]
-    const fn all() -> [Self; 8] {
+    const fn all() -> [Self; 9] {
         [
             Self::RuntimeCreated,
             Self::OffsetStoreLoaded,
             Self::ConsumeServiceStarted,
+            Self::PullSchedulerStarted,
             Self::ConsumerRegistered,
             Self::RuntimeStarted,
             Self::RoutesUpdated,
@@ -235,6 +241,7 @@ impl PushConsumer {
             self.config.consume_thread_max(),
             concurrent_listener,
         ));
+        let pull_scheduler = Arc::new(PullScheduler::new());
 
         self.copy_subscriptions(&consumer_group);
 
@@ -256,6 +263,7 @@ impl PushConsumer {
                 &consumer_group,
                 offset_store.clone(),
                 consume_service.clone(),
+                pull_scheduler.clone(),
             )
             .await;
         match startup {
@@ -265,10 +273,12 @@ impl PushConsumer {
                     lease,
                     offset_store,
                     consume_service,
+                    pull_scheduler,
                 };
                 Ok(())
             }
             Err((error, lease)) => {
+                pull_scheduler.stop().await;
                 consume_service
                     .shutdown(self.config.await_termination_millis_when_shutdown())
                     .await;
@@ -289,6 +299,7 @@ impl PushConsumer {
         consumer_group: &str,
         offset_store: Arc<dyn OffsetStore>,
         consume_service: Arc<ConcurrentConsumeService>,
+        pull_scheduler: Arc<PullScheduler>,
     ) -> Result<GroupLease, (PushConsumerError, Option<GroupLease>)> {
         if let Err(error) = offset_store.load().await {
             return Err((error.into(), None));
@@ -298,6 +309,12 @@ impl PushConsumer {
         }
         consume_service.start().await;
         if let Err(error) = self.checkpoint(StartupStage::ConsumeServiceStarted) {
+            return Err((error, None));
+        }
+        pull_scheduler
+            .start(Arc::downgrade(runtime))
+            .map_err(|error| (PushConsumerError::PullScheduler(error.to_string()), None))?;
+        if let Err(error) = self.checkpoint(StartupStage::PullSchedulerStarted) {
             return Err((error, None));
         }
         let owner: Arc<dyn ConsumerRuntime> = Arc::new(PushConsumerRegistration {
@@ -402,29 +419,30 @@ impl PushConsumer {
 
     pub async fn shutdown(&self) -> Result<(), PushConsumerError> {
         let mut state = self.state.lock().await;
-        let (runtime, lease, offset_store, consume_service) = match &*state {
+        let (runtime, lease, offset_store, consume_service, pull_scheduler) = match &*state {
             State::Created | State::Shutdown => return Ok(()),
             State::Started {
                 runtime,
                 lease,
                 offset_store,
                 consume_service,
-            } => {
-                let Some(runtime) = runtime.upgrade() else {
-                    *state = State::Shutdown;
-                    return Ok(());
-                };
-                (
-                    runtime,
-                    lease.clone(),
-                    offset_store.clone(),
-                    consume_service.clone(),
-                )
-            }
+                pull_scheduler,
+            } => (
+                runtime.upgrade(),
+                lease.clone(),
+                offset_store.clone(),
+                consume_service.clone(),
+                pull_scheduler.clone(),
+            ),
         };
+        pull_scheduler.stop().await;
         consume_service
             .shutdown(self.config.await_termination_millis_when_shutdown())
             .await;
+        let Some(runtime) = runtime else {
+            *state = State::Shutdown;
+            return Ok(());
+        };
         let queues = offset_store
             .clone_offset_table(None)
             .into_keys()
@@ -588,13 +606,16 @@ mod tests {
 
         consumer.start().await.unwrap();
         assert!(consumer.is_running().await);
-        let consume_service = match &*consumer.state.lock().await {
+        let (consume_service, pull_scheduler) = match &*consumer.state.lock().await {
             State::Started {
-                consume_service, ..
-            } => consume_service.clone(),
+                consume_service,
+                pull_scheduler,
+                ..
+            } => (consume_service.clone(), pull_scheduler.clone()),
             _ => panic!("consumer should own a started consume service"),
         };
         assert_eq!(consume_service.worker_count(), 20);
+        assert_eq!(pull_scheduler.worker_count(), 1);
         let runtime = manager
             .get_or_create(consumer.config().client_config())
             .await
@@ -631,6 +652,7 @@ mod tests {
         consumer.shutdown().await.unwrap();
         assert!(!consumer.is_running().await);
         assert_eq!(consume_service.worker_count(), 0);
+        assert_eq!(pull_scheduler.worker_count(), 0);
         assert!(matches!(
             consumer.start().await,
             Err(PushConsumerError::Shutdown)

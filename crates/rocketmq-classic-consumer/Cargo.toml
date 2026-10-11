@@ -15,6 +15,7 @@ rocketmq-classic-protocol = { path = "../rocketmq-classic-protocol" }
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tracing.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true
@@ -23,3 +24,4 @@ windows-sys.workspace = true
 base64.workspace = true
 bytes.workspace = true
 rocketmq-classic-remoting = { path = "../rocketmq-classic-remoting" }
+tokio = { workspace = true, features = ["test-util"] }
