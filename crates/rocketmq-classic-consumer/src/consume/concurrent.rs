@@ -6,22 +6,36 @@ use std::{
     time::Duration,
 };
 
-use tokio::{
-    sync::watch,
-    task::JoinHandle,
-    time::{Instant, timeout},
+use tokio::{sync::mpsc, task::JoinHandle, time::Instant};
+
+use crate::{
+    process_queue::{ConsumeBatch, ProcessQueue},
+    push::MessageListenerConcurrently,
 };
 
-use crate::push::MessageListenerConcurrently;
+const CONSUME_REQUEST_QUEUE_CAPACITY: usize = 256;
 
-/// Owns the initial concurrent-listener worker set created during Push startup.
-/// P10-06 attaches bounded consume requests to these workers.
+pub(crate) struct ConsumeRequest {
+    pub(crate) process_queue: Arc<ProcessQueue>,
+    pub(crate) batch: ConsumeBatch,
+}
+
+pub(crate) enum ConsumeSubmitError {
+    Full(ConsumeRequest),
+    Closed(ConsumeRequest),
+}
+
+struct ConsumeWorkerSet {
+    sender: Option<mpsc::Sender<ConsumeRequest>>,
+    workers: Vec<JoinHandle<()>>,
+}
+
+/// Owns a bounded set of concurrent-listener workers and their pending work.
 pub(crate) struct ConcurrentConsumeService {
     minimum_threads: usize,
     maximum_threads: usize,
     listener: Arc<dyn MessageListenerConcurrently>,
-    cancellation: Mutex<Option<watch::Sender<bool>>>,
-    workers: Mutex<Vec<JoinHandle<()>>>,
+    workers: Mutex<Option<ConsumeWorkerSet>>,
     started: AtomicBool,
 }
 
@@ -35,65 +49,79 @@ impl ConcurrentConsumeService {
             minimum_threads: minimum_threads.max(1) as usize,
             maximum_threads: maximum_threads.max(1) as usize,
             listener,
-            cancellation: Mutex::new(None),
-            workers: Mutex::new(Vec::new()),
+            workers: Mutex::new(None),
             started: AtomicBool::new(false),
         }
     }
 
-    pub async fn start(&self) {
+    pub async fn start(&self, consumer: std::sync::Weak<crate::push::PushConsumer>) {
         if self.started.swap(true, Ordering::AcqRel) {
             return;
         }
-        let (cancellation, receiver) = watch::channel(false);
         let worker_count = self.minimum_threads.min(self.maximum_threads);
+        let (sender, receiver) = mpsc::channel(CONSUME_REQUEST_QUEUE_CAPACITY);
+        let receiver = Arc::new(tokio::sync::Mutex::new(receiver));
         let mut workers = Vec::with_capacity(worker_count);
         for _ in 0..worker_count {
-            let mut receiver = receiver.clone();
+            let receiver = receiver.clone();
+            let consumer = consumer.clone();
             let listener = self.listener.clone();
             workers.push(tokio::spawn(async move {
-                let _listener_lifetime = listener;
                 loop {
-                    if *receiver.borrow() || receiver.changed().await.is_err() {
+                    let request = receiver.lock().await.recv().await;
+                    let Some(request) = request else {
                         break;
-                    }
+                    };
+                    let Some(consumer) = consumer.upgrade() else {
+                        continue;
+                    };
+                    consumer
+                        .run_consume_request(request, listener.clone())
+                        .await;
                 }
             }));
         }
         *self
-            .cancellation
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(cancellation);
-        *self
             .workers
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = workers;
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(ConsumeWorkerSet {
+            sender: Some(sender),
+            workers,
+        });
+    }
+
+    pub(crate) fn try_submit(&self, request: ConsumeRequest) -> Result<(), ConsumeSubmitError> {
+        let mut workers = self
+            .workers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(sender) = workers.as_mut().and_then(|workers| workers.sender.as_ref()) else {
+            return Err(ConsumeSubmitError::Closed(request));
+        };
+        sender.try_send(request).map_err(|error| match error {
+            mpsc::error::TrySendError::Full(request) => ConsumeSubmitError::Full(request),
+            mpsc::error::TrySendError::Closed(request) => ConsumeSubmitError::Closed(request),
+        })
     }
 
     pub async fn shutdown(&self, await_termination_millis: i64) {
         if !self.started.swap(false, Ordering::AcqRel) {
             return;
         }
-        if let Some(cancellation) = self
-            .cancellation
+        let Some(mut workers) = self
+            .workers
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take()
-        {
-            cancellation.send_replace(true);
-        }
-        let mut workers = std::mem::take(
-            &mut *self
-                .workers
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner),
-        );
-        let wait = Duration::from_millis(await_termination_millis.max(0) as u64);
-        let deadline = Instant::now() + wait;
-        for mut worker in workers.drain(..) {
+        else {
+            return;
+        };
+        workers.sender.take();
+        let deadline =
+            Instant::now() + Duration::from_millis(await_termination_millis.max(0) as u64);
+        for mut worker in workers.workers.drain(..) {
             let remaining = deadline.saturating_duration_since(Instant::now());
-            let timed_out = remaining.is_zero() || timeout(remaining, &mut worker).await.is_err();
-            if timed_out {
+            if remaining.is_zero() || tokio::time::timeout(remaining, &mut worker).await.is_err() {
                 worker.abort();
                 let _ = worker.await;
             }
@@ -105,27 +133,23 @@ impl ConcurrentConsumeService {
         self.workers
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .len()
+            .as_ref()
+            .map_or(0, |workers| workers.workers.len())
     }
 }
 
 impl Drop for ConcurrentConsumeService {
     fn drop(&mut self) {
-        if let Some(cancellation) = self
-            .cancellation
+        if let Some(mut workers) = self
+            .workers
             .get_mut()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take()
         {
-            cancellation.send_replace(true);
-        }
-        for worker in self
-            .workers
-            .get_mut()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .drain(..)
-        {
-            worker.abort();
+            workers.sender.take();
+            for worker in workers.workers.drain(..) {
+                worker.abort();
+            }
         }
     }
 }
@@ -144,7 +168,9 @@ mod tests {
             },
         );
         let service = ConcurrentConsumeService::new(3, 7, listener);
-        service.start().await;
+        service
+            .start(std::sync::Weak::<crate::push::PushConsumer>::new())
+            .await;
         assert_eq!(service.worker_count(), 3);
         service.shutdown(100).await;
         assert_eq!(service.worker_count(), 0);

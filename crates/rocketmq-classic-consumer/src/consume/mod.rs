@@ -1,3 +1,3 @@
 mod concurrent;
 
-pub(crate) use concurrent::ConcurrentConsumeService;
+pub(crate) use concurrent::{ConcurrentConsumeService, ConsumeRequest, ConsumeSubmitError};

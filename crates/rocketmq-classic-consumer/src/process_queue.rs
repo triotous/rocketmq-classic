@@ -320,6 +320,23 @@ impl ProcessQueue {
         })
     }
 
+    pub(crate) fn increment_reconsume_times(
+        &self,
+        generation: u64,
+        offset: i64,
+    ) -> Result<i32, ProcessQueueError> {
+        let mut state = self.lock_state();
+        self.ensure_active(generation, &state)?;
+        let Some(entry) = state.messages.get_mut(&offset) else {
+            return Err(ProcessQueueError::UnknownBatch);
+        };
+        let mut message = entry.message.as_ref().clone();
+        let reconsume_times = message.reconsume_times().saturating_add(1);
+        message.set_reconsume_times(reconsume_times);
+        entry.message = Arc::new(message);
+        Ok(reconsume_times)
+    }
+
     pub(crate) fn drop_assignment(&self, generation: u64) -> Result<bool, ProcessQueueError> {
         if generation != self.generation {
             return Err(ProcessQueueError::StaleGeneration);

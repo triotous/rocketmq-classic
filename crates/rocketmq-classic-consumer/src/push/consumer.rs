@@ -9,18 +9,27 @@ use std::{
     time::Duration,
 };
 
+#[cfg(test)]
+use std::collections::VecDeque;
+
 use rocketmq_classic_common::{
-    message::{DecodeLimits, DecodeOptions, MessageQueue},
+    message::{
+        DecodeLimits, DecodeOptions, Message, MessageQueue, constants::*, encode_properties,
+    },
     sysflag::pull::{build_pull_sys_flag, clear_commit_offset_flag},
 };
 use rocketmq_classic_core::api::consumer::PullStatus;
+use rocketmq_classic_core::api::producer::{SendKind, SendMode};
+use rocketmq_classic_core::route::broker_vip_channel;
 use rocketmq_classic_core::runtime::{
     ClientRuntime, ClientRuntimeManager, ConsumerRuntime, GroupLease,
 };
 use rocketmq_classic_protocol::{
     SharedValue,
     codes::response,
-    header::PullMessageRequestHeader,
+    header::{
+        ConsumerSendMsgBackRequestHeader, PullMessageRequestHeader, SendMessageRequestHeaderV1,
+    },
     heartbeat::{ConsumeType, ConsumerData, ConsumerSubscriptionDataSet, SubscriptionData},
 };
 use tokio::time::Instant;
@@ -29,7 +38,7 @@ use tokio::time::Instant;
 use std::sync::Mutex;
 
 use crate::{
-    consume::ConcurrentConsumeService,
+    consume::{ConcurrentConsumeService, ConsumeRequest, ConsumeSubmitError},
     error::PushConsumerError,
     offset::{LocalFileOffsetStore, OffsetStore, RemoteBrokerOffsetStore},
     offset::{OffsetRead, ReadOffsetType},
@@ -39,7 +48,10 @@ use crate::{
 
 use super::{
     config::PushConsumerConfig,
-    listener::PushMessageListener,
+    listener::{
+        ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus, MessageListenerConcurrently,
+        PushMessageListener,
+    },
     pull_service::{
         PULL_TIME_DELAY_MILLIS_WHEN_BROKER_FLOW_CONTROL,
         PULL_TIME_DELAY_MILLIS_WHEN_CACHE_FLOW_CONTROL, PULL_TIME_DELAY_MILLIS_WHEN_EXCEPTION,
@@ -50,13 +62,33 @@ use super::{
 
 type ConsumerFuture<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 
+#[cfg(test)]
+#[derive(Default)]
+struct ScriptedRetryTransport {
+    broker_results: VecDeque<Result<(), String>>,
+    retry_results: VecDeque<Result<(), String>>,
+    broker_headers: Vec<ConsumerSendMsgBackRequestHeader>,
+    retry_messages: Vec<Message>,
+}
+
 const BROKER_SUSPEND_MAX_TIME_MILLIS: i64 = 20_000;
 const CONSUMER_TIMEOUT_MILLIS_WHEN_SUSPEND: i64 = 30_000;
+const CONSUME_RETRY_DELAY_MILLIS: i64 = 5_000;
+const CONSUMER_SEND_BACK_TIMEOUT_MILLIS: u64 = 5_000;
 
 struct PullContext {
     runtime: Arc<ClientRuntime>,
     offset_store: Arc<dyn OffsetStore>,
     scheduler: Arc<PullScheduler>,
+    consume_service: Arc<ConcurrentConsumeService>,
+}
+
+struct AbortOnDrop<T>(tokio::task::JoinHandle<T>);
+
+impl<T> Drop for AbortOnDrop<T> {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
 }
 
 struct StartupServices {
@@ -169,12 +201,14 @@ pub struct PushConsumer {
     topic_queues: Arc<RwLock<HashMap<String, BTreeSet<MessageQueue>>>>,
     process_queues: Arc<RwLock<HashMap<MessageQueue, Arc<ProcessQueue>>>>,
     offset_corrections_pending: Arc<RwLock<HashSet<MessageQueue>>>,
-    #[allow(dead_code)] // Allocates assignment generations for Phase 11.
     next_generation: AtomicU64,
+    next_retry_message_id: AtomicU64,
     pull_api: PullAPIWrapper,
     paused: AtomicBool,
     #[cfg(test)]
     startup_failure: Mutex<Option<StartupStage>>,
+    #[cfg(test)]
+    scripted_retry_transport: Mutex<ScriptedRetryTransport>,
 }
 
 impl PushConsumer {
@@ -195,10 +229,13 @@ impl PushConsumer {
             process_queues: Arc::new(RwLock::new(HashMap::new())),
             offset_corrections_pending: Arc::new(RwLock::new(HashSet::new())),
             next_generation: AtomicU64::new(1),
+            next_retry_message_id: AtomicU64::new(0),
             pull_api,
             paused: AtomicBool::new(false),
             #[cfg(test)]
             startup_failure: Mutex::new(None),
+            #[cfg(test)]
+            scripted_retry_transport: Mutex::new(ScriptedRetryTransport::default()),
         }
     }
 
@@ -459,11 +496,13 @@ impl PushConsumer {
                 runtime,
                 offset_store,
                 pull_scheduler,
+                consume_service,
                 ..
             } => Some(PullContext {
                 runtime: runtime.upgrade()?,
                 offset_store: offset_store.clone(),
                 scheduler: pull_scheduler.clone(),
+                consume_service: consume_service.clone(),
             }),
             State::Created | State::Shutdown => None,
         }
@@ -741,6 +780,7 @@ impl PushConsumer {
                         inserted_count = outcome.inserted_count,
                         "push process queue has ready messages"
                     );
+                    self.submit_consume_batch(&context, process_queue, generation);
                 }
                 let delay = self.config.pull_interval_millis();
                 let _ = context.scheduler.schedule(request, delay);
@@ -769,6 +809,527 @@ impl PushConsumer {
                 }
             }
         }
+    }
+
+    fn submit_consume_batch(
+        self: &Arc<Self>,
+        context: &PullContext,
+        process_queue: Arc<ProcessQueue>,
+        generation: u64,
+    ) {
+        let batch = match process_queue.take_batch(
+            generation,
+            self.config.consume_message_batch_max_size().max(1) as usize,
+        ) {
+            Ok(Some(batch)) => batch,
+            Ok(None) | Err(_) => return,
+        };
+        let request = ConsumeRequest {
+            process_queue,
+            batch,
+        };
+        match context.consume_service.try_submit(request) {
+            Ok(()) => {}
+            Err(ConsumeSubmitError::Full(request)) => {
+                self.requeue_unsubmitted_batch(&request);
+                self.schedule_consume_retry(
+                    context.runtime.clone(),
+                    request.process_queue.clone(),
+                    request.batch.generation(),
+                    PULL_TIME_DELAY_MILLIS_WHEN_CACHE_FLOW_CONTROL,
+                );
+            }
+            Err(ConsumeSubmitError::Closed(request)) => {
+                self.requeue_unsubmitted_batch(&request);
+            }
+        }
+    }
+
+    fn requeue_unsubmitted_batch(&self, request: &ConsumeRequest) {
+        let _ = request.process_queue.complete_batch(
+            request.batch.generation(),
+            request.batch.id(),
+            &[],
+        );
+    }
+
+    fn schedule_consume_retry(
+        self: &Arc<Self>,
+        runtime: Arc<ClientRuntime>,
+        process_queue: Arc<ProcessQueue>,
+        generation: u64,
+        delay_millis: i64,
+    ) {
+        let consumer = Arc::downgrade(self);
+        let task = async move {
+            let Some(consumer) = consumer.upgrade() else {
+                return;
+            };
+            let Some(context) = consumer.pull_context().await else {
+                return;
+            };
+            consumer.submit_consume_batch(&context, process_queue, generation);
+        };
+        if let Err(error) = runtime.execute_task_later(task, delay_millis) {
+            tracing::debug!(
+                generation,
+                error = %error,
+                "failed to schedule push consume submission retry"
+            );
+        }
+    }
+
+    pub(crate) async fn run_consume_request(
+        self: Arc<Self>,
+        request: ConsumeRequest,
+        listener: Arc<dyn MessageListenerConcurrently>,
+    ) {
+        let Some(context) = self.pull_context().await else {
+            self.requeue_unsubmitted_batch(&request);
+            return;
+        };
+        let generation = request.batch.generation();
+        if !request
+            .process_queue
+            .snapshot(generation)
+            .is_ok_and(|snapshot| !snapshot.dropped)
+        {
+            return;
+        }
+
+        let messages = request
+            .batch
+            .messages()
+            .iter()
+            .map(|message| message.as_ref().clone())
+            .collect::<Vec<_>>();
+        let callback_context = ConsumeConcurrentlyContext::new(request.batch.queue().clone());
+        let fallback_context = callback_context.clone();
+        let mut callback = AbortOnDrop(tokio::spawn(async move {
+            listener.consume_message(messages, callback_context).await
+        }));
+        let timeout_millis = self
+            .config
+            .consume_timeout_minutes()
+            .max(1)
+            .saturating_mul(60_000) as u64;
+        let callback_result =
+            tokio::time::timeout(Duration::from_millis(timeout_millis), &mut callback.0).await;
+        let (status, returned_context) = match callback_result {
+            Ok(Ok(result)) => result,
+            Ok(Err(error)) => {
+                tracing::error!(
+                    topic = ?request.batch.queue().topic(),
+                    queue_id = request.batch.queue().queue_id(),
+                    generation,
+                    error = %error,
+                    "push concurrent listener failed"
+                );
+                (None, fallback_context)
+            }
+            Err(_) => {
+                callback.0.abort();
+                let _ = (&mut callback.0).await;
+                tracing::warn!(
+                    topic = ?request.batch.queue().topic(),
+                    queue_id = request.batch.queue().queue_id(),
+                    generation,
+                    "push concurrent listener timed out"
+                );
+                (None, fallback_context)
+            }
+        };
+        self.complete_consume_request(request, context, status, returned_context)
+            .await;
+    }
+
+    async fn complete_consume_request(
+        self: &Arc<Self>,
+        request: ConsumeRequest,
+        context: PullContext,
+        status: Option<ConsumeConcurrentlyStatus>,
+        callback_context: ConsumeConcurrentlyContext,
+    ) {
+        let process_queue = request.process_queue;
+        let batch = request.batch;
+        let generation = batch.generation();
+        let queue = batch.queue().clone();
+        if !process_queue
+            .snapshot(generation)
+            .is_ok_and(|snapshot| !snapshot.dropped)
+        {
+            return;
+        }
+
+        let batch_len = batch.offsets().len();
+        if batch_len == 0 {
+            let _ = process_queue.complete_batch(generation, batch.id(), &[]);
+            return;
+        }
+        let ack_index = match status {
+            Some(ConsumeConcurrentlyStatus::ConsumeSuccess) => callback_context
+                .ack_index()
+                .clamp(-1, batch_len.saturating_sub(1) as i32),
+            Some(ConsumeConcurrentlyStatus::ReconsumeLater) | None => -1,
+        };
+        let acknowledged = (ack_index + 1).max(0) as usize;
+        let mut terminal_offsets = batch.offsets()[..acknowledged].to_vec();
+        let mut local_retry_needed = false;
+        if self.config.message_model()
+            == rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting
+        {
+            terminal_offsets.extend_from_slice(&batch.offsets()[acknowledged..]);
+        } else {
+            for (offset, message) in batch.offsets()[acknowledged..]
+                .iter()
+                .copied()
+                .zip(&batch.messages()[acknowledged..])
+            {
+                if !process_queue
+                    .snapshot(generation)
+                    .is_ok_and(|snapshot| !snapshot.dropped)
+                {
+                    return;
+                }
+                if self
+                    .send_message_back(
+                        &context.runtime,
+                        &queue,
+                        message.as_ref(),
+                        callback_context.delay_level_when_next_consume(),
+                    )
+                    .await
+                {
+                    terminal_offsets.push(offset);
+                } else if process_queue
+                    .increment_reconsume_times(generation, offset)
+                    .is_err()
+                {
+                    return;
+                } else {
+                    local_retry_needed = true;
+                }
+            }
+        }
+
+        let completion =
+            match process_queue.complete_batch(generation, batch.id(), &terminal_offsets) {
+                Ok(completion) => completion,
+                Err(_) => return,
+            };
+        if let Some(offset) = completion.next_commit_offset {
+            if process_queue
+                .snapshot(generation)
+                .is_ok_and(|snapshot| !snapshot.dropped)
+            {
+                context.offset_store.update_offset(&queue, offset, true);
+            }
+        }
+        if completion.has_ready_messages {
+            if local_retry_needed {
+                self.schedule_consume_retry(
+                    context.runtime,
+                    process_queue,
+                    generation,
+                    CONSUME_RETRY_DELAY_MILLIS,
+                );
+            } else {
+                self.submit_consume_batch(&context, process_queue, generation);
+            }
+        }
+    }
+
+    async fn send_message_back(
+        &self,
+        runtime: &Arc<ClientRuntime>,
+        queue: &MessageQueue,
+        message: &rocketmq_classic_common::message::MessageExt,
+        delay_level: i32,
+    ) -> bool {
+        let mut client_config = self.config.client_config().clone();
+        let consumer_group = client_config
+            .with_namespace(Some(self.config.consumer_group()))
+            .ok()
+            .flatten();
+        let origin_topic = client_config
+            .with_namespace(Some(message.message().topic()))
+            .ok()
+            .flatten();
+        let Some(consumer_group) = consumer_group else {
+            tracing::error!("push send-back has no consumer group");
+            return false;
+        };
+        let Some(origin_topic) = origin_topic else {
+            tracing::error!("push send-back has no origin topic");
+            return false;
+        };
+        let broker_name = message
+            .broker_name()
+            .or(queue.broker_name())
+            .map(str::to_owned);
+        let header = ConsumerSendMsgBackRequestHeader {
+            group: consumer_group.clone(),
+            broker_name: broker_name.clone(),
+            origin_topic: origin_topic.clone(),
+            offset: message.commit_log_offset(),
+            delay_level,
+            origin_msg_id: message.message_id().map(str::to_owned),
+            max_reconsume_times: Some(self.config.effective_max_reconsume_times()),
+            unit_mode: self.config.unit_mode(),
+        };
+
+        match self
+            .try_send_message_back_to_broker(runtime, &header, broker_name.as_deref())
+            .await
+        {
+            Ok(()) => return true,
+            Err(error) => tracing::debug!(
+                topic = ?queue.topic(),
+                queue_id = queue.queue_id(),
+                offset = message.queue_offset(),
+                error = %error,
+                "push send-back Broker attempt failed; trying retry-topic publication"
+            ),
+        }
+
+        let sequence = self.next_retry_message_id.fetch_add(1, Ordering::Relaxed);
+        let retry_topic = format!("%RETRY%{consumer_group}");
+        let retry_message =
+            self.build_retry_message(runtime, message, retry_topic, origin_topic, sequence);
+        match self.send_retry_message(runtime, &retry_message).await {
+            Ok(()) => true,
+            Err(error) => {
+                tracing::error!(
+                    topic = ?queue.topic(),
+                    queue_id = queue.queue_id(),
+                    offset = message.queue_offset(),
+                    error = %error,
+                    "push send-back and retry-topic fallback both failed"
+                );
+                false
+            }
+        }
+    }
+
+    async fn try_send_message_back_to_broker(
+        &self,
+        runtime: &Arc<ClientRuntime>,
+        header: &ConsumerSendMsgBackRequestHeader,
+        broker_name: Option<&str>,
+    ) -> Result<(), String> {
+        #[cfg(test)]
+        {
+            let mut scripted = self
+                .scripted_retry_transport
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            scripted.broker_headers.push(header.clone());
+            if let Some(result) = scripted.broker_results.pop_front() {
+                return result;
+            }
+        }
+
+        let broker_name = broker_name.ok_or_else(|| "message has no broker name".to_owned())?;
+        let deadline = Instant::now() + Duration::from_millis(CONSUMER_SEND_BACK_TIMEOUT_MILLIS);
+        let mut route = runtime
+            .route_snapshot()
+            .map_err(|error| error.to_string())?;
+        let mut address = route.publish_address(broker_name).map(str::to_owned);
+        if address.is_none() {
+            runtime
+                .update_topic_route(&header.origin_topic, deadline)
+                .await
+                .map_err(|error| error.to_string())?;
+            route = runtime
+                .route_snapshot()
+                .map_err(|error| error.to_string())?;
+            address = route.publish_address(broker_name).map(str::to_owned);
+        }
+        let address =
+            address.ok_or_else(|| format!("broker {broker_name} has no master address"))?;
+        let address =
+            broker_vip_channel(self.config.client_config().vip_channel_enabled(), &address)
+                .map_err(|error| error.to_string())?;
+        runtime
+            .api()
+            .consumer_send_message_back(&address, header, deadline)
+            .await
+            .map_err(|error| error.to_string())
+    }
+
+    fn build_retry_message(
+        &self,
+        runtime: &ClientRuntime,
+        original: &rocketmq_classic_common::message::MessageExt,
+        retry_topic: String,
+        origin_topic: String,
+        sequence: u64,
+    ) -> Message {
+        let reconsume_times = original.reconsume_times().saturating_add(1);
+        let mut retry = Message::new(retry_topic, original.message().body().to_vec());
+        retry.set_flag(original.message().flag());
+        for (key, value) in original.message().properties() {
+            if key != PROPERTY_TRANSACTION_PREPARED {
+                let _ = retry.set_system_property(key.clone(), value.clone());
+            }
+        }
+        let origin_message_id = original
+            .message()
+            .properties()
+            .get(PROPERTY_ORIGIN_MESSAGE_ID)
+            .map(String::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| original.message_id());
+        let _ = retry.set_system_property(PROPERTY_RETRY_TOPIC, origin_topic);
+        if let Some(origin_message_id) = origin_message_id {
+            let _ =
+                retry.set_system_property(PROPERTY_ORIGIN_MESSAGE_ID, origin_message_id.to_owned());
+        }
+        let _ = retry.set_system_property(PROPERTY_RECONSUME_TIME, reconsume_times.to_string());
+        let _ = retry.set_system_property(
+            PROPERTY_MAX_RECONSUME_TIMES,
+            self.config.effective_max_reconsume_times().to_string(),
+        );
+        let _ = retry.set_system_property(
+            PROPERTY_DELAY_TIME_LEVEL,
+            3i32.saturating_add(original.reconsume_times()).to_string(),
+        );
+        if retry
+            .properties()
+            .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+            .is_none_or(|value| value.trim().is_empty())
+        {
+            let unique_id = format!("{}-{}-{}", runtime.client_id(), epoch_millis(), sequence);
+            let _ = retry.set_system_property(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX, unique_id);
+        }
+        retry
+    }
+
+    async fn send_retry_message(
+        &self,
+        runtime: &Arc<ClientRuntime>,
+        retry: &Message,
+    ) -> Result<(), String> {
+        #[cfg(test)]
+        {
+            let mut scripted = self
+                .scripted_retry_transport
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            scripted.retry_messages.push(retry.clone());
+            if let Some(result) = scripted.retry_results.pop_front() {
+                return result;
+            }
+        }
+
+        const DEFAULT_CREATE_TOPIC_KEY: &str = "TBW102";
+        const DEFAULT_TOPIC_QUEUE_COUNT: i32 = 4;
+        const DEFAULT_COMPRESS_THRESHOLD: usize = 4 * 1024;
+        const DEFAULT_MAX_MESSAGE_SIZE: usize = 4 * 1024 * 1024;
+        const INNER_PRODUCER_GROUP: &str = "CLIENT_INNER_PRODUCER";
+
+        if retry.body().len() > DEFAULT_MAX_MESSAGE_SIZE {
+            return Err("retry message exceeds the default producer size limit".into());
+        }
+        let topic = retry.topic();
+        let timeout_millis = self.config.client_config().mq_client_api_timeout().max(0) as u64;
+        let deadline = Instant::now() + Duration::from_millis(timeout_millis.max(1));
+        let route = runtime
+            .route_snapshot()
+            .map_err(|error| error.to_string())?;
+        if !route.topics.contains_key(topic) {
+            runtime
+                .update_topic_route(topic, deadline)
+                .await
+                .map_err(|error| error.to_string())?;
+            let route = runtime
+                .route_snapshot()
+                .map_err(|error| error.to_string())?;
+            if !route.topics.contains_key(topic) {
+                runtime
+                    .update_topic_route_from_default(topic, DEFAULT_TOPIC_QUEUE_COUNT, deadline)
+                    .await
+                    .map_err(|error| error.to_string())?;
+            }
+        }
+        let route = runtime
+            .route_snapshot()
+            .map_err(|error| error.to_string())?;
+        let topic_snapshot = route
+            .topics
+            .get(topic)
+            .ok_or_else(|| format!("retry topic {topic} has no route"))?;
+        if topic_snapshot.publish_queues.is_empty() {
+            return Err(format!("retry topic {topic} has no writable queues"));
+        }
+        let sequence = self.next_retry_message_id.fetch_add(1, Ordering::Relaxed);
+        let queue =
+            &topic_snapshot.publish_queues[sequence as usize % topic_snapshot.publish_queues.len()];
+        let broker_name = queue
+            .broker_name()
+            .ok_or_else(|| "retry queue has no broker name".to_owned())?;
+        let address = route
+            .publish_address(broker_name)
+            .ok_or_else(|| format!("retry broker {broker_name} has no master address"))?;
+        let address =
+            broker_vip_channel(self.config.client_config().vip_channel_enabled(), address)
+                .map_err(|error| error.to_string())?;
+
+        let mut properties = retry.properties().clone();
+        let reconsume_times = properties
+            .remove(PROPERTY_RECONSUME_TIME)
+            .and_then(|value| value.parse::<i32>().ok());
+        let max_reconsume_times = properties
+            .remove(PROPERTY_MAX_RECONSUME_TIMES)
+            .and_then(|value| value.parse::<i32>().ok());
+        let mut body = retry.body().to_vec();
+        let mut sys_flag = 0;
+        if body.len() >= DEFAULT_COMPRESS_THRESHOLD {
+            if let Ok(compressed) = rocketmq_classic_common::compression::compress(
+                rocketmq_classic_common::sysflag::message::CompressionType::Zlib,
+                &body,
+                5,
+            ) {
+                body = compressed;
+                sys_flag |= rocketmq_classic_common::sysflag::message::COMPRESSED_FLAG
+                    | rocketmq_classic_common::sysflag::message::CompressionType::Zlib
+                        .get_compression_flag();
+            }
+        }
+        let unique_id = properties
+            .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+            .cloned()
+            .ok_or_else(|| "retry message has no unique id".to_owned())?;
+        let header = SendMessageRequestHeaderV1 {
+            producer_group: INNER_PRODUCER_GROUP.into(),
+            topic: topic.to_owned(),
+            default_topic: DEFAULT_CREATE_TOPIC_KEY.into(),
+            default_topic_queue_nums: DEFAULT_TOPIC_QUEUE_COUNT,
+            queue_id: queue.queue_id(),
+            sys_flag,
+            born_timestamp: epoch_millis(),
+            flag: retry.flag(),
+            properties: Some(encode_properties(&properties)),
+            reconsume_times,
+            unit_mode: Some(self.config.unit_mode()),
+            max_reconsume_times,
+            batch: Some(false),
+        };
+        runtime
+            .api()
+            .send_message(
+                &address,
+                broker_name,
+                &header,
+                body,
+                &unique_id,
+                SendKind::V2,
+                SendMode::Sync,
+                deadline,
+            )
+            .await
+            .map_err(|error| error.to_string())?;
+        Ok(())
     }
 
     fn schedule_offset_recovery(
@@ -961,7 +1522,10 @@ impl PushConsumer {
         if let Err(error) = self.checkpoint(StartupStage::OffsetStoreLoaded) {
             return Err((error, None));
         }
-        services.consume_service.start().await;
+        services
+            .consume_service
+            .start(services.consumer.clone())
+            .await;
         if let Err(error) = self.checkpoint(StartupStage::ConsumeServiceStarted) {
             return Err((error, None));
         }
@@ -1329,6 +1893,136 @@ mod tests {
         message
     }
 
+    fn retry_test_message(offset: i64) -> MessageExt {
+        // Java 5.5.1 producer-produced `ipv4-v1` record from
+        // fixtures/messages/records.json (SHA-256 2F93B0A748E645D8AD2CEA027ABDF2C356ED16B74CEAF70A63D97B0A04861BD0CF).
+        use base64::Engine;
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/messages/records.json"))
+                .unwrap();
+        let decoded = &fixture["cases"][0]["decoded"];
+        let properties: HashMap<String, String> =
+            serde_json::from_value(decoded["properties"].clone()).unwrap();
+        let mut body = Message::new(
+            decoded["topic"].as_str().unwrap(),
+            base64::engine::general_purpose::STANDARD
+                .decode(decoded["bodyBase64"].as_str().unwrap())
+                .unwrap(),
+        );
+        body.set_flag(decoded["flag"].as_i64().unwrap() as i32);
+        for (key, value) in properties {
+            body.set_system_property(key, value).unwrap();
+        }
+        let mut message = MessageExt::new(body);
+        message.set_queue_offset(offset);
+        message.set_broker_name(Some("broker-a".into()));
+        message.set_commit_log_offset(offset + 100);
+        message.set_message_id(Some(format!("broker-msg-{offset}")));
+        message.set_reconsume_times(2);
+        message
+            .message_mut()
+            .set_system_property(PROPERTY_ORIGIN_MESSAGE_ID, "origin-msg")
+            .unwrap();
+        message
+            .message_mut()
+            .set_system_property(PROPERTY_RECONSUME_TIME, "2")
+            .unwrap();
+        message
+            .message_mut()
+            .set_system_property(PROPERTY_MAX_RECONSUME_TIMES, "7")
+            .unwrap();
+        message
+            .message_mut()
+            .set_system_property(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX, "source-uniq")
+            .unwrap();
+        message
+            .message_mut()
+            .set_system_property(PROPERTY_TRANSACTION_PREPARED, "true")
+            .unwrap();
+        message
+            .message_mut()
+            .set_system_property(PROPERTY_KEYS, "order-1")
+            .unwrap();
+        message
+    }
+
+    fn consume_request(
+        queue: MessageQueue,
+        generation: u64,
+        messages: Vec<MessageExt>,
+    ) -> ConsumeRequest {
+        let process_queue = Arc::new(ProcessQueue::new(queue, generation));
+        process_queue.insert_messages(generation, messages).unwrap();
+        let batch = process_queue
+            .take_batch(generation, usize::MAX)
+            .unwrap()
+            .unwrap();
+        ConsumeRequest {
+            process_queue,
+            batch,
+        }
+    }
+
+    fn idle_consume_service() -> Arc<ConcurrentConsumeService> {
+        Arc::new(ConcurrentConsumeService::new(
+            1,
+            1,
+            Arc::new(
+                |_messages: Vec<MessageExt>, context: ConsumeConcurrentlyContext| async move {
+                    (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+                },
+            ),
+        ))
+    }
+
+    async fn install_started_consumer(
+        consumer: &Arc<PushConsumer>,
+        manager: &ClientRuntimeManager,
+        offset_store: Arc<dyn OffsetStore>,
+        consume_service: Arc<ConcurrentConsumeService>,
+        pull_scheduler: Arc<PullScheduler>,
+        pull_rpc_workers: Arc<PullRpcWorkers>,
+    ) -> Arc<ClientRuntime> {
+        let mut client_config = consumer.config.client_config().clone();
+        let consumer_group = client_config
+            .with_namespace(Some(consumer.config.consumer_group()))
+            .unwrap()
+            .unwrap();
+        let runtime = manager
+            .get_or_create(consumer.config.client_config())
+            .await
+            .unwrap();
+        let owner: Arc<dyn ConsumerRuntime> = Arc::new(PushConsumerRegistration {
+            group: consumer_group.clone(),
+            message_model: consumer.config.message_model(),
+            consume_from_where: consumer.config.consume_from_where(),
+            unit_mode: consumer.config.unit_mode(),
+            subscriptions: consumer.subscriptions.clone(),
+            topic_queues: consumer.topic_queues.clone(),
+            pull_scheduler: pull_scheduler.clone(),
+            pull_rpc_workers: pull_rpc_workers.clone(),
+            offset_store: Arc::downgrade(&offset_store),
+        });
+        let lease = runtime
+            .register_consumer(&consumer_group, owner)
+            .await
+            .unwrap();
+        *consumer.state.lock().await = State::Started {
+            runtime: Arc::downgrade(&runtime),
+            lease,
+            offset_store,
+            consume_service: consume_service.clone(),
+            pull_scheduler: pull_scheduler.clone(),
+            pull_rpc_workers: pull_rpc_workers.clone(),
+        };
+        consume_service.start(Arc::downgrade(consumer)).await;
+        pull_scheduler.start(Arc::downgrade(&runtime)).unwrap();
+        pull_rpc_workers
+            .start(Arc::downgrade(consumer), pull_scheduler)
+            .unwrap();
+        runtime
+    }
+
     #[test]
     fn broker_flow_control_uses_the_java_retry_delay() {
         let flow_control =
@@ -1361,10 +2055,12 @@ mod tests {
             .unwrap();
         let offset_store = Arc::new(RecordingOffsetStore::default());
         let scheduler = Arc::new(PullScheduler::new());
+        let consume_service = idle_consume_service();
         let context = || PullContext {
             runtime: runtime.clone(),
             offset_store: offset_store.clone(),
             scheduler: scheduler.clone(),
+            consume_service: consume_service.clone(),
         };
 
         let empty_queue = MessageQueue::new("orders", "broker-a", 0);
@@ -1446,10 +2142,12 @@ mod tests {
             .unwrap();
         let offset_store = Arc::new(RecordingOffsetStore::default());
         let scheduler = Arc::new(PullScheduler::new());
+        let consume_service = idle_consume_service();
         let context = || PullContext {
             runtime: runtime.clone(),
             offset_store: offset_store.clone(),
             scheduler: scheduler.clone(),
+            consume_service: consume_service.clone(),
         };
 
         let stale_queue = MessageQueue::new("orders", "broker-a", 3);
@@ -1492,6 +2190,485 @@ mod tests {
             &[(illegal_queue, 55, false)]
         );
 
+        let _ = runtime.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn concurrent_ack_index_sends_only_the_unacknowledged_tail_back() {
+        let config = PushConsumerConfig::new("consume-ack-index").unwrap();
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let runtime = manager
+            .get_or_create(consumer.config().client_config())
+            .await
+            .unwrap();
+        let offset_store = Arc::new(RecordingOffsetStore::default());
+        let scheduler = Arc::new(PullScheduler::new());
+        let context = PullContext {
+            runtime: runtime.clone(),
+            offset_store: offset_store.clone(),
+            scheduler,
+            consume_service: idle_consume_service(),
+        };
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let request = consume_request(
+            queue.clone(),
+            31,
+            vec![retry_test_message(10), retry_test_message(11)],
+        );
+        consumer
+            .scripted_retry_transport
+            .lock()
+            .unwrap()
+            .broker_results
+            .push_back(Ok(()));
+        let mut callback_context = ConsumeConcurrentlyContext::new(queue.clone());
+        callback_context.set_ack_index(0);
+        consumer
+            .clone()
+            .complete_consume_request(
+                request,
+                context,
+                Some(ConsumeConcurrentlyStatus::ConsumeSuccess),
+                callback_context,
+            )
+            .await;
+
+        {
+            let scripted = consumer.scripted_retry_transport.lock().unwrap();
+            assert_eq!(scripted.broker_headers.len(), 1);
+            assert_eq!(scripted.broker_headers[0].origin_topic, "orders");
+            assert_eq!(scripted.broker_headers[0].offset, 111);
+            assert_eq!(
+                scripted.broker_headers[0].origin_msg_id.as_deref(),
+                Some("broker-msg-11")
+            );
+            assert_eq!(scripted.broker_headers[0].max_reconsume_times, Some(16));
+            assert!(scripted.retry_messages.is_empty());
+        }
+        assert_eq!(
+            offset_store.updates.lock().unwrap().as_slice(),
+            &[(queue, 12, true)]
+        );
+        let _ = runtime.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn broker_send_back_failure_publishes_java_compatible_retry_metadata() {
+        let mut config = PushConsumerConfig::new("consume-retry-fallback").unwrap();
+        config
+            .client_config_mut()
+            .set_namespace(Some("tenant".to_owned()));
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let runtime = manager
+            .get_or_create(consumer.config().client_config())
+            .await
+            .unwrap();
+        let offset_store = Arc::new(RecordingOffsetStore::default());
+        let context = PullContext {
+            runtime: runtime.clone(),
+            offset_store: offset_store.clone(),
+            scheduler: Arc::new(PullScheduler::new()),
+            consume_service: idle_consume_service(),
+        };
+        let queue = MessageQueue::new("orders", "broker-a", 1);
+        let request = consume_request(queue.clone(), 32, vec![retry_test_message(20)]);
+        {
+            let mut scripted = consumer.scripted_retry_transport.lock().unwrap();
+            scripted
+                .broker_results
+                .push_back(Err("broker refused send-back".into()));
+            scripted.retry_results.push_back(Ok(()));
+        }
+        let callback_context = ConsumeConcurrentlyContext::new(queue.clone());
+        consumer
+            .clone()
+            .complete_consume_request(
+                request,
+                context,
+                Some(ConsumeConcurrentlyStatus::ReconsumeLater),
+                callback_context,
+            )
+            .await;
+
+        {
+            let scripted = consumer.scripted_retry_transport.lock().unwrap();
+            let retry = &scripted.retry_messages[0];
+            assert_eq!(retry.topic(), "%RETRY%tenant%consume-retry-fallback");
+            assert_eq!(
+                retry
+                    .properties()
+                    .get(PROPERTY_RETRY_TOPIC)
+                    .map(String::as_str),
+                Some("tenant%orders")
+            );
+            assert_eq!(
+                retry
+                    .properties()
+                    .get(PROPERTY_ORIGIN_MESSAGE_ID)
+                    .map(String::as_str),
+                Some("origin-msg")
+            );
+            assert_eq!(
+                retry
+                    .properties()
+                    .get(PROPERTY_RECONSUME_TIME)
+                    .map(String::as_str),
+                Some("3")
+            );
+            assert_eq!(
+                retry
+                    .properties()
+                    .get(PROPERTY_MAX_RECONSUME_TIMES)
+                    .map(String::as_str),
+                Some("16")
+            );
+            assert_eq!(
+                retry
+                    .properties()
+                    .get(PROPERTY_DELAY_TIME_LEVEL)
+                    .map(String::as_str),
+                Some("5")
+            );
+            assert_eq!(
+                retry
+                    .properties()
+                    .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+                    .map(String::as_str),
+                Some("source-uniq")
+            );
+            assert_eq!(
+                retry.properties().get(PROPERTY_KEYS).map(String::as_str),
+                Some("order-1")
+            );
+            assert!(
+                !retry
+                    .properties()
+                    .contains_key(PROPERTY_TRANSACTION_PREPARED)
+            );
+        }
+        assert_eq!(
+            offset_store.updates.lock().unwrap().as_slice(),
+            &[(queue, 21, true)]
+        );
+        let _ = runtime.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn failed_send_back_retains_and_increments_messages_for_redelivery() {
+        let config = PushConsumerConfig::new("consume-retry-retention").unwrap();
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let runtime = manager
+            .get_or_create(consumer.config().client_config())
+            .await
+            .unwrap();
+        let offset_store = Arc::new(RecordingOffsetStore::default());
+        let context = PullContext {
+            runtime: runtime.clone(),
+            offset_store: offset_store.clone(),
+            scheduler: Arc::new(PullScheduler::new()),
+            consume_service: idle_consume_service(),
+        };
+        let queue = MessageQueue::new("orders", "broker-a", 2);
+        let request = consume_request(queue.clone(), 33, vec![retry_test_message(30)]);
+        let process_queue = request.process_queue.clone();
+        {
+            let mut scripted = consumer.scripted_retry_transport.lock().unwrap();
+            scripted
+                .broker_results
+                .push_back(Err("broker refused send-back".into()));
+            scripted
+                .retry_results
+                .push_back(Err("retry-topic publish failed".into()));
+        }
+        consumer
+            .clone()
+            .complete_consume_request(
+                request,
+                context,
+                Some(ConsumeConcurrentlyStatus::ReconsumeLater),
+                ConsumeConcurrentlyContext::new(queue.clone()),
+            )
+            .await;
+
+        let snapshot = process_queue.snapshot(33).unwrap();
+        assert_eq!(snapshot.cached_count, 1);
+        assert_eq!(snapshot.in_flight_count, 0);
+        let redelivery = process_queue.take_batch(33, 1).unwrap().unwrap();
+        assert_eq!(redelivery.messages()[0].reconsume_times(), 3);
+        assert_eq!(
+            offset_store.updates.lock().unwrap().as_slice(),
+            &[(queue, 30, true)]
+        );
+        let _ = runtime.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn concurrent_listener_success_commits_the_complete_fixture_batch() {
+        let mut config = PushConsumerConfig::new("consume-success").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let offset_store = Arc::new(RecordingOffsetStore::default());
+        let offset_store_dyn: Arc<dyn OffsetStore> = offset_store.clone();
+        let consume_service = idle_consume_service();
+        let scheduler = Arc::new(PullScheduler::new());
+        let pull_rpc_workers = Arc::new(PullRpcWorkers::new());
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            offset_store_dyn,
+            consume_service,
+            scheduler,
+            pull_rpc_workers,
+        )
+        .await;
+
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let request = consume_request(
+            queue.clone(),
+            50,
+            vec![retry_test_message(60), retry_test_message(61)],
+        );
+        let process_queue = request.process_queue.clone();
+        let listener: Arc<dyn MessageListenerConcurrently> = Arc::new(
+            |messages: Vec<MessageExt>, context: ConsumeConcurrentlyContext| async move {
+                assert_eq!(messages.len(), 2);
+                (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+            },
+        );
+        consumer
+            .clone()
+            .run_consume_request(request, listener)
+            .await;
+
+        let snapshot = process_queue.snapshot(50).unwrap();
+        assert_eq!(snapshot.cached_count, 0);
+        assert_eq!(snapshot.in_flight_count, 0);
+        assert_eq!(
+            offset_store.updates.lock().unwrap().as_slice(),
+            &[(queue, 62, true)]
+        );
+        let _ = runtime.shutdown().await;
+        consumer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn concurrent_listener_without_status_sends_fixture_back_for_retry() {
+        let mut config = PushConsumerConfig::new("consume-null-status").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let offset_store = Arc::new(RecordingOffsetStore::default());
+        let offset_store_dyn: Arc<dyn OffsetStore> = offset_store.clone();
+        let consume_service = idle_consume_service();
+        let scheduler = Arc::new(PullScheduler::new());
+        let pull_rpc_workers = Arc::new(PullRpcWorkers::new());
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            offset_store_dyn,
+            consume_service,
+            scheduler,
+            pull_rpc_workers,
+        )
+        .await;
+        consumer
+            .scripted_retry_transport
+            .lock()
+            .unwrap()
+            .broker_results
+            .push_back(Ok(()));
+
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let request = consume_request(queue.clone(), 51, vec![retry_test_message(70)]);
+        let process_queue = request.process_queue.clone();
+        let listener: Arc<dyn MessageListenerConcurrently> = Arc::new(
+            |_messages: Vec<MessageExt>, context: ConsumeConcurrentlyContext| async move {
+                (None, context)
+            },
+        );
+        consumer
+            .clone()
+            .run_consume_request(request, listener)
+            .await;
+
+        assert_eq!(process_queue.snapshot(51).unwrap().cached_count, 0);
+        {
+            let scripted = consumer.scripted_retry_transport.lock().unwrap();
+            assert_eq!(scripted.broker_headers.len(), 1);
+            assert_eq!(scripted.broker_headers[0].offset, 170);
+        }
+        assert_eq!(
+            offset_store.updates.lock().unwrap().as_slice(),
+            &[(queue, 71, true)]
+        );
+        let _ = runtime.shutdown().await;
+        consumer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn concurrent_listener_panic_is_isolated_and_retried() {
+        let mut config = PushConsumerConfig::new("consume-listener-panic").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let offset_store = Arc::new(RecordingOffsetStore::default());
+        let offset_store_dyn: Arc<dyn OffsetStore> = offset_store.clone();
+        let consume_service = idle_consume_service();
+        let scheduler = Arc::new(PullScheduler::new());
+        let pull_rpc_workers = Arc::new(PullRpcWorkers::new());
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            offset_store_dyn,
+            consume_service,
+            scheduler,
+            pull_rpc_workers,
+        )
+        .await;
+        consumer
+            .scripted_retry_transport
+            .lock()
+            .unwrap()
+            .broker_results
+            .push_back(Ok(()));
+
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let request = consume_request(queue.clone(), 52, vec![retry_test_message(80)]);
+        let process_queue = request.process_queue.clone();
+        let listener: Arc<dyn MessageListenerConcurrently> = Arc::new(
+            |_messages: Vec<MessageExt>, _context: ConsumeConcurrentlyContext| async move {
+                panic!("scripted concurrent-listener panic")
+            },
+        );
+        consumer
+            .clone()
+            .run_consume_request(request, listener)
+            .await;
+
+        assert_eq!(process_queue.snapshot(52).unwrap().cached_count, 0);
+        assert_eq!(
+            offset_store.updates.lock().unwrap().as_slice(),
+            &[(queue, 81, true)]
+        );
+        let _ = runtime.shutdown().await;
+        consumer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn private_fixed_assignment_retries_java_fixture_with_broker_limit() {
+        let mut config = PushConsumerConfig::new("consume-fixed-assignment").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        consumer.subscribe("orders", "*").await.unwrap();
+        consumer.suspend().await;
+        let offset_store = Arc::new(RecordingOffsetStore::default());
+        let offset_store_dyn: Arc<dyn OffsetStore> = offset_store.clone();
+        let consume_service = idle_consume_service();
+        let scheduler = Arc::new(PullScheduler::new());
+        let pull_rpc_workers = Arc::new(PullRpcWorkers::new());
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            offset_store_dyn,
+            consume_service,
+            scheduler,
+            pull_rpc_workers,
+        )
+        .await;
+        consumer
+            .scripted_retry_transport
+            .lock()
+            .unwrap()
+            .broker_results
+            .push_back(Ok(()));
+
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let process_queue = consumer.activate_process_queue(&queue, 90).await.unwrap();
+        let generation = process_queue.generation();
+        process_queue
+            .insert_messages(generation, vec![retry_test_message(90)])
+            .unwrap();
+        let batch = process_queue
+            .take_batch(generation, usize::MAX)
+            .unwrap()
+            .unwrap();
+        consumer
+            .clone()
+            .complete_consume_request(
+                ConsumeRequest {
+                    process_queue: process_queue.clone(),
+                    batch,
+                },
+                consumer.pull_context().await.unwrap(),
+                Some(ConsumeConcurrentlyStatus::ReconsumeLater),
+                ConsumeConcurrentlyContext::new(queue.clone()),
+            )
+            .await;
+
+        assert_eq!(process_queue.snapshot(generation).unwrap().cached_count, 0);
+        {
+            let scripted = consumer.scripted_retry_transport.lock().unwrap();
+            assert_eq!(scripted.broker_headers.len(), 1);
+            assert_eq!(scripted.broker_headers[0].offset, 190);
+            assert_eq!(
+                scripted.broker_headers[0].origin_msg_id.as_deref(),
+                Some("broker-msg-90")
+            );
+            assert_eq!(scripted.broker_headers[0].max_reconsume_times, Some(16));
+        }
+        assert_eq!(
+            offset_store.updates.lock().unwrap().as_slice(),
+            &[(queue.clone(), 90, false), (queue, 91, true)]
+        );
+        let _ = runtime.shutdown().await;
+        consumer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn broadcasting_drops_failed_messages_without_clustering_retry() {
+        let mut config = PushConsumerConfig::new("consume-broadcast-failure").unwrap();
+        config.set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let runtime = manager
+            .get_or_create(consumer.config().client_config())
+            .await
+            .unwrap();
+        let offset_store = Arc::new(RecordingOffsetStore::default());
+        let context = PullContext {
+            runtime: runtime.clone(),
+            offset_store: offset_store.clone(),
+            scheduler: Arc::new(PullScheduler::new()),
+            consume_service: idle_consume_service(),
+        };
+        let queue = MessageQueue::new("orders", "broker-a", 3);
+        let request = consume_request(queue.clone(), 34, vec![retry_test_message(40)]);
+        let process_queue = request.process_queue.clone();
+        consumer
+            .clone()
+            .complete_consume_request(
+                request,
+                context,
+                Some(ConsumeConcurrentlyStatus::ReconsumeLater),
+                ConsumeConcurrentlyContext::new(queue.clone()),
+            )
+            .await;
+
+        assert_eq!(process_queue.snapshot(34).unwrap().cached_count, 0);
+        {
+            let scripted = consumer.scripted_retry_transport.lock().unwrap();
+            assert!(scripted.broker_headers.is_empty());
+            assert!(scripted.retry_messages.is_empty());
+        }
+        assert_eq!(
+            offset_store.updates.lock().unwrap().as_slice(),
+            &[(queue, 41, true)]
+        );
         let _ = runtime.shutdown().await;
     }
 
