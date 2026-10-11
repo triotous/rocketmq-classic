@@ -1,5 +1,10 @@
 # Known differences and evidence gaps
 
+## Phase 9 pull and offset validation boundary
+
+- Pull facade, offset-store and boundary-RPC offline checks are recorded in [PHASE_9_OFFLINE_METHOD_MATRIX.md](PHASE_9_OFFLINE_METHOD_MATRIX.md). They use Java 5.5.1 source-derived fixtures and scripted peers; no live 5.3.4 Broker result is claimed. P9-V03 remains `PENDING_PHASE_19` until the Docker local integration suite runs.
+- Search timestamps and response offsets are signed Java `long` values. A successful `-1` empty-queue result stays a valid value; only transport/protocol/Broker failures return an error.
+
 ## Phase 2 Remoting codec
 
 - Java's 5.5.1 private RocketMQ serializer narrows request code and version to signed 16-bit values. The Rust private-header encoder rejects values outside that range instead of silently wrapping. JSON encoding retains full i32 request codes and is the supported path for such values. Java-generated fixture `private-large-code` documents the Java narrowing behavior; it is decoded as the narrowed signed value.

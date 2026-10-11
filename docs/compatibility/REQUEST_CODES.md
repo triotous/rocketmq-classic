@@ -8,6 +8,7 @@ The numeric source of truth is the pinned Java tag `rocketmq-all-5.5.1`, especia
 | 11 | PULL_MESSAGE | Consumer pull request/response headers | Implemented; Java request/response fixtures tested | Phase 5 |
 | 14 | QUERY_CONSUMER_OFFSET | Query offset request/response headers | Implemented; Java request/response fixtures tested | Phase 5 |
 | 15 | UPDATE_CONSUMER_OFFSET | Update offset header | Implemented; Java request fixture tested | Phase 5 |
+| 29–32 | SEARCH_OFFSET_BY_TIMESTAMP / GET_MAX_OFFSET / GET_MIN_OFFSET / GET_EARLIEST_MSG_STORETIME | Pull/admin offset-boundary queries | Typed request/response headers and one-attempt Broker RPCs implemented; success `-1` is preserved; offline Java 5.5.1 fixtures and scripted peers pass | Phase 9; live Broker in Phase 19 |
 | 34 | HEART_BEAT | Heartbeat body | Implemented in Phase 1; wire integration in Phase 5 | Phase 5 |
 | 35 | UNREGISTER_CLIENT | Lifecycle request fields | Request header and empty response header implemented; Java request/response fixtures tested | Phase 5 |
 | 37/39 | END_TRANSACTION / CHECK_TRANSACTION_STATE | Transaction request/response headers | Request/response models and fixtures implemented; both directions and table-driven validation verified | Phase 5 |
