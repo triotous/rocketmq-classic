@@ -1576,7 +1576,7 @@ Preserve semantics for:
 
 Needed for broadcasting compatibility.
 
-Expose the Java-equivalent local-offset path configuration with its exact defaults and precedence; do not add a Rust-only storage setting. Match Java read/recovery/error semantics, using safe internal file ownership without changing observable behavior.
+Expose the Java-equivalent local-offset process-property configuration with its exact defaults and precedence; do not add a Rust-only per-instance storage setter. Match Java read/recovery/error semantics, using safe internal file ownership without changing observable behavior.
 
 ### P9-04 — Pull API
 
@@ -1586,9 +1586,10 @@ Public pull operation accepts:
 - expression/subscription;
 - offset;
 - max message count;
+- max response size in bytes;
 - timeout/suspend parameters.
 
-Route to the correct Broker ID using suggested broker logic.
+Expose configured/selected offset-store access, keep pull results separate from offset updates, and expose explicit persist/commit operations. Route to the correct Broker ID using suggested broker logic.
 
 ### P9-05 — Offset boundary helpers
 
