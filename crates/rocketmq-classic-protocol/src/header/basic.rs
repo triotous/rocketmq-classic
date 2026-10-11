@@ -2,6 +2,7 @@ use super::{
     CommandHeader, HeaderMap, ProtocolError, java_boolean, optional_i32, optional_i64,
     optional_java_boolean, optional_string, required_i32, required_i64, required_string,
 };
+use crate::codes::JavaEnumLookupError;
 
 fn put_optional<T: ToString>(fields: &mut HeaderMap, name: &str, value: Option<T>) {
     if let Some(value) = value {
@@ -80,6 +81,277 @@ impl CommandHeader for QueryConsumerOffsetResponseHeader {
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
             offset: required_i64(fields, "offset")?,
+        })
+    }
+}
+
+/// Pinned Java `org.apache.rocketmq.common.BoundaryType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoundaryType {
+    Lower,
+    Upper,
+}
+
+impl BoundaryType {
+    pub const fn values() -> [Self; 2] {
+        [Self::Lower, Self::Upper]
+    }
+
+    pub fn value_of_name(name: Option<&str>) -> Result<Self, JavaEnumLookupError> {
+        match name {
+            None => Err(JavaEnumLookupError::NullName),
+            Some("LOWER") => Ok(Self::Lower),
+            Some("UPPER") => Ok(Self::Upper),
+            Some(other) => Err(JavaEnumLookupError::UnknownName {
+                enum_class: "org.apache.rocketmq.common.BoundaryType",
+                name: other.to_owned(),
+            }),
+        }
+    }
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Lower => "LOWER",
+            Self::Upper => "UPPER",
+        }
+    }
+
+    /// Java `BoundaryType.getName()` uses lowercase values for broker semantics.
+    pub const fn get_name(self) -> &'static str {
+        match self {
+            Self::Lower => "lower",
+            Self::Upper => "upper",
+        }
+    }
+
+    /// Java `BoundaryType.getType` recognizes the case-insensitive `upper`
+    /// name and falls back to LOWER for null or any other input.
+    pub fn get_type(name: Option<&str>) -> Self {
+        if name.is_some_and(|name| name.eq_ignore_ascii_case("upper")) {
+            Self::Upper
+        } else {
+            Self::Lower
+        }
+    }
+
+    pub const fn ordinal(self) -> i32 {
+        match self {
+            Self::Lower => 0,
+            Self::Upper => 1,
+        }
+    }
+
+    pub const fn java_compare_to(self, other: Self) -> i32 {
+        self.ordinal() - other.ordinal()
+    }
+}
+
+impl Default for BoundaryType {
+    fn default() -> Self {
+        Self::Lower
+    }
+}
+
+impl std::fmt::Display for BoundaryType {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.name())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SearchOffsetRequestHeader {
+    pub topic: String,
+    pub lite_topic: Option<String>,
+    pub queue_id: i32,
+    pub timestamp: i64,
+    pub boundary_type: Option<BoundaryType>,
+    pub broker_name: Option<String>,
+}
+
+impl CommandHeader for SearchOffsetRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("topic".into(), self.topic.clone());
+        put_optional(fields, "liteTopic", self.lite_topic.as_deref());
+        fields.insert("queueId".into(), self.queue_id.to_string());
+        fields.insert("timestamp".into(), self.timestamp.to_string());
+        put_optional(
+            fields,
+            "boundaryType",
+            self.boundary_type.map(BoundaryType::name),
+        );
+        put_optional(fields, "bname", self.broker_name.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        let boundary_type = fields
+            .get("boundaryType")
+            .map(|value| {
+                BoundaryType::value_of_name(Some(value)).map_err(|error| {
+                    ProtocolError::InvalidField {
+                        field: "boundaryType",
+                        reason: error.to_string(),
+                    }
+                })
+            })
+            .transpose()?;
+        Ok(Self {
+            topic: required_string(fields, "topic")?.to_owned(),
+            lite_topic: optional_string(fields, "liteTopic"),
+            queue_id: required_i32(fields, "queueId")?,
+            timestamp: required_i64(fields, "timestamp")?,
+            boundary_type,
+            broker_name: optional_string(fields, "bname"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GetMaxOffsetRequestHeader {
+    pub topic: String,
+    pub queue_id: i32,
+    pub committed: bool,
+    pub broker_name: Option<String>,
+}
+
+impl Default for GetMaxOffsetRequestHeader {
+    fn default() -> Self {
+        Self {
+            topic: String::new(),
+            queue_id: 0,
+            committed: true,
+            broker_name: None,
+        }
+    }
+}
+
+impl CommandHeader for GetMaxOffsetRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("topic".into(), self.topic.clone());
+        fields.insert("queueId".into(), self.queue_id.to_string());
+        fields.insert("committed".into(), self.committed.to_string());
+        put_optional(fields, "bname", self.broker_name.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            topic: required_string(fields, "topic")?.to_owned(),
+            queue_id: required_i32(fields, "queueId")?,
+            committed: optional_java_boolean(fields, "committed").unwrap_or(true),
+            broker_name: optional_string(fields, "bname"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct GetMinOffsetRequestHeader {
+    pub topic: String,
+    pub queue_id: i32,
+    pub broker_name: Option<String>,
+}
+
+impl CommandHeader for GetMinOffsetRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("topic".into(), self.topic.clone());
+        fields.insert("queueId".into(), self.queue_id.to_string());
+        put_optional(fields, "bname", self.broker_name.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            topic: required_string(fields, "topic")?.to_owned(),
+            queue_id: required_i32(fields, "queueId")?,
+            broker_name: optional_string(fields, "bname"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct GetEarliestMsgStoretimeRequestHeader {
+    pub topic: String,
+    pub queue_id: i32,
+    pub broker_name: Option<String>,
+}
+
+impl CommandHeader for GetEarliestMsgStoretimeRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("topic".into(), self.topic.clone());
+        fields.insert("queueId".into(), self.queue_id.to_string());
+        put_optional(fields, "bname", self.broker_name.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            topic: required_string(fields, "topic")?.to_owned(),
+            queue_id: required_i32(fields, "queueId")?,
+            broker_name: optional_string(fields, "bname"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SearchOffsetResponseHeader {
+    pub offset: i64,
+}
+
+impl CommandHeader for SearchOffsetResponseHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("offset".into(), self.offset.to_string());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            offset: required_i64(fields, "offset")?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct GetMaxOffsetResponseHeader {
+    pub offset: i64,
+}
+
+impl CommandHeader for GetMaxOffsetResponseHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("offset".into(), self.offset.to_string());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            offset: required_i64(fields, "offset")?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct GetMinOffsetResponseHeader {
+    pub offset: i64,
+}
+
+impl CommandHeader for GetMinOffsetResponseHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("offset".into(), self.offset.to_string());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            offset: required_i64(fields, "offset")?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct GetEarliestMsgStoretimeResponseHeader {
+    pub timestamp: i64,
+}
+
+impl CommandHeader for GetEarliestMsgStoretimeResponseHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("timestamp".into(), self.timestamp.to_string());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            timestamp: required_i64(fields, "timestamp")?,
         })
     }
 }

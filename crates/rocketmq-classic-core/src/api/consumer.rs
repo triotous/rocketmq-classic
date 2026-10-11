@@ -6,9 +6,12 @@ use rocketmq_classic_protocol::{
     },
     codes::{request, response},
     header::{
-        ConsumerSendMsgBackRequestHeader, HeaderMap, LockBatchMqRequestHeader,
-        PullMessageRequestHeader, PullMessageResponseHeader, QueryConsumerOffsetRequestHeader,
-        QueryConsumerOffsetResponseHeader, UpdateConsumerOffsetRequestHeader,
+        ConsumerSendMsgBackRequestHeader, GetEarliestMsgStoretimeRequestHeader,
+        GetEarliestMsgStoretimeResponseHeader, GetMaxOffsetRequestHeader,
+        GetMaxOffsetResponseHeader, GetMinOffsetRequestHeader, GetMinOffsetResponseHeader,
+        HeaderMap, LockBatchMqRequestHeader, PullMessageRequestHeader, PullMessageResponseHeader,
+        QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
+        SearchOffsetRequestHeader, SearchOffsetResponseHeader, UpdateConsumerOffsetRequestHeader,
     },
 };
 use tokio::time::Instant;
@@ -147,6 +150,58 @@ impl MQClientApi {
             .request_future(addr, code, header, None, deadline)
             .await?;
         self.process_pull_response(addr, code, reply)
+    }
+
+    /// Search a queue by a signed Java millisecond timestamp.
+    ///
+    /// A successful broker response may contain `-1` for an empty queue; only
+    /// a remoting or broker error is returned as `Err`.
+    pub async fn search_offset(
+        &self,
+        addr: &str,
+        header: &SearchOffsetRequestHeader,
+        deadline: Instant,
+    ) -> Result<i64, RpcError> {
+        let code = request::SEARCH_OFFSET_BY_TIMESTAMP;
+        let reply = self.request(addr, code, header, None, deadline).await?;
+        let reply = classify(reply, code, addr)?;
+        Ok(decode_header::<SearchOffsetResponseHeader>(&reply, code, addr)?.offset)
+    }
+
+    pub async fn get_max_offset(
+        &self,
+        addr: &str,
+        header: &GetMaxOffsetRequestHeader,
+        deadline: Instant,
+    ) -> Result<i64, RpcError> {
+        let code = request::GET_MAX_OFFSET;
+        let reply = self.request(addr, code, header, None, deadline).await?;
+        let reply = classify(reply, code, addr)?;
+        Ok(decode_header::<GetMaxOffsetResponseHeader>(&reply, code, addr)?.offset)
+    }
+
+    pub async fn get_min_offset(
+        &self,
+        addr: &str,
+        header: &GetMinOffsetRequestHeader,
+        deadline: Instant,
+    ) -> Result<i64, RpcError> {
+        let code = request::GET_MIN_OFFSET;
+        let reply = self.request(addr, code, header, None, deadline).await?;
+        let reply = classify(reply, code, addr)?;
+        Ok(decode_header::<GetMinOffsetResponseHeader>(&reply, code, addr)?.offset)
+    }
+
+    pub async fn get_earliest_msg_storetime(
+        &self,
+        addr: &str,
+        header: &GetEarliestMsgStoretimeRequestHeader,
+        deadline: Instant,
+    ) -> Result<i64, RpcError> {
+        let code = request::GET_EARLIEST_MSG_STORETIME;
+        let reply = self.request(addr, code, header, None, deadline).await?;
+        let reply = classify(reply, code, addr)?;
+        Ok(decode_header::<GetEarliestMsgStoretimeResponseHeader>(&reply, code, addr)?.timestamp)
     }
 
     fn process_pull_response(

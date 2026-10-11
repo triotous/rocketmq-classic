@@ -12,13 +12,16 @@ use rocketmq_classic_protocol::{
         ConsumeMessageDirectlyResultRequestHeader, ConsumerSendMsgBackRequestHeader,
         EndTransactionRequestHeader, EndTransactionResponseHeader,
         GetConsumerListByGroupRequestHeader, GetConsumerStatusRequestHeader,
-        GetRouteInfoRequestHeader, HeaderMap, LiteSubscriptionCtlRequestHeader,
-        LockBatchMqRequestHeader, NotificationRequestHeader, NotificationResponseHeader,
-        NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader, PollingInfoResponseHeader,
-        PopLiteMessageRequestHeader, PopLiteMessageResponseHeader, PopMessageRequestHeader,
-        PopMessageResponseHeader, PullMessageRequestHeader, PullMessageResponseHeader,
-        QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
-        ReplyMessageRequestHeader, ResetOffsetRequestHeader, SendMessageRequestHeaderV1,
+        GetEarliestMsgStoretimeRequestHeader, GetEarliestMsgStoretimeResponseHeader,
+        GetMaxOffsetRequestHeader, GetMaxOffsetResponseHeader, GetMinOffsetRequestHeader,
+        GetMinOffsetResponseHeader, GetRouteInfoRequestHeader, HeaderMap,
+        LiteSubscriptionCtlRequestHeader, LockBatchMqRequestHeader, NotificationRequestHeader,
+        NotificationResponseHeader, NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader,
+        PollingInfoResponseHeader, PopLiteMessageRequestHeader, PopLiteMessageResponseHeader,
+        PopMessageRequestHeader, PopMessageResponseHeader, PullMessageRequestHeader,
+        PullMessageResponseHeader, QueryConsumerOffsetRequestHeader,
+        QueryConsumerOffsetResponseHeader, ReplyMessageRequestHeader, ResetOffsetRequestHeader,
+        SearchOffsetRequestHeader, SearchOffsetResponseHeader, SendMessageRequestHeaderV1,
         SendMessageRequestHeaderV2, SendMessageResponseHeader, UnlockBatchMqRequestHeader,
         UnregisterClientRequestHeader, UnregisterClientResponseHeader,
         UpdateConsumerOffsetRequestHeader,
@@ -746,7 +749,7 @@ fn header_validation_matrix() {
             "consumerGroup topic queueId queueOffset maxMsgNums sysFlag commitOffset suspendTimeoutMillis subVersion",
             "queueId maxMsgNums sysFlag maxMsgBytes requestSource",
             "queueOffset commitOffset suspendTimeoutMillis subVersion",
-            "liteTopic subscription expressionType maxMsgBytes requestSource proxyFrowardClientId",
+            "liteTopic subscription expressionType maxMsgBytes requestSource proxyFrowardClientId bname",
             ""
         ),
         row!(
@@ -764,7 +767,7 @@ fn header_validation_matrix() {
             "consumerGroup topic queueId",
             "queueId",
             "",
-            "setZeroIfNotFound",
+            "setZeroIfNotFound bname",
             "setZeroIfNotFound"
         ),
         row!(
@@ -777,12 +780,84 @@ fn header_validation_matrix() {
             ""
         ),
         row!(
+            SearchOffsetRequestHeader,
+            "search-offset-request",
+            "topic queueId timestamp",
+            "queueId",
+            "timestamp",
+            "liteTopic boundaryType bname",
+            ""
+        ),
+        row!(
+            GetMaxOffsetRequestHeader,
+            "max-offset-request",
+            "topic queueId",
+            "queueId",
+            "",
+            "bname committed",
+            "committed"
+        ),
+        row!(
+            GetMinOffsetRequestHeader,
+            "min-offset-request",
+            "topic queueId",
+            "queueId",
+            "",
+            "bname",
+            ""
+        ),
+        row!(
+            GetEarliestMsgStoretimeRequestHeader,
+            "earliest-msg-storetime-request",
+            "topic queueId",
+            "queueId",
+            "",
+            "bname",
+            ""
+        ),
+        row!(
+            SearchOffsetResponseHeader,
+            "search-offset-response",
+            "offset",
+            "",
+            "offset",
+            "",
+            ""
+        ),
+        row!(
+            GetMaxOffsetResponseHeader,
+            "max-offset-response",
+            "offset",
+            "",
+            "offset",
+            "",
+            ""
+        ),
+        row!(
+            GetMinOffsetResponseHeader,
+            "min-offset-response",
+            "offset",
+            "",
+            "offset",
+            "",
+            ""
+        ),
+        row!(
+            GetEarliestMsgStoretimeResponseHeader,
+            "earliest-msg-storetime-response",
+            "timestamp",
+            "",
+            "timestamp",
+            "",
+            ""
+        ),
+        row!(
             UpdateConsumerOffsetRequestHeader,
             "update-offset-request",
             "consumerGroup topic queueId commitOffset",
             "queueId",
             "commitOffset",
-            "",
+            "bname",
             ""
         ),
         row!(
@@ -1099,7 +1174,9 @@ fn header_validation_matrix() {
         );
         let mut raw = baseline.clone();
         for &name in &optional {
-            let value = if i32_fields.contains(name) || i64_fields.contains(name) {
+            let value = if name == "boundaryType" {
+                "LOWER"
+            } else if i32_fields.contains(name) || i64_fields.contains(name) {
                 "0"
             } else if booleans.contains(name) {
                 "false"
@@ -1208,7 +1285,11 @@ fn header_validation_matrix() {
                 case.fixture
             );
             let absent = (case.decode)(&fields).unwrap();
-            let values: &[&str] = if i32_fields.contains(name) || i64_fields.contains(name) {
+            let values: &[&str] = if name == "boundaryType" {
+                &["LOWER", "UPPER"]
+            } else if name == "committed" {
+                &["false"]
+            } else if i32_fields.contains(name) || i64_fields.contains(name) {
                 &["0"]
             } else if booleans.contains(name) {
                 &["false", "true", ""]

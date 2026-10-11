@@ -14,7 +14,10 @@ use rocketmq_classic_core::{
 };
 use rocketmq_classic_protocol::{
     SharedValue,
-    header::PullMessageRequestHeader,
+    header::{
+        BoundaryType, GetEarliestMsgStoretimeRequestHeader, GetMaxOffsetRequestHeader,
+        GetMinOffsetRequestHeader, PullMessageRequestHeader, SearchOffsetRequestHeader,
+    },
     heartbeat::{
         ConsumeFromWhere, ConsumeType, ConsumerData, ConsumerSubscriptionDataSet, MessageModel,
         SubscriptionCodeSet, SubscriptionData, SubscriptionTagSet,
@@ -338,6 +341,111 @@ impl PullConsumer {
         .await
     }
 
+    /// Search a queue by a signed Java millisecond timestamp. A successful
+    /// response of `-1` is preserved as a valid empty-queue offset.
+    pub async fn search_offset(
+        &self,
+        queue: &MessageQueue,
+        timestamp_millis: i64,
+    ) -> Result<i64, PullConsumerError> {
+        self.search_offset_with_boundary(queue, timestamp_millis, BoundaryType::Lower)
+            .await
+    }
+
+    pub async fn search_offset_with_boundary(
+        &self,
+        input_queue: &MessageQueue,
+        timestamp_millis: i64,
+        boundary_type: BoundaryType,
+    ) -> Result<i64, PullConsumerError> {
+        let (runtime, _) = self.started_runtime().await?;
+        let queue = self.queue_with_namespace(input_queue)?;
+        let deadline = self.offset_rpc_deadline()?;
+        let (broker_name, address) = find_publish_broker(&runtime, &queue, deadline).await?;
+        let header = SearchOffsetRequestHeader {
+            topic: queue
+                .topic()
+                .ok_or(PullConsumerError::InvalidQueue)?
+                .to_owned(),
+            queue_id: queue.queue_id(),
+            timestamp: timestamp_millis,
+            boundary_type: Some(boundary_type),
+            broker_name: Some(broker_name),
+            ..SearchOffsetRequestHeader::default()
+        };
+        Ok(runtime
+            .api()
+            .search_offset(&address, &header, deadline)
+            .await?)
+    }
+
+    pub async fn get_max_offset(
+        &self,
+        input_queue: &MessageQueue,
+    ) -> Result<i64, PullConsumerError> {
+        let (runtime, _) = self.started_runtime().await?;
+        let queue = self.queue_with_namespace(input_queue)?;
+        let deadline = self.offset_rpc_deadline()?;
+        let (broker_name, address) = find_publish_broker(&runtime, &queue, deadline).await?;
+        let header = GetMaxOffsetRequestHeader {
+            topic: queue
+                .topic()
+                .ok_or(PullConsumerError::InvalidQueue)?
+                .to_owned(),
+            queue_id: queue.queue_id(),
+            committed: true,
+            broker_name: Some(broker_name),
+        };
+        Ok(runtime
+            .api()
+            .get_max_offset(&address, &header, deadline)
+            .await?)
+    }
+
+    pub async fn get_min_offset(
+        &self,
+        input_queue: &MessageQueue,
+    ) -> Result<i64, PullConsumerError> {
+        let (runtime, _) = self.started_runtime().await?;
+        let queue = self.queue_with_namespace(input_queue)?;
+        let deadline = self.offset_rpc_deadline()?;
+        let (broker_name, address) = find_publish_broker(&runtime, &queue, deadline).await?;
+        let header = GetMinOffsetRequestHeader {
+            topic: queue
+                .topic()
+                .ok_or(PullConsumerError::InvalidQueue)?
+                .to_owned(),
+            queue_id: queue.queue_id(),
+            broker_name: Some(broker_name),
+        };
+        Ok(runtime
+            .api()
+            .get_min_offset(&address, &header, deadline)
+            .await?)
+    }
+
+    pub async fn get_earliest_msg_store_time(
+        &self,
+        input_queue: &MessageQueue,
+    ) -> Result<i64, PullConsumerError> {
+        let (runtime, _) = self.started_runtime().await?;
+        let queue = self.queue_with_namespace(input_queue)?;
+        let deadline = self.offset_rpc_deadline()?;
+        let (broker_name, address) = find_publish_broker(&runtime, &queue, deadline).await?;
+        let header = GetEarliestMsgStoretimeRequestHeader {
+            topic: queue
+                .topic()
+                .ok_or(PullConsumerError::InvalidQueue)?
+                .to_owned(),
+            queue_id: queue.queue_id(),
+            broker_name: Some(broker_name),
+        };
+        Ok(runtime
+            .api()
+            .get_earliest_msg_storetime(&address, &header, deadline)
+            .await?)
+    }
+
     #[allow(clippy::too_many_arguments)]
     async fn pull_with_expression(
         &self,
@@ -581,6 +689,12 @@ impl PullConsumer {
             .ok_or(PullConsumerError::InvalidConsumerGroup)
     }
 
+    fn offset_rpc_deadline(&self) -> Result<Instant, PullConsumerError> {
+        request_deadline(i64::from(
+            self.config.client_config().mq_client_api_timeout(),
+        ))
+    }
+
     fn ensure_subscription(&self, topic: &str) {
         write_lock(&self.subscriptions)
             .entry(topic.to_owned())
@@ -604,6 +718,9 @@ struct PullConsumerRegistration {
 
 impl ConsumerRuntime for PullConsumerRegistration {
     fn heartbeat_data(&self) -> ConsumerData {
+        // Java sends mutable SubscriptionData values in a HashSet; preserve
+        // that identity/equality behavior for the heartbeat wire model.
+        #[allow(clippy::mutable_key_type)]
         let subscription_data_set = read_lock(&self.subscriptions)
             .values()
             .cloned()
@@ -753,6 +870,34 @@ async fn find_pull_broker(
         .map(|broker| (route, broker))
         .ok_or_else(|| PullConsumerError::BrokerNotFound {
             broker: broker_name.to_owned(),
+        })
+}
+
+async fn find_publish_broker(
+    runtime: &ClientRuntime,
+    queue: &MessageQueue,
+    deadline: Instant,
+) -> Result<(String, String), PullConsumerError> {
+    let topic = queue
+        .topic()
+        .filter(|topic| !topic.is_empty())
+        .ok_or(PullConsumerError::InvalidQueue)?;
+    let broker_name = queue
+        .broker_name()
+        .filter(|broker| !broker.is_empty())
+        .ok_or(PullConsumerError::InvalidQueue)?
+        .to_owned();
+    let mut route = runtime.route_snapshot()?;
+    let mut address = route.publish_address(&broker_name).map(str::to_owned);
+    if address.is_none() {
+        runtime.update_topic_route(topic, deadline).await?;
+        route = runtime.route_snapshot()?;
+        address = route.publish_address(&broker_name).map(str::to_owned);
+    }
+    address
+        .map(|address| (broker_name.clone(), address))
+        .ok_or(PullConsumerError::BrokerNotFound {
+            broker: broker_name,
         })
 }
 

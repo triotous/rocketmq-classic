@@ -17,15 +17,18 @@ use rocketmq_classic_protocol::{
         ConsumeMessageDirectlyResultRequestHeader, ConsumerSendMsgBackRequestHeader,
         EndTransactionRequestHeader, EndTransactionResponseHeader,
         GetConsumerListByGroupRequestHeader, GetConsumerStatusRequestHeader,
-        GetRouteInfoRequestHeader, LiteSubscriptionCtlRequestHeader, LockBatchMqRequestHeader,
-        NotificationRequestHeader, NotificationResponseHeader, NotifyUnsubscribeLiteRequestHeader,
-        PollingInfoRequestHeader, PollingInfoResponseHeader, PopLiteMessageRequestHeader,
-        PopLiteMessageResponseHeader, PopMessageRequestHeader, PopMessageResponseHeader,
-        PullMessageRequestHeader, PullMessageResponseHeader, QueryConsumerOffsetRequestHeader,
-        QueryConsumerOffsetResponseHeader, ReplyMessageRequestHeader, ResetOffsetRequestHeader,
-        SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
-        UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
-        UpdateConsumerOffsetRequestHeader,
+        GetEarliestMsgStoretimeRequestHeader, GetEarliestMsgStoretimeResponseHeader,
+        GetMaxOffsetRequestHeader, GetMaxOffsetResponseHeader, GetMinOffsetRequestHeader,
+        GetMinOffsetResponseHeader, GetRouteInfoRequestHeader, LiteSubscriptionCtlRequestHeader,
+        LockBatchMqRequestHeader, NotificationRequestHeader, NotificationResponseHeader,
+        NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader, PollingInfoResponseHeader,
+        PopLiteMessageRequestHeader, PopLiteMessageResponseHeader, PopMessageRequestHeader,
+        PopMessageResponseHeader, PullMessageRequestHeader, PullMessageResponseHeader,
+        QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
+        ReplyMessageRequestHeader, ResetOffsetRequestHeader, SearchOffsetRequestHeader,
+        SearchOffsetResponseHeader, SendMessageRequestHeaderV1, SendMessageRequestHeaderV2,
+        SendMessageResponseHeader, UnlockBatchMqRequestHeader, UnregisterClientRequestHeader,
+        UnregisterClientResponseHeader, UpdateConsumerOffsetRequestHeader,
     },
 };
 use rocketmq_classic_remoting::{codec::frame, command::RemotingCommand};
@@ -78,6 +81,54 @@ fn generate_p4_headers(output: &std::path::Path) {
         output,
         "typed-query-offset-response.bin",
         "header-query-offset-response",
+        0,
+    );
+    write_oracle_header::<SearchOffsetRequestHeader>(
+        output,
+        "typed-search-offset-request.bin",
+        "header-search-offset-request",
+        29,
+    );
+    write_oracle_header::<GetMaxOffsetRequestHeader>(
+        output,
+        "typed-max-offset-request.bin",
+        "header-max-offset-request",
+        30,
+    );
+    write_oracle_header::<GetMinOffsetRequestHeader>(
+        output,
+        "typed-min-offset-request.bin",
+        "header-min-offset-request",
+        31,
+    );
+    write_oracle_header::<GetEarliestMsgStoretimeRequestHeader>(
+        output,
+        "typed-earliest-msg-storetime-request.bin",
+        "header-earliest-msg-storetime-request",
+        32,
+    );
+    write_oracle_header::<SearchOffsetResponseHeader>(
+        output,
+        "typed-search-offset-response.bin",
+        "header-search-offset-response",
+        0,
+    );
+    write_oracle_header::<GetMaxOffsetResponseHeader>(
+        output,
+        "typed-max-offset-response.bin",
+        "header-max-offset-response",
+        0,
+    );
+    write_oracle_header::<GetMinOffsetResponseHeader>(
+        output,
+        "typed-min-offset-response.bin",
+        "header-min-offset-response",
+        0,
+    );
+    write_oracle_header::<GetEarliestMsgStoretimeResponseHeader>(
+        output,
+        "typed-earliest-msg-storetime-response.bin",
+        "header-earliest-msg-storetime-response",
         0,
     );
     write_oracle_header::<UnregisterClientRequestHeader>(
@@ -260,6 +311,7 @@ fn generate_p4_headers(output: &std::path::Path) {
             topic: "orders".into(),
             queue_id: 1,
             set_zero_if_not_found: None,
+            broker_name: None,
         },
     );
     write_typed(

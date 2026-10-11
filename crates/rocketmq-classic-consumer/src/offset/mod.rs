@@ -148,7 +148,7 @@ impl OffsetTable {
         entries
             .iter()
             .filter(|(queue, _)| topic.is_none_or(|topic| queue.topic() == Some(topic)))
-            .filter_map(|(queue, offset)| Some((queue.clone(), Self::lock_offset(offset).value)))
+            .map(|(queue, offset)| (queue.clone(), Self::lock_offset(offset).value))
             .collect()
     }
 

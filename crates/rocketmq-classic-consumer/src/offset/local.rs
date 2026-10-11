@@ -615,7 +615,7 @@ fn persist_snapshot(
             after_step(PersistStep::BackupTempSynced)?;
             replace_file(&backup_temp_path, &backup)?;
             std::mem::forget(backup_guard);
-            sync_directory(&parent)?;
+            sync_directory(parent)?;
             after_step(PersistStep::BackupInstalled)?;
         }
     }

@@ -8,19 +8,22 @@ pub use crate::body::ConsumerListByGroupResponseBody as GetConsumerListByGroupRe
 
 mod basic;
 pub use basic::{
-    AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader, CheckTransactionStateRequestHeader,
-    CheckTransactionStateResponseHeader, ConsumeMessageDirectlyResultRequestHeader,
-    ConsumerSendMsgBackRequestHeader, EndTransactionRequestHeader, EndTransactionResponseHeader,
-    GetConsumerListByGroupRequestHeader, GetConsumerStatusRequestHeader, GetRouteInfoRequestHeader,
+    AckMessageRequestHeader, BoundaryType, ChangeInvisibleTimeRequestHeader,
+    CheckTransactionStateRequestHeader, CheckTransactionStateResponseHeader,
+    ConsumeMessageDirectlyResultRequestHeader, ConsumerSendMsgBackRequestHeader,
+    EndTransactionRequestHeader, EndTransactionResponseHeader, GetConsumerListByGroupRequestHeader,
+    GetConsumerStatusRequestHeader, GetEarliestMsgStoretimeRequestHeader,
+    GetEarliestMsgStoretimeResponseHeader, GetMaxOffsetRequestHeader, GetMaxOffsetResponseHeader,
+    GetMinOffsetRequestHeader, GetMinOffsetResponseHeader, GetRouteInfoRequestHeader,
     LiteSubscriptionCtlRequestHeader, LockBatchMqRequestHeader, NotificationRequestHeader,
     NotificationResponseHeader, NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader,
     PollingInfoResponseHeader, PopLiteMessageRequestHeader, PopLiteMessageResponseHeader,
     PopMessageRequestHeader, PopMessageResponseHeader, PullMessageRequestHeader,
     PullMessageResponseHeader, QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
-    ReplyMessageRequestHeader, ResetOffsetRequestHeader, SendMessageRequestHeaderV1,
-    SendMessageRequestHeaderV2, SendMessageResponseHeader, UnlockBatchMqRequestHeader,
-    UnregisterClientRequestHeader, UnregisterClientResponseHeader,
-    UpdateConsumerOffsetRequestHeader,
+    ReplyMessageRequestHeader, ResetOffsetRequestHeader, SearchOffsetRequestHeader,
+    SearchOffsetResponseHeader, SendMessageRequestHeaderV1, SendMessageRequestHeaderV2,
+    SendMessageResponseHeader, UnlockBatchMqRequestHeader, UnregisterClientRequestHeader,
+    UnregisterClientResponseHeader, UpdateConsumerOffsetRequestHeader,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

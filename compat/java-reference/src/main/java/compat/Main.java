@@ -22,6 +22,14 @@ import org.apache.rocketmq.remoting.protocol.header.PullMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.PullMessageResponseHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryConsumerOffsetRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryConsumerOffsetResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.SearchOffsetRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.GetMaxOffsetRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.GetMinOffsetRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.GetEarliestMsgStoretimeRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.SearchOffsetResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.GetMaxOffsetResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.GetMinOffsetResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.GetEarliestMsgStoretimeResponseHeader;
 import org.apache.rocketmq.remoting.protocol.header.SendMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.SendMessageRequestHeaderV2;
 import org.apache.rocketmq.remoting.protocol.header.SendMessageResponseHeader;
@@ -65,6 +73,7 @@ import org.apache.rocketmq.remoting.protocol.body.LockBatchResponseBody;
 import org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody;
 import org.apache.rocketmq.remoting.protocol.body.CMResult;
 import org.apache.rocketmq.common.message.MessageRequestMode;
+import org.apache.rocketmq.common.BoundaryType;
 import org.apache.rocketmq.common.lite.LiteSubscriptionDTO;
 import org.apache.rocketmq.common.lite.LiteSubscriptionAction;
 import org.apache.rocketmq.common.lite.OffsetOption;
@@ -319,6 +328,39 @@ public final class Main {
         update.setQueueId(1);
         update.setCommitOffset(9L);
         writeTypedHeaderFixture(output, "update-offset-request", 15, update);
+
+        SearchOffsetRequestHeader searchOffset = new SearchOffsetRequestHeader();
+        searchOffset.setTopic("orders"); searchOffset.setLiteTopic("lite-orders");
+        searchOffset.setQueueId(1); searchOffset.setTimestamp(1_712_345_678_901L);
+        searchOffset.setBoundaryType(BoundaryType.UPPER); searchOffset.setBrokerName("broker-a");
+        writeTypedHeaderFixture(output, "search-offset-request", 29, searchOffset);
+        GetMaxOffsetRequestHeader maxOffset = new GetMaxOffsetRequestHeader();
+        maxOffset.setTopic("orders"); maxOffset.setQueueId(1); maxOffset.setCommitted(false);
+        maxOffset.setBrokerName("broker-a");
+        writeTypedHeaderFixture(output, "max-offset-request", 30, maxOffset);
+        GetMinOffsetRequestHeader minOffset = new GetMinOffsetRequestHeader();
+        minOffset.setTopic("orders"); minOffset.setQueueId(1); minOffset.setBrokerName("broker-a");
+        writeTypedHeaderFixture(output, "min-offset-request", 31, minOffset);
+        GetEarliestMsgStoretimeRequestHeader earliestStoretime = new GetEarliestMsgStoretimeRequestHeader();
+        earliestStoretime.setTopic("orders"); earliestStoretime.setQueueId(1);
+        earliestStoretime.setBrokerName("broker-a");
+        writeTypedHeaderFixture(output, "earliest-msg-storetime-request", 32, earliestStoretime);
+        SearchOffsetResponseHeader searchResponse = new SearchOffsetResponseHeader();
+        searchResponse.setOffset(9L);
+        writeTypedHeaderFixture(output, "search-offset-response",
+            RemotingCommand.createResponseCommandWithHeader(0, searchResponse));
+        GetMaxOffsetResponseHeader maxResponse = new GetMaxOffsetResponseHeader();
+        maxResponse.setOffset(100L);
+        writeTypedHeaderFixture(output, "max-offset-response",
+            RemotingCommand.createResponseCommandWithHeader(0, maxResponse));
+        GetMinOffsetResponseHeader minResponse = new GetMinOffsetResponseHeader();
+        minResponse.setOffset(0L);
+        writeTypedHeaderFixture(output, "min-offset-response",
+            RemotingCommand.createResponseCommandWithHeader(0, minResponse));
+        GetEarliestMsgStoretimeResponseHeader earliestResponse = new GetEarliestMsgStoretimeResponseHeader();
+        earliestResponse.setTimestamp(-1L);
+        writeTypedHeaderFixture(output, "earliest-msg-storetime-response",
+            RemotingCommand.createResponseCommandWithHeader(0, earliestResponse));
 
         SendMessageResponseHeader sendResponse = new SendMessageResponseHeader();
         sendResponse.setMsgId("msg-1");
@@ -633,6 +675,14 @@ public final class Main {
             assertAllExtFields(byName, "typed-ack.bin", 200051);
             assertAllExtFields(byName, "typed-change-invisible.bin", 200053);
             assertAllExtFields(byName, "typed-query-offset-response.bin", 0);
+            assertAllExtFields(byName, "typed-search-offset-request.bin", 29);
+            assertAllExtFields(byName, "typed-max-offset-request.bin", 30);
+            assertAllExtFields(byName, "typed-min-offset-request.bin", 31);
+            assertAllExtFields(byName, "typed-earliest-msg-storetime-request.bin", 32);
+            assertAllExtFields(byName, "typed-search-offset-response.bin", 0);
+            assertAllExtFields(byName, "typed-max-offset-response.bin", 0);
+            assertAllExtFields(byName, "typed-min-offset-response.bin", 0);
+            assertAllExtFields(byName, "typed-earliest-msg-storetime-response.bin", 0);
             assertAllExtFields(byName, "typed-unregister-request.bin", 35);
             assertAllExtFields(byName, "typed-lock-batch-request.bin", 41);
             assertAllExtFields(byName, "typed-unlock-batch-request.bin", 42);
@@ -654,6 +704,10 @@ public final class Main {
             assertExtField(byName, "typed-pull.bin", 11, "consumerGroup", "workers");
             assertExtField(byName, "typed-query-offset.bin", 14, "consumerGroup", "workers");
             assertExtField(byName, "typed-update-offset.bin", 15, "commitOffset", "9");
+            assertExtField(byName, "typed-search-offset-request.bin", 29, "boundaryType", "UPPER");
+            assertExtField(byName, "typed-search-offset-request.bin", 29, "timestamp", "1712345678901");
+            assertExtField(byName, "typed-max-offset-request.bin", 30, "committed", "false");
+            assertExtField(byName, "typed-earliest-msg-storetime-response.bin", 0, "timestamp", "-1");
             assertExtField(byName, "typed-end-transaction.bin", 37, "producerGroup", "producers");
             assertExtField(byName, "typed-check-transaction.bin", 39, "commitLogOffset", "9");
             assertExtField(byName, "typed-check-transaction-response.bin", 0, "commitOrRollback", "8");
@@ -720,6 +774,14 @@ public final class Main {
             case "typed-ack.bin": fixtureStem = "header-ack-request"; break;
             case "typed-change-invisible.bin": fixtureStem = "header-change-invisible-request"; break;
             case "typed-query-offset-response.bin": fixtureStem = "header-query-offset-response"; break;
+            case "typed-search-offset-request.bin": fixtureStem = "header-search-offset-request"; break;
+            case "typed-max-offset-request.bin": fixtureStem = "header-max-offset-request"; break;
+            case "typed-min-offset-request.bin": fixtureStem = "header-min-offset-request"; break;
+            case "typed-earliest-msg-storetime-request.bin": fixtureStem = "header-earliest-msg-storetime-request"; break;
+            case "typed-search-offset-response.bin": fixtureStem = "header-search-offset-response"; break;
+            case "typed-max-offset-response.bin": fixtureStem = "header-max-offset-response"; break;
+            case "typed-min-offset-response.bin": fixtureStem = "header-min-offset-response"; break;
+            case "typed-earliest-msg-storetime-response.bin": fixtureStem = "header-earliest-msg-storetime-response"; break;
             case "typed-unregister-request.bin": fixtureStem = "header-unregister-request"; break;
             case "typed-lock-batch-request.bin": fixtureStem = "header-lock-batch-request"; break;
             case "typed-unlock-batch-request.bin": fixtureStem = "header-unlock-batch-request"; break;

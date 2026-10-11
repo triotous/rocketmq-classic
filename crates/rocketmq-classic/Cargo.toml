@@ -16,3 +16,7 @@ tokio.workspace = true
 [[example]]
 name = "producer"
 path = "../../examples/producer.rs"
+
+[[example]]
+name = "pull_consumer"
+path = "../../examples/pull_consumer.rs"

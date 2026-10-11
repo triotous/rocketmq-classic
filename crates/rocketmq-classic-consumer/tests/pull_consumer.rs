@@ -14,7 +14,7 @@ use rocketmq_classic_consumer::{
 };
 use rocketmq_classic_protocol::{
     codes::{request, response},
-    header::HeaderMap,
+    header::{BoundaryType, HeaderMap},
 };
 use rocketmq_classic_remoting::{
     RemotingCommand,
@@ -417,7 +417,10 @@ async fn pull_routes_per_queue_returns_decoded_messages_and_only_explicitly_pers
     assert!(store.single_persists.lock().unwrap().is_empty());
     assert!(store.all_persists.lock().unwrap().is_empty());
 
-    consumer.update_consume_offset(&queue0, 101).await.unwrap();
+    consumer
+        .update_consume_offset(&queue0, found.result.next_begin_offset)
+        .await
+        .unwrap();
     assert_eq!(
         consumer.fetch_consume_offset(&queue0, false).await.unwrap(),
         101
@@ -437,6 +440,146 @@ async fn pull_routes_per_queue_returns_decoded_messages_and_only_explicitly_pers
         .unwrap()
         .unwrap();
     timeout(Duration::from_secs(3), slave_peer)
+        .await
+        .unwrap()
+        .unwrap();
+    consumer.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn boundary_lookups_route_to_master_and_preserve_signed_success_values() {
+    let master_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let master_address = master_listener.local_addr().unwrap().to_string();
+    let slave_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let slave_address = slave_listener.local_addr().unwrap().to_string();
+    let nameserver_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let nameserver_address = nameserver_listener.local_addr().unwrap().to_string();
+    let route = route(&master_address, &slave_address);
+
+    let nameserver_peer = tokio::spawn(async move {
+        let (mut stream, _) = nameserver_listener.accept().await.unwrap();
+        let command = read_command(&mut stream).await;
+        assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
+        assert_eq!(
+            command.ext_fields.as_ref().unwrap().get("topic"),
+            Some(&"orders".to_owned())
+        );
+        let mut reply = RemotingCommand {
+            code: response::SUCCESS,
+            opaque: command.opaque,
+            body: Some(route),
+            ..Default::default()
+        };
+        reply.mark_response();
+        stream
+            .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+            .await
+            .unwrap();
+    });
+
+    let master_peer = tokio::spawn(async move {
+        let mut stream = None;
+        let expected_codes = [
+            request::SEARCH_OFFSET_BY_TIMESTAMP,
+            request::GET_MAX_OFFSET,
+            request::GET_MIN_OFFSET,
+            request::GET_EARLIEST_MSG_STORETIME,
+        ];
+        for (index, expected_code) in expected_codes.into_iter().enumerate() {
+            let command = loop {
+                let command = read_or_accept(&master_listener, &mut stream).await;
+                if command.code == request::HEART_BEAT {
+                    respond_empty(stream.as_mut().unwrap(), &command, response::SUCCESS).await;
+                    continue;
+                }
+                break command;
+            };
+            assert_eq!(command.code, expected_code);
+            let fields = command.ext_fields.as_ref().unwrap();
+            assert_eq!(fields.get("topic"), Some(&"orders".to_owned()));
+            assert_eq!(fields.get("queueId"), Some(&"2".to_owned()));
+            assert_eq!(fields.get("bname"), Some(&"broker".to_owned()));
+            match expected_code {
+                request::SEARCH_OFFSET_BY_TIMESTAMP => {
+                    assert_eq!(fields.get("timestamp"), Some(&"-7".to_owned()));
+                    assert_eq!(fields.get("boundaryType"), Some(&"UPPER".to_owned()));
+                }
+                request::GET_MAX_OFFSET => {
+                    assert_eq!(fields.get("committed"), Some(&"true".to_owned()));
+                }
+                request::GET_MIN_OFFSET | request::GET_EARLIEST_MSG_STORETIME => {}
+                _ => unreachable!(),
+            }
+            let response_fields = match index {
+                0 | 1 => HeaderMap::from([("offset".into(), "-1".into())]),
+                2 => HeaderMap::from([("offset".into(), "3".into())]),
+                3 => HeaderMap::from([("timestamp".into(), "-1".into())]),
+                _ => unreachable!(),
+            };
+            let mut reply = RemotingCommand {
+                code: response::SUCCESS,
+                opaque: command.opaque,
+                ext_fields: Some(response_fields),
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .as_mut()
+                .unwrap()
+                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .await
+                .unwrap();
+        }
+    });
+
+    let unique_id = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos()
+        .to_string();
+    let mut config = PullConsumerConfig::new("boundary-group").unwrap();
+    config
+        .client_config_mut()
+        .set_namesrv_addr(Some(nameserver_address));
+    config
+        .client_config_mut()
+        .set_instance_name(Some(format!("pull-boundary-test-{unique_id}")));
+    config
+        .client_config_mut()
+        .set_poll_name_server_interval(60_000);
+    config
+        .client_config_mut()
+        .set_heartbeat_broker_interval(60_000);
+    config
+        .client_config_mut()
+        .set_persist_consumer_offset_interval(60_000);
+    let consumer = Arc::new(PullConsumer::new(config));
+    consumer
+        .set_offset_store(Some(Arc::new(RecordingOffsetStore::default())))
+        .await
+        .unwrap();
+    consumer.start().await.unwrap();
+
+    let queue = MessageQueue::new("orders", "broker", 2);
+    assert_eq!(
+        consumer
+            .search_offset_with_boundary(&queue, -7, BoundaryType::Upper)
+            .await
+            .unwrap(),
+        -1
+    );
+    assert_eq!(consumer.get_max_offset(&queue).await.unwrap(), -1);
+    assert_eq!(consumer.get_min_offset(&queue).await.unwrap(), 3);
+    assert_eq!(
+        consumer.get_earliest_msg_store_time(&queue).await.unwrap(),
+        -1
+    );
+
+    timeout(Duration::from_secs(3), nameserver_peer)
+        .await
+        .unwrap()
+        .unwrap();
+    timeout(Duration::from_secs(3), master_peer)
         .await
         .unwrap()
         .unwrap();

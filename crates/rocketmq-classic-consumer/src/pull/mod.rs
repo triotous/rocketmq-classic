@@ -7,3 +7,4 @@ pub use result::{
     FilterMessageContext, FilterMessageHook, ProcessPullError, ProcessedPullResult, PullAPIWrapper,
     build_class_filter_subscription_data,
 };
+pub use rocketmq_classic_protocol::header::BoundaryType;
