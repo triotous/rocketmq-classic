@@ -25,3 +25,11 @@ P10-01 / P10-02 implementation
 - Checks passed: `cargo fmt --check`; `cargo test -p rocketmq-classic-consumer --locked` (36 unit, 12 integration, 0 doc tests failed); `cargo clippy -p rocketmq-classic-consumer --all-targets --all-features --locked -- -D warnings`.
 - Commits: `766153f7 feat(consumer): add push config and startup lifecycle`; `7e406250 test(consumer): verify Java push config boundaries`.
 - Matrix status: configuration and checkConfig rows UNIT_VERIFIED; subscription row UNIT_VERIFIED; startup row and P10-V04 PARTIAL. P10-V01/V02/U01 remain TODO; P10-V03 remains PENDING_PHASE_19.
+
+P10-03 ProcessQueue
+- Added ordered queue-offset storage with explicit cached count/bytes, queued/in-flight entry state, immutable assignment generation, dropped-state checks, last-pull/consume timestamps and lock metadata.
+- Duplicate ready messages replace the cached message with an exact body-byte delta; duplicates for in-flight offsets do not replace listener-owned content or add count. Completion removes terminal offsets and requeues the rest. Commit candidates stop at the lowest unresolved message and advance to highest-observed-plus-one only when drained.
+- Added four P10-V01 unit tests for duplicate/count/size accounting, gaps, out-of-order batches, partial requeue, in-flight accounting and stale-generation rejection. Oracle source hashes are recorded in the tests and ADR-0083. The requested ADR-0003 filename was already occupied by an unrelated accepted decision; recorded this decision under ADR-0083 without overwriting it.
+- Checks passed: `cargo fmt --check`; `cargo test -p rocketmq-classic-consumer --locked` (40 unit, 12 integration, 0 doc tests failed); `cargo clippy -p rocketmq-classic-consumer --all-targets --all-features --locked -- -D warnings`.
+- Commit: `94e7c1eb feat(consumer): add generation-safe process queue`.
+- Matrix status: ProcessQueue and P10-V01 UNIT_VERIFIED. P10-V02/U01 remain TODO; P10-V04 PARTIAL; P10-V03 remains PENDING_PHASE_19.

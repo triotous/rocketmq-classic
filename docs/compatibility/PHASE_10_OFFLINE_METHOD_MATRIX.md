@@ -21,7 +21,7 @@ POP; Phase 16 owns tracing and public consume hooks.
 | `PullRequest` and `PullMessageService.executePullRequestImmediately/Later`; `DefaultMQPushConsumerImpl.executePullRequestImmediately/Later` | `push::pull_service::PullRequest` and bounded owner scheduler; P10-V02 paused-time task-bound/delay/cancel tests | TODO |
 | `DefaultMQPushConsumerImpl.pullMessage`: dropped/pause/state checks; queue count/size/span flow control; locked-queue gate; subscription and pull header construction; clustering commit offset; async response callback | `push::pull_service`; P10-V02 scripted pull/flow-control tests | TODO |
 | `DefaultMQPushConsumerImpl` pull callback: FOUND insert/consume/reschedule; NO_NEW/NO_MATCHED next-offset and safe tag-offset correction; OFFSET_ILLEGAL drop/freeze/persist/remove/rebalance; Broker flow-control vs ordinary failure delays; `correctTagsOffset` | `push::pull_service` and `ProcessQueue`; P10-V01/V02 scripted outcome tests | TODO |
-| `ProcessQueue.putMessage/getMaxSpan/takeMessages/removeMessage/makeMessageToConsumeAgain/setDropped`; `msgCount`, `msgSize`, `queueOffsetMax`, `lastPullTimestamp`, `lastConsumeTimestamp` | `process_queue::ProcessQueue`; P10-V01 duplicate/gap/out-of-order/drop-generation checks | TODO |
+| `ProcessQueue.putMessage/getMaxSpan/takeMessages/removeMessage/makeMessageToConsumeAgain/setDropped`; `msgCount`, `msgSize`, `queueOffsetMax`, `lastPullTimestamp`, `lastConsumeTimestamp` | `process_queue::ProcessQueue`; P10-V01 duplicate/gap/out-of-order/drop-generation checks; [ADR-0083](../architecture/ADR-0083-process-queue-offset-ownership.md) | UNIT_VERIFIED — local ordered ownership, exact accounting and generation-safe completion pass |
 | `ConsumeMessageConcurrentlyService.submitConsumeRequest/processConsumeResult/ConsumeRequest.run` | `consume::concurrent`; P10-U01 listener success/partial/failure, null/panic, retry and DLQ-decision checks | TODO |
 | `ConsumeConcurrentlyContext.ackIndex/delayLevelWhenNextConsume`; `CONSUME_SUCCESS` clamps ack index; `RECONSUME_LATER` resets it to `-1`; BROADCASTING drops failures | `consume::concurrent`; P10-U01 per-model acknowledgement tests | TODO |
 | `ConsumeMessageConcurrentlyService.sendMessageBack`; `DefaultMQPushConsumerImpl.sendMessageBack/sendMessageBackAsNormalMessage` | `consume::concurrent` and typed `consumer_send_message_back`; P10-U01 scripted Broker acceptance/failure and fallback-property tests | TODO |
@@ -65,7 +65,7 @@ is minutes; pull interval and shutdown wait are milliseconds.
 
 | Case | Check required here | Execution boundary | Status |
 | --- | --- | --- | --- |
-| P10-V01 | Ordered queue ownership, duplicate accounting, gaps, out-of-order completion, stale generation | Local unit tests | TODO |
+| P10-V01 | Ordered queue ownership, duplicate accounting, gaps, out-of-order completion, stale generation | Local unit tests | UNIT_VERIFIED |
 | P10-V02 | Bounded scheduler, pause/flow-control thresholds, delayed retry, dropped generation, send-back failure retention | Local paused-time/scripted tests | TODO |
 | P10-V04 | Startup rollback at every acquisition step; slow callback shutdown preserves unresolved work and joins owned tasks | Local fault-injection tests | PARTIAL — startup-stage rollback and idle-worker shutdown pass; slow callback/unresolved-work behavior is pending |
 | P10-U01 | Private fixed assignment with Java-produced message fixtures and scripted send-back results for concurrent listener/retry decisions | Local unit tests; no production fixed-assignment API | TODO |
