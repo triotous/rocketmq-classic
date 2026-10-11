@@ -48,3 +48,21 @@ P10-05 bounded Push pull pipeline
 - Added tests for pull outcomes, safe tag-offset correction, stale responses, OFFSET_ILLEGAL fencing and RPC retry-delay classification. P10-V03 remains `PENDING_PHASE_19`; real queue allocation remains owned by Phase 11 and consume submission is P10-06.
 - Checks passed: `cargo fmt --check`; `cargo test -p rocketmq-classic-consumer --offline` (50 unit, 12 integration, 0 doc tests failed); `cargo clippy -p rocketmq-classic-consumer --all-targets --all-features --offline -- -D warnings`.
 - Updated the Phase 10 offline method matrix and top-level compatibility rows. Pull outcome and RPC path are PARTIAL pending bounded consume submission/real assignment; P10-V02 remains PARTIAL pending send-back retention; P10-V04 remains PARTIAL pending slow-listener shutdown.
+
+P10-06 / P10-07 concurrent consume and retry
+- Added bounded consume submission, concurrent listener execution with timeout/panic isolation, Java ackIndex handling, clustering send-back, retry-topic fallback and local redelivery when both retry paths fail. Broadcasting failures are discarded under Java semantics.
+- Added fixture-backed success, partial, missing-status, panic, retry fallback/failure, broadcasting and private fixed-assignment coverage. The fixed assignment stays crate-private; retry fallback checks namespace composition and Java retry metadata.
+- Pinned Java 5.5.1 inspection confirmed send-back uses the VIP channel, a fixed 5000 ms timeout, and the current message ID. Rust now matches these details. The Java reference checkout, including its pre-existing untracked file, was not modified.
+
+P10-09 shutdown
+- Shutdown stops pull/consume submission, drops assigned queue generations, cancels their scheduled pulls, waits within the configured budget, aborts a slow listener without committing it, persists offsets and joins owned tasks.
+- The slow-listener test verifies cached/in-flight messages and the persisted offset remain unresolved while scheduler, RPC and consume worker counts return to zero.
+
+Verification
+- `cargo fmt -p rocketmq-classic-consumer -- --check` passed.
+- `cargo check -p rocketmq-classic-consumer --all-targets --offline` passed.
+- `cargo test -p rocketmq-classic-consumer --all-targets --offline` passed: 59 unit tests and 12 integration tests.
+- `cargo clippy -p rocketmq-classic-consumer --all-targets --offline -- -D warnings` passed.
+- Updated the Phase 10 offline method matrix and Java compatibility rows. P10-V03 remains PENDING_PHASE_19; no live Broker/DLQ result is claimed.
+- Implementation commits: `229bdfb2 feat(consumer): implement concurrent consume retries`; `d7ca6032 fix(consumer): quiesce push shutdown safely`.
+- Documentation and this execution-log update are pending their own commit.
