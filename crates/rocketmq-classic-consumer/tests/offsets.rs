@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, sync::Arc, time::Duration};
 use bytes::BytesMut;
 use rocketmq_classic_common::message::MessageQueue;
 use rocketmq_classic_consumer::offset::{
-    OffsetRead, OffsetStore, ReadOffsetType, RemoteBrokerOffsetStore,
+    LocalFileOffsetStore, OffsetRead, OffsetStore, ReadOffsetType, RemoteBrokerOffsetStore,
 };
 use rocketmq_classic_core::{config::ClientConfig, runtime::ClientRuntimeManager};
 use rocketmq_classic_protocol::{
@@ -260,4 +260,53 @@ async fn failed_persistence_keeps_the_in_memory_offset_for_retry() {
         OffsetRead::NotFound
     );
     runtime.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn local_store_persists_only_selected_queues_and_restores_after_restart() {
+    let root = std::env::temp_dir().join(format!(
+        "rocketmq-offset-integration-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let orders = MessageQueue::new("orders", "broker", 0);
+    let events = MessageQueue::new("events", "broker", 1);
+    let store = LocalFileOffsetStore::with_storage_dir(&root, "client", "group").unwrap();
+    store.update_offset(&orders, 51, false);
+    store.update_offset(&events, 92, false);
+    store
+        .persist_all(std::slice::from_ref(&orders))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        store
+            .read_offset(&events, ReadOffsetType::ReadFromMemory)
+            .await
+            .unwrap(),
+        OffsetRead::Found(92)
+    );
+    drop(store);
+
+    let restarted = LocalFileOffsetStore::with_storage_dir(&root, "client", "group").unwrap();
+    restarted.load().await.unwrap();
+    assert_eq!(
+        restarted
+            .read_offset(&orders, ReadOffsetType::ReadFromMemory)
+            .await
+            .unwrap(),
+        OffsetRead::Found(51)
+    );
+    assert_eq!(
+        restarted
+            .read_offset(&events, ReadOffsetType::ReadFromMemory)
+            .await
+            .unwrap(),
+        OffsetRead::NotFound
+    );
+    drop(restarted);
+    std::fs::remove_dir_all(root).unwrap();
 }

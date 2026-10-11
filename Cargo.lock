@@ -1019,6 +1019,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "bytes",
+ "libc",
  "rand",
  "rocketmq-classic-common",
  "rocketmq-classic-core",
@@ -1027,6 +1028,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

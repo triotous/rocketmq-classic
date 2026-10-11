@@ -7,6 +7,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+libc.workspace = true
 rand.workspace = true
 rocketmq-classic-common = { path = "../rocketmq-classic-common" }
 rocketmq-classic-core = { path = "../rocketmq-classic-core" }
@@ -14,6 +15,9 @@ rocketmq-classic-protocol = { path = "../rocketmq-classic-protocol" }
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
 
 [dev-dependencies]
 base64.workspace = true

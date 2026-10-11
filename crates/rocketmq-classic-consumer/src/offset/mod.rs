@@ -5,8 +5,10 @@ use std::{
     sync::{Arc, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
+mod local;
 mod remote;
 
+pub use local::LocalFileOffsetStore;
 pub use remote::RemoteBrokerOffsetStore;
 
 use rocketmq_classic_common::message::MessageQueue;
