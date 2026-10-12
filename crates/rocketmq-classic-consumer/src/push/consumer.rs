@@ -1916,24 +1916,24 @@ impl PushConsumer {
             }
 
             if self.config.client_rebalance() || self.consume_orderly.load(Ordering::Acquire) {
-                // RebalanceImpl queries membership before checking route data.
-                // A missing route notifies the queue listener with empty sets
-                // but leaves the old process-queue assignment untouched.
-                let consumer_ids = self
-                    .find_consumer_id_list_for_rebalance(&context.runtime, topic, &consumer_group)
-                    .await;
-                let Some(queue_snapshot) = topic_queues.get(topic) else {
+                // Java RebalanceImpl checks the local route table before it
+                // queries membership. A missing or empty route notifies with
+                // empty sets and leaves the previous assignment untouched.
+                let Some(queue_snapshot) =
+                    topic_queues.get(topic).filter(|queues| !queues.is_empty())
+                else {
                     if !topic.starts_with("%RETRY%") {
                         missing_route_notifications.push(topic.clone());
                     }
                     balanced = false;
                     continue;
                 };
+                let consumer_ids = self
+                    .find_consumer_id_list_for_rebalance(&context.runtime, topic, &consumer_group)
+                    .await;
                 let mut all_queues = queue_snapshot.iter().cloned().collect::<Vec<_>>();
                 all_queues.sort();
                 let all_queue_set = all_queues.iter().cloned().collect::<HashSet<_>>();
-                // An available empty route is distinct from a missing route:
-                // Java still calls the allocator with the empty queue list.
                 let consumer_ids = match consumer_ids {
                     Ok(Some(consumer_ids)) if !consumer_ids.is_empty() => consumer_ids,
                     Ok(Some(_)) | Ok(None) => {
@@ -2006,6 +2006,7 @@ impl PushConsumer {
                         3_000,
                     )
                     .await;
+                #[allow(clippy::mutable_key_type)]
                 let assignment_set = match result {
                     Ok(Some(assignment_set)) => assignment_set,
                     Ok(None) => {
@@ -3086,20 +3087,23 @@ mod tests {
         consumer.paused.store(true, Ordering::Release);
 
         assert!(consumer.rebalance_service.rebalance(&consumer).await);
-        let queues = read_lock(&consumer.process_queues);
-        assert_eq!(queues.len(), 2);
-        assert!(queues.contains_key(&first) && queues.contains_key(&second));
-        drop(queues);
+        {
+            let queues = read_lock(&consumer.process_queues);
+            assert_eq!(queues.len(), 2);
+            assert!(queues.contains_key(&first) && queues.contains_key(&second));
+        }
         assert_eq!(store.values.lock().unwrap().get(&first), Some(&17));
         assert_eq!(store.values.lock().unwrap().get(&second), Some(&29));
-        let changes = changes.lock().unwrap();
-        assert_eq!(changes.len(), 1);
-        assert_eq!(changes[0].0, "orders");
-        assert_eq!(
-            changes[0].1,
-            Some(HashSet::from([first.clone(), second.clone()]))
-        );
-        assert_eq!(changes[0].2, HashSet::from([first, second]));
+        {
+            let changes = changes.lock().unwrap();
+            assert_eq!(changes.len(), 1);
+            assert_eq!(changes[0].0, "orders");
+            assert_eq!(
+                changes[0].1,
+                Some(HashSet::from([first.clone(), second.clone()]))
+            );
+            assert_eq!(changes[0].2, HashSet::from([first, second]));
+        }
         consumer.shutdown().await.unwrap();
     }
 
@@ -3156,15 +3160,83 @@ mod tests {
                 .get("orders")
                 .unwrap()
                 .len(),
-            0,
-            "membership lookup runs before handling missing route data"
+            1,
+            "missing route data is handled before membership lookup"
         );
-        let changes = changes.lock().unwrap();
-        assert_eq!(changes.len(), 1);
-        assert_eq!(changes[0].0, "orders");
-        assert_eq!(changes[0].1, Some(HashSet::new()));
-        assert!(changes[0].2.is_empty());
-        drop(changes);
+        {
+            let changes = changes.lock().unwrap();
+            assert_eq!(changes.len(), 1);
+            assert_eq!(changes[0].0, "orders");
+            assert_eq!(changes[0].1, Some(HashSet::new()));
+            assert!(changes[0].2.is_empty());
+        }
+        consumer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn empty_clustering_route_notifies_without_querying_membership_or_dropping_assignment() {
+        let changes = Arc::new(Mutex::new(Vec::new()));
+        let recorded_changes = changes.clone();
+        let queue_listener: MessageQueueListener = Arc::new(move |topic, all, assigned| {
+            recorded_changes.lock().unwrap().push((
+                topic.to_owned(),
+                all.cloned(),
+                assigned.clone(),
+            ));
+        });
+        let mut config = PushConsumerConfig::new("rebalance-route-empty").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        config.set_message_queue_listener(Some(queue_listener));
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let store = Arc::new(RecordingOffsetStore::default());
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 37));
+        store.update_offset(&queue, 45, false);
+        write_lock(&consumer.subscriptions).insert(
+            "orders".to_owned(),
+            SubscriptionData::new(Some("orders".to_owned()), Some("*".to_owned())),
+        );
+        write_lock(&consumer.topic_queues).insert("orders".to_owned(), BTreeSet::new());
+        write_lock(&consumer.process_queues).insert(queue.clone(), process_queue.clone());
+        let _runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            store.clone(),
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+        script_rebalance_membership(&consumer, "orders", [Some(vec!["peer-a".to_owned()])]);
+        consumer.paused.store(true, Ordering::Release);
+
+        assert!(!consumer.rebalance_service.rebalance(&consumer).await);
+        assert!(
+            read_lock(&consumer.process_queues)
+                .get(&queue)
+                .is_some_and(|current| Arc::ptr_eq(current, &process_queue))
+        );
+        assert!(!process_queue.snapshot(37).unwrap().dropped);
+        assert_eq!(store.values.lock().unwrap().get(&queue), Some(&45));
+        assert_eq!(
+            consumer
+                .rebalance_membership
+                .lock()
+                .unwrap()
+                .get("orders")
+                .unwrap()
+                .len(),
+            1,
+            "an empty route does not query membership"
+        );
+        {
+            let changes = changes.lock().unwrap();
+            assert_eq!(changes.len(), 1);
+            assert_eq!(changes[0].0, "orders");
+            assert_eq!(changes[0].1, Some(HashSet::new()));
+            assert!(changes[0].2.is_empty());
+        }
         consumer.shutdown().await.unwrap();
     }
 
@@ -3598,7 +3670,7 @@ mod tests {
                 .get(&queue)
                 .is_some_and(|current| Arc::ptr_eq(current, &process_queue))
         );
-        assert_eq!(process_queue.snapshot(44).unwrap().dropped, true);
+        assert!(process_queue.snapshot(44).unwrap().dropped);
         assert_eq!(store.values.lock().unwrap().get(&queue), Some(&81));
 
         store.set_persist_failure(false);
