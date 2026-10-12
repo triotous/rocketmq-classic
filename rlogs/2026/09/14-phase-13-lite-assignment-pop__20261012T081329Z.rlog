@@ -30,3 +30,10 @@ P13-01 Java oracle baseline — 2026-10-12:
 - `cargo test -p rocketmq-classic-consumer --test lite_pop --locked` — PASS (2 tests).
 - `cargo fmt --all -- --check` and `git diff --check` — PASS.
 - No live Broker, Docker cluster or changes to the Java checkout were made.
+
+Phase 13 continuation — 2026-10-12 08:33 UTC:
+
+- Added `consumer::PopReceipt` using the pinned Java `ExtraInfoUtil` field order. It keeps the raw token, validates long/int fields with checked Rust parsing, resolves normal/retry topic names, and creates ACK/change-invisibility request headers from the exact receipt queue and offset.
+- Added focused unit cases for the pinned valid fixture value, extra trailing fields, missing fields, numeric overflow, retry-v2 topic mapping, and receipt preservation in both request headers.
+- `cargo test -p rocketmq-classic-consumer --lib pop::tests --locked` — PASS (3 tests); `cargo fmt --all` applied after the check identified formatting changes.
+- Updated the Phase 13 matrix to Partial for receipt parsing/header construction. Broker dispatch, source-used batch ACK, and replacement lifecycle are still unimplemented; phase remains In progress.

@@ -13,7 +13,7 @@ This matrix tracks Phase 13 implementation evidence. A lower-level request/heade
 | Lite public settings | Defaults and validation for pull threads, batch, flow thresholds, poll timeout, long-poll timeout, consume origin/timestamp, offset store, selector strategy, unit mode, trace controls, broker selection | `LitePullConsumerConfig` and existing `ClientConfig` | P13-U01, P13-V03 | In progress |
 | Push POP assignment | `QUERY_ASSIGNMENT`, per-queue PULL/POP assignment, mode transitions, POP retry-topic subscription and assignment callback | Existing typed assignment RPC plus POP queue runtime | P13-U01, P13-V02, P13-V03 | In progress |
 | Push POP pull/consume | POP scheduling, invisible-time bounds/default, batch size, queue flow control, subscription filtering, retry cutoff and listener dispatch | POP request worker and consumer service | P13-U01, P13-V02 | In progress |
-| POP receipt operations | Preserve `PROPERTY_POP_CK`, parse checkpoint/pop/invisible/revive/retry/Broker/queue/offset data, ACK, source-used batch ACK and change-invisibility receipt replacement | Opaque `PopReceipt` with validated accessors and typed API adapter | `fixtures/consumer/lite-pop.json`, P13-U01, P13-V02 | In progress |
+| POP receipt operations | Preserve `PROPERTY_POP_CK`, parse checkpoint/pop/invisible/revive/retry/Broker/queue/offset data, ACK, source-used batch ACK and change-invisibility receipt replacement | `consumer::PopReceipt` parses and retains the raw receipt and creates ACK/change-invisibility request headers | `fixtures/consumer/lite-pop.json`; `pop::tests` (3 focused cases) | Partial — header construction is implemented; Broker dispatch, batch ACK and replacement lifecycle remain |
 
 ## Pinned Java public surface and defaults
 
