@@ -215,6 +215,18 @@
             <configuration><arguments><argument>self-test</argument></arguments></configuration>
           </execution>
           <execution>
+            <id>verify-java-rebalance-allocation-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.RebalanceFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/rebalance/allocation.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-java-invoked-rpc-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

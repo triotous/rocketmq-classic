@@ -142,6 +142,10 @@ public final class Main {
             MessageDecodeFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;
         }
+        if (args.length > 0 && "rebalance-fixtures".equals(args[0])) {
+            RebalanceFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "rpc-invoked-ext-fixtures".equals(args[0])) {
             InvokedExtFixtures.run(option(args, "--output"), java.util.Arrays.asList(args).contains("--verify"));
             return;
@@ -200,7 +204,7 @@ public final class Main {
             writeScenario(id, output);
             return;
         }
-        throw new IllegalArgumentException("usage: self-test | fixtures --output DIR | header-fixtures --output DIR | decode --input FILE | scenario --id ID --output FILE");
+        throw new IllegalArgumentException("usage: self-test | fixtures --output DIR | header-fixtures --output DIR | rebalance-fixtures <file> [--verify] | decode --input FILE | scenario --id ID --output FILE");
     }
 
     private static Path option(String[] args, String name) {
