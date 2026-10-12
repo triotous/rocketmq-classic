@@ -101,3 +101,8 @@ Phase 13 continuation — Lite API audit and final local verification — 2026-1
 - `cargo fmt --all -- --check`, `git diff --check`, and `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` — PASS.
 - `cargo test --workspace --locked` — one unrelated producer test failed under parallel execution (`unique_id::tests::generated_id_uses_the_java_client_id_layout_and_advancing_counter`, expected counter 7, observed 1). The isolated test passed. `cargo test --workspace --locked -- --test-threads=1` — PASS across all workspace unit, integration, and doc tests; serialized execution avoids the producer test's shared global-counter race.
 - Phase 13 local Lite/POP checks are complete. Broker/Docker scenarios remain pending for Phase 19; no Broker or Docker test was run here. Final plan review confirmed every local Phase 13 deliverable is mapped to implementation and evidence; no plan file was changed.
+
+Phase 13 audit commit — 2026-10-12 12:18 UTC:
+
+- Committed the final Lite API/config and POP assignment audit as `815bcaf9` (`fix(consumer): complete Lite API compatibility audit`) on `phase/14-phase-13-lite-assignment-pop`.
+- The commit includes implementation, scripted/unit evidence, pinned fixture updates, compatibility crosswalk, and execution results. Phase 19 Broker/Docker execution remains pending; Phase 14 was not started.
