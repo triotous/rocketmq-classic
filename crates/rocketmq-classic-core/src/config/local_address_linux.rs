@@ -370,6 +370,54 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_production_enumerator_matches_invoked_java_loopback_scope() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/address-linux.json"
+        ))
+        .unwrap();
+        let actual = super::super::interfaces(false).unwrap();
+        for case in fixture["linuxIpv6LoopbackCandidates"].as_array().unwrap() {
+            let expected = Address {
+                ip: case["ip"].as_str().unwrap().parse().unwrap(),
+                scope: case["scopeId"].as_u64().unwrap() as u32,
+                scope_name: Some(case["interfaceName"].as_str().unwrap().to_owned()),
+            };
+            assert!(
+                actual.contains(&expected),
+                "Java Linux loopback candidate is missing from the production enumerator: {case}; {actual:?}"
+            );
+            assert_eq!(
+                super::super::normalize(&expected),
+                case["normalized"].as_str().unwrap(),
+                "{case}"
+            );
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "run in Linux after capturing a Java 5.5.1 candidate snapshot"]
+    fn linux_production_candidate_order_matches_invoked_java_runtime_snapshot() {
+        let path = std::env::var_os("ROCKETMQ_JAVA_LINUX_CANDIDATES")
+            .expect("set ROCKETMQ_JAVA_LINUX_CANDIDATES to the Java probe output path");
+        let fixture: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let expected = fixture["linuxCandidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|candidate| candidate["normalized"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        let actual = interfaces(false)
+            .unwrap()
+            .iter()
+            .map(super::super::normalize)
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected, "Linux interface candidate order");
+    }
+
     #[test]
     fn candidate_lists_match_openjdk_table_and_head_insertion_order() {
         let ordered = java_candidate_order(

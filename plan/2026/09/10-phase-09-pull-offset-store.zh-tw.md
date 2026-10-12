@@ -72,10 +72,10 @@ I/O 前驗證 queue、expression、非負 requested offset/count/response size �
 
 先寫對應失敗測試／Oracle fixture，再依序實作；以下 case 必須成為可執行檢查，而非人工勾選。以下檢查不依賴 Docker 或 live Broker，使用 Java fixture、可控時鐘及 scripted peer；共通命令與證據規則見執行索引。
 
-- [ ] **P9-V01** — 所有 read/update/freeze mode 符合 Java，包含 missing offset、increase-only race 與 transport failure 區分。
-- [ ] **P9-V02** — 在 local-file write/rename 各步前後注入 failure，保留可恢復的舊或新 snapshot；測 corrupt primary/backup 與 path traversal。
+- [x] **P9-V01** — 所有 read/update/freeze mode 符合 Java，包含 missing offset、increase-only race 與 transport failure 區分。
+- [x] **P9-V02** — 在 local-file write/rename 各步前後注入 failure，保留可恢復的舊或新 snapshot；測 corrupt primary/backup 與 path traversal。
 
-- [ ] **P9-U01** — scripted pull/offset response 與暫存檔 restart test 驗證全部 pull status、next-offset recovery、broker selection 及 boundary RPC。
+- [x] **P9-U01** — scripted pull/offset response 與暫存檔 restart test 驗證全部 pull status、next-offset recovery、broker selection 及 boundary RPC。
 
 ### 5.1 實作完成後的本機命令
 

@@ -28,7 +28,7 @@ fn public_topic_snapshot_factory_matches_invoked_java_route_conversions() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/route.json")).unwrap();
     let cases = fixture["cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 25);
+    assert_eq!(cases.len(), 36);
 
     for case in cases {
         let route: TopicRouteData = serde_json::from_value(case["input"].clone()).unwrap();
@@ -61,6 +61,16 @@ fn public_topic_snapshot_factory_matches_invoked_java_route_conversions() {
             assert!(TopicSnapshot::from_route_data("topic", &route).is_err());
         }
     }
+
+    let unmatched = cases
+        .iter()
+        .find(|case| case["id"] == "empty-mapping-unmatched-queue-broker")
+        .expect("Java oracle includes an empty-mapping route with an unmatched queue broker");
+    let route: TopicRouteData = serde_json::from_value(unmatched["input"].clone()).unwrap();
+    let snapshot = TopicSnapshot::from_route_data("topic", &route).unwrap();
+    assert!(snapshot.publish_queues.is_empty());
+    assert_eq!(snapshot.subscribe_queues.len(), 2);
+    assert!(snapshot.endpoints.is_empty());
 }
 
 #[test]

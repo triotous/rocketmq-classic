@@ -260,12 +260,393 @@ impl Serialize for FastjsonStringValue {
     }
 }
 
-/// Normalizes Fastjson's invoked nonstandard document whitespace and numeric
-/// tokens before Serde parsing. Quoted text and numeric object keys are kept.
+/// Normalizes Fastjson's invoked JSON syntax, whitespace, and numeric tokens
+/// before Serde parsing. Quoted text and numeric object keys are kept.
 pub fn normalize_json_input(input: &str) -> String {
     let input = input.strip_prefix('\u{feff}').unwrap_or(input);
-    let whitespace_normalized = normalize_fastjson_whitespace(input);
-    normalize_fastjson_number_tokens(&whitespace_normalized)
+    let syntax_normalized = normalize_fastjson_syntax(input);
+    let whitespace_normalized = normalize_fastjson_whitespace(&syntax_normalized);
+    let comma_normalized = normalize_fastjson_trailing_commas(&whitespace_normalized);
+    normalize_fastjson_number_tokens(&comma_normalized)
+}
+
+fn normalize_fastjson_syntax(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut output = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    let mut previous_significant = None;
+    let mut containers = Vec::new();
+
+    while index < bytes.len() {
+        match bytes[index] {
+            b'"' | b'\'' => {
+                let quote = bytes[index];
+                normalize_fastjson_string(bytes, &mut index, quote, &mut output);
+                previous_significant = Some(b'"');
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'/') || bytes.get(index + 1) == Some(&b'*') => {
+                let comment_start = index;
+                let line_comment = bytes[index + 1] == b'/';
+                let comment_end = fastjson_comment_end(bytes, comment_start, line_comment);
+                let next = next_fastjson_significant(bytes, comment_end);
+                let object_comma = previous_significant == Some(b',')
+                    && containers.last() == Some(&b'{')
+                    && next != Some(b'}');
+                let allowed = match previous_significant {
+                    None | Some(b'{' | b'[' | b'}' | b']') => true,
+                    Some(b',') => object_comma,
+                    _ => false,
+                };
+                if allowed {
+                    output.push(b' ');
+                    index = comment_end;
+                } else {
+                    output.extend_from_slice(&bytes[index..comment_end]);
+                    index = comment_end;
+                }
+            }
+            character => {
+                output.push(character);
+                index += 1;
+                if character == b'{' || character == b'[' {
+                    containers.push(character);
+                } else if (character == b'}' || character == b']')
+                    && matches!(
+                        (containers.last().copied(), character),
+                        (Some(b'{'), b'}') | (Some(b'['), b']')
+                    )
+                {
+                    containers.pop();
+                }
+                if !is_fastjson_json_space(character) {
+                    previous_significant = Some(character);
+                }
+            }
+        }
+    }
+
+    String::from_utf8(output).expect("normalizing valid JSON text preserves UTF-8")
+}
+
+fn normalize_fastjson_string(bytes: &[u8], index: &mut usize, quote: u8, output: &mut Vec<u8>) {
+    output.push(b'"');
+    *index += 1;
+    while *index < bytes.len() {
+        if bytes[*index] == b'\\' {
+            if let Some((code_unit, end, trailing_unit)) =
+                fastjson_escape_code_unit(bytes, *index, quote, b'u')
+            {
+                if (0xd800..=0xdbff).contains(&code_unit) {
+                    if let Some(low) = trailing_unit.filter(|low| (0xdc00..=0xdfff).contains(low)) {
+                        push_json_unicode_escape(output, code_unit);
+                        push_json_unicode_escape(output, low);
+                        *index = end;
+                    } else {
+                        match fastjson_escape_code_unit(bytes, end, quote, b'u') {
+                            Some((low, paired_end, trailing_low))
+                                if (0xdc00..=0xdfff).contains(&low) =>
+                            {
+                                push_json_unicode_escape(output, code_unit);
+                                push_json_unicode_escape(output, low);
+                                if trailing_low.is_some() {
+                                    output.extend_from_slice(b"\\uFFFD");
+                                }
+                                *index = paired_end;
+                            }
+                            _ => {
+                                output.extend_from_slice(b"\\uFFFD");
+                                *index = end;
+                            }
+                        }
+                    }
+                } else if (0xdc00..=0xdfff).contains(&code_unit) {
+                    output.extend_from_slice(b"\\uFFFD");
+                    if trailing_unit.is_some() {
+                        output.extend_from_slice(b"\\uFFFD");
+                    }
+                    *index = end;
+                } else {
+                    push_json_unicode_escape(output, code_unit);
+                    if trailing_unit.is_some() {
+                        output.extend_from_slice(b"\\uFFFD");
+                    }
+                    *index = end;
+                }
+            } else if let Some((code_unit, end, _)) =
+                fastjson_escape_code_unit(bytes, *index, quote, b'x')
+            {
+                push_json_unicode_escape(output, code_unit);
+                *index = end;
+            } else if let Some((code_unit, end, trailing_surrogate)) =
+                fastjson_non_ascii_escape_code_unit(bytes, *index)
+            {
+                push_json_unicode_escape(output, code_unit);
+                if trailing_surrogate {
+                    output.extend_from_slice(b"\\uFFFD");
+                }
+                *index = end;
+            } else if let Some(escaped) = bytes.get(*index + 1).copied() {
+                if let Some(code_unit) = fastjson_char1_escape_code_unit(u16::from(escaped)) {
+                    push_json_unicode_escape(output, code_unit);
+                    *index += 2;
+                } else if escaped.is_ascii() {
+                    output.extend_from_slice(&bytes[*index..=*index + 1]);
+                    *index += 2;
+                } else {
+                    let follower = std::str::from_utf8(&bytes[*index + 1..])
+                        .expect("input is valid UTF-8")
+                        .chars()
+                        .next()
+                        .expect("a non-ASCII escape follower is present");
+                    let end = *index + 1 + follower.len_utf8();
+                    output.extend_from_slice(&bytes[*index..end]);
+                    *index = end;
+                }
+            } else {
+                output.push(b'\\');
+                *index += 1;
+            }
+        } else if bytes[*index] == quote {
+            output.push(b'"');
+            *index += 1;
+            return;
+        } else if quote == b'\'' && bytes[*index] == b'"' {
+            output.extend_from_slice(b"\\u0022");
+            *index += 1;
+        } else {
+            output.push(bytes[*index]);
+            *index += 1;
+        }
+    }
+}
+
+fn fastjson_escape_digits(
+    bytes: &[u8],
+    start: usize,
+    quote: u8,
+    count: usize,
+) -> Option<(usize, [u16; 4], Option<u16>)> {
+    let marker = *bytes.get(start.checked_add(1)?)?;
+    let mut index = start.checked_add(2)?;
+    if count > 4 {
+        return None;
+    }
+    let mut digits = [0; 4];
+    let mut digit_count = 0;
+    let mut trailing_unit = None;
+    while digit_count < count {
+        let tail = std::str::from_utf8(bytes.get(index..)?).ok()?;
+        let escaped = tail.chars().next()?;
+        if escaped == char::from(quote) || (marker == b'x' && u32::from(escaped) > 0x66) {
+            return None;
+        }
+        let mut encoded = [0; 2];
+        for unit in escaped.encode_utf16(&mut encoded).iter().copied() {
+            if digit_count == count {
+                trailing_unit = Some(unit);
+                break;
+            }
+            digits[digit_count] = unit;
+            digit_count += 1;
+        }
+        index += escaped.len_utf8();
+    }
+    Some((index, digits, trailing_unit))
+}
+
+fn fastjson_escape_code_unit(
+    bytes: &[u8],
+    start: usize,
+    quote: u8,
+    marker: u8,
+) -> Option<(u16, usize, Option<u16>)> {
+    if bytes.get(start) != Some(&b'\\') || bytes.get(start + 1) != Some(&marker) {
+        return None;
+    }
+    let count = if marker == b'u' { 4 } else { 2 };
+    let (end, digits, trailing_unit) = fastjson_escape_digits(bytes, start, quote, count)?;
+    let mut value = 0u16;
+    for digit in digits.iter().take(count).copied() {
+        let nibble = if marker == b'x' {
+            fastjson_x_escape_digit(digit)?
+        } else {
+            fastjson_hex_digit_or_zero(digit)
+        };
+        value = value.wrapping_shl(4).wrapping_add(u16::from(nibble));
+    }
+    Some((value, end, trailing_unit))
+}
+
+fn fastjson_non_ascii_escape_code_unit(bytes: &[u8], start: usize) -> Option<(u16, usize, bool)> {
+    if bytes.get(start) != Some(&b'\\') {
+        return None;
+    }
+    let follower_start = start.checked_add(1)?;
+    let tail = std::str::from_utf8(bytes.get(follower_start..)?).ok()?;
+    let follower = tail.chars().next()?;
+    if follower.is_ascii() {
+        return None;
+    }
+    let mut encoded = [0; 2];
+    let units = follower.encode_utf16(&mut encoded);
+    let first = *units.first()?;
+    let trailing_surrogate = units.len() == 2;
+    let code_unit = fastjson_char1_escape_code_unit(first)?;
+    Some((
+        code_unit,
+        follower_start + follower.len_utf8(),
+        trailing_surrogate,
+    ))
+}
+
+fn fastjson_char1_escape_code_unit(escaped: u16) -> Option<u16> {
+    let escaped = (escaped & 0x7f) as u8;
+    match escaped {
+        b'0'..=b'7' => Some(u16::from(escaped - b'0')),
+        b'b' => Some(0x0008),
+        b't' => Some(0x0009),
+        b'n' => Some(0x000a),
+        b'v' => Some(0x000b),
+        b'f' | b'F' => Some(0x000c),
+        b'r' => Some(0x000d),
+        b'"' | b'\'' | b'/' | b'\\' => Some(u16::from(escaped)),
+        b' ' | b'#' | b'&' | b'(' | b')' | b',' | b'.' | b'@' | b'[' | b']' | b'_' | b'~' => {
+            Some(u16::from(escaped))
+        }
+        _ => None,
+    }
+}
+
+fn fastjson_hex_digit_or_zero(code_unit: u16) -> u8 {
+    ((code_unit & 0x0f) + if code_unit & 0x40 != 0 { 9 } else { 0 }) as u8 & 0x0f
+}
+
+fn fastjson_x_escape_digit(code_unit: u16) -> Option<u8> {
+    if code_unit > u16::from(b'f') {
+        return None;
+    }
+    Some(match code_unit as u8 {
+        b'0'..=b'9' => code_unit as u8 - b'0',
+        b'a'..=b'f' => code_unit as u8 - b'a' + 10,
+        b'A'..=b'F' => code_unit as u8 - b'A' + 10,
+        _ => 0,
+    })
+}
+
+fn push_json_unicode_escape(output: &mut Vec<u8>, value: u16) {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    output.extend_from_slice(b"\\u");
+    output.push(HEX[((value >> 12) & 0x0f) as usize]);
+    output.push(HEX[((value >> 8) & 0x0f) as usize]);
+    output.push(HEX[((value >> 4) & 0x0f) as usize]);
+    output.push(HEX[(value & 0x0f) as usize]);
+}
+
+fn fastjson_comment_end(bytes: &[u8], start: usize, line_comment: bool) -> usize {
+    if line_comment {
+        let mut end = start + 2;
+        while end < bytes.len() && bytes[end] != b'\n' {
+            end += 1;
+        }
+        end
+    } else {
+        let mut end = start + 2;
+        while end + 1 < bytes.len() && !(bytes[end] == b'*' && bytes[end + 1] == b'/') {
+            end += 1;
+        }
+        if end + 1 < bytes.len() {
+            end + 2
+        } else {
+            bytes.len()
+        }
+    }
+}
+
+fn next_fastjson_significant(bytes: &[u8], mut index: usize) -> Option<u8> {
+    loop {
+        while bytes
+            .get(index)
+            .is_some_and(|byte| is_fastjson_json_space(*byte))
+        {
+            index += 1;
+        }
+        match bytes.get(index..) {
+            Some(rest) if rest.starts_with(b"//") => {
+                index = fastjson_comment_end(bytes, index, true);
+                if bytes.get(index) == Some(&b'\n') {
+                    index += 1;
+                }
+            }
+            Some(rest) if rest.starts_with(b"/*") => {
+                index = fastjson_comment_end(bytes, index, false);
+            }
+            Some(rest) => return rest.first().copied(),
+            None => return None,
+        }
+    }
+}
+
+fn is_fastjson_json_space(byte: u8) -> bool {
+    matches!(byte, 0 | b' ' | b'\n' | b'\r' | b'\x0c' | b'\t' | b'\x08')
+}
+
+fn normalize_fastjson_trailing_commas(input: &str) -> String {
+    let characters: Vec<char> = input.chars().collect();
+    let mut output = String::with_capacity(input.len());
+    let mut index = 0;
+    let mut in_string = false;
+    let mut escaped = false;
+    let mut previous_significant = None;
+
+    while index < characters.len() {
+        let character = characters[index];
+        if in_string {
+            output.push(character);
+            index += 1;
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                in_string = false;
+                previous_significant = Some('"');
+            }
+            continue;
+        }
+
+        if character == '"' {
+            in_string = true;
+            output.push(character);
+            index += 1;
+            continue;
+        }
+
+        if character == ',' {
+            let mut next = index + 1;
+            while characters
+                .get(next)
+                .is_some_and(|next| next.is_ascii_whitespace())
+            {
+                next += 1;
+            }
+            let follows_container_value = matches!(previous_significant, Some('}' | ']' | '"'))
+                || previous_significant.is_some_and(|previous| {
+                    previous.is_ascii_alphanumeric() || matches!(previous, '+' | '-')
+                });
+            if follows_container_value && matches!(characters.get(next), Some('}' | ']')) {
+                index += 1;
+                continue;
+            }
+        }
+
+        output.push(character);
+        index += 1;
+        if !character.is_ascii_whitespace() {
+            previous_significant = Some(character);
+        }
+    }
+
+    output
 }
 
 /// Parses a JSON document with the Fastjson syntax cases recorded by the Java
@@ -1066,5 +1447,31 @@ where
         Ok(value)
     } else {
         Err(E::custom("Fastjson integer is out of range"))
+    }
+}
+
+#[cfg(test)]
+mod syntax_compat_tests {
+    use super::from_fastjson_str;
+    use serde_json::{Value, json};
+
+    #[test]
+    fn parses_single_quotes_comments_and_trailing_commas() {
+        let input = r#"/* prefix */ {'topic':'it\'s // literal /* text */', 'tagsSet':['tag',], 'subVersion':+02,} // suffix"#;
+        let decoded = from_fastjson_str::<Value>(input).unwrap();
+        assert_eq!(
+            decoded,
+            json!({
+                "topic": "it's // literal /* text */",
+                "tagsSet": ["tag"],
+                "subVersion": 2
+            })
+        );
+    }
+
+    #[test]
+    fn does_not_treat_comment_markers_inside_double_quoted_strings_as_comments() {
+        let decoded = from_fastjson_str::<Value>(r#"{"topic":"/* text */ // text"}"#).unwrap();
+        assert_eq!(decoded["topic"], "/* text */ // text");
     }
 }

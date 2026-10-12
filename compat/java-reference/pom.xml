@@ -215,6 +215,30 @@
             <configuration><arguments><argument>self-test</argument></arguments></configuration>
           </execution>
           <execution>
+            <id>verify-java-request-response-code-registry</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.CodeRegistryFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/protocol/request-response-codes.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>verify-java-orderly-consumer-fixture</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.OrderlyConsumerFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/consumer/orderly-settings.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-java-rebalance-allocation-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>
@@ -436,18 +460,6 @@
               <executable>python3</executable>
               <workingDirectory>${project.basedir}/../..</workingDirectory>
               <arguments><argument>tests/differential/compare.py</argument><argument>--validate-manifest</argument></arguments>
-            </configuration>
-          </execution>
-          <execution>
-            <id>verify-java-orderly-consumer-fixture</id>
-            <phase>verify</phase>
-            <goals><goal>java</goal></goals>
-            <configuration>
-              <mainClass>compat.OrderlyConsumerFixtures</mainClass>
-              <arguments>
-                <argument>${project.basedir}/../../fixtures/consumer/orderly-settings.json</argument>
-                <argument>--verify</argument>
-              </arguments>
             </configuration>
           </execution>
         </executions>

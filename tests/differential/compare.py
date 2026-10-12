@@ -2,6 +2,7 @@
 """Compare normalized JSON results without discarding meaningful array order."""
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -27,6 +28,16 @@ def compare(left, right, unordered_paths=frozenset(), ignored=frozenset()):
     return left_normal == right_normal
 
 
+def pending_phase19_source_case_ids():
+    pending = set()
+    for plan_path in Path("plan/2026/09").glob("*-phase-*.md"):
+        match = re.search(r"phase-(\d+)-", plan_path.name)
+        if not match or int(match.group(1)) > 11:
+            continue
+        pending.update(re.findall(r"(?m)^- \[ \] \*\*(P\d+-V\d+)\*\*", plan_path.read_text()))
+    return pending
+
+
 def validate_manifest(manifest):
     if manifest.get("java_client_version") != "5.5.1" or manifest.get("server_version") != "5.3.4":
         raise ValueError("manifest client/server versions do not match pinned baselines")
@@ -43,6 +54,43 @@ def validate_manifest(manifest):
         ids.add(scenario["id"])
         if scenario["execution_phase"] == 19 and scenario["live_status"] == "PASS":
             raise ValueError(f"unexecuted Phase 19 scenario cannot be PASS: {scenario['id']}")
+    phase19_ids = {
+        scenario["id"]
+        for scenario in scenarios
+        if scenario["execution_phase"] == 19
+    }
+    phase19_source_ids = {
+        scenario.get("source_case_id", scenario["id"])
+        for scenario in scenarios
+        if scenario["execution_phase"] == 19
+    }
+    covered_source_ids = phase19_ids | phase19_source_ids
+    missing_source_ids = {
+        source_id
+        for source_id in pending_phase19_source_case_ids()
+        if source_id not in covered_source_ids
+        and not any(case_id.startswith(f"{source_id}-") for case_id in phase19_ids)
+    }
+    if missing_source_ids:
+        missing = ", ".join(sorted(missing_source_ids))
+        raise ValueError(f"manifest missing Phase 19 source case IDs: {missing}")
+    for source_id in pending_phase19_source_case_ids():
+        source_phase = int(source_id.split("-")[0][1:])
+        source_cases = [
+            scenario
+            for scenario in scenarios
+            if scenario.get("source_case_id", scenario["id"]) == source_id
+            or scenario["id"] == source_id
+            or scenario["id"].startswith(f"{source_id}-")
+        ]
+        misplaced = [
+            scenario["id"]
+            for scenario in source_cases
+            if scenario["phase"] != source_phase or scenario["execution_phase"] != 19
+        ]
+        if misplaced:
+            cases = ", ".join(sorted(misplaced))
+            raise ValueError(f"Phase 19 source case {source_id} is assigned to the wrong phase: {cases}")
     return len(scenarios)
 
 
@@ -52,11 +100,27 @@ def self_test():
     assert compare({"queue": [1, 2]}, {"queue": [2, 1]}, frozenset({"$.queue"}))
     assert not compare({"code": 10}, {"code": 11})
     assert compare({"opaque": 1}, {"opaque": 2}, ignored=frozenset({"opaque"}))
-    manifest = {"java_client_version": "5.5.1", "server_version": "5.3.4", "scenarios": [
-        {"id": "live", "phase": 0, "execution_phase": 19, "profile": "basic", "inputs": {},
-         "normalization": [], "live_status": "PENDING_PHASE_19"}]}
-    assert validate_manifest(manifest) == 1
-    invalid = {**manifest, "scenarios": [{**manifest["scenarios"][0], "live_status": "PASS"}]}
+    manifest = {
+        "java_client_version": "5.5.1",
+        "server_version": "5.3.4",
+        "scenarios": [
+            {
+                "id": source_id,
+                "phase": int(source_id.split("-")[0][1:]),
+                "execution_phase": 19,
+                "profile": "basic",
+                "inputs": {},
+                "normalization": [],
+                "live_status": "PENDING_PHASE_19",
+            }
+            for source_id in sorted(pending_phase19_source_case_ids())
+        ],
+    }
+    assert validate_manifest(manifest) == len(pending_phase19_source_case_ids())
+    invalid = {
+        **manifest,
+        "scenarios": [{**manifest["scenarios"][0], "live_status": "PASS"}],
+    }
     try:
         validate_manifest(invalid)
         raise AssertionError("pending scenario incorrectly accepted as PASS")
@@ -70,6 +134,27 @@ def self_test():
     assert phase6[0]["live_status"] == "PENDING_PHASE_19"
     assert phase6[0]["inputs"]["checks"] == [
         "heartbeat-subscription-change", "unregister", "remaining-shared-user-functional"]
+    missing_handoff = {
+        **checked_in,
+        "scenarios": [case for case in checked_in["scenarios"] if case["id"] != "P11-V04"],
+    }
+    try:
+        validate_manifest(missing_handoff)
+        raise AssertionError("manifest accepted an omitted Phase 11 live handoff")
+    except ValueError as error:
+        assert "P11-V04" in str(error)
+    wrong_source_phase = {
+        **checked_in,
+        "scenarios": [
+            {**case, "phase": 10} if case["id"] == "P11-V04" else case
+            for case in checked_in["scenarios"]
+        ],
+    }
+    try:
+        validate_manifest(wrong_source_phase)
+        raise AssertionError("manifest accepted a Phase 11 case assigned to Phase 10")
+    except ValueError as error:
+        assert "P11-V04" in str(error)
     print("Differential comparator and manifest self-test passed")
 
 

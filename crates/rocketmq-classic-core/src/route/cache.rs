@@ -1666,6 +1666,139 @@ mod tests {
     }
 
     #[test]
+    fn broker_address_resolution_matches_invoked_java_runtime_cases() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        let cases = fixture["runtimeBrokerAddressResolution"]
+            .as_array()
+            .unwrap();
+        assert_eq!(cases.len(), 9);
+
+        for case in cases {
+            let input = &case["input"];
+            let mut snapshot = RouteSnapshot::default();
+            let mut addresses = BTreeMap::new();
+            for row in input["addresses"].as_array().unwrap() {
+                let id = row["id"].as_i64();
+                let address = row["address"].as_str().map(str::to_owned);
+                addresses.insert(id, address);
+            }
+            if input["tableEntry"].as_bool().unwrap() {
+                snapshot.broker_addresses.insert("broker".into(), addresses);
+            }
+            let versions = input["versions"].as_object().unwrap();
+            for (address, version) in versions {
+                snapshot.broker_versions.insert(
+                    ("broker".into(), address.clone()),
+                    version.as_i64().unwrap().try_into().unwrap(),
+                );
+            }
+
+            assert_eq!(
+                snapshot.publish_address("broker"),
+                case["publishAddress"].as_str(),
+                "{} publish lookup",
+                case["id"]
+            );
+
+            let candidate_rows = input["addresses"].as_array().unwrap();
+            let expected_admin = &case["admin"];
+            let actual_admin = snapshot.admin_address("broker");
+            if expected_admin["outcome"] != "OK" {
+                assert!(actual_admin.is_err(), "{} admin lookup", case["id"]);
+                assert!(matches!(actual_admin, Err(RuntimeError::InvalidRoute(_))));
+            } else if expected_admin["isNull"] == true {
+                assert!(
+                    actual_admin.unwrap().is_none(),
+                    "{} admin lookup",
+                    case["id"]
+                );
+            } else {
+                let actual = actual_admin.unwrap().expect("Rust admin lookup result");
+                let java_address = expected_admin["address"].as_str().unwrap();
+                assert!(
+                    candidate_rows
+                        .iter()
+                        .any(|row| row["address"].as_str() == Some(java_address)),
+                    "{} Java admin result is one of the advertised addresses",
+                    case["id"]
+                );
+                let (_, expected_id) = candidate_rows
+                    .iter()
+                    .filter_map(|row| Some((row["address"].as_str()?, row["id"].as_i64())))
+                    .find(|(address, _)| *address == actual.address)
+                    .expect("Rust admin result is an advertised address");
+                assert_eq!(
+                    actual.slave,
+                    expected_id != Some(0),
+                    "{} admin slave flag",
+                    case["id"]
+                );
+                let expected_version = versions
+                    .get(&actual.address)
+                    .and_then(serde_json::Value::as_i64)
+                    .unwrap_or(0) as i32;
+                assert_eq!(
+                    actual.version, expected_version,
+                    "{} admin version",
+                    case["id"]
+                );
+                let java_version = versions
+                    .get(java_address)
+                    .and_then(serde_json::Value::as_i64)
+                    .unwrap_or(0) as i32;
+                assert_eq!(
+                    expected_admin["version"].as_i64(),
+                    Some(i64::from(java_version)),
+                    "{} Java admin version oracle",
+                    case["id"]
+                );
+            }
+
+            for query in case["subscribe"].as_array().unwrap() {
+                let expected = &query["result"];
+                let broker_id = query["brokerId"].as_i64().unwrap();
+                let only_this_broker = query["onlyThisBroker"].as_bool().unwrap();
+                let actual = snapshot.subscribe_address("broker", broker_id, only_this_broker);
+                if expected["outcome"] != "OK" {
+                    assert!(actual.is_err(), "{} / {}", case["id"], query["id"]);
+                    assert!(matches!(actual, Err(RuntimeError::InvalidRoute(_))));
+                } else if expected["isNull"] == true {
+                    assert!(
+                        actual.unwrap().is_none(),
+                        "{} / {}",
+                        case["id"],
+                        query["id"]
+                    );
+                } else {
+                    let actual = actual.unwrap().expect("Rust subscribe lookup result");
+                    assert_eq!(
+                        actual.address,
+                        expected["address"].as_str().unwrap(),
+                        "{} / {} address",
+                        case["id"],
+                        query["id"]
+                    );
+                    assert_eq!(
+                        actual.slave,
+                        expected["slave"].as_bool().unwrap(),
+                        "{} / {} slave flag",
+                        case["id"],
+                        query["id"]
+                    );
+                    assert_eq!(
+                        actual.version,
+                        expected["version"].as_i64().unwrap() as i32,
+                        "{} / {} version",
+                        case["id"],
+                        query["id"]
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn offline_cleanup_preserves_live_null_values_but_removes_stale_ones() {
         let cache = RouteCache::default();
         let route = route(1);
@@ -2300,7 +2433,34 @@ mod tests {
     fn snapshots_and_vip_compare_actual_pinned_java_conversion_results() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
-        for case in fixture["cases"].as_array().unwrap() {
+        let cases = fixture["cases"].as_array().unwrap();
+        assert_eq!(cases.len(), 36);
+        for (order, expected_outcome) in [
+            (";broker:2", "ArrayIndexOutOfBoundsException"),
+            ("broker:2;;broker:1", "ArrayIndexOutOfBoundsException"),
+            ("broker:2;;;broker:1", "ArrayIndexOutOfBoundsException"),
+            ("broker:2;;;", "OK"),
+            (";", "OK"),
+            (":1", "OK"),
+            ("broker:2;:1", "OK"),
+            ("broker:2;broker", "ArrayIndexOutOfBoundsException"),
+            ("broker:2;broker:1", "OK"),
+        ] {
+            assert!(
+                cases.iter().any(|case| {
+                    case["input"]["orderTopicConf"] == order && case["outcome"] == expected_outcome
+                }),
+                "missing Java ordered-route case {order:?} => {expected_outcome}"
+            );
+        }
+        let repeated_broker = cases
+            .iter()
+            .find(|case| case["input"]["orderTopicConf"] == "broker:2;broker:1")
+            .unwrap();
+        let repeated_queues = repeated_broker["publish"].as_array().unwrap();
+        assert_eq!(repeated_queues.len(), 3);
+        assert_eq!(repeated_queues[0], repeated_queues[2]);
+        for case in cases {
             let cache = RouteCache::default();
             let route = serde_json::from_value(case["input"].clone()).unwrap();
             if case["outcome"] == "OK" {

@@ -10,6 +10,14 @@ At this field-shape checkpoint, the direct Java input fixture contained 213 case
 
 The matrix now adds 28 root-shape cases across the same four DTOs: empty object, null, empty array, singleton array, number, Boolean, and string. Fastjson accepts empty objects and JSON null, returning null for the latter; it rejects arrays and scalar roots. Rust compares these operations as `Option<T>`, and `HeartbeatData::java_from_json_nullable` covers the public nullable adapter. The empty `SubscriptionData` case omits `subVersion` from comparison because its Java constructor uses the wall clock. All cases pass; no production change was required. The complete input corpus now contains 241 cases at fixture SHA-256 `385fc38890b6f18fc9ea74a4a4d2a47f52c27bae5ffc7851064c594cef426803`.
 
+## DTO syntax continuation (2026-10-12)
+
+The invoked Java corpus has 276 heartbeat DTO inputs. Relative to the 249-case checkpoint, 27 cases add Fastjson 2.0.63's `char1` escape table, `\x` lookup boundaries, and parser-state-specific comment positions. Accepted escapes include `\0`–`\7`, `\v`, `\F`, the table's identity escapes, and double-quoted `\'`; `\xG1` produces U+0001, while `\8`, `\q`, and `\xg1` reject. Single-quoted keys and strings and plain object/array trailing commas are accepted; unquoted keys reject. Comments are accepted at the recorded object/array starts, after an object member comma, after a nested object value, and at the root boundaries. The Java oracle rejects them between a key and colon, after a colon, after an ordinary scalar, after an array comma, and after a trailing comma.
+
+The shared normalizer now follows these observed escape and comment transitions. The focused Rust differential passes all 276 inputs. Current `heartbeat.json` SHA-256: `67b844d3a61ee31ac12c340cf09f30d81083435635d6f17bebc44206b65d37cc`. This corpus closes only these input cases; other Fastjson grammar and whole-Phase 6 source/input reconciliation remain open.
+
+The earlier eight-case syntax checkpoint (241 to 249, SHA-256 `98b5029aafaa9146a801e3a68d7edc70707f25ba4c17d3ceca40012e4673e0b3`) is retained in the append-only execution record; it is superseded by the current 276-case corpus above.
+
 ## Context
 
 The Java 5.5.1 client decodes `SubscriptionData`, `ProducerData`, `ConsumerData`, and `HeartbeatData` fields with Fastjson 2.0.63. The native DTOs already represented nullable fields and Java constructor defaults, but direct Serde decoding rejected scalar values that Fastjson converts and did not apply Java's primitive coercions consistently.

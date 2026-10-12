@@ -1,6 +1,6 @@
 # RocketMQ Java client 5.5.1 request/response code inventory
 
-The numeric source of truth is the pinned Java tag `rocketmq-all-5.5.1`, especially `remoting/src/main/java/org/apache/rocketmq/remoting/protocol/RequestCode.java`, `ResponseCode.java`, and `RemotingSysResponseCode.java`. Phase 1 generated and checked in the complete public static integer registry from those sources in `crates/rocketmq-classic-protocol/src/codes/{request,response}.rs`; a registered code does not imply an RPC implementation.
+The numeric source of truth is the pinned Java tag `rocketmq-all-5.5.1`, especially `remoting/src/main/java/org/apache/rocketmq/remoting/protocol/RequestCode.java`, `ResponseCode.java`, and `RemotingSysResponseCode.java`. Phase 1 generated and checked in the complete public static integer registry from those sources in `crates/rocketmq-classic-protocol/src/codes/{request,response}.rs`; a registered code does not imply an RPC implementation. The Java reflection oracle writes [request-response-codes.json](../../fixtures/protocol/request-response-codes.json), Maven `verify` checks it against the pinned classes, and the Rust `code_registry` integration test compares every fixture entry with the checked-in constants, including the prefixed duplicate `RemotingSysResponseCode` names.
 
 | Code | Java name | Client operation | Typed model status | RPC status |
 |---:|---|---|---|---|

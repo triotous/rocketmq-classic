@@ -1,13 +1,13 @@
 # 計畫：Phase 4 相容性覆蓋收尾
 
-> 主計畫：[`../../09/00-rocketmq-classic-plan.md`](../../09/00-rocketmq-classic-plan.md)，Phase 4 實作計畫：[`../../09/05-phase-04-typed-headers-bodies.md`](../../09/05-phase-04-typed-headers-bodies.md)。
-> 本計畫是用於補齊 Phase 4 typed-header/body 證據缺口的限定範圍後續工作，不代表 Phase 4 已完成。
+> 主計畫：[`../09/00-rocketmq-classic-plan.md`](../09/00-rocketmq-classic-plan.md)，Phase 4 實作計畫：[`../09/05-phase-04-typed-headers-bodies.md`](../09/05-phase-04-typed-headers-bodies.md)。
+> 本限定範圍後續工作用於補齊 Phase 4 typed-header/body 證據缺口。第 7 節與 Phase 4 matrix 記錄已完成結果；此處只驗收 typed wire-model gate，不代表後續 RPC 或 live Broker 覆蓋已完成。
 
 ## 1. 目標與範圍
 
 完成已實作 Phase 4 header 與 body 對 Java 5.5.1 的可執行相容性覆蓋、關閉已確認的模型／oracle 缺口，並將觀察到的結果更新至 Phase 4 matrix 與 append-only session log。以下所有驗收條件達成前，Phase 4 維持未完成。本工作不擴及 RPC 執行或 live broker 驗證。
 
-## 2. 現況
+## 2. 收尾稽核開始時的狀態（2026-10-01）
 
 - `crates/rocketmq-classic-protocol/tests/headers.rs` 涵蓋 Java-to-Rust fixture 及部分 required/invalid header case。Rust-to-Java Maven 驗證會比較 19 個 Rust 產生 header frame 的所有 ext field，但尚未證明每個已實作 header 都有完整雙向覆蓋。
 - 七個 Rust 產生的 body fixture 會透過 `mvn verify` 與 Java 5.5.1 oracle 做語意比較。
@@ -68,3 +68,9 @@ Maven `verify` 必須能在 generated fixture 目錄為空時按設定重新產�
 ## 6. 限制與待釐清證據
 
 使用 pinned Java client 5.5.1 作為 wire-format oracle。不得依推論或 server 限制更改 protocol 行為。若 source annotation 與 call-site 行為不一致，測試／matrix 保留差異，並以實際 Java 建構／解碼路徑釐清。不需要 Docker、live broker、新 test framework 或無關的 Phase 5 RPC 工作。
+
+## 7. 完成紀錄（2026-10-04）
+
+P4-V01/V02/V03 的收尾工作已完成。完整 inventory 涵蓋 `basic.rs` 每個公開 `CommandHeader` 及 unlock alias，並具備雙向檢查；Maven verifier 解碼 38 個 Rust 產生的 header frame。Table-driven Rust test 涵蓋每個已建模 header field、required/optional case、格式錯誤與邊界數字、Java boolean parsing，以及 unknown-field preservation。Body gate 語意檢查 14 個 Java 解碼 frame，包含 consumer list absent/empty/populated、lock/unlock body，以及 reply V2/push binary body bytes。Pinned ACK Lite 稽核未找到獨立 Lite body/header call path；非 null request header 會走共用 ACK_MESSAGE method。
+
+最終證據：`cargo test -p rocketmq-classic-protocol --test headers --locked`、`cargo test --workspace --locked`、`cargo fmt --all -- --check`、strict workspace/all-target/all-feature Clippy、`mvn -q -f compat/java-reference/pom.xml clean verify`、`python3 tests/differential/compare.py --self-test` 及 `git diff --check` 均通過。Append-only 執行紀錄保存 fixture provenance 與結果。剩餘 RPC wiring、public client surface 及 Broker integration 屬後續 phase 範圍，不是 Phase 4 typed-model acceptance 缺口。

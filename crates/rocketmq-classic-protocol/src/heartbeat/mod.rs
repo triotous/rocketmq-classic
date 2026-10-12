@@ -1276,8 +1276,8 @@ mod fastjson_dto_input_tests {
         let cases = fixture["heartbeatDtoInputCases"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            241,
-            "Java oracle includes DTO root shapes, scalar, numeric-boundary, collection-shape, and per-field token-kind probes"
+            276,
+            "Java oracle includes DTO root shapes, scalar, numeric-boundary, collection-shape, syntax-grammar, and per-field token-kind probes"
         );
         for dto in ["subscription", "producer", "consumer", "heartbeat"] {
             for shape in [
@@ -1330,6 +1330,41 @@ mod fastjson_dto_input_tests {
             "subscription-form-feed-before-version",
             "consumer-vertical-tab-prefix",
             "heartbeat-embedded-bom",
+            "subscription-single-quoted-strings",
+            "subscription-single-quoted-escapes",
+            "subscription-comment-markers-in-string",
+            "subscription-unquoted-key-rejected",
+            "subscription-trailing-object-comma",
+            "subscription-trailing-array-comma",
+            "subscription-block-comment",
+            "subscription-line-comment",
+            "subscription-single-quoted-key",
+            "subscription-short-control-escapes",
+            "subscription-char1-escape-table",
+            "subscription-hex-escapes",
+            "subscription-identity-escapes",
+            "subscription-double-quoted-apostrophe-escape",
+            "subscription-single-quote-escaped-delimiters",
+            "subscription-comments-between-tokens",
+            "subscription-comment-after-object-open",
+            "subscription-comment-after-object-comma",
+            "subscription-comment-after-array-open",
+            "subscription-comment-after-array-comma",
+            "subscription-comment-after-colon",
+            "subscription-comment-before-object-close",
+            "subscription-comment-before-array-comma",
+            "subscription-comment-after-trailing-array-comma",
+            "subscription-comment-after-nested-value",
+            "subscription-comment-after-trailing-comma",
+            "subscription-null-array-trailing-comma",
+            "subscription-eof-line-comment",
+            "subscription-single-quoted-comment-markers",
+            "subscription-nested-trailing-commas",
+            "subscription-leading-and-trailing-comments",
+            "subscription-unknown-escape-rejected",
+            "subscription-nonhex-x-lookup-zero",
+            "subscription-hex-escape-above-lookup-range-rejected",
+            "subscription-char1-escape-8-rejected",
             "subscription-object-to-string",
             "subscription-array-to-string",
             "producer-object-to-string",
@@ -1371,8 +1406,10 @@ mod fastjson_dto_input_tests {
                 "missing {required}"
             );
         }
+        let mut mismatches = Vec::new();
         for case in cases {
             let raw_input = case["rawInput"].as_str().unwrap();
+            let case_id = case["id"].as_str().unwrap();
             let decoded = match case["type"].as_str().unwrap() {
                 "subscription" => {
                     serde_fastjson::from_fastjson_str::<Option<SubscriptionData>>(raw_input)
@@ -1387,18 +1424,28 @@ mod fastjson_dto_input_tests {
                 other => panic!("unknown heartbeat DTO case type {other}"),
             };
             let java_accepts = case["outcome"] == "ACCEPTED";
-            assert_eq!(decoded.is_ok(), java_accepts, "{}: {decoded:?}", case["id"]);
+            if decoded.is_ok() != java_accepts {
+                mismatches.push(format!(
+                    "{case_id}: Java accepted={java_accepts}, Rust={decoded:?}, input={raw_input:?}"
+                ));
+                continue;
+            }
             if let Ok(mut decoded) = decoded {
                 let mut expected = case["fields"].clone();
-                if case["id"] == "root-subscription-empty-object" {
+                if case_id == "root-subscription-empty-object" {
                     decoded.as_object_mut().unwrap().remove("subVersion");
                     expected.as_object_mut().unwrap().remove("subVersion");
                 }
                 normalize_json(&mut decoded);
                 normalize_json(&mut expected);
-                assert_eq!(decoded, expected, "{}", case["id"]);
+                if decoded != expected {
+                    mismatches.push(format!(
+                        "{case_id}: Rust fields={decoded}, Java fields={expected}, input={raw_input:?}"
+                    ));
+                }
             }
         }
+        assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
     }
 }
 

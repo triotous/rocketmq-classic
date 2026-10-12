@@ -3065,12 +3065,18 @@ impl TopicRouteData {
                 .flatten()
                 .collect();
         }
-        if self.order_topic_conf.is_none() {
-            if let Some(endpoints) = self.static_queue_endpoints(topic) {
-                let mut queues = endpoints.into_keys().collect::<Vec<_>>();
-                queues.sort_by_key(MessageQueue::queue_id);
-                return queues;
-            }
+        if self.order_topic_conf.is_none()
+            && self
+                .topic_queue_mapping_by_broker_snapshot()
+                .is_some_and(|mappings| !mappings.is_empty())
+        {
+            let mut queues = self
+                .static_queue_endpoints(topic)
+                .unwrap_or_default()
+                .into_keys()
+                .collect::<Vec<_>>();
+            queues.sort_by_key(MessageQueue::queue_id);
+            return queues;
         }
 
         let broker_datas = self.broker_datas_snapshot().unwrap_or_default();
@@ -3106,8 +3112,15 @@ impl TopicRouteData {
     }
 
     pub fn subscribe_queues(&self, topic: &str) -> Vec<MessageQueue> {
-        if let Some(endpoints) = self.static_queue_endpoints(topic) {
-            return endpoints.into_keys().collect();
+        if self
+            .topic_queue_mapping_by_broker_snapshot()
+            .is_some_and(|mappings| !mappings.is_empty())
+        {
+            return self
+                .static_queue_endpoints(topic)
+                .unwrap_or_default()
+                .into_keys()
+                .collect();
         }
         let queue_data_snapshot = self.queue_datas_snapshot().unwrap_or_default();
         let mut counts = BTreeMap::<Option<&str>, i32>::new();
@@ -3131,9 +3144,6 @@ impl TopicRouteData {
 
     pub fn static_queue_endpoints(&self, topic: &str) -> Option<BTreeMap<MessageQueue, String>> {
         let mappings = self.topic_queue_mapping_by_broker_snapshot()?;
-        if mappings.is_empty() {
-            return None;
-        }
         let mut owners = BTreeMap::<(String, i32), &TopicQueueMappingInfo>::new();
         for mapping in mappings.values().flatten() {
             if let (Some(scope), Some(ids)) = (&mapping.scope, &mapping.curr_id_map) {
@@ -3166,9 +3176,6 @@ impl TopicRouteData {
 
     fn static_topic_queues(&self, topic: &str) -> Option<Vec<MessageQueue>> {
         let mappings = self.topic_queue_mapping_by_broker_snapshot()?;
-        if mappings.is_empty() {
-            return None;
-        }
         let mut totals = BTreeMap::<String, i32>::new();
         for mapping in mappings.values().flatten() {
             if let Some(scope) = mapping.scope.as_deref().filter(|_| mapping.epoch >= -1) {
@@ -3238,7 +3245,7 @@ mod tests {
             );
             checked += 1;
         }
-        assert_eq!(checked, 4);
+        assert_eq!(checked, 6);
     }
 
     #[test]

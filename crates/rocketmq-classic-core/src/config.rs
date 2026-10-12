@@ -221,7 +221,13 @@ impl ClientConfig {
 
     /// Automatic IP initialization corresponding to Java's no-argument constructor.
     pub fn new_auto() -> Result<Self, ConfigError> {
-        Ok(Self::from_auto_client_ip_result(local_address::get()))
+        Ok(Self::new_auto_with_address_provider(local_address::get))
+    }
+
+    fn new_auto_with_address_provider(
+        address_provider: impl FnOnce() -> std::io::Result<String>,
+    ) -> Self {
+        Self::from_auto_client_ip_result(address_provider())
     }
 
     fn from_auto_client_ip_result(address: std::io::Result<String>) -> Self {
@@ -942,15 +948,54 @@ mod tests {
     }
 
     #[test]
-    fn automatic_client_ip_matches_invoked_java_network_util_and_constructor() {
+    fn automatic_client_ip_constructor_uses_the_resolved_address() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json"))
                 .unwrap();
-        let java_network_address = fixture["networkUtilLocalAddress"].as_str().unwrap();
-        let java_client_address = fixture["clientConfigAutoClientIP"].as_str().unwrap();
-        assert_eq!(java_client_address, java_network_address);
+        assert_eq!(fixture["clientConfigAutoIPUsesNetworkUtil"], true);
+
+        let expected = "192.0.2.111";
+        let config = ClientConfig::new_auto_with_address_provider(|| Ok(expected.to_owned()));
+        assert_eq!(config.client_ip.as_deref(), Some(expected));
+
+        // Exercise the real host enumeration path without assuming that this
+        // machine has the same interfaces as the machine that generated the
+        // Java fixture.
         let config = ClientConfig::new_auto().expect("automatic client-IP initialization");
-        assert_eq!(config.client_ip.as_deref(), Some(java_client_address));
+        assert!(
+            config
+                .client_ip
+                .as_deref()
+                .is_none_or(|address| !address.is_empty())
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "run only in a Linux environment with IPv6 and no non-loopback IPv4 address"]
+    fn automatic_client_ip_constructor_supports_ipv6_only_interfaces() {
+        let config = ClientConfig::new_auto().expect("automatic client-IP initialization");
+        let address = config
+            .client_ip
+            .as_deref()
+            .expect("IPv6-only interface should provide a client IP");
+        let bracketed_address = address
+            .strip_prefix('[')
+            .and_then(|address| address.strip_suffix(']'))
+            .expect("Java-compatible IPv6 client IP should be bracketed");
+        let unscoped_address = bracketed_address
+            .split('%')
+            .next()
+            .unwrap_or(bracketed_address);
+        let parsed: std::net::IpAddr = unscoped_address
+            .parse()
+            .expect("automatic client IP should be a valid IP address");
+
+        assert!(parsed.is_ipv6(), "resolved non-IPv4 address: {address}");
+        assert!(
+            !parsed.is_loopback(),
+            "resolved loopback address: {address}"
+        );
     }
 
     #[test]

@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.TreeSet;
 import java.util.TreeMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -1596,6 +1597,149 @@ public final class RuntimeRouteFixtures {
                 new IllegalStateException("null broker address lookup fixture teardown"));
         }
         return result;
+    }
+
+    private static Map<String, Object> brokerAddressRow(Long id, String address) {
+        Map<String, Object> row = new TreeMap<>();
+        row.put("id", id);
+        row.put("address", address);
+        return row;
+    }
+
+    private static Map<String, Object> brokerAddressQuery(String id, long brokerId, boolean onlyThisBroker) {
+        Map<String, Object> query = new TreeMap<>();
+        query.put("id", id);
+        query.put("brokerId", brokerId);
+        query.put("onlyThisBroker", onlyThisBroker);
+        return query;
+    }
+
+    private static Map<String, Object> brokerAddressScenario(
+        String id,
+        boolean tableEntry,
+        List<Map<String, Object>> addresses,
+        Map<String, Integer> versions,
+        List<Map<String, Object>> queries
+    ) {
+        Map<String, Object> input = new TreeMap<>();
+        input.put("tableEntry", tableEntry);
+        input.put("addresses", addresses);
+        input.put("versions", new TreeMap<>(versions));
+        input.put("queries", queries);
+        Map<String, Object> scenario = new TreeMap<>();
+        scenario.put("id", id);
+        scenario.put("input", input);
+        return scenario;
+    }
+
+    private static Map<String, Object> findBrokerResultOutcome(Callable<org.apache.rocketmq.client.impl.FindBrokerResult> lookup) {
+        Map<String, Object> outcome = new TreeMap<>();
+        try {
+            org.apache.rocketmq.client.impl.FindBrokerResult result = lookup.call();
+            outcome.put("outcome", "OK");
+            outcome.put("isNull", result == null);
+            if (result != null) {
+                outcome.put("address", result.getBrokerAddr());
+                outcome.put("slave", result.isSlave());
+                outcome.put("version", result.getBrokerVersion());
+            }
+        } catch (Exception error) {
+            outcome.put("outcome", error.getClass().getSimpleName());
+        }
+        return outcome;
+    }
+
+    private static List<Object> runtimeBrokerAddressResolution() throws Exception {
+        List<Map<String, Object>> scenarios = new ArrayList<>();
+        scenarios.add(brokerAddressScenario("master-exact-and-arbitrary-fallback", true,
+            List.of(brokerAddressRow(0L, "master:10911")), Map.of("master:10911", 551), List.of(
+                brokerAddressQuery("exact-master", 0L, true),
+                brokerAddressQuery("only-this-broker-miss", 7L, true),
+                brokerAddressQuery("arbitrary-master-fallback", 7L, false))));
+        scenarios.add(brokerAddressScenario("slave-exact-and-adjacent", true,
+            List.of(brokerAddressRow(0L, "master:10911"), brokerAddressRow(2L, "slave:10911")),
+            Map.of("master:10911", 551, "slave:10911", 552), List.of(
+                brokerAddressQuery("exact-slave", 2L, true),
+                brokerAddressQuery("adjacent-slave", 1L, true))));
+        scenarios.add(brokerAddressScenario("arbitrary-slave-fallback", true,
+            List.of(brokerAddressRow(2L, "slave:10911")), Map.of("slave:10911", 552), List.of(
+                brokerAddressQuery("arbitrary-slave-fallback", 8L, false))));
+        scenarios.add(brokerAddressScenario("adjacent-id-wraps-at-long-max", true,
+            List.of(brokerAddressRow(Long.MIN_VALUE, "wrapped:10911")), Map.of("wrapped:10911", 553), List.of(
+                brokerAddressQuery("adjacent-long-overflow", Long.MAX_VALUE, true))));
+        scenarios.add(brokerAddressScenario("empty-inner-address-map", true,
+            List.of(), Map.of(), List.of(brokerAddressQuery("empty-map", 0L, false))));
+        scenarios.add(brokerAddressScenario("missing-broker-table-entry", false,
+            List.of(), Map.of(), List.of(brokerAddressQuery("absent-map", 0L, false))));
+        scenarios.add(brokerAddressScenario("null-master-address", true,
+            List.of(brokerAddressRow(0L, null)), Map.of(), List.of(
+                brokerAddressQuery("null-exact-master", 0L, true),
+                brokerAddressQuery("null-arbitrary-fallback", 1L, false))));
+        scenarios.add(brokerAddressScenario("null-id-live-address", true,
+            List.of(brokerAddressRow(null, "null-id:10911")), Map.of("null-id:10911", 554), List.of(
+                brokerAddressQuery("null-id-fallback", 7L, false))));
+        scenarios.add(brokerAddressScenario("broker-version-address-missing", true,
+            List.of(brokerAddressRow(0L, "master:10911")), Map.of("other:10911", 555), List.of(
+                brokerAddressQuery("broker-version-default", 0L, true))));
+
+        List<Object> cases = new ArrayList<>();
+        java.lang.reflect.Field addressField = MQClientInstance.class.getDeclaredField("brokerAddrTable");
+        addressField.setAccessible(true);
+        java.lang.reflect.Field versionField = MQClientInstance.class.getDeclaredField("brokerVersionTable");
+        versionField.setAccessible(true);
+        for (Map<String, Object> scenario : scenarios) {
+            org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+            config.setClientIP("broker-lookup-" + scenario.get("id"));
+            MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+            Map<String, Object> input = (Map<String, Object>) scenario.get("input");
+            Map<String, Object> item = new TreeMap<>();
+            item.put("id", scenario.get("id"));
+            item.put("input", input);
+            try {
+                java.util.concurrent.ConcurrentMap<String, HashMap<Long, String>> addressTable =
+                    (java.util.concurrent.ConcurrentMap<String, HashMap<Long, String>>) addressField.get(runtime);
+                HashMap<Long, String> brokerAddresses = new HashMap<>();
+                for (Map<String, Object> row : (List<Map<String, Object>>) input.get("addresses")) {
+                    Number key = (Number) row.get("id");
+                    brokerAddresses.put(key == null ? null : key.longValue(), (String) row.get("address"));
+                }
+                if (Boolean.TRUE.equals(input.get("tableEntry"))) {
+                    addressTable.put("broker", brokerAddresses);
+                }
+                java.util.concurrent.ConcurrentMap<String, java.util.concurrent.ConcurrentHashMap<String, Integer>>
+                    versionTable = (java.util.concurrent.ConcurrentMap<String,
+                        java.util.concurrent.ConcurrentHashMap<String, Integer>>) versionField.get(runtime);
+                Map<String, Integer> versions = (Map<String, Integer>) input.get("versions");
+                if (!versions.isEmpty()) {
+                    versionTable.put("broker", new java.util.concurrent.ConcurrentHashMap<>(versions));
+                }
+
+                item.put("publishAddress", runtime.findBrokerAddressInPublish("broker"));
+                item.put("admin", findBrokerResultOutcome(() -> runtime.findBrokerAddressInAdmin("broker")));
+                List<Object> queryResults = new ArrayList<>();
+                for (Map<String, Object> query : (List<Map<String, Object>>) input.get("queries")) {
+                    Map<String, Object> result = new TreeMap<>();
+                    result.put("id", query.get("id"));
+                    result.put("brokerId", query.get("brokerId"));
+                    result.put("onlyThisBroker", query.get("onlyThisBroker"));
+                    long brokerId = ((Number) query.get("brokerId")).longValue();
+                    boolean onlyThisBroker = (Boolean) query.get("onlyThisBroker");
+                    result.put("result", findBrokerResultOutcome(
+                        () -> runtime.findBrokerAddressInSubscribe("broker", brokerId, onlyThisBroker)));
+                    queryResults.add(result);
+                }
+                item.put("subscribe", queryResults);
+            } finally {
+                java.lang.reflect.Method cleanup = MQClientInstance.class.getDeclaredMethod(
+                    "cleanupAfterConstructionFailure", org.apache.rocketmq.client.impl.MQClientAPIImpl.class,
+                    Throwable.class);
+                cleanup.setAccessible(true);
+                cleanup.invoke(runtime, runtime.getMQClientAPIImpl(),
+                    new IllegalStateException("broker address lookup fixture teardown"));
+            }
+            cases.add(item);
+        }
+        return cases;
     }
 
     private static Map<String, Object> routeLookupOutcome(java.util.concurrent.Callable<?> lookup) {
@@ -3486,7 +3630,9 @@ public final class RuntimeRouteFixtures {
         List<Map<String, Object>> inputs = new ArrayList<>();
         for (String order : new String[] {null, "", "broker:2", "broker:2:ignored;", ";;", "broker:invalid",
             "broker:٢", "broker:+２", "broker:1٢", "broker:२", "broker:߂", "broker:²",
-            "broker:𝟚", "broker: 2", "broker:", "broker:-２１４７４８３６４８", "broker:２１４７４８３６４８"}) {
+            "broker:𝟚", "broker: 2", "broker:", "broker:-２１４７４８３６４８", "broker:２１４７４８３６４８",
+            ";broker:2", "broker:2;;broker:1", "broker:2;;;broker:1", "broker:2;;;", ";",
+            ":1", "broker:2;:1", "broker:2;broker", "broker:2;broker:1"}) {
             Map<String, Object> input = new TreeMap<>(com.alibaba.fastjson2.JSON.parseObject(ordinary));
             input.put("orderTopicConf", order);
             inputs.add(input);
@@ -3501,6 +3647,17 @@ public final class RuntimeRouteFixtures {
             input.putAll(com.alibaba.fastjson2.JSON.parseObject(extra));
             inputs.add(input);
         }
+        Map<String, Object> unmatchedBroker = new TreeMap<>(com.alibaba.fastjson2.JSON.parseObject(ordinary));
+        unmatchedBroker.put("queueDatas", com.alibaba.fastjson2.JSON.parseArray(
+            "[{\"brokerName\":\"unlisted\",\"readQueueNums\":2,\"writeQueueNums\":3,\"perm\":6,\"topicSysFlag\":0}]"));
+        unmatchedBroker.put("brokerDatas", com.alibaba.fastjson2.JSON.parseArray(
+            "[{\"cluster\":\"cluster\",\"brokerName\":\"known\",\"brokerAddrs\":{\"0\":\"master:10911\"}}]"));
+        unmatchedBroker.put("topicQueueMappingByBroker", new TreeMap<>());
+        inputs.add(unmatchedBroker);
+        Map<String, Object> emptyMappingWithOrdinaryRoute =
+            new TreeMap<>(com.alibaba.fastjson2.JSON.parseObject(ordinary));
+        emptyMappingWithOrdinaryRoute.put("topicQueueMappingByBroker", new TreeMap<>());
+        inputs.add(emptyMappingWithOrdinaryRoute);
         List<Map<String, Object>> staticInputs = new ArrayList<>();
         for (String scope : new String[] {"__global__", "__custom", "__", null}) {
             Map<String, Object> input = new TreeMap<>(com.alibaba.fastjson2.JSON.parseObject(ordinary));
@@ -3518,6 +3675,9 @@ public final class RuntimeRouteFixtures {
             TopicRouteData route = com.alibaba.fastjson2.JSON.parseObject(
                 com.alibaba.fastjson2.JSON.toJSONString(input, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue), TopicRouteData.class);
             Map<String, Object> item = new TreeMap<>();
+            if (input == unmatchedBroker) {
+                item.put("id", "empty-mapping-unmatched-queue-broker");
+            }
             item.put("input", input);
             try {
                 org.apache.rocketmq.client.impl.producer.TopicPublishInfo publish = MQClientInstance.topicRouteData2TopicPublishInfo("topic", route);
@@ -3627,6 +3787,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("runtimeNullBrokerQueue", runtimeNullBrokerQueue());
         fixture.put("runtimeNullTopicBrokerSelection", runtimeNullTopicBrokerSelection());
         fixture.put("runtimeNullBrokerAddressLookups", runtimeNullBrokerAddressLookups());
+        fixture.put("runtimeBrokerAddressResolution", runtimeBrokerAddressResolution());
         fixture.put("runtimeNullTopicRouteLookups", runtimeNullTopicRouteLookups());
         fixture.put("runtimeTopicRouteTable", runtimeTopicRouteTable(inputs.get(0)));
         fixture.put("runtimeRawOfflineCleanup", runtimeRawOfflineCleanup(inputs.get(0)));

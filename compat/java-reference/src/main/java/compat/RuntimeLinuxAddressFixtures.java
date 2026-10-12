@@ -24,6 +24,10 @@ public final class RuntimeLinuxAddressFixtures {
         if (!"Linux".equals(System.getProperty("os.name"))) {
             throw new IllegalStateException("Linux address fixture requires a Linux JVM");
         }
+        if (args.length == 3 && "--capture-candidates".equals(args[1])) {
+            captureCurrentCandidates(Paths.get(args[2]));
+            return;
+        }
         List<String> procRows = Files.readAllLines(Paths.get("/proc/net/if_inet6"), StandardCharsets.US_ASCII);
         List<Object> loopbackCandidates = new ArrayList<>();
         for (InetAddress address : NetworkUtil.getLocalInetAddressList()) {
@@ -75,6 +79,30 @@ public final class RuntimeLinuxAddressFixtures {
             Files.write(file, json.getBytes(StandardCharsets.UTF_8));
         }
         System.out.println("Linux Java IPv6 loopback candidates verified: " + loopbackCandidates.size());
+    }
+
+    private static void captureCurrentCandidates(Path file) throws Exception {
+        List<Object> candidates = new ArrayList<>();
+        for (InetAddress address : NetworkUtil.getLocalInetAddressList()) {
+            NetworkInterface networkInterface = NetworkInterface.getByInetAddress(address);
+            if (networkInterface == null) {
+                throw new IllegalStateException("address has no NetworkInterface: " + address);
+            }
+            Map<String, Object> candidate = new TreeMap<>();
+            candidate.put("interfaceName", networkInterface.getName());
+            candidate.put("hostAddress", address.getHostAddress());
+            candidate.put("normalized", NetworkUtil.normalizeHostAddress(address));
+            candidates.add(candidate);
+        }
+        Map<String, Object> fixture = new TreeMap<>();
+        fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
+        fixture.put("sourceCommit", SOURCE_COMMIT);
+        fixture.put("entrypoint", "NetworkUtil.getLocalInetAddressList/normalizeHostAddress");
+        fixture.put("serverBaselineContacted", false);
+        fixture.put("linuxCandidates", candidates);
+        Files.createDirectories(file.getParent());
+        Files.write(file, (JSON.toJSONString(fixture) + "\n").getBytes(StandardCharsets.UTF_8));
+        System.out.println("Captured Java Linux address candidates: " + candidates.size());
     }
 
     private static String hex(byte[] bytes) {

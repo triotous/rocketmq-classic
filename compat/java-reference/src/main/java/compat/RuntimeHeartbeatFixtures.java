@@ -1048,6 +1048,84 @@ public final class RuntimeHeartbeatFixtures {
             String.valueOf((char) 0x0b) + "{\"unitMode\":true}"));
         cases.add(heartbeatDtoInputCase("heartbeat-embedded-bom", "heartbeat",
             "{\"heartbeatFingerprint\":" + String.valueOf((char) 0xfeff) + "2}"));
+        cases.add(heartbeatDtoInputCase("subscription-single-quoted-strings", "subscription",
+            "{'topic':'single','subVersion':0}"));
+        cases.add(heartbeatDtoInputCase("subscription-single-quoted-escapes", "subscription",
+            "{'topic':'it\\'s \"quoted\"','subVersion':0}"));
+        cases.add(heartbeatDtoInputCase("subscription-comment-markers-in-string", "subscription",
+            "{\"topic\":\"// stays /* stays */\",\"subVersion\":0}"));
+        cases.add(heartbeatDtoInputCase("subscription-unquoted-key-rejected", "subscription",
+            "{topic:'unquoted-key','subVersion':0}"));
+        cases.add(heartbeatDtoInputCase("subscription-trailing-object-comma", "subscription",
+            "{\"topic\":\"trailing-object-comma\",\"subVersion\":0,}"));
+        cases.add(heartbeatDtoInputCase("subscription-trailing-array-comma", "subscription",
+            "{\"subVersion\":0,\"tagsSet\":[\"tag\",]}"));
+        cases.add(heartbeatDtoInputCase("subscription-block-comment", "subscription",
+            "/*prefix*/{\"topic\":\"block-comment\",\"subVersion\":0}"));
+        cases.add(heartbeatDtoInputCase("subscription-line-comment", "subscription",
+            "{\"topic\":\"line-comment\",// gap\n\"subVersion\":0}"));
+        cases.add(heartbeatDtoInputCase("subscription-single-quoted-key", "subscription",
+            "{'topic':'single-key','subVersion':0}"));
+        cases.add(heartbeatDtoInputCase("subscription-short-control-escapes", "subscription",
+            "{\"topic\":\"zero=\\0 one=\\1 two=\\2 three=\\3 four=\\4 five=\\5 six=\\6 seven=\\7 vertical=\\v form=\\F\",\"subVersion\":0}"));
+        StringBuilder char1Escapes = new StringBuilder("{\"topic\":\"");
+        for (char escaped : new char[] {
+            '0', '1', '2', '3', '4', '5', '6', '7', 'b', 't', 'n', 'v', 'f', 'F', 'r',
+            '"', '\'', '/', '\\', ' ', '#', '&', '(', ')', ',', '.', '@', '[', ']', '_', '~'
+        }) {
+            char1Escapes.append('\\').append(escaped);
+        }
+        char1Escapes.append("\",\"subVersion\":0}");
+        cases.add(heartbeatDtoInputCase("subscription-char1-escape-table", "subscription",
+            char1Escapes.toString()));
+        cases.add(heartbeatDtoInputCase("subscription-hex-escapes", "subscription",
+            "{\"topic\":\"ascii=\\x41 nul=\\x00 slash=\\x5c quote=\\x22\",\"subVersion\":0}"));
+        cases.add(heartbeatDtoInputCase("subscription-identity-escapes", "subscription",
+            "{\"topic\":\"\\#\\&\\[\\]\\@\\(\\)\\_\\,\\~\\.\",\"subVersion\":0}"));
+        cases.add(heartbeatDtoInputCase("subscription-double-quoted-apostrophe-escape", "subscription",
+            "{\"topic\":\"it\\'s\",\"subVersion\":0}"));
+        cases.add(heartbeatDtoInputCase("subscription-single-quote-escaped-delimiters", "subscription",
+            "{'topic':'single \\'quote\\' and \"double\"','subVersion':0}"));
+        cases.add(heartbeatDtoInputCase("subscription-comments-between-tokens", "subscription",
+            "{\"topic\"/*name*/:\"value\"/*value*/,\"subVersion\":0}"));
+        cases.add(heartbeatDtoInputCase("subscription-comment-after-object-open", "subscription",
+            "{/* before first key */\"topic\":\"value\",\"subVersion\":0}"));
+        cases.add(heartbeatDtoInputCase("subscription-comment-after-object-comma", "subscription",
+            "{\"topic\":\"value\",/* before next key */\"subVersion\":0}"));
+        cases.add(heartbeatDtoInputCase("subscription-comment-after-array-open", "subscription",
+            "{\"subVersion\":0,\"tagsSet\":[/* before first value */\"tag\"]}"));
+        cases.add(heartbeatDtoInputCase("subscription-comment-after-array-comma", "subscription",
+            "{\"subVersion\":0,\"tagsSet\":[\"first\",/* before next value */\"second\"]}"));
+        cases.add(heartbeatDtoInputCase("subscription-comment-after-colon", "subscription",
+            "{\"topic\":/* before value */\"value\",\"subVersion\":0}"));
+        cases.add(heartbeatDtoInputCase("subscription-comment-before-object-close", "subscription",
+            "{\"topic\":\"value\"/* before close */}"));
+        cases.add(heartbeatDtoInputCase("subscription-comment-before-array-comma", "subscription",
+            "{\"subVersion\":0,\"tagsSet\":[\"value\"/* before comma */,\"next\"]}"));
+        cases.add(heartbeatDtoInputCase("subscription-comment-after-trailing-array-comma", "subscription",
+            "{\"subVersion\":0,\"tagsSet\":[\"value\",/* before close */]}"));
+        cases.add(heartbeatDtoInputCase("subscription-comment-after-nested-value", "subscription",
+            "{\"subVersion\":0,\"tagsSet\":[{\"x\":1}/* before comma */,{\"y\":2}]}"));
+        cases.add(heartbeatDtoInputCase("subscription-comment-after-trailing-comma", "subscription",
+            "{\"topic\":\"value\",\"subVersion\":0, /* tail */}"));
+        cases.add(heartbeatDtoInputCase("subscription-null-array-trailing-comma", "subscription",
+            "{\"subVersion\":0,\"tagsSet\":[null,]}"));
+        cases.add(heartbeatDtoInputCase("subscription-eof-line-comment", "subscription",
+            "{\"topic\":\"eof-comment\",\"subVersion\":0}// end"));
+        cases.add(heartbeatDtoInputCase("subscription-single-quoted-comment-markers", "subscription",
+            "{'topic':'// stays /* stays */','subVersion':0}"));
+        cases.add(heartbeatDtoInputCase("subscription-nested-trailing-commas", "subscription",
+            "{\"subVersion\":0,\"tagsSet\":[{\"z\":1,\"a\":2,},],}"));
+        cases.add(heartbeatDtoInputCase("subscription-leading-and-trailing-comments", "subscription",
+            " /* start */ {'topic':'commented','subVersion':0,} /* end */"));
+        cases.add(heartbeatDtoInputCase("subscription-unknown-escape-rejected", "subscription",
+            "{\"topic\":\"unknown=\\q\",\"subVersion\":0}"));
+        cases.add(heartbeatDtoInputCase("subscription-nonhex-x-lookup-zero", "subscription",
+            "{\"topic\":\"invalid=\\xG1\",\"subVersion\":0}"));
+        cases.add(heartbeatDtoInputCase("subscription-hex-escape-above-lookup-range-rejected", "subscription",
+            "{\"topic\":\"invalid=\\xg1\",\"subVersion\":0}"));
+        cases.add(heartbeatDtoInputCase("subscription-char1-escape-8-rejected", "subscription",
+            "{\"topic\":\"invalid=\\8\",\"subVersion\":0}"));
         cases.add(heartbeatDtoInputCase("subscription-object-to-string", "subscription",
             "{\"subVersion\":0,\"topic\":{\"z\":1,\"a\":2}}"));
         cases.add(heartbeatDtoInputCase("subscription-array-to-string", "subscription",

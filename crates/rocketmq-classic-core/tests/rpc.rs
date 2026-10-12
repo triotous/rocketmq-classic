@@ -16,9 +16,10 @@ use rocketmq_classic_protocol::{
     codes::{request, response},
     header::{
         AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader,
-        ConsumerSendMsgBackRequestHeader, EndTransactionRequestHeader, PopLiteMessageRequestHeader,
-        PopMessageRequestHeader, PullMessageRequestHeader, QueryConsumerOffsetRequestHeader,
-        UnregisterClientRequestHeader, UpdateConsumerOffsetRequestHeader,
+        ConsumerSendMsgBackRequestHeader, EndTransactionRequestHeader, HeaderMap,
+        PopLiteMessageRequestHeader, PopMessageRequestHeader, PullMessageRequestHeader,
+        QueryConsumerOffsetRequestHeader, UnregisterClientRequestHeader,
+        UpdateConsumerOffsetRequestHeader,
     },
     heartbeat::HeartbeatData,
 };
@@ -43,6 +44,35 @@ async fn read_command(stream: &mut tokio::net::TcpStream) -> RemotingCommand {
     frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
         .unwrap()
         .unwrap()
+}
+
+async fn scripted_probe_peer(
+    replies: Vec<(i32, Option<String>, Option<HeaderMap>)>,
+) -> (String, tokio::task::JoinHandle<Vec<RemotingCommand>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap().to_string();
+    let task = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut requests = Vec::with_capacity(replies.len());
+        for (code, remark, ext_fields) in replies {
+            let request = read_command(&mut stream).await;
+            let mut reply = RemotingCommand {
+                code,
+                opaque: request.opaque,
+                remark,
+                ext_fields,
+                ..RemotingCommand::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .await
+                .unwrap();
+            requests.push(request);
+        }
+        requests
+    });
+    (addr, task)
 }
 
 // A peer that consumes one request without responding, then watches for a retry.
@@ -801,5 +831,99 @@ async fn nameserver_deadline_does_not_fail_over_after_first_peer_stalls() {
         attempts += peer.await.unwrap();
     }
     assert_eq!(attempts, 1);
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn producer_broker_probe_matches_get_max_offset_request_and_response_validation() {
+    let replies = vec![
+        (
+            response::SUCCESS,
+            None,
+            Some([("offset".into(), "17".into())].into()),
+        ),
+        (response::SYSTEM_ERROR, Some("probe rejected".into()), None),
+        (response::SUCCESS, None, None),
+        (
+            response::SUCCESS,
+            None,
+            Some([("offset".into(), "not-an-offset".into())].into()),
+        ),
+    ];
+    let (addr, peer) = scripted_probe_peer(replies).await;
+    let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
+    let api = MQClientApi::new(client.clone());
+
+    api.probe_broker(
+        &addr,
+        "probe-topic",
+        Instant::now() + Duration::from_secs(2),
+    )
+    .await
+    .unwrap();
+
+    let broker_error = api
+        .probe_broker(
+            &addr,
+            "probe-topic",
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        broker_error,
+        RpcError::Response {
+            request_code: request::GET_MAX_OFFSET,
+            code: response::SYSTEM_ERROR,
+            remark: Some(ref remark),
+            ..
+        } if remark == "probe rejected"
+    ));
+
+    let missing_offset = api
+        .probe_broker(
+            &addr,
+            "probe-topic",
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        missing_offset,
+        RpcError::MalformedResponse {
+            request_code: request::GET_MAX_OFFSET,
+            reason,
+            ..
+        } if reason == "missing max offset"
+    ));
+
+    let invalid_offset = api
+        .probe_broker(
+            &addr,
+            "probe-topic",
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        invalid_offset,
+        RpcError::MalformedResponse {
+            request_code: request::GET_MAX_OFFSET,
+            reason,
+            ..
+        } if reason.starts_with("invalid max offset:")
+    ));
+
+    let requests = peer.await.unwrap();
+    assert_eq!(requests.len(), 4);
+    for command in requests {
+        assert_eq!(command.code, request::GET_MAX_OFFSET);
+        assert!(!command.is_oneway());
+        let fields = command.ext_fields.expect("probe request fields");
+        assert_eq!(fields.get("topic").map(String::as_str), Some("probe-topic"));
+        assert_eq!(fields.get("queueId").map(String::as_str), Some("0"));
+        assert_eq!(fields.get("committed").map(String::as_str), Some("true"));
+    }
     client.shutdown().await;
 }

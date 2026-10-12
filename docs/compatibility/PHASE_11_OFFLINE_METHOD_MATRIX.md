@@ -52,19 +52,46 @@ Orderly assignment remains PARTIAL until Phase 12 activates Broker queue locks.
 
 ## Validation record
 
-On 2026-10-12, these checks passed:
+Latest full local gates passed on 2026-10-12 on the repository host (ARM64
+macOS; Maven 3.10.0 using JDK 27):
 
-- `cargo fmt --all -- --check` and `git diff --check`
-- `cargo test -p rocketmq-classic-consumer --locked` (consumer library and integration targets)
+- `cargo fmt --all -- --check`
+- `cargo test --workspace --locked` (including 130 core tests and 81 consumer library tests)
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
 - `cargo build -p rocketmq-classic --examples --locked`
-- `cargo clippy --workspace --all-targets --locked -- -D warnings`
+- `mvn -o -q -f compat/java-reference/pom.xml verify` (31 differential scenarios, pinned Java fixtures and Rust-generated fixture cross-decodes)
 - `python3 tests/differential/compare.py --self-test`
-- Maven execution `exec:java@verify-java-rebalance-initial-offset-fixtures`
+- `python3 tests/differential/compare.py --validate-manifest` (31 scenarios)
+- `git diff --check`
 
-The full offline Maven `verify` stopped at a separate drift in
-`fixtures/runtime/client-config.json`; the Phase 11 initial-offset fixture
-verification passed independently. `cargo test --workspace --locked` reached
-the core crate and failed two host-interface-dependent tests: this runner
-reports `192.168.18.113` where the existing fixtures expect `10.10.10.111`.
-The complete consumer package test run passed, including the allocation and
-initial-offset fixtures; the two core failures are unrelated to Phase 11.
+A subsequent Linux ARM64 `cargo test --workspace --locked` run also passed on
+2026-10-12 after correcting two order/timing assumptions in existing remoting
+integration assertions. It exercises the Phase 11 local suite on Linux; it does
+not add Broker or cross-language evidence.
+
+The earlier workspace failure depended on a fixture storing the generating
+host's interface address; the runtime fixture now compares resolver behavior
+without storing host-specific interface data. The earlier Maven fixture drift
+is also resolved, and the full offline verify now passes. P11-V03/V04 remain
+pending Phase 19; these offline gates do not claim live Broker results.
+
+The preceding complete gate run used the 249-case Heartbeat DTO checkpoint
+(fixture SHA-256
+`98b5029aafaa9146a801e3a68d7edc70707f25ba4c17d3ceca40012e4673e0b3`). The
+latest rerun uses the current 276-case fixture, SHA-256
+`67b844d3a61ee31ac12c340cf09f30d81083435635d6f17bebc44206b65d37cc`; fmt,
+workspace tests, strict Clippy, example build, offline Maven verify,
+comparator self-test, manifest validation, and diff check all pass. See the
+[latest local gate record](../../rlogs/2026/10/12-phase-00-11-gate-rerun__20261012T033153Z.rlog).
+
+## Phase 19 source-case handoff coverage
+
+A handoff inventory audit on 2026-10-12 found that the manifest omitted the
+original pending IDs P0-V03, P3-V04, P7-V02/V03/V04, P9-V03, P10-V03, and
+P11-V03/V04. These nine cases are now registered as `PENDING_PHASE_19`;
+P5-V02 remains split into four detailed rows linked by `source_case_id`, and
+P6-V04 remains registered. `compare.py` now reads unchecked verification IDs
+from the Phase 0–11 plans and requires them in the manifest; the current set
+has eleven IDs. Its self-test verifies that dropping P11-V04 fails. The
+manifest validator passes with 31 scenarios. This records the full handoff
+inventory; none of these changes claim live Broker execution.

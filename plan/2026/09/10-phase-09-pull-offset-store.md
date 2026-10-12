@@ -72,10 +72,10 @@ Add typed header/response fixtures and single-attempt RPCs for search offset, mi
 
 Write the failing check/oracle fixture before its implementation. The cases below must become runnable checks, not manual checklist-only claims. Run these checks without Docker or a live Broker; use Java fixtures, controlled clocks and scripted peers. Shared commands and evidence rules are in the execution index.
 
-- [ ] **P9-V01** — All read/update/freeze modes match Java, including missing offsets, increase-only races and transport failure distinction.
-- [ ] **P9-V02** — Fault injection before/after each local-file write/rename step preserves a recoverable old or new snapshot; corrupt primary/backup and path traversal are tested.
+- [x] **P9-V01** — All read/update/freeze modes match Java, including missing offsets, increase-only races and transport failure distinction.
+- [x] **P9-V02** — Fault injection before/after each local-file write/rename step preserves a recoverable old or new snapshot; corrupt primary/backup and path traversal are tested.
 
-- [ ] **P9-U01** — Scripted pull/offset responses and temporary-file restart tests verify every pull status, next-offset recovery, broker selection and boundary RPC.
+- [x] **P9-U01** — Scripted pull/offset responses and temporary-file restart tests verify every pull status, next-offset recovery, broker selection and boundary RPC.
 
 ### 5.1 Local commands after implementation
 

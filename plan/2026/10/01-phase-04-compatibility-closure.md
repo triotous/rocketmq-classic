@@ -1,13 +1,13 @@
 # Plan: Phase 4 Compatibility Coverage Closure
 
-> Parent: [`../../09/00-rocketmq-classic-plan.md`](../../09/00-rocketmq-classic-plan.md), Phase 4 implementation plan: [`../../09/05-phase-04-typed-headers-bodies.md`](../../09/05-phase-04-typed-headers-bodies.md).
-> This is a scoped follow-up to close the remaining Phase 4 typed-header/body evidence gaps. It does not declare Phase 4 complete.
+> Parent: [`../09/00-rocketmq-classic-plan.md`](../09/00-rocketmq-classic-plan.md), Phase 4 implementation plan: [`../09/05-phase-04-typed-headers-bodies.md`](../09/05-phase-04-typed-headers-bodies.md).
+> This scoped follow-up was opened to close Phase 4 typed-header/body evidence gaps. Its completed outcome is recorded in section 7 and in the Phase 4 matrix; it accepts the typed wire-model gate only, not later RPC or live Broker coverage.
 
 ## 1. Goal and scope
 
 Complete executable Java 5.5.1 compatibility coverage for implemented Phase 4 headers and bodies, close identified model/oracle gaps, and update the Phase 4 matrix and append-only session log with observed results. Keep the phase incomplete until every acceptance criterion below is met. Do not expand into RPC execution or live broker validation.
 
-## 2. Current state
+## 2. State when this closure audit started (2026-10-01)
 
 - `crates/rocketmq-classic-protocol/tests/headers.rs` covers Java-to-Rust fixtures and a subset of required/invalid header cases. Rust-to-Java Maven verification compares all ext fields for 19 Rust-generated header frames; this does not yet prove complete bidirectional coverage for every implemented header.
 - Seven Rust-generated body fixtures are compared semantically by the Java 5.5.1 oracle through `mvn verify`.
@@ -68,3 +68,9 @@ Maven `verify` must work from a clean generated-fixture directory and regenerate
 ## 6. Constraints and open evidence
 
 Use the pinned Java client 5.5.1 as the wire-format oracle. Do not change protocol behavior based on inference or server limitations. If source annotations and call-site behavior disagree, preserve the distinction in tests/matrix and resolve from the actual Java construction/decoding path. No Docker, live broker, new test framework, or unrelated Phase 5 RPC work is required.
+
+## 7. Completion record (2026-10-04)
+
+The closure work is complete for P4-V01/V02/V03. The final inventory covers every public `basic.rs` `CommandHeader` plus the unlock alias in both directions, and the Maven verifier checks 38 Rust-generated header frames. Table-driven Rust tests cover every modeled header field, required/optional cases, malformed and boundary numbers, Java boolean parsing, and unknown-field preservation. The body gate checks 14 Java-decoded semantic frames, including absent/empty/populated consumer lists, lock/unlock bodies, and reply V2/push binary body bytes. The pinned ACK Lite audit found no distinct Lite body/header call path to model; the shared method uses ACK_MESSAGE for a non-null request header.
+
+Final evidence: `cargo test -p rocketmq-classic-protocol --test headers --locked`, `cargo test --workspace --locked`, `cargo fmt --all -- --check`, strict workspace/all-target/all-feature Clippy, `mvn -q -f compat/java-reference/pom.xml clean verify`, `python3 tests/differential/compare.py --self-test`, and `git diff --check` all passed. The append-only execution log records fixture provenance and results. The remaining RPC wiring, public client surface, and Broker integration are later-phase scope, not open Phase 4 typed-model acceptance items.

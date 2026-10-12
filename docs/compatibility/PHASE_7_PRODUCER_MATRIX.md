@@ -13,12 +13,12 @@ HEAD in the Java checkout.
 | Java source | Methods and call sites checked | Rust mapping |
 | --- | --- | --- |
 | `client/src/main/java/org/apache/rocketmq/client/producer/DefaultMQProducer.java` | `start`, `shutdown`, `fetchPublishMessageQueues`; default, explicit-queue, selector, oneway, and collection `send` overloads; wrapper dispatch to `sendDirect` / `sendByAccumulator`; `batch(Collection)`; producer setting getters/setters | `Producer::{start,shutdown,fetch_publish_message_queues}`; `send*` and `send_batch*`; `ProducerConfig` |
-| `client/src/main/java/org/apache/rocketmq/client/impl/producer/DefaultMQProducerImpl.java` | `start`, `shutdown`, `sendDefaultImpl`, `sendSelectImpl`, `sendKernelImpl`, `tryToFindTopicPublishInfo`, `selectOneMessageQueue`, `updateFaultItem`; sync/future/oneway mode branches | `Producer` lifecycle, route cache, `send`, `selector`, `fault`, and mode-specific retry logic |
+| `client/src/main/java/org/apache/rocketmq/client/impl/producer/DefaultMQProducerImpl.java` | `start`, `shutdown`, `sendDefaultImpl`, `sendSelectImpl`, `sendKernelImpl`, `tryToFindTopicPublishInfo`, `selectOneMessageQueue`, `updateFaultItem`, `pickTopic`; sync/future/oneway mode branches and the `ServiceDetector.detect` callback | `Producer` lifecycle, route cache, `send`, `selector`, `fault`, and `detect_brokers`; the detector calls `MQClientApi::probe_broker` |
 | `client/src/main/java/org/apache/rocketmq/client/Validators.java` | `checkGroup`, `checkMessage`, `checkTopic`; producer call sites before route/send and during batch construction | `validation::{validate_group,validate_message,validate_topic}` and `batch::create_batch` |
 | `common/src/main/java/org/apache/rocketmq/common/message/MessageClientIDSetter.java` | `setUniqID` | `UniqueIdGenerator` and immutable send preparation |
 | `common/src/main/java/org/apache/rocketmq/common/message/MessageBatch.java` | `generateFromList`, `encode` | `batch::create_batch` and Java-compatible record encoding |
 | `client/src/main/java/org/apache/rocketmq/client/impl/producer/TopicPublishInfo.java` | `ok`, `selectOneMessageQueue`, previous-broker avoidance | cached writable routes and `RoundRobinSelector` |
-| `client/src/main/java/org/apache/rocketmq/client/latency/MQFaultStrategy.java`; `LatencyFaultToleranceImpl.java` | `selectOneMessageQueue`, `updateFaultItem`, `isAvailable` | `FaultStrategy` and producer-owned detector task |
+| `client/src/main/java/org/apache/rocketmq/client/latency/MQFaultStrategy.java`; `LatencyFaultToleranceImpl.java` | `selectOneMessageQueue`, `updateFaultItem`, `isAvailable`, `detectByOneRound`; `DefaultMQProducerImpl` supplies `ServiceDetector.detect` using `MQClientAPIImpl.getMaxOffset(endpoint, queue, timeoutMillis)` | `FaultStrategy` and producer-owned detector task; `MQClientApi::probe_broker` sends `GET_MAX_OFFSET` for queue 0 with `committed=true` and treats only a successful, valid offset response as reachability |
 
 Java callback overloads are represented by Rust future-mode methods as allowed
 by the Phase 7 plan; future scheduling is selected by the caller's Tokio
@@ -99,6 +99,15 @@ remain assigned to Phase 16.
   preservation, and lost-ack duplicate delivery. All five loopback cases passed.
 - **P7-V02–V04:** PENDING_PHASE_19, as specified by the plan. Do not mark them
   passed before the Docker server 5.3.4 handoff.
+
+The producer detector's local probe adapter has direct scripted RPC coverage
+for the queue-0 request fields, Broker error response, and missing/invalid
+`offset` response branches. This is covered by
+`producer_broker_probe_matches_get_max_offset_request_and_response_validation`
+in `crates/rocketmq-classic-core/tests/rpc.rs`: the peer verifies GET_MAX_OFFSET,
+topic, queue ID 0, and `committed=true`, and the test checks valid, Broker-error,
+missing-offset, and invalid-offset outcomes. The focused test passes. This local
+check does not change P7-V02–V04's Phase 19 live Broker status.
 
 The dedicated offline Java producer fixture generator and its drift verification
 pass. `mvn -f compat/java-reference/pom.xml verify` also passed, including the

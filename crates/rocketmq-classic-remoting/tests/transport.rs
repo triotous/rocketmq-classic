@@ -532,6 +532,13 @@ async fn p3_async_callback_contains_response_future_metadata_and_timeout_grace()
     assert!(!context.timed_out);
     assert!(context.error.is_none());
     assert!(context.elapsed >= Duration::from_millis(100));
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while events.lock().unwrap().len() < 2 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("success callback should follow the completion callback");
     assert_eq!(*events.lock().unwrap(), vec!["complete", "succeed"]);
     peer.await.unwrap();
     client.shutdown().await;
@@ -718,7 +725,9 @@ async fn p3_nameserver_update_prunes_availability_on_next_scan() {
     client.update_name_server_address_list(vec![first_address.clone()]);
     let mut available = client.get_available_name_srv_list();
     available.sort();
-    assert_eq!(available, vec![first_address, second_address.clone()]);
+    let mut expected_available = vec![first_address, second_address.clone()];
+    expected_available.sort();
+    assert_eq!(available, expected_available);
     tokio::time::timeout(Duration::from_secs(1), async {
         while client
             .get_available_name_srv_list()

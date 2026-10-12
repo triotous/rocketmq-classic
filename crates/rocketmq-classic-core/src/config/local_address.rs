@@ -1,8 +1,11 @@
 use std::{
     io,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, ToSocketAddrs},
+    net::{IpAddr, ToSocketAddrs},
     sync::OnceLock,
 };
+
+#[cfg(any(test, windows, all(unix, not(target_os = "linux"))))]
+use std::net::{Ipv4Addr, Ipv6Addr};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Address {
@@ -1149,9 +1152,9 @@ mod tests {
             );
         }
     }
-    #[cfg(unix)]
+    #[cfg(target_os = "macos")]
     #[test]
-    fn interface_enumeration_retains_java_named_ipv6_scope() {
+    fn macos_interface_enumeration_retains_java_named_ipv6_scope() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/address.json"))
                 .unwrap();
@@ -1172,71 +1175,6 @@ mod tests {
                 "{case}"
             );
         }
-    }
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn local_address_selection_matches_invoked_java_candidates_and_ipv6_fallback() {
-        let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../fixtures/runtime/client-config.json"
-        ))
-        .unwrap();
-        let java_candidates = fixture["networkUtilLocalAddressCandidates"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|candidate| Address {
-                ip: candidate
-                    .as_str()
-                    .unwrap()
-                    .split('%')
-                    .next()
-                    .unwrap()
-                    .parse()
-                    .unwrap(),
-                scope: 0,
-                scope_name: None,
-            })
-            .collect::<Vec<_>>();
-        let native_candidates = interfaces(false).unwrap();
-        let java_v4 = java_candidates
-            .iter()
-            .filter(|address| address.ip.is_ipv4())
-            .map(|address| address.ip)
-            .collect::<Vec<_>>();
-        let native_v4 = native_candidates
-            .iter()
-            .filter(|address| address.ip.is_ipv4())
-            .map(|address| address.ip)
-            .collect::<Vec<_>>();
-        assert_eq!(native_v4, java_v4);
-
-        let java_selected = select(java_candidates.clone()).unwrap();
-        let native_selected = select(native_candidates.clone()).unwrap();
-        assert_eq!(native_selected.ip, java_selected.ip);
-        assert_eq!(
-            normalize(&native_selected),
-            fixture["networkUtilLocalAddress"].as_str().unwrap()
-        );
-
-        let java_v6 = java_candidates
-            .into_iter()
-            .filter(|address| address.ip.is_ipv6())
-            .collect::<Vec<_>>();
-        let native_v6 = native_candidates
-            .into_iter()
-            .filter(|address| address.ip.is_ipv6())
-            .collect::<Vec<_>>();
-        assert_eq!(
-            native_v6
-                .iter()
-                .map(|address| address.ip)
-                .collect::<Vec<_>>(),
-            java_v6.iter().map(|address| address.ip).collect::<Vec<_>>()
-        );
-        assert_eq!(
-            select(native_v6).map(|address| address.ip),
-            select(java_v6).map(|address| address.ip)
-        );
     }
     #[cfg(unix)]
     #[test]
