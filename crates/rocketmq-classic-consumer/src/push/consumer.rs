@@ -27,11 +27,15 @@ use rocketmq_classic_core::runtime::{
 };
 use rocketmq_classic_protocol::{
     SharedValue,
+    body::MessageRequestMode,
     codes::response,
     header::{
-        ConsumerSendMsgBackRequestHeader, PullMessageRequestHeader, SendMessageRequestHeaderV1,
+        BoundaryType, ConsumerSendMsgBackRequestHeader, GetMaxOffsetRequestHeader,
+        PullMessageRequestHeader, SearchOffsetRequestHeader, SendMessageRequestHeaderV1,
     },
-    heartbeat::{ConsumeType, ConsumerData, ConsumerSubscriptionDataSet, SubscriptionData},
+    heartbeat::{
+        ConsumeFromWhere, ConsumeType, ConsumerData, ConsumerSubscriptionDataSet, SubscriptionData,
+    },
 };
 use tokio::time::Instant;
 
@@ -41,14 +45,15 @@ use std::sync::Mutex;
 use crate::{
     consume::{ConcurrentConsumeService, ConsumeRequest, ConsumeSubmitError},
     error::PushConsumerError,
-    offset::{LocalFileOffsetStore, OffsetStore, RemoteBrokerOffsetStore},
+    offset::{LocalFileOffsetStore, OffsetStore, OffsetStoreError, RemoteBrokerOffsetStore},
     offset::{OffsetRead, ReadOffsetType},
     process_queue::ProcessQueue,
     pull::{PullAPIWrapper, build_subscription, resolve_pull_broker_address},
+    rebalance::RebalanceService,
 };
 
 use super::{
-    config::PushConsumerConfig,
+    config::{PushConsumerConfig, parse_java_timestamp_millis},
     listener::{
         ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus, MessageListenerConcurrently,
         PushMessageListener,
@@ -83,6 +88,21 @@ struct PullContext {
     offset_store: Arc<dyn OffsetStore>,
     scheduler: Arc<PullScheduler>,
     consume_service: Arc<ConcurrentConsumeService>,
+}
+
+struct DesiredAssignment {
+    topic: String,
+    all_queues: Option<HashSet<MessageQueue>>,
+    assigned_queues: HashSet<MessageQueue>,
+    pull_queues: HashSet<MessageQueue>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum InitialOffsetPlan {
+    Stored(i64),
+    Fixed(i64),
+    MaxOffset,
+    SearchTimestamp(i64),
 }
 
 struct AbortOnDrop<T>(tokio::task::JoinHandle<T>);
@@ -190,9 +210,8 @@ impl StartupStage {
     }
 }
 
-/// Java-compatible Push consumer startup and shared-runtime registration.
-/// Queue allocation and concurrent consumption remain partial until later
-/// pipeline stages are attached.
+/// Java-compatible Push startup, assignment lifecycle and concurrent pulls.
+/// POP and orderly queue ownership are attached in later phases.
 pub struct PushConsumer {
     config: PushConsumerConfig,
     manager: ClientRuntimeManager,
@@ -203,6 +222,7 @@ pub struct PushConsumer {
     subscriptions: Arc<RwLock<HashMap<String, SubscriptionData>>>,
     topic_queues: Arc<RwLock<HashMap<String, BTreeSet<MessageQueue>>>>,
     process_queues: Arc<RwLock<HashMap<MessageQueue, Arc<ProcessQueue>>>>,
+    rebalance_service: RebalanceService,
     offset_corrections_pending: Arc<RwLock<HashSet<MessageQueue>>>,
     next_generation: AtomicU64,
     next_retry_message_id: AtomicU64,
@@ -213,6 +233,8 @@ pub struct PushConsumer {
     startup_failure: Mutex<Option<StartupStage>>,
     #[cfg(test)]
     scripted_retry_transport: Mutex<ScriptedRetryTransport>,
+    #[cfg(test)]
+    rebalance_membership: Mutex<HashMap<String, VecDeque<Option<Vec<String>>>>>,
 }
 
 impl PushConsumer {
@@ -222,6 +244,7 @@ impl PushConsumer {
 
     fn with_manager(config: PushConsumerConfig, manager: ClientRuntimeManager) -> Self {
         let pull_api = PullAPIWrapper::new(config.unit_mode());
+        let rebalance_service = RebalanceService::new(config.allocate_message_queue_strategy());
         Self {
             config,
             manager,
@@ -232,6 +255,7 @@ impl PushConsumer {
             subscriptions: Arc::new(RwLock::new(HashMap::new())),
             topic_queues: Arc::new(RwLock::new(HashMap::new())),
             process_queues: Arc::new(RwLock::new(HashMap::new())),
+            rebalance_service,
             offset_corrections_pending: Arc::new(RwLock::new(HashSet::new())),
             next_generation: AtomicU64::new(1),
             next_retry_message_id: AtomicU64::new(0),
@@ -242,6 +266,8 @@ impl PushConsumer {
             startup_failure: Mutex::new(None),
             #[cfg(test)]
             scripted_retry_transport: Mutex::new(ScriptedRetryTransport::default()),
+            #[cfg(test)]
+            rebalance_membership: Mutex::new(HashMap::new()),
         }
     }
 
@@ -329,20 +355,30 @@ impl PushConsumer {
             .map_err(|error| PushConsumerError::InvalidSubscription(error.to_string()))?;
         write_lock(&self.subscriptions).insert(topic, subscription);
         if let Some(runtime) = runtime {
-            runtime.send_heartbeat_to_all_brokers().await?;
+            let heartbeat = runtime.send_heartbeat_to_all_brokers().await;
+            runtime.rebalance_immediately();
+            heartbeat?;
         }
         Ok(())
     }
 
     pub async fn unsubscribe(&self, topic: &str) -> Result<bool, PushConsumerError> {
         let state = self.state.lock().await;
-        match &*state {
-            State::Created | State::Started { .. } => {}
+        let runtime = match &*state {
+            State::Created => None,
+            State::Started { runtime, .. } => runtime.upgrade(),
             State::Shutdown => return Err(PushConsumerError::Shutdown),
-        }
+        };
+        drop(state);
         // Java's facade passes the argument through without applying the
         // namespace here, unlike subscribe().
-        Ok(write_lock(&self.subscriptions).remove(topic).is_some())
+        let removed = write_lock(&self.subscriptions).remove(topic).is_some();
+        if removed {
+            if let Some(runtime) = runtime {
+                runtime.rebalance_immediately();
+            }
+        }
+        Ok(removed)
     }
 
     pub fn subscriptions(&self) -> HashMap<String, SubscriptionData> {
@@ -533,6 +569,9 @@ impl PushConsumer {
             {
                 return Ok(existing);
             }
+            return Err(PushConsumerError::ProcessQueueRemovalPending(
+                queue.to_string(),
+            ));
         }
         let generation = self
             .next_generation
@@ -541,11 +580,20 @@ impl PushConsumer {
             })
             .map_err(|_| PushConsumerError::GenerationExhausted)?;
         let process_queue = Arc::new(ProcessQueue::new(queue.clone(), generation));
-        if let Some(previous) =
-            write_lock(&self.process_queues).insert(queue.clone(), process_queue.clone())
         {
-            let _ = previous.drop_assignment(previous.generation());
-            scheduler.cancel(previous.queue(), previous.generation());
+            let mut queues = write_lock(&self.process_queues);
+            if let Some(existing) = queues.get(&queue) {
+                if existing
+                    .snapshot(existing.generation())
+                    .is_ok_and(|snapshot| !snapshot.dropped)
+                {
+                    return Ok(existing.clone());
+                }
+                return Err(PushConsumerError::ProcessQueueRemovalPending(
+                    queue.to_string(),
+                ));
+            }
+            queues.insert(queue.clone(), process_queue.clone());
         }
         offset_store.update_offset(&queue, initial_offset, false);
         let request = Arc::new(PullRequest::new(
@@ -557,12 +605,14 @@ impl PushConsumer {
             scheduler.pause(request.queue(), request.generation());
         }
         if let Err(error) = scheduler.schedule(request, 0) {
+            scheduler.cancel(&queue, generation);
             let mut queues = write_lock(&self.process_queues);
             if queues
                 .get(&queue)
-                .is_some_and(|current| current.generation() == generation)
+                .is_some_and(|current| Arc::ptr_eq(current, &process_queue))
             {
                 queues.remove(&queue);
+                offset_store.remove_offset(&queue);
             }
             return Err(PushConsumerError::PullScheduler(error.to_string()));
         }
@@ -1632,6 +1682,7 @@ impl PushConsumer {
                     pull_scheduler,
                     pull_rpc_workers,
                 };
+                runtime.rebalance_immediately();
                 Ok(())
             }
             Err((error, lease)) => {
@@ -1699,6 +1750,8 @@ impl PushConsumer {
             offset_store: Arc::downgrade(&offset_store),
             pull_scheduler: services.pull_scheduler.clone(),
             pull_rpc_workers: services.pull_rpc_workers.clone(),
+            consumer: services.consumer.clone(),
+            runtime: Arc::downgrade(runtime),
         });
         let lease = match runtime.register_consumer(consumer_group, owner).await {
             Ok(lease) => lease,
@@ -1801,6 +1854,542 @@ impl PushConsumer {
         };
         *configured = Some(store.clone());
         Ok(store)
+    }
+
+    pub(crate) async fn rebalance_once(
+        &self,
+        strategy: &dyn crate::rebalance::AllocateMessageQueueStrategy,
+    ) -> bool {
+        let Some(context) = self.pull_context().await else {
+            return true;
+        };
+        let mut balanced = true;
+        let mut subscriptions = read_lock(&self.subscriptions)
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        subscriptions.sort_by(|left, right| java_string_cmp(left, right));
+        let subscribed_topics = subscriptions.iter().cloned().collect::<HashSet<_>>();
+        let topic_queues = read_lock(&self.topic_queues).clone();
+        let mut client_config = self.config.client_config().clone();
+        let Some(consumer_group) = client_config
+            .with_namespace(Some(self.config.consumer_group()))
+            .ok()
+            .flatten()
+        else {
+            return false;
+        };
+
+        let mut assignments = Vec::new();
+        let mut authoritative_topics = HashSet::new();
+        let mut desired_push_queues = HashSet::new();
+        let mut missing_route_notifications = Vec::new();
+        for topic in &subscriptions {
+            if !self.rebalance_is_started().await {
+                return true;
+            }
+            let message_model = self.config.message_model();
+            if message_model == rocketmq_classic_protocol::heartbeat::MessageModel::LiteSelective {
+                // Java RebalanceImpl's default model branch does no local
+                // allocation. POP assignment is owned by a later phase.
+                continue;
+            }
+
+            if message_model == rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting {
+                let Some(queue_snapshot) = topic_queues.get(topic) else {
+                    missing_route_notifications.push(topic.clone());
+                    balanced = false;
+                    continue;
+                };
+                let mut all_queues = queue_snapshot.iter().cloned().collect::<Vec<_>>();
+                all_queues.sort();
+                let all_queue_set = all_queues.iter().cloned().collect::<HashSet<_>>();
+                authoritative_topics.insert(topic.clone());
+                desired_push_queues.extend(all_queues.iter().cloned());
+                assignments.push(DesiredAssignment {
+                    topic: topic.clone(),
+                    all_queues: Some(all_queue_set.clone()),
+                    assigned_queues: all_queue_set.clone(),
+                    pull_queues: all_queue_set,
+                });
+                continue;
+            }
+
+            if self.config.client_rebalance() || self.consume_orderly.load(Ordering::Acquire) {
+                // RebalanceImpl queries membership before checking route data.
+                // A missing route notifies the queue listener with empty sets
+                // but leaves the old process-queue assignment untouched.
+                let consumer_ids = self
+                    .find_consumer_id_list_for_rebalance(&context.runtime, topic, &consumer_group)
+                    .await;
+                let Some(queue_snapshot) = topic_queues.get(topic) else {
+                    if !topic.starts_with("%RETRY%") {
+                        missing_route_notifications.push(topic.clone());
+                    }
+                    balanced = false;
+                    continue;
+                };
+                let mut all_queues = queue_snapshot.iter().cloned().collect::<Vec<_>>();
+                all_queues.sort();
+                let all_queue_set = all_queues.iter().cloned().collect::<HashSet<_>>();
+                // An available empty route is distinct from a missing route:
+                // Java still calls the allocator with the empty queue list.
+                let consumer_ids = match consumer_ids {
+                    Ok(Some(consumer_ids)) if !consumer_ids.is_empty() => consumer_ids,
+                    Ok(Some(_)) | Ok(None) => {
+                        balanced = false;
+                        continue;
+                    }
+                    Err(error) => {
+                        tracing::warn!(topic, error = %error, "push rebalance consumer list lookup failed");
+                        balanced = false;
+                        continue;
+                    }
+                };
+                let mut consumer_ids = match consumer_ids.into_iter().collect::<Option<Vec<_>>>() {
+                    Some(consumer_ids) => consumer_ids,
+                    None => {
+                        balanced = false;
+                        continue;
+                    }
+                };
+                consumer_ids.sort_by(|left, right| java_string_cmp(left, right));
+                let allocation = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    strategy.allocate(
+                        &consumer_group,
+                        context.runtime.client_id(),
+                        &all_queues,
+                        &consumer_ids,
+                    )
+                }));
+                let allocated = match allocation {
+                    Ok(Ok(allocated)) => allocated,
+                    Ok(Err(error)) => {
+                        tracing::warn!(
+                            topic,
+                            strategy = strategy.name(),
+                            error = %error,
+                            "push queue allocation failed"
+                        );
+                        balanced = false;
+                        continue;
+                    }
+                    Err(_) => {
+                        tracing::warn!(
+                            topic,
+                            strategy = strategy.name(),
+                            "push queue allocation panicked"
+                        );
+                        balanced = false;
+                        continue;
+                    }
+                };
+                let assigned = allocated.into_iter().collect::<HashSet<_>>();
+                desired_push_queues.extend(assigned.iter().cloned());
+                assignments.push(DesiredAssignment {
+                    topic: topic.clone(),
+                    all_queues: Some(all_queue_set),
+                    assigned_queues: assigned.clone(),
+                    pull_queues: assigned,
+                });
+                authoritative_topics.insert(topic.clone());
+                continue;
+            } else {
+                // Broker assignment does not depend on the local route table.
+                let result = context
+                    .runtime
+                    .query_assignment(
+                        topic,
+                        &consumer_group,
+                        strategy.name(),
+                        self.config.message_model(),
+                        3_000,
+                    )
+                    .await;
+                let assignment_set = match result {
+                    Ok(Some(assignment_set)) => assignment_set,
+                    Ok(None) => {
+                        balanced = false;
+                        continue;
+                    }
+                    Err(error) => {
+                        tracing::warn!(topic, error = %error, "push broker assignment lookup failed");
+                        balanced = false;
+                        continue;
+                    }
+                };
+                let mut assigned = HashSet::new();
+                let mut pull_queues = HashSet::new();
+                let mut has_pop_assignment = false;
+                let mut valid = true;
+                for assignment in assignment_set {
+                    let Some(assignment) = assignment else {
+                        valid = false;
+                        break;
+                    };
+                    let Some(queue) = assignment.message_queue.as_ref().map(SharedValue::snapshot)
+                    else {
+                        continue;
+                    };
+                    assigned.insert(queue.clone());
+                    if assignment.mode == Some(MessageRequestMode::Pop) {
+                        has_pop_assignment = true;
+                    } else {
+                        pull_queues.insert(queue);
+                    }
+                }
+                if !valid {
+                    balanced = false;
+                    continue;
+                }
+                if has_pop_assignment {
+                    // POP ProcessQueues are owned by Phase 13.
+                    balanced = false;
+                }
+                desired_push_queues.extend(pull_queues.iter().cloned());
+                authoritative_topics.insert(topic.clone());
+                assignments.push(DesiredAssignment {
+                    topic: topic.clone(),
+                    all_queues: None,
+                    assigned_queues: assigned,
+                    pull_queues,
+                });
+            };
+        }
+
+        let current_queues = read_lock(&self.process_queues)
+            .iter()
+            .map(|(queue, process_queue)| (queue.clone(), process_queue.clone()))
+            .collect::<Vec<_>>();
+        let mut changed_queues = HashSet::new();
+        for (queue, process_queue) in current_queues {
+            if !self.rebalance_is_started().await {
+                return true;
+            }
+            let Some(topic) = queue.topic() else {
+                balanced = false;
+                continue;
+            };
+            let generation = process_queue.generation();
+            let snapshot = match process_queue.snapshot(generation) {
+                Ok(snapshot) => snapshot,
+                Err(_) => {
+                    balanced = false;
+                    continue;
+                }
+            };
+            let should_remove = snapshot.dropped
+                || !subscribed_topics.contains(topic)
+                || (authoritative_topics.contains(topic) && !desired_push_queues.contains(&queue));
+            if !should_remove {
+                continue;
+            }
+            if !snapshot.dropped {
+                if process_queue.drop_assignment(generation).is_err() {
+                    balanced = false;
+                    continue;
+                }
+                context.scheduler.cancel(&queue, generation);
+            }
+            match self
+                .remove_process_queue_safely(&context, &queue, &process_queue)
+                .await
+            {
+                true => {
+                    changed_queues.insert(queue);
+                }
+                false => balanced = false,
+            }
+        }
+
+        let mut additions = desired_push_queues.into_iter().collect::<Vec<_>>();
+        additions.sort();
+        for queue in additions {
+            if !self.rebalance_is_started().await {
+                return true;
+            }
+            let Some(topic) = queue.topic() else {
+                balanced = false;
+                continue;
+            };
+            if !subscribed_topics.contains(topic) {
+                continue;
+            }
+            if let Some(existing) = read_lock(&self.process_queues).get(&queue).cloned() {
+                if existing
+                    .snapshot(existing.generation())
+                    .is_ok_and(|snapshot| !snapshot.dropped)
+                {
+                    continue;
+                }
+                // A dropped generation stays registered until its persisted
+                // offset cleanup succeeds; a replacement waits for that retry.
+                balanced = false;
+                continue;
+            }
+            if read_lock(&self.offset_corrections_pending).contains(&queue) {
+                balanced = false;
+                continue;
+            }
+            context.offset_store.remove_offset(&queue);
+            let initial_offset = match self
+                .compute_initial_offset(&context.runtime, &context.offset_store, &queue)
+                .await
+            {
+                Ok(offset) => offset,
+                Err(error) => {
+                    tracing::warn!(queue = %queue, error = %error, "push start offset lookup failed");
+                    balanced = false;
+                    continue;
+                }
+            };
+            match self.activate_process_queue(&queue, initial_offset).await {
+                Ok(_) => {
+                    changed_queues.insert(queue);
+                }
+                Err(error) => {
+                    tracing::warn!(queue = %queue, error = %error, "push queue activation failed");
+                    balanced = false;
+                }
+            }
+        }
+
+        for assignment in &assignments {
+            let expected = assignment
+                .pull_queues
+                .iter()
+                .filter(|queue| queue.topic() == Some(assignment.topic.as_str()))
+                .cloned()
+                .collect::<HashSet<_>>();
+            let working = read_lock(&self.process_queues)
+                .iter()
+                .filter(|(queue, process_queue)| {
+                    queue.topic() == Some(assignment.topic.as_str())
+                        && process_queue
+                            .snapshot(process_queue.generation())
+                            .is_ok_and(|snapshot| !snapshot.dropped)
+                })
+                .map(|(queue, _)| queue.clone())
+                .collect::<HashSet<_>>();
+            if expected != working {
+                balanced = false;
+            }
+            let queue_changed = changed_queues.iter().any(|queue| {
+                queue.topic() == Some(assignment.topic.as_str())
+                    || assignment.assigned_queues.contains(queue)
+            });
+            if queue_changed
+                && !self
+                    .notify_assignment_changed(&context.runtime, assignment)
+                    .await
+            {
+                balanced = false;
+            }
+        }
+        for topic in missing_route_notifications {
+            if !self.rebalance_is_started().await {
+                return true;
+            }
+            let empty = HashSet::new();
+            let assignment = DesiredAssignment {
+                topic,
+                all_queues: Some(empty.clone()),
+                assigned_queues: empty.clone(),
+                pull_queues: empty,
+            };
+            if !self
+                .notify_assignment_changed(&context.runtime, &assignment)
+                .await
+            {
+                balanced = false;
+            }
+        }
+        balanced
+    }
+
+    async fn rebalance_is_started(&self) -> bool {
+        matches!(&*self.state.lock().await, State::Started { .. })
+    }
+
+    async fn find_consumer_id_list_for_rebalance(
+        &self,
+        runtime: &Arc<ClientRuntime>,
+        topic: &str,
+        consumer_group: &str,
+    ) -> Result<Option<Vec<Option<String>>>, rocketmq_classic_core::runtime::RuntimeError> {
+        #[cfg(test)]
+        {
+            let scripted = self
+                .rebalance_membership
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get_mut(topic)
+                .and_then(VecDeque::pop_front);
+            if let Some(scripted) = scripted {
+                return Ok(scripted.map(|ids| ids.into_iter().map(Some).collect()));
+            }
+        }
+        runtime.find_consumer_id_list(topic, consumer_group).await
+    }
+
+    async fn remove_process_queue_safely(
+        &self,
+        context: &PullContext,
+        queue: &MessageQueue,
+        process_queue: &Arc<ProcessQueue>,
+    ) -> bool {
+        let generation = process_queue.generation();
+        if !self.rebalance_is_started().await {
+            return false;
+        }
+        if let Err(error) = context.offset_store.persist(queue).await {
+            tracing::warn!(queue = %queue, generation, error = %error, "push queue offset cleanup deferred");
+            return false;
+        }
+        let mut queues = write_lock(&self.process_queues);
+        if !queues
+            .get(queue)
+            .is_some_and(|current| Arc::ptr_eq(current, process_queue))
+        {
+            return false;
+        }
+        context.offset_store.remove_offset(queue);
+        queues.remove(queue);
+        write_lock(&self.offset_corrections_pending).remove(queue);
+        true
+    }
+
+    async fn compute_initial_offset(
+        &self,
+        runtime: &Arc<ClientRuntime>,
+        offset_store: &Arc<dyn OffsetStore>,
+        queue: &MessageQueue,
+    ) -> Result<i64, PushConsumerError> {
+        let stored = offset_store
+            .read_offset(queue, ReadOffsetType::ReadFromStore)
+            .await?;
+        let retry_topic = queue
+            .topic()
+            .is_some_and(|topic| topic.starts_with("%RETRY%"));
+        let plan = initial_offset_plan(
+            self.config.consume_from_where(),
+            retry_topic,
+            stored,
+            self.config.consume_timestamp(),
+        )?;
+        let offset = match plan {
+            InitialOffsetPlan::Stored(offset) | InitialOffsetPlan::Fixed(offset) => offset,
+            InitialOffsetPlan::MaxOffset => self.query_max_offset(runtime, queue).await?,
+            InitialOffsetPlan::SearchTimestamp(timestamp) => {
+                self.query_search_offset(runtime, queue, timestamp).await?
+            }
+        };
+        if offset < 0 {
+            return Err(PushConsumerError::InvalidOffset);
+        }
+        Ok(offset)
+    }
+
+    async fn query_max_offset(
+        &self,
+        runtime: &Arc<ClientRuntime>,
+        queue: &MessageQueue,
+    ) -> Result<i64, PushConsumerError> {
+        let topic = queue.topic().ok_or(PushConsumerError::InvalidQueue)?;
+        let broker_name = queue.broker_name().ok_or(PushConsumerError::InvalidQueue)?;
+        let deadline = self.offset_rpc_deadline();
+        let address = self
+            .find_offset_broker(runtime, topic, broker_name, deadline)
+            .await?;
+        let header = GetMaxOffsetRequestHeader {
+            topic: topic.to_owned(),
+            queue_id: queue.queue_id(),
+            committed: true,
+            broker_name: Some(broker_name.to_owned()),
+        };
+        Ok(runtime
+            .api()
+            .get_max_offset(&address, &header, deadline)
+            .await?)
+    }
+
+    async fn query_search_offset(
+        &self,
+        runtime: &Arc<ClientRuntime>,
+        queue: &MessageQueue,
+        timestamp: i64,
+    ) -> Result<i64, PushConsumerError> {
+        let topic = queue.topic().ok_or(PushConsumerError::InvalidQueue)?;
+        let broker_name = queue.broker_name().ok_or(PushConsumerError::InvalidQueue)?;
+        let deadline = self.offset_rpc_deadline();
+        let address = self
+            .find_offset_broker(runtime, topic, broker_name, deadline)
+            .await?;
+        let header = SearchOffsetRequestHeader {
+            topic: topic.to_owned(),
+            lite_topic: None,
+            queue_id: queue.queue_id(),
+            timestamp,
+            boundary_type: Some(BoundaryType::Lower),
+            broker_name: Some(broker_name.to_owned()),
+        };
+        Ok(runtime
+            .api()
+            .search_offset(&address, &header, deadline)
+            .await?)
+    }
+
+    async fn find_offset_broker(
+        &self,
+        runtime: &Arc<ClientRuntime>,
+        topic: &str,
+        broker_name: &str,
+        deadline: Instant,
+    ) -> Result<String, PushConsumerError> {
+        let mut route = runtime.route_snapshot()?;
+        let mut address = route.publish_address(broker_name).map(str::to_owned);
+        if address.is_none() {
+            runtime.update_topic_route(topic, deadline).await?;
+            route = runtime.route_snapshot()?;
+            address = route.publish_address(broker_name).map(str::to_owned);
+        }
+        address.ok_or_else(|| OffsetStoreError::BrokerNotFound(broker_name.to_owned()).into())
+    }
+
+    fn offset_rpc_deadline(&self) -> Instant {
+        Instant::now()
+            + Duration::from_millis(
+                self.config.client_config().mq_client_api_timeout().max(0) as u64
+            )
+    }
+
+    async fn notify_assignment_changed(
+        &self,
+        runtime: &Arc<ClientRuntime>,
+        assignment: &DesiredAssignment,
+    ) -> bool {
+        if let Some(subscription) = write_lock(&self.subscriptions).get_mut(&assignment.topic) {
+            subscription.set_sub_version(epoch_millis());
+        }
+        let mut successful = true;
+        if let Err(error) = runtime.send_heartbeat_to_all_brokers().await {
+            tracing::warn!(topic = %assignment.topic, error = %error, "push subscription heartbeat after rebalance failed");
+            successful = false;
+        }
+        if let Some(listener) = self.config.message_queue_listener() {
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                listener(
+                    &assignment.topic,
+                    assignment.all_queues.as_ref(),
+                    &assignment.assigned_queues,
+                );
+            }));
+            if outcome.is_err() {
+                tracing::warn!(topic = %assignment.topic, "push message queue listener panicked");
+                successful = false;
+            }
+        }
+        successful
     }
 
     pub async fn shutdown(&self) -> Result<(), PushConsumerError> {
@@ -1906,7 +2495,12 @@ impl ConsumerRuntime for PushConsumerRegistration {
     }
 
     fn update_topic_subscribe_info(&self, topic: &str, queues: BTreeSet<MessageQueue>) {
-        write_lock(&self.topic_queues).insert(topic.to_owned(), queues);
+        let previous = write_lock(&self.topic_queues).insert(topic.to_owned(), queues.clone());
+        if previous.as_ref() != Some(&queues) {
+            if let Some(runtime) = self.runtime.upgrade() {
+                runtime.rebalance_immediately();
+            }
+        }
     }
 
     fn persist_consumer_offset(&self) -> Option<ConsumerFuture<'_>> {
@@ -1917,6 +2511,17 @@ impl ConsumerRuntime for PushConsumerRegistration {
                 .into_keys()
                 .collect::<Vec<_>>();
             let _ = store.persist_all(&queues).await;
+        }))
+    }
+
+    fn try_rebalance(&self) -> Option<Pin<Box<dyn Future<Output = bool> + Send + '_>>> {
+        let consumer = self.consumer.clone();
+        Some(Box::pin(async move {
+            if let Some(consumer) = consumer.upgrade() {
+                consumer.rebalance_service.rebalance(&consumer).await
+            } else {
+                true
+            }
         }))
     }
 }
@@ -1931,6 +2536,8 @@ struct PushConsumerRegistration {
     pull_scheduler: Arc<PullScheduler>,
     pull_rpc_workers: Arc<PullRpcWorkers>,
     offset_store: Weak<dyn OffsetStore>,
+    consumer: Weak<PushConsumer>,
+    runtime: Weak<ClientRuntime>,
 }
 
 fn read_lock<T>(lock: &RwLock<T>) -> std::sync::RwLockReadGuard<'_, T> {
@@ -1951,10 +2558,49 @@ fn epoch_millis() -> i64 {
         })
 }
 
+fn java_string_cmp(left: &str, right: &str) -> std::cmp::Ordering {
+    left.encode_utf16().cmp(right.encode_utf16())
+}
+
+fn initial_offset_plan(
+    consume_from_where: ConsumeFromWhere,
+    retry_topic: bool,
+    stored: OffsetRead,
+    timestamp: &str,
+) -> Result<InitialOffsetPlan, PushConsumerError> {
+    match stored {
+        OffsetRead::Found(offset) if offset >= 0 => return Ok(InitialOffsetPlan::Stored(offset)),
+        OffsetRead::Found(-1) | OffsetRead::NotFound => {}
+        OffsetRead::Found(_) => return Err(PushConsumerError::InvalidOffset),
+    }
+    match consume_from_where {
+        ConsumeFromWhere::ConsumeFromFirstOffset => Ok(InitialOffsetPlan::Fixed(0)),
+        ConsumeFromWhere::ConsumeFromTimestamp if retry_topic => Ok(InitialOffsetPlan::MaxOffset),
+        ConsumeFromWhere::ConsumeFromTimestamp => {
+            let timestamp = parse_java_timestamp_millis(timestamp)
+                .ok_or(PushConsumerError::InvalidConsumeTimestamp)?;
+            Ok(InitialOffsetPlan::SearchTimestamp(timestamp))
+        }
+        ConsumeFromWhere::ConsumeFromLastOffset
+        | ConsumeFromWhere::ConsumeFromLastOffsetAndFromMinWhenBootFirst
+        | ConsumeFromWhere::ConsumeFromMinOffset
+        | ConsumeFromWhere::ConsumeFromMaxOffset
+            if retry_topic =>
+        {
+            Ok(InitialOffsetPlan::Fixed(0))
+        }
+        ConsumeFromWhere::ConsumeFromLastOffset
+        | ConsumeFromWhere::ConsumeFromLastOffsetAndFromMinWhenBootFirst
+        | ConsumeFromWhere::ConsumeFromMinOffset
+        | ConsumeFromWhere::ConsumeFromMaxOffset => Ok(InitialOffsetPlan::MaxOffset),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::offset::OffsetStoreFuture;
+    use crate::push::listener::MessageQueueListener;
     use rocketmq_classic_common::message::{Message, MessageExt};
     use rocketmq_classic_core::api::consumer::PullResultExt;
     use std::collections::HashMap;
@@ -1962,7 +2608,19 @@ mod tests {
     #[derive(Default)]
     struct RecordingOffsetStore {
         values: Mutex<HashMap<MessageQueue, i64>>,
+        persisted: Mutex<HashMap<MessageQueue, i64>>,
         updates: Mutex<Vec<(MessageQueue, i64, bool)>>,
+        fail_persist: Mutex<bool>,
+    }
+
+    impl RecordingOffsetStore {
+        fn seed_persisted(&self, queue: MessageQueue, offset: i64) {
+            self.persisted.lock().unwrap().insert(queue, offset);
+        }
+
+        fn set_persist_failure(&self, fail: bool) {
+            *self.fail_persist.lock().unwrap() = fail;
+        }
     }
 
     impl OffsetStore for RecordingOffsetStore {
@@ -1988,25 +2646,46 @@ mod tests {
         fn read_offset<'a>(
             &'a self,
             queue: &'a MessageQueue,
-            _mode: ReadOffsetType,
+            mode: ReadOffsetType,
         ) -> OffsetStoreFuture<'a, OffsetRead> {
             Box::pin(async move {
-                Ok(self
-                    .values
-                    .lock()
-                    .unwrap()
-                    .get(queue)
-                    .copied()
-                    .map_or(OffsetRead::NotFound, OffsetRead::Found))
+                let memory = self.values.lock().unwrap().get(queue).copied();
+                let stored = self.persisted.lock().unwrap().get(queue).copied();
+                Ok(match mode {
+                    ReadOffsetType::ReadFromMemory => memory,
+                    ReadOffsetType::ReadFromStore => stored,
+                    ReadOffsetType::MemoryFirstThenStore => memory.or(stored),
+                }
+                .map_or(OffsetRead::NotFound, OffsetRead::Found))
             })
         }
 
-        fn persist<'a>(&'a self, _queue: &'a MessageQueue) -> OffsetStoreFuture<'a, ()> {
-            Box::pin(async { Ok(()) })
+        fn persist<'a>(&'a self, queue: &'a MessageQueue) -> OffsetStoreFuture<'a, ()> {
+            Box::pin(async move {
+                if *self.fail_persist.lock().unwrap() {
+                    return Err(OffsetStoreError::Runtime("injected persist failure".into()));
+                }
+                if let Some(offset) = self.values.lock().unwrap().get(queue).copied() {
+                    self.persisted.lock().unwrap().insert(queue.clone(), offset);
+                }
+                Ok(())
+            })
         }
 
-        fn persist_all<'a>(&'a self, _queues: &'a [MessageQueue]) -> OffsetStoreFuture<'a, ()> {
-            Box::pin(async { Ok(()) })
+        fn persist_all<'a>(&'a self, queues: &'a [MessageQueue]) -> OffsetStoreFuture<'a, ()> {
+            Box::pin(async move {
+                if *self.fail_persist.lock().unwrap() {
+                    return Err(OffsetStoreError::Runtime("injected persist failure".into()));
+                }
+                let values = self.values.lock().unwrap();
+                let mut persisted = self.persisted.lock().unwrap();
+                for queue in queues {
+                    if let Some(offset) = values.get(queue) {
+                        persisted.insert(queue.clone(), *offset);
+                    }
+                }
+                Ok(())
+            })
         }
 
         fn remove_offset(&self, queue: &MessageQueue) {
@@ -2163,6 +2842,8 @@ mod tests {
             pull_scheduler: pull_scheduler.clone(),
             pull_rpc_workers: pull_rpc_workers.clone(),
             offset_store: Arc::downgrade(&offset_store),
+            consumer: Arc::downgrade(consumer),
+            runtime: Arc::downgrade(&runtime),
         });
         let lease = runtime
             .register_consumer(&consumer_group, owner)
@@ -2182,6 +2863,817 @@ mod tests {
             .start(Arc::downgrade(consumer), pull_scheduler)
             .unwrap();
         runtime
+    }
+
+    fn script_rebalance_membership(
+        consumer: &PushConsumer,
+        topic: &str,
+        results: impl IntoIterator<Item = Option<Vec<String>>>,
+    ) {
+        consumer
+            .rebalance_membership
+            .lock()
+            .unwrap()
+            .entry(topic.to_owned())
+            .or_default()
+            .extend(results);
+    }
+
+    #[test]
+    fn java_string_order_and_consume_timestamp_parsing_match_utility_semantics() {
+        assert_eq!(
+            java_string_cmp("\u{10000}", "\u{e000}"),
+            std::cmp::Ordering::Less
+        );
+        assert_eq!(
+            java_string_cmp("client-a", "client-b"),
+            std::cmp::Ordering::Less
+        );
+        assert!(parse_java_timestamp_millis("20240229010203").is_some());
+        assert!(parse_java_timestamp_millis("20230229010203").is_some());
+        assert!(parse_java_timestamp_millis("2024022901020x").is_some());
+        assert!(parse_java_timestamp_millis("+20240229010203").is_none());
+    }
+
+    #[test]
+    fn java_initial_offset_fixtures_match_policy_and_retry_topic_selection() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/rebalance/initial-offsets.json"
+        ))
+        .unwrap();
+        let max_offset = fixture["mockMaxOffset"].as_i64().unwrap();
+        let search_offset = fixture["mockSearchOffset"].as_i64().unwrap();
+        let mut checked = 0;
+        for case in fixture["cases"].as_array().unwrap() {
+            checked += 1;
+            let policy = match case["consumeFromWhere"].as_str().unwrap() {
+                "CONSUME_FROM_LAST_OFFSET" => ConsumeFromWhere::ConsumeFromLastOffset,
+                "CONSUME_FROM_LAST_OFFSET_AND_FROM_MIN_WHEN_BOOT_FIRST" => {
+                    ConsumeFromWhere::ConsumeFromLastOffsetAndFromMinWhenBootFirst
+                }
+                "CONSUME_FROM_MIN_OFFSET" => ConsumeFromWhere::ConsumeFromMinOffset,
+                "CONSUME_FROM_MAX_OFFSET" => ConsumeFromWhere::ConsumeFromMaxOffset,
+                "CONSUME_FROM_FIRST_OFFSET" => ConsumeFromWhere::ConsumeFromFirstOffset,
+                "CONSUME_FROM_TIMESTAMP" => ConsumeFromWhere::ConsumeFromTimestamp,
+                other => panic!("unknown fixture consume policy {other}"),
+            };
+            let topic = case["topic"].as_str().unwrap();
+            let stored_offset = case["storedOffset"].as_i64().unwrap();
+            let stored = if stored_offset == -1 {
+                OffsetRead::NotFound
+            } else {
+                OffsetRead::Found(stored_offset)
+            };
+            let plan = initial_offset_plan(
+                policy,
+                topic.starts_with("%RETRY%"),
+                stored,
+                case["consumeTimestamp"].as_str().unwrap(),
+            );
+            if case.get("errorCode").is_some() {
+                assert!(matches!(plan, Err(PushConsumerError::InvalidOffset)));
+                continue;
+            }
+            let plan = plan.unwrap();
+            let (query, actual_offset) = match plan {
+                InitialOffsetPlan::Stored(offset) => ("NONE", offset),
+                InitialOffsetPlan::Fixed(offset) => ("NONE", offset),
+                InitialOffsetPlan::MaxOffset => ("MAX_OFFSET", max_offset),
+                InitialOffsetPlan::SearchTimestamp(_) => ("SEARCH_OFFSET", search_offset),
+            };
+            assert_eq!(query, case["query"].as_str().unwrap(), "{}", case["id"]);
+            assert_eq!(
+                actual_offset,
+                case["result"].as_i64().unwrap(),
+                "{}",
+                case["id"]
+            );
+        }
+        assert_eq!(checked, 24);
+    }
+
+    #[tokio::test]
+    async fn initial_offsets_prefer_store_and_never_turn_query_failures_into_zero() {
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let policies = [
+            ConsumeFromWhere::ConsumeFromLastOffset,
+            ConsumeFromWhere::ConsumeFromLastOffsetAndFromMinWhenBootFirst,
+            ConsumeFromWhere::ConsumeFromMinOffset,
+            ConsumeFromWhere::ConsumeFromMaxOffset,
+            ConsumeFromWhere::ConsumeFromFirstOffset,
+            ConsumeFromWhere::ConsumeFromTimestamp,
+        ];
+        for policy in policies {
+            let mut config = PushConsumerConfig::new("initial-offset-stored").unwrap();
+            config.client_config_mut().set_namesrv_addr(None);
+            config.set_consume_from_where(policy);
+            let manager = ClientRuntimeManager::new();
+            let consumer = PushConsumer::with_manager(config, manager.clone());
+            let runtime = manager
+                .get_or_create(consumer.config.client_config())
+                .await
+                .unwrap();
+            let store = Arc::new(RecordingOffsetStore::default());
+            store.seed_persisted(queue.clone(), 73);
+            let store_dyn: Arc<dyn OffsetStore> = store.clone();
+            assert_eq!(
+                consumer
+                    .compute_initial_offset(&runtime, &store_dyn, &queue)
+                    .await
+                    .unwrap(),
+                73,
+                "stored offset must take precedence for {policy:?}"
+            );
+            let _ = runtime.shutdown().await;
+        }
+
+        for (policy, topic, expected) in [
+            (ConsumeFromWhere::ConsumeFromFirstOffset, "orders", Some(0)),
+            (
+                ConsumeFromWhere::ConsumeFromLastOffset,
+                "%RETRY%group",
+                Some(0),
+            ),
+            (
+                ConsumeFromWhere::ConsumeFromLastOffsetAndFromMinWhenBootFirst,
+                "%RETRY%group",
+                Some(0),
+            ),
+            (
+                ConsumeFromWhere::ConsumeFromMinOffset,
+                "%RETRY%group",
+                Some(0),
+            ),
+            (
+                ConsumeFromWhere::ConsumeFromMaxOffset,
+                "%RETRY%group",
+                Some(0),
+            ),
+            (ConsumeFromWhere::ConsumeFromTimestamp, "%RETRY%group", None),
+            (ConsumeFromWhere::ConsumeFromLastOffset, "orders", None),
+            (ConsumeFromWhere::ConsumeFromTimestamp, "orders", None),
+        ] {
+            let mut config = PushConsumerConfig::new("initial-offset-missing").unwrap();
+            config.client_config_mut().set_namesrv_addr(None);
+            config.set_consume_from_where(policy);
+            config.set_consume_timestamp("20240229010203");
+            let manager = ClientRuntimeManager::new();
+            let consumer = PushConsumer::with_manager(config, manager.clone());
+            let runtime = manager
+                .get_or_create(consumer.config.client_config())
+                .await
+                .unwrap();
+            let store = Arc::new(RecordingOffsetStore::default());
+            let store_dyn: Arc<dyn OffsetStore> = store.clone();
+            let queue = MessageQueue::new(topic, "broker-a", 0);
+            let result = consumer
+                .compute_initial_offset(&runtime, &store_dyn, &queue)
+                .await;
+            match expected {
+                Some(expected) => assert_eq!(result.unwrap(), expected, "{policy:?} {topic}"),
+                None => assert!(
+                    result.is_err(),
+                    "{policy:?} {topic} must retain the query error"
+                ),
+            }
+            assert!(store.values.lock().unwrap().is_empty());
+            let _ = runtime.shutdown().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn broadcasting_rebalance_activates_every_queue_with_local_offsets_and_notifies() {
+        let changes = Arc::new(Mutex::new(Vec::new()));
+        let recorded_changes = changes.clone();
+        let queue_listener: MessageQueueListener = Arc::new(move |topic, all, assigned| {
+            recorded_changes.lock().unwrap().push((
+                topic.to_owned(),
+                all.cloned(),
+                assigned.clone(),
+            ));
+        });
+        let mut config = PushConsumerConfig::new("rebalance-broadcast").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        config.set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting);
+        config.set_client_rebalance(false);
+        config.set_message_queue_listener(Some(queue_listener));
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let store = Arc::new(RecordingOffsetStore::default());
+        let store_dyn: Arc<dyn OffsetStore> = store.clone();
+        let scheduler = Arc::new(PullScheduler::new());
+        let _runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            store_dyn,
+            idle_consume_service(),
+            scheduler,
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+        let first = MessageQueue::new("orders", "broker-a", 0);
+        let second = MessageQueue::new("orders", "broker-a", 1);
+        write_lock(&consumer.subscriptions).insert(
+            "orders".to_owned(),
+            SubscriptionData::new(Some("orders".to_owned()), Some("*".to_owned())),
+        );
+        write_lock(&consumer.topic_queues).insert(
+            "orders".to_owned(),
+            BTreeSet::from([first.clone(), second.clone()]),
+        );
+        store.seed_persisted(first.clone(), 17);
+        store.seed_persisted(second.clone(), 29);
+        consumer.paused.store(true, Ordering::Release);
+
+        assert!(consumer.rebalance_service.rebalance(&consumer).await);
+        let queues = read_lock(&consumer.process_queues);
+        assert_eq!(queues.len(), 2);
+        assert!(queues.contains_key(&first) && queues.contains_key(&second));
+        drop(queues);
+        assert_eq!(store.values.lock().unwrap().get(&first), Some(&17));
+        assert_eq!(store.values.lock().unwrap().get(&second), Some(&29));
+        let changes = changes.lock().unwrap();
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].0, "orders");
+        assert_eq!(
+            changes[0].1,
+            Some(HashSet::from([first.clone(), second.clone()]))
+        );
+        assert_eq!(changes[0].2, HashSet::from([first, second]));
+        consumer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn missing_clustering_route_queries_membership_notifies_empty_and_keeps_assignment() {
+        let changes = Arc::new(Mutex::new(Vec::new()));
+        let recorded_changes = changes.clone();
+        let queue_listener: MessageQueueListener = Arc::new(move |topic, all, assigned| {
+            recorded_changes.lock().unwrap().push((
+                topic.to_owned(),
+                all.cloned(),
+                assigned.clone(),
+            ));
+        });
+        let mut config = PushConsumerConfig::new("rebalance-route-missing").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        config.set_message_queue_listener(Some(queue_listener));
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let store = Arc::new(RecordingOffsetStore::default());
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 37));
+        store.update_offset(&queue, 45, false);
+        write_lock(&consumer.subscriptions).insert(
+            "orders".to_owned(),
+            SubscriptionData::new(Some("orders".to_owned()), Some("*".to_owned())),
+        );
+        write_lock(&consumer.process_queues).insert(queue.clone(), process_queue.clone());
+        let _runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            store.clone(),
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+        script_rebalance_membership(&consumer, "orders", [Some(vec!["peer-a".to_owned()])]);
+        consumer.paused.store(true, Ordering::Release);
+
+        assert!(!consumer.rebalance_service.rebalance(&consumer).await);
+        assert!(
+            read_lock(&consumer.process_queues)
+                .get(&queue)
+                .is_some_and(|current| Arc::ptr_eq(current, &process_queue))
+        );
+        assert!(!process_queue.snapshot(37).unwrap().dropped);
+        assert_eq!(store.values.lock().unwrap().get(&queue), Some(&45));
+        assert_eq!(
+            consumer
+                .rebalance_membership
+                .lock()
+                .unwrap()
+                .get("orders")
+                .unwrap()
+                .len(),
+            0,
+            "membership lookup runs before handling missing route data"
+        );
+        let changes = changes.lock().unwrap();
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].0, "orders");
+        assert_eq!(changes[0].1, Some(HashSet::new()));
+        assert!(changes[0].2.is_empty());
+        drop(changes);
+        consumer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn lite_selective_rebalance_leaves_assignments_for_pop_handling() {
+        let changes = Arc::new(Mutex::new(Vec::new()));
+        let recorded_changes = changes.clone();
+        let queue_listener: MessageQueueListener = Arc::new(move |topic, all, assigned| {
+            recorded_changes.lock().unwrap().push((
+                topic.to_owned(),
+                all.cloned(),
+                assigned.clone(),
+            ));
+        });
+        let mut config = PushConsumerConfig::new("rebalance-lite-selective").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        config.set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::LiteSelective);
+        config.set_message_queue_listener(Some(queue_listener));
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let store = Arc::new(RecordingOffsetStore::default());
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 41));
+        store.update_offset(&queue, 52, false);
+        write_lock(&consumer.subscriptions).insert(
+            "orders".to_owned(),
+            SubscriptionData::new(Some("orders".to_owned()), Some("*".to_owned())),
+        );
+        write_lock(&consumer.topic_queues)
+            .insert("orders".to_owned(), BTreeSet::from([queue.clone()]));
+        write_lock(&consumer.process_queues).insert(queue.clone(), process_queue.clone());
+        let _runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            store,
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+        script_rebalance_membership(&consumer, "orders", [Some(vec!["peer-a".to_owned()])]);
+        consumer.paused.store(true, Ordering::Release);
+
+        assert!(consumer.rebalance_service.rebalance(&consumer).await);
+        assert!(
+            read_lock(&consumer.process_queues)
+                .get(&queue)
+                .is_some_and(|current| Arc::ptr_eq(current, &process_queue))
+        );
+        assert_eq!(
+            consumer
+                .rebalance_membership
+                .lock()
+                .unwrap()
+                .get("orders")
+                .unwrap()
+                .len(),
+            1,
+            "LiteSelective must not enter the clustering allocator"
+        );
+        assert!(changes.lock().unwrap().is_empty());
+        consumer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn unavailable_membership_keeps_the_previous_queue_assignment() {
+        let mut config = PushConsumerConfig::new("rebalance-membership-unavailable").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let store = Arc::new(RecordingOffsetStore::default());
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 31));
+        store.update_offset(&queue, 45, false);
+        write_lock(&consumer.subscriptions).insert(
+            "orders".to_owned(),
+            SubscriptionData::new(Some("orders".to_owned()), Some("*".to_owned())),
+        );
+        write_lock(&consumer.topic_queues)
+            .insert("orders".to_owned(), BTreeSet::from([queue.clone()]));
+        write_lock(&consumer.process_queues).insert(queue.clone(), process_queue.clone());
+        let _runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            store.clone(),
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+
+        assert!(!consumer.rebalance_service.rebalance(&consumer).await);
+        assert!(
+            read_lock(&consumer.process_queues)
+                .get(&queue)
+                .is_some_and(|current| Arc::ptr_eq(current, &process_queue))
+        );
+        assert!(!process_queue.snapshot(31).unwrap().dropped);
+        assert_eq!(store.values.lock().unwrap().get(&queue), Some(&45));
+        consumer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn client_rebalance_false_uses_broker_assignment_unless_orderly_forces_local() {
+        let mut config = PushConsumerConfig::new("rebalance-client-disabled").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        config.set_client_rebalance(false);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let store = Arc::new(RecordingOffsetStore::default());
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        store.seed_persisted(queue.clone(), 19);
+        write_lock(&consumer.subscriptions).insert(
+            "orders".to_owned(),
+            SubscriptionData::new(Some("orders".to_owned()), Some("*".to_owned())),
+        );
+        write_lock(&consumer.topic_queues)
+            .insert("orders".to_owned(), BTreeSet::from([queue.clone()]));
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            store,
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+        let client_id = runtime.client_id().to_owned();
+        script_rebalance_membership(&consumer, "orders", [Some(vec![client_id])]);
+        consumer.paused.store(true, Ordering::Release);
+
+        assert!(!consumer.rebalance_service.rebalance(&consumer).await);
+        assert!(!read_lock(&consumer.process_queues).contains_key(&queue));
+        assert_eq!(
+            consumer
+                .rebalance_membership
+                .lock()
+                .unwrap()
+                .get("orders")
+                .unwrap()
+                .len(),
+            1,
+            "broker assignment mode must not request the local membership list"
+        );
+
+        consumer.consume_orderly.store(true, Ordering::Release);
+        assert!(consumer.rebalance_service.rebalance(&consumer).await);
+        assert!(read_lock(&consumer.process_queues).contains_key(&queue));
+        consumer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn clustering_membership_join_leave_and_unavailable_cycles_converge() {
+        let mut config = PushConsumerConfig::new("rebalance-membership-churn").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let store = Arc::new(RecordingOffsetStore::default());
+        let queues = (0..4)
+            .map(|queue_id| MessageQueue::new("orders", "broker-a", queue_id))
+            .collect::<Vec<_>>();
+        write_lock(&consumer.subscriptions).insert(
+            "orders".to_owned(),
+            SubscriptionData::new(Some("orders".to_owned()), Some("*".to_owned())),
+        );
+        write_lock(&consumer.topic_queues)
+            .insert("orders".to_owned(), queues.iter().cloned().collect());
+        for (index, queue) in queues.iter().enumerate() {
+            store.seed_persisted(queue.clone(), 100 + index as i64);
+        }
+        let _runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            store.clone(),
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+        let runtime = match &*consumer.state.lock().await {
+            State::Started { runtime, .. } => runtime.upgrade().unwrap(),
+            State::Created | State::Shutdown => unreachable!(),
+        };
+        consumer.paused.store(true, Ordering::Release);
+        let current_id = runtime.client_id().to_owned();
+        let all = queues.clone();
+        let expected = |ids: &[&str]| {
+            let mut ids = ids.iter().map(|id| (*id).to_owned()).collect::<Vec<_>>();
+            ids.sort_by(|left, right| java_string_cmp(left, right));
+            consumer
+                .config
+                .allocate_message_queue_strategy()
+                .allocate(consumer.config.consumer_group(), &current_id, &all, &ids)
+                .unwrap()
+                .into_iter()
+                .collect::<HashSet<_>>()
+        };
+
+        let peer = "peer-z";
+        script_rebalance_membership(
+            &consumer,
+            "orders",
+            [
+                Some(vec![current_id.clone(), peer.to_owned()]),
+                Some(vec![current_id.clone()]),
+                Some(vec![
+                    "client-a".to_owned(),
+                    "client-b".to_owned(),
+                    current_id.clone(),
+                ]),
+                None,
+                Some(vec![peer.to_owned()]),
+                Some(vec![current_id.clone()]),
+            ],
+        );
+        let expected_sets = [
+            expected(&[&current_id, peer]),
+            expected(&[&current_id]),
+            expected(&["client-a", "client-b", &current_id]),
+            expected(&["client-a", "client-b", &current_id]),
+            HashSet::new(),
+            expected(&[&current_id]),
+        ];
+        for (round, expected) in expected_sets.iter().enumerate() {
+            let balanced = consumer.rebalance_service.rebalance(&consumer).await;
+            if round == 3 {
+                assert!(!balanced, "unavailable membership must request a retry");
+            } else {
+                assert!(balanced, "membership round {round} should converge");
+            }
+            let working = read_lock(&consumer.process_queues)
+                .iter()
+                .filter(|(queue, process_queue)| {
+                    queue.topic() == Some("orders")
+                        && process_queue
+                            .snapshot(process_queue.generation())
+                            .is_ok_and(|snapshot| !snapshot.dropped)
+                })
+                .map(|(queue, _)| queue.clone())
+                .collect::<HashSet<_>>();
+            assert_eq!(&working, expected, "membership round {round}");
+        }
+        assert_eq!(store.persisted.lock().unwrap().len(), queues.len());
+        consumer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn queue_removal_fences_a_listener_already_in_flight() {
+        let mut config = PushConsumerConfig::new("rebalance-listener-race").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let store = Arc::new(RecordingOffsetStore::default());
+        let store_dyn: Arc<dyn OffsetStore> = store.clone();
+        let scheduler = Arc::new(PullScheduler::new());
+        let consume_service = idle_consume_service();
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            store_dyn.clone(),
+            consume_service.clone(),
+            scheduler.clone(),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        store.update_offset(&queue, 50, false);
+        let request = consume_request(queue.clone(), 72, vec![message(50)]);
+        let process_queue = request.process_queue.clone();
+        write_lock(&consumer.process_queues).insert(queue.clone(), process_queue.clone());
+        let listener_started = Arc::new(tokio::sync::Barrier::new(2));
+        let listener_release = Arc::new(tokio::sync::Barrier::new(2));
+        let started = listener_started.clone();
+        let release = listener_release.clone();
+        let listener: Arc<dyn MessageListenerConcurrently> = Arc::new(
+            move |_messages: Vec<MessageExt>, context: ConsumeConcurrentlyContext| {
+                let started = started.clone();
+                let release = release.clone();
+                async move {
+                    started.wait().await;
+                    release.wait().await;
+                    (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+                }
+            },
+        );
+        let running_consumer = consumer.clone();
+        let listener_task = tokio::spawn(async move {
+            running_consumer
+                .run_consume_request(request, listener)
+                .await;
+        });
+        listener_started.wait().await;
+        process_queue.drop_assignment(72).unwrap();
+        scheduler.cancel(&queue, 72);
+        let context = PullContext {
+            runtime: runtime.clone(),
+            offset_store: store_dyn,
+            scheduler,
+            consume_service,
+        };
+        assert!(
+            consumer
+                .remove_process_queue_safely(&context, &queue, &process_queue)
+                .await
+        );
+        assert!(!read_lock(&consumer.process_queues).contains_key(&queue));
+        listener_release.wait().await;
+        listener_task.await.unwrap();
+        assert_eq!(store.values.lock().unwrap().get(&queue), None);
+        assert_eq!(store.persisted.lock().unwrap().get(&queue), Some(&50));
+        consumer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn queue_removal_fences_a_pull_response_already_in_flight() {
+        let mut config = PushConsumerConfig::new("rebalance-pull-race").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let store = Arc::new(RecordingOffsetStore::default());
+        let store_dyn: Arc<dyn OffsetStore> = store.clone();
+        let scheduler = Arc::new(PullScheduler::new());
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            store_dyn.clone(),
+            idle_consume_service(),
+            scheduler.clone(),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 73));
+        store.update_offset(&queue, 50, false);
+        write_lock(&consumer.process_queues).insert(queue.clone(), process_queue.clone());
+        let request = Arc::new(PullRequest::new(
+            "rebalance-pull-race",
+            process_queue.clone(),
+            50,
+        ));
+        scheduler.schedule(request.clone(), 0).unwrap();
+        let active_request = scheduler.take_due().unwrap();
+        let response_ready = Arc::new(tokio::sync::Barrier::new(2));
+        let response_release = Arc::new(tokio::sync::Barrier::new(2));
+        let task_ready = response_ready.clone();
+        let task_release = response_release.clone();
+        let pull_consumer = consumer.clone();
+        let pull_store = store_dyn.clone();
+        let pull_scheduler = scheduler.clone();
+        let pull_runtime = runtime.clone();
+        let updates_before = store.updates.lock().unwrap().len();
+        let pull_task = tokio::spawn(async move {
+            task_ready.wait().await;
+            task_release.wait().await;
+            let context = PullContext {
+                runtime: pull_runtime,
+                offset_store: pull_store,
+                scheduler: pull_scheduler,
+                consume_service: idle_consume_service(),
+            };
+            let mut result = pull_result(PullStatus::Found, 51);
+            result.messages = Some(vec![message(50)]);
+            pull_consumer
+                .apply_pull_result(request, context, result)
+                .await;
+        });
+        response_ready.wait().await;
+
+        process_queue.drop_assignment(73).unwrap();
+        scheduler.cancel(&queue, 73);
+        let removal_context = PullContext {
+            runtime,
+            offset_store: store_dyn,
+            scheduler: scheduler.clone(),
+            consume_service: idle_consume_service(),
+        };
+        assert!(
+            consumer
+                .remove_process_queue_safely(&removal_context, &queue, &process_queue)
+                .await
+        );
+        response_release.wait().await;
+        pull_task.await.unwrap();
+        scheduler.finish(&active_request);
+
+        assert!(!read_lock(&consumer.process_queues).contains_key(&queue));
+        assert_eq!(process_queue.snapshot(73).unwrap().cached_count, 0);
+        assert_eq!(store.updates.lock().unwrap().len(), updates_before);
+        assert_eq!(store.persisted.lock().unwrap().get(&queue), Some(&50));
+        consumer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn failed_offset_persist_retains_the_dropped_generation_for_retry() {
+        let mut config = PushConsumerConfig::new("rebalance-remove-retry").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let store = Arc::new(RecordingOffsetStore::default());
+        let scheduler = Arc::new(PullScheduler::new());
+        let pull_rpc_workers = Arc::new(PullRpcWorkers::new());
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            store.clone(),
+            idle_consume_service(),
+            scheduler.clone(),
+            pull_rpc_workers,
+        )
+        .await;
+        let queue = MessageQueue::new("orders", "broker-a", 2);
+        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 44));
+        process_queue.drop_assignment(44).unwrap();
+        write_lock(&consumer.process_queues).insert(queue.clone(), process_queue.clone());
+        store.update_offset(&queue, 81, false);
+        let context = PullContext {
+            runtime: runtime.clone(),
+            offset_store: store.clone(),
+            scheduler,
+            consume_service: idle_consume_service(),
+        };
+
+        store.set_persist_failure(true);
+        assert!(
+            !consumer
+                .remove_process_queue_safely(&context, &queue, &process_queue)
+                .await
+        );
+        assert!(
+            read_lock(&consumer.process_queues)
+                .get(&queue)
+                .is_some_and(|current| Arc::ptr_eq(current, &process_queue))
+        );
+        assert_eq!(process_queue.snapshot(44).unwrap().dropped, true);
+        assert_eq!(store.values.lock().unwrap().get(&queue), Some(&81));
+
+        store.set_persist_failure(false);
+        assert!(
+            consumer
+                .remove_process_queue_safely(&context, &queue, &process_queue)
+                .await
+        );
+        assert!(!read_lock(&consumer.process_queues).contains_key(&queue));
+        assert_eq!(store.persisted.lock().unwrap().get(&queue), Some(&81));
+        assert!(!store.values.lock().unwrap().contains_key(&queue));
+        consumer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn activation_fences_old_generations_and_rolls_back_scheduler_failure() {
+        let mut config = PushConsumerConfig::new("rebalance-activation").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let store = Arc::new(RecordingOffsetStore::default());
+        let scheduler = Arc::new(PullScheduler::new());
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            store.clone(),
+            idle_consume_service(),
+            scheduler.clone(),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+        write_lock(&consumer.subscriptions).insert(
+            "orders".to_owned(),
+            SubscriptionData::new(Some("orders".to_owned()), Some("*".to_owned())),
+        );
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let original = consumer.activate_process_queue(&queue, 10).await.unwrap();
+        assert!(Arc::ptr_eq(
+            &original,
+            &consumer.activate_process_queue(&queue, 999).await.unwrap()
+        ));
+        original.drop_assignment(original.generation()).unwrap();
+        assert!(matches!(
+            consumer.activate_process_queue(&queue, 20).await,
+            Err(PushConsumerError::ProcessQueueRemovalPending(_))
+        ));
+        assert!(
+            read_lock(&consumer.process_queues)
+                .get(&queue)
+                .is_some_and(|current| Arc::ptr_eq(current, &original))
+        );
+
+        let context = PullContext {
+            runtime: runtime.clone(),
+            offset_store: store.clone(),
+            scheduler: scheduler.clone(),
+            consume_service: idle_consume_service(),
+        };
+        assert!(
+            consumer
+                .remove_process_queue_safely(&context, &queue, &original)
+                .await
+        );
+        let replacement = consumer.activate_process_queue(&queue, 20).await.unwrap();
+        assert!(replacement.generation() > original.generation());
+
+        let failed_queue = MessageQueue::new("orders", "broker-a", 1);
+        scheduler.stop().await;
+        assert!(matches!(
+            consumer.activate_process_queue(&failed_queue, 30).await,
+            Err(PushConsumerError::PullScheduler(_))
+        ));
+        assert!(!read_lock(&consumer.process_queues).contains_key(&failed_queue));
+        assert!(!store.values.lock().unwrap().contains_key(&failed_queue));
+        consumer.shutdown().await.unwrap();
     }
 
     #[test]

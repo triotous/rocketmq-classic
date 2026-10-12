@@ -28,3 +28,18 @@ Commands/results:
 - `git diff --check` — PASS.
 
 Next: wire strategy selection, snapshots, reconciliation, initial offsets and Push triggers; P11-V02/U01 remain open.
+
+P11 reconciliation follow-up: compared `PushConsumer::rebalance_once` with pinned Java `RebalanceImpl.rebalanceByTopic`. Local clustering now looks up membership before handling a missing route and emits Java's empty-set queue callback for non-retry topics while preserving the previous assignment. Available empty routes still reach the allocator. Broker assignment queries no longer depend on the local route table. `LiteSelective` now follows Java's default no-op branch pending Phase 13 POP handling. Added `missing_clustering_route_queries_membership_notifies_empty_and_keeps_assignment` and `lite_selective_rebalance_leaves_assignments_for_pop_handling`.
+
+P11 race-coverage follow-up: added `queue_removal_fences_a_pull_response_already_in_flight`, using barriers to hold a returned pull response until the queue generation has been dropped and safely removed. The response is rejected without changing offsets or queue contents.
+
+Validation on 2026-10-12:
+- `cargo fmt --check` and `git diff --check` — PASS.
+- `cargo test -p rocketmq-classic-consumer --lib --locked` — PASS (77 tests).
+- `cargo test -p rocketmq-classic-consumer --test rebalance --locked` — PASS (2 fixture/strategy tests).
+- `cargo build -p rocketmq-classic --examples --locked` — PASS.
+- `mvn -o -q -f compat/java-reference/pom.xml exec:java@verify-java-rebalance-initial-offset-fixtures` — PASS; fixture SHA-256 `6db5b5ddc9ba68c85dd51ef769394ae8551f678412db5f1cae83b05f118435a4`.
+- `mvn -o -q -f compat/java-reference/pom.xml verify` — STOPPED at the separate `verify-runtime-config-fixtures` check because `fixtures/runtime/client-config.json` drifted. The Phase 11 initial-offset fixture passed in its named execution; no runtime-config fixture was regenerated.
+- An initial unqualified `exec:java` invocation reached `compat.Main` and printed its usage. Re-running the pom's named initial-offset fixture execution passed.
+
+Updated Phase 10/11 compatibility matrices and both Phase 11 plans with the passing local evidence. P11-V01, P11-V02 and P11-U01 are unit verified; P11-V03/V04 remain pending Phase 19. Orderly compatibility remains partial for Phase 12 locking.

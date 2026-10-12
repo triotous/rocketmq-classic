@@ -8,5 +8,5 @@ pub use consumer::PushConsumer;
 pub use listener::{
     ConcurrentListenerFuture, ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus,
     ConsumeOrderlyContext, ConsumeOrderlyStatus, MessageListenerConcurrently,
-    MessageListenerOrderly, OrderlyListenerFuture, PushMessageListener,
+    MessageListenerOrderly, MessageQueueListener, OrderlyListenerFuture, PushMessageListener,
 };

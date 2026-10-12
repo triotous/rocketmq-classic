@@ -1,6 +1,12 @@
-use std::{future::Future, pin::Pin};
+use std::{collections::HashSet, future::Future, pin::Pin, sync::Arc};
 
 use rocketmq_classic_common::message::{MessageExt, MessageQueue};
+
+/// Java `MessageQueueListener` callback. `None` for `mq_all` represents
+/// broker-driven assignment, where Java passes a null set.
+pub type MessageQueueListener = Arc<
+    dyn Fn(&str, Option<&HashSet<MessageQueue>>, &HashSet<MessageQueue>) + Send + Sync + 'static,
+>;
 
 pub type ConcurrentListenerFuture = Pin<
     Box<

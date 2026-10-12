@@ -1,9 +1,15 @@
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rocketmq_classic_core::config::ClientConfig;
 use rocketmq_classic_protocol::heartbeat::{ConsumeFromWhere, MessageModel};
 
-use crate::{config::validate_group, error::PushConsumerError};
+use crate::{
+    config::validate_group,
+    error::PushConsumerError,
+    push::listener::MessageQueueListener,
+    rebalance::{AllocateMessageQueueAveragely, AllocateMessageQueueStrategy},
+};
 
 pub const DEFAULT_PUSH_CONSUMER_GROUP: &str = "DEFAULT_CONSUMER";
 pub const DEFAULT_CONSUME_THREAD_MIN: i32 = 20;
@@ -22,10 +28,10 @@ pub const DEFAULT_MAX_RECONSUME_TIMES: i32 = -1;
 pub const DEFAULT_CONSUME_TIMEOUT_MINUTES: i64 = 15;
 pub const DEFAULT_AWAIT_TERMINATION_MILLIS_WHEN_SHUTDOWN: i64 = 0;
 
-/// Java 5.5.1 `DefaultMQPushConsumer` settings owned by Phase 10.
+/// Java 5.5.1 `DefaultMQPushConsumer` settings owned by Phases 10 and 11.
 ///
-/// POP, queue allocation, orderly consumption, tracing and public consume
-/// hooks remain owned by their later phases.
+/// POP, orderly consumption, tracing and public consume hooks remain owned by
+/// their later phases.
 pub struct PushConsumerConfig {
     client: ClientConfig,
     consumer_group: String,
@@ -49,6 +55,9 @@ pub struct PushConsumerConfig {
     max_reconsume_times: i32,
     consume_timeout_minutes: i64,
     await_termination_millis_when_shutdown: i64,
+    allocate_message_queue_strategy: Arc<dyn AllocateMessageQueueStrategy>,
+    client_rebalance: bool,
+    message_queue_listener: Option<MessageQueueListener>,
 }
 
 impl PushConsumerConfig {
@@ -76,6 +85,9 @@ impl PushConsumerConfig {
             max_reconsume_times: DEFAULT_MAX_RECONSUME_TIMES,
             consume_timeout_minutes: DEFAULT_CONSUME_TIMEOUT_MINUTES,
             await_termination_millis_when_shutdown: DEFAULT_AWAIT_TERMINATION_MILLIS_WHEN_SHUTDOWN,
+            allocate_message_queue_strategy: Arc::new(AllocateMessageQueueAveragely),
+            client_rebalance: true,
+            message_queue_listener: None,
         })
     }
 
@@ -101,6 +113,33 @@ impl PushConsumerConfig {
 
     pub fn set_message_model(&mut self, value: MessageModel) {
         self.message_model = value;
+    }
+
+    pub fn allocate_message_queue_strategy(&self) -> Arc<dyn AllocateMessageQueueStrategy> {
+        self.allocate_message_queue_strategy.clone()
+    }
+
+    pub fn set_allocate_message_queue_strategy(
+        &mut self,
+        value: Arc<dyn AllocateMessageQueueStrategy>,
+    ) {
+        self.allocate_message_queue_strategy = value;
+    }
+
+    pub const fn client_rebalance(&self) -> bool {
+        self.client_rebalance
+    }
+
+    pub fn set_client_rebalance(&mut self, value: bool) {
+        self.client_rebalance = value;
+    }
+
+    pub fn message_queue_listener(&self) -> Option<MessageQueueListener> {
+        self.message_queue_listener.clone()
+    }
+
+    pub fn set_message_queue_listener(&mut self, value: Option<MessageQueueListener>) {
+        self.message_queue_listener = value;
     }
 
     pub const fn consume_from_where(&self) -> ConsumeFromWhere {
@@ -271,7 +310,7 @@ impl PushConsumerConfig {
         if effective_consumer_group == DEFAULT_PUSH_CONSUMER_GROUP {
             return Err(PushConsumerError::DefaultConsumerGroup);
         }
-        if !valid_consume_timestamp(&self.consume_timestamp) {
+        if parse_java_timestamp_millis(&self.consume_timestamp).is_none() {
             return Err(PushConsumerError::InvalidConsumeTimestamp);
         }
         for (name, value) in [
@@ -354,30 +393,104 @@ fn validate_optional_range(
     validate_range(name, i64::from(value), 1, maximum)
 }
 
-fn valid_consume_timestamp(value: &str) -> bool {
-    if value.len() != 14 || !value.bytes().all(|byte| byte.is_ascii_digit()) {
-        return false;
+pub(crate) fn parse_java_timestamp_millis(value: &str) -> Option<i64> {
+    let units = value.encode_utf16().collect::<Vec<_>>();
+    let mut cursor = 0usize;
+    let year = parse_fixed_java_number(&units, &mut cursor, 4)?;
+    let month = parse_fixed_java_number(&units, &mut cursor, 2)?;
+    let day = parse_fixed_java_number(&units, &mut cursor, 2)?;
+    let hour = parse_fixed_java_number(&units, &mut cursor, 2)?;
+    let minute = parse_fixed_java_number(&units, &mut cursor, 2)?;
+    let second = parse_java_number_prefix(units.get(cursor..)?)?;
+
+    #[cfg(unix)]
+    {
+        let mut local = std::mem::MaybeUninit::<libc::tm>::zeroed();
+        // SAFETY: all tm fields used below are assigned. `mktime` normalizes
+        // overflowing calendar fields like Java SimpleDateFormat's lenient
+        // Calendar and uses the process-local timezone like Java's default.
+        let local = unsafe {
+            let local = local.assume_init_mut();
+            local.tm_year = year.checked_sub(1900)?;
+            local.tm_mon = month.checked_sub(1)?;
+            local.tm_mday = day;
+            local.tm_hour = hour;
+            local.tm_min = minute;
+            local.tm_sec = second;
+            local.tm_isdst = -1;
+            libc::mktime(local as *mut libc::tm)
+        };
+        return i64::try_from(local).ok()?.checked_mul(1_000);
     }
-    let number = |range: std::ops::Range<usize>| -> Option<u32> { value.get(range)?.parse().ok() };
-    let (Some(year), Some(month), Some(day), Some(hour), Some(minute), Some(second)) = (
-        number(0..4),
-        number(4..6),
-        number(6..8),
-        number(8..10),
-        number(10..12),
-        number(12..14),
-    ) else {
-        return false;
-    };
-    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
-    let days_in_month = match month {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
-        2 if leap => 29,
-        2 => 28,
-        _ => return false,
-    };
-    (1..=days_in_month).contains(&day) && hour <= 23 && minute <= 59 && second <= 59
+
+    #[cfg(not(unix))]
+    {
+        let month_zero = i64::from(month).checked_sub(1)?;
+        let normalized_year = i64::from(year).checked_add(month_zero.div_euclid(12))?;
+        let normalized_month = month_zero.rem_euclid(12) + 1;
+        let adjusted_year = normalized_year - i64::from(normalized_month <= 2);
+        let era = adjusted_year.div_euclid(400);
+        let year_of_era = adjusted_year - era * 400;
+        let day_of_year =
+            (153 * (normalized_month + if normalized_month > 2 { -3 } else { 9 }) + 2) / 5
+                + i64::from(day)
+                - 1;
+        let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+        let days = era * 146_097 + day_of_era - 719_468;
+        let seconds = days
+            .checked_mul(86_400)?
+            .checked_add(i64::from(hour) * 3_600)?
+            .checked_add(i64::from(minute) * 60)?
+            .checked_add(i64::from(second))?;
+        return seconds.checked_mul(1_000);
+    }
+}
+
+fn parse_fixed_java_number(units: &[u16], cursor: &mut usize, width: usize) -> Option<i32> {
+    let end = cursor.checked_add(width)?;
+    let value = parse_java_number_prefix(units.get(*cursor..end)?)?;
+    *cursor = end;
+    Some(value)
+}
+
+fn parse_java_number_prefix(units: &[u16]) -> Option<i32> {
+    let mut cursor = 0;
+    while units
+        .get(cursor)
+        .is_some_and(|unit| char::from_u32(u32::from(*unit)).is_some_and(char::is_whitespace))
+    {
+        cursor += 1;
+    }
+    let negative = units.get(cursor) == Some(&u16::from(b'-'));
+    if negative {
+        cursor += 1;
+    }
+    let mut value = 0i64;
+    let mut digits = 0;
+    for unit in &units[cursor..] {
+        let Some(digit) = java_decimal_digit(*unit) else {
+            break;
+        };
+        value = value.checked_mul(10)?.checked_add(i64::from(digit))?;
+        digits += 1;
+    }
+    if digits == 0 {
+        return None;
+    }
+    let value = if negative { -value } else { value };
+    i32::try_from(value).ok()
+}
+
+fn java_decimal_digit(unit: u16) -> Option<u16> {
+    const ZEROS: &[u16] = &[
+        0x0030, 0x0660, 0x06f0, 0x07c0, 0x0966, 0x09e6, 0x0a66, 0x0ae6, 0x0b66, 0x0be6, 0x0c66,
+        0x0ce6, 0x0d66, 0x0de6, 0x0e50, 0x0ed0, 0x0f20, 0x1040, 0x1090, 0x17e0, 0x1810, 0x1946,
+        0x19d0, 0x1a80, 0x1a90, 0x1b50, 0x1bb0, 0x1c40, 0x1c50, 0xa620, 0xa8d0, 0xa900, 0xa9d0,
+        0xa9f0, 0xaa50, 0xabf0, 0xff10,
+    ];
+    ZEROS
+        .iter()
+        .find_map(|zero| unit.checked_sub(*zero).filter(|digit| *digit < 10))
 }
 
 fn default_consume_timestamp() -> String {
@@ -465,7 +578,7 @@ mod tests {
         assert_eq!(config.effective_max_reconsume_times(), -2);
         assert_eq!(config.consume_timeout_minutes(), 15);
         assert_eq!(config.await_termination_millis_when_shutdown(), 0);
-        assert!(valid_consume_timestamp(config.consume_timestamp()));
+        assert!(parse_java_timestamp_millis(config.consume_timestamp()).is_some());
     }
 
     #[test]
@@ -573,7 +686,7 @@ mod tests {
         ));
 
         let mut config = PushConsumerConfig::new("orders").unwrap();
-        config.set_consume_timestamp("20260230010101");
+        config.set_consume_timestamp("not-a-date");
         assert!(matches!(
             config.validate("orders"),
             Err(PushConsumerError::InvalidConsumeTimestamp)
@@ -581,12 +694,36 @@ mod tests {
     }
 
     #[test]
-    fn timestamp_validation_checks_calendar_and_time_fields() {
-        assert!(valid_consume_timestamp("20240229010203"));
-        assert!(!valid_consume_timestamp("20230229010203"));
-        assert!(!valid_consume_timestamp("20260101246000"));
-        assert!(!valid_consume_timestamp("2026010112000"));
-        assert!(!valid_consume_timestamp("2026010112000x"));
+    fn timestamp_validation_matches_java_lenient_date_parser() {
+        assert!(parse_java_timestamp_millis("20240229010203").is_some());
+        assert!(parse_java_timestamp_millis("20230229010203").is_some());
+        assert!(parse_java_timestamp_millis("20241301010203").is_some());
+        assert!(parse_java_timestamp_millis("20240229010203xyz").is_some());
+        assert!(parse_java_timestamp_millis("2024022901020x").is_some());
+        assert!(parse_java_timestamp_millis("2026010112000").is_some());
+        assert!(parse_java_timestamp_millis("٢٠٢٤٠٢٢٩٠١٠٢٠٣").is_some());
+        assert!(parse_java_timestamp_millis("２０２４０２２９０１０２０３").is_some());
+        assert!(parse_java_timestamp_millis("2024022901").is_none());
+        assert!(parse_java_timestamp_millis("+20240229010203").is_none());
+        assert!(parse_java_timestamp_millis("not-a-date").is_none());
+    }
+
+    #[test]
+    fn timestamp_acceptance_matches_java_551_fixture_cases() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/rebalance/initial-offsets.json"
+        ))
+        .unwrap();
+        let cases = fixture["timestampParsing"].as_array().unwrap();
+        assert_eq!(cases.len(), 12);
+        for case in cases {
+            let input = case["input"].as_str().unwrap();
+            assert_eq!(
+                parse_java_timestamp_millis(input).is_some(),
+                case["accepted"].as_bool().unwrap(),
+                "Java parseDate acceptance for {input:?}"
+            );
+        }
     }
 
     #[test]

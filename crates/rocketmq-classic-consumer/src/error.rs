@@ -86,6 +86,8 @@ pub enum PushConsumerError {
     MissingSubscriptionForQueue(String),
     #[error("queue `{0}` is waiting for corrected offset persistence")]
     OffsetCorrectionPending(String),
+    #[error("queue `{0}` is still registered while its prior assignment is being removed")]
+    ProcessQueueRemovalPending(String),
     #[error("push consumer assignment generation counter is exhausted")]
     GenerationExhausted,
     #[error("consumer group is blank or contains characters not accepted by RocketMQ")]

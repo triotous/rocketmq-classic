@@ -226,6 +226,18 @@
               </arguments>
             </configuration>
           </execution>
+        <execution>
+          <id>verify-java-rebalance-initial-offset-fixtures</id>
+          <phase>verify</phase>
+          <goals><goal>java</goal></goals>
+          <configuration>
+            <mainClass>compat.RebalanceInitialOffsetFixtures</mainClass>
+            <arguments>
+              <argument>${project.basedir}/../../fixtures/rebalance/initial-offsets.json</argument>
+              <argument>--verify</argument>
+            </arguments>
+          </configuration>
+        </execution>
           <execution>
             <id>verify-java-invoked-rpc-fixtures</id>
             <phase>verify</phase>

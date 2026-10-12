@@ -10,7 +10,8 @@ pub mod rebalance;
 pub use config::PullConsumerConfig;
 pub use error::{PullConsumerError, PushConsumerError};
 pub use push::{
-    ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus, ConsumeOrderlyContext,
-    ConsumeOrderlyStatus, MessageListenerConcurrently, MessageListenerOrderly, PushConsumer,
+    ConcurrentListenerFuture, ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus,
+    ConsumeOrderlyContext, ConsumeOrderlyStatus, MessageListenerConcurrently,
+    MessageListenerOrderly, MessageQueueListener, OrderlyListenerFuture, PushConsumer,
     PushConsumerConfig, PushMessageListener,
 };

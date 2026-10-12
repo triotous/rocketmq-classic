@@ -74,14 +74,16 @@ Own one periodic service with immediate startup, subscription-change and NOTIFY_
 
 Write the failing check/oracle fixture before its implementation. The cases below must become runnable checks, not manual checklist-only claims. Run these checks without Docker or a live Broker; use Java fixtures, controlled clocks and scripted peers. Shared commands and evidence rules are in the execution index.
 
-- [ ] **P11-V01** — Java/Rust allocations match for 0/1/N queues, 1/N clients, 10q/3c, missing client, Unicode order and every Java strategy.
-- [ ] **P11-V02** — Initial-offset policies match Java; query/persist failure never resets to zero or removes a live replacement.
+- [x] **P11-V01** — Java/Rust allocations match for 0/1/N queues, 1/N clients, 10q/3c, missing client, Unicode order and every Java strategy.
+- [x] **P11-V02** — Initial-offset policies match Java; query/persist failure never resets to zero or removes a live replacement.
 
-- [ ] **P11-U01** — Java allocation fixtures, scripted membership changes and barrier tests verify join/leave convergence, startup, retry, safe offsets and shutdown ownership.
+- [x] **P11-U01** — Java allocation fixtures, scripted membership changes and barrier tests verify join/leave convergence, startup, retry, safe offsets and shutdown ownership.
 
 ### 5.1 Local commands after implementation
 
-Run after this phase or earlier phases create the named entry points. This documentation task does not execute these commands or claim their tests pass.
+The implementation run executed these commands. Detailed outcomes, including
+the separate full-Maven fixture drift, are recorded in the [Phase 11 execution
+log](../../../rlogs/2026/09/12-phase-11-rebalance__20261012T000155Z.rlog).
 
 ```bash
 cargo test -p rocketmq-classic-consumer --test rebalance --locked

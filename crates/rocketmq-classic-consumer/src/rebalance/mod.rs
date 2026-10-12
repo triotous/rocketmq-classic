@@ -1,5 +1,6 @@
 //! Java 5.5.1 queue assignment and Push rebalance lifecycle.
 
+mod service;
 pub mod strategy;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -23,3 +24,5 @@ pub use strategy::{
     AllocateMessageQueueByConfig, AllocateMessageQueueByMachineRoom,
     AllocateMessageQueueConsistentHash, AllocateMessageQueueStrategy, HashFunction,
 };
+
+pub(crate) use service::RebalanceService;

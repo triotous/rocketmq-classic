@@ -74,14 +74,14 @@ broadcasting 分配全部 subscribed queue，使用 local offset。clustering �
 
 先寫對應失敗測試／Oracle fixture，再依序實作；以下 case 必須成為可執行檢查，而非人工勾選。以下檢查不依賴 Docker 或 live Broker，使用 Java fixture、可控時鐘及 scripted peer；共通命令與證據規則見執行索引。
 
-- [ ] **P11-V01** — Java/Rust allocation 在 0/1/N queue、1/N client、10q/3c、missing client、Unicode order 與全部 Java strategy 相同。
-- [ ] **P11-V02** — initial-offset policy 符合 Java；query/persist failure 不得重設為零或移除 live replacement。
+- [x] **P11-V01** — Java/Rust allocation 在 0/1/N queue、1/N client、10q/3c、missing client、Unicode order 與全部 Java strategy 相同。
+- [x] **P11-V02** — initial-offset policy 符合 Java；query/persist failure 不得重設為零或移除 live replacement。
 
-- [ ] **P11-U01** — Java allocation fixture、scripted membership change 與 barrier test 驗證 join/leave convergence、startup、retry、安全 offset 及 shutdown ownership。
+- [x] **P11-U01** — Java allocation fixture、scripted membership change 與 barrier test 驗證 join/leave convergence、startup、retry、安全 offset 及 shutdown ownership。
 
 ### 5.1 實作完成後的本機命令
 
-下列命令由本 phase 或前面的 phase 建立對應 entry point 後執行；此次文件拆分未執行或宣稱測試通過。
+實作期間已執行下列命令。各項結果與完整 Maven 驗證遇到的其他 fixture drift，記錄於[Phase 11 執行紀錄](../../../rlogs/2026/09/12-phase-11-rebalance__20261012T000155Z.rlog)。
 
 ```bash
 cargo test -p rocketmq-classic-consumer --test rebalance --locked
