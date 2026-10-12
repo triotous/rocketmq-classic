@@ -1021,6 +1021,7 @@ dependencies = [
  "base64",
  "bytes",
  "libc",
+ "md-5",
  "rand",
  "rocketmq-classic-common",
  "rocketmq-classic-core",

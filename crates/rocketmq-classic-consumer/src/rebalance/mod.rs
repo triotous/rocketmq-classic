@@ -18,4 +18,8 @@ pub enum RebalanceError {
     Custom(String),
 }
 
-pub use strategy::{AllocateMessageQueueAveragely, AllocateMessageQueueStrategy};
+pub use strategy::{
+    AllocateMessageQueueAveragely, AllocateMessageQueueAveragelyByCircle,
+    AllocateMessageQueueByConfig, AllocateMessageQueueByMachineRoom,
+    AllocateMessageQueueConsistentHash, AllocateMessageQueueStrategy, HashFunction,
+};

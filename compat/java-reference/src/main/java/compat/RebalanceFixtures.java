@@ -113,6 +113,7 @@ public final class RebalanceFixtures {
         Map<String, Object> result = new TreeMap<>();
         result.put("id", strategyName.toLowerCase() + "_" + scenario.id);
         result.put("strategy", strategyName);
+        result.put("strategyName", strategy.getName());
         result.put("consumerGroup", "rebalance-fixture-group");
         result.put("queues", queueRecords(queues));
         result.put("consumerIds", consumers);

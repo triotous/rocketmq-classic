@@ -16,3 +16,15 @@ Commands/results:
 - `git diff --check` — PASS.
 
 A first focused test run exposed test setup that tried to isolate empty consumer IDs with an empty queue list; Java checks the queue list first. The test now uses a non-empty queue for that branch, and the subsequent focused run passed. The other four Rust allocation strategies and Push lifecycle cases remain unimplemented; P11-V01 is PARTIAL, P11-V02/U01 not implemented, P11-V03/V04 pending Phase 19.
+
+P11-03 implementation checkpoint: ported the remaining Java 5.5.1 strategies: circle average, explicit config list, machine-room partitioning and consistent hash. Consistent hash uses Java's MD5 UTF-8/first-four-byte ring key, virtual node names/indexing, sorted signed-long ring points, and accepts custom hash functions; negative virtual node counts return an error. Machine-room parsing preserves Java `String.split("@")` trailing-empty behavior.
+
+Expanded the Java fixture schema with actual strategy names and options. It now covers five public strategy classes plus the custom-hash overload over five input scenarios (30 strategy/scenario cases). The Rust integration test compares each consumer assignment and missing-current result, verifies invalid-input precedence, and checks disjoint complete ownership for partitioning strategies. Added machine-room delimiter edge tests and consistent-hash default/zero/negative vnode checks. Updated Cargo.lock for the existing workspace `md-5` dependency and compatibility matrix; P11-V01 is now UNIT_VERIFIED.
+
+Commands/results:
+- `cargo fmt --check` — PASS.
+- `cargo test -p rocketmq-classic-consumer --test rebalance --locked` — PASS (2 tests, all strategy fixtures and option edges).
+- `mvn -q -f compat/java-reference/pom.xml compile exec:java -Dexec.args='rebalance-fixtures .../fixtures/rebalance/allocation.json --verify'` — PASS; checked fixture SHA-256 `9a0cfabcf4234e955f19c5d5cebd438de25a0b5f45b5386d4c880549c91a0d8b`.
+- `git diff --check` — PASS.
+
+Next: wire strategy selection, snapshots, reconciliation, initial offsets and Push triggers; P11-V02/U01 remain open.
