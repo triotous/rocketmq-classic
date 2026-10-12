@@ -9,6 +9,7 @@ use std::{
 };
 
 use rocketmq_classic_common::message::{MessageExt, MessageQueue};
+use tokio::time::Instant;
 
 /// A single queue assignment's retained messages and in-flight consume work.
 /// Every operation that can change ownership state is scoped to its generation.
@@ -16,6 +17,7 @@ pub(crate) struct ProcessQueue {
     queue: MessageQueue,
     generation: u64,
     state: Mutex<ProcessQueueState>,
+    orderly_consume_gate: Arc<tokio::sync::Mutex<()>>,
 }
 
 struct ProcessQueueState {
@@ -31,6 +33,8 @@ struct ProcessQueueState {
     last_consume_timestamp_millis: i64,
     locked: bool,
     last_lock_timestamp_millis: i64,
+    last_lock_instant: Option<Instant>,
+    lock_attempt_id: u64,
     try_unlock_times: u64,
 }
 
@@ -44,6 +48,22 @@ struct QueueMessage {
 enum MessageState {
     Ready,
     InFlight(u64),
+    Held,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OrderlyCompletion {
+    HoldCurrent,
+    CommitAll,
+    RollbackAll,
+    RequeueCurrent,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LockAttemptResult {
+    Applied,
+    Superseded,
+    Dropped,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -142,8 +162,11 @@ impl ProcessQueue {
                 last_consume_timestamp_millis: now,
                 locked: false,
                 last_lock_timestamp_millis: now,
+                last_lock_instant: None,
+                lock_attempt_id: 0,
                 try_unlock_times: 0,
             }),
+            orderly_consume_gate: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
@@ -153,6 +176,10 @@ impl ProcessQueue {
 
     pub(crate) const fn generation(&self) -> u64 {
         self.generation
+    }
+
+    pub(crate) fn orderly_consume_gate(&self) -> Arc<tokio::sync::Mutex<()>> {
+        self.orderly_consume_gate.clone()
     }
 
     /// Retain pulled messages by queue offset. Repeated offsets update a ready
@@ -190,7 +217,7 @@ impl ProcessQueue {
                         .saturating_sub(previous_body_bytes)
                         .saturating_add(body_bytes);
                 }
-                Some((MessageState::InFlight(_), _)) => {}
+                Some((MessageState::InFlight(_) | MessageState::Held, _)) => {}
                 None => {
                     state.messages.insert(
                         offset,
@@ -320,6 +347,101 @@ impl ProcessQueue {
         })
     }
 
+    /// Applies Java orderly semantics to the current batch and any prior
+    /// autoCommit=false batches retained in `Held` state.
+    pub(crate) fn complete_orderly_batch(
+        &self,
+        generation: u64,
+        batch_id: u64,
+        completion: OrderlyCompletion,
+    ) -> Result<CompletionOutcome, ProcessQueueError> {
+        let mut state = self.lock_state();
+        self.ensure_active(generation, &state)?;
+        let Some(offsets) = state.in_flight_batches.get(&batch_id).cloned() else {
+            return Err(ProcessQueueError::UnknownBatch);
+        };
+        if offsets.iter().any(|offset| {
+            state
+                .messages
+                .get(offset)
+                .is_none_or(|message| message.state != MessageState::InFlight(batch_id))
+        }) {
+            return Err(ProcessQueueError::BatchOwnershipLost);
+        }
+
+        state.in_flight_batches.remove(&batch_id);
+        let mut completed_offsets = Vec::new();
+        let mut requeued_offsets = Vec::new();
+        let transition_offsets = match completion {
+            OrderlyCompletion::CommitAll => state
+                .messages
+                .iter()
+                .filter(|(_, message)| {
+                    message.state == MessageState::Held
+                        || message.state == MessageState::InFlight(batch_id)
+                })
+                .map(|(offset, _)| *offset)
+                .collect::<Vec<_>>(),
+            OrderlyCompletion::RollbackAll => state
+                .messages
+                .iter()
+                .filter(|(_, message)| {
+                    message.state == MessageState::Held
+                        || message.state == MessageState::InFlight(batch_id)
+                })
+                .map(|(offset, _)| *offset)
+                .collect::<Vec<_>>(),
+            OrderlyCompletion::HoldCurrent | OrderlyCompletion::RequeueCurrent => offsets,
+        };
+
+        for offset in transition_offsets {
+            let current_batch = state
+                .messages
+                .get(&offset)
+                .is_some_and(|message| message.state == MessageState::InFlight(batch_id));
+            let transition_held = completion == OrderlyCompletion::RollbackAll
+                && state
+                    .messages
+                    .get(&offset)
+                    .is_some_and(|message| message.state == MessageState::Held);
+            if completion == OrderlyCompletion::CommitAll {
+                if let Some(message) = state.messages.remove(&offset) {
+                    state.cached_count = state.cached_count.saturating_sub(1);
+                    state.cached_bytes = state.cached_bytes.saturating_sub(message.body_bytes);
+                    completed_offsets.push(offset);
+                }
+            } else if current_batch || transition_held {
+                if let Some(message) = state.messages.get_mut(&offset) {
+                    match completion {
+                        OrderlyCompletion::HoldCurrent => message.state = MessageState::Held,
+                        OrderlyCompletion::RollbackAll | OrderlyCompletion::RequeueCurrent => {
+                            message.state = MessageState::Ready;
+                            requeued_offsets.push(offset);
+                        }
+                        OrderlyCompletion::CommitAll => unreachable!(),
+                    }
+                }
+            }
+        }
+
+        let has_ready_messages = state
+            .messages
+            .values()
+            .any(|message| message.state == MessageState::Ready);
+        // Held messages are committed or rolled back only by a later listener
+        // result. They must not keep dispatch latched when no ready message is
+        // available, otherwise a future pull would never schedule a callback.
+        state.consuming = has_ready_messages;
+        state.last_consume_timestamp_millis = epoch_millis();
+        let next_commit_offset = next_commit_offset(&state);
+        Ok(CompletionOutcome {
+            completed_offsets,
+            requeued_offsets,
+            next_commit_offset,
+            has_ready_messages,
+        })
+    }
+
     pub(crate) fn increment_reconsume_times(
         &self,
         generation: u64,
@@ -347,7 +469,18 @@ impl ProcessQueue {
         }
         state.dropped = true;
         state.consuming = false;
+        state.lock_attempt_id = state.lock_attempt_id.wrapping_add(1);
         Ok(true)
+    }
+
+    pub(crate) fn release_consume_dispatch(
+        &self,
+        generation: u64,
+    ) -> Result<(), ProcessQueueError> {
+        let mut state = self.lock_state();
+        self.ensure_generation(generation)?;
+        state.consuming = false;
+        Ok(())
     }
 
     pub(crate) fn snapshot(
@@ -403,11 +536,133 @@ impl ProcessQueue {
         locked: bool,
         timestamp_millis: i64,
     ) -> Result<(), ProcessQueueError> {
+        self.set_lock_state_at(
+            generation,
+            locked,
+            timestamp_millis,
+            locked.then(Instant::now),
+        )
+    }
+
+    /// Sets local lock state using the instant the Broker response was
+    /// received, which may precede initial-offset lookup during assignment.
+    pub(crate) fn set_lock_state_at(
+        &self,
+        generation: u64,
+        locked: bool,
+        timestamp_millis: i64,
+        lock_instant: Option<Instant>,
+    ) -> Result<(), ProcessQueueError> {
         let mut state = self.lock_state();
         self.ensure_active(generation, &state)?;
         state.locked = locked;
-        state.last_lock_timestamp_millis = timestamp_millis;
+        if locked {
+            state.last_lock_timestamp_millis = timestamp_millis;
+            state.last_lock_instant = lock_instant;
+        }
         Ok(())
+    }
+
+    /// Starts a lock request tied to this queue generation. The returned token
+    /// prevents an older response from overwriting a newer lock decision.
+    pub(crate) fn begin_lock_attempt(&self, generation: u64) -> Result<u64, ProcessQueueError> {
+        let mut state = self.lock_state();
+        self.ensure_active(generation, &state)?;
+        state.lock_attempt_id = state.lock_attempt_id.wrapping_add(1).max(1);
+        Ok(state.lock_attempt_id)
+    }
+
+    /// Applies a Broker lock result only while the request still owns the
+    /// current, active assignment generation.
+    pub(crate) fn complete_lock_attempt(
+        &self,
+        generation: u64,
+        attempt_id: u64,
+        locked: bool,
+    ) -> Result<LockAttemptResult, ProcessQueueError> {
+        self.complete_lock_attempt_at(
+            generation,
+            attempt_id,
+            locked,
+            epoch_millis(),
+            Instant::now(),
+        )
+    }
+
+    /// Applies a Broker lock result using the instant its response arrived.
+    /// Batch requests may continue across other brokers before local state is
+    /// reconciled, so recording the later batch-completion time would extend
+    /// the earlier Broker lock's effective lifetime.
+    pub(crate) fn complete_lock_attempt_at(
+        &self,
+        generation: u64,
+        attempt_id: u64,
+        locked: bool,
+        timestamp_millis: i64,
+        lock_instant: Instant,
+    ) -> Result<LockAttemptResult, ProcessQueueError> {
+        let mut state = self.lock_state();
+        self.ensure_generation(generation)?;
+        if state.dropped {
+            return Ok(LockAttemptResult::Dropped);
+        }
+        if state.lock_attempt_id != attempt_id {
+            return Ok(LockAttemptResult::Superseded);
+        }
+        state.locked = locked;
+        if locked {
+            state.last_lock_timestamp_millis = timestamp_millis;
+            state.last_lock_instant = Some(lock_instant);
+        }
+        Ok(LockAttemptResult::Applied)
+    }
+
+    /// Records a confirmed unlock. This remains legal after drop so cleanup
+    /// can finish without making the old assignment active again.
+    pub(crate) fn record_unlocked(&self, generation: u64) -> Result<(), ProcessQueueError> {
+        let mut state = self.lock_state();
+        self.ensure_generation(generation)?;
+        state.locked = false;
+        state.lock_attempt_id = state.lock_attempt_id.wrapping_add(1).max(1);
+        Ok(())
+    }
+
+    pub(crate) fn is_lock_fresh(
+        &self,
+        generation: u64,
+        max_live_time_millis: i64,
+    ) -> Result<bool, ProcessQueueError> {
+        self.ensure_generation(generation)?;
+        let state = self.lock_state();
+        if state.dropped || !state.locked {
+            return Ok(false);
+        }
+        let Some(last_lock_instant) = state.last_lock_instant else {
+            return Ok(false);
+        };
+        let elapsed_millis = Instant::now()
+            .saturating_duration_since(last_lock_instant)
+            .as_millis();
+        Ok(i128::try_from(elapsed_millis).unwrap_or(i128::MAX) <= i128::from(max_live_time_millis))
+    }
+
+    /// Reports whether the most recent confirmed lock is older than Java's
+    /// dropped-queue unlock delay. The timestamp remains available after an
+    /// unlock response, matching ProcessQueue's retained lastLockTimestamp.
+    pub(crate) fn is_lock_older_than(
+        &self,
+        generation: u64,
+        unlock_delay_millis: i64,
+    ) -> Result<bool, ProcessQueueError> {
+        self.ensure_generation(generation)?;
+        let state = self.lock_state();
+        let Some(last_lock_instant) = state.last_lock_instant else {
+            return Ok(false);
+        };
+        let elapsed_millis = Instant::now()
+            .saturating_duration_since(last_lock_instant)
+            .as_millis();
+        Ok(i128::try_from(elapsed_millis).unwrap_or(i128::MAX) > i128::from(unlock_delay_millis))
     }
 
     pub(crate) fn increment_try_unlock_times(
@@ -415,7 +670,7 @@ impl ProcessQueue {
         generation: u64,
     ) -> Result<u64, ProcessQueueError> {
         let mut state = self.lock_state();
-        self.ensure_active(generation, &state)?;
+        self.ensure_generation(generation)?;
         state.try_unlock_times = state.try_unlock_times.saturating_add(1);
         Ok(state.try_unlock_times)
     }
@@ -579,6 +834,96 @@ mod tests {
         assert_eq!(retry.offsets(), &[21]);
         let completed = process_queue.complete_batch(19, retry.id(), &[21]).unwrap();
         assert_eq!(completed.next_commit_offset, Some(23));
+    }
+
+    #[test]
+    fn orderly_success_holds_offsets_until_a_later_commit() {
+        let process_queue = process_queue(23);
+        process_queue
+            .insert_messages(23, vec![message(10, 1), message(11, 1)])
+            .unwrap();
+        let first = process_queue.take_batch(23, 1).unwrap().unwrap();
+        let held = process_queue
+            .complete_orderly_batch(23, first.id(), OrderlyCompletion::HoldCurrent)
+            .unwrap();
+        assert_eq!(held.next_commit_offset, Some(10));
+        assert_eq!(process_queue.snapshot(23).unwrap().cached_count, 2);
+
+        let second = process_queue.take_batch(23, 1).unwrap().unwrap();
+        assert_eq!(second.offsets(), &[11]);
+        let committed = process_queue
+            .complete_orderly_batch(23, second.id(), OrderlyCompletion::CommitAll)
+            .unwrap();
+        assert_eq!(committed.completed_offsets, vec![10, 11]);
+        assert_eq!(committed.next_commit_offset, Some(12));
+        assert_eq!(process_queue.snapshot(23).unwrap().cached_count, 0);
+    }
+
+    #[test]
+    fn orderly_rollback_restores_held_and_current_messages_in_offset_order() {
+        let process_queue = process_queue(24);
+        process_queue
+            .insert_messages(24, vec![message(10, 1), message(11, 1), message(12, 1)])
+            .unwrap();
+        let first = process_queue.take_batch(24, 1).unwrap().unwrap();
+        process_queue
+            .complete_orderly_batch(24, first.id(), OrderlyCompletion::HoldCurrent)
+            .unwrap();
+        let second = process_queue.take_batch(24, 1).unwrap().unwrap();
+        let rolled_back = process_queue
+            .complete_orderly_batch(24, second.id(), OrderlyCompletion::RollbackAll)
+            .unwrap();
+        assert_eq!(rolled_back.requeued_offsets, vec![10, 11]);
+
+        let replay = process_queue.take_batch(24, 3).unwrap().unwrap();
+        assert_eq!(replay.offsets(), &[10, 11, 12]);
+    }
+
+    #[test]
+    fn stale_and_dropped_lock_responses_cannot_restore_queue_ownership() {
+        let process_queue = process_queue(25);
+        let first = process_queue.begin_lock_attempt(25).unwrap();
+        let current = process_queue.begin_lock_attempt(25).unwrap();
+        assert_eq!(
+            process_queue.complete_lock_attempt(25, first, true),
+            Ok(LockAttemptResult::Superseded)
+        );
+        assert_eq!(
+            process_queue.complete_lock_attempt(25, current, true),
+            Ok(LockAttemptResult::Applied)
+        );
+        assert!(process_queue.snapshot(25).unwrap().locked);
+
+        let late = process_queue.begin_lock_attempt(25).unwrap();
+        process_queue.drop_assignment(25).unwrap();
+        assert_eq!(
+            process_queue.complete_lock_attempt(25, late, true),
+            Ok(LockAttemptResult::Dropped)
+        );
+        assert!(process_queue.snapshot(25).unwrap().dropped);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn orderly_lock_expires_only_after_the_java_max_live_boundary() {
+        let process_queue = process_queue(26);
+        process_queue.set_lock_state(26, true, 1_000).unwrap();
+        assert!(process_queue.is_lock_fresh(26, 30_000).unwrap());
+        tokio::time::advance(std::time::Duration::from_millis(30_000)).await;
+        assert!(process_queue.is_lock_fresh(26, 30_000).unwrap());
+        tokio::time::advance(std::time::Duration::from_millis(1)).await;
+        assert!(!process_queue.is_lock_fresh(26, 30_000).unwrap());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn dropped_queue_unlock_delay_uses_the_java_strict_boundary() {
+        let process_queue = process_queue(27);
+        process_queue.set_lock_state(27, true, 1_000).unwrap();
+        process_queue.record_unlocked(27).unwrap();
+        assert!(!process_queue.is_lock_older_than(27, 20_000).unwrap());
+        tokio::time::advance(std::time::Duration::from_millis(20_000)).await;
+        assert!(!process_queue.is_lock_older_than(27, 20_000).unwrap());
+        tokio::time::advance(std::time::Duration::from_millis(1)).await;
+        assert!(process_queue.is_lock_older_than(27, 20_000).unwrap());
     }
 
     #[test]

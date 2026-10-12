@@ -20,8 +20,11 @@ pub type ConcurrentListenerFuture = Pin<
     >,
 >;
 
-pub type OrderlyListenerFuture =
-    Pin<Box<dyn Future<Output = (ConsumeOrderlyStatus, ConsumeOrderlyContext)> + Send + 'static>>;
+pub type OrderlyListenerFuture = Pin<
+    Box<
+        dyn Future<Output = (Option<ConsumeOrderlyStatus>, ConsumeOrderlyContext)> + Send + 'static,
+    >,
+>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConsumeConcurrentlyStatus {
@@ -32,6 +35,10 @@ pub enum ConsumeConcurrentlyStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConsumeOrderlyStatus {
     Success,
+    /// Deprecated by Java 5.5.1; accepted for source compatibility.
+    Rollback,
+    /// Deprecated by Java 5.5.1; accepted for source compatibility.
+    Commit,
     SuspendCurrentQueueAMoment,
 }
 
@@ -164,7 +171,7 @@ where
 impl<F, Fut> MessageListenerOrderly for F
 where
     F: Fn(Vec<MessageExt>, ConsumeOrderlyContext) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = (ConsumeOrderlyStatus, ConsumeOrderlyContext)> + Send + 'static,
+    Fut: Future<Output = (Option<ConsumeOrderlyStatus>, ConsumeOrderlyContext)> + Send + 'static,
 {
     fn consume_message(
         &self,

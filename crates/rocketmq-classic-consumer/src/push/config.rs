@@ -25,6 +25,7 @@ pub const DEFAULT_CONSUME_MESSAGE_BATCH_MAX_SIZE: i32 = 1;
 pub const DEFAULT_PULL_BATCH_SIZE: i32 = 32;
 pub const DEFAULT_PULL_BATCH_SIZE_IN_BYTES: i32 = 256 * 1024;
 pub const DEFAULT_MAX_RECONSUME_TIMES: i32 = -1;
+pub const DEFAULT_SUSPEND_CURRENT_QUEUE_TIME_MILLIS: i64 = 1_000;
 pub const DEFAULT_CONSUME_TIMEOUT_MINUTES: i64 = 15;
 pub const DEFAULT_AWAIT_TERMINATION_MILLIS_WHEN_SHUTDOWN: i64 = 0;
 
@@ -53,6 +54,7 @@ pub struct PushConsumerConfig {
     post_subscription_when_pull: bool,
     unit_mode: bool,
     max_reconsume_times: i32,
+    suspend_current_queue_time_millis: i64,
     consume_timeout_minutes: i64,
     await_termination_millis_when_shutdown: i64,
     allocate_message_queue_strategy: Arc<dyn AllocateMessageQueueStrategy>,
@@ -83,6 +85,7 @@ impl PushConsumerConfig {
             post_subscription_when_pull: false,
             unit_mode: false,
             max_reconsume_times: DEFAULT_MAX_RECONSUME_TIMES,
+            suspend_current_queue_time_millis: DEFAULT_SUSPEND_CURRENT_QUEUE_TIME_MILLIS,
             consume_timeout_minutes: DEFAULT_CONSUME_TIMEOUT_MINUTES,
             await_termination_millis_when_shutdown: DEFAULT_AWAIT_TERMINATION_MILLIS_WHEN_SHUTDOWN,
             allocate_message_queue_strategy: Arc::new(AllocateMessageQueueAveragely),
@@ -284,8 +287,25 @@ impl PushConsumerConfig {
         }
     }
 
+    /// Java orderly consumers interpret the `-1` default as unbounded retries.
+    pub(crate) const fn effective_orderly_max_reconsume_times(&self) -> i32 {
+        if self.max_reconsume_times == -1 {
+            i32::MAX
+        } else {
+            self.max_reconsume_times
+        }
+    }
+
     pub fn set_max_reconsume_times(&mut self, value: i32) {
         self.max_reconsume_times = value;
+    }
+
+    pub const fn suspend_current_queue_time_millis(&self) -> i64 {
+        self.suspend_current_queue_time_millis
+    }
+
+    pub fn set_suspend_current_queue_time_millis(&mut self, value: i64) {
+        self.suspend_current_queue_time_millis = value;
     }
 
     pub const fn consume_timeout_minutes(&self) -> i64 {
@@ -573,9 +593,16 @@ mod tests {
         assert_eq!(config.pull_batch_size_in_bytes(), 256 * 1024);
         assert_eq!(config.max_reconsume_times(), -1);
         assert_eq!(config.effective_max_reconsume_times(), 16);
+        assert_eq!(config.effective_orderly_max_reconsume_times(), i32::MAX);
+        assert_eq!(config.suspend_current_queue_time_millis(), 1_000);
         let mut config = config;
         config.set_max_reconsume_times(-2);
         assert_eq!(config.effective_max_reconsume_times(), -2);
+        assert_eq!(config.effective_orderly_max_reconsume_times(), -2);
+        config.set_max_reconsume_times(5);
+        assert_eq!(config.effective_orderly_max_reconsume_times(), 5);
+        config.set_suspend_current_queue_time_millis(4_321);
+        assert_eq!(config.suspend_current_queue_time_millis(), 4_321);
         assert_eq!(config.consume_timeout_minutes(), 15);
         assert_eq!(config.await_termination_millis_when_shutdown(), 0);
         assert!(parse_java_timestamp_millis(config.consume_timestamp()).is_some());

@@ -78,6 +78,8 @@ pub enum PushConsumerError {
     OffsetStore(#[from] OffsetStoreError),
     #[error("push pull scheduler error: {0}")]
     PullScheduler(String),
+    #[error("invalid orderly queue-lock settings: {0}")]
+    OrderlyLockSettings(String),
     #[error(transparent)]
     PullProcessing(#[from] ProcessPullError),
     #[error("push consumer requires a message queue with a topic and broker name")]
@@ -111,8 +113,6 @@ pub enum PushConsumerError {
     InvalidSubscription(String),
     #[error("a concurrent or orderly message listener must be registered before startup")]
     MissingMessageListener,
-    #[error("orderly message listeners are not supported until Phase 12")]
-    UnsupportedListenerMode,
     #[error("push consumer has already been started")]
     AlreadyStarted,
     #[error("push consumer has been shut down")]
@@ -125,6 +125,8 @@ pub enum PushConsumerError {
     ConfigurationAfterStartup,
     #[error("push message send-back and retry-topic fallback both failed")]
     SendMessageBackFailed,
+    #[error("one or more orderly queue locks could not be confirmed released")]
+    OrderlyUnlockFailed,
     #[cfg(test)]
     #[error("test injected startup failure at {0}")]
     TestStartupFault(&'static str),

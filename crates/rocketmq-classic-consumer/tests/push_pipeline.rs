@@ -53,7 +53,7 @@ async fn public_push_controls_match_configured_listener_and_subscription_state()
     orderly
         .set_message_listener(PushMessageListener::orderly(
             |_messages: Vec<MessageExt>, context: ConsumeOrderlyContext| async move {
-                (ConsumeOrderlyStatus::Success, context)
+                (Some(ConsumeOrderlyStatus::Success), context)
             },
         ))
         .await
