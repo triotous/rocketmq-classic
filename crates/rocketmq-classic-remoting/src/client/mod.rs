@@ -584,6 +584,11 @@ impl RemotingClient {
         channel_listener: Option<Arc<dyn ChannelEventListener>>,
     ) -> Result<Self, TransportError> {
         config.validate()?;
+        if let TransportMode::Tls(tls) = &config.transport {
+            // Validate certificate and key material before retaining worker
+            // receivers or allowing start() to launch background tasks.
+            let _ = tls.connector()?;
+        }
         let socks_proxy_routes = config.parse_socks_proxy_config()?;
         let max_frame_size = DEFAULT_MAX_FRAME_SIZE;
         let (inbound, inbound_rx) = mpsc::unbounded_channel();

@@ -97,7 +97,7 @@ pub enum TransportMode {
 }
 
 impl TransportMode {
-    /// Selects TLS using Java `tls.enable` and `tls.server.mode` defaults.
+    /// Selects TLS using Java `tls.enable` (default `false`).
     pub fn from_java_properties(
         system_properties: &HashMap<String, String>,
         config_file: Option<&Path>,
@@ -110,11 +110,10 @@ impl TransportMode {
         config_file: Option<&Path>,
         strategy: Option<Arc<dyn PrivateKeyDecryptionStrategy>>,
     ) -> Result<Self, TransportError> {
-        let tls_mode = TlsMode::parse(system_properties.get("tls.server.mode").map(String::as_str));
         let enabled = system_properties
             .get("tls.enable")
             .map(|value| value.eq_ignore_ascii_case("true"))
-            .unwrap_or(tls_mode == TlsMode::Enforcing);
+            .unwrap_or(false);
         if !enabled {
             return Ok(Self::Plain);
         }
@@ -131,6 +130,12 @@ pub struct TlsConfig {
     pub ca_pem: Option<Vec<u8>>,
     pub client_cert_pem: Option<Vec<u8>>,
     pub client_key_pem: Option<Vec<u8>>,
+    /// Java `tls.ciphers` property snapshot. Java 5.5.1's client TLS builder
+    /// does not apply this property to client contexts.
+    pub ciphers: Option<String>,
+    /// Java `tls.protocols` property snapshot. Java 5.5.1's client TLS builder
+    /// does not apply this property to client contexts.
+    pub protocols: Option<String>,
     /// Mirrors Java's `tls.test.mode.enable` (default `true`); true skips server trust and hostname checks.
     /// This is insecure and should be disabled outside Java-compatible test configurations.
     pub test_mode: bool,
@@ -177,6 +182,8 @@ impl fmt::Debug for TlsConfig {
                 &self.client_cert_pem.is_some(),
             )
             .field("client_key_pem_configured", &self.client_key_pem.is_some())
+            .field("ciphers", &self.ciphers)
+            .field("protocols", &self.protocols)
             .field("test_mode", &self.test_mode)
             .field("auth_server", &self.auth_server)
             .field("key_password_configured", &self.key_password.is_some())
@@ -194,6 +201,8 @@ impl Default for TlsConfig {
             ca_pem: None,
             client_cert_pem: None,
             client_key_pem: None,
+            ciphers: None,
+            protocols: None,
             test_mode: true,
             auth_server: false,
             key_password: None,
@@ -261,6 +270,12 @@ impl TlsConfig {
         }
         if let Some(value) = properties.get("tls.client.keyPassword") {
             self.key_password = Some(value.clone());
+        }
+        if let Some(value) = properties.get("tls.ciphers") {
+            self.ciphers = Some(value.clone());
+        }
+        if let Some(value) = properties.get("tls.protocols") {
+            self.protocols = Some(value.clone());
         }
         if !self.test_mode {
             if let Some(path) = properties.get("tls.client.trustCertPath") {
@@ -787,6 +802,108 @@ mod tests {
     }
 
     #[test]
+    fn java_client_tls_ignores_cipher_and_protocol_properties() {
+        let unsupported_cipher = TlsConfig::from_java_properties(
+            &HashMap::from([("tls.ciphers".into(), "TLS_UNKNOWN_CIPHER".into())]),
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            unsupported_cipher.ciphers.as_deref(),
+            Some("TLS_UNKNOWN_CIPHER")
+        );
+        assert!(unsupported_cipher.connector().is_ok());
+
+        let unsupported_protocol = TlsConfig::from_java_properties(
+            &HashMap::from([("tls.protocols".into(), "TLSv1".into())]),
+            None,
+        )
+        .unwrap();
+        assert_eq!(unsupported_protocol.protocols.as_deref(), Some("TLSv1"));
+        assert!(unsupported_protocol.connector().is_ok());
+    }
+
+    #[test]
+    fn java_tls_cipher_protocol_settings_match_pinned_fixture_and_file_loading() {
+        let defaults: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/security/tls-settings-defaults.json"
+        ))
+        .unwrap();
+        let configured: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/security/tls-settings-system-properties.json"
+        ))
+        .unwrap();
+
+        assert_eq!(defaults["settings"]["ciphers"], serde_json::Value::Null);
+        assert_eq!(defaults["settings"]["protocols"], serde_json::Value::Null);
+        assert_eq!(defaults["clientIgnoresCipherProtocolProperties"], true);
+        assert_eq!(
+            configured["settings"]["ciphers"],
+            "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
+        );
+        assert_eq!(configured["settings"]["protocols"], "TLSv1.2,TLSv1.3");
+
+        let directory = test_dir();
+        let properties_file = directory.join("tls.properties");
+        fs::write(
+            &properties_file,
+            format!(
+                "tls.ciphers={}\ntls.protocols={}\n",
+                configured["configFileValues"]["ciphers"].as_str().unwrap(),
+                configured["configFileValues"]["protocols"]
+                    .as_str()
+                    .unwrap(),
+            ),
+        )
+        .unwrap();
+        let system_properties = HashMap::from([
+            (
+                "tls.ciphers".into(),
+                configured["settings"]["ciphers"].as_str().unwrap().into(),
+            ),
+            (
+                "tls.protocols".into(),
+                configured["settings"]["protocols"].as_str().unwrap().into(),
+            ),
+        ]);
+        assert_eq!(configured["configFileOverridesSettings"], true);
+        let system_config = TlsConfig::from_java_properties(&system_properties, None).unwrap();
+        assert_eq!(
+            system_config.ciphers.as_deref(),
+            configured["settings"]["ciphers"].as_str()
+        );
+        assert_eq!(
+            system_config.protocols.as_deref(),
+            configured["settings"]["protocols"].as_str()
+        );
+        assert!(system_config.connector().is_ok());
+
+        let config =
+            TlsConfig::from_java_properties(&system_properties, Some(&properties_file)).unwrap();
+        assert_eq!(
+            config.ciphers.as_deref(),
+            configured["effectiveSettings"]["ciphers"].as_str()
+        );
+        assert_eq!(
+            config.protocols.as_deref(),
+            configured["effectiveSettings"]["protocols"].as_str()
+        );
+        assert!(config.connector().is_ok());
+
+        let default_config =
+            TlsConfig::from_java_properties(&HashMap::new(), Some(&properties_file)).unwrap();
+        assert_eq!(
+            default_config.ciphers.as_deref(),
+            defaults["effectiveSettings"]["ciphers"].as_str()
+        );
+        assert_eq!(
+            default_config.protocols.as_deref(),
+            defaults["effectiveSettings"]["protocols"].as_str()
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn java_tls_properties_decode_surrogate_pair_unicode_escapes() {
         let directory = test_dir();
         let properties_file = directory.join("tls.properties");
@@ -890,13 +1007,19 @@ mod tests {
             TransportMode::from_java_properties(&empty, None).unwrap(),
             TransportMode::Plain
         ));
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/client-config-tls.json"
+        ))
+        .unwrap();
+        let server_mode_properties = fixture["systemProperties"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_owned()))
+            .collect::<HashMap<_, _>>();
         assert!(matches!(
-            TransportMode::from_java_properties(
-                &HashMap::from([("tls.server.mode".into(), "enforcing".into())]),
-                None,
-            )
-            .unwrap(),
-            TransportMode::Tls(_)
+            TransportMode::from_java_properties(&server_mode_properties, None).unwrap(),
+            TransportMode::Plain
         ));
         for mode in ["ENFORCING", "unknown"] {
             assert!(matches!(
