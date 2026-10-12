@@ -1,0 +1,693 @@
+use rocketmq_classic_common::message::{
+    Message, MessageExt, MessageQueue,
+    constants::{
+        PROPERTY_CLUSTER, PROPERTY_CORRELATION_ID, PROPERTY_MESSAGE_REPLY_TO_CLIENT,
+        PROPERTY_MESSAGE_TTL, PROPERTY_MESSAGE_TYPE, REPLY_MESSAGE_FLAG, REPLY_TOPIC_POSTFIX,
+    },
+};
+use rocketmq_classic_core::runtime::{
+    PendingReplyCompletion, PendingReplyControl, PendingReplyRequest,
+};
+use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
+use thiserror::Error;
+use tokio::time::Instant;
+
+use crate::{Producer, ProducerError};
+
+/// Java `RequestCallback` expressed as a single Rust result callback.
+pub type RequestCallback = Box<dyn FnOnce(Result<MessageExt, ProducerError>) + Send + 'static>;
+
+type RequestSendFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<crate::SendResult, ProducerError>> + Send + 'a>>;
+type QueueSelector<'a> = dyn FnOnce(&[MessageQueue], &Message) -> Option<MessageQueue> + Send + 'a;
+
+enum RequestRoute<'a> {
+    Default,
+    Queue(MessageQueue),
+    Selector(Box<QueueSelector<'a>>),
+}
+
+/// Java-compatible failures from `MessageUtil.createReplyMessage`.
+#[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
+pub enum ReplyMessageError {
+    #[error("create reply message fail, requestMessage cannot be null.")]
+    NullRequest,
+    #[error("create reply message fail, requestMessage error, property[CLUSTER] is null.")]
+    MissingCluster,
+}
+
+impl ReplyMessageError {
+    /// Java `ClientErrorCode.CREATE_REPLY_MESSAGE_EXCEPTION` numeric code.
+    pub const fn java_error_code(self) -> i32 {
+        10_007
+    }
+}
+
+/// Builds the reply message used by RocketMQ's request/reply flow.
+///
+/// As in Java 5.5.1, a request and its `CLUSTER` property are required. The
+/// helper copies request correlation, reply-to and TTL metadata when present.
+pub fn create_reply_message(
+    request: Option<&Message>,
+    body: impl Into<Vec<u8>>,
+) -> Result<Message, ReplyMessageError> {
+    let request = request.ok_or(ReplyMessageError::NullRequest)?;
+    let cluster = request
+        .properties()
+        .get(PROPERTY_CLUSTER)
+        .ok_or(ReplyMessageError::MissingCluster)?;
+
+    let mut reply = Message::default();
+    reply.set_topic(format!("{cluster}_{REPLY_TOPIC_POSTFIX}"));
+    reply.set_body(body);
+    let _ = reply.set_system_property(PROPERTY_MESSAGE_TYPE, REPLY_MESSAGE_FLAG);
+    for property in [
+        PROPERTY_CORRELATION_ID,
+        PROPERTY_MESSAGE_REPLY_TO_CLIENT,
+        PROPERTY_MESSAGE_TTL,
+    ] {
+        if let Some(value) = request.properties().get(property) {
+            let _ = reply.set_system_property(property, value.clone());
+        }
+    }
+    Ok(reply)
+}
+
+impl Producer {
+    /// Sends a request and asynchronously resolves with its correlated reply.
+    pub async fn request(
+        &self,
+        message: &mut Message,
+        timeout: Duration,
+    ) -> Result<MessageExt, ProducerError> {
+        self.request_with_route(message, timeout, RequestRoute::Default)
+            .await
+    }
+
+    /// Sends a request through a queue selected from the current writable route.
+    pub async fn request_with_selector<'a, F>(
+        &'a self,
+        message: &'a mut Message,
+        selector: F,
+        timeout: Duration,
+    ) -> Result<MessageExt, ProducerError>
+    where
+        F: FnOnce(&[MessageQueue], &Message) -> Option<MessageQueue> + Send + 'a,
+    {
+        self.request_with_route(message, timeout, RequestRoute::Selector(Box::new(selector)))
+            .await
+    }
+
+    /// Sends a request to one explicit queue.
+    pub async fn request_to_queue(
+        &self,
+        message: &mut Message,
+        queue: &MessageQueue,
+        timeout: Duration,
+    ) -> Result<MessageExt, ProducerError> {
+        self.request_with_route(message, timeout, RequestRoute::Queue(queue.clone()))
+            .await
+    }
+
+    /// Registers a callback for the reply, timeout or final send failure.
+    /// Successful request-send completion alone does not invoke the callback.
+    pub async fn request_with_callback(
+        self: &Arc<Self>,
+        message: &mut Message,
+        callback: RequestCallback,
+        timeout: Duration,
+    ) -> Result<(), ProducerError> {
+        self.request_callback_with_route(message, timeout, RequestRoute::Default, callback)
+            .await
+    }
+
+    /// Callback counterpart to [`Producer::request_with_selector`].
+    pub async fn request_with_selector_callback<F>(
+        self: &Arc<Self>,
+        message: &mut Message,
+        selector: F,
+        callback: RequestCallback,
+        timeout: Duration,
+    ) -> Result<(), ProducerError>
+    where
+        F: FnOnce(&[MessageQueue], &Message) -> Option<MessageQueue> + Send + 'static,
+    {
+        self.request_callback_with_route(
+            message,
+            timeout,
+            RequestRoute::Selector(Box::new(selector)),
+            callback,
+        )
+        .await
+    }
+
+    /// Callback counterpart to [`Producer::request_to_queue`].
+    pub async fn request_to_queue_with_callback(
+        self: &Arc<Self>,
+        message: &mut Message,
+        queue: &MessageQueue,
+        callback: RequestCallback,
+        timeout: Duration,
+    ) -> Result<(), ProducerError> {
+        self.request_callback_with_route(
+            message,
+            timeout,
+            RequestRoute::Queue(queue.clone()),
+            callback,
+        )
+        .await
+    }
+
+    async fn request_callback_with_route(
+        self: &Arc<Self>,
+        message: &mut Message,
+        timeout: Duration,
+        route: RequestRoute<'static>,
+        callback: RequestCallback,
+    ) -> Result<(), ProducerError> {
+        let (pending, deadline) = self.prepare_request(message, timeout).await?;
+        let request_message = message.clone();
+        let producer = self.clone();
+        let task = tokio::spawn(async move {
+            let result = producer
+                .wait_for_reply(request_message, pending, deadline, timeout, false, route)
+                .await;
+            drop(producer);
+            callback(result);
+        });
+        self.track_request_callback_task(task).await;
+        Ok(())
+    }
+
+    async fn request_with_route<'a>(
+        &'a self,
+        message: &'a mut Message,
+        timeout: Duration,
+        route: RequestRoute<'a>,
+    ) -> Result<MessageExt, ProducerError> {
+        let (pending, deadline) = self.prepare_request(message, timeout).await?;
+        self.wait_for_reply(message.clone(), pending, deadline, timeout, true, route)
+            .await
+    }
+
+    async fn prepare_request(
+        &self,
+        message: &mut Message,
+        timeout: Duration,
+    ) -> Result<(PendingReplyRequest, Instant), ProducerError> {
+        let timeout_millis = timeout.as_millis();
+        if timeout_millis > i64::MAX as u128 {
+            return Err(ProducerError::InvalidRequestTimeout);
+        }
+        let deadline = Instant::now()
+            .checked_add(timeout)
+            .ok_or(ProducerError::InvalidRequestTimeout)?;
+        let (runtime, lease) = self.started_registration().await?;
+        let reply_to = runtime.client_id().to_owned();
+        let ttl = timeout_millis.to_string();
+        for _ in 0..3 {
+            let correlation_id = create_correlation_id();
+            let _ = message.set_system_property(PROPERTY_CORRELATION_ID, correlation_id.clone());
+            let _ = message.set_system_property(PROPERTY_MESSAGE_REPLY_TO_CLIENT, reply_to.clone());
+            let _ = message.set_system_property(PROPERTY_MESSAGE_TTL, ttl.clone());
+            match runtime
+                .register_reply_request(&lease, &correlation_id, deadline)
+                .await
+            {
+                Ok(pending) => return Ok((pending, deadline)),
+                Err(rocketmq_classic_core::runtime::RuntimeError::DuplicateCorrelation {
+                    ..
+                }) => {
+                    continue;
+                }
+                Err(rocketmq_classic_core::runtime::RuntimeError::RequestReplyAdmissionTimeout) => {
+                    return Err(ProducerError::RequestReplyTimeout {
+                        topic: message.topic().to_owned(),
+                        timeout_millis,
+                    });
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
+        Err(ProducerError::RequestReplyCancelled)
+    }
+
+    async fn wait_for_reply(
+        &self,
+        message: Message,
+        mut pending: PendingReplyRequest,
+        deadline: Instant,
+        timeout: Duration,
+        expire_waiter_at_deadline: bool,
+        route: RequestRoute<'_>,
+    ) -> Result<MessageExt, ProducerError> {
+        let timeout_millis = timeout.as_millis();
+        let topic = message.topic().to_owned();
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let send = match route {
+            RequestRoute::Default => Box::pin(self.send_future_with_timeout(&message, remaining))
+                as RequestSendFuture<'_>,
+            RequestRoute::Queue(queue) => Box::pin(async move {
+                self.send_to_queue_future_with_timeout(&message, &queue, remaining)
+                    .await
+            }) as RequestSendFuture<'_>,
+            RequestRoute::Selector(selector) => {
+                Box::pin(self.send_future_with_selector_with_timeout(&message, selector, remaining))
+                    as RequestSendFuture<'_>
+            }
+        };
+        tokio::pin!(send);
+        let control: PendingReplyControl = pending.control();
+        let mut completion = Box::pin(pending.receive());
+        let result = tokio::select! {
+            result = &mut completion => result,
+            _ = tokio::time::sleep_until(deadline), if expire_waiter_at_deadline => {
+                control.expire_if_due(Instant::now());
+                (&mut completion).await
+            }
+            send_result = &mut send => {
+                match send_result {
+                    Ok(_) => control.mark_send_succeeded(),
+                    Err(error) => {
+                        control.fail_send(error.to_string());
+                    }
+                }
+                (&mut completion).await
+            }
+        };
+        drop(completion);
+        match result {
+            Ok(PendingReplyCompletion::Reply(reply)) => Ok(reply),
+            Ok(PendingReplyCompletion::Timeout { send_succeeded: _ }) => {
+                Err(ProducerError::RequestReplyTimeout {
+                    topic,
+                    timeout_millis,
+                })
+            }
+            Ok(PendingReplyCompletion::SendFailed(cause)) => {
+                Err(ProducerError::RequestSendFailed { topic, cause })
+            }
+            Ok(PendingReplyCompletion::ProducerShutdown) => {
+                Err(ProducerError::RequestReplyShutdown)
+            }
+            Err(_) => Err(ProducerError::RequestReplyCancelled),
+        }
+    }
+}
+
+/// Creates the message-level request/reply correlation identifier used by
+/// Java's `CorrelationIdUtil.createCorrelationId`.
+pub(crate) fn create_correlation_id() -> String {
+    let mut bytes = rand::random::<[u8; 16]>();
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(36);
+    for (index, byte) in bytes.into_iter().enumerate() {
+        if matches!(index, 4 | 6 | 8 | 10) {
+            output.push('-');
+        }
+        output.push(HEX[(byte >> 4) as usize] as char);
+        output.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Producer, ProducerConfig, SendResult, SendStatus};
+    use rocketmq_classic_common::message::decode_properties;
+    use rocketmq_classic_core::{
+        api::producer::SendMode, route::TopicSnapshot, runtime::ClientRuntimeManager,
+    };
+    use rocketmq_classic_protocol::route::TopicRouteData;
+    use std::{
+        collections::{BTreeMap, BTreeSet},
+        sync::atomic::{AtomicUsize, Ordering},
+    };
+    use tokio::sync::oneshot;
+
+    fn scripted_send_result() -> SendResult {
+        SendResult {
+            status: SendStatus::SendOk,
+            msg_id: "send-ok".into(),
+            offset_msg_id: "offset-ok".into(),
+            topic: "orders".into(),
+            broker_name: "broker-a".into(),
+            queue_id: 0,
+            queue_offset: 1,
+            transaction_id: None,
+            recall_handle: None,
+            raw_resp_body: None,
+            region_id: "DefaultRegion".into(),
+            trace_on: true,
+        }
+    }
+
+    async fn producer(name: &str) -> (Arc<Producer>, [MessageQueue; 2], String) {
+        let producer = Arc::new(Producer::with_runtime_manager(
+            ProducerConfig::new(name).unwrap(),
+            ClientRuntimeManager::new(),
+        ));
+        producer.start().await.unwrap();
+        let queues = [
+            MessageQueue::new("orders", "broker-a", 0),
+            MessageQueue::new("orders", "broker-b", 0),
+        ];
+        producer.cache_publish_info(
+            "orders",
+            Arc::new(TopicSnapshot {
+                route: Arc::new(serde_json::from_str::<TopicRouteData>("{}").unwrap()),
+                publish_queues: queues.to_vec(),
+                subscribe_queues: BTreeSet::new(),
+                endpoints: BTreeMap::from([
+                    (queues[0].clone(), "10.0.0.1:10911".into()),
+                    (queues[1].clone(), "10.0.0.2:10911".into()),
+                ]),
+                order_topic: false,
+            }),
+        );
+        let client_id = producer
+            .started_runtime()
+            .await
+            .unwrap()
+            .client_id()
+            .to_owned();
+        (producer, queues, client_id)
+    }
+
+    fn queue_success(producer: &Producer, count: usize) {
+        producer
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .extend((0..count).map(|_| Ok(Some(scripted_send_result()))));
+    }
+
+    fn take_attempts(producer: &Producer) -> Vec<crate::producer::ScriptedSendAttempt> {
+        std::mem::take(&mut producer.scripted_transport.lock().unwrap().attempts)
+    }
+
+    async fn wait_for_attempts(producer: &Producer, expected: usize) {
+        for _ in 0..1000 {
+            if producer.scripted_transport.lock().unwrap().attempts.len() >= expected {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+        panic!("scripted request send did not start");
+    }
+
+    fn assert_request_attempt(
+        attempt: &crate::producer::ScriptedSendAttempt,
+        client_id: &str,
+        timeout_millis: u128,
+        queue: &MessageQueue,
+    ) {
+        let properties = decode_properties(attempt.properties.as_deref().unwrap_or_default());
+        let correlation_id = properties.get(PROPERTY_CORRELATION_ID).unwrap();
+        assert_eq!(correlation_id.len(), 36);
+        assert_eq!(correlation_id.as_bytes()[14], b'4');
+        assert!(matches!(
+            correlation_id.as_bytes()[19],
+            b'8' | b'9' | b'a' | b'b'
+        ));
+        assert_eq!(
+            properties
+                .get(PROPERTY_MESSAGE_REPLY_TO_CLIENT)
+                .map(String::as_str),
+            Some(client_id)
+        );
+        assert_eq!(
+            properties.get(PROPERTY_MESSAGE_TTL).map(String::as_str),
+            Some(timeout_millis.to_string().as_str())
+        );
+        assert_eq!(attempt.mode, SendMode::Future);
+        assert_eq!(&attempt.queue, queue);
+    }
+
+    fn timeout_callback(
+        calls: Arc<AtomicUsize>,
+        sender: oneshot::Sender<Result<Vec<u8>, ProducerError>>,
+    ) -> RequestCallback {
+        Box::new(move |result| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            let _ = sender.send(result.map(|reply| reply.message().body().to_vec()));
+        })
+    }
+
+    #[test]
+    fn correlation_id_uses_java_uuid_v4_text_format() {
+        let id = create_correlation_id();
+        assert_eq!(id.len(), 36);
+        assert_eq!(id.as_bytes()[14], b'4');
+        assert!(matches!(id.as_bytes()[19], b'8' | b'9' | b'a' | b'b'));
+        assert!(id.bytes().enumerate().all(|(index, byte)| {
+            matches!(index, 8 | 13 | 18 | 23)
+                .then_some(byte == b'-')
+                .unwrap_or_else(|| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        }));
+        assert!(id.bytes().all(|byte| !byte.is_ascii_uppercase()));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn all_six_request_overloads_send_with_java_metadata_and_wait_for_reply() {
+        let (producer, queues, client_id) = producer("request-overloads").await;
+        let timeout = Duration::from_millis(80);
+        queue_success(&producer, 6);
+        let mut attempts = Vec::new();
+
+        let mut default_message = Message::new("orders", b"default".to_vec());
+        assert!(matches!(
+            producer.request(&mut default_message, timeout).await,
+            Err(ProducerError::RequestReplyTimeout { .. })
+        ));
+        attempts.extend(take_attempts(&producer));
+
+        let mut selected_message = Message::new("orders", b"selected".to_vec());
+        assert!(matches!(
+            producer
+                .request_with_selector(
+                    &mut selected_message,
+                    |available, _| Some(available[1].clone()),
+                    timeout,
+                )
+                .await,
+            Err(ProducerError::RequestReplyTimeout { .. })
+        ));
+        attempts.extend(take_attempts(&producer));
+
+        let mut queued_message = Message::new("orders", b"queued".to_vec());
+        assert!(matches!(
+            producer
+                .request_to_queue(&mut queued_message, &queues[0], timeout)
+                .await,
+            Err(ProducerError::RequestReplyTimeout { .. })
+        ));
+        attempts.extend(take_attempts(&producer));
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let (sender, mut receiver) = oneshot::channel();
+        let mut callback_message = Message::new("orders", b"callback".to_vec());
+        producer
+            .request_with_callback(
+                &mut callback_message,
+                timeout_callback(calls.clone(), sender),
+                timeout,
+            )
+            .await
+            .unwrap();
+        wait_for_attempts(&producer, 1).await;
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_secs(5), &mut receiver)
+                .await
+                .unwrap()
+                .unwrap(),
+            Err(ProducerError::RequestReplyTimeout { .. })
+        ));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        attempts.extend(take_attempts(&producer));
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let (sender, mut receiver) = oneshot::channel();
+        let mut selector_callback_message = Message::new("orders", b"selector-callback".to_vec());
+        producer
+            .request_with_selector_callback(
+                &mut selector_callback_message,
+                move |available, _| Some(available[1].clone()),
+                timeout_callback(calls.clone(), sender),
+                timeout,
+            )
+            .await
+            .unwrap();
+        wait_for_attempts(&producer, 1).await;
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_secs(5), &mut receiver)
+                .await
+                .unwrap()
+                .unwrap(),
+            Err(ProducerError::RequestReplyTimeout { .. })
+        ));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        attempts.extend(take_attempts(&producer));
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let (sender, mut receiver) = oneshot::channel();
+        let mut queue_callback_message = Message::new("orders", b"queue-callback".to_vec());
+        producer
+            .request_to_queue_with_callback(
+                &mut queue_callback_message,
+                &queues[0],
+                timeout_callback(calls.clone(), sender),
+                timeout,
+            )
+            .await
+            .unwrap();
+        wait_for_attempts(&producer, 1).await;
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_secs(5), &mut receiver)
+                .await
+                .unwrap()
+                .unwrap(),
+            Err(ProducerError::RequestReplyTimeout { .. })
+        ));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        attempts.extend(take_attempts(&producer));
+
+        assert_eq!(attempts.len(), 6);
+        for (index, attempt) in attempts.iter().enumerate() {
+            let expected_queue = match index {
+                1 | 4 => &queues[1],
+                2 | 5 => &queues[0],
+                _ => &attempt.queue,
+            };
+            assert_request_attempt(attempt, &client_id, timeout.as_millis(), expected_queue);
+        }
+        producer.shutdown().await.unwrap();
+        assert!(producer.request_callback_tasks.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn invalid_request_timeout_fails_before_mutating_or_sending_message() {
+        let producer = Producer::new(ProducerConfig::new("invalid-request-timeout").unwrap());
+        let mut message = Message::new("orders", b"body".to_vec());
+        let timeout = Duration::from_millis(i64::MAX as u64 + 1);
+        assert!(matches!(
+            producer.request(&mut message, timeout).await,
+            Err(ProducerError::InvalidRequestTimeout)
+        ));
+        assert!(message.properties().get(PROPERTY_CORRELATION_ID).is_none());
+        assert!(
+            producer
+                .scripted_transport
+                .lock()
+                .unwrap()
+                .attempts
+                .is_empty()
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn send_failure_completes_request_and_callback_once() {
+        let (producer, _, _) = producer("request-send-failure").await;
+        let foreign_queue = MessageQueue::new("orders", "not-in-route", 8);
+        let timeout = Duration::from_millis(100);
+
+        let mut message = Message::new("orders", b"invalid-route".to_vec());
+        assert!(matches!(
+            producer
+                .request_to_queue(&mut message, &foreign_queue, timeout)
+                .await,
+            Err(ProducerError::RequestSendFailed { .. })
+        ));
+        assert!(
+            producer
+                .scripted_transport
+                .lock()
+                .unwrap()
+                .attempts
+                .is_empty()
+        );
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let (sender, receiver) = oneshot::channel();
+        let mut callback_message = Message::new("orders", b"callback-invalid-route".to_vec());
+        producer
+            .request_to_queue_with_callback(
+                &mut callback_message,
+                &foreign_queue,
+                timeout_callback(calls.clone(), sender),
+                timeout,
+            )
+            .await
+            .unwrap();
+        let callback_result = tokio::time::timeout(Duration::from_secs(5), receiver)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            callback_result,
+            Err(ProducerError::RequestSendFailed { .. })
+        ));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        producer.shutdown().await.unwrap();
+        assert!(producer.request_callback_tasks.lock().await.is_empty());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn callback_timeout_uses_java_housekeeping_initial_delay_and_period() {
+        let (producer, _, _) = producer("request-callback-schedule").await;
+        queue_success(&producer, 1);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let (sender, mut receiver) = oneshot::channel();
+        let mut message = Message::new("orders", b"scheduled-callback".to_vec());
+        producer
+            .request_with_callback(
+                &mut message,
+                timeout_callback(calls.clone(), sender),
+                Duration::from_millis(50),
+            )
+            .await
+            .unwrap();
+        wait_for_attempts(&producer, 1).await;
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+
+        tokio::time::advance(Duration::from_secs(2)).await;
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+
+        tokio::time::advance(Duration::from_secs(1)).await;
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        assert!(matches!(
+            receiver.try_recv().unwrap(),
+            Err(ProducerError::RequestReplyTimeout { .. })
+        ));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        producer.shutdown().await.unwrap();
+        assert!(producer.request_callback_tasks.lock().await.is_empty());
+    }
+}

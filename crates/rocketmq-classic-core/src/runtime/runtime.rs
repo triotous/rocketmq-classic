@@ -78,6 +78,7 @@ pub struct ClientRuntime {
     pub(super) rebalance: Arc<super::rebalance::RebalanceSignal>,
     pub(super) pull: Arc<super::pull::PullService>,
     manager: Mutex<Vec<ManagerLink>>,
+    reply_timeout_task: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
     pub(super) sharing_properties: HashMap<String, String>,
     pub(super) sharing_hook: Option<Arc<dyn RpcHook>>,
     pub(crate) heartbeat: crate::heartbeat::HeartbeatState,
@@ -196,6 +197,7 @@ impl ClientRuntime {
             rebalance,
             pull: Arc::default(),
             manager: Mutex::new(Vec::new()),
+            reply_timeout_task: tokio::sync::Mutex::new(None),
             sharing_properties: properties.clone(),
             sharing_hook,
             heartbeat: crate::heartbeat::HeartbeatState::default(),
@@ -898,7 +900,11 @@ impl ClientRuntime {
                 reply,
             })
             .map_err(|_| self.control_error())?;
-        receive.await.map_err(|_| self.control_error())??.accept()
+        let lease = receive.await.map_err(|_| self.control_error())??.accept()?;
+        if lease.group() != super::control::INNER_PRODUCER {
+            self.ensure_reply_timeout_task().await;
+        }
+        Ok(lease)
     }
 
     /// Nullable Java-compatible registration boundary. A null group or owner
@@ -1160,6 +1166,9 @@ impl ClientRuntime {
         }
         self.unregister_brokers(&lease.group, kind, deadline)
             .await?;
+        if kind == GroupKind::Producer {
+            self.stop_reply_timeout_task_if_idle().await?;
+        }
         Ok(true)
     }
 
@@ -1173,6 +1182,9 @@ impl ClientRuntime {
         let removed = self.groups.remove_by_group(group, kind)?;
         drop(gate);
         self.unregister_brokers(group, kind, deadline).await?;
+        if kind == GroupKind::Producer {
+            self.stop_reply_timeout_task_if_idle().await?;
+        }
         Ok(removed)
     }
 
@@ -1203,6 +1215,77 @@ impl ClientRuntime {
 
     pub fn state(&self) -> RuntimeState {
         self.control.state()
+    }
+
+    pub async fn register_reply_request(
+        &self,
+        lease: &GroupLease,
+        correlation_id: &str,
+        deadline: tokio::time::Instant,
+    ) -> Result<super::PendingReplyRequest, RuntimeError> {
+        let pending = self
+            .groups
+            .register_pending_reply(lease, correlation_id, deadline)
+            .await?;
+        if lease.group() != super::control::INNER_PRODUCER {
+            self.ensure_reply_timeout_task().await;
+        }
+        Ok(pending)
+    }
+
+    pub(super) fn complete_reply_request(
+        &self,
+        correlation_id: &str,
+        reply: rocketmq_classic_common::message::MessageExt,
+    ) -> bool {
+        self.groups.complete_pending_reply(correlation_id, reply)
+    }
+
+    async fn ensure_reply_timeout_task(&self) {
+        let mut task = self.reply_timeout_task.lock().await;
+        if task.is_some() {
+            return;
+        }
+        let registry = Arc::downgrade(&self.groups);
+        *task = Some(tokio::spawn(async move {
+            let period = tokio::time::Duration::from_secs(1);
+            let first_scan = tokio::time::Instant::now() + tokio::time::Duration::from_secs(3);
+            let mut interval = tokio::time::interval_at(first_scan, period);
+            loop {
+                interval.tick().await;
+                let Some(registry) = registry.upgrade() else {
+                    break;
+                };
+                registry.expire_pending_replies(tokio::time::Instant::now());
+            }
+        }));
+    }
+
+    async fn stop_reply_timeout_task(&self) {
+        let task = self.reply_timeout_task.lock().await.take();
+        if let Some(task) = task {
+            task.abort();
+            let _ = task.await;
+        }
+    }
+
+    async fn stop_reply_timeout_task_if_idle(&self) -> Result<(), RuntimeError> {
+        let mut task = self.reply_timeout_task.lock().await;
+        let producer_count = self.groups.table_len(super::tables::TableKind::Producer)?;
+        let has_internal_producer = self.groups.table_contains_key(
+            super::tables::TableKind::Producer,
+            super::control::INNER_PRODUCER,
+        )?;
+        let external_producer_count =
+            producer_count.saturating_sub(usize::from(has_internal_producer));
+        if external_producer_count != 0 {
+            return Ok(());
+        }
+        if let Some(task) = task.take() {
+            task.abort();
+            let _ = task.await;
+        }
+        Ok(())
     }
 
     pub async fn start(self: &Arc<Self>) -> Result<(), RuntimeError> {
@@ -1262,6 +1345,9 @@ impl ClientRuntime {
             Err(_) => Err(self.control_error()),
         };
         self.control.join_terminal().await?;
+        if result.as_ref().is_ok_and(|stopped| *stopped) {
+            self.stop_reply_timeout_task().await;
+        }
         result
     }
 
@@ -1418,6 +1504,9 @@ mod tests {
     use super::*;
     use tokio::time::{Duration, Instant};
 
+    struct RequestReplyProducer;
+    impl ProducerRuntime for RequestReplyProducer {}
+
     #[test]
     fn callback_thread_effective_capacity_matches_invoked_java_executor() {
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
@@ -1432,6 +1521,63 @@ mod tests {
                 "{java}"
             );
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn request_reply_timeout_worker_is_shared_and_joined_with_runtime() {
+        let mut config = ClientConfig::new("reply-timeout-worker");
+        config.namesrv_addr = Some(String::new());
+        let runtime = Arc::new(ClientRuntime::construct(config, &HashMap::new(), None).unwrap());
+        let first = runtime
+            .register_producer("first", Arc::new(RequestReplyProducer))
+            .await
+            .unwrap();
+        let first_task_id = runtime
+            .reply_timeout_task
+            .lock()
+            .await
+            .as_ref()
+            .unwrap()
+            .id();
+        let second = runtime
+            .register_producer("second", Arc::new(RequestReplyProducer))
+            .await
+            .unwrap();
+        assert_eq!(
+            runtime
+                .reply_timeout_task
+                .lock()
+                .await
+                .as_ref()
+                .unwrap()
+                .id(),
+            first_task_id,
+            "producers sharing a runtime share one timeout worker"
+        );
+
+        runtime.start().await.unwrap();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        runtime.unregister_producer(&first, deadline).await.unwrap();
+        assert!(runtime.reply_timeout_task.lock().await.is_some());
+        runtime
+            .unregister_producer(&second, deadline)
+            .await
+            .unwrap();
+        assert!(
+            runtime.reply_timeout_task.lock().await.is_none(),
+            "the shared worker stops when the last producer unregisters"
+        );
+
+        let third = runtime
+            .register_producer("third", Arc::new(RequestReplyProducer))
+            .await
+            .unwrap();
+        assert!(runtime.reply_timeout_task.lock().await.is_some());
+        runtime.unregister_producer(&third, deadline).await.unwrap();
+        assert!(runtime.reply_timeout_task.lock().await.is_none());
+
+        assert!(runtime.shutdown().await.unwrap());
+        assert!(runtime.reply_timeout_task.lock().await.is_none());
     }
 
     #[tokio::test(start_paused = true)]

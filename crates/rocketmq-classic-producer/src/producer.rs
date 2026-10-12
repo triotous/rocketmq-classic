@@ -59,6 +59,7 @@ pub struct Producer {
     pub(crate) auto_batch_tasks: tokio::sync::Mutex<Vec<JoinHandle<()>>>,
     pub(crate) self_weak: OnceLock<Weak<Producer>>,
     pub(crate) transaction: OnceLock<Arc<crate::transaction::TransactionRuntime>>,
+    pub(crate) request_callback_tasks: tokio::sync::Mutex<Vec<JoinHandle<()>>>,
     pub(crate) backpressure_send_num: Arc<Semaphore>,
     pub(crate) backpressure_send_size: Arc<Semaphore>,
     publish_info: RwLock<HashMap<String, Arc<TopicSnapshot>>>,
@@ -125,6 +126,7 @@ impl Producer {
             auto_batch_tasks: tokio::sync::Mutex::new(Vec::new()),
             self_weak: OnceLock::new(),
             transaction: OnceLock::new(),
+            request_callback_tasks: tokio::sync::Mutex::new(Vec::new()),
             backpressure_send_num,
             backpressure_send_size,
             publish_info: RwLock::new(HashMap::new()),
@@ -144,11 +146,49 @@ impl Producer {
     }
 
     pub(crate) async fn started_runtime(&self) -> Result<Arc<ClientRuntime>, ProducerError> {
+        self.started_registration()
+            .await
+            .map(|(runtime, _)| runtime)
+    }
+
+    pub(crate) async fn started_registration(
+        &self,
+    ) -> Result<(Arc<ClientRuntime>, GroupLease), ProducerError> {
         let state = self.state.lock().await;
         match &*state {
             State::Created => Err(ProducerError::NotStarted),
             State::Shutdown => Err(ProducerError::Shutdown),
-            State::Started { runtime, .. } => runtime.upgrade().ok_or(ProducerError::Shutdown),
+            State::Started { runtime, lease } => runtime
+                .upgrade()
+                .map(|runtime| (runtime, lease.clone()))
+                .ok_or(ProducerError::Shutdown),
+        }
+    }
+
+    pub(crate) async fn track_request_callback_task(&self, task: JoinHandle<()>) {
+        let state = self.state.lock().await;
+        if !matches!(&*state, State::Started { .. }) || task.is_finished() {
+            drop(task);
+            return;
+        }
+        let mut tasks = self.request_callback_tasks.lock().await;
+        tasks.retain(|task| !task.is_finished());
+        tasks.push(task);
+    }
+
+    async fn retire_request_callback_tasks(&self) {
+        let tasks = {
+            let mut tasks = self.request_callback_tasks.lock().await;
+            std::mem::take(&mut *tasks)
+        };
+        // Finished tasks can be joined immediately. An unfinished callback is
+        // detached so user code cannot hold producer shutdown open; its task
+        // owns the producer until it returns and still delivers its terminal
+        // request result.
+        for task in tasks {
+            if task.is_finished() {
+                let _ = task.await;
+            }
         }
     }
 
@@ -202,12 +242,14 @@ impl Producer {
             State::Created | State::Shutdown => {
                 self.stop_auto_batch().await;
                 self.stop_detector_task().await;
+                self.retire_request_callback_tasks().await;
                 Ok(())
             }
             State::Started { runtime, lease } => {
                 let Some(runtime_arc) = runtime.upgrade() else {
                     self.stop_auto_batch().await;
                     self.stop_detector_task().await;
+                    self.retire_request_callback_tasks().await;
                     return Ok(());
                 };
                 let deadline = self.unregister_deadline();
@@ -230,6 +272,7 @@ impl Producer {
                 }
                 self.stop_auto_batch().await;
                 self.stop_detector_task().await;
+                self.retire_request_callback_tasks().await;
                 Ok(())
             }
         }

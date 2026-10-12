@@ -1,4 +1,5 @@
 use super::RuntimeError;
+use rocketmq_classic_common::message::MessageExt;
 use rocketmq_classic_common::message::MessageQueue;
 use rocketmq_classic_protocol::heartbeat::ConsumerData;
 use std::{
@@ -7,7 +8,15 @@ use std::{
     pin::Pin,
     sync::{Arc, Mutex, Weak},
 };
-use tokio::sync::Mutex as AsyncMutex;
+use tokio::{
+    sync::{Mutex as AsyncMutex, OwnedSemaphorePermit, Semaphore, oneshot},
+    time::Instant,
+};
+
+/// Pinned Java 5.5.1 bounds its async sender queue at 50,000 entries. Reuse
+/// that admission ceiling for pending request/reply correlations so a missing
+/// responder cannot grow the shared runtime table without limit.
+const DEFAULT_PENDING_REPLY_CAPACITY: usize = 50_000;
 
 /// Narrow MQProducerInner contract consumed by the shared runtime. Actual send
 /// and transaction behavior belongs to the producer's owning implementation.
@@ -21,15 +30,6 @@ pub trait ProducerRuntime: Send + Sync + 'static {
     }
     fn transaction_processor(
         &self,
-    ) -> Option<Arc<dyn rocketmq_classic_remoting::client::RequestProcessor>> {
-        None
-    }
-    /// Phase 15 supplies the runtime's correlation dispatcher, including its
-    /// unknown/late-reply acknowledgement path. The responder's producerGroup
-    /// is never a requester-routing key.
-    fn reply_processor(
-        &self,
-        _correlation_id: &str,
     ) -> Option<Arc<dyn rocketmq_classic_remoting::client::RequestProcessor>> {
         None
     }
@@ -130,21 +130,168 @@ struct AdminEntry {
     _owner: Option<Arc<dyn std::any::Any + Send + Sync>>,
 }
 
+struct PendingReplyEntry {
+    owner: Arc<()>,
+    deadline: Instant,
+    send_succeeded: bool,
+    sender: oneshot::Sender<PendingReplyCompletion>,
+    _admission: OwnedSemaphorePermit,
+}
+
 #[derive(Default)]
 struct Entries {
     producers: BTreeMap<String, ProducerEntry>,
     consumers: BTreeMap<String, ConsumerEntry>,
     admins: BTreeMap<String, AdminEntry>,
+    pending_replies: HashMap<String, PendingReplyEntry>,
+}
+
+/// Terminal result delivered to the owner of one pending request/reply entry.
+#[derive(Debug)]
+pub enum PendingReplyCompletion {
+    Reply(MessageExt),
+    Timeout { send_succeeded: bool },
+    SendFailed(String),
+    ProducerShutdown,
+}
+
+/// Identity-bound operations for the currently pending correlation entry.
+#[derive(Clone)]
+pub struct PendingReplyControl {
+    registry: Weak<GroupRegistry>,
+    correlation_id: String,
+    owner: Arc<()>,
+}
+
+impl PendingReplyControl {
+    pub fn mark_send_succeeded(&self) {
+        let Some(registry) = self.registry.upgrade() else {
+            return;
+        };
+        if let Ok(mut entries) = registry.entries.lock() {
+            if let Some(entry) = entries.pending_replies.get_mut(&self.correlation_id) {
+                if Arc::ptr_eq(&entry.owner, &self.owner) {
+                    entry.send_succeeded = true;
+                }
+            }
+        }
+    }
+
+    /// Returns false when another terminal path already claimed the entry.
+    pub fn fail_send(&self, cause: String) -> bool {
+        let Some(registry) = self.registry.upgrade() else {
+            return false;
+        };
+        let sender = {
+            let Ok(mut entries) = registry.entries.lock() else {
+                return false;
+            };
+            let owned = entries
+                .pending_replies
+                .get(&self.correlation_id)
+                .is_some_and(|entry| Arc::ptr_eq(&entry.owner, &self.owner));
+            if owned {
+                entries
+                    .pending_replies
+                    .remove(&self.correlation_id)
+                    .map(|entry| entry.sender)
+            } else {
+                None
+            }
+        };
+        sender.is_some_and(|sender| {
+            sender
+                .send(PendingReplyCompletion::SendFailed(cause))
+                .is_ok()
+        })
+    }
+
+    pub fn cancel(&self) -> bool {
+        let Some(registry) = self.registry.upgrade() else {
+            return false;
+        };
+        let Ok(mut entries) = registry.entries.lock() else {
+            return false;
+        };
+        let owned = entries
+            .pending_replies
+            .get(&self.correlation_id)
+            .is_some_and(|entry| Arc::ptr_eq(&entry.owner, &self.owner));
+        owned
+            && entries
+                .pending_replies
+                .remove(&self.correlation_id)
+                .is_some()
+    }
+
+    /// Complete the owned entry with timeout only when its monotonic deadline
+    /// has elapsed. A reply or shared-scheduler scan may already own it.
+    pub fn expire_if_due(&self, now: Instant) -> bool {
+        let Some(registry) = self.registry.upgrade() else {
+            return false;
+        };
+        let expired = {
+            let Ok(mut entries) = registry.entries.lock() else {
+                return false;
+            };
+            let expired = entries
+                .pending_replies
+                .get(&self.correlation_id)
+                .is_some_and(|entry| {
+                    Arc::ptr_eq(&entry.owner, &self.owner) && entry.deadline <= now
+                });
+            if expired {
+                entries.pending_replies.remove(&self.correlation_id)
+            } else {
+                None
+            }
+        };
+        let Some(entry) = expired else {
+            return false;
+        };
+        let _ = entry.sender.send(PendingReplyCompletion::Timeout {
+            send_succeeded: entry.send_succeeded,
+        });
+        true
+    }
+}
+
+/// Cancellable receiver for one producer-owned request/reply correlation.
+pub struct PendingReplyRequest {
+    receiver: oneshot::Receiver<PendingReplyCompletion>,
+    control: PendingReplyControl,
+}
+
+impl PendingReplyRequest {
+    pub fn control(&self) -> PendingReplyControl {
+        self.control.clone()
+    }
+
+    pub async fn receive(&mut self) -> Result<PendingReplyCompletion, oneshot::error::RecvError> {
+        (&mut self.receiver).await
+    }
+}
+
+impl Drop for PendingReplyRequest {
+    fn drop(&mut self) {
+        self.control.cancel();
+    }
 }
 
 pub(super) type TableMutationGate = AsyncMutex<()>;
 type TableMutationGates =
     Mutex<HashMap<(super::tables::TableKind, String), Weak<TableMutationGate>>>;
 
-#[derive(Default)]
 pub(super) struct GroupRegistry {
     entries: Mutex<Entries>,
     table_mutation_gates: TableMutationGates,
+    pending_reply_admission: Arc<Semaphore>,
+}
+
+impl Default for GroupRegistry {
+    fn default() -> Self {
+        Self::with_pending_reply_capacity(DEFAULT_PENDING_REPLY_CAPACITY)
+    }
 }
 
 pub(super) struct RegistrySnapshot {
@@ -155,6 +302,14 @@ pub(super) struct RegistrySnapshot {
 pub(super) type ConsumerEntries = Vec<(String, Arc<dyn ConsumerRuntime>)>;
 
 impl GroupRegistry {
+    fn with_pending_reply_capacity(capacity: usize) -> Self {
+        Self {
+            entries: Mutex::default(),
+            table_mutation_gates: Mutex::default(),
+            pending_reply_admission: Arc::new(Semaphore::new(capacity.max(1))),
+        }
+    }
+
     pub(super) fn table_mutation_gate(
         &self,
         kind: super::tables::TableKind,
@@ -298,15 +453,123 @@ impl GroupRegistry {
     }
 
     pub fn clear(&self) -> Result<(), RuntimeError> {
-        let previous = {
+        let (previous, pending) = {
             let mut entries = self
                 .entries
                 .lock()
                 .map_err(|_| RuntimeError::RegistryPoisoned)?;
-            std::mem::take(&mut *entries)
+            let pending = std::mem::take(&mut entries.pending_replies);
+            (std::mem::take(&mut *entries), pending)
         };
+        for entry in pending.into_values() {
+            let _ = entry.sender.send(PendingReplyCompletion::ProducerShutdown);
+        }
         drop(previous);
         Ok(())
+    }
+
+    pub async fn register_pending_reply(
+        self: &Arc<Self>,
+        lease: &GroupLease,
+        correlation_id: &str,
+        deadline: Instant,
+    ) -> Result<PendingReplyRequest, RuntimeError> {
+        if lease.kind != GroupKind::Producer {
+            return Err(RuntimeError::InvalidRoute(
+                "request/reply requires a producer registration",
+            ));
+        }
+        let admission = tokio::time::timeout_at(
+            deadline,
+            self.pending_reply_admission.clone().acquire_owned(),
+        )
+        .await
+        .map_err(|_| RuntimeError::RequestReplyAdmissionTimeout)?
+        .map_err(|_| RuntimeError::RequestReplyAdmissionTimeout)?;
+        if Instant::now() >= deadline {
+            return Err(RuntimeError::RequestReplyAdmissionTimeout);
+        }
+        let (sender, receiver) = oneshot::channel();
+        {
+            let mut entries = self
+                .entries
+                .lock()
+                .map_err(|_| RuntimeError::RegistryPoisoned)?;
+            let active = entries
+                .producers
+                .get(&lease.group)
+                .is_some_and(|entry| Arc::ptr_eq(&entry.identity, &lease.identity));
+            if !active {
+                return Err(RuntimeError::InvalidRoute(
+                    "producer registration is no longer active",
+                ));
+            }
+            if entries.pending_replies.contains_key(correlation_id) {
+                return Err(RuntimeError::DuplicateCorrelation {
+                    correlation_id: correlation_id.to_owned(),
+                });
+            }
+            entries.pending_replies.insert(
+                correlation_id.to_owned(),
+                PendingReplyEntry {
+                    owner: lease.identity.clone(),
+                    deadline,
+                    send_succeeded: false,
+                    sender,
+                    _admission: admission,
+                },
+            );
+        }
+        Ok(PendingReplyRequest {
+            receiver,
+            control: PendingReplyControl {
+                registry: Arc::downgrade(self),
+                correlation_id: correlation_id.to_owned(),
+                owner: lease.identity.clone(),
+            },
+        })
+    }
+
+    pub fn complete_pending_reply(&self, correlation_id: &str, reply: MessageExt) -> bool {
+        let entry = self
+            .entries
+            .lock()
+            .ok()
+            .and_then(|mut entries| entries.pending_replies.remove(correlation_id));
+        entry.is_some_and(|entry| {
+            entry
+                .sender
+                .send(PendingReplyCompletion::Reply(reply))
+                .is_ok()
+        })
+    }
+
+    pub fn expire_pending_replies(&self, now: Instant) -> usize {
+        let expired = {
+            let Ok(mut entries) = self.entries.lock() else {
+                return 0;
+            };
+            let expired_ids = entries
+                .pending_replies
+                .iter()
+                .filter(|(_, entry)| entry.deadline <= now)
+                .map(|(correlation_id, _)| correlation_id.clone())
+                .collect::<Vec<_>>();
+            expired_ids
+                .into_iter()
+                .filter_map(|correlation_id| {
+                    entries
+                        .pending_replies
+                        .remove(&correlation_id)
+                        .map(|entry| (entry.sender, entry.send_succeeded))
+                })
+                .collect::<Vec<_>>()
+        };
+        let count = expired.len();
+        for (sender, send_succeeded) in expired {
+            let _ = sender.send(PendingReplyCompletion::Timeout { send_succeeded });
+        }
+        count
     }
     pub fn register_producer(
         &self,
@@ -467,7 +730,13 @@ impl GroupRegistry {
             GroupKind::Consumer => (None, entries.consumers.remove(&lease.group), None),
             GroupKind::Admin => (None, None, entries.admins.remove(&lease.group)),
         };
+        let cancelled = if kind == GroupKind::Producer {
+            take_pending_replies_for_owner(&mut entries, &lease.identity)
+        } else {
+            Vec::new()
+        };
         drop(entries);
+        notify_pending_reply_shutdown(cancelled);
         drop(removed_producer);
         drop(removed_consumer);
         drop(removed_admin);
@@ -479,7 +748,7 @@ impl GroupRegistry {
         group: &str,
         kind: GroupKind,
     ) -> Result<bool, RuntimeError> {
-        let (removed, removed_producer, removed_consumer, removed_admin) = {
+        let (removed, removed_producer, removed_consumer, removed_admin, cancelled) = {
             let mut entries = self
                 .entries
                 .lock()
@@ -487,18 +756,23 @@ impl GroupRegistry {
             match kind {
                 GroupKind::Producer => {
                     let entry = entries.producers.remove(group);
-                    (entry.is_some(), entry, None, None)
+                    let cancelled = entry
+                        .as_ref()
+                        .map(|entry| take_pending_replies_for_owner(&mut entries, &entry.identity))
+                        .unwrap_or_default();
+                    (entry.is_some(), entry, None, None, cancelled)
                 }
                 GroupKind::Consumer => {
                     let entry = entries.consumers.remove(group);
-                    (entry.is_some(), None, entry, None)
+                    (entry.is_some(), None, entry, None, Vec::new())
                 }
                 GroupKind::Admin => {
                     let entry = entries.admins.remove(group);
-                    (entry.is_some(), None, None, entry)
+                    (entry.is_some(), None, None, entry, Vec::new())
                 }
             }
         };
+        notify_pending_reply_shutdown(cancelled);
         drop(removed_producer);
         drop(removed_consumer);
         drop(removed_admin);
@@ -562,6 +836,33 @@ impl GroupRegistry {
             .consumers
             .get(group)
             .map(|entry| entry.handle.clone()))
+    }
+}
+
+fn take_pending_replies_for_owner(
+    entries: &mut Entries,
+    owner: &Arc<()>,
+) -> Vec<oneshot::Sender<PendingReplyCompletion>> {
+    let owned_ids = entries
+        .pending_replies
+        .iter()
+        .filter(|(_, entry)| Arc::ptr_eq(&entry.owner, owner))
+        .map(|(correlation_id, _)| correlation_id.clone())
+        .collect::<Vec<_>>();
+    owned_ids
+        .into_iter()
+        .filter_map(|correlation_id| {
+            entries
+                .pending_replies
+                .remove(&correlation_id)
+                .map(|entry| entry.sender)
+        })
+        .collect()
+}
+
+fn notify_pending_reply_shutdown(senders: Vec<oneshot::Sender<PendingReplyCompletion>>) {
+    for sender in senders {
+        let _ = sender.send(PendingReplyCompletion::ProducerShutdown);
     }
 }
 
@@ -631,6 +932,117 @@ fn mutate_map<T: ?Sized>(
         previous: previous.map(wrap),
         matched,
     })
+}
+
+#[cfg(test)]
+mod pending_reply_admission_tests {
+    use super::*;
+    use std::{sync::Arc, time::Duration};
+
+    struct Producer;
+    impl ProducerRuntime for Producer {}
+
+    #[tokio::test]
+    async fn pending_reply_slots_are_bounded_until_terminal_removal() {
+        let java_fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/producer/request-reply.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            DEFAULT_PENDING_REPLY_CAPACITY,
+            java_fixture["asyncSenderQueueCapacity"].as_u64().unwrap() as usize
+        );
+
+        let registry = Arc::new(GroupRegistry::with_pending_reply_capacity(1));
+        let producer: Arc<dyn ProducerRuntime> = Arc::new(Producer);
+        let lease = registry
+            .register_producer("request-owner", producer)
+            .unwrap();
+        let first_deadline = Instant::now() + Duration::from_secs(2);
+        let first = registry
+            .register_pending_reply(&lease, "first", first_deadline)
+            .await
+            .unwrap();
+
+        let second_deadline = Instant::now() + Duration::from_millis(25);
+        assert!(matches!(
+            registry
+                .register_pending_reply(&lease, "second", second_deadline)
+                .await,
+            Err(RuntimeError::RequestReplyAdmissionTimeout)
+        ));
+
+        drop(first);
+        let reply_deadline = Instant::now() + Duration::from_secs(2);
+        let mut reply_pending = registry
+            .register_pending_reply(&lease, "reply", reply_deadline)
+            .await
+            .unwrap();
+        assert!(registry.complete_pending_reply(
+            "reply",
+            MessageExt::new(rocketmq_classic_common::message::Message::new(
+                "reply-topic",
+                b"reply".to_vec()
+            ))
+        ));
+        assert!(matches!(
+            reply_pending.receive().await.unwrap(),
+            PendingReplyCompletion::Reply(_)
+        ));
+
+        let failure_deadline = Instant::now() + Duration::from_secs(2);
+        let mut failure_pending = registry
+            .register_pending_reply(&lease, "failure", failure_deadline)
+            .await
+            .unwrap();
+        assert!(
+            failure_pending
+                .control()
+                .fail_send("scripted failure".into())
+        );
+        assert!(matches!(
+            failure_pending.receive().await.unwrap(),
+            PendingReplyCompletion::SendFailed(cause) if cause == "scripted failure"
+        ));
+
+        let timeout_deadline = Instant::now() + Duration::from_secs(2);
+        let mut timeout_pending = registry
+            .register_pending_reply(&lease, "timeout", timeout_deadline)
+            .await
+            .unwrap();
+        assert_eq!(registry.expire_pending_replies(timeout_deadline), 1);
+        assert!(matches!(
+            timeout_pending.receive().await.unwrap(),
+            PendingReplyCompletion::Timeout { .. }
+        ));
+
+        let shutdown_deadline = Instant::now() + Duration::from_secs(2);
+        let mut shutdown_pending = registry
+            .register_pending_reply(&lease, "shutdown", shutdown_deadline)
+            .await
+            .unwrap();
+        assert!(registry.unregister(&lease, GroupKind::Producer).unwrap());
+        assert!(matches!(
+            shutdown_pending.receive().await.unwrap(),
+            PendingReplyCompletion::ProducerShutdown
+        ));
+
+        let replacement: Arc<dyn ProducerRuntime> = Arc::new(Producer);
+        let replacement_lease = registry
+            .register_producer("request-owner", replacement)
+            .unwrap();
+        let available_deadline = Instant::now() + Duration::from_secs(2);
+        let available = registry
+            .register_pending_reply(&replacement_lease, "available", available_deadline)
+            .await
+            .unwrap();
+        drop(available);
+        assert!(
+            registry
+                .unregister(&replacement_lease, GroupKind::Producer)
+                .unwrap()
+        );
+    }
 }
 
 #[cfg(test)]

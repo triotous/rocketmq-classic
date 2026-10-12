@@ -371,6 +371,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-java-request-reply-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.RequestReplyFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/producer/request-reply.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-java-message-decode-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

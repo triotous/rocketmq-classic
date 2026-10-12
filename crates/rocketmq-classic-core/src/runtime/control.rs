@@ -11,7 +11,7 @@ use tokio::{
     time::{Duration, Instant},
 };
 
-const INNER_PRODUCER: &str = "CLIENT_INNER_PRODUCER";
+pub(super) const INNER_PRODUCER: &str = "CLIENT_INNER_PRODUCER";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]

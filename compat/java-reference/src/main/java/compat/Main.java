@@ -102,6 +102,10 @@ public final class Main {
             TransactionFixtures.main(Arrays.copyOfRange(args, 1, args.length));
             return;
         }
+        if (args.length > 0 && "request-reply-fixture".equals(args[0])) {
+            RequestReplyFixtures.main(Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "client-config-tls-mode-probe".equals(args[0])) {
             ClientConfigTlsModeProbe.main(Arrays.copyOfRange(args, 1, args.length));
             return;
@@ -224,7 +228,7 @@ public final class Main {
             writeScenario(id, output);
             return;
         }
-        throw new IllegalArgumentException("usage: self-test | fixtures --output DIR | header-fixtures --output DIR | code-registry-fixtures <file> [--verify] | lite-pop-fixture <file> [--verify] | transaction-fixture <file> [--verify] | orderly-consumer-fixture <file> [--verify] | rebalance-fixtures <file> [--verify] | decode --input FILE | scenario --id ID --output FILE");
+        throw new IllegalArgumentException("usage: self-test | fixtures --output DIR | header-fixtures --output DIR | code-registry-fixtures <file> [--verify] | lite-pop-fixture <file> [--verify] | transaction-fixture <file> [--verify] | request-reply-fixture <file> [--verify] | orderly-consumer-fixture <file> [--verify] | rebalance-fixtures <file> [--verify] | decode --input FILE | scenario --id ID --output FILE");
     }
 
     private static Path option(String[] args, String name) {

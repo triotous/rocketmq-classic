@@ -25,7 +25,10 @@ pub use manager::{
     FactoryValuesView,
 };
 pub use pull::MessageRequest;
-pub use registry::{ConsumerOperation, ConsumerRuntime, GroupLease, ProducerRuntime};
+pub use registry::{
+    ConsumerOperation, ConsumerRuntime, GroupLease, PendingReplyCompletion, PendingReplyControl,
+    PendingReplyRequest, ProducerRuntime,
+};
 pub use tables::{
     ConsumerEntryHandle, ConsumerEntrySetView, ConsumerKeySetView, ConsumerTable,
     ConsumerValuesView, ProducerEntryHandle, ProducerEntrySetView, ProducerKeySetView,
@@ -75,6 +78,10 @@ pub enum RuntimeError {
     StartupFailure,
     #[error("client group already registered: {group}")]
     DuplicateGroup { group: String },
+    #[error("request/reply correlation is already pending: {correlation_id}")]
+    DuplicateCorrelation { correlation_id: String },
+    #[error("request/reply admission did not become available before the request deadline")]
+    RequestReplyAdmissionTimeout,
     #[error("invalid topic route: {0}")]
     InvalidRoute(&'static str),
     #[error("recursive update to a topic route table key during remapping")]

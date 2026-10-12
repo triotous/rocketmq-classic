@@ -44,6 +44,18 @@ pub enum ProducerError {
     NoQueueSelected,
     #[error("send deadline expired")]
     Timeout,
+    #[error(
+        "send request message to <{topic}> OK, but wait reply message timeout, {timeout_millis} ms."
+    )]
+    RequestReplyTimeout { topic: String, timeout_millis: u128 },
+    #[error("send request message to <{topic}> fail: {cause}")]
+    RequestSendFailed { topic: String, cause: String },
+    #[error("producer shut down before the request received a reply")]
+    RequestReplyShutdown,
+    #[error("request/reply waiter was cancelled")]
+    RequestReplyCancelled,
+    #[error("request timeout exceeds Java's signed long millisecond range")]
+    InvalidRequestTimeout,
     #[error("TransactionListener is null")]
     TransactionListenerMissing,
     #[error("Transactional messages do not support delayed delivery")]

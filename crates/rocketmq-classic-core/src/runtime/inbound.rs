@@ -1,9 +1,13 @@
 use super::{ClientRuntime, ConsumerOperation, RuntimeState};
 use rocketmq_classic_common::message::{
+    Message, MessageExt,
     constants::{PROPERTY_CORRELATION_ID, PROPERTY_PRODUCER_GROUP},
     decode_properties,
 };
-use rocketmq_classic_protocol::codes::{request, response};
+use rocketmq_classic_protocol::{
+    codes::{request, response},
+    header::{CommandHeader, ReplyMessageRequestHeader},
+};
 use rocketmq_classic_remoting::{RemotingCommand, client::RequestProcessor};
 use std::sync::{Arc, OnceLock, Weak};
 
@@ -53,6 +57,9 @@ impl RuntimeProcessor {
                 "client runtime is not running",
             )));
         }
+        if command.code == request::PUSH_REPLY_MESSAGE_TO_CLIENT {
+            return Ok(Some(receive_reply_message(&runtime, &command)));
+        }
         let groups = runtime
             .groups
             .snapshot()
@@ -83,16 +90,6 @@ impl RuntimeProcessor {
                     .into_iter()
                     .find(|(group, _)| properties.get(PROPERTY_PRODUCER_GROUP) == Some(group))
                     .map(|(_, processor)| processor)
-            }
-            request::PUSH_REPLY_MESSAGE_TO_CLIENT => {
-                let properties = decode_properties(field("properties").unwrap_or_default());
-                let Some(correlation) = properties.get(PROPERTY_CORRELATION_ID) else {
-                    return Ok(Some(unsupported(command.code, "Phase 15")));
-                };
-                groups
-                    .producers
-                    .into_iter()
-                    .find_map(|(_, producer)| producer.reply_processor(correlation))
             }
             request::NOTIFY_UNSUBSCRIBE_LITE => {
                 // MQClientAPIImpl registers this code, but Java's
@@ -136,12 +133,82 @@ impl RuntimeProcessor {
                 command.code,
                 match command.code {
                     request::CHECK_TRANSACTION_STATE => "Phase 14",
-                    request::PUSH_REPLY_MESSAGE_TO_CLIENT => "Phase 15",
                     _ => "Phase 17",
                 },
             ))),
         }
     }
+}
+
+fn receive_reply_message(runtime: &ClientRuntime, command: &RemotingCommand) -> RemotingCommand {
+    let result = (|| {
+        let fields = command
+            .ext_fields
+            .as_ref()
+            .ok_or_else(|| "reply request has no ext fields".to_owned())?;
+        let header =
+            ReplyMessageRequestHeader::decode_fields(fields).map_err(|error| error.to_string())?;
+        let mut body = command.body.clone().unwrap_or_default();
+        if header.sys_flag & rocketmq_classic_common::sysflag::message::COMPRESSED_FLAG != 0 {
+            let compression_type =
+                rocketmq_classic_common::sysflag::message::compression_type(header.sys_flag)
+                    .map_err(|error| error.to_string())?;
+            if let Ok(uncompressed) = rocketmq_classic_common::compression::decompress_limited(
+                compression_type,
+                &body,
+                rocketmq_classic_common::message::DecodeLimits::default()
+                    .max_decompressed_body_bytes,
+            ) {
+                body = uncompressed;
+            }
+        }
+
+        let properties = decode_properties(header.properties.as_deref().unwrap_or_default());
+        let correlation_id = properties.get(PROPERTY_CORRELATION_ID).cloned();
+        let mut message = Message::default();
+        message.set_topic(header.topic);
+        message.set_body(body);
+        message.set_flag(header.flag);
+        for (key, value) in properties {
+            let _ = message.set_system_property(key, value);
+        }
+        let _ = message.set_system_property(
+            rocketmq_classic_common::message::constants::PROPERTY_REPLY_MESSAGE_ARRIVE_TIME,
+            epoch_millis_now().to_string(),
+        );
+
+        let mut reply = MessageExt::new(message);
+        reply.set_queue_id(header.queue_id);
+        reply.set_sys_flag(header.sys_flag);
+        reply.set_born_timestamp(header.born_timestamp);
+        reply.set_born_host(Some(header.born_host));
+        reply.set_store_timestamp(header.store_timestamp);
+        reply.set_store_host(Some(header.store_host));
+        reply.set_reconsume_times(header.reconsume_times.unwrap_or_default());
+        Ok::<_, String>((reply, correlation_id))
+    })();
+
+    match result {
+        Ok((reply, Some(correlation_id))) => {
+            runtime.complete_reply_request(&correlation_id, reply);
+            RemotingCommand {
+                code: response::SUCCESS,
+                ..Default::default()
+            }
+        }
+        Ok((_, None)) => RemotingCommand {
+            code: response::SUCCESS,
+            ..Default::default()
+        },
+        Err(_) => error(response::SYSTEM_ERROR, "process reply message fail"),
+    }
+}
+
+fn epoch_millis_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
+        .unwrap_or_default()
 }
 
 impl RequestProcessor for RuntimeProcessor {
@@ -230,7 +297,10 @@ mod tests {
     use super::*;
     use crate::{
         config::ClientConfig,
-        runtime::{ClientRuntimeManager, ConsumerRuntime, GroupLease, ProducerRuntime},
+        runtime::{
+            ClientRuntimeManager, ConsumerRuntime, GroupLease, PendingReplyCompletion,
+            ProducerRuntime,
+        },
     };
     use base64::Engine;
     use rocketmq_classic_protocol::heartbeat::ConsumerData;
@@ -241,6 +311,7 @@ mod tests {
             Mutex,
             atomic::{AtomicUsize, Ordering},
         },
+        time::Duration,
     };
 
     fn fixtures() -> serde_json::Value {
@@ -320,15 +391,10 @@ mod tests {
     }
     struct Producer {
         handler: Arc<Handler>,
-        correlation: &'static str,
     }
     impl ProducerRuntime for Producer {
         fn transaction_processor(&self) -> Option<Arc<dyn RequestProcessor>> {
             Some(self.handler.clone())
-        }
-        fn reply_processor(&self, correlation: &str) -> Option<Arc<dyn RequestProcessor>> {
-            (correlation == self.correlation)
-                .then(|| self.handler.clone() as Arc<dyn RequestProcessor>)
         }
     }
     struct NoInboundProducer;
@@ -525,16 +591,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn transaction_routes_actual_body_group_not_header_and_reply_uses_correlation_not_responder()
-     {
+    async fn replies_complete_by_correlation_and_ack_unknown_or_duplicate_ids() {
         let runtime = runtime("transaction-slots").await;
         let first = Arc::new(Producer {
             handler: handler(&runtime, "producer-a"),
-            correlation: "first",
         });
         let second = Arc::new(Producer {
             handler: handler(&runtime, "producer-b"),
-            correlation: "second",
         });
         let first_lease = runtime
             .register_producer("producer-a", first.clone())
@@ -553,38 +616,267 @@ mod tests {
             );
             assert_eq!(result.remark.as_deref(), case["group"].as_str());
         }
-        let reply = dispatch(
-            &runtime,
-            request::PUSH_REPLY_MESSAGE_TO_CLIENT,
-            &[
-                ("producerGroup", "producer-b"),
-                ("properties", "CORRELATION_ID\u{1}first\u{2}"),
-            ],
-            Some(vec![0, 255]),
-        );
-        assert_eq!(reply.remark.as_deref(), Some("producer-a"));
-        assert!(
-            first
-                .handler
-                .calls
-                .lock()
-                .unwrap()
-                .iter()
-                .all(|(remote, _)| remote == "broker:10911")
-        );
+
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        let mut first_pending = runtime
+            .register_reply_request(&first_lease, "first", deadline)
+            .await
+            .unwrap();
+        let mut second_pending = runtime
+            .register_reply_request(&second_lease, "second", deadline)
+            .await
+            .unwrap();
+        let late_send_completion = second_pending.control();
         unregister(&runtime, &first_lease, true).await;
+        assert!(matches!(
+            first_pending.receive().await.unwrap(),
+            PendingReplyCompletion::ProducerShutdown
+        ));
+
+        let reply = dispatch_reply(&runtime, "second", b"reply-body");
+        assert_eq!(reply.code, response::SUCCESS);
+        assert!(reply.remark.is_none());
+        // A Broker reply can beat the async send completion callback. The
+        // later send-success signal must not reclaim or recreate the entry.
+        late_send_completion.mark_send_succeeded();
+        let PendingReplyCompletion::Reply(reply_message) = second_pending.receive().await.unwrap()
+        else {
+            panic!("matching correlation must complete with the decoded reply")
+        };
+        assert_eq!(reply_message.message().topic(), "cluster-a_REPLY_TOPIC");
+        assert_eq!(reply_message.message().body(), b"reply-body");
         assert_eq!(
-            dispatch(
-                &runtime,
-                request::PUSH_REPLY_MESSAGE_TO_CLIENT,
-                &[("properties", "CORRELATION_ID\u{1}first\u{2}")],
-                None
-            )
-            .code,
-            response::REQUEST_CODE_NOT_SUPPORTED
+            reply_message.message().properties()[PROPERTY_CORRELATION_ID],
+            "second"
+        );
+        assert!(
+            reply_message.message().properties()["ARRIVE_TIME"]
+                .parse::<i64>()
+                .is_ok()
+        );
+
+        assert_eq!(
+            dispatch_reply(&runtime, "second", b"duplicate").code,
+            response::SUCCESS
+        );
+        assert_eq!(
+            dispatch_reply(&runtime, "unknown", b"late").code,
+            response::SUCCESS
+        );
+        let late_deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+        let mut late_pending = runtime
+            .register_reply_request(&second_lease, "expired", late_deadline)
+            .await
+            .unwrap();
+        assert_eq!(
+            runtime.groups.expire_pending_replies(late_deadline),
+            1,
+            "the injected clock expires exactly this request"
+        );
+        assert!(matches!(
+            late_pending.receive().await.unwrap(),
+            PendingReplyCompletion::Timeout {
+                send_succeeded: false
+            }
+        ));
+        assert_eq!(
+            dispatch_reply(&runtime, "expired", b"late reply").code,
+            response::SUCCESS,
+            "late replies are acknowledged without resurrecting their correlation"
         );
         unregister(&runtime, &second_lease, true).await;
         assert!(runtime.shutdown().await.unwrap());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn concurrent_reply_and_timeout_claim_exactly_one_terminal_owner() {
+        let runtime = runtime("reply-timeout-race").await;
+        let producer = Arc::new(Producer {
+            handler: handler(&runtime, "race-producer"),
+        });
+        let lease = runtime
+            .register_producer("race-producer", producer)
+            .await
+            .unwrap();
+
+        for iteration in 0..100 {
+            let correlation_id = format!("race-{iteration}");
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+            let mut pending = runtime
+                .register_reply_request(&lease, &correlation_id, deadline)
+                .await
+                .unwrap();
+            let gate = Arc::new(tokio::sync::Barrier::new(3));
+
+            let reply_runtime = runtime.clone();
+            let reply_gate = gate.clone();
+            let reply_correlation = correlation_id.clone();
+            let reply = tokio::spawn(async move {
+                reply_gate.wait().await;
+                let message =
+                    MessageExt::new(Message::new("orders_REPLY_TOPIC", b"reply".to_vec()));
+                reply_runtime.complete_reply_request(&reply_correlation, message)
+            });
+
+            let timeout_runtime = runtime.clone();
+            let timeout_gate = gate.clone();
+            let timeout = tokio::spawn(async move {
+                timeout_gate.wait().await;
+                timeout_runtime.groups.expire_pending_replies(deadline)
+            });
+
+            gate.wait().await;
+            let reply_won = reply.await.unwrap();
+            let expired = timeout.await.unwrap();
+            assert_eq!(usize::from(reply_won) + expired, 1);
+            match pending.receive().await.unwrap() {
+                PendingReplyCompletion::Reply(reply) => {
+                    assert!(reply_won);
+                    assert_eq!(reply.message().body(), b"reply");
+                }
+                PendingReplyCompletion::Timeout { .. } => assert_eq!(expired, 1),
+                other => panic!("unexpected terminal request/reply result: {other:?}"),
+            }
+            assert!(!runtime.complete_reply_request(
+                &correlation_id,
+                MessageExt::new(Message::new("orders_REPLY_TOPIC", b"duplicate".to_vec()))
+            ));
+            assert_eq!(runtime.groups.expire_pending_replies(deadline), 0);
+        }
+
+        unregister(&runtime, &lease, true).await;
+        assert!(runtime.shutdown().await.unwrap());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reply_races_with_send_failure_or_cancellation_without_double_claim() {
+        let runtime = runtime("reply-send-cancel-race").await;
+        let producer = Arc::new(Producer {
+            handler: handler(&runtime, "race-producer"),
+        });
+        let lease = runtime
+            .register_producer("race-producer", producer)
+            .await
+            .unwrap();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+
+        let mut send_race = runtime
+            .register_reply_request(&lease, "send-race", deadline)
+            .await
+            .unwrap();
+        let send_control = send_race.control();
+        let gate = Arc::new(tokio::sync::Barrier::new(3));
+        let reply_runtime = runtime.clone();
+        let reply_gate = gate.clone();
+        let reply_task = tokio::spawn(async move {
+            reply_gate.wait().await;
+            reply_runtime.complete_reply_request(
+                "send-race",
+                MessageExt::new(Message::new("orders_REPLY_TOPIC", b"reply".to_vec())),
+            )
+        });
+        let failure_gate = gate.clone();
+        let failure_task = tokio::spawn(async move {
+            failure_gate.wait().await;
+            send_control.fail_send("scripted send failure".into())
+        });
+        gate.wait().await;
+        let reply_won = reply_task.await.unwrap();
+        let failure_won = failure_task.await.unwrap();
+        assert_eq!(usize::from(reply_won) + usize::from(failure_won), 1);
+        match send_race.receive().await.unwrap() {
+            PendingReplyCompletion::Reply(_) => assert!(reply_won),
+            PendingReplyCompletion::SendFailed(cause) => {
+                assert!(failure_won);
+                assert_eq!(cause, "scripted send failure");
+            }
+            other => panic!("unexpected terminal request/reply result: {other:?}"),
+        }
+
+        let mut cancel_race = runtime
+            .register_reply_request(&lease, "cancel-race", deadline)
+            .await
+            .unwrap();
+        let cancel_control = cancel_race.control();
+        let gate = Arc::new(tokio::sync::Barrier::new(3));
+        let reply_runtime = runtime.clone();
+        let reply_gate = gate.clone();
+        let reply_task = tokio::spawn(async move {
+            reply_gate.wait().await;
+            reply_runtime.complete_reply_request(
+                "cancel-race",
+                MessageExt::new(Message::new("orders_REPLY_TOPIC", b"reply".to_vec())),
+            )
+        });
+        let cancel_gate = gate.clone();
+        let cancel_task = tokio::spawn(async move {
+            cancel_gate.wait().await;
+            cancel_control.cancel()
+        });
+        gate.wait().await;
+        let reply_won = reply_task.await.unwrap();
+        let cancelled = cancel_task.await.unwrap();
+        assert_eq!(usize::from(reply_won) + usize::from(cancelled), 1);
+        if reply_won {
+            assert!(matches!(
+                cancel_race.receive().await.unwrap(),
+                PendingReplyCompletion::Reply(_)
+            ));
+        } else {
+            assert!(cancel_race.receive().await.is_err());
+        }
+
+        unregister(&runtime, &lease, true).await;
+        assert!(runtime.shutdown().await.unwrap());
+    }
+
+    fn dispatch_reply(
+        runtime: &Arc<ClientRuntime>,
+        correlation_id: &str,
+        body: &[u8],
+    ) -> RemotingCommand {
+        use rocketmq_classic_common::message::{
+            constants::{PROPERTY_CORRELATION_ID, PROPERTY_MESSAGE_TYPE},
+            encode_properties,
+        };
+        let properties = std::collections::BTreeMap::from([
+            (
+                PROPERTY_CORRELATION_ID.to_owned(),
+                correlation_id.to_owned(),
+            ),
+            (PROPERTY_MESSAGE_TYPE.to_owned(), "reply".to_owned()),
+        ]);
+        let header = ReplyMessageRequestHeader {
+            producer_group: "response-producer".into(),
+            topic: "cluster-a_REPLY_TOPIC".into(),
+            default_topic: "TBW102".into(),
+            default_topic_queue_nums: 4,
+            queue_id: 1,
+            born_timestamp: 1_700_000_000_123,
+            flag: 0,
+            properties: Some(encode_properties(&properties)),
+            born_host: "127.0.0.1:10911".into(),
+            store_host: "127.0.0.1:10911".into(),
+            store_timestamp: 1_700_000_001_234,
+            ..Default::default()
+        };
+        let mut fields = rocketmq_classic_protocol::header::HeaderMap::new();
+        header.encode_fields(&mut fields);
+        let result = runtime
+            .inbound
+            .process_with_context(
+                "broker:10911",
+                RemotingCommand {
+                    code: request::PUSH_REPLY_MESSAGE_TO_CLIENT,
+                    ext_fields: Some(fields),
+                    body: Some(body.to_vec()),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(result.code, response::SUCCESS);
+        result
     }
 
     #[tokio::test]
@@ -736,7 +1028,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn registered_producer_without_transaction_capability_returns_java_null_response() {
+    async fn transaction_check_without_processor_is_silent_and_malformed_reply_fails() {
         let runtime = runtime("producer-inactive-slots").await;
         let producer = Arc::new(NoInboundProducer);
         let lease = runtime
@@ -767,11 +1059,8 @@ mod tests {
             } else {
                 dispatch(&runtime, request::PUSH_REPLY_MESSAGE_TO_CLIENT, &[], None)
             };
-            assert_eq!(reply.code, response::REQUEST_CODE_NOT_SUPPORTED);
-            assert_eq!(
-                reply.remark.as_deref(),
-                Some("client request 326 has no active handler (Phase 15)")
-            );
+            assert_eq!(reply.code, response::SYSTEM_ERROR);
+            assert_eq!(reply.remark.as_deref(), Some("process reply message fail"));
         }
 
         unregister(&runtime, &lease, true).await;

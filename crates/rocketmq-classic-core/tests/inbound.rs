@@ -78,8 +78,13 @@ async fn inactive_runtime_slots_match_phase_errors_and_no_dispatch_silence() {
             let reply = read(&mut stream).await;
             assert_eq!(reply.opaque, command.opaque);
             assert!(reply.is_response());
-            assert_eq!(reply.code, response::REQUEST_CODE_NOT_SUPPORTED);
-            assert!(reply.remark.unwrap().contains("Phase"));
+            if code == request::PUSH_REPLY_MESSAGE_TO_CLIENT {
+                assert_eq!(reply.code, response::SYSTEM_ERROR);
+                assert_eq!(reply.remark.as_deref(), Some("process reply message fail"));
+            } else {
+                assert_eq!(reply.code, response::REQUEST_CODE_NOT_SUPPORTED);
+                assert!(reply.remark.unwrap().contains("Phase"));
+            }
         }
         let mut oneway = RemotingCommand {
             code: request::CHECK_TRANSACTION_STATE,
