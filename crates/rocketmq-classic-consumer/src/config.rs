@@ -1,5 +1,5 @@
 use rocketmq_classic_core::config::ClientConfig;
-use rocketmq_classic_protocol::heartbeat::MessageModel;
+use rocketmq_classic_protocol::heartbeat::{ConsumeFromWhere, MessageModel};
 
 use crate::error::PullConsumerError;
 
@@ -17,6 +17,7 @@ pub struct PullConsumerConfig {
     consumer_timeout_millis_when_suspend: i64,
     consumer_pull_timeout_millis: i64,
     message_model: MessageModel,
+    consume_from_where: ConsumeFromWhere,
     unit_mode: bool,
     enable_rebalance: bool,
     allocate_message_queue_strategy:
@@ -33,6 +34,7 @@ impl PullConsumerConfig {
             consumer_timeout_millis_when_suspend: DEFAULT_CONSUMER_TIMEOUT_MILLIS_WHEN_SUSPEND,
             consumer_pull_timeout_millis: DEFAULT_CONSUMER_PULL_TIMEOUT_MILLIS,
             message_model: MessageModel::Clustering,
+            consume_from_where: ConsumeFromWhere::ConsumeFromLastOffset,
             unit_mode: false,
             enable_rebalance: DEFAULT_PULL_CONSUMER_ENABLE_REBALANCE,
             allocate_message_queue_strategy: std::sync::Arc::new(
@@ -88,6 +90,14 @@ impl PullConsumerConfig {
 
     pub fn set_message_model(&mut self, value: MessageModel) {
         self.message_model = value;
+    }
+
+    pub const fn consume_from_where(&self) -> ConsumeFromWhere {
+        self.consume_from_where
+    }
+
+    pub fn set_consume_from_where(&mut self, value: ConsumeFromWhere) {
+        self.consume_from_where = value;
     }
 
     pub const fn unit_mode(&self) -> bool {

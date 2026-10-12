@@ -37,3 +37,23 @@ Phase 13 continuation — 2026-10-12 08:33 UTC:
 - Added focused unit cases for the pinned valid fixture value, extra trailing fields, missing fields, numeric overflow, retry-v2 topic mapping, and receipt preservation in both request headers.
 - `cargo test -p rocketmq-classic-consumer --lib pop::tests --locked` — PASS (3 tests); `cargo fmt --all` applied after the check identified formatting changes.
 - Updated the Phase 13 matrix to Partial for receipt parsing/header construction. Broker dispatch, source-used batch ACK, and replacement lifecycle are still unimplemented; phase remains In progress.
+
+Phase 13 continuation — 2026-10-12 10:53 UTC:
+
+- Completed the current Lite Pull facade and Push POP code path from the existing Phase 13 working tree. Push broker assignments now partition into PULL and POP queues, POP queue workers are created and removed with rebalance generations, and retry-topic transitions use the pinned Java v1 topic key. Receipt handling preserves the token, maps mixed-queue response metadata, dispatches ACK/change-invisibility, and constructs the pinned batch-ACK grouping/bitset body.
+- Added assignment partition tests for mixed PULL/POP, Java's missing-mode-as-PULL behavior, null assignment rejection, and POP-to-PULL retry-topic removal. Hardened batch-ACK bit-index arithmetic against signed overflow and treated empty optional POP metadata as Java's absent metadata.
+- `cargo test -p rocketmq-classic-consumer --lib --locked` — PASS (123 tests).
+- `cargo test -p rocketmq-classic-consumer --test lite_pop --locked` — PASS (8 tests). An earlier run caught a test-only `Vec` to `BTreeSet` conversion compile error; the test now collects into the set.
+- `cargo fmt --all -- --check` and `git diff --check` — PASS.
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` — PASS after fixing lock-across-await scopes, redundant closures/borrows, one unnecessary boolean comparison, and the POP consume context argument grouping. The first run reported these findings; none were suppressed.
+- `cargo test --workspace --locked` — PASS (all workspace unit, integration, and doc tests).
+- Updated `docs/compatibility/PHASE_13_LITE_POP_MATRIX.md` with implemented paths and current evidence. Phase 13 remains In progress: P13-V01's per-method Lite success/error differential sequence, P13-U01's controlled expiry/redelivery/receipt-replacement cases, P13-V03's complete API/config inventory, and a scripted successful Broker-assignment-to-POP-worker lifecycle case are not yet covered. Phase 19 Broker/Docker scenarios remain pending and were not run.
+
+Phase 13 continuation — 2026-10-12 11:00 UTC:
+
+- Added the Java 5.5.1 `ConsumeRequest.isPopTimeout` guard to `consume_pop_batch` before listener dispatch. Missing/malformed receipt data and nonpositive pop/invisibility times are treated as expired; valid receipts expire when elapsed time reaches invisibility. Expired batches release their found-message count.
+- Added controlled boundary tests (1049 ms is live; 1050 ms is expired for receipt `10 1000 50 2 0 broker-a 0 10`), missing/malformed/nonpositive receipt cases, and a consume-path test proving the listener is skipped and the found-message count is released.
+- `cargo test -p rocketmq-classic-consumer --lib --locked` — PASS (125 tests); `cargo test -p rocketmq-classic-consumer --test lite_pop --locked` — PASS (8 tests).
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` — PASS; `cargo test --workspace --locked` — PASS (unit, integration, and doc tests).
+- `cargo fmt --all -- --check` and `git diff --check` — PASS.
+- Updated the compatibility matrix with the receipt-expiry evidence. Phase 13 remains In progress: controlled redelivery/receipt replacement, complete Lite API/config differential coverage, Lite trace dispatch lifecycle, and scripted Broker-assignment-to-POP-worker activation/removal remain open. Phase 19 Broker/Docker validation was not run. No plan file was modified.

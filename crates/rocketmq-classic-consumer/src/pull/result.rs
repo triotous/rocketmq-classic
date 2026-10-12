@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     panic::{AssertUnwindSafe, catch_unwind},
+    sync::atomic::{AtomicBool, AtomicI64, Ordering},
     sync::{Arc, Mutex, RwLock},
 };
 
@@ -51,6 +52,8 @@ pub struct PullAPIWrapper {
     suggested_broker_ids: Mutex<HashMap<MessageQueue, i64>>,
     hooks: RwLock<Vec<Arc<dyn FilterMessageHook>>>,
     unit_mode: bool,
+    connect_broker_by_user: AtomicBool,
+    default_broker_id: AtomicI64,
 }
 
 impl PullAPIWrapper {
@@ -59,6 +62,8 @@ impl PullAPIWrapper {
             suggested_broker_ids: Mutex::new(HashMap::new()),
             hooks: RwLock::new(Vec::new()),
             unit_mode,
+            connect_broker_by_user: AtomicBool::new(false),
+            default_broker_id: AtomicI64::new(0),
         }
     }
 
@@ -69,12 +74,24 @@ impl PullAPIWrapper {
     /// Returns the Broker ID most recently suggested for this queue, defaulting
     /// to the master before the first pull response.
     pub fn recalculate_pull_from_which_node(&self, queue: &MessageQueue) -> i64 {
+        if self.connect_broker_by_user.load(Ordering::Acquire) {
+            return self.default_broker_id.load(Ordering::Acquire);
+        }
         self.suggested_broker_ids
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get(queue)
             .copied()
-            .unwrap_or(0)
+            .unwrap_or_else(|| self.default_broker_id.load(Ordering::Acquire))
+    }
+
+    pub fn set_connect_broker_by_user(&self, connect: bool) {
+        self.connect_broker_by_user
+            .store(connect, Ordering::Release);
+    }
+
+    pub fn set_default_broker_id(&self, broker_id: i64) {
+        self.default_broker_id.store(broker_id, Ordering::Release);
     }
 
     pub fn process_pull_result(

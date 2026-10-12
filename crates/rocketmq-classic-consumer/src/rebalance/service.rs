@@ -18,7 +18,7 @@ impl RebalanceService {
         }
     }
 
-    pub(crate) async fn rebalance(&self, consumer: &PushConsumer) -> bool {
+    pub(crate) async fn rebalance(&self, consumer: &Arc<PushConsumer>) -> bool {
         self.execute_serialized(consumer.rebalance_once(self.strategy.as_ref()))
             .await
     }

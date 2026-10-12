@@ -28,11 +28,11 @@ pub const DEFAULT_MAX_RECONSUME_TIMES: i32 = -1;
 pub const DEFAULT_SUSPEND_CURRENT_QUEUE_TIME_MILLIS: i64 = 1_000;
 pub const DEFAULT_CONSUME_TIMEOUT_MINUTES: i64 = 15;
 pub const DEFAULT_AWAIT_TERMINATION_MILLIS_WHEN_SHUTDOWN: i64 = 0;
+pub const DEFAULT_POP_THRESHOLD_FOR_QUEUE: i32 = 96;
+pub const DEFAULT_POP_INVISIBLE_TIME_MILLIS: i64 = 60_000;
+pub const DEFAULT_POP_BATCH_NUMS: i32 = 32;
 
-/// Java 5.5.1 `DefaultMQPushConsumer` settings owned by Phases 10 and 11.
-///
-/// POP, orderly consumption, tracing and public consume hooks remain owned by
-/// their later phases.
+/// Java 5.5.1 `DefaultMQPushConsumer` settings used by the pull and POP paths.
 pub struct PushConsumerConfig {
     client: ClientConfig,
     consumer_group: String,
@@ -57,6 +57,9 @@ pub struct PushConsumerConfig {
     suspend_current_queue_time_millis: i64,
     consume_timeout_minutes: i64,
     await_termination_millis_when_shutdown: i64,
+    pop_threshold_for_queue: i32,
+    pop_invisible_time_millis: i64,
+    pop_batch_nums: i32,
     allocate_message_queue_strategy: Arc<dyn AllocateMessageQueueStrategy>,
     client_rebalance: bool,
     message_queue_listener: Option<MessageQueueListener>,
@@ -88,6 +91,9 @@ impl PushConsumerConfig {
             suspend_current_queue_time_millis: DEFAULT_SUSPEND_CURRENT_QUEUE_TIME_MILLIS,
             consume_timeout_minutes: DEFAULT_CONSUME_TIMEOUT_MINUTES,
             await_termination_millis_when_shutdown: DEFAULT_AWAIT_TERMINATION_MILLIS_WHEN_SHUTDOWN,
+            pop_threshold_for_queue: DEFAULT_POP_THRESHOLD_FOR_QUEUE,
+            pop_invisible_time_millis: DEFAULT_POP_INVISIBLE_TIME_MILLIS,
+            pop_batch_nums: DEFAULT_POP_BATCH_NUMS,
             allocate_message_queue_strategy: Arc::new(AllocateMessageQueueAveragely),
             client_rebalance: true,
             message_queue_listener: None,
@@ -324,6 +330,30 @@ impl PushConsumerConfig {
         self.await_termination_millis_when_shutdown = value;
     }
 
+    pub const fn pop_threshold_for_queue(&self) -> i32 {
+        self.pop_threshold_for_queue
+    }
+
+    pub fn set_pop_threshold_for_queue(&mut self, value: i32) {
+        self.pop_threshold_for_queue = value;
+    }
+
+    pub const fn pop_invisible_time_millis(&self) -> i64 {
+        self.pop_invisible_time_millis
+    }
+
+    pub fn set_pop_invisible_time_millis(&mut self, value: i64) {
+        self.pop_invisible_time_millis = value;
+    }
+
+    pub const fn pop_batch_nums(&self) -> i32 {
+        self.pop_batch_nums
+    }
+
+    pub fn set_pop_batch_nums(&mut self, value: i32) {
+        self.pop_batch_nums = value;
+    }
+
     pub(crate) fn validate(&self, effective_consumer_group: &str) -> Result<(), PushConsumerError> {
         validate_group(effective_consumer_group)
             .map_err(|_| PushConsumerError::InvalidConsumerGroup)?;
@@ -381,6 +411,13 @@ impl PushConsumerConfig {
             1_024,
         )?;
         validate_range("pullBatchSize", i64::from(self.pull_batch_size), 1, 1_024)?;
+        validate_range(
+            "popInvisibleTime",
+            self.pop_invisible_time_millis,
+            5_000,
+            300_000,
+        )?;
+        validate_range("popBatchNums", i64::from(self.pop_batch_nums), 1, 32)?;
         Ok(())
     }
 }
@@ -513,7 +550,7 @@ fn java_decimal_digit(unit: u16) -> Option<u16> {
         .find_map(|zero| unit.checked_sub(*zero).filter(|digit| *digit < 10))
 }
 
-fn default_consume_timestamp() -> String {
+pub(crate) fn default_consume_timestamp() -> String {
     let target = SystemTime::now()
         .checked_sub(Duration::from_secs(30 * 60))
         .unwrap_or(UNIX_EPOCH);
@@ -605,6 +642,9 @@ mod tests {
         assert_eq!(config.suspend_current_queue_time_millis(), 4_321);
         assert_eq!(config.consume_timeout_minutes(), 15);
         assert_eq!(config.await_termination_millis_when_shutdown(), 0);
+        assert_eq!(config.pop_threshold_for_queue(), 96);
+        assert_eq!(config.pop_invisible_time_millis(), 60_000);
+        assert_eq!(config.pop_batch_nums(), 32);
         assert!(parse_java_timestamp_millis(config.consume_timestamp()).is_some());
     }
 
@@ -632,6 +672,14 @@ mod tests {
             Err(PushConsumerError::InvalidThreadBounds { .. })
         ));
         config.set_consume_thread_max(20);
+
+        config.set_pop_invisible_time_millis(4_999);
+        assert!(config.validate("orders").is_err());
+        config.set_pop_invisible_time_millis(5_000);
+        config.set_pop_batch_nums(33);
+        assert!(config.validate("orders").is_err());
+        config.set_pop_batch_nums(32);
+        assert!(config.validate("orders").is_ok());
 
         config.set_consume_concurrently_max_span(0);
         assert!(config.validate("orders").is_err());

@@ -13,7 +13,7 @@ use std::collections::VecDeque;
 
 use rocketmq_classic_common::{
     message::{DecodeLimits, DecodeOptions, MessageQueue},
-    sysflag::pull::{build_pull_sys_flag, clear_commit_offset_flag},
+    sysflag::pull::{build_pull_sys_flag_with_lite, clear_commit_offset_flag},
 };
 use rocketmq_classic_core::{
     route::{BrokerAddress, RouteSnapshot},
@@ -98,6 +98,7 @@ pub struct PullConsumer {
     offset_store: Mutex<Option<Arc<dyn OffsetStore>>>,
     subscriptions: Arc<RwLock<HashMap<String, SubscriptionData>>>,
     register_subscriptions: RegisteredSubscriptions,
+    additional_heartbeat_subscriptions: Arc<RwLock<ConsumerSubscriptionDataSet>>,
     topic_queues: Arc<RwLock<HashMap<String, BTreeSet<MessageQueue>>>>,
     register_topics: Arc<RwLock<BTreeSet<String>>>,
     in_balance_queues: Arc<RwLock<BTreeSet<MessageQueue>>>,
@@ -124,6 +125,9 @@ impl PullConsumer {
             offset_store: Mutex::new(None),
             subscriptions: Arc::new(RwLock::new(HashMap::new())),
             register_subscriptions: Arc::new(RwLock::new(HashMap::new())),
+            additional_heartbeat_subscriptions: Arc::new(RwLock::new(
+                ConsumerSubscriptionDataSet::new(),
+            )),
             topic_queues: Arc::new(RwLock::new(HashMap::new())),
             register_topics: Arc::new(RwLock::new(BTreeSet::new())),
             in_balance_queues: Arc::new(RwLock::new(BTreeSet::new())),
@@ -140,6 +144,22 @@ impl PullConsumer {
 
     pub fn register_filter_message_hook(&self, hook: Arc<dyn FilterMessageHook>) {
         self.pull_api.register_filter_message_hook(hook);
+    }
+
+    pub(crate) fn configure_pull_api(&self, connect_broker_by_user: bool, default_broker_id: i64) {
+        self.pull_api
+            .set_connect_broker_by_user(connect_broker_by_user);
+        self.pull_api.set_default_broker_id(default_broker_id);
+    }
+
+    pub(crate) fn set_additional_heartbeat_subscriptions(
+        &self,
+        subscriptions: Arc<RwLock<ConsumerSubscriptionDataSet>>,
+    ) {
+        *write_lock(&self.additional_heartbeat_subscriptions) = subscriptions
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
     }
 
     pub fn message_queue_listener(&self) -> Option<MessageQueueListener> {
@@ -204,10 +224,16 @@ impl PullConsumer {
         let topic = self.topic_with_namespace(topic)?;
         let removed_registration = write_lock(&self.register_topics).remove(&topic);
         let removed_subscription = write_lock(&self.subscriptions).remove(&topic).is_some();
-        if removed_registration || removed_subscription {
+        let removed_registered_subscriptions = {
+            let mut subscriptions = write_lock(&self.register_subscriptions);
+            let before = subscriptions.len();
+            subscriptions.retain(|(registered_topic, _, _), _| registered_topic != &topic);
+            subscriptions.len() != before
+        };
+        if removed_registration || removed_subscription || removed_registered_subscriptions {
             self.wakeup_rebalance();
         }
-        Ok(removed_registration || removed_subscription)
+        Ok(removed_registration || removed_subscription || removed_registered_subscriptions)
     }
 
     pub fn register_message_queue_listener(
@@ -309,6 +335,61 @@ impl PullConsumer {
             .map_err(PullConsumerError::from)
     }
 
+    /// Returns the route's full queue set, independently of this consumer's
+    /// current rebalance allocation.
+    pub async fn fetch_message_queues(
+        &self,
+        input_topic: &str,
+    ) -> Result<BTreeSet<MessageQueue>, PullConsumerError> {
+        let (runtime, _) = self.started_runtime().await?;
+        let topic = self.topic_with_namespace(input_topic)?;
+        if !runtime.route_snapshot()?.topics.contains_key(&topic) {
+            let timeout = i64::from(self.config.client_config().mq_client_api_timeout()).max(0);
+            runtime
+                .update_topic_route(
+                    &topic,
+                    Instant::now() + Duration::from_millis(timeout as u64),
+                )
+                .await?;
+        }
+        // The consumer's topic_queues table is populated by subscription
+        // rebalance callbacks. Lite's fetchMessageQueues API also accepts
+        // topics this consumer has not subscribed to, so read the complete
+        // converted route snapshot instead of the rebalance table.
+        let queues = runtime
+            .route_snapshot()?
+            .topics
+            .get(&topic)
+            .map(|snapshot| snapshot.subscribe_queues.clone())
+            .unwrap_or_default();
+        let mut client_config = self.config.client_config().clone();
+        queues
+            .into_iter()
+            .map(|queue| {
+                let topic = client_config.without_namespace(queue.topic())?;
+                Ok(MessageQueue::new_nullable(
+                    topic,
+                    queue.broker_name().map(str::to_owned),
+                    queue.queue_id(),
+                ))
+            })
+            .collect::<Result<BTreeSet<_>, rocketmq_classic_core::config::ConfigError>>()
+            .map_err(PullConsumerError::from)
+    }
+
+    pub async fn refresh_topic_route(&self, input_topic: &str) -> Result<(), PullConsumerError> {
+        let (runtime, _) = self.started_runtime().await?;
+        let topic = self.topic_with_namespace(input_topic)?;
+        let timeout = i64::from(self.config.client_config().mq_client_api_timeout()).max(0);
+        runtime
+            .update_topic_route(
+                &topic,
+                Instant::now() + Duration::from_millis(timeout as u64),
+            )
+            .await?;
+        Ok(())
+    }
+
     pub async fn start(self: &Arc<Self>) -> Result<(), PullConsumerError> {
         let mut state = self.state.lock().await;
         match &*state {
@@ -329,6 +410,7 @@ impl PullConsumer {
         let owner: Arc<dyn ConsumerRuntime> = Arc::new(PullConsumerRegistration {
             group: consumer_group.clone(),
             message_model: self.config.message_model(),
+            consume_from_where: self.config.consume_from_where(),
             unit_mode: self.config.unit_mode(),
             route_timeout_millis: i64::from(client_config.mq_client_api_timeout()),
             enable_rebalance: self.enable_rebalance.clone(),
@@ -337,6 +419,7 @@ impl PullConsumer {
             message_queue_listener: self.message_queue_listener.clone(),
             register_topics: self.register_topics.clone(),
             register_subscriptions: self.register_subscriptions.clone(),
+            additional_heartbeat_subscriptions: self.additional_heartbeat_subscriptions.clone(),
             topic_queues: self.topic_queues.clone(),
             in_balance_queues: self.in_balance_queues.clone(),
             offset_store: Arc::downgrade(&offset_store),
@@ -399,6 +482,15 @@ impl PullConsumer {
 
     pub async fn is_running(&self) -> bool {
         matches!(&*self.state.lock().await, State::Started { .. })
+    }
+
+    pub async fn update_name_server_address(
+        &self,
+        addresses: &str,
+    ) -> Result<(), PullConsumerError> {
+        let (runtime, _) = self.started_runtime().await?;
+        runtime.update_name_server_address_list(addresses);
+        Ok(())
     }
 
     pub async fn pull(
@@ -562,6 +654,28 @@ impl PullConsumer {
         .await
     }
 
+    pub(crate) async fn lite_pull_with_selector(
+        &self,
+        queue: &MessageQueue,
+        selector: &MessageSelector,
+        offset: i64,
+        max_message_count: i32,
+        timeout_millis: i64,
+    ) -> Result<ProcessedPullResult, PullConsumerError> {
+        self.pull_with_expression_mode(
+            queue,
+            Some(&selector.expression),
+            Some(&selector.expression_type),
+            offset,
+            max_message_count,
+            MAX_PULL_MESSAGE_BYTES,
+            timeout_millis,
+            true,
+            true,
+        )
+        .await
+    }
+
     /// Search a queue by a signed Java millisecond timestamp. A successful
     /// response of `-1` is preserved as a valid empty-queue offset.
     pub async fn search_offset(
@@ -679,6 +793,33 @@ impl PullConsumer {
         timeout_millis: i64,
         suspend: bool,
     ) -> Result<ProcessedPullResult, PullConsumerError> {
+        self.pull_with_expression_mode(
+            input_queue,
+            expression,
+            expression_type,
+            offset,
+            max_message_count,
+            max_size_in_bytes,
+            timeout_millis,
+            suspend,
+            false,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn pull_with_expression_mode(
+        &self,
+        input_queue: &MessageQueue,
+        expression: Option<&str>,
+        expression_type: Option<&str>,
+        offset: i64,
+        max_message_count: i32,
+        max_size_in_bytes: i32,
+        timeout_millis: i64,
+        suspend: bool,
+        lite_pull: bool,
+    ) -> Result<ProcessedPullResult, PullConsumerError> {
         let (runtime, _) = self.started_runtime().await?;
         validate_pull_request(
             input_queue,
@@ -708,8 +849,13 @@ impl PullConsumer {
         } else {
             subscription.get_sub_version()
         };
-        let mut sys_flag =
-            build_pull_sys_flag(false, suspend, true, subscription.is_class_filter_mode());
+        let mut sys_flag = build_pull_sys_flag_with_lite(
+            false,
+            suspend,
+            true,
+            subscription.is_class_filter_mode(),
+            lite_pull,
+        );
         let pull_timeout_millis = if suspend {
             self.config.consumer_timeout_millis_when_suspend()
         } else {
@@ -829,6 +975,19 @@ impl PullConsumer {
         let (_, store) = self.started_runtime().await?;
         let queue = self.queue_with_namespace(queue)?;
         store.persist(&queue).await?;
+        Ok(())
+    }
+
+    pub async fn persist_offsets(
+        &self,
+        input_queues: &[MessageQueue],
+    ) -> Result<(), PullConsumerError> {
+        let (_, store) = self.started_runtime().await?;
+        let queues = input_queues
+            .iter()
+            .map(|queue| self.queue_with_namespace(queue))
+            .collect::<Result<Vec<_>, _>>()?;
+        store.persist_all(&queues).await?;
         Ok(())
     }
 
@@ -959,6 +1118,7 @@ impl PullConsumer {
 struct PullConsumerRegistration {
     group: String,
     message_model: MessageModel,
+    consume_from_where: ConsumeFromWhere,
     unit_mode: bool,
     route_timeout_millis: i64,
     enable_rebalance: Arc<AtomicBool>,
@@ -967,6 +1127,7 @@ struct PullConsumerRegistration {
     message_queue_listener: Arc<RwLock<Option<MessageQueueListener>>>,
     register_topics: Arc<RwLock<BTreeSet<String>>>,
     register_subscriptions: RegisteredSubscriptions,
+    additional_heartbeat_subscriptions: Arc<RwLock<ConsumerSubscriptionDataSet>>,
     topic_queues: Arc<RwLock<HashMap<String, BTreeSet<MessageQueue>>>>,
     in_balance_queues: Arc<RwLock<BTreeSet<MessageQueue>>>,
     offset_store: Weak<dyn OffsetStore>,
@@ -982,7 +1143,7 @@ impl ConsumerRuntime for PullConsumerRegistration {
         // that identity/equality behavior for the heartbeat wire model.
         let registered_subscriptions = read_lock(&self.register_subscriptions);
         #[allow(clippy::mutable_key_type)]
-        let subscription_data_set = if registered_subscriptions.is_empty() {
+        let mut subscription_data_set = if registered_subscriptions.is_empty() {
             read_lock(&self.register_topics)
                 .iter()
                 .map(|topic| {
@@ -998,11 +1159,16 @@ impl ConsumerRuntime for PullConsumerRegistration {
                 .map(|subscription| Some(SharedValue::from(subscription)))
                 .collect::<ConsumerSubscriptionDataSet>()
         };
+        subscription_data_set.extend(
+            read_lock(&self.additional_heartbeat_subscriptions)
+                .iter()
+                .cloned(),
+        );
         ConsumerData {
             group_name: Some(self.group.clone()),
             consume_type: Some(ConsumeType::ConsumeActively),
             message_model: Some(self.message_model),
-            consume_from_where: Some(ConsumeFromWhere::ConsumeFromLastOffset),
+            consume_from_where: Some(self.consume_from_where),
             subscription_data_set: Some(SharedValue::from(subscription_data_set)),
             unit_mode: self.unit_mode,
         }
@@ -1656,6 +1822,7 @@ mod tests {
             registered_subscriptions[0].get_expression_type(),
             Some("SQL92")
         );
+        assert!(consumer.unregister_topic("events").unwrap());
         consumer.clear_register_subscriptions();
         assert!(consumer.register_subscriptions().is_empty());
         consumer.set_enable_rebalance(false);
@@ -1687,6 +1854,7 @@ mod tests {
         let registration = Arc::new(PullConsumerRegistration {
             group: "pull-rebalance-broadcast".to_owned(),
             message_model: MessageModel::Broadcasting,
+            consume_from_where: ConsumeFromWhere::ConsumeFromLastOffset,
             unit_mode: false,
             route_timeout_millis: 100,
             enable_rebalance: Arc::new(AtomicBool::new(true)),
@@ -1695,6 +1863,9 @@ mod tests {
             message_queue_listener: Arc::new(RwLock::new(Some(listener))),
             register_topics: Arc::new(RwLock::new(BTreeSet::from(["orders".to_owned()]))),
             register_subscriptions: Arc::new(RwLock::new(HashMap::new())),
+            additional_heartbeat_subscriptions: Arc::new(RwLock::new(
+                ConsumerSubscriptionDataSet::new(),
+            )),
             topic_queues: Arc::new(RwLock::new(HashMap::from([(
                 "orders".to_owned(),
                 BTreeSet::from([first.clone(), second.clone()]),
@@ -1705,6 +1876,23 @@ mod tests {
             rebalance_execution: tokio::sync::Mutex::new(()),
             rebalance_membership: Mutex::new(HashMap::new()),
         });
+        write_lock(&registration.additional_heartbeat_subscriptions)
+            .insert(Some(SharedValue::from(subscription_all("heartbeat-only"))));
+        let heartbeat_topics = registration
+            .heartbeat_data()
+            .subscription_data_set
+            .unwrap()
+            .snapshot()
+            .into_iter()
+            .flatten()
+            .map(|subscription| {
+                subscription.with(|subscription| subscription.get_topic().unwrap().to_owned())
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            heartbeat_topics,
+            BTreeSet::from(["orders".into(), "heartbeat-only".into()])
+        );
         let owner: Arc<dyn ConsumerRuntime> = registration.clone();
         let lease = runtime
             .register_consumer("pull-rebalance-broadcast", owner)
@@ -1776,6 +1964,7 @@ mod tests {
         let registration = Arc::new(PullConsumerRegistration {
             group: "pull-rebalance-cluster".to_owned(),
             message_model: MessageModel::Clustering,
+            consume_from_where: ConsumeFromWhere::ConsumeFromLastOffset,
             unit_mode: false,
             route_timeout_millis: 100,
             enable_rebalance: Arc::new(AtomicBool::new(true)),
@@ -1784,6 +1973,9 @@ mod tests {
             message_queue_listener: Arc::new(RwLock::new(None)),
             register_topics: Arc::new(RwLock::new(BTreeSet::from(["orders".to_owned()]))),
             register_subscriptions: Arc::new(RwLock::new(HashMap::new())),
+            additional_heartbeat_subscriptions: Arc::new(RwLock::new(
+                ConsumerSubscriptionDataSet::new(),
+            )),
             topic_queues: Arc::new(RwLock::new(HashMap::from([(
                 "orders".to_owned(),
                 BTreeSet::from([first.clone(), second.clone()]),

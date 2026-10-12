@@ -20,6 +20,7 @@ use rocketmq_classic_common::{
     sysflag::pull::{build_pull_sys_flag, clear_commit_offset_flag},
 };
 use rocketmq_classic_core::api::consumer::PullStatus;
+use rocketmq_classic_core::api::extensions::AckStatus;
 use rocketmq_classic_core::api::producer::{SendKind, SendMode};
 use rocketmq_classic_core::route::broker_vip_channel;
 use rocketmq_classic_core::runtime::{
@@ -27,11 +28,14 @@ use rocketmq_classic_core::runtime::{
 };
 use rocketmq_classic_protocol::{
     SharedValue,
-    body::{LockBatchRequestBody, MessageRequestMode, UnlockBatchRequestBody},
+    body::{
+        LockBatchRequestBody, MessageQueueAssignment, MessageRequestMode, UnlockBatchRequestBody,
+    },
     codes::response,
     header::{
         BoundaryType, ConsumerSendMsgBackRequestHeader, GetMaxOffsetRequestHeader,
-        PullMessageRequestHeader, SearchOffsetRequestHeader, SendMessageRequestHeaderV1,
+        PopMessageRequestHeader, PullMessageRequestHeader, SearchOffsetRequestHeader,
+        SendMessageRequestHeaderV1,
     },
     heartbeat::{
         ConsumeFromWhere, ConsumeType, ConsumerData, ConsumerSubscriptionDataSet, SubscriptionData,
@@ -52,6 +56,7 @@ use crate::{
     error::PushConsumerError,
     offset::{LocalFileOffsetStore, OffsetStore, OffsetStoreError, RemoteBrokerOffsetStore},
     offset::{OffsetRead, ReadOffsetType},
+    pop::{PopProcessQueue, PopReceipt, PopStatus, process_pop_reply},
     process_queue::{ConsumeBatch, LockAttemptResult, OrderlyCompletion, ProcessQueue},
     pull::{PullAPIWrapper, build_subscription, resolve_pull_broker_address},
     rebalance::RebalanceService,
@@ -120,11 +125,50 @@ struct PullContext {
     consume_service: ConsumeService,
 }
 
+struct PopConsumeBatchContext {
+    process_queue: Arc<PopProcessQueue>,
+    runtime: Arc<ClientRuntime>,
+    queue: MessageQueue,
+    route_topic: String,
+    consumer_group: String,
+}
+
 struct DesiredAssignment {
     topic: String,
     all_queues: Option<HashSet<MessageQueue>>,
     assigned_queues: HashSet<MessageQueue>,
     pull_queues: HashSet<MessageQueue>,
+    pop_queues: HashSet<MessageQueue>,
+}
+
+struct BrokerAssignmentQueues {
+    assigned: HashSet<MessageQueue>,
+    pull: HashSet<MessageQueue>,
+    pop: HashSet<MessageQueue>,
+}
+
+fn partition_broker_assignments(
+    assignments: impl IntoIterator<Item = Option<MessageQueueAssignment>>,
+) -> Option<BrokerAssignmentQueues> {
+    let mut partition = BrokerAssignmentQueues {
+        assigned: HashSet::new(),
+        pull: HashSet::new(),
+        pop: HashSet::new(),
+    };
+    for assignment in assignments {
+        let assignment = assignment?;
+        let Some(queue) = assignment.message_queue.as_ref().map(SharedValue::snapshot) else {
+            continue;
+        };
+        partition.assigned.insert(queue.clone());
+        if assignment.mode == Some(MessageRequestMode::Pop) {
+            partition.pop.insert(queue);
+        } else {
+            // Java treats a missing mode the same as PULL during rebalance.
+            partition.pull.insert(queue);
+        }
+    }
+    Some(partition)
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -243,14 +287,14 @@ impl StartupStage {
     }
 }
 
-/// Java-compatible Push startup, assignment lifecycle and listener modes.
-/// POP remains owned by a later phase.
+/// Java-compatible Push startup, assignment lifecycle, listener modes, and POP flow.
 pub struct PushConsumer {
     config: PushConsumerConfig,
     manager: ClientRuntimeManager,
     state: tokio::sync::Mutex<State>,
     offset_store: std::sync::Mutex<Option<Arc<dyn OffsetStore>>>,
     listener: RwLock<Option<PushMessageListener>>,
+    pop_listener: RwLock<Option<PushMessageListener>>,
     subscription_config: RwLock<HashMap<String, String>>,
     subscriptions: Arc<RwLock<HashMap<String, SubscriptionData>>>,
     topic_queues: Arc<RwLock<HashMap<String, BTreeSet<MessageQueue>>>>,
@@ -258,6 +302,10 @@ pub struct PushConsumer {
     pending_orderly_unlocks: Arc<RwLock<HashSet<MessageQueue>>>,
     rebalance_service: RebalanceService,
     offset_corrections_pending: Arc<RwLock<HashSet<MessageQueue>>>,
+    pop_process_queues: Arc<RwLock<HashMap<MessageQueue, Arc<PopProcessQueue>>>>,
+    pop_workers: std::sync::Mutex<HashMap<MessageQueue, tokio::task::JoinHandle<()>>>,
+    pop_consume_workers: std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>>,
+    pop_consume_semaphore: Arc<tokio::sync::Semaphore>,
     next_generation: AtomicU64,
     next_retry_message_id: AtomicU64,
     pull_api: PullAPIWrapper,
@@ -279,6 +327,7 @@ impl PushConsumer {
     }
 
     fn with_manager(config: PushConsumerConfig, manager: ClientRuntimeManager) -> Self {
+        let pop_consume_limit = usize::try_from(config.consume_thread_max().max(1)).unwrap_or(1);
         let pull_api = PullAPIWrapper::new(config.unit_mode());
         let rebalance_service = RebalanceService::new(config.allocate_message_queue_strategy());
         Self {
@@ -287,6 +336,7 @@ impl PushConsumer {
             state: tokio::sync::Mutex::new(State::Created),
             offset_store: std::sync::Mutex::new(None),
             listener: RwLock::new(None),
+            pop_listener: RwLock::new(None),
             subscription_config: RwLock::new(HashMap::new()),
             subscriptions: Arc::new(RwLock::new(HashMap::new())),
             topic_queues: Arc::new(RwLock::new(HashMap::new())),
@@ -294,6 +344,10 @@ impl PushConsumer {
             pending_orderly_unlocks: Arc::new(RwLock::new(HashSet::new())),
             rebalance_service,
             offset_corrections_pending: Arc::new(RwLock::new(HashSet::new())),
+            pop_process_queues: Arc::new(RwLock::new(HashMap::new())),
+            pop_workers: std::sync::Mutex::new(HashMap::new()),
+            pop_consume_workers: std::sync::Mutex::new(Vec::new()),
+            pop_consume_semaphore: Arc::new(tokio::sync::Semaphore::new(pop_consume_limit)),
             next_generation: AtomicU64::new(1),
             next_retry_message_id: AtomicU64::new(0),
             pull_api,
@@ -2150,6 +2204,7 @@ impl PushConsumer {
         let listener = read_lock(&self.listener)
             .clone()
             .ok_or(PushConsumerError::MissingMessageListener)?;
+        *write_lock(&self.pop_listener) = Some(listener.clone());
         let orderly_lock_settings = match &listener {
             PushMessageListener::Concurrently(_) => None,
             PushMessageListener::Orderly(_) => Some(
@@ -2370,6 +2425,25 @@ impl PushConsumer {
         Ok(())
     }
 
+    fn subscribe_pop_retry_topic(&self, topic: &str, consumer_group: &str) {
+        let retry_topic = format!("%RETRY%{consumer_group}_{topic}");
+        match build_subscription(&retry_topic, Some("*"), Some("TAG")) {
+            Ok(mut subscription) => {
+                subscription.set_sub_version(epoch_millis());
+                write_lock(&self.subscriptions).insert(retry_topic, subscription);
+            }
+            Err(error) => {
+                tracing::warn!(topic, error = %error, "failed to subscribe POP retry topic")
+            }
+        }
+    }
+
+    fn unsubscribe_pop_retry_topic(&self, topic: &str, consumer_group: &str) {
+        let retry_topic = format!("%RETRY%{consumer_group}_{topic}");
+        write_lock(&self.subscriptions).remove(&retry_topic);
+        write_lock(&self.topic_queues).remove(&retry_topic);
+    }
+
     fn select_offset_store(
         &self,
         runtime: &Arc<ClientRuntime>,
@@ -2395,8 +2469,543 @@ impl PushConsumer {
         Ok(store)
     }
 
-    pub(crate) async fn rebalance_once(
+    async fn pop_loop(
+        self: Arc<Self>,
+        process_queue: Arc<PopProcessQueue>,
+        consumer_group: String,
+        subscription: SubscriptionData,
+    ) {
+        let queue = process_queue.queue().clone();
+        let Some(topic) = queue.topic().map(str::to_owned) else {
+            return;
+        };
+        loop {
+            if process_queue.is_dropped() || !self.rebalance_is_started().await {
+                return;
+            }
+            if !read_lock(&self.pop_process_queues)
+                .get(&queue)
+                .is_some_and(|current| {
+                    current.generation() == process_queue.generation()
+                        && Arc::ptr_eq(current, &process_queue)
+                })
+            {
+                return;
+            }
+            let Some(context) = self.pull_context().await else {
+                return;
+            };
+            process_queue.set_last_pop_timestamp(epoch_millis());
+            if self.paused.load(Ordering::Acquire) {
+                tokio::time::sleep(Duration::from_millis(
+                    PULL_TIME_DELAY_MILLIS_WHEN_SUSPEND as u64,
+                ))
+                .await;
+                continue;
+            }
+            if process_queue.wait_ack_count() > i64::from(self.config.pop_threshold_for_queue()) {
+                tokio::time::sleep(Duration::from_millis(
+                    PULL_TIME_DELAY_MILLIS_WHEN_CACHE_FLOW_CONTROL as u64,
+                ))
+                .await;
+                continue;
+            }
+
+            let broker_name = queue.broker_name().unwrap_or_default();
+            let broker_address = match self
+                .resolve_pop_broker_address(&context.runtime, &topic, broker_name)
+                .await
+            {
+                Ok(Some((_, address))) => address,
+                Ok(None) => {
+                    tokio::time::sleep(Duration::from_millis(
+                        PULL_TIME_DELAY_MILLIS_WHEN_EXCEPTION as u64,
+                    ))
+                    .await;
+                    continue;
+                }
+                Err(error) => {
+                    tracing::warn!(queue = %queue, error = %error, "push POP broker lookup failed");
+                    tokio::time::sleep(Duration::from_millis(
+                        PULL_TIME_DELAY_MILLIS_WHEN_EXCEPTION as u64,
+                    ))
+                    .await;
+                    continue;
+                }
+            };
+            let poll_time = BROKER_SUSPEND_MAX_TIME_MILLIS;
+            let request = PopMessageRequestHeader {
+                consumer_group: consumer_group.clone(),
+                topic: topic.clone(),
+                queue_id: queue.queue_id(),
+                max_msg_nums: self.config.pop_batch_nums(),
+                invisible_time: self.config.pop_invisible_time_millis(),
+                poll_time,
+                born_time: epoch_millis(),
+                init_mode: if self.config.consume_from_where()
+                    == ConsumeFromWhere::ConsumeFromFirstOffset
+                {
+                    0
+                } else {
+                    1
+                },
+                expression_type: subscription.get_expression_type().map(str::to_owned),
+                expression: subscription.get_sub_string().map(str::to_owned),
+                order: Some(false),
+                attempt_id: None,
+            };
+            let deadline = Instant::now()
+                + Duration::from_millis(poll_time.saturating_add(10_000).max(0) as u64);
+            let reply = context
+                .runtime
+                .api()
+                .pop_message(&broker_address, &request, deadline)
+                .await;
+            let reply = match reply {
+                Ok(reply) => reply,
+                Err(error) => {
+                    if matches!(
+                        &error,
+                        rocketmq_classic_core::error::RpcError::Response {
+                            code: response::FLOW_CONTROL,
+                            ..
+                        }
+                    ) {
+                        tokio::time::sleep(Duration::from_millis(
+                            PULL_TIME_DELAY_MILLIS_WHEN_BROKER_FLOW_CONTROL as u64,
+                        ))
+                        .await;
+                    } else {
+                        tracing::debug!(queue = %queue, error = %error, "push POP request failed");
+                        tokio::time::sleep(Duration::from_millis(
+                            PULL_TIME_DELAY_MILLIS_WHEN_EXCEPTION as u64,
+                        ))
+                        .await;
+                    }
+                    continue;
+                }
+            };
+            let result = match process_pop_reply(
+                reply,
+                &request,
+                broker_name,
+                DecodeOptions {
+                    read_body: self.config.client_config().decode_read_body,
+                    decompress_body: self.config.client_config().decode_decompress_body,
+                    ..DecodeOptions::default()
+                },
+                DecodeLimits::default(),
+            ) {
+                Ok(result) => result,
+                Err(error) => {
+                    tracing::warn!(queue = %queue, error = %error, "push POP response processing failed");
+                    tokio::time::sleep(Duration::from_millis(
+                        PULL_TIME_DELAY_MILLIS_WHEN_EXCEPTION as u64,
+                    ))
+                    .await;
+                    continue;
+                }
+            };
+            if result.status() == &PopStatus::PollingFull {
+                tokio::time::sleep(Duration::from_millis(
+                    PULL_TIME_DELAY_MILLIS_WHEN_EXCEPTION as u64,
+                ))
+                .await;
+                continue;
+            }
+            if result.status() != &PopStatus::Found {
+                continue;
+            }
+            let messages = result.messages().unwrap_or_default().to_vec();
+            let (messages, discarded) = self.filter_pop_messages(&subscription, messages);
+            for message in discarded {
+                if let Err(error) = self
+                    .ack_pop_message(&context.runtime, &message, &topic, &consumer_group)
+                    .await
+                {
+                    tracing::debug!(queue = %queue, error = %error, "failed to ACK a filtered POP message");
+                }
+            }
+            if messages.is_empty() {
+                continue;
+            }
+            process_queue.inc_found_messages(messages.len());
+            self.dispatch_pop_messages(
+                process_queue.clone(),
+                context.runtime.clone(),
+                queue.clone(),
+                topic.clone(),
+                consumer_group.clone(),
+                messages,
+            )
+            .await;
+            if self.config.pull_interval_millis() > 0 {
+                tokio::time::sleep(Duration::from_millis(
+                    self.config.pull_interval_millis() as u64
+                ))
+                .await;
+            }
+        }
+    }
+
+    async fn resolve_pop_broker_address(
         &self,
+        runtime: &Arc<ClientRuntime>,
+        topic: &str,
+        broker_name: &str,
+    ) -> Result<Option<(String, String)>, PushConsumerError> {
+        let mut target_broker = broker_name.to_owned();
+        let mut route = runtime.route_snapshot()?;
+        if broker_name.starts_with("%LMQ%") {
+            let logical_queue = MessageQueue::new(topic, broker_name, 0);
+            if let Some(broker) = route.broker_name(&logical_queue)? {
+                target_broker = broker.to_owned();
+            }
+        }
+        let mut address = route.subscribe_address(&target_broker, 0, true)?;
+        if address.is_none() {
+            let timeout = i64::from(self.config.client_config().mq_client_api_timeout()).max(0);
+            runtime
+                .update_topic_route(
+                    topic,
+                    Instant::now() + Duration::from_millis(timeout as u64),
+                )
+                .await?;
+            route = runtime.route_snapshot()?;
+            address = route.subscribe_address(&target_broker, 0, true)?;
+        }
+        let Some(address) = address else {
+            return Ok(None);
+        };
+        let address = broker_vip_channel(
+            self.config.client_config().vip_channel_enabled(),
+            &address.address,
+        )?;
+        Ok(Some((target_broker, address)))
+    }
+
+    fn filter_pop_messages(
+        &self,
+        subscription: &SubscriptionData,
+        messages: Vec<MessageExt>,
+    ) -> (Vec<MessageExt>, Vec<MessageExt>) {
+        let tags = subscription
+            .get_tags_set()
+            .map(|tags| tags.snapshot())
+            .unwrap_or_default();
+        let max_reconsume_times = if self.config.max_reconsume_times() == -1 {
+            16
+        } else {
+            self.config.max_reconsume_times()
+        };
+        let mut accepted = Vec::with_capacity(messages.len());
+        let mut discarded = Vec::new();
+        for message in messages {
+            let tag_matches = subscription.is_class_filter_mode()
+                || tags.is_empty()
+                || message
+                    .message()
+                    .tags()
+                    .is_some_and(|tag| tags.contains(&Some(tag.to_owned())));
+            if !tag_matches || message.reconsume_times() > max_reconsume_times {
+                discarded.push(message);
+            } else {
+                accepted.push(message);
+            }
+        }
+        (accepted, discarded)
+    }
+
+    async fn dispatch_pop_messages(
+        self: &Arc<Self>,
+        process_queue: Arc<PopProcessQueue>,
+        runtime: Arc<ClientRuntime>,
+        queue: MessageQueue,
+        route_topic: String,
+        consumer_group: String,
+        messages: Vec<MessageExt>,
+    ) {
+        let Some(listener) = read_lock(&self.pop_listener).clone() else {
+            process_queue.dec_found_messages(messages.len());
+            return;
+        };
+        let batch_size = self.config.consume_message_batch_max_size().max(1) as usize;
+        for batch in messages.chunks(batch_size) {
+            let Ok(permit) = self.pop_consume_semaphore.clone().acquire_owned().await else {
+                return;
+            };
+            let consumer = self.clone();
+            let process_queue = process_queue.clone();
+            let runtime = runtime.clone();
+            let queue = queue.clone();
+            let route_topic = route_topic.clone();
+            let consumer_group = consumer_group.clone();
+            let listener = listener.clone();
+            let messages = batch.to_vec();
+            let batch_context = PopConsumeBatchContext {
+                process_queue,
+                runtime,
+                queue,
+                route_topic,
+                consumer_group,
+            };
+            let worker = tokio::spawn(async move {
+                let _permit = permit;
+                consumer
+                    .consume_pop_batch(batch_context, listener, messages)
+                    .await;
+            });
+            let mut workers = self
+                .pop_consume_workers
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            workers.retain(|worker| !worker.is_finished());
+            workers.push(worker);
+        }
+    }
+
+    async fn consume_pop_batch(
+        self: Arc<Self>,
+        batch_context: PopConsumeBatchContext,
+        listener: PushMessageListener,
+        mut messages: Vec<MessageExt>,
+    ) {
+        let PopConsumeBatchContext {
+            process_queue,
+            runtime,
+            queue,
+            route_topic,
+            consumer_group,
+        } = batch_context;
+        if process_queue.is_dropped() {
+            return;
+        }
+        if pop_batch_is_expired(&messages, epoch_millis()) {
+            process_queue.dec_found_messages(messages.len());
+            tracing::debug!(
+                queue = %queue,
+                message_count = messages.len(),
+                "push POP batch expired before listener dispatch"
+            );
+            return;
+        }
+        self.reset_retry_and_namespace_for_pop(&mut messages, &consumer_group);
+        let (ack_index, delay_level, orderly_delay_millis) = match listener {
+            PushMessageListener::Concurrently(listener) => {
+                let context = ConsumeConcurrentlyContext::new(queue.clone());
+                let listener_messages = messages.clone();
+                let callback = tokio::spawn(async move {
+                    listener.consume_message(listener_messages, context).await
+                });
+                match callback.await {
+                    Ok((Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)) => (
+                        context
+                            .ack_index()
+                            .min(i32::try_from(messages.len()).unwrap_or(i32::MAX) - 1),
+                        context.delay_level_when_next_consume(),
+                        None,
+                    ),
+                    Ok((_, context)) => (-1, context.delay_level_when_next_consume(), None),
+                    Err(error) => {
+                        tracing::warn!(queue = %queue, error = %error, "push POP concurrent listener failed");
+                        (-1, 0, None)
+                    }
+                }
+            }
+            PushMessageListener::Orderly(listener) => {
+                let context = ConsumeOrderlyContext::new(queue.clone());
+                let listener_messages = messages.clone();
+                let callback = tokio::spawn(async move {
+                    listener.consume_message(listener_messages, context).await
+                });
+                match callback.await {
+                    Ok((
+                        Some(ConsumeOrderlyStatus::Success | ConsumeOrderlyStatus::Commit),
+                        context,
+                    )) if context.auto_commit() => (
+                        i32::try_from(messages.len()).unwrap_or(i32::MAX) - 1,
+                        0,
+                        None,
+                    ),
+                    Ok((_, context)) => (-1, 0, Some(context.suspend_current_queue_time_millis())),
+                    Err(error) => {
+                        tracing::warn!(queue = %queue, error = %error, "push POP orderly listener failed");
+                        (-1, 0, None)
+                    }
+                }
+            }
+        };
+
+        let max_reconsume_times = if self.config.max_reconsume_times() == -1 {
+            16
+        } else {
+            self.config.max_reconsume_times()
+        };
+        let delay_table = pop_delay_seconds();
+        for (index, mut message) in messages.into_iter().enumerate() {
+            let acknowledged = i32::try_from(index).unwrap_or(i32::MAX) <= ack_index;
+            process_queue.ack();
+            if acknowledged {
+                if let Err(error) = self
+                    .ack_pop_message(&runtime, &message, &route_topic, &consumer_group)
+                    .await
+                {
+                    tracing::debug!(queue = %queue, error = %error, "push POP ACK failed");
+                }
+                continue;
+            }
+
+            if message.reconsume_times() >= max_reconsume_times {
+                let max_delay_millis = i64::from(*delay_table.last().unwrap_or(&7_200)) * 1_000;
+                if epoch_millis().saturating_sub(message.born_timestamp()) > max_delay_millis * 2 {
+                    let _ = self
+                        .ack_pop_message(&runtime, &message, &route_topic, &consumer_group)
+                        .await;
+                    continue;
+                }
+                let age_millis = epoch_millis().saturating_sub(message.born_timestamp());
+                let delay_index = delay_table
+                    .iter()
+                    .enumerate()
+                    .rev()
+                    .find(|(_, delay)| age_millis >= i64::from(**delay) * 1_000)
+                    .map_or(delay_table.len() - 1, |(index, _)| {
+                        (index + 1).min(delay_table.len() - 1)
+                    });
+                self.change_pop_invisible_time(
+                    &runtime,
+                    &mut message,
+                    &route_topic,
+                    &consumer_group,
+                    i64::from(delay_table[delay_index]) * 1_000,
+                )
+                .await;
+                continue;
+            }
+
+            let invisible_time = if let Some(delay_millis) = orderly_delay_millis {
+                delay_millis.clamp(10, 30_000)
+            } else {
+                let delay_index = if delay_level == 0 {
+                    usize::try_from(message.reconsume_times().max(0)).unwrap_or(0)
+                } else {
+                    usize::try_from(delay_level.max(0)).unwrap_or(0)
+                };
+                i64::from(
+                    *delay_table
+                        .get(delay_index)
+                        .unwrap_or_else(|| delay_table.last().unwrap()),
+                ) * 1_000
+            };
+            self.change_pop_invisible_time(
+                &runtime,
+                &mut message,
+                &route_topic,
+                &consumer_group,
+                invisible_time,
+            )
+            .await;
+        }
+    }
+
+    fn reset_retry_and_namespace_for_pop(&self, messages: &mut [MessageExt], consumer_group: &str) {
+        let mut config = self.config.client_config().clone();
+        let retry_topic = format!("%RETRY%{consumer_group}");
+        for message in messages {
+            if message.message().topic() == retry_topic {
+                if let Some(origin_topic) = message
+                    .message()
+                    .properties()
+                    .get(PROPERTY_RETRY_TOPIC)
+                    .cloned()
+                {
+                    message.message_mut().set_topic(origin_topic);
+                }
+            }
+            if let Ok(Some(topic)) = config.without_namespace(Some(message.message().topic())) {
+                message.message_mut().set_topic(topic);
+            }
+        }
+    }
+
+    async fn ack_pop_message(
+        &self,
+        runtime: &Arc<ClientRuntime>,
+        message: &MessageExt,
+        route_topic: &str,
+        consumer_group: &str,
+    ) -> Result<AckStatus, PushConsumerError> {
+        let raw = message
+            .message()
+            .properties()
+            .get(PROPERTY_POP_CK)
+            .ok_or(PushConsumerError::MissingPopReceipt)?;
+        let receipt = PopReceipt::parse(raw.clone())?;
+        let address = self
+            .resolve_pop_broker_address(runtime, route_topic, receipt.broker_name())
+            .await?
+            .ok_or_else(|| PushConsumerError::PopBrokerNotFound(receipt.broker_name().to_owned()))?
+            .1;
+        let header = receipt.ack_header(message.message().topic(), consumer_group);
+        Ok(runtime
+            .api()
+            .ack_message(
+                &address,
+                &header,
+                Instant::now() + Duration::from_millis(3_000),
+            )
+            .await?)
+    }
+
+    async fn change_pop_invisible_time(
+        &self,
+        runtime: &Arc<ClientRuntime>,
+        message: &mut MessageExt,
+        route_topic: &str,
+        consumer_group: &str,
+        invisible_time: i64,
+    ) {
+        let Some(raw) = message.message().properties().get(PROPERTY_POP_CK).cloned() else {
+            return;
+        };
+        let Ok(receipt) = PopReceipt::parse(raw) else {
+            return;
+        };
+        let Ok(Some((_, address))) = self
+            .resolve_pop_broker_address(runtime, route_topic, receipt.broker_name())
+            .await
+        else {
+            return;
+        };
+        let header = receipt.change_invisible_header(
+            message.message().topic(),
+            consumer_group,
+            invisible_time,
+        );
+        match runtime
+            .api()
+            .change_invisible_time(
+                &address,
+                receipt.broker_name(),
+                &header,
+                Instant::now() + Duration::from_millis(3_000),
+            )
+            .await
+        {
+            Ok(result) if result.status == AckStatus::Ok => {
+                if let Some(extra_info) = result.extra_info {
+                    let _ = message
+                        .message_mut()
+                        .set_system_property(PROPERTY_POP_CK, extra_info);
+                }
+            }
+            Ok(_) => {}
+            Err(error) => tracing::debug!(error = %error, "push POP invisibility update failed"),
+        }
+    }
+
+    pub(crate) async fn rebalance_once(
+        self: &Arc<Self>,
         strategy: &dyn crate::rebalance::AllocateMessageQueueStrategy,
     ) -> bool {
         let Some(context) = self.pull_context().await else {
@@ -2422,15 +3031,18 @@ impl PushConsumer {
         let mut assignments = Vec::new();
         let mut authoritative_topics = HashSet::new();
         let mut desired_push_queues = HashSet::new();
+        let mut desired_pop_queues = HashSet::new();
         let mut missing_route_notifications = Vec::new();
         for topic in &subscriptions {
             if !self.rebalance_is_started().await {
                 return true;
             }
             let message_model = self.config.message_model();
-            if message_model == rocketmq_classic_protocol::heartbeat::MessageModel::LiteSelective {
-                // Java RebalanceImpl's default model branch does no local
-                // allocation. POP assignment is owned by a later phase.
+            if message_model == rocketmq_classic_protocol::heartbeat::MessageModel::LiteSelective
+                && (self.config.client_rebalance() || self.consume_orderly.load(Ordering::Acquire))
+            {
+                // Java's LiteSelective rebalance uses the default no-local-allocation branch;
+                // broker assignment is used when client-side rebalance is disabled.
                 continue;
             }
 
@@ -2450,6 +3062,7 @@ impl PushConsumer {
                     all_queues: Some(all_queue_set.clone()),
                     assigned_queues: all_queue_set.clone(),
                     pull_queues: all_queue_set,
+                    pop_queues: HashSet::new(),
                 });
                 continue;
             }
@@ -2530,6 +3143,7 @@ impl PushConsumer {
                     all_queues: Some(all_queue_set),
                     assigned_queues: assigned.clone(),
                     pull_queues: assigned,
+                    pop_queues: HashSet::new(),
                 });
                 authoritative_topics.insert(topic.clone());
                 continue;
@@ -2558,41 +3172,31 @@ impl PushConsumer {
                         continue;
                     }
                 };
-                let mut assigned = HashSet::new();
-                let mut pull_queues = HashSet::new();
-                let mut has_pop_assignment = false;
-                let mut valid = true;
-                for assignment in assignment_set {
-                    let Some(assignment) = assignment else {
-                        valid = false;
-                        break;
-                    };
-                    let Some(queue) = assignment.message_queue.as_ref().map(SharedValue::snapshot)
-                    else {
-                        continue;
-                    };
-                    assigned.insert(queue.clone());
-                    if assignment.mode == Some(MessageRequestMode::Pop) {
-                        has_pop_assignment = true;
-                    } else {
-                        pull_queues.insert(queue);
-                    }
-                }
-                if !valid {
+                let Some(BrokerAssignmentQueues {
+                    assigned,
+                    pull: pull_queues,
+                    pop: pop_queues,
+                }) = partition_broker_assignments(assignment_set)
+                else {
                     balanced = false;
                     continue;
-                }
-                if has_pop_assignment {
-                    // POP ProcessQueues are owned by Phase 13.
-                    balanced = false;
+                };
+                if !topic.starts_with("%RETRY%") {
+                    if pop_queues.is_empty() && !pull_queues.is_empty() {
+                        self.subscribe_pop_retry_topic(topic, &consumer_group);
+                    } else if !pop_queues.is_empty() && pull_queues.is_empty() {
+                        self.unsubscribe_pop_retry_topic(topic, &consumer_group);
+                    }
                 }
                 desired_push_queues.extend(pull_queues.iter().cloned());
+                desired_pop_queues.extend(pop_queues.iter().cloned());
                 authoritative_topics.insert(topic.clone());
                 assignments.push(DesiredAssignment {
                     topic: topic.clone(),
                     all_queues: None,
                     assigned_queues: assigned,
                     pull_queues,
+                    pop_queues,
                 });
             };
         }
@@ -2640,6 +3244,53 @@ impl PushConsumer {
                 }
                 false => balanced = false,
             }
+        }
+
+        let current_pop_queues = read_lock(&self.pop_process_queues)
+            .iter()
+            .map(|(queue, process_queue)| (queue.clone(), process_queue.clone()))
+            .collect::<Vec<_>>();
+        for (queue, process_queue) in current_pop_queues {
+            if !self.rebalance_is_started().await {
+                return true;
+            }
+            let Some(topic) = queue.topic() else {
+                balanced = false;
+                continue;
+            };
+            let should_remove = process_queue.is_dropped()
+                || process_queue.is_pull_expired()
+                || !subscribed_topics.contains(topic)
+                || (authoritative_topics.contains(topic) && !desired_pop_queues.contains(&queue));
+            if !should_remove {
+                continue;
+            }
+            process_queue.drop_assignment();
+            let removed = {
+                let mut queues = write_lock(&self.pop_process_queues);
+                if queues
+                    .get(&queue)
+                    .is_some_and(|current| Arc::ptr_eq(current, &process_queue))
+                {
+                    queues.remove(&queue);
+                    true
+                } else {
+                    false
+                }
+            };
+            if !removed {
+                continue;
+            }
+            let worker = self
+                .pop_workers
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .remove(&queue);
+            if let Some(worker) = worker {
+                worker.abort();
+                let _ = worker.await;
+            }
+            changed_queues.insert(queue);
         }
 
         let mut additions = desired_push_queues.into_iter().collect::<Vec<_>>();
@@ -2746,6 +3397,96 @@ impl PushConsumer {
             }
         }
 
+        let mut pop_additions = desired_pop_queues.into_iter().collect::<Vec<_>>();
+        pop_additions.sort();
+        for queue in pop_additions {
+            if !self.rebalance_is_started().await {
+                return true;
+            }
+            let Some(topic) = queue.topic() else {
+                balanced = false;
+                continue;
+            };
+            if !subscribed_topics.contains(topic) {
+                continue;
+            }
+            if read_lock(&self.process_queues)
+                .get(&queue)
+                .is_some_and(|process_queue| {
+                    process_queue
+                        .snapshot(process_queue.generation())
+                        .is_ok_and(|snapshot| !snapshot.dropped)
+                })
+            {
+                balanced = false;
+                continue;
+            }
+            let subscription = match read_lock(&self.subscriptions).get(topic).cloned() {
+                Some(subscription) => subscription,
+                None => {
+                    balanced = false;
+                    continue;
+                }
+            };
+            let mut workers = self
+                .pop_workers
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if workers
+                .get(&queue)
+                .is_some_and(|worker| !worker.is_finished())
+            {
+                if read_lock(&self.pop_process_queues).contains_key(&queue) {
+                    continue;
+                }
+                workers.remove(&queue).unwrap().abort();
+            } else {
+                workers.remove(&queue);
+            }
+            drop(workers);
+
+            if let Some(existing) = read_lock(&self.pop_process_queues).get(&queue) {
+                if !existing.is_dropped() && !existing.is_pull_expired() {
+                    balanced = false;
+                    continue;
+                }
+            }
+            let generation = match self.next_generation.fetch_update(
+                Ordering::AcqRel,
+                Ordering::Acquire,
+                |value| value.checked_add(1),
+            ) {
+                Ok(generation) => generation,
+                Err(_) => {
+                    balanced = false;
+                    continue;
+                }
+            };
+            let process_queue = Arc::new(PopProcessQueue::new(queue.clone(), generation));
+            {
+                let mut queues = write_lock(&self.pop_process_queues);
+                if queues
+                    .get(&queue)
+                    .is_some_and(|current| !current.is_dropped() && !current.is_pull_expired())
+                {
+                    balanced = false;
+                    continue;
+                }
+                queues.insert(queue.clone(), process_queue.clone());
+            }
+            let consumer = self.clone();
+            let pop_queue = process_queue.clone();
+            let group = consumer_group.clone();
+            let worker = tokio::spawn(async move {
+                consumer.pop_loop(pop_queue, group, subscription).await;
+            });
+            self.pop_workers
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(queue.clone(), worker);
+            changed_queues.insert(queue);
+        }
+
         for assignment in &assignments {
             let expected = assignment
                 .pull_queues
@@ -2764,6 +3505,22 @@ impl PushConsumer {
                 .map(|(queue, _)| queue.clone())
                 .collect::<HashSet<_>>();
             if expected != working {
+                balanced = false;
+            }
+            let expected_pop = assignment
+                .pop_queues
+                .iter()
+                .filter(|queue| queue.topic() == Some(assignment.topic.as_str()))
+                .cloned()
+                .collect::<HashSet<_>>();
+            let working_pop = read_lock(&self.pop_process_queues)
+                .iter()
+                .filter(|(queue, process_queue)| {
+                    queue.topic() == Some(assignment.topic.as_str()) && !process_queue.is_dropped()
+                })
+                .map(|(queue, _)| queue.clone())
+                .collect::<HashSet<_>>();
+            if expected_pop != working_pop {
                 balanced = false;
             }
             let queue_changed = changed_queues.iter().any(|queue| {
@@ -2788,6 +3545,7 @@ impl PushConsumer {
                 all_queues: Some(empty.clone()),
                 assigned_queues: empty.clone(),
                 pull_queues: empty,
+                pop_queues: HashSet::new(),
             };
             if !self
                 .notify_assignment_changed(&context.runtime, &assignment)
@@ -3441,6 +4199,45 @@ impl PushConsumer {
                 State::Created | State::Shutdown => unreachable!("state checked before move"),
             }
         };
+        for process_queue in write_lock(&self.pop_process_queues).values() {
+            process_queue.drop_assignment();
+        }
+        write_lock(&self.pop_process_queues).clear();
+        let pop_workers = self
+            .pop_workers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .drain()
+            .map(|(_, worker)| worker)
+            .collect::<Vec<_>>();
+        for worker in &pop_workers {
+            worker.abort();
+        }
+        for worker in pop_workers {
+            let _ = worker.await;
+        }
+        let pop_consume_workers = self
+            .pop_consume_workers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .drain(..)
+            .collect::<Vec<_>>();
+        for mut worker in pop_consume_workers {
+            if self.config.await_termination_millis_when_shutdown() > 0
+                && tokio::time::timeout(
+                    Duration::from_millis(
+                        self.config.await_termination_millis_when_shutdown() as u64
+                    ),
+                    &mut worker,
+                )
+                .await
+                .is_ok()
+            {
+                continue;
+            }
+            worker.abort();
+            let _ = worker.await;
+        }
         let process_queues = read_lock(&self.process_queues)
             .iter()
             .map(|(queue, process_queue)| (queue.clone(), process_queue.clone()))
@@ -3609,6 +4406,29 @@ fn epoch_millis() -> i64 {
         .map_or(0, |duration| {
             duration.as_millis().min(i64::MAX as u128) as i64
         })
+}
+
+fn pop_delay_seconds() -> &'static [i32] {
+    &[
+        10, 30, 60, 120, 180, 240, 300, 360, 420, 480, 540, 600, 1_200, 1_800, 3_600, 7_200,
+    ]
+}
+
+fn pop_batch_is_expired(messages: &[MessageExt], now_millis: i64) -> bool {
+    let Some(raw_receipt) = messages
+        .first()
+        .and_then(|message| message.message().properties().get(PROPERTY_POP_CK))
+    else {
+        return true;
+    };
+    let Ok(receipt) = PopReceipt::parse(raw_receipt.clone()) else {
+        return true;
+    };
+    if receipt.pop_time() <= 0 || receipt.invisible_time() <= 0 {
+        return true;
+    }
+
+    now_millis.saturating_sub(receipt.pop_time()) >= receipt.invisible_time()
 }
 
 fn java_string_cmp(left: &str, right: &str) -> std::cmp::Ordering {
@@ -3785,6 +4605,80 @@ mod tests {
         let mut message = MessageExt::new(Message::new("orders", b"body".to_vec()));
         message.set_queue_offset(offset);
         message
+    }
+
+    fn pop_receipt_message(receipt: Option<&str>) -> MessageExt {
+        let mut message = MessageExt::new(Message::new("orders", b"body".to_vec()));
+        if let Some(receipt) = receipt {
+            message
+                .message_mut()
+                .set_system_property(PROPERTY_POP_CK, receipt)
+                .unwrap();
+        }
+        message
+    }
+
+    #[test]
+    fn pop_batch_expiry_uses_receipt_invisibility_boundary_and_rejects_invalid_receipts() {
+        let message = pop_receipt_message(Some("10 1000 50 2 0 broker-a 0 10"));
+        assert!(!pop_batch_is_expired(std::slice::from_ref(&message), 1_049));
+        assert!(pop_batch_is_expired(std::slice::from_ref(&message), 1_050));
+
+        assert!(pop_batch_is_expired(&[], 1_049));
+        assert!(pop_batch_is_expired(&[pop_receipt_message(None)], 1_049));
+        for receipt in [
+            "invalid receipt",
+            "10 invalid 50 2 0 broker-a 0 10",
+            "10 1000 50",
+            "10 0 50 2 0 broker-a 0 10",
+            "10 1000 0 2 0 broker-a 0 10",
+        ] {
+            assert!(
+                pop_batch_is_expired(&[pop_receipt_message(Some(receipt))], 1_049),
+                "receipt should be treated as expired: {receipt}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn expired_pop_batch_skips_listener_and_releases_found_message_count() {
+        let mut config = PushConsumerConfig::new("expired-pop-batch").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let runtime = manager
+            .get_or_create(consumer.config.client_config())
+            .await
+            .unwrap();
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let process_queue = Arc::new(PopProcessQueue::new(queue.clone(), 1));
+        process_queue.inc_found_messages(1);
+        let listener_called = Arc::new(AtomicBool::new(false));
+        let listener = PushMessageListener::concurrently({
+            let listener_called = listener_called.clone();
+            move |_messages, context| {
+                listener_called.store(true, Ordering::Release);
+                std::future::ready((Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context))
+            }
+        });
+
+        consumer
+            .consume_pop_batch(
+                PopConsumeBatchContext {
+                    process_queue: process_queue.clone(),
+                    runtime: runtime.clone(),
+                    queue,
+                    route_topic: "orders".to_owned(),
+                    consumer_group: "expired-pop-batch".to_owned(),
+                },
+                listener,
+                vec![pop_receipt_message(Some("10 1000 50 2 0 broker-a 0 10"))],
+            )
+            .await;
+
+        assert!(!listener_called.load(Ordering::Acquire));
+        assert_eq!(process_queue.wait_ack_count(), 0);
+        let _ = runtime.shutdown().await;
     }
 
     fn retry_test_message(offset: i64) -> MessageExt {
@@ -4353,6 +5247,74 @@ mod tests {
             assert!(changes[0].2.is_empty());
         }
         consumer.shutdown().await.unwrap();
+    }
+
+    #[test]
+    fn broker_assignment_partition_preserves_mixed_pull_pop_modes() {
+        let pull_queue = MessageQueue::new("orders", "broker-a", 0);
+        let pop_queue = MessageQueue::new("orders", "broker-a", 1);
+        let default_pull_queue = MessageQueue::new("orders", "broker-a", 2);
+        let assignments = [
+            Some(MessageQueueAssignment {
+                message_queue: Some(SharedValue::new(pull_queue.clone())),
+                mode: Some(MessageRequestMode::Pull),
+                attachments: None,
+            }),
+            Some(MessageQueueAssignment {
+                message_queue: Some(SharedValue::new(pop_queue.clone())),
+                mode: Some(MessageRequestMode::Pop),
+                attachments: None,
+            }),
+            Some(MessageQueueAssignment {
+                message_queue: Some(SharedValue::new(default_pull_queue.clone())),
+                mode: None,
+                attachments: None,
+            }),
+            Some(MessageQueueAssignment {
+                message_queue: None,
+                mode: Some(MessageRequestMode::Pop),
+                attachments: None,
+            }),
+        ];
+
+        let partition = partition_broker_assignments(assignments).unwrap();
+        assert_eq!(
+            partition.assigned,
+            HashSet::from([
+                pull_queue.clone(),
+                pop_queue.clone(),
+                default_pull_queue.clone()
+            ])
+        );
+        assert_eq!(
+            partition.pull,
+            HashSet::from([pull_queue, default_pull_queue])
+        );
+        assert_eq!(partition.pop, HashSet::from([pop_queue]));
+    }
+
+    #[test]
+    fn broker_assignment_with_a_null_entry_is_not_authoritative() {
+        assert!(partition_broker_assignments([None]).is_none());
+    }
+
+    #[test]
+    fn pop_to_pull_transition_uses_the_java_retry_topic_and_removes_its_route() {
+        let mut config = PushConsumerConfig::new("retry-transition").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        let consumer = PushConsumer::new(config);
+        let retry_topic = "%RETRY%retry-transition_orders";
+
+        consumer.subscribe_pop_retry_topic("orders", "retry-transition");
+        assert!(read_lock(&consumer.subscriptions).contains_key(retry_topic));
+        write_lock(&consumer.topic_queues).insert(
+            retry_topic.to_owned(),
+            BTreeSet::from([MessageQueue::new(retry_topic, "broker-a", 0)]),
+        );
+
+        consumer.unsubscribe_pop_retry_topic("orders", "retry-transition");
+        assert!(!read_lock(&consumer.subscriptions).contains_key(retry_topic));
+        assert!(!read_lock(&consumer.topic_queues).contains_key(retry_topic));
     }
 
     #[tokio::test]

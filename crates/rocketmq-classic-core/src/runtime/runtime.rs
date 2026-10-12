@@ -94,6 +94,13 @@ pub struct ClientRuntime {
 }
 
 impl ClientRuntime {
+    /// Replaces the remoting client's NameServer address list using the same
+    /// comma/semicolon/whitespace splitting used during client construction.
+    pub fn update_name_server_address_list(&self, addresses: &str) {
+        self.remoting
+            .update_name_server_address_list(crate::namesrv::split_addresses(addresses));
+    }
+
     #[cfg(test)]
     pub(super) fn construct(
         config: ClientConfig,

@@ -1,5 +1,9 @@
 use std::path::PathBuf;
 
+use rocketmq_classic_common::message::MessageQueue;
+use rocketmq_classic_consumer::push::PushConsumerConfig;
+use rocketmq_classic_consumer::{LitePullConsumer, LitePullConsumerConfig, LitePullConsumerError};
+use rocketmq_classic_protocol::heartbeat::{ConsumeFromWhere, MessageModel};
 use serde_json::Value;
 
 fn java_fixture() -> Value {
@@ -146,4 +150,135 @@ fn pinned_java_pop_settings_result_status_and_receipt_fields_are_recorded() {
         fixture["invalidReceipts"]["invalidQueueOffset"],
         "NumberFormatException"
     );
+}
+
+#[test]
+fn lite_config_defaults_and_mode_exclusivity_match_java() {
+    let config = LitePullConsumerConfig::new("lite-workers").unwrap();
+    assert!(config.auto_commit());
+    assert_eq!(config.pull_thread_nums(), 20);
+    assert_eq!(config.auto_commit_interval_millis(), 5_000);
+    assert_eq!(config.pull_batch_size(), 10);
+    assert_eq!(config.pull_threshold_for_all(), 10_000);
+    assert_eq!(config.pull_threshold_for_queue(), 1_000);
+    assert_eq!(config.pull_threshold_size_for_queue(), 100);
+    assert_eq!(config.consume_max_span(), 2_000);
+    assert_eq!(config.poll_timeout_millis(), 5_000);
+    assert_eq!(config.topic_metadata_check_interval_millis(), 30_000);
+    assert_eq!(config.broker_suspend_max_time_millis(), 20_000);
+    assert_eq!(config.consumer_timeout_millis_when_suspend(), 30_000);
+    assert_eq!(config.consumer_pull_timeout_millis(), 10_000);
+    assert_eq!(config.message_model(), MessageModel::Clustering);
+    assert_eq!(
+        config.consume_from_where(),
+        ConsumeFromWhere::ConsumeFromLastOffset
+    );
+    assert!(!config.enable_msg_trace());
+    assert!(config.consume_timestamp().len() >= 14);
+
+    let consumer = LitePullConsumer::new(config).unwrap();
+    consumer.subscribe_with_expression("orders", "*").unwrap();
+    assert!(
+        consumer
+            .assign(vec![MessageQueue::new("orders", "broker-a", 0)])
+            .is_err()
+    );
+
+    let config = LitePullConsumerConfig::new("lite-assigned").unwrap();
+    let consumer = LitePullConsumer::new(config).unwrap();
+    consumer
+        .assign(vec![MessageQueue::new("orders", "broker-a", 0)])
+        .unwrap();
+    assert!(consumer.subscribe_with_expression("orders", "*").is_err());
+}
+
+#[test]
+fn push_pop_settings_match_pinned_java_defaults_and_setters() {
+    let fixture = java_fixture();
+    let defaults = &fixture["pushPopDefaults"];
+    let mut config = PushConsumerConfig::new("pop-workers").unwrap();
+    assert_eq!(
+        config.pop_threshold_for_queue(),
+        defaults["popThresholdForQueue"]
+    );
+    assert_eq!(
+        config.pop_invisible_time_millis(),
+        defaults["popInvisibleTime"]
+    );
+    assert_eq!(config.pop_batch_nums(), defaults["popBatchNums"]);
+
+    let configured = &fixture["pushPopConfigured"];
+    config.set_pop_threshold_for_queue(configured["popThresholdForQueue"].as_i64().unwrap() as i32);
+    config.set_pop_invisible_time_millis(configured["popInvisibleTime"].as_i64().unwrap());
+    config.set_pop_batch_nums(configured["popBatchNums"].as_i64().unwrap() as i32);
+    assert_eq!(
+        config.pop_threshold_for_queue(),
+        configured["popThresholdForQueue"]
+    );
+    assert_eq!(
+        config.pop_invisible_time_millis(),
+        configured["popInvisibleTime"]
+    );
+    assert_eq!(config.pop_batch_nums(), configured["popBatchNums"]);
+}
+
+#[test]
+fn lite_auto_commit_interval_below_java_minimum_is_ignored() {
+    let mut config = LitePullConsumerConfig::new("lite-commit").unwrap();
+    config.set_auto_commit_interval_millis(999);
+    assert_eq!(config.auto_commit_interval_millis(), 5_000);
+    config.set_auto_commit_interval_millis(2_000);
+    assert_eq!(config.auto_commit_interval_millis(), 2_000);
+}
+
+#[tokio::test]
+async fn lite_start_validates_consumer_timeouts_and_thread_settings_before_runtime_start() {
+    let mut config = LitePullConsumerConfig::new("lite-invalid-timeout").unwrap();
+    config.set_broker_suspend_max_time_millis(60_000);
+    config.set_consumer_timeout_millis_when_suspend(30_000);
+    let consumer = std::sync::Arc::new(LitePullConsumer::new(config).unwrap());
+    assert!(matches!(
+        consumer.start().await,
+        Err(LitePullConsumerError::Pull(_))
+    ));
+    assert!(!consumer.is_running().await);
+
+    let mut config = LitePullConsumerConfig::new("lite-invalid-threads").unwrap();
+    config.set_pull_thread_nums(-1);
+    let consumer = std::sync::Arc::new(LitePullConsumer::new(config).unwrap());
+    assert!(matches!(
+        consumer.start().await,
+        Err(LitePullConsumerError::InvalidPullThreadCount)
+    ));
+}
+
+#[tokio::test]
+async fn lite_poll_requires_start_and_auto_commit_is_live_configurable() {
+    let config = LitePullConsumerConfig::new("lite-poll-state").unwrap();
+    let consumer = LitePullConsumer::new(config).unwrap();
+    assert!(matches!(
+        consumer.poll(Some(0)).await,
+        Err(LitePullConsumerError::NotStarted)
+    ));
+    assert!(consumer.is_auto_commit());
+    consumer.set_auto_commit(false);
+    assert!(!consumer.is_auto_commit());
+}
+
+#[tokio::test]
+async fn lite_assignment_is_available_before_start_and_created_shutdown_is_a_noop() {
+    let config = LitePullConsumerConfig::new("lite-assignment-before-start").unwrap();
+    let consumer = LitePullConsumer::new(config).unwrap();
+    let queues = vec![MessageQueue::new("orders", "broker-a", 0)];
+    consumer.assign(queues.clone()).unwrap();
+    assert_eq!(
+        consumer.assignment().await.unwrap(),
+        queues.into_iter().collect()
+    );
+
+    consumer.shutdown().await.unwrap();
+    assert!(!consumer.is_running().await);
+    consumer
+        .set_sub_expression_for_assign("orders", "paid")
+        .unwrap();
 }

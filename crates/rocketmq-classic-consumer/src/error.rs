@@ -1,6 +1,10 @@
 use rocketmq_classic_core::{config::ConfigError, error::RpcError, runtime::RuntimeError};
 
-use crate::{offset::OffsetStoreError, pull::ProcessPullError};
+use crate::{
+    offset::OffsetStoreError,
+    pop::{PopProcessError, PopReceiptError},
+    pull::ProcessPullError,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PullConsumerError {
@@ -67,6 +71,46 @@ pub enum PullConsumerError {
 }
 
 #[derive(Debug, thiserror::Error)]
+pub enum LitePullConsumerError {
+    #[error(transparent)]
+    Config(#[from] ConfigError),
+    #[error(transparent)]
+    Pull(#[from] PullConsumerError),
+    #[error("Lite pull consumer has not been started")]
+    NotStarted,
+    #[error("Lite pull consumer has already been started")]
+    AlreadyStarted,
+    #[error("Lite pull consumer has been shut down")]
+    Shutdown,
+    #[error("subscription and explicit assignment are mutually exclusive")]
+    SubscriptionModeConflict,
+    #[error("message queues must not be empty")]
+    EmptyAssignment,
+    #[error("poll timeout must not be negative")]
+    NegativePollTimeout,
+    #[error("message queue is not currently assigned")]
+    QueueNotAssigned,
+    #[error("seek offset {offset} is outside [{minimum}, {maximum}]")]
+    InvalidSeekOffset {
+        offset: i64,
+        minimum: i64,
+        maximum: i64,
+    },
+    #[error("assignment tag expression must not be blank")]
+    EmptyAssignmentExpression,
+    #[error("assignment tag expression can only be set before startup")]
+    AssignmentExpressionAfterStartup,
+    #[error("Lite pull consumer queue generation counter is exhausted")]
+    GenerationExhausted,
+    #[error("consumeTimestamp must be a valid yyyyMMddHHmmss date/time")]
+    InvalidConsumeTimestamp,
+    #[error("pullThreadNums must not be negative")]
+    InvalidPullThreadCount,
+    #[error("topicMetadataCheckIntervalMillis must be positive")]
+    InvalidTopicMetadataCheckInterval,
+}
+
+#[derive(Debug, thiserror::Error)]
 pub enum PushConsumerError {
     #[error(transparent)]
     Config(#[from] ConfigError),
@@ -82,6 +126,14 @@ pub enum PushConsumerError {
     OrderlyLockSettings(String),
     #[error(transparent)]
     PullProcessing(#[from] ProcessPullError),
+    #[error(transparent)]
+    PopProcessing(#[from] PopProcessError),
+    #[error(transparent)]
+    PopReceipt(#[from] PopReceiptError),
+    #[error("POP message is missing its receipt token")]
+    MissingPopReceipt,
+    #[error("POP receipt Broker `{0}` is not present in the current route")]
+    PopBrokerNotFound(String),
     #[error("push consumer requires a message queue with a topic and broker name")]
     InvalidQueue,
     #[error("push pull offset must be nonnegative")]
