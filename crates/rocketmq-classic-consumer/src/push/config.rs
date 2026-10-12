@@ -420,7 +420,7 @@ pub(crate) fn parse_java_timestamp_millis(value: &str) -> Option<i64> {
             local.tm_isdst = -1;
             libc::mktime(local as *mut libc::tm)
         };
-        return i64::try_from(local).ok()?.checked_mul(1_000);
+        (local as i64).checked_mul(1_000)
     }
 
     #[cfg(not(unix))]

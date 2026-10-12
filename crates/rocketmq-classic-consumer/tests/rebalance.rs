@@ -228,19 +228,17 @@ fn all_java_allocation_strategies_match_551_fixtures() {
             );
         }
 
-        if queues.is_empty() {
-            if strategy_name != "CONFIG" {
-                for client_id in &consumer_ids {
-                    assert!(
-                        strategy
-                            .allocate("group", client_id, &queues, &consumer_ids)
-                            .is_err(),
-                        "{} empty queue list",
-                        case["id"]
-                    );
-                }
-                continue;
+        if queues.is_empty() && strategy_name != "CONFIG" {
+            for client_id in &consumer_ids {
+                assert!(
+                    strategy
+                        .allocate("group", client_id, &queues, &consumer_ids)
+                        .is_err(),
+                    "{} empty queue list",
+                    case["id"]
+                );
             }
+            continue;
         }
 
         let mut all_assignments = Vec::new();
