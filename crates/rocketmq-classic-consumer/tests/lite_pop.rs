@@ -1387,6 +1387,11 @@ fn lite_configured_values_match_the_pinned_java_consumer_settings() {
 async fn lite_trace_dispatcher_uses_java_topic_defaults_and_lifecycle() {
     let mut config = LitePullConsumerConfig::new("lite-trace-lifecycle").unwrap();
     config.client_config_mut().set_namesrv_addr(None);
+    // This integration-style lifecycle case should not share the process-wide
+    // client runtime with the concurrently running Lite consumer tests.
+    config
+        .client_config_mut()
+        .set_instance_name(Some("lite-trace-lifecycle-test".into()));
     config.set_enable_msg_trace(true);
     let consumer = std::sync::Arc::new(LitePullConsumer::new(config).unwrap());
     assert!(consumer.trace_dispatcher().is_none());
