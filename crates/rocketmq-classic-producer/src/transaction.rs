@@ -21,7 +21,7 @@ use rocketmq_classic_protocol::{
 use rocketmq_classic_remoting::{RemotingCommand, client::RequestProcessor};
 use tokio::{
     runtime::Handle,
-    sync::{Mutex as AsyncMutex, mpsc, oneshot},
+    sync::{Mutex as AsyncMutex, Semaphore, mpsc, oneshot},
     task::JoinHandle,
     time::Instant,
 };
@@ -441,6 +441,8 @@ struct CheckPool {
     max_workers: usize,
     handle: Handle,
     workers: Vec<JoinHandle<()>>,
+    completion_tasks: Vec<JoinHandle<()>>,
+    custom_executor_permits: Option<Arc<Semaphore>>,
     executor: Option<Arc<dyn TransactionExecutor>>,
 }
 
@@ -507,6 +509,9 @@ impl TransactionRuntime {
         let handle =
             Handle::try_current().map_err(|_| ProducerError::TransactionCheckQueueUnavailable)?;
         let (sender, receiver) = mpsc::channel(capacity);
+        let custom_executor_permits = executor
+            .as_ref()
+            .map(|_| Arc::new(Semaphore::new(CUSTOM_EXECUTOR_QUEUE_CAPACITY)));
         *pool_slot = Some(CheckPool {
             sender: Some(sender),
             receiver: Arc::new(AsyncMutex::new(receiver)),
@@ -523,6 +528,8 @@ impl TransactionRuntime {
             },
             handle,
             workers: Vec::new(),
+            completion_tasks: Vec::new(),
+            custom_executor_permits,
             executor,
         });
         Ok(())
@@ -585,6 +592,17 @@ impl TransactionRuntime {
         {
             pool.worker_count = pool.worker_count.saturating_sub(1);
         }
+    }
+
+    fn track_completion_task(&self, task: JoinHandle<()>) {
+        let mut pool_slot = self.pool.lock().unwrap_or_else(PoisonError::into_inner);
+        let Some(pool) = pool_slot.as_mut() else {
+            task.abort();
+            return;
+        };
+        pool.completion_tasks
+            .retain(|completed| !completed.is_finished());
+        pool.completion_tasks.push(task);
     }
 
     async fn check_worker(
@@ -657,14 +675,25 @@ impl TransactionRuntime {
         if legacy.is_none() && current.is_none() {
             return;
         }
-        let executor = self
-            .pool
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .as_ref()
-            .and_then(|pool| pool.executor.clone());
+        let (executor, handle, custom_executor_permits) = {
+            let pool_slot = self.pool.lock().unwrap_or_else(PoisonError::into_inner);
+            let Some(pool) = pool_slot.as_ref() else {
+                return;
+            };
+            (
+                pool.executor.clone(),
+                pool.handle.clone(),
+                pool.custom_executor_permits.clone(),
+            )
+        };
 
         if let Some(executor) = executor {
+            let Some(custom_executor_permits) = custom_executor_permits else {
+                return;
+            };
+            let Ok(custom_executor_permit) = custom_executor_permits.acquire_owned().await else {
+                return;
+            };
             let (reply, receive) = oneshot::channel();
             let callback_message_backup = message.clone();
             let task = Box::new(move || {
@@ -672,41 +701,56 @@ impl TransactionRuntime {
                 let _ = reply.send(result);
             });
             if executor.execute(task).is_err() {
-                self.send_check_end(
-                    &producer,
-                    &job.remote,
-                    &header,
-                    LocalTransactionState::Unknown,
-                    Some(&callback_message_backup),
-                    Some("transaction executor rejected check"),
-                )
-                .await;
+                let transaction = Arc::clone(self);
+                let remote = job.remote;
+                let completion = handle.spawn(async move {
+                    transaction
+                        .send_check_end(
+                            &producer,
+                            &remote,
+                            &header,
+                            LocalTransactionState::Unknown,
+                            Some(&callback_message_backup),
+                            Some("transaction executor rejected check"),
+                        )
+                        .await;
+                    drop(custom_executor_permit);
+                });
+                self.track_completion_task(completion);
                 return;
             }
-            match receive.await {
-                Ok(outcome) => {
-                    self.send_check_end(
-                        &producer,
-                        &job.remote,
-                        &header,
-                        outcome.state,
-                        Some(&outcome.message),
-                        outcome.error.as_deref(),
-                    )
-                    .await;
+            let transaction = Arc::clone(self);
+            let remote = job.remote;
+            let completion = handle.spawn(async move {
+                match receive.await {
+                    Ok(outcome) => {
+                        transaction
+                            .send_check_end(
+                                &producer,
+                                &remote,
+                                &header,
+                                outcome.state,
+                                Some(&outcome.message),
+                                outcome.error.as_deref(),
+                            )
+                            .await;
+                    }
+                    Err(_) => {
+                        transaction
+                            .send_check_end(
+                                &producer,
+                                &remote,
+                                &header,
+                                LocalTransactionState::Unknown,
+                                Some(&callback_message_backup),
+                                Some("transaction executor dropped check callback"),
+                            )
+                            .await;
+                    }
                 }
-                Err(_) => {
-                    self.send_check_end(
-                        &producer,
-                        &job.remote,
-                        &header,
-                        LocalTransactionState::Unknown,
-                        Some(&callback_message_backup),
-                        Some("transaction executor dropped check callback"),
-                    )
-                    .await;
-                }
-            }
+                drop(custom_executor_permit);
+            });
+            self.track_completion_task(completion);
         } else {
             let backup = message.clone();
             let outcome = tokio::task::spawn_blocking(move || {
@@ -793,6 +837,9 @@ impl TransactionRuntime {
                 return;
             };
             pool.sender.take();
+            if let Some(permits) = &pool.custom_executor_permits {
+                permits.close();
+            }
             (std::mem::take(&mut pool.workers), pool.executor.clone())
         };
         let deadline = Instant::now() + timeout;
@@ -803,6 +850,18 @@ impl TransactionRuntime {
                 .is_err()
             {
                 worker.abort();
+            }
+        }
+        let mut completion_tasks = {
+            let mut pool_slot = self.pool.lock().unwrap_or_else(PoisonError::into_inner);
+            pool_slot
+                .as_mut()
+                .map(|pool| std::mem::take(&mut pool.completion_tasks))
+                .unwrap_or_default()
+        };
+        for task in &mut completion_tasks {
+            if tokio::time::timeout_at(deadline, &mut *task).await.is_err() {
+                task.abort();
             }
         }
         if let Some(executor) = executor {
@@ -1657,6 +1716,53 @@ mod tests {
         }
     }
 
+    struct ConcurrentBlockingListener {
+        started: std::sync::mpsc::Sender<usize>,
+        calls: AtomicUsize,
+        release: (std::sync::Mutex<bool>, std::sync::Condvar),
+    }
+
+    impl TransactionListener for ConcurrentBlockingListener {
+        fn execute_local_transaction(
+            &self,
+            _message: &mut Message,
+            _argument: Option<&(dyn Any + Send + Sync)>,
+        ) -> Result<Option<LocalTransactionState>, TransactionCallbackError> {
+            Ok(Some(LocalTransactionState::Unknown))
+        }
+
+        fn check_local_transaction(
+            &self,
+            _message: &mut MessageExt,
+        ) -> Result<Option<LocalTransactionState>, TransactionCallbackError> {
+            let call = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
+            let _ = self.started.send(call);
+            let (released, changed) = &self.release;
+            let mut released = released.lock().unwrap();
+            while !*released {
+                released = changed.wait(released).unwrap();
+            }
+            Ok(Some(LocalTransactionState::Commit))
+        }
+    }
+
+    struct ThreadPerTaskExecutor {
+        shutdown: AtomicBool,
+    }
+
+    impl TransactionExecutor for ThreadPerTaskExecutor {
+        fn execute(&self, task: Box<dyn FnOnce() + Send + 'static>) -> Result<(), String> {
+            std::thread::Builder::new()
+                .spawn(task)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+
+        fn shutdown(&self) {
+            self.shutdown.store(true, Ordering::SeqCst);
+        }
+    }
+
     async fn next_started(receiver: &std::sync::mpsc::Receiver<usize>) -> usize {
         tokio::time::timeout(Duration::from_secs(2), async {
             loop {
@@ -1673,6 +1779,20 @@ mod tests {
         })
         .await
         .unwrap()
+    }
+
+    async fn wait_started(receiver: &std::sync::mpsc::Receiver<usize>) -> usize {
+        loop {
+            match receiver.try_recv() {
+                Ok(value) => return value,
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    panic!("callback worker closed")
+                }
+            }
+        }
     }
 
     #[tokio::test]
@@ -1856,6 +1976,56 @@ mod tests {
             .unwrap();
         wait_for_end_transactions(&producer, 1).await;
         assert_eq!(executor.submitted.load(Ordering::SeqCst), 1);
+        producer.shutdown().await.unwrap();
+        assert!(executor.shutdown.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn p14_v02_custom_executor_receives_concurrent_checks_without_dispatch_serialization() {
+        let (started_send, started_receive) = std::sync::mpsc::channel();
+        let listener = Arc::new(ConcurrentBlockingListener {
+            started: started_send,
+            calls: AtomicUsize::new(0),
+            release: (std::sync::Mutex::new(false), std::sync::Condvar::new()),
+        });
+        let executor = Arc::new(ThreadPerTaskExecutor {
+            shutdown: AtomicBool::new(false),
+        });
+        let producer =
+            transaction_producer(ProducerConfig::new("producer-custom-parallel").unwrap());
+        producer.set_transaction_listener(Some(listener.clone()));
+        producer.set_executor_service(Some(executor.clone()));
+        producer.start().await.unwrap();
+        let processor = producer.transaction.request_processor();
+
+        for _ in 0..2 {
+            assert!(
+                processor
+                    .process_with_context("127.0.0.1:10911", check_command())
+                    .unwrap()
+                    .is_none()
+            );
+        }
+
+        let first =
+            tokio::time::timeout(Duration::from_secs(2), wait_started(&started_receive)).await;
+        let second =
+            tokio::time::timeout(Duration::from_millis(500), wait_started(&started_receive)).await;
+        {
+            let (released, changed) = &listener.release;
+            *released.lock().unwrap() = true;
+            changed.notify_all();
+        }
+        assert!(
+            first.is_ok(),
+            "custom executor did not start its first check"
+        );
+        assert!(
+            second.is_ok(),
+            "transaction dispatcher serialized checks submitted to the custom executor"
+        );
+        wait_for_end_transactions(&producer, 2).await;
+        assert_eq!(listener.calls.load(Ordering::SeqCst), 2);
         producer.shutdown().await.unwrap();
         assert!(executor.shutdown.load(Ordering::SeqCst));
     }
