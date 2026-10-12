@@ -4,6 +4,8 @@ use rocketmq_classic_core::config::{ClientConfig, ConfigError};
 use rocketmq_classic_protocol::heartbeat::{ConsumeFromWhere, MessageModel};
 
 use crate::{
+    config::DEFAULT_CONSUMER_GROUP,
+    error::LitePullConsumerError,
     offset::OffsetStore,
     push::{MessageQueueListener, default_consume_timestamp},
     rebalance::{AllocateMessageQueueAveragely, AllocateMessageQueueStrategy},
@@ -53,6 +55,12 @@ pub struct LitePullConsumerConfig {
 }
 
 impl LitePullConsumerConfig {
+    /// Creates the Rust equivalent of Java's no-argument constructor.
+    /// The `DEFAULT_CONSUMER` group is rejected when the consumer starts, as in Java.
+    pub fn new_default() -> Result<Self, ConfigError> {
+        Self::new(DEFAULT_CONSUMER_GROUP)
+    }
+
     pub fn new(consumer_group: impl Into<String>) -> Result<Self, ConfigError> {
         Ok(Self {
             client: ClientConfig::new_auto()?,
@@ -253,8 +261,20 @@ impl LitePullConsumerConfig {
         self.consume_from_where
     }
 
-    pub fn set_consume_from_where(&mut self, value: ConsumeFromWhere) {
+    pub fn set_consume_from_where(
+        &mut self,
+        value: ConsumeFromWhere,
+    ) -> Result<(), LitePullConsumerError> {
+        if !matches!(
+            value,
+            ConsumeFromWhere::ConsumeFromFirstOffset
+                | ConsumeFromWhere::ConsumeFromLastOffset
+                | ConsumeFromWhere::ConsumeFromTimestamp
+        ) {
+            return Err(LitePullConsumerError::InvalidConsumeFromWhere(value));
+        }
         self.consume_from_where = value;
+        Ok(())
     }
 
     pub fn consume_timestamp(&self) -> &str {

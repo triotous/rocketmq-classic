@@ -64,3 +64,12 @@ Phase 13 continuation — 2026-10-12 11:13 UTC:
 - Added consumer-to-producer workspace dependency and lockfile entry. Added source-derived wire-layout/filter/topic tests, full configured Lite settings assertions, and a lifecycle test that starts/shuts down an enabled dispatcher. Updated the matrix; Phase 13 remains In progress for method-level Lite differential sequences, complete API/config audit, POP redelivery/receipt replacement and scripted Broker-assignment worker lifecycle.
 - `cargo test -p rocketmq-classic-consumer --lib lite::trace::tests --locked` — PASS (3 tests); `cargo test -p rocketmq-classic-consumer --test lite_pop --locked` — PASS (10 tests, including trace lifecycle).
 - `cargo clippy -p rocketmq-classic-consumer --all-targets --all-features --locked -- -D warnings` — PASS; `cargo fmt --all -- --check` and `git diff --check` — PASS. Workspace-wide checks are reserved for final Phase 13 audit.
+
+Phase 13 continuation — Lite API audit — 2026-10-12:
+
+- Pinned Java 5.5.1 source confirms its no-argument `DefaultLitePullConsumer` uses `DEFAULT_CONSUMER` and `setConsumeFromWhere` accepts only FIRST, LAST, and TIMESTAMP. Rust now provides `LitePullConsumerConfig::new_default`, rejects Java-unsupported origin values, and preserves caller-provided queue keys from explicit `assign` in `assignment()` while using normalized internal keys for namespaced RPCs.
+- Extended the pinned Java Lite/POP oracle for invalid consume-origin configuration and added Rust tests for default-group startup rejection, rejected enum values, and explicit namespace assignment behavior.
+- `cargo test -p rocketmq-classic-consumer --test lite_pop --locked` — PASS (12 tests); `cargo test -p rocketmq-classic-consumer --lib --locked` — PASS (128 tests); `cargo fmt --all -- --check` and `git diff --check` — PASS.
+- Full `mvn -o -q -f compat/java-reference/pom.xml verify` is still running; record its final result before committing this API-audit change. Compatibility matrix updated; the Phase 13 plan remains untouched.
+- Follow-up: `mvn -o -q -f compat/java-reference/pom.xml verify` — PASS (32 differential scenarios, Java fixture drift checks, runtime/consumer oracles, and Java decoding of Rust typed fixtures).
+- API audit change committed as `NEXT_COMMIT` after local review.

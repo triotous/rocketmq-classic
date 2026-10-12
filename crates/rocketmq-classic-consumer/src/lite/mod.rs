@@ -78,6 +78,7 @@ pub struct LitePullConsumer {
     mode: RwLock<SubscriptionMode>,
     subscriptions: RwLock<BTreeMap<String, MessageSelector>>,
     assigned: RwLock<BTreeSet<MessageQueue>>,
+    assigned_public: RwLock<BTreeSet<MessageQueue>>,
     assign_expressions: RwLock<HashMap<String, String>>,
     queue_states: Mutex<HashMap<MessageQueue, QueueState>>,
     workers: Mutex<HashMap<MessageQueue, JoinHandle<()>>>,
@@ -127,6 +128,7 @@ impl LitePullConsumer {
             mode: RwLock::new(SubscriptionMode::None),
             subscriptions: RwLock::new(BTreeMap::new()),
             assigned: RwLock::new(BTreeSet::new()),
+            assigned_public: RwLock::new(BTreeSet::new()),
             assign_expressions: RwLock::new(HashMap::new()),
             queue_states: Mutex::new(HashMap::new()),
             workers: Mutex::new(HashMap::new()),
@@ -317,9 +319,10 @@ impl LitePullConsumer {
     where
         I: IntoIterator<Item = MessageQueue>,
     {
-        let queues = message_queues
-            .into_iter()
-            .map(|queue| self.normalized_queue(&queue))
+        let public_queues = message_queues.into_iter().collect::<BTreeSet<_>>();
+        let queues = public_queues
+            .iter()
+            .map(|queue| self.normalized_queue(queue))
             .collect::<Result<BTreeSet<_>, _>>()?;
         if queues.is_empty() {
             return Err(LitePullConsumerError::EmptyAssignment);
@@ -329,6 +332,10 @@ impl LitePullConsumer {
             .assigned
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = queues;
+        *self
+            .assigned_public
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = public_queues;
         self.reconcile.notify_one();
         Ok(())
     }
@@ -650,7 +657,7 @@ impl LitePullConsumer {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if mode == SubscriptionMode::Assign {
             return Ok(self
-                .assigned
+                .assigned_public
                 .read()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .clone());

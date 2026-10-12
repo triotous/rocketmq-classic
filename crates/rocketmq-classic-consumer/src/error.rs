@@ -104,6 +104,8 @@ pub enum LitePullConsumerError {
     GenerationExhausted,
     #[error("consumeTimestamp must be a valid yyyyMMddHHmmss date/time")]
     InvalidConsumeTimestamp,
+    #[error("Lite consumeFromWhere value {0:?} is not supported by Java 5.5.1")]
+    InvalidConsumeFromWhere(rocketmq_classic_protocol::heartbeat::ConsumeFromWhere),
     #[error("pullThreadNums must not be negative")]
     InvalidPullThreadCount,
     #[error("topicMetadataCheckIntervalMillis must be positive")]

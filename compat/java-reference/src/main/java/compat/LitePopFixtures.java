@@ -174,6 +174,9 @@ public final class LitePopFixtures {
         invalidInputs.put("suspendTimeout", exceptionName(invalidSuspendTimeout::start));
         DefaultLitePullConsumer invalidDefaultGroup = new DefaultLitePullConsumer();
         invalidInputs.put("defaultGroup", exceptionName(invalidDefaultGroup::start));
+        DefaultLitePullConsumer invalidConsumeFromWhere = new DefaultLitePullConsumer("invalid-consume-from-where");
+        invalidInputs.put("consumeFromWhere", exceptionName(
+            () -> invalidConsumeFromWhere.setConsumeFromWhere(ConsumeFromWhere.CONSUME_FROM_MIN_OFFSET)));
 
         DefaultMQPushConsumer push = new DefaultMQPushConsumer("pop-fixture");
         Map<String, Object> popDefaults = new TreeMap<>();

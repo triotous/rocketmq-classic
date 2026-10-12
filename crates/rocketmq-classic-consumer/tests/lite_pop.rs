@@ -120,6 +120,10 @@ fn pinned_java_lite_pull_surface_defaults_and_setter_rules_are_recorded() {
         fixture["invalidInputs"]["suspendTimeout"],
         "MQClientException"
     );
+    assert_eq!(
+        fixture["invalidInputs"]["consumeFromWhere"],
+        "RuntimeException"
+    );
 }
 
 #[test]
@@ -192,6 +196,63 @@ fn lite_config_defaults_and_mode_exclusivity_match_java() {
     assert!(consumer.subscribe_with_expression("orders", "*").is_err());
 }
 
+#[tokio::test]
+async fn lite_default_constructor_and_consume_origin_validation_match_java() {
+    let config = LitePullConsumerConfig::new_default().unwrap();
+    assert_eq!(config.consumer_group(), "DEFAULT_CONSUMER");
+    let consumer = std::sync::Arc::new(LitePullConsumer::new(config).unwrap());
+    assert!(matches!(
+        consumer.start().await,
+        Err(LitePullConsumerError::Pull(
+            rocketmq_classic_consumer::PullConsumerError::DefaultConsumerGroup
+        ))
+    ));
+
+    let mut config = LitePullConsumerConfig::new("lite-invalid-consume-origin").unwrap();
+    assert!(matches!(
+        config.set_consume_from_where(ConsumeFromWhere::ConsumeFromMinOffset),
+        Err(LitePullConsumerError::InvalidConsumeFromWhere(
+            ConsumeFromWhere::ConsumeFromMinOffset
+        ))
+    ));
+    assert!(matches!(
+        config.set_consume_from_where(ConsumeFromWhere::ConsumeFromMaxOffset),
+        Err(LitePullConsumerError::InvalidConsumeFromWhere(
+            ConsumeFromWhere::ConsumeFromMaxOffset
+        ))
+    ));
+    assert!(matches!(
+        config
+            .set_consume_from_where(ConsumeFromWhere::ConsumeFromLastOffsetAndFromMinWhenBootFirst),
+        Err(LitePullConsumerError::InvalidConsumeFromWhere(
+            ConsumeFromWhere::ConsumeFromLastOffsetAndFromMinWhenBootFirst
+        ))
+    ));
+    config
+        .set_consume_from_where(ConsumeFromWhere::ConsumeFromFirstOffset)
+        .unwrap();
+    assert_eq!(
+        config.consume_from_where(),
+        ConsumeFromWhere::ConsumeFromFirstOffset
+    );
+}
+
+#[tokio::test]
+async fn explicit_lite_assignment_returns_the_callers_queue_topic_with_namespace() {
+    let mut config = LitePullConsumerConfig::new("lite-namespaced-assignment").unwrap();
+    config
+        .client_config_mut()
+        .set_namespace(Some("tenant".to_owned()));
+    let consumer = LitePullConsumer::new(config).unwrap();
+    let queue = MessageQueue::new("orders", "broker-a", 0);
+    consumer.assign([queue.clone()]).unwrap();
+
+    assert_eq!(
+        consumer.assignment().await.unwrap(),
+        [queue].into_iter().collect()
+    );
+}
+
 #[test]
 fn push_pop_settings_match_pinned_java_defaults_and_setters() {
     let fixture = java_fixture();
@@ -239,7 +300,9 @@ fn lite_configured_values_match_the_pinned_java_consumer_settings() {
     config.set_auto_commit(configured["autoCommit"].as_bool().unwrap());
     config
         .set_auto_commit_interval_millis(configured["autoCommitIntervalMillis"].as_i64().unwrap());
-    config.set_consume_from_where(ConsumeFromWhere::ConsumeFromFirstOffset);
+    config
+        .set_consume_from_where(ConsumeFromWhere::ConsumeFromFirstOffset)
+        .unwrap();
     config.set_consume_max_span(configured["consumeMaxSpan"].as_i64().unwrap() as i32);
     config.set_consume_timestamp(configured["consumeTimestamp"].as_str().unwrap());
     config.set_consumer_pull_timeout_millis(
