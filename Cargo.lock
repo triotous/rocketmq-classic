@@ -1025,6 +1025,7 @@ dependencies = [
  "rand",
  "rocketmq-classic-common",
  "rocketmq-classic-core",
+ "rocketmq-classic-producer",
  "rocketmq-classic-protocol",
  "rocketmq-classic-remoting",
  "serde_json",

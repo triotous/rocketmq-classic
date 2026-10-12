@@ -57,3 +57,10 @@ Phase 13 continuation — 2026-10-12 11:00 UTC:
 - `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` — PASS; `cargo test --workspace --locked` — PASS (unit, integration, and doc tests).
 - `cargo fmt --all -- --check` and `git diff --check` — PASS.
 - Updated the compatibility matrix with the receipt-expiry evidence. Phase 13 remains In progress: controlled redelivery/receipt replacement, complete Lite API/config differential coverage, Lite trace dispatch lifecycle, and scripted Broker-assignment-to-POP-worker activation/removal remain open. Phase 19 Broker/Docker validation was not run. No plan file was modified.
+
+Phase 13 continuation — 2026-10-12 11:13 UTC:
+
+- Implemented Lite consume tracing from the pinned Java 5.5.1 `DefaultLitePullConsumer` call graph: trace dispatcher creation/getter, poll-time SubBefore/SubAfter contexts, namespace and TRACE_ON filtering, Local/Cloud topic selection, Java control-character row encoding, bounded context queue, batch cap, periodic/explicit flush and shutdown. The trace producer inherits consumer TLS/namespace/client settings, disables VIP routing and producer tracing, and uses Java's 5-second send timeout and 128000-byte message cap.
+- Added consumer-to-producer workspace dependency and lockfile entry. Added source-derived wire-layout/filter/topic tests, full configured Lite settings assertions, and a lifecycle test that starts/shuts down an enabled dispatcher. Updated the matrix; Phase 13 remains In progress for method-level Lite differential sequences, complete API/config audit, POP redelivery/receipt replacement and scripted Broker-assignment worker lifecycle.
+- `cargo test -p rocketmq-classic-consumer --lib lite::trace::tests --locked` — PASS (3 tests); `cargo test -p rocketmq-classic-consumer --test lite_pop --locked` — PASS (10 tests, including trace lifecycle).
+- `cargo clippy -p rocketmq-classic-consumer --all-targets --all-features --locked -- -D warnings` — PASS; `cargo fmt --all -- --check` and `git diff --check` — PASS. Workspace-wide checks are reserved for final Phase 13 audit.

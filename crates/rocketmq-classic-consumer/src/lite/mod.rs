@@ -1,6 +1,10 @@
 mod config;
+mod trace;
 
 pub use config::*;
+pub use trace::{
+    LiteTraceBean, LiteTraceContext, LiteTraceDispatcher, LiteTraceError, LiteTraceKind,
+};
 
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
@@ -91,6 +95,7 @@ pub struct LitePullConsumer {
     pending_topic_listener_seed: Mutex<HashSet<String>>,
     message_queue_listener: RwLock<Option<MessageQueueListener>>,
     name_server_address: RwLock<Option<String>>,
+    trace_dispatcher: RwLock<Option<Arc<LiteTraceDispatcher>>>,
 }
 
 enum Lifecycle {
@@ -139,6 +144,7 @@ impl LitePullConsumer {
             pending_topic_listener_seed: Mutex::new(HashSet::new()),
             message_queue_listener: RwLock::new(message_queue_listener),
             name_server_address: RwLock::new(None),
+            trace_dispatcher: RwLock::new(None),
         })
     }
 
@@ -152,6 +158,14 @@ impl LitePullConsumer {
 
     pub async fn is_running(&self) -> bool {
         self.running.load(Ordering::Acquire)
+    }
+
+    /// Returns the consume trace dispatcher after tracing has been enabled at start.
+    pub fn trace_dispatcher(&self) -> Option<Arc<LiteTraceDispatcher>> {
+        self.trace_dispatcher
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 
     fn normalized_topic(&self, topic: &str) -> Result<String, LitePullConsumerError> {
@@ -368,6 +382,29 @@ impl LitePullConsumer {
             }
             .into());
         }
+        let trace_dispatcher = if self.config.enable_msg_trace() {
+            match LiteTraceDispatcher::new(
+                self.config.client_config(),
+                self.config.consumer_group(),
+                self.config.customized_trace_topic(),
+            ) {
+                Ok(dispatcher) => {
+                    let dispatcher = Arc::new(dispatcher);
+                    *self
+                        .trace_dispatcher
+                        .write()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner) =
+                        Some(dispatcher.clone());
+                    Some(dispatcher)
+                }
+                Err(error) => {
+                    tracing::error!(error = %error, "Lite consume trace dispatcher initialization failed");
+                    None
+                }
+            }
+        } else {
+            None
+        };
         let engine = match self.prepare_engine().await {
             Ok(engine) => engine,
             Err(error) => {
@@ -409,6 +446,17 @@ impl LitePullConsumer {
             }
         }
         self.sync_workers().await;
+        if let Some(dispatcher) = trace_dispatcher {
+            let name_server_address = self.config.client_config().namesrv_addr.clone();
+            let access_channel = self
+                .config
+                .client_config()
+                .access_channel()
+                .unwrap_or_default();
+            if let Err(error) = dispatcher.start(name_server_address, access_channel).await {
+                tracing::warn!(error = %error, "Lite consume trace dispatcher start failed");
+            }
+        }
         let consumer = self.clone();
         let task = tokio::spawn(async move {
             let metadata_period = Duration::from_millis(
@@ -547,6 +595,11 @@ impl LitePullConsumer {
         if let Some(engine) = self.engine() {
             engine.shutdown().await?;
         }
+        if let Some(dispatcher) = self.trace_dispatcher() {
+            if let Err(error) = dispatcher.shutdown().await {
+                tracing::warn!(error = %error, "Lite consume trace dispatcher shutdown failed");
+            }
+        }
         Ok(())
     }
 
@@ -567,6 +620,18 @@ impl LitePullConsumer {
         loop {
             let notified = self.ready.notified();
             if let Some(batch) = self.take_ready_batch() {
+                if let Some(dispatcher) = self.trace_dispatcher() {
+                    let contexts = trace::consume_contexts(
+                        &batch,
+                        self.config.consumer_group(),
+                        self.config.client_config(),
+                        trace::epoch_millis(),
+                        trace::epoch_millis(),
+                    );
+                    for context in contexts {
+                        let _ = dispatcher.append(context);
+                    }
+                }
                 return Ok(batch);
             }
             if timeout_millis == 0 {

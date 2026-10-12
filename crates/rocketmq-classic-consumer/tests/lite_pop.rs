@@ -231,6 +231,97 @@ fn lite_auto_commit_interval_below_java_minimum_is_ignored() {
     assert_eq!(config.auto_commit_interval_millis(), 2_000);
 }
 
+#[test]
+fn lite_configured_values_match_the_pinned_java_consumer_settings() {
+    let fixture = java_fixture();
+    let configured = &fixture["litePullConfigured"];
+    let mut config = LitePullConsumerConfig::new("lite-configured-group").unwrap();
+    config.set_auto_commit(configured["autoCommit"].as_bool().unwrap());
+    config
+        .set_auto_commit_interval_millis(configured["autoCommitIntervalMillis"].as_i64().unwrap());
+    config.set_consume_from_where(ConsumeFromWhere::ConsumeFromFirstOffset);
+    config.set_consume_max_span(configured["consumeMaxSpan"].as_i64().unwrap() as i32);
+    config.set_consume_timestamp(configured["consumeTimestamp"].as_str().unwrap());
+    config.set_consumer_pull_timeout_millis(
+        configured["consumerPullTimeoutMillis"].as_i64().unwrap(),
+    );
+    config.set_consumer_timeout_millis_when_suspend(
+        configured["consumerTimeoutMillisWhenSuspend"]
+            .as_i64()
+            .unwrap(),
+    );
+    config.set_customized_trace_topic(Some(
+        configured["customizedTraceTopic"]
+            .as_str()
+            .unwrap()
+            .to_owned(),
+    ));
+    config.set_default_broker_id(17);
+    config.set_enable_msg_trace(configured["enableMessageTrace"].as_bool().unwrap());
+    config.set_message_model(MessageModel::Broadcasting);
+    config.set_poll_timeout_millis(configured["pollTimeoutMillis"].as_i64().unwrap());
+    config.set_pull_batch_size(configured["pullBatchSize"].as_i64().unwrap() as i32);
+    config.set_pull_thread_nums(configured["pullThreadNums"].as_i64().unwrap() as i32);
+    config.set_pull_threshold_for_all(configured["pullThresholdForAll"].as_i64().unwrap());
+    config
+        .set_pull_threshold_for_queue(configured["pullThresholdForQueue"].as_i64().unwrap() as i32);
+    config.set_pull_threshold_size_for_queue(
+        configured["pullThresholdSizeForQueue"].as_i64().unwrap() as i32,
+    );
+    config.set_topic_metadata_check_interval_millis(
+        configured["topicMetadataCheckIntervalMillis"]
+            .as_i64()
+            .unwrap(),
+    );
+    config.set_unit_mode(configured["unitMode"].as_bool().unwrap());
+    config.set_connect_broker_by_user(true);
+    config.set_message_queue_listener(Some(std::sync::Arc::new(|_, _, _| {})));
+
+    assert_eq!(config.consumer_group(), "lite-configured-group");
+    assert!(!config.auto_commit());
+    assert_eq!(config.auto_commit_interval_millis(), 2_000);
+    assert_eq!(
+        config.consume_from_where(),
+        ConsumeFromWhere::ConsumeFromFirstOffset
+    );
+    assert_eq!(config.consume_max_span(), 29);
+    assert_eq!(config.consume_timestamp(), "20000101000000");
+    assert_eq!(config.consumer_pull_timeout_millis(), 47);
+    assert_eq!(config.consumer_timeout_millis_when_suspend(), 53);
+    assert_eq!(
+        config.customized_trace_topic(),
+        Some("trace-configured-topic")
+    );
+    assert_eq!(config.default_broker_id(), 17);
+    assert!(config.enable_msg_trace());
+    assert_eq!(config.message_model(), MessageModel::Broadcasting);
+    assert_eq!(config.poll_timeout_millis(), 41);
+    assert_eq!(config.pull_batch_size(), 13);
+    assert_eq!(config.pull_thread_nums(), 7);
+    assert_eq!(config.pull_threshold_for_all(), 23);
+    assert_eq!(config.pull_threshold_for_queue(), 31);
+    assert_eq!(config.pull_threshold_size_for_queue(), 37);
+    assert_eq!(config.topic_metadata_check_interval_millis(), 43);
+    assert!(config.unit_mode());
+    assert!(config.connect_broker_by_user());
+    assert!(config.message_queue_listener().is_some());
+}
+
+#[tokio::test]
+async fn lite_trace_dispatcher_uses_java_topic_defaults_and_lifecycle() {
+    let mut config = LitePullConsumerConfig::new("lite-trace-lifecycle").unwrap();
+    config.client_config_mut().set_namesrv_addr(None);
+    config.set_enable_msg_trace(true);
+    let consumer = std::sync::Arc::new(LitePullConsumer::new(config).unwrap());
+    assert!(consumer.trace_dispatcher().is_none());
+
+    consumer.start().await.unwrap();
+    let dispatcher = consumer.trace_dispatcher().unwrap();
+    assert_eq!(dispatcher.trace_topic_name(), "RMQ_SYS_TRACE_TOPIC");
+    consumer.shutdown().await.unwrap();
+    assert!(!consumer.is_running().await);
+}
+
 #[tokio::test]
 async fn lite_start_validates_consumer_timeouts_and_thread_settings_before_runtime_start() {
     let mut config = LitePullConsumerConfig::new("lite-invalid-timeout").unwrap();
