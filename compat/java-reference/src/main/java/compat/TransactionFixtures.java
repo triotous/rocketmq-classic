@@ -161,9 +161,12 @@ public final class TransactionFixtures {
             MessageConst.PROPERTY_TIMER_DELAY_MS,
             MessageConst.PROPERTY_TIMER_DELAY_SEC,
             MessageConst.PROPERTY_TIMER_DELIVER_MS));
-        transactionFlow.put("commitLogOffsetDecode", Map.of(
-            "offsetMsgId", MessageDecoder.decodeMessageId("7F00000100002A9F0000000000003039").getOffset(),
-            "fallbackMsgId", MessageDecoder.decodeMessageId("7F00000100002A9F000000000000303A").getOffset()));
+        Map<String, Object> decodedOffsets = new TreeMap<>();
+        decodedOffsets.put("offsetMsgId",
+            MessageDecoder.decodeMessageId("7F00000100002A9F0000000000003039").getOffset());
+        decodedOffsets.put("fallbackMsgId",
+            MessageDecoder.decodeMessageId("7F00000100002A9F000000000000303A").getOffset());
+        transactionFlow.put("commitLogOffsetDecode", decodedOffsets);
         transactionFlow.put("initialEndTransaction", initialEndTransactionFields());
         Map<String, Object> brokerCheckMessage = brokerCheckMessage();
         transactionFlow.put("brokerCheckMessage", brokerCheckMessage);
