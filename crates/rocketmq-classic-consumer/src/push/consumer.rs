@@ -4647,10 +4647,21 @@ mod tests {
         code: i32,
         fields: Option<HeaderMap>,
     ) {
+        write_remoting_reply_with_body(stream, request, code, fields, None).await;
+    }
+
+    async fn write_remoting_reply_with_body(
+        stream: &mut TcpStream,
+        request: &RemotingCommand,
+        code: i32,
+        fields: Option<HeaderMap>,
+        body: Option<Vec<u8>>,
+    ) {
         let mut reply = RemotingCommand {
             code,
             opaque: request.opaque,
             ext_fields: fields,
+            body,
             ..Default::default()
         };
         reply.mark_response();
@@ -4940,6 +4951,167 @@ mod tests {
 
         broker_peer.await.unwrap();
         runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn broker_assignment_activates_and_removes_pop_worker() {
+        let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let nameserver_address = nameserver.local_addr().unwrap().to_string();
+        let broker_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let broker_address = broker_listener.local_addr().unwrap().to_string();
+        let route = pop_test_route(&broker_address);
+        let nameserver_peer = tokio::spawn(async move {
+            let (mut stream, _) = nameserver.accept().await.unwrap();
+            let incoming = read_remoting_command(&mut stream).await;
+            assert_eq!(incoming.code, request::GET_ROUTEINFO_BY_TOPIC);
+            let mut reply = RemotingCommand {
+                code: response::SUCCESS,
+                opaque: incoming.opaque,
+                body: Some(route),
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .await
+                .unwrap();
+        });
+
+        let pop_request_count = Arc::new(AtomicUsize::new(0));
+        let peer_pop_request_count = pop_request_count.clone();
+        let broker_peer = tokio::spawn(async move {
+            let mut stream = None;
+            let mut assignment_calls = 0;
+            loop {
+                let incoming = accept_remoting_request(&broker_listener, &mut stream).await;
+                match incoming.code {
+                    request::QUERY_ASSIGNMENT => {
+                        let body: serde_json::Value = serde_json::from_slice(
+                            incoming.body.as_deref().expect("assignment request body"),
+                        )
+                        .unwrap();
+                        assert_eq!(body["topic"], "orders");
+                        assert_eq!(body["consumerGroup"], "pop-assignment-flow");
+                        assignment_calls += 1;
+                        let assignments = if assignment_calls == 1 {
+                            serde_json::json!([{
+                                "messageQueue": {
+                                    "topic": "orders",
+                                    "brokerName": "broker-a",
+                                    "queueId": 0
+                                },
+                                "mode": "POP"
+                            }])
+                        } else {
+                            serde_json::json!([])
+                        };
+                        write_remoting_reply_with_body(
+                            stream.as_mut().unwrap(),
+                            &incoming,
+                            response::SUCCESS,
+                            None,
+                            Some(
+                                serde_json::to_vec(&serde_json::json!({
+                                    "messageQueueAssignments": assignments
+                                }))
+                                .unwrap(),
+                            ),
+                        )
+                        .await;
+                    }
+                    request::POP_MESSAGE => {
+                        peer_pop_request_count.fetch_add(1, Ordering::SeqCst);
+                        write_remoting_reply(
+                            stream.as_mut().unwrap(),
+                            &incoming,
+                            response::PULL_NOT_FOUND,
+                            None,
+                        )
+                        .await;
+                    }
+                    request::HEART_BEAT
+                    | request::UNREGISTER_CLIENT
+                    | request::CHECK_CLIENT_CONFIG => {
+                        write_remoting_reply(
+                            stream.as_mut().unwrap(),
+                            &incoming,
+                            response::SUCCESS,
+                            None,
+                        )
+                        .await;
+                    }
+                    code => panic!("unexpected scripted Broker request code {code}"),
+                }
+            }
+        });
+
+        let mut config = PushConsumerConfig::new("pop-assignment-flow").unwrap();
+        config.set_client_rebalance(false);
+        config
+            .client_config_mut()
+            .set_namesrv_addr(Some(nameserver_address));
+        config
+            .client_config_mut()
+            .set_instance_name(Some("pop-assignment-client".into()));
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        write_lock(&consumer.subscriptions).insert(
+            "orders".to_owned(),
+            SubscriptionData::new(Some("orders".to_owned()), Some("*".to_owned())),
+        );
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            Arc::new(RecordingOffsetStore::default()),
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+        runtime.remoting().start().unwrap();
+        runtime
+            .update_topic_route("orders", Instant::now() + Duration::from_secs(3))
+            .await
+            .unwrap();
+        nameserver_peer.await.unwrap();
+
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        assert!(consumer.rebalance_service.rebalance(&consumer).await);
+        timeout(Duration::from_secs(3), async {
+            while pop_request_count.load(Ordering::SeqCst) == 0 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("assigned POP worker did not issue POP_MESSAGE");
+        let process_queue = read_lock(&consumer.pop_process_queues)
+            .get(&queue)
+            .cloned()
+            .expect("Broker POP assignment must activate its queue");
+        assert!(!process_queue.is_dropped());
+        assert!(
+            consumer
+                .pop_workers
+                .lock()
+                .unwrap()
+                .get(&queue)
+                .is_some_and(|worker| !worker.is_finished())
+        );
+
+        assert!(consumer.rebalance_service.rebalance(&consumer).await);
+        assert!(process_queue.is_dropped());
+        assert!(!read_lock(&consumer.pop_process_queues).contains_key(&queue));
+        assert!(!consumer.pop_workers.lock().unwrap().contains_key(&queue));
+        let pop_count_after_removal = pop_request_count.load(Ordering::SeqCst);
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        assert_eq!(
+            pop_request_count.load(Ordering::SeqCst),
+            pop_count_after_removal,
+            "removed POP workers must not issue more Broker requests"
+        );
+
+        consumer.shutdown().await.unwrap();
+        broker_peer.abort();
     }
 
     fn retry_test_message(offset: i64) -> MessageExt {

@@ -82,3 +82,9 @@ Phase 13 continuation — scripted Lite and POP lifecycle checks — 2026-10-12:
 - `cargo test -p rocketmq-classic-consumer --lib pop_consume_dispatches_ack_redelivery_and_replacement_receipt --locked -- --nocapture` — PASS (1 test). Initial runs found and fixed a moved-`Arc` test compile error and an incorrect expectation that the Broker sends the replacement `extraInfo` field.
 - `cargo test -p rocketmq-classic-consumer --lib --test lite_pop --locked` — PASS (129 unit tests, 13 integration tests).
 - Updated `docs/compatibility/PHASE_13_LITE_POP_MATRIX.md` with the new evidence. Phase 13 remains in progress for the full API/config audit, per-method Lite RPC success/error evidence, and scripted successful Broker assignment worker activation/removal. Phase 19 Broker/Docker work remains pending.
+
+Phase 13 continuation — scripted Broker POP assignment lifecycle — 2026-10-12:
+
+- Added `push::consumer::tests::broker_assignment_activates_and_removes_pop_worker`: a scripted name server route and Broker return a POP assignment, observe the worker issue `POP_MESSAGE`, then return an empty assignment; the test verifies generation drop, worker removal and no further POP requests.
+- `cargo test -p rocketmq-classic-consumer --lib broker_assignment_activates_and_removes_pop_worker --locked -- --nocapture` — PASS (1 test); `cargo fmt --all` applied before the run.
+- Updated the compatibility matrix. The successful Broker assignment activation/removal case is now covered; assignment error/mode-transition differentials and the Lite API/config audit remain open.
