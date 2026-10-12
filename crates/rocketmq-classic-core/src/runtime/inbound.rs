@@ -74,10 +74,11 @@ impl RuntimeProcessor {
                             .map(|processor| (group, processor))
                     })
                     .collect::<Vec<_>>();
-                if producers.is_empty() {
-                    return Ok(Some(unsupported(command.code, "Phase 14")));
-                }
-                let properties = stored_properties(command.body.as_deref().unwrap_or_default())?;
+                let properties =
+                    match stored_properties(command.body.as_deref().unwrap_or_default()) {
+                        Ok(properties) => properties,
+                        Err(_) => return Ok(None),
+                    };
                 producers
                     .into_iter()
                     .find(|(group, _)| properties.get(PROPERTY_PRODUCER_GROUP) == Some(group))
@@ -130,6 +131,7 @@ impl RuntimeProcessor {
         };
         match selected {
             Some(processor) => processor.process_with_context(remote, command),
+            None if command.code == request::CHECK_TRANSACTION_STATE => Ok(None),
             None => Ok(Some(unsupported(
                 command.code,
                 match command.code {
@@ -734,7 +736,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn registered_producer_without_transaction_or_reply_capability_returns_phase_errors() {
+    async fn registered_producer_without_transaction_capability_returns_java_null_response() {
         let runtime = runtime("producer-inactive-slots").await;
         let producer = Arc::new(NoInboundProducer);
         let lease = runtime
@@ -742,12 +744,17 @@ mod tests {
             .await
             .unwrap();
 
-        let transaction = dispatch(&runtime, request::CHECK_TRANSACTION_STATE, &[], None);
-        assert_eq!(transaction.code, response::REQUEST_CODE_NOT_SUPPORTED);
-        assert_eq!(
-            transaction.remark.as_deref(),
-            Some("client request 39 has no active handler (Phase 14)")
-        );
+        let transaction = runtime
+            .inbound
+            .process_with_context(
+                "broker:10911",
+                RemotingCommand {
+                    code: request::CHECK_TRANSACTION_STATE,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert!(transaction.is_none());
 
         for properties in [None, Some("CORRELATION_ID\u{1}missing\u{2}")] {
             let reply = if let Some(value) = properties {

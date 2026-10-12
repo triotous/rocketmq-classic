@@ -1060,6 +1060,7 @@ dependencies = [
 name = "rocketmq-classic-producer"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "bytes",
  "rocketmq-classic-common",
  "rocketmq-classic-core",

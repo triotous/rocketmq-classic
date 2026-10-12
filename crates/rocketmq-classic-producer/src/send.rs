@@ -864,6 +864,7 @@ impl Producer {
                 queue: attempt.queue.clone(),
                 body: attempt.prepared.body.clone(),
                 properties: attempt.prepared.properties.clone(),
+                sys_flag: attempt.prepared.sys_flag,
                 unique_id: attempt.prepared.unique_id.clone(),
                 mode: attempt.mode,
                 batch: attempt.prepared.batch,

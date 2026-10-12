@@ -339,6 +339,10 @@ fn generate_p4_headers(output: &std::path::Path) {
             from_transaction_check: Some(false),
             msg_id: "msg-1".into(),
             transaction_id: Some("tx-1".into()),
+            namespace: None,
+            namespaced: None,
+            broker_name: None,
+            oneway: None,
         },
     );
     write_typed(
@@ -352,6 +356,10 @@ fn generate_p4_headers(output: &std::path::Path) {
             msg_id: Some("msg-1".into()),
             transaction_id: Some("tx-1".into()),
             offset_msg_id: Some("offset-1".into()),
+            namespace: None,
+            namespaced: None,
+            broker_name: None,
+            oneway: None,
         },
     );
     write_typed(

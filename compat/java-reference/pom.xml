@@ -359,6 +359,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-java-transaction-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.TransactionFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/producer/transaction.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-java-message-decode-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

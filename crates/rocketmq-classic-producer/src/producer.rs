@@ -24,6 +24,7 @@ pub(crate) struct ScriptedSendAttempt {
     pub(crate) queue: rocketmq_classic_common::message::MessageQueue,
     pub(crate) body: Vec<u8>,
     pub(crate) properties: Option<String>,
+    pub(crate) sys_flag: i32,
     pub(crate) unique_id: String,
     pub(crate) mode: SendMode,
     pub(crate) batch: bool,
@@ -55,6 +56,7 @@ pub struct Producer {
     pub(crate) auto_batch_accumulator: AutoBatchAccumulator,
     pub(crate) auto_batch_tasks: tokio::sync::Mutex<Vec<JoinHandle<()>>>,
     pub(crate) self_weak: OnceLock<Weak<Producer>>,
+    pub(crate) transaction: OnceLock<Arc<crate::transaction::TransactionRuntime>>,
     pub(crate) backpressure_send_num: Arc<Semaphore>,
     pub(crate) backpressure_send_size: Arc<Semaphore>,
     publish_info: RwLock<HashMap<String, Arc<TopicSnapshot>>>,
@@ -63,6 +65,16 @@ pub struct Producer {
     pub(crate) ids: UniqueIdGenerator,
     #[cfg(test)]
     pub(crate) scripted_transport: std::sync::Mutex<ScriptedTransport>,
+    #[cfg(test)]
+    pub(crate) scripted_end_transactions: std::sync::Mutex<
+        Vec<(
+            String,
+            rocketmq_classic_protocol::header::EndTransactionRequestHeader,
+            Option<String>,
+        )>,
+    >,
+    #[cfg(test)]
+    pub(crate) scripted_end_failure: std::sync::atomic::AtomicBool,
 }
 
 impl Producer {
@@ -95,6 +107,7 @@ impl Producer {
             auto_batch_accumulator: AutoBatchAccumulator::default(),
             auto_batch_tasks: tokio::sync::Mutex::new(Vec::new()),
             self_weak: OnceLock::new(),
+            transaction: OnceLock::new(),
             backpressure_send_num,
             backpressure_send_size,
             publish_info: RwLock::new(HashMap::new()),
@@ -102,6 +115,10 @@ impl Producer {
             fault,
             #[cfg(test)]
             scripted_transport: std::sync::Mutex::new(ScriptedTransport::default()),
+            #[cfg(test)]
+            scripted_end_transactions: std::sync::Mutex::new(Vec::new()),
+            #[cfg(test)]
+            scripted_end_failure: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -297,6 +314,14 @@ impl Producer {
 }
 
 impl ProducerRuntime for Producer {
+    fn transaction_processor(
+        &self,
+    ) -> Option<Arc<dyn rocketmq_classic_remoting::client::RequestProcessor>> {
+        self.transaction
+            .get()
+            .map(crate::transaction::TransactionRuntime::request_processor)
+    }
+
     fn publish_topics(&self) -> BTreeSet<String> {
         self.config
             .topics()

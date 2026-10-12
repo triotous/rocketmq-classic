@@ -619,7 +619,7 @@ impl CommandHeader for UnregisterClientResponseHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EndTransactionRequestHeader {
     pub topic: Option<String>,
     pub producer_group: String,
@@ -629,6 +629,29 @@ pub struct EndTransactionRequestHeader {
     pub from_transaction_check: Option<bool>,
     pub msg_id: String,
     pub transaction_id: Option<String>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
+}
+
+impl Default for EndTransactionRequestHeader {
+    fn default() -> Self {
+        Self {
+            topic: None,
+            producer_group: String::new(),
+            transaction_state_table_offset: 0,
+            commit_log_offset: 0,
+            commit_or_rollback: 0,
+            from_transaction_check: Some(false),
+            msg_id: String::new(),
+            transaction_id: None,
+            namespace: None,
+            namespaced: None,
+            broker_name: None,
+            oneway: None,
+        }
+    }
 }
 
 impl CommandHeader for EndTransactionRequestHeader {
@@ -647,6 +670,10 @@ impl CommandHeader for EndTransactionRequestHeader {
         put_optional(fields, "fromTransactionCheck", self.from_transaction_check);
         fields.insert("msgId".into(), self.msg_id.clone());
         put_optional(fields, "transactionId", self.transaction_id.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
@@ -659,6 +686,10 @@ impl CommandHeader for EndTransactionRequestHeader {
             from_transaction_check: optional_java_boolean(fields, "fromTransactionCheck"),
             msg_id: required_string(fields, "msgId")?.to_owned(),
             transaction_id: optional_string(fields, "transactionId"),
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
         })
     }
 }
@@ -681,6 +712,10 @@ pub struct CheckTransactionStateRequestHeader {
     pub msg_id: Option<String>,
     pub transaction_id: Option<String>,
     pub offset_msg_id: Option<String>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
 }
 
 impl CommandHeader for CheckTransactionStateRequestHeader {
@@ -694,6 +729,10 @@ impl CommandHeader for CheckTransactionStateRequestHeader {
         put_optional(fields, "msgId", self.msg_id.as_deref());
         put_optional(fields, "transactionId", self.transaction_id.as_deref());
         put_optional(fields, "offsetMsgId", self.offset_msg_id.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
@@ -704,6 +743,10 @@ impl CommandHeader for CheckTransactionStateRequestHeader {
             msg_id: optional_string(fields, "msgId"),
             transaction_id: optional_string(fields, "transactionId"),
             offset_msg_id: optional_string(fields, "offsetMsgId"),
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
         })
     }
 }

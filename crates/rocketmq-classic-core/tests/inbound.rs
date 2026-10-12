@@ -63,7 +63,9 @@ async fn inactive_runtime_slots_match_phase_errors_and_no_dispatch_silence() {
             write(&mut stream, &command).await;
             if matches!(
                 code,
-                request::NOTIFY_CONSUMER_IDS_CHANGED | request::NOTIFY_UNSUBSCRIBE_LITE
+                request::CHECK_TRANSACTION_STATE
+                    | request::NOTIFY_CONSUMER_IDS_CHANGED
+                    | request::NOTIFY_UNSUBSCRIBE_LITE
             ) {
                 assert!(
                     tokio::time::timeout(Duration::from_millis(20), read(&mut stream))

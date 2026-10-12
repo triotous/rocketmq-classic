@@ -275,6 +275,10 @@ fn transaction_and_reply_headers_round_trip_typed_fields() {
         from_transaction_check: Some(false),
         msg_id: "msg-1".into(),
         transaction_id: Some("tx-1".into()),
+        namespace: None,
+        namespaced: None,
+        broker_name: None,
+        oneway: None,
     };
     let mut fields = HeaderMap::new();
     end.encode_fields(&mut fields);
@@ -287,6 +291,10 @@ fn transaction_and_reply_headers_round_trip_typed_fields() {
         msg_id: Some("msg-1".into()),
         transaction_id: Some("tx-1".into()),
         offset_msg_id: Some("offset-id".into()),
+        namespace: None,
+        namespaced: None,
+        broker_name: None,
+        oneway: None,
     };
     fields.clear();
     check.encode_fields(&mut fields);
@@ -327,6 +335,51 @@ fn transaction_and_reply_headers_round_trip_typed_fields() {
     fields.clear();
     reply.encode_fields(&mut fields);
     assert_eq!(ReplyMessageRequestHeader::decode_fields(&fields), Ok(reply));
+}
+
+#[test]
+fn transaction_headers_match_pinned_java_fields_including_rpc_parent() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/transaction.json")).unwrap();
+    let transaction_flow = &fixture["transactionFlow"];
+    let fields = |value: &serde_json::Value| -> HeaderMap {
+        value
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_owned()))
+            .collect()
+    };
+
+    for value in transaction_flow["initialEndTransaction"]
+        .as_object()
+        .unwrap()
+        .values()
+    {
+        let expected = fields(value);
+        let header = EndTransactionRequestHeader::decode_fields(&expected).unwrap();
+        let mut actual = HeaderMap::new();
+        header.encode_fields(&mut actual);
+        assert_eq!(actual, expected);
+        assert_eq!(header.broker_name.as_deref(), Some("broker-a"));
+    }
+
+    let expected_check = fields(&transaction_flow["brokerCheckRequest"]);
+    let check = CheckTransactionStateRequestHeader::decode_fields(&expected_check).unwrap();
+    let mut actual_check = HeaderMap::new();
+    check.encode_fields(&mut actual_check);
+    assert_eq!(actual_check, expected_check);
+    assert_eq!(check.namespace.as_deref(), Some("fixture-namespace"));
+    assert_eq!(check.namespaced, Some(true));
+    assert_eq!(check.broker_name.as_deref(), Some("broker-a"));
+    assert_eq!(check.oneway, Some(false));
+
+    let mut default_end = HeaderMap::new();
+    EndTransactionRequestHeader::default().encode_fields(&mut default_end);
+    assert_eq!(
+        default_end.get("fromTransactionCheck").map(String::as_str),
+        Some("false")
+    );
 }
 
 #[test]
@@ -902,8 +955,8 @@ fn header_validation_matrix() {
             "producerGroup tranStateTableOffset commitLogOffset commitOrRollback msgId",
             "commitOrRollback",
             "tranStateTableOffset commitLogOffset",
-            "topic fromTransactionCheck transactionId",
-            "fromTransactionCheck"
+            "topic fromTransactionCheck transactionId ns nsd bname oway",
+            "fromTransactionCheck nsd oway"
         ),
         row!(
             EndTransactionResponseHeader,
@@ -920,8 +973,8 @@ fn header_validation_matrix() {
             "tranStateTableOffset commitLogOffset",
             "",
             "tranStateTableOffset commitLogOffset",
-            "topic msgId transactionId offsetMsgId",
-            ""
+            "topic msgId transactionId offsetMsgId ns nsd bname oway",
+            "nsd oway"
         ),
         row!(
             CheckTransactionStateResponseHeader,

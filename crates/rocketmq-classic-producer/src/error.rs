@@ -44,6 +44,18 @@ pub enum ProducerError {
     NoQueueSelected,
     #[error("send deadline expired")]
     Timeout,
+    #[error("TransactionListener is null")]
+    TransactionListenerMissing,
+    #[error("Transactional messages do not support delayed delivery")]
+    DelayedTransactionalMessage,
+    #[error("transaction check pool settings are invalid: min={min}, max={max}, hold={hold}")]
+    InvalidTransactionPoolSettings { min: i32, max: i32, hold: i32 },
+    #[error("transaction check queue is full or shut down")]
+    TransactionCheckQueueUnavailable,
+    #[error("transaction message ID is malformed: {0}")]
+    TransactionMetadata(String),
+    #[error("send message Exception: {0}")]
+    TransactionSend(Box<ProducerError>),
     #[error("configured synchronous retry count results in no send attempts")]
     NoSendAttempt,
     #[error("retry metadata is not a valid Java integer")]
