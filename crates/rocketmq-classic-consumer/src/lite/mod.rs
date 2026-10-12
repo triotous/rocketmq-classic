@@ -11,7 +11,7 @@ use std::{
     panic::AssertUnwindSafe,
     sync::{
         Arc, Mutex, RwLock,
-        atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -75,6 +75,17 @@ pub struct LitePullConsumer {
     start_invoked: AtomicBool,
     running: AtomicBool,
     auto_commit: AtomicBool,
+    pull_thread_nums: AtomicI32,
+    auto_commit_interval_millis: AtomicI64,
+    pull_batch_size: AtomicI32,
+    pull_threshold_for_all: AtomicI64,
+    consume_max_span: AtomicI32,
+    pull_threshold_for_queue: AtomicI32,
+    pull_threshold_size_for_queue: AtomicI32,
+    poll_timeout_millis: AtomicI64,
+    consumer_pull_timeout_millis: AtomicI64,
+    consumer_timeout_millis_when_suspend: AtomicI64,
+    topic_metadata_check_interval_millis: AtomicI64,
     connect_broker_by_user: AtomicBool,
     default_broker_id: AtomicI64,
     mode: RwLock<SubscriptionMode>,
@@ -119,12 +130,23 @@ impl LitePullConsumer {
         rpc_hook: Option<Arc<dyn RpcHook>>,
     ) -> Result<Self, LitePullConsumerError> {
         let auto_commit = config.auto_commit();
+        let pull_thread_nums = config.pull_thread_nums();
+        let auto_commit_interval_millis = config.auto_commit_interval_millis();
+        let pull_batch_size = config.pull_batch_size();
+        let pull_threshold_for_all = config.pull_threshold_for_all();
+        let consume_max_span = config.consume_max_span();
+        let pull_threshold_for_queue = config.pull_threshold_for_queue();
+        let pull_threshold_size_for_queue = config.pull_threshold_size_for_queue();
+        let poll_timeout_millis = config.poll_timeout_millis();
+        let consumer_pull_timeout_millis = config.consumer_pull_timeout_millis();
+        let consumer_timeout_millis_when_suspend = config.consumer_timeout_millis_when_suspend();
+        let topic_metadata_check_interval_millis = config.topic_metadata_check_interval_millis();
         let connect_broker_by_user = config.connect_broker_by_user();
         let default_broker_id = config.default_broker_id();
         let message_queue_listener = config.message_queue_listener();
-        let pull_permits = Arc::new(tokio::sync::Semaphore::new(
-            usize::try_from(config.pull_thread_nums().max(1)).unwrap_or(1),
-        ));
+        // Pull workers are created only after start, so settings changed after
+        // construction but before start can size the semaphore there.
+        let pull_permits = Arc::new(tokio::sync::Semaphore::new(0));
         Ok(Self {
             config,
             rpc_hook,
@@ -134,6 +156,21 @@ impl LitePullConsumer {
             start_invoked: AtomicBool::new(false),
             running: AtomicBool::new(false),
             auto_commit: AtomicBool::new(auto_commit),
+            pull_thread_nums: AtomicI32::new(pull_thread_nums),
+            auto_commit_interval_millis: AtomicI64::new(auto_commit_interval_millis),
+            pull_batch_size: AtomicI32::new(pull_batch_size),
+            pull_threshold_for_all: AtomicI64::new(pull_threshold_for_all),
+            consume_max_span: AtomicI32::new(consume_max_span),
+            pull_threshold_for_queue: AtomicI32::new(pull_threshold_for_queue),
+            pull_threshold_size_for_queue: AtomicI32::new(pull_threshold_size_for_queue),
+            poll_timeout_millis: AtomicI64::new(poll_timeout_millis),
+            consumer_pull_timeout_millis: AtomicI64::new(consumer_pull_timeout_millis),
+            consumer_timeout_millis_when_suspend: AtomicI64::new(
+                consumer_timeout_millis_when_suspend,
+            ),
+            topic_metadata_check_interval_millis: AtomicI64::new(
+                topic_metadata_check_interval_millis,
+            ),
             connect_broker_by_user: AtomicBool::new(connect_broker_by_user),
             default_broker_id: AtomicI64::new(default_broker_id),
             mode: RwLock::new(SubscriptionMode::None),
@@ -161,12 +198,130 @@ impl LitePullConsumer {
         })
     }
 
+    /// Returns the construction-time configuration snapshot. Settings with
+    /// Java-compatible live setters are read from the corresponding consumer
+    /// accessors after construction.
     pub fn config(&self) -> &LitePullConsumerConfig {
         &self.config
     }
 
     pub fn is_auto_commit(&self) -> bool {
         self.auto_commit.load(Ordering::Acquire)
+    }
+
+    pub fn pull_thread_nums(&self) -> i32 {
+        self.pull_thread_nums.load(Ordering::Acquire)
+    }
+
+    pub fn set_pull_thread_nums(&self, value: i32) {
+        self.pull_thread_nums.store(value, Ordering::Release);
+    }
+
+    pub fn auto_commit_interval_millis(&self) -> i64 {
+        self.auto_commit_interval_millis.load(Ordering::Acquire)
+    }
+
+    pub fn set_auto_commit_interval_millis(&self, value: i64) {
+        if value >= 1_000 {
+            self.auto_commit_interval_millis
+                .store(value, Ordering::Release);
+        }
+    }
+
+    pub fn pull_batch_size(&self) -> i32 {
+        self.pull_batch_size.load(Ordering::Acquire)
+    }
+
+    pub fn set_pull_batch_size(&self, value: i32) {
+        self.pull_batch_size.store(value, Ordering::Release);
+    }
+
+    pub fn pull_threshold_for_all(&self) -> i64 {
+        self.pull_threshold_for_all.load(Ordering::Acquire)
+    }
+
+    pub fn set_pull_threshold_for_all(&self, value: i64) {
+        self.pull_threshold_for_all.store(value, Ordering::Release);
+    }
+
+    pub fn consume_max_span(&self) -> i32 {
+        self.consume_max_span.load(Ordering::Acquire)
+    }
+
+    pub fn set_consume_max_span(&self, value: i32) {
+        self.consume_max_span.store(value, Ordering::Release);
+    }
+
+    pub fn pull_threshold_for_queue(&self) -> i32 {
+        self.pull_threshold_for_queue.load(Ordering::Acquire)
+    }
+
+    pub fn set_pull_threshold_for_queue(&self, value: i32) {
+        self.pull_threshold_for_queue
+            .store(value, Ordering::Release);
+    }
+
+    pub fn pull_threshold_size_for_queue(&self) -> i32 {
+        self.pull_threshold_size_for_queue.load(Ordering::Acquire)
+    }
+
+    pub fn set_pull_threshold_size_for_queue(&self, value: i32) {
+        self.pull_threshold_size_for_queue
+            .store(value, Ordering::Release);
+    }
+
+    pub fn poll_timeout_millis(&self) -> i64 {
+        self.poll_timeout_millis.load(Ordering::Acquire)
+    }
+
+    pub fn set_poll_timeout_millis(&self, value: i64) {
+        self.poll_timeout_millis.store(value, Ordering::Release);
+    }
+
+    pub fn consumer_pull_timeout_millis(&self) -> i64 {
+        self.consumer_pull_timeout_millis.load(Ordering::Acquire)
+    }
+
+    pub fn set_consumer_pull_timeout_millis(&self, value: i64) {
+        self.consumer_pull_timeout_millis
+            .store(value, Ordering::Release);
+    }
+
+    pub fn consumer_timeout_millis_when_suspend(&self) -> i64 {
+        self.consumer_timeout_millis_when_suspend
+            .load(Ordering::Acquire)
+    }
+
+    pub fn set_consumer_timeout_millis_when_suspend(&self, value: i64) {
+        self.consumer_timeout_millis_when_suspend
+            .store(value, Ordering::Release);
+    }
+
+    pub fn topic_metadata_check_interval_millis(&self) -> i64 {
+        self.topic_metadata_check_interval_millis
+            .load(Ordering::Acquire)
+    }
+
+    pub fn set_topic_metadata_check_interval_millis(&self, value: i64) {
+        self.topic_metadata_check_interval_millis
+            .store(value, Ordering::Release);
+    }
+
+    pub fn message_queue_listener(&self) -> Option<MessageQueueListener> {
+        self.message_queue_listener
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    pub fn set_message_queue_listener(&self, listener: Option<MessageQueueListener>) {
+        *self
+            .message_queue_listener
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = listener.clone();
+        if let Some(engine) = self.engine() {
+            engine.set_message_queue_listener(listener);
+        }
     }
 
     pub async fn is_running(&self) -> bool {
@@ -384,22 +539,32 @@ impl LitePullConsumer {
                 Lifecycle::Created => *state = Lifecycle::Starting,
             }
         }
-        if self.config.pull_thread_nums() < 0 {
+        let pull_thread_nums = self.pull_thread_nums.load(Ordering::Acquire);
+        if pull_thread_nums < 0 {
             *self.lifecycle.lock().await = Lifecycle::Shutdown;
             return Err(LitePullConsumerError::InvalidPullThreadCount);
         }
-        if self.config.topic_metadata_check_interval_millis() <= 0 {
+        let topic_metadata_check_interval_millis = self
+            .topic_metadata_check_interval_millis
+            .load(Ordering::Acquire);
+        if topic_metadata_check_interval_millis <= 0 {
             *self.lifecycle.lock().await = Lifecycle::Shutdown;
             return Err(LitePullConsumerError::InvalidTopicMetadataCheckInterval);
         }
-        if !self.config.validate_suspend_timeout() {
+        let consumer_timeout_millis = self
+            .consumer_timeout_millis_when_suspend
+            .load(Ordering::Acquire);
+        let broker_suspend_millis = self.config.broker_suspend_max_time_millis();
+        if consumer_timeout_millis < broker_suspend_millis {
             *self.lifecycle.lock().await = Lifecycle::Shutdown;
             return Err(PullConsumerError::InvalidSuspendTimeout {
-                consumer_timeout_millis: self.config.consumer_timeout_millis_when_suspend(),
-                broker_suspend_millis: self.config.broker_suspend_max_time_millis(),
+                consumer_timeout_millis,
+                broker_suspend_millis,
             }
             .into());
         }
+        self.pull_permits
+            .add_permits(usize::try_from(pull_thread_nums.max(1)).unwrap_or(1));
         let trace_dispatcher = if self.config.enable_msg_trace() {
             match LiteTraceDispatcher::new(
                 self.config.client_config(),
@@ -478,7 +643,9 @@ impl LitePullConsumer {
         let consumer = self.clone();
         let task = tokio::spawn(async move {
             let metadata_period = Duration::from_millis(
-                consumer.config.topic_metadata_check_interval_millis() as u64,
+                consumer
+                    .topic_metadata_check_interval_millis
+                    .load(Ordering::Acquire) as u64,
             );
             let mut next_metadata_refresh = Instant::now() + metadata_period;
             loop {
@@ -530,9 +697,12 @@ impl LitePullConsumer {
         pull_config
             .set_broker_suspend_max_time_millis(self.config.broker_suspend_max_time_millis());
         pull_config.set_consumer_timeout_millis_when_suspend(
-            self.config.consumer_timeout_millis_when_suspend(),
+            self.consumer_timeout_millis_when_suspend
+                .load(Ordering::Acquire),
         );
-        pull_config.set_consumer_pull_timeout_millis(self.config.consumer_pull_timeout_millis());
+        pull_config.set_consumer_pull_timeout_millis(
+            self.consumer_pull_timeout_millis.load(Ordering::Acquire),
+        );
         pull_config.set_message_model(self.config.message_model());
         pull_config.set_consume_from_where(self.config.consume_from_where());
         pull_config.set_unit_mode(self.config.unit_mode());
@@ -631,7 +801,8 @@ impl LitePullConsumer {
         if !self.running.load(Ordering::Acquire) {
             return Err(LitePullConsumerError::NotStarted);
         }
-        let timeout_millis = timeout_millis.unwrap_or(self.config.poll_timeout_millis());
+        let timeout_millis =
+            timeout_millis.unwrap_or_else(|| self.poll_timeout_millis.load(Ordering::Acquire));
         if timeout_millis < 0 {
             return Err(LitePullConsumerError::NegativePollTimeout);
         }
@@ -1256,8 +1427,9 @@ impl LitePullConsumer {
                     &queue,
                     &selector,
                     offset,
-                    self.config.pull_batch_size(),
-                    self.config.consumer_timeout_millis_when_suspend(),
+                    self.pull_batch_size.load(Ordering::Acquire),
+                    self.consumer_timeout_millis_when_suspend
+                        .load(Ordering::Acquire),
                 )
                 .await;
             match result {
@@ -1377,8 +1549,8 @@ impl LitePullConsumer {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let queued_requests = buffer.batches.len() as i64;
-        if queued_requests.saturating_mul(i64::from(self.config.pull_batch_size()))
-            > self.config.pull_threshold_for_all()
+        if queued_requests.saturating_mul(i64::from(self.pull_batch_size.load(Ordering::Acquire)))
+            > self.pull_threshold_for_all.load(Ordering::Acquire)
         {
             return true;
         }
@@ -1399,20 +1571,21 @@ impl LitePullConsumer {
             }
         }
         if i64::try_from(queue_count).unwrap_or(i64::MAX)
-            > i64::from(self.config.pull_threshold_for_queue())
+            > i64::from(self.pull_threshold_for_queue.load(Ordering::Acquire))
         {
             return true;
         }
         let queue_size_mib = queue_bytes / (1024 * 1024);
         if i64::try_from(queue_size_mib).unwrap_or(i64::MAX)
-            > i64::from(self.config.pull_threshold_size_for_queue())
+            > i64::from(self.pull_threshold_size_for_queue.load(Ordering::Acquire))
         {
             return true;
         }
         minimum_offset
             .zip(maximum_offset)
             .is_some_and(|(minimum, maximum)| {
-                maximum.saturating_sub(minimum) > i64::from(self.config.consume_max_span())
+                maximum.saturating_sub(minimum)
+                    > i64::from(self.consume_max_span.load(Ordering::Acquire))
             })
     }
 
@@ -1478,7 +1651,9 @@ impl LitePullConsumer {
             if deadline.is_none_or(|deadline| now >= deadline) {
                 *deadline = Some(
                     now + Duration::from_millis(
-                        self.config.auto_commit_interval_millis().max(0) as u64
+                        self.auto_commit_interval_millis
+                            .load(Ordering::Acquire)
+                            .max(0) as u64,
                     ),
                 );
                 true
@@ -1514,9 +1689,92 @@ mod tests {
     use super::*;
     use rocketmq_classic_common::message::{Message, MessageExt};
     use rocketmq_classic_core::api::consumer::{PullResultExt, PullStatus};
+    use rocketmq_classic_core::config::AccessChannel;
+    use rocketmq_classic_protocol::codes::LanguageCode;
 
     fn consumer() -> LitePullConsumer {
         LitePullConsumer::new(LitePullConsumerConfig::new("lite-test").unwrap()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn inherited_java_client_config_is_copied_to_the_pull_engine() {
+        let mut config = LitePullConsumerConfig::new("lite-client-config-copy").unwrap();
+        let client = config.client_config_mut();
+        client.namesrv_addr = Some("nameserver:9876".into());
+        client.client_ip = Some("192.0.2.10".into());
+        client.instance_name = Some("lite-client-config-copy-instance".into());
+        client.client_callback_executor_threads = 3;
+        client.set_namespace(Some("tenant".into()));
+        client.namespace_v2 = Some("tenant-v2".into());
+        client.access_channel = Some(AccessChannel::Cloud);
+        client.poll_name_server_interval = 31;
+        client.heartbeat_broker_interval = 32;
+        client.persist_consumer_offset_interval = 33;
+        client.pull_time_delay_millis_when_exception = 34;
+        client.trace_msg_batch_num = 35;
+        client.unit_mode = true;
+        client.unit_name = Some("unit-a".into());
+        client.decode_read_body = false;
+        client.decode_decompress_body = false;
+        client.vip_channel_enabled = true;
+        client.use_heartbeat_v2 = true;
+        client.use_tls = true;
+        client.socks_proxy_config = Some("{}".into());
+        client.mq_client_api_timeout = 36;
+        client.detect_timeout = 37;
+        client.detect_interval = 38;
+        client.language = Some(LanguageCode::Rust);
+        client.enable_stream_request_type = false;
+        client.send_latency_enable = true;
+        client.start_detector_enable = true;
+        client.enable_heartbeat_channel_event_listener = false;
+        client.enable_concurrent_heartbeat = true;
+        client.concurrent_heartbeat_thread_pool_size = 4;
+        client.enable_trace = true;
+        client.trace_topic = Some("client-trace-topic".into());
+        client.max_page_size_in_get_metadata = 39;
+        let expected = config.client_config().clone();
+
+        let consumer = LitePullConsumer::new(config).unwrap();
+        let engine = consumer.prepare_engine().await.unwrap();
+        assert_eq!(engine.config().client_config(), &expected);
+        assert!(engine.config().unit_mode());
+        assert!(consumer.config().enable_msg_trace());
+        assert_eq!(
+            consumer.config().customized_trace_topic(),
+            Some("client-trace-topic")
+        );
+    }
+
+    #[test]
+    fn post_construction_setters_update_java_live_runtime_settings() {
+        let consumer = consumer();
+        consumer.set_pull_thread_nums(3);
+        consumer.set_auto_commit_interval_millis(2_000);
+        consumer.set_auto_commit_interval_millis(999);
+        consumer.set_pull_batch_size(11);
+        consumer.set_pull_threshold_for_all(23);
+        consumer.set_consume_max_span(29);
+        consumer.set_pull_threshold_for_queue(31);
+        consumer.set_pull_threshold_size_for_queue(37);
+        consumer.set_poll_timeout_millis(41);
+        consumer.set_consumer_pull_timeout_millis(43);
+        consumer.set_consumer_timeout_millis_when_suspend(45);
+        consumer.set_topic_metadata_check_interval_millis(47);
+        consumer.set_message_queue_listener(Some(Arc::new(|_, _, _| {})));
+
+        assert_eq!(consumer.pull_thread_nums(), 3);
+        assert_eq!(consumer.auto_commit_interval_millis(), 2_000);
+        assert_eq!(consumer.pull_batch_size(), 11);
+        assert_eq!(consumer.pull_threshold_for_all(), 23);
+        assert_eq!(consumer.consume_max_span(), 29);
+        assert_eq!(consumer.pull_threshold_for_queue(), 31);
+        assert_eq!(consumer.pull_threshold_size_for_queue(), 37);
+        assert_eq!(consumer.poll_timeout_millis(), 41);
+        assert_eq!(consumer.consumer_pull_timeout_millis(), 43);
+        assert_eq!(consumer.consumer_timeout_millis_when_suspend(), 45);
+        assert_eq!(consumer.topic_metadata_check_interval_millis(), 47);
+        assert!(consumer.message_queue_listener().is_some());
     }
 
     #[tokio::test]
@@ -1657,12 +1915,12 @@ mod tests {
 
     #[test]
     fn flow_control_uses_java_request_count_message_and_whole_mib_boundaries() {
-        let mut config = LitePullConsumerConfig::new("lite-flow-control").unwrap();
-        config.set_pull_threshold_for_all(20);
-        config.set_pull_threshold_for_queue(2);
-        config.set_pull_threshold_size_for_queue(1);
-        config.set_consume_max_span(5);
+        let config = LitePullConsumerConfig::new("lite-flow-control").unwrap();
         let consumer = LitePullConsumer::new(config).unwrap();
+        consumer.set_pull_threshold_for_all(20);
+        consumer.set_pull_threshold_for_queue(2);
+        consumer.set_pull_threshold_size_for_queue(1);
+        consumer.set_consume_max_span(5);
         let queue = MessageQueue::new("orders", "broker-a", 0);
         let batch = |offsets: &[i64], body_bytes| BufferedBatch {
             queue: queue.clone(),

@@ -877,7 +877,7 @@ impl PullConsumer {
             subscription.is_class_filter_mode(),
             lite_pull,
         );
-        let pull_timeout_millis = if suspend {
+        let pull_timeout_millis = if suspend && !lite_pull {
             self.config.consumer_timeout_millis_when_suspend()
         } else {
             timeout_millis

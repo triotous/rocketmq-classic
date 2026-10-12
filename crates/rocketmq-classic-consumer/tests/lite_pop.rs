@@ -583,6 +583,78 @@ async fn lite_rpc_hook_stream_identity_and_namespace_config_reach_runtime() {
 }
 
 #[tokio::test]
+async fn lite_runtime_settings_can_be_changed_after_consumer_construction() {
+    let broker_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let broker_address = broker_listener.local_addr().unwrap().to_string();
+    let route = broker_route(&broker_address);
+    let (nameserver, nameserver_task) = start_scripted_nameserver(route).await;
+    let (mut requests, broker_task) = start_scripted_broker(broker_listener);
+    let store = Arc::new(LiteScriptedOffsetStore::default());
+    let config = lite_config_with_store(
+        "lite-post-construction-settings",
+        "lite-post-construction-client",
+        &nameserver,
+        store,
+    );
+    let consumer = Arc::new(LitePullConsumer::new(config).unwrap());
+    let queue = MessageQueue::new("orders", "broker-a", 0);
+
+    consumer.set_pull_thread_nums(2);
+    consumer.set_pull_batch_size(11);
+    consumer.set_auto_commit_interval_millis(2_000);
+    consumer.set_auto_commit_interval_millis(999);
+    consumer.set_pull_threshold_for_all(23);
+    consumer.set_consume_max_span(29);
+    consumer.set_pull_threshold_for_queue(31);
+    consumer.set_pull_threshold_size_for_queue(37);
+    consumer.set_poll_timeout_millis(20);
+    consumer.set_consumer_pull_timeout_millis(47);
+    consumer.set_consumer_timeout_millis_when_suspend(25_000);
+    consumer.set_topic_metadata_check_interval_millis(43);
+    assert_eq!(consumer.pull_thread_nums(), 2);
+    assert_eq!(consumer.auto_commit_interval_millis(), 2_000);
+    assert_eq!(consumer.pull_batch_size(), 11);
+    assert_eq!(consumer.pull_threshold_for_all(), 23);
+    assert_eq!(consumer.consume_max_span(), 29);
+    assert_eq!(consumer.pull_threshold_for_queue(), 31);
+    assert_eq!(consumer.pull_threshold_size_for_queue(), 37);
+    assert_eq!(consumer.poll_timeout_millis(), 20);
+    assert_eq!(consumer.consumer_pull_timeout_millis(), 47);
+    assert_eq!(consumer.consumer_timeout_millis_when_suspend(), 25_000);
+    assert_eq!(consumer.topic_metadata_check_interval_millis(), 43);
+
+    consumer.assign([queue.clone()]).unwrap();
+    consumer.start().await.unwrap();
+    let first_pull = next_lite_pull_request(&mut requests, "lite-post-construction-client").await;
+    assert_eq!(
+        first_pull.command.ext_fields.as_ref().unwrap()["maxMsgNums"],
+        "11"
+    );
+
+    consumer.set_pull_batch_size(13);
+    pull_reply(first_pull, response::PULL_NOT_FOUND, 0, false);
+    let next_pull = next_lite_pull_request(&mut requests, "lite-post-construction-client").await;
+    assert_eq!(
+        next_pull.command.ext_fields.as_ref().unwrap()["maxMsgNums"],
+        "13"
+    );
+
+    consumer.set_consumer_timeout_millis_when_suspend(35);
+    pull_reply(next_pull, response::PULL_NOT_FOUND, 0, false);
+    let _after_timeout =
+        next_lite_pull_request(&mut requests, "lite-post-construction-client").await;
+
+    let poll = timeout(Duration::from_secs(1), consumer.poll(None))
+        .await
+        .expect("the changed no-argument poll timeout must be used");
+    assert!(poll.unwrap().is_empty());
+
+    consumer.shutdown().await.unwrap();
+    nameserver_task.abort();
+    broker_task.abort();
+}
+
+#[tokio::test]
 async fn scripted_lite_helpers_cover_assignment_offsets_commits_and_name_server_updates() {
     let broker_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let broker_address = broker_listener.local_addr().unwrap().to_string();
@@ -982,6 +1054,7 @@ fn pinned_java_lite_pull_surface_defaults_and_setter_rules_are_recorded() {
         "setOffsetStore",
         "setEnableMsgTrace",
         "setCustomizedTraceTopic",
+        "setMessageQueueListener",
     ] {
         assert!(
             config_api
@@ -990,6 +1063,18 @@ fn pinned_java_lite_pull_surface_defaults_and_setter_rules_are_recorded() {
             "missing Java DefaultLitePullConsumer setting API {method}"
         );
     }
+    assert!(config_api.iter().any(|signature| {
+        signature
+            .as_str()
+            .unwrap()
+            .contains("getBrokerSuspendMaxTimeMillis")
+    }));
+    assert!(!config_api.iter().any(|signature| {
+        signature
+            .as_str()
+            .unwrap()
+            .contains("setBrokerSuspendMaxTimeMillis")
+    }));
     let constructors = fixture["liteConstructors"]
         .as_array()
         .expect("Lite constructors");
@@ -1277,6 +1362,11 @@ fn lite_configured_values_match_the_pinned_java_consumer_settings() {
         config.customized_trace_topic(),
         Some("trace-configured-topic")
     );
+    assert!(config.client_config().enable_trace());
+    assert_eq!(
+        config.client_config().trace_topic(),
+        Some("trace-configured-topic")
+    );
     assert_eq!(config.default_broker_id(), 17);
     assert!(config.enable_msg_trace());
     assert_eq!(config.message_model(), MessageModel::Broadcasting);
@@ -1288,6 +1378,7 @@ fn lite_configured_values_match_the_pinned_java_consumer_settings() {
     assert_eq!(config.pull_threshold_size_for_queue(), 37);
     assert_eq!(config.topic_metadata_check_interval_millis(), 43);
     assert!(config.unit_mode());
+    assert!(config.client_config().unit_mode());
     assert!(config.connect_broker_by_user());
     assert!(config.message_queue_listener().is_some());
 }
@@ -1310,8 +1401,7 @@ async fn lite_trace_dispatcher_uses_java_topic_defaults_and_lifecycle() {
 #[tokio::test]
 async fn lite_start_validates_consumer_timeouts_and_thread_settings_before_runtime_start() {
     let mut config = LitePullConsumerConfig::new("lite-invalid-timeout").unwrap();
-    config.set_broker_suspend_max_time_millis(60_000);
-    config.set_consumer_timeout_millis_when_suspend(30_000);
+    config.set_consumer_timeout_millis_when_suspend(19_999);
     let consumer = std::sync::Arc::new(LitePullConsumer::new(config).unwrap());
     assert!(matches!(
         consumer.start().await,
@@ -1326,6 +1416,13 @@ async fn lite_start_validates_consumer_timeouts_and_thread_settings_before_runti
         consumer.start().await,
         Err(LitePullConsumerError::InvalidPullThreadCount)
     ));
+
+    let mut config = LitePullConsumerConfig::new("lite-zero-threads").unwrap();
+    config.set_pull_thread_nums(0);
+    config.client_config_mut().set_namesrv_addr(None);
+    let consumer = std::sync::Arc::new(LitePullConsumer::new(config).unwrap());
+    consumer.start().await.unwrap();
+    consumer.shutdown().await.unwrap();
 }
 
 #[tokio::test]

@@ -28,14 +28,12 @@ pub const DEFAULT_LITE_CONSUMER_PULL_TIMEOUT_MILLIS: i64 = 10_000;
 pub struct LitePullConsumerConfig {
     client: ClientConfig,
     consumer_group: String,
-    broker_suspend_max_time_millis: i64,
     consumer_timeout_millis_when_suspend: i64,
     consumer_pull_timeout_millis: i64,
     message_model: MessageModel,
     message_queue_listener: Option<MessageQueueListener>,
     offset_store: Option<Arc<dyn OffsetStore>>,
     allocate_message_queue_strategy: Arc<dyn AllocateMessageQueueStrategy>,
-    unit_mode: bool,
     auto_commit: bool,
     pull_thread_nums: i32,
     auto_commit_interval_millis: i64,
@@ -50,8 +48,6 @@ pub struct LitePullConsumerConfig {
     consume_timestamp: String,
     connect_broker_by_user: bool,
     default_broker_id: i64,
-    enable_msg_trace: bool,
-    customized_trace_topic: Option<String>,
 }
 
 impl LitePullConsumerConfig {
@@ -69,14 +65,12 @@ impl LitePullConsumerConfig {
         Ok(Self {
             client,
             consumer_group: consumer_group.into(),
-            broker_suspend_max_time_millis: DEFAULT_LITE_BROKER_SUSPEND_MAX_TIME_MILLIS,
             consumer_timeout_millis_when_suspend: DEFAULT_LITE_CONSUMER_TIMEOUT_MILLIS_WHEN_SUSPEND,
             consumer_pull_timeout_millis: DEFAULT_LITE_CONSUMER_PULL_TIMEOUT_MILLIS,
             message_model: MessageModel::Clustering,
             message_queue_listener: None,
             offset_store: None,
             allocate_message_queue_strategy: Arc::new(AllocateMessageQueueAveragely),
-            unit_mode: false,
             auto_commit: true,
             pull_thread_nums: DEFAULT_LITE_PULL_THREAD_NUMS,
             auto_commit_interval_millis: DEFAULT_LITE_AUTO_COMMIT_INTERVAL_MILLIS,
@@ -91,8 +85,6 @@ impl LitePullConsumerConfig {
             consume_timestamp: default_consume_timestamp(),
             connect_broker_by_user: false,
             default_broker_id: 0,
-            enable_msg_trace: false,
-            customized_trace_topic: None,
         })
     }
 
@@ -116,11 +108,7 @@ impl LitePullConsumerConfig {
     }
 
     pub const fn broker_suspend_max_time_millis(&self) -> i64 {
-        self.broker_suspend_max_time_millis
-    }
-
-    pub fn set_broker_suspend_max_time_millis(&mut self, value: i64) {
-        self.broker_suspend_max_time_millis = value;
+        DEFAULT_LITE_BROKER_SUSPEND_MAX_TIME_MILLIS
     }
 
     pub const fn consumer_timeout_millis_when_suspend(&self) -> i64 {
@@ -174,12 +162,12 @@ impl LitePullConsumerConfig {
         self.allocate_message_queue_strategy = value;
     }
 
-    pub const fn unit_mode(&self) -> bool {
-        self.unit_mode
+    pub fn unit_mode(&self) -> bool {
+        self.client.unit_mode()
     }
 
     pub fn set_unit_mode(&mut self, value: bool) {
-        self.unit_mode = value;
+        self.client.set_unit_mode(value);
     }
 
     pub const fn auto_commit(&self) -> bool {
@@ -308,23 +296,19 @@ impl LitePullConsumerConfig {
         self.default_broker_id = value;
     }
 
-    pub const fn enable_msg_trace(&self) -> bool {
-        self.enable_msg_trace
+    pub fn enable_msg_trace(&self) -> bool {
+        self.client.enable_trace()
     }
 
     pub fn set_enable_msg_trace(&mut self, value: bool) {
-        self.enable_msg_trace = value;
+        self.client.set_enable_trace(value);
     }
 
     pub fn customized_trace_topic(&self) -> Option<&str> {
-        self.customized_trace_topic.as_deref()
+        self.client.trace_topic()
     }
 
     pub fn set_customized_trace_topic(&mut self, value: Option<String>) {
-        self.customized_trace_topic = value;
-    }
-
-    pub(crate) fn validate_suspend_timeout(&self) -> bool {
-        self.consumer_timeout_millis_when_suspend >= self.broker_suspend_max_time_millis
+        self.client.set_trace_topic(value);
     }
 }
