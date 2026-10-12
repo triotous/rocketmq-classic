@@ -4954,7 +4954,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn broker_assignment_activates_and_removes_pop_worker() {
+    async fn broker_assignment_error_preserves_worker_until_empty_assignment() {
         let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let nameserver_address = nameserver.local_addr().unwrap().to_string();
         let broker_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -4993,6 +4993,16 @@ mod tests {
                         assert_eq!(body["topic"], "orders");
                         assert_eq!(body["consumerGroup"], "pop-assignment-flow");
                         assignment_calls += 1;
+                        if assignment_calls == 2 {
+                            write_remoting_reply(
+                                stream.as_mut().unwrap(),
+                                &incoming,
+                                response::SYSTEM_ERROR,
+                                None,
+                            )
+                            .await;
+                            continue;
+                        }
                         let assignments = if assignment_calls == 1 {
                             serde_json::json!([{
                                 "messageQueue": {
@@ -5089,6 +5099,20 @@ mod tests {
             .cloned()
             .expect("Broker POP assignment must activate its queue");
         assert!(!process_queue.is_dropped());
+        assert!(
+            consumer
+                .pop_workers
+                .lock()
+                .unwrap()
+                .get(&queue)
+                .is_some_and(|worker| !worker.is_finished())
+        );
+
+        assert!(!consumer.rebalance_service.rebalance(&consumer).await);
+        assert!(
+            !process_queue.is_dropped(),
+            "an unavailable Broker assignment is not an authoritative empty assignment"
+        );
         assert!(
             consumer
                 .pop_workers

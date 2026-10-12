@@ -2,6 +2,7 @@ package compat;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONWriter;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.nio.file.Files;
@@ -57,6 +58,7 @@ public final class LitePopFixtures {
         Map<String, Object> defaults = new TreeMap<>();
         defaults.put("consumerGroup", lite.getConsumerGroup());
         defaults.put("noArgumentConsumerGroup", noArgumentLite.getConsumerGroup());
+        defaults.put("enableStreamRequestType", lite.isEnableStreamRequestType());
         defaults.put("brokerSuspendMaxTimeMillis", lite.getBrokerSuspendMaxTimeMillis());
         defaults.put("consumerTimeoutMillisWhenSuspend", lite.getConsumerTimeoutMillisWhenSuspend());
         defaults.put("consumerPullTimeoutMillis", lite.getConsumerPullTimeoutMillis());
@@ -156,6 +158,11 @@ public final class LitePopFixtures {
             .map(Method::toGenericString)
             .sorted()
             .collect(Collectors.toList());
+        List<String> liteConstructors = Arrays.stream(DefaultLitePullConsumer.class.getDeclaredConstructors())
+            .filter(constructor -> Modifier.isPublic(constructor.getModifiers()))
+            .map(Constructor::toGenericString)
+            .sorted()
+            .collect(Collectors.toList());
 
         Map<String, Object> invalidInputs = new TreeMap<>();
         DefaultLitePullConsumer emptyAssignment = new DefaultLitePullConsumer("empty-assignment");
@@ -232,6 +239,7 @@ public final class LitePopFixtures {
         fixture.put("litePullConfigured", configured);
         fixture.put("litePullApi", liteApi);
         fixture.put("liteConfigApi", liteConfigApi);
+        fixture.put("liteConstructors", liteConstructors);
         fixture.put("invalidInputs", invalidInputs);
         fixture.put("heartbeatSubscriptions", heartbeatSubscriptions);
         fixture.put("pushPopDefaults", popDefaults);

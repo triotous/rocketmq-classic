@@ -62,8 +62,12 @@ impl LitePullConsumerConfig {
     }
 
     pub fn new(consumer_group: impl Into<String>) -> Result<Self, ConfigError> {
+        let mut client = ClientConfig::new_auto()?;
+        // Java's DefaultLitePullConsumer constructors enable stream request
+        // type before creating the underlying client runtime.
+        client.set_enable_stream_request_type(true);
         Ok(Self {
-            client: ClientConfig::new_auto()?,
+            client,
             consumer_group: consumer_group.into(),
             broker_suspend_max_time_millis: DEFAULT_LITE_BROKER_SUSPEND_MAX_TIME_MILLIS,
             consumer_timeout_millis_when_suspend: DEFAULT_LITE_CONSUMER_TIMEOUT_MILLIS_WHEN_SUSPEND,
@@ -92,10 +96,13 @@ impl LitePullConsumerConfig {
         })
     }
 
+    /// Java `ClientConfig` settings inherited by Lite are configured through
+    /// this value and copied into the underlying pull consumer at startup.
     pub fn client_config(&self) -> &ClientConfig {
         &self.client
     }
 
+    /// Mutable access to Lite's inherited Java `ClientConfig` settings.
     pub fn client_config_mut(&mut self) -> &mut ClientConfig {
         &mut self.client
     }

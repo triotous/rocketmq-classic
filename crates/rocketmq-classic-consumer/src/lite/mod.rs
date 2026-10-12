@@ -21,6 +21,7 @@ use rocketmq_classic_protocol::{
     SharedValue,
     heartbeat::{ConsumeFromWhere, ConsumerSubscriptionDataSet},
 };
+use rocketmq_classic_remoting::client::RpcHook;
 use tokio::{
     task::JoinHandle,
     time::{Instant, sleep, timeout_at},
@@ -67,6 +68,7 @@ struct MessageBuffer {
 /// queue-scoped prefetch, and separate fetched/delivered/committed positions.
 pub struct LitePullConsumer {
     config: LitePullConsumerConfig,
+    rpc_hook: Option<Arc<dyn RpcHook>>,
     engine: RwLock<Option<Arc<PullConsumer>>>,
     lifecycle: tokio::sync::Mutex<Lifecycle>,
     lifecycle_gate: tokio::sync::Mutex<()>,
@@ -108,6 +110,14 @@ enum Lifecycle {
 
 impl LitePullConsumer {
     pub fn new(config: LitePullConsumerConfig) -> Result<Self, LitePullConsumerError> {
+        Self::new_with_rpc_hook(config, None)
+    }
+
+    /// Creates a Lite consumer whose remoting requests use the supplied Java-compatible RPC hook.
+    pub fn new_with_rpc_hook(
+        config: LitePullConsumerConfig,
+        rpc_hook: Option<Arc<dyn RpcHook>>,
+    ) -> Result<Self, LitePullConsumerError> {
         let auto_commit = config.auto_commit();
         let connect_broker_by_user = config.connect_broker_by_user();
         let default_broker_id = config.default_broker_id();
@@ -117,6 +127,7 @@ impl LitePullConsumer {
         ));
         Ok(Self {
             config,
+            rpc_hook,
             engine: RwLock::new(None),
             lifecycle: tokio::sync::Mutex::new(Lifecycle::Created),
             lifecycle_gate: tokio::sync::Mutex::new(()),
@@ -533,7 +544,10 @@ impl LitePullConsumer {
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .clone(),
         );
-        let engine = Arc::new(PullConsumer::new(pull_config));
+        let engine = Arc::new(PullConsumer::with_rpc_hook(
+            pull_config,
+            self.rpc_hook.clone(),
+        ));
         engine.configure_pull_api(
             self.connect_broker_by_user.load(Ordering::Acquire),
             self.default_broker_id.load(Ordering::Acquire),
@@ -621,7 +635,7 @@ impl LitePullConsumer {
         if timeout_millis < 0 {
             return Err(LitePullConsumerError::NegativePollTimeout);
         }
-        self.maybe_auto_commit().await?;
+        self.maybe_auto_commit().await;
         let deadline = Instant::now() + Duration::from_millis(timeout_millis as u64);
 
         loop {
@@ -793,7 +807,8 @@ impl LitePullConsumer {
     }
 
     pub async fn commit(&self) -> Result<(), LitePullConsumerError> {
-        self.commit_all(false).await
+        self.commit_all_best_effort().await;
+        Ok(())
     }
 
     pub async fn commit_sync(&self) -> Result<(), LitePullConsumerError> {
@@ -860,11 +875,15 @@ impl LitePullConsumer {
         persist_queues: &[MessageQueue],
         persist: bool,
     ) -> Result<(), LitePullConsumerError> {
+        let offsets = offsets
+            .into_iter()
+            .filter(|(queue, offset)| *offset != -1 && self.is_assigned(queue))
+            .collect::<Vec<_>>();
+        if offsets.is_empty() && !persist {
+            return Ok(());
+        }
         let engine = self.engine().ok_or(LitePullConsumerError::NotStarted)?;
         for (queue, offset) in offsets {
-            if offset == -1 || !self.is_assigned(&queue) {
-                continue;
-            }
             engine.update_consume_offset(&queue, offset).await?;
         }
         if persist {
@@ -1446,9 +1465,9 @@ impl LitePullConsumer {
         buffer.batches = retained;
     }
 
-    async fn maybe_auto_commit(&self) -> Result<(), LitePullConsumerError> {
+    async fn maybe_auto_commit(&self) {
         if !self.auto_commit.load(Ordering::Acquire) {
-            return Ok(());
+            return;
         }
         let now = Instant::now();
         let due = {
@@ -1468,12 +1487,11 @@ impl LitePullConsumer {
             }
         };
         if due {
-            self.commit_all(false).await?;
+            self.commit_all_best_effort().await;
         }
-        Ok(())
     }
 
-    async fn commit_all(&self, persist: bool) -> Result<(), LitePullConsumerError> {
+    async fn commit_all_best_effort(&self) {
         let offsets = self
             .queue_states
             .lock()
@@ -1483,7 +1501,11 @@ impl LitePullConsumer {
                 state.delivered_offset.map(|offset| (queue.clone(), offset))
             })
             .collect::<Vec<_>>();
-        self.commit_offsets(offsets, persist).await
+        for (queue, offset) in offsets {
+            if let Err(error) = self.commit_offsets([(queue, offset)], false).await {
+                tracing::debug!(error = %error, "Lite automatic offset commit failed");
+            }
+        }
     }
 }
 
@@ -1495,6 +1517,49 @@ mod tests {
 
     fn consumer() -> LitePullConsumer {
         LitePullConsumer::new(LitePullConsumerConfig::new("lite-test").unwrap()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn auto_commit_and_commit_all_ignore_per_queue_errors_like_java() {
+        let consumer = consumer();
+        consumer.running.store(true, Ordering::Release);
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        consumer.queue_states.lock().unwrap().insert(
+            queue,
+            QueueState {
+                generation: 1,
+                fetched_offset: Some(5),
+                delivered_offset: Some(5),
+                paused: false,
+            },
+        );
+
+        assert!(consumer.poll(Some(0)).await.unwrap().is_empty());
+        consumer.commit().await.unwrap();
+        assert!(
+            consumer
+                .next_auto_commit
+                .lock()
+                .unwrap()
+                .is_some_and(|deadline| deadline > Instant::now())
+        );
+    }
+
+    #[tokio::test]
+    async fn empty_unassigned_and_unset_commits_are_noops_before_start_like_java() {
+        let consumer = consumer();
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+
+        consumer.commit_sync().await.unwrap();
+        consumer
+            .commit_queues([queue.clone()], false)
+            .await
+            .unwrap();
+        consumer
+            .commit_offsets([(queue.clone(), -1)], false)
+            .await
+            .unwrap();
+        consumer.commit_offsets([(queue, 42)], false).await.unwrap();
     }
 
     #[test]
@@ -1519,6 +1584,35 @@ mod tests {
             &consumer.subscriptions_for_heartbeat()
         ));
         assert!(retained.read().unwrap().is_empty());
+    }
+
+    #[test]
+    fn default_subscribe_uses_java_tag_all_subscription() {
+        let consumer = consumer();
+        consumer.subscribe("orders").unwrap();
+        assert_eq!(
+            consumer.subscriptions.read().unwrap().get("orders"),
+            Some(&MessageSelector::by_tag("*"))
+        );
+    }
+
+    #[test]
+    fn heartbeat_builder_rejects_null_selectors_like_java() {
+        let consumer = consumer();
+        let selectors = HashMap::from([("orders".to_owned(), None)]);
+        assert!(matches!(
+            consumer.build_subscriptions_for_heartbeat(&selectors),
+            Err(LitePullConsumerError::Pull(
+                PullConsumerError::InvalidSubscription(_)
+            ))
+        ));
+        assert!(
+            consumer
+                .subscriptions_for_heartbeat()
+                .read()
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

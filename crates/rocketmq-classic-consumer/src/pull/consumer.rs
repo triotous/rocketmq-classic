@@ -30,6 +30,7 @@ use rocketmq_classic_protocol::{
         SubscriptionCodeSet, SubscriptionData, SubscriptionTagSet,
     },
 };
+use rocketmq_classic_remoting::client::RpcHook;
 use tokio::time::Instant;
 
 use crate::{
@@ -93,6 +94,7 @@ enum State {
 pub struct PullConsumer {
     config: PullConsumerConfig,
     manager: ClientRuntimeManager,
+    rpc_hook: Option<Arc<dyn RpcHook>>,
     state: tokio::sync::Mutex<State>,
     pull_api: PullAPIWrapper,
     offset_store: Mutex<Option<Arc<dyn OffsetStore>>>,
@@ -114,12 +116,28 @@ impl PullConsumer {
     }
 
     fn with_manager(config: PullConsumerConfig, manager: ClientRuntimeManager) -> Self {
+        Self::with_manager_and_hook(config, manager, None)
+    }
+
+    pub(crate) fn with_rpc_hook(
+        config: PullConsumerConfig,
+        rpc_hook: Option<Arc<dyn RpcHook>>,
+    ) -> Self {
+        Self::with_manager_and_hook(config, ClientRuntimeManager::shared_default(), rpc_hook)
+    }
+
+    fn with_manager_and_hook(
+        config: PullConsumerConfig,
+        manager: ClientRuntimeManager,
+        rpc_hook: Option<Arc<dyn RpcHook>>,
+    ) -> Self {
         let pull_api = PullAPIWrapper::new(config.unit_mode());
         let message_queue_listener = config.message_queue_listener();
         let enable_rebalance = config.enable_rebalance();
         Self {
             config,
             manager,
+            rpc_hook,
             state: tokio::sync::Mutex::new(State::Created),
             pull_api,
             offset_store: Mutex::new(None),
@@ -403,7 +421,10 @@ impl PullConsumer {
             .ok_or(PullConsumerError::InvalidConsumerGroup)?;
         self.config.validate(&consumer_group)?;
 
-        let runtime = self.manager.get_or_create(&client_config).await?;
+        let runtime = self
+            .manager
+            .get_or_create_with_hook(&client_config, self.rpc_hook.clone())
+            .await?;
         let offset_store = self.select_offset_store(&runtime, &consumer_group)?;
         offset_store.load().await?;
 

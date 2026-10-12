@@ -18,6 +18,7 @@ use rocketmq_classic_protocol::header::HeaderMap;
 use rocketmq_classic_protocol::heartbeat::{ConsumeFromWhere, MessageModel};
 use rocketmq_classic_remoting::{
     RemotingCommand,
+    client::RpcHook,
     codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
 };
 use serde_json::Value;
@@ -147,17 +148,21 @@ async fn write_reply<W: AsyncWrite + Unpin>(stream: &mut W, opaque: i32, reply: 
 }
 
 fn broker_route(address: &str) -> Vec<u8> {
+    broker_route_with(address, "broker-a", 1)
+}
+
+fn broker_route_with(address: &str, broker_name: &str, read_queue_nums: i32) -> Vec<u8> {
     serde_json::to_vec(&serde_json::json!({
         "queueDatas": [{
-            "brokerName": "broker-a",
-            "readQueueNums": 1,
-            "writeQueueNums": 1,
+            "brokerName": broker_name,
+            "readQueueNums": read_queue_nums,
+            "writeQueueNums": read_queue_nums,
             "perm": 6,
             "topicSysFlag": 0
         }],
         "brokerDatas": [{
             "cluster": "cluster",
-            "brokerName": "broker-a",
+            "brokerName": broker_name,
             "brokerAddrs": {"0": address}
         }],
         "filterServerTable": {}
@@ -258,14 +263,49 @@ async fn next_request(
     receiver: &mut mpsc::UnboundedReceiver<ScriptedBrokerRequest>,
     code: i32,
 ) -> ScriptedBrokerRequest {
+    let request = timeout(Duration::from_secs(4), receiver.recv())
+        .await
+        .expect("scripted broker timed out waiting for request")
+        .expect("scripted broker request stream closed");
+    assert_eq!(request.command.code, code);
+    request
+}
+
+async fn next_request_servicing_group(
+    receiver: &mut mpsc::UnboundedReceiver<ScriptedBrokerRequest>,
+    consumer_id: &str,
+    expected_code: i32,
+) -> ScriptedBrokerRequest {
     loop {
         let request = timeout(Duration::from_secs(4), receiver.recv())
             .await
-            .expect("scripted broker timed out waiting for request")
+            .expect("scripted broker timed out waiting for Lite pull request")
             .expect("scripted broker request stream closed");
-        assert_eq!(request.command.code, code);
+        if request.command.code == request::GET_CONSUMER_LIST_BY_GROUP {
+            request
+                .reply
+                .send(ScriptedReply {
+                    code: response::SUCCESS,
+                    fields: None,
+                    body: Some(
+                        serde_json::json!({"consumerIdList": [consumer_id]})
+                            .to_string()
+                            .into_bytes(),
+                    ),
+                })
+                .unwrap();
+            continue;
+        }
+        assert_eq!(request.command.code, expected_code);
         return request;
     }
+}
+
+async fn next_lite_pull_request(
+    receiver: &mut mpsc::UnboundedReceiver<ScriptedBrokerRequest>,
+    consumer_id: &str,
+) -> ScriptedBrokerRequest {
+    next_request_servicing_group(receiver, consumer_id, request::LITE_PULL_MESSAGE).await
 }
 
 fn reply_offset(request: ScriptedBrokerRequest, code: i32, name: &str, offset: i64) {
@@ -471,6 +511,405 @@ async fn scripted_lite_seek_pause_resume_commit_and_restart_preserve_delivery_of
     broker_task.abort();
 }
 
+#[tokio::test]
+async fn lite_rpc_hook_stream_identity_and_namespace_config_reach_runtime() {
+    let broker_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let broker_address = broker_listener.local_addr().unwrap().to_string();
+    let route = broker_route(&broker_address);
+    let (nameserver, nameserver_task) = start_scripted_nameserver(route).await;
+    let (mut requests, broker_task) = start_scripted_broker(broker_listener);
+    let store = Arc::new(LiteScriptedOffsetStore::default());
+    let observed_codes = Arc::new(Mutex::new(Vec::new()));
+    let hook_codes = observed_codes.clone();
+    let hook: Arc<dyn RpcHook> = Arc::new(move |_address: &str, command: &RemotingCommand| {
+        hook_codes.lock().unwrap().push(command.code);
+    });
+    let mut config = lite_config_with_store(
+        "lite-rpc-hook-flow",
+        "lite-rpc-hook-client",
+        &nameserver,
+        store.clone(),
+    );
+    config
+        .client_config_mut()
+        .set_namespace(Some("tenant".to_owned()));
+    assert!(config.client_config().enable_stream_request_type());
+
+    let consumer = Arc::new(
+        LitePullConsumer::new_with_rpc_hook(config, Some(hook)).expect("Lite RPC-hook constructor"),
+    );
+    let queue = MessageQueue::new("orders", "broker-a", 0);
+    consumer.assign([queue.clone()]).unwrap();
+    consumer.start().await.unwrap();
+
+    let pull = next_request(&mut requests, request::LITE_PULL_MESSAGE).await;
+    let fields = pull.command.ext_fields.as_ref().unwrap();
+    assert_eq!(fields.get("topic"), Some(&"tenant%orders".to_owned()));
+    assert_eq!(
+        fields.get("consumerGroup"),
+        Some(&"tenant%lite-rpc-hook-flow".to_owned())
+    );
+    assert!(
+        observed_codes
+            .lock()
+            .unwrap()
+            .contains(&request::LITE_PULL_MESSAGE)
+    );
+
+    consumer.pause([queue.clone()]);
+    pull_reply(pull, response::PULL_NOT_FOUND, 0, false);
+    consumer
+        .commit_offsets([(queue.clone(), 5)], true)
+        .await
+        .unwrap();
+    let namespaced_queue = MessageQueue::new("tenant%orders", "broker-a", 0);
+    assert_eq!(
+        store.memory.lock().unwrap().get(&namespaced_queue),
+        Some(&5)
+    );
+    assert_eq!(
+        store.persisted.lock().unwrap().get(&namespaced_queue),
+        Some(&5)
+    );
+    assert_eq!(consumer.committed(&queue).await.unwrap(), 5);
+    assert_eq!(
+        consumer.assignment().await.unwrap(),
+        [queue].into_iter().collect()
+    );
+
+    consumer.shutdown().await.unwrap();
+    nameserver_task.abort();
+    broker_task.abort();
+}
+
+#[tokio::test]
+async fn scripted_lite_helpers_cover_assignment_offsets_commits_and_name_server_updates() {
+    let broker_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let broker_address = broker_listener.local_addr().unwrap().to_string();
+    let (nameserver, nameserver_task) =
+        start_scripted_nameserver(broker_route(&broker_address)).await;
+    let (updated_nameserver, updated_nameserver_task) =
+        start_scripted_nameserver(broker_route_with(&broker_address, "broker-b", 2)).await;
+    let (mut requests, broker_task) = start_scripted_broker(broker_listener);
+    let store = Arc::new(LiteScriptedOffsetStore::default());
+    let queue = MessageQueue::new("orders", "broker-a", 0);
+    let mut config = lite_config_with_store(
+        "lite-helper-flow",
+        "lite-helper-client",
+        &nameserver,
+        store.clone(),
+    );
+    config.set_pull_thread_nums(1);
+    let consumer = Arc::new(LitePullConsumer::new(config).unwrap());
+    consumer
+        .set_sub_expression_for_assign("orders", "green")
+        .unwrap();
+    consumer.assign([queue.clone()]).unwrap();
+    consumer.start().await.unwrap();
+    assert!(matches!(
+        consumer.set_sub_expression_for_assign("orders", "new-tag"),
+        Err(LitePullConsumerError::AssignmentExpressionAfterStartup)
+    ));
+
+    let first_pull = next_request(&mut requests, request::LITE_PULL_MESSAGE).await;
+    let pull_fields = first_pull.command.ext_fields.as_ref().unwrap();
+    assert_eq!(pull_fields.get("subscription"), Some(&"green".to_owned()));
+    assert_eq!(pull_fields.get("expressionType"), Some(&"TAG".to_owned()));
+    pull_reply(first_pull, response::SUCCESS, 1, true);
+    let messages = consumer.poll(None).await.unwrap();
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].queue_offset(), 0);
+
+    let next_pull = next_request(&mut requests, request::LITE_PULL_MESSAGE).await;
+    assert_eq!(
+        next_pull.command.ext_fields.as_ref().unwrap()["queueOffset"],
+        "1"
+    );
+    consumer.pause([queue.clone()]);
+    pull_reply(next_pull, response::PULL_NOT_FOUND, 1, false);
+
+    consumer.commit_queues([queue.clone()], true).await.unwrap();
+    assert_eq!(store.memory.lock().unwrap().get(&queue), Some(&1));
+    assert_eq!(store.persisted.lock().unwrap().get(&queue), Some(&1));
+    consumer
+        .commit_sync_offsets([(queue.clone(), 7)], true)
+        .await
+        .unwrap();
+    assert_eq!(store.memory.lock().unwrap().get(&queue), Some(&7));
+    assert_eq!(store.persisted.lock().unwrap().get(&queue), Some(&7));
+
+    let timestamp_consumer = consumer.clone();
+    let timestamp_queue = queue.clone();
+    let timestamp_lookup = tokio::spawn(async move {
+        timestamp_consumer
+            .offset_for_timestamp(&timestamp_queue, 1_700_000_000_000)
+            .await
+    });
+    let timestamp_request = next_request(&mut requests, request::SEARCH_OFFSET_BY_TIMESTAMP).await;
+    assert_eq!(
+        timestamp_request.command.ext_fields.as_ref().unwrap()["timestamp"],
+        "1700000000000"
+    );
+    reply_offset(timestamp_request, response::SUCCESS, "offset", 8);
+    assert_eq!(timestamp_lookup.await.unwrap().unwrap(), 8);
+
+    let timestamp_consumer = consumer.clone();
+    let timestamp_queue = queue.clone();
+    let failed_lookup = tokio::spawn(async move {
+        timestamp_consumer
+            .offset_for_timestamp(&timestamp_queue, 1_700_000_000_001)
+            .await
+    });
+    let failed_request = next_request(&mut requests, request::SEARCH_OFFSET_BY_TIMESTAMP).await;
+    reply_offset(failed_request, response::SYSTEM_ERROR, "offset", 0);
+    assert!(failed_lookup.await.unwrap().is_err());
+
+    let seek_consumer = consumer.clone();
+    let seek_queue = queue.clone();
+    let seek_begin = tokio::spawn(async move { seek_consumer.seek_to_begin(&seek_queue).await });
+    let minimum = next_request(&mut requests, request::GET_MIN_OFFSET).await;
+    reply_offset(minimum, response::SUCCESS, "offset", 0);
+    let minimum = next_request(&mut requests, request::GET_MIN_OFFSET).await;
+    reply_offset(minimum, response::SUCCESS, "offset", 0);
+    let maximum = next_request(&mut requests, request::GET_MAX_OFFSET).await;
+    reply_offset(maximum, response::SUCCESS, "offset", 30);
+    seek_begin.await.unwrap().unwrap();
+    consumer.resume([queue.clone()]);
+    let seek_begin_pull = next_request(&mut requests, request::LITE_PULL_MESSAGE).await;
+    assert_eq!(
+        seek_begin_pull.command.ext_fields.as_ref().unwrap()["queueOffset"],
+        "0"
+    );
+    consumer.pause([queue.clone()]);
+    pull_reply(seek_begin_pull, response::PULL_NOT_FOUND, 0, false);
+
+    let seek_consumer = consumer.clone();
+    let seek_queue = queue.clone();
+    let seek_end = tokio::spawn(async move { seek_consumer.seek_to_end(&seek_queue).await });
+    let maximum = next_request(&mut requests, request::GET_MAX_OFFSET).await;
+    reply_offset(maximum, response::SUCCESS, "offset", 30);
+    let minimum = next_request(&mut requests, request::GET_MIN_OFFSET).await;
+    reply_offset(minimum, response::SUCCESS, "offset", 0);
+    let maximum = next_request(&mut requests, request::GET_MAX_OFFSET).await;
+    reply_offset(maximum, response::SUCCESS, "offset", 30);
+    seek_end.await.unwrap().unwrap();
+    consumer.resume([queue.clone()]);
+    let seek_end_pull = next_request(&mut requests, request::LITE_PULL_MESSAGE).await;
+    assert_eq!(
+        seek_end_pull.command.ext_fields.as_ref().unwrap()["queueOffset"],
+        "30"
+    );
+    consumer.pause([queue.clone()]);
+    pull_reply(seek_end_pull, response::PULL_NOT_FOUND, 30, false);
+
+    assert_eq!(
+        consumer.fetch_message_queues("orders").await.unwrap(),
+        [queue.clone()].into_iter().collect()
+    );
+    consumer
+        .update_name_server_address(updated_nameserver.clone())
+        .await
+        .unwrap();
+    assert_eq!(
+        consumer.fetch_message_queues("catalog").await.unwrap(),
+        [
+            MessageQueue::new("catalog", "broker-b", 0),
+            MessageQueue::new("catalog", "broker-b", 1),
+        ]
+        .into_iter()
+        .collect()
+    );
+
+    consumer.shutdown().await.unwrap();
+    nameserver_task.abort();
+    updated_nameserver_task.abort();
+    broker_task.abort();
+}
+
+#[tokio::test]
+async fn scripted_lite_subscription_unsubscribe_and_metadata_callbacks_match_java() {
+    let broker_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let broker_address = broker_listener.local_addr().unwrap().to_string();
+    let (nameserver, nameserver_task) =
+        start_scripted_nameserver(broker_route(&broker_address)).await;
+    let (updated_nameserver, updated_nameserver_task) =
+        start_scripted_nameserver(broker_route_with(&broker_address, "broker-a", 2)).await;
+    let (mut requests, broker_task) = start_scripted_broker(broker_listener);
+    let store = Arc::new(LiteScriptedOffsetStore::default());
+    let mut config = lite_config_with_store(
+        "lite-subscription-flow",
+        "lite-subscription-client",
+        &nameserver,
+        store,
+    );
+    config.set_topic_metadata_check_interval_millis(10);
+    let consumer_id = config.client_config().build_client_id();
+    let consumer = Arc::new(LitePullConsumer::new(config).unwrap());
+    let selector = rocketmq_classic_consumer::pull::MessageSelector::by_tag("green");
+    let (assignment_tx, mut assignment_rx) = mpsc::unbounded_channel();
+    consumer
+        .subscribe_with_listener(
+            "orders",
+            &selector,
+            Arc::new(move |topic, all, assigned| {
+                let _ = assignment_tx.send((topic.to_owned(), all.cloned(), assigned.clone()));
+            }),
+        )
+        .unwrap();
+    let (metadata_tx, mut metadata_rx) = mpsc::unbounded_channel();
+    consumer
+        .register_topic_message_queue_change_listener(
+            "orders",
+            Arc::new(move |topic, queues| {
+                let _ = metadata_tx.send((topic.to_owned(), queues.clone()));
+            }),
+        )
+        .unwrap();
+
+    assert!(consumer.subscribe_with_expression("", "*").is_err());
+    consumer.start().await.unwrap();
+    let initial_pull = next_lite_pull_request(&mut requests, &consumer_id).await;
+    assert_eq!(
+        initial_pull.command.ext_fields.as_ref().unwrap()["subscription"],
+        "green"
+    );
+    assert_eq!(
+        initial_pull.command.ext_fields.as_ref().unwrap()["expressionType"],
+        "TAG"
+    );
+    let (listener_topic, all_queues, assigned_queues) =
+        timeout(Duration::from_secs(4), assignment_rx.recv())
+            .await
+            .expect("message-queue listener was not called")
+            .expect("message-queue listener channel closed");
+    let first_queue = MessageQueue::new("orders", "broker-a", 0);
+    assert_eq!(listener_topic, "orders");
+    assert_eq!(
+        all_queues,
+        Some([first_queue.clone()].into_iter().collect())
+    );
+    assert_eq!(assigned_queues, [first_queue.clone()].into_iter().collect());
+    consumer.pause([first_queue.clone()]);
+    pull_reply(initial_pull, response::PULL_NOT_FOUND, 0, false);
+    assert!(metadata_rx.try_recv().is_err());
+
+    consumer
+        .update_name_server_address(updated_nameserver.clone())
+        .await
+        .unwrap();
+    let (changed_topic, changed_queues) = timeout(Duration::from_secs(4), metadata_rx.recv())
+        .await
+        .expect("topic metadata listener was not called after route change")
+        .expect("topic metadata listener channel closed");
+    let second_queue = MessageQueue::new("orders", "broker-a", 1);
+    assert_eq!(changed_topic, "orders");
+    assert_eq!(
+        changed_queues,
+        [first_queue.clone(), second_queue.clone()]
+            .into_iter()
+            .collect()
+    );
+    let added_pull = next_lite_pull_request(&mut requests, &consumer_id).await;
+    assert_eq!(
+        added_pull.command.ext_fields.as_ref().unwrap()["queueId"],
+        "1"
+    );
+    consumer.pause([second_queue.clone()]);
+    pull_reply(added_pull, response::PULL_NOT_FOUND, 0, false);
+    assert_eq!(
+        consumer.assignment().await.unwrap(),
+        [first_queue, second_queue].into_iter().collect()
+    );
+
+    assert!(consumer.unsubscribe("orders").await.unwrap());
+    assert!(consumer.assignment().await.unwrap().is_empty());
+    assert!(!consumer.unsubscribe("orders").await.unwrap());
+    consumer.shutdown().await.unwrap();
+    nameserver_task.abort();
+    updated_nameserver_task.abort();
+    broker_task.abort();
+}
+
+#[tokio::test]
+async fn committed_reads_use_broker_offsets_and_preserve_rpc_errors() {
+    let broker_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let broker_address = broker_listener.local_addr().unwrap().to_string();
+    let (nameserver, nameserver_task) =
+        start_scripted_nameserver(broker_route_with(&broker_address, "broker-a", 3)).await;
+    let (mut requests, broker_task) = start_scripted_broker(broker_listener);
+    let mut config = LitePullConsumerConfig::new("lite-remote-offsets").unwrap();
+    config
+        .client_config_mut()
+        .set_namesrv_addr(Some(nameserver));
+    config
+        .client_config_mut()
+        .set_instance_name(Some("lite-remote-offsets-client".into()));
+    config
+        .client_config_mut()
+        .set_poll_name_server_interval(60_000);
+    config
+        .client_config_mut()
+        .set_heartbeat_broker_interval(60_000);
+    config
+        .client_config_mut()
+        .set_persist_consumer_offset_interval(60_000);
+    config.set_auto_commit(false);
+    config.set_pull_thread_nums(1);
+    config
+        .set_consume_from_where(ConsumeFromWhere::ConsumeFromFirstOffset)
+        .unwrap();
+    let consumer_id = config.client_config().build_client_id();
+    let consumer = Arc::new(LitePullConsumer::new(config).unwrap());
+    let assigned_queue = MessageQueue::new("orders", "broker-a", 0);
+    consumer.assign([assigned_queue.clone()]).unwrap();
+    consumer.start().await.unwrap();
+
+    let initial_offset_request =
+        next_request_servicing_group(&mut requests, &consumer_id, request::QUERY_CONSUMER_OFFSET)
+            .await;
+    assert_eq!(
+        initial_offset_request.command.ext_fields.as_ref().unwrap()["queueId"],
+        "0"
+    );
+    reply_offset(initial_offset_request, response::SUCCESS, "offset", 5);
+    let pull = next_lite_pull_request(&mut requests, &consumer_id).await;
+    assert_eq!(
+        pull.command.ext_fields.as_ref().unwrap()["queueOffset"],
+        "5"
+    );
+    consumer.pause([assigned_queue.clone()]);
+    pull_reply(pull, response::PULL_NOT_FOUND, 5, false);
+    assert_eq!(consumer.committed(&assigned_queue).await.unwrap(), 5);
+
+    let committed_queue = MessageQueue::new("orders", "broker-a", 1);
+    let read_consumer = consumer.clone();
+    let read_queue = committed_queue.clone();
+    let read = tokio::spawn(async move { read_consumer.committed(&read_queue).await });
+    let read_request = next_request(&mut requests, request::QUERY_CONSUMER_OFFSET).await;
+    assert_eq!(
+        read_request.command.ext_fields.as_ref().unwrap()["queueId"],
+        "1"
+    );
+    reply_offset(read_request, response::SUCCESS, "offset", 17);
+    assert_eq!(read.await.unwrap().unwrap(), 17);
+
+    let missing_queue = MessageQueue::new("orders", "broker-a", 2);
+    let read_consumer = consumer.clone();
+    let read_queue = missing_queue.clone();
+    let failed_read = tokio::spawn(async move { read_consumer.committed(&read_queue).await });
+    let failed_request = next_request(&mut requests, request::QUERY_CONSUMER_OFFSET).await;
+    assert_eq!(
+        failed_request.command.ext_fields.as_ref().unwrap()["queueId"],
+        "2"
+    );
+    reply_offset(failed_request, response::SYSTEM_ERROR, "offset", 0);
+    assert!(failed_read.await.unwrap().is_err());
+
+    consumer.shutdown().await.unwrap();
+    nameserver_task.abort();
+    broker_task.abort();
+}
+
 #[test]
 fn pinned_java_lite_pull_surface_defaults_and_setter_rules_are_recorded() {
     let fixture = java_fixture();
@@ -480,6 +919,7 @@ fn pinned_java_lite_pull_surface_defaults_and_setter_rules_are_recorded() {
     );
     let defaults = &fixture["litePullDefaults"];
     assert_eq!(defaults["noArgumentConsumerGroup"], "DEFAULT_CONSUMER");
+    assert_eq!(defaults["enableStreamRequestType"], true);
     assert_eq!(defaults["messageModel"], "CLUSTERING");
     assert_eq!(defaults["autoCommit"], true);
     assert_eq!(defaults["pullThreadNums"], 20);
@@ -550,6 +990,29 @@ fn pinned_java_lite_pull_surface_defaults_and_setter_rules_are_recorded() {
             "missing Java DefaultLitePullConsumer setting API {method}"
         );
     }
+    let constructors = fixture["liteConstructors"]
+        .as_array()
+        .expect("Lite constructors");
+    for constructor in [
+        "DefaultLitePullConsumer()",
+        "DefaultLitePullConsumer(java.lang.String)",
+        "DefaultLitePullConsumer(org.apache.rocketmq.remoting.RPCHook)",
+        "DefaultLitePullConsumer(java.lang.String,org.apache.rocketmq.remoting.RPCHook)",
+        "DefaultLitePullConsumer(java.lang.String,java.lang.String,org.apache.rocketmq.remoting.RPCHook)",
+    ] {
+        assert!(
+            constructors
+                .iter()
+                .any(|signature| signature.as_str().unwrap().contains(constructor)),
+            "missing Java DefaultLitePullConsumer constructor {constructor}"
+        );
+    }
+    assert!(
+        LitePullConsumerConfig::new("stream-default")
+            .unwrap()
+            .client_config()
+            .enable_stream_request_type()
+    );
     assert_eq!(
         fixture["heartbeatSubscriptions"]["heartbeat-tag"]["expressionType"],
         "TAG"
@@ -627,6 +1090,7 @@ fn lite_config_defaults_and_mode_exclusivity_match_java() {
     assert_eq!(config.consume_max_span(), 2_000);
     assert_eq!(config.poll_timeout_millis(), 5_000);
     assert_eq!(config.topic_metadata_check_interval_millis(), 30_000);
+    assert_eq!(config.allocate_message_queue_strategy().name(), "AVG");
     assert_eq!(config.broker_suspend_max_time_millis(), 20_000);
     assert_eq!(config.consumer_timeout_millis_when_suspend(), 30_000);
     assert_eq!(config.consumer_pull_timeout_millis(), 10_000);
@@ -875,14 +1339,28 @@ async fn lite_poll_requires_start_and_auto_commit_is_live_configurable() {
     assert!(consumer.is_auto_commit());
     consumer.set_auto_commit(false);
     assert!(!consumer.is_auto_commit());
+    assert!(!consumer.is_connect_broker_by_user());
+    consumer.set_connect_broker_by_user(true);
+    assert!(consumer.is_connect_broker_by_user());
+    assert_eq!(consumer.default_broker_id(), 0);
+    consumer.set_default_broker_id(17);
+    assert_eq!(consumer.default_broker_id(), 17);
 }
 
 #[tokio::test]
 async fn lite_assignment_is_available_before_start_and_created_shutdown_is_a_noop() {
     let config = LitePullConsumerConfig::new("lite-assignment-before-start").unwrap();
     let consumer = LitePullConsumer::new(config).unwrap();
+    assert!(matches!(
+        consumer.assign(Vec::<MessageQueue>::new()),
+        Err(LitePullConsumerError::EmptyAssignment)
+    ));
     let queues = vec![MessageQueue::new("orders", "broker-a", 0)];
     consumer.assign(queues.clone()).unwrap();
+    assert!(matches!(
+        consumer.set_sub_expression_for_assign("orders", "  "),
+        Err(LitePullConsumerError::EmptyAssignmentExpression)
+    ));
     assert_eq!(
         consumer.assignment().await.unwrap(),
         queues.into_iter().collect()
@@ -893,4 +1371,38 @@ async fn lite_assignment_is_available_before_start_and_created_shutdown_is_a_noo
     consumer
         .set_sub_expression_for_assign("orders", "paid")
         .unwrap();
+}
+
+#[tokio::test]
+async fn lite_metadata_offset_and_seek_helpers_report_not_started_errors() {
+    let consumer = Arc::new(
+        LitePullConsumer::new(LitePullConsumerConfig::new("lite-helper-before-start").unwrap())
+            .unwrap(),
+    );
+    let queue = MessageQueue::new("orders", "broker-a", 0);
+    assert!(matches!(
+        consumer.fetch_message_queues("orders").await,
+        Err(LitePullConsumerError::NotStarted)
+    ));
+    assert!(matches!(
+        consumer.offset_for_timestamp(&queue, 0).await,
+        Err(LitePullConsumerError::NotStarted)
+    ));
+    assert!(matches!(
+        consumer.committed(&queue).await,
+        Err(LitePullConsumerError::NotStarted)
+    ));
+    assert!(matches!(
+        consumer.seek_to_begin(&queue).await,
+        Err(LitePullConsumerError::NotStarted)
+    ));
+    assert!(matches!(
+        consumer.seek_to_end(&queue).await,
+        Err(LitePullConsumerError::NotStarted)
+    ));
+    assert!(
+        consumer
+            .register_topic_message_queue_change_listener("", Arc::new(|_, _| {}))
+            .is_ok()
+    );
 }

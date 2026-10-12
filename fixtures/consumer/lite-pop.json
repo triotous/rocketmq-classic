@@ -106,6 +106,13 @@
 		"public void org.apache.rocketmq.client.consumer.DefaultLitePullConsumer.unsubscribe(java.lang.String)",
 		"public void org.apache.rocketmq.client.consumer.DefaultLitePullConsumer.updateNameServerAddress(java.lang.String)"
 	],
+	"liteConstructors":[
+		"public org.apache.rocketmq.client.consumer.DefaultLitePullConsumer()",
+		"public org.apache.rocketmq.client.consumer.DefaultLitePullConsumer(java.lang.String)",
+		"public org.apache.rocketmq.client.consumer.DefaultLitePullConsumer(java.lang.String,java.lang.String,org.apache.rocketmq.remoting.RPCHook)",
+		"public org.apache.rocketmq.client.consumer.DefaultLitePullConsumer(java.lang.String,org.apache.rocketmq.remoting.RPCHook)",
+		"public org.apache.rocketmq.client.consumer.DefaultLitePullConsumer(org.apache.rocketmq.remoting.RPCHook)"
+	],
 	"litePullApi":[
 		"public abstract boolean org.apache.rocketmq.client.consumer.LitePullConsumer.isAutoCommit()",
 		"public abstract boolean org.apache.rocketmq.client.consumer.LitePullConsumer.isRunning()",
@@ -176,6 +183,7 @@
 		"consumerPullTimeoutMillis":10000,
 		"consumerTimeoutMillisWhenSuspend":30000,
 		"enableMessageTrace":false,
+		"enableStreamRequestType":true,
 		"messageModel":"CLUSTERING",
 		"messageQueueListenerAbsent":true,
 		"noArgumentConsumerGroup":"DEFAULT_CONSUMER",

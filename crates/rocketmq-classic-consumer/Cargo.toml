@@ -14,6 +14,7 @@ rocketmq-classic-common = { path = "../rocketmq-classic-common" }
 rocketmq-classic-core = { path = "../rocketmq-classic-core" }
 rocketmq-classic-protocol = { path = "../rocketmq-classic-protocol" }
 rocketmq-classic-producer = { path = "../rocketmq-classic-producer" }
+rocketmq-classic-remoting = { path = "../rocketmq-classic-remoting" }
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
