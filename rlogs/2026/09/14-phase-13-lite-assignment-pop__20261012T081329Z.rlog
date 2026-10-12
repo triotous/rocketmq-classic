@@ -106,3 +106,15 @@ Phase 13 audit commit — 2026-10-12 12:18 UTC:
 
 - Committed the final Lite API/config and POP assignment audit as `815bcaf9` (`fix(consumer): complete Lite API compatibility audit`) on `phase/14-phase-13-lite-assignment-pop`.
 - The commit includes implementation, scripted/unit evidence, pinned fixture updates, compatibility crosswalk, and execution results. Phase 19 Broker/Docker execution remains pending; Phase 14 was not started.
+
+Phase 13 final Lite settings audit and validation — 2026-10-12 12:41 UTC:
+
+- Completed the post-construction Java 5.5.1 Lite settings audit. Consumer-level getters/setters now feed values used during polling, flow control, auto-commit and worker startup; Lite `unitMode`, message-trace enablement and trace topic share their inherited `ClientConfig` fields. Removed the Lite broker-suspend setter because the pinned Java API exposes only its fixed 20000 ms getter. The compatibility matrix records the source-derived behavior and evidence.
+- Added a scripted post-construction test proving changed pull batch size reaches the next request and changed default poll timeout is used. Added a full inherited `ClientConfig` copy assertion and pinned Java surface checks for the broker-suspend getter/setter distinction.
+- One unordered consumer test run transiently failed `lite_trace_dispatcher_uses_java_topic_defaults_and_lifecycle`; the isolated case and serialized consumer suite passed. The final serialized workspace run below also passed. An earlier parallel workspace failure in the producer global-counter test and its serialized pass remain recorded above.
+- `cargo test --workspace --locked -- --test-threads=1` — PASS across all workspace unit, integration and doc tests; consumer suite included 136 unit tests and 19 `lite_pop` integration tests.
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` — PASS.
+- `cargo fmt --all -- --check` and `git diff --check` — PASS.
+- `mvn -o -q -f compat/java-reference/pom.xml verify` — PASS (exit 0), including 32 differential scenarios, pinned Java 5.5.1 fixture drift checks, runtime/consumer oracles and Java decoding of Rust typed header/body fixtures. Maven emitted existing JDK reflective-access and Unsafe warnings.
+- Implementation, scripted tests and matrix were committed as `633d8106` (`fix(consumer): align Lite live settings with Java`) on `phase/14-phase-13-lite-assignment-pop`. The Phase 13 English and Traditional Chinese plan files were not modified. Java source provenance remains pinned to `efa1be59d6fc747ad220f036c86030f05f0419f9`; the Java checkout was not modified and its pre-existing untracked `broker/src/test/java/org/apache/rocketmq/broker/aaaa.java` remains untouched.
+- Local P13-V01, P13-V03 and P13-U01 evidence is covered. P13-V02 remains pending for Phase 19 live Broker/Docker execution; no live Broker or Docker gate was run. Phase 14 was not started.
