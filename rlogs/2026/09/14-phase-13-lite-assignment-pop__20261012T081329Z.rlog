@@ -73,3 +73,12 @@ Phase 13 continuation — Lite API audit — 2026-10-12:
 - Full `mvn -o -q -f compat/java-reference/pom.xml verify` is still running; record its final result before committing this API-audit change. Compatibility matrix updated; the Phase 13 plan remains untouched.
 - Follow-up: `mvn -o -q -f compat/java-reference/pom.xml verify` — PASS (32 differential scenarios, Java fixture drift checks, runtime/consumer oracles, and Java decoding of Rust typed fixtures).
 - API audit change committed as `NEXT_COMMIT` after local review.
+
+Phase 13 continuation — scripted Lite and POP lifecycle checks — 2026-10-12:
+
+- Correction to the prior `NEXT_COMMIT` placeholder: Lite API/config audit changes were committed as `511d3978` (`fix(consumer): align Lite assignment and config surface`). Earlier log entries were retained unchanged.
+- Added a scripted Lite flow covering failed/successful seek bounds, invalidation of a late pull result, delivered versus fetched offsets, pause/resume, explicit commits, persisted offset state and restart delivery position.
+- Added a scripted Push POP consume lifecycle covering listener success ACK, retry invisibility extension, a second receipt extension, generated replacement receipt fields and the final ACK. The test models Java's response-header-derived receipt generation.
+- `cargo test -p rocketmq-classic-consumer --lib pop_consume_dispatches_ack_redelivery_and_replacement_receipt --locked -- --nocapture` — PASS (1 test). Initial runs found and fixed a moved-`Arc` test compile error and an incorrect expectation that the Broker sends the replacement `extraInfo` field.
+- `cargo test -p rocketmq-classic-consumer --lib --test lite_pop --locked` — PASS (129 unit tests, 13 integration tests).
+- Updated `docs/compatibility/PHASE_13_LITE_POP_MATRIX.md` with the new evidence. Phase 13 remains in progress for the full API/config audit, per-method Lite RPC success/error evidence, and scripted successful Broker assignment worker activation/removal. Phase 19 Broker/Docker work remains pending.

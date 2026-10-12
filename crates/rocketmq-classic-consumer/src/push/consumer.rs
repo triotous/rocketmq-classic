@@ -4474,10 +4474,22 @@ mod tests {
     use super::*;
     use crate::offset::OffsetStoreFuture;
     use crate::push::listener::MessageQueueListener;
+    use bytes::BytesMut;
     use rocketmq_classic_common::message::{Message, MessageExt};
     use rocketmq_classic_core::api::consumer::PullResultExt;
+    use rocketmq_classic_protocol::codes::{request, response};
+    use rocketmq_classic_protocol::header::HeaderMap;
+    use rocketmq_classic_remoting::{
+        RemotingCommand,
+        codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
+    };
     use std::collections::HashMap;
     use std::sync::atomic::AtomicUsize;
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::{TcpListener, TcpStream},
+        time::timeout,
+    };
 
     #[derive(Default)]
     struct RecordingOffsetStore {
@@ -4618,6 +4630,71 @@ mod tests {
         message
     }
 
+    async fn read_remoting_command(stream: &mut TcpStream) -> RemotingCommand {
+        let mut length = [0; 4];
+        stream.read_exact(&mut length).await.unwrap();
+        let mut bytes = BytesMut::from(&length[..]);
+        bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
+        stream.read_exact(&mut bytes[4..]).await.unwrap();
+        frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
+            .unwrap()
+            .unwrap()
+    }
+
+    async fn write_remoting_reply(
+        stream: &mut TcpStream,
+        request: &RemotingCommand,
+        code: i32,
+        fields: Option<HeaderMap>,
+    ) {
+        let mut reply = RemotingCommand {
+            code,
+            opaque: request.opaque,
+            ext_fields: fields,
+            ..Default::default()
+        };
+        reply.mark_response();
+        stream
+            .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+            .await
+            .unwrap();
+    }
+
+    fn pop_test_route(address: &str) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "queueDatas": [{
+                "brokerName": "broker-a",
+                "readQueueNums": 1,
+                "writeQueueNums": 1,
+                "perm": 6,
+                "topicSysFlag": 0
+            }],
+            "brokerDatas": [{
+                "cluster": "cluster",
+                "brokerName": "broker-a",
+                "brokerAddrs": {"0": address}
+            }],
+            "filterServerTable": {}
+        }))
+        .unwrap()
+    }
+
+    async fn accept_remoting_request(
+        listener: &TcpListener,
+        current: &mut Option<TcpStream>,
+    ) -> RemotingCommand {
+        loop {
+            if current.is_none() {
+                *current = Some(listener.accept().await.unwrap().0);
+            }
+            let stream = current.as_mut().unwrap();
+            match timeout(Duration::from_millis(250), read_remoting_command(stream)).await {
+                Ok(command) => return command,
+                Err(_) => *current = None,
+            }
+        }
+    }
+
     #[test]
     fn pop_batch_expiry_uses_receipt_invisibility_boundary_and_rejects_invalid_receipts() {
         let message = pop_receipt_message(Some("10 1000 50 2 0 broker-a 0 10"));
@@ -4663,6 +4740,7 @@ mod tests {
         });
 
         consumer
+            .clone()
             .consume_pop_batch(
                 PopConsumeBatchContext {
                     process_queue: process_queue.clone(),
@@ -4679,6 +4757,189 @@ mod tests {
         assert!(!listener_called.load(Ordering::Acquire));
         assert_eq!(process_queue.wait_ack_count(), 0);
         let _ = runtime.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn pop_consume_dispatches_ack_redelivery_and_replacement_receipt() {
+        let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let nameserver_address = nameserver.local_addr().unwrap().to_string();
+        let broker_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let broker_address = broker_listener.local_addr().unwrap().to_string();
+        let route = pop_test_route(&broker_address);
+
+        let nameserver_peer = tokio::spawn(async move {
+            let (mut stream, _) = nameserver.accept().await.unwrap();
+            let incoming = read_remoting_command(&mut stream).await;
+            assert_eq!(incoming.code, request::GET_ROUTEINFO_BY_TOPIC);
+            let mut reply = RemotingCommand {
+                code: response::SUCCESS,
+                opaque: incoming.opaque,
+                body: Some(route),
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .await
+                .unwrap();
+        });
+
+        let now = epoch_millis();
+        let initial_receipt = format!("10 {now} 60000 2 0 broker-a 0 10");
+        let redelivery_receipt = format!("10 {now} 30000 2 0 broker-a 0 10");
+        let replacement_receipt = format!("10 {} 45000 3 0 broker-a 0 10", now + 1);
+        let expected_receipts = [
+            initial_receipt.clone(),
+            initial_receipt.clone(),
+            redelivery_receipt.clone(),
+            replacement_receipt.clone(),
+        ];
+        let broker_peer = tokio::spawn(async move {
+            let mut stream = None;
+            let expected_codes = [
+                request::ACK_MESSAGE,
+                request::CHANGE_MESSAGE_INVISIBLETIME,
+                request::CHANGE_MESSAGE_INVISIBLETIME,
+                request::ACK_MESSAGE,
+            ];
+            for (index, expected_code) in expected_codes.into_iter().enumerate() {
+                let incoming = accept_remoting_request(&broker_listener, &mut stream).await;
+                assert_eq!(incoming.code, expected_code);
+                let fields = incoming.ext_fields.as_ref().unwrap();
+                assert_eq!(
+                    fields.get("consumerGroup"),
+                    Some(&"pop-lifecycle-group".into())
+                );
+                assert_eq!(fields.get("topic"), Some(&"orders".into()));
+                assert_eq!(fields.get("queueId"), Some(&"0".into()));
+                assert_eq!(fields.get("offset"), Some(&"10".into()));
+                assert_eq!(fields.get("extraInfo"), Some(&expected_receipts[index]));
+                if expected_code == request::CHANGE_MESSAGE_INVISIBLETIME {
+                    let (pop_time, invisible_time, revive_qid) = if index == 1 {
+                        (now, 30_000, 2)
+                    } else {
+                        (now + 1, 45_000, 3)
+                    };
+                    assert_eq!(
+                        fields.get("invisibleTime"),
+                        Some(&(if index == 1 { "10000" } else { "30000" }).to_owned())
+                    );
+                    write_remoting_reply(
+                        stream.as_mut().unwrap(),
+                        &incoming,
+                        response::SUCCESS,
+                        Some(HeaderMap::from([
+                            ("popTime".into(), pop_time.to_string()),
+                            ("invisibleTime".into(), invisible_time.to_string()),
+                            ("reviveQid".into(), revive_qid.to_string()),
+                        ])),
+                    )
+                    .await;
+                } else {
+                    write_remoting_reply(
+                        stream.as_mut().unwrap(),
+                        &incoming,
+                        response::SUCCESS,
+                        None,
+                    )
+                    .await;
+                }
+            }
+        });
+
+        let mut config = PushConsumerConfig::new("pop-lifecycle-group").unwrap();
+        config
+            .client_config_mut()
+            .set_namesrv_addr(Some(nameserver_address));
+        config
+            .client_config_mut()
+            .set_instance_name(Some("pop-lifecycle-client".into()));
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let runtime = manager
+            .get_or_create(consumer.config.client_config())
+            .await
+            .unwrap();
+        runtime.remoting().start().unwrap();
+        runtime
+            .update_topic_route("orders", Instant::now() + Duration::from_secs(3))
+            .await
+            .unwrap();
+        nameserver_peer.await.unwrap();
+
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let successful_queue = Arc::new(PopProcessQueue::new(queue.clone(), 1));
+        successful_queue.inc_found_messages(1);
+        let listener_calls = Arc::new(AtomicUsize::new(0));
+        let successful_listener = PushMessageListener::concurrently({
+            let listener_calls = listener_calls.clone();
+            move |_messages, context| {
+                listener_calls.fetch_add(1, Ordering::SeqCst);
+                std::future::ready((Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context))
+            }
+        });
+        consumer
+            .clone()
+            .consume_pop_batch(
+                PopConsumeBatchContext {
+                    process_queue: successful_queue.clone(),
+                    runtime: runtime.clone(),
+                    queue: queue.clone(),
+                    route_topic: "orders".into(),
+                    consumer_group: "pop-lifecycle-group".into(),
+                },
+                successful_listener,
+                vec![pop_receipt_message(Some(&initial_receipt))],
+            )
+            .await;
+        assert_eq!(listener_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(successful_queue.wait_ack_count(), 0);
+
+        let retry_queue = Arc::new(PopProcessQueue::new(queue.clone(), 2));
+        retry_queue.inc_found_messages(1);
+        let retry_listener = PushMessageListener::concurrently(|_messages, context| {
+            std::future::ready((Some(ConsumeConcurrentlyStatus::ReconsumeLater), context))
+        });
+        consumer
+            .clone()
+            .consume_pop_batch(
+                PopConsumeBatchContext {
+                    process_queue: retry_queue.clone(),
+                    runtime: runtime.clone(),
+                    queue: queue.clone(),
+                    route_topic: "orders".into(),
+                    consumer_group: "pop-lifecycle-group".into(),
+                },
+                retry_listener,
+                vec![pop_receipt_message(Some(&initial_receipt))],
+            )
+            .await;
+        assert_eq!(retry_queue.wait_ack_count(), 0);
+
+        let mut changed_message = pop_receipt_message(Some(&redelivery_receipt));
+        consumer
+            .change_pop_invisible_time(
+                &runtime,
+                &mut changed_message,
+                "orders",
+                "pop-lifecycle-group",
+                30_000,
+            )
+            .await;
+        assert_eq!(
+            changed_message.message().properties().get(PROPERTY_POP_CK),
+            Some(&replacement_receipt)
+        );
+        assert_eq!(
+            consumer
+                .ack_pop_message(&runtime, &changed_message, "orders", "pop-lifecycle-group")
+                .await
+                .unwrap(),
+            AckStatus::Ok
+        );
+
+        broker_peer.await.unwrap();
+        runtime.shutdown().await.unwrap();
     }
 
     fn retry_test_message(offset: i64) -> MessageExt {

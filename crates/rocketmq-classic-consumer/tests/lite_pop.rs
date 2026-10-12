@@ -1,16 +1,474 @@
-use std::path::PathBuf;
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
+use base64::Engine;
+use bytes::BytesMut;
 use rocketmq_classic_common::message::MessageQueue;
 use rocketmq_classic_consumer::push::PushConsumerConfig;
-use rocketmq_classic_consumer::{LitePullConsumer, LitePullConsumerConfig, LitePullConsumerError};
+use rocketmq_classic_consumer::{
+    LitePullConsumer, LitePullConsumerConfig, LitePullConsumerError,
+    offset::{OffsetRead, OffsetStore, OffsetStoreFuture, ReadOffsetType},
+};
+use rocketmq_classic_protocol::codes::{request, response};
+use rocketmq_classic_protocol::header::HeaderMap;
 use rocketmq_classic_protocol::heartbeat::{ConsumeFromWhere, MessageModel};
+use rocketmq_classic_remoting::{
+    RemotingCommand,
+    codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
+};
 use serde_json::Value;
+use tokio::{
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    net::TcpListener,
+    sync::{mpsc, oneshot},
+    time::timeout,
+};
+
+#[derive(Default)]
+struct LiteScriptedOffsetStore {
+    memory: Mutex<HashMap<MessageQueue, i64>>,
+    persisted: Mutex<HashMap<MessageQueue, i64>>,
+}
+
+impl OffsetStore for LiteScriptedOffsetStore {
+    fn load(&self) -> OffsetStoreFuture<'_, ()> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn update_offset(&self, queue: &MessageQueue, offset: i64, _increase_only: bool) {
+        self.memory.lock().unwrap().insert(queue.clone(), offset);
+    }
+
+    fn update_and_freeze_offset(&self, queue: &MessageQueue, offset: i64) {
+        self.update_offset(queue, offset, false);
+    }
+
+    fn read_offset<'a>(
+        &'a self,
+        queue: &'a MessageQueue,
+        mode: ReadOffsetType,
+    ) -> OffsetStoreFuture<'a, OffsetRead> {
+        Box::pin(async move {
+            let memory = self.memory.lock().unwrap().get(queue).copied();
+            let persisted = self.persisted.lock().unwrap().get(queue).copied();
+            Ok(match mode {
+                ReadOffsetType::ReadFromMemory => memory,
+                ReadOffsetType::ReadFromStore => persisted,
+                ReadOffsetType::MemoryFirstThenStore => memory.or(persisted),
+            }
+            .map_or(OffsetRead::NotFound, OffsetRead::Found))
+        })
+    }
+
+    fn persist<'a>(&'a self, queue: &'a MessageQueue) -> OffsetStoreFuture<'a, ()> {
+        Box::pin(async move {
+            if let Some(offset) = self.memory.lock().unwrap().get(queue).copied() {
+                self.persisted.lock().unwrap().insert(queue.clone(), offset);
+            }
+            Ok(())
+        })
+    }
+
+    fn persist_all<'a>(&'a self, queues: &'a [MessageQueue]) -> OffsetStoreFuture<'a, ()> {
+        Box::pin(async move {
+            let memory = self.memory.lock().unwrap();
+            let mut persisted = self.persisted.lock().unwrap();
+            for queue in queues {
+                if let Some(offset) = memory.get(queue) {
+                    persisted.insert(queue.clone(), *offset);
+                }
+            }
+            Ok(())
+        })
+    }
+
+    fn remove_offset(&self, queue: &MessageQueue) {
+        self.memory.lock().unwrap().remove(queue);
+    }
+
+    fn clone_offset_table(&self, topic: Option<&str>) -> HashMap<MessageQueue, i64> {
+        self.memory
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(queue, _)| topic.is_none_or(|topic| queue.topic() == Some(topic)))
+            .map(|(queue, offset)| (queue.clone(), *offset))
+            .collect()
+    }
+
+    fn update_consume_offset_to_broker<'a>(
+        &'a self,
+        _queue: &'a MessageQueue,
+        _offset: i64,
+        _oneway: bool,
+    ) -> OffsetStoreFuture<'a, ()> {
+        Box::pin(async { Ok(()) })
+    }
+}
+
+struct ScriptedBrokerRequest {
+    command: RemotingCommand,
+    reply: oneshot::Sender<ScriptedReply>,
+}
+
+#[derive(Debug)]
+struct ScriptedReply {
+    code: i32,
+    fields: Option<HeaderMap>,
+    body: Option<Vec<u8>>,
+}
+
+async fn read_command<R: AsyncRead + Unpin>(stream: &mut R) -> Option<RemotingCommand> {
+    let mut length = [0; 4];
+    stream.read_exact(&mut length).await.ok()?;
+    let mut bytes = BytesMut::from(&length[..]);
+    bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
+    stream.read_exact(&mut bytes[4..]).await.ok()?;
+    frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE).ok()?
+}
+
+async fn write_reply<W: AsyncWrite + Unpin>(stream: &mut W, opaque: i32, reply: ScriptedReply) {
+    let mut response_command = RemotingCommand {
+        code: reply.code,
+        opaque,
+        ext_fields: reply.fields,
+        body: reply.body,
+        ..Default::default()
+    };
+    response_command.mark_response();
+    stream
+        .write_all(&frame::encode(&response_command, DEFAULT_MAX_FRAME_SIZE).unwrap())
+        .await
+        .unwrap();
+}
+
+fn broker_route(address: &str) -> Vec<u8> {
+    serde_json::to_vec(&serde_json::json!({
+        "queueDatas": [{
+            "brokerName": "broker-a",
+            "readQueueNums": 1,
+            "writeQueueNums": 1,
+            "perm": 6,
+            "topicSysFlag": 0
+        }],
+        "brokerDatas": [{
+            "cluster": "cluster",
+            "brokerName": "broker-a",
+            "brokerAddrs": {"0": address}
+        }],
+        "filterServerTable": {}
+    }))
+    .unwrap()
+}
+
+async fn start_scripted_nameserver(route: Vec<u8>) -> (String, tokio::task::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    let task = tokio::spawn(async move {
+        loop {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let route = route.clone();
+            tokio::spawn(async move {
+                while let Some(command) = read_command(&mut stream).await {
+                    let body =
+                        (command.code == request::GET_ROUTEINFO_BY_TOPIC).then(|| route.clone());
+                    write_reply(
+                        &mut stream,
+                        command.opaque,
+                        ScriptedReply {
+                            code: response::SUCCESS,
+                            fields: None,
+                            body,
+                        },
+                    )
+                    .await;
+                }
+            });
+        }
+    });
+    (address, task)
+}
+
+fn start_scripted_broker(
+    listener: TcpListener,
+) -> (
+    mpsc::UnboundedReceiver<ScriptedBrokerRequest>,
+    tokio::task::JoinHandle<()>,
+) {
+    let (request_tx, request_rx) = mpsc::unbounded_channel::<ScriptedBrokerRequest>();
+    let task = tokio::spawn(async move {
+        loop {
+            let (stream, _) = listener.accept().await.unwrap();
+            let request_tx = request_tx.clone();
+            tokio::spawn(async move {
+                let (mut reader, writer) = stream.into_split();
+                let writer = Arc::new(tokio::sync::Mutex::new(writer));
+                while let Some(command) = read_command(&mut reader).await {
+                    if matches!(
+                        command.code,
+                        request::HEART_BEAT
+                            | request::UNREGISTER_CLIENT
+                            | request::CHECK_CLIENT_CONFIG
+                    ) {
+                        let writer = writer.clone();
+                        let opaque = command.opaque;
+                        tokio::spawn(async move {
+                            write_reply(
+                                &mut *writer.lock().await,
+                                opaque,
+                                ScriptedReply {
+                                    code: response::SUCCESS,
+                                    fields: None,
+                                    body: None,
+                                },
+                            )
+                            .await;
+                        });
+                        continue;
+                    }
+                    let (reply_tx, reply_rx) = oneshot::channel();
+                    if request_tx
+                        .send(ScriptedBrokerRequest {
+                            command: command.clone(),
+                            reply: reply_tx,
+                        })
+                        .is_err()
+                    {
+                        return;
+                    }
+                    let writer = writer.clone();
+                    let opaque = command.opaque;
+                    tokio::spawn(async move {
+                        if let Ok(reply) = reply_rx.await {
+                            write_reply(&mut *writer.lock().await, opaque, reply).await;
+                        }
+                    });
+                }
+            });
+        }
+    });
+    (request_rx, task)
+}
+
+async fn next_request(
+    receiver: &mut mpsc::UnboundedReceiver<ScriptedBrokerRequest>,
+    code: i32,
+) -> ScriptedBrokerRequest {
+    loop {
+        let request = timeout(Duration::from_secs(4), receiver.recv())
+            .await
+            .expect("scripted broker timed out waiting for request")
+            .expect("scripted broker request stream closed");
+        assert_eq!(request.command.code, code);
+        return request;
+    }
+}
+
+fn reply_offset(request: ScriptedBrokerRequest, code: i32, name: &str, offset: i64) {
+    request
+        .reply
+        .send(ScriptedReply {
+            code,
+            fields: Some(HeaderMap::from([(name.into(), offset.to_string())])),
+            body: None,
+        })
+        .unwrap();
+}
+
+fn pull_reply(request: ScriptedBrokerRequest, code: i32, offset: i64, message: bool) {
+    let fields = HeaderMap::from([
+        ("suggestWhichBrokerId".into(), "0".into()),
+        ("nextBeginOffset".into(), offset.to_string()),
+        ("minOffset".into(), "0".into()),
+        ("maxOffset".into(), "30".into()),
+    ]);
+    let body = message.then(|| {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../../../fixtures/messages/records.json")).unwrap();
+        let mut bytes = base64::engine::general_purpose::STANDARD
+            .decode(
+                fixture["cases"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|case| case["name"] == "ipv4-v1")
+                    .unwrap()["recordBase64"]
+                    .as_str()
+                    .unwrap(),
+            )
+            .unwrap();
+        bytes[20..28].copy_from_slice(&(offset - 1).to_be_bytes());
+        bytes
+    });
+    request
+        .reply
+        .send(ScriptedReply {
+            code,
+            fields: Some(fields),
+            body,
+        })
+        .unwrap();
+}
+
+fn lite_config_with_store(
+    group: &str,
+    instance: &str,
+    nameserver: &str,
+    store: Arc<LiteScriptedOffsetStore>,
+) -> LitePullConsumerConfig {
+    let mut config = LitePullConsumerConfig::new(group).unwrap();
+    config
+        .client_config_mut()
+        .set_namesrv_addr(Some(nameserver.to_owned()));
+    config
+        .client_config_mut()
+        .set_instance_name(Some(instance.to_owned()));
+    config
+        .client_config_mut()
+        .set_poll_name_server_interval(60_000);
+    config
+        .client_config_mut()
+        .set_heartbeat_broker_interval(60_000);
+    config
+        .client_config_mut()
+        .set_persist_consumer_offset_interval(60_000);
+    config.set_auto_commit(false);
+    config
+        .set_consume_from_where(ConsumeFromWhere::ConsumeFromFirstOffset)
+        .unwrap();
+    config.set_offset_store(Some(store));
+    config
+}
 
 fn java_fixture() -> Value {
     let path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/consumer/lite-pop.json");
     serde_json::from_slice(&std::fs::read(path).expect("pinned Java Lite/POP fixture"))
         .expect("valid pinned Java Lite/POP fixture")
+}
+
+#[tokio::test]
+async fn scripted_lite_seek_pause_resume_commit_and_restart_preserve_delivery_offsets() {
+    let broker_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let broker_address = broker_listener.local_addr().unwrap().to_string();
+    let route = broker_route(&broker_address);
+    let (nameserver, nameserver_task) = start_scripted_nameserver(route).await;
+    let (mut requests, broker_task) = start_scripted_broker(broker_listener);
+    let queue = MessageQueue::new("orders", "broker-a", 0);
+    let store = Arc::new(LiteScriptedOffsetStore::default());
+
+    let first = Arc::new(
+        LitePullConsumer::new(lite_config_with_store(
+            "lite-scripted-flow",
+            "lite-scripted-client-1",
+            &nameserver,
+            store.clone(),
+        ))
+        .unwrap(),
+    );
+    first.assign([queue.clone()]).unwrap();
+    first.start().await.unwrap();
+
+    let original_pull = next_request(&mut requests, request::LITE_PULL_MESSAGE).await;
+    assert_eq!(
+        original_pull.command.ext_fields.as_ref().unwrap()["queueOffset"],
+        "0"
+    );
+
+    let seek_consumer = first.clone();
+    let seek_queue = queue.clone();
+    let invalid_seek = tokio::spawn(async move { seek_consumer.seek(&seek_queue, 31).await });
+    let minimum = next_request(&mut requests, request::GET_MIN_OFFSET).await;
+    reply_offset(minimum, response::SUCCESS, "offset", 0);
+    let maximum = next_request(&mut requests, request::GET_MAX_OFFSET).await;
+    reply_offset(maximum, response::SUCCESS, "offset", 30);
+    assert!(matches!(
+        invalid_seek.await.unwrap(),
+        Err(LitePullConsumerError::InvalidSeekOffset {
+            offset: 31,
+            minimum: 0,
+            maximum: 30
+        })
+    ));
+
+    let seek_consumer = first.clone();
+    let seek_queue = queue.clone();
+    let valid_seek = tokio::spawn(async move { seek_consumer.seek(&seek_queue, 10).await });
+    let minimum = next_request(&mut requests, request::GET_MIN_OFFSET).await;
+    reply_offset(minimum, response::SUCCESS, "offset", 0);
+    let maximum = next_request(&mut requests, request::GET_MAX_OFFSET).await;
+    reply_offset(maximum, response::SUCCESS, "offset", 30);
+    valid_seek.await.unwrap().unwrap();
+
+    // The original pull reply arrives after seek invalidated its generation.
+    pull_reply(original_pull, response::SUCCESS, 2, true);
+    let pulled_after_seek = next_request(&mut requests, request::LITE_PULL_MESSAGE).await;
+    assert_eq!(
+        pulled_after_seek.command.ext_fields.as_ref().unwrap()["queueOffset"],
+        "10"
+    );
+    pull_reply(pulled_after_seek, response::SUCCESS, 11, true);
+
+    let delivered = first.poll(Some(3_000)).await.unwrap();
+    assert_eq!(delivered.len(), 1);
+    assert_eq!(delivered[0].queue_offset(), 10);
+
+    let pending_pull = next_request(&mut requests, request::LITE_PULL_MESSAGE).await;
+    assert_eq!(
+        pending_pull.command.ext_fields.as_ref().unwrap()["queueOffset"],
+        "11"
+    );
+    first.pause([queue.clone()]);
+    pull_reply(pending_pull, response::PULL_NOT_FOUND, 11, false);
+    assert!(
+        timeout(Duration::from_millis(150), requests.recv())
+            .await
+            .is_err()
+    );
+
+    first
+        .commit_offsets([(queue.clone(), 11)], true)
+        .await
+        .unwrap();
+    first.commit_queues([queue.clone()], true).await.unwrap();
+    assert_eq!(store.persisted.lock().unwrap().get(&queue), Some(&11));
+
+    first.resume([queue.clone()]);
+    let resumed_pull = next_request(&mut requests, request::LITE_PULL_MESSAGE).await;
+    assert_eq!(
+        resumed_pull.command.ext_fields.as_ref().unwrap()["queueOffset"],
+        "11"
+    );
+    first.pause([queue.clone()]);
+    pull_reply(resumed_pull, response::PULL_NOT_FOUND, 11, false);
+    first.shutdown().await.unwrap();
+
+    let restarted = Arc::new(
+        LitePullConsumer::new(lite_config_with_store(
+            "lite-scripted-flow",
+            "lite-scripted-client-2",
+            &nameserver,
+            store.clone(),
+        ))
+        .unwrap(),
+    );
+    restarted.assign([queue.clone()]).unwrap();
+    restarted.start().await.unwrap();
+    let restarted_pull = next_request(&mut requests, request::LITE_PULL_MESSAGE).await;
+    assert_eq!(
+        restarted_pull.command.ext_fields.as_ref().unwrap()["queueOffset"],
+        "11"
+    );
+    restarted.pause([queue]);
+    pull_reply(restarted_pull, response::PULL_NOT_FOUND, 11, false);
+    restarted.shutdown().await.unwrap();
+
+    nameserver_task.abort();
+    broker_task.abort();
 }
 
 #[test]
