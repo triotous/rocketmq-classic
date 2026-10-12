@@ -1,0 +1,32 @@
+Phase 13 Lite Pull and POP — 2026-10-12 08:13 UTC
+
+Objective: implement plan `plan/2026/09/14-phase-13-lite-assignment-pop.md` on a phase-specific branch, preserving all public Java 5.5.1 API/configuration behavior and consumer flow semantics. Java reference tag: `efa1be59d6fc747ad220f036c86030f05f0419f9`.
+
+Branch and starting state:
+
+- Created `phase/14-phase-13-lite-assignment-pop` from Phase 12 HEAD `f4a72f72`.
+- Preserved the pre-existing Phase 0–11 audit work in separate commit `eb9d725e` before starting Phase 13.
+- Java checkout `/Users/bruce.tsai/Projects/3rd/rocketmq` is at 5.3.3 HEAD `2238256d`; use `git show efa1be59d6fc747ad220f036c86030f05f0419f9:<path>` for source and the Maven-pinned 5.5.1 artifact for invoked fixtures. No files in the Java checkout were changed.
+
+Initial source audit:
+
+- Lite public API includes `buildSubscriptionsForHeartbeat(Map)` in the pinned 5.5.1 artifact/source; it clears and rebuilds the retained heartbeat subscription set. The 5.3.3 checkout lacks that interface method, so all remaining source checks use the pinned commit.
+- Existing Rust core already has QUERY_ASSIGNMENT/SET_MESSAGE_REQUEST_MODE and POP/ACK/batch-ACK/change-invisibility RPCs. Push rebalance currently detects POP assignments but skips activating them; the consumer crate has no Lite polling facade or receipt abstraction.
+- Phase 13 Java fixture invokes Lite defaults/setters/heartbeat subscription construction, Push POP settings, `PopResult`, and `ExtraInfoUtil` receipt parsing. Fixture contents are in `fixtures/consumer/lite-pop.json`.
+
+Oracle fixture generation attempts:
+
+- Initial compile used a guessed MessageModel package and failed; corrected to `org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel` from pinned source.
+- Initial fixture called delegated `PullAPIWrapper` settings before start; the Java implementation dereferences an uninitialized wrapper in that lifecycle state. Removed those pre-start calls; the method signatures remain captured in the API inventory.
+- The constructor's consume timestamp is time-dependent; fixture records whether it is within one second of the 30-minute default instead of storing the changing timestamp.
+
+Current Phase 13 acceptance is not yet met. Continue with failing Rust cases before implementing Lite state, POP assignment/queue workers, and receipt operations. Keep local unit/fixture checks distinct from Phase 19 live Broker evidence.
+
+P13-01 Java oracle baseline — 2026-10-12:
+
+- Added `LitePopFixtures`, executed against Maven-pinned `rocketmq-client:5.5.1`. It records the full Lite interface and `DefaultLitePullConsumer` declared public method signatures, defaults, representative config mutations, invalid mode/config outcomes, heartbeat selector construction, Push POP settings, `PopResult` defaults/statuses, and valid/malformed `ExtraInfoUtil` receipt fields. Runtime-derived constructor timestamp is normalized to a bounded boolean so the fixture remains deterministic.
+- Added `fixtures/consumer/lite-pop.json`, Maven verify drift checking, a consumer integration test for pinned fixture invariants, and the initial Phase 13 method/config/flow matrix. The matrix remains explicitly `In progress` because Rust Lite and Push POP behavior are not implemented yet.
+- `mvn -o -q -f compat/java-reference/pom.xml verify` — PASS (exit 0), including 32 differential scenarios, Java fixture drift checks, registry/route/runtime oracles, and Java decoding of 46 Rust typed headers plus 14 Rust typed bodies.
+- `cargo test -p rocketmq-classic-consumer --test lite_pop --locked` — PASS (2 tests).
+- `cargo fmt --all -- --check` and `git diff --check` — PASS.
+- No live Broker, Docker cluster or changes to the Java checkout were made.
