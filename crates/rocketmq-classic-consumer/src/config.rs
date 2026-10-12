@@ -7,6 +7,7 @@ pub const DEFAULT_CONSUMER_GROUP: &str = "DEFAULT_CONSUMER";
 pub const DEFAULT_BROKER_SUSPEND_MAX_TIME_MILLIS: i64 = 20_000;
 pub const DEFAULT_CONSUMER_TIMEOUT_MILLIS_WHEN_SUSPEND: i64 = 30_000;
 pub const DEFAULT_CONSUMER_PULL_TIMEOUT_MILLIS: i64 = 10_000;
+pub const DEFAULT_PULL_CONSUMER_ENABLE_REBALANCE: bool = true;
 
 /// Settings implemented by Java 5.5.1 `DefaultMQPullConsumer` for explicit pull.
 pub struct PullConsumerConfig {
@@ -17,6 +18,10 @@ pub struct PullConsumerConfig {
     consumer_pull_timeout_millis: i64,
     message_model: MessageModel,
     unit_mode: bool,
+    enable_rebalance: bool,
+    allocate_message_queue_strategy:
+        std::sync::Arc<dyn crate::rebalance::AllocateMessageQueueStrategy>,
+    message_queue_listener: Option<crate::push::MessageQueueListener>,
 }
 
 impl PullConsumerConfig {
@@ -29,6 +34,11 @@ impl PullConsumerConfig {
             consumer_pull_timeout_millis: DEFAULT_CONSUMER_PULL_TIMEOUT_MILLIS,
             message_model: MessageModel::Clustering,
             unit_mode: false,
+            enable_rebalance: DEFAULT_PULL_CONSUMER_ENABLE_REBALANCE,
+            allocate_message_queue_strategy: std::sync::Arc::new(
+                crate::rebalance::AllocateMessageQueueAveragely,
+            ),
+            message_queue_listener: None,
         })
     }
 
@@ -86,6 +96,35 @@ impl PullConsumerConfig {
 
     pub fn set_unit_mode(&mut self, value: bool) {
         self.unit_mode = value;
+    }
+
+    pub const fn enable_rebalance(&self) -> bool {
+        self.enable_rebalance
+    }
+
+    pub fn set_enable_rebalance(&mut self, value: bool) {
+        self.enable_rebalance = value;
+    }
+
+    pub fn allocate_message_queue_strategy(
+        &self,
+    ) -> std::sync::Arc<dyn crate::rebalance::AllocateMessageQueueStrategy> {
+        self.allocate_message_queue_strategy.clone()
+    }
+
+    pub fn set_allocate_message_queue_strategy(
+        &mut self,
+        value: std::sync::Arc<dyn crate::rebalance::AllocateMessageQueueStrategy>,
+    ) {
+        self.allocate_message_queue_strategy = value;
+    }
+
+    pub fn message_queue_listener(&self) -> Option<crate::push::MessageQueueListener> {
+        self.message_queue_listener.clone()
+    }
+
+    pub fn set_message_queue_listener(&mut self, value: Option<crate::push::MessageQueueListener>) {
+        self.message_queue_listener = value;
     }
 
     pub(crate) fn validate(&self, effective_consumer_group: &str) -> Result<(), PullConsumerError> {

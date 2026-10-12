@@ -45,6 +45,8 @@ pub enum PullConsumerError {
     InvalidTimeout,
     #[error("SQL92 pull expression must not be empty")]
     EmptySqlExpression,
+    #[error("invalid pull subscription: {0}")]
+    InvalidSubscription(String),
     #[error("broker `{broker}` was not found in the current route")]
     BrokerNotFound { broker: String },
     #[error(
