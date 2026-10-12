@@ -23,6 +23,7 @@ Java source baseline: Apache RocketMQ client 5.5.1, commit `efa1be59d6fc747ad220
 | `PullConsumer::{get_offset_store, set_offset_store}` | Deprecated Java `DefaultMQPullConsumer.getOffsetStore/setOffsetStore` | Lifecycle unit test checks `None` before selection, model-selected store after startup, and retained access after shutdown. |
 | `PullConsumer::register_filter_message_hook` | Java `DefaultMQPullConsumerImpl.registerFilterMessageHook` | Pull facade test verifies the hook receives Java unit-mode context. |
 | `PullConsumer::{search_offset, search_offset_with_boundary, get_max_offset, get_min_offset, get_earliest_msg_store_time}` | Java `MQAdminImpl` offset helpers; default search boundary is LOWER, max offset requests committed data | Boundary RPC fixtures and routed facade test. Return values remain signed `i64`; `-1` is not treated as an RPC failure. |
+| `PullConsumer::{register_message_queue_listener, set_message_queue_listener, register_topics, set_register_topics, add_register_subscriptions, clear_register_subscriptions, fetch_message_queues_in_balance}` | Java `DefaultMQPullConsumer` registration/config APIs and `MQPullConsumer.fetchMessageQueuesInBalance` | Phase 11 matrix P11-U02 verifies defaults, namespace handling, queue-listener assignment updates, offset-safe removal and lifecycle-checked queue queries. Returned queue topics have the configured namespace removed, matching Java `parseSubscribeMessageQueues`. |
 | `OffsetStore`, `OffsetRead`, `ReadOffsetType`, `LocalFileOffsetStore`, `RemoteBrokerOffsetStore` | Java `OffsetStore`, remote and local implementations | Unit tests, Java local-store fixture and scripted RPC peer. |
 | `PullConsumerConfig` | Java `DefaultMQPullConsumer` settings implemented by this phase | Exact setting/default/validation map below. |
 
@@ -52,6 +53,16 @@ The consumer-specific settings in this phase map as follows. The inherited Java 
 | `LocalFileOffsetStore.LOCAL_OFFSET_STORE_DIR` | Java system property `rocketmq.client.localOffsetStoreDir`; default is `${user.home}/.rocketmq_offsets`. | Same-named process environment variable, then `$HOME` or `%USERPROFILE%` plus `.rocketmq_offsets`; explicit root construction is private to tests. |
 
 The Java `maxSizeInBytes` overload is callback-based in the pinned source. Rust maps it to the Future-returning `pull_with_max_size` and `pull_with_max_size_and_timeout` methods; all existing pull overloads preserve Java's `Integer.MAX_VALUE` default. `maxMsgBytes <= 0` is rejected before route or Broker I/O.
+
+### Phase 11 Pull rebalance settings
+
+| Java setting/API | Java 5.5.1 default/behavior | Rust setting and evidence |
+| --- | --- | --- |
+| `allocateMessageQueueStrategy` | `AllocateMessageQueueAveragely`; validated non-null at startup. | `PullConsumerConfig::{allocate_message_queue_strategy, set_allocate_message_queue_strategy}`; defaults to `AllocateMessageQueueAveragely`; strategy differential is P11-V01. |
+| `messageQueueListener` | Unset by default; listener receives topic, all queues and the local assignment; callback exceptions are isolated. | `PullConsumerConfig::{message_queue_listener, set_message_queue_listener}` and `PullConsumer::{message_queue_listener, set_message_queue_listener, register_message_queue_listener}`; P11-U02. |
+| `enableRebalance` | `true`; a disabled cycle leaves the current local assignment in place. | `PullConsumerConfig::{enable_rebalance, set_enable_rebalance}` and live `PullConsumer::{enable_rebalance, set_enable_rebalance}`; P11-U02. |
+| `registerTopics` / `registerSubscriptions` | Empty at construction. Registered topics become wildcard subscriptions; a non-empty explicit subscription set is used for heartbeat data. | `PullConsumer::{register_topics, set_register_topics, register_topic, add_register_subscriptions, register_subscriptions, clear_register_subscriptions}`; P11-U02 namespace and registration checks. |
+| `fetchMessageQueuesInBalance(topic)` | Returns queues currently assigned to this consumer and strips the configured namespace. | `PullConsumer::fetch_message_queues_in_balance`; P11-U02 checks running-state errors, assignment results and namespace removal. |
 
 ## Verification status
 
