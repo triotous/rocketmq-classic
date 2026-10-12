@@ -116,7 +116,15 @@ pub struct TransactionProducer {
 
 impl TransactionProducer {
     pub fn new(config: ProducerConfig) -> Self {
-        let producer = Arc::new(Producer::new(config));
+        Self::new_with_rpc_hook(config, None)
+    }
+
+    /// Creates a transaction producer whose remoting requests use the supplied RPC hook.
+    pub fn new_with_rpc_hook(
+        config: ProducerConfig,
+        rpc_hook: Option<Arc<dyn rocketmq_classic_remoting::client::RpcHook>>,
+    ) -> Self {
+        let producer = Arc::new(Producer::new_with_rpc_hook(config, rpc_hook));
         let transaction = Arc::new(TransactionRuntime::new(
             Arc::downgrade(&producer),
             producer.config().producer_group().to_owned(),
@@ -271,6 +279,7 @@ impl TransactionProducer {
     }
 
     #[allow(deprecated)]
+    #[deprecated(note = "use TransactionListener::check_local_transaction")]
     pub fn set_transaction_check_listener(
         &self,
         listener: Option<Arc<dyn TransactionCheckListener>>,
@@ -286,6 +295,7 @@ impl TransactionProducer {
         self.transaction.min_size.load(Ordering::Relaxed)
     }
 
+    #[deprecated(note = "Java deprecated this setting; use a custom transaction executor")]
     pub fn set_check_thread_pool_min_size(&self, value: i32) {
         self.transaction.min_size.store(value, Ordering::Relaxed);
     }
@@ -294,6 +304,7 @@ impl TransactionProducer {
         self.transaction.max_size.load(Ordering::Relaxed)
     }
 
+    #[deprecated(note = "Java deprecated this setting; use a custom transaction executor")]
     pub fn set_check_thread_pool_max_size(&self, value: i32) {
         self.transaction.max_size.store(value, Ordering::Relaxed);
     }
@@ -302,6 +313,7 @@ impl TransactionProducer {
         self.transaction.hold_max.load(Ordering::Relaxed)
     }
 
+    #[deprecated(note = "Java deprecated this setting; use a custom transaction executor")]
     pub fn set_check_request_hold_max(&self, value: i32) {
         self.transaction.hold_max.store(value, Ordering::Relaxed);
     }
@@ -911,12 +923,14 @@ fn decode_message_id_offset(message_id: &str) -> Option<i64> {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
     use base64::Engine as _;
     use rocketmq_classic_common::message::{MessageQueue, decode_properties};
     use rocketmq_classic_core::{route::TopicSnapshot, runtime::ClientRuntimeManager};
     use rocketmq_classic_protocol::header::HeaderMap;
+    use rocketmq_classic_remoting::client::RpcHook;
     use std::{
         collections::BTreeMap,
         sync::atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -1205,6 +1219,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn java_rpc_hook_constructor_path_registers_hook_on_client_runtime() {
+        let mut config = ProducerConfig::new("transaction-rpc-hook-test").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        config
+            .client_config_mut()
+            .set_instance_name(Some("transaction-rpc-hook-test".into()));
+        let hook: Arc<dyn RpcHook> = Arc::new(|_: &str, _: &RemotingCommand| {});
+        let producer = TransactionProducer::new_with_rpc_hook(config, Some(hook.clone()));
+
+        producer.start().await.unwrap();
+        let runtime = producer.producer.started_runtime().await.unwrap();
+        assert!(
+            runtime
+                .remoting()
+                .get_rpc_hooks()
+                .iter()
+                .any(|registered| Arc::ptr_eq(registered, &hook))
+        );
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn p14_v01_half_message_statuses_and_initial_end_fields_match_java_fixture() {
         let cases = [
             (
@@ -1449,8 +1485,13 @@ mod tests {
             calls: AtomicUsize::new(0),
             check_message: Mutex::new(None),
         });
+        let legacy_api: Arc<dyn TransactionCheckListener> = legacy.clone();
         #[allow(deprecated)]
-        producer.set_transaction_check_listener(Some(legacy.clone()));
+        producer.set_transaction_check_listener(Some(legacy_api.clone()));
+        assert!(Arc::ptr_eq(
+            &legacy_api,
+            &producer.transaction_check_listener().unwrap()
+        ));
         let processor = producer.transaction.request_processor();
         for _ in 0..2 {
             assert!(
@@ -1781,7 +1822,12 @@ mod tests {
             submitted: AtomicUsize::new(0),
             shutdown: AtomicBool::new(false),
         });
-        producer.set_executor_service(Some(executor.clone()));
+        let executor_api: Arc<dyn TransactionExecutor> = executor.clone();
+        producer.set_executor_service(Some(executor_api.clone()));
+        assert!(Arc::ptr_eq(
+            &executor_api,
+            &producer.executor_service().unwrap()
+        ));
         // Executor injection after start does not replace Java's active executor.
         let processor = producer.transaction.request_processor();
         processor

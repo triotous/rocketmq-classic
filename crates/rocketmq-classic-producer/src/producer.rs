@@ -8,6 +8,7 @@ use rocketmq_classic_core::{
     route::TopicSnapshot,
     runtime::{ClientRuntime, ClientRuntimeManager, GroupLease, ProducerRuntime},
 };
+use rocketmq_classic_remoting::client::RpcHook;
 
 #[cfg(test)]
 use rocketmq_classic_core::api::producer::{SendMode, SendResult};
@@ -51,6 +52,7 @@ enum State {
 pub struct Producer {
     pub(crate) config: ProducerConfig,
     manager: ClientRuntimeManager,
+    rpc_hook: Option<Arc<dyn RpcHook>>,
     state: tokio::sync::Mutex<State>,
     detector_task: tokio::sync::Mutex<Option<JoinHandle<()>>>,
     pub(crate) auto_batch_accumulator: AutoBatchAccumulator,
@@ -79,13 +81,27 @@ pub struct Producer {
 
 impl Producer {
     pub fn new(config: ProducerConfig) -> Self {
-        let manager = ClientRuntimeManager::shared_default();
-        Self::with_runtime_manager(config, manager)
+        Self::new_with_rpc_hook(config, None)
     }
 
+    /// Creates a producer whose remoting requests use the supplied RPC hook.
+    pub fn new_with_rpc_hook(config: ProducerConfig, rpc_hook: Option<Arc<dyn RpcHook>>) -> Self {
+        let manager = ClientRuntimeManager::shared_default();
+        Self::with_runtime_manager_and_hook(config, manager, rpc_hook)
+    }
+
+    #[cfg(test)]
     pub(crate) fn with_runtime_manager(
         config: ProducerConfig,
         manager: ClientRuntimeManager,
+    ) -> Self {
+        Self::with_runtime_manager_and_hook(config, manager, None)
+    }
+
+    pub(crate) fn with_runtime_manager_and_hook(
+        config: ProducerConfig,
+        manager: ClientRuntimeManager,
+        rpc_hook: Option<Arc<dyn RpcHook>>,
     ) -> Self {
         let ids = UniqueIdGenerator::new(config.client_config().client_ip());
         let backpressure_send_num = Arc::new(Semaphore::new(
@@ -102,6 +118,7 @@ impl Producer {
             ids,
             config,
             manager,
+            rpc_hook,
             state: tokio::sync::Mutex::new(State::Created),
             detector_task: tokio::sync::Mutex::new(None),
             auto_batch_accumulator: AutoBatchAccumulator::default(),
@@ -151,7 +168,10 @@ impl Producer {
         validation::validate_group(self.config.producer_group())?;
         self.config.accumulator_settings()?;
 
-        let runtime = self.manager.get_or_create(&self.config.client).await?;
+        let runtime = self
+            .manager
+            .get_or_create_with_hook(&self.config.client, self.rpc_hook.clone())
+            .await?;
         let owner: Arc<dyn ProducerRuntime> = self.clone();
         let lease = runtime
             .register_producer(self.config.producer_group(), owner)

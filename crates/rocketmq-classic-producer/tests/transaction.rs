@@ -2,7 +2,7 @@ use std::{any::Any, sync::Arc};
 
 use rocketmq_classic_common::message::{Message, MessageExt};
 use rocketmq_classic_producer::{
-    LocalTransactionState, ProducerConfig, ProducerError, TransactionCallbackError,
+    LocalTransactionState, ProducerConfig, ProducerError, RpcHook, TransactionCallbackError,
     TransactionListener, TransactionProducer,
 };
 
@@ -34,12 +34,35 @@ fn producer() -> TransactionProducer {
 }
 
 #[test]
+fn java_rpc_hook_constructor_is_available_from_the_public_crate_api() {
+    struct Hook;
+    impl RpcHook for Hook {}
+
+    let producer = TransactionProducer::new_with_rpc_hook(
+        ProducerConfig::new("transaction-public-rpc-hook").unwrap(),
+        Some(Arc::new(Hook)),
+    );
+    assert!(producer.executor_service().is_none());
+}
+
+#[test]
+#[allow(deprecated)]
 fn java_check_executor_defaults_and_settings_are_exposed() {
     let producer = producer();
     assert_eq!(producer.check_thread_pool_min_size(), 1);
     assert_eq!(producer.check_thread_pool_max_size(), 1);
     assert_eq!(producer.check_request_hold_max(), 2_000);
     assert!(producer.executor_service().is_none());
+    assert!(producer.transaction_listener().is_none());
+    assert!(producer.transaction_check_listener().is_none());
+
+    let listener = Arc::new(NoopListener);
+    let listener_api: Arc<dyn TransactionListener> = listener.clone();
+    producer.set_transaction_listener(Some(listener_api.clone()));
+    assert!(Arc::ptr_eq(
+        &listener_api,
+        &producer.transaction_listener().unwrap()
+    ));
 
     producer.set_check_thread_pool_min_size(2);
     producer.set_check_thread_pool_max_size(5);
@@ -50,6 +73,7 @@ fn java_check_executor_defaults_and_settings_are_exposed() {
 }
 
 #[tokio::test]
+#[allow(deprecated)]
 async fn check_pool_settings_validate_java_boundaries_at_start() {
     for (min, max, hold) in [(-1, 1, 2_000), (1, 0, 2_000), (2, 1, 2_000), (1, 1, 0)] {
         let producer = producer();

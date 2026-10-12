@@ -15,6 +15,7 @@ pub use error::ProducerError;
 pub use producer::Producer;
 pub use rocketmq_classic_common::sysflag::message::CompressionType;
 pub use rocketmq_classic_core::api::producer::{SendResult, SendStatus};
+pub use rocketmq_classic_remoting::client::RpcHook;
 #[allow(deprecated)]
 pub use transaction::{
     LocalTransactionState, TransactionCallbackError, TransactionCheckListener, TransactionExecutor,
