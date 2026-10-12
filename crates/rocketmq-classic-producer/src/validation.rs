@@ -1,33 +1,12 @@
-use rocketmq_classic_common::message::{Message, constants::PROPERTY_INNER_MULTI_DISPATCH};
+use rocketmq_classic_common::{
+    message::{Message, constants::PROPERTY_INNER_MULTI_DISPATCH},
+    topic::TopicValidator,
+};
 
 use crate::{ProducerConfig, ProducerError};
 
 const GROUP_MAX_LENGTH: usize = 120;
 const TOPIC_MAX_LENGTH: usize = 127;
-const SYSTEM_TOPICS: &[&str] = &[
-    "TBW102",
-    "SCHEDULE_TOPIC_XXXX",
-    "BenchmarkTest",
-    "RMQ_SYS_TRANS_HALF_TOPIC",
-    "RMQ_SYS_ROCKSDB_TRANS_HALF_TOPIC",
-    "RMQ_SYS_TRACE_TOPIC",
-    "RMQ_SYS_TRANS_OP_HALF_TOPIC",
-    "RMQ_SYS_ROCKSDB_TRANS_OP_HALF_TOPIC",
-    "TRANS_CHECK_MAX_TIME_TOPIC",
-    "SELF_TEST_TOPIC",
-    "OFFSET_MOVED_EVENT",
-    "CHECKPOINT_TOPIC",
-];
-const FORBIDDEN_SEND_TOPICS: &[&str] = &[
-    "SCHEDULE_TOPIC_XXXX",
-    "RMQ_SYS_TRANS_HALF_TOPIC",
-    "RMQ_SYS_TRANS_OP_HALF_TOPIC",
-    "TRANS_CHECK_MAX_TIME_TOPIC",
-    "SELF_TEST_TOPIC",
-    "OFFSET_MOVED_EVENT",
-    "RMQ_SYS_ROCKSDB_TRANS_HALF_TOPIC",
-    "RMQ_SYS_ROCKSDB_TRANS_OP_HALF_TOPIC",
-];
 
 fn java_blank(value: &str) -> bool {
     value.is_empty()
@@ -74,7 +53,7 @@ pub fn validate_topic(topic: &str) -> Result<(), ProducerError> {
 }
 
 pub fn is_system_topic(topic: &str) -> bool {
-    SYSTEM_TOPICS.contains(&topic) || topic.starts_with("rmq_sys_")
+    TopicValidator::is_system_topic(topic)
 }
 
 pub fn validate_system_topic(topic: &str) -> Result<(), ProducerError> {
@@ -86,7 +65,7 @@ pub fn validate_system_topic(topic: &str) -> Result<(), ProducerError> {
 }
 
 pub fn validate_send_topic(topic: &str) -> Result<(), ProducerError> {
-    if FORBIDDEN_SEND_TOPICS.contains(&topic) {
+    if TopicValidator::is_not_allowed_send_topic(topic) {
         Err(ProducerError::ForbiddenTopic)
     } else {
         Ok(())
@@ -162,6 +141,11 @@ mod tests {
         assert!(validate_system_topic("rmq_sys_custom").is_err());
         assert!(validate_send_topic("RMQ_SYS_TRACE_TOPIC").is_ok());
         assert!(validate_send_topic("SCHEDULE_TOPIC_XXXX").is_err());
+
+        let custom = "phase16_dynamic_system_topic";
+        TopicValidator::add_system_topic(custom);
+        assert!(is_system_topic(custom));
+        assert!(validate_system_topic(custom).is_err());
     }
 
     #[test]

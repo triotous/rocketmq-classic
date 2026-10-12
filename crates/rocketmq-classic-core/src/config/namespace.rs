@@ -1,65 +1,13 @@
-//! Private implementation of the pinned NamespaceUtil/endpoint helpers.
+//! Private ClientConfig adapters for the public pinned NamespaceUtil helpers.
 
-fn system(resource: &str) -> bool {
-    resource.starts_with("rmq_sys_")
-        || resource.starts_with("CID_RMQ_SYS_")
-        || matches!(
-            resource,
-            "TBW102"
-                | "SCHEDULE_TOPIC_XXXX"
-                | "BenchmarkTest"
-                | "RMQ_SYS_TRANS_HALF_TOPIC"
-                | "RMQ_SYS_TRACE_TOPIC"
-                | "RMQ_SYS_TRANS_OP_HALF_TOPIC"
-                | "TRANS_CHECK_MAX_TIME_TOPIC"
-                | "SELF_TEST_TOPIC"
-                | "OFFSET_MOVED_EVENT"
-                | "CHECKPOINT_TOPIC"
-                | "RMQ_SYS_ROCKSDB_TRANS_HALF_TOPIC"
-                | "RMQ_SYS_ROCKSDB_TRANS_OP_HALF_TOPIC"
-        )
-}
-
-fn prefix(resource: &str) -> (&str, &str) {
-    for prefix in ["%RETRY%", "%DLQ%"] {
-        if let Some(rest) = resource.strip_prefix(prefix) {
-            return (prefix, rest);
-        }
-    }
-    ("", resource)
-}
+use rocketmq_classic_protocol::NamespaceUtil;
 
 pub(super) fn wrap(namespace: Option<&str>, resource: Option<&str>) -> Option<String> {
-    let resource = resource?;
-    let Some(namespace) = namespace.filter(|value| !value.is_empty()) else {
-        return Some(resource.into());
-    };
-    let (prefix, rest) = prefix(resource);
-    let marker = format!("{namespace}%");
-    Some(
-        if resource.is_empty() || system(resource) || rest.starts_with(&marker) {
-            resource.into()
-        } else {
-            format!("{prefix}{marker}{rest}")
-        },
-    )
+    NamespaceUtil::wrap_namespace(namespace, resource)
 }
 
 pub(crate) fn unwrap(namespace: Option<&str>, resource: Option<&str>) -> Option<String> {
-    let resource = resource?;
-    let Some(namespace) = namespace.filter(|value| !value.is_empty()) else {
-        return Some(resource.into());
-    };
-    let (prefix, rest) = prefix(resource);
-    if !system(resource) && rest.starts_with(&format!("{namespace}%")) {
-        // Java's no-argument remover removes through the first '%' only.
-        if let Some((before, after)) = rest.split_once('%') {
-            if !before.is_empty() {
-                return Some(format!("{prefix}{after}"));
-            }
-        }
-    }
-    Some(resource.into())
+    NamespaceUtil::without_namespace_for(resource, namespace)
 }
 
 fn line_terminator(value: char) -> bool {

@@ -1,7 +1,9 @@
 use rocketmq_classic_common::message::MessageQueue;
+use rocketmq_classic_common::topic::TopicValidator;
 use rocketmq_classic_core::config::{
     AccessChannel, AccessChannelLookupError, ClientConfig, ConfigError,
 };
+use rocketmq_classic_protocol::NamespaceUtil;
 use rocketmq_classic_protocol::codes::LanguageCode;
 use serde_json::Value;
 
@@ -182,6 +184,121 @@ fn endpoint_namespace_and_resource_helpers_match_invoked_java() {
         null_instance.change_instance_name_to_pid(),
         Err(ConfigError::NullInstanceName)
     );
+}
+
+#[test]
+fn namespace_util_fixture_matches_java_5_5_1() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/namespace/namespace-util.json"
+    ))
+    .unwrap();
+    assert_eq!(
+        fixture["sourceCommit"],
+        "efa1be59d6fc747ad220f036c86030f05f0419f9"
+    );
+    assert_eq!(fixture["serverContacted"], false);
+    assert_eq!(NamespaceUtil::NAMESPACE_SEPARATOR, '%');
+    assert_eq!(NamespaceUtil::STRING_BLANK, "");
+    assert_eq!(NamespaceUtil::RETRY_PREFIX_LENGTH, 7);
+    assert_eq!(NamespaceUtil::DLQ_PREFIX_LENGTH, 5);
+    assert_eq!(
+        fixture["namespaceSeparator"],
+        NamespaceUtil::NAMESPACE_SEPARATOR.to_string()
+    );
+    assert_eq!(fixture["stringBlank"], NamespaceUtil::STRING_BLANK);
+    assert_eq!(
+        fixture["retryPrefixLength"],
+        NamespaceUtil::RETRY_PREFIX_LENGTH
+    );
+    assert_eq!(fixture["dlqPrefixLength"], NamespaceUtil::DLQ_PREFIX_LENGTH);
+    TopicValidator::add_system_topic(fixture["customSystemTopic"].as_str().unwrap());
+
+    for case in fixture["cases"].as_array().unwrap() {
+        let mut config = ClientConfig::new("namespace-fixture");
+        let namespace = case["namespace"].as_str();
+        let resource = case["resource"].as_str();
+        config.set_namespace(namespace.map(str::to_owned));
+
+        let wrapped = optional(&case["wrapped"]);
+        assert_eq!(
+            config.with_namespace(resource).unwrap(),
+            wrapped,
+            "wrapNamespace for {}",
+            case["name"]
+        );
+        assert_eq!(
+            config.with_namespace(case["wrapped"].as_str()).unwrap(),
+            optional(&case["wrappedAgain"]),
+            "idempotent wrapNamespace for {}",
+            case["name"]
+        );
+        assert_eq!(
+            config.without_namespace(resource).unwrap(),
+            optional(&case["unwrappedResource"]),
+            "withoutNamespace for {}",
+            case["name"]
+        );
+        assert_eq!(
+            config.without_namespace(case["wrapped"].as_str()).unwrap(),
+            optional(&case["unwrappedWrapped"]),
+            "withoutNamespace on wrapped value for {}",
+            case["name"]
+        );
+        assert_eq!(
+            NamespaceUtil::wrap_namespace(namespace, resource),
+            optional(&case["wrapped"]),
+            "NamespaceUtil.wrapNamespace for {}",
+            case["name"]
+        );
+        assert_eq!(
+            NamespaceUtil::without_namespace(resource),
+            optional(&case["withoutNamespace"]),
+            "NamespaceUtil.withoutNamespace(resource) for {}",
+            case["name"]
+        );
+        assert_eq!(
+            NamespaceUtil::without_namespace_for(resource, namespace),
+            optional(&case["unwrappedResource"]),
+            "NamespaceUtil.withoutNamespace(resource, namespace) for {}",
+            case["name"]
+        );
+        assert_eq!(
+            NamespaceUtil::is_already_with_namespace(resource, namespace),
+            case["isAlreadyWithNamespace"],
+            "NamespaceUtil.isAlreadyWithNamespace for {}",
+            case["name"]
+        );
+        assert_eq!(
+            NamespaceUtil::wrap_namespace_and_retry(namespace, resource),
+            optional(&case["wrapNamespaceAndRetry"]),
+            "NamespaceUtil.wrapNamespaceAndRetry for {}",
+            case["name"]
+        );
+        assert_eq!(
+            NamespaceUtil::get_namespace_from_resource(resource),
+            case["namespaceFromResource"].as_str().unwrap_or_default(),
+            "NamespaceUtil.getNamespaceFromResource for {}",
+            case["name"]
+        );
+        assert_eq!(
+            NamespaceUtil::without_retry_and_dlq(resource),
+            case["withoutRetryAndDlq"].as_str().unwrap_or_default(),
+            "NamespaceUtil.withOutRetryAndDLQ for {}",
+            case["name"]
+        );
+        assert_eq!(
+            NamespaceUtil::is_retry_topic(resource),
+            case["isRetryTopic"],
+            "NamespaceUtil.isRetryTopic for {}",
+            case["name"]
+        );
+        assert_eq!(
+            NamespaceUtil::is_dlq_topic(resource),
+            case["isDlqTopic"],
+            "NamespaceUtil.isDLQTopic for {}",
+            case["name"]
+        );
+    }
 }
 
 #[tokio::test]
