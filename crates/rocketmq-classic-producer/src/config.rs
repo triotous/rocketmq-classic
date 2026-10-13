@@ -298,8 +298,11 @@ impl ProducerConfig {
     pub fn set_batch_max_bytes(&mut self, value: i64) {
         self.batch_max_bytes = Some(value);
     }
+    /// Mirrors Java's `getTotalBatchMaxBytes`, which returns the per-batch
+    /// hold size. The paired setter still configures the accumulator-wide cap.
+    #[allow(clippy::misnamed_getters)]
     pub fn total_batch_max_bytes(&self) -> Option<i64> {
-        self.total_batch_max_bytes
+        self.batch_max_bytes
     }
     pub fn set_total_batch_max_bytes(&mut self, value: i64) {
         self.total_batch_max_bytes = Some(value);
@@ -491,7 +494,11 @@ mod tests {
         assert!(config.auto_batch());
         assert_eq!(config.batch_max_delay_millis(), Some(25));
         assert_eq!(config.batch_max_bytes(), Some(65_536));
-        assert_eq!(config.total_batch_max_bytes(), Some(1_048_576));
+        assert_eq!(
+            config.total_batch_max_bytes(),
+            fixture["batchSettings"]["configuredTotalBatchMaxBytes"].as_i64(),
+            "Java's getter reports the per-batch hold size"
+        );
         assert_eq!(
             config.accumulator_settings().unwrap().total_max_bytes,
             1_048_576

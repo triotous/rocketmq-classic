@@ -1,0 +1,7 @@
+# Phase 18 producer total-batch getter parity — 2026-10-13T19:54:15Z
+
+- Corrected `ProducerConfig::total_batch_max_bytes()` to mirror pinned Java `getTotalBatchMaxBytes()`, which returns the per-batch hold size even though `setTotalBatchMaxBytes()` configures the aggregate accumulator cap. The fixture assertion now reads the Java getter value and separately verifies the aggregate cap.
+- Updated `PHASE_7_PRODUCER_MATRIX.md` to document the getter/setter asymmetry. No plan changed.
+- PASS: `cargo test -p rocketmq-classic-producer --locked` (92 unit tests and 34 integration tests); strict producer Clippy; focused getter fixture regression after the final lint annotation; `cargo fmt --all -- --check`; `git diff --check`.
+- Strict Clippy initially flagged the source-backed getter/setter asymmetry as `misnamed_getters`; added a narrowly scoped lint allowance with the Java behavior documented at the accessor. The final strict Clippy run passed.
+- P18-V01 remains partial for the broad bidirectional Java source/API/input/reverse-export audit. The new accessor correction is complete and locally verified; current-revision GitHub Ubuntu evidence, Phase 19 local Broker/Docker scenarios, registry resolution, and release-version confirmation remain open.

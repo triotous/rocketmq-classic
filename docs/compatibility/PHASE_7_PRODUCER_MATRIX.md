@@ -56,7 +56,10 @@ name mismatch for `totalBatchMaxBytes`: `totalBatchMaxBytes(value)` sets the
 accumulator-wide hold cap, but `getTotalBatchMaxBytes()` returns the per-batch
 hold size, matching `getBatchMaxBytes()`. The fixture records both that getter
 result and the actual aggregate hold cap; Rust's `accumulator_settings()` maps
-the setter's effect to the aggregate hold limit.
+the setter's effect to the aggregate hold limit. The public Rust
+`ProducerConfig::total_batch_max_bytes()` accessor mirrors that getter by
+returning the configured per-batch value; `set_total_batch_max_bytes()` remains
+the input for the aggregate cap consumed by the private accumulator settings.
 
 ## Implemented and locally verified
 
