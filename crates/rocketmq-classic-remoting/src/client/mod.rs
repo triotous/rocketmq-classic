@@ -2472,11 +2472,16 @@ mod tests {
             calls: std::sync::atomic::AtomicUsize,
             live: Arc<std::sync::atomic::AtomicUsize>,
             entered: Notify,
+            exited: Arc<Notify>,
         }
-        struct Live(Arc<std::sync::atomic::AtomicUsize>);
+        struct Live {
+            live: Arc<std::sync::atomic::AtomicUsize>,
+            exited: Arc<Notify>,
+        }
         impl Drop for Live {
             fn drop(&mut self) {
-                self.0.fetch_sub(1, Ordering::SeqCst);
+                self.live.fetch_sub(1, Ordering::SeqCst);
+                self.exited.notify_one();
             }
         }
         impl ChannelEventListener for Listener {
@@ -2488,7 +2493,10 @@ mod tests {
                     let call = self.calls.fetch_add(1, Ordering::SeqCst);
                     assert_ne!(call, 0, "scripted active listener panic");
                     self.live.fetch_add(1, Ordering::SeqCst);
-                    let _live = Live(self.live.clone());
+                    let _live = Live {
+                        live: self.live.clone(),
+                        exited: self.exited.clone(),
+                    };
                     self.entered.notify_one();
                     std::future::pending::<()>().await;
                 })
@@ -2498,6 +2506,7 @@ mod tests {
             calls: std::sync::atomic::AtomicUsize::new(0),
             live: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             entered: Notify::new(),
+            exited: Arc::new(Notify::new()),
         });
         let (sender, receiver) = mpsc::channel(2);
         let (stop, shutdown) = tokio::sync::watch::channel(false);
@@ -2523,6 +2532,14 @@ mod tests {
         assert_eq!(listener.live.load(Ordering::SeqCst), 1);
         stop.send_replace(true);
         worker.await.unwrap();
+        if listener.live.load(Ordering::SeqCst) != 0 {
+            tokio::time::timeout(
+                std::time::Duration::from_secs(1),
+                listener.exited.notified(),
+            )
+            .await
+            .expect("active listener future was not dropped after shutdown");
+        }
         assert_eq!(listener.live.load(Ordering::SeqCst), 0);
     }
 
