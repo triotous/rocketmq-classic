@@ -11,13 +11,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.apache.rocketmq.client.ClientConfig;
 import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
 import org.apache.rocketmq.client.consumer.store.OffsetStore;
 import org.apache.rocketmq.client.exception.MQClientException;
 import org.apache.rocketmq.client.hook.ConsumeMessageContext;
 import org.apache.rocketmq.client.hook.ConsumeMessageHook;
+import org.apache.rocketmq.client.impl.MQAdminImpl;
 import org.apache.rocketmq.client.impl.consumer.DefaultMQPushConsumerImpl;
 import org.apache.rocketmq.client.impl.consumer.ProcessQueue;
+import org.apache.rocketmq.client.impl.factory.MQClientInstance;
 import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.common.ServiceState;
 import org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData;
@@ -84,6 +87,18 @@ public final class PushImplementationAccessorFixtures {
             .map(SubscriptionData::getTopic)
             .sorted()
             .collect(Collectors.toList());
+        RecordingMqClientInstance resetFactory = recordingMqClientInstance();
+        first.setmQClientFactory(resetFactory);
+        first.getRebalanceImpl().setmQClientFactory(resetFactory);
+        SubscriptionData emptySubscription = new SubscriptionData();
+        emptySubscription.setTopic("empty");
+        first.getRebalanceImpl().getSubscriptionInner().put("empty", emptySubscription);
+        MessageQueue resetQueueA = new MessageQueue("orders", "broker-a", 0);
+        MessageQueue resetQueueB = new MessageQueue("orders", "broker-a", 1);
+        first.getRebalanceImpl().getTopicSubscribeInfoTable().put(
+            "orders", Set.of(resetQueueA, resetQueueB));
+        first.getRebalanceImpl().getTopicSubscribeInfoTable().put("empty", Set.of());
+        first.resetOffsetByTimeStamp(12345);
         boolean offsetStoreInitiallyNull = first.getOffsetStore() == null;
         List<String> offsetUpdates = new ArrayList<>();
         List<String> persistedQueues = new ArrayList<>();
@@ -168,6 +183,10 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("consumeOrderlyAfterSetFalse", consumeOrderlyAfterSetFalse);
         fixture.put("pullDelayBeforeSet", pullDelayBeforeSet);
         fixture.put("pullDelayAfterSet", pullDelayAfterSet);
+        fixture.put("timestampResetSearches", resetFactory.searches.stream()
+            .sorted()
+            .collect(Collectors.toList()));
+        fixture.put("timestampResetCalls", resetFactory.resets);
         fixture.put("subscriptionCountBefore", subscriptionCountBefore);
         fixture.put("subscriptionInnerIdentityStable", subscriptionInnerIdentityStable);
         fixture.put("subscriptionTopicsAfterSubscribe", subscriptionTopicsAfterSubscribe);
@@ -194,5 +213,60 @@ public final class PushImplementationAccessorFixtures {
         Field delay = DefaultMQPushConsumerImpl.class.getDeclaredField("pullTimeDelayMillsWhenException");
         delay.setAccessible(true);
         return delay.getLong(implementation);
+    }
+
+    private static RecordingMqClientInstance recordingMqClientInstance() throws Exception {
+        Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
+        Field unsafeField = unsafeClass.getDeclaredField("theUnsafe");
+        unsafeField.setAccessible(true);
+        Object unsafe = unsafeField.get(null);
+        RecordingMqClientInstance factory = (RecordingMqClientInstance) unsafeClass
+            .getMethod("allocateInstance", Class.class)
+            .invoke(unsafe, RecordingMqClientInstance.class);
+        factory.initialize();
+        return factory;
+    }
+
+    private static final class RecordingMqClientInstance extends MQClientInstance {
+        private List<String> searches;
+        private List<Map<String, Object>> resets;
+        private MQAdminImpl admin;
+
+        private RecordingMqClientInstance() {
+            super(new ClientConfig(), 1, "phase18-push-offset-reset-fixture");
+        }
+
+        private void initialize() {
+            searches = new ArrayList<>();
+            resets = new ArrayList<>();
+            this.admin = new MQAdminImpl(this) {
+                @Override
+                public long searchOffset(MessageQueue queue, long timestamp) throws MQClientException {
+                    searches.add(queue.getTopic() + "|" + queue.getBrokerName() + "|"
+                        + queue.getQueueId() + "|" + timestamp);
+                    return 11;
+                }
+            };
+        }
+
+        @Override
+        public MQAdminImpl getMQAdminImpl() {
+            return admin;
+        }
+
+        @Override
+        public synchronized void resetOffset(
+            String topic, String group, Map<MessageQueue, Long> offsetTable) {
+            List<String> offsets = offsetTable.entrySet().stream()
+                .map(entry -> entry.getKey().getTopic() + "|" + entry.getKey().getBrokerName()
+                    + "|" + entry.getKey().getQueueId() + "|" + entry.getValue())
+                .sorted()
+                .collect(Collectors.toList());
+            Map<String, Object> reset = new LinkedHashMap<>();
+            reset.put("topic", topic);
+            reset.put("group", group);
+            reset.put("offsets", offsets);
+            resets.add(reset);
+        }
     }
 }

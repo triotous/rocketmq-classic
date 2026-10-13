@@ -63,11 +63,15 @@ async fn write_response(
 }
 
 fn route_body(address: &str) -> Vec<u8> {
+    route_body_with_queue_count(address, 4)
+}
+
+fn route_body_with_queue_count(address: &str, queue_count: i32) -> Vec<u8> {
     serde_json::to_vec(&json!({
         "queueDatas": [{
             "brokerName": "broker-a",
-            "readQueueNums": 4,
-            "writeQueueNums": 4,
+            "readQueueNums": queue_count,
+            "writeQueueNums": queue_count,
             "perm": 6,
             "topicSysFlag": 0
         }],
@@ -76,6 +80,15 @@ fn route_body(address: &str) -> Vec<u8> {
             "brokerName": "broker-a",
             "brokerAddrs": {"0": address}
         }],
+        "filterServerTable": {}
+    }))
+    .unwrap()
+}
+
+fn empty_route_body() -> Vec<u8> {
+    serde_json::to_vec(&json!({
+        "queueDatas": [],
+        "brokerDatas": [],
         "filterServerTable": {}
     }))
     .unwrap()
@@ -400,6 +413,98 @@ async fn push_admin_offset_facade_routes_namespaced_queues_to_the_named_broker()
             assert_eq!(fields.get("committed"), Some(&"true".to_owned()));
         }
     }
+
+    consumer.shutdown().await.unwrap();
+    namesrv_task.abort();
+    broker_task.abort();
+}
+
+#[tokio::test]
+async fn push_reset_offset_by_timestamp_matches_java_subscribed_topic_flow() {
+    let group = "phase18-push-implementation-accessor";
+    let (broker, broker_task, mut broker_requests) = broker_peer().await;
+    let (namesrv, namesrv_task) = nameserver_peer_with_topic_routes(
+        vec![
+            ("orders".to_owned(), route_body_with_queue_count(&broker, 2)),
+            (format!("%RETRY%{group}"), empty_route_body()),
+        ],
+        empty_route_body(),
+    )
+    .await;
+    let mut config = PushConsumerConfig::new(group).unwrap();
+    config
+        .client_config_mut()
+        .set_instance_name(Some("push-reset-offset-by-timestamp".into()));
+    config.client_config_mut().set_namesrv_addr(Some(namesrv));
+    let consumer = Arc::new(PushConsumer::new(config));
+    consumer.subscribe("orders", "*").await.unwrap();
+    consumer
+        .register_message_listener(PushMessageListener::concurrently(
+            |_messages: Vec<MessageExt>, context| async move {
+                (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+            },
+        ))
+        .await
+        .unwrap();
+    consumer.start().await.unwrap();
+
+    consumer.reset_offset_by_timestamp(12345).await.unwrap();
+    let mut searches = Vec::new();
+    timeout(Duration::from_secs(2), async {
+        while searches.len() < 2 {
+            let command = broker_requests.recv().await.unwrap();
+            if command.code == request::SEARCH_OFFSET_BY_TIMESTAMP {
+                searches.push(command);
+            }
+        }
+    })
+    .await
+    .unwrap();
+    searches.sort_by_key(|command| {
+        command
+            .ext_fields
+            .as_ref()
+            .and_then(|fields| fields.get("queueId"))
+            .and_then(|value| value.parse::<i32>().ok())
+    });
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/consumer/push-implementation-accessor.json"
+    ))
+    .unwrap();
+    for (queue_id, command) in searches.iter().enumerate() {
+        let fields = command.ext_fields.as_ref().unwrap();
+        assert_eq!(fields.get("topic"), Some(&"orders".to_owned()));
+        assert_eq!(fields.get("queueId"), Some(&queue_id.to_string()));
+        assert_eq!(fields.get("bname"), Some(&"broker-a".to_owned()));
+        assert_eq!(fields.get("timestamp"), Some(&"12345".to_owned()));
+        assert_eq!(fields.get("boundaryType"), Some(&"LOWER".to_owned()));
+        assert_eq!(
+            fixture["timestampResetSearches"][queue_id],
+            format!("orders|broker-a|{queue_id}|12345")
+        );
+    }
+    let actual_offsets = consumer
+        .get_offset_store()
+        .unwrap()
+        .clone_offset_table(Some("orders"))
+        .into_iter()
+        .map(|(queue, offset)| {
+            format!(
+                "{}|{}|{}|{}",
+                queue.topic().unwrap(),
+                queue.broker_name().unwrap(),
+                queue.queue_id(),
+                offset
+            )
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    let expected_offsets = fixture["timestampResetCalls"][0]["offsets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|offset| offset.as_str().unwrap().to_owned())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(actual_offsets, expected_offsets);
 
     consumer.shutdown().await.unwrap();
     namesrv_task.abort();

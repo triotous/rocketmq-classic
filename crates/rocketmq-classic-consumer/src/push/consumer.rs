@@ -759,6 +759,34 @@ impl PushConsumer {
             .await?)
     }
 
+    /// Resets each currently subscribed topic to the Broker offsets selected
+    /// by Java's `DefaultMQPushConsumerImpl.resetOffsetByTimeStamp` flow.
+    pub async fn reset_offset_by_timestamp(
+        &self,
+        timestamp_millis: i64,
+    ) -> Result<(), PushConsumerError> {
+        let topics = read_lock(&self.subscriptions)
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        for topic in topics {
+            let queues = read_lock(&self.topic_queues)
+                .get(&topic)
+                .cloned()
+                .unwrap_or_default();
+            if queues.is_empty() {
+                continue;
+            }
+            let mut offsets = Vec::with_capacity(queues.len());
+            for queue in queues {
+                let offset = self.search_offset(&queue, timestamp_millis).await?;
+                offsets.push((queue, Some(offset)));
+            }
+            self.reset_consumer_offsets(&topic, offsets).await?;
+        }
+        Ok(())
+    }
+
     pub async fn get_max_offset(
         &self,
         input_queue: &MessageQueue,

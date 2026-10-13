@@ -60,3 +60,11 @@
 - Updated `docs/compatibility/PHASE_10_OFFLINE_METHOD_MATRIX.md` and `docs/release-checklist.md`. Push accessor fixture SHA-256: `1acfbbe30f1c4ce80f2fc59fe57e3938b1f41918c4ebaf456d0df3b4da596142`.
 - PASS: `cargo test -p rocketmq-classic-consumer --locked` (184 library tests, all integration tests; 227 total); strict consumer Clippy (`--all-targets --all-features --locked -- -D warnings`); `mvn -f compat/java-reference/pom.xml verify` (37 scenarios and fixture drift); `cargo fmt --all -- --check`; `git diff --check`. Focused raw-offset and orderly-shutdown tests also pass.
 - No live Broker or Docker was used. The broader Push raw implementation method inventory, Pull rebalance/wrapper inventory, Phase 6 behavior audit, final workspace-wide Phase 18 gates, package provenance review and Ubuntu CI remain open. Commit follows final diff review.
+
+# Phase 18 execution session — 2026-10-13T13:47:25Z
+
+- Continued P18-V01 / Phase 10 `DefaultMQPushConsumerImpl` reverse inventory. Added `PushConsumer::reset_offset_by_timestamp`: for every subscribed topic with route queues, search each queue at the requested timestamp and apply those offsets through the consumer reset lifecycle; empty route sets are skipped.
+- Extended the invoked Java Push implementation fixture with a constructor-free `MQClientInstance` test double. It records `resetOffsetByTimeStamp` search calls and the reset map without creating threads or contacting a Broker. Rust's scripted NameServer/Broker test compares topic, queue ID, broker, timestamp, lower-bound type and final offset values. Fixture SHA-256: `dad2b34371fbbe7125fa860e27be584056aa25cd57edffdba981782dbe7cfbf6`.
+- One Maven `verify` attempt found fixture drift because search calls were emitted in `Set.of` iteration order. Sorted that fixture output, regenerated it, and reran Maven successfully; earlier failure retained here as required.
+- PASS after correction: `cargo test -p rocketmq-classic-consumer --locked` (184 library tests and all integration tests; 228 total); strict consumer Clippy; `mvn -f compat/java-reference/pom.xml verify` (37 scenarios and fixture drift); `cargo fmt --all -- --check`; `git diff --check`.
+- Updated Phase 10 matrix and release checklist. No live Broker or Docker was used. Commit follows final diff review.
