@@ -241,21 +241,24 @@ struct PullAttemptError {
 }
 
 impl PullAttemptError {
-    fn retry(reason: impl Into<String>) -> Self {
+    fn retry_with_delay(delay_millis: i64, reason: impl Into<String>) -> Self {
         Self {
-            delay_millis: PULL_TIME_DELAY_MILLIS_WHEN_EXCEPTION,
+            delay_millis,
             reason: reason.into(),
         }
     }
 
-    fn from_rpc(error: rocketmq_classic_core::error::RpcError) -> Self {
+    fn from_rpc_with_delay(
+        error: rocketmq_classic_core::error::RpcError,
+        exception_delay_millis: i64,
+    ) -> Self {
         let delay_millis = match &error {
             rocketmq_classic_core::error::RpcError::Response { code, .. }
                 if *code == response::FLOW_CONTROL =>
             {
                 PULL_TIME_DELAY_MILLIS_WHEN_BROKER_FLOW_CONTROL
             }
-            _ => PULL_TIME_DELAY_MILLIS_WHEN_EXCEPTION,
+            _ => exception_delay_millis,
         };
         Self {
             delay_millis,
@@ -353,6 +356,7 @@ pub struct PushConsumer {
     next_retry_message_id: AtomicU64,
     pull_api: PullAPIWrapper,
     paused: AtomicBool,
+    pull_time_delay_millis_when_exception: AtomicI64,
     consume_orderly: AtomicBool,
     consumer_start_timestamp: AtomicI64,
     consume_core_pool_size: AtomicI32,
@@ -390,6 +394,9 @@ impl PushConsumer {
     ) -> Self {
         let pop_consume_limit = usize::try_from(config.consume_thread_max().max(1)).unwrap_or(1);
         let consume_core_pool_size = config.consume_thread_min();
+        let pull_time_delay_millis_when_exception = config
+            .client_config()
+            .pull_time_delay_millis_when_exception();
         let pull_api = PullAPIWrapper::new(config.unit_mode());
         let rebalance_service = RebalanceService::new(config.allocate_message_queue_strategy());
         Self {
@@ -418,6 +425,9 @@ impl PushConsumer {
             next_retry_message_id: AtomicU64::new(0),
             pull_api,
             paused: AtomicBool::new(false),
+            pull_time_delay_millis_when_exception: AtomicI64::new(
+                pull_time_delay_millis_when_exception,
+            ),
             consume_orderly: AtomicBool::new(false),
             consumer_start_timestamp: AtomicI64::new(0),
             consume_core_pool_size: AtomicI32::new(consume_core_pool_size),
@@ -457,6 +467,30 @@ impl PushConsumer {
     /// Returns Java's effective implementation retry limit (`-1` becomes 16).
     pub fn get_max_reconsume_times(&self) -> i32 {
         self.config.effective_max_reconsume_times()
+    }
+
+    /// Returns the current Java-compatible pull/POP exception retry delay.
+    pub fn pull_time_delay_millis_when_exception(&self) -> i64 {
+        self.pull_time_delay_millis_when_exception
+            .load(Ordering::Acquire)
+    }
+
+    /// Mirrors Java's implementation setter; the value is read by subsequent
+    /// pull and POP failure paths without restarting the consumer.
+    pub fn set_pull_time_delay_millis_when_exception(&self, delay_millis: i64) {
+        self.pull_time_delay_millis_when_exception
+            .store(delay_millis, Ordering::Release);
+    }
+
+    fn pull_retry_error(&self, reason: impl Into<String>) -> PullAttemptError {
+        PullAttemptError::retry_with_delay(self.pull_time_delay_millis_when_exception(), reason)
+    }
+
+    fn pull_retry_error_from_rpc(
+        &self,
+        error: rocketmq_classic_core::error::RpcError,
+    ) -> PullAttemptError {
+        PullAttemptError::from_rpc_with_delay(error, self.pull_time_delay_millis_when_exception())
     }
 
     pub fn group_name(&self) -> &str {
@@ -1571,7 +1605,7 @@ impl PushConsumer {
         let Some(topic) = queue.topic() else {
             let _ = context
                 .scheduler
-                .schedule(request, PULL_TIME_DELAY_MILLIS_WHEN_EXCEPTION);
+                .schedule(request, self.pull_time_delay_millis_when_exception());
             return;
         };
         let subscription = read_lock(&self.subscriptions).get(topic).cloned();
@@ -1583,7 +1617,7 @@ impl PushConsumer {
             );
             let _ = context
                 .scheduler
-                .schedule(request, PULL_TIME_DELAY_MILLIS_WHEN_EXCEPTION);
+                .schedule(request, self.pull_time_delay_millis_when_exception());
             return;
         };
 
@@ -1619,37 +1653,37 @@ impl PushConsumer {
         let topic = queue
             .topic()
             .filter(|topic| !topic.is_empty())
-            .ok_or_else(|| PullAttemptError::retry("message queue has no topic"))?;
+            .ok_or_else(|| self.pull_retry_error("message queue has no topic"))?;
         let broker_name = queue
             .broker_name()
             .filter(|broker| !broker.is_empty())
-            .ok_or_else(|| PullAttemptError::retry("message queue has no broker name"))?;
+            .ok_or_else(|| self.pull_retry_error("message queue has no broker name"))?;
         let deadline =
             Instant::now() + Duration::from_millis(CONSUMER_TIMEOUT_MILLIS_WHEN_SUSPEND as u64);
         let suggested_broker_id = self.pull_api.recalculate_pull_from_which_node(queue);
         let mut route = context
             .runtime
             .route_snapshot()
-            .map_err(|error| PullAttemptError::retry(error.to_string()))?;
+            .map_err(|error| self.pull_retry_error(error.to_string()))?;
         let mut broker = route
             .subscribe_address(broker_name, suggested_broker_id, false)
-            .map_err(|error| PullAttemptError::retry(error.to_string()))?;
+            .map_err(|error| self.pull_retry_error(error.to_string()))?;
         if broker.is_none() {
             context
                 .runtime
                 .update_topic_route(topic, deadline)
                 .await
-                .map_err(|error| PullAttemptError::retry(error.to_string()))?;
+                .map_err(|error| self.pull_retry_error(error.to_string()))?;
             route = context
                 .runtime
                 .route_snapshot()
-                .map_err(|error| PullAttemptError::retry(error.to_string()))?;
+                .map_err(|error| self.pull_retry_error(error.to_string()))?;
             broker = route
                 .subscribe_address(broker_name, suggested_broker_id, false)
-                .map_err(|error| PullAttemptError::retry(error.to_string()))?;
+                .map_err(|error| self.pull_retry_error(error.to_string()))?;
         }
         let broker = broker.ok_or_else(|| {
-            PullAttemptError::retry(format!("broker {broker_name} was not found in route"))
+            self.pull_retry_error(format!("broker {broker_name} was not found in route"))
         })?;
 
         let class_filter = subscription.is_class_filter_mode();
@@ -1665,7 +1699,7 @@ impl PushConsumer {
                 .offset_store
                 .read_offset(queue, ReadOffsetType::ReadFromMemory)
                 .await
-                .map_err(|error| PullAttemptError::retry(error.to_string()))?
+                .map_err(|error| self.pull_retry_error(error.to_string()))?
             {
                 OffsetRead::Found(offset) if offset > 0 => offset,
                 OffsetRead::Found(_) | OffsetRead::NotFound => 0,
@@ -1689,12 +1723,12 @@ impl PushConsumer {
             let route_data = route
                 .raw_routes
                 .get(topic)
-                .ok_or_else(|| PullAttemptError::retry("class-filter route was not found"))?
+                .ok_or_else(|| self.pull_retry_error("class-filter route was not found"))?
                 .snapshot()
-                .map_err(|error| PullAttemptError::retry(error.to_string()))?;
+                .map_err(|error| self.pull_retry_error(error.to_string()))?;
             resolve_pull_broker_address(&route_data, topic, &broker.address, sys_flag)
-                .map_err(|error| PullAttemptError::retry(error.to_string()))?
-                .ok_or_else(|| PullAttemptError::retry("class-filter broker was not found"))?
+                .map_err(|error| self.pull_retry_error(error.to_string()))?
+                .ok_or_else(|| self.pull_retry_error("class-filter broker was not found"))?
         } else {
             broker.address
         };
@@ -1702,8 +1736,8 @@ impl PushConsumer {
         let mut group_config = client_config.clone();
         let consumer_group = group_config
             .with_namespace(Some(self.config.consumer_group()))
-            .map_err(|error| PullAttemptError::retry(error.to_string()))?
-            .ok_or_else(|| PullAttemptError::retry("consumer group is empty"))?;
+            .map_err(|error| self.pull_retry_error(error.to_string()))?
+            .ok_or_else(|| self.pull_retry_error("consumer group is empty"))?;
         let header = PullMessageRequestHeader {
             consumer_group,
             topic: topic.to_owned(),
@@ -1726,7 +1760,7 @@ impl PushConsumer {
             .api()
             .pull_message(&broker_address, &header, deadline)
             .await
-            .map_err(PullAttemptError::from_rpc)?;
+            .map_err(|error| self.pull_retry_error_from_rpc(error))?;
         let mut processed = self
             .pull_api
             .process_pull_result(
@@ -1740,13 +1774,13 @@ impl PushConsumer {
                 },
                 DecodeLimits::default(),
             )
-            .map_err(|error| PullAttemptError::retry(error.to_string()))?;
+            .map_err(|error| self.pull_retry_error(error.to_string()))?;
         if let Some(messages) = processed.messages.as_mut() {
             for message in messages {
                 let message_topic = message.message().topic().to_owned();
                 let topic = client_config
                     .without_namespace(Some(&message_topic))
-                    .map_err(|error| PullAttemptError::retry(error.to_string()))?;
+                    .map_err(|error| self.pull_retry_error(error.to_string()))?;
                 if let Some(topic) = topic {
                     message.message_mut().set_topic(topic);
                 }
@@ -1785,7 +1819,7 @@ impl PushConsumer {
                 let Some(messages) = processed.messages else {
                     let _ = context
                         .scheduler
-                        .schedule(request, PULL_TIME_DELAY_MILLIS_WHEN_EXCEPTION);
+                        .schedule(request, self.pull_time_delay_millis_when_exception());
                     return;
                 };
                 if messages.is_empty() {
@@ -3438,7 +3472,7 @@ impl PushConsumer {
                 Ok(Some((_, address))) => address,
                 Ok(None) => {
                     tokio::time::sleep(Duration::from_millis(
-                        PULL_TIME_DELAY_MILLIS_WHEN_EXCEPTION as u64,
+                        self.pull_time_delay_millis_when_exception().max(0) as u64,
                     ))
                     .await;
                     continue;
@@ -3446,7 +3480,7 @@ impl PushConsumer {
                 Err(error) => {
                     tracing::warn!(queue = %queue, error = %error, "push POP broker lookup failed");
                     tokio::time::sleep(Duration::from_millis(
-                        PULL_TIME_DELAY_MILLIS_WHEN_EXCEPTION as u64,
+                        self.pull_time_delay_millis_when_exception().max(0) as u64,
                     ))
                     .await;
                     continue;
@@ -3498,7 +3532,7 @@ impl PushConsumer {
                     } else {
                         tracing::debug!(queue = %queue, error = %error, "push POP request failed");
                         tokio::time::sleep(Duration::from_millis(
-                            PULL_TIME_DELAY_MILLIS_WHEN_EXCEPTION as u64,
+                            self.pull_time_delay_millis_when_exception().max(0) as u64,
                         ))
                         .await;
                     }
@@ -3520,7 +3554,7 @@ impl PushConsumer {
                 Err(error) => {
                     tracing::warn!(queue = %queue, error = %error, "push POP response processing failed");
                     tokio::time::sleep(Duration::from_millis(
-                        PULL_TIME_DELAY_MILLIS_WHEN_EXCEPTION as u64,
+                        self.pull_time_delay_millis_when_exception().max(0) as u64,
                     ))
                     .await;
                     continue;
@@ -3528,7 +3562,7 @@ impl PushConsumer {
             };
             if result.status() == &PopStatus::PollingFull {
                 tokio::time::sleep(Duration::from_millis(
-                    PULL_TIME_DELAY_MILLIS_WHEN_EXCEPTION as u64,
+                    self.pull_time_delay_millis_when_exception().max(0) as u64,
                 ))
                 .await;
                 continue;
@@ -5808,6 +5842,38 @@ mod tests {
         consumer.set_consume_orderly(false);
         assert!(!consumer.is_consume_orderly());
         assert_eq!(fixture["consumeOrderlyAfterSetFalse"], false);
+        assert_eq!(
+            consumer.pull_time_delay_millis_when_exception(),
+            fixture["pullDelayBeforeSet"].as_i64().unwrap()
+        );
+        consumer.set_pull_time_delay_millis_when_exception(73);
+        assert_eq!(
+            consumer.pull_time_delay_millis_when_exception(),
+            fixture["pullDelayAfterSet"].as_i64().unwrap()
+        );
+        assert_eq!(
+            consumer.pull_retry_error("custom delay").delay_millis,
+            fixture["pullDelayAfterSet"].as_i64().unwrap()
+        );
+        assert_eq!(
+            consumer
+                .pull_retry_error_from_rpc(rocketmq_classic_core::error::RpcError::Unsupported(
+                    "custom delay",
+                ))
+                .delay_millis,
+            fixture["pullDelayAfterSet"].as_i64().unwrap()
+        );
+        assert_eq!(
+            consumer
+                .pull_retry_error_from_rpc(rocketmq_classic_core::error::RpcError::Response {
+                    request_code: 11,
+                    peer: "broker-a".to_owned(),
+                    code: response::FLOW_CONTROL,
+                    remark: None,
+                })
+                .delay_millis,
+            PULL_TIME_DELAY_MILLIS_WHEN_BROKER_FLOW_CONTROL
+        );
         assert_eq!(
             consumer.subscriptions().len(),
             fixture["subscriptionCountBefore"].as_u64().unwrap() as usize
@@ -8217,8 +8283,9 @@ mod tests {
 
     #[test]
     fn broker_flow_control_uses_the_java_retry_delay() {
+        let consumer = PushConsumer::new(PushConsumerConfig::new("pull-delay-config").unwrap());
         let flow_control =
-            PullAttemptError::from_rpc(rocketmq_classic_core::error::RpcError::Response {
+            consumer.pull_retry_error_from_rpc(rocketmq_classic_core::error::RpcError::Response {
                 request_code: 11,
                 peer: "broker-a".to_owned(),
                 code: response::FLOW_CONTROL,
@@ -8229,10 +8296,10 @@ mod tests {
             PULL_TIME_DELAY_MILLIS_WHEN_BROKER_FLOW_CONTROL
         );
 
-        let failure = PullAttemptError::from_rpc(
+        let failure = consumer.pull_retry_error_from_rpc(
             rocketmq_classic_core::error::RpcError::Unsupported("test failure"),
         );
-        assert_eq!(failure.delay_millis, PULL_TIME_DELAY_MILLIS_WHEN_EXCEPTION);
+        assert_eq!(failure.delay_millis, 1_000);
     }
 
     #[tokio::test]

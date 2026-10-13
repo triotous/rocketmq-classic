@@ -15,8 +15,9 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   remains `PARTIAL`; Phase 9 now has fixture/unit coverage for raw Pull offset
   entrypoints, `consumerRunningInfo`, the construction-time start timestamp,
   `get/setPullAPIWrapper`, and Pull's `get/setServiceState`. The Push
-  `getDefaultMQPushConsumerImpl()` alias, service-state, pause, and
-  consume-orderly accessors, effective retry-limit getter, offset-store accessors, consumer
+  `getDefaultMQPushConsumerImpl()` alias, service-state, pause,
+  consume-orderly and exception-delay accessors, effective retry-limit getter,
+  offset-store accessors, consumer
   settings/subscriptions, and direct consume-hook entrypoints now have Java
   fixture/Rust evidence; its
   returned public method surface still needs a method-by-method audit. Pull

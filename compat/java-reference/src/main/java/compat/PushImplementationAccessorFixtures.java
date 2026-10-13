@@ -1,6 +1,7 @@
 package compat;
 
 import com.alibaba.fastjson2.JSON;
+import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -68,6 +69,9 @@ public final class PushImplementationAccessorFixtures {
         boolean consumeOrderlyAfterSetTrue = first.isConsumeOrderly();
         first.setConsumeOrderly(false);
         boolean consumeOrderlyAfterSetFalse = first.isConsumeOrderly();
+        long pullDelayBeforeSet = pullTimeDelayMillsWhenException(first);
+        first.setPullTimeDelayMillsWhenException(73);
+        long pullDelayAfterSet = pullTimeDelayMillsWhenException(first);
         int subscriptionCountBefore = first.subscriptions().size();
         Object subscriptionTable = first.getSubscriptionInner();
         first.subscribe("orders", "*");
@@ -132,6 +136,8 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("consumeOrderlyBeforeSet", consumeOrderlyBeforeSet);
         fixture.put("consumeOrderlyAfterSetTrue", consumeOrderlyAfterSetTrue);
         fixture.put("consumeOrderlyAfterSetFalse", consumeOrderlyAfterSetFalse);
+        fixture.put("pullDelayBeforeSet", pullDelayBeforeSet);
+        fixture.put("pullDelayAfterSet", pullDelayAfterSet);
         fixture.put("subscriptionCountBefore", subscriptionCountBefore);
         fixture.put("subscriptionInnerIdentityStable", subscriptionInnerIdentityStable);
         fixture.put("subscriptionTopicsAfterSubscribe", subscriptionTopicsAfterSubscribe);
@@ -149,5 +155,12 @@ public final class PushImplementationAccessorFixtures {
             Files.writeString(path, json);
         }
         System.out.println("Push implementation accessor verified");
+    }
+
+    private static long pullTimeDelayMillsWhenException(DefaultMQPushConsumerImpl implementation)
+        throws Exception {
+        Field delay = DefaultMQPushConsumerImpl.class.getDeclaredField("pullTimeDelayMillsWhenException");
+        delay.setAccessible(true);
+        return delay.getLong(implementation);
     }
 }
