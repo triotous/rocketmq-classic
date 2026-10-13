@@ -16,3 +16,9 @@ Deterministic fuzz smoke (2026-10-13 07:33:39 UTC):
 - First run exposed the private-header signed 16-bit request-code encoding boundary when 987654 was selected for the binary codec. Kept the large unknown-code probe on JSON and added a private-header unknown code within its wire range; no implementation behavior was changed.
 - PASS: `cargo test -p rocketmq-classic-remoting --test fuzz_regressions --locked`; `cargo run -p rocketmq-classic-remoting --example fuzz_smoke --locked` (103 Remoting seeds, 10 message seeds, 1,808 mutations, 144 successful frame decodes, 95 successful message decodes); strict Remoting all-target/all-feature Clippy; `cargo fmt --all -- --check`.
 - The bounded decoder limits cap frame/record input at 64 KiB and decompressed bodies at 4 KiB.
+
+
+Deterministic race/leak smoke (2026-10-13 07:33:48 UTC):
+- Added `tests/stress/run-offline-smoke.sh` and its coverage map. The fail-closed runner requires each filter to execute at least one passing test and repeats 16 named cases three times. It covers remoting pending/opaque/deadline/cancel/shutdown, socket publication, GO_AWAY reconnect, concurrent runtime creation, request/reply terminal ownership/admission, consumer assignment churn and offset/lock generation fencing.
+- PASS: `bash tests/stress/run-offline-smoke.sh` (all 48 executions passed; each test confirmed at least one matching case).
+- All runs use locked local scripted or paused-time tests. No Docker or Broker was started.
