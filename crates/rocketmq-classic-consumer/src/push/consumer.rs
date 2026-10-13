@@ -3,7 +3,7 @@ use std::{
     future::Future,
     pin::Pin,
     sync::{
-        Arc, RwLock, Weak,
+        Arc, OnceLock, RwLock, Weak,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::Duration,
@@ -41,6 +41,7 @@ use rocketmq_classic_protocol::{
         ConsumeFromWhere, ConsumeType, ConsumerData, ConsumerSubscriptionDataSet, SubscriptionData,
     },
 };
+use rocketmq_classic_remoting::client::RpcHook;
 use tokio::time::Instant;
 
 #[cfg(test)]
@@ -48,10 +49,11 @@ use std::sync::Mutex;
 
 use crate::{
     consume::{
-        ConcurrentConsumeService, ConsumeRequest, ConsumeService, ConsumeSubmitError,
-        ORDERLY_LOCK_RETRY_DELAY_MILLIS, ORDERLY_LOCK_RPC_TIMEOUT_MILLIS, OrderlyConsumeRequest,
-        OrderlyConsumeService, OrderlyDisposition, OrderlyLockSettings, OrderlySubmitError,
-        orderly_disposition, suspend_delay_millis,
+        ConcurrentConsumeService, ConsumeMessageContext, ConsumeMessageHook,
+        ConsumeMessageHookRegistry, ConsumeRequest, ConsumeService, ConsumeSubmitError,
+        ConsumeTraceHook, ORDERLY_LOCK_RETRY_DELAY_MILLIS, ORDERLY_LOCK_RPC_TIMEOUT_MILLIS,
+        OrderlyConsumeRequest, OrderlyConsumeService, OrderlyDisposition, OrderlyLockSettings,
+        OrderlySubmitError, orderly_disposition, suspend_delay_millis,
     },
     error::PushConsumerError,
     offset::{LocalFileOffsetStore, OffsetStore, OffsetStoreError, RemoteBrokerOffsetStore},
@@ -187,6 +189,24 @@ impl<T> Drop for AbortOnDrop<T> {
     }
 }
 
+fn consume_timeout_exceeded(started_at: Instant, timeout_minutes: i64) -> bool {
+    let elapsed_millis = i64::try_from(started_at.elapsed().as_millis()).unwrap_or(i64::MAX);
+    let timeout_millis = timeout_minutes.wrapping_mul(60).wrapping_mul(1_000);
+    elapsed_millis >= timeout_millis
+}
+
+fn orderly_consume_return_type(
+    callback_return_type: &'static str,
+    status: Option<ConsumeOrderlyStatus>,
+    timed_out: bool,
+) -> &'static str {
+    if timed_out && status.is_some() {
+        "TIME_OUT"
+    } else {
+        callback_return_type
+    }
+}
+
 struct StartupServices {
     consume_service: ConsumeService,
     orderly_lock_settings: Option<OrderlyLockSettings>,
@@ -291,6 +311,9 @@ impl StartupStage {
 pub struct PushConsumer {
     config: PushConsumerConfig,
     manager: ClientRuntimeManager,
+    rpc_hook: Option<Arc<dyn RpcHook>>,
+    consume_message_hooks: ConsumeMessageHookRegistry,
+    trace_dispatcher: OnceLock<Arc<rocketmq_classic_producer::TraceDispatcher>>,
     state: tokio::sync::Mutex<State>,
     offset_store: std::sync::Mutex<Option<Arc<dyn OffsetStore>>>,
     listener: RwLock<Option<PushMessageListener>>,
@@ -327,12 +350,31 @@ impl PushConsumer {
     }
 
     fn with_manager(config: PushConsumerConfig, manager: ClientRuntimeManager) -> Self {
+        Self::with_manager_and_hook(config, manager, None)
+    }
+
+    /// Creates a push consumer whose remoting requests use the supplied RPC hook.
+    pub fn new_with_rpc_hook(
+        config: PushConsumerConfig,
+        rpc_hook: Option<Arc<dyn RpcHook>>,
+    ) -> Self {
+        Self::with_manager_and_hook(config, ClientRuntimeManager::shared_default(), rpc_hook)
+    }
+
+    fn with_manager_and_hook(
+        config: PushConsumerConfig,
+        manager: ClientRuntimeManager,
+        rpc_hook: Option<Arc<dyn RpcHook>>,
+    ) -> Self {
         let pop_consume_limit = usize::try_from(config.consume_thread_max().max(1)).unwrap_or(1);
         let pull_api = PullAPIWrapper::new(config.unit_mode());
         let rebalance_service = RebalanceService::new(config.allocate_message_queue_strategy());
         Self {
             config,
             manager,
+            rpc_hook,
+            consume_message_hooks: ConsumeMessageHookRegistry::default(),
+            trace_dispatcher: OnceLock::new(),
             state: tokio::sync::Mutex::new(State::Created),
             offset_store: std::sync::Mutex::new(None),
             listener: RwLock::new(None),
@@ -368,6 +410,13 @@ impl PushConsumer {
         &self.config
     }
 
+    /// Returns the message trace dispatcher after trace initialization.
+    ///
+    /// This corresponds to Java `DefaultMQPushConsumer.getTraceDispatcher()`.
+    pub fn trace_dispatcher(&self) -> Option<Arc<rocketmq_classic_producer::TraceDispatcher>> {
+        self.trace_dispatcher.get().cloned()
+    }
+
     pub fn get_offset_store(&self) -> Option<Arc<dyn OffsetStore>> {
         self.offset_store
             .lock()
@@ -400,6 +449,29 @@ impl PushConsumer {
         // after startup; already-created consume workers retain their listener.
         *write_lock(&self.listener) = Some(listener);
         Ok(())
+    }
+
+    /// Registers a Java-compatible hook around each delivered consume batch.
+    pub fn register_consume_message_hook(&self, hook: Arc<dyn ConsumeMessageHook>) {
+        self.consume_message_hooks.register(hook);
+    }
+
+    fn new_consume_message_context(
+        &self,
+        messages: Vec<MessageExt>,
+        queue: MessageQueue,
+    ) -> ConsumeMessageContext {
+        let mut client_config = self.config.client_config().clone();
+        let namespace = client_config
+            .get_namespace()
+            .expect("the consumer namespace was validated before consume workers start")
+            .map(str::to_owned);
+        let consumer_group = client_config
+            .with_namespace(Some(self.config.consumer_group()))
+            .expect("the consumer namespace was validated before consume workers start")
+            .unwrap_or_else(|| self.config.consumer_group().to_owned());
+        ConsumeMessageContext::new(consumer_group, Some(messages), queue, namespace)
+            .with_properties(HashMap::new())
     }
 
     /// Sets the configured message listener. This mirrors Java's
@@ -1289,21 +1361,41 @@ impl PushConsumer {
             .iter()
             .map(|message| message.as_ref().clone())
             .collect::<Vec<_>>();
+        let mut consume_context =
+            self.new_consume_message_context(messages, request.batch.queue().clone());
+        self.consume_message_hooks
+            .execute_before(&mut consume_context);
         let callback_context = ConsumeConcurrentlyContext::new(request.batch.queue().clone());
         let fallback_context = callback_context.clone();
+        let listener_messages = consume_context.messages.clone().unwrap_or_default();
+        let callback_started = Instant::now();
         let mut callback = AbortOnDrop(tokio::spawn(async move {
-            listener.consume_message(messages, callback_context).await
+            listener
+                .consume_message(listener_messages, callback_context)
+                .await
         }));
-        let timeout_millis = self
-            .config
-            .consume_timeout_minutes()
-            .max(1)
-            .saturating_mul(60_000) as u64;
-        let callback_result =
-            tokio::time::timeout(Duration::from_millis(timeout_millis), &mut callback.0).await;
-        let (status, returned_context) = match callback_result {
-            Ok(Ok(result)) => result,
-            Ok(Err(error)) => {
+        // Java classifies consume timeout after the listener returns. The
+        // timeout is an observation for hooks and statistics, not a reason to
+        // cancel the callback.
+        let callback_result = (&mut callback.0).await;
+        let callback_timed_out =
+            consume_timeout_exceeded(callback_started, self.config.consume_timeout_minutes());
+        let (status, returned_context, consume_context_type) = match callback_result {
+            Ok((status, returned_context)) => {
+                let context_type = if status.is_none() {
+                    "RETURNNULL"
+                } else if callback_timed_out {
+                    "TIME_OUT"
+                } else {
+                    match status {
+                        Some(ConsumeConcurrentlyStatus::ConsumeSuccess) => "SUCCESS",
+                        Some(ConsumeConcurrentlyStatus::ReconsumeLater) => "FAILED",
+                        None => unreachable!("null status was handled above"),
+                    }
+                };
+                (status, returned_context, context_type)
+            }
+            Err(error) => {
                 tracing::error!(
                     topic = ?request.batch.queue().topic(),
                     queue_id = request.batch.queue().queue_id(),
@@ -1311,20 +1403,27 @@ impl PushConsumer {
                     error = %error,
                     "push concurrent listener failed"
                 );
-                (None, fallback_context)
-            }
-            Err(_) => {
-                callback.0.abort();
-                let _ = (&mut callback.0).await;
-                tracing::warn!(
-                    topic = ?request.batch.queue().topic(),
-                    queue_id = request.batch.queue().queue_id(),
-                    generation,
-                    "push concurrent listener timed out"
-                );
-                (None, fallback_context)
+                (None, fallback_context, "EXCEPTION")
             }
         };
+        consume_context
+            .properties
+            .get_or_insert_with(HashMap::new)
+            .insert(
+                "CONSUME_CONTEXT_TYPE".to_owned(),
+                consume_context_type.to_owned(),
+            );
+        consume_context.status = Some(
+            match status {
+                Some(ConsumeConcurrentlyStatus::ConsumeSuccess) => "CONSUME_SUCCESS",
+                Some(ConsumeConcurrentlyStatus::ReconsumeLater) | None => "RECONSUME_LATER",
+            }
+            .to_owned(),
+        );
+        consume_context.success = status == Some(ConsumeConcurrentlyStatus::ConsumeSuccess);
+        consume_context.access_channel = self.config.client_config().access_channel();
+        self.consume_message_hooks
+            .execute_after(&mut consume_context);
         self.complete_consume_request(request, context, status, returned_context)
             .await;
     }
@@ -1405,10 +1504,16 @@ impl PushConsumer {
                 .map(|message| message.as_ref().clone())
                 .collect::<Vec<_>>();
             self.reset_retry_and_namespace_for_orderly(&mut messages);
+            let mut consume_context =
+                self.new_consume_message_context(messages.clone(), queue.clone());
+            self.consume_message_hooks
+                .execute_before(&mut consume_context);
+            messages = consume_context.messages.clone().unwrap_or_default();
+            let listener_messages = messages.clone();
             let callback_context = ConsumeOrderlyContext::new(queue.clone());
             let fallback_context = callback_context.clone();
-            let listener_messages = messages.clone();
             let listener = listener.clone();
+            let callback_started = Instant::now();
             let mut callback = AbortOnDrop(tokio::spawn(async move {
                 listener
                     .consume_message(listener_messages, callback_context)
@@ -1417,8 +1522,15 @@ impl PushConsumer {
             // Java's consumeTimeout only classifies a completed callback for
             // statistics; it does not interrupt the listener. Keep the queue
             // gate held until the callback actually returns.
-            let (status, returned_context) = match (&mut callback.0).await {
-                Ok(result) => result,
+            let (status, returned_context, consume_context_type) = match (&mut callback.0).await {
+                Ok((status, returned_context)) => {
+                    let context_type = match status {
+                        Some(ConsumeOrderlyStatus::SuspendCurrentQueueAMoment) => "FAILED",
+                        None => "RETURNNULL",
+                        Some(_) => "SUCCESS",
+                    };
+                    (status, returned_context, context_type)
+                }
                 Err(error) => {
                     tracing::error!(
                         topic = ?queue.topic(),
@@ -1427,9 +1539,39 @@ impl PushConsumer {
                         error = %error,
                         "push orderly listener failed"
                     );
-                    (None, fallback_context)
+                    (None, fallback_context, "EXCEPTION")
                 }
             };
+
+            let consume_timed_out =
+                consume_timeout_exceeded(callback_started, self.config.consume_timeout_minutes());
+            let consume_context_type =
+                orderly_consume_return_type(consume_context_type, status, consume_timed_out);
+            consume_context
+                .properties
+                .get_or_insert_with(HashMap::new)
+                .insert(
+                    "CONSUME_CONTEXT_TYPE".to_owned(),
+                    consume_context_type.to_owned(),
+                );
+            consume_context.status = Some(
+                match status {
+                    Some(ConsumeOrderlyStatus::Success) => "SUCCESS",
+                    Some(ConsumeOrderlyStatus::Rollback) => "ROLLBACK",
+                    Some(ConsumeOrderlyStatus::Commit) => "COMMIT",
+                    Some(ConsumeOrderlyStatus::SuspendCurrentQueueAMoment) | None => {
+                        "SUSPEND_CURRENT_QUEUE_A_MOMENT"
+                    }
+                }
+                .to_owned(),
+            );
+            consume_context.success = matches!(
+                status,
+                Some(ConsumeOrderlyStatus::Success | ConsumeOrderlyStatus::Commit)
+            );
+            consume_context.access_channel = self.config.client_config().access_channel();
+            self.consume_message_hooks
+                .execute_after(&mut consume_context);
 
             if !process_queue
                 .snapshot(generation)
@@ -2235,7 +2377,14 @@ impl PushConsumer {
 
         self.copy_subscriptions(&consumer_group)?;
 
-        let runtime = self.manager.get_or_create(&client_config).await?;
+        let runtime = self
+            .manager
+            .get_or_create_with_hook_and_tls_config(
+                &client_config,
+                self.rpc_hook.clone(),
+                self.config.tls_config().cloned(),
+            )
+            .await?;
         if let Err(error) = self.checkpoint(StartupStage::RuntimeCreated) {
             let _ = runtime.shutdown().await;
             return Err(error);
@@ -2271,6 +2420,7 @@ impl PushConsumer {
                     pull_scheduler,
                     pull_rpc_workers,
                 };
+                self.start_trace_dispatcher().await;
                 runtime.rebalance_immediately();
                 Ok(())
             }
@@ -2290,6 +2440,46 @@ impl PushConsumer {
                 }
                 let _ = runtime.shutdown().await;
                 Err(error)
+            }
+        }
+    }
+
+    async fn start_trace_dispatcher(&self) {
+        let client_config = self.config.client_config();
+        if !client_config.enable_trace() {
+            return;
+        }
+        let dispatcher = match rocketmq_classic_producer::TraceDispatcher::new(
+            client_config,
+            self.config.consumer_group(),
+            rocketmq_classic_producer::TraceProducerKind::Consume,
+            client_config.trace_topic(),
+            self.manager.clone(),
+            self.rpc_hook.clone(),
+        ) {
+            Ok(dispatcher) => Arc::new(dispatcher),
+            Err(error) => {
+                tracing::error!(error = %error, "consume trace dispatcher initialization failed");
+                return;
+            }
+        };
+        if let Err(error) = dispatcher.start().await {
+            tracing::error!(error = %error, "consume trace dispatcher start failed");
+            return;
+        }
+        self.consume_message_hooks
+            .register(Arc::new(ConsumeTraceHook::new(
+                dispatcher.clone(),
+                self.config.consumer_group(),
+                client_config.clone(),
+            )));
+        let _ = self.trace_dispatcher.set(dispatcher);
+    }
+
+    async fn shutdown_trace_dispatcher(&self) {
+        if let Some(dispatcher) = self.trace_dispatcher.get() {
+            if let Err(error) = dispatcher.shutdown().await {
+                tracing::warn!(error = %error, "consume trace dispatcher shutdown failed");
             }
         }
     }
@@ -2790,51 +2980,128 @@ impl PushConsumer {
             return;
         }
         self.reset_retry_and_namespace_for_pop(&mut messages, &consumer_group);
-        let (ack_index, delay_level, orderly_delay_millis) = match listener {
-            PushMessageListener::Concurrently(listener) => {
-                let context = ConsumeConcurrentlyContext::new(queue.clone());
-                let listener_messages = messages.clone();
-                let callback = tokio::spawn(async move {
-                    listener.consume_message(listener_messages, context).await
-                });
-                match callback.await {
-                    Ok((Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)) => (
-                        context
-                            .ack_index()
-                            .min(i32::try_from(messages.len()).unwrap_or(i32::MAX) - 1),
-                        context.delay_level_when_next_consume(),
-                        None,
-                    ),
-                    Ok((_, context)) => (-1, context.delay_level_when_next_consume(), None),
-                    Err(error) => {
-                        tracing::warn!(queue = %queue, error = %error, "push POP concurrent listener failed");
-                        (-1, 0, None)
+        let mut consume_context = self.new_consume_message_context(messages.clone(), queue.clone());
+        self.consume_message_hooks
+            .execute_before(&mut consume_context);
+        messages = consume_context.messages.clone().unwrap_or_default();
+        let (ack_index, delay_level, orderly_delay_millis, status, success, return_type) =
+            match listener {
+                PushMessageListener::Concurrently(listener) => {
+                    let context = ConsumeConcurrentlyContext::new(queue.clone());
+                    let listener_messages = messages.clone();
+                    let callback_started = Instant::now();
+                    let callback = tokio::spawn(async move {
+                        listener.consume_message(listener_messages, context).await
+                    });
+                    match callback.await {
+                        Ok((Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)) => (
+                            context
+                                .ack_index()
+                                .min(i32::try_from(messages.len()).unwrap_or(i32::MAX) - 1),
+                            context.delay_level_when_next_consume(),
+                            None,
+                            Some("CONSUME_SUCCESS"),
+                            true,
+                            if callback_started.elapsed() >= pop_invisible_timeout(&messages) {
+                                "TIME_OUT"
+                            } else {
+                                "SUCCESS"
+                            },
+                        ),
+                        Ok((Some(ConsumeConcurrentlyStatus::ReconsumeLater), context)) => (
+                            -1,
+                            context.delay_level_when_next_consume(),
+                            None,
+                            Some("RECONSUME_LATER"),
+                            false,
+                            if callback_started.elapsed() >= pop_invisible_timeout(&messages) {
+                                "TIME_OUT"
+                            } else {
+                                "FAILED"
+                            },
+                        ),
+                        Ok((None, context)) => (
+                            -1,
+                            context.delay_level_when_next_consume(),
+                            None,
+                            Some("RECONSUME_LATER"),
+                            false,
+                            "RETURNNULL",
+                        ),
+                        Err(error) => {
+                            tracing::warn!(queue = %queue, error = %error, "push POP concurrent listener failed");
+                            (-1, 0, None, Some("RECONSUME_LATER"), false, "EXCEPTION")
+                        }
                     }
                 }
-            }
-            PushMessageListener::Orderly(listener) => {
-                let context = ConsumeOrderlyContext::new(queue.clone());
-                let listener_messages = messages.clone();
-                let callback = tokio::spawn(async move {
-                    listener.consume_message(listener_messages, context).await
-                });
-                match callback.await {
-                    Ok((
-                        Some(ConsumeOrderlyStatus::Success | ConsumeOrderlyStatus::Commit),
-                        context,
-                    )) if context.auto_commit() => (
-                        i32::try_from(messages.len()).unwrap_or(i32::MAX) - 1,
-                        0,
-                        None,
-                    ),
-                    Ok((_, context)) => (-1, 0, Some(context.suspend_current_queue_time_millis())),
-                    Err(error) => {
-                        tracing::warn!(queue = %queue, error = %error, "push POP orderly listener failed");
-                        (-1, 0, None)
+                PushMessageListener::Orderly(listener) => {
+                    let context = ConsumeOrderlyContext::new(queue.clone());
+                    let listener_messages = messages.clone();
+                    let callback_started = Instant::now();
+                    let callback = tokio::spawn(async move {
+                        listener.consume_message(listener_messages, context).await
+                    });
+                    match callback.await {
+                        Ok((
+                            Some(ConsumeOrderlyStatus::Success | ConsumeOrderlyStatus::Commit),
+                            context,
+                        )) if context.auto_commit() => (
+                            i32::try_from(messages.len()).unwrap_or(i32::MAX) - 1,
+                            0,
+                            None,
+                            Some("SUCCESS"),
+                            true,
+                            if callback_started.elapsed() >= pop_invisible_timeout(&messages) {
+                                "TIME_OUT"
+                            } else {
+                                "SUCCESS"
+                            },
+                        ),
+                        Ok((Some(status), context)) => (
+                            -1,
+                            0,
+                            Some(context.suspend_current_queue_time_millis()),
+                            Some(orderly_status_name(status)),
+                            false,
+                            if callback_started.elapsed() >= pop_invisible_timeout(&messages) {
+                                "TIME_OUT"
+                            } else if status == ConsumeOrderlyStatus::SuspendCurrentQueueAMoment {
+                                "FAILED"
+                            } else {
+                                "SUCCESS"
+                            },
+                        ),
+                        Ok((None, context)) => (
+                            -1,
+                            0,
+                            Some(context.suspend_current_queue_time_millis()),
+                            Some("SUSPEND_CURRENT_QUEUE_A_MOMENT"),
+                            false,
+                            "RETURNNULL",
+                        ),
+                        Err(error) => {
+                            tracing::warn!(queue = %queue, error = %error, "push POP orderly listener failed");
+                            (
+                                -1,
+                                0,
+                                None,
+                                Some("SUSPEND_CURRENT_QUEUE_A_MOMENT"),
+                                false,
+                                "EXCEPTION",
+                            )
+                        }
                     }
                 }
-            }
-        };
+            };
+        consume_context
+            .properties
+            .get_or_insert_with(HashMap::new)
+            .insert("CONSUME_CONTEXT_TYPE".to_owned(), return_type.to_owned());
+        consume_context.status = status.map(str::to_owned);
+        consume_context.success = success;
+        consume_context.access_channel = self.config.client_config().access_channel();
+        self.consume_message_hooks
+            .execute_after(&mut consume_context);
 
         let max_reconsume_times = if self.config.max_reconsume_times() == -1 {
             16
@@ -4287,6 +4554,7 @@ impl PushConsumer {
         } else {
             (Ok(true), Ok(true))
         };
+        self.shutdown_trace_dispatcher().await;
         persist?;
         if orderly_clustering && !unlock_confirmed {
             return Err(PushConsumerError::OrderlyUnlockFailed);
@@ -4431,6 +4699,24 @@ fn pop_batch_is_expired(messages: &[MessageExt], now_millis: i64) -> bool {
     now_millis.saturating_sub(receipt.pop_time()) >= receipt.invisible_time()
 }
 
+fn pop_invisible_timeout(messages: &[MessageExt]) -> Duration {
+    messages
+        .first()
+        .and_then(|message| message.message().properties().get(PROPERTY_POP_CK))
+        .and_then(|raw| PopReceipt::parse(raw.clone()).ok())
+        .map(|receipt| Duration::from_millis(receipt.invisible_time().max(0) as u64))
+        .unwrap_or(Duration::MAX)
+}
+
+fn orderly_status_name(status: ConsumeOrderlyStatus) -> &'static str {
+    match status {
+        ConsumeOrderlyStatus::Success => "SUCCESS",
+        ConsumeOrderlyStatus::Rollback => "ROLLBACK",
+        ConsumeOrderlyStatus::Commit => "COMMIT",
+        ConsumeOrderlyStatus::SuspendCurrentQueueAMoment => "SUSPEND_CURRENT_QUEUE_A_MOMENT",
+    }
+}
+
 fn java_string_cmp(left: &str, right: &str) -> std::cmp::Ordering {
     left.encode_utf16().cmp(right.encode_utf16())
 }
@@ -4490,6 +4776,29 @@ mod tests {
         net::{TcpListener, TcpStream},
         time::timeout,
     };
+
+    #[test]
+    fn orderly_timeout_preserves_java_null_and_exception_priority() {
+        assert_eq!(
+            orderly_consume_return_type("RETURNNULL", None, true),
+            "RETURNNULL"
+        );
+        assert_eq!(
+            orderly_consume_return_type("EXCEPTION", None, true),
+            "EXCEPTION"
+        );
+        assert_eq!(
+            orderly_consume_return_type("SUCCESS", Some(ConsumeOrderlyStatus::Success), true),
+            "TIME_OUT"
+        );
+    }
+
+    #[test]
+    fn trace_dispatcher_accessor_is_empty_before_start() {
+        let config = PushConsumerConfig::new("trace-dispatcher-accessor").unwrap();
+        let consumer = PushConsumer::new(config);
+        assert!(consumer.trace_dispatcher().is_none());
+    }
 
     #[derive(Default)]
     struct RecordingOffsetStore {
@@ -4867,6 +5176,26 @@ mod tests {
             .set_instance_name(Some("pop-lifecycle-client".into()));
         let manager = ClientRuntimeManager::new();
         let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let pop_hook_events = Arc::new(Mutex::new(Vec::new()));
+        struct PopHook(Arc<Mutex<Vec<String>>>);
+        impl ConsumeMessageHook for PopHook {
+            fn hook_name(&self) -> &str {
+                "pop-consume-hook"
+            }
+
+            fn consume_message_before(&self, _context: &mut ConsumeMessageContext) {
+                self.0.lock().unwrap().push("before".into());
+            }
+
+            fn consume_message_after(&self, context: &mut ConsumeMessageContext) {
+                self.0.lock().unwrap().push(format!(
+                    "{}:{}",
+                    context.status.as_deref().unwrap_or("missing"),
+                    context.success
+                ));
+            }
+        }
+        consumer.register_consume_message_hook(Arc::new(PopHook(pop_hook_events.clone())));
         let runtime = manager
             .get_or_create(consumer.config.client_config())
             .await
@@ -4926,6 +5255,15 @@ mod tests {
             )
             .await;
         assert_eq!(retry_queue.wait_ack_count(), 0);
+        assert_eq!(
+            pop_hook_events.lock().unwrap().as_slice(),
+            [
+                "before",
+                "CONSUME_SUCCESS:true",
+                "before",
+                "RECONSUME_LATER:false"
+            ]
+        );
 
         let mut changed_message = pop_receipt_message(Some(&redelivery_receipt));
         consumer
@@ -6774,6 +7112,197 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn consume_message_hooks_wrap_the_listener_and_share_context_state() {
+        struct Hook(Arc<std::sync::Mutex<Vec<String>>>);
+
+        impl ConsumeMessageHook for Hook {
+            fn hook_name(&self) -> &str {
+                "consume-hook-test"
+            }
+
+            fn consume_message_before(&self, context: &mut ConsumeMessageContext) {
+                assert!(!context.success);
+                assert!(context.status.is_none());
+                assert!(context.access_channel.is_none());
+                assert_eq!(context.consumer_group, "tenant%consume-hook-lifecycle");
+                assert_eq!(context.namespace.as_deref(), Some("tenant"));
+                assert_eq!(context.properties, Some(HashMap::new()));
+                context
+                    .properties
+                    .as_mut()
+                    .unwrap()
+                    .insert("hook-state".into(), "retained".into());
+                self.0.lock().unwrap().push("before".into());
+            }
+
+            fn consume_message_after(&self, context: &mut ConsumeMessageContext) {
+                assert!(context.success);
+                assert_eq!(context.status.as_deref(), Some("CONSUME_SUCCESS"));
+                assert_eq!(
+                    context.access_channel,
+                    Some(rocketmq_classic_core::config::AccessChannel::Local)
+                );
+                assert_eq!(
+                    context
+                        .properties
+                        .as_ref()
+                        .and_then(|properties| properties.get("hook-state"))
+                        .map(String::as_str),
+                    Some("retained")
+                );
+                self.0.lock().unwrap().push("after".into());
+            }
+        }
+
+        let mut config = PushConsumerConfig::new("consume-hook-lifecycle").unwrap();
+        config
+            .client_config_mut()
+            .set_namespace(Some("tenant".into()));
+        config.client_config_mut().set_namesrv_addr(None);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        consumer.register_consume_message_hook(Arc::new(Hook(events.clone())));
+        let offset_store = Arc::new(RecordingOffsetStore::default());
+        let offset_store_dyn: Arc<dyn OffsetStore> = offset_store.clone();
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            offset_store_dyn,
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let request = consume_request(queue, 60, vec![retry_test_message(70)]);
+        let listener: Arc<dyn MessageListenerConcurrently> = Arc::new(
+            |messages: Vec<MessageExt>, context: ConsumeConcurrentlyContext| async move {
+                assert_eq!(messages.len(), 1);
+                (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+            },
+        );
+        consumer
+            .clone()
+            .run_consume_request(request, listener)
+            .await;
+
+        assert_eq!(events.lock().unwrap().as_slice(), ["before", "after"]);
+        let _ = runtime.shutdown().await;
+        consumer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn concurrent_consume_timeout_classifies_after_listener_returns_without_cancelling_it() {
+        struct Hook(Arc<std::sync::Mutex<Vec<String>>>);
+
+        impl ConsumeMessageHook for Hook {
+            fn hook_name(&self) -> &str {
+                "consume-timeout-hook"
+            }
+
+            fn consume_message_before(&self, _context: &mut ConsumeMessageContext) {
+                self.0.lock().unwrap().push("before".into());
+            }
+
+            fn consume_message_after(&self, context: &mut ConsumeMessageContext) {
+                let return_type = context
+                    .properties
+                    .as_ref()
+                    .and_then(|properties| properties.get("CONSUME_CONTEXT_TYPE"))
+                    .map(String::as_str)
+                    .unwrap_or("missing");
+                self.0.lock().unwrap().push(format!(
+                    "after:{}:{}:{return_type}",
+                    context.status.as_deref().unwrap_or("missing"),
+                    context.success
+                ));
+            }
+        }
+
+        struct CallbackDrop(Arc<AtomicBool>);
+
+        impl Drop for CallbackDrop {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Release);
+            }
+        }
+
+        let started = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        let dropped = Arc::new(AtomicBool::new(false));
+        let listener: Arc<dyn MessageListenerConcurrently> = {
+            let started = started.clone();
+            let release = release.clone();
+            let dropped = dropped.clone();
+            Arc::new(
+                move |_messages: Vec<MessageExt>, context: ConsumeConcurrentlyContext| {
+                    let started = started.clone();
+                    let release = release.clone();
+                    let dropped = dropped.clone();
+                    async move {
+                        let _drop_signal = CallbackDrop(dropped);
+                        started.notify_one();
+                        release.notified().await;
+                        (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+                    }
+                },
+            )
+        };
+
+        let mut config = PushConsumerConfig::new("consume-timeout-hook").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        config.set_consume_timeout_minutes(1);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        consumer.register_consume_message_hook(Arc::new(Hook(events.clone())));
+        let offset_store = Arc::new(RecordingOffsetStore::default());
+        let offset_store_dyn: Arc<dyn OffsetStore> = offset_store.clone();
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            offset_store_dyn,
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+
+        let request = consume_request(
+            MessageQueue::new("orders", "broker-a", 0),
+            61,
+            vec![retry_test_message(71)],
+        );
+        let task = tokio::spawn({
+            let consumer = consumer.clone();
+            async move { consumer.run_consume_request(request, listener).await }
+        });
+        tokio::time::timeout(Duration::from_secs(1), started.notified())
+            .await
+            .unwrap();
+
+        tokio::time::advance(Duration::from_secs(60)).await;
+        tokio::task::yield_now().await;
+        assert!(
+            !dropped.load(Ordering::Acquire),
+            "consume timeout must classify a completed callback, not cancel it"
+        );
+        assert_eq!(events.lock().unwrap().as_slice(), ["before"]);
+
+        release.notify_one();
+        task.await.unwrap();
+        assert!(dropped.load(Ordering::Acquire));
+        assert_eq!(
+            events.lock().unwrap().as_slice(),
+            ["before", "after:CONSUME_SUCCESS:true:TIME_OUT"]
+        );
+        let _ = runtime.shutdown().await;
+        consumer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn concurrent_listener_without_status_sends_fixture_back_for_retry() {
         let mut config = PushConsumerConfig::new("consume-null-status").unwrap();
         config.client_config_mut().set_namesrv_addr(None);
@@ -7273,6 +7802,59 @@ mod tests {
         );
     }
 
+    #[test]
+    fn retry_and_dlq_messages_restore_logical_topics_for_orderly_and_pop() {
+        let mut config = PushConsumerConfig::new("namespace-consumer").unwrap();
+        config
+            .client_config_mut()
+            .set_namespace(Some("tenant".to_owned()));
+        let consumer = PushConsumer::with_manager(config, ClientRuntimeManager::new());
+        let mut client_config = consumer.config.client_config().clone();
+        let namespaced_group = client_config
+            .with_namespace(Some(consumer.config.consumer_group()))
+            .unwrap()
+            .unwrap();
+
+        let make_messages = || {
+            let mut retry = retry_test_message(1);
+            retry
+                .message_mut()
+                .set_topic(format!("%RETRY%{namespaced_group}"));
+            retry
+                .message_mut()
+                .set_system_property(PROPERTY_RETRY_TOPIC, "tenant%orders")
+                .unwrap();
+
+            let mut dlq = retry_test_message(2);
+            dlq.message_mut()
+                .set_topic(format!("%DLQ%tenant%{}", consumer.config.consumer_group()));
+
+            let mut normal = retry_test_message(3);
+            normal.message_mut().set_topic("tenant%orders");
+            vec![retry, dlq, normal]
+        };
+
+        let mut orderly_messages = make_messages();
+        consumer.reset_retry_and_namespace_for_orderly(&mut orderly_messages);
+        assert_eq!(
+            orderly_messages
+                .iter()
+                .map(|message| message.message().topic())
+                .collect::<Vec<_>>(),
+            ["orders", "%DLQ%namespace-consumer", "orders"]
+        );
+
+        let mut pop_messages = make_messages();
+        consumer.reset_retry_and_namespace_for_pop(&mut pop_messages, &namespaced_group);
+        assert_eq!(
+            pop_messages
+                .iter()
+                .map(|message| message.message().topic())
+                .collect::<Vec<_>>(),
+            ["orders", "%DLQ%namespace-consumer", "orders"]
+        );
+    }
+
     #[tokio::test]
     async fn shutdown_aborts_a_slow_listener_without_committing_its_batch() {
         struct NotifyOnDrop(Arc<tokio::sync::Notify>);
@@ -7621,6 +8203,26 @@ mod tests {
         config.set_consume_message_batch_max_size(1);
         let manager = ClientRuntimeManager::new();
         let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let hook_events = Arc::new(Mutex::new(Vec::new()));
+        struct Hook(Arc<Mutex<Vec<String>>>);
+        impl ConsumeMessageHook for Hook {
+            fn hook_name(&self) -> &str {
+                "orderly-consume-hook"
+            }
+
+            fn consume_message_before(&self, _context: &mut ConsumeMessageContext) {
+                self.0.lock().unwrap().push("before".into());
+            }
+
+            fn consume_message_after(&self, context: &mut ConsumeMessageContext) {
+                self.0.lock().unwrap().push(format!(
+                    "{}:{}",
+                    context.status.as_deref().unwrap_or("missing"),
+                    context.success
+                ));
+            }
+        }
+        consumer.register_consume_message_hook(Arc::new(Hook(hook_events.clone())));
         let offset_store = Arc::new(RecordingOffsetStore::default());
         let outcomes = Arc::new(Mutex::new(VecDeque::from([
             (Some(ConsumeOrderlyStatus::Success), false, -1),
@@ -7692,6 +8294,19 @@ mod tests {
         assert_eq!(
             offset_store.updates.lock().unwrap().as_slice(),
             &[(queue.clone(), 11, false), (queue, 12, false)]
+        );
+        assert_eq!(
+            hook_events.lock().unwrap().as_slice(),
+            [
+                "before",
+                "SUCCESS:true",
+                "before",
+                "ROLLBACK:false",
+                "before",
+                "SUCCESS:true",
+                "before",
+                "SUCCESS:true"
+            ]
         );
         consumer.shutdown().await.unwrap();
         runtime.shutdown().await.unwrap();

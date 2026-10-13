@@ -14,6 +14,7 @@ use rocketmq_classic_common::{
     sysflag::message as message_sys_flag,
 };
 use rocketmq_classic_core::api::producer::{SendResult, SendStatus};
+pub use rocketmq_classic_core::trace::LocalTransactionState;
 use rocketmq_classic_protocol::{
     codes::request,
     header::{CheckTransactionStateRequestHeader, CommandHeader, EndTransactionRequestHeader},
@@ -36,21 +37,11 @@ const CHECK_WORKER_KEEPALIVE: Duration = Duration::from_secs(60);
 #[cfg(not(test))]
 const CHECK_END_TRANSACTION_TIMEOUT: Duration = Duration::from_millis(3_000);
 
-/// The result of executing a local transaction or answering a Broker check.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LocalTransactionState {
-    Commit,
-    Rollback,
-    Unknown,
-}
-
-impl LocalTransactionState {
-    fn wire_value(self) -> i32 {
-        match self {
-            Self::Commit => message_sys_flag::TRANSACTION_COMMIT_TYPE,
-            Self::Rollback => message_sys_flag::TRANSACTION_ROLLBACK_TYPE,
-            Self::Unknown => message_sys_flag::TRANSACTION_NOT_TYPE,
-        }
+fn transaction_flag(state: LocalTransactionState) -> i32 {
+    match state {
+        LocalTransactionState::Commit => message_sys_flag::TRANSACTION_COMMIT_TYPE,
+        LocalTransactionState::Rollback => message_sys_flag::TRANSACTION_ROLLBACK_TYPE,
+        LocalTransactionState::Unknown => message_sys_flag::TRANSACTION_NOT_TYPE,
     }
 }
 
@@ -124,10 +115,16 @@ impl TransactionProducer {
         config: ProducerConfig,
         rpc_hook: Option<Arc<dyn rocketmq_classic_remoting::client::RpcHook>>,
     ) -> Self {
+        let mut client_config = config.client_config().clone();
+        let producer_group = client_config
+            .with_namespace(Some(config.producer_group()))
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| config.producer_group().to_owned());
         let producer = Arc::new(Producer::new_with_rpc_hook(config, rpc_hook));
         let transaction = Arc::new(TransactionRuntime::new(
             Arc::downgrade(&producer),
-            producer.config().producer_group().to_owned(),
+            producer_group,
         ));
         let _ = producer.transaction.set(transaction.clone());
         Self {
@@ -179,10 +176,8 @@ impl TransactionProducer {
         crate::validation::validate_message(Some(message), self.producer.config())?;
 
         let _ = message.set_system_property(PROPERTY_TRANSACTION_PREPARED, "true");
-        let _ = message.set_system_property(
-            PROPERTY_PRODUCER_GROUP,
-            self.producer.config().producer_group(),
-        );
+        let _ =
+            message.set_system_property(PROPERTY_PRODUCER_GROUP, self.producer.producer_group());
 
         let timeout =
             Duration::from_millis(self.producer.config().send_timeout_millis().max(0) as u64);
@@ -369,10 +364,10 @@ impl TransactionProducer {
             .ok_or_else(|| ProducerError::NoRoute(message.topic().to_owned()))?;
         let header = EndTransactionRequestHeader {
             topic: Some(message.topic().to_owned()),
-            producer_group: self.producer.config().producer_group().to_owned(),
+            producer_group: self.producer.producer_group().to_owned(),
             transaction_state_table_offset: send_result.queue_offset,
             commit_log_offset,
-            commit_or_rollback: state.wire_value(),
+            commit_or_rollback: transaction_flag(state),
             from_transaction_check: Some(false),
             msg_id: send_result.msg_id.clone(),
             transaction_id: send_result.transaction_id.clone(),
@@ -381,6 +376,14 @@ impl TransactionProducer {
         };
         let remark =
             callback_error.map(|error| format!("executeLocalTransactionBranch exception: {error}"));
+        self.producer.append_end_transaction_trace(
+            message,
+            &header.msg_id,
+            &broker_addr,
+            header.transaction_id.as_deref(),
+            state,
+            false,
+        );
         #[cfg(test)]
         {
             self.producer
@@ -800,7 +803,7 @@ impl TransactionRuntime {
             producer_group: self.producer_group.clone(),
             transaction_state_table_offset: check_header.transaction_state_table_offset,
             commit_log_offset: check_header.commit_log_offset,
-            commit_or_rollback: state.wire_value(),
+            commit_or_rollback: transaction_flag(state),
             from_transaction_check: Some(true),
             msg_id: unique_key,
             transaction_id: check_header.transaction_id.clone(),
@@ -809,6 +812,14 @@ impl TransactionRuntime {
         };
         let remark =
             callback_error.map(|error| format!("checkLocalTransactionState Exception: {error}"));
+        producer.append_end_transaction_trace(
+            message.message(),
+            &header.msg_id,
+            remote,
+            header.transaction_id.as_deref(),
+            state,
+            true,
+        );
         #[cfg(test)]
         {
             producer
@@ -1142,12 +1153,15 @@ mod tests {
     }
 
     fn transaction_producer(config: ProducerConfig) -> TransactionProducer {
+        let mut client_config = config.client_config().clone();
+        let group = client_config
+            .with_namespace(Some(config.producer_group()))
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| config.producer_group().to_owned());
         let manager = ClientRuntimeManager::new();
         let producer = Arc::new(Producer::with_runtime_manager(config, manager));
-        let transaction = Arc::new(TransactionRuntime::new(
-            Arc::downgrade(&producer),
-            producer.config().producer_group().to_owned(),
-        ));
+        let transaction = Arc::new(TransactionRuntime::new(Arc::downgrade(&producer), group));
         let _ = producer.transaction.set(transaction.clone());
         TransactionProducer {
             producer,

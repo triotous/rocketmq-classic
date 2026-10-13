@@ -1,6 +1,7 @@
 use rocketmq_classic_common::message::{Message, constants::*, encode_properties};
+use rocketmq_classic_core::unique_id::UniqueIdGenerator;
 
-use crate::{ProducerConfig, ProducerError, unique_id::UniqueIdGenerator, validation};
+use crate::{ProducerConfig, ProducerError, validation};
 
 pub(crate) fn create_batch(
     messages: &[Message],

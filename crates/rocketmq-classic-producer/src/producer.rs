@@ -7,6 +7,7 @@ use std::{
 use rocketmq_classic_core::{
     route::TopicSnapshot,
     runtime::{ClientRuntime, ClientRuntimeManager, GroupLease, ProducerRuntime},
+    unique_id::UniqueIdGenerator,
 };
 use rocketmq_classic_remoting::client::RpcHook;
 
@@ -15,15 +16,17 @@ use rocketmq_classic_core::api::producer::{SendMode, SendResult};
 
 use crate::{
     ProducerConfig, ProducerError, accumulator::AutoBatchAccumulator, fault::FaultStrategy,
-    selector::RoundRobinSelector, unique_id::UniqueIdGenerator, validation,
+    selector::RoundRobinSelector, validation,
 };
 
 #[cfg(test)]
+#[derive(Clone)]
 pub(crate) struct ScriptedSendAttempt {
     pub(crate) broker: String,
     pub(crate) address: String,
     pub(crate) queue: rocketmq_classic_common::message::MessageQueue,
     pub(crate) body: Vec<u8>,
+    pub(crate) topic: String,
     pub(crate) properties: Option<String>,
     pub(crate) sys_flag: i32,
     pub(crate) unique_id: String,
@@ -51,6 +54,7 @@ enum State {
 /// Java-compatible producer lifecycle and send surface.
 pub struct Producer {
     pub(crate) config: ProducerConfig,
+    namespaced_group: OnceLock<String>,
     manager: ClientRuntimeManager,
     rpc_hook: Option<Arc<dyn RpcHook>>,
     state: tokio::sync::Mutex<State>,
@@ -59,7 +63,11 @@ pub struct Producer {
     pub(crate) auto_batch_tasks: tokio::sync::Mutex<Vec<JoinHandle<()>>>,
     pub(crate) self_weak: OnceLock<Weak<Producer>>,
     pub(crate) transaction: OnceLock<Arc<crate::transaction::TransactionRuntime>>,
+    pub(crate) trace_dispatcher: OnceLock<Arc<crate::trace::TraceDispatcher>>,
+    recall_trace_hook: tokio::sync::Mutex<Option<Arc<dyn RpcHook>>>,
     pub(crate) request_callback_tasks: tokio::sync::Mutex<Vec<JoinHandle<()>>>,
+    pub(crate) check_forbidden_hooks: crate::hooks::CheckForbiddenHookList,
+    pub(crate) send_message_hooks: crate::hooks::SendMessageHookList,
     pub(crate) backpressure_send_num: Arc<Semaphore>,
     pub(crate) backpressure_send_size: Arc<Semaphore>,
     publish_info: RwLock<HashMap<String, Arc<TopicSnapshot>>>,
@@ -81,6 +89,36 @@ pub struct Producer {
 }
 
 impl Producer {
+    /// Registers a Java-compatible pre-send forbidden check.
+    pub fn register_check_forbidden_hook(&self, hook: Arc<dyn crate::CheckForbiddenHook>) {
+        self.check_forbidden_hooks
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(hook);
+    }
+
+    pub(crate) fn check_forbidden_hook_snapshot(&self) -> Vec<Arc<dyn crate::CheckForbiddenHook>> {
+        self.check_forbidden_hooks
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Registers a Java-compatible hook for every outbound producer attempt.
+    pub fn register_send_message_hook(&self, hook: Arc<dyn crate::SendMessageHook>) {
+        self.send_message_hooks
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(hook);
+    }
+
+    pub(crate) fn send_message_hook_snapshot(&self) -> Vec<Arc<dyn crate::SendMessageHook>> {
+        self.send_message_hooks
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
     pub fn new(config: ProducerConfig) -> Self {
         Self::new_with_rpc_hook(config, None)
     }
@@ -118,6 +156,7 @@ impl Producer {
         Self {
             ids,
             config,
+            namespaced_group: OnceLock::new(),
             manager,
             rpc_hook,
             state: tokio::sync::Mutex::new(State::Created),
@@ -126,7 +165,11 @@ impl Producer {
             auto_batch_tasks: tokio::sync::Mutex::new(Vec::new()),
             self_weak: OnceLock::new(),
             transaction: OnceLock::new(),
+            trace_dispatcher: OnceLock::new(),
+            recall_trace_hook: tokio::sync::Mutex::new(None),
             request_callback_tasks: tokio::sync::Mutex::new(Vec::new()),
+            check_forbidden_hooks: Default::default(),
+            send_message_hooks: Default::default(),
             backpressure_send_num,
             backpressure_send_size,
             publish_info: RwLock::new(HashMap::new()),
@@ -143,6 +186,21 @@ impl Producer {
 
     pub fn config(&self) -> &ProducerConfig {
         &self.config
+    }
+
+    /// Returns the message trace dispatcher after trace initialization.
+    ///
+    /// This corresponds to Java `DefaultMQProducer.getTraceDispatcher()`.
+    pub fn trace_dispatcher(&self) -> Option<Arc<crate::TraceDispatcher>> {
+        self.trace_dispatcher.get().cloned()
+    }
+
+    /// Returns the Java-compatible producer group, namespace-wrapped after start.
+    pub fn producer_group(&self) -> &str {
+        self.namespaced_group
+            .get()
+            .map(String::as_str)
+            .unwrap_or_else(|| self.config.producer_group())
     }
 
     pub(crate) async fn started_runtime(&self) -> Result<Arc<ClientRuntime>, ProducerError> {
@@ -205,16 +263,25 @@ impl Producer {
             State::Created => {}
         }
         let _ = self.self_weak.set(Arc::downgrade(self));
-        validation::validate_group(self.config.producer_group())?;
+        let mut client_config = self.config.client_config().clone();
+        let group = client_config
+            .with_namespace(Some(self.config.producer_group()))?
+            .unwrap_or_else(|| self.config.producer_group().to_owned());
+        let _ = self.namespaced_group.set(group);
+        validation::validate_group(self.producer_group())?;
         self.config.accumulator_settings()?;
 
         let runtime = self
             .manager
-            .get_or_create_with_hook(&self.config.client, self.rpc_hook.clone())
+            .get_or_create_with_hook_and_tls_config(
+                &self.config.client,
+                self.rpc_hook.clone(),
+                self.config.tls_config().cloned(),
+            )
             .await?;
         let owner: Arc<dyn ProducerRuntime> = self.clone();
         let lease = runtime
-            .register_producer(self.config.producer_group(), owner)
+            .register_producer(self.producer_group(), owner)
             .await?;
         if let Err(error) = runtime.start().await {
             let deadline = self.unregister_deadline();
@@ -225,11 +292,52 @@ impl Producer {
             runtime: Arc::downgrade(&runtime),
             lease,
         };
+        self.start_trace_dispatcher(&runtime).await;
         if self.config.client.start_detector_enable() {
             let task = self.spawn_detector_task(Arc::downgrade(&runtime));
             *self.detector_task.lock().await = Some(task);
         }
         Ok(())
+    }
+
+    async fn start_trace_dispatcher(&self, runtime: &Arc<ClientRuntime>) {
+        if !self.config.client.enable_trace() {
+            return;
+        }
+        let dispatcher = match crate::trace::TraceDispatcher::new(
+            &self.config.client,
+            self.producer_group(),
+            crate::TraceProducerKind::Produce,
+            self.config.client.trace_topic(),
+            self.manager.clone(),
+            self.rpc_hook.clone(),
+        ) {
+            Ok(dispatcher) => Arc::new(dispatcher),
+            Err(error) => {
+                tracing::error!(error = %error, "message trace dispatcher initialization failed");
+                return;
+            }
+        };
+        if let Err(error) = dispatcher.start().await {
+            tracing::error!(error = %error, "message trace dispatcher start failed");
+            return;
+        }
+        self.register_send_message_hook(Arc::new(crate::trace::ProducerSendTraceHook::new(
+            dispatcher.clone(),
+            self.producer_group(),
+            self.config.client.clone(),
+        )));
+        let _ = self.trace_dispatcher.set(dispatcher);
+        if crate::trace::recall_trace_property_enabled() {
+            self.register_recall_trace_hook(
+                runtime,
+                self.trace_dispatcher
+                    .get()
+                    .expect("dispatcher was just set")
+                    .clone(),
+            )
+            .await;
+        }
     }
 
     pub async fn shutdown(&self) -> Result<(), ProducerError> {
@@ -240,16 +348,20 @@ impl Producer {
         let previous = std::mem::replace(&mut *state, State::Shutdown);
         match previous {
             State::Created | State::Shutdown => {
+                self.remove_recall_trace_hook(None).await;
                 self.stop_auto_batch().await;
                 self.stop_detector_task().await;
                 self.retire_request_callback_tasks().await;
+                self.shutdown_trace_dispatcher().await;
                 Ok(())
             }
             State::Started { runtime, lease } => {
                 let Some(runtime_arc) = runtime.upgrade() else {
+                    self.remove_recall_trace_hook(None).await;
                     self.stop_auto_batch().await;
                     self.stop_detector_task().await;
                     self.retire_request_callback_tasks().await;
+                    self.shutdown_trace_dispatcher().await;
                     return Ok(());
                 };
                 let deadline = self.unregister_deadline();
@@ -270,12 +382,42 @@ impl Producer {
                         return Err(error.into());
                     }
                 }
+                self.remove_recall_trace_hook(Some(&runtime_arc)).await;
                 self.stop_auto_batch().await;
                 self.stop_detector_task().await;
                 self.retire_request_callback_tasks().await;
+                self.shutdown_trace_dispatcher().await;
                 Ok(())
             }
         }
+    }
+
+    async fn shutdown_trace_dispatcher(&self) {
+        if let Some(dispatcher) = self.trace_dispatcher.get() {
+            if let Err(error) = dispatcher.shutdown().await {
+                tracing::warn!(error = %error, "message trace dispatcher shutdown failed");
+            }
+        }
+    }
+
+    async fn remove_recall_trace_hook(&self, runtime: Option<&ClientRuntime>) {
+        let hook = self.recall_trace_hook.lock().await.take();
+        if let (Some(runtime), Some(hook)) = (runtime, hook.as_ref()) {
+            runtime.remoting().remove_rpc_hook(hook);
+        }
+    }
+
+    async fn register_recall_trace_hook(
+        &self,
+        runtime: &ClientRuntime,
+        dispatcher: Arc<crate::trace::TraceDispatcher>,
+    ) {
+        let hook: Arc<dyn RpcHook> = Arc::new(crate::trace::RecallMessageTraceHook::new(
+            dispatcher,
+            self.config.client.clone(),
+        ));
+        runtime.remoting().add_rpc_hook(hook.clone());
+        *self.recall_trace_hook.lock().await = Some(hook);
     }
 
     fn spawn_detector_task(self: &Arc<Self>, runtime: Weak<ClientRuntime>) -> JoinHandle<()> {
@@ -386,11 +528,18 @@ impl ProducerRuntime for Producer {
     }
 
     fn publish_topics(&self) -> BTreeSet<String> {
+        let mut client_config = self.config.client_config().clone();
         self.config
             .topics()
             .unwrap_or_default()
             .iter()
-            .cloned()
+            .filter_map(|topic| {
+                client_config
+                    .with_namespace(Some(topic))
+                    .ok()
+                    .flatten()
+                    .or_else(|| Some(topic.clone()))
+            })
             .collect()
     }
 
@@ -407,6 +556,31 @@ impl ProducerRuntime for Producer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn configured_publish_topics_are_namespace_wrapped_once() {
+        let mut config = ProducerConfig::new("namespace-publish-topics").unwrap();
+        config
+            .client_config_mut()
+            .set_namespace(Some("tenant".into()));
+        config.set_topics(Some(vec![
+            "orders".into(),
+            "tenant%already".into(),
+            "%RETRY%workers".into(),
+            "RMQ_SYS_TRACE_TOPIC".into(),
+        ]));
+        let producer = Producer::with_runtime_manager(config, ClientRuntimeManager::new());
+
+        assert_eq!(
+            producer.publish_topics(),
+            BTreeSet::from([
+                "tenant%orders".to_owned(),
+                "tenant%already".to_owned(),
+                "%RETRY%tenant%workers".to_owned(),
+                "RMQ_SYS_TRACE_TOPIC".to_owned(),
+            ])
+        );
+    }
 
     #[tokio::test]
     async fn invalid_group_fails_before_creating_or_registering_runtime() {
@@ -494,5 +668,84 @@ mod tests {
         ));
         producer.start().await.unwrap();
         producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn enabled_trace_starts_and_stops_its_owned_dispatcher() {
+        let manager = ClientRuntimeManager::new();
+        let mut config = ProducerConfig::new("trace-lifecycle-producer").unwrap();
+        config.client_config_mut().set_enable_trace(true);
+        let producer = Arc::new(Producer::with_runtime_manager(config, manager));
+
+        producer.start().await.unwrap();
+        assert!(producer.trace_dispatcher().is_some());
+        let dispatcher = producer.trace_dispatcher().unwrap();
+        let trace_producer = dispatcher.trace_producer().unwrap();
+        assert_eq!(producer.send_message_hook_snapshot().len(), 1);
+        assert!(
+            dispatcher.append(rocketmq_classic_core::trace::TraceContext {
+                trace_type: Some(rocketmq_classic_core::trace::TraceType::Recall),
+                timestamp_millis: 1,
+                region_id: None,
+                region_name: Some(String::new()),
+                group_name: None,
+                cost_time_millis: 0,
+                success: true,
+                request_id: None,
+                context_code: 0,
+                access_channel: None,
+                trace_beans: Some(vec![rocketmq_classic_core::trace::TraceBean::default()]),
+            })
+        );
+        dispatcher.flush().await.unwrap();
+        producer.shutdown().await.unwrap();
+        let trace = rocketmq_classic_core::trace::TraceContext {
+            trace_type: Some(rocketmq_classic_core::trace::TraceType::Recall),
+            timestamp_millis: 1,
+            region_id: Some("region-a".into()),
+            region_name: Some(String::new()),
+            group_name: Some("trace-lifecycle-producer".into()),
+            cost_time_millis: 0,
+            success: true,
+            request_id: None,
+            context_code: 0,
+            access_channel: None,
+            trace_beans: Some(vec![]),
+        };
+        assert!(!dispatcher.append(trace));
+        assert!(Arc::ptr_eq(
+            &trace_producer,
+            &dispatcher.trace_producer().unwrap()
+        ));
+    }
+
+    #[tokio::test]
+    async fn recall_trace_rpc_hook_is_registered_and_removed_with_its_producer() {
+        let manager = ClientRuntimeManager::new();
+        let config = ProducerConfig::new("recall-trace-lifecycle").unwrap();
+        let runtime = manager.get_or_create(config.client_config()).await.unwrap();
+        let producer = Arc::new(Producer::with_runtime_manager(
+            config.clone(),
+            manager.clone(),
+        ));
+        let dispatcher = Arc::new(
+            crate::trace::TraceDispatcher::new(
+                config.client_config(),
+                config.producer_group(),
+                crate::TraceProducerKind::Produce,
+                None,
+                manager,
+                None,
+            )
+            .unwrap(),
+        );
+        let hooks_before = runtime.remoting().get_rpc_hooks().len();
+
+        producer
+            .register_recall_trace_hook(&runtime, dispatcher)
+            .await;
+        assert_eq!(runtime.remoting().get_rpc_hooks().len(), hooks_before + 1);
+        producer.remove_recall_trace_hook(Some(&runtime)).await;
+        assert_eq!(runtime.remoting().get_rpc_hooks().len(), hooks_before);
     }
 }

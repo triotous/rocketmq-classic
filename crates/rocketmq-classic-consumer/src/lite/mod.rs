@@ -29,6 +29,7 @@ use tokio::{
 
 use crate::{
     config::PullConsumerConfig,
+    consume::{ConsumeMessageContext, ConsumeMessageHook, ConsumeMessageHookRegistry},
     error::{LitePullConsumerError, PullConsumerError},
     pull::{MessageSelector, ProcessedPullResult, PullConsumer, build_subscription},
     push::{MessageQueueListener, parse_java_timestamp_millis},
@@ -69,6 +70,7 @@ struct MessageBuffer {
 pub struct LitePullConsumer {
     config: LitePullConsumerConfig,
     rpc_hook: Option<Arc<dyn RpcHook>>,
+    consume_message_hooks: ConsumeMessageHookRegistry,
     engine: RwLock<Option<Arc<PullConsumer>>>,
     lifecycle: tokio::sync::Mutex<Lifecycle>,
     lifecycle_gate: tokio::sync::Mutex<()>,
@@ -150,6 +152,7 @@ impl LitePullConsumer {
         Ok(Self {
             config,
             rpc_hook,
+            consume_message_hooks: ConsumeMessageHookRegistry::default(),
             engine: RwLock::new(None),
             lifecycle: tokio::sync::Mutex::new(Lifecycle::Created),
             lifecycle_gate: tokio::sync::Mutex::new(()),
@@ -203,6 +206,11 @@ impl LitePullConsumer {
     /// accessors after construction.
     pub fn config(&self) -> &LitePullConsumerConfig {
         &self.config
+    }
+
+    /// Installs an internal hook around each non-empty poll result.
+    pub(crate) fn register_consume_message_hook(&self, hook: Arc<dyn ConsumeMessageHook>) {
+        self.consume_message_hooks.register(hook);
     }
 
     pub fn is_auto_commit(&self) -> bool {
@@ -570,6 +578,7 @@ impl LitePullConsumer {
                 self.config.client_config(),
                 self.config.consumer_group(),
                 self.config.customized_trace_topic(),
+                self.rpc_hook.clone(),
             ) {
                 Ok(dispatcher) => {
                     let dispatcher = Arc::new(dispatcher);
@@ -588,6 +597,13 @@ impl LitePullConsumer {
         } else {
             None
         };
+        if let Some(dispatcher) = trace_dispatcher.as_ref() {
+            self.register_consume_message_hook(Arc::new(trace::LiteConsumeTraceHook::new(
+                dispatcher.clone(),
+                self.config.consumer_group(),
+                self.config.client_config().clone(),
+            )));
+        }
         let engine = match self.prepare_engine().await {
             Ok(engine) => engine,
             Err(error) => {
@@ -684,6 +700,7 @@ impl LitePullConsumer {
     async fn prepare_engine(&self) -> Result<Arc<PullConsumer>, LitePullConsumerError> {
         let mut pull_config = PullConsumerConfig::new(self.config.consumer_group())?;
         *pull_config.client_config_mut() = self.config.client_config().clone();
+        pull_config.set_tls_config(self.config.tls_config().cloned());
         if let Some(address) = self
             .name_server_address
             .read()
@@ -714,7 +731,7 @@ impl LitePullConsumer {
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .clone(),
         );
-        let engine = Arc::new(PullConsumer::with_rpc_hook(
+        let engine = Arc::new(PullConsumer::new_with_rpc_hook(
             pull_config,
             self.rpc_hook.clone(),
         ));
@@ -811,20 +828,22 @@ impl LitePullConsumer {
 
         loop {
             let notified = self.ready.notified();
-            if let Some(batch) = self.take_ready_batch() {
-                if let Some(dispatcher) = self.trace_dispatcher() {
-                    let contexts = trace::consume_contexts(
-                        &batch,
-                        self.config.consumer_group(),
-                        self.config.client_config(),
-                        trace::epoch_millis(),
-                        trace::epoch_millis(),
-                    );
-                    for context in contexts {
-                        let _ = dispatcher.append(context);
-                    }
-                }
-                return Ok(batch);
+            if let Some((queue, batch)) = self.take_ready_batch_with_queue() {
+                let mut client_config = self.config.client_config().clone();
+                let namespace = client_config.get_namespace()?.map(str::to_owned);
+                let consumer_group = client_config
+                    .with_namespace(Some(self.config.consumer_group()))?
+                    .unwrap_or_else(|| self.config.consumer_group().to_owned());
+                let mut consume_context =
+                    ConsumeMessageContext::new(consumer_group, Some(batch), queue, namespace);
+                self.consume_message_hooks
+                    .execute_before(&mut consume_context);
+                consume_context.status = Some("CONSUME_SUCCESS".to_owned());
+                consume_context.success = true;
+                consume_context.access_channel = client_config.access_channel();
+                self.consume_message_hooks
+                    .execute_after(&mut consume_context);
+                return Ok(consume_context.messages.unwrap_or_default());
             }
             if timeout_millis == 0 {
                 return Ok(Vec::new());
@@ -1589,7 +1608,18 @@ impl LitePullConsumer {
             })
     }
 
+    #[cfg(test)]
     fn take_ready_batch(&self) -> Option<Vec<rocketmq_classic_common::message::MessageExt>> {
+        self.take_ready_batch_with_queue()
+            .map(|(_, messages)| messages)
+    }
+
+    fn take_ready_batch_with_queue(
+        &self,
+    ) -> Option<(
+        MessageQueue,
+        Vec<rocketmq_classic_common::message::MessageExt>,
+    )> {
         let mut buffer = self
             .buffer
             .lock()
@@ -1615,7 +1645,7 @@ impl LitePullConsumer {
             {
                 state.delivered_offset = Some(last_offset.saturating_add(1));
             }
-            return Some(batch.messages);
+            return Some((batch.queue, batch.messages));
         }
         None
     }
@@ -1744,6 +1774,91 @@ mod tests {
             consumer.config().customized_trace_topic(),
             Some("client-trace-topic")
         );
+    }
+
+    #[tokio::test]
+    async fn lite_poll_consume_hooks_run_around_delivery_with_queue_metadata() {
+        struct Hook(Arc<Mutex<Vec<String>>>);
+
+        impl ConsumeMessageHook for Hook {
+            fn hook_name(&self) -> &str {
+                "lite-consume-hook"
+            }
+
+            fn consume_message_before(&self, context: &mut ConsumeMessageContext) {
+                assert_eq!(context.message_queue.topic(), Some("orders"));
+                assert!(!context.success);
+                assert!(context.properties.is_none());
+                assert!(context.access_channel.is_none());
+                assert_eq!(context.consumer_group, "tenant%lite-hook");
+                assert_eq!(context.namespace.as_deref(), Some("tenant"));
+                context.properties = Some(std::collections::HashMap::new());
+                context
+                    .properties
+                    .as_mut()
+                    .unwrap()
+                    .insert("shared".into(), "yes".into());
+                self.0.lock().unwrap().push("before".into());
+            }
+
+            fn consume_message_after(&self, context: &mut ConsumeMessageContext) {
+                assert!(context.success);
+                assert_eq!(context.status.as_deref(), Some("CONSUME_SUCCESS"));
+                assert_eq!(
+                    context.access_channel,
+                    Some(rocketmq_classic_core::config::AccessChannel::Local)
+                );
+                assert_eq!(
+                    context
+                        .properties
+                        .as_ref()
+                        .and_then(|properties| properties.get("shared"))
+                        .map(String::as_str),
+                    Some("yes")
+                );
+                self.0.lock().unwrap().push("after".into());
+            }
+        }
+
+        let mut config = LitePullConsumerConfig::new("lite-hook").unwrap();
+        config
+            .client_config_mut()
+            .set_namespace(Some("tenant".into()));
+        let consumer = LitePullConsumer::new(config).unwrap();
+        consumer.running.store(true, Ordering::Release);
+        consumer.auto_commit.store(false, Ordering::Release);
+        let events = Arc::new(Mutex::new(Vec::new()));
+        consumer.register_consume_message_hook(Arc::new(Hook(events.clone())));
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        consumer.queue_states.lock().unwrap().insert(
+            queue.clone(),
+            QueueState {
+                generation: 7,
+                fetched_offset: Some(1),
+                delivered_offset: None,
+                paused: false,
+            },
+        );
+        let mut message = MessageExt::new(Message::new("orders", b"body".to_vec()));
+        message.set_queue_offset(0);
+        consumer
+            .buffer
+            .lock()
+            .unwrap()
+            .batches
+            .push_back(BufferedBatch {
+                queue,
+                generation: 7,
+                messages: vec![message],
+                body_bytes: 4,
+            });
+        consumer.buffer.lock().unwrap().messages = 1;
+        consumer.buffer.lock().unwrap().body_bytes = 4;
+
+        let messages = consumer.poll(Some(0)).await.unwrap();
+
+        assert_eq!(messages.len(), 1);
+        assert_eq!(events.lock().unwrap().as_slice(), ["before", "after"]);
     }
 
     #[test]

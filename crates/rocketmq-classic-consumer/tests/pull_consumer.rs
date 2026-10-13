@@ -202,6 +202,27 @@ fn message_record() -> Vec<u8> {
         .unwrap()
 }
 
+fn message_record_with_topic(topic: &str) -> Vec<u8> {
+    let mut record = message_record();
+    let original = b"orders";
+    let topic_position = (1..record.len() - original.len())
+        .find(|position| {
+            record[*position..].starts_with(original)
+                && record[*position - 1] == original.len() as u8
+        })
+        .expect("fixture contains its one-byte length-prefixed topic");
+    assert!(topic.len() < i8::MAX as usize);
+    record[topic_position - 1] = topic.len() as u8;
+    record.splice(
+        topic_position..topic_position + original.len(),
+        topic.bytes(),
+    );
+    let store_size = i32::from_be_bytes(record[..4].try_into().unwrap());
+    let updated_store_size = store_size + topic.len() as i32 - original.len() as i32;
+    record[..4].copy_from_slice(&updated_store_size.to_be_bytes());
+    record
+}
+
 async fn read_or_accept(
     listener: &TcpListener,
     current: &mut Option<TcpStream>,
@@ -297,7 +318,7 @@ async fn pull_routes_per_queue_returns_decoded_messages_and_only_explicitly_pers
                     &command,
                     response::SUCCESS,
                     1,
-                    Some(message_record()),
+                    Some(message_record_with_topic("tenant%orders")),
                 )
                 .await;
             } else if expected_queue_id == 1 {
@@ -404,7 +425,9 @@ async fn pull_routes_per_queue_returns_decoded_messages_and_only_explicitly_pers
         rocketmq_classic_core::api::consumer::PullStatus::Found
     );
     assert_eq!(found.result.next_begin_offset, 101);
-    assert_eq!(found.messages.unwrap().len(), 1);
+    let messages = found.messages.unwrap();
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].message().topic(), "orders");
     assert!(hook_ran_in_unit_mode.load(std::sync::atomic::Ordering::SeqCst));
     assert_eq!(
         consumer
@@ -451,6 +474,23 @@ async fn pull_routes_per_queue_returns_decoded_messages_and_only_explicitly_pers
     assert_eq!(store.updates.lock().unwrap().len(), 1);
     assert_eq!(store.single_persists.lock().unwrap().len(), 1);
     assert_eq!(store.all_persists.lock().unwrap().len(), 1);
+    let namespaced_queue0 = MessageQueue::new("tenant%orders", "broker", 0);
+    assert_eq!(
+        store.values.lock().unwrap().get(&namespaced_queue0),
+        Some(&101)
+    );
+    assert_eq!(
+        store.updates.lock().unwrap().as_slice(),
+        &[(namespaced_queue0.clone(), 101, false)]
+    );
+    assert_eq!(
+        store.single_persists.lock().unwrap().as_slice(),
+        &[namespaced_queue0.clone()]
+    );
+    assert_eq!(
+        store.all_persists.lock().unwrap().as_slice(),
+        &[vec![namespaced_queue0]]
+    );
 
     timeout(Duration::from_secs(3), nameserver_peer)
         .await

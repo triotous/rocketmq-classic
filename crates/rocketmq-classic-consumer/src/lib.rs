@@ -10,6 +10,7 @@ pub mod push;
 pub mod rebalance;
 
 pub use config::PullConsumerConfig;
+pub use consume::{ConsumeMessageContext, ConsumeMessageHook};
 pub use error::{LitePullConsumerError, PullConsumerError, PushConsumerError};
 pub use lite::{LitePullConsumer, LitePullConsumerConfig, TopicMessageQueueChangeListener};
 pub use pop::{PopReceipt, PopReceiptError, PopResult, PopStatus};

@@ -4,7 +4,7 @@ use std::{
 };
 
 use rocketmq_classic_remoting::client::{
-    ClientConfig as TransportConfig, RemotingClient, RpcHook, TransportMode,
+    ClientConfig as TransportConfig, RemotingClient, RpcHook, TlsConfig, TransportMode,
 };
 
 use super::{
@@ -81,6 +81,7 @@ pub struct ClientRuntime {
     reply_timeout_task: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
     pub(super) sharing_properties: HashMap<String, String>,
     pub(super) sharing_hook: Option<Arc<dyn RpcHook>>,
+    pub(super) sharing_tls_config: Option<TlsConfig>,
     pub(crate) heartbeat: crate::heartbeat::HeartbeatState,
     pub(crate) concurrent_heartbeat_width: Option<usize>,
     heartbeat_listener: Option<Arc<crate::heartbeat::HeartbeatChannelListener>>,
@@ -111,11 +112,22 @@ impl ClientRuntime {
         Self::construct_with_top_addressing(config, properties, hook, None)
     }
 
+    #[cfg(test)]
     pub(super) fn construct_with_top_addressing(
         config: ClientConfig,
         properties: &HashMap<String, String>,
         hook: Option<Arc<dyn RpcHook>>,
         provider: Option<Arc<dyn crate::namesrv::TopAddressing>>,
+    ) -> Result<Self, RuntimeError> {
+        Self::construct_with_top_addressing_and_tls_config(config, properties, hook, provider, None)
+    }
+
+    pub(super) fn construct_with_top_addressing_and_tls_config(
+        config: ClientConfig,
+        properties: &HashMap<String, String>,
+        hook: Option<Arc<dyn RpcHook>>,
+        provider: Option<Arc<dyn crate::namesrv::TopAddressing>>,
+        tls_config: Option<TlsConfig>,
     ) -> Result<Self, RuntimeError> {
         let boot_timestamp = epoch_millis(std::time::SystemTime::now());
         let shared_config = Arc::new(std::sync::RwLock::new(config.clone()));
@@ -135,7 +147,9 @@ impl ClientRuntime {
             .then_some(config.concurrent_heartbeat_thread_pool_size as usize);
         let callback_executor_threads =
             callback_executor_threads(config.client_callback_executor_threads);
-        let transport = if config.use_tls {
+        let transport = if let Some(tls_config) = &tls_config {
+            TransportMode::Tls(tls_config.clone())
+        } else if config.use_tls {
             let mut properties = properties.clone();
             properties.insert("tls.enable".into(), "true".into());
             TransportMode::from_java_properties(&properties, None)?
@@ -200,6 +214,7 @@ impl ClientRuntime {
             reply_timeout_task: tokio::sync::Mutex::new(None),
             sharing_properties: properties.clone(),
             sharing_hook,
+            sharing_tls_config: tls_config,
             heartbeat: crate::heartbeat::HeartbeatState::default(),
             concurrent_heartbeat_width,
             heartbeat_listener,

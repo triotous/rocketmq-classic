@@ -25,10 +25,11 @@ use rocketmq_classic_protocol::{
         PopLiteMessageRequestHeader, PopLiteMessageResponseHeader, PopMessageRequestHeader,
         PopMessageResponseHeader, PullMessageRequestHeader, PullMessageResponseHeader,
         QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
-        ReplyMessageRequestHeader, ResetOffsetRequestHeader, SearchOffsetRequestHeader,
-        SearchOffsetResponseHeader, SendMessageRequestHeaderV1, SendMessageRequestHeaderV2,
-        SendMessageResponseHeader, UnlockBatchMqRequestHeader, UnregisterClientRequestHeader,
-        UnregisterClientResponseHeader, UpdateConsumerOffsetRequestHeader,
+        RecallMessageRequestHeader, RecallMessageResponseHeader, ReplyMessageRequestHeader,
+        ResetOffsetRequestHeader, SearchOffsetRequestHeader, SearchOffsetResponseHeader,
+        SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
+        UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
+        UpdateConsumerOffsetRequestHeader,
     },
 };
 use rocketmq_classic_remoting::{codec::frame, command::RemotingCommand};
@@ -136,6 +137,18 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-unregister-request.bin",
         "header-unregister-request",
         35,
+    );
+    write_oracle_header::<RecallMessageRequestHeader>(
+        output,
+        "typed-recall-request.bin",
+        "header-recall-message-request",
+        370,
+    );
+    write_oracle_header::<RecallMessageResponseHeader>(
+        output,
+        "typed-recall-response.bin",
+        "header-recall-message-response",
+        0,
     );
     write_oracle_header::<LockBatchMqRequestHeader>(
         output,

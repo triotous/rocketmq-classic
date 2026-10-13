@@ -119,7 +119,7 @@ struct PendingEntry {
 struct Startup {
     inbound_receiver: mpsc::UnboundedReceiver<processor::InboundRequest>,
     callback_receiver: mpsc::UnboundedReceiver<CallbackTask>,
-    channel_event_receiver: mpsc::Receiver<(String, NettyEventType)>,
+    channel_event_receiver: mpsc::Receiver<ChannelEvent>,
 }
 
 struct ClientInner {
@@ -149,7 +149,7 @@ struct ClientInner {
     callback_executor: Mutex<Option<Arc<dyn CallbackExecutor>>>,
     rpc_hooks: Mutex<Vec<Arc<dyn RpcHook>>>,
     channel_listener: Option<Arc<dyn ChannelEventListener>>,
-    channel_event_sender: mpsc::Sender<(String, NettyEventType)>,
+    channel_event_sender: mpsc::Sender<ChannelEvent>,
     startup: Mutex<Option<Startup>>,
     runtime: Mutex<Option<tokio::runtime::Handle>>,
     started: AtomicBool,
@@ -542,7 +542,32 @@ impl CallbackExecutor for ClientCallbackExecutor {
     }
 }
 
+/// Owned channel lifecycle information, including the connection generation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChannelEvent {
+    pub remote_addr: String,
+    pub event_type: NettyEventType,
+    pub generation: u64,
+}
+
 pub trait ChannelEventListener: Send + Sync + 'static {
+    /// Synchronous callbacks run serially on a Tokio blocking thread behind the bounded event
+    /// queue, so a slow observer cannot block transport or a Tokio runtime worker. Queue overflow
+    /// drops the event. A synchronous callback already running cannot be forcibly cancelled by
+    /// shutdown; it must return for its blocking thread to be reclaimed.
+    /// Receives the event with generation metadata. The default adapter
+    /// preserves the Java-shaped address callbacks below.
+    fn on_channel_event(&self, event: &ChannelEvent) {
+        match event.event_type {
+            NettyEventType::Connect => self.on_connect(&event.remote_addr),
+            NettyEventType::Close => self.on_close(&event.remote_addr),
+            NettyEventType::Exception => self.on_exception(&event.remote_addr),
+            NettyEventType::Idle => self.on_idle(&event.remote_addr),
+            // Active is delivered through the async adapter below.
+            NettyEventType::Active => {}
+        }
+    }
+
     fn on_connect(&self, _remote_addr: &str) {}
     fn on_close(&self, _remote_addr: &str) {}
     fn on_exception(&self, _remote_addr: &str) {}
@@ -1808,11 +1833,13 @@ impl ClientInner {
         }
     }
 
-    fn notify_channel(&self, address: &str, event: NettyEventType) {
+    fn notify_channel(&self, address: &str, event: NettyEventType, generation: u64) {
         if self.channel_listener.is_some() {
-            let _ = self
-                .channel_event_sender
-                .try_send((address.to_owned(), event));
+            let _ = self.channel_event_sender.try_send(ChannelEvent {
+                remote_addr: redact_peer_address(address),
+                event_type: event,
+                generation,
+            });
         }
     }
 
@@ -2045,7 +2072,7 @@ fn run_callback(job: CallbackJob) {
 
 fn start_channel_event_worker(
     listener: Option<Arc<dyn ChannelEventListener>>,
-    mut receiver: mpsc::Receiver<(String, NettyEventType)>,
+    mut receiver: mpsc::Receiver<ChannelEvent>,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
@@ -2057,37 +2084,56 @@ fn start_channel_event_worker(
                     continue;
                 },
             };
-            let Some((address, event)) = event else {
+            let Some(event) = event else {
                 return;
             };
             let Some(listener) = &listener else { continue };
-            if matches!(event, NettyEventType::Active) {
-                let operation = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    listener.on_active_async(&address)
+            let listener = listener.clone();
+            let callback_shutdown = shutdown.clone();
+            let runtime = tokio::runtime::Handle::current();
+            let callback = tokio::task::spawn_blocking(move || {
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    listener.on_channel_event(&event)
                 }));
-                if let Ok(mut operation) = operation {
-                    let caught = std::future::poll_fn(|context| {
-                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            operation.as_mut().poll(context)
-                        }))
-                        .unwrap_or(Poll::Ready(()))
-                    });
-                    tokio::select! { biased;
-                        _ = shutdown.changed() => return,
-                        _ = caught => {},
+                if matches!(event.event_type, NettyEventType::Active) {
+                    let operation = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        listener.on_active_async(&event.remote_addr)
+                    }));
+                    if let Ok(operation) = operation {
+                        let mut callback_shutdown = callback_shutdown;
+                        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            runtime.block_on(async move {
+                                tokio::select! { biased;
+                                    _ = callback_shutdown.changed() => {},
+                                    _ = operation => {},
+                                }
+                            })
+                        }));
                     }
                 }
-                continue;
+            });
+            let shutdown_requested = tokio::select! { biased;
+                result = shutdown.changed() => result.is_err() || *shutdown.borrow(),
+                _ = callback => false,
+            };
+            if shutdown_requested {
+                return;
             }
-            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match event {
-                NettyEventType::Connect => listener.on_connect(&address),
-                NettyEventType::Close => listener.on_close(&address),
-                NettyEventType::Exception => listener.on_exception(&address),
-                NettyEventType::Idle => listener.on_idle(&address),
-                NettyEventType::Active => listener.on_active(&address),
-            }));
         }
     })
+}
+
+fn redact_peer_address(address: &str) -> String {
+    let Some((scheme, remainder)) = address.split_once("://") else {
+        return address.to_owned();
+    };
+    let authority_end = remainder.find(['/', '?', '#']).unwrap_or(remainder.len());
+    let authority = &remainder[..authority_end];
+    let Some((_, host)) = authority.rsplit_once('@') else {
+        return address.to_owned();
+    };
+    let suffix = &remainder[authority_end..];
+    format!("{scheme}://[REDACTED]@{host}{suffix}")
 }
 
 fn start_callback_workers(
@@ -2305,6 +2351,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn channel_event_peer_address_redacts_uri_userinfo() {
+        assert_eq!(
+            redact_peer_address("tcp://user:secret@broker.example:10911/path"),
+            "tcp://[REDACTED]@broker.example:10911/path"
+        );
+        assert_eq!(
+            redact_peer_address("[2001:db8::1]:10911"),
+            "[2001:db8::1]:10911"
+        );
+    }
+
+    #[test]
     fn netty_event_type_methods_match_invoked_java_enum() {
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
             "../../../../fixtures/runtime/client-config.json"
@@ -2436,11 +2494,19 @@ mod tests {
         let (stop, shutdown) = tokio::sync::watch::channel(false);
         let worker = start_channel_event_worker(Some(listener.clone()), receiver, shutdown);
         sender
-            .send(("broker".into(), NettyEventType::Active))
+            .send(ChannelEvent {
+                remote_addr: "broker".into(),
+                event_type: NettyEventType::Active,
+                generation: 1,
+            })
             .await
             .unwrap();
         sender
-            .send(("broker".into(), NettyEventType::Active))
+            .send(ChannelEvent {
+                remote_addr: "broker".into(),
+                event_type: NettyEventType::Active,
+                generation: 1,
+            })
             .await
             .unwrap();
         listener.entered.notified().await;

@@ -22,6 +22,12 @@ pub enum ProducerError {
     IllegalTopic,
     #[error("message topic conflicts with a system topic")]
     SystemTopic,
+    #[error("topic is not supported")]
+    UnsupportedRecallTopic,
+    #[error("recall handle is invalid")]
+    InvalidRecallHandle,
+    #[error("The broker service address not found")]
+    RecallBrokerAddressNotFound,
     #[error("sending to this system topic is forbidden")]
     ForbiddenTopic,
     #[error("message body is empty")]

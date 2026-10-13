@@ -598,6 +598,63 @@ impl CommandHeader for ConsumerSendMsgBackRequestHeader {
     }
 }
 
+/// Java 5.5.1 `RecallMessageRequestHeader`, including nullable fields inherited
+/// from `RpcRequestHeader` and `TopicRequestHeader`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct RecallMessageRequestHeader {
+    pub producer_group: Option<String>,
+    pub topic: String,
+    pub recall_handle: String,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
+    pub logical: Option<bool>,
+}
+
+impl CommandHeader for RecallMessageRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "producerGroup", self.producer_group.as_deref());
+        fields.insert("topic".into(), self.topic.clone());
+        fields.insert("recallHandle".into(), self.recall_handle.clone());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
+        put_optional(fields, "lo", self.logical);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            producer_group: optional_string(fields, "producerGroup"),
+            topic: required_string(fields, "topic")?.to_owned(),
+            recall_handle: required_string(fields, "recallHandle")?.to_owned(),
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
+            logical: optional_java_boolean(fields, "lo"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct RecallMessageResponseHeader {
+    pub msg_id: String,
+}
+
+impl CommandHeader for RecallMessageResponseHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("msgId".into(), self.msg_id.clone());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            msg_id: required_string(fields, "msgId")?.to_owned(),
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SendMessageResponseHeader {
     pub msg_id: String,
@@ -1563,5 +1620,44 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn recall_headers_match_java_field_names_and_required_response_msg_id() {
+        let request = RecallMessageRequestHeader {
+            producer_group: Some("recall-group".into()),
+            topic: "orders".into(),
+            recall_handle: "handle".into(),
+            broker_name: Some("broker-a".into()),
+            ..RecallMessageRequestHeader::default()
+        };
+        let mut fields = HeaderMap::new();
+        request.encode_fields(&mut fields);
+        assert_eq!(
+            fields,
+            HeaderMap::from([
+                ("producerGroup".into(), "recall-group".into()),
+                ("topic".into(), "orders".into()),
+                ("recallHandle".into(), "handle".into()),
+                ("bname".into(), "broker-a".into()),
+            ])
+        );
+        assert_eq!(
+            RecallMessageRequestHeader::decode_fields(&fields),
+            Ok(request)
+        );
+        assert_eq!(
+            RecallMessageResponseHeader::decode_fields(&HeaderMap::new()),
+            Err(ProtocolError::MissingField("msgId"))
+        );
+        assert_eq!(
+            RecallMessageResponseHeader::decode_fields(&HeaderMap::from([(
+                "msgId".into(),
+                "recalled-id".into()
+            )])),
+            Ok(RecallMessageResponseHeader {
+                msg_id: "recalled-id".into()
+            })
+        );
     }
 }

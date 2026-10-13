@@ -17,11 +17,16 @@
 package compat;
 
 import com.alibaba.fastjson2.JSON;
+import io.netty.buffer.ByteBufAllocator;
+import io.netty.handler.ssl.SslContext;
 import java.lang.reflect.Method;
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.TreeMap;
+import javax.net.ssl.SSLEngine;
 import org.apache.rocketmq.remoting.netty.TlsHelper;
 import org.apache.rocketmq.remoting.netty.TlsSystemConfig;
 
@@ -79,15 +84,52 @@ public final class TlsSettingsFixtures {
         String previousCiphers = TlsSystemConfig.tlsCiphers;
         String previousProtocols = TlsSystemConfig.tlsProtocols;
         boolean previousTestMode = TlsSystemConfig.tlsTestModeEnable;
-        boolean clientIgnoresCipherProtocolProperties;
+        String clientCipher = "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256";
+        String clientProtocol = "TLSv1.2";
+        String[] clientEnabledCiphers;
+        String[] clientEnabledProtocols;
+        Map<String, Object> unsupportedClientContext = new TreeMap<>();
+        Map<String, Object> unsupportedProtocolContext = new TreeMap<>();
         Path emptyConfigFile = Files.createTempFile("rocketmq-tls-client", ".properties");
         try {
             TlsSystemConfig.tlsConfigFile = emptyConfigFile.toString();
+            TlsSystemConfig.tlsCiphers = clientCipher;
+            TlsSystemConfig.tlsProtocols = clientProtocol;
+            TlsSystemConfig.tlsTestModeEnable = true;
+            SslContext clientContext = TlsHelper.buildSslContext(true);
+            SSLEngine clientEngine = clientContext.newEngine(ByteBufAllocator.DEFAULT);
+            clientEnabledCiphers = clientEngine.getEnabledCipherSuites();
+            clientEnabledProtocols = clientEngine.getEnabledProtocols();
+            clientEngine.closeOutbound();
+
             TlsSystemConfig.tlsCiphers = "INVALID_CLIENT_CIPHER";
             TlsSystemConfig.tlsProtocols = "INVALID_CLIENT_PROTOCOL";
-            TlsSystemConfig.tlsTestModeEnable = false;
-            TlsHelper.buildSslContext(true);
-            clientIgnoresCipherProtocolProperties = true;
+            try {
+                SslContext invalidContext = TlsHelper.buildSslContext(true);
+                SSLEngine invalidEngine = invalidContext.newEngine(ByteBufAllocator.DEFAULT);
+                unsupportedClientContext.put("outcome", "success");
+                unsupportedClientContext.put("enabledCipherSuites", invalidEngine.getEnabledCipherSuites());
+                unsupportedClientContext.put("enabledProtocols", invalidEngine.getEnabledProtocols());
+                invalidEngine.closeOutbound();
+            } catch (Throwable error) {
+                unsupportedClientContext.put("outcome", "failure");
+                unsupportedClientContext.put("errorClass", error.getClass().getName());
+                unsupportedClientContext.put("errorMessage", error.getMessage());
+            }
+
+            TlsSystemConfig.tlsCiphers = clientCipher;
+            TlsSystemConfig.tlsProtocols = "INVALID_CLIENT_PROTOCOL";
+            try {
+                SslContext invalidProtocolContext = TlsHelper.buildSslContext(true);
+                SSLEngine invalidProtocolEngine = invalidProtocolContext.newEngine(ByteBufAllocator.DEFAULT);
+                unsupportedProtocolContext.put("outcome", "success");
+                unsupportedProtocolContext.put("enabledProtocols", invalidProtocolEngine.getEnabledProtocols());
+                invalidProtocolEngine.closeOutbound();
+            } catch (Throwable error) {
+                unsupportedProtocolContext.put("outcome", "failure");
+                unsupportedProtocolContext.put("errorClass", error.getClass().getName());
+                unsupportedProtocolContext.put("errorMessage", error.getMessage());
+            }
         } finally {
             TlsSystemConfig.tlsConfigFile = previousConfigFile;
             TlsSystemConfig.tlsCiphers = previousCiphers;
@@ -113,12 +155,104 @@ public final class TlsSettingsFixtures {
         result.put("settings", settings);
         result.put("configFileValues", fileValues);
         result.put("effectiveSettings", effectiveSettings);
-        result.put("clientIgnoresCipherProtocolProperties", clientIgnoresCipherProtocolProperties);
+        Map<String, Object> clientContext = new TreeMap<>();
+        clientContext.put("configuredCipher", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256");
+        clientContext.put("configuredProtocol", "TLSv1.2");
+        clientContext.put("enabledCipherSuites", clientEnabledCiphers);
+        clientContext.put("enabledProtocols", clientEnabledProtocols);
+        clientContext.put("configuredCipherEnabled", Arrays.asList(clientEnabledCiphers)
+            .contains("TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"));
+        clientContext.put("configuredProtocolEnabled", Arrays.asList(clientEnabledProtocols)
+            .equals(java.util.Collections.singletonList("TLSv1.2")));
+        result.put("clientContext", clientContext);
+        result.put("unsupportedClientContext", unsupportedClientContext);
+        result.put("unsupportedProtocolContext", unsupportedProtocolContext);
+        result.put("systemClientContext", inspectClientContext(ciphers, protocols));
+        result.put("fileClientContext", inspectClientContext(
+            (String) effectiveSettings.get("ciphers"),
+            (String) effectiveSettings.get("protocols")));
         result.put("configFileOverridesSettings",
             !java.util.Objects.equals(ciphers, TlsSystemConfig.tlsCiphers)
                 || !java.util.Objects.equals(protocols, TlsSystemConfig.tlsProtocols));
         result.put("serverContacted", false);
         return result;
+    }
+
+    private static Map<String, Object> inspectClientContext(String ciphers, String protocols) throws Exception {
+        String previousConfigFile = TlsSystemConfig.tlsConfigFile;
+        String previousCiphers = TlsSystemConfig.tlsCiphers;
+        String previousProtocols = TlsSystemConfig.tlsProtocols;
+        boolean previousTestMode = TlsSystemConfig.tlsTestModeEnable;
+        Path emptyConfigFile = Files.createTempFile("rocketmq-tls-client-settings", ".properties");
+        try {
+            TlsSystemConfig.tlsConfigFile = emptyConfigFile.toString();
+            TlsSystemConfig.tlsCiphers = ciphers;
+            TlsSystemConfig.tlsProtocols = protocols;
+            TlsSystemConfig.tlsTestModeEnable = true;
+            SSLEngine engine = TlsHelper.buildSslContext(true).newEngine(ByteBufAllocator.DEFAULT);
+            Map<String, Object> result = new TreeMap<>();
+            result.put("configuredCiphers", ciphers);
+            result.put("configuredProtocols", protocols);
+            result.put("enabledCipherSuites", engine.getEnabledCipherSuites());
+            result.put("enabledProtocols", engine.getEnabledProtocols());
+            engine.beginHandshake();
+            ByteBuffer networkBytes = ByteBuffer.allocate(32768);
+            engine.wrap(ByteBuffer.allocate(0), networkBytes);
+            networkBytes.flip();
+            byte[] clientHello = new byte[networkBytes.remaining()];
+            networkBytes.get(clientHello);
+            result.put("clientHello", inspectClientHello(clientHello));
+            engine.closeOutbound();
+            return result;
+        } finally {
+            TlsSystemConfig.tlsConfigFile = previousConfigFile;
+            TlsSystemConfig.tlsCiphers = previousCiphers;
+            TlsSystemConfig.tlsProtocols = previousProtocols;
+            TlsSystemConfig.tlsTestModeEnable = previousTestMode;
+            Files.deleteIfExists(emptyConfigFile);
+        }
+    }
+
+    private static Map<String, Object> inspectClientHello(byte[] record) {
+        if (record.length < 9 || record[0] != 22 || record[5] != 1) {
+            throw new IllegalStateException("expected a TLS ClientHello record");
+        }
+        int offset = 9 + 2 + 32;
+        int sessionIdLength = record[offset++] & 0xff;
+        offset += sessionIdLength;
+        int cipherBytesLength = readUnsignedShort(record, offset);
+        offset += 2;
+        java.util.List<Integer> ciphers = new java.util.ArrayList<>();
+        for (int end = offset + cipherBytesLength; offset < end; offset += 2) {
+            ciphers.add(readUnsignedShort(record, offset));
+        }
+        int compressionLength = record[offset++] & 0xff;
+        offset += compressionLength;
+        int extensionsLength = readUnsignedShort(record, offset);
+        offset += 2;
+        int extensionsEnd = offset + extensionsLength;
+        java.util.List<Integer> protocols = new java.util.ArrayList<>();
+        while (offset < extensionsEnd) {
+            int extensionType = readUnsignedShort(record, offset);
+            int extensionLength = readUnsignedShort(record, offset + 2);
+            offset += 4;
+            if (extensionType == 43) {
+                int versionsOffset = offset + 1;
+                int versionsLength = record[offset] & 0xff;
+                for (int end = versionsOffset + versionsLength; versionsOffset < end; versionsOffset += 2) {
+                    protocols.add(readUnsignedShort(record, versionsOffset));
+                }
+            }
+            offset += extensionLength;
+        }
+        Map<String, Object> result = new TreeMap<>();
+        result.put("cipherSuiteIds", ciphers);
+        result.put("supportedVersionIds", protocols);
+        return result;
+    }
+
+    private static int readUnsignedShort(byte[] bytes, int offset) {
+        return ((bytes[offset] & 0xff) << 8) | (bytes[offset + 1] & 0xff);
     }
 
 }

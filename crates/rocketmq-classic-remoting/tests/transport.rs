@@ -1,4 +1,6 @@
 use std::{
+    future::Future,
+    pin::Pin,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -11,9 +13,10 @@ use rocketmq_classic_protocol::codes::{SerializeType, request, response};
 use rocketmq_classic_remoting::{
     RemotingCommand,
     client::{
-        CallbackExecutor, ChannelEventListener, ClientConfig, InvokeCallback, InvokeCallbackResult,
-        RemotingClient, RequestExecutor, RequestPipeline, RequestPipelineError, RequestProcessor,
-        RpcHook, RpcHookError, TransportMode, tls::TlsConfig,
+        CallbackExecutor, ChannelEvent, ChannelEventListener, ClientConfig, InvokeCallback,
+        InvokeCallbackResult, NettyEventType, RemotingClient, RequestExecutor, RequestPipeline,
+        RequestPipelineError, RequestProcessor, RpcHook, RpcHookError, TransportMode,
+        tls::TlsConfig,
     },
     codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
     error::TransportError,
@@ -35,6 +38,19 @@ async fn read_command<S: AsyncRead + Unpin>(stream: &mut S) -> RemotingCommand {
     frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
         .unwrap()
         .unwrap()
+}
+
+async fn try_read_command<S: AsyncRead + Unpin>(stream: &mut S) -> Option<RemotingCommand> {
+    let mut prefix = [0; 4];
+    stream.read_exact(&mut prefix).await.ok()?;
+    let frame_length = u32::from_be_bytes(prefix) as usize;
+    let mut bytes = BytesMut::with_capacity(frame_length + 4);
+    bytes.extend_from_slice(&prefix);
+    bytes.resize(frame_length + 4, 0);
+    stream.read_exact(&mut bytes[4..]).await.ok()?;
+    frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
+        .ok()
+        .flatten()
 }
 
 #[tokio::test]
@@ -2094,6 +2110,234 @@ async fn p3_max_idle_time_observes_partial_read_activity_like_all_idle_timer() {
     assert_eq!(event_address, address.to_string());
     client.shutdown().await;
     peer.abort();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn p16_slow_channel_observer_does_not_block_transport_and_is_cancelled_on_shutdown() {
+    struct Listener {
+        entered: tokio::sync::Notify,
+        live: Arc<AtomicUsize>,
+    }
+    struct Live(Arc<AtomicUsize>);
+    impl Drop for Live {
+        fn drop(&mut self) {
+            self.0.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+    impl ChannelEventListener for Listener {
+        fn on_active_async<'a>(
+            &'a self,
+            _: &'a str,
+        ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+            Box::pin(async move {
+                self.live.fetch_add(1, Ordering::SeqCst);
+                let _live = Live(self.live.clone());
+                self.entered.notify_one();
+                std::future::pending::<()>().await;
+            })
+        }
+    }
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let request = read_command(&mut stream).await;
+        let mut response = command(42);
+        response.opaque = request.opaque;
+        response.mark_response();
+        write_command(&mut stream, &response).await;
+    });
+    let observer = Arc::new(Listener {
+        entered: tokio::sync::Notify::new(),
+        live: Arc::new(AtomicUsize::new(0)),
+    });
+    let client = RemotingClient::with_config_and_channel_event_listener(
+        ClientConfig {
+            scan_available_nameserver: false,
+            ..ClientConfig::default()
+        },
+        Some(observer.clone()),
+    )
+    .unwrap();
+    client.start().unwrap();
+
+    assert_eq!(
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            client.invoke(
+                &address.to_string(),
+                command(1),
+                Instant::now() + Duration::from_secs(2),
+            ),
+        )
+        .await
+        .expect("transport request must not wait for the observer")
+        .unwrap()
+        .code,
+        42
+    );
+    tokio::time::timeout(Duration::from_secs(1), observer.entered.notified())
+        .await
+        .expect("the observer should receive the active event");
+    assert_eq!(observer.live.load(Ordering::SeqCst), 1);
+    tokio::time::timeout(Duration::from_secs(1), client.shutdown())
+        .await
+        .expect("shutdown should cancel the pending observer");
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while observer.live.load(Ordering::SeqCst) != 0 {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .expect("the async observer should finish cancellation after shutdown");
+    assert_eq!(observer.live.load(Ordering::SeqCst), 0);
+    peer.await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn p16_slow_sync_channel_observer_does_not_block_transport_runtime() {
+    struct Listener {
+        entered: Arc<std::sync::atomic::AtomicBool>,
+        release: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
+    }
+    impl ChannelEventListener for Listener {
+        fn on_connect(&self, _: &str) {
+            self.entered.store(true, Ordering::Release);
+            let _ = self
+                .release
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_millis(1500));
+        }
+    }
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let entered = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let peer_entered = entered.clone();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let Some(request) = try_read_command(&mut stream).await else {
+            return;
+        };
+        while !peer_entered.load(Ordering::Acquire) {
+            tokio::task::yield_now().await;
+        }
+        let mut response = command(42);
+        response.opaque = request.opaque;
+        response.mark_response();
+        write_command(&mut stream, &response).await;
+    });
+
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let observer = Arc::new(Listener {
+        entered,
+        release: std::sync::Mutex::new(release_rx),
+    });
+    let client = RemotingClient::with_config_and_channel_event_listener(
+        ClientConfig {
+            scan_available_nameserver: false,
+            ..ClientConfig::default()
+        },
+        Some(observer),
+    )
+    .unwrap();
+    client.start().unwrap();
+
+    let result = tokio::time::timeout(
+        Duration::from_millis(750),
+        client.invoke(
+            &address.to_string(),
+            command(1),
+            Instant::now() + Duration::from_secs(2),
+        ),
+    )
+    .await;
+    let _ = release_tx.send(());
+    client.shutdown().await;
+    let _ = peer.await;
+
+    assert_eq!(
+        result
+            .expect("a slow synchronous observer must not stall the Tokio runtime")
+            .unwrap()
+            .code,
+        42
+    );
+}
+
+#[tokio::test]
+async fn p16_channel_events_carry_connection_generation_and_redacted_peer() {
+    struct Listener(Arc<std::sync::Mutex<Vec<ChannelEvent>>>);
+    impl ChannelEventListener for Listener {
+        fn on_channel_event(&self, event: &ChannelEvent) {
+            self.0.lock().unwrap().push(event.clone());
+        }
+    }
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let request = read_command(&mut stream).await;
+        let mut response = command(42);
+        response.opaque = request.opaque;
+        response.mark_response();
+        write_command(&mut stream, &response).await;
+    });
+    let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let client = RemotingClient::with_config_and_channel_event_listener(
+        ClientConfig::default(),
+        Some(Arc::new(Listener(events.clone()))),
+    )
+    .unwrap();
+    client.start().unwrap();
+    assert_eq!(
+        client
+            .invoke(
+                &address.to_string(),
+                command(1),
+                Instant::now() + Duration::from_secs(2),
+            )
+            .await
+            .unwrap()
+            .code,
+        42
+    );
+    peer.await.unwrap();
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if events
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|event| event.event_type == NettyEventType::Active)
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("active event was not delivered");
+
+    {
+        let events = events.lock().unwrap();
+        let connect = events
+            .iter()
+            .find(|event| event.event_type == NettyEventType::Connect)
+            .unwrap();
+        let active = events
+            .iter()
+            .find(|event| event.event_type == NettyEventType::Active)
+            .unwrap();
+        assert!(connect.generation > 0);
+        assert_eq!(connect.generation, active.generation);
+        assert_eq!(connect.remote_addr, address.to_string());
+        assert_eq!(active.remote_addr, address.to_string());
+    }
+    client.shutdown().await;
 }
 
 #[tokio::test]

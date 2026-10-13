@@ -3,6 +3,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rocketmq_classic_core::config::ClientConfig;
 use rocketmq_classic_protocol::heartbeat::{ConsumeFromWhere, MessageModel};
+use rocketmq_classic_remoting::client::TlsConfig;
 
 use crate::{
     config::validate_group,
@@ -35,6 +36,7 @@ pub const DEFAULT_POP_BATCH_NUMS: i32 = 32;
 /// Java 5.5.1 `DefaultMQPushConsumer` settings used by the pull and POP paths.
 pub struct PushConsumerConfig {
     client: ClientConfig,
+    tls_config: Option<TlsConfig>,
     consumer_group: String,
     message_model: MessageModel,
     consume_from_where: ConsumeFromWhere,
@@ -69,6 +71,7 @@ impl PushConsumerConfig {
     pub fn new(consumer_group: impl Into<String>) -> Result<Self, PushConsumerError> {
         Ok(Self {
             client: ClientConfig::new_auto()?,
+            tls_config: None,
             consumer_group: consumer_group.into(),
             message_model: MessageModel::Clustering,
             consume_from_where: ConsumeFromWhere::ConsumeFromLastOffset,
@@ -106,6 +109,17 @@ impl PushConsumerConfig {
 
     pub fn client_config_mut(&mut self) -> &mut ClientConfig {
         &mut self.client
+    }
+
+    pub fn tls_config(&self) -> Option<&TlsConfig> {
+        self.tls_config.as_ref()
+    }
+
+    pub fn set_tls_config(&mut self, value: Option<TlsConfig>) {
+        if value.is_some() {
+            self.client.set_use_tls(true);
+        }
+        self.tls_config = value;
     }
 
     pub fn consumer_group(&self) -> &str {
@@ -605,6 +619,18 @@ fn format_utc_timestamp(seconds: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn explicit_tls_config_enables_client_transport() {
+        let mut config = PushConsumerConfig::new("tls-consumer").unwrap();
+        let tls = TlsConfig {
+            test_mode: false,
+            ..TlsConfig::default()
+        };
+        config.set_tls_config(Some(tls));
+        assert!(config.client_config().use_tls());
+        assert!(!config.tls_config().unwrap().test_mode);
+    }
 
     #[test]
     fn defaults_match_java_push_consumer() {

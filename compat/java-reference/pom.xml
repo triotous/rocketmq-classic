@@ -135,6 +135,36 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-tls-settings-defaults-fixture</id>
+            <phase>verify</phase>
+            <goals><goal>exec</goal></goals>
+            <configuration>
+              <executable>${java.home}/bin/java</executable>
+              <arguments>
+                <argument>-cp</argument><classpath/>
+                <argument>compat.TlsSettingsFixtures</argument>
+                <argument>${project.basedir}/../../fixtures/security/tls-settings-defaults.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>verify-tls-settings-system-properties-fixture</id>
+            <phase>verify</phase>
+            <goals><goal>exec</goal></goals>
+            <configuration>
+              <executable>${java.home}/bin/java</executable>
+              <arguments>
+                <argument>-Dtls.ciphers=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256</argument>
+                <argument>-Dtls.protocols=TLSv1.2,TLSv1.3</argument>
+                <argument>-cp</argument><classpath/>
+                <argument>compat.TlsSettingsFixtures</argument>
+                <argument>${project.basedir}/../../fixtures/security/tls-settings-system-properties.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-runtime-address-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>
@@ -378,6 +408,54 @@
               <mainClass>compat.RequestReplyFixtures</mainClass>
               <arguments>
                 <argument>${project.basedir}/../../fixtures/producer/request-reply.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>verify-java-acl-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.AclFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/security/acl-signatures.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>verify-java-trace-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.TraceFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/tracing/trace-records.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>verify-java-namespace-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.NamespaceFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/namespace/namespace-util.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>verify-java-topic-validator-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.TopicValidatorFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/namespace/topic-validator.json</argument>
                 <argument>--verify</argument>
               </arguments>
             </configuration>

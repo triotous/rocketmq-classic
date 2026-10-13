@@ -20,10 +20,11 @@ pub use basic::{
     PollingInfoResponseHeader, PopLiteMessageRequestHeader, PopLiteMessageResponseHeader,
     PopMessageRequestHeader, PopMessageResponseHeader, PullMessageRequestHeader,
     PullMessageResponseHeader, QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
-    ReplyMessageRequestHeader, ResetOffsetRequestHeader, SearchOffsetRequestHeader,
-    SearchOffsetResponseHeader, SendMessageRequestHeaderV1, SendMessageRequestHeaderV2,
-    SendMessageResponseHeader, UnlockBatchMqRequestHeader, UnregisterClientRequestHeader,
-    UnregisterClientResponseHeader, UpdateConsumerOffsetRequestHeader,
+    RecallMessageRequestHeader, RecallMessageResponseHeader, ReplyMessageRequestHeader,
+    ResetOffsetRequestHeader, SearchOffsetRequestHeader, SearchOffsetResponseHeader,
+    SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
+    UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
+    UpdateConsumerOffsetRequestHeader,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

@@ -19,6 +19,7 @@ publish = false
 [workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["raw_value"] }
+yaml_serde = "0.10.7"
 thiserror = "2.0"
 tracing = "0.1"
 bytes = "1.10.1"
@@ -37,6 +38,9 @@ windows-sys = { version = "0.61.2", features = ["Win32_NetworkManagement_IpHelpe
 pkcs8 = { version = "0.10.2", features = ["3des", "encryption", "pem", "sha1-insecure"] }
 des = { version = "0.8.1", features = ["zeroize"] }
 md-5 = "0.10.6"
+hmac = "0.12.1"
+sha1 = "0.10.7"
+sha2 = "0.10.9"
 base64 = "0.22.1"
 cbc = { version = "0.1.2", features = ["alloc", "block-padding"] }
 cipher = "0.4.4"

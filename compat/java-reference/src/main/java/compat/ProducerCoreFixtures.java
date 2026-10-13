@@ -12,12 +12,17 @@ import java.util.TreeSet;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import org.apache.rocketmq.client.Validators;
+import org.apache.rocketmq.client.hook.CheckForbiddenContext;
+import org.apache.rocketmq.client.hook.SendMessageContext;
+import org.apache.rocketmq.client.impl.CommunicationMode;
 import org.apache.rocketmq.client.producer.DefaultMQProducer;
 import org.apache.rocketmq.common.message.Message;
 import org.apache.rocketmq.common.message.MessageBatch;
+import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.common.message.MessageAccessor;
 import org.apache.rocketmq.common.message.MessageClientIDSetter;
 import org.apache.rocketmq.common.message.MessageConst;
+import org.apache.rocketmq.common.message.MessageType;
 import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.common.topic.TopicValidator;
 import org.apache.rocketmq.remoting.protocol.RequestCode;
@@ -115,6 +120,8 @@ public final class ProducerCoreFixtures {
         defaults.put("backPressureForAsyncSendSize", producer.getBackPressureForAsyncSendSize());
         defaults.put("retryResponseCodes", new TreeSet<>(producer.getRetryResponseCodes()));
         result.put("defaults", defaults);
+        result.put("checkForbiddenContext", checkForbiddenContext());
+        result.put("sendMessageContext", sendMessageContext());
 
         Map<String, Object> batchSettings = new TreeMap<>();
         DefaultMQProducer configuredBatch = new DefaultMQProducer("batch-settings");
@@ -243,6 +250,94 @@ public final class ProducerCoreFixtures {
 
         result.put("batchValidation", batchCases());
         result.put("batchEncoding", batchEncoding());
+        return result;
+    }
+
+    private static Map<String, Object> checkForbiddenContext() {
+        CheckForbiddenContext context = new CheckForbiddenContext();
+        context.setNameSrvAddr("namesrv.example:9876");
+        context.setGroup("producer-group");
+        context.setMessage(new Message("orders", "body".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        context.setMq(new MessageQueue("orders", "broker-a", 7));
+        context.setBrokerAddr("broker.example:10911");
+        context.setCommunicationMode(CommunicationMode.ASYNC);
+        context.setSendResult(null);
+        context.setException(null);
+        context.setArg("opaque-argument");
+        context.setUnitMode(true);
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("nameSrvAddr", context.getNameSrvAddr());
+        result.put("group", context.getGroup());
+        result.put("messageTopic", context.getMessage().getTopic());
+        result.put("messageBody", new String(context.getMessage().getBody(), java.nio.charset.StandardCharsets.UTF_8));
+        result.put("queueTopic", context.getMq().getTopic());
+        result.put("queueBroker", context.getMq().getBrokerName());
+        result.put("queueId", context.getMq().getQueueId());
+        result.put("brokerAddr", context.getBrokerAddr());
+        result.put("communicationMode", context.getCommunicationMode().name());
+        result.put("sendResultIsNull", context.getSendResult() == null);
+        result.put("exceptionIsNull", context.getException() == null);
+        result.put("arg", context.getArg());
+        result.put("unitMode", context.isUnitMode());
+        result.put("communicationModes", Arrays.stream(CommunicationMode.values())
+            .map(Enum::name).collect(java.util.stream.Collectors.toList()));
+        return result;
+    }
+
+    private static Map<String, Object> sendMessageContext() {
+        SendMessageContext defaults = new SendMessageContext();
+        Map<String, Object> defaultValues = new TreeMap<>();
+        defaultValues.put("producerGroupIsNull", defaults.getProducerGroup() == null);
+        defaultValues.put("messageIsNull", defaults.getMessage() == null);
+        defaultValues.put("queueIsNull", defaults.getMq() == null);
+        defaultValues.put("brokerAddrIsNull", defaults.getBrokerAddr() == null);
+        defaultValues.put("bornHostIsNull", defaults.getBornHost() == null);
+        defaultValues.put("communicationModeIsNull", defaults.getCommunicationMode() == null);
+        defaultValues.put("sendResultIsNull", defaults.getSendResult() == null);
+        defaultValues.put("exceptionIsNull", defaults.getException() == null);
+        defaultValues.put("traceContextIsNull", defaults.getMqTraceContext() == null);
+        defaultValues.put("propsIsNull", defaults.getProps() == null);
+        defaultValues.put("producerIsNull", defaults.getProducer() == null);
+        defaultValues.put("messageType", defaults.getMsgType().name());
+        defaultValues.put("namespaceIsNull", defaults.getNamespace() == null);
+
+        SendMessageContext context = new SendMessageContext();
+        context.setProducerGroup("producer-group");
+        context.setMessage(new Message("orders", "body".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        context.setMq(new MessageQueue("orders", "broker-a", 7));
+        context.setBrokerAddr("broker.example:10911");
+        context.setBornHost("192.0.2.1");
+        context.setProducer(new DefaultMQProducer().getDefaultMQProducerImpl());
+        context.setCommunicationMode(CommunicationMode.ASYNC);
+        context.setException(new IllegalStateException("hook failure"));
+        context.setMqTraceContext("trace-context");
+        context.setProps(Map.of("source", "hook"));
+        context.setMsgType(MessageType.Delay_Msg);
+        context.setNamespace("tenant");
+        Map<String, Object> values = new TreeMap<>();
+        values.put("producerGroup", context.getProducerGroup());
+        values.put("messageTopic", context.getMessage().getTopic());
+        values.put("messageBody", new String(context.getMessage().getBody(), java.nio.charset.StandardCharsets.UTF_8));
+        values.put("queueTopic", context.getMq().getTopic());
+        values.put("queueBroker", context.getMq().getBrokerName());
+        values.put("queueId", context.getMq().getQueueId());
+        values.put("brokerAddr", context.getBrokerAddr());
+        values.put("bornHost", context.getBornHost());
+        values.put("communicationMode", context.getCommunicationMode().name());
+        values.put("producerIsNull", context.getProducer() == null);
+        values.put("exceptionClass", context.getException().getClass().getSimpleName());
+        values.put("exceptionMessage", context.getException().getMessage());
+        values.put("traceContext", context.getMqTraceContext());
+        values.put("props", context.getProps());
+        values.put("messageType", context.getMsgType().name());
+        values.put("namespace", context.getNamespace());
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("defaults", defaultValues);
+        result.put("values", values);
+        result.put("communicationModes", Arrays.stream(CommunicationMode.values())
+            .map(Enum::name).collect(java.util.stream.Collectors.toList()));
         return result;
     }
 

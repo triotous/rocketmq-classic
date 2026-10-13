@@ -8,7 +8,14 @@ use std::{
 
 use bytes::BytesMut;
 use rocketmq_classic_common::message::{Message, MessageQueue, decode_properties};
-use rocketmq_classic_producer::{Producer, ProducerConfig, ProducerError, SendStatus};
+use rocketmq_classic_core::{
+    runtime::ClientRuntimeManager,
+    trace::{MessageType, TraceBean, TraceContext, TraceType},
+};
+use rocketmq_classic_producer::{
+    Producer, ProducerConfig, ProducerError, RecallMessageHandle, SendStatus, TraceDispatcher,
+    TraceProducerKind,
+};
 use rocketmq_classic_protocol::{
     codes::{request, response},
     header::HeaderMap,
@@ -28,7 +35,10 @@ use tokio::{
 struct SentRequest {
     broker: String,
     request_code: i32,
+    producer_group: Option<String>,
+    topic: Option<String>,
     body: Option<Vec<u8>>,
+    properties: Option<String>,
     unique_id: Option<String>,
     oneway: bool,
 }
@@ -175,12 +185,29 @@ async fn broker_peer(
                 .ext_fields
                 .as_ref()
                 .and_then(|fields| fields.get("i"))
-                .map(|value| decode_properties(value));
-            let unique_id = properties.and_then(|properties| properties.get("UNIQ_KEY").cloned());
+                .cloned();
+            let decoded_properties = properties
+                .as_deref()
+                .map(decode_properties)
+                .unwrap_or_default();
+            let unique_id = decoded_properties.get("UNIQ_KEY").cloned();
+            let producer_group = command
+                .ext_fields
+                .as_ref()
+                .and_then(|fields| fields.get("a"))
+                .cloned();
+            let topic = command
+                .ext_fields
+                .as_ref()
+                .and_then(|fields| fields.get("b"))
+                .cloned();
             requests.lock().unwrap().push(SentRequest {
                 broker: broker.to_owned(),
                 request_code: command.code,
+                producer_group,
+                topic,
                 body: command.body.clone(),
+                properties,
                 unique_id,
                 oneway: command.is_oneway(),
             });
@@ -225,6 +252,32 @@ async fn broker_peer(
     (address, task)
 }
 
+async fn recall_broker_peer() -> (String, JoinHandle<()>, Arc<Mutex<Vec<RemotingCommand>>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let requests_from_task = requests.clone();
+    let task = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        while let Some(command) = read_command(&mut stream).await {
+            if command.code == request::RECALL_MESSAGE {
+                requests_from_task.lock().unwrap().push(command.clone());
+                write_response(
+                    &mut stream,
+                    &command,
+                    response::SUCCESS,
+                    None,
+                    Some([("msgId".into(), "recalled-id".into())].into()),
+                )
+                .await;
+            } else if !command.is_oneway() {
+                write_response(&mut stream, &command, response::SUCCESS, None, None).await;
+            }
+        }
+    });
+    (address, task, requests)
+}
+
 fn producer_config(group: &str, nameserver: &str) -> ProducerConfig {
     let mut config = ProducerConfig::new(group).unwrap();
     config
@@ -234,6 +287,302 @@ fn producer_config(group: &str, nameserver: &str) -> ProducerConfig {
         .client_config_mut()
         .set_instance_name(Some(format!("phase7-{group}")));
     config
+}
+
+struct UnknownTransaction;
+
+impl rocketmq_classic_producer::TransactionListener for UnknownTransaction {
+    fn execute_local_transaction(
+        &self,
+        _message: &mut Message,
+        _argument: Option<&(dyn std::any::Any + Send + Sync)>,
+    ) -> Result<
+        Option<rocketmq_classic_producer::LocalTransactionState>,
+        rocketmq_classic_producer::TransactionCallbackError,
+    > {
+        Ok(Some(
+            rocketmq_classic_producer::LocalTransactionState::Unknown,
+        ))
+    }
+
+    fn check_local_transaction(
+        &self,
+        _message: &mut rocketmq_classic_common::message::MessageExt,
+    ) -> Result<
+        Option<rocketmq_classic_producer::LocalTransactionState>,
+        rocketmq_classic_producer::TransactionCallbackError,
+    > {
+        Ok(Some(
+            rocketmq_classic_producer::LocalTransactionState::Unknown,
+        ))
+    }
+}
+
+#[tokio::test]
+async fn transaction_half_send_wraps_topic_and_group_once() {
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let (broker, broker_task) =
+        broker_peer("broker-a", attempts.clone(), 0, false, requests.clone()).await;
+    let route = route_body(&[("broker-a", &broker)]);
+    let (nameserver, nameserver_task, route_requests) = name_server_peer(route, None).await;
+    let mut config = producer_config("transaction-namespace", &nameserver);
+    config
+        .client_config_mut()
+        .set_namespace(Some("tenant".into()));
+    let producer = rocketmq_classic_producer::TransactionProducer::new(config);
+    producer.set_transaction_listener(Some(Arc::new(UnknownTransaction)));
+    producer.start().await.unwrap();
+
+    let mut message = Message::new("orders", b"half-message".to_vec());
+    producer
+        .send_message_in_transaction(&mut message, None)
+        .await
+        .unwrap();
+
+    assert_eq!(message.topic(), "tenant%orders");
+    assert!(
+        route_requests
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|topic| topic == "tenant%orders")
+    );
+    let half_send = requests
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|request| request.request_code == request::SEND_MESSAGE_V2)
+        .cloned()
+        .expect("transaction half message reached the Broker");
+    assert_eq!(half_send.topic.as_deref(), Some("tenant%orders"));
+    assert_eq!(
+        half_send.producer_group.as_deref(),
+        Some("tenant%transaction-namespace")
+    );
+    let properties = decode_properties(half_send.properties.as_deref().unwrap_or_default());
+    assert_eq!(properties.get("TRAN_MSG").map(String::as_str), Some("true"));
+    assert_eq!(
+        properties.get("PGROUP").map(String::as_str),
+        Some("tenant%transaction-namespace")
+    );
+
+    producer.shutdown().await.unwrap();
+    nameserver_task.abort();
+    broker_task.abort();
+}
+
+#[tokio::test]
+async fn recall_wraps_topic_and_group_once_at_the_namespace_wire_boundary() {
+    let (broker, broker_task, broker_requests) = recall_broker_peer().await;
+    let route = route_body(&[("broker-a", &broker)]);
+    let (nameserver, nameserver_task, route_requests) = name_server_peer(route, None).await;
+    let mut config = producer_config("recall-namespace", &nameserver);
+    config
+        .client_config_mut()
+        .set_namespace(Some("tenant".into()));
+    let producer = Arc::new(Producer::new(config));
+    producer.start().await.unwrap();
+
+    let handle = RecallMessageHandle::build_handle("orders", "broker-a", "123", "message-id");
+    assert_eq!(
+        producer.recall_message("orders", &handle).await.unwrap(),
+        "recalled-id"
+    );
+
+    assert!(
+        route_requests
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|topic| topic == "tenant%orders")
+    );
+    {
+        let requests = broker_requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        let fields = requests[0].ext_fields.as_ref().unwrap();
+        assert_eq!(
+            fields.get("topic").map(String::as_str),
+            Some("tenant%orders")
+        );
+        assert_eq!(
+            fields.get("producerGroup").map(String::as_str),
+            Some("tenant%recall-namespace")
+        );
+        assert_eq!(fields.get("recallHandle"), Some(&handle));
+    }
+
+    producer.shutdown().await.unwrap();
+    nameserver_task.abort();
+    broker_task.abort();
+}
+
+#[tokio::test]
+async fn trace_flush_waits_for_scripted_broker_delivery() {
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let (broker, broker_task) =
+        broker_peer("broker-a", attempts.clone(), 0, false, requests.clone()).await;
+    let route = route_body(&[("broker-a", &broker)]);
+    let (nameserver, nameserver_task, _) = name_server_peer(route, None).await;
+    let config = producer_config("trace-flush-parent", &nameserver);
+    let dispatcher = TraceDispatcher::new(
+        config.client_config(),
+        "trace-flush-parent",
+        TraceProducerKind::Produce,
+        None,
+        ClientRuntimeManager::new(),
+        None,
+    )
+    .unwrap();
+    dispatcher.start().await.unwrap();
+    assert!(dispatcher.append(TraceContext {
+        trace_type: Some(TraceType::Pub),
+        timestamp_millis: 1,
+        region_id: Some("region-a".into()),
+        region_name: Some(String::new()),
+        group_name: Some("trace-flush-parent".into()),
+        cost_time_millis: 2,
+        success: true,
+        request_id: None,
+        context_code: 0,
+        access_channel: None,
+        trace_beans: Some(vec![TraceBean {
+            topic: Some("orders".into()),
+            message_id: Some("message-id".into()),
+            body_length: 7,
+            message_type: Some(MessageType::Normal),
+            ..TraceBean::default()
+        }]),
+    }));
+
+    dispatcher.flush().await.unwrap();
+
+    let delivered = requests.lock().unwrap().clone();
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    assert_eq!(delivered.len(), 1);
+    assert_eq!(delivered[0].broker, "broker-a");
+    let body = String::from_utf8(delivered[0].body.clone().unwrap()).unwrap();
+    assert!(body.contains("Pub\u{1}"));
+    assert!(body.contains("message-id"));
+    dispatcher.shutdown().await.unwrap();
+    nameserver_task.abort();
+    broker_task.abort();
+}
+
+#[tokio::test]
+async fn trace_shutdown_waits_for_scripted_broker_delivery() {
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let (broker, broker_task) =
+        broker_peer("broker-a", attempts.clone(), 0, false, requests.clone()).await;
+    let route = route_body(&[("broker-a", &broker)]);
+    let (nameserver, nameserver_task, _) = name_server_peer(route, None).await;
+    let mut config = producer_config("trace-shutdown-parent", &nameserver);
+    config
+        .client_config_mut()
+        .set_namespace(Some("tenant".into()));
+    config
+        .client_config_mut()
+        .set_namespace_v2(Some("tenant-v2".into()));
+    let dispatcher = TraceDispatcher::new(
+        config.client_config(),
+        "tenant%trace-shutdown-parent",
+        TraceProducerKind::Produce,
+        Some("custom-trace"),
+        ClientRuntimeManager::new(),
+        None,
+    )
+    .unwrap();
+    dispatcher.start().await.unwrap();
+    assert!(dispatcher.append(TraceContext {
+        trace_type: Some(TraceType::Pub),
+        timestamp_millis: 1,
+        region_id: Some("region-a".into()),
+        region_name: Some(String::new()),
+        group_name: Some("trace-shutdown-parent".into()),
+        cost_time_millis: 2,
+        success: true,
+        request_id: None,
+        context_code: 0,
+        access_channel: None,
+        trace_beans: Some(vec![TraceBean {
+            topic: Some("orders".into()),
+            message_id: Some("message-id".into()),
+            body_length: 7,
+            message_type: Some(MessageType::Normal),
+            ..TraceBean::default()
+        }]),
+    }));
+
+    dispatcher.shutdown().await.unwrap();
+
+    let delivered = requests.lock().unwrap().clone();
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    assert_eq!(delivered.len(), 1);
+    assert_eq!(delivered[0].broker, "broker-a");
+    assert_eq!(delivered[0].topic.as_deref(), Some("custom-trace"));
+    assert!(delivered[0].producer_group.as_deref().is_some_and(|group| {
+        group.starts_with("_INNER_TRACE_PRODUCER-tenant%trace-shutdown-parent-PRODUCE-")
+    }));
+    let body = String::from_utf8(delivered[0].body.clone().unwrap()).unwrap();
+    assert!(body.contains("Pub\u{1}"));
+    assert!(body.contains("message-id"));
+    nameserver_task.abort();
+    broker_task.abort();
+}
+
+#[tokio::test]
+async fn dropping_trace_dispatcher_flushes_queued_data() {
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let (broker, broker_task) =
+        broker_peer("broker-a", attempts.clone(), 0, false, requests.clone()).await;
+    let route = route_body(&[("broker-a", &broker)]);
+    let (nameserver, nameserver_task, _) = name_server_peer(route, None).await;
+    let config = producer_config("trace-drop-parent", &nameserver);
+    let dispatcher = TraceDispatcher::new(
+        config.client_config(),
+        "trace-drop-parent",
+        TraceProducerKind::Produce,
+        Some("custom-trace"),
+        ClientRuntimeManager::new(),
+        None,
+    )
+    .unwrap();
+    dispatcher.start().await.unwrap();
+    assert!(dispatcher.append(TraceContext {
+        trace_type: Some(TraceType::Pub),
+        timestamp_millis: 1,
+        region_id: Some("region-a".into()),
+        region_name: Some(String::new()),
+        group_name: Some("trace-drop-parent".into()),
+        cost_time_millis: 2,
+        success: true,
+        request_id: None,
+        context_code: 0,
+        access_channel: None,
+        trace_beans: Some(vec![TraceBean {
+            topic: Some("orders".into()),
+            message_id: Some("message-id".into()),
+            body_length: 7,
+            message_type: Some(MessageType::Normal),
+            ..TraceBean::default()
+        }]),
+    }));
+
+    drop(dispatcher);
+    wait_for_attempts(&attempts, 1).await;
+
+    let delivered = requests.lock().unwrap().clone();
+    assert_eq!(delivered.len(), 1);
+    assert_eq!(delivered[0].broker, "broker-a");
+    assert_eq!(delivered[0].topic.as_deref(), Some("custom-trace"));
+    let body = String::from_utf8(delivered[0].body.clone().unwrap()).unwrap();
+    assert!(body.contains("Pub\u{1}"));
+    assert!(body.contains("message-id"));
+    nameserver_task.abort();
+    broker_task.abort();
 }
 
 #[tokio::test]
@@ -302,7 +651,9 @@ async fn default_topic_route_fallback_and_async_mode_response_policy_match_java(
     let route = route_body(&[("broker-a", &broker)]);
     let (nameserver, nameserver_task, route_requests) =
         name_server_peer(route, Some("orders".to_owned())).await;
-    let producer = Arc::new(Producer::new(producer_config("future-policy", &nameserver)));
+    let mut config = producer_config("future-policy", &nameserver);
+    config.set_retry_times_when_send_async_failed(0);
+    let producer = Arc::new(Producer::new(config));
     producer.start().await.unwrap();
 
     let message = Message::new("orders", b"future-body".to_vec());

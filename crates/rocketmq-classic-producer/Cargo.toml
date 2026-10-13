@@ -7,16 +7,17 @@ license.workspace = true
 publish = false
 
 [dependencies]
+base64.workspace = true
 rocketmq-classic-common = { path = "../rocketmq-classic-common" }
 rocketmq-classic-core = { path = "../rocketmq-classic-core" }
 rocketmq-classic-protocol = { path = "../rocketmq-classic-protocol" }
 rocketmq-classic-remoting = { path = "../rocketmq-classic-remoting" }
 thiserror.workspace = true
 tokio.workspace = true
+tracing.workspace = true
 rand.workspace = true
 
 [dev-dependencies]
-base64.workspace = true
 bytes.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["test-util"] }

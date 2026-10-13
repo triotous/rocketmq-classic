@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use rocketmq_classic_core::config::{ClientConfig, ConfigError};
 use rocketmq_classic_protocol::heartbeat::{ConsumeFromWhere, MessageModel};
+use rocketmq_classic_remoting::client::TlsConfig;
 
 use crate::{
     config::DEFAULT_CONSUMER_GROUP,
@@ -27,6 +28,7 @@ pub const DEFAULT_LITE_CONSUMER_PULL_TIMEOUT_MILLIS: i64 = 10_000;
 /// Java 5.5.1 `DefaultLitePullConsumer` configuration.
 pub struct LitePullConsumerConfig {
     client: ClientConfig,
+    tls_config: Option<TlsConfig>,
     consumer_group: String,
     consumer_timeout_millis_when_suspend: i64,
     consumer_pull_timeout_millis: i64,
@@ -64,6 +66,7 @@ impl LitePullConsumerConfig {
         client.set_enable_stream_request_type(true);
         Ok(Self {
             client,
+            tls_config: None,
             consumer_group: consumer_group.into(),
             consumer_timeout_millis_when_suspend: DEFAULT_LITE_CONSUMER_TIMEOUT_MILLIS_WHEN_SUSPEND,
             consumer_pull_timeout_millis: DEFAULT_LITE_CONSUMER_PULL_TIMEOUT_MILLIS,
@@ -97,6 +100,17 @@ impl LitePullConsumerConfig {
     /// Mutable access to Lite's inherited Java `ClientConfig` settings.
     pub fn client_config_mut(&mut self) -> &mut ClientConfig {
         &mut self.client
+    }
+
+    pub fn tls_config(&self) -> Option<&TlsConfig> {
+        self.tls_config.as_ref()
+    }
+
+    pub fn set_tls_config(&mut self, value: Option<TlsConfig>) {
+        if value.is_some() {
+            self.client.set_use_tls(true);
+        }
+        self.tls_config = value;
     }
 
     pub fn consumer_group(&self) -> &str {
@@ -310,5 +324,22 @@ impl LitePullConsumerConfig {
 
     pub fn set_customized_trace_topic(&mut self, value: Option<String>) {
         self.client.set_trace_topic(value);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn explicit_tls_config_enables_client_transport() {
+        let mut config = LitePullConsumerConfig::new("tls-lite-consumer").unwrap();
+        let tls = TlsConfig {
+            test_mode: false,
+            ..TlsConfig::default()
+        };
+        config.set_tls_config(Some(tls));
+        assert!(config.client_config().use_tls());
+        assert!(!config.tls_config().unwrap().test_mode);
     }
 }

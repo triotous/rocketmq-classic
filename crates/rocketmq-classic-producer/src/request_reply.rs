@@ -346,17 +346,28 @@ mod tests {
     }
 
     async fn producer(name: &str) -> (Arc<Producer>, [MessageQueue; 2], String) {
+        producer_with_config(ProducerConfig::new(name).unwrap()).await
+    }
+
+    async fn producer_with_config(
+        config: ProducerConfig,
+    ) -> (Arc<Producer>, [MessageQueue; 2], String) {
+        let mut client_config = config.client_config().clone();
+        let topic = client_config
+            .with_namespace(Some("orders"))
+            .unwrap()
+            .unwrap_or_else(|| "orders".into());
         let producer = Arc::new(Producer::with_runtime_manager(
-            ProducerConfig::new(name).unwrap(),
+            config,
             ClientRuntimeManager::new(),
         ));
         producer.start().await.unwrap();
         let queues = [
-            MessageQueue::new("orders", "broker-a", 0),
-            MessageQueue::new("orders", "broker-b", 0),
+            MessageQueue::new(&topic, "broker-a", 0),
+            MessageQueue::new(&topic, "broker-b", 0),
         ];
         producer.cache_publish_info(
-            "orders",
+            &topic,
             Arc::new(TopicSnapshot {
                 route: Arc::new(serde_json::from_str::<TopicRouteData>("{}").unwrap()),
                 publish_queues: queues.to_vec(),
@@ -579,6 +590,37 @@ mod tests {
         }
         producer.shutdown().await.unwrap();
         assert!(producer.request_callback_tasks.lock().await.is_empty());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn namespaced_request_wraps_its_topic_once_before_send() {
+        let mut config = ProducerConfig::new("namespaced-request").unwrap();
+        config
+            .client_config_mut()
+            .set_namespace(Some("tenant".into()));
+        let (producer, queues, _) = producer_with_config(config).await;
+        queue_success(&producer, 1);
+
+        let mut message = Message::new("orders", b"request".to_vec());
+        assert!(matches!(
+            producer
+                .request(&mut message, Duration::from_millis(80))
+                .await,
+            Err(ProducerError::RequestReplyTimeout { .. })
+        ));
+
+        assert_eq!(message.topic(), "orders");
+        let attempts = take_attempts(&producer);
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[0].topic, "tenant%orders");
+        assert_eq!(attempts[0].queue.topic(), Some("tenant%orders"));
+        assert_eq!(queues[0].topic(), Some("tenant%orders"));
+        let properties = decode_properties(attempts[0].properties.as_deref().unwrap_or_default());
+        assert_eq!(
+            properties.get(PROPERTY_MESSAGE_TTL).map(String::as_str),
+            Some("80")
+        );
+        producer.shutdown().await.unwrap();
     }
 
     #[tokio::test]

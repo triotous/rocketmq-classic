@@ -5,7 +5,7 @@ use std::{
 };
 use tokio::sync::Mutex as AsyncMutex;
 
-use rocketmq_classic_remoting::client::RpcHook;
+use rocketmq_classic_remoting::client::{RpcHook, TlsConfig};
 
 use super::{
     ClientRuntime, NullableTableEntry, RuntimeError, TableCompute, TableComputeIfAbsent,
@@ -20,6 +20,7 @@ struct Entry {
     config: ClientConfig,
     properties: HashMap<String, String>,
     hook: Option<Arc<dyn RpcHook>>,
+    tls_config: Option<TlsConfig>,
     initialization: AsyncMutex<()>,
     runtime: OnceLock<Arc<ClientRuntime>>,
 }
@@ -238,15 +239,29 @@ impl ClientRuntimeManager {
         config: &ClientConfig,
         hook: Option<Arc<dyn RpcHook>>,
     ) -> Result<Arc<ClientRuntime>, RuntimeError> {
+        self.get_or_create_with_hook_and_tls_config(config, hook, None)
+            .await
+    }
+
+    /// Creates a shared runtime with an explicit Rust TLS configuration.
+    /// The first configuration used for a Java-compatible client identity owns
+    /// that shared runtime, including its transport settings.
+    pub async fn get_or_create_with_hook_and_tls_config(
+        &self,
+        config: &ClientConfig,
+        hook: Option<Arc<dyn RpcHook>>,
+        tls_config: Option<TlsConfig>,
+    ) -> Result<Arc<ClientRuntime>, RuntimeError> {
         let provider = self.top_addressing.clone();
-        self.get_or_create_inner(config, hook, move |entry| {
+        self.get_or_create_inner_with_tls_config(config, hook, tls_config, move |entry| {
             let provider = provider.clone();
             async move {
-                ClientRuntime::construct_with_top_addressing(
+                ClientRuntime::construct_with_top_addressing_and_tls_config(
                     entry.config.clone_client_config(),
                     &entry.properties,
                     entry.hook.clone(),
                     provider,
+                    entry.tls_config.clone(),
                 )
             }
         })
@@ -274,10 +289,26 @@ impl ClientRuntimeManager {
         self.get_or_create_with_hook(config, hook).await
     }
 
+    #[cfg(test)]
     async fn get_or_create_inner<F, Fut>(
         &self,
         config: &ClientConfig,
         hook: Option<Arc<dyn RpcHook>>,
+        construct: F,
+    ) -> Result<Arc<ClientRuntime>, RuntimeError>
+    where
+        F: Fn(Arc<Entry>) -> Fut,
+        Fut: Future<Output = Result<ClientRuntime, RuntimeError>>,
+    {
+        self.get_or_create_inner_with_tls_config(config, hook, None, construct)
+            .await
+    }
+
+    async fn get_or_create_inner_with_tls_config<F, Fut>(
+        &self,
+        config: &ClientConfig,
+        hook: Option<Arc<dyn RpcHook>>,
+        tls_config: Option<TlsConfig>,
         construct: F,
     ) -> Result<Arc<ClientRuntime>, RuntimeError>
     where
@@ -306,6 +337,7 @@ impl ClientRuntimeManager {
                         config: config.clone(),
                         properties,
                         hook: hook.clone(),
+                        tls_config: tls_config.clone(),
                         initialization: AsyncMutex::new(()),
                         runtime: OnceLock::new(),
                     })
@@ -1137,6 +1169,7 @@ impl FactoryTable {
                 config: value.config_snapshot(),
                 properties: value.sharing_properties.clone(),
                 hook: value.sharing_hook.clone(),
+                tls_config: value.sharing_tls_config.clone(),
                 initialization: AsyncMutex::new(()),
                 runtime: OnceLock::from(value.clone()),
             };
@@ -1693,9 +1726,38 @@ impl FactoryEntrySetView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rocketmq_classic_remoting::TransportError;
     use std::hash::{DefaultHasher, Hash, Hasher};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tokio::sync::Barrier;
+
+    #[tokio::test]
+    async fn explicit_tls_config_reaches_runtime_construction_before_workers_start() {
+        let manager = ClientRuntimeManager::new();
+        let mut config = ClientConfig::new("explicit-client-tls");
+        config.set_use_tls(true);
+        let tls = TlsConfig {
+            test_mode: false,
+            client_cert_pem: Some(b"malformed client certificate".to_vec()),
+            client_key_pem: Some(b"malformed client key".to_vec()),
+            ..TlsConfig::default()
+        };
+
+        let result = manager
+            .get_or_create_with_hook_and_tls_config(&config, None, Some(tls))
+            .await;
+        assert!(matches!(
+            result,
+            Err(RuntimeError::Transport(TransportError::Tls(_)))
+        ));
+        assert!(
+            !manager
+                .entries
+                .lock()
+                .unwrap()
+                .contains_key(&config.build_client_id())
+        );
+    }
 
     #[tokio::test]
     async fn unconditional_removal_matches_java_without_stale_identity_cleanup_regression() {

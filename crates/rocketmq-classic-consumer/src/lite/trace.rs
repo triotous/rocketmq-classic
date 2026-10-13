@@ -8,13 +8,18 @@ use std::{
 };
 
 use rocketmq_classic_common::message::{Message, MessageExt, constants::*};
-use rocketmq_classic_core::config::{AccessChannel, ClientConfig};
+use rocketmq_classic_core::{
+    RpcHook,
+    config::{AccessChannel, ClientConfig},
+};
 use rocketmq_classic_producer::{Producer, ProducerConfig, ProducerError};
 use tokio::{
     sync::{mpsc, oneshot},
     task::JoinHandle,
     time::{Instant, interval_at},
 };
+
+use crate::consume::{ConsumeMessageContext, ConsumeMessageHook};
 
 const TRACE_TOPIC: &str = "RMQ_SYS_TRACE_TOPIC";
 const TRACE_TOPIC_PREFIX: &str = "RMQ_SYS_TRACE_DATA_";
@@ -94,12 +99,66 @@ impl LiteTraceContext {
                     if self.access_channel != Some(AccessChannel::Cloud) {
                         fields.push(self.timestamp_millis.to_string());
                         fields.push(self.group_name.clone());
+                    } else {
+                        fields.push(String::new());
                     }
                     append_fields(&mut encoded, fields);
                 }
             }
         }
         encoded
+    }
+}
+
+/// Internal Java-compatible consume hook installed when Lite tracing is enabled.
+pub(crate) struct LiteConsumeTraceHook {
+    dispatcher: Arc<LiteTraceDispatcher>,
+    consumer_group: String,
+    client_config: ClientConfig,
+}
+
+impl LiteConsumeTraceHook {
+    pub(crate) fn new(
+        dispatcher: Arc<LiteTraceDispatcher>,
+        consumer_group: impl Into<String>,
+        client_config: ClientConfig,
+    ) -> Self {
+        Self {
+            dispatcher,
+            consumer_group: consumer_group.into(),
+            client_config,
+        }
+    }
+}
+
+impl ConsumeMessageHook for LiteConsumeTraceHook {
+    fn hook_name(&self) -> &str {
+        "ConsumeMessageTraceHook"
+    }
+
+    fn consume_message_before(&self, context: &mut ConsumeMessageContext) {
+        context.trace_context = Some(Box::new(epoch_millis()));
+    }
+
+    fn consume_message_after(&self, context: &mut ConsumeMessageContext) {
+        let Some(messages) = context.messages.as_deref() else {
+            return;
+        };
+        let before_timestamp = context
+            .trace_context
+            .as_deref()
+            .and_then(|value| value.downcast_ref::<i64>())
+            .copied()
+            .unwrap_or_else(epoch_millis);
+        for trace in consume_contexts(
+            messages,
+            &self.consumer_group,
+            &self.client_config,
+            before_timestamp,
+            epoch_millis(),
+        ) {
+            let _ = self.dispatcher.append(trace);
+        }
     }
 }
 
@@ -222,8 +281,10 @@ pub enum LiteTraceError {
 /// Asynchronous Lite consume trace publisher using the Java trace wire format.
 pub struct LiteTraceDispatcher {
     producer_config: ProducerConfig,
+    rpc_hook: Option<Arc<dyn RpcHook>>,
     trace_topic_name: String,
     batch_size: usize,
+    trace_producer: Mutex<Option<Arc<Producer>>>,
     sender: mpsc::Sender<TraceCommand>,
     receiver: Mutex<Option<mpsc::Receiver<TraceCommand>>>,
     start_gate: tokio::sync::Mutex<()>,
@@ -237,12 +298,20 @@ impl LiteTraceDispatcher {
         client_config: &ClientConfig,
         consumer_group: &str,
         customized_trace_topic: Option<&str>,
+        rpc_hook: Option<Arc<dyn RpcHook>>,
     ) -> Result<Self, LiteTraceError> {
         let trace_number = TRACE_PRODUCER_COUNTER.fetch_add(1, Ordering::Relaxed) + 1;
-        let mut producer_config = ProducerConfig::new(format!(
-            "{TRACE_GROUP_PREFIX}-{consumer_group}-CONSUME-{trace_number}"
-        ))?;
         let mut producer_client_config = client_config.clone();
+        let namespaced_group = producer_client_config
+            .with_namespace(Some(consumer_group))
+            .map_err(ProducerError::from)?
+            .unwrap_or_else(|| consumer_group.to_owned());
+        let mut producer_config = ProducerConfig::new(format!(
+            "{TRACE_GROUP_PREFIX}-{namespaced_group}-CONSUME-{trace_number}"
+        ))?;
+        // Match Java AsyncTraceDispatcher: retain namespaceV2, while the
+        // generated trace group already contains the host namespace.
+        producer_client_config.set_namespace(None);
         producer_client_config.set_vip_channel_enabled(false);
         producer_client_config.set_enable_trace(false);
         *producer_config.client_config_mut() = producer_client_config;
@@ -259,8 +328,10 @@ impl LiteTraceDispatcher {
         let (sender, receiver) = mpsc::channel(TRACE_CONTEXT_CAPACITY);
         Ok(Self {
             producer_config,
+            rpc_hook,
             trace_topic_name,
             batch_size,
+            trace_producer: Mutex::new(None),
             sender,
             receiver: Mutex::new(Some(receiver)),
             start_gate: tokio::sync::Mutex::new(()),
@@ -272,6 +343,14 @@ impl LiteTraceDispatcher {
 
     pub fn trace_topic_name(&self) -> &str {
         &self.trace_topic_name
+    }
+
+    /// Returns the owned internal producer after the dispatcher has started.
+    pub fn trace_producer(&self) -> Option<Arc<Producer>> {
+        self.trace_producer
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 
     /// Starts the trace producer and its bounded batching worker.
@@ -294,8 +373,15 @@ impl LiteTraceDispatcher {
             client.set_namesrv_addr(Some(address));
         }
         client.set_access_channel(Some(access_channel));
-        let producer = Arc::new(Producer::new(producer_config));
+        let producer = Arc::new(Producer::new_with_rpc_hook(
+            producer_config,
+            self.rpc_hook.clone(),
+        ));
         producer.start().await?;
+        *self
+            .trace_producer
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(producer.clone());
         let receiver = self
             .receiver
             .lock()
@@ -486,6 +572,10 @@ mod tests {
     use super::*;
     use rocketmq_classic_common::message::Message;
 
+    struct NoopRpcHook;
+
+    impl RpcHook for NoopRpcHook {}
+
     #[test]
     fn consume_context_wire_rows_match_java_trace_encoder_layout() {
         let bean = LiteTraceBean {
@@ -533,7 +623,7 @@ mod tests {
         cloud.access_channel = Some(AccessChannel::Cloud);
         assert_eq!(
             cloud.encode(),
-            "SubAfter\u{1}req-1\u{1}msg-1\u{1}5\u{1}true\u{1}order-1 order-2\u{1}0\u{2}"
+            "SubAfter\u{1}req-1\u{1}msg-1\u{1}5\u{1}true\u{1}order-1 order-2\u{1}0\u{1}\u{2}"
         );
     }
 
@@ -571,13 +661,109 @@ mod tests {
     }
 
     #[test]
+    fn lite_consume_trace_hook_appends_before_and_after_rows_from_shared_context() {
+        let mut client = ClientConfig::new("lite-trace-hook");
+        client.set_namespace(Some("ns".to_owned()));
+        let dispatcher =
+            Arc::new(LiteTraceDispatcher::new(&client, "ns%workers", None, None).unwrap());
+        let hook = LiteConsumeTraceHook::new(dispatcher.clone(), "ns%workers", client.clone());
+        let mut message = MessageExt::new(Message::new("ns%orders", b"body".to_vec()));
+        message.set_message_id(Some("msg-1".to_owned()));
+        message
+            .message_mut()
+            .set_system_property(PROPERTY_MSG_REGION, "region-a")
+            .unwrap();
+        let mut context = ConsumeMessageContext::new(
+            "ns%workers",
+            Some(vec![message]),
+            rocketmq_classic_common::message::MessageQueue::new("ns%orders", "broker-a", 0),
+            Some("ns".to_owned()),
+        );
+
+        hook.consume_message_before(&mut context);
+        context.success = true;
+        context.status = Some("CONSUME_SUCCESS".to_owned());
+        hook.consume_message_after(&mut context);
+
+        let mut receiver = dispatcher
+            .receiver
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+            .unwrap();
+        let Some(TraceCommand::Append(before)) = receiver.try_recv().ok() else {
+            panic!("Lite trace hook did not append the before record");
+        };
+        let Some(TraceCommand::Append(after)) = receiver.try_recv().ok() else {
+            panic!("Lite trace hook did not append the after record");
+        };
+        assert_eq!(before.trace_kind, LiteTraceKind::SubBefore);
+        assert_eq!(after.trace_kind, LiteTraceKind::SubAfter);
+        assert_eq!(before.group_name, "workers");
+        assert_eq!(before.trace_beans[0].topic, "orders");
+        assert_eq!(before.request_id, after.request_id);
+        assert!(after.success);
+    }
+
+    #[test]
     fn dispatcher_topic_defaults_and_customization_match_java_settings() {
         let client = ClientConfig::new("lite-trace-topic");
-        let default = LiteTraceDispatcher::new(&client, "workers", None).unwrap();
+        let default = LiteTraceDispatcher::new(&client, "workers", None, None).unwrap();
         assert_eq!(default.trace_topic_name(), TRACE_TOPIC);
-        let blank = LiteTraceDispatcher::new(&client, "workers", Some("  ")).unwrap();
+        let blank = LiteTraceDispatcher::new(&client, "workers", Some("  "), None).unwrap();
         assert_eq!(blank.trace_topic_name(), TRACE_TOPIC);
-        let custom = LiteTraceDispatcher::new(&client, "workers", Some("trace-custom")).unwrap();
+        let custom =
+            LiteTraceDispatcher::new(&client, "workers", Some("trace-custom"), None).unwrap();
         assert_eq!(custom.trace_topic_name(), "trace-custom");
+    }
+
+    #[tokio::test]
+    async fn lite_trace_dispatcher_exposes_its_owned_trace_producer() {
+        let client = ClientConfig::new("lite-trace-producer-accessor");
+        let dispatcher = LiteTraceDispatcher::new(&client, "workers", None, None).unwrap();
+        assert!(dispatcher.trace_producer().is_none());
+
+        dispatcher.start(None, AccessChannel::Local).await.unwrap();
+        let trace_producer = dispatcher.trace_producer().unwrap();
+        dispatcher.shutdown().await.unwrap();
+        assert!(Arc::ptr_eq(
+            &trace_producer,
+            &dispatcher.trace_producer().unwrap()
+        ));
+    }
+
+    #[test]
+    fn lite_internal_trace_producer_uses_host_namespace_once_and_keeps_namespace_v2() {
+        let mut client = ClientConfig::new("lite-trace-namespace");
+        client.set_namespace(Some("tenant".into()));
+        client.set_namespace_v2(Some("tenant-v2".into()));
+        let dispatcher =
+            LiteTraceDispatcher::new(&client, "workers", Some("custom-trace"), None).unwrap();
+
+        assert!(
+            dispatcher
+                .producer_config
+                .producer_group()
+                .starts_with("_INNER_TRACE_PRODUCER-tenant%workers-CONSUME-")
+        );
+        assert_eq!(dispatcher.producer_config.client_config().namespace, None);
+        assert_eq!(
+            dispatcher.producer_config.client_config().namespace_v2(),
+            Some("tenant-v2")
+        );
+        assert_eq!(dispatcher.trace_topic_name(), "custom-trace");
+    }
+
+    #[test]
+    fn lite_internal_trace_dispatcher_retains_host_rpc_hook() {
+        let client = ClientConfig::new("lite-trace-rpc-hook");
+        let rpc_hook: Arc<dyn RpcHook> = Arc::new(NoopRpcHook);
+        let dispatcher =
+            LiteTraceDispatcher::new(&client, "workers", None, Some(rpc_hook.clone())).unwrap();
+
+        assert!(Arc::ptr_eq(
+            dispatcher.rpc_hook.as_ref().unwrap(),
+            &rpc_hook
+        ));
     }
 }

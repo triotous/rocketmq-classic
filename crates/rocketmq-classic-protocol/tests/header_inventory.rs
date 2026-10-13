@@ -60,6 +60,8 @@ macro_rules! inventory {
             ConsumeMessageDirectlyResultRequestHeader => ("header-consume-directly-request", "typed-consume-directly-request.bin"),
             ReplyMessageRequestHeader => ("header-reply-request", "typed-reply.bin"),
             SendMessageResponseHeader => ("header-send-response", "typed-send-response.bin"),
+            RecallMessageRequestHeader => ("header-recall-message-request", "typed-recall-request.bin"),
+            RecallMessageResponseHeader => ("header-recall-message-response", "typed-recall-response.bin"),
             SendMessageRequestHeaderV2 => ("header-send-v2", "typed-send-v2.bin"),
             SendMessageRequestHeaderV1 => ("header-send-v1", "typed-send-v1.bin"),
         }

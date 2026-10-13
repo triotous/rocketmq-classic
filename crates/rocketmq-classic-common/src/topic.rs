@@ -68,6 +68,71 @@ fn not_allowed_send_topics() -> &'static RwLock<HashSet<String>> {
     })
 }
 
+fn valid_char_bit_map() -> &'static RwLock<[bool; 128]> {
+    static VALID_CHAR_BIT_MAP: OnceLock<RwLock<[bool; 128]>> = OnceLock::new();
+    VALID_CHAR_BIT_MAP.get_or_init(|| {
+        let mut valid = [false; 128];
+        for character in b"%|-_" {
+            valid[*character as usize] = true;
+        }
+        for character in b'0'..=b'9' {
+            valid[character as usize] = true;
+        }
+        for character in b'A'..=b'Z' {
+            valid[character as usize] = true;
+        }
+        for character in b'a'..=b'z' {
+            valid[character as usize] = true;
+        }
+        RwLock::new(valid)
+    })
+}
+
+fn java_length(value: &str) -> usize {
+    value.encode_utf16().count()
+}
+
+fn java_blank(value: Option<&str>) -> bool {
+    value.is_none_or(|value| {
+        value.is_empty()
+            || value.chars().all(|character| {
+                (character.is_whitespace() || matches!(character, '\u{001c}'..='\u{001f}'))
+                    && !matches!(character, '\u{00a0}' | '\u{2007}' | '\u{202f}')
+            })
+    })
+}
+
+/// Result returned by Java-compatible topic and group validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValidateResult {
+    valid: bool,
+    remark: String,
+}
+
+impl ValidateResult {
+    fn valid() -> Self {
+        Self {
+            valid: true,
+            remark: String::new(),
+        }
+    }
+
+    fn invalid(remark: String) -> Self {
+        Self {
+            valid: false,
+            remark,
+        }
+    }
+
+    pub const fn is_valid(&self) -> bool {
+        self.valid
+    }
+
+    pub fn remark(&self) -> &str {
+        &self.remark
+    }
+}
+
 /// Java's `TopicValidator` operations used by namespace and producer validation.
 pub struct TopicValidator;
 
@@ -91,6 +156,62 @@ impl TopicValidator {
     pub const SYSTEM_TOPIC_PREFIX: &'static str = crate::topic::SYSTEM_TOPIC_PREFIX;
     pub const SYNC_BROKER_MEMBER_GROUP_PREFIX: &'static str =
         crate::topic::SYNC_BROKER_MEMBER_GROUP_PREFIX;
+
+    /// Returns the mutable Java-style character table behind validation.
+    /// Values outside ASCII are always rejected, as in Java's 128-element array.
+    pub fn valid_char_bit_map() -> &'static RwLock<[bool; 128]> {
+        valid_char_bit_map()
+    }
+
+    pub fn is_topic_or_group_illegal(value: &str) -> bool {
+        let map = valid_char_bit_map()
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        value
+            .encode_utf16()
+            .any(|unit| usize::from(unit) >= map.len() || !map[usize::from(unit)])
+    }
+
+    pub fn validate_topic(topic: Option<&str>) -> ValidateResult {
+        let Some(topic) = topic.filter(|topic| !java_blank(Some(topic))) else {
+            return ValidateResult::invalid("The specified topic is blank.".to_owned());
+        };
+        if Self::is_topic_or_group_illegal(topic) {
+            return ValidateResult::invalid(format!(
+                "The specified topic: {topic}, contains illegal characters, allowing only ^[%|a-zA-Z0-9_-]+$"
+            ));
+        }
+        let is_retry_or_dlq = topic.starts_with("%RETRY%") || topic.starts_with("%DLQ%");
+        let maximum = if is_retry_or_dlq { 255 } else { 127 };
+        if java_length(topic) > maximum {
+            if is_retry_or_dlq {
+                return ValidateResult::invalid(format!(
+                    "The specified topic is DLQ or Retry topic: {topic}, and it's longer than topic max length: {maximum}"
+                ));
+            }
+            return ValidateResult::invalid(format!(
+                "The specified topic: {topic}, is longer than topic max length: {maximum}"
+            ));
+        }
+        ValidateResult::valid()
+    }
+
+    pub fn validate_group(group: Option<&str>) -> ValidateResult {
+        let Some(group) = group.filter(|group| !java_blank(Some(group))) else {
+            return ValidateResult::invalid("The specified group is blank.".to_owned());
+        };
+        if Self::is_topic_or_group_illegal(group) {
+            return ValidateResult::invalid(format!(
+                "The specified group: {group}, contains illegal characters, allowing only ^[%|a-zA-Z0-9_-]+$"
+            ));
+        }
+        if java_length(group) > 120 {
+            return ValidateResult::invalid(format!(
+                "The specified group: {group}, is longer than group max length: 120"
+            ));
+        }
+        ValidateResult::valid()
+    }
 
     pub fn is_system_topic(topic: &str) -> bool {
         topic.starts_with(SYSTEM_TOPIC_PREFIX)

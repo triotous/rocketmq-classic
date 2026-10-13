@@ -208,7 +208,10 @@ impl ClientInner {
         };
         let (host, _) = connection::split_address(&key)?;
         let selected = super::config::ClientConfig::proxy_for(&self.socks_proxy_routes, &host)?;
-        self.notify_channel(&key, super::NettyEventType::Connect);
+        let generation = self
+            .generation
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.notify_channel(&key, super::NettyEventType::Connect, generation);
         let proxy = match selected.as_ref() {
             Some(selection) => selection.connect_proxy()?,
             None => None,
@@ -233,9 +236,6 @@ impl ClientInner {
             drop(stream);
             return Err(TransportError::Shutdown);
         }
-        let generation = self
-            .generation
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let connection = connection::Connection::spawn(
             stream,
             generation,
@@ -254,7 +254,7 @@ impl ClientInner {
         }
         connections.insert(key.clone(), connection.clone());
         drop(connections);
-        self.notify_channel(&key, super::NettyEventType::Active);
+        self.notify_channel(&key, super::NettyEventType::Active, generation);
         Ok(connection)
     }
 
@@ -276,9 +276,9 @@ impl ClientInner {
         };
         if let Some(address) = &address {
             if failure.is_some() && failure != Some(TransportError::Closed) {
-                self.notify_channel(address, super::NettyEventType::Exception);
+                self.notify_channel(address, super::NettyEventType::Exception, generation);
             }
-            self.notify_channel(address, super::NettyEventType::Close);
+            self.notify_channel(address, super::NettyEventType::Close, generation);
             if !was_retired {
                 let mut chosen = self.chosen_nameserver.lock().unwrap();
                 if chosen.as_deref() == Some(address.as_str()) {

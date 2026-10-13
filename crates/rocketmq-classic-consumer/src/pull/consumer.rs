@@ -35,6 +35,7 @@ use tokio::time::Instant;
 
 use crate::{
     config::PullConsumerConfig,
+    consume::{ConsumeMessageContext, ConsumeMessageHook, ConsumeMessageHookRegistry},
     error::PullConsumerError,
     offset::{LocalFileOffsetStore, OffsetStore, ReadOffsetType, RemoteBrokerOffsetStore},
     pull::{FilterMessageHook, ProcessedPullResult, PullAPIWrapper, resolve_pull_broker_address},
@@ -95,6 +96,7 @@ pub struct PullConsumer {
     config: PullConsumerConfig,
     manager: ClientRuntimeManager,
     rpc_hook: Option<Arc<dyn RpcHook>>,
+    consume_message_hooks: ConsumeMessageHookRegistry,
     state: tokio::sync::Mutex<State>,
     pull_api: PullAPIWrapper,
     offset_store: Mutex<Option<Arc<dyn OffsetStore>>>,
@@ -119,7 +121,8 @@ impl PullConsumer {
         Self::with_manager_and_hook(config, manager, None)
     }
 
-    pub(crate) fn with_rpc_hook(
+    /// Creates a pull consumer whose remoting requests use the supplied RPC hook.
+    pub fn new_with_rpc_hook(
         config: PullConsumerConfig,
         rpc_hook: Option<Arc<dyn RpcHook>>,
     ) -> Self {
@@ -138,6 +141,7 @@ impl PullConsumer {
             config,
             manager,
             rpc_hook,
+            consume_message_hooks: ConsumeMessageHookRegistry::default(),
             state: tokio::sync::Mutex::new(State::Created),
             pull_api,
             offset_store: Mutex::new(None),
@@ -158,6 +162,11 @@ impl PullConsumer {
 
     pub fn config(&self) -> &PullConsumerConfig {
         &self.config
+    }
+
+    /// Registers a Java-compatible hook around each pull result.
+    pub fn register_consume_message_hook(&self, hook: Arc<dyn ConsumeMessageHook>) {
+        self.consume_message_hooks.register(hook);
     }
 
     pub fn register_filter_message_hook(&self, hook: Arc<dyn FilterMessageHook>) {
@@ -423,7 +432,11 @@ impl PullConsumer {
 
         let runtime = self
             .manager
-            .get_or_create_with_hook(&client_config, self.rpc_hook.clone())
+            .get_or_create_with_hook_and_tls_config(
+                &client_config,
+                self.rpc_hook.clone(),
+                self.config.tls_config().cloned(),
+            )
             .await?;
         let offset_store = self.select_offset_store(&runtime, &consumer_group)?;
         offset_store.load().await?;
@@ -963,7 +976,31 @@ impl PullConsumer {
                 }
             }
         }
+        self.execute_consume_message_hooks(input_queue, &mut processed)?;
         Ok(processed)
+    }
+
+    fn execute_consume_message_hooks(
+        &self,
+        queue: &MessageQueue,
+        processed: &mut ProcessedPullResult,
+    ) -> Result<(), PullConsumerError> {
+        let mut client_config = self.config.client_config().clone();
+        let mut consume_context = ConsumeMessageContext::new(
+            self.effective_consumer_group()?,
+            processed.messages.take(),
+            queue.clone(),
+            client_config.get_namespace()?.map(str::to_owned),
+        );
+        self.consume_message_hooks
+            .execute_before(&mut consume_context);
+        consume_context.status = Some("CONSUME_SUCCESS".to_owned());
+        consume_context.success = true;
+        consume_context.access_channel = client_config.access_channel();
+        self.consume_message_hooks
+            .execute_after(&mut consume_context);
+        processed.messages = consume_context.messages;
+        Ok(())
     }
 
     pub async fn update_consume_offset(
@@ -1653,7 +1690,79 @@ fn write_lock<T>(lock: &RwLock<T>) -> std::sync::RwLockWriteGuard<'_, T> {
 mod tests {
     use super::*;
     use crate::offset::OffsetRead;
+    use rocketmq_classic_core::api::consumer::PullStatus;
+    use rocketmq_classic_core::config::AccessChannel;
     use std::collections::{HashMap, HashSet};
+
+    #[test]
+    fn pull_consume_hooks_receive_empty_pull_context_with_java_success_state() {
+        struct Hook(Arc<Mutex<Vec<String>>>);
+
+        impl ConsumeMessageHook for Hook {
+            fn hook_name(&self) -> &str {
+                "pull-consume-hook"
+            }
+
+            fn consume_message_before(&self, context: &mut ConsumeMessageContext) {
+                assert!(context.messages.is_none());
+                assert!(!context.success);
+                assert!(context.properties.is_none());
+                assert!(context.access_channel.is_none());
+                assert_eq!(context.consumer_group, "tenant%pull-hook-lifecycle");
+                assert_eq!(context.namespace.as_deref(), Some("tenant"));
+                context.properties = Some(HashMap::new());
+                context
+                    .properties
+                    .as_mut()
+                    .unwrap()
+                    .insert("shared".into(), "yes".into());
+                self.0.lock().unwrap().push("before".into());
+            }
+
+            fn consume_message_after(&self, context: &mut ConsumeMessageContext) {
+                assert!(context.success);
+                assert_eq!(context.status.as_deref(), Some("CONSUME_SUCCESS"));
+                assert_eq!(context.access_channel, Some(AccessChannel::Local));
+                assert_eq!(
+                    context
+                        .properties
+                        .as_ref()
+                        .and_then(|properties| properties.get("shared"))
+                        .map(String::as_str),
+                    Some("yes")
+                );
+                self.0.lock().unwrap().push("after".into());
+            }
+        }
+
+        let mut config = PullConsumerConfig::new("pull-hook-lifecycle").unwrap();
+        config
+            .client_config_mut()
+            .set_namespace(Some("tenant".into()));
+        let consumer = PullConsumer::new(config);
+        let events = Arc::new(Mutex::new(Vec::new()));
+        consumer.register_consume_message_hook(Arc::new(Hook(events.clone())));
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let mut processed = ProcessedPullResult {
+            result: rocketmq_classic_core::api::consumer::PullResultExt {
+                status: PullStatus::NoNewMessage,
+                next_begin_offset: 0,
+                min_offset: 0,
+                max_offset: 0,
+                suggest_which_broker_id: 0,
+                offset_delta: None,
+                raw_messages: None,
+            },
+            messages: None,
+        };
+
+        consumer
+            .execute_consume_message_hooks(&queue, &mut processed)
+            .unwrap();
+
+        assert_eq!(events.lock().unwrap().as_slice(), ["before", "after"]);
+        assert!(processed.messages.is_none());
+    }
 
     #[derive(Default)]
     struct TestOffsetStore {

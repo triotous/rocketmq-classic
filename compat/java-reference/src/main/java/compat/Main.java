@@ -58,6 +58,8 @@ import org.apache.rocketmq.remoting.protocol.header.ConsumeMessageDirectlyResult
 import org.apache.rocketmq.remoting.protocol.header.LiteSubscriptionCtlRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.LockBatchMqRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.UnlockBatchMqRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.RecallMessageRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.RecallMessageResponseHeader;
 import org.apache.rocketmq.remoting.protocol.header.UnregisterClientResponseHeader;
 import org.apache.rocketmq.remoting.protocol.body.QueryAssignmentRequestBody;
 import org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody;
@@ -104,6 +106,26 @@ public final class Main {
         }
         if (args.length > 0 && "request-reply-fixture".equals(args[0])) {
             RequestReplyFixtures.main(Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
+        if (args.length > 0 && "acl-fixture".equals(args[0])) {
+            AclFixtures.main(Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
+        if (args.length > 0 && "trace-fixture".equals(args[0])) {
+            TraceFixtures.main(Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
+        if (args.length > 0 && "namespace-fixture".equals(args[0])) {
+            NamespaceFixtures.main(Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
+        if (args.length > 0 && "topic-validator-fixture".equals(args[0])) {
+            TopicValidatorFixtures.main(Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
+        if (args.length > 0 && "tls-settings-fixture".equals(args[0])) {
+            TlsSettingsFixtures.main(Arrays.copyOfRange(args, 1, args.length));
             return;
         }
         if (args.length > 0 && "client-config-tls-mode-probe".equals(args[0])) {
@@ -396,6 +418,21 @@ public final class Main {
         sendResponse.setQueueOffset(99L);
         writeTypedHeaderFixture(output, "send-response",
             RemotingCommand.createResponseCommandWithHeader(0, sendResponse));
+
+        RecallMessageRequestHeader recall = new RecallMessageRequestHeader();
+        recall.setProducerGroup("producers");
+        recall.setTopic("orders");
+        recall.setRecallHandle("message-id%orders%1712345678901");
+        recall.setNamespace("tenant");
+        recall.setNamespaced(true);
+        recall.setBrokerName("broker-a");
+        recall.setOneway(false);
+        recall.setLo(true);
+        writeTypedHeaderFixture(output, "recall-message-request", 370, recall);
+        RecallMessageResponseHeader recallResponse = new RecallMessageResponseHeader();
+        recallResponse.setMsgId("broker-message-id");
+        writeTypedHeaderFixture(output, "recall-message-response",
+            RemotingCommand.createResponseCommandWithHeader(0, recallResponse));
 
         GetConsumerListByGroupRequestHeader consumerList = new GetConsumerListByGroupRequestHeader();
         consumerList.setConsumerGroup("workers");
@@ -693,6 +730,8 @@ public final class Main {
             assertAllExtFields(byName, "typed-reply-v2.bin", 325);
             assertAllExtFields(byName, "typed-reply-push.bin", 326);
             assertAllExtFields(byName, "typed-send-response.bin", 0);
+            assertAllExtFields(byName, "typed-recall-request.bin", 370);
+            assertAllExtFields(byName, "typed-recall-response.bin", 0);
             assertAllExtFields(byName, "typed-pull-response.bin", 0);
             assertAllExtFields(byName, "typed-notification.bin", 200054);
             assertAllExtFields(byName, "typed-notification-response.bin", 0);
@@ -741,6 +780,8 @@ public final class Main {
             assertExtField(byName, "typed-check-transaction-response.bin", 0, "commitOrRollback", "8");
             assertExtField(byName, "typed-reply.bin", 324, "bornHost", "127.0.0.1:1001");
             assertExtField(byName, "typed-send-response.bin", 0, "msgId", "msg-1");
+            assertExtField(byName, "typed-recall-request.bin", 370, "recallHandle", "message-id%orders%1712345678901");
+            assertExtField(byName, "typed-recall-response.bin", 0, "msgId", "broker-message-id");
             assertExtField(byName, "typed-pull-response.bin", 0, "nextBeginOffset", "10");
             assertExtField(byName, "typed-notification.bin", 200054, "consumerGroup", "workers");
             assertExtField(byName, "typed-notification-response.bin", 0, "hasMsg", "true");
@@ -794,6 +835,8 @@ public final class Main {
             case "typed-reply-push.bin": fixtureStem = "header-reply-push-request"; break;
             case "typed-pop-response.bin": fixtureStem = "header-pop-response"; break;
             case "typed-send-response.bin": fixtureStem = "header-send-response"; break;
+            case "typed-recall-request.bin": fixtureStem = "header-recall-message-request"; break;
+            case "typed-recall-response.bin": fixtureStem = "header-recall-message-response"; break;
             case "typed-notification.bin": fixtureStem = "header-notification-request"; break;
             case "typed-notification-response.bin": fixtureStem = "header-notification-response"; break;
             case "typed-reset-offset.bin": fixtureStem = "header-reset-offset-request"; break;

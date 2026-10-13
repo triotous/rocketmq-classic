@@ -18,8 +18,8 @@ use rocketmq_classic_protocol::{
         AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader,
         ConsumerSendMsgBackRequestHeader, EndTransactionRequestHeader, HeaderMap,
         PopLiteMessageRequestHeader, PopMessageRequestHeader, PullMessageRequestHeader,
-        QueryConsumerOffsetRequestHeader, UnregisterClientRequestHeader,
-        UpdateConsumerOffsetRequestHeader,
+        QueryConsumerOffsetRequestHeader, RecallMessageRequestHeader,
+        UnregisterClientRequestHeader, UpdateConsumerOffsetRequestHeader,
     },
     heartbeat::HeartbeatData,
 };
@@ -357,6 +357,22 @@ async fn broker_methods_use_one_attempt_and_honor_deadline() {
             deadline
         )
     );
+    broker_attempt!(
+        "recall_message",
+        request::RECALL_MESSAGE,
+        false,
+        |api, addr, deadline| api.recall_message(
+            addr,
+            &RecallMessageRequestHeader {
+                producer_group: Some("recall-group".into()),
+                topic: "recall-topic".into(),
+                recall_handle: "v1-handle".into(),
+                broker_name: Some("broker-a".into()),
+                ..RecallMessageRequestHeader::default()
+            },
+            deadline
+        )
+    );
     for (kind, code) in [
         (SendKind::V1, request::SEND_MESSAGE),
         (SendKind::V2, request::SEND_MESSAGE_V2),
@@ -381,6 +397,86 @@ async fn broker_methods_use_one_attempt_and_honor_deadline() {
                 )
             );
         }
+    }
+}
+
+#[tokio::test]
+async fn recall_message_matches_java_request_header_and_decodes_broker_msg_id() {
+    let (addr, peer) = scripted_probe_peer(vec![(
+        response::SUCCESS,
+        None,
+        Some(HeaderMap::from([("msgId".into(), "recalled-id".into())])),
+    )])
+    .await;
+    let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
+    let api = MQClientApi::new(client.clone());
+    let header = RecallMessageRequestHeader {
+        producer_group: Some("recall-group".into()),
+        topic: "recall-topic".into(),
+        recall_handle: "v1-handle".into(),
+        broker_name: Some("broker-a".into()),
+        ..RecallMessageRequestHeader::default()
+    };
+
+    assert_eq!(
+        api.recall_message(&addr, &header, Instant::now() + Duration::from_secs(1))
+            .await
+            .unwrap(),
+        "recalled-id"
+    );
+    let requests = peer.await.unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].code, request::RECALL_MESSAGE);
+    assert_eq!(
+        requests[0].ext_fields.as_ref().unwrap(),
+        &HeaderMap::from([
+            ("producerGroup".into(), "recall-group".into()),
+            ("topic".into(), "recall-topic".into()),
+            ("recallHandle".into(), "v1-handle".into()),
+            ("bname".into(), "broker-a".into()),
+        ])
+    );
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn recall_message_preserves_broker_errors_and_rejects_malformed_success() {
+    for (reply, expected_code) in [
+        (
+            (response::SYSTEM_ERROR, Some("broker failed".into()), None),
+            response::SYSTEM_ERROR,
+        ),
+        (
+            (response::SUCCESS, None, Some(HeaderMap::new())),
+            response::SUCCESS,
+        ),
+    ] {
+        let (addr, peer) = scripted_probe_peer(vec![reply]).await;
+        let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
+        let api = MQClientApi::new(client.clone());
+        let result = api
+            .recall_message(
+                &addr,
+                &RecallMessageRequestHeader {
+                    topic: "recall-topic".into(),
+                    recall_handle: "v1-handle".into(),
+                    ..RecallMessageRequestHeader::default()
+                },
+                Instant::now() + Duration::from_secs(1),
+            )
+            .await;
+        if expected_code == response::SUCCESS {
+            assert!(matches!(result, Err(RpcError::MalformedResponse { .. })));
+        } else {
+            assert!(
+                matches!(result, Err(RpcError::Response { code, .. }) if code == expected_code)
+            );
+        }
+        let requests = peer.await.unwrap();
+        assert_eq!(requests[0].code, request::RECALL_MESSAGE);
+        client.shutdown().await;
     }
 }
 

@@ -12,7 +12,11 @@ metadata = json.loads(
 packages = {package["name"]: package for package in metadata["packages"]}
 expected = {
     "rocketmq-classic-common",
+    "rocketmq-classic-consumer",
+    "rocketmq-classic-core",
+    "rocketmq-classic",
     "rocketmq-classic-protocol",
+    "rocketmq-classic-producer",
     "rocketmq-classic-remoting",
 }
 assert set(packages) == expected, f"unexpected workspace packages: {set(packages)}"

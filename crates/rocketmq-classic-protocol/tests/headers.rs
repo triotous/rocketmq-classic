@@ -20,11 +20,11 @@ use rocketmq_classic_protocol::{
         PollingInfoResponseHeader, PopLiteMessageRequestHeader, PopLiteMessageResponseHeader,
         PopMessageRequestHeader, PopMessageResponseHeader, PullMessageRequestHeader,
         PullMessageResponseHeader, QueryConsumerOffsetRequestHeader,
-        QueryConsumerOffsetResponseHeader, ReplyMessageRequestHeader, ResetOffsetRequestHeader,
-        SearchOffsetRequestHeader, SearchOffsetResponseHeader, SendMessageRequestHeaderV1,
-        SendMessageRequestHeaderV2, SendMessageResponseHeader, UnlockBatchMqRequestHeader,
-        UnregisterClientRequestHeader, UnregisterClientResponseHeader,
-        UpdateConsumerOffsetRequestHeader,
+        QueryConsumerOffsetResponseHeader, RecallMessageRequestHeader, RecallMessageResponseHeader,
+        ReplyMessageRequestHeader, ResetOffsetRequestHeader, SearchOffsetRequestHeader,
+        SearchOffsetResponseHeader, SendMessageRequestHeaderV1, SendMessageRequestHeaderV2,
+        SendMessageResponseHeader, UnlockBatchMqRequestHeader, UnregisterClientRequestHeader,
+        UnregisterClientResponseHeader, UpdateConsumerOffsetRequestHeader,
     },
 };
 
@@ -102,6 +102,23 @@ fn java_request_and_response_header_fixtures_decode() {
     let send_response =
         SendMessageResponseHeader::decode_fields(&java_ext_fields("header-send-response")).unwrap();
     assert_eq!(send_response.msg_id, "msg-1");
+    let recall = RecallMessageRequestHeader::decode_fields(&java_ext_fields(
+        "header-recall-message-request",
+    ))
+    .unwrap();
+    assert_eq!(recall.producer_group.as_deref(), Some("producers"));
+    assert_eq!(recall.topic, "orders");
+    assert_eq!(recall.recall_handle, "message-id%orders%1712345678901");
+    assert_eq!(recall.namespace.as_deref(), Some("tenant"));
+    assert_eq!(recall.namespaced, Some(true));
+    assert_eq!(recall.broker_name.as_deref(), Some("broker-a"));
+    assert_eq!(recall.oneway, Some(false));
+    assert_eq!(recall.logical, Some(true));
+    let recall_response = RecallMessageResponseHeader::decode_fields(&java_ext_fields(
+        "header-recall-message-response",
+    ))
+    .unwrap();
+    assert_eq!(recall_response.msg_id, "broker-message-id");
     let unregister =
         UnregisterClientRequestHeader::decode_fields(&java_ext_fields("header-unregister-request"))
             .unwrap();
@@ -993,6 +1010,24 @@ fn header_validation_matrix() {
             "bornTimestamp storeTimestamp",
             "properties reconsumeTimes",
             "unitMode"
+        ),
+        row!(
+            RecallMessageRequestHeader,
+            "recall-message-request",
+            "topic recallHandle",
+            "",
+            "",
+            "producerGroup ns nsd bname oway lo",
+            "nsd oway lo"
+        ),
+        row!(
+            RecallMessageResponseHeader,
+            "recall-message-response",
+            "msgId",
+            "",
+            "",
+            "",
+            ""
         ),
         row!(
             NotificationRequestHeader,

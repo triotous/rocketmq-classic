@@ -130,11 +130,11 @@ pub struct TlsConfig {
     pub ca_pem: Option<Vec<u8>>,
     pub client_cert_pem: Option<Vec<u8>>,
     pub client_key_pem: Option<Vec<u8>>,
-    /// Java `tls.ciphers` property snapshot. Java 5.5.1's client TLS builder
-    /// does not apply this property to client contexts.
+    /// Java `tls.ciphers` property snapshot, applied to Java-compatible client
+    /// TLS contexts. Unsupported cipher names fail context construction.
     pub ciphers: Option<String>,
-    /// Java `tls.protocols` property snapshot. Java 5.5.1's client TLS builder
-    /// does not apply this property to client contexts.
+    /// Java `tls.protocols` property snapshot, applied to Java-compatible
+    /// client TLS contexts. Unsupported protocol names fail context construction.
     pub protocols: Option<String>,
     /// Mirrors Java's `tls.test.mode.enable` (default `true`); true skips server trust and hostname checks.
     /// This is insecure and should be disabled outside Java-compatible test configurations.
@@ -331,7 +331,29 @@ impl TlsConfig {
 
     pub(crate) fn connector(&self) -> Result<TlsConnector, TransportError> {
         let verify_server = !self.test_mode && self.auth_server;
-        let builder = ClientConfig::builder();
+        let default_builder = ClientConfig::builder();
+        let mut crypto_provider = (**default_builder.crypto_provider()).clone();
+        if let Some(ciphers) = self.ciphers.as_deref() {
+            let available_suites = crypto_provider.cipher_suites.clone();
+            crypto_provider.cipher_suites = ciphers
+                .split(',')
+                .map(|configured_name| {
+                    available_suites
+                        .iter()
+                        .find(|suite| cipher_suite_matches_java_name(suite, configured_name))
+                        .copied()
+                        .ok_or_else(|| {
+                            TransportError::Tls(format!(
+                                "unsupported Java TLS cipher suite: {configured_name}"
+                            ))
+                        })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+        }
+        let versions = configured_protocol_versions(self.protocols.as_deref())?;
+        let builder = ClientConfig::builder_with_provider(Arc::new(crypto_provider))
+            .with_protocol_versions(&versions)
+            .map_err(|error| TransportError::Tls(error.to_string()))?;
         let builder = if verify_server {
             let mut roots = RootCertStore::empty();
             if let Some(pem) = &self.ca_pem {
@@ -383,6 +405,38 @@ impl TlsConfig {
         };
         Ok(TlsConnector::from(Arc::new(config)))
     }
+}
+
+fn cipher_suite_matches_java_name(
+    suite: &tokio_rustls::rustls::SupportedCipherSuite,
+    configured_name: &str,
+) -> bool {
+    let Some(rustls_name) = suite.suite().as_str() else {
+        return false;
+    };
+    if let Some(tls13_name) = rustls_name.strip_prefix("TLS13_") {
+        configured_name.strip_prefix("TLS_") == Some(tls13_name)
+    } else {
+        rustls_name == configured_name
+    }
+}
+
+fn configured_protocol_versions(
+    protocols: Option<&str>,
+) -> Result<Vec<&'static tokio_rustls::rustls::SupportedProtocolVersion>, TransportError> {
+    let Some(protocols) = protocols else {
+        return Ok(tokio_rustls::rustls::DEFAULT_VERSIONS.to_vec());
+    };
+    protocols
+        .split(',')
+        .map(|protocol| match protocol {
+            "TLSv1.2" => Ok(&tokio_rustls::rustls::version::TLS12),
+            "TLSv1.3" => Ok(&tokio_rustls::rustls::version::TLS13),
+            unsupported => Err(TransportError::Tls(format!(
+                "unsupported Java TLS protocol version: {unsupported}"
+            ))),
+        })
+        .collect()
 }
 
 fn decrypt_private_key_file(
@@ -722,11 +776,25 @@ mod tests {
 
     fn test_dir() -> PathBuf {
         static NEXT_TEST_DIR: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let sequence = NEXT_TEST_DIR.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let path =
-            std::env::temp_dir().join(format!("rocketmq-tls-{}-{sequence}", std::process::id()));
-        fs::create_dir(&path).unwrap();
-        path
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        loop {
+            let sequence = NEXT_TEST_DIR.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "rocketmq-tls-{}-{timestamp}-{sequence}",
+                std::process::id()
+            ));
+            match fs::create_dir(&path) {
+                Ok(()) => return path,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => panic!(
+                    "failed to create TLS test directory {}: {error}",
+                    path.display()
+                ),
+            }
+        }
     }
 
     #[test]
@@ -801,26 +869,93 @@ mod tests {
         fs::remove_dir_all(directory).unwrap();
     }
 
-    #[test]
-    fn java_client_tls_ignores_cipher_and_protocol_properties() {
-        let unsupported_cipher = TlsConfig::from_java_properties(
-            &HashMap::from([("tls.ciphers".into(), "TLS_UNKNOWN_CIPHER".into())]),
-            None,
-        )
-        .unwrap();
-        assert_eq!(
-            unsupported_cipher.ciphers.as_deref(),
-            Some("TLS_UNKNOWN_CIPHER")
-        );
-        assert!(unsupported_cipher.connector().is_ok());
+    fn client_hello_settings(
+        connection: &mut tokio_rustls::rustls::ClientConnection,
+    ) -> (Vec<u16>, Vec<u16>) {
+        let mut bytes = Vec::new();
+        connection.write_tls(&mut bytes).unwrap();
+        assert_eq!(bytes[0], 22, "TLS record must contain a handshake");
+        assert_eq!(bytes[5], 1, "handshake must be a ClientHello");
+        let mut offset = 9;
+        offset += 2 + 32;
+        let session_id_length = usize::from(bytes[offset]);
+        offset += 1 + session_id_length;
+        let cipher_bytes_length =
+            usize::from(u16::from_be_bytes([bytes[offset], bytes[offset + 1]]));
+        offset += 2;
+        let cipher_suites = bytes[offset..offset + cipher_bytes_length]
+            .chunks_exact(2)
+            .map(|bytes| u16::from_be_bytes([bytes[0], bytes[1]]))
+            .collect();
+        offset += cipher_bytes_length;
+        let compression_length = usize::from(bytes[offset]);
+        offset += 1 + compression_length;
+        let extensions_length = usize::from(u16::from_be_bytes([bytes[offset], bytes[offset + 1]]));
+        offset += 2;
+        let extensions_end = offset + extensions_length;
+        let mut versions = Vec::new();
+        while offset < extensions_end {
+            let extension_type = u16::from_be_bytes([bytes[offset], bytes[offset + 1]]);
+            let extension_length =
+                usize::from(u16::from_be_bytes([bytes[offset + 2], bytes[offset + 3]]));
+            offset += 4;
+            if extension_type == 43 {
+                let versions_length = usize::from(bytes[offset]);
+                versions.extend(
+                    bytes[offset + 1..offset + 1 + versions_length]
+                        .chunks_exact(2)
+                        .map(|bytes| u16::from_be_bytes([bytes[0], bytes[1]])),
+                );
+            }
+            offset += extension_length;
+        }
+        (cipher_suites, versions)
+    }
 
-        let unsupported_protocol = TlsConfig::from_java_properties(
-            &HashMap::from([("tls.protocols".into(), "TLSv1".into())]),
-            None,
-        )
+    fn java_cipher_suite_name(suite: &tokio_rustls::rustls::SupportedCipherSuite) -> String {
+        let name = suite.suite().as_str().unwrap();
+        name.strip_prefix("TLS13_")
+            .map_or_else(|| name.to_owned(), |suffix| format!("TLS_{suffix}"))
+    }
+
+    #[test]
+    fn java_client_tls_applies_cipher_and_protocol_properties_to_client_hello() {
+        use tokio_rustls::rustls::{ClientConnection, pki_types::ServerName};
+
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/security/tls-settings-defaults.json"
+        ))
         .unwrap();
-        assert_eq!(unsupported_protocol.protocols.as_deref(), Some("TLSv1"));
-        assert!(unsupported_protocol.connector().is_ok());
+        let client_settings = &fixture["clientContext"];
+        assert_eq!(client_settings["configuredCipherEnabled"], true);
+        assert_eq!(client_settings["configuredProtocolEnabled"], true);
+
+        let config = TlsConfig {
+            ciphers: Some(
+                client_settings["configuredCipher"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned(),
+            ),
+            protocols: Some(
+                client_settings["configuredProtocol"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned(),
+            ),
+            ..TlsConfig::default()
+        };
+        let connector = config.connector().unwrap();
+        let server_name = ServerName::try_from("localhost".to_owned()).unwrap();
+        let mut connection =
+            ClientConnection::new(connector.config().clone(), server_name).unwrap();
+        let (cipher_suites, versions) = client_hello_settings(&mut connection);
+        let cipher_suites = cipher_suites
+            .into_iter()
+            .filter(|suite| *suite != 0x00ff) // Rustls adds the renegotiation SCSV.
+            .collect::<Vec<_>>();
+        assert_eq!(cipher_suites, [0xc02f]);
+        assert_eq!(versions, [0x0303]);
     }
 
     #[test]
@@ -836,12 +971,35 @@ mod tests {
 
         assert_eq!(defaults["settings"]["ciphers"], serde_json::Value::Null);
         assert_eq!(defaults["settings"]["protocols"], serde_json::Value::Null);
-        assert_eq!(defaults["clientIgnoresCipherProtocolProperties"], true);
+        assert_eq!(defaults["clientContext"]["configuredCipherEnabled"], true);
+        assert_eq!(defaults["clientContext"]["configuredProtocolEnabled"], true);
+        assert_eq!(defaults["unsupportedClientContext"]["outcome"], "failure");
+        assert_eq!(
+            defaults["unsupportedClientContext"]["errorClass"],
+            "java.lang.IllegalArgumentException"
+        );
+        assert_eq!(defaults["unsupportedProtocolContext"]["outcome"], "failure");
+        assert_eq!(
+            defaults["unsupportedProtocolContext"]["errorClass"],
+            "java.lang.IllegalArgumentException"
+        );
         assert_eq!(
             configured["settings"]["ciphers"],
             "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
         );
         assert_eq!(configured["settings"]["protocols"], "TLSv1.2,TLSv1.3");
+        let expected_system_suites: Vec<String> = serde_json::from_value(
+            configured["systemClientContext"]["enabledCipherSuites"].clone(),
+        )
+        .unwrap();
+        let expected_system_protocols: Vec<String> =
+            serde_json::from_value(configured["systemClientContext"]["enabledProtocols"].clone())
+                .unwrap();
+        assert_eq!(
+            expected_system_suites,
+            ["TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"]
+        );
+        assert_eq!(expected_system_protocols, ["TLSv1.2", "TLSv1.3"]);
 
         let directory = test_dir();
         let properties_file = directory.join("tls.properties");
@@ -876,7 +1034,39 @@ mod tests {
             system_config.protocols.as_deref(),
             configured["settings"]["protocols"].as_str()
         );
-        assert!(system_config.connector().is_ok());
+        let system_connector = system_config.connector().unwrap();
+        let system_suites = system_connector
+            .config()
+            .crypto_provider()
+            .cipher_suites
+            .iter()
+            .map(java_cipher_suite_name)
+            .collect::<Vec<_>>();
+        assert_eq!(system_suites, expected_system_suites);
+        let server_name =
+            tokio_rustls::rustls::pki_types::ServerName::try_from("localhost".to_owned()).unwrap();
+        let mut system_connection = tokio_rustls::rustls::ClientConnection::new(
+            system_connector.config().clone(),
+            server_name,
+        )
+        .unwrap();
+        let (mut system_suites_in_hello, system_versions) =
+            client_hello_settings(&mut system_connection);
+        system_suites_in_hello.retain(|suite| *suite != 0x00ff); // rustls adds the renegotiation SCSV.
+        assert_eq!(
+            system_suites_in_hello,
+            serde_json::from_value::<Vec<u16>>(
+                configured["systemClientContext"]["clientHello"]["cipherSuiteIds"].clone()
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            system_versions,
+            serde_json::from_value::<Vec<u16>>(
+                configured["systemClientContext"]["clientHello"]["supportedVersionIds"].clone()
+            )
+            .unwrap()
+        );
 
         let config =
             TlsConfig::from_java_properties(&system_properties, Some(&properties_file)).unwrap();
@@ -888,7 +1078,70 @@ mod tests {
             config.protocols.as_deref(),
             configured["effectiveSettings"]["protocols"].as_str()
         );
-        assert!(config.connector().is_ok());
+        let file_connector = config.connector().unwrap();
+        let file_suites: Vec<String> =
+            serde_json::from_value(configured["fileClientContext"]["enabledCipherSuites"].clone())
+                .unwrap();
+        assert_eq!(file_suites, ["TLS_AES_128_GCM_SHA256"]);
+        assert_eq!(
+            serde_json::from_value::<Vec<String>>(
+                configured["fileClientContext"]["enabledProtocols"].clone()
+            )
+            .unwrap(),
+            ["TLSv1.3"]
+        );
+        assert_eq!(
+            file_connector
+                .config()
+                .crypto_provider()
+                .cipher_suites
+                .iter()
+                .map(java_cipher_suite_name)
+                .collect::<Vec<_>>(),
+            file_suites
+        );
+        let server_name =
+            tokio_rustls::rustls::pki_types::ServerName::try_from("localhost".to_owned()).unwrap();
+        let mut connection = tokio_rustls::rustls::ClientConnection::new(
+            file_connector.config().clone(),
+            server_name,
+        )
+        .unwrap();
+        let (mut suites_in_hello, versions) = client_hello_settings(&mut connection);
+        suites_in_hello.retain(|suite| *suite != 0x00ff); // rustls adds the renegotiation SCSV.
+        assert_eq!(
+            suites_in_hello,
+            serde_json::from_value::<Vec<u16>>(
+                configured["fileClientContext"]["clientHello"]["cipherSuiteIds"].clone()
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            versions,
+            serde_json::from_value::<Vec<u16>>(
+                configured["fileClientContext"]["clientHello"]["supportedVersionIds"].clone()
+            )
+            .unwrap()
+        );
+
+        assert!(
+            TlsConfig::from_java_properties(
+                &HashMap::from([("tls.ciphers".into(), "INVALID_CLIENT_CIPHER".into())]),
+                None,
+            )
+            .unwrap()
+            .connector()
+            .is_err()
+        );
+        assert!(
+            TlsConfig::from_java_properties(
+                &HashMap::from([("tls.protocols".into(), "INVALID_CLIENT_PROTOCOL".into())]),
+                None,
+            )
+            .unwrap()
+            .connector()
+            .is_err()
+        );
 
         let default_config =
             TlsConfig::from_java_properties(&HashMap::new(), Some(&properties_file)).unwrap();

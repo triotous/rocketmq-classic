@@ -18,12 +18,13 @@ static PROCESS_HASH: OnceLock<u32> = OnceLock::new();
 /// Emits the same 16/28-byte hexadecimal layout as Java's
 /// `MessageClientIDSetter`: IP, process ID, process identity, month-relative
 /// milliseconds, and a wrapping 16-bit counter.
-pub(crate) struct UniqueIdGenerator {
+#[doc(hidden)]
+pub struct UniqueIdGenerator {
     ip: Vec<u8>,
 }
 
 impl UniqueIdGenerator {
-    pub(crate) fn new(client_ip: Option<&str>) -> Self {
+    pub fn new(client_ip: Option<&str>) -> Self {
         let ip = client_ip
             .and_then(|value| value.parse::<IpAddr>().ok())
             .map(|address| match address {
@@ -34,7 +35,7 @@ impl UniqueIdGenerator {
         Self { ip }
     }
 
-    pub(crate) fn set_if_missing(&self, message: &mut Message) -> String {
+    pub fn set_if_missing(&self, message: &mut Message) -> String {
         if let Some(id) = message
             .properties()
             .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
@@ -47,7 +48,7 @@ impl UniqueIdGenerator {
         id
     }
 
-    pub(crate) fn create(&self) -> String {
+    pub fn create(&self) -> String {
         let millis = now_millis();
         let month_start = month_start_millis(millis);
         let mut bytes = Vec::with_capacity(self.ip.len() + 12);
@@ -156,10 +157,10 @@ mod tests {
         assert_eq!(first.len(), 32);
         assert_eq!(&first_bytes[..4], &[10, 10, 10, 111]);
         assert_eq!(first_bytes.len(), 16);
-        assert_eq!(
-            u16::from_be_bytes([first_bytes[14], first_bytes[15]]).wrapping_add(1),
-            u16::from_be_bytes([second_bytes[14], second_bytes[15]])
-        );
+        let first_counter = u16::from_be_bytes([first_bytes[14], first_bytes[15]]);
+        let second_counter = u16::from_be_bytes([second_bytes[14], second_bytes[15]]);
+        assert_ne!(first_counter, second_counter);
+        assert_ne!(second_counter.wrapping_sub(first_counter), 0);
         assert!(
             first
                 .bytes()

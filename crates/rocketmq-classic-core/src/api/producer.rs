@@ -1,8 +1,9 @@
 use rocketmq_classic_protocol::{
     codes::{request, response},
     header::{
-        CommandHeader, EndTransactionRequestHeader, HeaderMap, SendMessageRequestHeaderV1,
-        SendMessageRequestHeaderV2, SendMessageResponseHeader,
+        CommandHeader, EndTransactionRequestHeader, HeaderMap, RecallMessageRequestHeader,
+        RecallMessageResponseHeader, SendMessageRequestHeaderV1, SendMessageRequestHeaderV2,
+        SendMessageResponseHeader,
     },
 };
 use rocketmq_classic_remoting::RemotingCommand;
@@ -122,6 +123,20 @@ pub struct SendResult {
 }
 
 impl MQClientApi {
+    /// Calls Java's synchronous `MQClientAPIImpl.recallMessage` operation.
+    pub async fn recall_message(
+        &self,
+        addr: &str,
+        header: &RecallMessageRequestHeader,
+        deadline: Instant,
+    ) -> Result<String, RpcError> {
+        let code = request::RECALL_MESSAGE;
+        let reply = self.request(addr, code, header, None, deadline).await?;
+        let reply = super::classify(reply, code, addr)?;
+        let response: RecallMessageResponseHeader = super::decode_header(&reply, code, addr)?;
+        Ok(response.msg_id)
+    }
+
     /// Java's optional latency detector probes a broker with GET_MAX_OFFSET
     /// for queue zero of one cached producer topic. The caller only needs the
     /// result's validity to restore broker reachability.

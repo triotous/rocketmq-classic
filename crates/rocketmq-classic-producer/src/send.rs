@@ -22,6 +22,7 @@ use crate::{
     Producer, ProducerError,
     accumulator::{BatchKey, EnqueueResult, ReadyBatch},
     batch::create_batch,
+    hooks::{CheckForbiddenContext, SendMessageContext, SendMessageType},
     validation,
 };
 
@@ -83,21 +84,25 @@ impl Producer {
         topic: &str,
     ) -> Result<Vec<MessageQueue>, ProducerError> {
         let runtime = self.started_runtime().await?;
+        let topic = self.topic_with_namespace(topic)?;
         let timeout = Duration::from_millis(
             self.config.client_config().mq_client_api_timeout().max(0) as u64,
         );
         let deadline = deadline_after(timeout);
-        let updated = runtime.update_topic_route(topic, deadline).await?;
+        let updated = runtime.update_topic_route(&topic, deadline).await?;
         if !updated {
             return Err(ProducerError::NoRoute(topic.to_owned()));
         }
-        let Some(info) = self.current_publish_info(&runtime, topic)? else {
+        let Some(info) = self.current_publish_info(&runtime, &topic)? else {
             return Err(ProducerError::NoRoute(topic.to_owned()));
         };
         if info.publish_queues.is_empty() {
             return Err(ProducerError::NoRoute(topic.to_owned()));
         }
-        Ok(info.publish_queues.clone())
+        info.publish_queues
+            .iter()
+            .map(|queue| self.queue_without_namespace(queue))
+            .collect()
     }
 
     /// Sync-mode send. The returned future waits for the Java sync-mode result
@@ -117,8 +122,8 @@ impl Producer {
             .ok_or(ProducerError::Timeout)
     }
 
-    /// Future-mode send. Like Java's callback send, it retries only transport
-    /// failures; this Rust future resolves with the final callback outcome.
+    /// Future-mode send. Like Java's callback send, it retries asynchronous
+    /// failures up to the configured budget and resolves with the terminal result.
     pub async fn send_future(&self, message: &Message) -> Result<SendResult, ProducerError> {
         self.send_auto_or_direct(message, None, SendMode::Future)
             .await
@@ -175,7 +180,7 @@ impl Producer {
     }
 
     /// Future-mode counterpart to Java's explicit-queue callback overload.
-    /// It makes one Broker attempt, as the explicit-queue Java path does.
+    /// Failed attempts retry the selected Broker up to the configured budget.
     pub async fn send_to_queue_future(
         &self,
         message: &Message,
@@ -311,31 +316,69 @@ impl Producer {
         F: FnOnce(&[MessageQueue], &Message) -> Option<MessageQueue> + Send,
     {
         let deadline = deadline_after(timeout);
+        let wire_message = self.message_with_namespace(message)?;
         let use_auto_batch =
             auto_batch_enabled && mode != SendMode::Oneway && self.config.auto_batch();
         let _backpressure = if mode == SendMode::Future && !use_auto_batch {
-            self.acquire_async_backpressure(message.body().len(), deadline)
+            self.acquire_async_backpressure(wire_message.body().len(), deadline)
                 .await?
         } else {
             None
         };
         let runtime = self.started_runtime().await?;
-        validation::validate_message(Some(message), &self.config)?;
+        validation::validate_message(Some(&wire_message), &self.config)?;
         let info = self
-            .acquire_publish_info(&runtime, message.topic(), deadline)
+            .acquire_publish_info(&runtime, wire_message.topic(), deadline)
             .await?;
-        let queue =
-            selector(&info.publish_queues, message).ok_or(ProducerError::NoQueueSelected)?;
+        let logical_queues = info
+            .publish_queues
+            .iter()
+            .map(|queue| self.queue_without_namespace(queue))
+            .collect::<Result<Vec<_>, _>>()?;
+        let logical_queue =
+            selector(&logical_queues, message).ok_or(ProducerError::NoQueueSelected)?;
+        let mut queue = self.queue_with_namespace(&logical_queue)?;
         ensure_queue_member(&queue, &info)?;
         if use_auto_batch {
             return self
-                .send_auto_or_direct(message, Some(queue), mode)
+                .send_auto_or_direct(message, Some(logical_queue), mode)
                 .await
                 .map(Some);
         }
-        let prepared = self.prepare(message, false)?;
-        self.send_one_attempt(&runtime, &info, &queue, &prepared, mode, deadline)
-            .await
+        let broker = queue
+            .broker_name()
+            .ok_or_else(|| ProducerError::NoRoute(wire_message.topic().to_owned()))?
+            .to_owned();
+        let address = self
+            .broker_address(&runtime, &info, &queue)?
+            .ok_or_else(|| ProducerError::NoRoute(wire_message.topic().to_owned()))?;
+        if mode == SendMode::Future {
+            let mut hooked_message = wire_message;
+            return self
+                .send_future_attempts(
+                    &runtime,
+                    &mut queue,
+                    &broker,
+                    &address,
+                    &mut hooked_message,
+                    false,
+                    None,
+                    deadline,
+                )
+                .await;
+        }
+        let mut hooked_message = wire_message;
+        self.send_one_attempt_with_hooks(
+            &runtime,
+            &mut queue,
+            &broker,
+            &address,
+            &mut hooked_message,
+            false,
+            mode,
+            deadline,
+        )
+        .await
     }
 
     async fn send_auto_or_direct(
@@ -344,17 +387,18 @@ impl Producer {
         queue: Option<MessageQueue>,
         mode: SendMode,
     ) -> Result<SendResult, ProducerError> {
+        let wire_message = self.message_with_namespace(message)?;
         let timeout = Duration::from_millis(self.config.send_timeout_millis().max(0) as u64);
-        if mode == SendMode::Oneway || !self.config.auto_batch() || !can_accumulate(message) {
+        if mode == SendMode::Oneway || !self.config.auto_batch() || !can_accumulate(&wire_message) {
             return self
-                .send_message_direct_with_mode(message, queue.as_ref(), mode, timeout)
+                .send_message_direct_with_mode(&wire_message, queue.as_ref(), mode, timeout)
                 .await;
         }
 
         self.started_runtime().await?;
-        validation::validate_message(Some(message), &self.config)?;
+        validation::validate_message(Some(&wire_message), &self.config)?;
         let settings = self.config.accumulator_settings()?;
-        let mut accumulated_message = message.clone();
+        let mut accumulated_message = wire_message.clone();
         self.ids.set_if_missing(&mut accumulated_message);
         let queued = self
             .auto_batch_accumulator
@@ -370,7 +414,7 @@ impl Producer {
 
         match queued {
             EnqueueResult::Bypass => {
-                self.send_message_direct_with_mode(message, queue.as_ref(), mode, timeout)
+                self.send_message_direct_with_mode(&wire_message, queue.as_ref(), mode, timeout)
                     .await
             }
             EnqueueResult::Queued {
@@ -544,7 +588,8 @@ impl Producer {
         timeout: Duration,
     ) -> Result<SendResult, ProducerError> {
         let deadline = deadline_after(timeout);
-        let batch = create_batch(messages, &self.config, &self.ids)?;
+        let namespaced_messages = self.messages_with_namespace(messages)?;
+        let batch = create_batch(&namespaced_messages, &self.config, &self.ids)?;
         self.send_default_until(&batch, true, SendMode::Sync, deadline)
             .await?
             .ok_or(ProducerError::Timeout)
@@ -567,7 +612,8 @@ impl Producer {
         timeout: Duration,
     ) -> Result<SendResult, ProducerError> {
         let deadline = deadline_after(timeout);
-        let batch = create_batch(messages, &self.config, &self.ids)?;
+        let namespaced_messages = self.messages_with_namespace(messages)?;
+        let batch = create_batch(&namespaced_messages, &self.config, &self.ids)?;
         self.send_default_until(&batch, true, SendMode::Future, deadline)
             .await?
             .ok_or(ProducerError::Timeout)
@@ -629,7 +675,8 @@ impl Producer {
         timeout: Duration,
     ) -> Result<Option<SendResult>, ProducerError> {
         let deadline = deadline_after(timeout);
-        let batch = create_batch(messages, &self.config, &self.ids)?;
+        let namespaced_messages = self.messages_with_namespace(messages)?;
+        let batch = create_batch(&namespaced_messages, &self.config, &self.ids)?;
         self.send_to_queue_until(&batch, queue, true, mode, deadline)
             .await
     }
@@ -661,15 +708,48 @@ impl Producer {
         } else {
             None
         };
+        let wire_message = self.message_with_namespace(message)?;
+        let mut wire_queue = self.queue_with_namespace(queue)?;
         let runtime = self.started_runtime().await?;
-        validation::validate_message(Some(message), &self.config)?;
+        validation::validate_message(Some(&wire_message), &self.config)?;
         let info = self
-            .acquire_publish_info(&runtime, message.topic(), deadline)
+            .acquire_publish_info(&runtime, wire_message.topic(), deadline)
             .await?;
-        ensure_queue_member(queue, &info)?;
-        let prepared = self.prepare(message, batch)?;
-        self.send_one_attempt(&runtime, &info, queue, &prepared, mode, deadline)
-            .await
+        ensure_queue_member(&wire_queue, &info)?;
+        let broker = wire_queue
+            .broker_name()
+            .ok_or_else(|| ProducerError::NoRoute(wire_message.topic().to_owned()))?
+            .to_owned();
+        let address = self
+            .broker_address(&runtime, &info, &wire_queue)?
+            .ok_or_else(|| ProducerError::NoRoute(wire_message.topic().to_owned()))?;
+        if mode == SendMode::Future {
+            let mut hooked_message = wire_message;
+            return self
+                .send_future_attempts(
+                    &runtime,
+                    &mut wire_queue,
+                    &broker,
+                    &address,
+                    &mut hooked_message,
+                    batch,
+                    None,
+                    deadline,
+                )
+                .await;
+        }
+        let mut hooked_message = wire_message;
+        self.send_one_attempt_with_hooks(
+            &runtime,
+            &mut wire_queue,
+            &broker,
+            &address,
+            &mut hooked_message,
+            batch,
+            mode,
+            deadline,
+        )
+        .await
     }
 
     async fn send_default(
@@ -691,18 +771,20 @@ impl Producer {
         mode: SendMode,
         deadline: Instant,
     ) -> Result<Option<SendResult>, ProducerError> {
+        let wire_message = self.message_with_namespace(message)?;
         let _backpressure = if mode == SendMode::Future {
-            self.acquire_async_backpressure(message.body().len(), deadline)
+            self.acquire_async_backpressure(wire_message.body().len(), deadline)
                 .await?
         } else {
             None
         };
         let runtime = self.started_runtime().await?;
-        validation::validate_message(Some(message), &self.config)?;
+        validation::validate_message(Some(&wire_message), &self.config)?;
         let mut info = self
-            .acquire_publish_info(&runtime, message.topic(), deadline)
+            .acquire_publish_info(&runtime, wire_message.topic(), deadline)
             .await?;
-        let prepared = self.prepare(message, batch)?;
+        let mut hooked_message = wire_message;
+        self.ids.set_if_missing(&mut hooked_message);
         let attempts = attempt_count(mode, &self.config);
         if attempts == 0 {
             return Err(ProducerError::NoSendAttempt);
@@ -719,52 +801,74 @@ impl Producer {
             }
             let latency_fault_enabled = self.config.client_config().send_latency_enable();
             if attempt > 0 && latency_fault_enabled {
-                self.selector.reset(message.topic());
+                self.selector.reset(hooked_message.topic());
+            }
+            let topic = hooked_message.topic().to_owned();
+            if !info
+                .publish_queues
+                .iter()
+                .any(|queue| queue.topic() == Some(topic.as_str()))
+            {
+                info = self
+                    .acquire_publish_info(&runtime, &topic, deadline)
+                    .await?;
             }
             let selected = self.fault.select(
                 &info.publish_queues,
                 last_broker.as_deref(),
                 latency_fault_enabled,
-                |length| self.selector.next_index(message.topic(), length),
+                |length| self.selector.next_index(&topic, length),
                 StdInstant::now(),
             );
-            let Some(queue) = selected else {
+            let Some(mut queue) = selected else {
                 return last_send_result
                     .map(Some)
-                    .ok_or_else(|| ProducerError::NoRoute(message.topic().to_owned()));
+                    .ok_or_else(|| ProducerError::NoRoute(topic.clone()));
             };
             let Some(broker) = queue.broker_name().map(str::to_owned) else {
                 return last_send_result
                     .map(Some)
-                    .ok_or_else(|| ProducerError::NoRoute(message.topic().to_owned()));
+                    .ok_or_else(|| ProducerError::NoRoute(topic.clone()));
             };
             last_broker = Some(broker.clone());
 
             let Some(address) = self.broker_address(&runtime, &info, &queue)? else {
                 // Java refreshes publish info once from sendKernelImpl when the
                 // broker address is absent, then lets the retry loop decide.
-                let _ = runtime
-                    .update_topic_route(message.topic(), deadline)
-                    .await?;
-                info = self
-                    .current_publish_info(&runtime, message.topic())?
-                    .unwrap_or(info);
-                last_error = Some(ProducerError::NoRoute(message.topic().to_owned()));
+                let _ = runtime.update_topic_route(&topic, deadline).await?;
+                info = self.current_publish_info(&runtime, &topic)?.unwrap_or(info);
+                last_error = Some(ProducerError::NoRoute(topic));
                 continue;
             };
+
+            if mode == SendMode::Future {
+                return self
+                    .send_future_attempts(
+                        &runtime,
+                        &mut queue,
+                        &broker,
+                        &address,
+                        &mut hooked_message,
+                        batch,
+                        Some(&info),
+                        deadline,
+                    )
+                    .await;
+            }
 
             let request_deadline = self.request_deadline(mode, deadline, attempt, attempts);
             let started = StdInstant::now();
             let result = self
-                .send_one_attempt_at(SendAttempt {
-                    runtime: &runtime,
-                    queue: &queue,
-                    broker: &broker,
-                    address: &address,
-                    prepared: &prepared,
+                .send_one_attempt_with_hooks(
+                    &runtime,
+                    &mut queue,
+                    &broker,
+                    &address,
+                    &mut hooked_message,
+                    batch,
                     mode,
-                    deadline: request_deadline,
-                })
+                    request_deadline,
+                )
                 .await;
             let latency = started.elapsed();
             match result {
@@ -815,34 +919,327 @@ impl Producer {
         if let Some(send_result) = last_send_result {
             return Ok(Some(send_result));
         }
-        Err(last_error.unwrap_or_else(|| ProducerError::NoRoute(message.topic().to_owned())))
+        Err(last_error.unwrap_or_else(|| ProducerError::NoRoute(hooked_message.topic().to_owned())))
     }
 
-    async fn send_one_attempt(
+    #[allow(clippy::too_many_arguments)]
+    async fn send_one_attempt_with_hooks(
         &self,
         runtime: &ClientRuntime,
-        info: &TopicSnapshot,
-        queue: &MessageQueue,
-        prepared: &PreparedMessage,
+        queue: &mut MessageQueue,
+        broker: &str,
+        address: &str,
+        message: &mut Message,
+        batch: bool,
         mode: SendMode,
         deadline: Instant,
     ) -> Result<Option<SendResult>, ProducerError> {
-        let broker = queue
-            .broker_name()
-            .ok_or_else(|| ProducerError::NoRoute(prepared.topic.clone()))?;
-        let address = self
-            .broker_address(runtime, info, queue)?
-            .ok_or_else(|| ProducerError::NoRoute(prepared.topic.clone()))?;
-        self.send_one_attempt_at(SendAttempt {
-            runtime,
+        self.ids.set_if_missing(message);
+        let mut original_body = Some(message.body().to_vec());
+        let compression_sys_flag = self.compress_message_before_hook(message, batch);
+        self.execute_check_forbidden_hooks(message, queue, address, mode)?;
+        let hooks = self.send_message_hook_snapshot();
+        let mut context = self.send_message_context(message, queue, address, mode);
+        for hook in &hooks {
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                hook.send_message_before(&mut context);
+            }));
+        }
+        // Java passes the selected MessageQueue object itself through the hook
+        // context, so in-place queue edits affect the ensuing request.
+        *queue = context.queue.clone();
+
+        let prepared_result = self.prepare(context.message, batch, compression_sys_flag);
+        if mode == SendMode::Future {
+            context.message.set_body(
+                original_body
+                    .take()
+                    .expect("original message body is retained"),
+            );
+        }
+        let mut result = match prepared_result {
+            Ok(prepared) => {
+                self.send_one_attempt_at(SendAttempt {
+                    runtime,
+                    queue,
+                    broker,
+                    address,
+                    prepared: &prepared,
+                    mode,
+                    deadline,
+                })
+                .await
+            }
+            Err(error) => Err(error),
+        };
+
+        if let Ok(Some(send_result)) = &mut result {
+            send_result.topic = self.topic_without_namespace(&send_result.topic)?;
+        }
+
+        match &result {
+            Ok(Some(send_result)) => context.send_result = Some(send_result.clone()),
+            Err(error) => context.exception = Some(error),
+            Ok(None) => {}
+        }
+        if !matches!(&result, Err(ProducerError::InvalidRetryMetadata)) {
+            for hook in &hooks {
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    hook.send_message_after(&mut context);
+                }));
+            }
+        }
+        if let Some(original_body) = original_body {
+            context.message.set_body(original_body);
+        }
+        let hook_result = context.send_result.take();
+        drop(context);
+        if let (Ok(Some(send_result)), Some(hook_result)) = (&mut result, hook_result) {
+            *send_result = hook_result.clone();
+        }
+        result
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn send_future_attempts(
+        &self,
+        runtime: &ClientRuntime,
+        queue: &mut MessageQueue,
+        broker: &str,
+        address: &str,
+        message: &mut Message,
+        batch: bool,
+        publish_info: Option<&TopicSnapshot>,
+        deadline: Instant,
+    ) -> Result<Option<SendResult>, ProducerError> {
+        self.ids.set_if_missing(message);
+        let original_body = message.body().to_vec();
+        let compression_sys_flag = self.compress_message_before_hook(message, batch);
+        self.execute_check_forbidden_hooks(message, queue, address, SendMode::Future)?;
+        let hooks = self.send_message_hook_snapshot();
+        let mut context = self.send_message_context(message, queue, address, SendMode::Future);
+        for hook in &hooks {
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                hook.send_message_before(&mut context);
+            }));
+        }
+        // Preserve Java's shared MessageQueue mutation semantics before the
+        // asynchronous submission and any retry setup.
+        *queue = context.queue.clone();
+
+        let prepared = self.prepare(context.message, batch, compression_sys_flag);
+        context.message.set_body(original_body);
+        let prepared = match prepared {
+            Ok(prepared) => prepared,
+            Err(ProducerError::InvalidRetryMetadata) => {
+                return Err(ProducerError::InvalidRetryMetadata);
+            }
+            Err(error) => {
+                context.exception = Some(&error);
+                for hook in &hooks {
+                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        hook.send_message_after(&mut context);
+                    }));
+                }
+                drop(context);
+                return Err(error);
+            }
+        };
+        if let Ok(topic) = self.topic_without_namespace(context.message.topic()) {
+            context.message.set_topic(topic);
+        }
+
+        let attempts = attempt_count(SendMode::Future, &self.config);
+        let request_queue = queue.clone();
+        let mut current_broker = broker.to_owned();
+        let mut current_address = address.to_owned();
+        let mut outcome = Err(ProducerError::NoSendAttempt);
+        let mut pending_after_called = false;
+        for attempt in 0..attempts {
+            if Instant::now() >= deadline {
+                outcome = Err(ProducerError::Timeout);
+                break;
+            }
+            if !pending_after_called {
+                for hook in &hooks {
+                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        hook.send_message_after(&mut context);
+                    }));
+                }
+                pending_after_called = true;
+            }
+            let started = StdInstant::now();
+            let result = self
+                .send_one_attempt_at(SendAttempt {
+                    runtime,
+                    queue: &request_queue,
+                    broker: &current_broker,
+                    address: &current_address,
+                    prepared: &prepared,
+                    mode: SendMode::Future,
+                    deadline,
+                })
+                .await;
+            let latency = started.elapsed();
+            match result {
+                Ok(Some(mut send_result)) => {
+                    send_result.topic = match self.topic_without_namespace(&send_result.topic) {
+                        Ok(topic) => topic,
+                        Err(error) => {
+                            outcome = Err(error);
+                            break;
+                        }
+                    };
+                    self.update_fault(&current_broker, latency, false, true);
+                    outcome = Ok(Some(send_result));
+                    break;
+                }
+                Ok(None) => {
+                    self.update_fault(&current_broker, latency, false, true);
+                    outcome = Ok(None);
+                    break;
+                }
+                Err(error) => {
+                    if let ProducerError::Rpc(rpc) = &error {
+                        let (isolation, reachable) = classify_fault(
+                            rpc,
+                            SendMode::Future,
+                            self.config.client_config().start_detector_enable(),
+                        );
+                        self.update_fault(&current_broker, latency, isolation, reachable);
+                    }
+                    outcome = Err(error);
+                    if attempt + 1 >= attempts
+                        || !matches!(
+                            &outcome,
+                            Err(ProducerError::Rpc(rpc))
+                                if should_retry(SendMode::Future, rpc, &self.config)
+                        )
+                    {
+                        break;
+                    }
+
+                    if let Some(info) = publish_info {
+                        let topic = prepared.topic.clone();
+                        let selected = self.fault.select(
+                            &info.publish_queues,
+                            Some(&current_broker),
+                            self.config.client_config().send_latency_enable(),
+                            |length| self.selector.next_index(&topic, length),
+                            StdInstant::now(),
+                        );
+                        let Some(selected) = selected else {
+                            break;
+                        };
+                        let Some(next_broker) = selected.broker_name().map(str::to_owned) else {
+                            break;
+                        };
+                        let next_address = match self.broker_address(runtime, info, &selected) {
+                            Ok(Some(address)) => address,
+                            Ok(None) => break,
+                            Err(error) => {
+                                outcome = Err(error);
+                                break;
+                            }
+                        };
+                        current_broker = next_broker;
+                        current_address = next_address;
+                    }
+                }
+            }
+        }
+
+        match &outcome {
+            Ok(Some(send_result)) => context.send_result = Some(send_result.clone()),
+            Err(error) => context.exception = Some(error),
+            Ok(None) => {}
+        }
+        for hook in &hooks {
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                hook.send_message_after(&mut context);
+            }));
+        }
+        let hook_result = context.send_result.take();
+        drop(context);
+        if let (Ok(Some(send_result)), Some(hook_result)) = (&mut outcome, hook_result) {
+            *send_result = hook_result.clone();
+        }
+        outcome
+    }
+
+    fn execute_check_forbidden_hooks(
+        &self,
+        message: &mut Message,
+        queue: &mut MessageQueue,
+        address: &str,
+        communication_mode: SendMode,
+    ) -> Result<(), ProducerError> {
+        let hooks = self.check_forbidden_hook_snapshot();
+        if hooks.is_empty() {
+            return Ok(());
+        }
+        let mut context = CheckForbiddenContext {
+            name_srv_addr: self.config.client_config().get_namesrv_addr(),
+            group: self.producer_group().to_owned(),
+            message,
             queue,
-            broker,
-            address: &address,
-            prepared,
-            mode,
-            deadline,
-        })
-        .await
+            broker_addr: address.to_owned(),
+            communication_mode: communication_mode.into(),
+            send_result: None,
+            exception: None,
+            arg: None,
+            unit_mode: self.config.client_config().unit_mode(),
+        };
+        for hook in hooks {
+            hook.check_forbidden(&mut context)?;
+        }
+        Ok(())
+    }
+
+    fn send_message_context<'a>(
+        &'a self,
+        message: &'a mut Message,
+        queue: &MessageQueue,
+        address: &str,
+        mode: SendMode,
+    ) -> SendMessageContext<'a> {
+        let mut client_config = self.config.client_config().clone();
+        let namespace = client_config
+            .get_namespace()
+            .ok()
+            .flatten()
+            .map(str::to_owned);
+        let properties = message.properties();
+        let is_transaction_half = properties
+            .get(PROPERTY_TRANSACTION_PREPARED)
+            .is_some_and(|value| value == "true");
+        let is_delay = properties.contains_key(PROPERTY_DELAY_TIME_LEVEL)
+            || properties.contains_key("__STARTDELIVERTIME")
+            || properties.contains_key(PROPERTY_TIMER_DELIVER_MS)
+            || properties.contains_key(PROPERTY_TIMER_DELAY_SEC)
+            || properties.contains_key(PROPERTY_TIMER_DELAY_MS);
+        let message_type = if is_delay {
+            SendMessageType::Delay
+        } else if is_transaction_half {
+            SendMessageType::TransactionHalf
+        } else {
+            SendMessageType::Normal
+        };
+        SendMessageContext {
+            producer_group: self.producer_group().to_owned(),
+            producer: self,
+            message,
+            queue: queue.clone(),
+            broker_addr: address.to_owned(),
+            born_host: self.config.client_config().client_ip().map(str::to_owned),
+            communication_mode: mode.into(),
+            send_result: None,
+            exception: None,
+            message_type,
+            namespace,
+            trace_context: None,
+            properties: None,
+        }
     }
 
     async fn send_one_attempt_at(
@@ -863,6 +1260,7 @@ impl Producer {
                 address: attempt.address.to_owned(),
                 queue: attempt.queue.clone(),
                 body: attempt.prepared.body.clone(),
+                topic: attempt.prepared.topic.clone(),
                 properties: attempt.prepared.properties.clone(),
                 sys_flag: attempt.prepared.sys_flag,
                 unique_id: attempt.prepared.unique_id.clone(),
@@ -874,7 +1272,7 @@ impl Producer {
             }
         }
         let header = SendMessageRequestHeaderV1 {
-            producer_group: self.config.producer_group().to_owned(),
+            producer_group: self.producer_group().to_owned(),
             topic: attempt.prepared.topic.clone(),
             default_topic: self.config.create_topic_key().to_owned(),
             default_topic_queue_nums: self.config.default_topic_queue_nums(),
@@ -1007,7 +1405,73 @@ impl Producer {
         per_request.min(deadline)
     }
 
-    fn prepare(&self, message: &Message, batch: bool) -> Result<PreparedMessage, ProducerError> {
+    fn message_with_namespace(&self, message: &Message) -> Result<Message, ProducerError> {
+        let mut namespaced = message.clone();
+        let mut config = self.config.client_config().clone();
+        if let Some(topic) = config.with_namespace(Some(message.topic()))? {
+            namespaced.set_topic(topic);
+        }
+        Ok(namespaced)
+    }
+
+    fn messages_with_namespace(&self, messages: &[Message]) -> Result<Vec<Message>, ProducerError> {
+        messages
+            .iter()
+            .map(|message| self.message_with_namespace(message))
+            .collect()
+    }
+
+    fn topic_with_namespace(&self, topic: &str) -> Result<String, ProducerError> {
+        let mut config = self.config.client_config().clone();
+        Ok(config
+            .with_namespace(Some(topic))?
+            .unwrap_or_else(|| topic.to_owned()))
+    }
+
+    fn queue_with_namespace(&self, queue: &MessageQueue) -> Result<MessageQueue, ProducerError> {
+        let mut config = self.config.client_config().clone();
+        Ok(config.queue_with_namespace(queue)?)
+    }
+
+    fn queue_without_namespace(&self, queue: &MessageQueue) -> Result<MessageQueue, ProducerError> {
+        let mut config = self.config.client_config().clone();
+        let mut logical = queue.clone();
+        if let Some(topic) = config.without_namespace(queue.topic())? {
+            logical.set_topic(Some(topic));
+        }
+        Ok(logical)
+    }
+
+    fn topic_without_namespace(&self, topic: &str) -> Result<String, ProducerError> {
+        let mut config = self.config.client_config().clone();
+        Ok(config
+            .without_namespace(Some(topic))?
+            .unwrap_or_else(|| topic.to_owned()))
+    }
+
+    fn compress_message_before_hook(&self, message: &mut Message, batch: bool) -> i32 {
+        if batch || (message.body().len() as i64) < self.config.compress_threshold() as i64 {
+            return 0;
+        }
+        match rocketmq_classic_common::compression::compress(
+            self.config.compress_type(),
+            message.body(),
+            self.config.compress_level(),
+        ) {
+            Ok(compressed) => {
+                message.set_body(compressed);
+                message::COMPRESSED_FLAG | self.config.compress_type().get_compression_flag()
+            }
+            Err(_) => 0,
+        }
+    }
+
+    fn prepare(
+        &self,
+        message: &Message,
+        batch: bool,
+        compression_sys_flag: i32,
+    ) -> Result<PreparedMessage, ProducerError> {
         let mut copy = message.clone();
         let unique_id = self.ids.set_if_missing(&mut copy);
         let mut properties: BTreeMap<String, String> = copy.properties().clone();
@@ -1037,19 +1501,8 @@ impl Producer {
             None
         };
 
-        let mut body = copy.body().to_vec();
-        let mut sys_flag = 0;
-        if !batch && body.len() as i64 >= self.config.compress_threshold() as i64 {
-            if let Ok(compressed) = rocketmq_classic_common::compression::compress(
-                self.config.compress_type(),
-                &body,
-                self.config.compress_level(),
-            ) {
-                body = compressed;
-                sys_flag |=
-                    message::COMPRESSED_FLAG | self.config.compress_type().get_compression_flag();
-            }
-        }
+        let body = copy.body().to_vec();
+        let mut sys_flag = compression_sys_flag;
         if copy
             .properties()
             .get(PROPERTY_TRANSACTION_PREPARED)
@@ -1168,9 +1621,10 @@ fn should_retry(mode: SendMode, error: &RpcError, config: &crate::ProducerConfig
             RpcError::Response { code, .. } => config.retry_response_codes().contains(code),
             _ => true,
         },
-        SendMode::Future => {
-            matches!(error, RpcError::Transport(error) if *error != rocketmq_classic_remoting::TransportError::TooManyRequests)
-        }
+        SendMode::Future => !matches!(
+            error,
+            RpcError::Transport(rocketmq_classic_remoting::TransportError::TooManyRequests)
+        ),
         SendMode::Oneway => false,
     }
 }
@@ -1194,6 +1648,7 @@ fn classify_fault(error: &RpcError, mode: SendMode, detector_enabled: bool) -> (
 
 #[cfg(test)]
 mod tests {
+    use crate::{CheckForbiddenContext, CheckForbiddenHook, CommunicationMode, SendMessageHook};
     use rocketmq_classic_common::message::decode_properties;
     use rocketmq_classic_core::api::producer::SendStatus;
     use rocketmq_classic_core::error::RpcError;
@@ -1222,12 +1677,17 @@ mod tests {
     async fn scripted_producer(
         config: crate::ProducerConfig,
     ) -> (Arc<Producer>, [MessageQueue; 2]) {
+        let mut client_config = config.client_config().clone();
+        let topic = client_config
+            .with_namespace(Some("orders"))
+            .unwrap()
+            .unwrap_or_else(|| "orders".into());
         let manager = rocketmq_classic_core::runtime::ClientRuntimeManager::new();
         let producer = Arc::new(Producer::with_runtime_manager(config, manager));
         producer.start().await.unwrap();
         let queues = [
-            MessageQueue::new("orders", "broker-a", 0),
-            MessageQueue::new("orders", "broker-b", 0),
+            MessageQueue::new(&topic, "broker-a", 0),
+            MessageQueue::new(&topic, "broker-b", 0),
         ];
         let snapshot = Arc::new(TopicSnapshot {
             route: Arc::new(
@@ -1242,8 +1702,121 @@ mod tests {
             ]),
             order_topic: false,
         });
-        producer.cache_publish_info("orders", snapshot);
+        producer.cache_publish_info(&topic, snapshot);
         (producer, queues)
+    }
+
+    #[tokio::test]
+    async fn namespaced_send_uses_wire_names_and_unwraps_the_result() {
+        let mut config = crate::ProducerConfig::new("namespace-send").unwrap();
+        config
+            .client_config_mut()
+            .set_namespace(Some("tenant".into()));
+        let (producer, queues) = scripted_producer(config).await;
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        type HookEvents = Arc<std::sync::Mutex<Vec<(String, Option<String>, String)>>>;
+        struct Hook(HookEvents);
+        impl SendMessageHook for Hook {
+            fn hook_name(&self) -> &str {
+                "namespace-test"
+            }
+
+            fn send_message_before(&self, context: &mut SendMessageContext<'_>) {
+                self.0.lock().unwrap().push((
+                    context.message.topic().to_owned(),
+                    context.namespace.clone(),
+                    context.queue.topic().unwrap_or_default().to_owned(),
+                ));
+            }
+        }
+        producer.register_send_message_hook(Arc::new(Hook(seen.clone())));
+        let mut response = scripted_result("msg-ns", "offset-ns", 7);
+        response.topic = "tenant%orders".into();
+        producer
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .push_back(Ok(Some(response)));
+
+        assert_eq!(producer.producer_group(), "tenant%namespace-send");
+        let message = Message::new("orders", b"namespaced body".to_vec());
+        let result = producer
+            .send_with_timeout(&message, Duration::from_secs(1))
+            .await
+            .unwrap();
+        assert_eq!(message.topic(), "orders");
+        assert_eq!(result.topic, "orders");
+        {
+            let transport = producer.scripted_transport.lock().unwrap();
+            assert_eq!(transport.attempts[0].topic, "tenant%orders");
+            assert_eq!(transport.attempts[0].queue.topic(), Some("tenant%orders"));
+        }
+        assert_eq!(queues[0].topic(), Some("tenant%orders"));
+        assert_eq!(
+            seen.lock().unwrap().as_slice(),
+            &[(
+                "tenant%orders".to_owned(),
+                Some("tenant".to_owned()),
+                "tenant%orders".to_owned(),
+            )]
+        );
+
+        let logical_queue = MessageQueue::new("orders", "broker-a", 0);
+        let mut response = scripted_result("msg-ns-queue", "offset-ns-queue", 8);
+        response.topic = "tenant%orders".into();
+        producer
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .push_back(Ok(Some(response)));
+        let queue_result = producer
+            .send_to_queue_with_timeout(&message, &logical_queue, Duration::from_secs(1))
+            .await
+            .unwrap();
+        assert_eq!(logical_queue.topic(), Some("orders"));
+        assert_eq!(queue_result.topic, "orders");
+
+        let mut response = scripted_result("msg-ns-selector", "offset-ns-selector", 9);
+        response.topic = "tenant%orders".into();
+        producer
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .push_back(Ok(Some(response)));
+        let selector_result = producer
+            .send_with_selector_with_timeout(
+                &message,
+                |logical_queues, selected_message| {
+                    assert_eq!(selected_message.topic(), "orders");
+                    assert_eq!(logical_queues[0].topic(), Some("orders"));
+                    Some(logical_queues[0].clone())
+                },
+                Duration::from_secs(1),
+            )
+            .await
+            .unwrap();
+        assert_eq!(selector_result.topic, "orders");
+        {
+            let transport = producer.scripted_transport.lock().unwrap();
+            assert_eq!(transport.attempts.len(), 3);
+            assert!(
+                transport
+                    .attempts
+                    .iter()
+                    .all(|attempt| attempt.topic == "tenant%orders")
+            );
+            assert!(
+                transport
+                    .attempts
+                    .iter()
+                    .all(|attempt| attempt.queue.topic() == Some("tenant%orders"))
+            );
+        }
+        assert_eq!(seen.lock().unwrap().len(), 3);
+        producer.shutdown().await.unwrap();
     }
 
     #[tokio::test]
@@ -1292,8 +1865,644 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn send_message_hooks_run_in_order_for_each_attempt_and_keep_context_state() {
+        struct Hook(Arc<std::sync::Mutex<Vec<String>>>);
+
+        impl SendMessageHook for Hook {
+            fn hook_name(&self) -> &str {
+                "send-hook-test"
+            }
+
+            fn send_message_before(&self, context: &mut SendMessageContext<'_>) {
+                context.message.set_tags("hooked-tag").unwrap();
+                context
+                    .properties
+                    .get_or_insert_with(Default::default)
+                    .insert("hook-state".into(), "retained".into());
+                context.trace_context = Some(Box::new(17_u8));
+                self.0.lock().unwrap().push("before".into());
+            }
+
+            fn send_message_after(&self, context: &mut SendMessageContext<'_>) {
+                assert_eq!(
+                    context
+                        .properties
+                        .as_ref()
+                        .and_then(|values| values.get("hook-state"))
+                        .map(String::as_str),
+                    Some("retained")
+                );
+                assert_eq!(
+                    context
+                        .trace_context
+                        .as_deref()
+                        .and_then(|value| value.downcast_ref::<u8>()),
+                    Some(&17)
+                );
+                self.0
+                    .lock()
+                    .unwrap()
+                    .push(if context.send_result.is_some() {
+                        "after-success".into()
+                    } else {
+                        assert!(context.exception.is_some());
+                        "after-error".into()
+                    });
+            }
+        }
+
+        let mut config = crate::ProducerConfig::new("send-hook-lifecycle").unwrap();
+        config.set_retry_times_when_send_failed(1);
+        let (producer, _) = scripted_producer(config).await;
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        producer.register_send_message_hook(Arc::new(Hook(events.clone())));
+        {
+            let mut scripted = producer.scripted_transport.lock().unwrap();
+            scripted.responses.extend([
+                Err(ProducerError::Rpc(RpcError::Response {
+                    request_code: 10,
+                    peer: "broker".into(),
+                    code: response::SERVICE_NOT_AVAILABLE,
+                    remark: Some("retry this request".into()),
+                })),
+                Ok(Some(scripted_result("hooked-msg", "hooked-offset", 9))),
+            ]);
+        }
+
+        let message = Message::new("orders", b"hook body".to_vec());
+        producer
+            .send_with_timeout(&message, Duration::from_secs(1))
+            .await
+            .unwrap();
+        assert_eq!(
+            events.lock().unwrap().as_slice(),
+            ["before", "after-error", "before", "after-success"]
+        );
+        let attempts = {
+            let scripted = producer.scripted_transport.lock().unwrap();
+            assert_eq!(scripted.attempts.len(), 2);
+            scripted.attempts.clone()
+        };
+        for attempt in &attempts {
+            let properties = decode_properties(attempt.properties.as_deref().unwrap());
+            assert_eq!(
+                properties.get(PROPERTY_TAGS).map(String::as_str),
+                Some("hooked-tag")
+            );
+        }
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn send_message_hook_panics_are_isolated_like_java() {
+        struct PanickingHook;
+
+        impl SendMessageHook for PanickingHook {
+            fn hook_name(&self) -> &str {
+                "panicking-send-hook"
+            }
+
+            fn send_message_before(&self, _context: &mut SendMessageContext<'_>) {
+                panic!("before hook failure");
+            }
+
+            fn send_message_after(&self, _context: &mut SendMessageContext<'_>) {
+                panic!("after hook failure");
+            }
+        }
+
+        struct RecordingHook(Arc<std::sync::Mutex<Vec<String>>>);
+
+        impl SendMessageHook for RecordingHook {
+            fn hook_name(&self) -> &str {
+                "recording-send-hook"
+            }
+
+            fn send_message_before(&self, _context: &mut SendMessageContext<'_>) {
+                self.0.lock().unwrap().push("before".into());
+            }
+
+            fn send_message_after(&self, context: &mut SendMessageContext<'_>) {
+                assert!(context.send_result.is_some());
+                self.0.lock().unwrap().push("after".into());
+            }
+        }
+
+        let (producer, _) =
+            scripted_producer(crate::ProducerConfig::new("send-hook-panic").unwrap()).await;
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        producer.register_send_message_hook(Arc::new(PanickingHook));
+        producer.register_send_message_hook(Arc::new(RecordingHook(events.clone())));
+        producer
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .push_back(Ok(Some(scripted_result("panic-isolated", "offset", 1))));
+
+        let result = producer
+            .send_with_timeout(
+                &Message::new("orders", b"hook body".to_vec()),
+                Duration::from_secs(1),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.msg_id, "panic-isolated");
+        assert_eq!(events.lock().unwrap().as_slice(), ["before", "after"]);
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn send_message_hook_queue_mutation_changes_the_request_queue() {
+        struct Hook;
+        impl SendMessageHook for Hook {
+            fn hook_name(&self) -> &str {
+                "send-hook-queue-mutation"
+            }
+
+            fn send_message_before(&self, context: &mut SendMessageContext<'_>) {
+                context.queue.set_queue_id(7);
+            }
+        }
+
+        let config = crate::ProducerConfig::new("send-hook-queue-mutation").unwrap();
+        let (producer, queues) = scripted_producer(config).await;
+        producer.register_send_message_hook(Arc::new(Hook));
+        producer
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .push_back(Ok(Some(scripted_result("hook-queue", "hook-offset", 1))));
+
+        producer
+            .send_with_timeout(
+                &Message::new("orders", b"hook queue".to_vec()),
+                Duration::from_secs(1),
+            )
+            .await
+            .unwrap();
+
+        {
+            let scripted = producer.scripted_transport.lock().unwrap();
+            assert_eq!(scripted.attempts.len(), 1);
+            assert_eq!(scripted.attempts[0].queue.queue_id(), 7);
+        }
+        assert_eq!(queues[0].queue_id(), 0);
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn send_message_hook_result_mutation_reaches_the_returned_result() {
+        struct Hook;
+        impl SendMessageHook for Hook {
+            fn hook_name(&self) -> &str {
+                "send-hook-result-mutation"
+            }
+
+            fn send_message_after(&self, context: &mut SendMessageContext<'_>) {
+                if let Some(result) = &mut context.send_result {
+                    result.msg_id = "hook-mutated-id".into();
+                }
+            }
+        }
+
+        let config = crate::ProducerConfig::new("send-hook-result-mutation").unwrap();
+        let (producer, _) = scripted_producer(config).await;
+        producer.register_send_message_hook(Arc::new(Hook));
+        producer
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .push_back(Ok(Some(scripted_result("original-id", "offset", 1))));
+
+        let result = producer
+            .send_with_timeout(
+                &Message::new("orders", b"hook result".to_vec()),
+                Duration::from_secs(1),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result.msg_id, "hook-mutated-id");
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn check_forbidden_hook_runs_before_send_hooks_and_can_adjust_message_and_queue() {
+        struct Forbidden(Arc<std::sync::Mutex<Vec<&'static str>>>);
+
+        impl CheckForbiddenHook for Forbidden {
+            fn hook_name(&self) -> &str {
+                "forbidden-context-test"
+            }
+
+            fn check_forbidden(
+                &self,
+                context: &mut CheckForbiddenContext<'_>,
+            ) -> Result<(), ProducerError> {
+                assert_eq!(context.name_srv_addr, None);
+                assert_eq!(context.group, "check-forbidden-order");
+                assert_eq!(context.communication_mode, CommunicationMode::Sync);
+                assert_eq!(context.broker_addr, "10.0.0.1:10911");
+                assert_eq!(context.queue.broker_name(), Some("broker-a"));
+                assert_eq!(context.queue.queue_id(), 0);
+                assert_eq!(context.send_result, None);
+                assert!(context.exception.is_none());
+                assert!(context.arg.is_none());
+                assert!(!context.unit_mode);
+                context.message.set_tags("checked").unwrap();
+                context.queue.set_queue_id(1);
+                self.0.lock().unwrap().push("forbidden");
+                Ok(())
+            }
+        }
+
+        struct Send(Arc<std::sync::Mutex<Vec<&'static str>>>);
+
+        impl SendMessageHook for Send {
+            fn hook_name(&self) -> &str {
+                "send-after-forbidden-test"
+            }
+
+            fn send_message_before(&self, context: &mut SendMessageContext<'_>) {
+                assert_eq!(context.message.tags(), Some("checked"));
+                self.0.lock().unwrap().push("send-before");
+            }
+
+            fn send_message_after(&self, context: &mut SendMessageContext<'_>) {
+                assert!(context.send_result.is_some());
+                self.0.lock().unwrap().push("send-after");
+            }
+        }
+
+        let (producer, queues) =
+            scripted_producer(crate::ProducerConfig::new("check-forbidden-order").unwrap()).await;
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        producer.register_check_forbidden_hook(Arc::new(Forbidden(events.clone())));
+        producer.register_send_message_hook(Arc::new(Send(events.clone())));
+        producer
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .push_back(Ok(Some(scripted_result(
+                "checked-message",
+                "checked-offset",
+                3,
+            ))));
+
+        producer
+            .send_to_queue_with_timeout(
+                &Message::new("orders", b"checked body".to_vec()),
+                &queues[0],
+                Duration::from_secs(1),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            events.lock().unwrap().as_slice(),
+            ["forbidden", "send-before", "send-after"]
+        );
+        let attempts = producer.scripted_transport.lock().unwrap().attempts.clone();
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[0].queue.queue_id(), 1);
+        assert_eq!(
+            decode_properties(attempts[0].properties.as_deref().unwrap())
+                .get(PROPERTY_TAGS)
+                .map(String::as_str),
+            Some("checked")
+        );
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn rejecting_check_forbidden_hook_aborts_before_rpc_and_send_hooks() {
+        struct Reject;
+
+        impl CheckForbiddenHook for Reject {
+            fn hook_name(&self) -> &str {
+                "reject-send-test"
+            }
+
+            fn check_forbidden(
+                &self,
+                _context: &mut CheckForbiddenContext<'_>,
+            ) -> Result<(), ProducerError> {
+                Err(ProducerError::ForbiddenTopic)
+            }
+        }
+
+        let (producer, queues) =
+            scripted_producer(crate::ProducerConfig::new("reject-send").unwrap()).await;
+        producer.register_check_forbidden_hook(Arc::new(Reject));
+        let error = producer
+            .send_to_queue_with_timeout(
+                &Message::new("orders", b"blocked body".to_vec()),
+                &queues[0],
+                Duration::from_secs(1),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(error, ProducerError::ForbiddenTopic));
+        assert!(
+            producer
+                .scripted_transport
+                .lock()
+                .unwrap()
+                .attempts
+                .is_empty()
+        );
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn send_hooks_observe_compressed_body_before_and_after_sync_attempt() {
+        type BodyLengths = Arc<std::sync::Mutex<Vec<usize>>>;
+        struct Hook(BodyLengths);
+        impl SendMessageHook for Hook {
+            fn hook_name(&self) -> &str {
+                "compressed-body-hook"
+            }
+
+            fn send_message_before(&self, context: &mut SendMessageContext<'_>) {
+                self.0.lock().unwrap().push(context.message.body().len());
+            }
+
+            fn send_message_after(&self, context: &mut SendMessageContext<'_>) {
+                self.0.lock().unwrap().push(context.message.body().len());
+            }
+        }
+
+        let mut config = crate::ProducerConfig::new("compressed-body-hook").unwrap();
+        config.set_compress_threshold(1);
+        let (producer, _) = scripted_producer(config).await;
+        let body_lengths = Arc::new(std::sync::Mutex::new(Vec::new()));
+        producer.register_send_message_hook(Arc::new(Hook(body_lengths.clone())));
+        producer
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .push_back(Ok(Some(scripted_result(
+                "compressed-hook-msg",
+                "compressed-hook-offset",
+                11,
+            ))));
+
+        let body = vec![b'x'; 2048];
+        producer
+            .send_with_timeout(
+                &Message::new("orders", body.clone()),
+                Duration::from_secs(1),
+            )
+            .await
+            .unwrap();
+
+        let attempt = producer.scripted_transport.lock().unwrap().attempts[0].clone();
+        {
+            let body_lengths = body_lengths.lock().unwrap();
+            assert_eq!(body_lengths.len(), 2);
+            assert!(
+                body_lengths[0] < body.len(),
+                "before hook sees compressed body"
+            );
+            assert_eq!(body_lengths[0], body_lengths[1]);
+            assert_eq!(body_lengths[1], attempt.body.len());
+        }
+        assert_ne!(attempt.sys_flag & message::COMPRESSED_FLAG, 0);
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn async_send_retries_share_one_hook_context_until_terminal_result() {
+        struct Hook(Arc<std::sync::Mutex<Vec<&'static str>>>);
+
+        impl SendMessageHook for Hook {
+            fn hook_name(&self) -> &str {
+                "async-retry-hook"
+            }
+
+            fn send_message_before(&self, context: &mut SendMessageContext<'_>) {
+                context
+                    .properties
+                    .get_or_insert_with(Default::default)
+                    .insert("hook-state".into(), "retained".into());
+                self.0.lock().unwrap().push("before");
+            }
+
+            fn send_message_after(&self, context: &mut SendMessageContext<'_>) {
+                assert_eq!(
+                    context
+                        .properties
+                        .as_ref()
+                        .and_then(|properties| properties.get("hook-state"))
+                        .map(String::as_str),
+                    Some("retained")
+                );
+                self.0
+                    .lock()
+                    .unwrap()
+                    .push(if context.send_result.is_some() {
+                        "after-success"
+                    } else if context.exception.is_some() {
+                        "after-error"
+                    } else {
+                        "after-pending"
+                    });
+            }
+        }
+
+        let mut config = crate::ProducerConfig::new("async-retry-hook").unwrap();
+        config.set_retry_times_when_send_async_failed(1);
+        let (producer, _) = scripted_producer(config).await;
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        producer.register_send_message_hook(Arc::new(Hook(events.clone())));
+        producer
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .extend([
+                Err(ProducerError::Rpc(RpcError::Response {
+                    request_code: 10,
+                    peer: "broker".into(),
+                    code: response::SERVICE_NOT_AVAILABLE,
+                    remark: Some("retry this request".into()),
+                })),
+                Ok(Some(scripted_result(
+                    "async-retry-msg",
+                    "async-retry-offset",
+                    9,
+                ))),
+            ]);
+
+        producer
+            .send_future_with_timeout(
+                &Message::new("orders", b"async body".to_vec()),
+                Duration::from_secs(1),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            events.lock().unwrap().as_slice(),
+            ["before", "after-pending", "after-success"]
+        );
+        let attempts = producer.scripted_transport.lock().unwrap().attempts.clone();
+        assert_eq!(attempts.len(), 2);
+        assert_ne!(attempts[0].broker, attempts[1].broker);
+        assert_eq!(attempts[0].body, attempts[1].body);
+        assert_eq!(attempts[0].unique_id, attempts[1].unique_id);
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn explicit_queue_future_retries_on_the_same_broker_with_one_hook_lifecycle() {
+        struct Hook(Arc<std::sync::Mutex<Vec<&'static str>>>);
+
+        impl SendMessageHook for Hook {
+            fn hook_name(&self) -> &str {
+                "explicit-async-retry-hook"
+            }
+
+            fn send_message_before(&self, _context: &mut SendMessageContext<'_>) {
+                self.0.lock().unwrap().push("before");
+            }
+
+            fn send_message_after(&self, context: &mut SendMessageContext<'_>) {
+                self.0
+                    .lock()
+                    .unwrap()
+                    .push(if context.send_result.is_some() {
+                        "after-success"
+                    } else if context.exception.is_some() {
+                        "after-error"
+                    } else {
+                        "after-pending"
+                    });
+            }
+        }
+
+        let mut config = crate::ProducerConfig::new("explicit-async-retry-hook").unwrap();
+        config.set_retry_times_when_send_async_failed(1);
+        let (producer, queues) = scripted_producer(config).await;
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        producer.register_send_message_hook(Arc::new(Hook(events.clone())));
+        producer
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .extend([
+                Err(ProducerError::Rpc(RpcError::Response {
+                    request_code: 10,
+                    peer: "broker".into(),
+                    code: response::SERVICE_NOT_AVAILABLE,
+                    remark: Some("retry this request".into()),
+                })),
+                Ok(Some(scripted_result(
+                    "explicit-async-msg",
+                    "explicit-async-offset",
+                    9,
+                ))),
+            ]);
+
+        producer
+            .send_to_queue_future_with_timeout(
+                &Message::new("orders", b"async body".to_vec()),
+                &queues[0],
+                Duration::from_secs(1),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            events.lock().unwrap().as_slice(),
+            ["before", "after-pending", "after-success"]
+        );
+        let attempts = producer.scripted_transport.lock().unwrap().attempts.clone();
+        assert_eq!(attempts.len(), 2);
+        assert_eq!(attempts[0].broker, attempts[1].broker);
+        assert_eq!(attempts[0].address, attempts[1].address);
+        assert_eq!(attempts[0].queue, queues[0]);
+        assert_eq!(attempts[1].queue, queues[0]);
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn async_send_hooks_report_submission_and_terminal_failure_once_each() {
+        struct Hook(Arc<std::sync::Mutex<Vec<&'static str>>>);
+
+        impl SendMessageHook for Hook {
+            fn hook_name(&self) -> &str {
+                "async-terminal-failure-hook"
+            }
+
+            fn send_message_before(&self, _context: &mut SendMessageContext<'_>) {
+                self.0.lock().unwrap().push("before");
+            }
+
+            fn send_message_after(&self, context: &mut SendMessageContext<'_>) {
+                self.0
+                    .lock()
+                    .unwrap()
+                    .push(if context.send_result.is_some() {
+                        "after-success"
+                    } else if context.exception.is_some() {
+                        "after-error"
+                    } else {
+                        "after-pending"
+                    });
+            }
+        }
+
+        let mut config = crate::ProducerConfig::new("async-terminal-failure-hook").unwrap();
+        config.set_retry_times_when_send_async_failed(1);
+        let (producer, _) = scripted_producer(config).await;
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        producer.register_send_message_hook(Arc::new(Hook(events.clone())));
+        let unavailable = || {
+            Err(ProducerError::Rpc(RpcError::Response {
+                request_code: 10,
+                peer: "broker".into(),
+                code: response::SERVICE_NOT_AVAILABLE,
+                remark: Some("still unavailable".into()),
+            }))
+        };
+        producer
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .extend([unavailable(), unavailable()]);
+
+        assert!(matches!(
+            producer
+                .send_future_with_timeout(
+                    &Message::new("orders", b"async body".to_vec()),
+                    Duration::from_secs(1)
+                )
+                .await,
+            Err(ProducerError::Rpc(RpcError::Response { .. }))
+        ));
+        assert_eq!(
+            events.lock().unwrap().as_slice(),
+            ["before", "after-pending", "after-error"]
+        );
+        assert_eq!(
+            producer.scripted_transport.lock().unwrap().attempts.len(),
+            2
+        );
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn scripted_async_and_oneway_failures_keep_their_java_retry_policies() {
-        let config = crate::ProducerConfig::new("scripted-mode-policy").unwrap();
+        let mut config = crate::ProducerConfig::new("scripted-mode-policy").unwrap();
+        config.set_retry_times_when_send_async_failed(0);
         let (producer, queues) = scripted_producer(config).await;
         producer
             .scripted_transport
@@ -1379,6 +2588,121 @@ mod tests {
             let scripted = producer.scripted_transport.lock().unwrap();
             assert_eq!(scripted.attempts.len(), 4);
             assert_eq!(scripted.attempts[3].queue, queues[0]);
+        }
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn oneway_send_hook_receives_submission_and_empty_result_context() {
+        struct Hook(Arc<std::sync::Mutex<Vec<(String, bool, bool)>>>);
+
+        impl SendMessageHook for Hook {
+            fn hook_name(&self) -> &str {
+                "oneway-send-hook"
+            }
+
+            fn send_message_before(&self, context: &mut SendMessageContext<'_>) {
+                self.0.lock().unwrap().push((
+                    format!("before:{}", context.communication_mode.java_name()),
+                    context.send_result.is_some(),
+                    context.exception.is_some(),
+                ));
+            }
+
+            fn send_message_after(&self, context: &mut SendMessageContext<'_>) {
+                self.0.lock().unwrap().push((
+                    format!("after:{}", context.communication_mode.java_name()),
+                    context.send_result.is_some(),
+                    context.exception.is_some(),
+                ));
+            }
+        }
+
+        let (producer, queues) =
+            scripted_producer(crate::ProducerConfig::new("oneway-send-hook").unwrap()).await;
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        producer.register_send_message_hook(Arc::new(Hook(events.clone())));
+        producer
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .push_back(Ok(None));
+
+        producer
+            .send_to_queue_oneway(&Message::new("orders", b"oneway".to_vec()), &queues[0])
+            .await
+            .unwrap();
+        assert_eq!(
+            events.lock().unwrap().as_slice(),
+            [
+                ("before:ONEWAY".into(), false, false),
+                ("after:ONEWAY".into(), false, false),
+            ]
+        );
+        assert_eq!(
+            producer.scripted_transport.lock().unwrap().attempts.len(),
+            1
+        );
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn explicit_batch_send_runs_hooks_for_one_batch_request() {
+        struct Hook(Arc<std::sync::Mutex<Vec<(String, usize, SendMessageType)>>>);
+
+        impl SendMessageHook for Hook {
+            fn hook_name(&self) -> &str {
+                "batch-send-hook"
+            }
+
+            fn send_message_before(&self, context: &mut SendMessageContext<'_>) {
+                self.0.lock().unwrap().push((
+                    "before".into(),
+                    context.message.body().len(),
+                    context.message_type,
+                ));
+            }
+
+            fn send_message_after(&self, context: &mut SendMessageContext<'_>) {
+                self.0.lock().unwrap().push((
+                    "after".into(),
+                    context.message.body().len(),
+                    context.message_type,
+                ));
+            }
+        }
+
+        let (producer, _) =
+            scripted_producer(crate::ProducerConfig::new("batch-send-hook").unwrap()).await;
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        producer.register_send_message_hook(Arc::new(Hook(events.clone())));
+        producer
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .push_back(Ok(Some(scripted_result("batch-result", "batch-offset", 1))));
+
+        let messages = [
+            Message::new("orders", b"first".to_vec()),
+            Message::new("orders", b"second".to_vec()),
+        ];
+        producer.send_batch(&messages).await.unwrap();
+        {
+            let events = events.lock().unwrap();
+            assert_eq!(events.len(), 2);
+            assert_eq!(events[0].0, "before");
+            assert_eq!(events[1].0, "after");
+            assert!(events[0].1 > 0);
+            assert_eq!(events[0].1, events[1].1);
+            assert_eq!(events[0].2, SendMessageType::Normal);
+            assert_eq!(events[1].2, SendMessageType::Normal);
+        }
+        {
+            let transport = producer.scripted_transport.lock().unwrap();
+            assert_eq!(transport.attempts.len(), 1);
+            assert!(transport.attempts[0].batch);
         }
         producer.shutdown().await.unwrap();
     }
@@ -1519,7 +2843,7 @@ mod tests {
     }
 
     #[test]
-    fn sync_retries_configured_broker_codes_while_future_retries_transport_only() {
+    fn sync_and_future_retry_broker_responses_using_java_policies() {
         let config = crate::ProducerConfig::new("producer").unwrap();
         let retryable = RpcError::Response {
             request_code: 10,
@@ -1528,7 +2852,7 @@ mod tests {
             remark: None,
         };
         assert!(should_retry(SendMode::Sync, &retryable, &config));
-        assert!(!should_retry(SendMode::Future, &retryable, &config));
+        assert!(should_retry(SendMode::Future, &retryable, &config));
         let transport = RpcError::Transport(TransportError::InvalidConfiguration("test".into()));
         assert!(should_retry(SendMode::Sync, &transport, &config));
         assert!(should_retry(SendMode::Future, &transport, &config));
@@ -1565,6 +2889,71 @@ mod tests {
             remark: None,
         };
         assert!(!should_retry(SendMode::Sync, &non_retryable, &config));
+    }
+
+    #[test]
+    fn send_hook_message_type_matches_java_transaction_and_timer_precedence() {
+        let producer = Producer::new(crate::ProducerConfig::new("send-hook-type").unwrap());
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+        let defaults = &fixture["sendMessageContext"]["defaults"];
+        let mut normal = Message::new("orders", b"normal".to_vec());
+        let normal_context =
+            producer.send_message_context(&mut normal, &queue, "broker-a:10911", SendMode::Sync);
+        assert_eq!(
+            normal_context.message_type.java_name(),
+            defaults["messageType"]
+        );
+        assert_eq!(
+            normal_context.send_result.is_none(),
+            defaults["sendResultIsNull"]
+        );
+        assert_eq!(
+            normal_context.exception.is_none(),
+            defaults["exceptionIsNull"]
+        );
+        assert_eq!(
+            normal_context.trace_context.is_none(),
+            defaults["traceContextIsNull"]
+        );
+        assert_eq!(normal_context.properties.is_none(), defaults["propsIsNull"]);
+        assert_eq!(
+            normal_context.namespace.is_none(),
+            defaults["namespaceIsNull"]
+        );
+
+        let mut transaction = Message::new("orders", b"transaction".to_vec());
+        transaction
+            .set_system_property(PROPERTY_TRANSACTION_PREPARED, "true")
+            .unwrap();
+        assert_eq!(
+            producer
+                .send_message_context(&mut transaction, &queue, "broker-a:10911", SendMode::Sync)
+                .message_type,
+            SendMessageType::TransactionHalf
+        );
+
+        for property in [
+            PROPERTY_DELAY_TIME_LEVEL,
+            "__STARTDELIVERTIME",
+            PROPERTY_TIMER_DELIVER_MS,
+            PROPERTY_TIMER_DELAY_SEC,
+            PROPERTY_TIMER_DELAY_MS,
+        ] {
+            let mut delayed = Message::new("orders", b"delayed".to_vec());
+            delayed
+                .set_system_property(PROPERTY_TRANSACTION_PREPARED, "true")
+                .unwrap();
+            delayed.set_system_property(property, "1").unwrap();
+            assert_eq!(
+                producer
+                    .send_message_context(&mut delayed, &queue, "broker-a:10911", SendMode::Sync)
+                    .message_type,
+                SendMessageType::Delay,
+                "{property} must override transaction message type like Java"
+            );
+        }
     }
 
     #[test]
@@ -1634,7 +3023,12 @@ mod tests {
             let length = case["bodyLength"].as_u64().unwrap() as usize;
             let expected = case["compressed"].as_bool().unwrap();
             let message = Message::new("orders", vec![b'x'; length]);
-            let prepared = producer.prepare(&message, false).unwrap();
+            let mut message_for_send = message.clone();
+            let compression_sys_flag =
+                producer.compress_message_before_hook(&mut message_for_send, false);
+            let prepared = producer
+                .prepare(&message_for_send, false, compression_sys_flag)
+                .unwrap();
             assert_eq!(
                 message::has_compressed_flag(prepared.sys_flag),
                 expected,
@@ -1654,7 +3048,7 @@ mod tests {
             }
             assert_eq!(message.body().len(), length);
 
-            let batch_prepared = producer.prepare(&message, true).unwrap();
+            let batch_prepared = producer.prepare(&message, true, 0).unwrap();
             assert_eq!(batch_prepared.sys_flag, 0);
             assert_eq!(batch_prepared.body, message.body());
         }
