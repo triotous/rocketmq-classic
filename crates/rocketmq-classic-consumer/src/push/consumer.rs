@@ -34,14 +34,14 @@ use rocketmq_classic_protocol::{
     body::{
         ConsumeMessageDirectlyResult, ConsumeMessageResult, ConsumerPopProcessQueueInfo,
         ConsumerProcessQueueInfo, ConsumerRunningInfoBody, LockBatchRequestBody,
-        MessageQueueAssignment, MessageRequestMode, UnlockBatchRequestBody,
+        MessageQueueAssignment, MessageRequestMode, QueueTimeSpan, UnlockBatchRequestBody,
     },
     codes::{request, response},
     header::{
         BoundaryType, ConsumerSendMsgBackRequestHeader, GetEarliestMsgStoretimeRequestHeader,
         GetMaxOffsetRequestHeader, GetMinOffsetRequestHeader, PopMessageRequestHeader,
-        PullMessageRequestHeader, SearchOffsetRequestHeader, SendMessageRequestHeaderV1,
-        ViewMessageRequestHeader,
+        PullMessageRequestHeader, QueryConsumeTimeSpanRequestHeader, SearchOffsetRequestHeader,
+        SendMessageRequestHeaderV1, ViewMessageRequestHeader,
     },
     heartbeat::{
         ConsumeFromWhere, ConsumeType, ConsumerData, ConsumerSubscriptionDataSet, SubscriptionData,
@@ -138,6 +138,7 @@ const BROKER_SUSPEND_MAX_TIME_MILLIS: i64 = 20_000;
 const CONSUMER_TIMEOUT_MILLIS_WHEN_SUSPEND: i64 = 30_000;
 const CONSUME_RETRY_DELAY_MILLIS: i64 = 5_000;
 const CONSUMER_SEND_BACK_TIMEOUT_MILLIS: u64 = 5_000;
+const CONSUME_TIME_SPAN_TIMEOUT: Duration = Duration::from_millis(3_000);
 
 struct PullContext {
     runtime: Arc<ClientRuntime>,
@@ -927,6 +928,82 @@ impl PushConsumer {
     ) -> Result<QueryResult, PushConsumerError> {
         self.query_messages(topic, key, max_num, begin_timestamp, end_timestamp, false)
             .await
+    }
+
+    /// Returns the consume timestamp span for every Broker in a freshly
+    /// queried route, retaining route order and Java's per-Broker failure
+    /// behavior.
+    pub async fn query_consume_time_span(
+        &self,
+        topic: &str,
+    ) -> Result<Vec<Option<QueueTimeSpan>>, PushConsumerError> {
+        let context = self
+            .pull_context()
+            .await
+            .ok_or(PushConsumerError::NotStarted)?;
+        let route = context
+            .runtime
+            .api()
+            .get_topic_route(topic, Instant::now() + CONSUME_TIME_SPAN_TIMEOUT)
+            .await?
+            .ok_or_else(
+                || rocketmq_classic_core::error::RpcError::MalformedResponse {
+                    request_code: request::GET_ROUTEINFO_BY_TOPIC,
+                    peer: topic.to_owned(),
+                    reason: "missing route response".into(),
+                },
+            )?;
+        let brokers = route.broker_datas_snapshot().ok_or(
+            rocketmq_classic_core::runtime::RuntimeError::InvalidRoute(
+                "null BrokerData list in consume-time-span route",
+            ),
+        )?;
+        let header = QueryConsumeTimeSpanRequestHeader {
+            topic: topic.to_owned(),
+            group: self.group_name().to_owned(),
+        };
+        let mut spans = Vec::new();
+        for broker in brokers {
+            let broker = broker.ok_or_else(|| {
+                rocketmq_classic_core::error::RpcError::MalformedResponse {
+                    request_code: request::QUERY_CONSUME_TIME_SPAN,
+                    peer: topic.to_owned(),
+                    reason: "null BrokerData in consume-time-span route".into(),
+                }
+            })?;
+            let address = broker.java_select_broker_addr().map_err(|error| {
+                rocketmq_classic_core::error::RpcError::MalformedResponse {
+                    request_code: request::QUERY_CONSUME_TIME_SPAN,
+                    peer: topic.to_owned(),
+                    reason: error.to_string(),
+                }
+            })?;
+            let address = address.ok_or_else(|| {
+                rocketmq_classic_core::error::RpcError::MalformedResponse {
+                    request_code: request::QUERY_CONSUME_TIME_SPAN,
+                    peer: topic.to_owned(),
+                    reason: "selected Broker address is null".into(),
+                }
+            })?;
+            let response = context
+                .runtime
+                .api()
+                .query_consume_time_span(
+                    &address,
+                    &header,
+                    Instant::now() + CONSUME_TIME_SPAN_TIMEOUT,
+                )
+                .await?;
+            let mut response = response.ok_or_else(|| {
+                rocketmq_classic_core::error::RpcError::MalformedResponse {
+                    request_code: request::QUERY_CONSUME_TIME_SPAN,
+                    peer: address,
+                    reason: "null consumeTimeSpanSet".into(),
+                }
+            })?;
+            spans.append(&mut response);
+        }
+        Ok(spans)
     }
 
     pub async fn query_message_by_unique_key(
@@ -5803,6 +5880,144 @@ mod tests {
         let custom_consumer = PushConsumer::new(custom_config);
         assert_eq!(fixture["effectiveMaxReconsumeTimesCustom"], 7);
         assert_eq!(custom_consumer.get_max_reconsume_times(), 7);
+    }
+
+    #[tokio::test]
+    async fn query_consume_time_span_queries_fresh_route_in_order_and_uses_vip_addresses() {
+        let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let nameserver_address = nameserver.local_addr().unwrap().to_string();
+        let first_broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let first_address = first_broker.local_addr().unwrap();
+        let first_vip_address = format!(
+            "{}:{}",
+            first_address.ip(),
+            first_address.port().checked_add(2).unwrap()
+        );
+        let second_broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let second_address = second_broker.local_addr().unwrap();
+        let second_vip_address = format!(
+            "{}:{}",
+            second_address.ip(),
+            second_address.port().checked_add(2).unwrap()
+        );
+        let route_body = serde_json::to_vec(&serde_json::json!({
+            "queueDatas": [],
+            "brokerDatas": [
+                {"cluster": "cluster-a", "brokerName": "broker-z", "brokerAddrs": {"0": first_vip_address}},
+                {"cluster": "cluster-a", "brokerName": "broker-a", "brokerAddrs": {"0": second_vip_address}}
+            ],
+            "filterServerTable": {}
+        }))
+        .unwrap();
+        let nameserver_peer = tokio::spawn(async move {
+            let (mut stream, _) = nameserver.accept().await.unwrap();
+            let incoming = read_remoting_command(&mut stream).await;
+            assert_eq!(incoming.code, request::GET_ROUTEINFO_BY_TOPIC);
+            assert_eq!(
+                incoming
+                    .ext_fields
+                    .as_ref()
+                    .and_then(|fields| fields.get("topic"))
+                    .map(String::as_str),
+                Some("orders")
+            );
+            write_remoting_reply_with_body(
+                &mut stream,
+                &incoming,
+                response::SUCCESS,
+                None,
+                Some(route_body),
+            )
+            .await;
+        });
+
+        let first_peer = tokio::spawn(async move {
+            let (mut stream, _) = first_broker.accept().await.unwrap();
+            let incoming = read_remoting_command(&mut stream).await;
+            assert_eq!(incoming.code, request::QUERY_CONSUME_TIME_SPAN);
+            let fields = incoming.ext_fields.as_ref().unwrap();
+            assert_eq!(fields.get("topic").map(String::as_str), Some("orders"));
+            assert_eq!(
+                fields.get("group").map(String::as_str),
+                Some("consume-time-span-group")
+            );
+            write_remoting_reply_with_body(
+                &mut stream,
+                &incoming,
+                response::SUCCESS,
+                None,
+                Some(
+                    br#"{"consumeTimeSpanSet":[{"messageQueue":{"topic":"orders","brokerName":"broker-z","queueId":3},"minTimeStamp":1,"maxTimeStamp":9,"consumeTimeStamp":5,"delayTime":4}]}"#.to_vec(),
+                ),
+            )
+            .await;
+        });
+        let second_peer = tokio::spawn(async move {
+            let (mut stream, _) = second_broker.accept().await.unwrap();
+            let incoming = read_remoting_command(&mut stream).await;
+            assert_eq!(incoming.code, request::QUERY_CONSUME_TIME_SPAN);
+            let fields = incoming.ext_fields.as_ref().unwrap();
+            assert_eq!(fields.get("topic").map(String::as_str), Some("orders"));
+            assert_eq!(
+                fields.get("group").map(String::as_str),
+                Some("consume-time-span-group")
+            );
+            write_remoting_reply_with_body(
+                &mut stream,
+                &incoming,
+                response::SUCCESS,
+                None,
+                Some(
+                    br#"{"consumeTimeSpanSet":[{"messageQueue":{"topic":"orders","brokerName":"broker-a","queueId":1},"minTimeStamp":2,"maxTimeStamp":10,"consumeTimeStamp":7,"delayTime":3}]}"#.to_vec(),
+                ),
+            )
+            .await;
+        });
+
+        let mut config = PushConsumerConfig::new("consume-time-span-group").unwrap();
+        config
+            .client_config_mut()
+            .set_namesrv_addr(Some(nameserver_address));
+        config.client_config_mut().set_vip_channel_enabled(true);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let offset_store: Arc<dyn OffsetStore> = Arc::new(RecordingOffsetStore::default());
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            offset_store,
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+        runtime.remoting().start().unwrap();
+
+        let spans = consumer.query_consume_time_span("orders").await.unwrap();
+        nameserver_peer.await.unwrap();
+        first_peer.await.unwrap();
+        second_peer.await.unwrap();
+        assert_eq!(spans.len(), 2);
+        assert_eq!(
+            spans
+                .iter()
+                .map(|span| {
+                    span.as_ref()
+                        .unwrap()
+                        .message_queue
+                        .as_ref()
+                        .unwrap()
+                        .broker_name()
+                        .unwrap()
+                })
+                .collect::<Vec<_>>(),
+            ["broker-z", "broker-a"]
+        );
+        assert_eq!(spans[0].as_ref().unwrap().delay_time, 4);
+        assert_eq!(spans[1].as_ref().unwrap().delay_time, 3);
+
+        consumer.shutdown().await.unwrap();
+        let _ = runtime.shutdown().await;
     }
 
     #[test]

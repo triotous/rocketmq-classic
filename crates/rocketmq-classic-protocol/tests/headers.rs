@@ -23,12 +23,12 @@ use rocketmq_classic_protocol::{
         NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader, PollingInfoResponseHeader,
         PopLiteMessageRequestHeader, PopLiteMessageResponseHeader, PopMessageRequestHeader,
         PopMessageResponseHeader, PullMessageRequestHeader, PullMessageResponseHeader,
-        QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
-        QueryMessageRequestHeader, QueryMessageResponseHeader, RecallMessageRequestHeader,
-        RecallMessageResponseHeader, ReplyMessageRequestHeader, ResetOffsetRequestHeader,
-        SearchOffsetRequestHeader, SearchOffsetResponseHeader, SendMessageRequestHeaderV1,
-        SendMessageRequestHeaderV2, SendMessageResponseHeader, UnlockBatchMqRequestHeader,
-        UnregisterClientRequestHeader, UnregisterClientResponseHeader,
+        QueryConsumeTimeSpanRequestHeader, QueryConsumerOffsetRequestHeader,
+        QueryConsumerOffsetResponseHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
+        RecallMessageRequestHeader, RecallMessageResponseHeader, ReplyMessageRequestHeader,
+        ResetOffsetRequestHeader, SearchOffsetRequestHeader, SearchOffsetResponseHeader,
+        SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
+        UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
         UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
     },
 };
@@ -128,6 +128,13 @@ fn java_request_and_response_header_fixtures_decode() {
     .unwrap();
     assert_eq!(query.consumer_group, "workers");
     assert_eq!(query.queue_id, 1);
+
+    let query_time_span = QueryConsumeTimeSpanRequestHeader::decode_fields(&java_ext_fields(
+        "header-query-consume-time-span-request",
+    ))
+    .unwrap();
+    assert_eq!(query_time_span.topic, "orders");
+    assert_eq!(query_time_span.group, "workers");
 
     let update = UpdateConsumerOffsetRequestHeader::decode_fields(&java_ext_fields(
         "header-update-offset-request",
@@ -1059,6 +1066,15 @@ fn header_validation_matrix() {
             "",
             "setZeroIfNotFound bname",
             "setZeroIfNotFound"
+        ),
+        row!(
+            QueryConsumeTimeSpanRequestHeader,
+            "query-consume-time-span-request",
+            "topic group",
+            "",
+            "",
+            "",
+            ""
         ),
         row!(
             QueryConsumerOffsetResponseHeader,

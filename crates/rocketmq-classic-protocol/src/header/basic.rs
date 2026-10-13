@@ -85,6 +85,26 @@ impl CommandHeader for QueryConsumerOffsetResponseHeader {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct QueryConsumeTimeSpanRequestHeader {
+    pub topic: String,
+    pub group: String,
+}
+
+impl CommandHeader for QueryConsumeTimeSpanRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("topic".into(), self.topic.clone());
+        fields.insert("group".into(), self.group.clone());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            topic: required_string(fields, "topic")?.to_owned(),
+            group: required_string(fields, "group")?.to_owned(),
+        })
+    }
+}
+
 /// Pinned Java `org.apache.rocketmq.common.BoundaryType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BoundaryType {

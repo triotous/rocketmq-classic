@@ -78,3 +78,11 @@
 - Updated the Phase 10 pull method matrix and release checklist. The raw Push public-method audit remains open.
 - PASS: `cargo test -p rocketmq-classic-consumer --locked` (185 library tests and all consumer integration/doc targets); `cargo clippy -p rocketmq-classic-consumer --all-targets --all-features --locked -- -D warnings`; `mvn -f compat/java-reference/pom.xml verify` (37 scenarios, Java fixture drift, cross-decodes); `cargo fmt --all -- --check`; `git diff --check`.
 - No live Broker or Docker was used. Phase 18 V01–V04 and Phase 19 local Broker/Docker execution remain incomplete.
+
+# Phase 18 execution session — 2026-10-13T14:23:07Z
+
+- Continued the P18-V01 audit and closed the missing Push `queryConsumeTimeSpan` flow. Added protocol request header and response DTO, `MQClientApi::query_consume_time_span`, and `PushConsumer::query_consume_time_span`. The facade queries a fresh route and requests each Broker sequentially in route order with Java's 3000 ms deadline and VIP address behavior.
+- Added invoked Java 5.5.1 fixture and Rust RPC/facade tests for request code/header, decoded spans, Broker error, route ordering, fresh lookup and VIP endpoints. Fixture SHA-256: `612c0adbd099e5282e027b69a9996575d6efc8293a4b42c70c367da800637e0c`.
+- Updated request-code/header inventories, Phase 5/6/10 compatibility mappings, the Phase 6 requirement audit and release checklist. The first protocol full-suite run exposed a missing header inventory entry; registered the header and Java fixture, then reran the protocol suite successfully.
+- PASS: protocol full suite (110 unit tests, integration tests and 15 doctests); core full suite (156 unit tests and integration tests); consumer full suite (186 unit tests plus integration/doc targets); `mvn -f compat/java-reference/pom.xml verify` (BUILD SUCCESS); strict Clippy for protocol/remoting/core/consumer with all targets/features and `-D warnings`; `cargo fmt --all -- --check`; `git diff --check`.
+- The full Maven `verify` completed at 2026-10-13T14:22:03Z. No live Broker or Docker was used. P18-V01 broad Push/Pull/Phase 6 reconciliation, final workspace-wide gates, package contents/dependency provenance review, Ubuntu CI evidence and Phase 19 local Broker/Docker execution remain open. This change is not committed yet.

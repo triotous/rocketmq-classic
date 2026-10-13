@@ -4,7 +4,7 @@ Phase scope: one-attempt typed client RPCs, independent of public Producer/Consu
 
 At Phase 5 acceptance there were 22 public domain methods, one constructor and no new core configuration settings. `request`, `oneway`, mode selection and response decoders are private implementation helpers. Java ASYNC completion is represented by Rust futures, as permitted by the Rust-native implementation contract; request mode, response interpretation, timeout behavior and pending ownership remain mapped. Phase 7 owns producer selection/retry policy; Phase 8 owns binary message decoding; Phase 13 owns public POP/Lite consumer logic. No missing Phase 5 RPC is deferred to those phases.
 
-Later source-owned runtime RPC additions are tracked in the [Phase 6 inventory](PHASE_6_RUNTIME_INVENTORY.md), including default-topic route lookup and `MQClientApi::check_client_in_broker` (request 46). The latter uses the existing one-attempt request/classification pipeline and actual Java runtime/API fixtures; it is not included in the historical 22-method count or 148-case Phase 5 corpus below.
+Later source-owned runtime RPC additions are tracked in the [Phase 6 inventory](PHASE_6_RUNTIME_INVENTORY.md), including default-topic route lookup, `MQClientApi::check_client_in_broker` (request 46), and consume timestamp span query (request 303). These additions use the existing one-attempt request/classification pipeline and invoked Java runtime/API fixtures; they are not included in the historical 22-method count or 148-case Phase 5 corpus below.
 
 ## Bidirectional method and branch inventory
 
@@ -19,6 +19,7 @@ All Java methods below are in `client/.../impl/MQClientAPIImpl.java`, except Lit
 | `pull_message` | `pullMessage`, SYNC | `rpc-invoked-consumer-more/pull-*` and `lite-pull-*`: FOUND, NO_NEW_MSG, NO_MATCHED_MSG, OFFSET_ILLEGAL, error, unknown, missing and invalid header |
 | `pull_message_future` | `pullMessage`, ASYNC | Same cases with `-async` suffix; actual Java callback driven by mock. Lite flag selects code 361 in both modes; otherwise code 11. Raw message bytes, offsets and request-code error context compare exactly |
 | `query_consumer_offset` | `queryConsumerOffset`, SYNC | `rpc-invoked/offset-{success,not-found,unknown,no-header}`; QUERY_NOT_FOUND is retained as a structured response error, distinct from transport failure |
+| `query_consume_time_span` | `queryConsumeTimeSpan`, SYNC | `fixtures/runtime/lookup.json:queryConsumeTimeSpanApiCase` and scripted loopback; code/header/body fields plus `TOPIC_NOT_EXIST` request and error behavior |
 | `update_consumer_offset` | `updateConsumerOffset` / `updateConsumerOffsetOneway` | `rpc-invoked/update-{success,error,unknown,oneway}`; `consumer_void_success_has_no_malformed_response_payload` |
 | `get_consumer_list_by_group` | `getConsumerIdListByGroup`, SYNC | `rpc-invoked-consumer/consumer-list-{populated,empty,no-body,error,unknown,invalid-json}`; absent body is a domain error even with SUCCESS |
 | `consumer_send_message_back` | `consumerSendMessageBack`, SYNC | `rpc-invoked-consumer/send-back-{success,error,unknown}`; no decoded success payload |

@@ -2,7 +2,7 @@ use rocketmq_classic_common::{message::MessageQueue, sysflag::pull::has_lite_pul
 use rocketmq_classic_protocol::{
     body::{
         ConsumerListByGroupResponseBody, LockBatchRequestBody, LockBatchResponseBody,
-        UnlockBatchRequestBody,
+        QueryConsumeTimeSpanBody, QueueTimeSpan, UnlockBatchRequestBody,
     },
     codes::{request, response},
     header::{
@@ -10,13 +10,14 @@ use rocketmq_classic_protocol::{
         GetEarliestMsgStoretimeResponseHeader, GetMaxOffsetRequestHeader,
         GetMaxOffsetResponseHeader, GetMinOffsetRequestHeader, GetMinOffsetResponseHeader,
         HeaderMap, LockBatchMqRequestHeader, PullMessageRequestHeader, PullMessageResponseHeader,
-        QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
-        SearchOffsetRequestHeader, SearchOffsetResponseHeader, UpdateConsumerOffsetRequestHeader,
+        QueryConsumeTimeSpanRequestHeader, QueryConsumerOffsetRequestHeader,
+        QueryConsumerOffsetResponseHeader, SearchOffsetRequestHeader, SearchOffsetResponseHeader,
+        UpdateConsumerOffsetRequestHeader,
     },
 };
 use tokio::time::Instant;
 
-use super::{MQClientApi, classify, decode_body, decode_header};
+use super::{MQClientApi, classify, decode_body, decode_header, read_shared_client_config};
 use crate::error::RpcError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,6 +106,34 @@ fn pull_request_code(header: &PullMessageRequestHeader) -> i32 {
 }
 
 impl MQClientApi {
+    /// Queries one Broker for consume timestamp ranges. The caller owns route
+    /// iteration and result concatenation, matching Java's consumer wrapper.
+    pub async fn query_consume_time_span(
+        &self,
+        addr: &str,
+        header: &QueryConsumeTimeSpanRequestHeader,
+        deadline: Instant,
+    ) -> Result<Option<Vec<Option<QueueTimeSpan>>>, RpcError> {
+        let code = request::QUERY_CONSUME_TIME_SPAN;
+        let vip_enabled = self
+            .config
+            .as_ref()
+            .is_some_and(|config| read_shared_client_config(config).vip_channel_enabled);
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr).map_err(|error| {
+            RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: error.to_string(),
+            }
+        })?;
+        let reply = self
+            .request(&broker_addr, code, header, None, deadline)
+            .await?;
+        let reply = classify(reply, code, &broker_addr)?;
+        let body: QueryConsumeTimeSpanBody = decode_body(&reply, code, &broker_addr)?;
+        Ok(body.consume_time_span_set)
+    }
+
     pub async fn check_client_in_broker(
         &self,
         addr: &str,
@@ -374,5 +403,166 @@ impl MQClientApi {
             classify(reply, code, addr)?;
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rocketmq_classic_protocol::codes::response;
+    use rocketmq_classic_protocol::header::QueryConsumeTimeSpanRequestHeader;
+    use rocketmq_classic_remoting::{
+        RemotingCommand,
+        client::{RemotingClient, TransportMode},
+        codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
+    };
+    use std::time::Duration;
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::{TcpListener, TcpStream},
+    };
+
+    async fn read_command(stream: &mut TcpStream) -> RemotingCommand {
+        let mut length = [0; 4];
+        stream.read_exact(&mut length).await.unwrap();
+        let mut bytes = bytes::BytesMut::from(&length[..]);
+        bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
+        stream.read_exact(&mut bytes[4..]).await.unwrap();
+        frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
+            .unwrap()
+            .unwrap()
+    }
+
+    async fn reply(
+        stream: &mut TcpStream,
+        request: &RemotingCommand,
+        code: i32,
+        remark: Option<String>,
+        body: Option<Vec<u8>>,
+    ) {
+        let mut response = RemotingCommand {
+            code,
+            opaque: request.opaque,
+            remark,
+            body,
+            ..Default::default()
+        };
+        response.mark_response();
+        stream
+            .write_all(&frame::encode(&response, DEFAULT_MAX_FRAME_SIZE).unwrap())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn query_consume_time_span_matches_java_invoked_fixture() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/lookup.json")).unwrap();
+        let case = &fixture["queryConsumeTimeSpanApiCase"];
+        let request_case = case["requests"][0].clone();
+        let success_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let success_address = success_listener.local_addr().unwrap().to_string();
+        let success_body = case["responseBody"].as_str().unwrap().as_bytes().to_vec();
+        let success_peer = tokio::spawn(async move {
+            let (mut stream, _) = success_listener.accept().await.unwrap();
+            let incoming = read_command(&mut stream).await;
+            assert_eq!(incoming.code, request::QUERY_CONSUME_TIME_SPAN);
+            assert!(incoming.body.is_none());
+            let fields = incoming.ext_fields.as_ref().unwrap();
+            assert_eq!(fields.get("topic").map(String::as_str), Some("orders"));
+            assert_eq!(fields.get("group").map(String::as_str), Some("consumer-a"));
+            assert_eq!(
+                request_case["requestCode"].as_i64(),
+                Some(i64::from(incoming.code))
+            );
+            assert_eq!(request_case["topic"], fields["topic"]);
+            assert_eq!(request_case["group"], fields["group"]);
+            reply(
+                &mut stream,
+                &incoming,
+                response::SUCCESS,
+                None,
+                Some(success_body),
+            )
+            .await;
+        });
+
+        let error_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let error_address = error_listener.local_addr().unwrap().to_string();
+        let error_peer = tokio::spawn(async move {
+            let (mut stream, _) = error_listener.accept().await.unwrap();
+            let incoming = read_command(&mut stream).await;
+            assert_eq!(incoming.code, request::QUERY_CONSUME_TIME_SPAN);
+            reply(
+                &mut stream,
+                &incoming,
+                response::TOPIC_NOT_EXIST,
+                Some("topic not exist".into()),
+                None,
+            )
+            .await;
+        });
+
+        let remoting = RemotingClient::new(TransportMode::Plain);
+        remoting.start().unwrap();
+        let api = MQClientApi::new(remoting.clone());
+        let header = QueryConsumeTimeSpanRequestHeader {
+            topic: "orders".into(),
+            group: "consumer-a".into(),
+        };
+        let spans = api
+            .query_consume_time_span(
+                &success_address,
+                &header,
+                Instant::now() + Duration::from_secs(3),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        success_peer.await.unwrap();
+        assert_eq!(spans.len(), 2);
+        for (span, expected) in spans.iter().zip(case["successRows"].as_array().unwrap()) {
+            let span = span.as_ref().unwrap();
+            let queue = span.message_queue.as_ref().unwrap();
+            assert_eq!(queue.topic(), expected["topic"].as_str());
+            assert_eq!(queue.broker_name(), expected["brokerName"].as_str());
+            assert_eq!(
+                queue.queue_id(),
+                expected["queueId"].as_i64().unwrap() as i32
+            );
+            assert_eq!(
+                span.min_time_stamp,
+                expected["minTimeStamp"].as_i64().unwrap()
+            );
+            assert_eq!(
+                span.max_time_stamp,
+                expected["maxTimeStamp"].as_i64().unwrap()
+            );
+            assert_eq!(
+                span.consume_time_stamp,
+                expected["consumeTimeStamp"].as_i64().unwrap()
+            );
+            assert_eq!(span.delay_time, expected["delayTime"].as_i64().unwrap());
+        }
+
+        let error = api
+            .query_consume_time_span(
+                &error_address,
+                &header,
+                Instant::now() + Duration::from_secs(3),
+            )
+            .await
+            .unwrap_err();
+        error_peer.await.unwrap();
+        assert!(matches!(
+            error,
+            RpcError::Response {
+                request_code: request::QUERY_CONSUME_TIME_SPAN,
+                peer,
+                code: response::TOPIC_NOT_EXIST,
+                remark: Some(remark),
+            } if peer == error_address && remark == case["topicNotExistMessage"].as_str().unwrap()
+        ));
+        remoting.shutdown().await;
     }
 }

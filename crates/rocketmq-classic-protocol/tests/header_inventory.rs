@@ -20,6 +20,7 @@ macro_rules! inventory {
     ($visit:ident) => {
         $visit! {
             QueryConsumerOffsetRequestHeader => ("header-query-offset-request", "typed-query-offset.bin"),
+            QueryConsumeTimeSpanRequestHeader => ("header-query-consume-time-span-request", "typed-query-consume-time-span-request.bin"),
             UpdateConsumerOffsetRequestHeader => ("header-update-offset-request", "typed-update-offset.bin"),
             QueryConsumerOffsetResponseHeader => ("header-query-offset-response", "typed-query-offset-response.bin"),
             SearchOffsetRequestHeader => ("header-search-offset-request", "typed-search-offset-request.bin"),

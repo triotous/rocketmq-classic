@@ -20,12 +20,12 @@ pub use basic::{
     NotificationResponseHeader, NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader,
     PollingInfoResponseHeader, PopLiteMessageRequestHeader, PopLiteMessageResponseHeader,
     PopMessageRequestHeader, PopMessageResponseHeader, PullMessageRequestHeader,
-    PullMessageResponseHeader, QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
-    QueryMessageRequestHeader, QueryMessageResponseHeader, RecallMessageRequestHeader,
-    RecallMessageResponseHeader, ReplyMessageRequestHeader, ResetOffsetRequestHeader,
-    SearchOffsetRequestHeader, SearchOffsetResponseHeader, SendMessageRequestHeaderV1,
-    SendMessageRequestHeaderV2, SendMessageResponseHeader, UnlockBatchMqRequestHeader,
-    UnregisterClientRequestHeader, UnregisterClientResponseHeader,
+    PullMessageResponseHeader, QueryConsumeTimeSpanRequestHeader, QueryConsumerOffsetRequestHeader,
+    QueryConsumerOffsetResponseHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
+    RecallMessageRequestHeader, RecallMessageResponseHeader, ReplyMessageRequestHeader,
+    ResetOffsetRequestHeader, SearchOffsetRequestHeader, SearchOffsetResponseHeader,
+    SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
+    UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
     UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
 };
 

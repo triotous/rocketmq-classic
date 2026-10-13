@@ -24,12 +24,13 @@ use rocketmq_classic_protocol::{
         NotificationRequestHeader, NotificationResponseHeader, NotifyUnsubscribeLiteRequestHeader,
         PollingInfoRequestHeader, PollingInfoResponseHeader, PopLiteMessageRequestHeader,
         PopLiteMessageResponseHeader, PopMessageRequestHeader, PopMessageResponseHeader,
-        PullMessageRequestHeader, PullMessageResponseHeader, QueryConsumerOffsetRequestHeader,
-        QueryConsumerOffsetResponseHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
-        RecallMessageRequestHeader, RecallMessageResponseHeader, ReplyMessageRequestHeader,
-        ResetOffsetRequestHeader, SearchOffsetRequestHeader, SearchOffsetResponseHeader,
-        SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
-        UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
+        PullMessageRequestHeader, PullMessageResponseHeader, QueryConsumeTimeSpanRequestHeader,
+        QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
+        QueryMessageRequestHeader, QueryMessageResponseHeader, RecallMessageRequestHeader,
+        RecallMessageResponseHeader, ReplyMessageRequestHeader, ResetOffsetRequestHeader,
+        SearchOffsetRequestHeader, SearchOffsetResponseHeader, SendMessageRequestHeaderV1,
+        SendMessageRequestHeaderV2, SendMessageResponseHeader, UnlockBatchMqRequestHeader,
+        UnregisterClientRequestHeader, UnregisterClientResponseHeader,
         UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
     },
 };
@@ -90,6 +91,12 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-query-message-request.bin",
         "header-query-message-request",
         12,
+    );
+    write_oracle_header::<QueryConsumeTimeSpanRequestHeader>(
+        output,
+        "typed-query-consume-time-span-request.bin",
+        "header-query-consume-time-span-request",
+        303,
     );
     write_oracle_header::<QueryMessageResponseHeader>(
         output,

@@ -1466,6 +1466,173 @@ impl QueryAssignmentResponseBody {
     }
 }
 
+/// One queue's broker and consumer timestamp range, matching Java
+/// `org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan`.
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueTimeSpan {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_queue: Option<MessageQueue>,
+    #[serde(default)]
+    pub min_time_stamp: i64,
+    #[serde(default)]
+    pub max_time_stamp: i64,
+    #[serde(default)]
+    pub consume_time_stamp: i64,
+    #[serde(default)]
+    pub delay_time: i64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QueueTimeSpanFields {
+    #[serde(default)]
+    message_queue: Option<MessageQueue>,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_i64_reject_object"
+    )]
+    min_time_stamp: i64,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_i64_reject_object"
+    )]
+    max_time_stamp: i64,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_i64_reject_object"
+    )]
+    consume_time_stamp: i64,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_i64_reject_object"
+    )]
+    delay_time: i64,
+}
+
+impl<'de> Deserialize<'de> for QueueTimeSpan {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: QueueTimeSpanFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            message_queue: fields.message_queue,
+            min_time_stamp: fields.min_time_stamp,
+            max_time_stamp: fields.max_time_stamp,
+            consume_time_stamp: fields.consume_time_stamp,
+            delay_time: fields.delay_time,
+        })
+    }
+}
+
+impl QueueTimeSpan {
+    pub fn get_message_queue(&self) -> Option<&MessageQueue> {
+        self.message_queue.as_ref()
+    }
+
+    pub fn set_message_queue(&mut self, message_queue: Option<MessageQueue>) {
+        self.message_queue = message_queue;
+    }
+
+    pub fn get_min_time_stamp(&self) -> i64 {
+        self.min_time_stamp
+    }
+
+    pub fn set_min_time_stamp(&mut self, min_time_stamp: i64) {
+        self.min_time_stamp = min_time_stamp;
+    }
+
+    pub fn get_max_time_stamp(&self) -> i64 {
+        self.max_time_stamp
+    }
+
+    pub fn set_max_time_stamp(&mut self, max_time_stamp: i64) {
+        self.max_time_stamp = max_time_stamp;
+    }
+
+    pub fn get_consume_time_stamp(&self) -> i64 {
+        self.consume_time_stamp
+    }
+
+    pub fn set_consume_time_stamp(&mut self, consume_time_stamp: i64) {
+        self.consume_time_stamp = consume_time_stamp;
+    }
+
+    pub fn get_delay_time(&self) -> i64 {
+        self.delay_time
+    }
+
+    pub fn set_delay_time(&mut self, delay_time: i64) {
+        self.delay_time = delay_time;
+    }
+}
+
+/// Java response wrapper returned by `QUERY_CONSUME_TIME_SPAN`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryConsumeTimeSpanBody {
+    #[serde(
+        default = "default_consume_time_span_set",
+        deserialize_with = "serde_fastjson::deserialize_optional_nullable_vec_or_single",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub consume_time_span_set: Option<Vec<Option<QueueTimeSpan>>>,
+}
+
+fn default_consume_time_span_set() -> Option<Vec<Option<QueueTimeSpan>>> {
+    Some(Vec::new())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QueryConsumeTimeSpanBodyFields {
+    #[serde(
+        default = "default_consume_time_span_set",
+        deserialize_with = "serde_fastjson::deserialize_optional_nullable_vec_or_single"
+    )]
+    consume_time_span_set: Option<Vec<Option<QueueTimeSpan>>>,
+}
+
+impl<'de> Deserialize<'de> for QueryConsumeTimeSpanBody {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: QueryConsumeTimeSpanBodyFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            consume_time_span_set: fields.consume_time_span_set,
+        })
+    }
+}
+
+impl Default for QueryConsumeTimeSpanBody {
+    fn default() -> Self {
+        Self {
+            consume_time_span_set: default_consume_time_span_set(),
+        }
+    }
+}
+
+impl QueryConsumeTimeSpanBody {
+    pub fn get_consume_time_span_set(&self) -> Option<&[Option<QueueTimeSpan>]> {
+        self.consume_time_span_set.as_deref()
+    }
+
+    pub fn get_consume_time_span_set_mut(&mut self) -> Option<&mut Vec<Option<QueueTimeSpan>>> {
+        self.consume_time_span_set.as_mut()
+    }
+
+    pub fn set_consume_time_span_set(
+        &mut self,
+        consume_time_span_set: Option<Vec<Option<QueueTimeSpan>>>,
+    ) {
+        self.consume_time_span_set = consume_time_span_set;
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetMessageRequestModeRequestBody {

@@ -22,6 +22,7 @@ import org.apache.rocketmq.remoting.protocol.header.PullMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.PullMessageResponseHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryConsumerOffsetRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryConsumerOffsetResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.QueryConsumeTimeSpanRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.SearchOffsetRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetMaxOffsetRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetMinOffsetRequestHeader;
@@ -415,6 +416,10 @@ public final class Main {
         queryOffset.setTopic("orders");
         queryOffset.setQueueId(1);
         writeTypedHeaderFixture(output, "query-offset-request", 14, queryOffset);
+        QueryConsumeTimeSpanRequestHeader queryConsumeTimeSpan = new QueryConsumeTimeSpanRequestHeader();
+        queryConsumeTimeSpan.setTopic("orders");
+        queryConsumeTimeSpan.setGroup("workers");
+        writeTypedHeaderFixture(output, "query-consume-time-span-request", 303, queryConsumeTimeSpan);
         QueryConsumerOffsetResponseHeader queryResponse = new QueryConsumerOffsetResponseHeader();
         queryResponse.setOffset(9L);
         writeTypedHeaderFixture(output, "query-offset-response",
@@ -780,6 +785,7 @@ public final class Main {
             assertAllExtFields(byName, "typed-send-batch-v2.bin", 320);
             assertAllExtFields(byName, "typed-pull.bin", 11);
             assertAllExtFields(byName, "typed-query-offset.bin", 14);
+            assertAllExtFields(byName, "typed-query-consume-time-span-request.bin", 303);
             assertAllExtFields(byName, "typed-update-offset.bin", 15);
             assertAllExtFields(byName, "typed-end-transaction.bin", 37);
             assertAllExtFields(byName, "typed-check-transaction.bin", 39);
@@ -835,6 +841,7 @@ public final class Main {
         assertExtField(byName, "typed-send-batch-v2.bin", 320, "a", "producers");
             assertExtField(byName, "typed-pull.bin", 11, "consumerGroup", "workers");
             assertExtField(byName, "typed-query-offset.bin", 14, "consumerGroup", "workers");
+            assertExtField(byName, "typed-query-consume-time-span-request.bin", 303, "group", "workers");
             assertExtField(byName, "typed-update-offset.bin", 15, "commitOffset", "9");
             assertExtField(byName, "typed-search-offset-request.bin", 29, "boundaryType", "UPPER");
             assertExtField(byName, "typed-search-offset-request.bin", 29, "timestamp", "1712345678901");
@@ -895,6 +902,7 @@ public final class Main {
             case "typed-pull.bin": fixtureStem = "header-pull-request"; break;
             case "typed-pull-response.bin": fixtureStem = "header-pull-response"; break;
             case "typed-query-offset.bin": fixtureStem = "header-query-offset-request"; break;
+            case "typed-query-consume-time-span-request.bin": fixtureStem = "header-query-consume-time-span-request"; break;
             case "typed-update-offset.bin": fixtureStem = "header-update-offset-request"; break;
             case "typed-end-transaction.bin": fixtureStem = "header-end-transaction-request"; break;
             case "typed-check-transaction.bin": fixtureStem = "header-check-transaction-request"; break;
