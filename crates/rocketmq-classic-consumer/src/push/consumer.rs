@@ -1209,6 +1209,12 @@ impl PushConsumer {
         self.consume_orderly.load(Ordering::Acquire)
     }
 
+    /// Mirrors Java's direct `setConsumeOrderly` implementation-state setter.
+    pub fn set_consume_orderly(&self, consume_orderly: bool) {
+        self.consume_orderly
+            .store(consume_orderly, Ordering::Release);
+    }
+
     /// Updates the active concurrent-consume worker count when the requested
     /// value satisfies Java 5.5.1's `updateCorePoolSize` bounds.
     pub async fn update_core_pool_size(&self, core_pool_size: i32) -> bool {
@@ -5792,6 +5798,16 @@ mod tests {
         consumer.set_pause(false);
         assert!(!consumer.is_pause());
         assert_eq!(fixture["pauseAfterSetFalse"], false);
+        assert_eq!(
+            consumer.is_consume_orderly(),
+            fixture["consumeOrderlyBeforeSet"].as_bool().unwrap()
+        );
+        consumer.set_consume_orderly(true);
+        assert!(consumer.is_consume_orderly());
+        assert_eq!(fixture["consumeOrderlyAfterSetTrue"], true);
+        consumer.set_consume_orderly(false);
+        assert!(!consumer.is_consume_orderly());
+        assert_eq!(fixture["consumeOrderlyAfterSetFalse"], false);
         assert_eq!(
             consumer.subscriptions().len(),
             fixture["subscriptionCountBefore"].as_u64().unwrap() as usize

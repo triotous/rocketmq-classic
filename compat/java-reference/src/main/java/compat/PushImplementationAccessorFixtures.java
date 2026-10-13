@@ -63,6 +63,11 @@ public final class PushImplementationAccessorFixtures {
         boolean pauseAfterSetTrue = first.isPause();
         first.setPause(false);
         boolean pauseAfterSetFalse = first.isPause();
+        boolean consumeOrderlyBeforeSet = first.isConsumeOrderly();
+        first.setConsumeOrderly(true);
+        boolean consumeOrderlyAfterSetTrue = first.isConsumeOrderly();
+        first.setConsumeOrderly(false);
+        boolean consumeOrderlyAfterSetFalse = first.isConsumeOrderly();
         int subscriptionCountBefore = first.subscriptions().size();
         Object subscriptionTable = first.getSubscriptionInner();
         first.subscribe("orders", "*");
@@ -124,6 +129,9 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("pauseBeforeSet", pauseBeforeSet);
         fixture.put("pauseAfterSetTrue", pauseAfterSetTrue);
         fixture.put("pauseAfterSetFalse", pauseAfterSetFalse);
+        fixture.put("consumeOrderlyBeforeSet", consumeOrderlyBeforeSet);
+        fixture.put("consumeOrderlyAfterSetTrue", consumeOrderlyAfterSetTrue);
+        fixture.put("consumeOrderlyAfterSetFalse", consumeOrderlyAfterSetFalse);
         fixture.put("subscriptionCountBefore", subscriptionCountBefore);
         fixture.put("subscriptionInnerIdentityStable", subscriptionInnerIdentityStable);
         fixture.put("subscriptionTopicsAfterSubscribe", subscriptionTopicsAfterSubscribe);
