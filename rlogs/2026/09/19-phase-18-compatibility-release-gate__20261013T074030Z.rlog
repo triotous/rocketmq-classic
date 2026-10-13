@@ -14,3 +14,10 @@ Linux server-free oracle/CI preparation (2026-10-13 07:50 UTC):
 Server-free CI gate change (2026-10-13 07:51 UTC):
 - CI pins Rust 1.85.0 and Java 27, then requires default/all-feature locked tests, strict workspace Clippy, Java 5.5.1 Maven verification, comparator self-test and manifest validation, deterministic fuzz/race smoke, facade example compilation, offline benchmark compilation, and workspace metadata validation. All configured jobs remain server- and Docker-free.
 - The first post-fixture-change `cargo test --workspace --locked` exposed one stale Rust unit assertion reading the removed raw `procRow` field. Updated the test to validate the stable Java-recorded address/interface pair through the Linux row parser; focused locked test `cargo test -p rocketmq-classic-core --lib linux_loopback_proc_scope_matches_invoked_java_551 --locked` passes. The original full-suite failure is retained here and will be rerun after the correction.
+
+Release-preparation metadata and docs (2026-10-13 08:09 UTC):
+- Updated README and the Phase 17 matrix to reflect Phase 18 work and its open audit status.
+- Added `docs/release-checklist.md` with the verified crate dependency order, outstanding P18-V01 items, Linux CI evidence, and Apache LICENSE/NOTICE review state.
+- Added the repository URL and per-crate descriptions without changing versions or `publish = false`.
+- PASS: `cargo metadata --locked --no-deps --format-version 1` reports all seven package descriptions, repository URLs, `Apache-2.0` metadata and unpublished status; `git diff --check` passes.
+- No tests were run for these documentation/metadata-only edits. Registry publication and tagging remain out of scope.

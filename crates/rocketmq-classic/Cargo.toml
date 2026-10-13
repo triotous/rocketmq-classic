@@ -1,9 +1,11 @@
 [package]
 name = "rocketmq-classic"
 version = "0.1.0"
+description = "Facade APIs for the RocketMQ Classic Rust client."
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 publish = false
 
 [dependencies]

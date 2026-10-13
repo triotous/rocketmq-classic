@@ -71,7 +71,10 @@ environment check for final validation.
   aggregation in `MQAdminImpl.queryMessage`.
 
 **P17-V02** is the Broker-backed query check assigned to Phase 19; it does not
-replace the local evidence above. Phase 18 has not started.
+replace the local evidence above. Phase 18 server-free gates have since been
+implemented and run locally. The remaining parity and release-preparation work
+is tracked in the [Phase 18 release checklist](../release-checklist.md); live
+Broker evidence remains assigned to Phase 19.
 
 Latest local gates passed: locked consumer tests and strict all-target/all-
 feature consumer Clippy on macOS ARM64, Linux AArch64, and Linux x86_64 (164
