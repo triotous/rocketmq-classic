@@ -11,6 +11,26 @@ pub(crate) fn dump_threads() -> String {
         }
     }
 
+    #[cfg(all(
+        target_os = "linux",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
+    {
+        if let Ok(dump) = linux::dump() {
+            return dump;
+        }
+    }
+
+    #[cfg(all(
+        target_os = "windows",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
+    {
+        if let Ok(dump) = windows::dump() {
+            return dump;
+        }
+    }
+
     current_thread_dump()
 }
 
@@ -305,6 +325,815 @@ mod apple {
     }
 }
 
+#[cfg(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+mod linux {
+    use std::{
+        ffi::c_void,
+        fs, io,
+        mem::{self, size_of},
+        ptr,
+        sync::{
+            Mutex,
+            atomic::{AtomicBool, AtomicI32, AtomicU64, AtomicUsize, Ordering},
+        },
+        thread,
+        time::{Duration, Instant},
+    };
+
+    const MAX_FRAMES: usize = 128;
+    const SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(5);
+    const THREAD_SIGNAL_TIMEOUT: Duration = Duration::from_millis(100);
+    const SIGNAL_CANDIDATES: [libc::c_int; 2] = [libc::SIGWINCH, libc::SIGURG];
+    const MAX_FRAME_GAP: u64 = 1024 * 1024;
+    const MAX_STACK_SPAN: u64 = 32 * 1024 * 1024;
+
+    static CAPTURE_LOCK: Mutex<()> = Mutex::new(());
+    static ACTIVE_TID: AtomicI32 = AtomicI32::new(0);
+    static ACTIVE_SIGNAL: AtomicI32 = AtomicI32::new(0);
+    static ACTIVE_TOKEN: AtomicUsize = AtomicUsize::new(0);
+    static CAPTURED: AtomicBool = AtomicBool::new(false);
+    static RELEASE: AtomicBool = AtomicBool::new(true);
+    static NEXT_TOKEN: AtomicUsize = AtomicUsize::new(1);
+    static FRAME_POINTER: AtomicU64 = AtomicU64::new(0);
+    static STACK_POINTER: AtomicU64 = AtomicU64::new(0);
+    static PROGRAM_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    struct ThreadInfo {
+        id: libc::pid_t,
+        name: String,
+        blocked_signals: u64,
+    }
+
+    struct CapturedThread {
+        id: libc::pid_t,
+        name: String,
+        frames: Vec<u64>,
+        current_backtrace: Option<String>,
+    }
+
+    #[repr(C)]
+    struct QueuedSignalInfo {
+        signo: libc::c_int,
+        errno: libc::c_int,
+        code: libc::c_int,
+        reserved: libc::c_int,
+        pid: libc::pid_t,
+        uid: libc::uid_t,
+        value: libc::sigval,
+        padding: [u8; 96],
+    }
+
+    const _: () = assert!(size_of::<QueuedSignalInfo>() == size_of::<libc::siginfo_t>());
+
+    struct SignalHandler {
+        signal: libc::c_int,
+        previous: libc::sigaction,
+    }
+
+    impl Drop for SignalHandler {
+        fn drop(&mut self) {
+            let mut current = unsafe { mem::zeroed::<libc::sigaction>() };
+            if unsafe { libc::sigaction(self.signal, ptr::null(), &mut current) } != 0
+                || current.sa_sigaction != snapshot_signal_handler as usize
+            {
+                return;
+            }
+            unsafe {
+                let _ = libc::sigaction(self.signal, &self.previous, ptr::null_mut());
+            }
+        }
+    }
+
+    pub(super) fn dump() -> Result<String, String> {
+        let _capture_guard = CAPTURE_LOCK
+            .try_lock()
+            .map_err(|_| "another Linux stack capture is in progress".to_owned())?;
+        let threads = enumerate_threads().map_err(|error| error.to_string())?;
+        if threads.is_empty() {
+            return Err("/proc/self/task returned no threads".into());
+        }
+        let signal_handler = install_signal_handler(&threads).map_err(|error| error.to_string())?;
+        let process_id = unsafe { libc::getpid() };
+        let current_id = unsafe { libc::syscall(libc::SYS_gettid) as libc::pid_t };
+        let deadline = Instant::now() + SNAPSHOT_TIMEOUT;
+        let mut captured = Vec::with_capacity(threads.len());
+
+        for thread_info in &threads {
+            if thread_info.id == current_id {
+                captured.push(CapturedThread {
+                    id: thread_info.id,
+                    name: thread_info.name.clone(),
+                    frames: Vec::new(),
+                    current_backtrace: Some(format!(
+                        "{:?}",
+                        std::backtrace::Backtrace::force_capture()
+                    )),
+                });
+                continue;
+            }
+
+            let registers =
+                capture_thread(process_id, thread_info.id, signal_handler.signal, deadline);
+            let frames = registers
+                .map(|(frame_pointer, stack_pointer, program_counter)| unsafe {
+                    walk_frames(process_id, frame_pointer, stack_pointer, program_counter)
+                })
+                .unwrap_or_default();
+            captured.push(CapturedThread {
+                id: thread_info.id,
+                name: thread_info.name.clone(),
+                frames,
+                current_backtrace: None,
+            });
+        }
+
+        drop(signal_handler);
+        if captured
+            .iter()
+            .all(|thread| thread.frames.is_empty() && thread.current_backtrace.is_none())
+        {
+            return Err("Linux stack capture could not read any thread registers".into());
+        }
+
+        let mut dump = String::new();
+        for thread in captured {
+            use std::fmt::Write as _;
+            let _ = writeln!(dump, "\"{}\" tid={}", thread.name, thread.id);
+            if let Some(backtrace) = thread.current_backtrace {
+                for line in backtrace.lines() {
+                    let _ = writeln!(dump, "    {line}");
+                }
+            } else if thread.frames.is_empty() {
+                let _ = writeln!(dump, "    <native stack unavailable>");
+            } else {
+                for frame in symbolize(&thread.frames) {
+                    let _ = writeln!(dump, "    {frame}");
+                }
+            }
+        }
+        Ok(dump)
+    }
+
+    fn enumerate_threads() -> io::Result<Vec<ThreadInfo>> {
+        let mut threads = Vec::new();
+        for entry in fs::read_dir("/proc/self/task")? {
+            let entry = entry?;
+            let Some(id) = entry
+                .file_name()
+                .to_str()
+                .and_then(|id| id.parse::<libc::pid_t>().ok())
+            else {
+                continue;
+            };
+            let status_path = entry.path().join("status");
+            let blocked_signals = match read_blocked_signals(&status_path) {
+                Ok(mask) => mask,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error),
+            };
+            let name = fs::read_to_string(entry.path().join("comm"))
+                .ok()
+                .map(|name| name.trim_end().to_owned())
+                .filter(|name| !name.is_empty())
+                .unwrap_or_else(|| format!("thread-{id}"));
+            threads.push(ThreadInfo {
+                id,
+                name,
+                blocked_signals,
+            });
+        }
+        threads.sort_by_key(|thread| thread.id);
+        Ok(threads)
+    }
+
+    fn read_blocked_signals(path: &std::path::Path) -> io::Result<u64> {
+        let status = fs::read_to_string(path)?;
+        let value = status
+            .lines()
+            .find_map(|line| line.strip_prefix("SigBlk:").map(str::trim))
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "missing SigBlk field"))?;
+        u64::from_str_radix(value, 16)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+    }
+
+    fn install_signal_handler(threads: &[ThreadInfo]) -> io::Result<SignalHandler> {
+        for signal in SIGNAL_CANDIDATES {
+            let mask = 1u64 << (signal - 1);
+            if threads
+                .iter()
+                .any(|thread| thread.blocked_signals & mask != 0)
+            {
+                continue;
+            }
+
+            let mut previous = unsafe { mem::zeroed::<libc::sigaction>() };
+            if unsafe { libc::sigaction(signal, ptr::null(), &mut previous) } != 0 {
+                continue;
+            }
+            if previous.sa_sigaction != libc::SIG_DFL && previous.sa_sigaction != libc::SIG_IGN {
+                continue;
+            }
+
+            let mut action = unsafe { mem::zeroed::<libc::sigaction>() };
+            action.sa_sigaction = snapshot_signal_handler as usize;
+            action.sa_flags = libc::SA_SIGINFO | libc::SA_RESTART;
+            unsafe { libc::sigemptyset(&mut action.sa_mask) };
+            if unsafe { libc::sigaction(signal, &action, ptr::null_mut()) } == 0 {
+                return Ok(SignalHandler { signal, previous });
+            }
+        }
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "no unused, unblocked default-ignore signal is available for stack capture",
+        ))
+    }
+
+    extern "C" fn snapshot_signal_handler(
+        signal: libc::c_int,
+        info: *mut libc::siginfo_t,
+        context: *mut c_void,
+    ) {
+        if info.is_null()
+            || signal != ACTIVE_SIGNAL.load(Ordering::Relaxed)
+            || ACTIVE_TID.load(Ordering::Acquire)
+                != unsafe { libc::syscall(libc::SYS_gettid) as libc::pid_t }
+        {
+            return;
+        }
+        let info = unsafe { &*info };
+        let token = unsafe { info.si_value().sival_ptr as usize };
+        if info.si_code != libc::SI_QUEUE
+            || unsafe { info.si_pid() } != unsafe { libc::getpid() }
+            || token != ACTIVE_TOKEN.load(Ordering::Acquire)
+        {
+            return;
+        }
+        let Some((frame_pointer, stack_pointer, program_counter)) =
+            (unsafe { registers_from_context(context) })
+        else {
+            return;
+        };
+        FRAME_POINTER.store(frame_pointer, Ordering::Relaxed);
+        STACK_POINTER.store(stack_pointer, Ordering::Relaxed);
+        PROGRAM_COUNTER.store(program_counter, Ordering::Relaxed);
+        CAPTURED.store(true, Ordering::Release);
+        while !RELEASE.load(Ordering::Acquire) {
+            std::hint::spin_loop();
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    unsafe fn registers_from_context(context: *mut c_void) -> Option<(u64, u64, u64)> {
+        let context = unsafe { &*context.cast::<libc::ucontext_t>() };
+        Some((
+            context.uc_mcontext.gregs[libc::REG_RBP as usize] as u64,
+            context.uc_mcontext.gregs[libc::REG_RSP as usize] as u64,
+            context.uc_mcontext.gregs[libc::REG_RIP as usize] as u64,
+        ))
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    unsafe fn registers_from_context(context: *mut c_void) -> Option<(u64, u64, u64)> {
+        let context = unsafe { &*context.cast::<libc::ucontext_t>() };
+        Some((
+            context.uc_mcontext.regs[29],
+            context.uc_mcontext.sp,
+            context.uc_mcontext.pc,
+        ))
+    }
+
+    fn capture_thread(
+        process_id: libc::pid_t,
+        thread_id: libc::pid_t,
+        signal: libc::c_int,
+        deadline: Instant,
+    ) -> Option<(u64, u64, u64)> {
+        if Instant::now() >= deadline {
+            return None;
+        }
+        let token = NEXT_TOKEN.fetch_add(1, Ordering::Relaxed).max(1);
+        CAPTURED.store(false, Ordering::Relaxed);
+        RELEASE.store(false, Ordering::Relaxed);
+        FRAME_POINTER.store(0, Ordering::Relaxed);
+        STACK_POINTER.store(0, Ordering::Relaxed);
+        PROGRAM_COUNTER.store(0, Ordering::Relaxed);
+        ACTIVE_TOKEN.store(token, Ordering::Relaxed);
+        ACTIVE_SIGNAL.store(signal, Ordering::Relaxed);
+        ACTIVE_TID.store(thread_id, Ordering::Release);
+
+        let mut info = QueuedSignalInfo {
+            signo: signal,
+            errno: 0,
+            code: libc::SI_QUEUE,
+            reserved: 0,
+            pid: process_id,
+            uid: unsafe { libc::getuid() },
+            value: libc::sigval {
+                sival_ptr: token as *mut c_void,
+            },
+            padding: [0; 96],
+        };
+        let queued = unsafe {
+            libc::syscall(
+                libc::SYS_rt_tgsigqueueinfo,
+                process_id,
+                thread_id,
+                signal,
+                (&mut info as *mut QueuedSignalInfo).cast::<c_void>(),
+            )
+        };
+        if queued != 0 {
+            RELEASE.store(true, Ordering::Release);
+            ACTIVE_TID.store(0, Ordering::Release);
+            return None;
+        }
+
+        let thread_deadline = (Instant::now() + THREAD_SIGNAL_TIMEOUT).min(deadline);
+        while !CAPTURED.load(Ordering::Acquire) && Instant::now() < thread_deadline {
+            thread::sleep(Duration::from_millis(1));
+        }
+        let registers = CAPTURED.load(Ordering::Acquire).then(|| {
+            (
+                FRAME_POINTER.load(Ordering::Relaxed),
+                STACK_POINTER.load(Ordering::Relaxed),
+                PROGRAM_COUNTER.load(Ordering::Relaxed),
+            )
+        });
+        RELEASE.store(true, Ordering::Release);
+        ACTIVE_TID.store(0, Ordering::Release);
+        registers
+    }
+
+    unsafe fn walk_frames(
+        process_id: libc::pid_t,
+        mut frame_pointer: u64,
+        stack_pointer: u64,
+        program_counter: u64,
+    ) -> Vec<u64> {
+        let mut frames = Vec::with_capacity(MAX_FRAMES);
+        if program_counter != 0 {
+            frames.push(program_counter);
+        }
+        if frame_pointer < stack_pointer
+            || frame_pointer.saturating_sub(stack_pointer) > MAX_STACK_SPAN
+            || frame_pointer & 7 != 0
+        {
+            return frames;
+        }
+        while frame_pointer != 0 && frames.len() < MAX_FRAMES {
+            let mut record = [0u64; 2];
+            let local = libc::iovec {
+                iov_base: record.as_mut_ptr().cast::<c_void>(),
+                iov_len: size_of::<[u64; 2]>(),
+            };
+            let remote = libc::iovec {
+                iov_base: frame_pointer as usize as *mut c_void,
+                iov_len: size_of::<[u64; 2]>(),
+            };
+            let read = unsafe { libc::process_vm_readv(process_id, &local, 1, &remote, 1, 0) };
+            if read != size_of::<[u64; 2]>() as isize {
+                break;
+            }
+            if record[1] != 0 {
+                frames.push(record[1]);
+            }
+            let next = record[0];
+            if next <= frame_pointer
+                || next.saturating_sub(frame_pointer) > MAX_FRAME_GAP
+                || next.saturating_sub(stack_pointer) > MAX_STACK_SPAN
+            {
+                break;
+            }
+            frame_pointer = next;
+        }
+        frames
+    }
+
+    fn symbolize(frames: &[u64]) -> Vec<String> {
+        let addresses = frames
+            .iter()
+            .map(|address| *address as usize as *mut c_void)
+            .collect::<Vec<_>>();
+        let symbols =
+            unsafe { libc::backtrace_symbols(addresses.as_ptr(), addresses.len() as libc::c_int) };
+        if symbols.is_null() {
+            return frames.iter().map(|frame| format!("0x{frame:x}")).collect();
+        }
+        let strings = unsafe { std::slice::from_raw_parts(symbols, frames.len()) }
+            .iter()
+            .map(|symbol| unsafe { std::ffi::CStr::from_ptr(*symbol) })
+            .map(|symbol| symbol.to_string_lossy().into_owned())
+            .collect();
+        unsafe { libc::free(symbols.cast()) };
+        strings
+    }
+}
+
+#[cfg(all(
+    target_os = "windows",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+mod windows {
+    use std::{
+        ffi::c_void,
+        mem::size_of,
+        ptr,
+        sync::{Mutex, OnceLock},
+        time::{Duration, Instant},
+    };
+
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE, LocalFree},
+        System::{
+            Diagnostics::{
+                Debug::{
+                    CONTEXT, GetThreadContext, RtlLookupFunctionEntry, RtlPcToFileHeader,
+                    RtlVirtualUnwind, UNW_FLAG_NHANDLER, UNWIND_HISTORY_TABLE,
+                },
+                ToolHelp::{
+                    CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First,
+                    Thread32Next,
+                },
+            },
+            LibraryLoader::{GetModuleFileNameW, GetModuleHandleW, GetProcAddress},
+            Threading::{
+                GetCurrentProcess, GetCurrentProcessId, GetCurrentThreadId, OpenThread,
+                ResumeThread, SuspendThread, THREAD_GET_CONTEXT, THREAD_QUERY_LIMITED_INFORMATION,
+                THREAD_SUSPEND_RESUME,
+            },
+        },
+    };
+
+    #[cfg(target_arch = "x86_64")]
+    use windows_sys::Win32::System::Diagnostics::Debug::{CONTEXT_FULL_AMD64, ReadProcessMemory};
+    #[cfg(target_arch = "aarch64")]
+    use windows_sys::Win32::System::Diagnostics::Debug::{
+        CONTEXT_FULL_ARM64, IMAGE_ARM64_RUNTIME_FUNCTION_ENTRY,
+    };
+
+    const MAX_FRAMES: usize = 128;
+    const MAX_THREAD_NAME_UNITS: usize = 4096;
+    const SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(5);
+    const KERNEL32_WIDE: [u16; 13] = [
+        b'k' as u16,
+        b'e' as u16,
+        b'r' as u16,
+        b'n' as u16,
+        b'e' as u16,
+        b'l' as u16,
+        b'3' as u16,
+        b'2' as u16,
+        b'.' as u16,
+        b'd' as u16,
+        b'l' as u16,
+        b'l' as u16,
+        0,
+    ];
+    static CAPTURE_LOCK: Mutex<()> = Mutex::new(());
+
+    type GetThreadDescriptionFn = unsafe extern "system" fn(
+        HANDLE,
+        *mut windows_sys::core::PWSTR,
+    ) -> windows_sys::core::HRESULT;
+
+    static GET_THREAD_DESCRIPTION: OnceLock<Option<GetThreadDescriptionFn>> = OnceLock::new();
+
+    struct Handle(HANDLE);
+
+    impl Drop for Handle {
+        fn drop(&mut self) {
+            if !self.0.is_null() && self.0 != INVALID_HANDLE_VALUE {
+                unsafe {
+                    let _ = CloseHandle(self.0);
+                }
+            }
+        }
+    }
+
+    struct SuspendedThread(HANDLE);
+
+    impl SuspendedThread {
+        fn new(handle: HANDLE) -> Option<Self> {
+            (unsafe { SuspendThread(handle) } != u32::MAX).then_some(Self(handle))
+        }
+    }
+
+    impl Drop for SuspendedThread {
+        fn drop(&mut self) {
+            unsafe {
+                let _ = ResumeThread(self.0);
+            }
+        }
+    }
+
+    struct ThreadDump {
+        id: u32,
+        name: String,
+        frames: Vec<u64>,
+        current_backtrace: Option<String>,
+    }
+
+    pub(super) fn dump() -> Result<String, String> {
+        let _capture_guard = CAPTURE_LOCK
+            .try_lock()
+            .map_err(|_| "another Windows stack capture is in progress".to_owned())?;
+        let threads = enumerate_threads().map_err(|error| error.to_string())?;
+        if threads.is_empty() {
+            return Err("Toolhelp returned no process threads".into());
+        }
+        let process = unsafe { GetCurrentProcess() };
+        let current_id = unsafe { GetCurrentThreadId() };
+        let deadline = Instant::now() + SNAPSHOT_TIMEOUT;
+        let mut dumps = Vec::with_capacity(threads.len());
+
+        for (index, id) in threads.iter().copied().enumerate() {
+            if Instant::now() >= deadline {
+                dumps.extend(threads[index..].iter().copied().map(|id| ThreadDump {
+                    id,
+                    name: format!("thread-{id}"),
+                    frames: Vec::new(),
+                    current_backtrace: None,
+                }));
+                break;
+            }
+            if id == current_id {
+                let name = std::thread::current()
+                    .name()
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| format!("thread-{id}"));
+                dumps.push(ThreadDump {
+                    id,
+                    name,
+                    frames: Vec::new(),
+                    current_backtrace: Some(format!(
+                        "{:?}",
+                        std::backtrace::Backtrace::force_capture()
+                    )),
+                });
+                continue;
+            }
+
+            let handle = unsafe {
+                OpenThread(
+                    THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME | THREAD_QUERY_LIMITED_INFORMATION,
+                    0,
+                    id,
+                )
+            };
+            if handle.is_null() {
+                dumps.push(ThreadDump {
+                    id,
+                    name: format!("thread-{id}"),
+                    frames: Vec::new(),
+                    current_backtrace: None,
+                });
+                continue;
+            }
+            let handle = Handle(handle);
+            let name = thread_name(handle.0, id);
+            let frames = if let Some(_suspended) = SuspendedThread::new(handle.0) {
+                unsafe { capture_stack(process, handle.0, deadline) }
+            } else {
+                Vec::new()
+            };
+            dumps.push(ThreadDump {
+                id,
+                name,
+                frames,
+                current_backtrace: None,
+            });
+        }
+
+        if dumps
+            .iter()
+            .all(|dump| dump.frames.is_empty() && dump.current_backtrace.is_none())
+        {
+            return Err("Windows stack capture could not read any thread contexts".into());
+        }
+
+        let mut output = String::new();
+        for dump in dumps {
+            use std::fmt::Write as _;
+            let _ = writeln!(output, "\"{}\" tid={}", dump.name, dump.id);
+            if let Some(backtrace) = dump.current_backtrace {
+                for line in backtrace.lines() {
+                    let _ = writeln!(output, "    {line}");
+                }
+            } else if dump.frames.is_empty() {
+                let _ = writeln!(output, "    <native stack unavailable>");
+            } else {
+                for frame in symbolize(&dump.frames) {
+                    let _ = writeln!(output, "    {frame}");
+                }
+            }
+        }
+        Ok(output)
+    }
+
+    fn enumerate_threads() -> std::io::Result<Vec<u32>> {
+        let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
+        if snapshot.is_null() || snapshot == INVALID_HANDLE_VALUE {
+            return Err(std::io::Error::last_os_error());
+        }
+        let _snapshot = Handle(snapshot);
+        let process_id = unsafe { GetCurrentProcessId() };
+        let mut entry = THREADENTRY32 {
+            dwSize: size_of::<THREADENTRY32>() as u32,
+            ..Default::default()
+        };
+        if unsafe { Thread32First(snapshot, &mut entry) } == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        let mut threads = Vec::new();
+        loop {
+            if entry.th32OwnerProcessID == process_id {
+                threads.push(entry.th32ThreadID);
+            }
+            if unsafe { Thread32Next(snapshot, &mut entry) } == 0 {
+                break;
+            }
+        }
+        threads.sort_unstable();
+        Ok(threads)
+    }
+
+    fn thread_name(handle: HANDLE, id: u32) -> String {
+        let Some(get_description) = get_thread_description_function() else {
+            return format!("thread-{id}");
+        };
+        let mut description = ptr::null_mut();
+        let result = unsafe { get_description(handle, &mut description) };
+        if result < 0 || description.is_null() {
+            return format!("thread-{id}");
+        }
+        let mut length = 0;
+        while length < MAX_THREAD_NAME_UNITS && unsafe { *description.add(length) } != 0 {
+            length += 1;
+        }
+        let name =
+            String::from_utf16_lossy(unsafe { std::slice::from_raw_parts(description, length) });
+        unsafe {
+            let _ = LocalFree(description.cast());
+        }
+        if name.is_empty() {
+            format!("thread-{id}")
+        } else {
+            name
+        }
+    }
+
+    fn get_thread_description_function() -> Option<GetThreadDescriptionFn> {
+        *GET_THREAD_DESCRIPTION.get_or_init(|| unsafe {
+            let kernel32 = GetModuleHandleW(KERNEL32_WIDE.as_ptr());
+            if kernel32.is_null() {
+                return None;
+            }
+            let function = GetProcAddress(kernel32, c"GetThreadDescription".as_ptr().cast::<u8>());
+            let function = function?;
+            Some(std::mem::transmute::<
+                unsafe extern "system" fn() -> isize,
+                GetThreadDescriptionFn,
+            >(function))
+        })
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    unsafe fn capture_stack(process: HANDLE, thread: HANDLE, deadline: Instant) -> Vec<u64> {
+        let mut context = CONTEXT {
+            ContextFlags: CONTEXT_FULL_AMD64,
+            ..Default::default()
+        };
+        if unsafe { GetThreadContext(thread, &mut context) } == 0 {
+            return Vec::new();
+        }
+        let mut frames = vec![context.Rip];
+        let mut history = UNWIND_HISTORY_TABLE::default();
+        while frames.len() < MAX_FRAMES && Instant::now() < deadline {
+            let control_pc = context.Rip;
+            if control_pc == 0 {
+                break;
+            }
+            let mut image_base = 0u64;
+            let function =
+                unsafe { RtlLookupFunctionEntry(control_pc, &mut image_base, &mut history) };
+            if function.is_null() {
+                let mut return_address = 0u64;
+                let mut bytes_read = 0usize;
+                let read = unsafe {
+                    ReadProcessMemory(
+                        process,
+                        context.Rsp as usize as *const c_void,
+                        (&mut return_address as *mut u64).cast(),
+                        size_of::<u64>(),
+                        &mut bytes_read,
+                    )
+                };
+                if read == 0 || bytes_read != size_of::<u64>() {
+                    break;
+                }
+                context.Rsp = context.Rsp.saturating_add(size_of::<u64>() as u64);
+                context.Rip = return_address;
+            } else {
+                unsafe {
+                    let _ = RtlVirtualUnwind(
+                        UNW_FLAG_NHANDLER,
+                        image_base,
+                        control_pc,
+                        function,
+                        &mut context,
+                        ptr::null_mut(),
+                        ptr::null_mut(),
+                        ptr::null_mut(),
+                    );
+                }
+            }
+            if context.Rip == 0 || context.Rip == control_pc {
+                break;
+            }
+            frames.push(context.Rip);
+        }
+        frames.retain(|frame| *frame != 0);
+        frames
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    unsafe fn capture_stack(_process: HANDLE, thread: HANDLE, deadline: Instant) -> Vec<u64> {
+        let mut context = CONTEXT::default();
+        context.ContextFlags = CONTEXT_FULL_ARM64;
+        if unsafe { GetThreadContext(thread, &mut context) } == 0 {
+            return Vec::new();
+        }
+        let mut frames = vec![context.Pc];
+        let mut history = UNWIND_HISTORY_TABLE::default();
+        while frames.len() < MAX_FRAMES && Instant::now() < deadline {
+            let control_pc = context.Pc;
+            if control_pc == 0 {
+                break;
+            }
+            let mut image_base = 0usize;
+            let function = unsafe {
+                RtlLookupFunctionEntry(control_pc as usize, &mut image_base, &mut history)
+            };
+            if function.is_null() {
+                let return_address = unsafe { context.Anonymous.X[30] };
+                if return_address == 0 {
+                    break;
+                }
+                context.Pc = return_address;
+            } else {
+                unsafe {
+                    let _ = RtlVirtualUnwind(
+                        UNW_FLAG_NHANDLER,
+                        image_base,
+                        control_pc as usize,
+                        function as *const IMAGE_ARM64_RUNTIME_FUNCTION_ENTRY,
+                        &mut context,
+                        ptr::null_mut(),
+                        ptr::null_mut(),
+                        ptr::null_mut(),
+                    );
+                }
+            }
+            if context.Pc == 0 || context.Pc == control_pc {
+                break;
+            }
+            frames.push(context.Pc);
+        }
+        frames
+    }
+
+    fn symbolize(frames: &[u64]) -> Vec<String> {
+        frames.iter().map(|frame| format_frame(*frame)).collect()
+    }
+
+    fn format_frame(address: u64) -> String {
+        let mut module_base = ptr::null_mut();
+        if unsafe { RtlPcToFileHeader(address as usize as *const c_void, &mut module_base) }
+            .is_null()
+            || module_base.is_null()
+        {
+            return format!("0x{address:x}");
+        }
+        let mut module_path = [0u16; 1024];
+        let path_length = unsafe {
+            GetModuleFileNameW(
+                module_base,
+                module_path.as_mut_ptr(),
+                module_path.len() as u32,
+            )
+        } as usize;
+        if path_length == 0 || path_length >= module_path.len() {
+            return format!("0x{address:x}");
+        }
+        let module_path = String::from_utf16_lossy(&module_path[..path_length]);
+        let offset = address.saturating_sub(module_base as usize as u64);
+        format!("{module_path}+0x{offset:x}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::dump_threads;
@@ -318,9 +1147,10 @@ mod tests {
     fn jstack_includes_current_and_other_named_threads() {
         let (started, ready) = mpsc::channel();
         let release = Arc::new(AtomicBool::new(false));
+        let worker_cleanup = WorkerCleanup(release.clone());
         let worker_release = release.clone();
         let worker = std::thread::Builder::new()
-            .name("running-info-stack-worker".to_owned())
+            .name("jstack-worker".to_owned())
             .spawn(move || {
                 started.send(()).unwrap();
                 while !worker_release.load(Ordering::Acquire) {
@@ -330,17 +1160,36 @@ mod tests {
             .unwrap();
         ready.recv().unwrap();
 
+        #[cfg(target_os = "linux")]
+        let original_winch_handler = signal_handler(libc::SIGWINCH);
+        #[cfg(all(
+            target_os = "linux",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        ))]
+        let dump = super::linux::dump()
+            .unwrap_or_else(|error| panic!("Linux all-thread stack capture failed: {error}"));
+        #[cfg(not(all(
+            target_os = "linux",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        )))]
         let dump = dump_threads();
+        #[cfg(target_os = "linux")]
+        assert_eq!(signal_handler(libc::SIGWINCH), original_winch_handler);
+
+        #[cfg(target_os = "linux")]
+        let alternate_signal_dump = dump_with_custom_winch_handler();
+
         release.store(true, Ordering::Release);
         worker.join().unwrap();
+        drop(worker_cleanup);
 
-        assert!(dump.contains("running-info-stack-worker"), "{dump}");
+        assert!(dump.contains("jstack-worker"), "{dump}");
         assert!(dump.contains("tid="), "{dump}");
-        assert!(dump.contains("Backtrace"), "{dump}");
+        assert!(dump.contains("Backtrace") || dump.contains("0x"), "{dump}");
         let lines = dump.lines().collect::<Vec<_>>();
         let worker_line = lines
             .iter()
-            .position(|line| line.contains("running-info-stack-worker"))
+            .position(|line| line.contains("jstack-worker"))
             .unwrap();
         assert!(
             lines
@@ -348,5 +1197,81 @@ mod tests {
                 .is_some_and(|line| !line.contains("native stack unavailable")),
             "{dump}"
         );
+
+        #[cfg(target_os = "linux")]
+        {
+            assert!(
+                alternate_signal_dump.contains("jstack-worker"),
+                "{alternate_signal_dump}"
+            );
+            let lines = alternate_signal_dump.lines().collect::<Vec<_>>();
+            let worker_line = lines
+                .iter()
+                .position(|line| line.contains("jstack-worker"))
+                .unwrap();
+            assert!(
+                lines
+                    .get(worker_line + 1)
+                    .is_some_and(|line| !line.contains("native stack unavailable")),
+                "{alternate_signal_dump}"
+            );
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    extern "C" fn custom_winch_handler(_signal: libc::c_int) {}
+
+    #[cfg(target_os = "linux")]
+    fn signal_handler(signal: libc::c_int) -> usize {
+        let mut action = unsafe { std::mem::zeroed::<libc::sigaction>() };
+        assert_eq!(
+            unsafe { libc::sigaction(signal, std::ptr::null(), &mut action) },
+            0
+        );
+        action.sa_sigaction
+    }
+
+    #[cfg(target_os = "linux")]
+    fn dump_with_custom_winch_handler() -> String {
+        let mut custom_action = unsafe { std::mem::zeroed::<libc::sigaction>() };
+        custom_action.sa_sigaction = custom_winch_handler as usize;
+        unsafe { libc::sigemptyset(&mut custom_action.sa_mask) };
+        let mut previous = unsafe { std::mem::zeroed::<libc::sigaction>() };
+        assert_eq!(
+            unsafe { libc::sigaction(libc::SIGWINCH, &custom_action, &mut previous) },
+            0
+        );
+        let _restore = RestoreSignalAction {
+            signal: libc::SIGWINCH,
+            previous,
+        };
+
+        let dump = dump_threads();
+        let current = signal_handler(libc::SIGWINCH);
+        assert_eq!(current, custom_action.sa_sigaction);
+        dump
+    }
+
+    struct WorkerCleanup(Arc<AtomicBool>);
+
+    impl Drop for WorkerCleanup {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::Release);
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    struct RestoreSignalAction {
+        signal: libc::c_int,
+        previous: libc::sigaction,
+    }
+
+    #[cfg(target_os = "linux")]
+    impl Drop for RestoreSignalAction {
+        fn drop(&mut self) {
+            unsafe {
+                let _ = libc::sigaction(self.signal, &self.previous, std::ptr::null_mut());
+            }
+        }
     }
 }
