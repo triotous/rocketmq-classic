@@ -21,8 +21,10 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   offset-store accessors, direct/periodic/shutdown offset persistence scoped to
   active pull queues, timestamp offset reset, consumer
   settings/subscriptions, and direct consume-hook entrypoints now have Java
-  fixture/Rust evidence; its
-  returned public method surface still needs a method-by-method audit. Pull
+  fixture/Rust evidence. The `pullMessage` row also now covers Java's one-time
+  first-lock offset refresh for orderly clustering pulls; its Java fixture and
+  Rust regression pass. The returned Push implementation public method surface
+  still needs a method-by-method audit. Pull
   `getRebalanceImpl`, the nested wrapper method inventory, and broad Phase 6
   behavior reconciliation remain open. Pull
   `sendMessageBack`/`maxReconsumeTimes` covers the 3000 ms timeout and logical

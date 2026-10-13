@@ -35,7 +35,6 @@ pub(crate) struct PullRequest {
     consumer_group: String,
     process_queue: Arc<ProcessQueue>,
     next_offset: Arc<Mutex<i64>>,
-    #[allow(dead_code)] // Orderly queue locking is owned by Phase 12.
     previously_locked: Arc<AtomicBool>,
 }
 
@@ -84,12 +83,10 @@ impl PullRequest {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = offset;
     }
 
-    #[allow(dead_code)] // Orderly queue locking is owned by Phase 12.
     pub(crate) fn previously_locked(&self) -> bool {
         self.previously_locked.load(Ordering::Acquire)
     }
 
-    #[allow(dead_code)] // Orderly queue locking is owned by Phase 12.
     pub(crate) fn set_previously_locked(&self, value: bool) {
         self.previously_locked.store(value, Ordering::Release);
     }

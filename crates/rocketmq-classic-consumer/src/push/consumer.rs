@@ -1643,6 +1643,35 @@ impl PushConsumer {
             return;
         }
 
+        if orderly_lock_settings.is_some()
+            && self.config.message_model()
+                == rocketmq_classic_protocol::heartbeat::MessageModel::Clustering
+            && !request.previously_locked()
+        {
+            match self
+                .compute_initial_offset(&context.runtime, &context.offset_store, &queue)
+                .await
+            {
+                Ok(offset) => {
+                    request.set_next_offset(offset);
+                    request.set_previously_locked(true);
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        consumer_group = %request.consumer_group(),
+                        queue_id = queue.queue_id(),
+                        generation,
+                        error = %error,
+                        "push failed to refresh offset on the first orderly pull after lock"
+                    );
+                    let _ = context
+                        .scheduler
+                        .schedule(request, self.pull_time_delay_millis_when_exception());
+                    return;
+                }
+            }
+        }
+
         let assigned_queue_count = read_lock(&self.process_queues)
             .keys()
             .filter(|assigned| assigned.topic() == queue.topic())
@@ -6100,6 +6129,7 @@ mod tests {
         values: Mutex<HashMap<MessageQueue, i64>>,
         persisted: Mutex<HashMap<MessageQueue, i64>>,
         updates: Mutex<Vec<(MessageQueue, i64, bool)>>,
+        reads: Mutex<Vec<(MessageQueue, ReadOffsetType)>>,
         persist_calls: Mutex<Vec<Vec<MessageQueue>>>,
         fail_persist: Mutex<bool>,
         persist_started: Mutex<Option<Arc<tokio::sync::Barrier>>>,
@@ -6151,6 +6181,7 @@ mod tests {
             mode: ReadOffsetType,
         ) -> OffsetStoreFuture<'a, OffsetRead> {
             Box::pin(async move {
+                self.reads.lock().unwrap().push((queue.clone(), mode));
                 let memory = self.values.lock().unwrap().get(queue).copied();
                 let stored = self.persisted.lock().unwrap().get(queue).copied();
                 Ok(match mode {
@@ -8538,6 +8569,81 @@ mod tests {
         let snapshot = found_process_queue.snapshot(3).unwrap();
         assert_eq!(snapshot.cached_count, 1);
         assert_eq!(found_request.next_offset(), 42);
+    }
+
+    #[tokio::test]
+    async fn first_orderly_locked_pull_refreshes_offset_once_like_java() {
+        let mut config = PushConsumerConfig::new("orderly-first-lock-offset").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        config.set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::Clustering);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let store = Arc::new(RecordingOffsetStore::default());
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        store.seed_persisted(queue.clone(), 15);
+        store.update_offset(&queue, 8, false);
+        let store_dyn: Arc<dyn OffsetStore> = store.clone();
+        let listener: Arc<dyn MessageListenerOrderly> = Arc::new(
+            |_messages: Vec<MessageExt>, context: ConsumeOrderlyContext| async move {
+                (Some(ConsumeOrderlyStatus::Success), context)
+            },
+        );
+        let runtime =
+            install_started_orderly_consumer(&consumer, &manager, store_dyn, listener, None).await;
+        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 101));
+        process_queue
+            .set_lock_state(101, true, epoch_millis())
+            .unwrap();
+        write_lock(&consumer.process_queues).insert(queue.clone(), process_queue.clone());
+        consumer
+            .scripted_lock_transport
+            .lock()
+            .unwrap()
+            .unlock_results
+            .push_back(Ok(()));
+        let request = Arc::new(PullRequest::new(
+            "orderly-first-lock-offset",
+            process_queue,
+            8,
+        ));
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/push-implementation-accessor.json"
+        ))
+        .unwrap();
+
+        consumer
+            .clone()
+            .run_pull_worker_request(request.clone())
+            .await;
+        assert_eq!(
+            request.next_offset(),
+            fixture["orderlyFirstLockedPullOffset"].as_i64().unwrap()
+        );
+        assert!(request.previously_locked());
+        assert_eq!(fixture["orderlyFirstLockedPullPreviouslyLocked"], true);
+        assert_eq!(
+            store.reads.lock().unwrap().as_slice(),
+            &[(queue.clone(), ReadOffsetType::ReadFromStore)]
+        );
+
+        store.seed_persisted(queue.clone(), 21);
+        consumer
+            .clone()
+            .run_pull_worker_request(request.clone())
+            .await;
+        assert_eq!(request.next_offset(), 15);
+        assert_eq!(
+            fixture["orderlySecondLockedPullOffset"].as_i64().unwrap(),
+            request.next_offset()
+        );
+        assert_eq!(
+            store.reads.lock().unwrap().as_slice(),
+            &[(queue, ReadOffsetType::ReadFromStore)]
+        );
+        assert_eq!(fixture["orderlySecondLockedPullStoreReads"], 1);
+
+        consumer.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
     }
 
     #[tokio::test]

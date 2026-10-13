@@ -69,3 +69,12 @@
 - PASS after correction: `cargo test -p rocketmq-classic-consumer --locked` (184 library tests and all integration tests; 228 total); strict consumer Clippy; `mvn -f compat/java-reference/pom.xml verify` (37 scenarios and fixture drift); `cargo fmt --all -- --check`; `git diff --check`.
 - Updated Phase 10 matrix and release checklist. No live Broker or Docker was used. Commit follows final diff review.
 - Change commit: `dbda48ad` (`Add Push timestamp offset reset API`).
+
+## P18-V01 orderly Push pull follow-up — 2026-10-13
+
+- Audited Java 5.5.1 `DefaultMQPushConsumerImpl.pullMessage` against `PullRequest` and the current Rust pull worker. Found that Java refreshes the configured start offset once when an orderly clustering queue is first locked, then marks the request `previouslyLocked`; Rust carried the matching flag but never read or set it. This could pull from an offset that changed between assignment and the first locked pull.
+- Extended the invoked Java 5.5.1 implementation fixture with sequential store offsets (15 then 21). It records that the first locked pull adopts 15, marks `previouslyLocked`, and the next attempt does not reread. Fixture SHA-256: `3407efb21e8c669d49864ff59a2cb3bcbb6382aa45e7a449c6a7ea0cb928869b`.
+- Added `first_orderly_locked_pull_refreshes_offset_once_like_java`. Before the Rust change it failed as expected: actual offset 8, fixture offset 15. Rust now recomputes the initial offset after lock validation, stores it on the pull request once, and retries on lookup failure using the configured Java exception delay. Removed the dead-code exemptions from the lock-history field/accessors.
+- Updated the Phase 10 pull method matrix and release checklist. The raw Push public-method audit remains open.
+- PASS: `cargo test -p rocketmq-classic-consumer --locked` (185 library tests and all consumer integration/doc targets); `cargo clippy -p rocketmq-classic-consumer --all-targets --all-features --locked -- -D warnings`; `mvn -f compat/java-reference/pom.xml verify` (37 scenarios, Java fixture drift, cross-decodes); `cargo fmt --all -- --check`; `git diff --check`.
+- No live Broker or Docker was used. Phase 18 V01–V04 and Phase 19 local Broker/Docker execution remain incomplete.

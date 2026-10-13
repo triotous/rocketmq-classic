@@ -19,11 +19,14 @@ import org.apache.rocketmq.client.hook.ConsumeMessageContext;
 import org.apache.rocketmq.client.hook.ConsumeMessageHook;
 import org.apache.rocketmq.client.impl.MQAdminImpl;
 import org.apache.rocketmq.client.impl.consumer.DefaultMQPushConsumerImpl;
+import org.apache.rocketmq.client.impl.consumer.PullRequest;
 import org.apache.rocketmq.client.impl.consumer.ProcessQueue;
 import org.apache.rocketmq.client.impl.factory.MQClientInstance;
 import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.common.ServiceState;
+import org.apache.rocketmq.client.consumer.store.ReadOffsetType;
 import org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /** Invokes the deprecated Push consumer implementation accessor on Java 5.5.1. */
 public final class PushImplementationAccessorFixtures {
@@ -198,6 +201,7 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("hasConsumeHookBeforeRegistration", hasConsumeHookBeforeRegistration);
         fixture.put("directHookEvents", directHookEvents);
         fixture.put("hasConsumeHookAfterRegistration", hasConsumeHookAfterRegistration);
+        fixture.putAll(orderlyLockedPullAttempts());
         String json = JSON.toJSONString(fixture) + "\n";
         if (verify) {
             check(Files.exists(path) && json.equals(Files.readString(path)), "fixture drift: " + path);
@@ -206,6 +210,58 @@ public final class PushImplementationAccessorFixtures {
             Files.writeString(path, json);
         }
         System.out.println("Push implementation accessor verified");
+    }
+
+    private static Map<String, Object> orderlyLockedPullAttempts() {
+        DefaultMQPushConsumer consumer = new DefaultMQPushConsumer("phase18-orderly-pull-offset");
+        DefaultMQPushConsumerImpl implementation = consumer.getDefaultMQPushConsumerImpl();
+        implementation.setServiceState(ServiceState.RUNNING);
+        implementation.setConsumeOrderly(true);
+
+        AtomicInteger storeReads = new AtomicInteger();
+        OffsetStore offsetStore = (OffsetStore) Proxy.newProxyInstance(
+            OffsetStore.class.getClassLoader(),
+            new Class<?>[] {OffsetStore.class},
+            (proxy, method, methodArgs) -> {
+                if ("readOffset".equals(method.getName())) {
+                    return storeReads.getAndIncrement() == 0 ? 15L : 21L;
+                }
+                return null;
+            });
+        implementation.setOffsetStore(offsetStore);
+
+        MessageQueue queue = new MessageQueue("orders", "broker-a", 0);
+        ProcessQueue processQueue = new ProcessQueue();
+        processQueue.setLocked(true);
+        PullRequest request = new PullRequest();
+        request.setConsumerGroup("phase18-orderly-pull-offset");
+        request.setMessageQueue(queue);
+        request.setProcessQueue(processQueue);
+        request.setNextOffset(8L);
+
+        try {
+            implementation.pullMessage(request);
+        } catch (RuntimeException expectedAfterOffsetRefresh) {
+            // No live client factory is installed; the empty subscription path reaches
+            // delayed pull scheduling after the first-lock offset refresh.
+        }
+        long firstAttemptOffset = request.getNextOffset();
+        boolean previouslyLockedAfterFirstAttempt = request.isPreviouslyLocked();
+        int storeReadsAfterFirstAttempt = storeReads.get();
+
+        try {
+            implementation.pullMessage(request);
+        } catch (RuntimeException expectedAfterOffsetRefresh) {
+            // The second attempt remains on the same controlled no-factory path.
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("orderlyFirstLockedPullOffset", firstAttemptOffset);
+        result.put("orderlyFirstLockedPullPreviouslyLocked", previouslyLockedAfterFirstAttempt);
+        result.put("orderlyFirstLockedPullStoreReads", storeReadsAfterFirstAttempt);
+        result.put("orderlySecondLockedPullOffset", request.getNextOffset());
+        result.put("orderlySecondLockedPullStoreReads", storeReads.get());
+        return result;
     }
 
     private static long pullTimeDelayMillsWhenException(DefaultMQPushConsumerImpl implementation)
