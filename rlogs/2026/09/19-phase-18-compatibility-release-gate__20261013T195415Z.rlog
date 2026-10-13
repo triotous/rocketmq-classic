@@ -39,3 +39,10 @@
 - Added the re-exported common `CompressionType::find_by_value` / `get_compression_flag` mappings to the Producer matrix; their Java enum behavior and evidence remain owned by the Phase 6 compression API entry.
 - This closes the bounded Rust inherent-method name crosswalk only. It does not close Java-side reverse-export reconciliation, inherited/Deref/trait APIs, source branch/input equivalence, or the full P18-V01 acceptance audit.
 - PASS: `git diff --check`. This documentation-only pass did not run tests or contact a Broker.
+
+# Phase 18 latest-revision server-free gate and benchmark rerun — 2026-10-13
+
+- Revision under test: `a8c510d1cbc7` on `phase/19-phase-18-compatibility-release-gate`.
+- PASS: `cargo test --workspace --locked`; `cargo test --workspace --all-features --locked`; strict all-target/all-feature workspace Clippy; formatting and `git diff --check`; offline Java reference Maven verify; comparator self-test; 37-scenario manifest validation; workspace metadata/package checks; offline stress smoke (16 cases × 3); fuzz smoke (1,824 bounded mutations); facade examples build; offline release benchmark; and benchmark-target strict Clippy.
+- Latest local benchmark observations are recorded in `docs/compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`. Allocation counts and byte totals matched the prior capture; timing is host-specific and is not an acceptance threshold.
+- P18-V01 remains PARTIAL for the full Java↔Rust source, branch/input behavior, and Java reverse-export audit. No current-revision GitHub Ubuntu result is available without a pushed/triggered workflow. Phase 19 Broker/Docker runner and scenario execution remain outstanding; `0.1.0` release intent and crates.io dependency resolution remain unconfirmed. The final Windows IP Helper, non-macOS BSD address enumeration, and actual IPv6-only host checks remain manual validation.
