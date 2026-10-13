@@ -477,12 +477,9 @@ impl PushConsumer {
         &self,
         store: Option<Arc<dyn OffsetStore>>,
     ) -> Result<(), PushConsumerError> {
-        let state = self.state.lock().await;
-        match &*state {
-            State::Created => {}
-            State::Started { .. } => return Err(PushConsumerError::OffsetStoreAfterStartup),
-            State::Shutdown => return Err(PushConsumerError::Shutdown),
-        }
+        // Java's DefaultMQPushConsumerImpl.setOffsetStore directly replaces
+        // the field and does not guard on service lifecycle state.
+        let _state = self.state.lock().await;
         *self
             .offset_store
             .lock()
@@ -5695,6 +5692,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn push_raw_offset_store_accessors_match_java_null_and_identity() {
+        let config = PushConsumerConfig::new("phase18-push-implementation-accessor").unwrap();
+        let consumer = PushConsumer::new(config);
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/push-implementation-accessor.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            consumer.get_offset_store().is_none(),
+            fixture["offsetStoreInitiallyNull"]
+        );
+
+        let store: Arc<dyn OffsetStore> = Arc::new(RecordingOffsetStore::default());
+        consumer
+            .set_offset_store(Some(store.clone()))
+            .await
+            .unwrap();
+        let retained = consumer.get_offset_store().unwrap();
+        assert!(Arc::ptr_eq(&store, &retained));
+        assert_eq!(fixture["offsetStoreSetterPreservesIdentity"], true);
+
+        consumer.set_offset_store(None).await.unwrap();
+        assert!(consumer.get_offset_store().is_none());
+        assert_eq!(fixture["offsetStoreSetterAcceptsNull"], true);
+    }
+
+    #[tokio::test]
     async fn push_service_state_accessors_match_java_null_and_start_guard() {
         let group = "phase18-push-implementation-accessor";
         let config = PushConsumerConfig::new(group).unwrap();
@@ -9097,14 +9121,18 @@ mod tests {
                     })
                 })
         );
+        let running_offset_store = consumer.get_offset_store();
+        assert!(running_offset_store.is_some());
+        consumer.set_offset_store(None).await.unwrap();
+        assert!(consumer.get_offset_store().is_none());
+        consumer
+            .set_offset_store(running_offset_store)
+            .await
+            .unwrap();
         assert!(consumer.get_offset_store().is_some());
         assert!(matches!(
             consumer.start().await,
             Err(PushConsumerError::AlreadyStarted)
-        ));
-        assert!(matches!(
-            consumer.set_offset_store(None).await,
-            Err(PushConsumerError::OffsetStoreAfterStartup)
         ));
         assert!(consumer.unsubscribe("tenant%orders").await.unwrap());
 

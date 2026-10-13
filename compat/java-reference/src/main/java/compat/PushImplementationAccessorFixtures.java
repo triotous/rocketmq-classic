@@ -1,6 +1,7 @@
 package compat;
 
 import com.alibaba.fastjson2.JSON;
+import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -8,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
+import org.apache.rocketmq.client.consumer.store.OffsetStore;
 import org.apache.rocketmq.client.exception.MQClientException;
 import org.apache.rocketmq.client.hook.ConsumeMessageContext;
 import org.apache.rocketmq.client.hook.ConsumeMessageHook;
@@ -49,6 +51,15 @@ public final class PushImplementationAccessorFixtures {
         int effectiveMaxReconsumeTimesDefault = first.getMaxReconsumeTimes();
         consumer.setMaxReconsumeTimes(7);
         int effectiveMaxReconsumeTimesCustom = first.getMaxReconsumeTimes();
+        boolean offsetStoreInitiallyNull = first.getOffsetStore() == null;
+        OffsetStore directOffsetStore = (OffsetStore) Proxy.newProxyInstance(
+            OffsetStore.class.getClassLoader(),
+            new Class<?>[] {OffsetStore.class},
+            (proxy, method, methodArgs) -> null);
+        first.setOffsetStore(directOffsetStore);
+        boolean offsetStoreSetterPreservesIdentity = first.getOffsetStore() == directOffsetStore;
+        first.setOffsetStore(null);
+        boolean offsetStoreSetterAcceptsNull = first.getOffsetStore() == null;
         boolean hasConsumeHookBeforeRegistration = first.hasHook();
         List<String> directHookEvents = new ArrayList<>();
         first.registerConsumeMessageHook(new ConsumeMessageHook() {
@@ -85,6 +96,9 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("serviceStateAfterRejectedStart", serviceStateAfterRejectedStart);
         fixture.put("effectiveMaxReconsumeTimesDefault", effectiveMaxReconsumeTimesDefault);
         fixture.put("effectiveMaxReconsumeTimesCustom", effectiveMaxReconsumeTimesCustom);
+        fixture.put("offsetStoreInitiallyNull", offsetStoreInitiallyNull);
+        fixture.put("offsetStoreSetterPreservesIdentity", offsetStoreSetterPreservesIdentity);
+        fixture.put("offsetStoreSetterAcceptsNull", offsetStoreSetterAcceptsNull);
         fixture.put("hasConsumeHookBeforeRegistration", hasConsumeHookBeforeRegistration);
         fixture.put("directHookEvents", directHookEvents);
         fixture.put("hasConsumeHookAfterRegistration", hasConsumeHookAfterRegistration);

@@ -12,3 +12,10 @@
 - Updated the Phase 10 matrix and release checklist. Current Push implementation accessor fixture SHA-256: `ae2b0a060c1ff4d0757926fd891b0ef4fa74051f0666d78b470259615b4a83ba`.
 - PASS: `cargo test -p rocketmq-classic-consumer --locked push_raw_consume_hook_entrypoints_match_java`; strict consumer Clippy; `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios and fixture drift checks, exit 0); `cargo fmt --all -- --check`; `git diff --check`.
 - No live Broker or Docker was used. The remaining Push implementation public-method audit and the Phase 9/6 reconciliation remain open.
+
+# Phase 18 execution session — 2026-10-13T12:49:18Z
+
+- Continued the Phase 10 Push raw implementation audit for `getOffsetStore` and `setOffsetStore`. The setter now follows Java's direct store-field replacement semantics, including null and replacement after startup; the invoked Java fixture and Rust tests compare initial null, object identity and null reset.
+- Updated the Phase 10 matrix and release checklist. Current Push implementation accessor fixture SHA-256: `c7195beb1225540a1e671c85324e3984571d5d26764d790c27b08b16fd10e9da`.
+- PASS: `cargo test -p rocketmq-classic-consumer --locked` (182 unit tests plus all consumer integration/doc tests); strict consumer Clippy; `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios and fixture drift checks, exit 0); `cargo fmt --all -- --check`; `git diff --check`.
+- No live Broker or Docker was used. The remaining Push implementation public-method audit and the Phase 9/6 reconciliation remain open.

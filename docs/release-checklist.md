@@ -16,10 +16,11 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   entrypoints, `consumerRunningInfo`, the construction-time start timestamp,
   `get/setPullAPIWrapper`, and Pull's `get/setServiceState`. The Push
   `getDefaultMQPushConsumerImpl()` alias, service-state accessors, effective
-  retry-limit getter, and direct consume-hook entrypoints now have Java
-  fixture/Rust evidence; its returned public method surface still needs a
-  method-by-method audit. Pull `getRebalanceImpl`, the nested wrapper method
-  inventory, and broad Phase 6 behavior reconciliation remain open. Pull
+  retry-limit getter, offset-store accessors, and direct consume-hook
+  entrypoints now have Java fixture/Rust evidence; its returned public method
+  surface still needs a method-by-method audit. Pull `getRebalanceImpl`, the
+  nested wrapper method inventory, and broad Phase 6 behavior reconciliation
+  remain open. Pull
   `sendMessageBack`/`maxReconsumeTimes` covers the 3000 ms timeout and logical
   Broker route lookup offline; its live Broker handoff remains pending.
 - [x] Register live cases in the Phase 19 scenario manifest and validate the
