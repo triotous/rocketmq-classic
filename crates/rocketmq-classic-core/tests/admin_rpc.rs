@@ -10,8 +10,10 @@ use rocketmq_classic_core::{
 use rocketmq_classic_protocol::{
     codes::{request, response},
     header::{
-        CommandHeader, CreateTopicRequestHeader, HeaderMap, QueryMessageRequestHeader,
-        QueryMessageResponseHeader, ViewMessageRequestHeader,
+        BoundaryType, CommandHeader, CreateTopicRequestHeader,
+        GetEarliestMsgStoretimeRequestHeader, GetMaxOffsetRequestHeader, GetMinOffsetRequestHeader,
+        HeaderMap, QueryMessageRequestHeader, QueryMessageResponseHeader,
+        SearchOffsetRequestHeader, ViewMessageRequestHeader,
     },
     route::TopicRouteData,
 };
@@ -43,11 +45,21 @@ async fn scripted_peer(
     header: Option<HeaderMap>,
     body: Option<Vec<u8>>,
 ) -> (String, tokio::task::JoinHandle<RemotingCommand>) {
+    scripted_peer_after(code, header, body, Duration::ZERO).await
+}
+
+async fn scripted_peer_after(
+    code: i32,
+    header: Option<HeaderMap>,
+    body: Option<Vec<u8>>,
+    response_delay: Duration,
+) -> (String, tokio::task::JoinHandle<RemotingCommand>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap().to_string();
     let task = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
         let request = read_command(&mut stream).await;
+        tokio::time::sleep(response_delay).await;
         let mut reply = RemotingCommand {
             code,
             opaque: request.opaque,
@@ -85,6 +97,67 @@ async fn api() -> (MQClientApi, RemotingClient) {
     (MQClientApi::new(client.clone()), client)
 }
 
+async fn invoke_offset_operation(
+    api: &MQClientApi,
+    addr: &str,
+    code: i32,
+) -> Result<i64, RpcError> {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    match code {
+        request::SEARCH_OFFSET_BY_TIMESTAMP => {
+            api.search_offset(
+                addr,
+                &SearchOffsetRequestHeader {
+                    topic: "orders".into(),
+                    queue_id: 0,
+                    timestamp: 1_700_000_000_000,
+                    boundary_type: Some(BoundaryType::value_of_name(Some("LOWER")).unwrap()),
+                    ..Default::default()
+                },
+                deadline,
+            )
+            .await
+        }
+        request::GET_MAX_OFFSET => {
+            api.get_max_offset(
+                addr,
+                &GetMaxOffsetRequestHeader {
+                    topic: "orders".into(),
+                    queue_id: 0,
+                    ..Default::default()
+                },
+                deadline,
+            )
+            .await
+        }
+        request::GET_MIN_OFFSET => {
+            api.get_min_offset(
+                addr,
+                &GetMinOffsetRequestHeader {
+                    topic: "orders".into(),
+                    queue_id: 0,
+                    ..Default::default()
+                },
+                deadline,
+            )
+            .await
+        }
+        request::GET_EARLIEST_MSG_STORETIME => {
+            api.get_earliest_msg_storetime(
+                addr,
+                &GetEarliestMsgStoretimeRequestHeader {
+                    topic: "orders".into(),
+                    queue_id: 0,
+                    ..Default::default()
+                },
+                deadline,
+            )
+            .await
+        }
+        _ => panic!("unexpected admin offset request code {code}"),
+    }
+}
+
 #[tokio::test]
 async fn create_topic_sends_java_request_code_and_header_fields() {
     let (addr, peer) = scripted_peer(response::SUCCESS, None, None).await;
@@ -113,6 +186,71 @@ async fn create_topic_sends_java_request_code_and_header_fields() {
     header.encode_fields(&mut fields);
     assert_eq!(command.ext_fields, Some(fields));
     client.shutdown().await;
+}
+
+#[tokio::test]
+async fn create_topic_preserves_broker_permission_error() {
+    let (addr, peer) = scripted_peer(response::NO_PERMISSION, None, None).await;
+    let (api, client) = api().await;
+    let error = api
+        .create_topic(
+            &addr,
+            &CreateTopicRequestHeader {
+                topic: "orders".into(),
+                default_topic: "TBW102".into(),
+                ..Default::default()
+            },
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        RpcError::Response {
+            request_code: request::UPDATE_AND_CREATE_TOPIC,
+            code: response::NO_PERMISSION,
+            ..
+        }
+    ));
+    assert_eq!(peer.await.unwrap().code, request::UPDATE_AND_CREATE_TOPIC);
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn offset_admin_rpcs_preserve_broker_errors_and_reject_missing_response_fields() {
+    for code in [
+        request::SEARCH_OFFSET_BY_TIMESTAMP,
+        request::GET_MAX_OFFSET,
+        request::GET_MIN_OFFSET,
+        request::GET_EARLIEST_MSG_STORETIME,
+    ] {
+        let (error_address, error_peer) = scripted_peer(response::NO_PERMISSION, None, None).await;
+        let (api, client) = api().await;
+        let error = invoke_offset_operation(&api, &error_address, code)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            RpcError::Response {
+                request_code,
+                code: response::NO_PERMISSION,
+                ..
+            } if request_code == code
+        ));
+        assert_eq!(error_peer.await.unwrap().code, code);
+
+        let (malformed_address, malformed_peer) =
+            scripted_peer(response::SUCCESS, Some(HeaderMap::new()), None).await;
+        let malformed = invoke_offset_operation(&api, &malformed_address, code)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            malformed,
+            RpcError::MalformedResponse { request_code, .. } if request_code == code
+        ));
+        assert_eq!(malformed_peer.await.unwrap().code, code);
+        client.shutdown().await;
+    }
 }
 
 #[tokio::test]
@@ -219,6 +357,32 @@ async fn query_message_rejects_success_without_response_header() {
 }
 
 #[tokio::test]
+async fn query_message_rejects_malformed_success_body() {
+    let mut fields = HeaderMap::new();
+    QueryMessageResponseHeader::default().encode_fields(&mut fields);
+    let (addr, peer) = scripted_peer(response::SUCCESS, Some(fields), Some(vec![0, 0, 0, 1])).await;
+    let (api, client) = api().await;
+    let error = api
+        .query_message(
+            &addr,
+            &QueryMessageRequestHeader::default(),
+            false,
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap_err();
+    peer.await.unwrap();
+    assert!(matches!(
+        error,
+        RpcError::MalformedResponse {
+            request_code: request::QUERY_MESSAGE,
+            ..
+        }
+    ));
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn query_fanout_filters_unique_key_merges_watermarks_and_keeps_partial_successes() {
     let message_record = java_message_record("ipv4-v1");
     let decoded = decode_many(&message_record, Default::default(), Default::default()).unwrap();
@@ -298,6 +462,116 @@ async fn query_fanout_filters_unique_key_merges_watermarks_and_keeps_partial_suc
         assert_eq!(fields.get("_UNIQUE_KEY_QUERY"), Some(&"true".to_owned()));
     }
     assert_eq!(failed_peer.await.unwrap().code, request::QUERY_MESSAGE);
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn query_fanout_preserves_java_response_completion_order_and_time_bounds() {
+    let first_record = java_message_record("ipv4-v1");
+    let mut second_record = first_record.clone();
+    let body_marker = b"hello-v1";
+    let body_offset = second_record
+        .windows(body_marker.len())
+        .position(|window| window == body_marker)
+        .expect("the Java fixture contains a fixed-length message body");
+    second_record[body_offset..body_offset + body_marker.len()].copy_from_slice(b"hello-v2");
+
+    let mut first_header = HeaderMap::new();
+    QueryMessageResponseHeader {
+        index_last_update_timestamp: 200,
+        index_last_update_phyoffset: 20,
+    }
+    .encode_fields(&mut first_header);
+    let (first_address, first_peer) = scripted_peer_after(
+        response::SUCCESS,
+        Some(first_header),
+        Some(first_record),
+        Duration::from_millis(75),
+    )
+    .await;
+
+    let mut second_header = HeaderMap::new();
+    QueryMessageResponseHeader {
+        index_last_update_timestamp: 100,
+        index_last_update_phyoffset: 10,
+    }
+    .encode_fields(&mut second_header);
+    let (second_address, second_peer) =
+        scripted_peer(response::SUCCESS, Some(second_header), Some(second_record)).await;
+
+    let route = TopicRouteData::java_decode(
+        serde_json::json!({
+            "queueDatas": [],
+            "brokerDatas": [
+                {"cluster": "cluster-a", "brokerName": "broker-a", "brokerAddrs": {"0": first_address}},
+                {"cluster": "cluster-a", "brokerName": "broker-b", "brokerAddrs": {"0": second_address}}
+            ],
+            "filterServerTable": {}
+        })
+        .to_string()
+        .as_bytes(),
+    )
+    .unwrap();
+    let begin = 1_700_000_200_000;
+    let end = 1_700_000_200_100;
+    let query = AdminQueryRequest::by_unique_key("orders", "producer-unique-1", 32, begin, end);
+    let (api, client) = api().await;
+
+    let result = api
+        .query_message_across_brokers(&route, &query, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap();
+
+    assert_eq!(result.index_last_update_timestamp, 200);
+    assert_eq!(result.message_list.len(), 2);
+    assert_eq!(result.message_list[0].message().body(), b"hello-v2");
+    assert_eq!(result.message_list[1].message().body(), b"hello-v1");
+    for peer in [first_peer, second_peer] {
+        let command = peer.await.unwrap();
+        let fields = command.ext_fields.unwrap();
+        assert_eq!(fields.get("beginTimestamp"), Some(&begin.to_string()));
+        assert_eq!(fields.get("endTimestamp"), Some(&end.to_string()));
+        assert_eq!(fields.get("maxNum"), Some(&"32".to_owned()));
+    }
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn query_fanout_maps_only_terminal_broker_failures_to_java_no_message() {
+    let (first_address, first_peer) = scripted_peer(response::NO_PERMISSION, None, None).await;
+    let (second_address, second_peer) = scripted_peer(response::SYSTEM_ERROR, None, None).await;
+    let route = TopicRouteData::java_decode(
+        serde_json::json!({
+            "queueDatas": [],
+            "brokerDatas": [
+                {"cluster": "cluster-a", "brokerName": "broker-a", "brokerAddrs": {"0": first_address}},
+                {"cluster": "cluster-a", "brokerName": "broker-b", "brokerAddrs": {"0": second_address}}
+            ],
+            "filterServerTable": {}
+        })
+        .to_string()
+        .as_bytes(),
+    )
+    .unwrap();
+    let query = AdminQueryRequest::by_key("orders", "order-key", 32, 10, 99);
+    let (api, client) = api().await;
+
+    let error = api
+        .query_message_across_brokers(&route, &query, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        RpcError::Response {
+            request_code: request::QUERY_MESSAGE,
+            code: response::NO_MESSAGE,
+            remark: Some(remark),
+            ..
+        } if remark == "query message by key finished, but no message."
+    ));
+    assert_eq!(first_peer.await.unwrap().code, request::QUERY_MESSAGE);
+    assert_eq!(second_peer.await.unwrap().code, request::QUERY_MESSAGE);
     client.shutdown().await;
 }
 
@@ -473,5 +747,29 @@ async fn view_message_rejects_malformed_success_body() {
             ..
         }
     ));
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn view_message_preserves_not_found_response() {
+    let (addr, peer) = scripted_peer(response::NO_MESSAGE, None, None).await;
+    let (api, client) = api().await;
+    let error = api
+        .view_message(
+            &addr,
+            &ViewMessageRequestHeader::default(),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        RpcError::Response {
+            request_code: request::VIEW_MESSAGE_BY_ID,
+            code: response::NO_MESSAGE,
+            ..
+        }
+    ));
+    assert_eq!(peer.await.unwrap().code, request::VIEW_MESSAGE_BY_ID);
     client.shutdown().await;
 }

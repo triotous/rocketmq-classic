@@ -392,12 +392,13 @@ async fn run(
                             .register_producer(INNER_PRODUCER, producer.clone())?,
                     );
                     runtime.control.checkpoint(1)?;
+                    let inbound_executor = runtime.inbound.request_executor()?;
                     for (index, code) in super::inbound::CODES.into_iter().enumerate() {
-                        inbound.push(
-                            runtime
-                                .remoting()
-                                .register_owned_processor(code, runtime.inbound.clone()),
-                        );
+                        inbound.push(runtime.remoting().register_owned_processor_with_executor(
+                            code,
+                            runtime.inbound.clone(),
+                            Some(inbound_executor.clone()),
+                        ));
                         runtime.control.checkpoint(10 + index as u8)?;
                     }
                     let needs_name_server_discovery = runtime.config_read().namesrv_addr.is_none();
@@ -465,6 +466,7 @@ async fn run(
                             tasks.stop().await;
                         }
                         runtime.remoting().shutdown().await;
+                        let _ = runtime.inbound.shutdown_executor().await;
                         inbound.clear();
                         let _ = runtime.groups.clear();
                         runtime.control.set_state(RuntimeState::Failed);
@@ -512,9 +514,11 @@ async fn run(
                 }
                 inner_producer.take();
                 runtime.remoting().shutdown().await;
+                let executor_result = runtime.inbound.shutdown_executor().await;
                 inbound.clear();
                 runtime.control.set_state(RuntimeState::Stopped);
-                let result = runtime.remove_from_manager().map(|_| true);
+                let removal_result = runtime.remove_from_manager().map(|_| true);
+                let result = executor_result.and(removal_result);
                 let _ = reply.send(result);
                 break;
             }

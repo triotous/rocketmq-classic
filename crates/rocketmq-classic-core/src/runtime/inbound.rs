@@ -5,11 +5,21 @@ use rocketmq_classic_common::message::{
     decode_properties,
 };
 use rocketmq_classic_protocol::{
+    body::GetConsumerStatusBody,
     codes::{request, response},
     header::{CommandHeader, ReplyMessageRequestHeader},
 };
-use rocketmq_classic_remoting::{RemotingCommand, client::RequestProcessor};
-use std::sync::{Arc, OnceLock, Weak};
+use rocketmq_classic_remoting::{
+    RemotingCommand,
+    client::{RequestExecutor, RequestProcessor},
+};
+use std::{
+    sync::{
+        Arc, Mutex, OnceLock, Weak,
+        mpsc::{SyncSender, sync_channel},
+    },
+    thread::{self, JoinHandle},
+};
 
 pub(super) const CODES: [i32; 8] = [
     request::CHECK_TRANSACTION_STATE,
@@ -25,11 +35,138 @@ pub(super) const CODES: [i32; 8] = [
 #[derive(Default)]
 pub(super) struct RuntimeProcessor {
     runtime: OnceLock<Weak<ClientRuntime>>,
+    request_executor: OnceLock<Arc<InboundExecutor>>,
+}
+
+const INBOUND_EXECUTOR_WORKERS: usize = 4;
+const INBOUND_EXECUTOR_QUEUE_CAPACITY: usize = 1_024;
+type InboundTask = Box<dyn FnOnce() + Send + 'static>;
+
+struct InboundExecutor {
+    sender: Mutex<Option<SyncSender<InboundTask>>>,
+    workers: Mutex<Vec<JoinHandle<()>>>,
+}
+
+impl InboundExecutor {
+    fn new() -> Result<Self, super::RuntimeError> {
+        let (sender, receiver) = sync_channel::<InboundTask>(INBOUND_EXECUTOR_QUEUE_CAPACITY);
+        let receiver = Arc::new(Mutex::new(receiver));
+        let mut workers = Vec::with_capacity(INBOUND_EXECUTOR_WORKERS);
+        for index in 0..INBOUND_EXECUTOR_WORKERS {
+            let receiver = receiver.clone();
+            let worker = thread::Builder::new()
+                .name(format!("rocketmq-client-inbound-{index}"))
+                .spawn(move || {
+                    loop {
+                        let task = receiver
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .recv();
+                        match task {
+                            Ok(task) => task(),
+                            Err(_) => return,
+                        }
+                    }
+                })
+                .map_err(|error| super::RuntimeError::InboundRequestExecutor(error.to_string()))?;
+            workers.push(worker);
+        }
+        Ok(Self {
+            sender: Mutex::new(Some(sender)),
+            workers: Mutex::new(workers),
+        })
+    }
+
+    async fn shutdown(&self) -> Result<(), super::RuntimeError> {
+        self.sender
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        let workers = std::mem::take(
+            &mut *self
+                .workers
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        );
+        if workers.is_empty() {
+            return Ok(());
+        }
+        let panicked_workers = tokio::task::spawn_blocking(move || {
+            workers
+                .into_iter()
+                .map(|worker| worker.join().is_err())
+                .filter(|panicked| *panicked)
+                .count()
+        })
+        .await
+        .map_err(|error| {
+            super::RuntimeError::InboundRequestExecutor(format!(
+                "failed to join inbound request workers: {error}"
+            ))
+        })?;
+        if panicked_workers > 0 {
+            return Err(super::RuntimeError::InboundRequestExecutor(format!(
+                "{panicked_workers} inbound request workers panicked during shutdown"
+            )));
+        }
+        Ok(())
+    }
+}
+
+impl RequestExecutor for InboundExecutor {
+    fn execute(&self, task: Box<dyn FnOnce() + Send + 'static>) -> Result<(), String> {
+        let sender = self
+            .sender
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(sender) = sender.as_ref() else {
+            return Err("inbound request executor is shut down".into());
+        };
+        sender.try_send(task).map_err(|error| match error {
+            std::sync::mpsc::TrySendError::Full(_) => "inbound request executor is busy".into(),
+            std::sync::mpsc::TrySendError::Disconnected(_) => {
+                "inbound request executor is shut down".into()
+            }
+        })
+    }
+}
+
+impl Drop for InboundExecutor {
+    fn drop(&mut self) {
+        self.sender
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        self.workers
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+    }
 }
 
 impl RuntimeProcessor {
     pub fn bind(&self, runtime: &Arc<ClientRuntime>) {
         let _ = self.runtime.set(Arc::downgrade(runtime));
+    }
+
+    pub fn request_executor(&self) -> Result<Arc<dyn RequestExecutor>, super::RuntimeError> {
+        if self.request_executor.get().is_none() {
+            let executor = Arc::new(InboundExecutor::new()?);
+            let _ = self.request_executor.set(executor);
+        }
+        self.request_executor
+            .get()
+            .cloned()
+            .map(|executor| executor as Arc<dyn RequestExecutor>)
+            .ok_or(super::RuntimeError::ControlTaskFailed)
+    }
+
+    pub async fn shutdown_executor(&self) -> Result<(), super::RuntimeError> {
+        if let Some(executor) = self.request_executor.get() {
+            executor.shutdown().await
+        } else {
+            Ok(())
+        }
     }
 
     fn dispatch(
@@ -121,9 +258,12 @@ impl RuntimeProcessor {
                     .select_consumer(group)
                     .map_err(|error| error.to_string())?
                 else {
-                    return Ok(Some(unsupported(code, phase)));
+                    return missing_consumer_response(operation, group);
                 };
-                consumer.inbound_processor(operation)
+                match consumer.inbound_processor(operation) {
+                    Some(processor) => Some(processor),
+                    None => return missing_consumer_response(operation, group),
+                }
             }
         };
         match selected {
@@ -238,6 +378,29 @@ fn unsupported(code: i32, phase: &str) -> RemotingCommand {
     )
 }
 
+fn missing_consumer_response(
+    operation: ConsumerOperation,
+    group: &str,
+) -> Result<Option<RemotingCommand>, String> {
+    match operation {
+        ConsumerOperation::ResetOffset => Ok(None),
+        ConsumerOperation::ConsumerStatus => {
+            let body = GetConsumerStatusBody::default()
+                .encode_java_json()
+                .map_err(|error| error.to_string())?;
+            Ok(Some(RemotingCommand {
+                code: response::SUCCESS,
+                body: Some(body),
+                ..Default::default()
+            }))
+        }
+        ConsumerOperation::RunningInfo | ConsumerOperation::ConsumeDirectly => Ok(Some(error(
+            response::SYSTEM_ERROR,
+            &format!("The Consumer Group <{group}> not exist in this consumer"),
+        ))),
+    }
+}
+
 /// Routing-only metadata extraction from MessageDecoder's V1/V2 layout. Full
 /// message decoding/decompression belongs to Phase 8/14; no payload is copied.
 fn stored_properties(
@@ -324,6 +487,65 @@ mod tests {
         base64::engine::general_purpose::STANDARD
             .decode(case["body"].as_str().unwrap())
             .unwrap()
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn inbound_executor_shutdown_joins_running_work_and_rejects_new_work() {
+        let executor = Arc::new(InboundExecutor::new().unwrap());
+        let (started_sender, started_receiver) = std::sync::mpsc::sync_channel(1);
+        let (release_sender, release_receiver) = std::sync::mpsc::sync_channel(1);
+        let (completed_sender, completed_receiver) = std::sync::mpsc::sync_channel(1);
+        executor
+            .execute(Box::new(move || {
+                started_sender.send(()).unwrap();
+                release_receiver.recv().unwrap();
+                completed_sender.send(()).unwrap();
+            }))
+            .unwrap();
+        started_receiver
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap();
+
+        let shutdown_executor = executor.clone();
+        let mut shutdown = tokio::spawn(async move { shutdown_executor.shutdown().await });
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let is_open = executor
+                    .sender
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .is_some();
+                if !is_open {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("shutdown closes the executor before joining its workers");
+        assert!(executor.execute(Box::new(|| {})).is_err());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(25), &mut shutdown)
+                .await
+                .is_err()
+        );
+
+        release_sender.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(1), shutdown)
+            .await
+            .expect("shutdown waits for accepted work")
+            .unwrap()
+            .unwrap();
+        completed_receiver
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap();
+        assert!(
+            executor
+                .workers
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .is_empty()
+        );
     }
 
     #[test]
@@ -469,6 +691,14 @@ mod tests {
         fields: &[(&str, &str)],
         body: Option<Vec<u8>>,
     ) -> RemotingCommand {
+        dispatch_maybe(runtime, code, fields, body).unwrap()
+    }
+    fn dispatch_maybe(
+        runtime: &Arc<ClientRuntime>,
+        code: i32,
+        fields: &[(&str, &str)],
+        body: Option<Vec<u8>>,
+    ) -> Option<RemotingCommand> {
         runtime
             .inbound
             .process_with_context(
@@ -486,7 +716,39 @@ mod tests {
                 },
             )
             .unwrap()
-            .unwrap()
+    }
+    fn assert_missing_consumer_response(
+        runtime: &Arc<ClientRuntime>,
+        code: i32,
+        header: &str,
+        group: &str,
+    ) {
+        let result = dispatch_maybe(runtime, code, &[(header, group)], None);
+        match code {
+            request::RESET_CONSUMER_CLIENT_OFFSET => assert!(result.is_none()),
+            request::GET_CONSUMER_STATUS_FROM_CLIENT => {
+                let result = result.unwrap();
+                assert_eq!(result.code, response::SUCCESS);
+                let body = result.body.unwrap();
+                let body =
+                    GetConsumerStatusBody::decode_java_json(std::str::from_utf8(&body).unwrap())
+                        .unwrap();
+                body.message_queue_table
+                    .unwrap()
+                    .with(|entries| assert!(entries.is_empty()));
+            }
+            request::GET_CONSUMER_RUNNING_INFO | request::CONSUME_MESSAGE_DIRECTLY => {
+                let result = result.unwrap();
+                assert_eq!(result.code, response::SYSTEM_ERROR);
+                assert_eq!(
+                    result.remark.as_deref(),
+                    Some(
+                        format!("The Consumer Group <{group}> not exist in this consumer").as_str()
+                    )
+                );
+            }
+            _ => unreachable!(),
+        }
     }
     fn dispatch_optional(
         runtime: &Arc<ClientRuntime>,
@@ -909,23 +1171,16 @@ mod tests {
                     .as_deref(),
                 Some("consumer-a")
             );
-            assert_eq!(
-                dispatch(&runtime, code, &[(key, "missing")], None).code,
-                response::REQUEST_CODE_NOT_SUPPORTED
-            );
+            assert_missing_consumer_response(&runtime, code, key, "missing");
         }
         assert_eq!(first.handler.calls.lock().unwrap().len(), 4);
         assert!(second.handler.calls.lock().unwrap().is_empty());
         unregister(&runtime, &first_lease, false).await;
-        assert_eq!(
-            dispatch(
-                &runtime,
-                request::CONSUME_MESSAGE_DIRECTLY,
-                &[("consumerGroup", "consumer-a")],
-                None
-            )
-            .code,
-            response::REQUEST_CODE_NOT_SUPPORTED
+        assert_missing_consumer_response(
+            &runtime,
+            request::CONSUME_MESSAGE_DIRECTLY,
+            "consumerGroup",
+            "consumer-a",
         );
         unregister(&other, &second_lease, false).await;
         assert!(runtime.shutdown().await.unwrap());
@@ -989,7 +1244,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn absent_consumer_group_and_handler_capabilities_return_phase_errors() {
+    async fn absent_consumer_group_and_handler_capabilities_match_java_responses() {
         let runtime = runtime("consumer-inactive-slots").await;
         let consumer = Arc::new(NoInboundConsumer);
         let lease = runtime
@@ -1015,9 +1270,7 @@ mod tests {
             ),
         ] {
             let expected = format!("client request {code} has no active handler ({phase})");
-            let no_capability = dispatch(&runtime, code, &[(key, "consumer-no-inbound")], None);
-            assert_eq!(no_capability.code, response::REQUEST_CODE_NOT_SUPPORTED);
-            assert_eq!(no_capability.remark.as_deref(), Some(expected.as_str()));
+            assert_missing_consumer_response(&runtime, code, key, "consumer-no-inbound");
 
             let no_group = dispatch(&runtime, code, &[], None);
             assert_eq!(no_group.code, response::REQUEST_CODE_NOT_SUPPORTED);

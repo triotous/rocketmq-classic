@@ -74,6 +74,8 @@ pub enum RuntimeError {
     InvalidState(RuntimeState),
     #[error("owned runtime control task failed")]
     ControlTaskFailed,
+    #[error("inbound request executor failed: {0}")]
+    InboundRequestExecutor(String),
     #[error("runtime startup failed")]
     #[cfg(test)]
     StartupFailure,
