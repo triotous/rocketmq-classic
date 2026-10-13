@@ -106,30 +106,29 @@ fn java_blank(value: Option<&str>) -> bool {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidateResult {
     valid: bool,
-    remark: String,
+    remark: Option<String>,
 }
 
 impl ValidateResult {
+    /// Creates a validation result. `None` matches Java's nullable remark.
+    pub fn new(valid: bool, remark: Option<String>) -> Self {
+        Self { valid, remark }
+    }
+
     fn valid() -> Self {
-        Self {
-            valid: true,
-            remark: String::new(),
-        }
+        Self::new(true, Some(String::new()))
     }
 
     fn invalid(remark: String) -> Self {
-        Self {
-            valid: false,
-            remark,
-        }
+        Self::new(false, Some(remark))
     }
 
     pub const fn is_valid(&self) -> bool {
         self.valid
     }
 
-    pub fn remark(&self) -> &str {
-        &self.remark
+    pub fn remark(&self) -> Option<&str> {
+        self.remark.as_deref()
     }
 }
 

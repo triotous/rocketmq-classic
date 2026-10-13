@@ -95,7 +95,7 @@ fn public_topic_validator_surface_matches_pinned_java_fixture() {
             case["name"]
         );
         assert_eq!(
-            case["remark"],
+            optional_string(&case["remark"]),
             result.remark(),
             "topic case {}",
             case["name"]
@@ -120,7 +120,7 @@ fn public_topic_validator_surface_matches_pinned_java_fixture() {
             case["name"]
         );
         assert_eq!(
-            case["remark"],
+            optional_string(&case["remark"]),
             result.remark(),
             "group case {}",
             case["name"]
@@ -133,6 +133,34 @@ fn public_topic_validator_surface_matches_pinned_java_fixture() {
                 case["name"]
             );
         }
+    }
+
+    for case in fixture["validateResultConstructorCases"]
+        .as_array()
+        .unwrap()
+    {
+        let remark_is_null = case["remarkIsNull"].as_bool().unwrap();
+        let remark = if remark_is_null {
+            None
+        } else {
+            Some(case["remark"].as_str().unwrap())
+        };
+        let result = rocketmq_classic_common::topic::ValidateResult::new(
+            case["valid"].as_bool().unwrap(),
+            remark.map(str::to_owned),
+        );
+        assert_eq!(
+            case["valid"],
+            result.is_valid(),
+            "ValidateResult constructor case {}",
+            case["name"]
+        );
+        assert_eq!(
+            remark,
+            result.remark(),
+            "ValidateResult constructor case {}",
+            case["name"]
+        );
     }
 
     let classification = &fixture["classification"];

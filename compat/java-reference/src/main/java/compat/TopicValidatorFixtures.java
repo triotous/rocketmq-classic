@@ -62,12 +62,14 @@ public final class TopicValidatorFixtures {
             "TopicValidator.addSystemTopic",
             "TopicValidator.getSystemTopicSet",
             "TopicValidator.getNotAllowedSendTopicSet",
+            "TopicValidator.ValidateResult.<init>(boolean, String)",
             "TopicValidator.ValidateResult.isValid",
             "TopicValidator.ValidateResult.getRemark"));
         result.put("constants", constants());
         result.put("validCharacters", validCharacters());
         result.put("topicCases", topicCases());
         result.put("groupCases", groupCases());
+        result.put("validateResultConstructorCases", validateResultConstructorCases());
         result.put("classification", classification());
         result.put("validCharMutation", validCharMutation());
         result.put("serverContacted", false);
@@ -163,6 +165,27 @@ public final class TopicValidatorFixtures {
         item.put("valid", validation.isValid());
         item.put("remark", validation.getRemark());
         item.put("illegal", value != null && TopicValidator.isTopicOrGroupIllegal(value));
+        return item;
+    }
+
+    private static List<Map<String, Object>> validateResultConstructorCases() {
+        return List.of(
+            validateResultConstructorCase("valid_null_remark", true, null),
+            validateResultConstructorCase("valid_empty_remark", true, ""),
+            validateResultConstructorCase("valid_remark", true, "valid result"),
+            validateResultConstructorCase("invalid_null_remark", false, null),
+            validateResultConstructorCase("invalid_empty_remark", false, ""),
+            validateResultConstructorCase("invalid_remark", false, "invalid result"));
+    }
+
+    private static Map<String, Object> validateResultConstructorCase(
+        String name, boolean valid, String remark) {
+        TopicValidator.ValidateResult result = new TopicValidator.ValidateResult(valid, remark);
+        Map<String, Object> item = new TreeMap<>();
+        item.put("name", name);
+        item.put("valid", result.isValid());
+        item.put("remarkIsNull", result.getRemark() == null);
+        if (result.getRemark() != null) item.put("remark", result.getRemark());
         return item;
     }
 

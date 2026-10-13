@@ -34,7 +34,7 @@ const ADMIN_TIMEOUT: Duration = Duration::from_millis(6_000);
 pub(crate) fn validate_topic(topic: &str) -> Result<(), String> {
     let validation = TopicValidator::validate_topic(Some(topic));
     if !validation.is_valid() {
-        return Err(validation.remark().to_owned());
+        return Err(validation.remark().unwrap_or_default().to_owned());
     }
     if TopicValidator::is_system_topic(topic) {
         return Err(format!("The specified topic: {topic}, is a system topic."));
