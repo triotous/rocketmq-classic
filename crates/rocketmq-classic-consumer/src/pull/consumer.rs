@@ -171,7 +171,7 @@ impl PullConsumer {
             enable_rebalance: Arc::new(AtomicBool::new(enable_rebalance)),
             rebalance_active: Arc::new(AtomicBool::new(false)),
             runtime_for_wakeup: RwLock::new(None),
-            consumer_start_timestamp: AtomicI64::new(0),
+            consumer_start_timestamp: AtomicI64::new(epoch_millis()),
         }
     }
 
@@ -259,6 +259,65 @@ impl PullConsumer {
             jstack,
             ..ConsumerRunningInfoBody::default()
         }
+    }
+
+    /// Returns the local `ConsumerRunningInfo` snapshot exposed by Java's
+    /// `DefaultMQPullConsumerImpl.consumerRunningInfo` entrypoint.
+    pub fn consumer_running_info(&self) -> ConsumerRunningInfoBody {
+        let mut properties = crate::admin::pull_consumer_running_info_properties(
+            &self.config,
+            self.consumer_start_timestamp(),
+        );
+        properties.insert(
+            "defaultMQPullConsumerImpl".into(),
+            "<implementation>".into(),
+        );
+        properties.insert(
+            "allocateMessageQueueStrategy".into(),
+            self.config
+                .allocate_message_queue_strategy()
+                .name()
+                .to_owned(),
+        );
+        let topics = self.register_topics();
+        properties.insert(
+            "registerTopics".into(),
+            format!(
+                "[{}]",
+                topics
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        );
+        let mut registered_subscriptions = self
+            .register_subscriptions()
+            .iter()
+            .map(SubscriptionData::java_to_string)
+            .collect::<Vec<_>>();
+        registered_subscriptions.sort();
+        properties.insert(
+            "registerSubscriptions".into(),
+            format!("[{}]", registered_subscriptions.join(", ")),
+        );
+        if self.message_queue_listener().is_some() {
+            properties.insert("messageQueueListener".into(), "<configured>".into());
+        }
+        if self.get_offset_store().is_some() {
+            properties.insert("offsetStore".into(), "<configured>".into());
+        }
+        ConsumerRunningInfoBody {
+            properties,
+            subscription_set: self.subscriptions().into_iter().collect(),
+            ..ConsumerRunningInfoBody::default()
+        }
+    }
+
+    /// Java initializes this timestamp when the implementation is constructed,
+    /// before `start()` is called.
+    pub fn consumer_start_timestamp(&self) -> i64 {
+        self.consumer_start_timestamp.load(Ordering::Acquire)
     }
 
     /// Registers a Java-compatible hook around each pull result.
@@ -664,8 +723,6 @@ impl PullConsumer {
         let offset_store = self.select_offset_store(&runtime, &consumer_group)?;
         offset_store.load().await?;
 
-        self.consumer_start_timestamp
-            .store(epoch_millis(), Ordering::Release);
         let registration = Arc::new(PullConsumerRegistration {
             group: consumer_group.clone(),
             message_model: self.config.message_model(),
@@ -3449,6 +3506,73 @@ mod tests {
             .map(|call| call.as_str().unwrap().to_owned())
             .collect::<Vec<_>>();
         assert_eq!(*store.calls.lock().unwrap(), expected_calls);
+        consumer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn pull_consumer_running_info_and_start_timestamp_match_java_fixture() {
+        let expected: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/pull-implementation-accessor.json"
+        ))
+        .unwrap();
+        let mut config = PullConsumerConfig::new("phase18-pull-implementation-accessor").unwrap();
+        config.set_message_model(MessageModel::Broadcasting);
+        config.set_unit_mode(true);
+        config.set_max_reconsume_times(-3);
+        config
+            .client_config_mut()
+            .set_namespace(Some("tenant".into()));
+        config.client_config_mut().set_namesrv_addr(None);
+        config
+            .client_config_mut()
+            .set_client_callback_executor_threads(3);
+        config
+            .client_config_mut()
+            .set_concurrent_heartbeat_thread_pool_size(8);
+        config.client_config_mut().set_use_tls(false);
+        let consumer = Arc::new(PullConsumer::with_manager(
+            config,
+            ClientRuntimeManager::new(),
+        ));
+        assert!(
+            consumer
+                .config()
+                .client_config()
+                .enable_stream_request_type()
+        );
+
+        let start_timestamp = consumer.consumer_start_timestamp();
+        assert!(start_timestamp > 0);
+        assert!(
+            expected["consumerStartTimestampPositive"]
+                .as_bool()
+                .unwrap()
+        );
+        let info = consumer.consumer_running_info();
+        let mut normalized_properties = info.properties.clone();
+        if normalized_properties.contains_key("clientIP") {
+            normalized_properties.insert("clientIP".into(), "<present>".into());
+        }
+        normalized_properties.insert("PROP_CONSUMER_START_TIMESTAMP".into(), "<timestamp>".into());
+        assert_eq!(
+            serde_json::to_value(&normalized_properties).unwrap(),
+            expected["directRunningInfoProperties"]
+        );
+        assert_eq!(
+            info.subscription_set.len(),
+            expected["directRunningInfoSubscriptions"]
+                .as_array()
+                .unwrap()
+                .len()
+        );
+        assert!(info.mq_table.is_empty());
+        assert!(info.mq_pop_table.is_empty());
+        assert!(info.status_table.is_empty());
+        assert!(info.user_consumer_info.is_empty());
+        assert!(info.jstack.is_none());
+
+        consumer.start().await.unwrap();
+        assert_eq!(consumer.consumer_start_timestamp(), start_timestamp);
         consumer.shutdown().await.unwrap();
     }
 

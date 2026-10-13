@@ -31,8 +31,12 @@ pub struct PullConsumerConfig {
 
 impl PullConsumerConfig {
     pub fn new(consumer_group: impl Into<String>) -> Result<Self, PullConsumerError> {
+        let mut client = ClientConfig::new_auto()?;
+        // DefaultMQPullConsumer enables the stream request type in its
+        // constructor, although the shared Java ClientConfig default is false.
+        client.set_enable_stream_request_type(true);
         Ok(Self {
-            client: ClientConfig::new_auto()?,
+            client,
             tls_config: None,
             consumer_group: consumer_group.into(),
             broker_suspend_max_time_millis: DEFAULT_BROKER_SUSPEND_MAX_TIME_MILLIS,

@@ -387,6 +387,17 @@ pub(crate) fn pull_running_info_properties(
     runtime: &ClientRuntime,
     start_timestamp: i64,
 ) -> BTreeMap<String, String> {
+    let mut properties = pull_consumer_running_info_properties(config, start_timestamp);
+    append_client_runtime_properties(runtime, &mut properties);
+    properties.insert("PROP_CONSUME_TYPE".into(), "CONSUME_ACTIVELY".into());
+    properties.insert("PROP_CLIENT_VERSION".into(), "V5_5_1".into());
+    properties
+}
+
+pub(crate) fn pull_consumer_running_info_properties(
+    config: &crate::config::PullConsumerConfig,
+    start_timestamp: i64,
+) -> BTreeMap<String, String> {
     let mut properties = BTreeMap::new();
     properties.insert("consumerGroup".into(), config.consumer_group().to_owned());
     properties.insert(
@@ -402,20 +413,28 @@ pub(crate) fn pull_running_info_properties(
         config.consumer_pull_timeout_millis().to_string(),
     );
     properties.insert("messageModel".into(), config.message_model().name().into());
-    properties.insert("unitMode".into(), config.unit_mode().to_string());
+    // MixAll.object2Properties walks DefaultMQPullConsumer before ClientConfig;
+    // the inherited ClientConfig.unitMode field therefore wins this duplicate.
+    properties.insert(
+        "unitMode".into(),
+        config.client_config().unit_mode.to_string(),
+    );
     // Java 5.5.1's DefaultMQPullConsumer field is fixed at 16.
-    properties.insert("maxReconsumeTimes".into(), "16".into());
+    properties.insert(
+        "maxReconsumeTimes".into(),
+        config.max_reconsume_times().to_string(),
+    );
     properties.insert(
         "enableRebalance".into(),
         config.enable_rebalance().to_string(),
     );
-    append_client_running_info_properties(config.client_config(), runtime, &mut properties);
+    properties.extend(client_config_running_info_properties(
+        config.client_config(),
+    ));
     properties.insert(
         "PROP_CONSUMER_START_TIMESTAMP".into(),
         start_timestamp.to_string(),
     );
-    properties.insert("PROP_CONSUME_TYPE".into(), "CONSUME_ACTIVELY".into());
-    properties.insert("PROP_CLIENT_VERSION".into(), "V5_5_1".into());
     properties
 }
 
@@ -424,15 +443,33 @@ fn append_client_running_info_properties(
     runtime: &ClientRuntime,
     properties: &mut BTreeMap<String, String>,
 ) {
-    insert_optional_property(properties, "namesrvAddr", config.namesrv_addr.as_deref());
-    insert_optional_property(properties, "clientIP", config.client_ip.as_deref());
-    insert_optional_property(properties, "instanceName", config.instance_name.as_deref());
+    properties.extend(client_config_running_info_properties(config));
+    append_client_runtime_properties(runtime, properties);
+}
+
+fn client_config_running_info_properties(config: &ClientConfig) -> BTreeMap<String, String> {
+    let mut properties = BTreeMap::new();
+    insert_optional_property(
+        &mut properties,
+        "namesrvAddr",
+        config.namesrv_addr.as_deref(),
+    );
+    insert_optional_property(&mut properties, "clientIP", config.client_ip.as_deref());
+    insert_optional_property(
+        &mut properties,
+        "instanceName",
+        config.instance_name.as_deref(),
+    );
     properties.insert(
         "clientCallbackExecutorThreads".into(),
         config.client_callback_executor_threads.to_string(),
     );
-    insert_optional_property(properties, "namespace", config.namespace.as_deref());
-    insert_optional_property(properties, "namespaceV2", config.namespace_v2.as_deref());
+    insert_optional_property(&mut properties, "namespace", config.namespace.as_deref());
+    insert_optional_property(
+        &mut properties,
+        "namespaceV2",
+        config.namespace_v2.as_deref(),
+    );
     if let Some(access_channel) = config.access_channel {
         properties.insert("accessChannel".into(), access_channel.name().into());
     }
@@ -457,7 +494,7 @@ fn append_client_running_info_properties(
         config.trace_msg_batch_num.to_string(),
     );
     properties.insert("unitMode".into(), config.unit_mode.to_string());
-    insert_optional_property(properties, "unitName", config.unit_name.as_deref());
+    insert_optional_property(&mut properties, "unitName", config.unit_name.as_deref());
     properties.insert("decodeReadBody".into(), config.decode_read_body.to_string());
     properties.insert(
         "decodeDecompressBody".into(),
@@ -469,6 +506,11 @@ fn append_client_running_info_properties(
     );
     properties.insert("useHeartbeatV2".into(), config.use_heartbeat_v2.to_string());
     properties.insert("useTLS".into(), config.use_tls.to_string());
+    insert_optional_property(
+        &mut properties,
+        "socksProxyConfig",
+        config.socks_proxy_config.as_deref(),
+    );
     properties.insert(
         "mqClientApiTimeout".into(),
         config.mq_client_api_timeout.to_string(),
@@ -503,12 +545,18 @@ fn append_client_running_info_properties(
         config.concurrent_heartbeat_thread_pool_size.to_string(),
     );
     properties.insert("enableTrace".into(), config.enable_trace.to_string());
-    insert_optional_property(properties, "traceTopic", config.trace_topic.as_deref());
+    insert_optional_property(&mut properties, "traceTopic", config.trace_topic.as_deref());
     properties.insert(
         "maxPageSizeInGetMetadata".into(),
         config.max_page_size_in_get_metadata.to_string(),
     );
+    properties
+}
 
+fn append_client_runtime_properties(
+    runtime: &ClientRuntime,
+    properties: &mut BTreeMap<String, String>,
+) {
     let nameserver_addresses = runtime
         .remoting()
         .get_name_server_address_list()

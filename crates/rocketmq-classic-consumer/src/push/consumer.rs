@@ -7437,7 +7437,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn running_info_returns_queue_snapshot_and_omits_proxy_credentials() {
+    async fn running_info_returns_queue_snapshot_and_java_config_properties() {
         let mut config = PushConsumerConfig::new("running-info-snapshot").unwrap();
         config.client_config_mut().set_namesrv_addr(None);
         config
@@ -7525,7 +7525,10 @@ mod tests {
         assert_eq!(properties["PROP_CONSUME_TYPE"], "CONSUME_PASSIVELY");
         assert_eq!(properties["PROP_CONSUMER_START_TIMESTAMP"], "1700000000000");
         assert_eq!(properties["pullThresholdForQueue"], "1000");
-        assert!(properties.get("socksProxyConfig").is_none());
+        assert_eq!(
+            properties["socksProxyConfig"],
+            r#"{"10.1.0.0/16":{"addr":"proxy.internal:1080","username":"reader","password":"secret"}}"#
+        );
         assert!(properties.get("tlsConfig").is_none());
         assert_eq!(json["subscriptionSet"].as_array().unwrap().len(), 1);
         assert_eq!(json["statusTable"]["orders"]["pullRT"], 500.0);
@@ -7558,7 +7561,11 @@ mod tests {
             json["mqPopTable"][encoded_pop_queue]["lastPopTimestamp"],
             1_700_000_000_005i64
         );
-        assert!(!std::str::from_utf8(&bytes).unwrap().contains("secret"));
+        assert!(
+            std::str::from_utf8(&bytes)
+                .unwrap()
+                .contains("socksProxyConfig")
+        );
 
         let response = processor
             .process(RemotingCommand {

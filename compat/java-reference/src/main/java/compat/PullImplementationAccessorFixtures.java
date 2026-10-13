@@ -21,6 +21,7 @@ import org.apache.rocketmq.common.ServiceState;
 import org.apache.rocketmq.common.consumer.ConsumeFromWhere;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.message.MessageQueue;
+import org.apache.rocketmq.remoting.protocol.body.ConsumerRunningInfo;
 import org.apache.rocketmq.remoting.protocol.heartbeat.ConsumeType;
 import org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel;
 import org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData;
@@ -68,6 +69,38 @@ public final class PullImplementationAccessorFixtures {
         }
         rows.sort(String::compareTo);
         return rows;
+    }
+
+    private static Map<String, String> normalizedRunningInfoProperties(
+        ConsumerRunningInfo info, DefaultMQPullConsumer consumer) {
+        Map<String, String> properties = new TreeMap<>();
+        for (Map.Entry<Object, Object> entry : info.getProperties().entrySet()) {
+            String key = String.valueOf(entry.getKey());
+            Object value = entry.getValue();
+            if ("namespaceInitialized".equals(key)) {
+                continue;
+            } else if ("defaultMQPullConsumerImpl".equals(key)) {
+                properties.put(key, "<implementation>");
+            } else if ("allocateMessageQueueStrategy".equals(key)) {
+                properties.put(key, consumer.getAllocateMessageQueueStrategy().getName());
+            } else if ("clientIP".equals(key)) {
+                properties.put(key, value == null ? "null" : "<present>");
+            } else if ("PROP_CONSUMER_START_TIMESTAMP".equals(key)) {
+                properties.put(key, "<timestamp>");
+            } else {
+                properties.put(key, String.valueOf(value));
+            }
+        }
+        List<String> topics = new ArrayList<>(consumer.getRegisterTopics());
+        topics.sort(String::compareTo);
+        properties.put("registerTopics", "[" + String.join(", ", topics) + "]");
+        List<String> subscriptions = new ArrayList<>();
+        for (SubscriptionData subscription : consumer.getRegisterSubscriptions()) {
+            subscriptions.add(subscription.toString());
+        }
+        subscriptions.sort(String::compareTo);
+        properties.put("registerSubscriptions", "[" + String.join(", ", subscriptions) + "]");
+        return properties;
     }
 
     private static SubscriptionData tagSubscription(String topic, String tag, long version) {
@@ -136,6 +169,14 @@ public final class PullImplementationAccessorFixtures {
         int maxReconsumeTimesDefault = consumer.getMaxReconsumeTimes();
         consumer.setMaxReconsumeTimes(-3);
         check(consumer.getMaxReconsumeTimes() == -3, "max reconsume setting mutation");
+        consumer.setNamesrvAddr(null);
+        consumer.setClientCallbackExecutorThreads(3);
+        consumer.setConcurrentHeartbeatThreadPoolSize(8);
+        ConsumerRunningInfo directRunningInfo = first.consumerRunningInfo();
+        Map<String, String> directRunningInfoProperties = normalizedRunningInfoProperties(
+            directRunningInfo, consumer);
+        List<String> directRunningInfoSubscriptions =
+            subscriptionRows(directRunningInfo.getSubscriptionSet());
 
         Set<MessageQueue> parseInput = new HashSet<>();
         parseInput.add(new MessageQueue("tenant%orders", "broker-a", 0));
@@ -308,6 +349,9 @@ public final class PullImplementationAccessorFixtures {
         fixture.put("rawOffsetStoreCalls", rawOffsetStoreCalls);
         fixture.put("rawImplementationFetchOffset", rawImplementationFetchOffset);
         fixture.put("facadeFetchOffset", facadeFetchOffset);
+        fixture.put("directRunningInfoProperties", directRunningInfoProperties);
+        fixture.put("directRunningInfoSubscriptions", directRunningInfoSubscriptions);
+        fixture.put("consumerStartTimestampPositive", first.getConsumerStartTimestamp() > 0);
         fixture.put("groupNameBeforeStart", groupNameBeforeStart);
         fixture.put("messageModelBeforeMutation", messageModelBeforeMutation.name());
         fixture.put("messageModelAfterMutation", messageModelAfterMutation.name());
