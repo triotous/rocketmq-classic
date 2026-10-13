@@ -10,10 +10,10 @@ publish = false
 
 [dependencies]
 base64.workspace = true
-rocketmq-classic-common = { path = "../rocketmq-classic-common" }
-rocketmq-classic-core = { path = "../rocketmq-classic-core" }
-rocketmq-classic-protocol = { path = "../rocketmq-classic-protocol" }
-rocketmq-classic-remoting = { path = "../rocketmq-classic-remoting" }
+rocketmq-classic-common.workspace = true
+rocketmq-classic-core.workspace = true
+rocketmq-classic-protocol.workspace = true
+rocketmq-classic-remoting.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true

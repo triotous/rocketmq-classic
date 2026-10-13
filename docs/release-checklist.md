@@ -87,8 +87,12 @@ a future leaf-to-facade publication is:
 
 Before any publication:
 
-- [ ] Choose release versions and replace workspace path dependencies with
-  registry-compatible version requirements in dependency order.
+- [x] Set internal workspace dependency requirements to the currently aligned
+  `0.1.0` package versions in dependency order while retaining local paths for
+  workspace builds. This prepares crate manifests for registry publication;
+  it does not prove registry availability.
+- [ ] Confirm `0.1.0` remains the intended release version set and validate
+  registry dependency resolution before publication.
 - [x] Add package descriptions and repository metadata; verify them with
   `cargo metadata --locked`.
 - [x] Review package contents and dependency license/provenance metadata.
@@ -97,9 +101,10 @@ Before any publication:
   examples/benches, tests, and synthetic TLS/fuzz fixtures. Locked Cargo
   metadata reports 207 external crates, all from crates.io registry sources
   with license metadata and no git/path overrides. The manifest license
-  expressions use permissive alternatives. Package path dependencies still do
-  not establish future registry resolution; choose versions and validate the
-  registry graph before publication.
+  expressions use permissive alternatives. Internal workspace dependencies
+  now pair local paths with `0.1.0` version requirements. This does not establish
+  future registry resolution; confirm the version set and validate the registry
+  graph before publication.
 - [ ] Keep each package unpublished until all of its dependencies are available
   and its package contents have been inspected.
 
@@ -110,7 +115,7 @@ Before any publication:
 - [x] Preserve the Apache RocketMQ reference `NOTICE` at the repository root
   for the Java 5.5.1 compatibility harness and its source-derived fixtures.
   Package contents and external dependency provenance are reviewed above;
-  registry-resolvable workspace dependency versions remain release preparation.
+  registry resolution of workspace dependencies remains release preparation.
 
 ## Final release boundary
 

@@ -12,11 +12,11 @@ publish = false
 libc.workspace = true
 md-5.workspace = true
 rand.workspace = true
-rocketmq-classic-common = { path = "../rocketmq-classic-common" }
-rocketmq-classic-core = { path = "../rocketmq-classic-core" }
-rocketmq-classic-protocol = { path = "../rocketmq-classic-protocol" }
-rocketmq-classic-producer = { path = "../rocketmq-classic-producer" }
-rocketmq-classic-remoting = { path = "../rocketmq-classic-remoting" }
+rocketmq-classic-common.workspace = true
+rocketmq-classic-core.workspace = true
+rocketmq-classic-protocol.workspace = true
+rocketmq-classic-producer.workspace = true
+rocketmq-classic-remoting.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
@@ -34,5 +34,5 @@ libc.workspace = true
 [dev-dependencies]
 base64.workspace = true
 bytes.workspace = true
-rocketmq-classic-remoting = { path = "../rocketmq-classic-remoting" }
+rocketmq-classic-remoting.workspace = true
 tokio = { workspace = true, features = ["test-util"] }

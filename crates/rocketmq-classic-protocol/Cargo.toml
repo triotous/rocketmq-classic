@@ -9,7 +9,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-rocketmq-classic-common = { path = "../rocketmq-classic-common" }
+rocketmq-classic-common.workspace = true
 rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
