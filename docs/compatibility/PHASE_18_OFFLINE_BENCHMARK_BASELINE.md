@@ -30,6 +30,24 @@ The loopback result includes local TCP and Tokio scheduling. Repeat measurements
 on the same host before comparing revisions. This baseline sets no acceptance
 threshold.
 
+## Final current-revision rerun
+
+Captured with the same command and environment on 2026-10-13 at revision
+`97e27ff9`. This rerun includes the TopicValidator nullable-input change; its
+benchmarks do not target TopicValidator. The results remain machine-specific
+observations.
+
+| Operation | Input | Iterations | Time per iteration | Allocation calls per iteration | Allocated bytes per iteration |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Remoting frame encode/decode | 427 encoded frame bytes | 20,000 | 1,999.9 ns | 39.00 (1,000 samples) | 4,612.0 (1,000 samples) |
+| Zstd message-record decode | 146 record bytes | 10,000 | 1,282.7 ns | 20.00 (1,000 samples) | 197,407.0 (1,000 samples) |
+| Producer send-request construction | 512-byte body | 20,000 | 1,077.6 ns | 43.00 (1,000 samples) | 3,247.0 (1,000 samples) |
+| Publish-address lookup | 10-byte key, 128 route entries | 100,000 | 14.9 ns | 0.00 (1,000 samples) | 0.0 (1,000 samples) |
+| Loopback pending-request completion | 128-byte body over local TCP | 500 | 63,866.0 ns | 77.00 (100 samples) | 9,234.0 (100 samples) |
+
+The sample timing varies from the earlier run while allocation counts and byte
+totals match. This is not evidence of a performance regression or improvement.
+
 ## Reproduction
 
 ```bash
