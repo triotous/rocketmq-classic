@@ -131,6 +131,19 @@ public final class PullImplementationAccessorFixtures {
         noNamespaceConsumer.getDefaultMQPullConsumerImpl().resetTopic(noNamespaceMessages);
 
         Map<String, SubscriptionData> subscriptionInner = first.getRebalanceImpl().getSubscriptionInner();
+        String rebalanceTopic = "rebalance-topic";
+        first.subscriptionAutomatically(rebalanceTopic);
+        boolean unsubscribedTopicNeedsUpdate = first.isSubscribeTopicNeedUpdate("not-subscribed");
+        boolean subscribedTopicNeedsUpdateBeforeInfo = first.isSubscribeTopicNeedUpdate(rebalanceTopic);
+        Set<MessageQueue> rebalanceInfo = new HashSet<>();
+        rebalanceInfo.add(new MessageQueue(rebalanceTopic, "broker-a", 0));
+        first.updateTopicSubscribeInfo(rebalanceTopic, rebalanceInfo);
+        boolean subscribeInfoStoredForSubscribedTopic = first.getRebalanceImpl()
+            .getTopicSubscribeInfoTable().containsKey(rebalanceTopic);
+        boolean subscribedTopicNeedsUpdateAfterInfo = first.isSubscribeTopicNeedUpdate(rebalanceTopic);
+        first.updateTopicSubscribeInfo("not-subscribed", rebalanceInfo);
+        boolean subscribeInfoStoredForUnsubscribedTopic = first.getRebalanceImpl()
+            .getTopicSubscribeInfoTable().containsKey("not-subscribed");
         first.subscriptionAutomatically("raw-topic");
         SubscriptionData automaticSubscription = subscriptionInner.get("raw-topic");
         check(automaticSubscription != null, "automatic subscription inserted");
@@ -220,6 +233,11 @@ public final class PullImplementationAccessorFixtures {
         fixture.put("unsubscribeLeavesFacadeRegistration",
             consumer.getRegisterTopics().contains(registeredTopic));
         fixture.put("subscriptionAutomaticallyDoesNotNamespace", "raw-topic".equals(automaticSubscription.getTopic()));
+        fixture.put("unsubscribedTopicNeedsUpdate", unsubscribedTopicNeedsUpdate);
+        fixture.put("subscribedTopicNeedsUpdateBeforeInfo", subscribedTopicNeedsUpdateBeforeInfo);
+        fixture.put("subscribeInfoStoredForSubscribedTopic", subscribeInfoStoredForSubscribedTopic);
+        fixture.put("subscribedTopicNeedsUpdateAfterInfo", subscribedTopicNeedsUpdateAfterInfo);
+        fixture.put("subscribeInfoStoredForUnsubscribedTopic", subscribeInfoStoredForUnsubscribedTopic);
         fixture.put("groupNameBeforeStart", groupNameBeforeStart);
         fixture.put("messageModelBeforeMutation", messageModelBeforeMutation.name());
         fixture.put("messageModelAfterMutation", messageModelAfterMutation.name());

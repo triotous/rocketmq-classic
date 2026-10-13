@@ -639,6 +639,7 @@ impl PullConsumer {
             strategy: self.config.allocate_message_queue_strategy(),
             message_queue_listener: self.message_queue_listener.clone(),
             register_topics: self.register_topics.clone(),
+            subscriptions: self.subscriptions.clone(),
             register_subscriptions: self.register_subscriptions.clone(),
             additional_heartbeat_subscriptions: self.additional_heartbeat_subscriptions.clone(),
             topic_queues: self.topic_queues.clone(),
@@ -1651,6 +1652,7 @@ struct PullConsumerRegistration {
     strategy: Arc<dyn AllocateMessageQueueStrategy>,
     message_queue_listener: Arc<RwLock<Option<MessageQueueListener>>>,
     register_topics: Arc<RwLock<BTreeSet<String>>>,
+    subscriptions: Arc<RwLock<HashMap<String, SubscriptionData>>>,
     register_subscriptions: RegisteredSubscriptions,
     additional_heartbeat_subscriptions: Arc<RwLock<ConsumerSubscriptionDataSet>>,
     topic_queues: Arc<RwLock<HashMap<String, BTreeSet<MessageQueue>>>>,
@@ -1719,10 +1721,14 @@ impl ConsumerRuntime for PullConsumerRegistration {
     }
 
     fn is_subscribe_topic_need_update(&self, topic: &str) -> bool {
-        read_lock(&self.register_topics).contains(topic)
+        read_lock(&self.subscriptions).contains_key(topic)
+            && !read_lock(&self.topic_queues).contains_key(topic)
     }
 
     fn update_topic_subscribe_info(&self, topic: &str, queues: BTreeSet<MessageQueue>) {
+        if !read_lock(&self.subscriptions).contains_key(topic) {
+            return;
+        }
         write_lock(&self.topic_queues).insert(topic.to_owned(), queues);
         if let Some(runtime) = self.runtime.upgrade() {
             runtime.rebalance_immediately();
@@ -3056,6 +3062,67 @@ mod tests {
         assert!(!consumer.enable_rebalance());
     }
 
+    #[test]
+    fn pull_subscription_info_callbacks_follow_java_subscription_and_route_tables() {
+        let config = PullConsumerConfig::new("pull-subscribe-info-callbacks").unwrap();
+        let offset_store = Arc::new(TestOffsetStore::default());
+        let offset_store_trait: Arc<dyn OffsetStore> = offset_store;
+        let subscriptions = Arc::new(RwLock::new(HashMap::from([
+            (
+                "registered-topic".to_owned(),
+                subscription_all("registered-topic"),
+            ),
+            (
+                "automatic-topic".to_owned(),
+                subscription_all("automatic-topic"),
+            ),
+        ])));
+        let registration = PullConsumerRegistration {
+            group: "pull-subscribe-info-callbacks".to_owned(),
+            message_model: MessageModel::Clustering,
+            consume_from_where: ConsumeFromWhere::ConsumeFromLastOffset,
+            unit_mode: false,
+            route_timeout_millis: 100,
+            enable_rebalance: Arc::new(AtomicBool::new(true)),
+            rebalance_active: Arc::new(AtomicBool::new(false)),
+            strategy: config.allocate_message_queue_strategy(),
+            message_queue_listener: Arc::new(RwLock::new(None)),
+            register_topics: Arc::new(RwLock::new(BTreeSet::from(["registered-topic".to_owned()]))),
+            subscriptions: subscriptions.clone(),
+            register_subscriptions: Arc::new(RwLock::new(HashSet::new())),
+            additional_heartbeat_subscriptions: Arc::new(RwLock::new(
+                ConsumerSubscriptionDataSet::new(),
+            )),
+            topic_queues: Arc::new(RwLock::new(HashMap::new())),
+            in_balance_queues: Arc::new(RwLock::new(BTreeSet::new())),
+            offset_store: Arc::downgrade(&offset_store_trait),
+            runtime: Weak::new(),
+            consumer: Weak::new(),
+            rebalance_execution: tokio::sync::Mutex::new(()),
+            rebalance_membership: Mutex::new(HashMap::new()),
+        };
+
+        assert!(!registration.is_subscribe_topic_need_update("unregistered-topic"));
+        assert!(registration.is_subscribe_topic_need_update("registered-topic"));
+        assert!(registration.is_subscribe_topic_need_update("automatic-topic"));
+
+        let queue = MessageQueue::new("unregistered-topic", "broker-a", 0);
+        registration
+            .update_topic_subscribe_info("unregistered-topic", BTreeSet::from([queue.clone()]));
+        assert!(!read_lock(&registration.topic_queues).contains_key("unregistered-topic"));
+
+        let subscribed_queue = MessageQueue::new("registered-topic", "broker-a", 0);
+        registration.update_topic_subscribe_info(
+            "registered-topic",
+            BTreeSet::from([subscribed_queue.clone()]),
+        );
+        assert_eq!(
+            read_lock(&registration.topic_queues).get("registered-topic"),
+            Some(&BTreeSet::from([subscribed_queue]))
+        );
+        assert!(!registration.is_subscribe_topic_need_update("registered-topic"));
+    }
+
     #[tokio::test]
     async fn pull_runtime_rebalance_assigns_all_broadcast_queues_and_persists_removals() {
         let mut config = PullConsumerConfig::new("pull-rebalance-broadcast").unwrap();
@@ -3089,6 +3156,10 @@ mod tests {
             strategy: config.allocate_message_queue_strategy(),
             message_queue_listener: Arc::new(RwLock::new(Some(listener))),
             register_topics: Arc::new(RwLock::new(BTreeSet::from(["orders".to_owned()]))),
+            subscriptions: Arc::new(RwLock::new(HashMap::from([(
+                "orders".to_owned(),
+                subscription_all("orders"),
+            )]))),
             register_subscriptions: Arc::new(RwLock::new(HashSet::new())),
             additional_heartbeat_subscriptions: Arc::new(RwLock::new(
                 ConsumerSubscriptionDataSet::new(),
@@ -3200,6 +3271,10 @@ mod tests {
             strategy: config.allocate_message_queue_strategy(),
             message_queue_listener: Arc::new(RwLock::new(None)),
             register_topics: Arc::new(RwLock::new(BTreeSet::from(["orders".to_owned()]))),
+            subscriptions: Arc::new(RwLock::new(HashMap::from([(
+                "orders".to_owned(),
+                subscription_all("orders"),
+            )]))),
             register_subscriptions: Arc::new(RwLock::new(HashSet::new())),
             additional_heartbeat_subscriptions: Arc::new(RwLock::new(
                 ConsumerSubscriptionDataSet::new(),
