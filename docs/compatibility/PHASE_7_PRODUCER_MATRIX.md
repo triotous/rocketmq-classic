@@ -50,6 +50,11 @@ Java's live `getRetryResponseCodes()` set; public validation functions map the
 Java `Validators` entry points. Private scripted transport seams remain
 test-only.
 
+The re-exported `CompressionType::{find_by_value,get_compression_flag}` map to
+Java `CompressionType.findByValue` and `getCompressionFlag`; the enum's values,
+names, ordinals, and formatting are covered by the Phase 6 compression API
+entry.
+
 The complete public `ProducerConfig` accessor surface is grouped above by its
 Java property, including `set_tls_config`/`tls_config` for the shared TLS
 configuration adapter. Its API and fixture values are covered by the named
