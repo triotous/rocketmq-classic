@@ -88,6 +88,16 @@ use super::{
 
 type ConsumerFuture<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 
+#[derive(Clone, Copy)]
+pub(crate) struct SendBackOptions<'a> {
+    pub(crate) broker_name_override: Option<Option<&'a str>>,
+    pub(crate) address_broker_name_override: Option<Option<&'a str>>,
+    pub(crate) consumer_group_override: Option<&'a str>,
+    pub(crate) max_reconsume_times_override: Option<i32>,
+    pub(crate) timeout_millis: u64,
+    pub(crate) orderly: bool,
+}
+
 #[cfg(test)]
 type ScriptedLockResult = Result<Option<HashSet<Option<MessageQueue>>>, String>;
 #[cfg(test)]
@@ -95,12 +105,13 @@ type ScriptedLockWaiter = tokio::sync::oneshot::Receiver<ScriptedLockResult>;
 
 #[cfg(test)]
 #[derive(Default)]
-struct ScriptedRetryTransport {
-    broker_results: VecDeque<Result<(), String>>,
-    retry_results: VecDeque<Result<(), String>>,
-    broker_headers: Vec<ConsumerSendMsgBackRequestHeader>,
-    broker_targets: Vec<(Option<String>, Option<String>)>,
-    retry_messages: Vec<Message>,
+pub(crate) struct ScriptedRetryTransport {
+    pub(crate) broker_results: VecDeque<Result<(), String>>,
+    pub(crate) retry_results: VecDeque<Result<(), String>>,
+    pub(crate) broker_headers: Vec<ConsumerSendMsgBackRequestHeader>,
+    pub(crate) broker_targets: Vec<(Option<String>, Option<String>)>,
+    pub(crate) broker_timeouts_millis: Vec<u64>,
+    pub(crate) retry_messages: Vec<Message>,
 }
 
 #[cfg(test)]
@@ -346,7 +357,7 @@ pub struct PushConsumer {
     #[cfg(test)]
     startup_failure: Mutex<Option<StartupStage>>,
     #[cfg(test)]
-    scripted_retry_transport: Mutex<ScriptedRetryTransport>,
+    pub(crate) scripted_retry_transport: Mutex<ScriptedRetryTransport>,
     #[cfg(test)]
     scripted_lock_transport: Mutex<ScriptedLockTransport>,
     #[cfg(test)]
@@ -1198,8 +1209,14 @@ impl PushConsumer {
                 &queue,
                 message,
                 delay_level,
-                broker_name_override,
-                false,
+                SendBackOptions {
+                    broker_name_override,
+                    address_broker_name_override: None,
+                    consumer_group_override: None,
+                    max_reconsume_times_override: None,
+                    timeout_millis: CONSUMER_SEND_BACK_TIMEOUT_MILLIS,
+                    orderly: false,
+                },
             )
             .await
         {
@@ -2304,7 +2321,20 @@ impl PushConsumer {
         for (offset, message) in batch.offsets().iter().copied().zip(messages) {
             if message.reconsume_times() >= maximum {
                 if !self
-                    .send_message_back_for_consume(&context.runtime, queue, message, 0, None, true)
+                    .send_message_back_for_consume(
+                        &context.runtime,
+                        queue,
+                        message,
+                        0,
+                        SendBackOptions {
+                            broker_name_override: None,
+                            address_broker_name_override: None,
+                            consumer_group_override: None,
+                            max_reconsume_times_override: None,
+                            timeout_millis: CONSUMER_SEND_BACK_TIMEOUT_MILLIS,
+                            orderly: true,
+                        },
+                    )
                     .await
                 {
                     if process_queue
@@ -2436,8 +2466,14 @@ impl PushConsumer {
                         &queue,
                         message.as_ref(),
                         callback_context.delay_level_when_next_consume(),
-                        None,
-                        false,
+                        SendBackOptions {
+                            broker_name_override: None,
+                            address_broker_name_override: None,
+                            consumer_group_override: None,
+                            max_reconsume_times_override: None,
+                            timeout_millis: CONSUMER_SEND_BACK_TIMEOUT_MILLIS,
+                            orderly: false,
+                        },
                     )
                     .await
                 {
@@ -2480,20 +2516,25 @@ impl PushConsumer {
         }
     }
 
-    async fn send_message_back_for_consume(
+    pub(crate) async fn send_message_back_for_consume(
         &self,
         runtime: &Arc<ClientRuntime>,
         queue: &MessageQueue,
         message: &rocketmq_classic_common::message::MessageExt,
         delay_level: i32,
-        broker_name_override: Option<Option<&str>>,
-        orderly: bool,
+        options: SendBackOptions<'_>,
     ) -> bool {
         let mut client_config = self.config.client_config().clone();
-        let consumer_group = client_config
-            .with_namespace(Some(self.config.consumer_group()))
-            .ok()
-            .flatten();
+        let consumer_group = options
+            .consumer_group_override
+            .filter(|group| !group.trim().is_empty())
+            .map(str::to_owned)
+            .or_else(|| {
+                client_config
+                    .with_namespace(Some(self.config.consumer_group()))
+                    .ok()
+                    .flatten()
+            });
         let origin_topic = client_config
             .with_namespace(Some(message.message().topic()))
             .ok()
@@ -2506,12 +2547,14 @@ impl PushConsumer {
             tracing::error!("push send-back has no origin topic");
             return false;
         };
-        let max_reconsume_times = if orderly {
-            self.config.effective_orderly_max_reconsume_times()
-        } else {
-            self.config.effective_max_reconsume_times()
-        };
-        if orderly {
+        let max_reconsume_times = options.max_reconsume_times_override.unwrap_or_else(|| {
+            if options.orderly {
+                self.config.effective_orderly_max_reconsume_times()
+            } else {
+                self.config.effective_max_reconsume_times()
+            }
+        });
+        if options.orderly {
             let sequence = self.next_retry_message_id.fetch_add(1, Ordering::Relaxed);
             let retry_topic = format!("%RETRY%{consumer_group}");
             let retry_message = self.build_retry_message(
@@ -2536,7 +2579,7 @@ impl PushConsumer {
                 }
             };
         }
-        let broker_name = match broker_name_override {
+        let broker_name = match options.broker_name_override {
             Some(broker_name) => broker_name,
             None => message.broker_name().or(queue.broker_name()),
         }
@@ -2557,7 +2600,9 @@ impl PushConsumer {
                 runtime,
                 &header,
                 broker_name.as_deref(),
+                options.address_broker_name_override,
                 message.store_host(),
+                options.timeout_millis,
             )
             .await
         {
@@ -2601,8 +2646,11 @@ impl PushConsumer {
         runtime: &Arc<ClientRuntime>,
         header: &ConsumerSendMsgBackRequestHeader,
         broker_name: Option<&str>,
+        address_broker_name_override: Option<Option<&str>>,
         store_host: Option<&str>,
+        timeout_millis: u64,
     ) -> Result<(), String> {
+        let address_broker_name = address_broker_name_override.unwrap_or(broker_name);
         #[cfg(test)]
         {
             let mut scripted = self
@@ -2611,31 +2659,25 @@ impl PushConsumer {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             scripted.broker_headers.push(header.clone());
             scripted.broker_targets.push((
-                broker_name.map(str::to_owned),
+                address_broker_name.map(str::to_owned),
                 store_host.map(str::to_owned),
             ));
+            scripted.broker_timeouts_millis.push(timeout_millis);
             if let Some(result) = scripted.broker_results.pop_front() {
                 return result;
             }
         }
 
-        let deadline = Instant::now() + Duration::from_millis(CONSUMER_SEND_BACK_TIMEOUT_MILLIS);
-        let address = if let Some(broker_name) = broker_name {
-            let mut route = runtime
+        let address = if broker_name.is_some() {
+            let broker_name = address_broker_name
+                .ok_or_else(|| "logical broker has no route endpoint".to_owned())?;
+            let route = runtime
                 .route_snapshot()
                 .map_err(|error| error.to_string())?;
-            let mut address = route.publish_address(broker_name).map(str::to_owned);
-            if address.is_none() {
-                runtime
-                    .update_topic_route(&header.origin_topic, deadline)
-                    .await
-                    .map_err(|error| error.to_string())?;
-                route = runtime
-                    .route_snapshot()
-                    .map_err(|error| error.to_string())?;
-                address = route.publish_address(broker_name).map(str::to_owned);
-            }
-            address.ok_or_else(|| format!("broker {broker_name} has no master address"))?
+            route
+                .publish_address(broker_name)
+                .ok_or_else(|| format!("broker {broker_name} has no master address"))?
+                .to_owned()
         } else {
             store_host
                 .filter(|address| !address.trim().is_empty())
@@ -2645,6 +2687,7 @@ impl PushConsumer {
         let address =
             broker_vip_channel(self.config.client_config().vip_channel_enabled(), &address)
                 .map_err(|error| error.to_string())?;
+        let deadline = Instant::now() + Duration::from_millis(timeout_millis);
         runtime
             .api()
             .consumer_send_message_back(&address, header, deadline)

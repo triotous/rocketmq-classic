@@ -45,12 +45,14 @@ use crate::{
     error::PullConsumerError,
     offset::{LocalFileOffsetStore, OffsetStore, ReadOffsetType, RemoteBrokerOffsetStore},
     pull::{FilterMessageHook, ProcessedPullResult, PullAPIWrapper, resolve_pull_broker_address},
-    push::MessageQueueListener,
+    push::{MessageQueueListener, PushConsumer, PushConsumerConfig, SendBackOptions},
     rebalance::AllocateMessageQueueStrategy,
 };
 
 const MAX_PULL_MESSAGE_BYTES: i32 = i32::MAX;
 const FIRST_BROKER_SUPPORTING_EXPRESSION_FILTER: i32 = 232;
+const PULL_SEND_BACK_TIMEOUT_MILLIS: u64 = 3_000;
+const LOGICAL_QUEUE_MOCK_BROKER_PREFIX: &str = "__syslo__";
 
 type RegisteredSubscriptionKey = (String, String, String);
 type RegisteredSubscriptions = Arc<RwLock<HashMap<RegisteredSubscriptionKey, SubscriptionData>>>;
@@ -106,6 +108,7 @@ pub struct PullConsumer {
     state: tokio::sync::Mutex<State>,
     pull_api: PullAPIWrapper,
     offset_store: Mutex<Option<Arc<dyn OffsetStore>>>,
+    retry_helper: Mutex<Option<Arc<PushConsumer>>>,
     subscriptions: Arc<RwLock<HashMap<String, SubscriptionData>>>,
     register_subscriptions: RegisteredSubscriptions,
     additional_heartbeat_subscriptions: Arc<RwLock<ConsumerSubscriptionDataSet>>,
@@ -152,6 +155,7 @@ impl PullConsumer {
             state: tokio::sync::Mutex::new(State::Created),
             pull_api,
             offset_store: Mutex::new(None),
+            retry_helper: Mutex::new(None),
             subscriptions: Arc::new(RwLock::new(HashMap::new())),
             register_subscriptions: Arc::new(RwLock::new(HashMap::new())),
             additional_heartbeat_subscriptions: Arc::new(RwLock::new(
@@ -170,6 +174,16 @@ impl PullConsumer {
 
     pub fn config(&self) -> &PullConsumerConfig {
         &self.config
+    }
+
+    /// Returns the pull-consumer implementation represented by this facade.
+    ///
+    /// Java's deprecated `DefaultMQPullConsumer.getDefaultMQPullConsumerImpl`
+    /// returns a separate implementation object. Rust keeps the implementation
+    /// and facade in one owner, so this compatibility accessor returns `self`.
+    #[deprecated(note = "PullConsumer is the implementation; use it directly")]
+    pub fn get_default_mq_pull_consumer_impl(&self) -> &Self {
+        self
     }
 
     pub(crate) fn running_info_body(
@@ -1199,6 +1213,120 @@ impl PullConsumer {
         Ok(())
     }
 
+    /// Sends a pulled message back using its Broker name, matching the
+    /// deprecated Java two-argument `sendMessageBack` overload.
+    pub async fn send_message_back(
+        &self,
+        message: &mut MessageExt,
+        delay_level: i32,
+    ) -> Result<(), PullConsumerError> {
+        self.send_message_back_with_options(message, delay_level, None, None)
+            .await
+    }
+
+    /// Sends a pulled message back using an explicit Broker name. `None`
+    /// follows Java's null-name path and uses the message store host.
+    pub async fn send_message_back_to_broker(
+        &self,
+        message: &mut MessageExt,
+        delay_level: i32,
+        broker_name: Option<&str>,
+    ) -> Result<(), PullConsumerError> {
+        self.send_message_back_with_options(message, delay_level, Some(broker_name), None)
+            .await
+    }
+
+    /// Sends a pulled message back with Java's deprecated custom-group
+    /// overload. A missing or blank group uses this consumer's group.
+    pub async fn send_message_back_with_group(
+        &self,
+        message: &mut MessageExt,
+        delay_level: i32,
+        broker_name: Option<&str>,
+        consumer_group: Option<&str>,
+    ) -> Result<(), PullConsumerError> {
+        self.send_message_back_with_options(message, delay_level, Some(broker_name), consumer_group)
+            .await
+    }
+
+    async fn send_message_back_with_options(
+        &self,
+        message: &mut MessageExt,
+        delay_level: i32,
+        broker_name_override: Option<Option<&str>>,
+        consumer_group_override: Option<&str>,
+    ) -> Result<(), PullConsumerError> {
+        let original_topic = message.message().topic().to_owned();
+        let mut client_config = self.config.client_config().clone();
+        let restored_topic = client_config
+            .without_namespace(Some(&original_topic))?
+            .unwrap_or_else(|| original_topic.clone());
+
+        let result = async {
+            let (runtime, _) = self.started_runtime().await?;
+            let namespaced_topic = self.topic_with_namespace(&original_topic)?;
+            let mut namespaced_message = message.clone();
+            namespaced_message
+                .message_mut()
+                .set_topic(namespaced_topic.clone());
+            let effective_broker = match broker_name_override {
+                Some(broker_name) => broker_name.map(str::to_owned),
+                None => namespaced_message.broker_name().map(str::to_owned),
+            };
+            let queue = MessageQueue::new_nullable_broker(
+                namespaced_topic,
+                effective_broker.clone(),
+                namespaced_message.queue_id(),
+            );
+            let route_queue = MessageQueue::new_nullable_broker(
+                namespaced_message.message().topic().to_owned(),
+                namespaced_message.broker_name().map(str::to_owned),
+                namespaced_message.queue_id(),
+            );
+            let address_broker_name_override = if effective_broker
+                .as_deref()
+                .is_some_and(|name| name.starts_with(LOGICAL_QUEUE_MOCK_BROKER_PREFIX))
+            {
+                let route_snapshot = runtime.route_snapshot()?;
+                resolve_pull_send_back_address_broker_name_override(
+                    &route_snapshot,
+                    effective_broker.as_deref(),
+                    &route_queue,
+                )?
+            } else {
+                None
+            };
+            let helper = self.retry_helper()?;
+            if helper
+                .send_message_back_for_consume(
+                    &runtime,
+                    &queue,
+                    &namespaced_message,
+                    delay_level,
+                    SendBackOptions {
+                        broker_name_override,
+                        address_broker_name_override: address_broker_name_override
+                            .as_ref()
+                            .map(|broker| broker.as_deref()),
+                        consumer_group_override,
+                        max_reconsume_times_override: Some(self.config.max_reconsume_times()),
+                        timeout_millis: PULL_SEND_BACK_TIMEOUT_MILLIS,
+                        orderly: false,
+                    },
+                )
+                .await
+            {
+                Ok(())
+            } else {
+                Err(PullConsumerError::SendMessageBackFailed)
+            }
+        }
+        .await;
+
+        message.message_mut().set_topic(restored_topic);
+        result
+    }
+
     pub async fn fetch_consume_offset(
         &self,
         queue: &MessageQueue,
@@ -1340,6 +1468,25 @@ impl PullConsumer {
             .ok_or(PullConsumerError::InvalidConsumerGroup)
     }
 
+    fn retry_helper(&self) -> Result<Arc<PushConsumer>, PullConsumerError> {
+        let mut retry_helper = self
+            .retry_helper
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(helper) = retry_helper.as_ref() {
+            return Ok(helper.clone());
+        }
+
+        let mut config = PushConsumerConfig::new(self.config.consumer_group())?;
+        *config.client_config_mut() = self.config.client_config().clone();
+        config.set_tls_config(self.config.tls_config().cloned());
+        config.set_unit_mode(self.config.unit_mode());
+        config.set_max_reconsume_times(self.config.max_reconsume_times());
+        let helper = Arc::new(PushConsumer::new(config));
+        *retry_helper = Some(helper.clone());
+        Ok(helper)
+    }
+
     fn offset_rpc_deadline(&self) -> Result<Instant, PullConsumerError> {
         request_deadline(i64::from(
             self.config.client_config().mq_client_api_timeout(),
@@ -1356,6 +1503,17 @@ impl PullConsumer {
         Instant::now()
             + Duration::from_millis(self.config.client_config().mq_client_api_timeout.max(0) as u64)
     }
+}
+
+fn resolve_pull_send_back_address_broker_name_override(
+    route: &RouteSnapshot,
+    broker_name: Option<&str>,
+    message_queue: &MessageQueue,
+) -> Result<Option<Option<String>>, PullConsumerError> {
+    if !broker_name.is_some_and(|name| name.starts_with(LOGICAL_QUEUE_MOCK_BROKER_PREFIX)) {
+        return Ok(None);
+    }
+    Ok(Some(route.broker_name(message_queue)?.map(str::to_owned)))
 }
 
 struct PullConsumerRegistration {
@@ -1894,10 +2052,172 @@ fn write_lock<T>(lock: &RwLock<T>) -> std::sync::RwLockWriteGuard<'_, T> {
 mod tests {
     use super::*;
     use crate::offset::OffsetRead;
+    use rocketmq_classic_common::message::Message;
+    use rocketmq_classic_common::message::constants::{
+        PROPERTY_MAX_RECONSUME_TIMES, PROPERTY_RECONSUME_TIME, PROPERTY_RETRY_TOPIC,
+    };
     use rocketmq_classic_core::api::consumer::PullStatus;
     use rocketmq_classic_core::config::AccessChannel;
+    use rocketmq_classic_core::route::TopicSnapshot;
     use rocketmq_classic_remoting::{RemotingCommand, client::RequestProcessor};
     use std::collections::{BTreeMap, HashMap, HashSet};
+
+    #[test]
+    #[allow(deprecated)]
+    fn deprecated_java_impl_accessor_returns_the_same_pull_consumer() {
+        let expected: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/pull-implementation-accessor.json"
+        ))
+        .unwrap();
+        let group = expected["consumerGroup"].as_str().unwrap();
+        let mut config = PullConsumerConfig::new(group).unwrap();
+        assert_eq!(
+            config.max_reconsume_times(),
+            expected["maxReconsumeTimesDefault"].as_i64().unwrap() as i32
+        );
+        let mutated_max_reconsume_times =
+            expected["maxReconsumeTimesAfterMutation"].as_i64().unwrap() as i32;
+        config.set_max_reconsume_times(mutated_max_reconsume_times);
+        assert_eq!(config.max_reconsume_times(), mutated_max_reconsume_times);
+        let consumer = PullConsumer::new(config);
+        let implementation = consumer.get_default_mq_pull_consumer_impl();
+
+        assert!(std::ptr::eq(implementation, &consumer));
+        assert!(std::ptr::eq(
+            consumer.get_default_mq_pull_consumer_impl(),
+            implementation
+        ));
+        assert_eq!(consumer.config().consumer_group(), group);
+        assert!(consumer.get_offset_store().is_none());
+        assert!(expected["accessorNonNull"].as_bool().unwrap());
+        assert!(expected["sameImplementationAcrossCalls"].as_bool().unwrap());
+        assert!(expected["offsetStoreIsNullBeforeStart"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn pull_sendback_resolves_logical_broker_through_topic_endpoints() {
+        let logical_queue = MessageQueue::new("tenant%orders", "__syslo__logical", 2);
+        let topic = TopicSnapshot {
+            route: Arc::new(rocketmq_classic_protocol::route::TopicRouteData::default()),
+            publish_queues: Vec::new(),
+            subscribe_queues: BTreeSet::new(),
+            endpoints: BTreeMap::from([(logical_queue.clone(), "broker-a".to_owned())]),
+            order_topic: false,
+        };
+        let mut route = RouteSnapshot::default();
+        route
+            .topics
+            .insert("tenant%orders".to_owned(), Arc::new(topic));
+
+        assert_eq!(
+            resolve_pull_send_back_address_broker_name_override(
+                &route,
+                Some("__syslo__logical"),
+                &logical_queue,
+            )
+            .unwrap(),
+            Some(Some("broker-a".to_owned()))
+        );
+        assert_eq!(
+            resolve_pull_send_back_address_broker_name_override(
+                &route,
+                Some("broker-a"),
+                &logical_queue,
+            )
+            .unwrap(),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn pull_sendback_matches_java_retry_fallback_and_restores_message_topic() {
+        let mut config = PullConsumerConfig::new("pull-sendback").unwrap();
+        config
+            .client_config_mut()
+            .set_namespace(Some("tenant".to_owned()));
+        config.client_config_mut().set_namesrv_addr(None);
+        config.set_max_reconsume_times(-3);
+        let consumer = Arc::new(PullConsumer::with_manager(
+            config,
+            ClientRuntimeManager::new(),
+        ));
+        consumer.register_topic("orders").unwrap();
+        consumer.start().await.unwrap();
+
+        let helper = consumer.retry_helper().unwrap();
+        {
+            let mut scripted = helper.scripted_retry_transport.lock().unwrap();
+            scripted
+                .broker_results
+                .extend([Ok(()), Err("broker refused send-back".into())]);
+            scripted.retry_results.push_back(Ok(()));
+        }
+
+        let mut message = MessageExt::new(Message::new("orders", b"payload".to_vec()));
+        message.set_broker_name(Some("broker-a".to_owned()));
+        message.set_queue_id(2);
+        message.set_commit_log_offset(71);
+        message.set_message_id(Some("origin-message-id".to_owned()));
+        message.set_reconsume_times(4);
+
+        consumer.send_message_back(&mut message, 2).await.unwrap();
+        assert_eq!(message.message().topic(), "orders");
+        consumer
+            .send_message_back_with_group(
+                &mut message,
+                5,
+                Some("broker-override"),
+                Some("override-group"),
+            )
+            .await
+            .unwrap();
+        assert_eq!(message.message().topic(), "orders");
+
+        {
+            let scripted = helper.scripted_retry_transport.lock().unwrap();
+            assert_eq!(scripted.broker_headers.len(), 2);
+            assert_eq!(scripted.broker_timeouts_millis, vec![3_000, 3_000]);
+            assert_eq!(scripted.broker_headers[0].group, "tenant%pull-sendback");
+            assert_eq!(scripted.broker_headers[0].origin_topic, "tenant%orders");
+            assert_eq!(
+                scripted.broker_headers[0].broker_name.as_deref(),
+                Some("broker-a")
+            );
+            assert_eq!(scripted.broker_headers[0].offset, 71);
+            assert_eq!(scripted.broker_headers[0].max_reconsume_times, Some(-3));
+            assert_eq!(scripted.broker_headers[1].group, "override-group");
+            assert_eq!(
+                scripted.broker_headers[1].broker_name.as_deref(),
+                Some("broker-override")
+            );
+            assert_eq!(scripted.broker_headers[1].delay_level, 5);
+            let retry = &scripted.retry_messages[0];
+            assert_eq!(retry.topic(), "%RETRY%override-group");
+            assert_eq!(
+                retry
+                    .properties()
+                    .get(PROPERTY_RETRY_TOPIC)
+                    .map(String::as_str),
+                Some("tenant%orders")
+            );
+            assert_eq!(
+                retry
+                    .properties()
+                    .get(PROPERTY_MAX_RECONSUME_TIMES)
+                    .map(String::as_str),
+                Some("-3")
+            );
+            assert_eq!(
+                retry
+                    .properties()
+                    .get(PROPERTY_RECONSUME_TIME)
+                    .map(String::as_str),
+                Some("5")
+            );
+        }
+
+        consumer.shutdown().await.unwrap();
+    }
 
     #[tokio::test]
     async fn pull_running_info_uses_group_and_reports_active_consumer_properties() {

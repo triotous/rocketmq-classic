@@ -20,6 +20,8 @@ pub enum PullConsumerError {
     PullProcessing(#[from] ProcessPullError),
     #[error(transparent)]
     AdminQuery(#[from] rocketmq_classic_core::api::admin::AdminQueryError),
+    #[error(transparent)]
+    Push(#[from] PushConsumerError),
     #[error("consumer group is blank or contains characters not accepted by RocketMQ")]
     InvalidConsumerGroup,
     #[error("consumer group must not be DEFAULT_CONSUMER")]
@@ -57,6 +59,8 @@ pub enum PullConsumerError {
     EmptySqlExpression,
     #[error("invalid pull subscription: {0}")]
     InvalidSubscription(String),
+    #[error("Broker send-back and retry-topic fallback both failed")]
+    SendMessageBackFailed,
     #[error("broker `{broker}` was not found in the current route")]
     BrokerNotFound { broker: String },
     #[error(

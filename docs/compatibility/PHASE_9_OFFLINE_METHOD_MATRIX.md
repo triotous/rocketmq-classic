@@ -33,11 +33,31 @@ Phase 9 covers the explicit pull/store/boundary surface described in the P9 plan
 
 | Java surface outside Phase 9 | Planned owner |
 | --- | --- |
-| `sendMessageBack`, `maxReconsumeTimes`, retry fallback | Phase 10 push/retry pipeline. |
+| `sendMessageBack`, `maxReconsumeTimes`, retry fallback | Push processing remains in Phase 10; Phase 18 parity audit added the deprecated Pull send-back overloads, Java default setting, Broker path, and retry-topic fallback to the Pull facade. |
 | `MessageQueueListener`, queue allocation strategy, rebalance enablement, registration/subscription lifecycle, queues-in-balance | Phase 11 rebalance/assignment lifecycle. |
 | `createTopic`, `queryMessage`, `viewMessage`, and `fetchSubscribeMessageQueues` admin/query APIs | Phase 17 admin/query surface. |
 | Constructor RPC hooks | Phase 16 hook/security operations. |
-| `getDefaultMQPullConsumerImpl()` raw implementation accessor | Outstanding full-surface compatibility audit; resolve in Phase 18. |
+| `getDefaultMQPullConsumerImpl()` raw implementation accessor | Phase 18 accessor fixture and Rust alias getter now cover non-null/stable identity; the full public surface remains under audit below. |
+
+### Deprecated raw implementation accessor audit (Phase 18)
+
+The pinned Java fixture invokes `DefaultMQPullConsumer.getDefaultMQPullConsumerImpl()` twice and records stable identity, configured group, `CREATE_JUST`, null offset store, null `PullAPIWrapper`, and a constructed `RebalanceImpl`. Rust maps the separate Java impl object to the owning `PullConsumer` and tests pointer identity, configured group, and the pre-start absent offset store. Rust intentionally constructs its internal `PullAPIWrapper` with the facade, so the Java null-wrapper state has no direct structural equivalent.
+
+The accessor exposes more public methods than the facade delegates. The following surfaces still require a method-by-method behavior decision and test mapping before this audit can close:
+
+| Java implementation surface | Current Rust mapping/evidence | Audit status |
+| --- | --- | --- |
+| `sendMessageBack` overloads and `maxReconsumeTimes` | `PullConsumer::{send_message_back, send_message_back_to_broker, send_message_back_with_group}` delegates to the tested retry path with Pull's exact setting. The Java call uses a 3000 ms RPC timeout; logical queue names resolve through the namespaced queue endpoint while the request header retains the passed broker name. Tests cover timeout, endpoint resolution, default/custom retry limit, group override, namespace restore and retry metadata. | Implemented and unit-verified; live Broker behavior remains P9-V03/Phase 19. |
+| `fetchPublishMessageQueues` and `parseSubscribeMessageQueues` | Producer can fetch publish queues; Pull's subscribe fetch normalizes namespace inline. No corresponding Pull implementation methods are public. | Open mapping/API gap. |
+| `resetTopic`, `subscriptionAutomatically`, and `unsubscribe` | Namespace normalization and Pull topic registration APIs cover adjacent flows, but there is no per-method oracle for the raw impl entrypoints. | Open behavior audit. |
+| `groupName`, `messageModel`, `isUnitMode`, `consumeType`, `consumeFromWhere`, and `subscriptions` | Configuration and registration state expose most values; active-consumer and subscription snapshots are not reconciled method by method. | Open behavior audit. |
+| `executeHookBefore/After` and `registerConsumeMessageHook` | Rust registers consume hooks and invokes them around pull-result handling; direct Java method calls are not separately mapped. | Open invocation audit. |
+| `doRebalance`, `tryRebalance`, `updateTopicSubscribeInfo`, and `isSubscribeTopicNeedUpdate` | The runtime owns the corresponding registration callbacks and rebalance cycle. The raw Java methods are publicly reachable through the accessor. | Open invocation audit. |
+| `persistConsumerOffset`, `fetchConsumeOffset`, and `updateConsumeOffsetToBroker` | Rust has explicit offset APIs, including `persist_consumer_offset`, `fetch_consume_offset`, and `update_consume_offset_to_broker`. | Direct facade mappings exist; raw-entrypoint equivalence still needs evidence. |
+| `consumerRunningInfo` | Rust builds Pull running-info bodies for inbound administrative requests; no public direct getter exists. | Open API mapping. |
+| `get/setPullAPIWrapper`, `get/setServiceState`, `getConsumerStartTimestamp`, and `getRebalanceImpl` | Rust owns wrapper, lifecycle, timestamp, and rebalance state inside the facade/runtime; it does not expose Java's mutable implementation objects. | Open compatibility/design decision; do not count the accessor as fully mapped. |
+
+The Java raw implementation surface was inspected with `javap -public` against the pinned 5.5.1 artifact and the corresponding source. This table is not a waiver: any supported observable flow must be implemented with Rust-appropriate ownership and unit evidence, or the API map must explain why an internal integration entrypoint is not an application capability. P18-V01 remains open until that review is resolved.
 
 The consumer-specific settings in this phase map as follows. The inherited Java `ClientConfig` settings remain owned by the shared client configuration map and are accessed through `client_config()` / `client_config_mut()`.
 
@@ -47,6 +67,7 @@ The consumer-specific settings in this phase map as follows. The inherited Java 
 | `brokerSuspendMaxTimeMillis` | `20_000` ms. | `broker_suspend_max_time_millis`; default and suspend relationship covered by config tests. |
 | `consumerTimeoutMillisWhenSuspend` | `30_000` ms; must be at least the Broker suspend timeout. | `consumer_timeout_millis_when_suspend`; default and relationship validation covered by config tests. |
 | `consumerPullTimeoutMillis` | `10_000` ms. | `consumer_pull_timeout_millis`; supplies default pull timeout. |
+| `maxReconsumeTimes` | `16`; setter retains any supplied integer. | `PullConsumerConfig::{max_reconsume_times, set_max_reconsume_times}`; Java invoked fixture checks the default and a negative mutation, and the Pull send-back test checks the configured value in the send-back request and retry headers. |
 | `messageModel` | `CLUSTERING`. | `message_model`; selects the default remote/local offset store. |
 | `unitMode` | `false`. | `unit_mode`; controls pull flags and filter-hook context. |
 | `offsetStore` | Optional override; otherwise the implementation chooses remote for clustering and local for broadcasting. `getOffsetStore()` exposes the configured/selected instance. | `set_offset_store` is valid only before startup; `get_offset_store` returns the configured store or the model-selected store after startup, retaining it after shutdown. |

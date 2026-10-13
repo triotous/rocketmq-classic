@@ -8,6 +8,7 @@ pub const DEFAULT_CONSUMER_GROUP: &str = "DEFAULT_CONSUMER";
 pub const DEFAULT_BROKER_SUSPEND_MAX_TIME_MILLIS: i64 = 20_000;
 pub const DEFAULT_CONSUMER_TIMEOUT_MILLIS_WHEN_SUSPEND: i64 = 30_000;
 pub const DEFAULT_CONSUMER_PULL_TIMEOUT_MILLIS: i64 = 10_000;
+pub const DEFAULT_PULL_MAX_RECONSUME_TIMES: i32 = 16;
 pub const DEFAULT_PULL_CONSUMER_ENABLE_REBALANCE: bool = true;
 
 /// Settings implemented by Java 5.5.1 `DefaultMQPullConsumer` for explicit pull.
@@ -18,6 +19,7 @@ pub struct PullConsumerConfig {
     broker_suspend_max_time_millis: i64,
     consumer_timeout_millis_when_suspend: i64,
     consumer_pull_timeout_millis: i64,
+    max_reconsume_times: i32,
     message_model: MessageModel,
     consume_from_where: ConsumeFromWhere,
     unit_mode: bool,
@@ -36,6 +38,7 @@ impl PullConsumerConfig {
             broker_suspend_max_time_millis: DEFAULT_BROKER_SUSPEND_MAX_TIME_MILLIS,
             consumer_timeout_millis_when_suspend: DEFAULT_CONSUMER_TIMEOUT_MILLIS_WHEN_SUSPEND,
             consumer_pull_timeout_millis: DEFAULT_CONSUMER_PULL_TIMEOUT_MILLIS,
+            max_reconsume_times: DEFAULT_PULL_MAX_RECONSUME_TIMES,
             message_model: MessageModel::Clustering,
             consume_from_where: ConsumeFromWhere::ConsumeFromLastOffset,
             unit_mode: false,
@@ -96,6 +99,14 @@ impl PullConsumerConfig {
 
     pub fn set_consumer_pull_timeout_millis(&mut self, value: i64) {
         self.consumer_pull_timeout_millis = value;
+    }
+
+    pub const fn max_reconsume_times(&self) -> i32 {
+        self.max_reconsume_times
+    }
+
+    pub fn set_max_reconsume_times(&mut self, value: i32) {
+        self.max_reconsume_times = value;
     }
 
     pub const fn message_model(&self) -> MessageModel {
@@ -197,6 +208,17 @@ mod tests {
         config.set_tls_config(Some(tls));
         assert!(config.client_config().use_tls());
         assert!(!config.tls_config().unwrap().test_mode);
+    }
+
+    #[test]
+    fn pull_max_reconsume_times_matches_java_default_and_accepts_mutation() {
+        let mut config = PullConsumerConfig::new("pull-reconsume-config").unwrap();
+        assert_eq!(
+            config.max_reconsume_times(),
+            DEFAULT_PULL_MAX_RECONSUME_TIMES
+        );
+        config.set_max_reconsume_times(-3);
+        assert_eq!(config.max_reconsume_times(), -3);
     }
 
     #[test]
