@@ -117,8 +117,8 @@ fn pinned_java_producer_core_fixture_matches_defaults_and_validation() {
     assert_eq!(
         config
             .retry_response_codes()
-            .iter()
-            .copied()
+            .snapshot()
+            .into_iter()
             .collect::<Vec<_>>(),
         defaults["retryResponseCodes"]
             .as_array()
@@ -129,6 +129,52 @@ fn pinned_java_producer_core_fixture_matches_defaults_and_validation() {
     );
     assert!(!config.retry_another_broker_when_not_store_ok());
     assert_eq!(config.max_message_size(), 4 * 1024 * 1024);
+
+    let runtime = &fixture["runtimeSettings"];
+    let producer = Producer::new(ProducerConfig::new("runtime-settings-fixture").unwrap());
+    producer.set_enable_backpressure_for_async_mode(true);
+    producer
+        .set_backpressure_async_send_num(runtime["sendNumAfterUpdate"].as_i64().unwrap() as i32);
+    producer
+        .set_backpressure_async_send_size(runtime["sendSizeAfterUpdate"].as_i64().unwrap() as i32);
+    assert_eq!(
+        producer.enable_backpressure_for_async_mode(),
+        runtime["backpressureEnabledAfterToggle"]
+    );
+    assert_eq!(
+        producer.backpressure_async_send_num(),
+        runtime["sendNumAfterUpdate"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        producer.backpressure_async_send_size(),
+        runtime["sendSizeAfterUpdate"].as_i64().unwrap() as i32
+    );
+    producer.set_backpressure_async_send_num(1);
+    producer.set_backpressure_async_send_size(1);
+    assert_eq!(
+        producer.backpressure_async_send_num(),
+        runtime["clampedSendNumAfterUpdate"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        producer.backpressure_async_send_size(),
+        runtime["clampedSendSizeAfterUpdate"].as_i64().unwrap() as i32
+    );
+    let live_codes = producer.retry_response_codes();
+    assert!(live_codes.insert(9001));
+    assert_eq!(
+        live_codes.contains(&9001),
+        runtime["setMutationVisibleThroughGetter"]
+    );
+    producer.add_retry_response_code(9002);
+    assert_eq!(
+        live_codes.contains(&9002),
+        runtime["addMethodVisibleThroughExistingSet"]
+    );
+    live_codes.remove(&9001);
+    assert_eq!(
+        !producer.retry_response_codes().contains(&9001),
+        runtime["setRemovalVisibleThroughGetter"]
+    );
 
     for row in fixture["groups"].as_array().unwrap() {
         assert_eq!(

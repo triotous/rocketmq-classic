@@ -1,5 +1,6 @@
 mod accumulator;
 mod admin;
+mod backpressure;
 mod batch;
 mod config;
 mod error;
@@ -9,12 +10,14 @@ mod hooks;
 mod producer;
 mod recall;
 mod request_reply;
+mod retry_response_codes;
 mod selector;
 mod send;
 mod trace;
 mod transaction;
 pub mod validation;
 
+pub use backpressure::BackpressureReadGuard;
 pub use config::{DEFAULT_PRODUCER_GROUP, ProducerConfig};
 pub use error::ProducerError;
 pub use executor::{AsyncSenderExecutor, AsyncSenderTask};
@@ -25,6 +28,7 @@ pub use hooks::{
 pub use producer::Producer;
 pub use recall::RecallMessageHandle;
 pub use request_reply::{ReplyMessageError, RequestCallback, create_reply_message};
+pub use retry_response_codes::RetryResponseCodes;
 pub use rocketmq_classic_common::sysflag::message::CompressionType;
 pub use rocketmq_classic_core::api::admin::QueryResult;
 pub use rocketmq_classic_core::api::producer::{SendResult, SendStatus};

@@ -16,11 +16,12 @@ use rocketmq_classic_core::{
     runtime::ClientRuntime,
 };
 use rocketmq_classic_protocol::header::SendMessageRequestHeaderV1;
-use tokio::{sync::OwnedSemaphorePermit, time::Instant};
+use tokio::time::Instant;
 
 use crate::{
     AsyncSenderTask, Producer, ProducerError,
     accumulator::{BatchKey, EnqueueResult, ReadyBatch},
+    backpressure::AdjustablePermit,
     batch::create_batch,
     hooks::{CheckForbiddenContext, SendMessageContext, SendMessageType},
     validation,
@@ -52,31 +53,24 @@ struct SendAttempt<'a> {
     deadline: Instant,
 }
 
-type AsyncBackpressurePermit = (OwnedSemaphorePermit, OwnedSemaphorePermit);
+type AsyncBackpressurePermit = (AdjustablePermit, AdjustablePermit);
 
 impl Producer {
     async fn acquire_async_backpressure(
         &self,
         message_size: usize,
         deadline: Instant,
-    ) -> Result<Option<AsyncBackpressurePermit>, ProducerError> {
-        if !self.config.enable_backpressure_for_async_mode() {
-            return Ok(None);
+    ) -> Result<(bool, Option<AsyncBackpressurePermit>), ProducerError> {
+        let enabled = self.enable_backpressure_for_async_mode();
+        if !enabled {
+            return Ok((false, None));
         }
-        let count =
-            tokio::time::timeout_at(deadline, self.backpressure_send_num.clone().acquire_owned())
-                .await
-                .map_err(|_| ProducerError::Timeout)?
-                .map_err(|_| ProducerError::Shutdown)?;
-        let size = u32::try_from(message_size.max(1)).map_err(|_| ProducerError::Timeout)?;
-        let bytes = tokio::time::timeout_at(
-            deadline,
-            self.backpressure_send_size.clone().acquire_many_owned(size),
-        )
-        .await
-        .map_err(|_| ProducerError::Timeout)?
-        .map_err(|_| ProducerError::Shutdown)?;
-        Ok(Some((count, bytes)))
+        let count = self.backpressure_send_num.acquire(1, deadline).await?;
+        let bytes = self
+            .backpressure_send_size
+            .acquire(message_size.max(1), deadline)
+            .await?;
+        Ok((true, Some((count, bytes))))
     }
 
     /// Refreshes the topic route from NameServer and returns writable queues,
@@ -322,11 +316,11 @@ impl Producer {
         let wire_message = self.message_with_namespace(message)?;
         let use_auto_batch =
             auto_batch_enabled && mode != SendMode::Oneway && self.config.auto_batch();
-        let backpressure = if mode == SendMode::Future && !use_auto_batch {
+        let (backpressure_enabled, backpressure) = if mode == SendMode::Future && !use_auto_batch {
             self.acquire_async_backpressure(wire_message.body().len(), deadline)
                 .await?
         } else {
-            None
+            (false, None)
         };
         let runtime = self.started_runtime().await?;
         validation::validate_message(Some(&wire_message), &self.config)?;
@@ -368,6 +362,7 @@ impl Producer {
                     None,
                     deadline,
                     backpressure,
+                    backpressure_enabled,
                 )
                 .await;
         }
@@ -706,11 +701,11 @@ impl Producer {
         mode: SendMode,
         deadline: Instant,
     ) -> Result<Option<SendResult>, ProducerError> {
-        let backpressure = if mode == SendMode::Future {
+        let (backpressure_enabled, backpressure) = if mode == SendMode::Future {
             self.acquire_async_backpressure(message.body().len(), deadline)
                 .await?
         } else {
-            None
+            (false, None)
         };
         let wire_message = self.message_with_namespace(message)?;
         let mut wire_queue = self.queue_with_namespace(queue)?;
@@ -740,6 +735,7 @@ impl Producer {
                     None,
                     deadline,
                     backpressure,
+                    backpressure_enabled,
                 )
                 .await;
         }
@@ -777,11 +773,11 @@ impl Producer {
         deadline: Instant,
     ) -> Result<Option<SendResult>, ProducerError> {
         let wire_message = self.message_with_namespace(message)?;
-        let backpressure = if mode == SendMode::Future {
+        let (backpressure_enabled, backpressure) = if mode == SendMode::Future {
             self.acquire_async_backpressure(wire_message.body().len(), deadline)
                 .await?
         } else {
-            None
+            (false, None)
         };
         let runtime = self.started_runtime().await?;
         validation::validate_message(Some(&wire_message), &self.config)?;
@@ -858,6 +854,7 @@ impl Producer {
                         Some(&info),
                         deadline,
                         backpressure,
+                        backpressure_enabled,
                     )
                     .await;
             }
@@ -1018,6 +1015,7 @@ impl Producer {
         publish_info: Option<&TopicSnapshot>,
         deadline: Instant,
         backpressure: Option<AsyncBackpressurePermit>,
+        backpressure_enabled: bool,
     ) -> Result<Option<SendResult>, ProducerError> {
         let executor = self.async_sender_executor();
         let producer = self
@@ -1054,7 +1052,7 @@ impl Producer {
                 Ok(result) => result.map_err(|_| ProducerError::AsyncSenderExecutorDropped)?,
                 Err(_) => Err(ProducerError::Timeout),
             },
-            Err(task) if self.config.enable_backpressure_for_async_mode() => {
+            Err(task) if backpressure_enabled => {
                 task.await;
                 result_rx
                     .await
@@ -2070,7 +2068,7 @@ mod tests {
         );
         assert_eq!(
             producer.backpressure_send_size.available_permits(),
-            initial_size_permits - message_size
+            initial_size_permits - i64::try_from(message_size).unwrap()
         );
         assert!(
             producer
@@ -3376,13 +3374,12 @@ mod tests {
         let producer = Producer::new(config);
         let mut permits = Vec::new();
         for _ in 0..10 {
-            permits.push(
-                producer
-                    .acquire_async_backpressure(1, Instant::now() + Duration::from_secs(1))
-                    .await
-                    .unwrap()
-                    .unwrap(),
-            );
+            let (enabled, permit) = producer
+                .acquire_async_backpressure(1, Instant::now() + Duration::from_secs(1))
+                .await
+                .unwrap();
+            assert!(enabled);
+            permits.push(permit.unwrap());
         }
         assert!(matches!(
             producer
@@ -3391,12 +3388,116 @@ mod tests {
             Err(ProducerError::Timeout)
         ));
         drop(permits);
-        assert!(
-            producer
+        let (enabled, permit) = producer
+            .acquire_async_backpressure(1, Instant::now() + Duration::from_secs(1))
+            .await
+            .unwrap();
+        assert!(enabled);
+        assert!(permit.is_some());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn producer_runtime_backpressure_settings_update_live_limits_and_mode() {
+        let producer = Producer::new(crate::ProducerConfig::new("runtime-backpressure").unwrap());
+        assert!(!producer.enable_backpressure_for_async_mode());
+        let (enabled, permit) = producer
+            .acquire_async_backpressure(1, Instant::now() + Duration::from_secs(1))
+            .await
+            .unwrap();
+        assert!(!enabled);
+        assert!(permit.is_none());
+
+        producer.set_enable_backpressure_for_async_mode(true);
+        producer.set_backpressure_async_send_num(1);
+        producer.set_backpressure_async_send_size(1);
+        assert!(producer.enable_backpressure_for_async_mode());
+        assert!(producer.config().enable_backpressure_for_async_mode());
+        assert_eq!(producer.backpressure_async_send_num(), 10);
+        assert_eq!(producer.backpressure_async_send_size(), 1024 * 1024);
+        drop(producer.acquire_backpressure_for_async_send_num_lock());
+        drop(producer.acquire_backpressure_for_async_send_size_lock());
+
+        let (enabled, permit) = producer
+            .acquire_async_backpressure(1, Instant::now() + Duration::from_secs(1))
+            .await
+            .unwrap();
+        assert!(enabled);
+        assert!(permit.is_some());
+        producer.set_backpressure_async_send_num(12);
+        assert_eq!(producer.backpressure_send_num.available_permits(), 11);
+        producer.set_backpressure_async_send_num_inside_adjust(13);
+        producer.set_backpressure_async_send_size_inside_adjust(2 * 1024 * 1024 + 1);
+        assert_eq!(producer.backpressure_async_send_num(), 13);
+        assert_eq!(producer.backpressure_async_send_size(), 2 * 1024 * 1024 + 1);
+        producer.set_backpressure_async_send_num(12);
+        producer.set_backpressure_async_send_size(2 * 1024 * 1024);
+
+        producer.set_enable_backpressure_for_async_mode(false);
+        assert!(!producer.enable_backpressure_for_async_mode());
+        assert!(!producer.config().enable_backpressure_for_async_mode());
+        let (enabled, permit) = producer
+            .acquire_async_backpressure(1, Instant::now() + Duration::from_secs(1))
+            .await
+            .unwrap();
+        assert!(!enabled);
+        assert!(permit.is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn runtime_resize_preserves_in_flight_count_like_the_java_fixture() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+        let runtime = &fixture["runtimeSettings"];
+        let mut config = crate::ProducerConfig::new("runtime-resize-fixture").unwrap();
+        config.set_enable_backpressure_for_async_mode(true);
+        config.set_backpressure_async_send_num(20);
+        let producer = Producer::new(config);
+        let mut held_count_permits = Vec::new();
+
+        for _ in 0..7 {
+            let (enabled, permits) = producer
                 .acquire_async_backpressure(1, Instant::now() + Duration::from_secs(1))
                 .await
-                .unwrap()
-                .is_some()
+                .unwrap();
+            assert!(enabled);
+            let (count, size) = permits.unwrap();
+            held_count_permits.push(count);
+            drop(size);
+        }
+
+        producer.set_backpressure_async_send_num(12);
+        assert_eq!(
+            producer.backpressure_send_num.available_permits(),
+            runtime["sendNumPermitsAfterResize"].as_i64().unwrap()
         );
+        drop(held_count_permits);
+        assert_eq!(
+            producer.backpressure_send_num.available_permits(),
+            runtime["sendNumPermitsAfterInFlightRelease"]
+                .as_i64()
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn producer_retry_response_codes_are_live_for_sync_retry_decisions() {
+        let producer = Producer::new(crate::ProducerConfig::new("runtime-retry-codes").unwrap());
+        let code = 9_001;
+        let error = RpcError::Response {
+            request_code: 10,
+            peer: "broker".into(),
+            code,
+            remark: None,
+        };
+        let live_codes = producer.retry_response_codes();
+        assert!(!live_codes.contains(&code));
+        assert!(!should_retry(SendMode::Sync, &error, producer.config()));
+
+        producer.add_retry_response_code(code);
+        assert!(live_codes.contains(&code));
+        assert!(should_retry(SendMode::Sync, &error, producer.config()));
+
+        live_codes.remove(&code);
+        assert!(!should_retry(SendMode::Sync, &error, producer.config()));
     }
 }

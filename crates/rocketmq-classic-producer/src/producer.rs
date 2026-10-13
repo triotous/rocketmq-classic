@@ -15,8 +15,12 @@ use rocketmq_classic_remoting::client::{CallbackExecutor, RpcHook};
 use rocketmq_classic_core::api::producer::{SendMode, SendResult};
 
 use crate::{
-    AsyncSenderExecutor, ProducerConfig, ProducerError, accumulator::AutoBatchAccumulator,
-    executor::TokioAsyncSenderExecutor, fault::FaultStrategy, selector::RoundRobinSelector,
+    AsyncSenderExecutor, ProducerConfig, ProducerError, RetryResponseCodes,
+    accumulator::AutoBatchAccumulator,
+    backpressure::{AdjustableSemaphore, BackpressureReadGuard},
+    executor::TokioAsyncSenderExecutor,
+    fault::FaultStrategy,
+    selector::RoundRobinSelector,
     validation,
 };
 
@@ -41,7 +45,7 @@ pub(crate) struct ScriptedTransport {
     pub(crate) responses: std::collections::VecDeque<Result<Option<SendResult>, ProducerError>>,
     pub(crate) attempts: Vec<ScriptedSendAttempt>,
 }
-use tokio::{sync::Semaphore, task::JoinHandle};
+use tokio::task::JoinHandle;
 
 enum State {
     Created,
@@ -69,8 +73,8 @@ pub struct Producer {
     pub(crate) request_callback_tasks: tokio::sync::Mutex<Vec<JoinHandle<()>>>,
     pub(crate) check_forbidden_hooks: crate::hooks::CheckForbiddenHookList,
     pub(crate) send_message_hooks: crate::hooks::SendMessageHookList,
-    pub(crate) backpressure_send_num: Arc<Semaphore>,
-    pub(crate) backpressure_send_size: Arc<Semaphore>,
+    pub(crate) backpressure_send_num: Arc<AdjustableSemaphore>,
+    pub(crate) backpressure_send_size: Arc<AdjustableSemaphore>,
     publish_info: RwLock<HashMap<String, Arc<TopicSnapshot>>>,
     known_publish_topics: RwLock<BTreeSet<String>>,
     default_async_sender_executor: Arc<dyn AsyncSenderExecutor>,
@@ -147,11 +151,11 @@ impl Producer {
         rpc_hook: Option<Arc<dyn RpcHook>>,
     ) -> Self {
         let ids = UniqueIdGenerator::new(config.client_config().client_ip());
-        let backpressure_send_num = Arc::new(Semaphore::new(
-            config.backpressure_async_send_num().max(10) as usize,
+        let backpressure_send_num = Arc::new(AdjustableSemaphore::new(
+            config.backpressure_async_send_num(),
         ));
-        let backpressure_send_size = Arc::new(Semaphore::new(
-            config.backpressure_async_send_size().max(1024 * 1024) as usize,
+        let backpressure_send_size = Arc::new(AdjustableSemaphore::new(
+            config.backpressure_async_send_size(),
         ));
         let fault = FaultStrategy::new(
             config.latency_max_millis().to_vec(),
@@ -193,6 +197,86 @@ impl Producer {
 
     pub fn config(&self) -> &ProducerConfig {
         &self.config
+    }
+
+    /// Returns the current async backpressure mode. The value can be changed
+    /// while the producer is running, like Java's
+    /// `isEnableBackpressureForAsyncMode` setting.
+    pub fn enable_backpressure_for_async_mode(&self) -> bool {
+        self.config.enable_backpressure_for_async_mode()
+    }
+
+    /// Changes whether later future-mode sends acquire async backpressure.
+    pub fn set_enable_backpressure_for_async_mode(&self, value: bool) {
+        self.config
+            .set_enable_backpressure_for_async_mode_runtime(value);
+    }
+
+    /// Returns the current maximum number of in-flight async sends.
+    pub fn backpressure_async_send_num(&self) -> i32 {
+        self.config.backpressure_async_send_num()
+    }
+
+    /// Resizes the live async-send count limit while preserving permits held
+    /// by sends already in flight. Values below Java's minimum clamp to 10.
+    pub fn set_backpressure_async_send_num(&self, value: i32) {
+        let value = value.max(10);
+        self.backpressure_send_num.resize_and(value, || {
+            self.config.set_backpressure_async_send_num_runtime(value);
+        });
+    }
+
+    /// Returns the current maximum number of bytes held by async sends.
+    pub fn backpressure_async_send_size(&self) -> i32 {
+        self.config.backpressure_async_send_size()
+    }
+
+    /// Resizes the live async-send byte limit while preserving permits held by
+    /// sends already in flight. Values below Java's minimum clamp to 1 MiB.
+    pub fn set_backpressure_async_send_size(&self, value: i32) {
+        let value = value.max(1024 * 1024);
+        self.backpressure_send_size.resize_and(value, || {
+            self.config.set_backpressure_async_send_size_runtime(value);
+        });
+    }
+
+    /// Mirrors Java's internal permit-accounting setter. It updates the
+    /// reported limit without resizing the semaphore; normal callers should
+    /// use `set_backpressure_async_send_num`.
+    pub fn set_backpressure_async_send_num_inside_adjust(&self, value: i32) {
+        self.config
+            .set_backpressure_async_send_num_inside_adjust(value);
+    }
+
+    /// Mirrors Java's internal permit-accounting setter. It updates the
+    /// reported limit without resizing the semaphore; normal callers should
+    /// use `set_backpressure_async_send_size`.
+    pub fn set_backpressure_async_send_size_inside_adjust(&self, value: i32) {
+        self.config
+            .set_backpressure_async_send_size_inside_adjust(value);
+    }
+
+    /// Acquires the Java-compatible count-limit read lock. The lock is
+    /// released when the returned guard is dropped.
+    pub fn acquire_backpressure_for_async_send_num_lock(&self) -> BackpressureReadGuard {
+        self.backpressure_send_num.read_lock()
+    }
+
+    /// Acquires the Java-compatible byte-limit read lock. The lock is
+    /// released when the returned guard is dropped.
+    pub fn acquire_backpressure_for_async_send_size_lock(&self) -> BackpressureReadGuard {
+        self.backpressure_send_size.read_lock()
+    }
+
+    /// Returns a handle to the live retry response-code set used by this
+    /// producer's synchronous retry decisions.
+    pub fn retry_response_codes(&self) -> RetryResponseCodes {
+        self.config.retry_response_codes()
+    }
+
+    /// Adds a code to the live synchronous retry set.
+    pub fn add_retry_response_code(&self, value: i32) {
+        self.config.retry_response_codes().insert(value);
     }
 
     /// Sets the executor used for future-mode send attempts. Passing `None`

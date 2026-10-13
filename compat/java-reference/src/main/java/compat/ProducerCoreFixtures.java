@@ -7,6 +7,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.Semaphore;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.lang.reflect.Field;
@@ -72,6 +74,19 @@ public final class ProducerCoreFixtures {
             return (Boolean) canBatch.invoke(producer, message);
         } catch (ReflectiveOperationException error) {
             throw new IllegalStateException("Could not invoke pinned auto-batch eligibility", error);
+        }
+    }
+
+    private static Semaphore asyncSendNumSemaphore(DefaultMQProducer producer) {
+        try {
+            Field implementationField = DefaultMQProducer.class.getDeclaredField("defaultMQProducerImpl");
+            implementationField.setAccessible(true);
+            Object implementation = implementationField.get(producer);
+            Field semaphoreField = implementation.getClass().getDeclaredField("semaphoreAsyncSendNum");
+            semaphoreField.setAccessible(true);
+            return (Semaphore) semaphoreField.get(implementation);
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalStateException("Could not inspect pinned async-send semaphore", error);
         }
     }
 
@@ -182,6 +197,7 @@ public final class ProducerCoreFixtures {
         backpressure.put("clampedSendNum", backpressureSettings.getBackPressureForAsyncSendNum());
         backpressure.put("clampedSendSize", backpressureSettings.getBackPressureForAsyncSendSize());
         result.put("backpressureSettings", backpressure);
+        result.put("runtimeSettings", runtimeSettings());
 
         List<Map<String, Object>> groups = new ArrayList<>();
         for (String value : Arrays.asList(" ", "g".repeat(120), "g".repeat(121), "bad.group", "a|b_%")) {
@@ -277,6 +293,46 @@ public final class ProducerCoreFixtures {
         } finally {
             customExecutor.shutdownNow();
         }
+        return result;
+    }
+
+    private static Map<String, Object> runtimeSettings() {
+        DefaultMQProducer producer = new DefaultMQProducer("producer-runtime-settings");
+        Map<String, Object> result = new TreeMap<>();
+        producer.setEnableBackpressureForAsyncMode(true);
+        result.put("backpressureEnabledAfterToggle", producer.isEnableBackpressureForAsyncMode());
+
+        try {
+            Semaphore beforeResize = asyncSendNumSemaphore(producer);
+            beforeResize.acquire(7);
+            producer.setBackPressureForAsyncSendNum(12);
+            result.put("sendNumPermitsAfterResize", producer.getDefaultMQProducerImpl()
+                .getSemaphoreAsyncSendNumAvailablePermits());
+            Semaphore afterResize = asyncSendNumSemaphore(producer);
+            afterResize.release(7);
+            result.put("sendNumPermitsAfterInFlightRelease", producer.getDefaultMQProducerImpl()
+                .getSemaphoreAsyncSendNumAvailablePermits());
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Could not inspect pinned async-send permit adjustment", error);
+        }
+
+        producer.setBackPressureForAsyncSendNum(12);
+        producer.setBackPressureForAsyncSendSize(2 * 1024 * 1024);
+        result.put("sendNumAfterUpdate", producer.getBackPressureForAsyncSendNum());
+        result.put("sendSizeAfterUpdate", producer.getBackPressureForAsyncSendSize());
+        producer.setBackPressureForAsyncSendNum(1);
+        producer.setBackPressureForAsyncSendSize(1);
+        result.put("clampedSendNumAfterUpdate", producer.getBackPressureForAsyncSendNum());
+        result.put("clampedSendSizeAfterUpdate", producer.getBackPressureForAsyncSendSize());
+
+        Set<Integer> liveRetryCodes = producer.getRetryResponseCodes();
+        liveRetryCodes.add(9001);
+        result.put("setMutationVisibleThroughGetter", producer.getRetryResponseCodes().contains(9001));
+        producer.addRetryResponseCode(9002);
+        result.put("addMethodVisibleThroughExistingSet", liveRetryCodes.contains(9002));
+        liveRetryCodes.remove(9001);
+        result.put("setRemovalVisibleThroughGetter", !producer.getRetryResponseCodes().contains(9001));
         return result;
     }
 

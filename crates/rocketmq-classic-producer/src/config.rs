@@ -1,10 +1,16 @@
+#[cfg(test)]
 use std::collections::BTreeSet;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicI32, Ordering},
+};
 
 use rocketmq_classic_common::sysflag::message::CompressionType;
 use rocketmq_classic_core::config::ClientConfig;
 use rocketmq_classic_remoting::client::TlsConfig;
 
 use crate::ProducerError;
+use crate::retry_response_codes::RetryResponseCodes;
 
 pub const DEFAULT_PRODUCER_GROUP: &str = "DEFAULT_PRODUCER";
 pub const DEFAULT_CREATE_TOPIC_KEY: &str = "TBW102";
@@ -25,6 +31,50 @@ pub const DEFAULT_NOT_AVAILABLE_DURATION_MILLIS: [i64; 7] =
 pub const MESSAGE_COMPRESS_TYPE_PROPERTY: &str = "rocketmq.message.compressType";
 pub const MESSAGE_COMPRESS_LEVEL_PROPERTY: &str = "rocketmq.message.compressLevel";
 
+struct SharedAtomicBool(Arc<AtomicBool>);
+
+impl SharedAtomicBool {
+    fn new(value: bool) -> Self {
+        Self(Arc::new(AtomicBool::new(value)))
+    }
+
+    fn load(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
+
+    fn store(&self, value: bool) {
+        self.0.store(value, Ordering::SeqCst);
+    }
+}
+
+impl Clone for SharedAtomicBool {
+    fn clone(&self) -> Self {
+        Self::new(self.load())
+    }
+}
+
+struct SharedAtomicI32(Arc<AtomicI32>);
+
+impl SharedAtomicI32 {
+    fn new(value: i32) -> Self {
+        Self(Arc::new(AtomicI32::new(value)))
+    }
+
+    fn load(&self) -> i32 {
+        self.0.load(Ordering::SeqCst)
+    }
+
+    fn store(&self, value: i32) {
+        self.0.store(value, Ordering::SeqCst);
+    }
+}
+
+impl Clone for SharedAtomicI32 {
+    fn clone(&self) -> Self {
+        Self::new(self.load())
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct AccumulatorSettings {
     pub(crate) max_delay_millis: i32,
@@ -34,7 +84,6 @@ pub(crate) struct AccumulatorSettings {
 
 /// Producer settings from Java 5.5.1. Client-level transport settings stay
 /// in the embedded `ClientConfig`.
-#[derive(Clone)]
 pub struct ProducerConfig {
     pub(crate) client: ClientConfig,
     tls_config: Option<TlsConfig>,
@@ -48,19 +97,51 @@ pub struct ProducerConfig {
     compress_level: i32,
     retry_times_when_send_failed: i32,
     retry_times_when_send_async_failed: i32,
-    retry_response_codes: BTreeSet<i32>,
+    retry_response_codes: RetryResponseCodes,
     retry_another_broker_when_not_store_ok: bool,
     max_message_size: i32,
     auto_batch: bool,
     batch_max_delay_millis: Option<i32>,
     batch_max_bytes: Option<i64>,
     total_batch_max_bytes: Option<i64>,
-    enable_backpressure_for_async_mode: bool,
-    backpressure_async_send_num: i32,
-    backpressure_async_send_size: i32,
+    enable_backpressure_for_async_mode: SharedAtomicBool,
+    backpressure_async_send_num: SharedAtomicI32,
+    backpressure_async_send_size: SharedAtomicI32,
     latency_max_millis: Vec<i64>,
     not_available_duration_millis: Vec<i64>,
     topics: Option<Vec<String>>,
+}
+
+impl Clone for ProducerConfig {
+    fn clone(&self) -> Self {
+        Self {
+            client: self.client.clone(),
+            tls_config: self.tls_config.clone(),
+            producer_group: self.producer_group.clone(),
+            create_topic_key: self.create_topic_key.clone(),
+            default_topic_queue_nums: self.default_topic_queue_nums,
+            send_timeout_millis: self.send_timeout_millis,
+            send_msg_max_timeout_per_request: self.send_msg_max_timeout_per_request,
+            compress_threshold: self.compress_threshold,
+            compress_type: self.compress_type,
+            compress_level: self.compress_level,
+            retry_times_when_send_failed: self.retry_times_when_send_failed,
+            retry_times_when_send_async_failed: self.retry_times_when_send_async_failed,
+            retry_response_codes: self.retry_response_codes.detached_clone(),
+            retry_another_broker_when_not_store_ok: self.retry_another_broker_when_not_store_ok,
+            max_message_size: self.max_message_size,
+            auto_batch: self.auto_batch,
+            batch_max_delay_millis: self.batch_max_delay_millis,
+            batch_max_bytes: self.batch_max_bytes,
+            total_batch_max_bytes: self.total_batch_max_bytes,
+            enable_backpressure_for_async_mode: self.enable_backpressure_for_async_mode.clone(),
+            backpressure_async_send_num: self.backpressure_async_send_num.clone(),
+            backpressure_async_send_size: self.backpressure_async_send_size.clone(),
+            latency_max_millis: self.latency_max_millis.clone(),
+            not_available_duration_millis: self.not_available_duration_millis.clone(),
+            topics: self.topics.clone(),
+        }
+    }
 }
 
 impl ProducerConfig {
@@ -80,16 +161,20 @@ impl ProducerConfig {
             compress_level,
             retry_times_when_send_failed: DEFAULT_SYNC_RETRIES,
             retry_times_when_send_async_failed: DEFAULT_ASYNC_RETRIES,
-            retry_response_codes: [17, 14, 1, 2, 16, 204, 205, 1500].into(),
+            retry_response_codes: RetryResponseCodes::new(
+                [17, 14, 1, 2, 16, 204, 205, 1500].into(),
+            ),
             retry_another_broker_when_not_store_ok: false,
             max_message_size: DEFAULT_MAX_MESSAGE_SIZE,
             auto_batch: false,
             batch_max_delay_millis: None,
             batch_max_bytes: None,
             total_batch_max_bytes: None,
-            enable_backpressure_for_async_mode: false,
-            backpressure_async_send_num: DEFAULT_BACKPRESSURE_ASYNC_SEND_NUM,
-            backpressure_async_send_size: DEFAULT_BACKPRESSURE_ASYNC_SEND_SIZE,
+            enable_backpressure_for_async_mode: SharedAtomicBool::new(false),
+            backpressure_async_send_num: SharedAtomicI32::new(DEFAULT_BACKPRESSURE_ASYNC_SEND_NUM),
+            backpressure_async_send_size: SharedAtomicI32::new(
+                DEFAULT_BACKPRESSURE_ASYNC_SEND_SIZE,
+            ),
             latency_max_millis: DEFAULT_LATENCY_MAX_MILLIS.to_vec(),
             not_available_duration_millis: DEFAULT_NOT_AVAILABLE_DURATION_MILLIS.to_vec(),
             topics: None,
@@ -259,8 +344,10 @@ impl ProducerConfig {
     pub fn set_retry_times_when_send_async_failed(&mut self, value: i32) {
         self.retry_times_when_send_async_failed = value;
     }
-    pub fn retry_response_codes(&self) -> &BTreeSet<i32> {
-        &self.retry_response_codes
+    /// Returns a shared live set. Mutations through the returned handle affect
+    /// retry decisions of any Producer using this configuration.
+    pub fn retry_response_codes(&self) -> RetryResponseCodes {
+        self.retry_response_codes.shared_handle()
     }
     pub fn add_retry_response_code(&mut self, value: i32) {
         self.retry_response_codes.insert(value);
@@ -308,22 +395,44 @@ impl ProducerConfig {
         self.total_batch_max_bytes = Some(value);
     }
     pub fn enable_backpressure_for_async_mode(&self) -> bool {
-        self.enable_backpressure_for_async_mode
+        self.enable_backpressure_for_async_mode.load()
     }
     pub fn set_enable_backpressure_for_async_mode(&mut self, value: bool) {
-        self.enable_backpressure_for_async_mode = value;
+        self.enable_backpressure_for_async_mode.store(value);
     }
     pub fn backpressure_async_send_num(&self) -> i32 {
-        self.backpressure_async_send_num
+        self.backpressure_async_send_num.load()
     }
     pub fn set_backpressure_async_send_num(&mut self, value: i32) {
-        self.backpressure_async_send_num = value.max(10);
+        self.backpressure_async_send_num.store(value.max(10));
     }
     pub fn backpressure_async_send_size(&self) -> i32 {
-        self.backpressure_async_send_size
+        self.backpressure_async_send_size.load()
     }
     pub fn set_backpressure_async_send_size(&mut self, value: i32) {
-        self.backpressure_async_send_size = value.max(1024 * 1024);
+        self.backpressure_async_send_size
+            .store(value.max(1024 * 1024));
+    }
+
+    pub(crate) fn set_enable_backpressure_for_async_mode_runtime(&self, value: bool) {
+        self.enable_backpressure_for_async_mode.store(value);
+    }
+
+    pub(crate) fn set_backpressure_async_send_num_runtime(&self, value: i32) {
+        self.backpressure_async_send_num.store(value.max(10));
+    }
+
+    pub(crate) fn set_backpressure_async_send_size_runtime(&self, value: i32) {
+        self.backpressure_async_send_size
+            .store(value.max(1024 * 1024));
+    }
+
+    pub(crate) fn set_backpressure_async_send_num_inside_adjust(&self, value: i32) {
+        self.backpressure_async_send_num.store(value);
+    }
+
+    pub(crate) fn set_backpressure_async_send_size_inside_adjust(&self, value: i32) {
+        self.backpressure_async_send_size.store(value);
     }
     pub fn latency_max_millis(&self) -> &[i64] {
         &self.latency_max_millis
@@ -362,8 +471,8 @@ mod tests {
         assert_eq!(config.retry_times_when_send_failed(), 2);
         assert_eq!(config.retry_times_when_send_async_failed(), 2);
         assert_eq!(
-            config.retry_response_codes(),
-            &[17, 14, 1, 2, 16, 204, 205, 1500].into()
+            config.retry_response_codes().snapshot(),
+            BTreeSet::from([17, 14, 1, 2, 16, 204, 205, 1500])
         );
         assert!(!config.retry_another_broker_when_not_store_ok());
         assert_eq!(config.max_message_size(), 4 * 1024 * 1024);
@@ -403,6 +512,19 @@ mod tests {
             config.accumulator_settings().unwrap().total_max_bytes,
             DEFAULT_TOTAL_BATCH_MAX_BYTES as usize
         );
+    }
+
+    #[test]
+    fn retry_code_handles_are_live_and_config_clones_are_independent() {
+        let config = ProducerConfig::new("retry-codes").unwrap();
+        let live = config.retry_response_codes();
+        assert!(live.insert(9001));
+        assert!(config.retry_response_codes().contains(&9001));
+
+        let mut independent = config.clone();
+        independent.add_retry_response_code(9002);
+        assert!(!config.retry_response_codes().contains(&9002));
+        assert!(independent.retry_response_codes().contains(&9002));
     }
 
     #[test]
