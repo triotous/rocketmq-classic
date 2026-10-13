@@ -458,6 +458,12 @@ impl PushConsumer {
         self.clone()
     }
 
+    /// Returns the rebalance compatibility handle. Assignment state and
+    /// rebalance behavior live on this owner in Rust, so it aliases `self`.
+    pub fn get_rebalance_impl(&self) -> &Self {
+        self
+    }
+
     /// Returns Java's `DefaultMQPushConsumerImpl.getServiceState()` value.
     pub fn service_state(&self) -> Option<ConsumerServiceState> {
         *read_lock(&self.service_state)
@@ -6036,6 +6042,8 @@ mod tests {
 
         let first = consumer.get_default_mq_push_consumer_impl();
         let second = consumer.get_default_mq_push_consumer_impl();
+        let first_rebalance = consumer.get_rebalance_impl();
+        let second_rebalance = consumer.get_rebalance_impl();
 
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
             "../../../../fixtures/consumer/push-implementation-accessor.json"
@@ -6043,6 +6051,8 @@ mod tests {
         .unwrap();
         assert_eq!(fixture["implementationNonNull"], true);
         assert_eq!(fixture["implementationIdentityStable"], true);
+        assert_eq!(fixture["rebalanceImplementationNonNull"], true);
+        assert_eq!(fixture["rebalanceImplementationIdentityStable"], true);
         assert_eq!(fixture["configuredConsumerGroup"], group);
         assert_eq!(
             fixture["rawImplementationPublicMethodSignatures"]
@@ -6055,6 +6065,8 @@ mod tests {
         assert_eq!(fixture["effectiveMaxReconsumeTimesDefault"], 16);
         assert!(Arc::ptr_eq(&consumer, &first));
         assert!(Arc::ptr_eq(&first, &second));
+        assert!(std::ptr::eq(first_rebalance, consumer.as_ref()));
+        assert!(std::ptr::eq(second_rebalance, first_rebalance));
         assert_eq!(first.config().consumer_group(), group);
         assert_eq!(first.get_max_reconsume_times(), 16);
 

@@ -160,3 +160,10 @@
 - Maven fixture verification first failed because serialized `subVersion` varied by generation time. Normalized the Java fixture field to `0`, regenerated it and reran verification successfully; the pinned Java source checkout was not modified.
 - PASS: `cargo test -p rocketmq-classic-consumer --locked` (191 unit tests plus all consumer integration/doc targets); focused `class_filter_subscription_matches_java_facade_and_heartbeat_flow`; strict consumer Clippy (`--all-targets --all-features --locked -- -D warnings`); `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios and fixture drift); `cargo fmt --all -- --check`; `git diff --check`.
 - This closes the class-filter facade subscription gap only. P18-V01 remains open for the remaining Push method dispositions and broad Phase 6 audit; P18-V02–V04 and Phase 19 local Broker/Docker execution remain open. The Java checkout's untracked `broker/src/test/java/org/apache/rocketmq/broker/aaaa.java` remains present and untouched.
+
+## P18-V01 Push rebalance accessor follow-up — 2026-10-13 UTC
+
+- Added `PushConsumer::get_rebalance_impl` as a stable alias to the Push owner, matching the Rust Pull rebalance-handle design while keeping mutable route/assignment tables inside the lifecycle owner.
+- Extended the invoked Java 5.5.1 Push implementation fixture to call `getRebalanceImpl()` twice and assert non-null stable object identity. Rust verifies both accessor results point to the same `PushConsumer`. Fixture SHA-256: `cfb8a5dcf402c21e620f4c1c2ebc260a954c4c68f028d93e385699d1a4a284ba`.
+- PASS: `cargo test -p rocketmq-classic-consumer raw_push_implementation_accessor_retains_identity --locked`; strict consumer Clippy (`--all-targets --all-features --locked -- -D warnings`); `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios and fixture drift); `cargo fmt --all -- --check`; `git diff --check`.
+- This closes accessor identity only. `RebalancePushImpl` method-flow reconciliation and the remaining Push raw surface stay open for P18-V01. The Java checkout was not modified.

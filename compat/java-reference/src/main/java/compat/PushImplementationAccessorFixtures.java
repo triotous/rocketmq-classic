@@ -63,6 +63,10 @@ public final class PushImplementationAccessorFixtures {
         DefaultMQPushConsumerImpl second = consumer.getDefaultMQPushConsumerImpl();
         check(first != null, "implementation accessor non-null");
         check(first == second, "implementation accessor identity stable");
+        Object firstRebalance = first.getRebalanceImpl();
+        Object secondRebalance = first.getRebalanceImpl();
+        check(firstRebalance != null, "rebalance implementation accessor non-null");
+        check(firstRebalance == secondRebalance, "rebalance implementation identity stable");
 
         String initialServiceState = first.getServiceState().name();
         first.setServiceState(null);
@@ -232,6 +236,8 @@ public final class PushImplementationAccessorFixtures {
         Map<String, Object> fixture = new LinkedHashMap<>();
         fixture.put("implementationNonNull", first != null);
         fixture.put("implementationIdentityStable", first == second);
+        fixture.put("rebalanceImplementationNonNull", firstRebalance != null);
+        fixture.put("rebalanceImplementationIdentityStable", firstRebalance == secondRebalance);
         fixture.put("configuredConsumerGroup", first.groupName());
         fixture.put("initialServiceState", initialServiceState);
         fixture.put("serviceStateSetterAcceptsNull", serviceStateSetterAcceptsNull);
