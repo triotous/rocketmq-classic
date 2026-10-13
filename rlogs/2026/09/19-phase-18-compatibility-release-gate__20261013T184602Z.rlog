@@ -45,3 +45,8 @@
 
 - Corrected the stale `MQAdmin/query public API` row in `JAVA_5_5_1_COMPATIBILITY.md`: Phase 17's in-scope client operations have local unit evidence recorded in `PHASE_17_ADMIN_MATRIX.md`; the Broker-backed P17-V02 remains assigned to Phase 19. The previous `TODO` incorrectly implied the client API was unimplemented.
 - No implementation or test changes. `git diff --check` is the validation for this documentation-only correction.
+
+# Phase 18 compatibility overview Phase 10 status correction — 2026-10-13T19:44:05Z
+
+- Updated the global Java compatibility summary for Push raw implementation and Pull scheduling: the Phase 10/11 method matrices now show the formerly cited 71-method Push audit complete and assignment locally verified. Changed those rows to `UNIT_VERIFIED` while retaining P10-V03's Broker retry/DLQ handoff under Phase 19.
+- No implementation or test changes. `git diff --check` is the validation for this documentation-only correction.
