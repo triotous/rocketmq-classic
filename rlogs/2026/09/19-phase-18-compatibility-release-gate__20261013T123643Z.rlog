@@ -5,3 +5,10 @@
 - Current accessor fixture SHA-256: `6c64943e2493d0e367478711f51761864779b27de5d29b8145bb869ade3820b8`.
 - PASS: `cargo test -p rocketmq-classic-consumer --locked raw_push_implementation_accessor_retains_identity`; strict consumer Clippy; `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios and fixture drift checks); `cargo fmt --all -- --check`; `git diff --check`.
 - No live Broker or Docker was used. Continue the raw Push implementation methods and remaining Pull/Phase 6 reconciliation.
+
+# Phase 18 execution session — 2026-10-13T12:44:07Z
+
+- Continued the Phase 10 Push raw implementation audit. Added `PushConsumer::has_hook`, `execute_hook_before`, and `execute_hook_after`, backed by the shared consume-hook registry, plus a registry emptiness query. The invoked Java fixture now checks direct hook registration, callback ordering, and status mutation visibility.
+- Updated the Phase 10 matrix and release checklist. Current Push implementation accessor fixture SHA-256: `ae2b0a060c1ff4d0757926fd891b0ef4fa74051f0666d78b470259615b4a83ba`.
+- PASS: `cargo test -p rocketmq-classic-consumer --locked push_raw_consume_hook_entrypoints_match_java`; strict consumer Clippy; `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios and fixture drift checks, exit 0); `cargo fmt --all -- --check`; `git diff --check`.
+- No live Broker or Docker was used. The remaining Push implementation public-method audit and the Phase 9/6 reconciliation remain open.

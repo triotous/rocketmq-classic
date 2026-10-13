@@ -77,6 +77,13 @@ impl ConsumeMessageHookRegistry {
             .push(hook);
     }
 
+    pub(crate) fn is_empty(&self) -> bool {
+        self.hooks
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_empty()
+    }
+
     pub(crate) fn execute_before(&self, context: &mut ConsumeMessageContext) {
         self.execute(context, true);
     }

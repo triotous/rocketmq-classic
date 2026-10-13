@@ -505,6 +505,21 @@ impl PushConsumer {
         self.consume_message_hooks.register(hook);
     }
 
+    /// Reports whether Java's Push implementation has a consume hook.
+    pub fn has_hook(&self) -> bool {
+        !self.consume_message_hooks.is_empty()
+    }
+
+    /// Runs the registered Push consume hooks before the listener callback.
+    pub fn execute_hook_before(&self, context: &mut ConsumeMessageContext) {
+        self.consume_message_hooks.execute_before(context);
+    }
+
+    /// Runs the registered Push consume hooks after the listener callback.
+    pub fn execute_hook_after(&self, context: &mut ConsumeMessageContext) {
+        self.consume_message_hooks.execute_after(context);
+    }
+
     fn new_consume_message_context(
         &self,
         messages: Vec<MessageExt>,
@@ -5618,6 +5633,65 @@ mod tests {
         let custom_consumer = PushConsumer::new(custom_config);
         assert_eq!(fixture["effectiveMaxReconsumeTimesCustom"], 7);
         assert_eq!(custom_consumer.get_max_reconsume_times(), 7);
+    }
+
+    #[test]
+    fn push_raw_consume_hook_entrypoints_match_java() {
+        struct Hook(Arc<std::sync::Mutex<Vec<String>>>);
+
+        impl ConsumeMessageHook for Hook {
+            fn hook_name(&self) -> &str {
+                "push-raw-hook-fixture"
+            }
+
+            fn consume_message_before(&self, context: &mut ConsumeMessageContext) {
+                self.0.lock().unwrap().push(format!(
+                    "before:{}",
+                    context.status.as_deref().unwrap_or("null")
+                ));
+                context.status = Some("hook-before".to_owned());
+            }
+
+            fn consume_message_after(&self, context: &mut ConsumeMessageContext) {
+                self.0.lock().unwrap().push(format!(
+                    "after:{}:{}",
+                    context.status.as_deref().unwrap_or("null"),
+                    context.success
+                ));
+            }
+        }
+
+        let config = PushConsumerConfig::new("phase18-push-implementation-accessor").unwrap();
+        let consumer = PushConsumer::new(config);
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/push-implementation-accessor.json"
+        ))
+        .unwrap();
+        assert!(!consumer.has_hook());
+        assert_eq!(fixture["hasConsumeHookBeforeRegistration"], false);
+
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        consumer.register_consume_message_hook(Arc::new(Hook(events.clone())));
+        assert!(consumer.has_hook());
+        let mut context = ConsumeMessageContext::new(
+            "phase18-push-implementation-accessor",
+            None,
+            MessageQueue::new("orders", "broker-a", 0),
+            None,
+        );
+        context.status = Some("seed".to_owned());
+        consumer.execute_hook_before(&mut context);
+        context.success = true;
+        consumer.execute_hook_after(&mut context);
+
+        let events = events.lock().unwrap().clone();
+        assert_eq!(fixture["hasConsumeHookAfterRegistration"], true);
+        assert_eq!(
+            fixture["directHookEvents"],
+            serde_json::json!(["before:seed", "after:hook-before:true"])
+        );
+        assert_eq!(events, ["before:seed", "after:hook-before:true"]);
+        assert_eq!(context.status.as_deref(), Some("hook-before"));
     }
 
     #[tokio::test]
