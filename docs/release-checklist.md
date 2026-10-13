@@ -50,10 +50,14 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   Heartbeat Fastjson input coverage now includes 1086 invoked Java cases with
   systematic whitespace positions and raw control characters in string keys
   and values; the Rust differential and Maven fixture-drift gate pass for that
-  corpus. The broad Phase 6 source/API/input/reverse-export audit remains open. Pull
-  `getRebalanceImpl`, both `pullKernelImpl` overloads, `popAsync`, and the
-  `RebalanceImpl`/`RebalancePullImpl` surface now have source-based owner-flow
-  mappings or internal-entrypoint dispositions. Pull
+  corpus. Route DTO Fastjson input coverage now includes 527 invoked Java
+  cases, including 128 raw U+0000–U+001F probes across values, field names,
+  and filter-map keys/values; the Rust differential and fixture-drift gate
+  pass. These bounded inputs do not close the broad Phase 6
+  source/API/input/reverse-export audit. Pull `getRebalanceImpl`, both
+  `pullKernelImpl` overloads, `popAsync`, and the `RebalanceImpl`/`RebalancePullImpl`
+  surface now have source-based owner-flow mappings or internal-entrypoint
+  dispositions. Pull
   `sendMessageBack`/`maxReconsumeTimes` covers the 3000 ms timeout and logical
   Broker route lookup offline; its live Broker handoff remains pending.
 - [x] Register live cases in the Phase 19 scenario manifest and validate the
