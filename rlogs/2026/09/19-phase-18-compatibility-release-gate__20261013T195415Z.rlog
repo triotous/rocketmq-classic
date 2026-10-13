@@ -56,3 +56,8 @@
 
 - Scanned pinned Java 5.5.1 `PullAPIWrapper.java` at `efa1be59d6fc747ad220f036c86030f05f0419f9`: 14 declared public method signatures across 13 names, plus the public constructor. The Phase 9 matrix already mapped the result/state methods, both `pullKernelImpl` overloads to Pull/Push/Lite owners, and `popAsync` to the Phase 13 Push POP owner. No declared public method name was unmapped.
 - Updated the Phase 9 matrix to remove its stale open-method-inventory statement and recorded the bounded result in the Phase 6 audit. The broad source/input/branch P18-V01 remains open. Validation: `git diff --check`; no tests run because this change only records a source declaration inventory and existing evidence.
+
+# Phase 18 NamespaceUtil reverse API inventory — 2026-10-13
+
+- Reverse-scanned pinned Java `NamespaceUtil.java`: four public constants and nine declared method signatures (nine names, including two `withoutNamespace` overloads). All map to Rust `NamespaceUtil` constants/methods, and the existing invoked-fixture differential calls each declared method.
+- Updated the Phase 16 matrix and Phase 6 audit with the bounded scan. This does not close the broader source/input/branch audit. Validation: `git diff --check`; no tests run because the change records declarations already covered by the existing fixture test.
