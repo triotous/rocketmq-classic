@@ -546,6 +546,38 @@ impl PushConsumer {
         Ok(())
     }
 
+    /// Updates the selected queue offset without applying the increase-only
+    /// rule used by pull completion, matching Java's raw implementation API.
+    pub fn update_consume_offset(
+        &self,
+        queue: &MessageQueue,
+        offset: i64,
+    ) -> Result<(), PushConsumerError> {
+        let store = self
+            .get_offset_store()
+            .ok_or(PushConsumerError::OffsetStoreUnavailable)?;
+        store.update_offset(queue, offset, false);
+        Ok(())
+    }
+
+    /// Persists offsets for currently assigned pull queues, matching
+    /// `DefaultMQPushConsumerImpl.persistConsumerOffset`.
+    pub async fn persist_consumer_offset(&self) -> Result<(), PushConsumerError> {
+        let service_state = self.service_state();
+        if service_state != Some(ConsumerServiceState::Running) {
+            return Err(PushConsumerError::ServiceStateNotReady(service_state));
+        }
+        let store = self
+            .get_offset_store()
+            .ok_or(PushConsumerError::OffsetStoreUnavailable)?;
+        let queues = read_lock(&self.process_queues)
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        store.persist_all(&queues).await?;
+        Ok(())
+    }
+
     pub async fn register_message_listener(
         &self,
         listener: PushMessageListener,
@@ -5370,9 +5402,9 @@ impl PushConsumer {
         consume_service
             .shutdown(self.config.await_termination_millis_when_shutdown())
             .await;
-        let queues = offset_store
-            .clone_offset_table(None)
-            .into_keys()
+        let queues = process_queues
+            .iter()
+            .map(|(queue, _)| queue.clone())
             .collect::<Vec<_>>();
         let persist = offset_store.persist_all(&queues).await;
         let orderly_clustering = orderly_lock_settings.is_some()
@@ -5503,10 +5535,14 @@ impl ConsumerRuntime for PushConsumerRegistration {
 
     fn persist_consumer_offset(&self) -> Option<ConsumerFuture<'_>> {
         let store = self.offset_store.upgrade()?;
+        let consumer = self.consumer.upgrade()?;
         Some(Box::pin(async move {
-            let queues = store
-                .clone_offset_table(None)
-                .into_keys()
+            if consumer.service_state() != Some(ConsumerServiceState::Running) {
+                return;
+            }
+            let queues = read_lock(&consumer.process_queues)
+                .keys()
+                .cloned()
                 .collect::<Vec<_>>();
             let _ = store.persist_all(&queues).await;
         }))
@@ -5799,6 +5835,79 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn push_raw_offset_entrypoints_match_java_and_persist_only_active_pull_queue() {
+        let config = PushConsumerConfig::new("phase18-push-implementation-accessor").unwrap();
+        let consumer = Arc::new(PushConsumer::new(config));
+        let store = Arc::new(RecordingOffsetStore::default());
+        let store_dyn: Arc<dyn OffsetStore> = store.clone();
+        consumer
+            .set_offset_store(Some(store_dyn.clone()))
+            .await
+            .unwrap();
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/push-implementation-accessor.json"
+        ))
+        .unwrap();
+        let assigned = MessageQueue::new("orders", "broker-a", 2);
+        let unassigned = MessageQueue::new("orders", "broker-b", 3);
+
+        consumer.update_consume_offset(&assigned, 41).unwrap();
+        consumer.update_consume_offset(&unassigned, 99).unwrap();
+        assert_eq!(
+            store.updates.lock().unwrap().as_slice(),
+            &[(assigned.clone(), 41, false), (unassigned, 99, false)]
+        );
+        assert_eq!(
+            fixture["offsetUpdates"],
+            serde_json::json!(["orders|broker-a|2|41|false", "orders|broker-b|3|99|false"])
+        );
+
+        assert!(matches!(
+            consumer.persist_consumer_offset().await,
+            Err(PushConsumerError::ServiceStateNotReady(Some(
+                ConsumerServiceState::CreateJust
+            )))
+        ));
+        assert!(store.persist_calls.lock().unwrap().is_empty());
+
+        write_lock(&consumer.process_queues).insert(
+            assigned.clone(),
+            Arc::new(ProcessQueue::new(assigned.clone(), 1)),
+        );
+        consumer.set_service_state(Some(ConsumerServiceState::Running));
+        consumer.persist_consumer_offset().await.unwrap();
+        assert_eq!(
+            store.persist_calls.lock().unwrap().as_slice(),
+            &[vec![assigned.clone()]]
+        );
+        assert_eq!(
+            fixture["persistedQueues"],
+            serde_json::json!(["orders|broker-a|2"])
+        );
+
+        let registration = PushConsumerRegistration {
+            group: consumer.group_name().to_owned(),
+            message_model: consumer.message_model(),
+            consume_from_where: consumer.consume_from_where(),
+            unit_mode: consumer.is_unit_mode(),
+            subscriptions: consumer.subscriptions.clone(),
+            topic_queues: consumer.topic_queues.clone(),
+            pull_scheduler: Arc::new(PullScheduler::new()),
+            pull_rpc_workers: Arc::new(PullRpcWorkers::new()),
+            offset_store: Arc::downgrade(&store_dyn),
+            consumer: Arc::downgrade(&consumer),
+            runtime: std::sync::Weak::new(),
+        };
+        ConsumerRuntime::persist_consumer_offset(&registration)
+            .expect("running consumer registers periodic offset persistence")
+            .await;
+        assert_eq!(
+            store.persist_calls.lock().unwrap().as_slice(),
+            &[vec![assigned.clone()], vec![assigned]]
+        );
+    }
+
+    #[tokio::test]
     async fn push_raw_consumer_inner_accessors_match_java() {
         let config = PushConsumerConfig::new("phase18-push-implementation-accessor").unwrap();
         let consumer = PushConsumer::new(config);
@@ -5963,6 +6072,7 @@ mod tests {
         values: Mutex<HashMap<MessageQueue, i64>>,
         persisted: Mutex<HashMap<MessageQueue, i64>>,
         updates: Mutex<Vec<(MessageQueue, i64, bool)>>,
+        persist_calls: Mutex<Vec<Vec<MessageQueue>>>,
         fail_persist: Mutex<bool>,
         persist_started: Mutex<Option<Arc<tokio::sync::Barrier>>>,
         persist_release: Mutex<Option<Arc<tokio::sync::Barrier>>>,
@@ -6046,6 +6156,7 @@ mod tests {
 
         fn persist_all<'a>(&'a self, queues: &'a [MessageQueue]) -> OffsetStoreFuture<'a, ()> {
             Box::pin(async move {
+                self.persist_calls.lock().unwrap().push(queues.to_vec());
                 if *self.fail_persist.lock().unwrap() {
                     return Err(OffsetStoreError::Runtime("injected persist failure".into()));
                 }
@@ -10751,6 +10862,8 @@ mod tests {
             .unwrap();
         write_lock(&consumer.process_queues).insert(queue.clone(), process_queue.clone());
         offset_store.update_offset(&queue, 500, false);
+        let unassigned_queue = MessageQueue::new("stale-orders", "broker-b", 1);
+        offset_store.update_offset(&unassigned_queue, 900, false);
         consumer
             .scripted_lock_transport
             .lock()
@@ -10765,6 +10878,17 @@ mod tests {
         assert_eq!(
             offset_store.persisted.lock().unwrap().get(&queue),
             Some(&500)
+        );
+        assert!(
+            !offset_store
+                .persisted
+                .lock()
+                .unwrap()
+                .contains_key(&unassigned_queue)
+        );
+        assert_eq!(
+            offset_store.persist_calls.lock().unwrap().as_slice(),
+            &[vec![queue.clone()]]
         );
         assert!(process_queue.snapshot(94).unwrap().locked);
         assert!(read_lock(&consumer.pending_orderly_unlocks).contains(&queue));

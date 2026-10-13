@@ -204,6 +204,8 @@ pub enum PushConsumerError {
     OffsetStoreAfterStartup,
     #[error("push consumer has not been started")]
     NotStarted,
+    #[error("push consumer offset store is not available")]
+    OffsetStoreUnavailable,
     #[error("operation requires the push consumer to be created or stopped")]
     ConfigurationAfterStartup,
     #[error("push message send-back and retry-topic fallback both failed")]

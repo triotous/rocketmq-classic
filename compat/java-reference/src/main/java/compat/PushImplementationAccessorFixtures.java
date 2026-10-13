@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
 import org.apache.rocketmq.client.consumer.store.OffsetStore;
@@ -16,6 +17,8 @@ import org.apache.rocketmq.client.exception.MQClientException;
 import org.apache.rocketmq.client.hook.ConsumeMessageContext;
 import org.apache.rocketmq.client.hook.ConsumeMessageHook;
 import org.apache.rocketmq.client.impl.consumer.DefaultMQPushConsumerImpl;
+import org.apache.rocketmq.client.impl.consumer.ProcessQueue;
+import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.common.ServiceState;
 import org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData;
 
@@ -82,12 +85,37 @@ public final class PushImplementationAccessorFixtures {
             .sorted()
             .collect(Collectors.toList());
         boolean offsetStoreInitiallyNull = first.getOffsetStore() == null;
+        List<String> offsetUpdates = new ArrayList<>();
+        List<String> persistedQueues = new ArrayList<>();
         OffsetStore directOffsetStore = (OffsetStore) Proxy.newProxyInstance(
             OffsetStore.class.getClassLoader(),
             new Class<?>[] {OffsetStore.class},
-            (proxy, method, methodArgs) -> null);
+            (proxy, method, methodArgs) -> {
+                if ("updateOffset".equals(method.getName())) {
+                    MessageQueue queue = (MessageQueue) methodArgs[0];
+                    offsetUpdates.add(queue.getTopic() + "|" + queue.getBrokerName() + "|"
+                        + queue.getQueueId() + "|" + methodArgs[1] + "|" + methodArgs[2]);
+                } else if ("persistAll".equals(method.getName())) {
+                    @SuppressWarnings("unchecked")
+                    Set<MessageQueue> queues = (Set<MessageQueue>) methodArgs[0];
+                    queues.stream()
+                        .map(queue -> queue.getTopic() + "|" + queue.getBrokerName() + "|"
+                            + queue.getQueueId())
+                        .sorted()
+                        .forEach(persistedQueues::add);
+                }
+                return null;
+            });
         first.setOffsetStore(directOffsetStore);
         boolean offsetStoreSetterPreservesIdentity = first.getOffsetStore() == directOffsetStore;
+        MessageQueue assignedQueue = new MessageQueue("orders", "broker-a", 2);
+        MessageQueue unassignedQueue = new MessageQueue("orders", "broker-b", 3);
+        first.updateConsumeOffset(assignedQueue, 41);
+        first.updateConsumeOffset(unassignedQueue, 99);
+        first.getRebalanceImpl().getProcessQueueTable().put(assignedQueue, new ProcessQueue());
+        first.setServiceState(ServiceState.RUNNING);
+        first.persistConsumerOffset();
+        first.setServiceState(ServiceState.CREATE_JUST);
         first.setOffsetStore(null);
         boolean offsetStoreSetterAcceptsNull = first.getOffsetStore() == null;
         boolean hasConsumeHookBeforeRegistration = first.hasHook();
@@ -145,6 +173,8 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("subscriptionTopicsAfterSubscribe", subscriptionTopicsAfterSubscribe);
         fixture.put("offsetStoreInitiallyNull", offsetStoreInitiallyNull);
         fixture.put("offsetStoreSetterPreservesIdentity", offsetStoreSetterPreservesIdentity);
+        fixture.put("offsetUpdates", offsetUpdates);
+        fixture.put("persistedQueues", persistedQueues);
         fixture.put("offsetStoreSetterAcceptsNull", offsetStoreSetterAcceptsNull);
         fixture.put("hasConsumeHookBeforeRegistration", hasConsumeHookBeforeRegistration);
         fixture.put("directHookEvents", directHookEvents);
