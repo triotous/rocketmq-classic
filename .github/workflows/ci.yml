@@ -7,13 +7,28 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.85.0
           components: rustfmt, clippy
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '27'
+          cache: maven
+          cache-dependency-path: compat/java-reference/pom.xml
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: cargo test --workspace --locked
+      - run: cargo test --workspace --all-features --locked
+      - run: python3 tests/differential/compare.py --self-test
+      - run: python3 tests/differential/compare.py --validate-manifest
+      - run: cargo run -p rocketmq-classic-remoting --example fuzz_smoke --locked
+      - run: bash tests/stress/run-offline-smoke.sh
+      - run: mvn -f compat/java-reference/pom.xml verify
+      - run: cargo build -p rocketmq-classic --examples --release --locked
+      - run: cargo bench -p rocketmq-classic --bench offline --locked --no-run
       - run: scripts/check-workspace-metadata.py

@@ -10,3 +10,6 @@ Linux server-free oracle/CI preparation (2026-10-13 07:50 UTC):
 - Added Java 27 setup and Phase 18 server-free Rust, Python, Maven, example, fuzz-smoke, stress-smoke, and benchmark-compilation commands to `.github/workflows/ci.yml`.
 - PASS: portable address oracle on the local Java 27 runtime via `mvn -f compat/java-reference/pom.xml compile exec:java@verify-runtime-address-fixtures -Druntime.address.fixture.verify.mode=--verify-portable`; strict complete `mvn -q -f compat/java-reference/pom.xml verify` on macOS (37 manifest scenarios, Java cross-decodes and generated-fixture checks).
 - Linux-specific Maven profile is not executable on this macOS host; CI is configured to execute it on Ubuntu. No Broker or Docker was started.
+
+Server-free CI gate change (2026-10-13 07:51 UTC):
+- CI pins Rust 1.85.0 and Java 27, then requires default/all-feature locked tests, strict workspace Clippy, Java 5.5.1 Maven verification, comparator self-test and manifest validation, deterministic fuzz/race smoke, facade example compilation, offline benchmark compilation, and workspace metadata validation. All configured jobs remain server- and Docker-free.
