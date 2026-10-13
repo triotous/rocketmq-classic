@@ -40,3 +40,8 @@
 - Pinned Java source: `efa1be59d6fc747ad220f036c86030f05f0419f9`.
 - Reconciled `MQClientAPIImpl.checkRocksdbCqWriteProgress` and `exportRocksDBConfigToJson`, plus `CheckRocksdbCqWriteResult`, against pinned call sites. Their public admin facade is `rocketmq-tools` (`MQAdminExt`/`DefaultMQAdminExt`), which the Phase 17 client-only plan excludes; recorded an explicit `TOOLS_OUT_OF_SCOPE` disposition in the Phase 17 matrix and Phase 6 requirement audit. This is one bounded scope mapping and does not close P18-V01.
 - No implementation or test changes. `git diff --check` and pinned-source search are the validation for this documentation-only audit update.
+
+# Phase 18 compatibility overview status correction — 2026-10-13T19:43:14Z
+
+- Corrected the stale `MQAdmin/query public API` row in `JAVA_5_5_1_COMPATIBILITY.md`: Phase 17's in-scope client operations have local unit evidence recorded in `PHASE_17_ADMIN_MATRIX.md`; the Broker-backed P17-V02 remains assigned to Phase 19. The previous `TODO` incorrectly implied the client API was unimplemented.
+- No implementation or test changes. `git diff --check` is the validation for this documentation-only correction.
