@@ -109,6 +109,10 @@ public final class Main {
             PullImplementationAccessorFixtures.main(Arrays.copyOfRange(args, 1, args.length));
             return;
         }
+        if (args.length > 0 && "push-implementation-accessor-fixture".equals(args[0])) {
+            PushImplementationAccessorFixtures.main(Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "transaction-fixture".equals(args[0])) {
             TransactionFixtures.main(Arrays.copyOfRange(args, 1, args.length));
             return;

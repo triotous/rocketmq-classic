@@ -390,6 +390,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-push-implementation-accessor-fixture</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.PushImplementationAccessorFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/consumer/push-implementation-accessor.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-java-invoked-producer-more-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

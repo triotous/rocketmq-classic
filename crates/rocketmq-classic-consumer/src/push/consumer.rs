@@ -433,6 +433,14 @@ impl PushConsumer {
         &self.config
     }
 
+    /// Returns the retained implementation handle exposed by Java's
+    /// deprecated `DefaultMQPushConsumer.getDefaultMQPushConsumerImpl()`.
+    /// `PushConsumer` owns both the facade behavior and implementation state,
+    /// so the Rust handle is a clone of this same `Arc`.
+    pub fn get_default_mq_push_consumer_impl(self: &Arc<Self>) -> Arc<Self> {
+        self.clone()
+    }
+
     /// Returns the message trace dispatcher after trace initialization.
     ///
     /// This corresponds to Java `DefaultMQPushConsumer.getTraceDispatcher()`.
@@ -5538,6 +5546,27 @@ mod tests {
         let config = PushConsumerConfig::new("trace-dispatcher-accessor").unwrap();
         let consumer = PushConsumer::new(config);
         assert!(consumer.trace_dispatcher().is_none());
+    }
+
+    #[test]
+    fn raw_push_implementation_accessor_retains_identity() {
+        let group = "phase18-push-implementation-accessor";
+        let config = PushConsumerConfig::new(group).unwrap();
+        let consumer = Arc::new(PushConsumer::new(config));
+
+        let first = consumer.get_default_mq_push_consumer_impl();
+        let second = consumer.get_default_mq_push_consumer_impl();
+
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/push-implementation-accessor.json"
+        ))
+        .unwrap();
+        assert_eq!(fixture["implementationNonNull"], true);
+        assert_eq!(fixture["implementationIdentityStable"], true);
+        assert_eq!(fixture["configuredConsumerGroup"], group);
+        assert!(Arc::ptr_eq(&consumer, &first));
+        assert!(Arc::ptr_eq(&first, &second));
+        assert_eq!(first.config().consumer_group(), group);
     }
 
     #[derive(Default)]
