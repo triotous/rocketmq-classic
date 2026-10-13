@@ -13,3 +13,4 @@ Linux server-free oracle/CI preparation (2026-10-13 07:50 UTC):
 
 Server-free CI gate change (2026-10-13 07:51 UTC):
 - CI pins Rust 1.85.0 and Java 27, then requires default/all-feature locked tests, strict workspace Clippy, Java 5.5.1 Maven verification, comparator self-test and manifest validation, deterministic fuzz/race smoke, facade example compilation, offline benchmark compilation, and workspace metadata validation. All configured jobs remain server- and Docker-free.
+- The first post-fixture-change `cargo test --workspace --locked` exposed one stale Rust unit assertion reading the removed raw `procRow` field. Updated the test to validate the stable Java-recorded address/interface pair through the Linux row parser; focused locked test `cargo test -p rocketmq-classic-core --lib linux_loopback_proc_scope_matches_invoked_java_551 --locked` passes. The original full-suite failure is retained here and will be rerun after the correction.

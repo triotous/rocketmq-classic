@@ -349,8 +349,16 @@ mod tests {
             "pinned Linux JDK did not expose IPv6 loopback"
         );
         for case in cases {
-            let candidate = parse_ipv6_row(case["procRow"].as_str().unwrap()).unwrap();
-            assert_eq!(candidate.interface, case["interfaceName"].as_str().unwrap());
+            let interface = case["procEntryInterface"].as_str().unwrap();
+            let scope = case["scopeId"].as_u64().unwrap() as u32;
+            let row = format!(
+                "{} {:02x} 00 00 00 {}",
+                case["procEntryAddress"].as_str().unwrap(),
+                scope,
+                interface
+            );
+            let candidate = parse_ipv6_row(&row).unwrap();
+            assert_eq!(candidate.interface, interface);
             assert_eq!(
                 candidate.address.ip,
                 case["ip"].as_str().unwrap().parse::<IpAddr>().unwrap()
