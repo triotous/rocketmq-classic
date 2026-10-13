@@ -9,6 +9,8 @@ mod process_queue;
 pub mod pull;
 pub mod push;
 pub mod rebalance;
+mod stack;
+mod stats;
 
 pub use config::PullConsumerConfig;
 pub use consume::{ConsumeMessageContext, ConsumeMessageHook};

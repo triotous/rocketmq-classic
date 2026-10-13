@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, fmt::Write as _, net::SocketAddr, sync::Arc, time::Duration};
 
 use base64::Engine;
 use bytes::BytesMut;
@@ -90,23 +90,88 @@ fn java_message_record() -> Vec<u8> {
         .unwrap()
 }
 
+fn physical_message_id(address: &str, offset: i64) -> String {
+    let address: SocketAddr = address.parse().unwrap();
+    let mut bytes = match address.ip() {
+        std::net::IpAddr::V4(address) => address.octets().to_vec(),
+        std::net::IpAddr::V6(address) => address.octets().to_vec(),
+    };
+    bytes.extend_from_slice(&i32::from(address.port()).to_be_bytes());
+    bytes.extend_from_slice(&offset.to_be_bytes());
+    let mut message_id = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        write!(&mut message_id, "{byte:02X}").unwrap();
+    }
+    message_id
+}
+
 async fn nameserver_peer(route: Vec<u8>) -> (String, JoinHandle<()>) {
+    nameserver_peer_with_response(route, response::SUCCESS).await
+}
+
+async fn nameserver_peer_with_response(
+    route: Vec<u8>,
+    response_code: i32,
+) -> (String, JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap().to_string();
     let task = tokio::spawn(async move {
-        let (mut stream, _) = listener.accept().await.unwrap();
-        while let Some(command) = read_command(&mut stream).await {
-            if command.code == request::GET_ROUTEINFO_BY_TOPIC {
-                write_response(
-                    &mut stream,
-                    &command,
-                    response::SUCCESS,
-                    Some(route.clone()),
-                    None,
-                )
-                .await;
-            } else if !command.is_oneway() {
-                write_response(&mut stream, &command, response::SUCCESS, None, None).await;
+        loop {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                break;
+            };
+            while let Some(command) = read_command(&mut stream).await {
+                if command.code == request::GET_ROUTEINFO_BY_TOPIC {
+                    write_response(
+                        &mut stream,
+                        &command,
+                        response_code,
+                        Some(route.clone()),
+                        None,
+                    )
+                    .await;
+                } else if !command.is_oneway() {
+                    write_response(&mut stream, &command, response::SUCCESS, None, None).await;
+                }
+            }
+        }
+    });
+    (address, task)
+}
+
+async fn nameserver_peer_with_topic_routes(
+    topic_routes: Vec<(String, Vec<u8>)>,
+    default_route: Vec<u8>,
+) -> (String, JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    let task = tokio::spawn(async move {
+        loop {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                break;
+            };
+            while let Some(command) = read_command(&mut stream).await {
+                if command.code == request::GET_ROUTEINFO_BY_TOPIC {
+                    let topic = command
+                        .ext_fields
+                        .as_ref()
+                        .and_then(|fields| fields.get("topic"));
+                    let route = topic_routes
+                        .iter()
+                        .find(|(route_topic, _)| Some(route_topic) == topic)
+                        .map(|(_, route)| route)
+                        .unwrap_or(&default_route);
+                    write_response(
+                        &mut stream,
+                        &command,
+                        response::SUCCESS,
+                        Some(route.clone()),
+                        None,
+                    )
+                    .await;
+                } else if !command.is_oneway() {
+                    write_response(&mut stream, &command, response::SUCCESS, None, None).await;
+                }
             }
         }
     });
@@ -118,70 +183,110 @@ async fn broker_peer() -> (
     JoinHandle<()>,
     tokio::sync::mpsc::UnboundedReceiver<RemotingCommand>,
 ) {
+    broker_peer_with_query_response(response::SUCCESS).await
+}
+
+async fn broker_peer_with_query_response(
+    query_response_code: i32,
+) -> (
+    String,
+    JoinHandle<()>,
+    tokio::sync::mpsc::UnboundedReceiver<RemotingCommand>,
+) {
+    broker_peer_with_responses(query_response_code, response::SUCCESS, response::SUCCESS).await
+}
+
+async fn broker_peer_with_responses(
+    query_response_code: i32,
+    offset_response_code: i32,
+    create_topic_response_code: i32,
+) -> (
+    String,
+    JoinHandle<()>,
+    tokio::sync::mpsc::UnboundedReceiver<RemotingCommand>,
+) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap().to_string();
     let (sender, requests) = tokio::sync::mpsc::unbounded_channel();
     let record = java_message_record();
     let task = tokio::spawn(async move {
-        let (mut stream, _) = listener.accept().await.unwrap();
-        while let Some(command) = read_command(&mut stream).await {
-            let _ = sender.send(command.clone());
-            let (code, body, ext_fields) = match command.code {
-                request::SEARCH_OFFSET_BY_TIMESTAMP => (
-                    response::SUCCESS,
-                    None,
-                    Some(HeaderMap::from([("offset".into(), "11".into())])),
-                ),
-                request::GET_MAX_OFFSET => (
-                    response::SUCCESS,
-                    None,
-                    Some(HeaderMap::from([("offset".into(), "22".into())])),
-                ),
-                request::GET_MIN_OFFSET => (
-                    response::SUCCESS,
-                    None,
-                    Some(HeaderMap::from([("offset".into(), "3".into())])),
-                ),
-                request::GET_EARLIEST_MSG_STORETIME => (
-                    response::SUCCESS,
-                    None,
-                    Some(HeaderMap::from([("timestamp".into(), "44".into())])),
-                ),
-                request::PULL_MESSAGE => (
-                    response::PULL_NOT_FOUND,
-                    None,
-                    Some(HeaderMap::from([
-                        ("suggestWhichBrokerId".into(), "0".into()),
-                        ("nextBeginOffset".into(), "0".into()),
-                        ("minOffset".into(), "0".into()),
-                        ("maxOffset".into(), "0".into()),
-                    ])),
-                ),
-                request::GET_CONSUMER_LIST_BY_GROUP => (
-                    response::SUCCESS,
-                    Some(br#"{"consumerIdList":[]}"#.to_vec()),
-                    None,
-                ),
-                request::QUERY_MESSAGE => {
-                    let mut fields = HeaderMap::new();
-                    QueryMessageResponseHeader {
-                        index_last_update_timestamp: 200,
-                        index_last_update_phyoffset: 100,
-                    }
-                    .encode_fields(&mut fields);
-                    write_response(
-                        &mut stream,
-                        &command,
-                        response::SUCCESS,
-                        Some(record.clone()),
-                        Some(fields),
-                    )
-                    .await;
-                    continue;
-                }
-                _ => (response::SUCCESS, None, None),
+        loop {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                break;
             };
-            write_response(&mut stream, &command, code, body, ext_fields).await;
+            while let Some(command) = read_command(&mut stream).await {
+                let _ = sender.send(command.clone());
+                let (code, body, ext_fields) = match command.code {
+                    request::SEARCH_OFFSET_BY_TIMESTAMP
+                    | request::GET_MAX_OFFSET
+                    | request::GET_MIN_OFFSET
+                    | request::GET_EARLIEST_MSG_STORETIME
+                        if offset_response_code != response::SUCCESS =>
+                    {
+                        (offset_response_code, None, None)
+                    }
+                    request::SEARCH_OFFSET_BY_TIMESTAMP => (
+                        response::SUCCESS,
+                        None,
+                        Some(HeaderMap::from([("offset".into(), "11".into())])),
+                    ),
+                    request::GET_MAX_OFFSET => (
+                        response::SUCCESS,
+                        None,
+                        Some(HeaderMap::from([("offset".into(), "22".into())])),
+                    ),
+                    request::GET_MIN_OFFSET => (
+                        response::SUCCESS,
+                        None,
+                        Some(HeaderMap::from([("offset".into(), "3".into())])),
+                    ),
+                    request::GET_EARLIEST_MSG_STORETIME => (
+                        response::SUCCESS,
+                        None,
+                        Some(HeaderMap::from([("timestamp".into(), "44".into())])),
+                    ),
+                    request::PULL_MESSAGE => (
+                        response::PULL_NOT_FOUND,
+                        None,
+                        Some(HeaderMap::from([
+                            ("suggestWhichBrokerId".into(), "0".into()),
+                            ("nextBeginOffset".into(), "0".into()),
+                            ("minOffset".into(), "0".into()),
+                            ("maxOffset".into(), "0".into()),
+                        ])),
+                    ),
+                    request::GET_CONSUMER_LIST_BY_GROUP => (
+                        response::SUCCESS,
+                        Some(br#"{"consumerIdList":[]}"#.to_vec()),
+                        None,
+                    ),
+                    request::UPDATE_AND_CREATE_TOPIC => (create_topic_response_code, None, None),
+                    request::QUERY_MESSAGE => {
+                        if query_response_code != response::SUCCESS {
+                            (query_response_code, None, None)
+                        } else {
+                            let mut fields = HeaderMap::new();
+                            QueryMessageResponseHeader {
+                                index_last_update_timestamp: 200,
+                                index_last_update_phyoffset: 100,
+                            }
+                            .encode_fields(&mut fields);
+                            write_response(
+                                &mut stream,
+                                &command,
+                                response::SUCCESS,
+                                Some(record.clone()),
+                                Some(fields),
+                            )
+                            .await;
+                            continue;
+                        }
+                    }
+                    request::VIEW_MESSAGE_BY_ID => (response::SUCCESS, Some(record.clone()), None),
+                    _ => (response::SUCCESS, None, None),
+                };
+                write_response(&mut stream, &command, code, body, ext_fields).await;
+            }
         }
     });
     (address, task, requests)
@@ -251,6 +356,103 @@ async fn push_admin_offset_facade_routes_namespaced_queues_to_the_named_broker()
     consumer.shutdown().await.unwrap();
     namesrv_task.abort();
     broker_task.abort();
+}
+
+#[tokio::test]
+async fn push_and_pull_admin_facades_forward_broker_permission_errors() {
+    let (push_broker, push_broker_task, _) = broker_peer_with_responses(
+        response::SUCCESS,
+        response::NO_PERMISSION,
+        response::NO_PERMISSION,
+    )
+    .await;
+    let (push_namesrv, push_namesrv_task) = nameserver_peer(route_body(&push_broker)).await;
+    let mut push_config = PushConsumerConfig::new("push-admin-permission-error").unwrap();
+    push_config
+        .client_config_mut()
+        .set_namesrv_addr(Some(push_namesrv));
+    push_config
+        .client_config_mut()
+        .set_instance_name(Some("push-admin-permission-error".into()));
+    let push = Arc::new(PushConsumer::new(push_config));
+    push.register_message_listener(PushMessageListener::concurrently(
+        |_messages: Vec<MessageExt>, context| async move {
+            (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+        },
+    ))
+    .await
+    .unwrap();
+    push.start().await.unwrap();
+    let queue = MessageQueue::new("orders", "broker-a", 0);
+    assert!(matches!(
+        push.get_max_offset(&queue).await,
+        Err(rocketmq_classic_consumer::PushConsumerError::Rpc(
+            rocketmq_classic_core::error::RpcError::Response {
+                request_code: request::GET_MAX_OFFSET,
+                code: response::NO_PERMISSION,
+                ..
+            }
+        ))
+    ));
+    assert!(matches!(
+        push.create_topic("TBW102", "admin-permission-topic", 1, None)
+            .await,
+        Err(rocketmq_classic_consumer::PushConsumerError::AdminQuery(
+            rocketmq_classic_core::api::admin::AdminQueryError::Rpc(
+                rocketmq_classic_core::error::RpcError::Response {
+                    request_code: request::UPDATE_AND_CREATE_TOPIC,
+                    code: response::NO_PERMISSION,
+                    ..
+                }
+            )
+        ))
+    ));
+    push.shutdown().await.unwrap();
+    push_namesrv_task.abort();
+    push_broker_task.abort();
+
+    let (pull_broker, pull_broker_task, _) = broker_peer_with_responses(
+        response::SUCCESS,
+        response::NO_PERMISSION,
+        response::NO_PERMISSION,
+    )
+    .await;
+    let (pull_namesrv, pull_namesrv_task) = nameserver_peer(route_body(&pull_broker)).await;
+    let mut pull_config = PullConsumerConfig::new("pull-admin-permission-error").unwrap();
+    pull_config
+        .client_config_mut()
+        .set_namesrv_addr(Some(pull_namesrv));
+    pull_config
+        .client_config_mut()
+        .set_instance_name(Some("pull-admin-permission-error".into()));
+    let pull = Arc::new(PullConsumer::new(pull_config));
+    pull.start().await.unwrap();
+    assert!(matches!(
+        pull.get_max_offset(&queue).await,
+        Err(rocketmq_classic_consumer::PullConsumerError::Rpc(
+            rocketmq_classic_core::error::RpcError::Response {
+                request_code: request::GET_MAX_OFFSET,
+                code: response::NO_PERMISSION,
+                ..
+            }
+        ))
+    ));
+    assert!(matches!(
+        pull.create_topic("TBW102", "admin-permission-topic", 1, None)
+            .await,
+        Err(rocketmq_classic_consumer::PullConsumerError::AdminQuery(
+            rocketmq_classic_core::api::admin::AdminQueryError::Rpc(
+                rocketmq_classic_core::error::RpcError::Response {
+                    request_code: request::UPDATE_AND_CREATE_TOPIC,
+                    code: response::NO_PERMISSION,
+                    ..
+                }
+            )
+        ))
+    ));
+    pull.shutdown().await.unwrap();
+    pull_namesrv_task.abort();
+    pull_broker_task.abort();
 }
 
 #[tokio::test]
@@ -358,6 +560,197 @@ async fn push_and_pull_query_facades_preserve_java_client_message_ids() {
 }
 
 #[tokio::test]
+async fn push_and_pull_unique_key_query_facades_preserve_terminal_no_message_errors() {
+    let (push_broker, push_broker_task, _) =
+        broker_peer_with_query_response(response::SERVICE_NOT_AVAILABLE).await;
+    let (push_namesrv, push_namesrv_task) = nameserver_peer(route_body(&push_broker)).await;
+    let mut push_config = PushConsumerConfig::new("push-admin-query-no-message").unwrap();
+    push_config
+        .client_config_mut()
+        .set_namesrv_addr(Some(push_namesrv));
+    push_config
+        .client_config_mut()
+        .set_instance_name(Some("push-admin-query-no-message".into()));
+    let push = Arc::new(PushConsumer::new(push_config));
+    push.register_message_listener(PushMessageListener::concurrently(
+        |_messages: Vec<MessageExt>, context| async move {
+            (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+        },
+    ))
+    .await
+    .unwrap();
+    push.start().await.unwrap();
+    assert!(matches!(
+        push.query_message_by_unique_key("orders", "missing-key", 16, 10, 99)
+            .await,
+        Err(rocketmq_classic_consumer::PushConsumerError::AdminQuery(
+            rocketmq_classic_core::api::admin::AdminQueryError::Rpc(
+                rocketmq_classic_core::error::RpcError::Response {
+                    request_code: request::QUERY_MESSAGE,
+                    code: response::NO_MESSAGE,
+                    ..
+                }
+            )
+        ))
+    ));
+    push.shutdown().await.unwrap();
+    push_namesrv_task.abort();
+    push_broker_task.abort();
+
+    let (pull_broker, pull_broker_task, _) =
+        broker_peer_with_query_response(response::SERVICE_NOT_AVAILABLE).await;
+    let (pull_namesrv, pull_namesrv_task) = nameserver_peer(route_body(&pull_broker)).await;
+    let mut pull_config = PullConsumerConfig::new("pull-admin-query-no-message").unwrap();
+    pull_config
+        .client_config_mut()
+        .set_namesrv_addr(Some(pull_namesrv));
+    pull_config
+        .client_config_mut()
+        .set_instance_name(Some("pull-admin-query-no-message".into()));
+    let pull = Arc::new(PullConsumer::new(pull_config));
+    pull.start().await.unwrap();
+    let pull_query_error = pull
+        .query_message_by_unique_key("orders", "missing-key", 16, 10, 99)
+        .await;
+    assert!(
+        matches!(
+            &pull_query_error,
+            Err(rocketmq_classic_consumer::PullConsumerError::AdminQuery(
+                rocketmq_classic_core::api::admin::AdminQueryError::Rpc(
+                    rocketmq_classic_core::error::RpcError::Response {
+                        request_code: request::QUERY_MESSAGE,
+                        code: response::NO_MESSAGE,
+                        ..
+                    }
+                )
+            ))
+        ),
+        "unexpected pull query result: {pull_query_error:?}"
+    );
+    pull.shutdown().await.unwrap();
+    pull_namesrv_task.abort();
+    pull_broker_task.abort();
+}
+
+#[tokio::test]
+async fn push_and_pull_view_message_use_only_the_physical_id_rpc() {
+    let (push_broker, push_broker_task, mut push_requests) = broker_peer().await;
+    let (push_namesrv, push_namesrv_task) = nameserver_peer(route_body(&push_broker)).await;
+    let mut push_config = PushConsumerConfig::new("push-admin-view").unwrap();
+    push_config
+        .client_config_mut()
+        .set_namespace(Some("tenant".into()));
+    push_config
+        .client_config_mut()
+        .set_instance_name(Some("push-admin-view".into()));
+    push_config
+        .client_config_mut()
+        .set_namesrv_addr(Some(push_namesrv));
+    let push = Arc::new(PushConsumer::new(push_config));
+    push.register_message_listener(PushMessageListener::concurrently(
+        |_messages: Vec<MessageExt>, context| async move {
+            (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+        },
+    ))
+    .await
+    .unwrap();
+    push.start().await.unwrap();
+
+    let invalid = push
+        .view_message("orders", "not-a-physical-message-id")
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        invalid,
+        rocketmq_classic_consumer::PushConsumerError::Rpc(
+            rocketmq_classic_core::error::RpcError::Response {
+                request_code: request::VIEW_MESSAGE_BY_ID,
+                code: response::NO_MESSAGE,
+                ..
+            }
+        )
+    ));
+    let push_id = physical_message_id(&push_broker, 71);
+    let push_message = push.view_message("orders", &push_id).await.unwrap();
+    assert_eq!(push_message.message().topic(), "orders");
+    assert_eq!(push_message.message_id(), Some("producer-unique-1"));
+    let push_view = timeout(Duration::from_secs(1), async {
+        loop {
+            let command = push_requests.recv().await.unwrap();
+            if command.code == request::VIEW_MESSAGE_BY_ID {
+                break command;
+            }
+            assert_ne!(command.code, request::QUERY_MESSAGE);
+        }
+    })
+    .await
+    .unwrap();
+    let fields = push_view.ext_fields.unwrap();
+    assert_eq!(fields.get("topic"), Some(&"orders".to_owned()));
+    assert_eq!(fields.get("offset"), Some(&"71".to_owned()));
+    while let Ok(command) = push_requests.try_recv() {
+        assert_ne!(command.code, request::QUERY_MESSAGE);
+    }
+    push.shutdown().await.unwrap();
+    push_namesrv_task.abort();
+    push_broker_task.abort();
+
+    let (pull_broker, pull_broker_task, mut pull_requests) = broker_peer().await;
+    let (pull_namesrv, pull_namesrv_task) = nameserver_peer(route_body(&pull_broker)).await;
+    let mut pull_config = PullConsumerConfig::new("pull-admin-view").unwrap();
+    pull_config
+        .client_config_mut()
+        .set_namespace(Some("tenant".into()));
+    pull_config
+        .client_config_mut()
+        .set_instance_name(Some("pull-admin-view".into()));
+    pull_config
+        .client_config_mut()
+        .set_namesrv_addr(Some(pull_namesrv));
+    let pull = Arc::new(PullConsumer::new(pull_config));
+    pull.start().await.unwrap();
+
+    let invalid = pull
+        .view_message("orders", "not-a-physical-message-id")
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        invalid,
+        rocketmq_classic_consumer::PullConsumerError::Rpc(
+            rocketmq_classic_core::error::RpcError::Response {
+                request_code: request::VIEW_MESSAGE_BY_ID,
+                code: response::NO_MESSAGE,
+                ..
+            }
+        )
+    ));
+    let pull_id = physical_message_id(&pull_broker, 72);
+    let pull_message = pull.view_message("orders", &pull_id).await.unwrap();
+    assert_eq!(pull_message.message().topic(), "orders");
+    assert_eq!(pull_message.message_id(), Some("producer-unique-1"));
+    let pull_view = timeout(Duration::from_secs(1), async {
+        loop {
+            let command = pull_requests.recv().await.unwrap();
+            if command.code == request::VIEW_MESSAGE_BY_ID {
+                break command;
+            }
+            assert_ne!(command.code, request::QUERY_MESSAGE);
+        }
+    })
+    .await
+    .unwrap();
+    let fields = pull_view.ext_fields.unwrap();
+    assert_eq!(fields.get("topic"), Some(&"orders".to_owned()));
+    assert_eq!(fields.get("offset"), Some(&"72".to_owned()));
+    while let Ok(command) = pull_requests.try_recv() {
+        assert_ne!(command.code, request::QUERY_MESSAGE);
+    }
+    pull.shutdown().await.unwrap();
+    pull_namesrv_task.abort();
+    pull_broker_task.abort();
+}
+
+#[tokio::test]
 async fn push_and_pull_create_topic_and_fetch_subscribe_queues_match_java_facades() {
     let (push_broker, push_broker_task, mut push_requests) = broker_peer().await;
     let (push_namesrv, push_namesrv_task) = nameserver_peer(route_body(&push_broker)).await;
@@ -451,4 +844,129 @@ async fn push_and_pull_create_topic_and_fetch_subscribe_queues_match_java_facade
     pull.shutdown().await.unwrap();
     pull_namesrv_task.abort();
     pull_broker_task.abort();
+}
+
+#[tokio::test]
+async fn push_and_pull_subscribe_queue_queries_handle_missing_empty_and_malformed_routes() {
+    let (namesrv, namesrv_task) =
+        nameserver_peer_with_response(route_body("unused"), response::TOPIC_NOT_EXIST).await;
+    let mut config = PushConsumerConfig::new("push-admin-route-not-found").unwrap();
+    config.client_config_mut().set_namesrv_addr(Some(namesrv));
+    config
+        .client_config_mut()
+        .set_instance_name(Some("push-admin-route-not-found".into()));
+    let push = Arc::new(PushConsumer::new(config));
+    push.register_message_listener(PushMessageListener::concurrently(
+        |_messages: Vec<MessageExt>, context| async move {
+            (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+        },
+    ))
+    .await
+    .unwrap();
+    push.start().await.unwrap();
+    assert!(push.fetch_subscribe_message_queues("orders").await.is_err());
+    push.shutdown().await.unwrap();
+    namesrv_task.abort();
+
+    let empty_route = serde_json::to_vec(&json!({
+        "queueDatas": [],
+        "brokerDatas": [],
+        "filterServerTable": {}
+    }))
+    .unwrap();
+    let (broker, broker_task, _) = broker_peer().await;
+    let (namesrv, namesrv_task) = nameserver_peer_with_topic_routes(
+        vec![("orders".into(), empty_route.clone())],
+        route_body(&broker),
+    )
+    .await;
+    let mut config = PushConsumerConfig::new("push-admin-empty-route").unwrap();
+    config.client_config_mut().set_namesrv_addr(Some(namesrv));
+    config
+        .client_config_mut()
+        .set_instance_name(Some("push-admin-empty-route".into()));
+    let push = Arc::new(PushConsumer::new(config));
+    push.register_message_listener(PushMessageListener::concurrently(
+        |_messages: Vec<MessageExt>, context| async move {
+            (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+        },
+    ))
+    .await
+    .unwrap();
+    push.start().await.unwrap();
+    assert!(
+        push.fetch_subscribe_message_queues("orders")
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    push.shutdown().await.unwrap();
+    namesrv_task.abort();
+    broker_task.abort();
+
+    let (broker, broker_task, _) = broker_peer().await;
+    let (namesrv, namesrv_task) = nameserver_peer_with_topic_routes(
+        vec![("orders".into(), b"{".to_vec())],
+        route_body(&broker),
+    )
+    .await;
+    let mut config = PushConsumerConfig::new("push-admin-malformed-route").unwrap();
+    config.client_config_mut().set_namesrv_addr(Some(namesrv));
+    config
+        .client_config_mut()
+        .set_instance_name(Some("push-admin-malformed-route".into()));
+    let push = Arc::new(PushConsumer::new(config));
+    push.register_message_listener(PushMessageListener::concurrently(
+        |_messages: Vec<MessageExt>, context| async move {
+            (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+        },
+    ))
+    .await
+    .unwrap();
+    push.start().await.unwrap();
+    assert!(push.fetch_subscribe_message_queues("orders").await.is_err());
+    push.shutdown().await.unwrap();
+    namesrv_task.abort();
+    broker_task.abort();
+
+    let (namesrv, namesrv_task) = nameserver_peer(b"{".to_vec()).await;
+    let mut config = PullConsumerConfig::new("pull-admin-malformed-route").unwrap();
+    config.client_config_mut().set_namesrv_addr(Some(namesrv));
+    config
+        .client_config_mut()
+        .set_instance_name(Some("pull-admin-malformed-route".into()));
+    let pull = Arc::new(PullConsumer::new(config));
+    pull.start().await.unwrap();
+    assert!(pull.fetch_subscribe_message_queues("orders").await.is_err());
+    pull.shutdown().await.unwrap();
+    namesrv_task.abort();
+
+    let (namesrv, namesrv_task) =
+        nameserver_peer_with_response(route_body("unused"), response::TOPIC_NOT_EXIST).await;
+    let mut config = PullConsumerConfig::new("pull-admin-route-not-found").unwrap();
+    config.client_config_mut().set_namesrv_addr(Some(namesrv));
+    config
+        .client_config_mut()
+        .set_instance_name(Some("pull-admin-route-not-found".into()));
+    let pull = Arc::new(PullConsumer::new(config));
+    pull.start().await.unwrap();
+    assert!(pull.fetch_subscribe_message_queues("orders").await.is_err());
+    pull.shutdown().await.unwrap();
+    namesrv_task.abort();
+
+    let (namesrv, namesrv_task) = nameserver_peer(empty_route).await;
+    let mut config = PullConsumerConfig::new("pull-admin-empty-route").unwrap();
+    config.client_config_mut().set_namesrv_addr(Some(namesrv));
+    config
+        .client_config_mut()
+        .set_instance_name(Some("pull-admin-empty-route".into()));
+    let pull = Arc::new(PullConsumer::new(config));
+    pull.start().await.unwrap();
+    assert!(matches!(
+        pull.fetch_subscribe_message_queues("orders").await,
+        Err(rocketmq_classic_consumer::PullConsumerError::EmptyMessageQueues(topic))
+            if topic == "orders"
+    ));
+    pull.shutdown().await.unwrap();
+    namesrv_task.abort();
 }

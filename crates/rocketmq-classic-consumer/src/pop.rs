@@ -83,6 +83,10 @@ impl PopProcessQueue {
         self.wait_ack_count.load(Ordering::Acquire)
     }
 
+    pub(crate) fn last_pop_timestamp(&self) -> i64 {
+        self.last_pop_timestamp.load(Ordering::Acquire)
+    }
+
     pub(crate) fn is_pull_expired(&self) -> bool {
         epoch_millis().saturating_sub(self.last_pop_timestamp.load(Ordering::Acquire)) > 120_000
     }

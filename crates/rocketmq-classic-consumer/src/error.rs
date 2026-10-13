@@ -41,6 +41,8 @@ pub enum PullConsumerError {
     OffsetStoreAfterStartup,
     #[error("message queue must have a topic and broker name")]
     InvalidQueue,
+    #[error("Can not find Message Queue for this topic, {0} Namesrv return empty")]
+    EmptyMessageQueues(String),
     #[error("invalid topic for administrative creation: {0}")]
     InvalidAdminTopic(String),
     #[error("pull offset must be nonnegative")]

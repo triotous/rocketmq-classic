@@ -3,7 +3,7 @@ use std::{
     panic::AssertUnwindSafe,
     sync::{
         Arc, Mutex, RwLock, Weak,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicI64, Ordering},
     },
     time::Duration,
 };
@@ -18,10 +18,14 @@ use rocketmq_classic_common::{
 use rocketmq_classic_core::{
     api::admin::{AdminQueryRequest, QueryResult, decode_message_id},
     route::{BrokerAddress, RouteSnapshot},
-    runtime::{ClientRuntime, ClientRuntimeManager, ConsumerRuntime, GroupLease},
+    runtime::{
+        ClientRuntime, ClientRuntimeManager, ConsumerOperation, ConsumerRuntime, GroupLease,
+    },
 };
 use rocketmq_classic_protocol::{
     SharedValue,
+    body::ConsumerRunningInfoBody,
+    codes::{request, response},
     header::{
         BoundaryType, GetEarliestMsgStoretimeRequestHeader, GetMaxOffsetRequestHeader,
         GetMinOffsetRequestHeader, PullMessageRequestHeader, SearchOffsetRequestHeader,
@@ -112,6 +116,7 @@ pub struct PullConsumer {
     enable_rebalance: Arc<AtomicBool>,
     rebalance_active: Arc<AtomicBool>,
     runtime_for_wakeup: RwLock<Option<Weak<ClientRuntime>>>,
+    consumer_start_timestamp: AtomicI64,
 }
 
 impl PullConsumer {
@@ -159,11 +164,33 @@ impl PullConsumer {
             enable_rebalance: Arc::new(AtomicBool::new(enable_rebalance)),
             rebalance_active: Arc::new(AtomicBool::new(false)),
             runtime_for_wakeup: RwLock::new(None),
+            consumer_start_timestamp: AtomicI64::new(0),
         }
     }
 
     pub fn config(&self) -> &PullConsumerConfig {
         &self.config
+    }
+
+    pub(crate) fn running_info_body(
+        &self,
+        runtime: &ClientRuntime,
+        jstack: Option<String>,
+    ) -> ConsumerRunningInfoBody {
+        let subscriptions = read_lock(&self.subscriptions)
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        ConsumerRunningInfoBody {
+            properties: crate::admin::pull_running_info_properties(
+                &self.config,
+                runtime,
+                self.consumer_start_timestamp.load(Ordering::Acquire),
+            ),
+            subscription_set: subscriptions,
+            jstack,
+            ..ConsumerRunningInfoBody::default()
+        }
     }
 
     /// Registers a Java-compatible hook around each pull result.
@@ -443,6 +470,8 @@ impl PullConsumer {
         let offset_store = self.select_offset_store(&runtime, &consumer_group)?;
         offset_store.load().await?;
 
+        self.consumer_start_timestamp
+            .store(epoch_millis(), Ordering::Release);
         let owner: Arc<dyn ConsumerRuntime> = Arc::new(PullConsumerRegistration {
             group: consumer_group.clone(),
             message_model: self.config.message_model(),
@@ -460,6 +489,7 @@ impl PullConsumer {
             in_balance_queues: self.in_balance_queues.clone(),
             offset_store: Arc::downgrade(&offset_store),
             runtime: Arc::downgrade(&runtime),
+            consumer: Arc::downgrade(self),
             rebalance_execution: tokio::sync::Mutex::new(()),
             #[cfg(test)]
             rebalance_membership: Mutex::new(HashMap::new()),
@@ -859,8 +889,11 @@ impl PullConsumer {
         let timeout = Duration::from_millis(
             i64::from(self.config.client_config().mq_client_api_timeout()).max(0) as u64,
         );
-        crate::admin::fetch_subscribe_queues(&runtime, &topic, timeout)
-            .await?
+        let queues = crate::admin::fetch_subscribe_queues(&runtime, &topic, timeout).await?;
+        if queues.is_empty() {
+            return Err(crate::error::PullConsumerError::EmptyMessageQueues(topic));
+        }
+        queues
             .into_iter()
             .map(|queue| {
                 let topic = client_config.without_namespace(queue.topic())?;
@@ -905,44 +938,35 @@ impl PullConsumer {
         .await
     }
 
-    /// Resolves physical IDs directly and falls back to a unique-key query
-    /// only when Java's pull facade would reject the ID syntax.
+    /// Views a message by Java's physical offset message ID.
     pub async fn view_message(
         &self,
         topic: &str,
         message_id: &str,
-    ) -> Result<Option<MessageExt>, PullConsumerError> {
+    ) -> Result<MessageExt, PullConsumerError> {
         let (runtime, _) = self.started_runtime().await?;
-        if let Ok(decoded) = decode_message_id(message_id) {
-            let header = ViewMessageRequestHeader {
-                // DefaultMQPullConsumer uses the raw topic for a physical ID
-                // request and applies its namespace only to unique-key lookup.
-                topic: Some(topic.to_owned()),
-                offset: decoded.offset,
-            };
-            let timeout_millis =
-                i64::from(self.config.client_config().mq_client_api_timeout()).max(0) as u64;
-            let message = runtime
-                .api()
-                .view_message(
-                    &decoded.address.to_string(),
-                    &header,
-                    Instant::now() + Duration::from_millis(timeout_millis),
-                )
-                .await?;
-            return Ok(Some(message));
-        }
-
-        let now_millis = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis()
-            .min(i64::MAX as u128) as i64;
-        let begin_timestamp = now_millis.saturating_sub(3 * 24 * 60 * 60 * 1000);
-        let result = self
-            .query_messages(topic, message_id, 32, begin_timestamp, i64::MAX, true)
-            .await?;
-        Ok(result.message_list.into_iter().next())
+        let decoded = decode_message_id(message_id).map_err(|_| {
+            crate::error::PullConsumerError::Rpc(rocketmq_classic_core::error::RpcError::Response {
+                request_code: request::VIEW_MESSAGE_BY_ID,
+                peer: topic.to_owned(),
+                code: response::NO_MESSAGE,
+                remark: Some("query message by id finished, but no message.".into()),
+            })
+        })?;
+        let header = ViewMessageRequestHeader {
+            topic: Some(topic.to_owned()),
+            offset: decoded.offset,
+        };
+        let timeout_millis =
+            i64::from(self.config.client_config().mq_client_api_timeout()).max(0) as u64;
+        Ok(runtime
+            .api()
+            .view_message(
+                &decoded.address.to_string(),
+                &header,
+                Instant::now() + Duration::from_millis(timeout_millis),
+            )
+            .await?)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1351,12 +1375,31 @@ struct PullConsumerRegistration {
     in_balance_queues: Arc<RwLock<BTreeSet<MessageQueue>>>,
     offset_store: Weak<dyn OffsetStore>,
     runtime: Weak<ClientRuntime>,
+    consumer: Weak<PullConsumer>,
     rebalance_execution: tokio::sync::Mutex<()>,
     #[cfg(test)]
     rebalance_membership: Mutex<HashMap<String, VecDeque<Option<Vec<String>>>>>,
 }
 
 impl ConsumerRuntime for PullConsumerRegistration {
+    fn inbound_processor(
+        &self,
+        operation: ConsumerOperation,
+    ) -> Option<Arc<dyn rocketmq_classic_remoting::client::RequestProcessor>> {
+        match operation {
+            ConsumerOperation::ConsumerStatus => Some(Arc::new(
+                crate::admin::ConsumerStatusProcessor::new(self.offset_store.clone()),
+            )),
+            ConsumerOperation::RunningInfo => Some(Arc::new(
+                crate::admin::ConsumerRunningInfoProcessor::for_pull(
+                    self.consumer.clone(),
+                    self.runtime.clone(),
+                ),
+            )),
+            _ => None,
+        }
+    }
+
     fn heartbeat_data(&self) -> ConsumerData {
         // Java sends mutable SubscriptionData values in a HashSet; preserve
         // that identity/equality behavior for the heartbeat wire model.
@@ -1853,7 +1896,60 @@ mod tests {
     use crate::offset::OffsetRead;
     use rocketmq_classic_core::api::consumer::PullStatus;
     use rocketmq_classic_core::config::AccessChannel;
-    use std::collections::{HashMap, HashSet};
+    use rocketmq_classic_remoting::{RemotingCommand, client::RequestProcessor};
+    use std::collections::{BTreeMap, HashMap, HashSet};
+
+    #[tokio::test]
+    async fn pull_running_info_uses_group_and_reports_active_consumer_properties() {
+        let mut config = PullConsumerConfig::new("pull-running-info").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PullConsumer::with_manager(config, manager.clone()));
+        consumer.register_topic("orders").unwrap();
+        let runtime = manager
+            .get_or_create(consumer.config().client_config())
+            .await
+            .unwrap();
+        consumer
+            .consumer_start_timestamp
+            .store(1_700_000_000_000, Ordering::Release);
+
+        let processor = crate::admin::ConsumerRunningInfoProcessor::for_pull(
+            Arc::downgrade(&consumer),
+            Arc::downgrade(&runtime),
+        );
+        let response = processor
+            .process(RemotingCommand {
+                ext_fields: Some(BTreeMap::from([
+                    ("consumerGroup".into(), "pull-running-info".into()),
+                    ("clientId".into(), "client-id-is-ignored".into()),
+                    ("jstackEnable".into(), "false".into()),
+                ])),
+                ..Default::default()
+            })
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            response.code,
+            rocketmq_classic_protocol::codes::response::SUCCESS
+        );
+        let body = ConsumerRunningInfoBody::decode_java_json(
+            std::str::from_utf8(response.body.as_deref().unwrap()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(body["properties"]["PROP_CONSUME_TYPE"], "CONSUME_ACTIVELY");
+        assert_eq!(body["properties"]["consumerPullTimeoutMillis"], "10000");
+        assert_eq!(
+            body["properties"]["PROP_CONSUMER_START_TIMESTAMP"],
+            "1700000000000"
+        );
+        assert_eq!(body["subscriptionSet"].as_array().unwrap().len(), 1);
+        assert_eq!(body["mqTable"], serde_json::json!({}));
+        assert_eq!(body["mqPopTable"], serde_json::json!({}));
+        assert!(body.get("jstack").is_none());
+
+        runtime.shutdown().await.unwrap();
+    }
 
     #[test]
     fn pull_consume_hooks_receive_empty_pull_context_with_java_success_state() {
@@ -2164,6 +2260,7 @@ mod tests {
             in_balance_queues: Arc::new(RwLock::new(BTreeSet::new())),
             offset_store: Arc::downgrade(&store_trait),
             runtime: Arc::downgrade(&runtime),
+            consumer: Weak::new(),
             rebalance_execution: tokio::sync::Mutex::new(()),
             rebalance_membership: Mutex::new(HashMap::new()),
         });
@@ -2274,6 +2371,7 @@ mod tests {
             in_balance_queues: Arc::new(RwLock::new(BTreeSet::new())),
             offset_store: Arc::downgrade(&store_trait),
             runtime: Arc::downgrade(&runtime),
+            consumer: Weak::new(),
             rebalance_execution: tokio::sync::Mutex::new(()),
             rebalance_membership: Mutex::new(HashMap::from([(
                 "orders".to_owned(),

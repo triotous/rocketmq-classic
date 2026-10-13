@@ -66,6 +66,10 @@ impl ConcurrentConsumeService {
         }
     }
 
+    pub(crate) fn listener(&self) -> Arc<dyn MessageListenerConcurrently> {
+        self.listener.clone()
+    }
+
     pub async fn start(&self, consumer: std::sync::Weak<crate::push::PushConsumer>) {
         if self.started.swap(true, Ordering::AcqRel) {
             return;

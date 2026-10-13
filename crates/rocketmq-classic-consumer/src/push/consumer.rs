@@ -4,7 +4,7 @@ use std::{
     pin::Pin,
     sync::{
         Arc, OnceLock, RwLock, Weak,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -27,14 +27,16 @@ use rocketmq_classic_core::api::{
 };
 use rocketmq_classic_core::route::broker_vip_channel;
 use rocketmq_classic_core::runtime::{
-    ClientRuntime, ClientRuntimeManager, ConsumerRuntime, GroupLease,
+    ClientRuntime, ClientRuntimeManager, ConsumerOperation, ConsumerRuntime, GroupLease,
 };
 use rocketmq_classic_protocol::{
     SharedValue,
     body::{
-        LockBatchRequestBody, MessageQueueAssignment, MessageRequestMode, UnlockBatchRequestBody,
+        ConsumeMessageDirectlyResult, ConsumeMessageResult, ConsumerPopProcessQueueInfo,
+        ConsumerProcessQueueInfo, ConsumerRunningInfoBody, LockBatchRequestBody,
+        MessageQueueAssignment, MessageRequestMode, UnlockBatchRequestBody,
     },
-    codes::response,
+    codes::{request, response},
     header::{
         BoundaryType, ConsumerSendMsgBackRequestHeader, GetEarliestMsgStoretimeRequestHeader,
         GetMaxOffsetRequestHeader, GetMinOffsetRequestHeader, PopMessageRequestHeader,
@@ -66,6 +68,7 @@ use crate::{
     process_queue::{ConsumeBatch, LockAttemptResult, OrderlyCompletion, ProcessQueue},
     pull::{PullAPIWrapper, build_subscription, resolve_pull_broker_address},
     rebalance::RebalanceService,
+    stats::global_consumer_stats,
 };
 
 use super::{
@@ -338,6 +341,8 @@ pub struct PushConsumer {
     pull_api: PullAPIWrapper,
     paused: AtomicBool,
     consume_orderly: AtomicBool,
+    consumer_start_timestamp: AtomicI64,
+    consume_core_pool_size: AtomicI32,
     #[cfg(test)]
     startup_failure: Mutex<Option<StartupStage>>,
     #[cfg(test)]
@@ -371,6 +376,7 @@ impl PushConsumer {
         rpc_hook: Option<Arc<dyn RpcHook>>,
     ) -> Self {
         let pop_consume_limit = usize::try_from(config.consume_thread_max().max(1)).unwrap_or(1);
+        let consume_core_pool_size = config.consume_thread_min();
         let pull_api = PullAPIWrapper::new(config.unit_mode());
         let rebalance_service = RebalanceService::new(config.allocate_message_queue_strategy());
         Self {
@@ -399,6 +405,8 @@ impl PushConsumer {
             pull_api,
             paused: AtomicBool::new(false),
             consume_orderly: AtomicBool::new(false),
+            consumer_start_timestamp: AtomicI64::new(0),
+            consume_core_pool_size: AtomicI32::new(consume_core_pool_size),
             #[cfg(test)]
             startup_failure: Mutex::new(None),
             #[cfg(test)]
@@ -763,53 +771,39 @@ impl PushConsumer {
         .await
     }
 
-    /// Resolves a physical ID and falls back to Java's three-day unique-key
-    /// query when the direct lookup cannot be used.
+    /// Views a message by Java's physical offset message ID.
     pub async fn view_message(
         &self,
         topic: &str,
         message_id: &str,
-    ) -> Result<Option<MessageExt>, PushConsumerError> {
+    ) -> Result<MessageExt, PushConsumerError> {
         let context = self
             .pull_context()
             .await
             .ok_or(PushConsumerError::NotStarted)?;
-        let mut client_config = self.config.client_config().clone();
-        let topic = client_config
-            .with_namespace(Some(topic))?
-            .filter(|topic| !topic.is_empty())
-            .ok_or(PushConsumerError::InvalidQueue)?;
-        if let Ok(decoded) = decode_message_id(message_id) {
-            let header = ViewMessageRequestHeader {
-                topic: Some(topic.clone()),
-                offset: decoded.offset,
-            };
-            let timeout_millis =
-                i64::from(self.config.client_config().mq_client_api_timeout()).max(0) as u64;
-            if let Ok(message) = context
-                .runtime
-                .api()
-                .view_message(
-                    &decoded.address.to_string(),
-                    &header,
-                    Instant::now() + Duration::from_millis(timeout_millis),
-                )
-                .await
-            {
-                return Ok(Some(message));
-            }
-        }
-
-        let now_millis = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis()
-            .min(i64::MAX as u128) as i64;
-        let begin_timestamp = now_millis.saturating_sub(3 * 24 * 60 * 60 * 1000);
-        let result = self
-            .query_messages(&topic, message_id, 32, begin_timestamp, i64::MAX, true)
-            .await?;
-        Ok(result.message_list.into_iter().next())
+        let decoded = decode_message_id(message_id).map_err(|_| {
+            crate::error::PushConsumerError::Rpc(rocketmq_classic_core::error::RpcError::Response {
+                request_code: request::VIEW_MESSAGE_BY_ID,
+                peer: topic.to_owned(),
+                code: response::NO_MESSAGE,
+                remark: Some("query message by id finished, but no message.".into()),
+            })
+        })?;
+        let header = ViewMessageRequestHeader {
+            topic: Some(topic.to_owned()),
+            offset: decoded.offset,
+        };
+        let timeout_millis =
+            i64::from(self.config.client_config().mq_client_api_timeout()).max(0) as u64;
+        Ok(context
+            .runtime
+            .api()
+            .view_message(
+                &decoded.address.to_string(),
+                &header,
+                Instant::now() + Duration::from_millis(timeout_millis),
+            )
+            .await?)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -876,6 +870,253 @@ impl PushConsumer {
         }
     }
 
+    pub(crate) async fn reset_consumer_offsets(
+        &self,
+        topic: &str,
+        offsets: Vec<(MessageQueue, Option<i64>)>,
+    ) -> Result<(), PushConsumerError> {
+        let context = self
+            .pull_context()
+            .await
+            .ok_or(PushConsumerError::NotStarted)?;
+        self.suspend().await;
+        let result = async {
+            for (queue, offset) in offsets {
+                let Some(offset) = offset.filter(|_| queue.topic() == Some(topic)) else {
+                    continue;
+                };
+                context
+                    .offset_store
+                    .update_and_freeze_offset(&queue, offset);
+                let process_queue = { read_lock(&self.process_queues).get(&queue).cloned() };
+                if let Some(process_queue) = process_queue {
+                    let generation = process_queue.generation();
+                    process_queue
+                        .drop_assignment(generation)
+                        .map_err(|error| PushConsumerError::PullScheduler(error.to_string()))?;
+                    context.scheduler.cancel(&queue, generation);
+                    process_queue.clear();
+                    if !self
+                        .remove_process_queue_safely(&context, &queue, &process_queue)
+                        .await
+                    {
+                        return Err(PushConsumerError::ProcessQueueRemovalPending(
+                            queue.to_string(),
+                        ));
+                    }
+                } else {
+                    context.offset_store.persist(&queue).await?;
+                }
+                // Keep the reset value available for the next assignment. Any
+                // old callback has already lost its ProcessQueue generation.
+                context
+                    .offset_store
+                    .update_and_freeze_offset(&queue, offset);
+            }
+            Ok(())
+        }
+        .await;
+        self.resume().await;
+        result
+    }
+
+    pub(crate) fn running_info_body(
+        &self,
+        runtime: &ClientRuntime,
+        jstack: Option<String>,
+        offset_store: Option<Arc<dyn OffsetStore>>,
+    ) -> ConsumerRunningInfoBody {
+        let mut body = ConsumerRunningInfoBody {
+            properties: crate::admin::push_running_info_properties(
+                &self.config,
+                runtime,
+                self.consumer_start_timestamp.load(Ordering::Acquire),
+                self.consume_orderly.load(Ordering::Acquire),
+                self.consume_core_pool_size.load(Ordering::Acquire),
+            ),
+            subscription_set: read_lock(&self.subscriptions).values().cloned().collect(),
+            jstack,
+            ..ConsumerRunningInfoBody::default()
+        };
+
+        body.status_table = body
+            .subscription_set
+            .iter()
+            .filter_map(|subscription| {
+                subscription.topic.as_ref().map(|topic| {
+                    (
+                        topic.clone(),
+                        global_consumer_stats().status(
+                            runtime.client_id(),
+                            self.config.consumer_group(),
+                            topic,
+                        ),
+                    )
+                })
+            })
+            .collect();
+
+        let offset_table = offset_store
+            .map(|offset_store| offset_store.clone_offset_table(None))
+            .unwrap_or_default();
+        let process_queues = read_lock(&self.process_queues)
+            .iter()
+            .map(|(queue, process_queue)| {
+                (
+                    queue.clone(),
+                    process_queue.clone(),
+                    process_queue.generation(),
+                )
+            })
+            .collect::<Vec<_>>();
+        body.mq_table = process_queues
+            .into_iter()
+            .filter_map(|(queue, process_queue, generation)| {
+                let snapshot = process_queue.snapshot(generation).ok()?;
+                Some((
+                    queue.clone(),
+                    ConsumerProcessQueueInfo {
+                        commit_offset: offset_table.get(&queue).copied().unwrap_or(-1),
+                        cached_msg_min_offset: snapshot.minimum_offset.unwrap_or(0),
+                        cached_msg_max_offset: snapshot.maximum_offset.unwrap_or(0),
+                        cached_msg_count: i32::try_from(snapshot.cached_count).unwrap_or(i32::MAX),
+                        cached_msg_size_in_mi_b: i32::try_from(
+                            snapshot.cached_bytes / (1024 * 1024),
+                        )
+                        .unwrap_or(i32::MAX),
+                        locked: snapshot.locked,
+                        try_unlock_times: i64::try_from(snapshot.try_unlock_times)
+                            .unwrap_or(i64::MAX),
+                        last_lock_timestamp: snapshot.last_lock_timestamp_millis,
+                        droped: snapshot.dropped,
+                        last_pull_timestamp: snapshot.last_pull_timestamp_millis,
+                        last_consume_timestamp: snapshot.last_consume_timestamp_millis,
+                        ..ConsumerProcessQueueInfo::default()
+                    },
+                ))
+            })
+            .collect();
+
+        let pop_process_queues = read_lock(&self.pop_process_queues)
+            .iter()
+            .map(|(queue, process_queue)| (queue.clone(), process_queue.clone()))
+            .collect::<Vec<_>>();
+        body.mq_pop_table = pop_process_queues
+            .into_iter()
+            .map(|(queue, process_queue)| {
+                let wait_ack_count = process_queue.wait_ack_count();
+                (
+                    queue,
+                    ConsumerPopProcessQueueInfo {
+                        wait_ack_count: i32::try_from(wait_ack_count).unwrap_or_else(|_| {
+                            if wait_ack_count.is_negative() {
+                                i32::MIN
+                            } else {
+                                i32::MAX
+                            }
+                        }),
+                        droped: process_queue.is_dropped(),
+                        last_pop_timestamp: process_queue.last_pop_timestamp(),
+                    },
+                )
+            })
+            .collect();
+
+        body
+    }
+
+    pub(crate) async fn consume_message_directly(
+        &self,
+        mut message: MessageExt,
+        broker_name: Option<String>,
+    ) -> Option<ConsumeMessageDirectlyResult> {
+        let context = self.pull_context().await?;
+        let started = std::time::Instant::now();
+        let orderly = matches!(&context.consume_service, ConsumeService::Orderly(_));
+        let queue = MessageQueue::new_nullable(
+            Some(message.message().topic().to_owned()),
+            broker_name.clone(),
+            message.queue_id(),
+        );
+        if !orderly {
+            message.set_broker_name(broker_name);
+        }
+        let mut messages = vec![message];
+        self.reset_retry_and_namespace_for_orderly(&mut messages);
+        if let Some(message) = messages.first_mut() {
+            let offset_message_id = message.message_id().map(str::to_owned);
+            let message_id = message
+                .message()
+                .properties()
+                .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+                .cloned()
+                .or_else(|| offset_message_id.clone());
+            message.set_offset_message_id(offset_message_id);
+            message.set_message_id(message_id);
+        }
+
+        let mut result = ConsumeMessageDirectlyResult::default();
+        match context.consume_service.listener() {
+            PushMessageListener::Concurrently(listener) if !orderly => {
+                result.set_order(false);
+                result.set_auto_commit(true);
+                let callback = tokio::spawn(
+                    listener.consume_message(messages, ConsumeConcurrentlyContext::new(queue)),
+                );
+                match callback.await {
+                    Ok((Some(ConsumeConcurrentlyStatus::ConsumeSuccess), _)) => {
+                        result.set_consume_result(Some(ConsumeMessageResult::CrSuccess));
+                    }
+                    Ok((Some(ConsumeConcurrentlyStatus::ReconsumeLater), _)) => {
+                        result.set_consume_result(Some(ConsumeMessageResult::CrLater));
+                    }
+                    Ok((None, _)) => {
+                        result.set_consume_result(Some(ConsumeMessageResult::CrReturnNull));
+                    }
+                    Err(error) => {
+                        result.set_consume_result(Some(ConsumeMessageResult::CrThrowException));
+                        result.set_remark(Some(error.to_string()));
+                    }
+                }
+            }
+            PushMessageListener::Orderly(listener) if orderly => {
+                result.set_order(true);
+                let callback = tokio::spawn(
+                    listener.consume_message(messages, ConsumeOrderlyContext::new(queue)),
+                );
+                match callback.await {
+                    Ok((Some(ConsumeOrderlyStatus::Success), context)) => {
+                        result.set_consume_result(Some(ConsumeMessageResult::CrSuccess));
+                        result.set_auto_commit(context.auto_commit());
+                    }
+                    Ok((Some(ConsumeOrderlyStatus::Rollback), context)) => {
+                        result.set_consume_result(Some(ConsumeMessageResult::CrRollback));
+                        result.set_auto_commit(context.auto_commit());
+                    }
+                    Ok((Some(ConsumeOrderlyStatus::Commit), context)) => {
+                        result.set_consume_result(Some(ConsumeMessageResult::CrCommit));
+                        result.set_auto_commit(context.auto_commit());
+                    }
+                    Ok((Some(ConsumeOrderlyStatus::SuspendCurrentQueueAMoment), context)) => {
+                        result.set_consume_result(Some(ConsumeMessageResult::CrLater));
+                        result.set_auto_commit(context.auto_commit());
+                    }
+                    Ok((None, context)) => {
+                        result.set_consume_result(Some(ConsumeMessageResult::CrReturnNull));
+                        result.set_auto_commit(context.auto_commit());
+                    }
+                    Err(error) => {
+                        result.set_consume_result(Some(ConsumeMessageResult::CrThrowException));
+                        result.set_remark(Some(error.to_string()));
+                    }
+                }
+            }
+            _ => return None,
+        }
+        result.set_spent_time_mills(started.elapsed().as_millis().min(i64::MAX as u128) as i64);
+        Some(result)
+    }
+
     pub fn is_pause(&self) -> bool {
         self.paused.load(Ordering::Acquire)
     }
@@ -891,7 +1132,14 @@ impl PushConsumer {
         match &*state {
             State::Started {
                 consume_service, ..
-            } => consume_service.update_core_pool_size(core_pool_size),
+            } => {
+                let updated = consume_service.update_core_pool_size(core_pool_size);
+                if updated {
+                    self.consume_core_pool_size
+                        .store(core_pool_size, Ordering::Release);
+                }
+                updated
+            }
             State::Created | State::Shutdown => false,
         }
     }
@@ -1376,6 +1624,7 @@ impl PushConsumer {
             broker_name: Some(broker_name.to_owned()),
             ..PullMessageRequestHeader::default()
         };
+        let pull_started = Instant::now();
         let pull_result = context
             .runtime
             .api()
@@ -1406,6 +1655,16 @@ impl PushConsumer {
                     message.message_mut().set_topic(topic);
                 }
             }
+        }
+        if processed.result.status == PullStatus::Found {
+            let message_count = processed.messages.as_ref().map_or(0, Vec::len);
+            global_consumer_stats().record_pull(
+                context.runtime.client_id(),
+                self.config.consumer_group(),
+                topic,
+                pull_started.elapsed(),
+                message_count,
+            );
         }
         Ok(processed)
     }
@@ -1700,6 +1959,14 @@ impl PushConsumer {
         consume_context.access_channel = self.config.client_config().access_channel();
         self.consume_message_hooks
             .execute_after(&mut consume_context);
+        if let Some(topic) = request.batch.queue().topic() {
+            global_consumer_stats().record_consume_rt(
+                context.runtime.client_id(),
+                self.config.consumer_group(),
+                topic,
+                callback_started.elapsed(),
+            );
+        }
         self.complete_consume_request(request, context, status, returned_context)
             .await;
     }
@@ -1848,6 +2115,14 @@ impl PushConsumer {
             consume_context.access_channel = self.config.client_config().access_channel();
             self.consume_message_hooks
                 .execute_after(&mut consume_context);
+            if let Some(topic) = queue.topic() {
+                global_consumer_stats().record_consume_rt(
+                    context.runtime.client_id(),
+                    self.config.consumer_group(),
+                    topic,
+                    callback_started.elapsed(),
+                );
+            }
 
             if !process_queue
                 .snapshot(generation)
@@ -1881,6 +2156,36 @@ impl PushConsumer {
             }
 
             let status = status.unwrap_or(ConsumeOrderlyStatus::SuspendCurrentQueueAMoment);
+            if let Some(topic) = queue.topic() {
+                let message_count = batch.offsets().len();
+                let (acknowledged, failed) = if returned_context.auto_commit() {
+                    match status {
+                        ConsumeOrderlyStatus::Success
+                        | ConsumeOrderlyStatus::Commit
+                        | ConsumeOrderlyStatus::Rollback => (Some(message_count), None),
+                        ConsumeOrderlyStatus::SuspendCurrentQueueAMoment => {
+                            (None, Some(message_count))
+                        }
+                    }
+                } else {
+                    match status {
+                        ConsumeOrderlyStatus::Success => (Some(message_count), None),
+                        ConsumeOrderlyStatus::SuspendCurrentQueueAMoment => {
+                            (None, Some(message_count))
+                        }
+                        ConsumeOrderlyStatus::Commit | ConsumeOrderlyStatus::Rollback => {
+                            (None, None)
+                        }
+                    }
+                };
+                global_consumer_stats().record_orderly_result(
+                    context.runtime.client_id(),
+                    self.config.consumer_group(),
+                    topic,
+                    acknowledged,
+                    failed,
+                );
+            }
             let retry_required = if status == ConsumeOrderlyStatus::SuspendCurrentQueueAMoment {
                 self.check_orderly_reconsume_times(
                     &context,
@@ -2097,6 +2402,16 @@ impl PushConsumer {
             Some(ConsumeConcurrentlyStatus::ReconsumeLater) | None => -1,
         };
         let acknowledged = (ack_index + 1).max(0) as usize;
+        if let Some(topic) = queue.topic() {
+            let successful_result = status == Some(ConsumeConcurrentlyStatus::ConsumeSuccess);
+            global_consumer_stats().record_concurrent_result(
+                context.runtime.client_id(),
+                self.config.consumer_group(),
+                topic,
+                successful_result.then_some(acknowledged),
+                batch_len.saturating_sub(acknowledged),
+            );
+        }
         let mut terminal_offsets = batch.offsets()[..acknowledged].to_vec();
         let mut local_retry_needed = false;
         if self.config.message_model()
@@ -2682,6 +2997,8 @@ impl PushConsumer {
             pull_rpc_workers: pull_rpc_workers.clone(),
             consumer: Arc::downgrade(self),
         };
+        self.consumer_start_timestamp
+            .store(epoch_millis(), Ordering::Release);
         let startup = self
             .start_registered(&runtime, &consumer_group, offset_store.clone(), &services)
             .await;
@@ -3022,6 +3339,7 @@ impl PushConsumer {
             };
             let deadline = Instant::now()
                 + Duration::from_millis(poll_time.saturating_add(10_000).max(0) as u64);
+            let pop_started = Instant::now();
             let reply = context
                 .runtime
                 .api()
@@ -3083,6 +3401,13 @@ impl PushConsumer {
                 continue;
             }
             let messages = result.messages().unwrap_or_default().to_vec();
+            global_consumer_stats().record_pull(
+                context.runtime.client_id(),
+                &consumer_group,
+                &topic,
+                pop_started.elapsed(),
+                messages.len(),
+            );
             let (messages, discarded) = self.filter_pop_messages(&subscription, messages);
             for message in discarded {
                 if let Err(error) = self
@@ -3260,6 +3585,7 @@ impl PushConsumer {
         self.consume_message_hooks
             .execute_before(&mut consume_context);
         messages = consume_context.messages.clone().unwrap_or_default();
+        let consume_started = Instant::now();
         let (ack_index, delay_level, orderly_delay_millis, status, success, return_type) =
             match listener {
                 PushMessageListener::Concurrently(listener) => {
@@ -3378,6 +3704,39 @@ impl PushConsumer {
         consume_context.access_channel = self.config.client_config().access_channel();
         self.consume_message_hooks
             .execute_after(&mut consume_context);
+
+        let message_count = messages.len();
+        if let Some(topic) = queue.topic() {
+            let stats = global_consumer_stats();
+            stats.record_consume_rt(
+                runtime.client_id(),
+                &consumer_group,
+                topic,
+                consume_started.elapsed(),
+            );
+            if message_count > 0 && return_type != "TIME_OUT" && !process_queue.is_dropped() {
+                if success {
+                    let acknowledged = usize::try_from(ack_index.saturating_add(1))
+                        .unwrap_or(0)
+                        .min(message_count);
+                    stats.record_concurrent_result(
+                        runtime.client_id(),
+                        &consumer_group,
+                        topic,
+                        Some(acknowledged),
+                        message_count.saturating_sub(acknowledged),
+                    );
+                } else {
+                    stats.record_concurrent_result(
+                        runtime.client_id(),
+                        &consumer_group,
+                        topic,
+                        None,
+                        message_count,
+                    );
+                }
+            }
+        }
 
         let max_reconsume_times = if self.config.max_reconsume_times() == -1 {
             16
@@ -4881,6 +5240,36 @@ impl PushConsumer {
 }
 
 impl ConsumerRuntime for PushConsumerRegistration {
+    fn inbound_processor(
+        &self,
+        operation: ConsumerOperation,
+    ) -> Option<Arc<dyn rocketmq_classic_remoting::client::RequestProcessor>> {
+        match operation {
+            ConsumerOperation::ResetOffset => {
+                Some(Arc::new(crate::admin::ResetOffsetProcessor::new(
+                    self.consumer.clone(),
+                    self.runtime.clone(),
+                )))
+            }
+            ConsumerOperation::ConsumerStatus => Some(Arc::new(
+                crate::admin::ConsumerStatusProcessor::new(self.offset_store.clone()),
+            )),
+            ConsumerOperation::ConsumeDirectly => {
+                Some(Arc::new(crate::admin::DirectConsumeProcessor::new(
+                    self.consumer.clone(),
+                    self.runtime.clone(),
+                )))
+            }
+            ConsumerOperation::RunningInfo => Some(Arc::new(
+                crate::admin::ConsumerRunningInfoProcessor::for_push(
+                    self.consumer.clone(),
+                    self.offset_store.clone(),
+                    self.runtime.clone(),
+                ),
+            )),
+        }
+    }
+
     fn pull_message(
         &self,
         request: Arc<dyn rocketmq_classic_core::runtime::MessageRequest>,
@@ -5069,8 +5458,10 @@ mod tests {
     use bytes::BytesMut;
     use rocketmq_classic_common::message::{Message, MessageExt};
     use rocketmq_classic_core::api::consumer::PullResultExt;
+    use rocketmq_classic_protocol::body::GetConsumerStatusBody;
     use rocketmq_classic_protocol::codes::{request, response};
     use rocketmq_classic_protocol::header::HeaderMap;
+    use rocketmq_classic_remoting::client::RequestProcessor;
     use rocketmq_classic_remoting::{
         RemotingCommand,
         codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
@@ -5112,6 +5503,8 @@ mod tests {
         persisted: Mutex<HashMap<MessageQueue, i64>>,
         updates: Mutex<Vec<(MessageQueue, i64, bool)>>,
         fail_persist: Mutex<bool>,
+        persist_started: Mutex<Option<Arc<tokio::sync::Barrier>>>,
+        persist_release: Mutex<Option<Arc<tokio::sync::Barrier>>>,
     }
 
     impl RecordingOffsetStore {
@@ -5121,6 +5514,15 @@ mod tests {
 
         fn set_persist_failure(&self, fail: bool) {
             *self.fail_persist.lock().unwrap() = fail;
+        }
+
+        fn set_persist_barriers(
+            &self,
+            started: Arc<tokio::sync::Barrier>,
+            release: Arc<tokio::sync::Barrier>,
+        ) {
+            *self.persist_started.lock().unwrap() = Some(started);
+            *self.persist_release.lock().unwrap() = Some(release);
         }
     }
 
@@ -5163,6 +5565,14 @@ mod tests {
 
         fn persist<'a>(&'a self, queue: &'a MessageQueue) -> OffsetStoreFuture<'a, ()> {
             Box::pin(async move {
+                let started = self.persist_started.lock().unwrap().clone();
+                if let Some(started) = started {
+                    started.wait().await;
+                }
+                let release = self.persist_release.lock().unwrap().clone();
+                if let Some(release) = release {
+                    release.wait().await;
+                }
                 if *self.fail_persist.lock().unwrap() {
                     return Err(OffsetStoreError::Runtime("injected persist failure".into()));
                 }
@@ -5303,6 +5713,33 @@ mod tests {
             "filterServerTable": {}
         }))
         .unwrap()
+    }
+
+    fn pop_test_message_record() -> Vec<u8> {
+        let now = epoch_millis();
+        let mut record = Vec::new();
+        record.extend_from_slice(&0i32.to_be_bytes());
+        record.extend_from_slice(&(-626_843_481i32).to_be_bytes());
+        record.extend_from_slice(&0i32.to_be_bytes());
+        record.extend_from_slice(&0i32.to_be_bytes());
+        record.extend_from_slice(&0i32.to_be_bytes());
+        record.extend_from_slice(&10i64.to_be_bytes());
+        record.extend_from_slice(&10i64.to_be_bytes());
+        record.extend_from_slice(&0i32.to_be_bytes());
+        record.extend_from_slice(&now.to_be_bytes());
+        record.extend_from_slice(&[127, 0, 0, 1, 0, 0, 0, 0]);
+        record.extend_from_slice(&now.to_be_bytes());
+        record.extend_from_slice(&[127, 0, 0, 1, 0, 0, 0, 0]);
+        record.extend_from_slice(&0i32.to_be_bytes());
+        record.extend_from_slice(&0i64.to_be_bytes());
+        record.extend_from_slice(&1i32.to_be_bytes());
+        record.push(b'x');
+        record.push(6);
+        record.extend_from_slice(b"orders");
+        record.extend_from_slice(&0i16.to_be_bytes());
+        let size = i32::try_from(record.len()).unwrap();
+        record[..4].copy_from_slice(&size.to_be_bytes());
+        record
     }
 
     async fn accept_remoting_request(
@@ -5593,6 +6030,10 @@ mod tests {
             AckStatus::Ok
         );
 
+        let status =
+            global_consumer_stats().status(runtime.client_id(), "pop-lifecycle-group", "orders");
+        assert!(status.consume_ok_tps > 0.0);
+
         broker_peer.await.unwrap();
         runtime.shutdown().await.unwrap();
     }
@@ -5674,14 +6115,30 @@ mod tests {
                         .await;
                     }
                     request::POP_MESSAGE => {
-                        peer_pop_request_count.fetch_add(1, Ordering::SeqCst);
-                        write_remoting_reply(
-                            stream.as_mut().unwrap(),
-                            &incoming,
-                            response::PULL_NOT_FOUND,
-                            None,
-                        )
-                        .await;
+                        if peer_pop_request_count.fetch_add(1, Ordering::SeqCst) == 0 {
+                            tokio::time::sleep(Duration::from_millis(20)).await;
+                            write_remoting_reply_with_body(
+                                stream.as_mut().unwrap(),
+                                &incoming,
+                                response::SUCCESS,
+                                Some(HeaderMap::from([
+                                    ("popTime".into(), epoch_millis().to_string()),
+                                    ("invisibleTime".into(), "60000".into()),
+                                    ("reviveQid".into(), "2".into()),
+                                    ("restNum".into(), "0".into()),
+                                ])),
+                                Some(pop_test_message_record()),
+                            )
+                            .await;
+                        } else {
+                            write_remoting_reply(
+                                stream.as_mut().unwrap(),
+                                &incoming,
+                                response::PULL_NOT_FOUND,
+                                None,
+                            )
+                            .await;
+                        }
                     }
                     request::HEART_BEAT
                     | request::UNREGISTER_CLIENT
@@ -5738,6 +6195,21 @@ mod tests {
         })
         .await
         .expect("assigned POP worker did not issue POP_MESSAGE");
+        timeout(Duration::from_secs(3), async {
+            while global_consumer_stats()
+                .status(runtime.client_id(), "pop-assignment-flow", "orders")
+                .pull_rt
+                <= 0.0
+            {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("POP_FOUND must record pull latency in consumer statistics");
+        let status =
+            global_consumer_stats().status(runtime.client_id(), "pop-assignment-flow", "orders");
+        assert!(status.pull_rt > 0.0, "unexpected POP stats: {status:?}");
+        assert!(status.pull_tps > 0.0, "unexpected POP stats: {status:?}");
         let process_queue = read_lock(&consumer.pop_process_queues)
             .get(&queue)
             .cloned()
@@ -6726,6 +7198,431 @@ mod tests {
         assert_eq!(store.values.lock().unwrap().get(&queue), None);
         assert_eq!(store.persisted.lock().unwrap().get(&queue), Some(&50));
         consumer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn reset_offset_fences_a_slow_callback_and_persists_only_the_new_value() {
+        let mut config = PushConsumerConfig::new("reset-offset-listener-race").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let store = Arc::new(RecordingOffsetStore::default());
+        let store_dyn: Arc<dyn OffsetStore> = store.clone();
+        let scheduler = Arc::new(PullScheduler::new());
+        let consume_service = idle_consume_service();
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            store_dyn.clone(),
+            consume_service.clone(),
+            scheduler,
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        store.update_offset(&queue, 50, false);
+        let request = consume_request(queue.clone(), 73, vec![message(50)]);
+        let process_queue = request.process_queue.clone();
+        write_lock(&consumer.process_queues).insert(queue.clone(), process_queue.clone());
+        let listener_started = Arc::new(tokio::sync::Barrier::new(2));
+        let listener_release = Arc::new(tokio::sync::Barrier::new(2));
+        let started = listener_started.clone();
+        let release = listener_release.clone();
+        let listener: Arc<dyn MessageListenerConcurrently> = Arc::new(
+            move |_messages: Vec<MessageExt>, context: ConsumeConcurrentlyContext| {
+                let started = started.clone();
+                let release = release.clone();
+                async move {
+                    started.wait().await;
+                    release.wait().await;
+                    (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+                }
+            },
+        );
+        let running_consumer = consumer.clone();
+        let listener_task = tokio::spawn(async move {
+            running_consumer
+                .run_consume_request(request, listener)
+                .await;
+        });
+        listener_started.wait().await;
+
+        consumer
+            .reset_consumer_offsets("orders", vec![(queue.clone(), Some(7))])
+            .await
+            .unwrap();
+        assert!(!read_lock(&consumer.process_queues).contains_key(&queue));
+        assert_eq!(store.values.lock().unwrap().get(&queue), Some(&7));
+        assert_eq!(store.persisted.lock().unwrap().get(&queue), Some(&7));
+
+        listener_release.wait().await;
+        listener_task.await.unwrap();
+        assert_eq!(store.values.lock().unwrap().get(&queue), Some(&7));
+        consumer.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn reset_offset_fences_a_late_pull_response_before_persisting_the_new_value() {
+        let mut config = PushConsumerConfig::new("reset-offset-pull-race").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let store = Arc::new(RecordingOffsetStore::default());
+        let store_dyn: Arc<dyn OffsetStore> = store.clone();
+        let scheduler = Arc::new(PullScheduler::new());
+        let consume_service = idle_consume_service();
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            store_dyn.clone(),
+            consume_service.clone(),
+            scheduler.clone(),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        store.update_offset(&queue, 50, false);
+        store.persist(&queue).await.unwrap();
+        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 73));
+        write_lock(&consumer.process_queues).insert(queue.clone(), process_queue.clone());
+        let stale_request = Arc::new(PullRequest::new(
+            "reset-offset-pull-race",
+            process_queue.clone(),
+            50,
+        ));
+        let persist_started = Arc::new(tokio::sync::Barrier::new(2));
+        let persist_release = Arc::new(tokio::sync::Barrier::new(2));
+        store.set_persist_barriers(persist_started.clone(), persist_release.clone());
+
+        let reset_consumer = consumer.clone();
+        let reset_queue = queue.clone();
+        let reset_task = tokio::spawn(async move {
+            reset_consumer
+                .reset_consumer_offsets("orders", vec![(reset_queue, Some(7))])
+                .await
+        });
+        persist_started.wait().await;
+        assert!(process_queue.snapshot(73).unwrap().dropped);
+        assert_eq!(store.values.lock().unwrap().get(&queue), Some(&7));
+        assert_eq!(store.persisted.lock().unwrap().get(&queue), Some(&50));
+
+        let mut late_result = pull_result(PullStatus::Found, 51);
+        late_result.messages = Some(vec![message(50)]);
+        consumer
+            .apply_pull_result(
+                stale_request,
+                PullContext {
+                    runtime: runtime.clone(),
+                    offset_store: store_dyn,
+                    scheduler,
+                    consume_service: ConsumeService::Concurrent(consume_service),
+                },
+                late_result,
+            )
+            .await;
+        assert_eq!(store.values.lock().unwrap().get(&queue), Some(&7));
+        assert_eq!(
+            store.updates.lock().unwrap().as_slice(),
+            &[(queue.clone(), 50, false), (queue.clone(), 7, false)]
+        );
+
+        persist_release.wait().await;
+        reset_task.await.unwrap().unwrap();
+        assert_eq!(store.values.lock().unwrap().get(&queue), Some(&7));
+        assert_eq!(store.persisted.lock().unwrap().get(&queue), Some(&7));
+        assert!(!read_lock(&consumer.process_queues).contains_key(&queue));
+        consumer.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn direct_consume_invokes_listener_without_advancing_regular_offsets() {
+        let mut config = PushConsumerConfig::new("direct-consume-offset-isolation").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let store = Arc::new(RecordingOffsetStore::default());
+        let store_dyn: Arc<dyn OffsetStore> = store.clone();
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        store.update_offset(&queue, 50, false);
+        store.persist(&queue).await.unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let listener: Arc<dyn MessageListenerConcurrently> = {
+            let calls = calls.clone();
+            Arc::new(
+                move |messages: Vec<MessageExt>, context: ConsumeConcurrentlyContext| {
+                    let calls = calls.clone();
+                    async move {
+                        assert_eq!(messages.len(), 1);
+                        assert_eq!(messages[0].message().topic(), "orders");
+                        assert_eq!(context.message_queue().topic(), Some("orders"));
+                        assert_eq!(context.message_queue().broker_name(), Some("broker-a"));
+                        calls.fetch_add(1, Ordering::AcqRel);
+                        (Some(ConsumeConcurrentlyStatus::ReconsumeLater), context)
+                    }
+                },
+            )
+        };
+        let consume_service = Arc::new(ConcurrentConsumeService::new(1, 1, listener));
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            store_dyn,
+            consume_service.clone(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+
+        let result = consumer
+            .consume_message_directly(message(812), Some("broker-a".into()))
+            .await
+            .unwrap();
+
+        assert_eq!(calls.load(Ordering::Acquire), 1);
+        assert_eq!(
+            result.get_consume_result(),
+            Some(ConsumeMessageResult::CrLater)
+        );
+        assert_eq!(store.values.lock().unwrap().get(&queue), Some(&50));
+        assert_eq!(store.persisted.lock().unwrap().get(&queue), Some(&50));
+        assert!(!read_lock(&consumer.process_queues).contains_key(&queue));
+
+        consumer.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn running_info_returns_queue_snapshot_and_omits_proxy_credentials() {
+        let mut config = PushConsumerConfig::new("running-info-snapshot").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        config
+            .client_config_mut()
+            .set_socks_proxy_config(Some(
+                r#"{"10.1.0.0/16":{"addr":"proxy.internal:1080","username":"reader","password":"secret"}}"#.into(),
+            ));
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        consumer.subscribe("orders", "blue").await.unwrap();
+        let store = Arc::new(RecordingOffsetStore::default());
+        let store_dyn: Arc<dyn OffsetStore> = store.clone();
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        store.update_offset(&queue, 17, false);
+        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 19));
+        process_queue
+            .insert_messages(19, vec![message(11)])
+            .unwrap();
+        write_lock(&consumer.process_queues).insert(queue.clone(), process_queue);
+
+        let pop_queue = MessageQueue::new("orders", "broker-a", 2);
+        let pop_process_queue = Arc::new(PopProcessQueue::new(pop_queue.clone(), 23));
+        pop_process_queue.inc_found_messages(3);
+        pop_process_queue.set_last_pop_timestamp(1_700_000_000_005);
+        write_lock(&consumer.pop_process_queues).insert(pop_queue.clone(), pop_process_queue);
+
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            store_dyn.clone(),
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+        consumer
+            .consumer_start_timestamp
+            .store(1_700_000_000_000, Ordering::Release);
+        global_consumer_stats().record_pull(
+            runtime.client_id(),
+            "running-info-snapshot",
+            "orders",
+            Duration::from_millis(500),
+            2,
+        );
+        global_consumer_stats().record_consume_rt(
+            runtime.client_id(),
+            "running-info-snapshot",
+            "orders",
+            Duration::from_millis(8),
+        );
+        global_consumer_stats().record_concurrent_result(
+            runtime.client_id(),
+            "running-info-snapshot",
+            "orders",
+            Some(3),
+            1,
+        );
+
+        let processor = crate::admin::ConsumerRunningInfoProcessor::for_push(
+            Arc::downgrade(&consumer),
+            Arc::downgrade(&store_dyn),
+            Arc::downgrade(&runtime),
+        );
+        let response = processor
+            .process(RemotingCommand {
+                ext_fields: Some(BTreeMap::from([
+                    ("consumerGroup".into(), "running-info-snapshot".into()),
+                    (
+                        "clientId".into(),
+                        "client-id-is-not-used-for-filtering".into(),
+                    ),
+                    ("jstackEnable".into(), "false".into()),
+                ])),
+                ..Default::default()
+            })
+            .unwrap()
+            .unwrap();
+        assert_eq!(response.code, response::SUCCESS);
+        let bytes = response.body.unwrap();
+        let json = ConsumerRunningInfoBody::decode_java_json(std::str::from_utf8(&bytes).unwrap())
+            .unwrap();
+        assert!(json.get("jstack").is_none());
+        let properties = json["properties"].as_object().unwrap();
+        assert_eq!(properties["PROP_CONSUME_TYPE"], "CONSUME_PASSIVELY");
+        assert_eq!(properties["PROP_CONSUMER_START_TIMESTAMP"], "1700000000000");
+        assert_eq!(properties["pullThresholdForQueue"], "1000");
+        assert!(properties.get("socksProxyConfig").is_none());
+        assert!(properties.get("tlsConfig").is_none());
+        assert_eq!(json["subscriptionSet"].as_array().unwrap().len(), 1);
+        assert_eq!(json["statusTable"]["orders"]["pullRT"], 500.0);
+        assert!(json["statusTable"]["orders"]["pullTPS"].as_f64().unwrap() > 0.0);
+        assert_eq!(json["statusTable"]["orders"]["consumeRT"], 8.0);
+        assert!(
+            json["statusTable"]["orders"]["consumeOKTPS"]
+                .as_f64()
+                .unwrap()
+                > 0.0
+        );
+        assert!(
+            json["statusTable"]["orders"]["consumeFailedTPS"]
+                .as_f64()
+                .unwrap()
+                > 0.0
+        );
+        assert_eq!(json["statusTable"]["orders"]["consumeFailedMsgs"], 1);
+        let encoded_queue = r#"{"brokerName":"broker-a","queueId":0,"topic":"orders"}"#;
+        let encoded_pop_queue = r#"{"brokerName":"broker-a","queueId":2,"topic":"orders"}"#;
+        assert_eq!(
+            json["mqTable"][encoded_queue]["commitOffset"],
+            serde_json::Value::from(17)
+        );
+        assert_eq!(json["mqTable"][encoded_queue]["cachedMsgMinOffset"], 11);
+        assert_eq!(json["mqTable"][encoded_queue]["cachedMsgMaxOffset"], 11);
+        assert_eq!(json["mqTable"][encoded_queue]["cachedMsgCount"], 1);
+        assert_eq!(json["mqPopTable"][encoded_pop_queue]["waitAckCount"], 3);
+        assert_eq!(
+            json["mqPopTable"][encoded_pop_queue]["lastPopTimestamp"],
+            1_700_000_000_005i64
+        );
+        assert!(!std::str::from_utf8(&bytes).unwrap().contains("secret"));
+
+        let response = processor
+            .process(RemotingCommand {
+                ext_fields: Some(BTreeMap::from([
+                    ("consumerGroup".into(), "running-info-snapshot".into()),
+                    ("clientId".into(), "ignored-client-id".into()),
+                    ("jstackEnable".into(), "true".into()),
+                ])),
+                ..Default::default()
+            })
+            .unwrap()
+            .unwrap();
+        let body = ConsumerRunningInfoBody::decode_java_json(
+            std::str::from_utf8(response.body.as_deref().unwrap()).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            body["jstack"]
+                .as_str()
+                .is_some_and(|stack| !stack.is_empty())
+        );
+        assert!(
+            body["jstack"]
+                .as_str()
+                .is_some_and(|stack| stack.contains("running_info_returns_queue_snapshot"))
+        );
+
+        consumer.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn consumer_status_stays_responsive_during_a_slow_direct_consume_callback() {
+        let mut config = PushConsumerConfig::new("status-during-direct-consume").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let store = Arc::new(RecordingOffsetStore::default());
+        let store_dyn: Arc<dyn OffsetStore> = store.clone();
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        store.update_offset(&queue, 42, false);
+        let listener_started = Arc::new(tokio::sync::Barrier::new(2));
+        let listener_release = Arc::new(tokio::sync::Barrier::new(2));
+        let started = listener_started.clone();
+        let release = listener_release.clone();
+        let listener: Arc<dyn MessageListenerConcurrently> = Arc::new(
+            move |_messages: Vec<MessageExt>, context: ConsumeConcurrentlyContext| {
+                let started = started.clone();
+                let release = release.clone();
+                async move {
+                    started.wait().await;
+                    release.wait().await;
+                    (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+                }
+            },
+        );
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            store_dyn.clone(),
+            Arc::new(ConcurrentConsumeService::new(1, 1, listener)),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+
+        let direct_consume = {
+            let consumer = consumer.clone();
+            tokio::spawn(async move {
+                consumer
+                    .consume_message_directly(message(99), Some("broker-a".into()))
+                    .await
+                    .unwrap()
+            })
+        };
+        listener_started.wait().await;
+        let status_processor =
+            crate::admin::ConsumerStatusProcessor::new(Arc::downgrade(&store_dyn));
+        let response = tokio::time::timeout(Duration::from_secs(1), async {
+            status_processor.process(RemotingCommand {
+                ext_fields: Some(BTreeMap::from([
+                    ("topic".into(), "orders".into()),
+                    ("group".into(), "status-during-direct-consume".into()),
+                ])),
+                ..Default::default()
+            })
+        })
+        .await
+        .expect("status snapshot must not wait for a consumer callback")
+        .unwrap()
+        .unwrap();
+        assert_eq!(response.code, response::SUCCESS);
+        let body = GetConsumerStatusBody::decode_java_json(
+            std::str::from_utf8(response.body.as_deref().unwrap()).unwrap(),
+        )
+        .unwrap();
+        body.message_queue_table
+            .unwrap()
+            .with(|entries| assert_eq!(entries, &vec![(queue.clone(), Some(42))]));
+
+        listener_release.wait().await;
+        assert_eq!(
+            direct_consume.await.unwrap().get_consume_result(),
+            Some(ConsumeMessageResult::CrSuccess)
+        );
+        consumer.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
     }
 
     #[tokio::test]

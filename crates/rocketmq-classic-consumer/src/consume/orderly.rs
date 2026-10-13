@@ -230,6 +230,10 @@ impl OrderlyConsumeService {
         }
     }
 
+    pub(crate) fn listener(&self) -> Arc<dyn MessageListenerOrderly> {
+        self.listener.clone()
+    }
+
     pub(crate) async fn start(
         &self,
         consumer: std::sync::Weak<PushConsumer>,

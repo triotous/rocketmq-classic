@@ -473,6 +473,16 @@ impl ProcessQueue {
         Ok(true)
     }
 
+    pub(crate) fn clear(&self) {
+        let mut state = self.lock_state();
+        state.messages.clear();
+        state.in_flight_batches.clear();
+        state.cached_count = 0;
+        state.cached_bytes = 0;
+        state.highest_seen_offset = None;
+        state.consuming = false;
+    }
+
     pub(crate) fn release_consume_dispatch(
         &self,
         generation: u64,
@@ -901,6 +911,29 @@ mod tests {
             Ok(LockAttemptResult::Dropped)
         );
         assert!(process_queue.snapshot(25).unwrap().dropped);
+    }
+
+    #[test]
+    fn reset_clear_discards_cached_and_in_flight_queue_messages() {
+        let process_queue = process_queue(28);
+        process_queue
+            .insert_messages(28, vec![message(30, 1), message(31, 2)])
+            .unwrap();
+        let batch = process_queue.take_batch(28, 2).unwrap().unwrap();
+        assert_eq!(process_queue.snapshot(28).unwrap().in_flight_count, 2);
+
+        process_queue.drop_assignment(28).unwrap();
+        process_queue.clear();
+
+        let snapshot = process_queue.snapshot(28).unwrap();
+        assert_eq!(snapshot.cached_count, 0);
+        assert_eq!(snapshot.cached_bytes, 0);
+        assert_eq!(snapshot.in_flight_count, 0);
+        assert_eq!(snapshot.next_commit_offset, None);
+        assert!(matches!(
+            process_queue.complete_batch(28, batch.id(), &[30, 31]),
+            Err(ProcessQueueError::Dropped)
+        ));
     }
 
     #[tokio::test(start_paused = true)]

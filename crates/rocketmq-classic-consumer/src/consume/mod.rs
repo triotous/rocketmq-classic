@@ -22,6 +22,15 @@ pub(crate) enum ConsumeService {
 }
 
 impl ConsumeService {
+    pub(crate) fn listener(&self) -> crate::push::PushMessageListener {
+        match self {
+            Self::Concurrent(service) => {
+                crate::push::PushMessageListener::Concurrently(service.listener())
+            }
+            Self::Orderly(service) => crate::push::PushMessageListener::Orderly(service.listener()),
+        }
+    }
+
     pub(crate) async fn start(
         &self,
         consumer: std::sync::Weak<crate::push::PushConsumer>,
