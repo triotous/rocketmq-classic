@@ -56,6 +56,10 @@ pub enum ProducerError {
     NoQueueSelected,
     #[error("send deadline expired")]
     Timeout,
+    #[error("asynchronous send executor rejected the task")]
+    AsyncSenderExecutorRejected,
+    #[error("asynchronous send executor dropped the task before completion")]
+    AsyncSenderExecutorDropped,
     #[error(
         "send request message to <{topic}> OK, but wait reply message timeout, {timeout_millis} ms."
     )]

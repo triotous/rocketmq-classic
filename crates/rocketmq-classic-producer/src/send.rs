@@ -19,7 +19,7 @@ use rocketmq_classic_protocol::header::SendMessageRequestHeaderV1;
 use tokio::{sync::OwnedSemaphorePermit, time::Instant};
 
 use crate::{
-    Producer, ProducerError,
+    AsyncSenderTask, Producer, ProducerError,
     accumulator::{BatchKey, EnqueueResult, ReadyBatch},
     batch::create_batch,
     hooks::{CheckForbiddenContext, SendMessageContext, SendMessageType},
@@ -52,12 +52,14 @@ struct SendAttempt<'a> {
     deadline: Instant,
 }
 
+type AsyncBackpressurePermit = (OwnedSemaphorePermit, OwnedSemaphorePermit);
+
 impl Producer {
     async fn acquire_async_backpressure(
         &self,
         message_size: usize,
         deadline: Instant,
-    ) -> Result<Option<(OwnedSemaphorePermit, OwnedSemaphorePermit)>, ProducerError> {
+    ) -> Result<Option<AsyncBackpressurePermit>, ProducerError> {
         if !self.config.enable_backpressure_for_async_mode() {
             return Ok(None);
         }
@@ -320,7 +322,7 @@ impl Producer {
         let wire_message = self.message_with_namespace(message)?;
         let use_auto_batch =
             auto_batch_enabled && mode != SendMode::Oneway && self.config.auto_batch();
-        let _backpressure = if mode == SendMode::Future && !use_auto_batch {
+        let backpressure = if mode == SendMode::Future && !use_auto_batch {
             self.acquire_async_backpressure(wire_message.body().len(), deadline)
                 .await?
         } else {
@@ -357,7 +359,7 @@ impl Producer {
             let mut hooked_message = wire_message;
             return self
                 .send_future_attempts(
-                    &runtime,
+                    runtime.clone(),
                     &mut queue,
                     &broker,
                     &address,
@@ -365,6 +367,7 @@ impl Producer {
                     false,
                     None,
                     deadline,
+                    backpressure,
                 )
                 .await;
         }
@@ -703,7 +706,7 @@ impl Producer {
         mode: SendMode,
         deadline: Instant,
     ) -> Result<Option<SendResult>, ProducerError> {
-        let _backpressure = if mode == SendMode::Future {
+        let backpressure = if mode == SendMode::Future {
             self.acquire_async_backpressure(message.body().len(), deadline)
                 .await?
         } else {
@@ -728,7 +731,7 @@ impl Producer {
             let mut hooked_message = wire_message;
             return self
                 .send_future_attempts(
-                    &runtime,
+                    runtime.clone(),
                     &mut wire_queue,
                     &broker,
                     &address,
@@ -736,6 +739,7 @@ impl Producer {
                     batch,
                     None,
                     deadline,
+                    backpressure,
                 )
                 .await;
         }
@@ -773,7 +777,7 @@ impl Producer {
         deadline: Instant,
     ) -> Result<Option<SendResult>, ProducerError> {
         let wire_message = self.message_with_namespace(message)?;
-        let _backpressure = if mode == SendMode::Future {
+        let backpressure = if mode == SendMode::Future {
             self.acquire_async_backpressure(wire_message.body().len(), deadline)
                 .await?
         } else {
@@ -845,7 +849,7 @@ impl Producer {
             if mode == SendMode::Future {
                 return self
                     .send_future_attempts(
-                        &runtime,
+                        runtime.clone(),
                         &mut queue,
                         &broker,
                         &address,
@@ -853,6 +857,7 @@ impl Producer {
                         batch,
                         Some(&info),
                         deadline,
+                        backpressure,
                     )
                     .await;
             }
@@ -1004,6 +1009,64 @@ impl Producer {
     #[allow(clippy::too_many_arguments)]
     async fn send_future_attempts(
         &self,
+        runtime: Arc<ClientRuntime>,
+        queue: &mut MessageQueue,
+        broker: &str,
+        address: &str,
+        message: &mut Message,
+        batch: bool,
+        publish_info: Option<&TopicSnapshot>,
+        deadline: Instant,
+        backpressure: Option<AsyncBackpressurePermit>,
+    ) -> Result<Option<SendResult>, ProducerError> {
+        let executor = self.async_sender_executor();
+        let producer = self
+            .self_weak
+            .get()
+            .and_then(std::sync::Weak::upgrade)
+            .ok_or(ProducerError::NotStarted)?;
+        let mut queue = queue.clone();
+        let broker = broker.to_owned();
+        let address = address.to_owned();
+        let mut message = message.clone();
+        let publish_info = publish_info.cloned();
+        let (result_tx, result_rx) = tokio::sync::oneshot::channel();
+        let task: AsyncSenderTask = Box::pin(async move {
+            let backpressure = backpressure;
+            let result = producer
+                .send_future_attempts_inline(
+                    &runtime,
+                    &mut queue,
+                    &broker,
+                    &address,
+                    &mut message,
+                    batch,
+                    publish_info.as_ref(),
+                    deadline,
+                )
+                .await;
+            drop(backpressure);
+            let _ = result_tx.send(result);
+        });
+
+        match executor.execute(task) {
+            Ok(()) => match tokio::time::timeout_at(deadline, result_rx).await {
+                Ok(result) => result.map_err(|_| ProducerError::AsyncSenderExecutorDropped)?,
+                Err(_) => Err(ProducerError::Timeout),
+            },
+            Err(task) if self.config.enable_backpressure_for_async_mode() => {
+                task.await;
+                result_rx
+                    .await
+                    .map_err(|_| ProducerError::AsyncSenderExecutorDropped)?
+            }
+            Err(_task) => Err(ProducerError::AsyncSenderExecutorRejected),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn send_future_attempts_inline(
+        &self,
         runtime: &ClientRuntime,
         queue: &mut MessageQueue,
         broker: &str,
@@ -1013,6 +1076,10 @@ impl Producer {
         publish_info: Option<&TopicSnapshot>,
         deadline: Instant,
     ) -> Result<Option<SendResult>, ProducerError> {
+        if Instant::now() >= deadline {
+            return Err(ProducerError::Timeout);
+        }
+
         self.ids.set_if_missing(message);
         let original_body = message.body().to_vec();
         let compression_sys_flag = self.compress_message_before_hook(message, batch);
@@ -1818,6 +1885,250 @@ mod tests {
             );
         }
         assert_eq!(seen.lock().unwrap().len(), 3);
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn configured_async_sender_executor_runs_future_send_attempts() {
+        struct TokioSender(Arc<std::sync::atomic::AtomicUsize>);
+
+        impl crate::AsyncSenderExecutor for TokioSender {
+            fn execute(&self, task: AsyncSenderTask) -> Result<(), AsyncSenderTask> {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                tokio::spawn(task);
+                Ok(())
+            }
+        }
+
+        let (producer, _) =
+            scripted_producer(crate::ProducerConfig::new("async-executor").unwrap()).await;
+        producer
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .push_back(Ok(Some(scripted_result("async-executor", "offset", 1))));
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        producer.set_async_sender_executor(Some(Arc::new(TokioSender(calls.clone()))));
+
+        let result = producer
+            .send_future(&Message::new("orders", b"executor task".to_vec()))
+            .await
+            .unwrap();
+
+        assert_eq!(result.msg_id, "async-executor");
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(
+            producer.scripted_transport.lock().unwrap().attempts[0].mode,
+            SendMode::Future
+        );
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn dropping_future_after_async_submission_does_not_cancel_the_send() {
+        struct StartedHook(std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>);
+        impl crate::SendMessageHook for StartedHook {
+            fn hook_name(&self) -> &str {
+                "started-hook"
+            }
+
+            fn send_message_before(&self, _context: &mut crate::SendMessageContext<'_>) {
+                if let Some(started) = self.0.lock().unwrap().take() {
+                    let _ = started.send(());
+                }
+            }
+        }
+
+        let (producer, _) =
+            scripted_producer(crate::ProducerConfig::new("async-future-drop").unwrap()).await;
+        producer
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .push_back(Ok(Some(scripted_result("detached-send", "offset", 1))));
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        producer.register_send_message_hook(Arc::new(StartedHook(std::sync::Mutex::new(Some(
+            started_tx,
+        )))));
+
+        let sending_producer = producer.clone();
+        let send_future = tokio::spawn(async move {
+            sending_producer
+                .send_future(&Message::new("orders", b"drop result future".to_vec()))
+                .await
+        });
+        started_rx.await.unwrap();
+        send_future.abort();
+        let _ = send_future.await;
+
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            loop {
+                if !producer
+                    .scripted_transport
+                    .lock()
+                    .unwrap()
+                    .attempts
+                    .is_empty()
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("submitted send continues after its result future is dropped");
+        assert_eq!(
+            producer.scripted_transport.lock().unwrap().attempts.len(),
+            1
+        );
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn rejected_async_sender_executor_follows_java_backpressure_fallback() {
+        struct RejectSender;
+        impl crate::AsyncSenderExecutor for RejectSender {
+            fn execute(&self, task: AsyncSenderTask) -> Result<(), AsyncSenderTask> {
+                Err(task)
+            }
+        }
+
+        let (producer, _) =
+            scripted_producer(crate::ProducerConfig::new("async-reject").unwrap()).await;
+        producer.set_async_sender_executor(Some(Arc::new(RejectSender)));
+        let error = producer
+            .send_future(&Message::new("orders", b"rejected".to_vec()))
+            .await
+            .unwrap_err();
+        assert!(matches!(error, ProducerError::AsyncSenderExecutorRejected));
+        assert!(
+            producer
+                .scripted_transport
+                .lock()
+                .unwrap()
+                .attempts
+                .is_empty()
+        );
+        producer.shutdown().await.unwrap();
+
+        let mut config = crate::ProducerConfig::new("async-reject-backpressure").unwrap();
+        config.set_enable_backpressure_for_async_mode(true);
+        let (producer, _) = scripted_producer(config).await;
+        producer
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .push_back(Ok(Some(scripted_result("inline-fallback", "offset", 2))));
+        producer.set_async_sender_executor(Some(Arc::new(RejectSender)));
+        let result = producer
+            .send_future(&Message::new("orders", b"inline fallback".to_vec()))
+            .await
+            .unwrap();
+        assert_eq!(result.msg_id, "inline-fallback");
+        assert_eq!(
+            producer.scripted_transport.lock().unwrap().attempts.len(),
+            1
+        );
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn queued_async_sender_work_obeys_the_send_deadline() {
+        struct HeldSender(Arc<std::sync::Mutex<Option<AsyncSenderTask>>>);
+        impl crate::AsyncSenderExecutor for HeldSender {
+            fn execute(&self, task: AsyncSenderTask) -> Result<(), AsyncSenderTask> {
+                *self.0.lock().unwrap() = Some(task);
+                Ok(())
+            }
+        }
+
+        let mut config = crate::ProducerConfig::new("async-executor-deadline").unwrap();
+        config.set_enable_backpressure_for_async_mode(true);
+        let (producer, _) = scripted_producer(config).await;
+        let held_task = Arc::new(std::sync::Mutex::new(None));
+        producer.set_async_sender_executor(Some(Arc::new(HeldSender(held_task.clone()))));
+        let initial_count_permits = producer.backpressure_send_num.available_permits();
+        let initial_size_permits = producer.backpressure_send_size.available_permits();
+        let message = Message::new("orders", b"deadline before executor runs".to_vec());
+        let message_size = message.body().len().max(1);
+
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            producer.send_future_with_timeout(&message, std::time::Duration::from_millis(15)),
+        )
+        .await
+        .expect("the send should observe its deadline without executor progress");
+        let error = result.unwrap_err();
+
+        assert!(matches!(error, ProducerError::Timeout));
+        assert_eq!(
+            producer.backpressure_send_num.available_permits(),
+            initial_count_permits - 1
+        );
+        assert_eq!(
+            producer.backpressure_send_size.available_permits(),
+            initial_size_permits - message_size
+        );
+        assert!(
+            producer
+                .scripted_transport
+                .lock()
+                .unwrap()
+                .attempts
+                .is_empty()
+        );
+
+        let delayed_task = held_task.lock().unwrap().take().unwrap();
+        delayed_task.await;
+        assert_eq!(
+            producer.backpressure_send_num.available_permits(),
+            initial_count_permits
+        );
+        assert_eq!(
+            producer.backpressure_send_size.available_permits(),
+            initial_size_permits
+        );
+        assert!(
+            producer
+                .scripted_transport
+                .lock()
+                .unwrap()
+                .attempts
+                .is_empty()
+        );
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn producer_callback_executor_forwards_to_shared_remoting_client() {
+        struct InlineCallback;
+        impl rocketmq_classic_remoting::client::CallbackExecutor for InlineCallback {
+            fn execute(
+                &self,
+                task: Box<dyn FnOnce() + Send + 'static>,
+            ) -> Result<(), Box<dyn FnOnce() + Send + 'static>> {
+                task();
+                Ok(())
+            }
+        }
+
+        let (producer, _) =
+            scripted_producer(crate::ProducerConfig::new("callback-executor").unwrap()).await;
+        let runtime = producer.started_runtime().await.unwrap();
+        let executor: Arc<dyn rocketmq_classic_remoting::client::CallbackExecutor> =
+            Arc::new(InlineCallback);
+        producer
+            .set_callback_executor(Some(executor.clone()))
+            .await
+            .unwrap();
+        let current = runtime.remoting().get_callback_executor().unwrap();
+        assert!(Arc::ptr_eq(&executor, &current));
+
+        producer.set_callback_executor(None).await.unwrap();
+        assert!(runtime.remoting().get_callback_executor().is_some());
         producer.shutdown().await.unwrap();
     }
 

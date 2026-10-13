@@ -11,6 +11,8 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import org.apache.rocketmq.client.Validators;
 import org.apache.rocketmq.client.hook.CheckForbiddenContext;
 import org.apache.rocketmq.client.hook.SendMessageContext;
@@ -120,6 +122,7 @@ public final class ProducerCoreFixtures {
         defaults.put("backPressureForAsyncSendSize", producer.getBackPressureForAsyncSendSize());
         defaults.put("retryResponseCodes", new TreeSet<>(producer.getRetryResponseCodes()));
         result.put("defaults", defaults);
+        result.put("executorSettings", executorSettings());
         result.put("checkForbiddenContext", checkForbiddenContext());
         result.put("sendMessageContext", sendMessageContext());
 
@@ -250,6 +253,30 @@ public final class ProducerCoreFixtures {
 
         result.put("batchValidation", batchCases());
         result.put("batchEncoding", batchEncoding());
+        return result;
+    }
+
+    private static Map<String, Object> executorSettings() {
+        DefaultMQProducer producer = new DefaultMQProducer("producer-executor-fixture");
+        ExecutorService defaultExecutor = producer.getDefaultMQProducerImpl().getAsyncSenderExecutor();
+        ExecutorService customExecutor = Executors.newSingleThreadExecutor();
+        Map<String, Object> result = new TreeMap<>();
+        result.put("defaultAsyncExecutorStable",
+            defaultExecutor == producer.getDefaultMQProducerImpl().getAsyncSenderExecutor());
+        producer.setAsyncSenderExecutor(customExecutor);
+        result.put("customAsyncExecutorRetained",
+            customExecutor == producer.getDefaultMQProducerImpl().getAsyncSenderExecutor());
+        producer.setAsyncSenderExecutor(null);
+        result.put("nullAsyncExecutorRestoresDefault",
+            defaultExecutor == producer.getDefaultMQProducerImpl().getAsyncSenderExecutor());
+        try {
+            producer.setCallbackExecutor(null);
+            result.put("callbackExecutorBeforeStart", "no-exception");
+        } catch (NullPointerException exception) {
+            result.put("callbackExecutorBeforeStart", exception.getClass().getSimpleName());
+        } finally {
+            customExecutor.shutdownNow();
+        }
         return result;
     }
 

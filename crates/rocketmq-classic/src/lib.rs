@@ -22,10 +22,11 @@ pub use rocketmq_classic_producer::TransactionCallbackError;
 pub use rocketmq_classic_producer::validation;
 #[allow(deprecated)]
 pub use rocketmq_classic_producer::{
-    CheckForbiddenContext, CheckForbiddenHook, CommunicationMode, HookException, Producer,
-    ProducerConfig, ProducerError, RecallMessageHandle, SendMessageContext, SendMessageHook,
-    SendMessageType, SendResult, SendStatus, TransactionCheckListener, TransactionExecutor,
-    TransactionListener, TransactionProducer, TransactionSendResult,
+    AsyncSenderExecutor, AsyncSenderTask, CallbackExecutor, CheckForbiddenContext,
+    CheckForbiddenHook, CommunicationMode, HookException, Producer, ProducerConfig, ProducerError,
+    RecallMessageHandle, SendMessageContext, SendMessageHook, SendMessageType, SendResult,
+    SendStatus, TransactionCheckListener, TransactionExecutor, TransactionListener,
+    TransactionProducer, TransactionSendResult,
 };
 pub use rocketmq_classic_producer::{TraceDispatcher, TraceDispatcherError, TraceProducerKind};
 pub use rocketmq_classic_protocol::NamespaceUtil;

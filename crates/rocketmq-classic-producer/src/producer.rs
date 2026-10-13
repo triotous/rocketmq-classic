@@ -9,14 +9,15 @@ use rocketmq_classic_core::{
     runtime::{ClientRuntime, ClientRuntimeManager, GroupLease, ProducerRuntime},
     unique_id::UniqueIdGenerator,
 };
-use rocketmq_classic_remoting::client::RpcHook;
+use rocketmq_classic_remoting::client::{CallbackExecutor, RpcHook};
 
 #[cfg(test)]
 use rocketmq_classic_core::api::producer::{SendMode, SendResult};
 
 use crate::{
-    ProducerConfig, ProducerError, accumulator::AutoBatchAccumulator, fault::FaultStrategy,
-    selector::RoundRobinSelector, validation,
+    AsyncSenderExecutor, ProducerConfig, ProducerError, accumulator::AutoBatchAccumulator,
+    executor::TokioAsyncSenderExecutor, fault::FaultStrategy, selector::RoundRobinSelector,
+    validation,
 };
 
 #[cfg(test)]
@@ -72,6 +73,8 @@ pub struct Producer {
     pub(crate) backpressure_send_size: Arc<Semaphore>,
     publish_info: RwLock<HashMap<String, Arc<TopicSnapshot>>>,
     known_publish_topics: RwLock<BTreeSet<String>>,
+    default_async_sender_executor: Arc<dyn AsyncSenderExecutor>,
+    async_sender_executor: RwLock<Option<Arc<dyn AsyncSenderExecutor>>>,
     pub(crate) selector: RoundRobinSelector,
     pub(crate) fault: FaultStrategy,
     pub(crate) ids: UniqueIdGenerator,
@@ -175,6 +178,8 @@ impl Producer {
             backpressure_send_size,
             publish_info: RwLock::new(HashMap::new()),
             known_publish_topics: RwLock::new(BTreeSet::new()),
+            default_async_sender_executor: Arc::new(TokioAsyncSenderExecutor),
+            async_sender_executor: RwLock::new(None),
             selector: RoundRobinSelector::default(),
             fault,
             #[cfg(test)]
@@ -188,6 +193,37 @@ impl Producer {
 
     pub fn config(&self) -> &ProducerConfig {
         &self.config
+    }
+
+    /// Sets the executor used for future-mode send attempts. Passing `None`
+    /// restores the producer's Tokio-backed default executor.
+    pub fn set_async_sender_executor(&self, executor: Option<Arc<dyn AsyncSenderExecutor>>) {
+        *self
+            .async_sender_executor
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = executor;
+    }
+
+    /// Returns the effective asynchronous sender executor. If no override was
+    /// set, this is the producer's Tokio-backed default executor.
+    pub fn async_sender_executor(&self) -> Arc<dyn AsyncSenderExecutor> {
+        self.async_sender_executor
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+            .unwrap_or_else(|| self.default_async_sender_executor.clone())
+    }
+
+    /// Sets the callback executor on the shared remoting client, corresponding
+    /// to Java `DefaultMQProducer.setCallbackExecutor`. The producer must be
+    /// started because Java stores this executor on its initialized client.
+    pub async fn set_callback_executor(
+        &self,
+        executor: Option<Arc<dyn CallbackExecutor>>,
+    ) -> Result<(), ProducerError> {
+        let runtime = self.started_runtime().await?;
+        runtime.remoting().set_callback_executor(executor);
+        Ok(())
     }
 
     /// Returns the message trace dispatcher after trace initialization.

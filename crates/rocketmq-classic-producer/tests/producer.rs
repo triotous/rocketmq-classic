@@ -1,12 +1,12 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use rocketmq_classic_common::{
     message::{Message, MessageQueue},
     sysflag::message::CompressionType,
 };
 use rocketmq_classic_producer::{
-    CheckForbiddenContext, CommunicationMode, Producer, ProducerConfig, ProducerError,
-    SendMessageContext, SendMessageType,
+    AsyncSenderExecutor, AsyncSenderTask, CheckForbiddenContext, CommunicationMode, Producer,
+    ProducerConfig, ProducerError, SendMessageContext, SendMessageType,
     validation::{
         validate_group, validate_message, validate_send_topic, validate_system_topic,
         validate_topic,
@@ -188,6 +188,46 @@ fn pinned_java_producer_core_fixture_matches_defaults_and_validation() {
         };
         assert_eq!(valid, row["valid"], "message case {case}");
     }
+
+    let executor_fixture = &fixture["executorSettings"];
+    assert_eq!(executor_fixture["defaultAsyncExecutorStable"], true);
+    assert_eq!(executor_fixture["customAsyncExecutorRetained"], true);
+    assert_eq!(executor_fixture["nullAsyncExecutorRestoresDefault"], true);
+    assert_eq!(
+        executor_fixture["callbackExecutorBeforeStart"],
+        "NullPointerException"
+    );
+
+    struct UnusedExecutor;
+    impl AsyncSenderExecutor for UnusedExecutor {
+        fn execute(&self, task: AsyncSenderTask) -> Result<(), AsyncSenderTask> {
+            Err(task)
+        }
+    }
+
+    let producer = Producer::new(ProducerConfig::new("executor-fixture").unwrap());
+    let default_executor = producer.async_sender_executor();
+    assert!(Arc::ptr_eq(
+        &default_executor,
+        &producer.async_sender_executor()
+    ));
+    let executor: Arc<dyn AsyncSenderExecutor> = Arc::new(UnusedExecutor);
+    producer.set_async_sender_executor(Some(executor.clone()));
+    assert!(Arc::ptr_eq(&producer.async_sender_executor(), &executor));
+    producer.set_async_sender_executor(None);
+    assert!(Arc::ptr_eq(
+        &producer.async_sender_executor(),
+        &default_executor
+    ));
+}
+
+#[tokio::test]
+async fn producer_callback_executor_requires_an_initialized_client() {
+    let producer = Producer::new(ProducerConfig::new("callback-before-start").unwrap());
+    assert!(matches!(
+        producer.set_callback_executor(None).await,
+        Err(ProducerError::NotStarted)
+    ));
 }
 
 #[test]
