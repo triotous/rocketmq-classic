@@ -1,10 +1,14 @@
 use std::collections::BTreeMap;
 
-use rocketmq_classic_common::message::MessageQueue;
-use rocketmq_classic_core::route::broker_vip_channel;
+use rocketmq_classic_common::message::{MessageExt, MessageQueue, constants};
+use rocketmq_classic_core::{
+    api::admin::{AdminQueryRequest, QueryResult, decode_message_id},
+    route::broker_vip_channel,
+};
 use rocketmq_classic_protocol::header::{
     BoundaryType, CreateTopicRequestHeader, GetEarliestMsgStoretimeRequestHeader,
     GetMaxOffsetRequestHeader, GetMinOffsetRequestHeader, SearchOffsetRequestHeader,
+    ViewMessageRequestHeader,
 };
 use tokio::time::Instant;
 
@@ -13,6 +17,120 @@ use crate::{Producer, ProducerError, validation};
 const ADMIN_TIMEOUT_MILLIS: u64 = 6_000;
 
 impl Producer {
+    pub async fn query_message(
+        &self,
+        topic: &str,
+        key: &str,
+        max_num: i32,
+        begin_timestamp: i64,
+        end_timestamp: i64,
+    ) -> Result<QueryResult, ProducerError> {
+        self.query_messages(topic, key, max_num, begin_timestamp, end_timestamp, false)
+            .await
+    }
+
+    pub async fn query_message_by_unique_key(
+        &self,
+        topic: &str,
+        unique_key: &str,
+        max_num: i32,
+        begin_timestamp: i64,
+        end_timestamp: i64,
+    ) -> Result<QueryResult, ProducerError> {
+        self.query_messages(
+            topic,
+            unique_key,
+            max_num,
+            begin_timestamp,
+            end_timestamp,
+            true,
+        )
+        .await
+    }
+
+    /// Resolves an offset message ID directly and falls back to a unique-key
+    /// query when Java's producer facade would enter its fallback path.
+    pub async fn view_message(
+        &self,
+        topic: &str,
+        message_id: &str,
+    ) -> Result<Option<MessageExt>, ProducerError> {
+        let runtime = self.started_runtime().await?;
+        if let Ok(decoded) = decode_message_id(message_id) {
+            let header = ViewMessageRequestHeader {
+                // DefaultMQProducer passes the topic unchanged for a physical
+                // ID lookup; its unique-key fallback applies the namespace.
+                topic: Some(topic.to_owned()),
+                offset: decoded.offset,
+            };
+            let timeout = std::time::Duration::from_millis(
+                i64::from(self.config.client_config().mq_client_api_timeout()).max(0) as u64,
+            );
+            if let Ok(message) = runtime
+                .api()
+                .view_message(
+                    &decoded.address.to_string(),
+                    &header,
+                    Instant::now() + timeout,
+                )
+                .await
+            {
+                return Ok(Some(message));
+            }
+        }
+
+        let now_millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+            .min(i64::MAX as u128) as i64;
+        let begin_timestamp = now_millis.saturating_sub(3 * 24 * 60 * 60 * 1000);
+        let result = self
+            .query_messages(topic, message_id, 32, begin_timestamp, i64::MAX, true)
+            .await?;
+        Ok(result.message_list.into_iter().next())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn query_messages(
+        &self,
+        topic: &str,
+        key: &str,
+        max_num: i32,
+        begin_timestamp: i64,
+        end_timestamp: i64,
+        unique_key: bool,
+    ) -> Result<QueryResult, ProducerError> {
+        let runtime = self.started_runtime().await?;
+        let mut client_config = self.config.client_config().clone();
+        let topic = client_config
+            .with_namespace(Some(topic))?
+            .ok_or_else(|| ProducerError::NoRoute(topic.to_owned()))?;
+        let logical_message_queue = topic.starts_with("%LMQ%");
+        let mut query = if unique_key {
+            AdminQueryRequest::by_unique_key(&topic, key, max_num, begin_timestamp, end_timestamp)
+        } else {
+            AdminQueryRequest::by_key(&topic, key, max_num, begin_timestamp, end_timestamp)
+        };
+        query.logical_message_queue = logical_message_queue;
+        query.index_type = if unique_key {
+            constants::INDEX_UNIQUE_TYPE.to_owned()
+        } else {
+            constants::INDEX_KEY_TYPE.to_owned()
+        };
+        let timeout_millis =
+            i64::from(self.config.client_config().mq_client_api_timeout()).max(0) as u64;
+        let deadline =
+            Instant::now() + std::time::Duration::from_millis(timeout_millis).saturating_mul(4);
+        let mut result = runtime.query_message(&query, deadline).await?;
+        for message in &mut result.message_list {
+            if let Some(topic) = client_config.without_namespace(Some(message.message().topic()))? {
+                message.message_mut().set_topic(topic);
+            }
+        }
+        Ok(result)
+    }
+
     /// Searches a queue by Java's default lower timestamp boundary.
     pub async fn search_offset(
         &self,

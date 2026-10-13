@@ -18,6 +18,8 @@ pub enum PullConsumerError {
     OffsetStore(#[from] OffsetStoreError),
     #[error(transparent)]
     PullProcessing(#[from] ProcessPullError),
+    #[error(transparent)]
+    AdminQuery(#[from] rocketmq_classic_core::api::admin::AdminQueryError),
     #[error("consumer group is blank or contains characters not accepted by RocketMQ")]
     InvalidConsumerGroup,
     #[error("consumer group must not be DEFAULT_CONSUMER")]
@@ -120,6 +122,8 @@ pub enum PushConsumerError {
     Runtime(#[from] RuntimeError),
     #[error(transparent)]
     Rpc(#[from] RpcError),
+    #[error(transparent)]
+    AdminQuery(#[from] rocketmq_classic_core::api::admin::AdminQueryError),
     #[error(transparent)]
     OffsetStore(#[from] OffsetStoreError),
     #[error("push pull scheduler error: {0}")]

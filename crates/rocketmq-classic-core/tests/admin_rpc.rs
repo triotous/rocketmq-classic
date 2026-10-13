@@ -3,13 +3,17 @@ use std::time::Duration;
 use base64::Engine;
 use bytes::BytesMut;
 use rocketmq_classic_common::message::{MessageExt, decode_many};
-use rocketmq_classic_core::{api::MQClientApi, error::RpcError};
+use rocketmq_classic_core::{
+    api::{MQClientApi, admin::AdminQueryRequest},
+    error::RpcError,
+};
 use rocketmq_classic_protocol::{
     codes::{request, response},
     header::{
         CommandHeader, CreateTopicRequestHeader, HeaderMap, QueryMessageRequestHeader,
         QueryMessageResponseHeader, ViewMessageRequestHeader,
     },
+    route::TopicRouteData,
 };
 use rocketmq_classic_remoting::{
     RemotingCommand,
@@ -154,8 +158,19 @@ async fn query_message_sets_unique_flag_and_decodes_java_message_records() {
     expected_fields.insert("_UNIQUE_KEY_QUERY".into(), "true".into());
     assert_eq!(command.ext_fields, Some(expected_fields));
     assert_eq!(result.index_last_update_timestamp, 1_700_000_200_041);
-    let messages: Vec<MessageExt> =
+    let mut messages: Vec<MessageExt> =
         decode_many(&message_record, Default::default(), Default::default()).unwrap();
+    for message in &mut messages {
+        let offset_id = message.message_id().map(str::to_owned);
+        let client_id = message
+            .message()
+            .properties()
+            .get("UNIQ_KEY")
+            .cloned()
+            .or_else(|| offset_id.clone());
+        message.set_offset_message_id(offset_id);
+        message.set_message_id(client_id);
+    }
     assert_eq!(result.message_list, messages);
     client.shutdown().await;
 }
@@ -204,6 +219,207 @@ async fn query_message_rejects_success_without_response_header() {
 }
 
 #[tokio::test]
+async fn query_fanout_filters_unique_key_merges_watermarks_and_keeps_partial_successes() {
+    let message_record = java_message_record("ipv4-v1");
+    let decoded = decode_many(&message_record, Default::default(), Default::default()).unwrap();
+    let offset_message_id = decoded[0].message_id().unwrap().to_owned();
+    let unique_key = decoded[0]
+        .message()
+        .properties()
+        .get("UNIQ_KEY")
+        .unwrap()
+        .to_owned();
+    assert_ne!(offset_message_id, unique_key);
+
+    let mut first_header = HeaderMap::new();
+    QueryMessageResponseHeader {
+        index_last_update_timestamp: 100,
+        index_last_update_phyoffset: 1,
+    }
+    .encode_fields(&mut first_header);
+    let (first_address, first_peer) = scripted_peer(
+        response::SUCCESS,
+        Some(first_header),
+        Some(message_record.clone()),
+    )
+    .await;
+
+    let mut second_header = HeaderMap::new();
+    QueryMessageResponseHeader {
+        index_last_update_timestamp: 200,
+        index_last_update_phyoffset: 2,
+    }
+    .encode_fields(&mut second_header);
+    let (second_address, second_peer) = scripted_peer(
+        response::SUCCESS,
+        Some(second_header),
+        Some(message_record.clone()),
+    )
+    .await;
+    let (failed_address, failed_peer) = scripted_peer(response::NO_PERMISSION, None, None).await;
+
+    let route = TopicRouteData::java_decode(
+        serde_json::json!({
+            "queueDatas": [],
+            "brokerDatas": [
+                {"cluster": "cluster-a", "brokerName": "broker-a", "brokerAddrs": {"0": first_address}},
+                {"cluster": "cluster-a", "brokerName": "broker-b", "brokerAddrs": {"0": second_address}},
+                {"cluster": "cluster-a", "brokerName": "broker-c", "brokerAddrs": {"0": failed_address}}
+            ],
+            "filterServerTable": {}
+        })
+        .to_string()
+        .as_bytes(),
+    )
+    .unwrap();
+    let query = AdminQueryRequest::by_unique_key("orders", unique_key.clone(), 32, 10, 99);
+    let (api, client) = api().await;
+
+    let result = api
+        .query_message_across_brokers(&route, &query, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap();
+
+    assert_eq!(result.index_last_update_timestamp, 200);
+    assert_eq!(result.message_list.len(), 2);
+    assert!(result.message_list.iter().all(|message| {
+        message.message_id() == Some(unique_key.as_str())
+            && message.offset_message_id() == Some(offset_message_id.as_str())
+    }));
+    for peer in [first_peer, second_peer] {
+        let command = peer.await.unwrap();
+        assert_eq!(command.code, request::QUERY_MESSAGE);
+        let fields = command.ext_fields.unwrap();
+        assert_eq!(fields.get("key"), Some(&unique_key));
+        assert_eq!(fields.get("maxNum"), Some(&"32".to_owned()));
+        assert_eq!(fields.get("beginTimestamp"), Some(&"10".to_owned()));
+        assert_eq!(fields.get("endTimestamp"), Some(&"99".to_owned()));
+        assert_eq!(fields.get("indexType"), Some(&"U".to_owned()));
+        assert_eq!(fields.get("_UNIQUE_KEY_QUERY"), Some(&"true".to_owned()));
+    }
+    assert_eq!(failed_peer.await.unwrap().code, request::QUERY_MESSAGE);
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn query_fanout_returns_java_no_message_error_after_filtering() {
+    let message_record = java_message_record("ipv4-v1");
+    let mut header = HeaderMap::new();
+    QueryMessageResponseHeader {
+        index_last_update_timestamp: 100,
+        index_last_update_phyoffset: 1,
+    }
+    .encode_fields(&mut header);
+    let (address, peer) =
+        scripted_peer(response::SUCCESS, Some(header), Some(message_record)).await;
+    let route = TopicRouteData::java_decode(
+        serde_json::json!({
+            "queueDatas": [],
+            "brokerDatas": [{"cluster": "cluster-a", "brokerName": "broker-a", "brokerAddrs": {"0": address}}],
+            "filterServerTable": {}
+        })
+        .to_string()
+        .as_bytes(),
+    )
+    .unwrap();
+    let query = AdminQueryRequest::by_unique_key("orders", "not-the-message-id", 32, 10, 99);
+    let (api, client) = api().await;
+
+    let error = api
+        .query_message_across_brokers(&route, &query, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        RpcError::Response {
+            request_code: request::QUERY_MESSAGE,
+            code: response::NO_MESSAGE,
+            remark: Some(remark),
+            ..
+        } if remark == "query message by key finished, but no message."
+    ));
+    assert_eq!(peer.await.unwrap().code, request::QUERY_MESSAGE);
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn query_fanout_returns_java_no_message_error_for_empty_routes() {
+    let route = TopicRouteData::java_decode(
+        br#"{"queueDatas":[],"brokerDatas":[],"filterServerTable":{}}"#,
+    )
+    .unwrap();
+    let query = AdminQueryRequest::by_key("orders", "order-key", 32, 10, 99);
+    let (api, client) = api().await;
+
+    let error = api
+        .query_message_across_brokers(&route, &query, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        RpcError::Response {
+            request_code: request::QUERY_MESSAGE,
+            code: response::NO_MESSAGE,
+            remark: Some(remark),
+            ..
+        } if remark == "query message by key finished, but no message."
+    ));
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn query_fanout_applies_java_cluster_filter_and_last_key() {
+    let message_record = java_message_record("ipv4-v1");
+    let mut header = HeaderMap::new();
+    QueryMessageResponseHeader {
+        index_last_update_timestamp: 100,
+        index_last_update_phyoffset: 1,
+    }
+    .encode_fields(&mut header);
+    let (selected_address, selected_peer) =
+        scripted_peer(response::SUCCESS, Some(header), Some(message_record)).await;
+    let (filtered_address, mut filtered_peer) = scripted_peer(response::SUCCESS, None, None).await;
+    let route = TopicRouteData::java_decode(
+        serde_json::json!({
+            "queueDatas": [],
+            "brokerDatas": [
+                {"cluster": "cluster-a", "brokerName": "broker-a", "brokerAddrs": {"0": selected_address}},
+                {"cluster": "cluster-b", "brokerName": "broker-b", "brokerAddrs": {"0": filtered_address}}
+            ],
+            "filterServerTable": {}
+        })
+        .to_string()
+        .as_bytes(),
+    )
+    .unwrap();
+    let mut query = AdminQueryRequest::by_unique_key("orders", "producer-unique-1", 32, 10, 99)
+        .in_cluster("cluster-a");
+    query.last_key = Some("page-token".into());
+    let (api, client) = api().await;
+
+    let result = api
+        .query_message_across_brokers(&route, &query, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap();
+
+    assert_eq!(result.message_list.len(), 1);
+    let command = selected_peer.await.unwrap();
+    assert_eq!(command.code, request::QUERY_MESSAGE);
+    let fields = command.ext_fields.unwrap();
+    assert_eq!(fields.get("lastKey"), Some(&"page-token".to_owned()));
+    assert_eq!(fields.get("_UNIQUE_KEY_QUERY"), Some(&"true".to_owned()));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(10), &mut filtered_peer)
+            .await
+            .is_err()
+    );
+    filtered_peer.abort();
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn view_message_sends_physical_offset_and_decodes_one_java_message() {
     let message_record = java_message_record("ipv4-v1");
     let (addr, peer) = scripted_peer(response::SUCCESS, None, Some(message_record)).await;
@@ -225,6 +441,15 @@ async fn view_message_sends_physical_offset_and_decodes_one_java_message() {
     assert_eq!(command.ext_fields, Some(expected_fields));
     assert_eq!(message.message().topic(), "orders");
     assert_eq!(message.message().body(), b"hello-v1");
+    assert_eq!(
+        message.message_id(),
+        message
+            .message()
+            .properties()
+            .get("UNIQ_KEY")
+            .map(String::as_str)
+    );
+    assert!(message.offset_message_id().is_some());
     client.shutdown().await;
 }
 

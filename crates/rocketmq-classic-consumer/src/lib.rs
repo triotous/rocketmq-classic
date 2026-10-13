@@ -20,3 +20,4 @@ pub use push::{
     MessageListenerOrderly, MessageQueueListener, OrderlyListenerFuture, PushConsumer,
     PushConsumerConfig, PushMessageListener,
 };
+pub use rocketmq_classic_core::api::admin::QueryResult;

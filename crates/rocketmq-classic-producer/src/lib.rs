@@ -24,6 +24,7 @@ pub use producer::Producer;
 pub use recall::RecallMessageHandle;
 pub use request_reply::{ReplyMessageError, RequestCallback, create_reply_message};
 pub use rocketmq_classic_common::sysflag::message::CompressionType;
+pub use rocketmq_classic_core::api::admin::QueryResult;
 pub use rocketmq_classic_core::api::producer::{SendResult, SendStatus};
 pub use rocketmq_classic_remoting::client::RpcHook;
 pub use trace::{TraceDispatcher, TraceDispatcherError, TraceProducerKind};

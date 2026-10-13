@@ -7,6 +7,7 @@ use std::{
     time::Duration,
 };
 
+use base64::Engine;
 use bytes::BytesMut;
 use rocketmq_classic_common::topic::TopicValidator;
 use rocketmq_classic_core::error::RpcError;
@@ -74,6 +75,76 @@ async fn write_response_fields(
         .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
         .await
         .unwrap();
+}
+
+async fn write_response_body_fields(
+    stream: &mut TcpStream,
+    request: &RemotingCommand,
+    code: i32,
+    body: Vec<u8>,
+    ext_fields: HeaderMap,
+) {
+    let mut reply = RemotingCommand {
+        code,
+        opaque: request.opaque,
+        body: Some(body),
+        ext_fields: Some(ext_fields),
+        ..Default::default()
+    };
+    reply.mark_response();
+    stream
+        .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+        .await
+        .unwrap();
+}
+
+fn java_message_record(name: &str) -> Vec<u8> {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/messages/records.json")).unwrap();
+    let record = fixture["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["name"] == name)
+        .unwrap()["recordBase64"]
+        .as_str()
+        .unwrap();
+    base64::engine::general_purpose::STANDARD
+        .decode(record)
+        .unwrap()
+}
+
+async fn query_broker_peer() -> (
+    String,
+    JoinHandle<()>,
+    mpsc::UnboundedReceiver<RemotingCommand>,
+) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    let (sender, requests) = mpsc::unbounded_channel();
+    let record = java_message_record("ipv4-v1");
+    let task = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        while let Some(command) = read_command(&mut stream).await {
+            let _ = sender.send(command.clone());
+            if command.code == request::QUERY_MESSAGE {
+                write_response_body_fields(
+                    &mut stream,
+                    &command,
+                    response::SUCCESS,
+                    record.clone(),
+                    HeaderMap::from([
+                        ("indexLastUpdateTimestamp".into(), "200".into()),
+                        ("indexLastUpdatePhyoffset".into(), "100".into()),
+                    ]),
+                )
+                .await;
+            } else if !command.is_oneway() {
+                write_response(&mut stream, &command, response::SUCCESS, None).await;
+            }
+        }
+    });
+    (address, task, requests)
 }
 
 async fn name_server_peer(
@@ -275,6 +346,78 @@ async fn create_topic_sorts_brokers_and_accepts_partial_success() {
     namesrv_task.abort();
     broker_a_task.abort();
     broker_b_task.abort();
+}
+
+#[tokio::test]
+async fn query_facade_uses_namespaced_topic_and_java_client_message_ids() {
+    let (broker, broker_task, mut broker_requests) = query_broker_peer().await;
+    let (namesrv, namesrv_task, mut namesrv_requests) =
+        name_server_peer(route_body(&[("broker-a", &broker)])).await;
+    let mut config = producer_config(namesrv);
+    config
+        .client_config_mut()
+        .set_namespace(Some("tenant".into()));
+    let producer = Arc::new(Producer::new(config));
+    producer.start().await.unwrap();
+
+    let result = producer
+        .query_message_by_unique_key("orders", "producer-unique-1", 32, 10, 99)
+        .await
+        .unwrap();
+    assert_eq!(result.index_last_update_timestamp, 200);
+    assert_eq!(result.message_list.len(), 1);
+    assert_eq!(result.message_list[0].message().topic(), "orders");
+    assert_eq!(
+        result.message_list[0].message_id(),
+        Some("producer-unique-1")
+    );
+    assert_eq!(
+        result.message_list[0].offset_message_id(),
+        Some("C633641400002A9F0000018BCFE56829")
+    );
+
+    let route_request = timeout(Duration::from_secs(1), async {
+        loop {
+            let command = namesrv_requests.recv().await.unwrap();
+            if command.code == request::GET_ROUTEINFO_BY_TOPIC
+                && command
+                    .ext_fields
+                    .as_ref()
+                    .and_then(|fields| fields.get("topic"))
+                    .is_some_and(|topic| topic == "tenant%orders")
+            {
+                break command;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        route_request.ext_fields.unwrap().get("topic"),
+        Some(&"tenant%orders".to_owned())
+    );
+    let query_request = timeout(Duration::from_secs(1), async {
+        loop {
+            let command = broker_requests.recv().await.unwrap();
+            if command.code == request::QUERY_MESSAGE {
+                break command;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    let fields = query_request.ext_fields.unwrap();
+    assert_eq!(fields.get("topic"), Some(&"tenant%orders".to_owned()));
+    assert_eq!(fields.get("key"), Some(&"producer-unique-1".to_owned()));
+    assert_eq!(fields.get("maxNum"), Some(&"32".to_owned()));
+    assert_eq!(fields.get("beginTimestamp"), Some(&"10".to_owned()));
+    assert_eq!(fields.get("endTimestamp"), Some(&"99".to_owned()));
+    assert_eq!(fields.get("indexType"), Some(&"U".to_owned()));
+    assert_eq!(fields.get("_UNIQUE_KEY_QUERY"), Some(&"true".to_owned()));
+
+    producer.shutdown().await.unwrap();
+    namesrv_task.abort();
+    broker_task.abort();
 }
 
 #[tokio::test]

@@ -1,3 +1,4 @@
+mod admin;
 mod client_check;
 mod control;
 mod hooks;

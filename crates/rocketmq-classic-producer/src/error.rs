@@ -48,6 +48,8 @@ pub enum ProducerError {
     InvalidQueue,
     #[error("broker `{broker}` was not found in the current route")]
     BrokerNotFound { broker: String },
+    #[error(transparent)]
+    AdminQuery(#[from] rocketmq_classic_core::api::admin::AdminQueryError),
     #[error("selected queue does not belong to the topic writable queues")]
     QueueNotInRoute,
     #[error("queue selector did not choose a writable queue")]

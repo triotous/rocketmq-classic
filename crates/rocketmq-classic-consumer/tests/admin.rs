@@ -1,13 +1,15 @@
 use std::{sync::Arc, time::Duration};
 
+use base64::Engine;
 use bytes::BytesMut;
 use rocketmq_classic_common::message::{MessageExt, MessageQueue};
 use rocketmq_classic_consumer::{
-    ConsumeConcurrentlyStatus, PushConsumer, PushConsumerConfig, PushMessageListener,
+    ConsumeConcurrentlyStatus, PullConsumerConfig, PushConsumer, PushConsumerConfig,
+    PushMessageListener, pull::PullConsumer,
 };
 use rocketmq_classic_protocol::{
     codes::{request, response},
-    header::HeaderMap,
+    header::{CommandHeader, HeaderMap, QueryMessageResponseHeader},
 };
 use rocketmq_classic_remoting::{
     RemotingCommand,
@@ -72,6 +74,22 @@ fn route_body(address: &str) -> Vec<u8> {
     .unwrap()
 }
 
+fn java_message_record() -> Vec<u8> {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/messages/records.json")).unwrap();
+    let record = fixture["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["name"] == "ipv4-v1")
+        .unwrap()["recordBase64"]
+        .as_str()
+        .unwrap();
+    base64::engine::general_purpose::STANDARD
+        .decode(record)
+        .unwrap()
+}
+
 async fn nameserver_peer(route: Vec<u8>) -> (String, JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap().to_string();
@@ -103,6 +121,7 @@ async fn broker_peer() -> (
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap().to_string();
     let (sender, requests) = tokio::sync::mpsc::unbounded_channel();
+    let record = java_message_record();
     let task = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
         while let Some(command) = read_command(&mut stream).await {
@@ -143,6 +162,23 @@ async fn broker_peer() -> (
                     Some(br#"{"consumerIdList":[]}"#.to_vec()),
                     None,
                 ),
+                request::QUERY_MESSAGE => {
+                    let mut fields = HeaderMap::new();
+                    QueryMessageResponseHeader {
+                        index_last_update_timestamp: 200,
+                        index_last_update_phyoffset: 100,
+                    }
+                    .encode_fields(&mut fields);
+                    write_response(
+                        &mut stream,
+                        &command,
+                        response::SUCCESS,
+                        Some(record.clone()),
+                        Some(fields),
+                    )
+                    .await;
+                    continue;
+                }
                 _ => (response::SUCCESS, None, None),
             };
             write_response(&mut stream, &command, code, body, ext_fields).await;
@@ -212,4 +248,102 @@ async fn push_admin_offset_facade_routes_namespaced_queues_to_the_named_broker()
     consumer.shutdown().await.unwrap();
     namesrv_task.abort();
     broker_task.abort();
+}
+
+#[tokio::test]
+async fn push_and_pull_query_facades_preserve_java_client_message_ids() {
+    let (push_broker, push_broker_task, mut push_requests) = broker_peer().await;
+    let (push_namesrv, push_namesrv_task) = nameserver_peer(route_body(&push_broker)).await;
+    let mut push_config = PushConsumerConfig::new("push-admin-query").unwrap();
+    push_config
+        .client_config_mut()
+        .set_namespace(Some("tenant".into()));
+    push_config
+        .client_config_mut()
+        .set_namesrv_addr(Some(push_namesrv));
+    let push = Arc::new(PushConsumer::new(push_config));
+    push.register_message_listener(PushMessageListener::concurrently(
+        |_messages: Vec<MessageExt>, context| async move {
+            (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+        },
+    ))
+    .await
+    .unwrap();
+    push.start().await.unwrap();
+
+    let push_result = push
+        .query_message_by_unique_key("orders", "producer-unique-1", 32, 10, 99)
+        .await
+        .unwrap();
+    assert_eq!(push_result.message_list.len(), 1);
+    assert_eq!(push_result.message_list[0].message().topic(), "orders");
+    assert_eq!(
+        push_result.message_list[0].message_id(),
+        Some("producer-unique-1")
+    );
+    assert_eq!(
+        push_result.message_list[0].offset_message_id(),
+        Some("C633641400002A9F0000018BCFE56829")
+    );
+    let push_query = timeout(Duration::from_secs(1), async {
+        loop {
+            let command = push_requests.recv().await.unwrap();
+            if command.code == request::QUERY_MESSAGE {
+                break command;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    let fields = push_query.ext_fields.unwrap();
+    assert_eq!(fields.get("topic"), Some(&"tenant%orders".to_owned()));
+    assert_eq!(fields.get("indexType"), Some(&"U".to_owned()));
+    assert_eq!(fields.get("_UNIQUE_KEY_QUERY"), Some(&"true".to_owned()));
+    push.shutdown().await.unwrap();
+    push_namesrv_task.abort();
+    push_broker_task.abort();
+
+    let (pull_broker, pull_broker_task, mut pull_requests) = broker_peer().await;
+    let (pull_namesrv, pull_namesrv_task) = nameserver_peer(route_body(&pull_broker)).await;
+    let mut pull_config = PullConsumerConfig::new("pull-admin-query").unwrap();
+    pull_config
+        .client_config_mut()
+        .set_namespace(Some("tenant".into()));
+    pull_config
+        .client_config_mut()
+        .set_namesrv_addr(Some(pull_namesrv));
+    let pull = Arc::new(PullConsumer::new(pull_config));
+    pull.start().await.unwrap();
+
+    let pull_result = pull
+        .query_message_by_unique_key("orders", "producer-unique-1", 32, 10, 99)
+        .await
+        .unwrap();
+    assert_eq!(pull_result.message_list.len(), 1);
+    assert_eq!(pull_result.message_list[0].message().topic(), "orders");
+    assert_eq!(
+        pull_result.message_list[0].message_id(),
+        Some("producer-unique-1")
+    );
+    assert_eq!(
+        pull_result.message_list[0].offset_message_id(),
+        Some("C633641400002A9F0000018BCFE56829")
+    );
+    let pull_query = timeout(Duration::from_secs(1), async {
+        loop {
+            let command = pull_requests.recv().await.unwrap();
+            if command.code == request::QUERY_MESSAGE {
+                break command;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    let fields = pull_query.ext_fields.unwrap();
+    assert_eq!(fields.get("topic"), Some(&"tenant%orders".to_owned()));
+    assert_eq!(fields.get("indexType"), Some(&"U".to_owned()));
+    assert_eq!(fields.get("_UNIQUE_KEY_QUERY"), Some(&"true".to_owned()));
+    pull.shutdown().await.unwrap();
+    pull_namesrv_task.abort();
+    pull_broker_task.abort();
 }

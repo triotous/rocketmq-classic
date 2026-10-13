@@ -1,14 +1,19 @@
 use rocketmq_classic_common::message::{
-    DecodeLimits, DecodeOptions, MessageExt, decode_many, decode_one,
+    DecodeLimits, DecodeOptions, MessageExt, constants, decode_many, decode_one,
 };
 use rocketmq_classic_protocol::{
-    codes::request,
+    codes::{request, response},
     header::{
         CommandHeader, CreateTopicRequestHeader, QueryMessageRequestHeader,
         QueryMessageResponseHeader, ViewMessageRequestHeader,
     },
+    route::TopicRouteData,
 };
-use tokio::time::Instant;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use tokio::{
+    task::JoinSet,
+    time::{Instant, timeout_at},
+};
 
 use super::{MQClientApi, classify, decode_header};
 use crate::error::RpcError;
@@ -18,6 +23,178 @@ use crate::error::RpcError;
 pub struct QueryResult {
     pub index_last_update_timestamp: i64,
     pub message_list: Vec<MessageExt>,
+}
+
+/// A decoded Java RocketMQ physical message ID.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DecodedMessageId {
+    pub address: SocketAddr,
+    pub offset: i64,
+}
+
+#[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
+pub enum MessageIdDecodeError {
+    #[error("message ID contains an odd number of hexadecimal digits")]
+    OddLength,
+    #[error("message ID contains a non-hexadecimal digit at byte {index}")]
+    InvalidHex { index: usize },
+    #[error("message ID is too short for an address, port and offset")]
+    TooShort,
+    #[error("message ID contains an invalid port")]
+    InvalidPort,
+}
+
+/// Decodes Java's offset message ID format: address bytes, network-order port,
+/// then a signed network-order commit-log offset.
+pub fn decode_message_id(value: &str) -> Result<DecodedMessageId, MessageIdDecodeError> {
+    if value.len() % 2 != 0 {
+        return Err(MessageIdDecodeError::OddLength);
+    }
+    let mut bytes = Vec::with_capacity(value.len() / 2);
+    for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
+        let high =
+            hex_nibble(pair[0]).ok_or(MessageIdDecodeError::InvalidHex { index: index * 2 })?;
+        let low = hex_nibble(pair[1]).ok_or(MessageIdDecodeError::InvalidHex {
+            index: index * 2 + 1,
+        })?;
+        bytes.push((high << 4) | low);
+    }
+    let address_length = if value.len() == 32 { 4 } else { 16 };
+    if bytes.len() < address_length + 12 {
+        return Err(MessageIdDecodeError::TooShort);
+    }
+    let address = if address_length == 4 {
+        IpAddr::V4(Ipv4Addr::new(bytes[0], bytes[1], bytes[2], bytes[3]))
+    } else {
+        IpAddr::V6(Ipv6Addr::new(
+            u16::from_be_bytes([bytes[0], bytes[1]]),
+            u16::from_be_bytes([bytes[2], bytes[3]]),
+            u16::from_be_bytes([bytes[4], bytes[5]]),
+            u16::from_be_bytes([bytes[6], bytes[7]]),
+            u16::from_be_bytes([bytes[8], bytes[9]]),
+            u16::from_be_bytes([bytes[10], bytes[11]]),
+            u16::from_be_bytes([bytes[12], bytes[13]]),
+            u16::from_be_bytes([bytes[14], bytes[15]]),
+        ))
+    };
+    let port_offset = address_length;
+    let port = u32::from_be_bytes([
+        bytes[port_offset],
+        bytes[port_offset + 1],
+        bytes[port_offset + 2],
+        bytes[port_offset + 3],
+    ]);
+    let port = u16::try_from(port).map_err(|_| MessageIdDecodeError::InvalidPort)?;
+    let offset = i64::from_be_bytes([
+        bytes[port_offset + 4],
+        bytes[port_offset + 5],
+        bytes[port_offset + 6],
+        bytes[port_offset + 7],
+        bytes[port_offset + 8],
+        bytes[port_offset + 9],
+        bytes[port_offset + 10],
+        bytes[port_offset + 11],
+    ]);
+    Ok(DecodedMessageId {
+        address: SocketAddr::new(address, port),
+        offset,
+    })
+}
+
+fn hex_nibble(value: u8) -> Option<u8> {
+    match value {
+        b'0'..=b'9' => Some(value - b'0'),
+        b'a'..=b'f' => Some(value - b'a' + 10),
+        b'A'..=b'F' => Some(value - b'A' + 10),
+        _ => None,
+    }
+}
+
+/// One Java MQAdmin key or unique-key query across a topic route.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdminQueryRequest {
+    pub route_topic: String,
+    pub topic: String,
+    pub key: String,
+    pub max_num: i32,
+    pub begin_timestamp: i64,
+    pub end_timestamp: i64,
+    pub index_type: String,
+    pub last_key: Option<String>,
+    pub unique_key: bool,
+    pub cluster_name: Option<String>,
+    pub logical_message_queue: bool,
+}
+
+impl AdminQueryRequest {
+    pub fn by_key(
+        topic: impl Into<String>,
+        key: impl Into<String>,
+        max_num: i32,
+        begin_timestamp: i64,
+        end_timestamp: i64,
+    ) -> Self {
+        let topic = topic.into();
+        Self {
+            route_topic: topic.clone(),
+            logical_message_queue: topic.starts_with("%LMQ%"),
+            topic,
+            key: key.into(),
+            max_num,
+            begin_timestamp,
+            end_timestamp,
+            index_type: constants::INDEX_KEY_TYPE.to_owned(),
+            last_key: None,
+            unique_key: false,
+            cluster_name: None,
+        }
+    }
+
+    pub fn by_unique_key(
+        topic: impl Into<String>,
+        unique_key: impl Into<String>,
+        max_num: i32,
+        begin_timestamp: i64,
+        end_timestamp: i64,
+    ) -> Self {
+        let topic = topic.into();
+        Self {
+            route_topic: topic.clone(),
+            logical_message_queue: topic.starts_with("%LMQ%"),
+            topic,
+            key: unique_key.into(),
+            max_num,
+            begin_timestamp,
+            end_timestamp,
+            index_type: constants::INDEX_UNIQUE_TYPE.to_owned(),
+            last_key: None,
+            unique_key: true,
+            cluster_name: None,
+        }
+    }
+
+    /// Applies Java's optional cluster selector. Logical topics and the wheel
+    /// timer use the supplied cluster as their route topic; ordinary topics
+    /// keep their own route and use the cluster only to filter Brokers.
+    pub fn in_cluster(mut self, cluster_name: impl Into<String>) -> Self {
+        let cluster_name = cluster_name.into();
+        if !cluster_name.is_empty()
+            && (self.logical_message_queue || self.topic == "rmq_sys_wheel_timer")
+        {
+            self.route_topic = cluster_name.clone();
+        }
+        self.cluster_name = Some(cluster_name);
+        self
+    }
+}
+
+/// Errors from the route lookup or single-Broker calls used by an admin query.
+#[derive(Debug, thiserror::Error)]
+pub enum AdminQueryError {
+    #[error(transparent)]
+    Runtime(#[from] crate::runtime::RuntimeError),
+    #[error(transparent)]
+    Rpc(#[from] RpcError),
 }
 
 impl QueryResult {
@@ -35,6 +212,112 @@ impl QueryResult {
 }
 
 impl MQClientApi {
+    /// Fans one Java MQAdmin query out to the selected Brokers on a route.
+    /// Individual Broker errors and malformed responses are ignored when
+    /// another Broker returns matching messages, as in Java's callback path.
+    pub async fn query_message_across_brokers(
+        &self,
+        route: &TopicRouteData,
+        query: &AdminQueryRequest,
+        deadline: Instant,
+    ) -> Result<QueryResult, RpcError> {
+        let mut addresses = Vec::new();
+        for broker in route.broker_datas_snapshot().unwrap_or_default() {
+            let Some(broker) = broker else {
+                continue;
+            };
+            if !query.logical_message_queue
+                && query.cluster_name.as_deref().is_some_and(|cluster| {
+                    !cluster.is_empty() && broker.cluster.as_deref() != Some(cluster)
+                })
+            {
+                continue;
+            }
+            match broker.java_select_broker_addr() {
+                Ok(Some(address)) => addresses.push(address),
+                Ok(None) => {}
+                Err(error) => {
+                    return Err(RpcError::MalformedResponse {
+                        request_code: request::QUERY_MESSAGE,
+                        peer: query.route_topic.clone(),
+                        reason: error.to_string(),
+                    });
+                }
+            }
+        }
+        if addresses.is_empty() {
+            return Err(no_message_error(&query.topic));
+        }
+
+        let request_topic = if query.logical_message_queue {
+            query
+                .cluster_name
+                .as_deref()
+                .filter(|cluster| !cluster.is_empty())
+                .unwrap_or(&query.topic)
+        } else {
+            &query.topic
+        };
+        let header = QueryMessageRequestHeader {
+            topic: request_topic.to_owned(),
+            key: query.key.clone(),
+            max_num: query.max_num,
+            begin_timestamp: query.begin_timestamp,
+            end_timestamp: query.end_timestamp,
+            index_type: Some(query.index_type.clone()),
+            last_key: query.last_key.clone(),
+            ..QueryMessageRequestHeader::default()
+        };
+        let mut tasks = JoinSet::new();
+        for address in addresses {
+            let api = self.clone();
+            let header = header.clone();
+            let query_is_unique = query.unique_key;
+            tasks.spawn(async move {
+                api.query_message(&address, &header, query_is_unique, deadline)
+                    .await
+            });
+        }
+
+        let mut watermark = 0;
+        let mut messages = Vec::new();
+        loop {
+            let joined = match timeout_at(deadline, tasks.join_next()).await {
+                Ok(joined) => joined,
+                Err(_) => {
+                    tasks.abort_all();
+                    break;
+                }
+            };
+            match joined {
+                None => break,
+                Some(Ok(Ok(result))) => {
+                    watermark = watermark.max(result.index_last_update_timestamp);
+                    messages.extend(
+                        result
+                            .message_list
+                            .into_iter()
+                            .filter(|message| query_message_matches(message, query)),
+                    );
+                }
+                Some(_) => continue,
+            }
+        }
+
+        if messages.is_empty() {
+            return Err(RpcError::Response {
+                request_code: request::QUERY_MESSAGE,
+                peer: query.topic.clone(),
+                code: response::NO_MESSAGE,
+                remark: Some("query message by key finished, but no message.".into()),
+            });
+        }
+        Ok(QueryResult {
+            index_last_update_timestamp: watermark,
+            message_list: messages,
+        })
+    }
+
     /// Sends Java `MQClientAPIImpl.createTopic` to one Broker.
     pub async fn create_topic(
         &self,
@@ -75,12 +358,15 @@ impl MQClientApi {
                 peer: addr.to_owned(),
                 reason: "missing response body".into(),
             })?;
-        let message_list = decode_many(body, DecodeOptions::default(), DecodeLimits::default())
+        let mut message_list = decode_many(body, DecodeOptions::default(), DecodeLimits::default())
             .map_err(|error| RpcError::MalformedResponse {
                 request_code: code,
                 peer: addr.to_owned(),
                 reason: error.to_string(),
             })?;
+        for message in &mut message_list {
+            client_decode_message(message);
+        }
         Ok(QueryResult {
             index_last_update_timestamp: response_header.index_last_update_timestamp,
             message_list,
@@ -106,7 +392,10 @@ impl MQClientApi {
                 reason: "missing response body".into(),
             })?;
         decode_one(body, DecodeOptions::default(), DecodeLimits::default())
-            .map(|(message, _)| message)
+            .map(|(mut message, _)| {
+                client_decode_message(&mut message);
+                message
+            })
             .map_err(|error| RpcError::MalformedResponse {
                 request_code: code,
                 peer: addr.to_owned(),
@@ -115,9 +404,86 @@ impl MQClientApi {
     }
 }
 
+fn no_message_error(topic: &str) -> RpcError {
+    RpcError::Response {
+        request_code: request::QUERY_MESSAGE,
+        peer: topic.to_owned(),
+        code: response::NO_MESSAGE,
+        remark: Some("query message by key finished, but no message.".into()),
+    }
+}
+
+fn query_message_matches(message: &MessageExt, query: &AdminQueryRequest) -> bool {
+    if query.unique_key {
+        return message.message_id() == Some(query.key.as_str());
+    }
+
+    let topic_matches =
+        query.logical_message_queue || message.message().topic() == query.topic.as_str();
+    if !topic_matches {
+        return false;
+    }
+    match query.index_type.as_str() {
+        constants::INDEX_KEY_TYPE => message.message().keys().is_some_and(|keys| {
+            keys.split(constants::KEY_SEPARATOR)
+                .any(|key| key == query.key)
+        }),
+        constants::INDEX_TAG_TYPE => message
+            .message()
+            .tags()
+            .is_some_and(|tags| tags == query.key),
+        _ => false,
+    }
+}
+
+/// Applies the ID fields exposed by Java's `MessageDecoder.clientDecode`.
+/// The record decoder creates the physical ID; client decode exposes that as
+/// `offsetMsgId` and prefers the `UNIQ_KEY` property for `msgId`.
+fn client_decode_message(message: &mut MessageExt) {
+    let offset_message_id = message.message_id().map(str::to_owned);
+    let client_message_id = message
+        .message()
+        .properties()
+        .get(constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+        .cloned()
+        .or_else(|| offset_message_id.clone());
+    message.set_offset_message_id(offset_message_id);
+    message.set_message_id(client_message_id);
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{MessageExt, QueryResult};
+    use super::{
+        DecodedMessageId, MessageExt, MessageIdDecodeError, QueryResult, decode_message_id,
+    };
+    use std::{net::SocketAddr, str::FromStr};
+
+    #[test]
+    fn java_message_id_decoder_handles_ipv4_ipv6_and_malformed_values() {
+        assert_eq!(
+            decode_message_id("C633641400002A9F0000018BCFE56829").unwrap(),
+            DecodedMessageId {
+                address: SocketAddr::from_str("198.51.100.20:10911").unwrap(),
+                offset: 1_700_000_000_041,
+            }
+        );
+        assert_eq!(
+            decode_message_id("20010db800000000000000000000000000002a9f0000000000000000").unwrap(),
+            DecodedMessageId {
+                address: SocketAddr::from_str("[2001:db8::]:10911").unwrap(),
+                offset: 0,
+            }
+        );
+        assert_eq!(decode_message_id("a"), Err(MessageIdDecodeError::OddLength));
+        assert_eq!(
+            decode_message_id("zz"),
+            Err(MessageIdDecodeError::InvalidHex { index: 0 })
+        );
+        assert_eq!(
+            decode_message_id("00000000000100000000000000000000"),
+            Err(MessageIdDecodeError::InvalidPort)
+        );
+    }
 
     #[test]
     fn query_result_java_getters_expose_the_stored_values() {

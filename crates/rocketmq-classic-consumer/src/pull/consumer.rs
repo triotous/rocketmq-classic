@@ -12,10 +12,11 @@ use std::{
 use std::collections::VecDeque;
 
 use rocketmq_classic_common::{
-    message::{DecodeLimits, DecodeOptions, MessageQueue},
+    message::{DecodeLimits, DecodeOptions, MessageExt, MessageQueue},
     sysflag::pull::{build_pull_sys_flag_with_lite, clear_commit_offset_flag},
 };
 use rocketmq_classic_core::{
+    api::admin::{AdminQueryRequest, QueryResult, decode_message_id},
     route::{BrokerAddress, RouteSnapshot},
     runtime::{ClientRuntime, ClientRuntimeManager, ConsumerRuntime, GroupLease},
 };
@@ -24,6 +25,7 @@ use rocketmq_classic_protocol::{
     header::{
         BoundaryType, GetEarliestMsgStoretimeRequestHeader, GetMaxOffsetRequestHeader,
         GetMinOffsetRequestHeader, PullMessageRequestHeader, SearchOffsetRequestHeader,
+        ViewMessageRequestHeader,
     },
     heartbeat::{
         ConsumeFromWhere, ConsumeType, ConsumerData, ConsumerSubscriptionDataSet, MessageModel,
@@ -813,6 +815,108 @@ impl PullConsumer {
             .api()
             .get_earliest_msg_storetime(&address, &header, deadline)
             .await?)
+    }
+
+    pub async fn query_message(
+        &self,
+        topic: &str,
+        key: &str,
+        max_num: i32,
+        begin_timestamp: i64,
+        end_timestamp: i64,
+    ) -> Result<QueryResult, PullConsumerError> {
+        self.query_messages(topic, key, max_num, begin_timestamp, end_timestamp, false)
+            .await
+    }
+
+    pub async fn query_message_by_unique_key(
+        &self,
+        topic: &str,
+        unique_key: &str,
+        max_num: i32,
+        begin_timestamp: i64,
+        end_timestamp: i64,
+    ) -> Result<QueryResult, PullConsumerError> {
+        self.query_messages(
+            topic,
+            unique_key,
+            max_num,
+            begin_timestamp,
+            end_timestamp,
+            true,
+        )
+        .await
+    }
+
+    /// Resolves physical IDs directly and falls back to a unique-key query
+    /// only when Java's pull facade would reject the ID syntax.
+    pub async fn view_message(
+        &self,
+        topic: &str,
+        message_id: &str,
+    ) -> Result<Option<MessageExt>, PullConsumerError> {
+        let (runtime, _) = self.started_runtime().await?;
+        if let Ok(decoded) = decode_message_id(message_id) {
+            let header = ViewMessageRequestHeader {
+                // DefaultMQPullConsumer uses the raw topic for a physical ID
+                // request and applies its namespace only to unique-key lookup.
+                topic: Some(topic.to_owned()),
+                offset: decoded.offset,
+            };
+            let timeout_millis =
+                i64::from(self.config.client_config().mq_client_api_timeout()).max(0) as u64;
+            let message = runtime
+                .api()
+                .view_message(
+                    &decoded.address.to_string(),
+                    &header,
+                    Instant::now() + Duration::from_millis(timeout_millis),
+                )
+                .await?;
+            return Ok(Some(message));
+        }
+
+        let now_millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+            .min(i64::MAX as u128) as i64;
+        let begin_timestamp = now_millis.saturating_sub(3 * 24 * 60 * 60 * 1000);
+        let result = self
+            .query_messages(topic, message_id, 32, begin_timestamp, i64::MAX, true)
+            .await?;
+        Ok(result.message_list.into_iter().next())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn query_messages(
+        &self,
+        topic: &str,
+        key: &str,
+        max_num: i32,
+        begin_timestamp: i64,
+        end_timestamp: i64,
+        unique_key: bool,
+    ) -> Result<QueryResult, PullConsumerError> {
+        let (runtime, _) = self.started_runtime().await?;
+        let mut client_config = self.config.client_config().clone();
+        let topic = self.topic_with_namespace(topic)?;
+        let mut query = if unique_key {
+            AdminQueryRequest::by_unique_key(&topic, key, max_num, begin_timestamp, end_timestamp)
+        } else {
+            AdminQueryRequest::by_key(&topic, key, max_num, begin_timestamp, end_timestamp)
+        };
+        query.logical_message_queue = topic.starts_with("%LMQ%");
+        let timeout_millis =
+            i64::from(self.config.client_config().mq_client_api_timeout()).max(0) as u64;
+        let deadline = Instant::now() + Duration::from_millis(timeout_millis).saturating_mul(4);
+        let mut result = runtime.query_message(&query, deadline).await?;
+        for message in &mut result.message_list {
+            if let Some(topic) = client_config.without_namespace(Some(message.message().topic()))? {
+                message.message_mut().set_topic(topic);
+            }
+        }
+        Ok(result)
     }
 
     #[allow(clippy::too_many_arguments)]
