@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use rocketmq_classic_common::topic::TopicValidator;
+use rocketmq_classic_common::topic::{TopicValidator, TopicValidatorError};
 use serde_json::Value;
 
 fn fixture() -> Value {
@@ -170,7 +170,7 @@ fn public_topic_validator_surface_matches_pinned_java_fixture() {
     TopicValidator::not_allowed_send_topic_set()
         .write()
         .unwrap()
-        .insert(custom_blocked_topic.to_owned());
+        .insert(Some(custom_blocked_topic.to_owned()));
     assert_eq!(
         classification["systemTopics"],
         serde_json::to_value(
@@ -219,6 +219,90 @@ fn public_topic_validator_surface_matches_pinned_java_fixture() {
         classification["scheduleTopicIsBlocked"],
         TopicValidator::is_not_allowed_send_topic(TopicValidator::RMQ_SYS_SCHEDULE_TOPIC)
     );
+
+    let nullable = &fixture["nullableBehavior"];
+    {
+        let mut system_topics = TopicValidator::system_topic_set().write().unwrap();
+        system_topics.remove(&None);
+    }
+    {
+        let mut blocked_topics = TopicValidator::not_allowed_send_topic_set()
+            .write()
+            .unwrap();
+        blocked_topics.remove(&None);
+    }
+    assert_eq!(nullable["illegalNullException"], "NullPointerException");
+    assert_eq!(
+        TopicValidator::is_topic_or_group_illegal_nullable(None),
+        Err(TopicValidatorError::NullString)
+    );
+    assert_eq!(
+        nullable["illegalSomeValid"],
+        TopicValidator::is_topic_or_group_illegal_nullable(Some("valid-topic")).unwrap()
+    );
+    assert_eq!(
+        nullable["illegalSomeInvalid"],
+        TopicValidator::is_topic_or_group_illegal_nullable(Some("invalid.topic")).unwrap()
+    );
+    assert_eq!(
+        nullable["systemNullBeforeAddException"],
+        "NullPointerException"
+    );
+    assert_eq!(
+        TopicValidator::is_system_topic_nullable(None),
+        Err(TopicValidatorError::NullString)
+    );
+    assert_eq!(
+        nullable["systemSomeKnownTopic"],
+        TopicValidator::is_system_topic_nullable(Some("TBW102")).unwrap()
+    );
+    assert_eq!(
+        nullable["systemSomePrefixTopic"],
+        TopicValidator::is_system_topic_nullable(Some("rmq_sys_custom")).unwrap()
+    );
+    assert_eq!(
+        nullable["systemSomeUnknownTopic"],
+        TopicValidator::is_system_topic_nullable(Some("custom-topic")).unwrap()
+    );
+    assert_eq!(nullable["blockedNullBeforeAdd"], false);
+    assert!(!TopicValidator::is_not_allowed_send_topic_nullable(None));
+    assert_eq!(
+        nullable["blockedSomeKnownTopic"],
+        TopicValidator::is_not_allowed_send_topic_nullable(Some("SCHEDULE_TOPIC_XXXX"))
+    );
+    assert_eq!(
+        nullable["blockedSomeUnknownTopic"],
+        TopicValidator::is_not_allowed_send_topic_nullable(Some("custom-topic"))
+    );
+
+    TopicValidator::add_system_topic_nullable(None);
+    assert_eq!(nullable["systemNullEntryPresentAfterAdd"], true);
+    assert!(
+        TopicValidator::system_topic_set()
+            .read()
+            .unwrap()
+            .contains(&None)
+    );
+    assert_eq!(nullable["systemNullAfterAddIsSystem"], true);
+    assert_eq!(TopicValidator::is_system_topic_nullable(None), Ok(true));
+
+    TopicValidator::not_allowed_send_topic_set()
+        .write()
+        .unwrap()
+        .insert(None);
+    assert_eq!(nullable["blockedNullEntryPresentAfterAdd"], true);
+    assert_eq!(nullable["blockedNullAfterAdd"], true);
+    assert!(TopicValidator::is_not_allowed_send_topic_nullable(None));
+    {
+        let mut system_topics = TopicValidator::system_topic_set().write().unwrap();
+        system_topics.remove(&None);
+    }
+    {
+        let mut blocked_topics = TopicValidator::not_allowed_send_topic_set()
+            .write()
+            .unwrap();
+        blocked_topics.remove(&None);
+    }
 
     let mutation = &fixture["validCharMutation"];
     let tilde_was_valid = mutation["wasInitiallyValid"].as_bool().unwrap();

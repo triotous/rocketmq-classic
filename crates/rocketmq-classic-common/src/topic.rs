@@ -1,6 +1,7 @@
 //! Client-side topic classification matching RocketMQ Java 5.5.1.
 
 use std::collections::HashSet;
+use std::fmt;
 use std::sync::{OnceLock, RwLock};
 
 pub const AUTO_CREATE_TOPIC_KEY_TOPIC: &str = "TBW102";
@@ -44,25 +45,25 @@ const INITIAL_NOT_ALLOWED_SEND_TOPICS: &[&str] = &[
     RMQ_SYS_ROCKSDB_TRANS_OP_HALF_TOPIC,
 ];
 
-fn system_topics() -> &'static RwLock<HashSet<String>> {
-    static SYSTEM_TOPICS: OnceLock<RwLock<HashSet<String>>> = OnceLock::new();
+fn system_topics() -> &'static RwLock<HashSet<Option<String>>> {
+    static SYSTEM_TOPICS: OnceLock<RwLock<HashSet<Option<String>>>> = OnceLock::new();
     SYSTEM_TOPICS.get_or_init(|| {
         RwLock::new(
             INITIAL_SYSTEM_TOPICS
                 .iter()
-                .map(|topic| (*topic).to_owned())
+                .map(|topic| Some((*topic).to_owned()))
                 .collect(),
         )
     })
 }
 
-fn not_allowed_send_topics() -> &'static RwLock<HashSet<String>> {
-    static NOT_ALLOWED_SEND_TOPICS: OnceLock<RwLock<HashSet<String>>> = OnceLock::new();
+fn not_allowed_send_topics() -> &'static RwLock<HashSet<Option<String>>> {
+    static NOT_ALLOWED_SEND_TOPICS: OnceLock<RwLock<HashSet<Option<String>>>> = OnceLock::new();
     NOT_ALLOWED_SEND_TOPICS.get_or_init(|| {
         RwLock::new(
             INITIAL_NOT_ALLOWED_SEND_TOPICS
                 .iter()
-                .map(|topic| (*topic).to_owned())
+                .map(|topic| Some((*topic).to_owned()))
                 .collect(),
         )
     })
@@ -108,6 +109,23 @@ pub struct ValidateResult {
     valid: bool,
     remark: Option<String>,
 }
+
+/// Rust error corresponding to a Java `NullPointerException` from a
+/// `TopicValidator` method that dereferences a nullable string argument.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TopicValidatorError {
+    NullString,
+}
+
+impl fmt::Display for TopicValidatorError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NullString => formatter.write_str("null string argument"),
+        }
+    }
+}
+
+impl std::error::Error for TopicValidatorError {}
 
 impl ValidateResult {
     /// Creates a validation result. `None` matches Java's nullable remark.
@@ -171,6 +189,15 @@ impl TopicValidator {
             .any(|unit| usize::from(unit) >= map.len() || !map[usize::from(unit)])
     }
 
+    /// Handles Java's nullable input boundary; `None` maps to its NPE branch.
+    pub fn is_topic_or_group_illegal_nullable(
+        value: Option<&str>,
+    ) -> Result<bool, TopicValidatorError> {
+        value
+            .map(Self::is_topic_or_group_illegal)
+            .ok_or(TopicValidatorError::NullString)
+    }
+
     pub fn validate_topic(topic: Option<&str>) -> ValidateResult {
         let Some(topic) = topic.filter(|topic| !java_blank(Some(topic))) else {
             return ValidateResult::invalid("The specified topic is blank.".to_owned());
@@ -217,30 +244,61 @@ impl TopicValidator {
             || system_topics()
                 .read()
                 .expect("system topic set lock poisoned")
-                .contains(topic)
+                .contains(&Some(topic.to_owned()))
+    }
+
+    /// Handles Java's nullable input and mutable set behavior. If the live
+    /// system set contains null, Java returns true before dereferencing it.
+    pub fn is_system_topic_nullable(topic: Option<&str>) -> Result<bool, TopicValidatorError> {
+        let topics = system_topics()
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if topics.contains(&topic.map(str::to_owned)) {
+            return Ok(true);
+        }
+        let Some(topic) = topic else {
+            return Err(TopicValidatorError::NullString);
+        };
+        Ok(topic.starts_with(SYSTEM_TOPIC_PREFIX))
     }
 
     pub fn is_not_allowed_send_topic(topic: &str) -> bool {
         not_allowed_send_topics()
             .read()
             .expect("send topic set lock poisoned")
-            .contains(topic)
+            .contains(&Some(topic.to_owned()))
+    }
+
+    /// Tests membership for either a Java string or Java null.
+    pub fn is_not_allowed_send_topic_nullable(topic: Option<&str>) -> bool {
+        not_allowed_send_topics()
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .contains(&topic.map(str::to_owned))
     }
 
     pub fn add_system_topic(topic: impl Into<String>) {
         system_topics()
             .write()
             .expect("system topic set lock poisoned")
-            .insert(topic.into());
+            .insert(Some(topic.into()));
+    }
+
+    /// Adds a Java string or null to the live system-topic set.
+    pub fn add_system_topic_nullable(topic: Option<&str>) {
+        system_topics()
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(topic.map(str::to_owned));
     }
 
     /// Returns the live Java-style mutable set behind a lock.
-    pub fn system_topic_set() -> &'static RwLock<HashSet<String>> {
+    pub fn system_topic_set() -> &'static RwLock<HashSet<Option<String>>> {
         system_topics()
     }
 
     /// Returns the live Java-style mutable set behind a lock.
-    pub fn not_allowed_send_topic_set() -> &'static RwLock<HashSet<String>> {
+    pub fn not_allowed_send_topic_set() -> &'static RwLock<HashSet<Option<String>>> {
         not_allowed_send_topics()
     }
 }
@@ -258,7 +316,7 @@ mod tests {
             TopicValidator::system_topic_set()
                 .read()
                 .unwrap()
-                .contains(topic)
+                .contains(&Some(topic.to_owned()))
         );
     }
 }

@@ -71,6 +71,7 @@ public final class TopicValidatorFixtures {
         result.put("groupCases", groupCases());
         result.put("validateResultConstructorCases", validateResultConstructorCases());
         result.put("classification", classification());
+        result.put("nullableBehavior", nullableBehavior());
         result.put("validCharMutation", validCharMutation());
         result.put("serverContacted", false);
         return result;
@@ -207,6 +208,38 @@ public final class TopicValidatorFixtures {
         result.put("traceTopicIsBlocked", TopicValidator.isNotAllowedSendTopic(TopicValidator.RMQ_SYS_TRACE_TOPIC));
         result.put("scheduleTopicIsBlocked", TopicValidator.isNotAllowedSendTopic(TopicValidator.RMQ_SYS_SCHEDULE_TOPIC));
         return result;
+    }
+
+    private static Map<String, Object> nullableBehavior() {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("illegalNullException", nullFailure(() -> TopicValidator.isTopicOrGroupIllegal(null)));
+        result.put("illegalSomeValid", TopicValidator.isTopicOrGroupIllegal("valid-topic"));
+        result.put("illegalSomeInvalid", TopicValidator.isTopicOrGroupIllegal("invalid.topic"));
+        result.put("systemNullBeforeAddException", nullFailure(() -> TopicValidator.isSystemTopic(null)));
+        result.put("systemSomeKnownTopic", TopicValidator.isSystemTopic("TBW102"));
+        result.put("systemSomePrefixTopic", TopicValidator.isSystemTopic("rmq_sys_custom"));
+        result.put("systemSomeUnknownTopic", TopicValidator.isSystemTopic("custom-topic"));
+        result.put("blockedNullBeforeAdd", TopicValidator.isNotAllowedSendTopic(null));
+        result.put("blockedSomeKnownTopic", TopicValidator.isNotAllowedSendTopic("SCHEDULE_TOPIC_XXXX"));
+        result.put("blockedSomeUnknownTopic", TopicValidator.isNotAllowedSendTopic("custom-topic"));
+
+        TopicValidator.addSystemTopic(null);
+        result.put("systemNullEntryPresentAfterAdd", TopicValidator.getSystemTopicSet().contains(null));
+        result.put("systemNullAfterAddIsSystem", TopicValidator.isSystemTopic(null));
+
+        TopicValidator.getNotAllowedSendTopicSet().add(null);
+        result.put("blockedNullEntryPresentAfterAdd", TopicValidator.getNotAllowedSendTopicSet().contains(null));
+        result.put("blockedNullAfterAdd", TopicValidator.isNotAllowedSendTopic(null));
+        return result;
+    }
+
+    private static String nullFailure(Runnable operation) {
+        try {
+            operation.run();
+            return "no-exception";
+        } catch (NullPointerException exception) {
+            return exception.getClass().getSimpleName();
+        }
     }
 
     private static Map<String, Object> validCharMutation() {
