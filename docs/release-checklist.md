@@ -46,8 +46,11 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   scaling across multiple topics, later assignment changes, empty-table
   retention, pull backpressure, and running-info values; fixture SHA-256
   `c531359f6121cd35087a50150bebc14064f4a9d423825f2fdbb16aa7629adf67`. The
-  raw Push inventory now has a method-level mapping or reviewed disposition;
-  the broad Phase 6 source/API/input/reverse-export audit remains open. Pull
+  raw Push inventory now has a method-level mapping or reviewed disposition.
+  Heartbeat Fastjson input coverage now includes 1086 invoked Java cases with
+  systematic whitespace positions and raw control characters in string keys
+  and values; the Rust differential and Maven fixture-drift gate pass for that
+  corpus. The broad Phase 6 source/API/input/reverse-export audit remains open. Pull
   `getRebalanceImpl`, both `pullKernelImpl` overloads, `popAsync`, and the
   `RebalanceImpl`/`RebalancePullImpl` surface now have source-based owner-flow
   mappings or internal-entrypoint dispositions. Pull

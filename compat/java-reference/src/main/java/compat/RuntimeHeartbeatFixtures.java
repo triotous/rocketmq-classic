@@ -1191,7 +1191,87 @@ public final class RuntimeHeartbeatFixtures {
                     field[0], rawInput));
             }
         }
+        int[] unicodeWhitespace = {
+            0x0085, 0x00a0, 0x1680, 0x180e, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004,
+            0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200a, 0x2028, 0x2029, 0x202f,
+            0x205f, 0x3000, 0xfeff
+        };
+        String[] positions = {
+            "root-prefix", "object-open", "key-colon", "colon-value", "value-comma",
+            "object-comma", "array-open", "array-comma", "array-element-close",
+            "array-close", "nested-object-close", "object-close", "after-root",
+            "string-key", "string-value"
+        };
+        for (int codePoint = 0; codePoint <= 0x20; codePoint++) {
+            addHeartbeatWhitespaceCases(cases, codePoint, positions);
+        }
+        for (int codePoint : unicodeWhitespace) {
+            addHeartbeatWhitespaceCases(cases, codePoint, positions);
+        }
         return cases;
+    }
+
+    private static void addHeartbeatWhitespaceCases(List<Object> cases, int codePoint, String[] positions) {
+        String whitespace = new String(Character.toChars(codePoint));
+        String hex = String.format(java.util.Locale.ROOT, "%04x", codePoint);
+        for (String position : positions) {
+            String rawInput;
+            switch (position) {
+                case "root-prefix":
+                    rawInput = whitespace + "{\"clientID\":\"ws\"}";
+                    break;
+                case "object-open":
+                    rawInput = "{" + whitespace + "\"clientID\":\"ws\"}";
+                    break;
+                case "key-colon":
+                    rawInput = "{\"clientID\"" + whitespace + ":\"ws\"}";
+                    break;
+                case "colon-value":
+                    rawInput = "{\"clientID\":" + whitespace + "\"ws\"}";
+                    break;
+                case "value-comma":
+                    rawInput = "{\"clientID\":\"ws\"" + whitespace
+                        + ",\"withoutSub\":true}";
+                    break;
+                case "object-comma":
+                    rawInput = "{\"clientID\":\"ws\"," + whitespace
+                        + "\"withoutSub\":true}";
+                    break;
+                case "array-open":
+                    rawInput = "{\"producerDataSet\":[" + whitespace
+                        + "{\"groupName\":\"ws\"}]}";
+                    break;
+                case "array-comma":
+                    rawInput = "{\"producerDataSet\":[{\"groupName\":\"a\"}," + whitespace
+                        + "{\"groupName\":\"b\"}]}";
+                    break;
+                case "array-element-close":
+                    rawInput = "{\"producerDataSet\":[{\"groupName\":\"ws\"}" + whitespace + "]}";
+                    break;
+                case "array-close":
+                    rawInput = "{\"producerDataSet\":[]" + whitespace + "}";
+                    break;
+                case "nested-object-close":
+                    rawInput = "{\"producerDataSet\":[{\"groupName\":\"ws\"" + whitespace + "}]}";
+                    break;
+                case "object-close":
+                    rawInput = "{\"clientID\":\"ws\"" + whitespace + "}";
+                    break;
+                case "after-root":
+                    rawInput = "{\"clientID\":\"ws\"}" + whitespace;
+                    break;
+                case "string-key":
+                    rawInput = "{\"clientID" + whitespace + "\":\"ws\"}";
+                    break;
+                case "string-value":
+                    rawInput = "{\"clientID\":\"a" + whitespace + "b\"}";
+                    break;
+                default:
+                    throw new IllegalArgumentException("unknown whitespace position: " + position);
+            }
+            cases.add(heartbeatDtoInputCase("heartbeat-whitespace-" + hex + "-" + position,
+                "heartbeat", rawInput));
+        }
     }
 
     private static Map<String, Object> nullOwnerSubscriptionPreparation() throws Exception {

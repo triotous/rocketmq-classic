@@ -1276,8 +1276,8 @@ mod fastjson_dto_input_tests {
         let cases = fixture["heartbeatDtoInputCases"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            276,
-            "Java oracle includes DTO root shapes, scalar, numeric-boundary, collection-shape, syntax-grammar, and per-field token-kind probes"
+            1086,
+            "Java oracle includes DTO root shapes, scalar, numeric-boundary, collection-shape, syntax-grammar, per-field token-kind, and systematic whitespace-position/string probes"
         );
         for dto in ["subscription", "producer", "consumer", "heartbeat"] {
             for shape in [
@@ -1400,6 +1400,18 @@ mod fastjson_dto_input_tests {
             "shape-subscription-subVersion-object",
             "shape-consumer-consumeType-array",
             "shape-heartbeat-producerDataSet-object",
+            "heartbeat-whitespace-0000-root-prefix",
+            "heartbeat-whitespace-000c-colon-value",
+            "heartbeat-whitespace-000b-object-open",
+            "heartbeat-whitespace-00a0-after-root",
+            "heartbeat-whitespace-00a0-object-comma",
+            "heartbeat-whitespace-00a0-array-comma",
+            "heartbeat-whitespace-00a0-nested-object-close",
+            "heartbeat-whitespace-0000-string-key",
+            "heartbeat-whitespace-0000-string-value",
+            "heartbeat-whitespace-00a0-string-value",
+            "heartbeat-whitespace-2007-key-colon",
+            "heartbeat-whitespace-feff-root-prefix",
         ] {
             assert!(
                 cases.iter().any(|case| case["id"] == required),

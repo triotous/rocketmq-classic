@@ -266,7 +266,10 @@ pub fn normalize_json_input(input: &str) -> String {
     let input = input.strip_prefix('\u{feff}').unwrap_or(input);
     let syntax_normalized = normalize_fastjson_syntax(input);
     let whitespace_normalized = normalize_fastjson_whitespace(&syntax_normalized);
-    let comma_normalized = normalize_fastjson_trailing_commas(&whitespace_normalized);
+    let eof_normalized = whitespace_normalized
+        .strip_suffix('\u{001a}')
+        .unwrap_or(&whitespace_normalized);
+    let comma_normalized = normalize_fastjson_trailing_commas(eof_normalized);
     normalize_fastjson_number_tokens(&comma_normalized)
 }
 
@@ -696,27 +699,62 @@ fn normalize_fastjson_whitespace(input: &str) -> String {
     let mut output = String::with_capacity(input.len());
     let mut in_string = false;
     let mut escaped = false;
+    let mut previous_significant = None;
+    let bytes = input.as_bytes();
 
-    for character in input.chars() {
+    for (index, character) in input.char_indices() {
         if in_string {
-            output.push(character);
+            if character <= '\u{001f}' && !escaped {
+                let code_unit = character as u32;
+                output.push_str("\\u00");
+                output.push(char::from(
+                    b"0123456789abcdef"[((code_unit >> 4) & 0x0f) as usize],
+                ));
+                output.push(char::from(b"0123456789abcdef"[(code_unit & 0x0f) as usize]));
+            } else {
+                output.push(character);
+            }
             if escaped {
                 escaped = false;
             } else if character == '\\' {
                 escaped = true;
             } else if character == '"' {
                 in_string = false;
+                previous_significant = Some('"');
             }
         } else if character == '"' {
             in_string = true;
             output.push(character);
-        } else if character == '\u{000c}' {
+        } else if character.is_ascii() && is_fastjson_json_space(character as u8) {
             output.push(' ');
+        } else if character == '\u{00a0}' {
+            let next =
+                next_fastjson_significant(bytes, index + character.len_utf8()).map(char::from);
+            if fastjson_nonbreaking_space_allowed(previous_significant, next) {
+                output.push(' ');
+            } else {
+                output.push(character);
+                previous_significant = Some(character);
+            }
         } else {
             output.push(character);
+            previous_significant = Some(character);
         }
     }
     output
+}
+
+fn fastjson_nonbreaking_space_allowed(previous: Option<char>, next: Option<char>) -> bool {
+    match previous {
+        Some('{') => matches!(next, Some('"' | '}')),
+        Some(',') => true,
+        Some('"') => matches!(next, Some(':' | ',' | '}' | ']')),
+        Some('}') | Some(']') => matches!(next, Some(',' | '}' | ']') | None),
+        Some(character) if character.is_ascii_alphanumeric() || matches!(character, '+' | '-') => {
+            matches!(next, Some(',' | '}' | ']'))
+        }
+        _ => false,
+    }
 }
 
 fn normalize_fastjson_number_tokens(input: &str) -> String {
@@ -1473,5 +1511,12 @@ mod syntax_compat_tests {
     fn does_not_treat_comment_markers_inside_double_quoted_strings_as_comments() {
         let decoded = from_fastjson_str::<Value>(r#"{"topic":"/* text */ // text"}"#).unwrap();
         assert_eq!(decoded["topic"], "/* text */ // text");
+    }
+
+    #[test]
+    fn preserves_raw_control_characters_inside_fastjson_strings() {
+        let input = "{\"a\u{0000}b\":\"x\u{0001}\ny\u{001f}\"}";
+        let decoded = from_fastjson_str::<Value>(input).unwrap();
+        assert_eq!(decoded["a\u{0000}b"], "x\u{0001}\ny\u{001f}");
     }
 }
