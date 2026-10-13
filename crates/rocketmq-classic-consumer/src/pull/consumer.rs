@@ -405,6 +405,27 @@ impl PullConsumer {
             .map_err(PullConsumerError::from)
     }
 
+    /// Removes this consumer's namespace from subscribe-queue topics, matching
+    /// `DefaultMQPullConsumerImpl.parseSubscribeMessageQueues`.
+    pub fn parse_subscribe_message_queues(
+        &self,
+        queue_set: &BTreeSet<MessageQueue>,
+    ) -> Result<BTreeSet<MessageQueue>, PullConsumerError> {
+        let mut client_config = self.config.client_config().clone();
+        queue_set
+            .iter()
+            .map(|queue| {
+                let topic = client_config.without_namespace(queue.topic())?;
+                Ok(MessageQueue::new_nullable(
+                    topic,
+                    queue.broker_name().map(str::to_owned),
+                    queue.queue_id(),
+                ))
+            })
+            .collect::<Result<BTreeSet<_>, rocketmq_classic_core::config::ConfigError>>()
+            .map_err(PullConsumerError::from)
+    }
+
     /// Returns the route's full queue set, independently of this consumer's
     /// current rebalance allocation.
     pub async fn fetch_message_queues(
@@ -2071,6 +2092,9 @@ mod tests {
         .unwrap();
         let group = expected["consumerGroup"].as_str().unwrap();
         let mut config = PullConsumerConfig::new(group).unwrap();
+        config
+            .client_config_mut()
+            .set_namespace(Some("tenant".into()));
         assert_eq!(
             config.max_reconsume_times(),
             expected["maxReconsumeTimesDefault"].as_i64().unwrap() as i32
@@ -2092,6 +2116,46 @@ mod tests {
         assert!(expected["accessorNonNull"].as_bool().unwrap());
         assert!(expected["sameImplementationAcrossCalls"].as_bool().unwrap());
         assert!(expected["offsetStoreIsNullBeforeStart"].as_bool().unwrap());
+
+        let parse_input = expected["parseSubscribeMessageQueuesInput"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| {
+                let value = value.as_str().unwrap();
+                let (topic, tail) = value.split_once('|').unwrap();
+                let (broker, queue_id) = tail.rsplit_once('|').unwrap();
+                MessageQueue::new_nullable(
+                    (topic != "null").then(|| topic.to_owned()),
+                    (broker != "null").then(|| broker.to_owned()),
+                    queue_id.parse().unwrap(),
+                )
+            })
+            .collect::<BTreeSet<_>>();
+        let parsed = consumer
+            .parse_subscribe_message_queues(&parse_input)
+            .unwrap();
+        let mut parsed_keys = parsed
+            .iter()
+            .map(|queue| {
+                format!(
+                    "{}|{}|{}",
+                    queue.topic().unwrap_or("null"),
+                    queue.broker_name().unwrap_or("null"),
+                    queue.queue_id()
+                )
+            })
+            .collect::<Vec<_>>();
+        parsed_keys.sort();
+        assert_eq!(
+            parsed_keys,
+            expected["parseSubscribeMessageQueuesOutput"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_str().unwrap().to_owned())
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]

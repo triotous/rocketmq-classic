@@ -2,10 +2,16 @@ package compat;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import org.apache.rocketmq.client.consumer.DefaultMQPullConsumer;
 import org.apache.rocketmq.client.impl.consumer.DefaultMQPullConsumerImpl;
+import org.apache.rocketmq.common.message.MessageQueue;
 
 /** Checks the deprecated facade accessor and its retained implementation identity. */
 public final class PullImplementationAccessorFixtures {
@@ -15,12 +21,24 @@ public final class PullImplementationAccessorFixtures {
         if (!condition) throw new IllegalStateException(label);
     }
 
+    private static String queueKey(MessageQueue queue) {
+        return String.valueOf(queue.getTopic()) + "|" + String.valueOf(queue.getBrokerName())
+            + "|" + queue.getQueueId();
+    }
+
+    private static List<String> queueKeys(Iterable<MessageQueue> queues) {
+        TreeSet<String> keys = new TreeSet<>();
+        for (MessageQueue queue : queues) keys.add(queueKey(queue));
+        return new ArrayList<>(keys);
+    }
+
     public static void main(String[] args) throws Exception {
         check(args.length >= 1, "expected fixture path");
         Path path = Path.of(args[0]);
         boolean verify = args.length > 1 && "--verify".equals(args[1]);
         String group = "phase18-pull-implementation-accessor";
         DefaultMQPullConsumer consumer = new DefaultMQPullConsumer(group);
+        consumer.setNamespace("tenant");
         DefaultMQPullConsumerImpl first = consumer.getDefaultMQPullConsumerImpl();
         DefaultMQPullConsumerImpl second = consumer.getDefaultMQPullConsumerImpl();
         check(first != null, "implementation accessor non-null");
@@ -33,6 +51,15 @@ public final class PullImplementationAccessorFixtures {
         int maxReconsumeTimesDefault = consumer.getMaxReconsumeTimes();
         consumer.setMaxReconsumeTimes(-3);
         check(consumer.getMaxReconsumeTimes() == -3, "max reconsume setting mutation");
+
+        Set<MessageQueue> parseInput = new HashSet<>();
+        parseInput.add(new MessageQueue("tenant%orders", "broker-a", 0));
+        parseInput.add(new MessageQueue("orders", "broker-a", 0));
+        parseInput.add(new MessageQueue("%RETRY%tenant%group-a", "broker-b", 1));
+        parseInput.add(new MessageQueue("other%orders", "broker-c", 2));
+        parseInput.add(new MessageQueue(null, "broker-d", 3));
+        parseInput.add(new MessageQueue("tenant%nullable-broker", null, 4));
+        Set<MessageQueue> parseOutput = first.parseSubscribeMessageQueues(parseInput);
 
         Map<String, Object> provenance = new TreeMap<>();
         provenance.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
@@ -50,6 +77,8 @@ public final class PullImplementationAccessorFixtures {
         fixture.put("rebalanceImplementationPresent", first.getRebalanceImpl() != null);
         fixture.put("maxReconsumeTimesDefault", maxReconsumeTimesDefault);
         fixture.put("maxReconsumeTimesAfterMutation", consumer.getMaxReconsumeTimes());
+        fixture.put("parseSubscribeMessageQueuesInput", queueKeys(parseInput));
+        fixture.put("parseSubscribeMessageQueuesOutput", queueKeys(parseOutput));
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture) + "\n";
         if (verify) {
             check(Files.exists(path) && json.equals(Files.readString(path)), "fixture drift: " + path);

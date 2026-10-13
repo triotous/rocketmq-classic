@@ -33,3 +33,10 @@ Apache license and attribution preparation (2026-10-13 08:37 UTC):
 - Added the full root Apache License 2.0 text and preserved the Apache RocketMQ reference NOTICE for the Java 5.5.1 compatibility harness/fixtures, copying both files from the read-only reference checkout. Marked those two release-checklist items complete; package contents and dependency license/provenance review remain open.
 - PASS: `cmp LICENSE /Users/bruce.tsai/Projects/3rd/rocketmq/LICENSE`; `cmp NOTICE /Users/bruce.tsai/Projects/3rd/rocketmq/NOTICE`; `git diff --check`.
 - No build or test was needed for these text-only additions.
+
+Pull raw subscribe-queue parser parity (2026-10-13 08:50 UTC):
+- Added `PullConsumer::parse_subscribe_message_queues` for the public raw `DefaultMQPullConsumerImpl.parseSubscribeMessageQueues` surface. The method strips only the configured namespace, preserves nullable topic/broker fields, and collects like a Java set.
+- Expanded the invoked Java 5.5.1 accessor fixture with already-logical and namespaced duplicates, retry topic, foreign namespace, null topic, and null broker inputs; regenerated the fixture and updated the Phase 9 method matrix. `fetchPublishMessageQueues` and other raw implementation methods remain open.
+- Diagnostic failures retained: the first differential run exposed a missing Rust test namespace; the next exposed that Rust `BTreeSet` iteration order differs from the fixture's canonical Java key order. The test now supplies the same namespace and sorts canonical keys before comparison.
+- PASS: targeted accessor/parser differential; `cargo test -p rocketmq-classic-consumer --locked` (168 unit tests and all consumer integration targets); `cargo clippy -p rocketmq-classic-consumer --all-targets --all-features --locked -- -D warnings`; `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios and fixture drift checks); `cargo fmt --all -- --check`; `git diff --check`.
+- No live Broker or Docker was used. This closes only the raw subscribe-queue parser mapping; P18-V01 and Phase 19 validation remain open.
