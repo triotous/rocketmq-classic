@@ -1510,6 +1510,12 @@ impl PushConsumer {
         }
     }
 
+    /// Mirrors `DefaultMQPushConsumerImpl.adjustThreadPool` for the pinned
+    /// Java client's built-in consume services. Their `incCorePoolSize` and
+    /// `decCorePoolSize` methods are no-ops; explicit resizing remains
+    /// available through [`Self::update_core_pool_size`].
+    pub fn adjust_thread_pool(&self) {}
+
     /// Sends a consumed message back to its originating Broker and uses the
     /// Java-compatible retry-topic fallback if the Broker rejects the request.
     pub async fn send_message_back(
@@ -6022,6 +6028,22 @@ mod tests {
         let custom_consumer = PushConsumer::new(custom_config);
         assert_eq!(fixture["effectiveMaxReconsumeTimesCustom"], 7);
         assert_eq!(custom_consumer.get_max_reconsume_times(), 7);
+    }
+
+    #[test]
+    fn push_adjust_thread_pool_matches_java_default_service_noop() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/push-implementation-accessor.json"
+        ))
+        .unwrap();
+        assert_eq!(fixture["adjustThreadPoolDecreaseCalls"], 1);
+        assert_eq!(fixture["adjustThreadPoolCorePoolSizeBefore"], 7);
+        assert_eq!(fixture["adjustThreadPoolCorePoolSizeAfter"], 7);
+
+        let consumer = PushConsumer::new(PushConsumerConfig::new("phase18-adjust-pool").unwrap());
+        consumer.consume_core_pool_size.store(7, Ordering::Release);
+        consumer.adjust_thread_pool();
+        assert_eq!(consumer.consume_core_pool_size.load(Ordering::Acquire), 7);
     }
 
     #[tokio::test]

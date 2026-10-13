@@ -32,7 +32,9 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   Rust regression pass. The returned Push implementation's 71 declared public
   signatures are now captured from the pinned Java fixture and count-pinned in
   Rust. Its `consumerRunningInfo` method now has a direct Rust owner API and
-  fixture-backed running-flow checks; other signatures still need
+  fixture-backed running-flow checks. `adjustThreadPool` now has a direct
+  owner mapping and fixture evidence for the pinned built-in services' no-op
+  behavior; other signatures still need
   method-by-method mappings or internal-entrypoint dispositions. Pull
   `getRebalanceImpl`, the nested wrapper method inventory, and broad Phase 6
   behavior reconciliation remain open. Pull

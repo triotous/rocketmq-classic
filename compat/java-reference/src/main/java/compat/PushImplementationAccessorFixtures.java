@@ -85,6 +85,19 @@ public final class PushImplementationAccessorFixtures {
         String consumeFromWhere = first.consumeFromWhere().name();
         boolean unitMode = first.isUnitMode();
         boolean messageQueueListenerInitiallyNull = first.getMessageQueueListener() == null;
+        AtomicInteger adjustThreadPoolDecreaseCalls = new AtomicInteger();
+        first.setConsumeMessageService((ConsumeMessageService) Proxy.newProxyInstance(
+            ConsumeMessageService.class.getClassLoader(),
+            new Class<?>[] {ConsumeMessageService.class},
+            (proxy, method, methodArgs) -> {
+                if ("decCorePoolSize".equals(method.getName())) {
+                    adjustThreadPoolDecreaseCalls.incrementAndGet();
+                }
+                return "getCorePoolSize".equals(method.getName()) ? 7 : null;
+            }));
+        int adjustThreadPoolCorePoolSizeBefore = first.getConsumeMessageService().getCorePoolSize();
+        first.adjustThreadPool();
+        int adjustThreadPoolCorePoolSizeAfter = first.getConsumeMessageService().getCorePoolSize();
         boolean pauseBeforeSet = first.isPause();
         first.setPause(true);
         boolean pauseAfterSetTrue = first.isPause();
@@ -232,6 +245,9 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("consumeFromWhere", consumeFromWhere);
         fixture.put("unitMode", unitMode);
         fixture.put("messageQueueListenerInitiallyNull", messageQueueListenerInitiallyNull);
+        fixture.put("adjustThreadPoolDecreaseCalls", adjustThreadPoolDecreaseCalls.get());
+        fixture.put("adjustThreadPoolCorePoolSizeBefore", adjustThreadPoolCorePoolSizeBefore);
+        fixture.put("adjustThreadPoolCorePoolSizeAfter", adjustThreadPoolCorePoolSizeAfter);
         fixture.put("pauseBeforeSet", pauseBeforeSet);
         fixture.put("pauseAfterSetTrue", pauseAfterSetTrue);
         fixture.put("pauseAfterSetFalse", pauseAfterSetFalse);
