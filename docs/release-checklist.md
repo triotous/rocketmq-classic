@@ -31,7 +31,11 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   fixture checks; active assignment behavior is covered by Phase 11 tests. The
   `pullMessage` row also now covers Java's one-time
   first-lock offset refresh for orderly clustering pulls; its Java fixture and
-  Rust regression pass. The returned Push implementation's 71 declared public
+  Rust regression pass. Push reset-offset behavior now also matches Java's
+  active-queue selection, null-offset drop/clear, callback drain and orderly
+  lock windows, conditional offset-store cleanup, and late-work generation
+  fencing; paused-time reset regressions cover the timeout and removal paths.
+  The returned Push implementation's 71 declared public
   signatures are now captured from the pinned Java fixture and count-pinned in
   Rust. Its `consumerRunningInfo` method now has a direct Rust owner API and
   fixture-backed running-flow checks. `adjustThreadPool` has a direct owner

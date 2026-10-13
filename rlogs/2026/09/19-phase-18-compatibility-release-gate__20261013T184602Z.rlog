@@ -16,3 +16,14 @@
 - PASS: locked offline Cargo metadata confirmed all seven workspace package versions and internal dependency requirements; `cargo package --workspace --list --locked --allow-dirty` listed the package contents; `cargo check --workspace --all-targets --all-features --locked` passed; `git diff --check` passed.
 - An initial metadata assertion one-liner had a Python quoting syntax error; the corrected assertion passed. No manifest or lockfile state was changed by that failed check.
 - Actual crates.io dependency resolution remains unverified and publishing remains disabled pending Phase 19/release approval.
+
+# Phase 18 Push reset-offset continuation — 2026-10-13T19:23:08Z
+
+- Compared the reset lifecycle with pinned Java 5.5.1 source at `efa1be59d6fc747ad220f036c86030f05f0419f9`: `MQClientInstance.resetOffset`, `waitResetOffsetReady`, and `RebalancePushImpl.removeUnnecessaryMessageQueue` / `tryRemoveOrderMessageQueue`.
+- Updated Rust reset handling to select only live process queues represented in the input table; drop and clear matching queues even for null offsets; wait Java's 10-second non-orderly drain or orderly consume-lock window; write only non-null offsets; then perform the Java 500-ms orderly removal attempt. A timed-out orderly removal still removes the local queue but leaves the offset-store entry; successful removal persists, removes the stored offset and unlocks. Reset values are not frozen, and generation fencing rejects late work. The process-queue unlock delay now begins at queue creation.
+- Added paused-time and lifecycle regressions for slow callback fencing, 10-second orderly and non-orderly windows, the additional 500-ms attempt, available-lock unlock, null offsets, unassigned rows, and unlock-delay timing.
+- PASS: `cargo test -p rocketmq-classic-consumer --locked` (201 unit tests and all 44 integration tests), strict consumer Clippy, and focused reset-offset regressions. After documentation edits, `cargo fmt --all -- --check` and `git diff --check` also pass.
+- Updated the Phase 17 admin matrix, Phase 6 API/config and inbound maps, Phase 6 requirement audit, and release checklist to record the behavior and remove stale claims that the Phase 17 reset/status handlers are inactive. No plan was changed.
+- P18-V01 remains partial for the wider bidirectional Java/Rust source/API/input/reverse-export reconciliation. P18-V04 still lacks a current GitHub Ubuntu run. Phase 19's local Docker/Broker matrix, actual registry dependency resolution and release-version confirmation also remain open. No Broker or Phase 19 Docker scenario was run; source and documentation changes remain uncommitted at this checkpoint.
+
+- Follow-up at 2026-10-13T19:23:59Z: committed the consumer implementation and regression tests as `dc2090f0` (`fix(consumer): match Java reset offset lifecycle`). Compatibility documentation and this execution-log update are pending their documentation commit.

@@ -24,6 +24,29 @@ The Java producer, push consumer, and pull consumer expose the shared
 | Producer `fetchPublishMessageQueues(topic)` | `Producer::fetch_publish_message_queues` | Implemented. Scripted tests cover route-not-found, empty-route, malformed-route, and successful queue conversion. |
 | Push/Pull `fetchSubscribeMessageQueues(topic)` | `PushConsumer::fetch_subscribe_message_queues`, `PullConsumer::fetch_subscribe_message_queues` | Implemented. Both remove the namespace from returned queues. Tests cover missing and malformed routes. Push returns an empty set for an empty route as Java does; Pull returns the Java admin error when NameServer returns an empty queue set. |
 
+## Push consumer offset reset
+
+The pinned Java `MQClientInstance.resetOffset` walks the active Push process
+queues, drops and clears matching queues whose keys occur in the supplied
+offset table, then processes only non-null offsets. Non-orderly reset waits
+10 seconds before updating offsets; orderly reset waits up to 10 seconds for
+the consume write lock. Orderly clustered removal then waits up to 500 ms for
+that lock, unless the dropped queue's unlock delay has elapsed. Java removes
+the local queue even when that removal attempt times out; it removes the stored
+offset only on the successful orderly unlock path. A null offset therefore
+drops and clears a matching queue but does not update its offset or remove it.
+
+Rust matches these transitions: reset cancels the old queue generation so late
+pull replies and consume callbacks cannot update the reset offset, does not
+freeze the reset value, and removes only queues with a non-null mapped offset.
+The orderly removal path persists before and during removal and preserves the
+Java distinction between local queue removal and stored-offset cleanup. Paused
+time regressions cover the 10-second and 500-ms windows, callback fencing,
+available-lock unlock, null offsets, and queue rows without a live process
+queue. The pinned source is `MQClientInstance.resetOffset` and
+`waitResetOffsetReady`, plus `RebalancePushImpl.removeUnnecessaryMessageQueue`
+and `tryRemoveOrderMessageQueue`.
+
 ## Client inbound administrative requests
 
 Java `ClientRemotingProcessor` implements `RESET_CONSUMER_CLIENT_OFFSET`,
