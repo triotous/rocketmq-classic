@@ -11,6 +11,7 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import org.apache.rocketmq.client.consumer.DefaultMQPullConsumer;
 import org.apache.rocketmq.client.impl.consumer.DefaultMQPullConsumerImpl;
+import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.message.MessageQueue;
 
 /** Checks the deprecated facade accessor and its retained implementation identity. */
@@ -30,6 +31,18 @@ public final class PullImplementationAccessorFixtures {
         TreeSet<String> keys = new TreeSet<>();
         for (MessageQueue queue : queues) keys.add(queueKey(queue));
         return new ArrayList<>(keys);
+    }
+
+    private static MessageExt message(String topic) {
+        MessageExt message = new MessageExt();
+        message.setTopic(topic);
+        return message;
+    }
+
+    private static List<String> messageTopics(Iterable<MessageExt> messages) {
+        List<String> topics = new ArrayList<>();
+        for (MessageExt message : messages) topics.add(message.getTopic());
+        return topics;
     }
 
     public static void main(String[] args) throws Exception {
@@ -61,6 +74,23 @@ public final class PullImplementationAccessorFixtures {
         parseInput.add(new MessageQueue("tenant%nullable-broker", null, 4));
         Set<MessageQueue> parseOutput = first.parseSubscribeMessageQueues(parseInput);
 
+        first.resetTopic(null);
+        List<MessageExt> emptyMessages = new ArrayList<>();
+        first.resetTopic(emptyMessages);
+        List<MessageExt> resetInput = new ArrayList<>(List.of(
+            message("tenant%orders"),
+            message("orders"),
+            message("other%orders"),
+            message("%RETRY%tenant%group-a"),
+            message("%RETRY%other%group-a"),
+            message("%DLQ%tenant%group-a")
+        ));
+        first.resetTopic(resetInput);
+
+        DefaultMQPullConsumer noNamespaceConsumer = new DefaultMQPullConsumer(group + "-no-namespace");
+        List<MessageExt> noNamespaceMessages = new ArrayList<>(List.of(message("tenant%orders")));
+        noNamespaceConsumer.getDefaultMQPullConsumerImpl().resetTopic(noNamespaceMessages);
+
         Map<String, Object> provenance = new TreeMap<>();
         provenance.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         provenance.put("entrypoint", "DefaultMQPullConsumer.getDefaultMQPullConsumerImpl");
@@ -79,6 +109,14 @@ public final class PullImplementationAccessorFixtures {
         fixture.put("maxReconsumeTimesAfterMutation", consumer.getMaxReconsumeTimes());
         fixture.put("parseSubscribeMessageQueuesInput", queueKeys(parseInput));
         fixture.put("parseSubscribeMessageQueuesOutput", queueKeys(parseOutput));
+        fixture.put("resetTopicNullListNoOp", true);
+        fixture.put("resetTopicEmptyListOutput", messageTopics(emptyMessages));
+        fixture.put("resetTopicInput", List.of(
+            "tenant%orders", "orders", "other%orders", "%RETRY%tenant%group-a",
+            "%RETRY%other%group-a", "%DLQ%tenant%group-a"));
+        fixture.put("resetTopicOutput", messageTopics(resetInput));
+        fixture.put("resetTopicNoNamespaceInput", List.of("tenant%orders"));
+        fixture.put("resetTopicNoNamespaceOutput", messageTopics(noNamespaceMessages));
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture) + "\n";
         if (verify) {
             check(Files.exists(path) && json.equals(Files.readString(path)), "fixture drift: " + path);

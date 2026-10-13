@@ -426,6 +426,30 @@ impl PullConsumer {
             .map_err(PullConsumerError::from)
     }
 
+    /// Removes this consumer's namespace from message topics, matching
+    /// `DefaultMQPullConsumerImpl.resetTopic`. A missing or empty list is a
+    /// no-op. `MessageExt` topics are non-null in Rust, unlike Java's mutable
+    /// message model.
+    pub fn reset_topic(
+        &self,
+        messages: Option<&mut [MessageExt]>,
+    ) -> Result<(), PullConsumerError> {
+        let Some(messages) = messages else {
+            return Ok(());
+        };
+        if messages.is_empty() {
+            return Ok(());
+        }
+
+        let mut client_config = self.config.client_config().clone();
+        for message in messages {
+            if let Some(topic) = client_config.without_namespace(Some(message.message().topic()))? {
+                message.message_mut().set_topic(topic);
+            }
+        }
+        Ok(())
+    }
+
     /// Refreshes the route and returns the writable queues with the namespace
     /// removed, matching Pull's Java implementation accessor.
     pub async fn fetch_publish_message_queues(
@@ -1057,7 +1081,6 @@ impl PullConsumer {
         unique_key: bool,
     ) -> Result<QueryResult, PullConsumerError> {
         let (runtime, _) = self.started_runtime().await?;
-        let mut client_config = self.config.client_config().clone();
         let topic = self.topic_with_namespace(topic)?;
         let mut query = if unique_key {
             AdminQueryRequest::by_unique_key(&topic, key, max_num, begin_timestamp, end_timestamp)
@@ -1069,11 +1092,7 @@ impl PullConsumer {
             i64::from(self.config.client_config().mq_client_api_timeout()).max(0) as u64;
         let deadline = Instant::now() + Duration::from_millis(timeout_millis).saturating_mul(4);
         let mut result = runtime.query_message(&query, deadline).await?;
-        for message in &mut result.message_list {
-            if let Some(topic) = client_config.without_namespace(Some(message.message().topic()))? {
-                message.message_mut().set_topic(topic);
-            }
-        }
+        self.reset_topic(Some(&mut result.message_list))?;
         Ok(result)
     }
 
@@ -1230,14 +1249,7 @@ impl PullConsumer {
             options,
             DecodeLimits::default(),
         )?;
-        if let Some(messages) = &mut processed.messages {
-            for message in messages {
-                let topic = client_config.without_namespace(Some(message.message().topic()))?;
-                if let Some(topic) = topic {
-                    message.message_mut().set_topic(topic);
-                }
-            }
-        }
+        self.reset_topic(processed.messages.as_deref_mut())?;
         self.execute_consume_message_hooks(input_queue, &mut processed)?;
         Ok(processed)
     }
@@ -2192,6 +2204,67 @@ mod tests {
         assert_eq!(
             parsed_keys,
             expected["parseSubscribeMessageQueuesOutput"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_str().unwrap().to_owned())
+                .collect::<Vec<_>>()
+        );
+
+        consumer.reset_topic(None).unwrap();
+        assert!(expected["resetTopicNullListNoOp"].as_bool().unwrap());
+        let mut empty_messages: Vec<MessageExt> = Vec::new();
+        consumer.reset_topic(Some(&mut empty_messages)).unwrap();
+        assert_eq!(
+            empty_messages
+                .iter()
+                .map(|message| message.message().topic().to_owned())
+                .collect::<Vec<_>>(),
+            expected["resetTopicEmptyListOutput"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_str().unwrap().to_owned())
+                .collect::<Vec<_>>()
+        );
+        let mut reset_messages = expected["resetTopicInput"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| MessageExt::new(Message::new(value.as_str().unwrap(), Vec::new())))
+            .collect::<Vec<_>>();
+        consumer.reset_topic(Some(&mut reset_messages)).unwrap();
+        assert_eq!(
+            reset_messages
+                .iter()
+                .map(|message| message.message().topic().to_owned())
+                .collect::<Vec<_>>(),
+            expected["resetTopicOutput"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_str().unwrap().to_owned())
+                .collect::<Vec<_>>()
+        );
+
+        let mut no_namespace_config = PullConsumerConfig::new(group).unwrap();
+        no_namespace_config.client_config_mut().set_namespace(None);
+        let no_namespace_consumer = PullConsumer::new(no_namespace_config);
+        let mut no_namespace_messages = expected["resetTopicNoNamespaceInput"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| MessageExt::new(Message::new(value.as_str().unwrap(), Vec::new())))
+            .collect::<Vec<_>>();
+        no_namespace_consumer
+            .reset_topic(Some(&mut no_namespace_messages))
+            .unwrap();
+        assert_eq!(
+            no_namespace_messages
+                .iter()
+                .map(|message| message.message().topic().to_owned())
+                .collect::<Vec<_>>(),
+            expected["resetTopicNoNamespaceOutput"]
                 .as_array()
                 .unwrap()
                 .iter()
