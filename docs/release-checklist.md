@@ -36,8 +36,10 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   owner mapping and fixture evidence for the pinned built-in services' no-op
   behavior; other signatures still need
   method-by-method mappings or internal-entrypoint dispositions. Pull
-  `getRebalanceImpl`, the nested wrapper method inventory, and broad Phase 6
-  behavior reconciliation remain open. Pull
+  `getRebalanceImpl`, both `pullKernelImpl` overloads, `popAsync`, and the
+  `RebalanceImpl`/`RebalancePullImpl` surface now have source-based owner-flow
+  mappings or internal-entrypoint dispositions. The remaining Push signatures
+  and broad Phase 6 behavior reconciliation remain open. Pull
   `sendMessageBack`/`maxReconsumeTimes` covers the 3000 ms timeout and logical
   Broker route lookup offline; its live Broker handoff remains pending.
 - [x] Register live cases in the Phase 19 scenario manifest and validate the

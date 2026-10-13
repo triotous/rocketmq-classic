@@ -146,3 +146,9 @@
 - PASS after change: `cargo test -p rocketmq-classic-consumer push_adjust_thread_pool_matches_java_default_service_noop --locked`; `cargo clippy -p rocketmq-classic-consumer --all-targets --all-features --locked -- -D warnings`; `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios and fixture drift); `cargo fmt --all -- --check`; `git diff --check`.
 - PASS baseline at `9afaffe8` before this method change: `cargo test --workspace --locked`.
 - P18-V01 remains open: the other raw Push implementation signatures, Pull rebalance/wrapper inventory and broad Phase 6 reconciliation still need method-level mappings or reviewed internal-entrypoint dispositions. No files in the pinned Java repository were changed.
+
+## P18-V01 Pull raw-surface disposition — 2026-10-13T15:43:11Z
+
+- Audited pinned Java 5.5.1 `PullAPIWrapper`, `RebalanceImpl`, and `RebalancePullImpl` public methods and call sites. Mapped both `pullKernelImpl` overloads to Rust Pull/Push/Lite owner APIs and `popAsync` to the Push POP owner; recorded the source-confirmed zero/unsupported/empty Pull rebalance methods and the table/factory/lock helpers as internal entrypoints whose raw exposure would bypass Rust assignment, runtime, and shutdown ownership.
+- Updated the Phase 9 raw implementation matrix and release checklist. Pull raw-surface review is closed; Push raw signatures and the broad Phase 6 audit remain open under P18-V01.
+- PASS evidence already on this revision: `cargo test --workspace --all-features --locked`; `git diff --check`. The all-features run included consumer Pull rebalance, wrapper, Push/POP, admin, and lifecycle suites. No code changed in this documentation continuation, and the pinned Java checkout was not modified.
