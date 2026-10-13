@@ -33,9 +33,9 @@ use rocketmq_classic_protocol::{
     },
     codes::response,
     header::{
-        BoundaryType, ConsumerSendMsgBackRequestHeader, GetMaxOffsetRequestHeader,
-        PopMessageRequestHeader, PullMessageRequestHeader, SearchOffsetRequestHeader,
-        SendMessageRequestHeaderV1,
+        BoundaryType, ConsumerSendMsgBackRequestHeader, GetEarliestMsgStoretimeRequestHeader,
+        GetMaxOffsetRequestHeader, GetMinOffsetRequestHeader, PopMessageRequestHeader,
+        PullMessageRequestHeader, SearchOffsetRequestHeader, SendMessageRequestHeaderV1,
     },
     heartbeat::{
         ConsumeFromWhere, ConsumeType, ConsumerData, ConsumerSubscriptionDataSet, SubscriptionData,
@@ -571,6 +571,92 @@ impl PushConsumer {
         }
         *write_lock(&self.subscription_config) = namespaced;
         Ok(())
+    }
+
+    /// Searches a queue by Java's default lower timestamp boundary.
+    pub async fn search_offset(
+        &self,
+        input_queue: &MessageQueue,
+        timestamp_millis: i64,
+    ) -> Result<i64, PushConsumerError> {
+        let (runtime, queue, broker_name, address, deadline) =
+            self.prepare_admin_queue(input_queue).await?;
+        let header = SearchOffsetRequestHeader {
+            topic: queue
+                .topic()
+                .ok_or(PushConsumerError::InvalidQueue)?
+                .to_owned(),
+            queue_id: queue.queue_id(),
+            timestamp: timestamp_millis,
+            boundary_type: Some(BoundaryType::Lower),
+            broker_name: Some(broker_name),
+            ..SearchOffsetRequestHeader::default()
+        };
+        Ok(runtime
+            .api()
+            .search_offset(&address, &header, deadline)
+            .await?)
+    }
+
+    pub async fn get_max_offset(
+        &self,
+        input_queue: &MessageQueue,
+    ) -> Result<i64, PushConsumerError> {
+        let (runtime, queue, broker_name, address, deadline) =
+            self.prepare_admin_queue(input_queue).await?;
+        let header = GetMaxOffsetRequestHeader {
+            topic: queue
+                .topic()
+                .ok_or(PushConsumerError::InvalidQueue)?
+                .to_owned(),
+            queue_id: queue.queue_id(),
+            committed: true,
+            broker_name: Some(broker_name),
+        };
+        Ok(runtime
+            .api()
+            .get_max_offset(&address, &header, deadline)
+            .await?)
+    }
+
+    pub async fn get_min_offset(
+        &self,
+        input_queue: &MessageQueue,
+    ) -> Result<i64, PushConsumerError> {
+        let (runtime, queue, broker_name, address, deadline) =
+            self.prepare_admin_queue(input_queue).await?;
+        let header = GetMinOffsetRequestHeader {
+            topic: queue
+                .topic()
+                .ok_or(PushConsumerError::InvalidQueue)?
+                .to_owned(),
+            queue_id: queue.queue_id(),
+            broker_name: Some(broker_name),
+        };
+        Ok(runtime
+            .api()
+            .get_min_offset(&address, &header, deadline)
+            .await?)
+    }
+
+    pub async fn get_earliest_msg_store_time(
+        &self,
+        input_queue: &MessageQueue,
+    ) -> Result<i64, PushConsumerError> {
+        let (runtime, queue, broker_name, address, deadline) =
+            self.prepare_admin_queue(input_queue).await?;
+        let header = GetEarliestMsgStoretimeRequestHeader {
+            topic: queue
+                .topic()
+                .ok_or(PushConsumerError::InvalidQueue)?
+                .to_owned(),
+            queue_id: queue.queue_id(),
+            broker_name: Some(broker_name),
+        };
+        Ok(runtime
+            .api()
+            .get_earliest_msg_storetime(&address, &header, deadline)
+            .await?)
     }
 
     pub async fn suspend(&self) {
@@ -4006,6 +4092,36 @@ impl PushConsumer {
             address = route.publish_address(broker_name).map(str::to_owned);
         }
         address.ok_or_else(|| OffsetStoreError::BrokerNotFound(broker_name.to_owned()).into())
+    }
+
+    async fn prepare_admin_queue(
+        &self,
+        input_queue: &MessageQueue,
+    ) -> Result<(Arc<ClientRuntime>, MessageQueue, String, String, Instant), PushConsumerError>
+    {
+        let context = self
+            .pull_context()
+            .await
+            .ok_or(PushConsumerError::NotStarted)?;
+        let queue = self
+            .config
+            .client_config()
+            .clone()
+            .queue_with_namespace(input_queue)?;
+        let topic = queue
+            .topic()
+            .filter(|topic| !topic.is_empty())
+            .ok_or(PushConsumerError::InvalidQueue)?;
+        let broker_name = queue
+            .broker_name()
+            .filter(|broker| !broker.is_empty())
+            .ok_or(PushConsumerError::InvalidQueue)?
+            .to_owned();
+        let deadline = self.offset_rpc_deadline();
+        let address = self
+            .find_offset_broker(&context.runtime, topic, &broker_name, deadline)
+            .await?;
+        Ok((context.runtime, queue, broker_name, address, deadline))
     }
 
     async fn request_orderly_lock_batch(
