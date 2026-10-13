@@ -36,26 +36,34 @@ snapshots, Pull properties, JSON layout and credential omission have local
 coverage. Push/Pull consume and POP paths now populate Java-style per-topic
 success/failure counts, 10-second and 10-minute TPS/RT snapshots, and the
 one-hour failure count; Running Info has non-zero statistics coverage. The
-`jstackEnable` dump enumerates process threads on macOS ARM64 and x86_64, but
-other targets still fall back to the request thread only. Cross-platform
-all-thread stack capture is the remaining behavior gap.
+`jstackEnable` dump enumerates process threads on macOS ARM64 and x86_64,
+Linux AArch64 and x86_64, and Windows x86_64 and ARM64. Linux sends a queued
+signal to each target thread, reads its `ucontext`, and walks readable frame
+records; it does not use ptrace or change `PR_SET_PTRACER`. It restores the
+previous signal handler after capture. Windows enumerates with Toolhelp,
+suspends one thread at a time, reads its architecture-specific context, and
+resumes it through an RAII guard. If the shared deadline expires, all remaining
+enumerated thread IDs are still included with an unavailable-stack marker.
+Linux stack tests pass on both architectures. The complete Windows consumer
+crate checks and strict Clippy pass for x86_64; the isolated stack module and
+tests type-check with warnings denied for x86_64 and ARM64. Native Windows
+runtime behavior has not been executed on this macOS host and stays an
+environment check for final validation.
 
-## Required local evidence still open
+## Verification status
 
-- **P17-V01:** Route-not-found, empty-route and malformed-route behavior is now
-  covered for publish/subscribe queue queries. Offset and create-topic
-  permission errors and unique-key terminal `NO_MESSAGE` are forwarded by all
-  three facades. Java-style Running Info statistics are implemented and covered
-  locally. Remaining work is all-thread `jstackEnable` parity on non-macOS
-  targets. Core tests cover Broker errors/malformed responses for offset RPCs,
-  create-topic permission errors, query failures/malformed bodies, and
-  view-message not-found/malformed responses.
-- **P17-V03:** Reset fencing now has separate late-pull and slow-callback
-  regressions; direct-consume offset isolation, slow-callback status
-  responsiveness, and executor shutdown joining also have targeted tests.
-  Protocol, core, remoting, consumer and producer locked suites, strict Clippy,
-  formatting, Maven fixtures, differential self-test, workspace metadata and
-  diff checks pass on this working tree.
+- **P17-V01:** Local API coverage passes. Route-not-found, empty-route and
+  malformed-route behavior is covered for publish/subscribe queue queries.
+  Offset and create-topic permission errors and unique-key terminal
+  `NO_MESSAGE` are forwarded by all three facades. Core tests cover Broker
+  errors and malformed responses for offset RPCs, create-topic permission
+  errors, query failures/malformed bodies, and view-message not-found/malformed
+  responses. Native Windows stack runtime execution remains a final platform
+  check; cross-target compile and strict lint evidence is recorded above.
+- **P17-V03:** Reset fencing has late-pull and slow-callback regressions;
+  direct-consume offset isolation, slow-callback status responsiveness, and
+  executor shutdown joining also have targeted tests. The full consumer suite
+  passes on macOS ARM64, Linux AArch64, and Linux x86_64.
 - **P17-U01:** Complete. Scripted multi-Broker tests cover duplicate results,
   completion-order merge, bounded time fields, partial failure, maximum
   watermark, cluster/key filtering, `lastKey`, empty results and terminal
@@ -65,10 +73,15 @@ all-thread stack capture is the remaining behavior gap.
 **P17-V02** is the Broker-backed query check assigned to Phase 19; it does not
 replace the local evidence above. Phase 18 has not started.
 
-Latest local gates passed: locked tests and strict all-target/all-feature
-Clippy for protocol, remoting, core, consumer and producer; pinned Maven
-`verify` (32 scenarios, including the Running Info fixture); differential
-self-test; workspace metadata; `cargo fmt --all -- --check`; and
-`git diff --check`. macOS x86_64 stack code also compiles from the ARM64 host
-with `cargo check --target x86_64-apple-darwin -p rocketmq-classic-consumer
---locked`. These checks do not close the non-macOS all-thread stack gap.
+Latest local gates passed: locked consumer tests and strict all-target/all-
+feature consumer Clippy on macOS ARM64, Linux AArch64, and Linux x86_64 (164
+unit tests plus all consumer integration/doctests per platform); core
+`admin_rpc` tests (16 cases); producer tests (92 unit, 10 admin, 5 facade,
+3 request/reply, 10 scripted-send, and 6 transaction cases) and strict Clippy;
+pinned Maven `verify` (32 scenarios and
+Java/Rust fixture cross-decodes); differential comparator self-test; workspace
+metadata; `cargo fmt --all -- --check`; and `git diff --check`. The complete
+consumer crate also passes locked Windows x86_64 GNU `cargo check` and strict
+all-target/all-feature Clippy in a Rust 1.85.0 MinGW container. An isolated
+stack harness with warnings denied passes for Windows x86_64 GNU and ARM64
+MSVC. No native Windows runtime or Broker-backed Phase 19 validation was run.
