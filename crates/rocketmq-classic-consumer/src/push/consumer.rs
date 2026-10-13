@@ -454,6 +454,11 @@ impl PushConsumer {
         *write_lock(&self.service_state) = service_state;
     }
 
+    /// Returns Java's effective implementation retry limit (`-1` becomes 16).
+    pub fn get_max_reconsume_times(&self) -> i32 {
+        self.config.effective_max_reconsume_times()
+    }
+
     /// Returns the message trace dispatcher after trace initialization.
     ///
     /// This corresponds to Java `DefaultMQPushConsumer.getTraceDispatcher()`.
@@ -5601,9 +5606,18 @@ mod tests {
         assert_eq!(fixture["implementationNonNull"], true);
         assert_eq!(fixture["implementationIdentityStable"], true);
         assert_eq!(fixture["configuredConsumerGroup"], group);
+        assert_eq!(fixture["effectiveMaxReconsumeTimesDefault"], 16);
         assert!(Arc::ptr_eq(&consumer, &first));
         assert!(Arc::ptr_eq(&first, &second));
         assert_eq!(first.config().consumer_group(), group);
+        assert_eq!(first.get_max_reconsume_times(), 16);
+
+        let mut custom_config =
+            PushConsumerConfig::new("phase18-push-max-reconsume-custom").unwrap();
+        custom_config.set_max_reconsume_times(7);
+        let custom_consumer = PushConsumer::new(custom_config);
+        assert_eq!(fixture["effectiveMaxReconsumeTimesCustom"], 7);
+        assert_eq!(custom_consumer.get_max_reconsume_times(), 7);
     }
 
     #[tokio::test]

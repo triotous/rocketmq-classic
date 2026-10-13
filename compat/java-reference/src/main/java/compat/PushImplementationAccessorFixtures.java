@@ -42,6 +42,9 @@ public final class PushImplementationAccessorFixtures {
         }
         String serviceStateAfterRejectedStart = first.getServiceState().name();
         first.setServiceState(ServiceState.CREATE_JUST);
+        int effectiveMaxReconsumeTimesDefault = first.getMaxReconsumeTimes();
+        consumer.setMaxReconsumeTimes(7);
+        int effectiveMaxReconsumeTimesCustom = first.getMaxReconsumeTimes();
 
         Map<String, Object> fixture = new LinkedHashMap<>();
         fixture.put("implementationNonNull", first != null);
@@ -51,6 +54,8 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("serviceStateSetterAcceptsNull", serviceStateSetterAcceptsNull);
         fixture.put("startFailedStateBlocksStart", startFailedStateBlocksStart);
         fixture.put("serviceStateAfterRejectedStart", serviceStateAfterRejectedStart);
+        fixture.put("effectiveMaxReconsumeTimesDefault", effectiveMaxReconsumeTimesDefault);
+        fixture.put("effectiveMaxReconsumeTimesCustom", effectiveMaxReconsumeTimesCustom);
         String json = JSON.toJSONString(fixture) + "\n";
         if (verify) {
             check(Files.exists(path) && json.equals(Files.readString(path)), "fixture drift: " + path);

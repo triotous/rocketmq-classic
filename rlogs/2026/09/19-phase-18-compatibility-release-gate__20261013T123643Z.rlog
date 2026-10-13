@@ -1,0 +1,7 @@
+# Phase 18 execution session — 2026-10-13T12:36:43Z
+
+- Continued the P18-V01 Phase 10 Push raw implementation audit. Added `PushConsumer::get_max_reconsume_times`, using the existing Java-compatible config bridge where `-1` resolves to 16, and extended the invoked Java fixture plus Rust test for default and configured value 7.
+- Updated the Phase 10 matrix with the closed getter mapping. The wider `DefaultMQPushConsumerImpl` public method inventory remains open.
+- Current accessor fixture SHA-256: `6c64943e2493d0e367478711f51761864779b27de5d29b8145bb869ade3820b8`.
+- PASS: `cargo test -p rocketmq-classic-consumer --locked raw_push_implementation_accessor_retains_identity`; strict consumer Clippy; `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios and fixture drift checks); `cargo fmt --all -- --check`; `git diff --check`.
+- No live Broker or Docker was used. Continue the raw Push implementation methods and remaining Pull/Phase 6 reconciliation.
