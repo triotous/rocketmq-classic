@@ -1,0 +1,6 @@
+# Phase 18 — Compatibility release gate (resumed session)
+
+- Resumed on 2026-10-13 07:40 UTC on `phase/19-phase-18-compatibility-release-gate`; inspected the active Phase 18 plan and existing worktree. Java oracle remains `/Users/bruce.tsai/Projects/3rd/rocketmq` and is read-only.
+- Corrected the benchmark's reported Remoting input length to use the encoded frame size (427 bytes) and route-lookup input size to use the key length (10 bytes), with the 128-entry route dataset explicit in the benchmark name.
+- PASS: `cargo fmt --all -- --check`; `cargo bench -p rocketmq-classic --bench offline --locked`; `cargo clippy -p rocketmq-classic --bench offline --all-features --locked -- -D warnings`.
+- Recorded fixed-input latency and allocator observations, host/toolchain, sample counts, interpretation limits, and reproduction commands in `docs/compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`. The measurements are observations only and define no performance threshold.

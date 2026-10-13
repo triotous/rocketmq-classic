@@ -1027,12 +1027,15 @@ dependencies = [
 name = "rocketmq-classic"
 version = "0.1.0"
 dependencies = [
+ "base64",
+ "bytes",
  "rocketmq-classic-common",
  "rocketmq-classic-consumer",
  "rocketmq-classic-core",
  "rocketmq-classic-producer",
  "rocketmq-classic-protocol",
  "rocketmq-classic-remoting",
+ "serde_json",
  "tokio",
 ]
 
