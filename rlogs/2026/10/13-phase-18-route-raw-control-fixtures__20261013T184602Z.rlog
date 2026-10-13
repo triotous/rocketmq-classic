@@ -1,8 +1,0 @@
-# Phase 18 Route DTO raw-control fixture extension — 2026-10-13T18:46:02Z
-
-- Revision: `15fa5d03` on `phase/19-phase-18-compatibility-release-gate`.
-- Extended the pinned Java 5.5.1 route DTO fixture with all 32 raw U+0000–U+001F code points at four input positions: `orderTopicConf` value, unknown field name, `filterServerTable` key, and filter value. Added a Rust assertion requiring all 128 IDs. Route DTO corpus: 527 cases; `route.json` SHA-256: `1ac509576845e9f9d78fc4c677702b6c21cf1195d711cb0437dacb48e8e14da1`.
-- PASS: route DTO Java differential (527 cases), including the full 32 × 4 ID-presence assertion; `cargo fmt --all -- --check`; `git diff --check`.
-- Fixture generation, Maven verify (37 scenarios), `cargo test --workspace --all-features --locked`, strict all-target/all-feature Clippy, and the other Phase 18 workflow gates passed during this fixture extension before the final Rust corpus-completeness assertion was added; the focused differential and formatting/diff gates were rerun after that assertion.
-- Updated the Phase 6 API/config map, requirement audit, and route audit. No plan changed. No Broker or Phase 19 Docker scenarios were run.
-- This closes only this Route DTO raw-control input slice. P18-V01 and the broader Phase 6 source/API/input/reverse-export audit remain `PARTIAL`; P18-V04, outstanding platform evidence, release dependency-version preparation, and Phase 19 local Broker/Docker scenarios remain open.
