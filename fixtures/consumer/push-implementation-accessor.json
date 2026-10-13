@@ -1,1 +1,1 @@
-{"implementationNonNull":true,"implementationIdentityStable":true,"configuredConsumerGroup":"phase18-push-implementation-accessor"}
+{"implementationNonNull":true,"implementationIdentityStable":true,"configuredConsumerGroup":"phase18-push-implementation-accessor","initialServiceState":"CREATE_JUST","serviceStateSetterAcceptsNull":true,"startFailedStateBlocksStart":true,"serviceStateAfterRejectedStart":"START_FAILED"}

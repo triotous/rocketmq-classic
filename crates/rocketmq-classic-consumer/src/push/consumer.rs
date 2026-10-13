@@ -68,6 +68,7 @@ use crate::{
     process_queue::{ConsumeBatch, LockAttemptResult, OrderlyCompletion, ProcessQueue},
     pull::{PullAPIWrapper, build_subscription, resolve_pull_broker_address},
     rebalance::RebalanceService,
+    service_state::ConsumerServiceState,
     stats::global_consumer_stats,
 };
 
@@ -333,6 +334,7 @@ pub struct PushConsumer {
     consume_message_hooks: ConsumeMessageHookRegistry,
     trace_dispatcher: OnceLock<Arc<rocketmq_classic_producer::TraceDispatcher>>,
     state: tokio::sync::Mutex<State>,
+    service_state: RwLock<Option<ConsumerServiceState>>,
     offset_store: std::sync::Mutex<Option<Arc<dyn OffsetStore>>>,
     listener: RwLock<Option<PushMessageListener>>,
     pop_listener: RwLock<Option<PushMessageListener>>,
@@ -397,6 +399,7 @@ impl PushConsumer {
             consume_message_hooks: ConsumeMessageHookRegistry::default(),
             trace_dispatcher: OnceLock::new(),
             state: tokio::sync::Mutex::new(State::Created),
+            service_state: RwLock::new(Some(ConsumerServiceState::CreateJust)),
             offset_store: std::sync::Mutex::new(None),
             listener: RwLock::new(None),
             pop_listener: RwLock::new(None),
@@ -439,6 +442,16 @@ impl PushConsumer {
     /// so the Rust handle is a clone of this same `Arc`.
     pub fn get_default_mq_push_consumer_impl(self: &Arc<Self>) -> Arc<Self> {
         self.clone()
+    }
+
+    /// Returns Java's `DefaultMQPushConsumerImpl.getServiceState()` value.
+    pub fn service_state(&self) -> Option<ConsumerServiceState> {
+        *read_lock(&self.service_state)
+    }
+
+    /// Mirrors the deprecated Java implementation setter, including null.
+    pub fn set_service_state(&self, service_state: Option<ConsumerServiceState>) {
+        *write_lock(&self.service_state) = service_state;
     }
 
     /// Returns the message trace dispatcher after trace initialization.
@@ -2979,6 +2992,11 @@ impl PushConsumer {
             State::Shutdown => return Err(PushConsumerError::Shutdown),
             State::Created => {}
         }
+        let service_state = self.service_state();
+        if service_state != Some(ConsumerServiceState::CreateJust) {
+            return Err(PushConsumerError::ServiceStateNotReady(service_state));
+        }
+        self.set_service_state(Some(ConsumerServiceState::StartFailed));
 
         let mut client_config = self.config.client_config().clone();
         let consumer_group = client_config
@@ -3064,6 +3082,7 @@ impl PushConsumer {
                     pull_scheduler,
                     pull_rpc_workers,
                 };
+                self.set_service_state(Some(ConsumerServiceState::Running));
                 self.start_trace_dispatcher().await;
                 runtime.rebalance_immediately();
                 Ok(())
@@ -3083,6 +3102,14 @@ impl PushConsumer {
                         .await;
                 }
                 let _ = runtime.shutdown().await;
+                if matches!(
+                    &error,
+                    PushConsumerError::Runtime(
+                        rocketmq_classic_core::runtime::RuntimeError::DuplicateGroup { .. }
+                    )
+                ) {
+                    self.set_service_state(Some(ConsumerServiceState::CreateJust));
+                }
                 Err(error)
             }
         }
@@ -5158,8 +5185,17 @@ impl PushConsumer {
             pull_rpc_workers,
         ) = {
             let mut state = self.state.lock().await;
-            if matches!(&*state, State::Created | State::Shutdown) {
-                return Ok(());
+            match self.service_state() {
+                Some(ConsumerServiceState::Running) => {}
+                Some(ConsumerServiceState::CreateJust)
+                | Some(ConsumerServiceState::StartFailed)
+                | Some(ConsumerServiceState::ShutdownAlready) => return Ok(()),
+                None => return Err(PushConsumerError::ServiceStateNotReady(None)),
+            }
+            if !matches!(&*state, State::Started { .. }) {
+                return Err(PushConsumerError::ServiceStateNotReady(
+                    self.service_state(),
+                ));
             }
             match std::mem::replace(&mut *state, State::Shutdown) {
                 State::Started {
@@ -5277,11 +5313,12 @@ impl PushConsumer {
         }
         unregister?;
         shutdown?;
+        self.set_service_state(Some(ConsumerServiceState::ShutdownAlready));
         Ok(())
     }
 
     pub async fn is_running(&self) -> bool {
-        matches!(&*self.state.lock().await, State::Started { .. })
+        self.service_state() == Some(ConsumerServiceState::Running)
     }
 
     fn unregister_deadline(&self) -> Instant {
@@ -5567,6 +5604,57 @@ mod tests {
         assert!(Arc::ptr_eq(&consumer, &first));
         assert!(Arc::ptr_eq(&first, &second));
         assert_eq!(first.config().consumer_group(), group);
+    }
+
+    #[tokio::test]
+    async fn push_service_state_accessors_match_java_null_and_start_guard() {
+        let group = "phase18-push-implementation-accessor";
+        let config = PushConsumerConfig::new(group).unwrap();
+        let consumer = Arc::new(PushConsumer::new(config));
+
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/push-implementation-accessor.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            consumer.service_state(),
+            Some(ConsumerServiceState::CreateJust)
+        );
+        assert_eq!(fixture["initialServiceState"], "CREATE_JUST");
+
+        consumer.set_service_state(None);
+        assert_eq!(consumer.service_state(), None);
+        assert_eq!(fixture["serviceStateSetterAcceptsNull"], true);
+        assert!(matches!(
+            consumer.start().await,
+            Err(PushConsumerError::ServiceStateNotReady(None))
+        ));
+
+        consumer.set_service_state(Some(ConsumerServiceState::StartFailed));
+        assert_eq!(fixture["startFailedStateBlocksStart"], true);
+        assert!(matches!(
+            consumer.start().await,
+            Err(PushConsumerError::ServiceStateNotReady(Some(
+                ConsumerServiceState::StartFailed
+            )))
+        ));
+        assert_eq!(
+            consumer.service_state(),
+            Some(ConsumerServiceState::StartFailed)
+        );
+
+        consumer.set_service_state(Some(ConsumerServiceState::Running));
+        assert!(consumer.is_running().await);
+        consumer.set_service_state(Some(ConsumerServiceState::CreateJust));
+        assert!(!consumer.is_running().await);
+        assert!(matches!(
+            consumer.start().await,
+            Err(PushConsumerError::MissingMessageListener)
+        ));
+        assert_eq!(
+            consumer.service_state(),
+            Some(ConsumerServiceState::StartFailed)
+        );
     }
 
     #[derive(Default)]
@@ -6476,6 +6564,7 @@ mod tests {
             pull_scheduler: pull_scheduler.clone(),
             pull_rpc_workers: pull_rpc_workers.clone(),
         };
+        consumer.set_service_state(Some(ConsumerServiceState::Running));
         consume_service
             .start(
                 Arc::downgrade(consumer),
@@ -8966,13 +9055,22 @@ mod tests {
         second.register_message_listener(listener()).await.unwrap();
 
         first.start().await.unwrap();
+        assert_eq!(first.service_state(), Some(ConsumerServiceState::Running));
         assert!(matches!(
             second.start().await,
             Err(PushConsumerError::Runtime(_))
         ));
+        assert_eq!(
+            second.service_state(),
+            Some(ConsumerServiceState::CreateJust)
+        );
         assert!(!second.is_running().await);
         assert!(first.is_running().await);
         first.shutdown().await.unwrap();
+        assert_eq!(
+            first.service_state(),
+            Some(ConsumerServiceState::ShutdownAlready)
+        );
         assert!(!first.is_running().await);
     }
 

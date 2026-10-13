@@ -198,6 +198,8 @@ pub enum PushConsumerError {
     AlreadyStarted,
     #[error("push consumer has been shut down")]
     Shutdown,
+    #[error("consumer service state does not permit this operation: {0:?}")]
+    ServiceStateNotReady(Option<ConsumerServiceState>),
     #[error("offset store must be configured before startup")]
     OffsetStoreAfterStartup,
     #[error("push consumer has not been started")]

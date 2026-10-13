@@ -6,7 +6,9 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
+import org.apache.rocketmq.client.exception.MQClientException;
 import org.apache.rocketmq.client.impl.consumer.DefaultMQPushConsumerImpl;
+import org.apache.rocketmq.common.ServiceState;
 
 /** Invokes the deprecated Push consumer implementation accessor on Java 5.5.1. */
 public final class PushImplementationAccessorFixtures {
@@ -28,10 +30,27 @@ public final class PushImplementationAccessorFixtures {
         check(first != null, "implementation accessor non-null");
         check(first == second, "implementation accessor identity stable");
 
+        String initialServiceState = first.getServiceState().name();
+        first.setServiceState(null);
+        boolean serviceStateSetterAcceptsNull = first.getServiceState() == null;
+        first.setServiceState(ServiceState.START_FAILED);
+        boolean startFailedStateBlocksStart = false;
+        try {
+            first.start();
+        } catch (MQClientException expectedStateFailure) {
+            startFailedStateBlocksStart = true;
+        }
+        String serviceStateAfterRejectedStart = first.getServiceState().name();
+        first.setServiceState(ServiceState.CREATE_JUST);
+
         Map<String, Object> fixture = new LinkedHashMap<>();
         fixture.put("implementationNonNull", first != null);
         fixture.put("implementationIdentityStable", first == second);
         fixture.put("configuredConsumerGroup", first.groupName());
+        fixture.put("initialServiceState", initialServiceState);
+        fixture.put("serviceStateSetterAcceptsNull", serviceStateSetterAcceptsNull);
+        fixture.put("startFailedStateBlocksStart", startFailedStateBlocksStart);
+        fixture.put("serviceStateAfterRejectedStart", serviceStateAfterRejectedStart);
         String json = JSON.toJSONString(fixture) + "\n";
         if (verify) {
             check(Files.exists(path) && json.equals(Files.readString(path)), "fixture drift: " + path);
