@@ -58,6 +58,11 @@ public final class PushImplementationAccessorFixtures {
         String consumeType = first.consumeType().name();
         String consumeFromWhere = first.consumeFromWhere().name();
         boolean unitMode = first.isUnitMode();
+        boolean pauseBeforeSet = first.isPause();
+        first.setPause(true);
+        boolean pauseAfterSetTrue = first.isPause();
+        first.setPause(false);
+        boolean pauseAfterSetFalse = first.isPause();
         int subscriptionCountBefore = first.subscriptions().size();
         Object subscriptionTable = first.getSubscriptionInner();
         first.subscribe("orders", "*");
@@ -116,6 +121,9 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("consumeType", consumeType);
         fixture.put("consumeFromWhere", consumeFromWhere);
         fixture.put("unitMode", unitMode);
+        fixture.put("pauseBeforeSet", pauseBeforeSet);
+        fixture.put("pauseAfterSetTrue", pauseAfterSetTrue);
+        fixture.put("pauseAfterSetFalse", pauseAfterSetFalse);
         fixture.put("subscriptionCountBefore", subscriptionCountBefore);
         fixture.put("subscriptionInnerIdentityStable", subscriptionInnerIdentityStable);
         fixture.put("subscriptionTopicsAfterSubscribe", subscriptionTopicsAfterSubscribe);

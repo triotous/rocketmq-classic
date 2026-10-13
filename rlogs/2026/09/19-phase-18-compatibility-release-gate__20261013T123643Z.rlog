@@ -26,3 +26,9 @@
 - Updated the Phase 10 matrix and release checklist. Current Push implementation accessor fixture SHA-256: `e6d1f1eea3537576b16dec98aa53fb534f85356168b40356b915d109400a63ce`.
 - PASS: `cargo test -p rocketmq-classic-consumer --locked` (183 unit tests plus all consumer integration/doc tests); strict consumer Clippy; `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios and fixture drift checks, exit 0); `cargo fmt --all -- --check`; `git diff --check`.
 - No live Broker or Docker was used. The returned Push implementation public-method audit remains partial.
+
+# Phase 18 execution session — 2026-10-13T13:02:57Z
+
+- Continued the Phase 10 `DefaultMQPushConsumerImpl` accessor audit. Added `PushConsumer::set_pause` with Java's direct flag mutation semantics; lifecycle scheduling remains owned by `suspend`/`resume`. The invoked Java fixture checks false→true→false and the Rust differential checks both transitions. Updated the Phase 10 matrix and release checklist. Fixture SHA-256: `f1d43fe75eedcf2ba33021733d2c1cef203a9d03c9c27a6cddce7890f43cbe66`.
+- PASS: `cargo test -p rocketmq-classic-consumer --locked push_raw_consumer_inner_accessors_match_java`; strict consumer Clippy; `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios and fixture drift checks); `cargo fmt --all -- --check`; `git diff --check`.
+- Remaining work includes the method-by-method Push implementation surface, Pull rebalance/wrapper reconciliation, broad Phase 6 source/API/input/reverse-export audit, full Phase 18 release gates and package provenance review, Ubuntu CI evidence, and Phase 19 local Broker scenarios. No live Broker or Docker was used.

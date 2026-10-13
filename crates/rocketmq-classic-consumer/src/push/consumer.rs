@@ -1199,6 +1199,12 @@ impl PushConsumer {
         self.paused.load(Ordering::Acquire)
     }
 
+    /// Mirrors Java's direct `setPause` field mutation without scheduling a
+    /// rebalance. Use `suspend` or `resume` for the lifecycle operations.
+    pub fn set_pause(&self, pause: bool) {
+        self.paused.store(pause, Ordering::Release);
+    }
+
     pub fn is_consume_orderly(&self) -> bool {
         self.consume_orderly.load(Ordering::Acquire)
     }
@@ -5776,6 +5782,16 @@ mod tests {
             consumer.is_unit_mode(),
             fixture["unitMode"].as_bool().unwrap()
         );
+        assert_eq!(
+            consumer.is_pause(),
+            fixture["pauseBeforeSet"].as_bool().unwrap()
+        );
+        consumer.set_pause(true);
+        assert!(consumer.is_pause());
+        assert_eq!(fixture["pauseAfterSetTrue"], true);
+        consumer.set_pause(false);
+        assert!(!consumer.is_pause());
+        assert_eq!(fixture["pauseAfterSetFalse"], false);
         assert_eq!(
             consumer.subscriptions().len(),
             fixture["subscriptionCountBefore"].as_u64().unwrap() as usize
