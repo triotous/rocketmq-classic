@@ -2089,8 +2089,8 @@ mod route_dto_input_cases_tests {
         let cases = fixture["routeDtoInputCases"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            399,
-            "Java oracle includes root shapes, exact coercions, duplicate fields, collection shapes, and per-field token kinds"
+            527,
+            "Java oracle includes root shapes, exact coercions, duplicate fields, collection shapes, per-field token kinds, and raw C0 string probes"
         );
         for dto in [
             "queueData",
@@ -2291,11 +2291,30 @@ mod route_dto_input_cases_tests {
             "shape-mapping-currIdMap-array",
             "shape-topicRouteData-queueDatas-object",
             "shape-brokerData-enableActingMaster-fraction",
+            "route-raw-c0-0000-order-topic-value",
+            "route-raw-c0-000c-field-name",
+            "route-raw-c0-001f-filter-key",
+            "route-raw-c0-001f-filter-value",
         ] {
             assert!(
                 cases.iter().any(|case| case["id"] == required),
                 "missing {required}"
             );
+        }
+        for code_unit in 0..=0x1f {
+            let hex = format!("{code_unit:04x}");
+            for position in [
+                "order-topic-value",
+                "field-name",
+                "filter-key",
+                "filter-value",
+            ] {
+                let id = format!("route-raw-c0-{hex}-{position}");
+                assert!(
+                    cases.iter().any(|case| case["id"] == id),
+                    "missing raw-control probe {id}"
+                );
+            }
         }
         for id in [
             "broker-address-unquoted-null-key",

@@ -951,6 +951,23 @@ public final class RuntimeRouteFixtures {
                     field[0], rawInput));
             }
         }
+        // Fastjson accepts literal C0 controls inside string keys and values.
+        // Preserve that source behavior at route DTO entrypoints as well as
+        // the heartbeat DTO path; the Rust normalizer must not reject them.
+        for (int codeUnit = 0; codeUnit <= 0x1f; codeUnit++) {
+            String hex = String.format(java.util.Locale.ROOT, "%04x", codeUnit);
+            String control = String.valueOf((char) codeUnit);
+            cases.add(routeDtoInputCase("route-raw-c0-" + hex + "-order-topic-value",
+                "topicRouteData", "{\"orderTopicConf\":\"left" + control + "right\"}"));
+            cases.add(routeDtoInputCase("route-raw-c0-" + hex + "-field-name",
+                "topicRouteData", "{\"order" + control + "TopicConf\":\"ignored\"}"));
+            cases.add(routeDtoInputCase("route-raw-c0-" + hex + "-filter-key",
+                "topicRouteData", "{\"filterServerTable\":{\"left" + control
+                    + "right\":[\"filter\"]}}"));
+            cases.add(routeDtoInputCase("route-raw-c0-" + hex + "-filter-value",
+                "topicRouteData", "{\"filterServerTable\":{\"broker\":[\"left"
+                    + control + "right\"]}}"));
+        }
         return cases;
     }
 
