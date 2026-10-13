@@ -1506,12 +1506,35 @@ impl PullConsumer {
     ) -> Result<i64, PullConsumerError> {
         let (_, store) = self.started_runtime().await?;
         let queue = self.queue_with_namespace(queue)?;
+        self.read_consume_offset(store.as_ref(), &queue, from_store)
+            .await
+    }
+
+    /// Reads the offset through Java's raw `DefaultMQPullConsumerImpl` entrypoint.
+    /// The caller supplies the queue exactly as the implementation receives it;
+    /// unlike [`Self::fetch_consume_offset`], this method does not add a namespace.
+    pub async fn fetch_consume_offset_raw(
+        &self,
+        queue: &MessageQueue,
+        from_store: bool,
+    ) -> Result<i64, PullConsumerError> {
+        let (_, store) = self.started_runtime().await?;
+        self.read_consume_offset(store.as_ref(), queue, from_store)
+            .await
+    }
+
+    async fn read_consume_offset(
+        &self,
+        store: &dyn OffsetStore,
+        queue: &MessageQueue,
+        from_store: bool,
+    ) -> Result<i64, PullConsumerError> {
         let mode = if from_store {
             ReadOffsetType::ReadFromStore
         } else {
             ReadOffsetType::MemoryFirstThenStore
         };
-        Ok(store.read_offset(&queue, mode).await?.java_value())
+        Ok(store.read_offset(queue, mode).await?.java_value())
     }
 
     pub async fn persist_offset(&self, queue: &MessageQueue) -> Result<(), PullConsumerError> {
@@ -1550,10 +1573,9 @@ impl PullConsumer {
         offset: i64,
         oneway: bool,
     ) -> Result<(), PullConsumerError> {
-        let (_, store) = self.started_runtime().await?;
-        let queue = self.queue_with_namespace(queue)?;
+        let store = self.offset_store_for_implementation_call().await?;
         store
-            .update_consume_offset_to_broker(&queue, offset, oneway)
+            .update_consume_offset_to_broker(queue, offset, oneway)
             .await?;
         Ok(())
     }
@@ -1598,6 +1620,20 @@ impl PullConsumer {
                 .upgrade()
                 .map(|runtime| (runtime, offset_store.clone()))
                 .ok_or(PullConsumerError::Shutdown),
+        }
+    }
+
+    async fn offset_store_for_implementation_call(
+        &self,
+    ) -> Result<Arc<dyn OffsetStore>, PullConsumerError> {
+        if let Some(store) = self.get_offset_store() {
+            return Ok(store);
+        }
+        let state = self.state.lock().await;
+        match &*state {
+            State::Created => Err(PullConsumerError::NotStarted),
+            State::Started { offset_store, .. } => Ok(offset_store.clone()),
+            State::Shutdown => Err(PullConsumerError::Shutdown),
         }
     }
 
@@ -3005,6 +3041,7 @@ mod tests {
     struct TestOffsetStore {
         values: Mutex<HashMap<MessageQueue, i64>>,
         persisted: Mutex<Vec<MessageQueue>>,
+        calls: Mutex<Vec<String>>,
     }
 
     impl OffsetStore for TestOffsetStore {
@@ -3023,9 +3060,19 @@ mod tests {
         fn read_offset<'a>(
             &'a self,
             queue: &'a MessageQueue,
-            _mode: ReadOffsetType,
+            mode: ReadOffsetType,
         ) -> crate::offset::OffsetStoreFuture<'a, OffsetRead> {
             Box::pin(async move {
+                let mode = match mode {
+                    ReadOffsetType::ReadFromMemory => "READ_FROM_MEMORY",
+                    ReadOffsetType::ReadFromStore => "READ_FROM_STORE",
+                    ReadOffsetType::MemoryFirstThenStore => "MEMORY_FIRST_THEN_STORE",
+                };
+                self.calls.lock().unwrap().push(format!(
+                    "readOffset|{}|{}",
+                    queue_key_for_fixture(queue),
+                    mode
+                ));
                 Ok(self
                     .values
                     .lock()
@@ -3075,12 +3122,27 @@ mod tests {
 
         fn update_consume_offset_to_broker<'a>(
             &'a self,
-            _queue: &'a MessageQueue,
-            _offset: i64,
-            _oneway: bool,
+            queue: &'a MessageQueue,
+            offset: i64,
+            oneway: bool,
         ) -> crate::offset::OffsetStoreFuture<'a, ()> {
-            Box::pin(async { Ok(()) })
+            Box::pin(async move {
+                self.calls.lock().unwrap().push(format!(
+                    "updateConsumeOffsetToBroker|{}|{offset}|{oneway}",
+                    queue_key_for_fixture(queue)
+                ));
+                Ok(())
+            })
         }
+    }
+
+    fn queue_key_for_fixture(queue: &MessageQueue) -> String {
+        format!(
+            "{}|{}|{}",
+            queue.topic().unwrap_or("null"),
+            queue.broker_name().unwrap_or("null"),
+            queue.queue_id()
+        )
     }
 
     #[test]
@@ -3321,6 +3383,72 @@ mod tests {
             read_lock(&consumer.in_balance_queues).clone(),
             BTreeSet::from([assigned])
         );
+        consumer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn pull_raw_offset_entrypoints_match_java_queue_and_lifecycle_boundaries() {
+        let expected: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/pull-implementation-accessor.json"
+        ))
+        .unwrap();
+        let mut config = PullConsumerConfig::new("phase18-pull-implementation-accessor").unwrap();
+        config.set_message_model(MessageModel::Broadcasting);
+        config.set_enable_rebalance(false);
+        config
+            .client_config_mut()
+            .set_namespace(Some("tenant".into()));
+        config.client_config_mut().set_namesrv_addr(None);
+        config
+            .client_config_mut()
+            .set_persist_consumer_offset_interval(60_000);
+        let consumer = Arc::new(PullConsumer::with_manager(
+            config,
+            ClientRuntimeManager::new(),
+        ));
+        let store = Arc::new(TestOffsetStore::default());
+        let store_trait: Arc<dyn OffsetStore> = store.clone();
+        consumer.set_offset_store(Some(store_trait)).await.unwrap();
+
+        let raw_queue = MessageQueue::new("raw-offset-topic", "broker-offset", 3);
+        let namespaced_queue = MessageQueue::new("tenant%raw-offset-topic", "broker-offset", 3);
+        store.update_offset(&raw_queue, 73, false);
+        store.update_offset(&namespaced_queue, 73, false);
+
+        // The raw Java implementation update call has no running-state check
+        // and forwards the supplied queue directly to OffsetStore.
+        consumer
+            .update_consume_offset_to_broker(&raw_queue, 37, true)
+            .await
+            .unwrap();
+        assert!(matches!(
+            consumer.fetch_consume_offset_raw(&raw_queue, false).await,
+            Err(PullConsumerError::NotStarted)
+        ));
+
+        consumer.start().await.unwrap();
+        assert_eq!(
+            consumer
+                .fetch_consume_offset_raw(&raw_queue, false)
+                .await
+                .unwrap(),
+            73
+        );
+        assert_eq!(
+            consumer
+                .fetch_consume_offset(&raw_queue, true)
+                .await
+                .unwrap(),
+            73
+        );
+
+        let expected_calls = expected["rawOffsetStoreCalls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|call| call.as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(*store.calls.lock().unwrap(), expected_calls);
         consumer.shutdown().await.unwrap();
     }
 

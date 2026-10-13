@@ -178,6 +178,7 @@ public final class PullImplementationAccessorFixtures {
         boolean subscribeInfoStoredForUnsubscribedTopic = first.getRebalanceImpl()
             .getTopicSubscribeInfoTable().containsKey("not-subscribed");
         List<String> persistedQueues = new ArrayList<>();
+        List<String> rawOffsetStoreCalls = new ArrayList<>();
         OffsetStore recordingOffsetStore = (OffsetStore) Proxy.newProxyInstance(
             OffsetStore.class.getClassLoader(), new Class<?>[] {OffsetStore.class},
             (proxy, method, arguments) -> {
@@ -185,12 +186,24 @@ public final class PullImplementationAccessorFixtures {
                     for (Object queue : (Iterable<?>) arguments[0]) {
                         persistedQueues.add(queueKey((MessageQueue) queue));
                     }
+                } else if ("readOffset".equals(method.getName())) {
+                    MessageQueue queue = (MessageQueue) arguments[0];
+                    rawOffsetStoreCalls.add("readOffset|" + queueKey(queue) + "|" + arguments[1]);
+                    return 73L;
+                } else if ("updateConsumeOffsetToBroker".equals(method.getName())) {
+                    MessageQueue queue = (MessageQueue) arguments[0];
+                    rawOffsetStoreCalls.add("updateConsumeOffsetToBroker|" + queueKey(queue) + "|"
+                        + arguments[1] + "|" + arguments[2]);
                 }
                 return null;
             });
         MessageQueue assignedPersistQueue = new MessageQueue("assigned-topic", "broker-persist", 4);
         first.setOffsetStore(recordingOffsetStore);
+        MessageQueue rawOffsetQueue = new MessageQueue("raw-offset-topic", "broker-offset", 3);
+        first.updateConsumeOffsetToBroker(rawOffsetQueue, 37L, true);
         first.setServiceState(ServiceState.RUNNING);
+        long rawImplementationFetchOffset = first.fetchConsumeOffset(rawOffsetQueue, false);
+        long facadeFetchOffset = consumer.fetchConsumeOffset(rawOffsetQueue, true);
         first.getRebalanceImpl().getProcessQueueTable().put(assignedPersistQueue, new ProcessQueue());
         first.persistConsumerOffset();
         first.getRebalanceImpl().getProcessQueueTable().clear();
@@ -292,6 +305,9 @@ public final class PullImplementationAccessorFixtures {
         fixture.put("subscribedTopicNeedsUpdateAfterInfo", subscribedTopicNeedsUpdateAfterInfo);
         fixture.put("subscribeInfoStoredForUnsubscribedTopic", subscribeInfoStoredForUnsubscribedTopic);
         fixture.put("persistConsumerOffsetOutputQueues", persistedQueues);
+        fixture.put("rawOffsetStoreCalls", rawOffsetStoreCalls);
+        fixture.put("rawImplementationFetchOffset", rawImplementationFetchOffset);
+        fixture.put("facadeFetchOffset", facadeFetchOffset);
         fixture.put("groupNameBeforeStart", groupNameBeforeStart);
         fixture.put("messageModelBeforeMutation", messageModelBeforeMutation.name());
         fixture.put("messageModelAfterMutation", messageModelAfterMutation.name());
