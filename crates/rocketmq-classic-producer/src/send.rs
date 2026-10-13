@@ -85,6 +85,7 @@ impl Producer {
     ) -> Result<Vec<MessageQueue>, ProducerError> {
         let runtime = self.started_runtime().await?;
         let topic = self.topic_with_namespace(topic)?;
+        self.remember_publish_topic(&topic);
         let timeout = Duration::from_millis(
             self.config.client_config().mq_client_api_timeout().max(0) as u64,
         );
@@ -1314,6 +1315,7 @@ impl Producer {
         topic: &str,
         deadline: Instant,
     ) -> Result<Arc<TopicSnapshot>, ProducerError> {
+        self.remember_publish_topic(topic);
         if let Some(info) = self.current_publish_info(runtime, topic)? {
             if !info.publish_queues.is_empty() {
                 return Ok(info);

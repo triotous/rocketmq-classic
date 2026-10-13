@@ -71,6 +71,7 @@ pub struct Producer {
     pub(crate) backpressure_send_num: Arc<Semaphore>,
     pub(crate) backpressure_send_size: Arc<Semaphore>,
     publish_info: RwLock<HashMap<String, Arc<TopicSnapshot>>>,
+    known_publish_topics: RwLock<BTreeSet<String>>,
     pub(crate) selector: RoundRobinSelector,
     pub(crate) fault: FaultStrategy,
     pub(crate) ids: UniqueIdGenerator,
@@ -173,6 +174,7 @@ impl Producer {
             backpressure_send_num,
             backpressure_send_size,
             publish_info: RwLock::new(HashMap::new()),
+            known_publish_topics: RwLock::new(BTreeSet::new()),
             selector: RoundRobinSelector::default(),
             fault,
             #[cfg(test)]
@@ -510,7 +512,15 @@ impl Producer {
             .cloned()
     }
 
+    pub(crate) fn remember_publish_topic(&self, topic: &str) {
+        self.known_publish_topics
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(topic.to_owned());
+    }
+
     pub(crate) fn cache_publish_info(&self, topic: &str, info: Arc<TopicSnapshot>) {
+        self.remember_publish_topic(topic);
         self.publish_info
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -528,19 +538,33 @@ impl ProducerRuntime for Producer {
     }
 
     fn publish_topics(&self) -> BTreeSet<String> {
+        let mut topics = self
+            .known_publish_topics
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        topics.extend(
+            self.publish_info
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .keys()
+                .cloned(),
+        );
         let mut client_config = self.config.client_config().clone();
-        self.config
-            .topics()
-            .unwrap_or_default()
-            .iter()
-            .filter_map(|topic| {
-                client_config
-                    .with_namespace(Some(topic))
-                    .ok()
-                    .flatten()
-                    .or_else(|| Some(topic.clone()))
-            })
-            .collect()
+        topics.extend(
+            self.config
+                .topics()
+                .unwrap_or_default()
+                .iter()
+                .filter_map(|topic| {
+                    client_config
+                        .with_namespace(Some(topic))
+                        .ok()
+                        .flatten()
+                        .or_else(|| Some(topic.clone()))
+                }),
+        );
+        topics
     }
 
     fn is_publish_topic_need_update(&self, topic: &str) -> bool {
@@ -578,6 +602,32 @@ mod tests {
                 "tenant%already".to_owned(),
                 "%RETRY%tenant%workers".to_owned(),
                 "RMQ_SYS_TRACE_TOPIC".to_owned(),
+            ])
+        );
+    }
+
+    #[test]
+    fn publish_topics_include_cached_dynamic_topics_and_configured_topics() {
+        let mut config = ProducerConfig::new("namespace-publish-topics").unwrap();
+        config
+            .client_config_mut()
+            .set_namespace(Some("tenant".into()));
+        config.set_topics(Some(vec!["configured".into()]));
+        let producer = Producer::with_runtime_manager(config, ClientRuntimeManager::new());
+        let route = Arc::new(
+            TopicSnapshot::from_route_data(
+                "tenant%sent-before",
+                &rocketmq_classic_protocol::route::TopicRouteData::default(),
+            )
+            .unwrap(),
+        );
+        producer.update_topic_publish_info("tenant%sent-before", route);
+
+        assert_eq!(
+            producer.publish_topics(),
+            BTreeSet::from([
+                "tenant%configured".to_owned(),
+                "tenant%sent-before".to_owned(),
             ])
         );
     }

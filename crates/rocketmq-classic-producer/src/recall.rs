@@ -95,6 +95,7 @@ impl Producer {
 
         let deadline = Instant::now()
             + tokio::time::Duration::from_millis(self.config.send_timeout_millis().max(0) as u64);
+        self.remember_publish_topic(&topic);
         let _ = runtime.update_topic_route(&topic, deadline).await?;
         let route = runtime.route_snapshot()?;
         if !route.raw_routes.contains_key(&topic) {

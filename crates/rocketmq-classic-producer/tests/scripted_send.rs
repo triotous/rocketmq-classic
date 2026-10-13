@@ -9,7 +9,7 @@ use std::{
 use bytes::BytesMut;
 use rocketmq_classic_common::message::{Message, MessageQueue, decode_properties};
 use rocketmq_classic_core::{
-    runtime::ClientRuntimeManager,
+    runtime::{ClientRuntimeManager, ProducerRuntime},
     trace::{MessageType, TraceBean, TraceContext, TraceType},
 };
 use rocketmq_classic_producer::{
@@ -122,7 +122,7 @@ fn route_body(brokers: &[(&str, &str)]) -> Vec<u8> {
 
 async fn name_server_peer(
     route: Vec<u8>,
-    missing_topic: Option<String>,
+    missing_topics: BTreeSet<String>,
 ) -> (String, JoinHandle<()>, Arc<Mutex<Vec<String>>>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap().to_string();
@@ -139,7 +139,7 @@ async fn name_server_peer(
                     .cloned()
                     .unwrap_or_default();
                 requests_from_task.lock().unwrap().push(topic.clone());
-                if missing_topic.as_deref() == Some(topic.as_str()) {
+                if missing_topics.contains(&topic) {
                     write_response(&mut stream, &command, response::TOPIC_NOT_EXIST, None, None)
                         .await;
                 } else {
@@ -325,7 +325,8 @@ async fn transaction_half_send_wraps_topic_and_group_once() {
     let (broker, broker_task) =
         broker_peer("broker-a", attempts.clone(), 0, false, requests.clone()).await;
     let route = route_body(&[("broker-a", &broker)]);
-    let (nameserver, nameserver_task, route_requests) = name_server_peer(route, None).await;
+    let (nameserver, nameserver_task, route_requests) =
+        name_server_peer(route, BTreeSet::new()).await;
     let mut config = producer_config("transaction-namespace", &nameserver);
     config
         .client_config_mut()
@@ -376,7 +377,8 @@ async fn transaction_half_send_wraps_topic_and_group_once() {
 async fn recall_wraps_topic_and_group_once_at_the_namespace_wire_boundary() {
     let (broker, broker_task, broker_requests) = recall_broker_peer().await;
     let route = route_body(&[("broker-a", &broker)]);
-    let (nameserver, nameserver_task, route_requests) = name_server_peer(route, None).await;
+    let (nameserver, nameserver_task, route_requests) =
+        name_server_peer(route, BTreeSet::new()).await;
     let mut config = producer_config("recall-namespace", &nameserver);
     config
         .client_config_mut()
@@ -424,7 +426,7 @@ async fn trace_flush_waits_for_scripted_broker_delivery() {
     let (broker, broker_task) =
         broker_peer("broker-a", attempts.clone(), 0, false, requests.clone()).await;
     let route = route_body(&[("broker-a", &broker)]);
-    let (nameserver, nameserver_task, _) = name_server_peer(route, None).await;
+    let (nameserver, nameserver_task, _) = name_server_peer(route, BTreeSet::new()).await;
     let config = producer_config("trace-flush-parent", &nameserver);
     let dispatcher = TraceDispatcher::new(
         config.client_config(),
@@ -477,7 +479,7 @@ async fn trace_shutdown_waits_for_scripted_broker_delivery() {
     let (broker, broker_task) =
         broker_peer("broker-a", attempts.clone(), 0, false, requests.clone()).await;
     let route = route_body(&[("broker-a", &broker)]);
-    let (nameserver, nameserver_task, _) = name_server_peer(route, None).await;
+    let (nameserver, nameserver_task, _) = name_server_peer(route, BTreeSet::new()).await;
     let mut config = producer_config("trace-shutdown-parent", &nameserver);
     config
         .client_config_mut()
@@ -539,7 +541,7 @@ async fn dropping_trace_dispatcher_flushes_queued_data() {
     let (broker, broker_task) =
         broker_peer("broker-a", attempts.clone(), 0, false, requests.clone()).await;
     let route = route_body(&[("broker-a", &broker)]);
-    let (nameserver, nameserver_task, _) = name_server_peer(route, None).await;
+    let (nameserver, nameserver_task, _) = name_server_peer(route, BTreeSet::new()).await;
     let config = producer_config("trace-drop-parent", &nameserver);
     let dispatcher = TraceDispatcher::new(
         config.client_config(),
@@ -594,7 +596,7 @@ async fn sync_send_retries_across_two_brokers_and_preserves_one_prepared_message
     let (broker_b, broker_b_task) =
         broker_peer("broker-b", attempts.clone(), 2, false, requests.clone()).await;
     let route = route_body(&[("broker-a", &broker_a), ("broker-b", &broker_b)]);
-    let (nameserver, nameserver_task, _) = name_server_peer(route, None).await;
+    let (nameserver, nameserver_task, _) = name_server_peer(route, BTreeSet::new()).await;
     let producer = Arc::new(Producer::new(producer_config("sync-retry", &nameserver)));
     producer.start().await.unwrap();
 
@@ -650,7 +652,7 @@ async fn default_topic_route_fallback_and_async_mode_response_policy_match_java(
         broker_peer("broker-a", attempts.clone(), 1, false, requests.clone()).await;
     let route = route_body(&[("broker-a", &broker)]);
     let (nameserver, nameserver_task, route_requests) =
-        name_server_peer(route, Some("orders".to_owned())).await;
+        name_server_peer(route, BTreeSet::from(["orders".to_owned()])).await;
     let mut config = producer_config("future-policy", &nameserver);
     config.set_retry_times_when_send_async_failed(0);
     let producer = Arc::new(Producer::new(config));
@@ -679,13 +681,46 @@ async fn default_topic_route_fallback_and_async_mode_response_policy_match_java(
 }
 
 #[tokio::test]
+async fn topic_without_route_stays_in_producer_refresh_inventory() {
+    let route = route_body(&[]);
+    let missing_topics = BTreeSet::from(["orders".to_owned(), "TBW102".to_owned()]);
+    let (nameserver, nameserver_task, route_requests) =
+        name_server_peer(route, missing_topics).await;
+    let producer = Arc::new(Producer::new(producer_config("missing-route", &nameserver)));
+    producer.start().await.unwrap();
+
+    assert!(matches!(
+        producer
+            .send(&Message::new("orders", b"no-route".to_vec()))
+            .await,
+        Err(ProducerError::NoRoute(_))
+    ));
+    assert!(
+        route_requests
+            .lock()
+            .unwrap()
+            .contains(&"orders".to_owned())
+    );
+    assert!(
+        route_requests
+            .lock()
+            .unwrap()
+            .contains(&"TBW102".to_owned())
+    );
+    assert!(producer.publish_topics().contains("orders"));
+
+    producer.shutdown().await.unwrap();
+    nameserver_task.abort();
+}
+
+#[tokio::test]
 async fn oneway_sends_once_and_custom_queue_membership_is_checked_before_io() {
     let attempts = Arc::new(AtomicUsize::new(0));
     let requests = Arc::new(Mutex::new(Vec::new()));
     let (broker, broker_task) =
         broker_peer("broker-a", attempts.clone(), 0, false, requests.clone()).await;
     let route = route_body(&[("broker-a", &broker)]);
-    let (nameserver, nameserver_task, _) = name_server_peer(route, None).await;
+    let (nameserver, nameserver_task, _) = name_server_peer(route, BTreeSet::new()).await;
     let producer = Arc::new(Producer::new(producer_config("oneway", &nameserver)));
     producer.start().await.unwrap();
 
@@ -715,7 +750,7 @@ async fn public_queue_selector_and_batch_modes_use_the_scripted_route() {
     let (broker, broker_task) =
         broker_peer("broker-a", attempts.clone(), 0, false, requests.clone()).await;
     let route = route_body(&[("broker-a", &broker)]);
-    let (nameserver, nameserver_task, _) = name_server_peer(route, None).await;
+    let (nameserver, nameserver_task, _) = name_server_peer(route, BTreeSet::new()).await;
     let producer = Arc::new(Producer::new(producer_config(
         "public-send-modes",
         &nameserver,
@@ -796,7 +831,7 @@ async fn stored_message_with_lost_ack_can_be_retried_and_duplicated() {
     let (broker_b, broker_b_task) =
         broker_peer("broker-b", attempts.clone(), 0, true, requests.clone()).await;
     let route = route_body(&[("broker-a", &broker_a), ("broker-b", &broker_b)]);
-    let (nameserver, nameserver_task, _) = name_server_peer(route, None).await;
+    let (nameserver, nameserver_task, _) = name_server_peer(route, BTreeSet::new()).await;
     let mut config = producer_config("stored-timeout", &nameserver);
     config.set_send_timeout_millis(500);
     config.set_send_msg_max_timeout_per_request(20);
