@@ -3,7 +3,8 @@
 This is an implementation audit against Java client source commit
 `efa1be59d6fc747ad220f036c86030f05f0419f9`. It separates public facade coverage
 from the lower-level RPCs already present in Rust. It does not count Phase 19
-Broker-backed evidence as Phase 17 unit completion.
+Broker-backed evidence as Phase 17 unit completion. The audit began at Rust
+revision `68c9631d`; later Phase 17 changes are reflected in the rows below.
 
 ## Public MQAdmin methods
 
@@ -11,10 +12,10 @@ The three Java facades `DefaultMQProducer`, `DefaultMQPushConsumer`, and
 `DefaultMQPullConsumer` inherit the methods in `MQAdmin`. An implementation on
 only one Rust facade therefore does not complete this surface.
 
-| Java capability | Rust implementation at `68c9631d` | Status and remaining work |
+| Java capability | Rust implementation | Status and remaining work |
 | --- | --- | --- |
 | `createTopic(key, topic, queues, attributes)` and `createTopic(..., topicSysFlag, attributes)` | `Producer::create_topic`, `Producer::create_topic_with_sys_flag`; core single-Broker `MQClientApi::create_topic` | **Partial.** Producer route lookup, namespace, sorting, master targeting, retries, and partial-success handling are implemented. Push/Pull facade methods are absent. |
-| `searchOffset(queue, timestamp)` | Core `MQClientApi::search_offset`; `PullConsumer::search_offset` | **Partial.** Pull exposes the lower-bound operation; Producer and Push facades are missing it. The same gap applies to `maxOffset`, `minOffset`, and `earliestMsgStoreTime`, whose core RPCs are already present. |
+| `searchOffset`, `maxOffset`, `minOffset`, `earliestMsgStoreTime` | Core single-Broker methods; Pull facade methods; `Producer::{search_offset, get_max_offset, get_min_offset, get_earliest_msg_store_time}` | **Partial.** Producer and Pull expose these operations; Push facade methods are missing. |
 | `queryMessage(topic, key, max, begin, end)` | Single-Broker `MQClientApi::query_message`; `QueryResult` in core | **Partial.** No facade route lookup/fan-out, bounded multi-Broker aggregation, Java key/topic filtering, watermark merge, no-message error, or cluster selection is implemented. Producer, Push, and Pull wrappers are absent. |
 | `viewMessage(topic, messageId)` | Single-Broker `MQClientApi::view_message` takes a physical-offset request header | **Partial.** Java message-ID parsing, facade routing, invalid-ID mapping, and the Java producer/push/pull unique-key fallback behavior are missing. |
 | `queryMessageByUniqKey` overloads exposed by the concrete Java facades | Query RPC can set `_UNIQUE_KEY_QUERY` when called directly | **Missing at facade level.** Add the query-result and first-message variants, including Java defaults and each facade's namespace behavior. |

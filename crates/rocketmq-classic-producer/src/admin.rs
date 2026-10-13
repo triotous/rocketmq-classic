@@ -1,7 +1,11 @@
 use std::collections::BTreeMap;
 
+use rocketmq_classic_common::message::MessageQueue;
 use rocketmq_classic_core::route::broker_vip_channel;
-use rocketmq_classic_protocol::header::CreateTopicRequestHeader;
+use rocketmq_classic_protocol::header::{
+    BoundaryType, CreateTopicRequestHeader, GetEarliestMsgStoretimeRequestHeader,
+    GetMaxOffsetRequestHeader, GetMinOffsetRequestHeader, SearchOffsetRequestHeader,
+};
 use tokio::time::Instant;
 
 use crate::{Producer, ProducerError, validation};
@@ -9,6 +13,118 @@ use crate::{Producer, ProducerError, validation};
 const ADMIN_TIMEOUT_MILLIS: u64 = 6_000;
 
 impl Producer {
+    /// Searches a queue by Java's default lower timestamp boundary.
+    pub async fn search_offset(
+        &self,
+        input_queue: &MessageQueue,
+        timestamp_millis: i64,
+    ) -> Result<i64, ProducerError> {
+        let (runtime, queue, broker_name, address, deadline) =
+            self.prepare_admin_queue(input_queue).await?;
+        let header = SearchOffsetRequestHeader {
+            topic: queue.topic().ok_or(ProducerError::InvalidQueue)?.to_owned(),
+            queue_id: queue.queue_id(),
+            timestamp: timestamp_millis,
+            boundary_type: Some(BoundaryType::Lower),
+            broker_name: Some(broker_name),
+            ..SearchOffsetRequestHeader::default()
+        };
+        Ok(runtime
+            .api()
+            .search_offset(&address, &header, deadline)
+            .await?)
+    }
+
+    pub async fn get_max_offset(&self, input_queue: &MessageQueue) -> Result<i64, ProducerError> {
+        let (runtime, queue, broker_name, address, deadline) =
+            self.prepare_admin_queue(input_queue).await?;
+        let header = GetMaxOffsetRequestHeader {
+            topic: queue.topic().ok_or(ProducerError::InvalidQueue)?.to_owned(),
+            queue_id: queue.queue_id(),
+            committed: true,
+            broker_name: Some(broker_name),
+        };
+        Ok(runtime
+            .api()
+            .get_max_offset(&address, &header, deadline)
+            .await?)
+    }
+
+    pub async fn get_min_offset(&self, input_queue: &MessageQueue) -> Result<i64, ProducerError> {
+        let (runtime, queue, broker_name, address, deadline) =
+            self.prepare_admin_queue(input_queue).await?;
+        let header = GetMinOffsetRequestHeader {
+            topic: queue.topic().ok_or(ProducerError::InvalidQueue)?.to_owned(),
+            queue_id: queue.queue_id(),
+            broker_name: Some(broker_name),
+        };
+        Ok(runtime
+            .api()
+            .get_min_offset(&address, &header, deadline)
+            .await?)
+    }
+
+    pub async fn get_earliest_msg_store_time(
+        &self,
+        input_queue: &MessageQueue,
+    ) -> Result<i64, ProducerError> {
+        let (runtime, queue, broker_name, address, deadline) =
+            self.prepare_admin_queue(input_queue).await?;
+        let header = GetEarliestMsgStoretimeRequestHeader {
+            topic: queue.topic().ok_or(ProducerError::InvalidQueue)?.to_owned(),
+            queue_id: queue.queue_id(),
+            broker_name: Some(broker_name),
+        };
+        Ok(runtime
+            .api()
+            .get_earliest_msg_storetime(&address, &header, deadline)
+            .await?)
+    }
+
+    async fn prepare_admin_queue(
+        &self,
+        input_queue: &MessageQueue,
+    ) -> Result<
+        (
+            std::sync::Arc<rocketmq_classic_core::runtime::ClientRuntime>,
+            MessageQueue,
+            String,
+            String,
+            Instant,
+        ),
+        ProducerError,
+    > {
+        let runtime = self.started_runtime().await?;
+        let queue = self
+            .config
+            .client_config()
+            .clone()
+            .queue_with_namespace(input_queue)?;
+        let topic = queue
+            .topic()
+            .filter(|topic| !topic.is_empty())
+            .ok_or(ProducerError::InvalidQueue)?;
+        let broker_name = queue
+            .broker_name()
+            .filter(|broker| !broker.is_empty())
+            .ok_or(ProducerError::InvalidQueue)?
+            .to_owned();
+        let timeout_millis =
+            i64::from(self.config.client_config().mq_client_api_timeout()).max(0) as u64;
+        let deadline = Instant::now() + std::time::Duration::from_millis(timeout_millis);
+        let mut route = runtime.route_snapshot()?;
+        let mut address = route.publish_address(&broker_name).map(str::to_owned);
+        if address.is_none() {
+            runtime.update_topic_route(topic, deadline).await?;
+            route = runtime.route_snapshot()?;
+            address = route.publish_address(&broker_name).map(str::to_owned);
+        }
+        let address = address.ok_or_else(|| ProducerError::BrokerNotFound {
+            broker: broker_name.clone(),
+        })?;
+        Ok((runtime, queue, broker_name, address, deadline))
+    }
+
     /// Creates a topic on each master Broker advertising the supplied key.
     /// A successful creation on any Broker makes the operation successful,
     /// matching Java's partial-success rule. Java 5.5.1 accepts but discards

@@ -44,6 +44,10 @@ pub enum ProducerError {
     Shutdown,
     #[error("no writable route for topic {0}")]
     NoRoute(String),
+    #[error("message queue must have a topic and broker name")]
+    InvalidQueue,
+    #[error("broker `{broker}` was not found in the current route")]
+    BrokerNotFound { broker: String },
     #[error("selected queue does not belong to the topic writable queues")]
     QueueNotInRoute,
     #[error("queue selector did not choose a writable queue")]

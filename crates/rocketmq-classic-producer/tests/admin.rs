@@ -13,6 +13,7 @@ use rocketmq_classic_core::error::RpcError;
 use rocketmq_classic_core::route::broker_vip_channel;
 use rocketmq_classic_producer::{Producer, ProducerConfig, ProducerError};
 use rocketmq_classic_protocol::codes::{request, response};
+use rocketmq_classic_protocol::header::HeaderMap;
 use rocketmq_classic_remoting::{
     RemotingCommand,
     codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
@@ -47,6 +48,25 @@ async fn write_response(
         code,
         opaque: request.opaque,
         body,
+        ..Default::default()
+    };
+    reply.mark_response();
+    stream
+        .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+        .await
+        .unwrap();
+}
+
+async fn write_response_fields(
+    stream: &mut TcpStream,
+    request: &RemotingCommand,
+    code: i32,
+    ext_fields: HeaderMap,
+) {
+    let mut reply = RemotingCommand {
+        code,
+        opaque: request.opaque,
+        ext_fields: Some(ext_fields),
         ..Default::default()
     };
     reply.mark_response();
@@ -106,6 +126,41 @@ async fn broker_peer(
                 &command,
                 codes.next().unwrap_or(response::SUCCESS),
                 None,
+            )
+            .await;
+        }
+    });
+    (address, task, requests)
+}
+
+async fn offset_broker_peer() -> (
+    String,
+    JoinHandle<()>,
+    mpsc::UnboundedReceiver<RemotingCommand>,
+) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    let (sender, requests) = mpsc::unbounded_channel();
+    let task = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        while let Some(command) = read_command(&mut stream).await {
+            let _ = sender.send(command.clone());
+            if command.code == request::HEART_BEAT {
+                write_response(&mut stream, &command, response::SUCCESS, None).await;
+                continue;
+            }
+            let (code, value) = match command.code {
+                request::SEARCH_OFFSET_BY_TIMESTAMP => ("offset", "11"),
+                request::GET_MAX_OFFSET => ("offset", "22"),
+                request::GET_MIN_OFFSET => ("offset", "3"),
+                request::GET_EARLIEST_MSG_STORETIME => ("timestamp", "44"),
+                other => panic!("unexpected Broker request {other}"),
+            };
+            write_response_fields(
+                &mut stream,
+                &command,
+                response::SUCCESS,
+                HeaderMap::from([(code.to_owned(), value.to_owned())]),
             )
             .await;
         }
@@ -272,6 +327,71 @@ async fn create_topic_returns_the_last_broker_error_after_five_attempts() {
             .unwrap()
             .unwrap();
         assert_eq!(command.code, request::UPDATE_AND_CREATE_TOPIC);
+    }
+
+    producer.shutdown().await.unwrap();
+    namesrv_task.abort();
+    broker_task.abort();
+}
+
+#[tokio::test]
+async fn producer_admin_offset_facade_routes_namespaced_queues_to_the_named_broker() {
+    let (broker, broker_task, mut broker_requests) = offset_broker_peer().await;
+    let (namesrv, namesrv_task, mut namesrv_requests) =
+        name_server_peer(route_body(&[("broker-a", &broker)])).await;
+    let mut config = producer_config(namesrv);
+    config
+        .client_config_mut()
+        .set_namespace(Some("tenant".into()));
+    let producer = Arc::new(Producer::new(config));
+    producer.start().await.unwrap();
+    let queue = rocketmq_classic_common::message::MessageQueue::new("orders", "broker-a", 3);
+
+    assert_eq!(producer.search_offset(&queue, 9).await.unwrap(), 11);
+    assert_eq!(producer.get_max_offset(&queue).await.unwrap(), 22);
+    assert_eq!(producer.get_min_offset(&queue).await.unwrap(), 3);
+    assert_eq!(
+        producer.get_earliest_msg_store_time(&queue).await.unwrap(),
+        44
+    );
+
+    let route_request = timeout(Duration::from_secs(1), namesrv_requests.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(route_request.code, request::GET_ROUTEINFO_BY_TOPIC);
+    assert_eq!(
+        route_request.ext_fields.as_ref().unwrap().get("topic"),
+        Some(&"tenant%orders".to_owned())
+    );
+
+    for (expected_code, expected_timestamp) in [
+        (request::SEARCH_OFFSET_BY_TIMESTAMP, Some("9")),
+        (request::GET_MAX_OFFSET, None),
+        (request::GET_MIN_OFFSET, None),
+        (request::GET_EARLIEST_MSG_STORETIME, None),
+    ] {
+        let command = loop {
+            let command = timeout(Duration::from_secs(1), broker_requests.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            if command.code != request::HEART_BEAT {
+                break command;
+            }
+        };
+        assert_eq!(command.code, expected_code);
+        let fields = command.ext_fields.as_ref().unwrap();
+        assert_eq!(fields.get("topic"), Some(&"tenant%orders".to_owned()));
+        assert_eq!(fields.get("queueId"), Some(&"3".to_owned()));
+        assert_eq!(fields.get("bname"), Some(&"broker-a".to_owned()));
+        if let Some(timestamp) = expected_timestamp {
+            assert_eq!(fields.get("timestamp"), Some(&timestamp.to_owned()));
+            assert_eq!(fields.get("boundaryType"), Some(&"LOWER".to_owned()));
+        }
+        if expected_code == request::GET_MAX_OFFSET {
+            assert_eq!(fields.get("committed"), Some(&"true".to_owned()));
+        }
     }
 
     producer.shutdown().await.unwrap();
