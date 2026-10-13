@@ -44,7 +44,11 @@ previous signal handler after capture. Windows enumerates with Toolhelp,
 suspends one thread at a time, reads its architecture-specific context, and
 resumes it through an RAII guard. If the shared deadline expires, all remaining
 enumerated thread IDs are still included with an unavailable-stack marker.
-Linux stack tests pass on both architectures. The complete Windows consumer
+Thread captures are serialized on each supported platform, so simultaneous
+running-info requests do not receive a degraded current-thread-only dump or
+interleave process-wide signal-handler changes. Linux stack tests cover the two
+concurrent readers and signal-handler restoration on ARM64; Linux stack tests
+pass on both architectures. The complete Windows consumer
 crate checks and strict Clippy pass for x86_64; the isolated stack module and
 tests type-check with warnings denied for x86_64 and ARM64. Native Windows
 runtime behavior has not been executed on this macOS host and stays an
