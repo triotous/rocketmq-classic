@@ -6101,6 +6101,8 @@ mod tests {
         assert_eq!(fixture["rebalanceImplementationNonNull"], true);
         assert_eq!(fixture["rebalanceImplementationIdentityStable"], true);
         assert_eq!(fixture["configuredConsumerGroup"], group);
+        assert_eq!(fixture["rawFacadeConsumerIdentityStable"], true);
+        assert_eq!(fixture["rawFacadeConsumerGroup"], group);
         assert_eq!(
             fixture["rawImplementationPublicMethodSignatures"]
                 .as_array()
@@ -6112,6 +6114,7 @@ mod tests {
         assert_eq!(fixture["effectiveMaxReconsumeTimesDefault"], 16);
         assert!(Arc::ptr_eq(&consumer, &first));
         assert!(Arc::ptr_eq(&first, &second));
+        assert!(std::ptr::eq(first.config(), second.config()));
         assert!(std::ptr::eq(first_rebalance, consumer.as_ref()));
         assert!(std::ptr::eq(second_rebalance, first_rebalance));
         assert_eq!(first.config().consumer_group(), group);
@@ -6123,6 +6126,35 @@ mod tests {
         let custom_consumer = PushConsumer::new(custom_config);
         assert_eq!(fixture["effectiveMaxReconsumeTimesCustom"], 7);
         assert_eq!(custom_consumer.get_max_reconsume_times(), 7);
+    }
+
+    #[tokio::test]
+    async fn raw_push_listener_accessors_match_java_registration_flow() {
+        let config = PushConsumerConfig::new("phase18-push-implementation-accessor").unwrap();
+        let consumer = Arc::new(PushConsumer::new(config));
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/push-implementation-accessor.json"
+        ))
+        .unwrap();
+
+        assert!(consumer.get_message_listener().is_none());
+        assert_eq!(fixture["rawMessageListenerInitiallyNull"], true);
+
+        let listener: Arc<dyn MessageListenerConcurrently> = Arc::new(
+            |_messages: Vec<MessageExt>, context: ConsumeConcurrentlyContext| async move {
+                (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+            },
+        );
+        consumer
+            .register_message_listener(PushMessageListener::Concurrently(listener.clone()))
+            .await
+            .unwrap();
+        let listener_getter_preserves_identity = match consumer.get_message_listener() {
+            Some(PushMessageListener::Concurrently(current)) => Arc::ptr_eq(&listener, &current),
+            _ => false,
+        };
+        assert_eq!(fixture["rawMessageListenerGetterPreservesIdentity"], true);
+        assert!(listener_getter_preserves_identity);
     }
 
     #[test]

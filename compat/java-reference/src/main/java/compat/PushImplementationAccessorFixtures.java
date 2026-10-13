@@ -21,6 +21,8 @@ import org.apache.rocketmq.client.ClientConfig;
 import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
 import org.apache.rocketmq.client.consumer.PopResult;
 import org.apache.rocketmq.client.consumer.PopStatus;
+import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyStatus;
+import org.apache.rocketmq.client.consumer.listener.MessageListenerConcurrently;
 import org.apache.rocketmq.client.consumer.store.OffsetStore;
 import org.apache.rocketmq.client.consumer.store.ReadOffsetType;
 import org.apache.rocketmq.client.exception.MQClientException;
@@ -91,6 +93,14 @@ public final class PushImplementationAccessorFixtures {
         String consumeFromWhere = first.consumeFromWhere().name();
         boolean unitMode = first.isUnitMode();
         boolean messageQueueListenerInitiallyNull = first.getMessageQueueListener() == null;
+        boolean rawMessageListenerInitiallyNull = first.getMessageListenerInner() == null;
+        MessageListenerConcurrently rawMessageListener =
+            (messages, context) -> ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
+        first.registerMessageListener(rawMessageListener);
+        boolean rawMessageListenerGetterPreservesIdentity =
+            first.getMessageListenerInner() == rawMessageListener;
+        boolean rawFacadeConsumerIdentityStable = first.getDefaultMQPushConsumer() == consumer;
+        String rawFacadeConsumerGroup = first.getDefaultMQPushConsumer().getConsumerGroup();
         AtomicInteger adjustThreadPoolDecreaseCalls = new AtomicInteger();
         first.setConsumeMessageService((ConsumeMessageService) Proxy.newProxyInstance(
             ConsumeMessageService.class.getClassLoader(),
@@ -253,6 +263,10 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("consumeFromWhere", consumeFromWhere);
         fixture.put("unitMode", unitMode);
         fixture.put("messageQueueListenerInitiallyNull", messageQueueListenerInitiallyNull);
+        fixture.put("rawMessageListenerInitiallyNull", rawMessageListenerInitiallyNull);
+        fixture.put("rawMessageListenerGetterPreservesIdentity", rawMessageListenerGetterPreservesIdentity);
+        fixture.put("rawFacadeConsumerIdentityStable", rawFacadeConsumerIdentityStable);
+        fixture.put("rawFacadeConsumerGroup", rawFacadeConsumerGroup);
         fixture.put("adjustThreadPoolDecreaseCalls", adjustThreadPoolDecreaseCalls.get());
         fixture.put("adjustThreadPoolCorePoolSizeBefore", adjustThreadPoolCorePoolSizeBefore);
         fixture.put("adjustThreadPoolCorePoolSizeAfter", adjustThreadPoolCorePoolSizeAfter);

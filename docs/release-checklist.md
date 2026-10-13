@@ -26,7 +26,8 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   have Java fixture/Rust evidence. Push filter-hook registration and POP invocation,
   `parseSubscribeMessageQueues`, `tryResetPopRetryTopic`, and
   `resetRetryAndNamespace` also have invoked Java fixture/Rust checks. Push
-  subscribe-route update and paused `tryRebalance` entrypoints now have direct
+  raw listener registration/getter and facade-owner identity also have direct
+  Java fixture/Rust checks. Push subscribe-route update and paused `tryRebalance` entrypoints now have direct
   fixture checks; active assignment behavior is covered by Phase 11 tests. The
   `pullMessage` row also now covers Java's one-time
   first-lock offset refresh for orderly clustering pulls; its Java fixture and
@@ -39,7 +40,7 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   fixture and Rust regression for global queue/size threshold scaling across
   multiple topics, later assignment changes, empty-table retention, pull
   backpressure, and running-info values; fixture SHA-256
-  `e3f9d1766ddb010a530247066647b27149977bb11eda15df03576cd89f93e84c`. Other
+  `e3d24681be1616915fc68951c5ffb82c707be7785e069b36a288e454c5a6fe80`. Other
   signatures still need
   method-by-method mappings or internal-entrypoint dispositions. Pull
   `getRebalanceImpl`, both `pullKernelImpl` overloads, `popAsync`, and the
