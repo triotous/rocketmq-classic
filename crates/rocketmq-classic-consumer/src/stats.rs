@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque},
-    sync::{Mutex, OnceLock},
+    sync::Mutex,
     time::{Duration, Instant},
 };
 
@@ -14,12 +14,7 @@ const STATS_IDLE_TTL: Duration = Duration::from_secs(2 * 60 * 60);
 
 type StatsKey = (String, String, String);
 
-static CONSUMER_STATS: OnceLock<ConsumerStatsManager> = OnceLock::new();
-
-pub(crate) fn global_consumer_stats() -> &'static ConsumerStatsManager {
-    CONSUMER_STATS.get_or_init(ConsumerStatsManager::default)
-}
-
+/// Per-PushConsumer metrics for its Running Info snapshot.
 #[derive(Default)]
 pub(crate) struct ConsumerStatsManager {
     topics: Mutex<HashMap<StatsKey, TopicStats>>,

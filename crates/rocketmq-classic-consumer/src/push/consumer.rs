@@ -72,7 +72,7 @@ use crate::{
     },
     rebalance::RebalanceService,
     service_state::ConsumerServiceState,
-    stats::global_consumer_stats,
+    stats::ConsumerStatsManager,
 };
 
 use super::{
@@ -339,6 +339,7 @@ pub struct PushConsumer {
     manager: ClientRuntimeManager,
     rpc_hook: Option<Arc<dyn RpcHook>>,
     consume_message_hooks: ConsumeMessageHookRegistry,
+    stats: ConsumerStatsManager,
     trace_dispatcher: OnceLock<Arc<rocketmq_classic_producer::TraceDispatcher>>,
     state: tokio::sync::Mutex<State>,
     service_state: RwLock<Option<ConsumerServiceState>>,
@@ -412,6 +413,7 @@ impl PushConsumer {
             manager,
             rpc_hook,
             consume_message_hooks: ConsumeMessageHookRegistry::default(),
+            stats: ConsumerStatsManager::default(),
             trace_dispatcher: OnceLock::new(),
             state: tokio::sync::Mutex::new(State::Created),
             service_state: RwLock::new(Some(ConsumerServiceState::CreateJust)),
@@ -1434,11 +1436,8 @@ impl PushConsumer {
                 subscription.topic.as_ref().map(|topic| {
                     (
                         topic.clone(),
-                        global_consumer_stats().status(
-                            runtime.client_id(),
-                            self.config.consumer_group(),
-                            topic,
-                        ),
+                        self.stats
+                            .status(runtime.client_id(), self.config.consumer_group(), topic),
                     )
                 })
             })
@@ -2195,7 +2194,7 @@ impl PushConsumer {
         }
         if processed.result.status == PullStatus::Found {
             let message_count = processed.messages.as_ref().map_or(0, Vec::len);
-            global_consumer_stats().record_pull(
+            self.stats.record_pull(
                 context.runtime.client_id(),
                 self.config.consumer_group(),
                 topic,
@@ -2497,7 +2496,7 @@ impl PushConsumer {
         self.consume_message_hooks
             .execute_after(&mut consume_context);
         if let Some(topic) = request.batch.queue().topic() {
-            global_consumer_stats().record_consume_rt(
+            self.stats.record_consume_rt(
                 context.runtime.client_id(),
                 self.config.consumer_group(),
                 topic,
@@ -2653,7 +2652,7 @@ impl PushConsumer {
             self.consume_message_hooks
                 .execute_after(&mut consume_context);
             if let Some(topic) = queue.topic() {
-                global_consumer_stats().record_consume_rt(
+                self.stats.record_consume_rt(
                     context.runtime.client_id(),
                     self.config.consumer_group(),
                     topic,
@@ -2715,7 +2714,7 @@ impl PushConsumer {
                         }
                     }
                 };
-                global_consumer_stats().record_orderly_result(
+                self.stats.record_orderly_result(
                     context.runtime.client_id(),
                     self.config.consumer_group(),
                     topic,
@@ -2954,7 +2953,7 @@ impl PushConsumer {
         let acknowledged = (ack_index + 1).max(0) as usize;
         if let Some(topic) = queue.topic() {
             let successful_result = status == Some(ConsumeConcurrentlyStatus::ConsumeSuccess);
-            global_consumer_stats().record_concurrent_result(
+            self.stats.record_concurrent_result(
                 context.runtime.client_id(),
                 self.config.consumer_group(),
                 topic,
@@ -3972,7 +3971,7 @@ impl PushConsumer {
                 continue;
             }
             let messages = result.messages().unwrap_or_default().to_vec();
-            global_consumer_stats().record_pull(
+            self.stats.record_pull(
                 context.runtime.client_id(),
                 &consumer_group,
                 &topic,
@@ -4302,7 +4301,7 @@ impl PushConsumer {
 
         let message_count = messages.len();
         if let Some(topic) = queue.topic() {
-            let stats = global_consumer_stats();
+            let stats = &self.stats;
             stats.record_consume_rt(
                 runtime.client_id(),
                 &consumer_group,
@@ -7490,8 +7489,9 @@ mod tests {
             AckStatus::Ok
         );
 
-        let status =
-            global_consumer_stats().status(runtime.client_id(), "pop-lifecycle-group", "orders");
+        let status = consumer
+            .stats
+            .status(runtime.client_id(), "pop-lifecycle-group", "orders");
         assert!(status.consume_ok_tps > 0.0);
 
         broker_peer.await.unwrap();
@@ -7656,7 +7656,8 @@ mod tests {
         .await
         .expect("assigned POP worker did not issue POP_MESSAGE");
         timeout(Duration::from_secs(3), async {
-            while global_consumer_stats()
+            while consumer
+                .stats
                 .status(runtime.client_id(), "pop-assignment-flow", "orders")
                 .pull_rt
                 <= 0.0
@@ -7666,8 +7667,9 @@ mod tests {
         })
         .await
         .expect("POP_FOUND must record pull latency in consumer statistics");
-        let status =
-            global_consumer_stats().status(runtime.client_id(), "pop-assignment-flow", "orders");
+        let status = consumer
+            .stats
+            .status(runtime.client_id(), "pop-assignment-flow", "orders");
         assert!(status.pull_rt > 0.0, "unexpected POP stats: {status:?}");
         assert!(status.pull_tps > 0.0, "unexpected POP stats: {status:?}");
         let process_queue = read_lock(&consumer.pop_process_queues)
@@ -8961,6 +8963,66 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn independent_runtime_owners_with_same_client_id_isolate_consumer_stats() {
+        let mut first_config = PushConsumerConfig::new("stats-isolation-group").unwrap();
+        first_config.client_config_mut().set_namesrv_addr(None);
+        first_config
+            .client_config_mut()
+            .set_client_ip(Some("198.51.100.41".into()));
+        first_config
+            .client_config_mut()
+            .set_instance_name(Some("stats-isolation-instance".into()));
+        let mut second_config = PushConsumerConfig::new("stats-isolation-group").unwrap();
+        second_config.client_config_mut().set_namesrv_addr(None);
+        second_config
+            .client_config_mut()
+            .set_client_ip(Some("198.51.100.41".into()));
+        second_config
+            .client_config_mut()
+            .set_instance_name(Some("stats-isolation-instance".into()));
+
+        let first = PushConsumer::with_manager(first_config, ClientRuntimeManager::new());
+        let second = PushConsumer::with_manager(second_config, ClientRuntimeManager::new());
+        let first_runtime = first
+            .manager
+            .get_or_create(first.config.client_config())
+            .await
+            .unwrap();
+        let second_runtime = second
+            .manager
+            .get_or_create(second.config.client_config())
+            .await
+            .unwrap();
+        assert_eq!(first_runtime.client_id(), second_runtime.client_id());
+        let java_fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/push-implementation-accessor.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            java_fixture["consumerStatsManagersAreInstanceScoped"].as_bool(),
+            Some(true)
+        );
+
+        first.stats.record_pull(
+            first_runtime.client_id(),
+            "stats-isolation-group",
+            "stats-isolation-topic",
+            Duration::from_millis(3),
+            4,
+        );
+
+        let second_status = second.stats.status(
+            second_runtime.client_id(),
+            "stats-isolation-group",
+            "stats-isolation-topic",
+        );
+        assert_eq!(second_status.pull_tps, 0.0);
+
+        first_runtime.shutdown().await.unwrap();
+        second_runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn running_info_returns_queue_snapshot_and_java_config_properties() {
         let mut config = PushConsumerConfig::new("running-info-snapshot").unwrap();
         config.set_pull_threshold_for_queue(777);
@@ -9010,20 +9072,20 @@ mod tests {
         consumer
             .consumer_start_timestamp
             .store(1_700_000_000_000, Ordering::Release);
-        global_consumer_stats().record_pull(
+        consumer.stats.record_pull(
             runtime.client_id(),
             "running-info-snapshot",
             "orders",
             Duration::from_millis(500),
             2,
         );
-        global_consumer_stats().record_consume_rt(
+        consumer.stats.record_consume_rt(
             runtime.client_id(),
             "running-info-snapshot",
             "orders",
             Duration::from_millis(8),
         );
-        global_consumer_stats().record_concurrent_result(
+        consumer.stats.record_concurrent_result(
             runtime.client_id(),
             "running-info-snapshot",
             "orders",

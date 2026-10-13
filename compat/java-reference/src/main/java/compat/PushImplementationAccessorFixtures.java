@@ -257,6 +257,7 @@ public final class PushImplementationAccessorFixtures {
         Map<String, Object> topicHelpers = topicHelperResults();
 
         Map<String, Object> fixture = new LinkedHashMap<>();
+        fixture.put("consumerStatsManagersAreInstanceScoped", consumerStatsManagersAreInstanceScoped());
         fixture.put("implementationNonNull", first != null);
         fixture.put("implementationIdentityStable", first == second);
         fixture.put("rebalanceImplementationNonNull", firstRebalance != null);
@@ -589,6 +590,22 @@ public final class PushImplementationAccessorFixtures {
             return result;
         } finally {
             factory.shutdownStats();
+        }
+    }
+
+    private static boolean consumerStatsManagersAreInstanceScoped() throws Exception {
+        MQClientInstance first = new MQClientInstance(new ClientConfig(), 101, "phase18-stats-scope");
+        MQClientInstance second = new MQClientInstance(new ClientConfig(), 102, "phase18-stats-scope");
+        Field schedulerField = MQClientInstance.class.getDeclaredField("scheduledExecutorService");
+        schedulerField.setAccessible(true);
+        ScheduledExecutorService firstScheduler = (ScheduledExecutorService) schedulerField.get(first);
+        ScheduledExecutorService secondScheduler = (ScheduledExecutorService) schedulerField.get(second);
+        try {
+            return first.getClientId().equals(second.getClientId())
+                && first.getConsumerStatsManager() != second.getConsumerStatsManager();
+        } finally {
+            firstScheduler.shutdownNow();
+            secondScheduler.shutdownNow();
         }
     }
 
