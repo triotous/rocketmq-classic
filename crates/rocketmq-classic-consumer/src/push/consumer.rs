@@ -459,6 +459,26 @@ impl PushConsumer {
         self.config.effective_max_reconsume_times()
     }
 
+    pub fn group_name(&self) -> &str {
+        self.config.consumer_group()
+    }
+
+    pub fn message_model(&self) -> rocketmq_classic_protocol::heartbeat::MessageModel {
+        self.config.message_model()
+    }
+
+    pub fn consume_type(&self) -> ConsumeType {
+        ConsumeType::ConsumePassively
+    }
+
+    pub fn consume_from_where(&self) -> ConsumeFromWhere {
+        self.config.consume_from_where()
+    }
+
+    pub fn is_unit_mode(&self) -> bool {
+        self.config.unit_mode()
+    }
+
     /// Returns the message trace dispatcher after trace initialization.
     ///
     /// This corresponds to Java `DefaultMQPushConsumer.getTraceDispatcher()`.
@@ -607,8 +627,17 @@ impl PushConsumer {
         Ok(removed)
     }
 
-    pub fn subscriptions(&self) -> HashMap<String, SubscriptionData> {
-        read_lock(&self.subscriptions).clone()
+    /// Returns Java `MQConsumerInner.subscriptions()` values.
+    // Java returns mutable `SubscriptionData` keys in a HashSet; retain that
+    // method-level public contract despite Clippy's mutable-key warning.
+    #[allow(clippy::mutable_key_type)]
+    pub fn subscriptions(&self) -> HashSet<SubscriptionData> {
+        read_lock(&self.subscriptions).values().cloned().collect()
+    }
+
+    /// Returns the live table used by the Java implementation accessor.
+    pub fn get_subscription_inner(&self) -> Arc<RwLock<HashMap<String, SubscriptionData>>> {
+        self.subscriptions.clone()
     }
 
     /// Returns the legacy `topic -> tag expression` configuration map.
@@ -5719,6 +5748,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn push_raw_consumer_inner_accessors_match_java() {
+        let config = PushConsumerConfig::new("phase18-push-implementation-accessor").unwrap();
+        let consumer = PushConsumer::new(config);
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/push-implementation-accessor.json"
+        ))
+        .unwrap();
+
+        assert_eq!(
+            consumer.group_name(),
+            fixture["groupName"].as_str().unwrap()
+        );
+        assert_eq!(fixture["messageModel"], "CLUSTERING");
+        assert_eq!(
+            consumer.message_model(),
+            rocketmq_classic_protocol::heartbeat::MessageModel::Clustering
+        );
+        assert_eq!(fixture["consumeType"], "CONSUME_PASSIVELY");
+        assert_eq!(consumer.consume_type(), ConsumeType::ConsumePassively);
+        assert_eq!(fixture["consumeFromWhere"], "CONSUME_FROM_LAST_OFFSET");
+        assert_eq!(
+            consumer.consume_from_where(),
+            ConsumeFromWhere::ConsumeFromLastOffset
+        );
+        assert_eq!(
+            consumer.is_unit_mode(),
+            fixture["unitMode"].as_bool().unwrap()
+        );
+        assert_eq!(
+            consumer.subscriptions().len(),
+            fixture["subscriptionCountBefore"].as_u64().unwrap() as usize
+        );
+
+        let table = consumer.get_subscription_inner();
+        assert!(Arc::ptr_eq(&table, &consumer.get_subscription_inner()));
+        consumer.subscribe("orders", "*").await.unwrap();
+        assert_eq!(fixture["subscriptionInnerIdentityStable"], true);
+        let mut topics = consumer
+            .subscriptions()
+            .into_iter()
+            .filter_map(|subscription| subscription.topic)
+            .collect::<Vec<_>>();
+        topics.sort();
+        assert_eq!(
+            serde_json::json!(topics),
+            fixture["subscriptionTopicsAfterSubscribe"]
+        );
+        assert_eq!(table.read().unwrap().len(), topics.len());
+    }
+
+    #[tokio::test]
     async fn push_service_state_accessors_match_java_null_and_start_guard() {
         let group = "phase18-push-implementation-accessor";
         let config = PushConsumerConfig::new(group).unwrap();
@@ -9055,13 +9135,16 @@ mod tests {
         assert!(!consumer.unsubscribe("temporary").await.unwrap());
         assert!(consumer.unsubscribe("tenant%temporary").await.unwrap());
         assert!(!consumer.unsubscribe("tenant%temporary").await.unwrap());
-        let subscriptions = consumer.subscriptions();
-        assert_eq!(
-            subscriptions
-                .get("tenant%orders")
-                .and_then(|subscription| subscription.sub_string.as_deref()),
-            Some("*")
-        );
+        let subscription_table = consumer.get_subscription_inner();
+        {
+            let subscriptions = read_lock(&subscription_table);
+            assert_eq!(
+                subscriptions
+                    .get("tenant%orders")
+                    .and_then(|subscription| subscription.sub_string.as_deref()),
+                Some("*")
+            );
+        }
 
         consumer.start().await.unwrap();
         assert!(consumer.is_running().await);
@@ -9255,15 +9338,14 @@ mod tests {
             ClientRuntimeManager::new(),
         );
         clustering.copy_subscriptions("orders").unwrap();
-        assert!(clustering.subscriptions().contains_key("%RETRY%orders"));
+        assert!(read_lock(&clustering.get_subscription_inner()).contains_key("%RETRY%orders"));
 
         let mut config = PushConsumerConfig::new("broadcast-orders").unwrap();
         config.set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting);
         let broadcasting = PushConsumer::with_manager(config, ClientRuntimeManager::new());
         broadcasting.copy_subscriptions("broadcast-orders").unwrap();
         assert!(
-            !broadcasting
-                .subscriptions()
+            !read_lock(&broadcasting.get_subscription_inner())
                 .keys()
                 .any(|topic| topic.starts_with("%RETRY%"))
         );
@@ -9290,8 +9372,7 @@ mod tests {
         );
         consumer.copy_subscriptions("tenant%orders").unwrap();
         assert_eq!(
-            consumer
-                .subscriptions()
+            read_lock(&consumer.get_subscription_inner())
                 .get("tenant%orders")
                 .and_then(SubscriptionData::get_sub_string),
             Some("gold || silver")

@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
 import org.apache.rocketmq.client.consumer.store.OffsetStore;
 import org.apache.rocketmq.client.exception.MQClientException;
@@ -15,6 +16,7 @@ import org.apache.rocketmq.client.hook.ConsumeMessageContext;
 import org.apache.rocketmq.client.hook.ConsumeMessageHook;
 import org.apache.rocketmq.client.impl.consumer.DefaultMQPushConsumerImpl;
 import org.apache.rocketmq.common.ServiceState;
+import org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData;
 
 /** Invokes the deprecated Push consumer implementation accessor on Java 5.5.1. */
 public final class PushImplementationAccessorFixtures {
@@ -51,6 +53,19 @@ public final class PushImplementationAccessorFixtures {
         int effectiveMaxReconsumeTimesDefault = first.getMaxReconsumeTimes();
         consumer.setMaxReconsumeTimes(7);
         int effectiveMaxReconsumeTimesCustom = first.getMaxReconsumeTimes();
+        String groupName = first.groupName();
+        String messageModel = first.messageModel().name();
+        String consumeType = first.consumeType().name();
+        String consumeFromWhere = first.consumeFromWhere().name();
+        boolean unitMode = first.isUnitMode();
+        int subscriptionCountBefore = first.subscriptions().size();
+        Object subscriptionTable = first.getSubscriptionInner();
+        first.subscribe("orders", "*");
+        boolean subscriptionInnerIdentityStable = subscriptionTable == first.getSubscriptionInner();
+        List<String> subscriptionTopicsAfterSubscribe = first.subscriptions().stream()
+            .map(SubscriptionData::getTopic)
+            .sorted()
+            .collect(Collectors.toList());
         boolean offsetStoreInitiallyNull = first.getOffsetStore() == null;
         OffsetStore directOffsetStore = (OffsetStore) Proxy.newProxyInstance(
             OffsetStore.class.getClassLoader(),
@@ -96,6 +111,14 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("serviceStateAfterRejectedStart", serviceStateAfterRejectedStart);
         fixture.put("effectiveMaxReconsumeTimesDefault", effectiveMaxReconsumeTimesDefault);
         fixture.put("effectiveMaxReconsumeTimesCustom", effectiveMaxReconsumeTimesCustom);
+        fixture.put("groupName", groupName);
+        fixture.put("messageModel", messageModel);
+        fixture.put("consumeType", consumeType);
+        fixture.put("consumeFromWhere", consumeFromWhere);
+        fixture.put("unitMode", unitMode);
+        fixture.put("subscriptionCountBefore", subscriptionCountBefore);
+        fixture.put("subscriptionInnerIdentityStable", subscriptionInnerIdentityStable);
+        fixture.put("subscriptionTopicsAfterSubscribe", subscriptionTopicsAfterSubscribe);
         fixture.put("offsetStoreInitiallyNull", offsetStoreInitiallyNull);
         fixture.put("offsetStoreSetterPreservesIdentity", offsetStoreSetterPreservesIdentity);
         fixture.put("offsetStoreSetterAcceptsNull", offsetStoreSetterAcceptsNull);

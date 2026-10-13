@@ -19,3 +19,10 @@
 - Updated the Phase 10 matrix and release checklist. Current Push implementation accessor fixture SHA-256: `c7195beb1225540a1e671c85324e3984571d5d26764d790c27b08b16fd10e9da`.
 - PASS: `cargo test -p rocketmq-classic-consumer --locked` (182 unit tests plus all consumer integration/doc tests); strict consumer Clippy; `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios and fixture drift checks, exit 0); `cargo fmt --all -- --check`; `git diff --check`.
 - No live Broker or Docker was used. The remaining Push implementation public-method audit and the Phase 9/6 reconciliation remain open.
+
+# Phase 18 execution session — 2026-10-13T12:57:57Z
+
+- Continued the Phase 10 raw Push surface audit for `MQConsumerInner` settings and subscriptions. Added `group_name`, `message_model`, `consume_type`, `consume_from_where`, `is_unit_mode`, Java-shaped `subscriptions()` Set results, and a live `get_subscription_inner()` table handle. The invoked fixture compares defaults, subscription contents, and table identity after mutation.
+- Updated the Phase 10 matrix and release checklist. Current Push implementation accessor fixture SHA-256: `e6d1f1eea3537576b16dec98aa53fb534f85356168b40356b915d109400a63ce`.
+- PASS: `cargo test -p rocketmq-classic-consumer --locked` (183 unit tests plus all consumer integration/doc tests); strict consumer Clippy; `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios and fixture drift checks, exit 0); `cargo fmt --all -- --check`; `git diff --check`.
+- No live Broker or Docker was used. The returned Push implementation public-method audit remains partial.
