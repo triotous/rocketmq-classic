@@ -86,10 +86,11 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   reconciliation remains local P18-V01 work, not manual validation.
 - [x] Register live cases in the Phase 19 scenario manifest and validate the
   manifest locally.
-- [ ] Re-run full workspace/all-feature P18-V02 gates on the latest Producer
-  revision. The comprehensive macOS run at `1a741f97` predates the latest
-  Producer commits; the latest scoped Producer tests, Clippy, fixture and Maven
-  checks pass.
+- [x] Re-run full workspace/all-feature P18-V02 gates on the latest Producer
+  revision `d56e4094`. Default/all-feature workspace tests, strict workspace
+  Clippy, fmt/diff, Maven verify (37 scenarios), comparator self-test and
+  37-scenario manifest validation, the 16-case race/leak smoke repeated three
+  times, bounded fuzz smoke, release examples and benchmark compilation pass.
 - [ ] Obtain a current GitHub Ubuntu CI result for the Linux-specific Java
   address profile. A native Ubuntu ARM64 container passes the Core RPC
   integration suite; this does not replace the required GitHub Ubuntu result.
