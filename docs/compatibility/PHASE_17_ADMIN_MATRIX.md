@@ -17,6 +17,30 @@ The Java producer, push consumer, and pull consumer expose the shared
 | `viewMessage(topic, messageId)` | Core physical-offset RPC; Producer, Push, Pull facades | Implemented as Java 5.5.1 does: parse the physical message ID, send `VIEW_MESSAGE_BY_ID` with the caller's raw topic, return Broker errors directly, and return `NO_MESSAGE` for an invalid ID. There is no unique-key fallback. Direct success, not-found, malformed response, invalid ID and no-fallback cases are covered across core and facade tests. |
 | Concrete facade `queryMessageByUniqKey` methods | Query-result methods on Producer, Push, and Pull | Implemented for all three facades. Java defaults, unique-key request fields, and terminal `NO_MESSAGE` forwarding are covered by facade tests. |
 
+## Tools-only admin extension scope audit
+
+The pinned Java client implementation also contains public
+`MQClientAPIImpl.checkRocksdbCqWriteProgress` and
+`MQClientAPIImpl.exportRocksDBConfigToJson` methods. At source commit
+`efa1be59d6fc747ad220f036c86030f05f0419f9`, both are called by
+`tools/.../DefaultMQAdminExtImpl` and exposed by the `tools/.../MQAdminExt`
+interface and `DefaultMQAdminExt` facade. Neither is a `client` `MQAdmin`
+operation or a Producer/Push/Pull client-facade method. The result DTO
+`CheckRocksdbCqWriteResult` is likewise surfaced by that tools interface. The
+Phase 17 plan explicitly excludes the separate `rocketmq-tools` artifact, so
+these helpers are recorded as `TOOLS_OUT_OF_SCOPE`, not as missing Rust client
+capabilities. Rust still carries request code 354 as a protocol constant; this
+does not expose a RocksDB administration API.
+
+Pinned-source check:
+
+```bash
+git -C /Users/bruce.tsai/Projects/3rd/rocketmq grep -n -E 'checkRocksdbCqWriteProgress|exportRocksDBConfigToJson|CheckRocksdbCqWriteResult' efa1be59d6fc747ad220f036c86030f05f0419f9 -- client/src/main/java tools/src/main/java common/src/main/java remoting/src/main/java
+```
+
+This closes the scope disposition for these two tools-backed helpers only; it
+does not close P18-V01's broader source/API/input/reverse-export audit.
+
 ## Concrete facade methods outside `MQAdmin`
 
 | Java method | Rust counterpart | Status and remaining work |
