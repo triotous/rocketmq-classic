@@ -66,7 +66,10 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   Broker route lookup offline; its live Broker handoff remains pending.
   The public `TopicValidator.ValidateResult(boolean, String)` constructor,
   including null remarks, also has direct pinned-Java fixture and Rust
-  differential coverage.
+  differential coverage. `TopicValidator` null-input behavior and nullable
+  system/send-block set members now have fixture-backed Rust differentials too;
+  this closes those specific branches only, while the broad API/source/input
+  audit remains open.
 - [x] Register live cases in the Phase 19 scenario manifest and validate the
   manifest locally.
 - [ ] Obtain a current GitHub Ubuntu CI result for the Linux-specific Java
