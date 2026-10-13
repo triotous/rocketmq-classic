@@ -13,6 +13,8 @@ import java.util.TreeSet;
 import org.apache.rocketmq.client.consumer.DefaultMQPullConsumer;
 import org.apache.rocketmq.client.consumer.MessageSelector;
 import org.apache.rocketmq.client.consumer.store.OffsetStore;
+import org.apache.rocketmq.client.hook.ConsumeMessageContext;
+import org.apache.rocketmq.client.hook.ConsumeMessageHook;
 import org.apache.rocketmq.client.impl.consumer.DefaultMQPullConsumerImpl;
 import org.apache.rocketmq.client.impl.consumer.ProcessQueue;
 import org.apache.rocketmq.common.ServiceState;
@@ -107,6 +109,29 @@ public final class PullImplementationAccessorFixtures {
         boolean disabledTryRebalanceReturnsTrue = first.tryRebalance();
         first.doRebalance();
         consumer.setEnableRebalance(true);
+        List<String> directHookEvents = new ArrayList<>();
+        first.registerConsumeMessageHook(new ConsumeMessageHook() {
+            @Override
+            public String hookName() {
+                return "pull-raw-hook-entrypoint";
+            }
+
+            @Override
+            public void consumeMessageBefore(ConsumeMessageContext context) {
+                directHookEvents.add("before:" + context.getStatus());
+                context.setStatus("hook-before");
+            }
+
+            @Override
+            public void consumeMessageAfter(ConsumeMessageContext context) {
+                directHookEvents.add("after:" + context.getStatus() + ":" + context.isSuccess());
+            }
+        });
+        ConsumeMessageContext directHookContext = new ConsumeMessageContext();
+        directHookContext.setStatus("seed");
+        first.executeHookBefore(directHookContext);
+        directHookContext.setSuccess(true);
+        first.executeHookAfter(directHookContext);
         List<String> initialSubscriptions = subscriptionRows(first.subscriptions());
         int maxReconsumeTimesDefault = consumer.getMaxReconsumeTimes();
         consumer.setMaxReconsumeTimes(-3);
@@ -275,6 +300,7 @@ public final class PullImplementationAccessorFixtures {
         fixture.put("consumeType", consumeType.name());
         fixture.put("consumeFromWhere", consumeFromWhere.name());
         fixture.put("disabledTryRebalanceReturnsTrue", disabledTryRebalanceReturnsTrue);
+        fixture.put("directHookEvents", directHookEvents);
         fixture.put("subscriptionsInitially", initialSubscriptions);
         fixture.put("subscriptionsFromTopics", topicSubscriptions);
         fixture.put("subscriptionsFromExplicit", explicitSubscriptions);

@@ -266,6 +266,14 @@ impl PullConsumer {
         self.consume_message_hooks.register(hook);
     }
 
+    pub fn execute_hook_before(&self, context: &mut ConsumeMessageContext) {
+        self.consume_message_hooks.execute_before(context);
+    }
+
+    pub fn execute_hook_after(&self, context: &mut ConsumeMessageContext) {
+        self.consume_message_hooks.execute_after(context);
+    }
+
     pub fn register_filter_message_hook(&self, hook: Arc<dyn FilterMessageHook>) {
         self.pull_api.register_filter_message_hook(hook);
     }
@@ -2935,6 +2943,62 @@ mod tests {
 
         assert_eq!(events.lock().unwrap().as_slice(), ["before", "after"]);
         assert!(processed.messages.is_none());
+    }
+
+    #[test]
+    fn pull_raw_hook_entrypoints_share_the_supplied_context() {
+        let expected: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/pull-implementation-accessor.json"
+        ))
+        .unwrap();
+        struct Hook(Arc<Mutex<Vec<String>>>);
+
+        impl ConsumeMessageHook for Hook {
+            fn hook_name(&self) -> &str {
+                "pull-raw-hook-entrypoint"
+            }
+
+            fn consume_message_before(&self, context: &mut ConsumeMessageContext) {
+                self.0.lock().unwrap().push(format!(
+                    "before:{}",
+                    context.status.as_deref().unwrap_or("null")
+                ));
+                context.status = Some("hook-before".to_owned());
+            }
+
+            fn consume_message_after(&self, context: &mut ConsumeMessageContext) {
+                self.0.lock().unwrap().push(format!(
+                    "after:{}:{}",
+                    context.status.as_deref().unwrap_or("null"),
+                    context.success
+                ));
+            }
+        }
+
+        let consumer =
+            PullConsumer::new(PullConsumerConfig::new("pull-raw-hook-entrypoint").unwrap());
+        let events = Arc::new(Mutex::new(Vec::new()));
+        consumer.register_consume_message_hook(Arc::new(Hook(events.clone())));
+        let mut context = ConsumeMessageContext::new(
+            "pull-raw-hook-entrypoint",
+            None,
+            MessageQueue::new("orders", "broker-a", 0),
+            None,
+        );
+        context.status = Some("seed".to_owned());
+
+        consumer.execute_hook_before(&mut context);
+        assert_eq!(context.status.as_deref(), Some("hook-before"));
+        context.success = true;
+        consumer.execute_hook_after(&mut context);
+
+        let expected_events = expected["directHookEvents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|event| event.as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(*events.lock().unwrap(), expected_events);
     }
 
     #[derive(Default)]

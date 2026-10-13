@@ -28,7 +28,7 @@ pub struct ConsumeMessageContext {
 }
 
 impl ConsumeMessageContext {
-    pub(crate) fn new(
+    pub fn new(
         consumer_group: impl Into<String>,
         messages: Option<Vec<MessageExt>>,
         message_queue: MessageQueue,
