@@ -1,6 +1,8 @@
 package compat;
 
 import com.alibaba.fastjson2.JSON;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -8,18 +10,19 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.Semaphore;
 import java.util.TreeMap;
 import java.util.TreeSet;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
 import org.apache.rocketmq.client.Validators;
 import org.apache.rocketmq.client.hook.CheckForbiddenContext;
 import org.apache.rocketmq.client.hook.SendMessageContext;
 import org.apache.rocketmq.client.impl.CommunicationMode;
 import org.apache.rocketmq.client.producer.DefaultMQProducer;
+import org.apache.rocketmq.common.MixAll;
+import org.apache.rocketmq.common.compression.Compressor;
+import org.apache.rocketmq.common.compression.CompressionType;
 import org.apache.rocketmq.common.message.Message;
 import org.apache.rocketmq.common.message.MessageBatch;
 import org.apache.rocketmq.common.message.MessageQueue;
@@ -27,7 +30,6 @@ import org.apache.rocketmq.common.message.MessageAccessor;
 import org.apache.rocketmq.common.message.MessageClientIDSetter;
 import org.apache.rocketmq.common.message.MessageConst;
 import org.apache.rocketmq.common.message.MessageType;
-import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.common.topic.TopicValidator;
 import org.apache.rocketmq.remoting.protocol.RequestCode;
 
@@ -101,7 +103,7 @@ public final class ProducerCoreFixtures {
         return accepts(() -> Validators.checkMessage(message, producer));
     }
 
-    private static Map<String, Object> produce() {
+    private static Map<String, Object> produce() throws Exception {
         DefaultMQProducer producer = new DefaultMQProducer();
         Map<String, Object> result = new TreeMap<>();
         Map<String, Object> provenance = new TreeMap<>();
@@ -172,7 +174,43 @@ public final class ProducerCoreFixtures {
         Map<String, Object> autoBatch = new TreeMap<>();
         autoBatch.put("enabledBeforeAccumulator", autoBatchBeforeAccumulator);
         autoBatch.put("enabledAfterAccumulator", autoBatchLifecycle.getAutoBatch());
+        autoBatchLifecycle.setAutoBatch(false);
+        autoBatch.put("disabledAfterRuntimeToggle", autoBatchLifecycle.getAutoBatch());
+        autoBatchLifecycle.setAutoBatch(true);
+        autoBatch.put("enabledAfterRuntimeToggle", autoBatchLifecycle.getAutoBatch());
         result.put("autoBatchLifecycle", autoBatch);
+
+        DefaultMQProducer compressorProducer = new DefaultMQProducer("compressor-settings");
+        List<Map<String, Object>> compressorTypes = new ArrayList<>();
+        byte[] compressorInput = new byte[] {0, 1, 2, 3, 127, (byte) 255};
+        for (CompressionType type : CompressionType.values()) {
+            compressorProducer.setCompressType(type);
+            Compressor compressor = compressorProducer.getCompressor();
+            byte[] compressed = compressor.compress(compressorInput,
+                compressorProducer.getCompressLevel());
+            Map<String, Object> compressorType = new TreeMap<>();
+            compressorType.put("type", compressorProducer.getCompressType().name());
+            compressorType.put("class", compressor.getClass().getSimpleName());
+            compressorType.put("roundTrip",
+                Arrays.equals(compressorInput, compressor.decompress(compressed)));
+            compressorTypes.add(compressorType);
+        }
+        compressorProducer.setCompressType(CompressionType.ZLIB);
+        Compressor retainedCompressor = compressorProducer.getCompressor();
+        compressorProducer.setCompressType(CompressionType.LZ4);
+        byte[] retainedCompressed = retainedCompressor.compress(compressorInput,
+            compressorProducer.getCompressLevel());
+        Map<String, Object> compressorSettings = new TreeMap<>();
+        compressorSettings.put("types", compressorTypes);
+        compressorSettings.put("currentTypeAfterUpdate",
+            compressorProducer.getCompressType().name());
+        compressorSettings.put("retainedRoundTripAfterUpdate",
+            Arrays.equals(compressorInput, retainedCompressor.decompress(retainedCompressed)));
+        compressorSettings.put("retainedClassAfterUpdate",
+            retainedCompressor.getClass().getSimpleName());
+        compressorSettings.put("currentClassAfterUpdate",
+            compressorProducer.getCompressor().getClass().getSimpleName());
+        result.put("compressorSettings", compressorSettings);
 
         DefaultMQProducer autoBatchEligibility = new DefaultMQProducer("auto-batch-eligibility");
         autoBatchEligibility.setInstanceName("auto-batch-eligibility");

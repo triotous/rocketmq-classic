@@ -2,6 +2,7 @@ mod accumulator;
 mod admin;
 mod backpressure;
 mod batch;
+mod compressor;
 mod config;
 mod error;
 mod executor;
@@ -18,6 +19,7 @@ mod transaction;
 pub mod validation;
 
 pub use backpressure::BackpressureReadGuard;
+pub use compressor::ProducerCompressor;
 pub use config::{DEFAULT_PRODUCER_GROUP, ProducerConfig};
 pub use error::ProducerError;
 pub use executor::{AsyncSenderExecutor, AsyncSenderTask};

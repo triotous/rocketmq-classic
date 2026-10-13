@@ -1,6 +1,9 @@
 use std::{
     collections::{BTreeSet, HashMap},
-    sync::{Arc, OnceLock, RwLock, Weak},
+    sync::{
+        Arc, OnceLock, RwLock, Weak,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant as StdInstant},
 };
 
@@ -15,7 +18,7 @@ use rocketmq_classic_remoting::client::{CallbackExecutor, RpcHook};
 use rocketmq_classic_core::api::producer::{SendMode, SendResult};
 
 use crate::{
-    AsyncSenderExecutor, ProducerConfig, ProducerError, RetryResponseCodes,
+    AsyncSenderExecutor, ProducerCompressor, ProducerConfig, ProducerError, RetryResponseCodes,
     accumulator::AutoBatchAccumulator,
     backpressure::{AdjustableSemaphore, BackpressureReadGuard},
     executor::TokioAsyncSenderExecutor,
@@ -65,6 +68,7 @@ pub struct Producer {
     state: tokio::sync::Mutex<State>,
     detector_task: tokio::sync::Mutex<Option<JoinHandle<()>>>,
     pub(crate) auto_batch_accumulator: AutoBatchAccumulator,
+    accumulator_initialized: AtomicBool,
     pub(crate) auto_batch_tasks: tokio::sync::Mutex<Vec<JoinHandle<()>>>,
     pub(crate) self_weak: OnceLock<Weak<Producer>>,
     pub(crate) transaction: OnceLock<Arc<crate::transaction::TransactionRuntime>>,
@@ -170,6 +174,7 @@ impl Producer {
             state: tokio::sync::Mutex::new(State::Created),
             detector_task: tokio::sync::Mutex::new(None),
             auto_batch_accumulator: AutoBatchAccumulator::default(),
+            accumulator_initialized: AtomicBool::new(false),
             auto_batch_tasks: tokio::sync::Mutex::new(Vec::new()),
             self_weak: OnceLock::new(),
             transaction: OnceLock::new(),
@@ -197,6 +202,39 @@ impl Producer {
 
     pub fn config(&self) -> &ProducerConfig {
         &self.config
+    }
+
+    /// Returns whether auto-batching is enabled after the accumulator has
+    /// been initialized. Java reports `false` before that lifecycle step.
+    pub fn auto_batch(&self) -> bool {
+        self.accumulator_initialized.load(Ordering::SeqCst) && self.config.auto_batch()
+    }
+
+    /// Changes auto-batching for later sends. The setting becomes observable
+    /// through [`Self::auto_batch`] once the accumulator is initialized.
+    pub fn set_auto_batch(&self, value: bool) {
+        self.config.set_auto_batch_runtime(value);
+    }
+
+    /// Initializes the producer-owned accumulator. This is idempotent and is
+    /// called by [`Self::start`] at the same point that Java creates its
+    /// `ProduceAccumulator`.
+    pub fn init_produce_accumulator(&self) {
+        self.accumulator_initialized.store(true, Ordering::SeqCst);
+    }
+
+    /// Returns a compression backend snapshot for the current configured type.
+    pub fn compressor(&self) -> ProducerCompressor {
+        ProducerCompressor::new(self.config.compress_type())
+    }
+
+    /// Changes the backend used by later sends. Previously returned
+    /// [`ProducerCompressor`] values retain their original type.
+    pub fn set_compress_type(
+        &self,
+        value: rocketmq_classic_common::sysflag::message::CompressionType,
+    ) {
+        self.config.set_compress_type_runtime(value);
     }
 
     /// Returns the current async backpressure mode. The value can be changed
@@ -401,6 +439,7 @@ impl Producer {
                 self.config.tls_config().cloned(),
             )
             .await?;
+        self.init_produce_accumulator();
         let owner: Arc<dyn ProducerRuntime> = self.clone();
         let lease = runtime
             .register_producer(self.producer_group(), owner)

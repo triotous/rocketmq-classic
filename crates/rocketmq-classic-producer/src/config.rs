@@ -93,14 +93,14 @@ pub struct ProducerConfig {
     send_timeout_millis: i32,
     send_msg_max_timeout_per_request: i32,
     compress_threshold: i32,
-    compress_type: CompressionType,
+    compress_type: SharedAtomicI32,
     compress_level: i32,
     retry_times_when_send_failed: i32,
     retry_times_when_send_async_failed: i32,
     retry_response_codes: RetryResponseCodes,
     retry_another_broker_when_not_store_ok: bool,
     max_message_size: i32,
-    auto_batch: bool,
+    auto_batch: SharedAtomicBool,
     batch_max_delay_millis: Option<i32>,
     batch_max_bytes: Option<i64>,
     total_batch_max_bytes: Option<i64>,
@@ -123,14 +123,14 @@ impl Clone for ProducerConfig {
             send_timeout_millis: self.send_timeout_millis,
             send_msg_max_timeout_per_request: self.send_msg_max_timeout_per_request,
             compress_threshold: self.compress_threshold,
-            compress_type: self.compress_type,
+            compress_type: self.compress_type.clone(),
             compress_level: self.compress_level,
             retry_times_when_send_failed: self.retry_times_when_send_failed,
             retry_times_when_send_async_failed: self.retry_times_when_send_async_failed,
             retry_response_codes: self.retry_response_codes.detached_clone(),
             retry_another_broker_when_not_store_ok: self.retry_another_broker_when_not_store_ok,
             max_message_size: self.max_message_size,
-            auto_batch: self.auto_batch,
+            auto_batch: self.auto_batch.clone(),
             batch_max_delay_millis: self.batch_max_delay_millis,
             batch_max_bytes: self.batch_max_bytes,
             total_batch_max_bytes: self.total_batch_max_bytes,
@@ -157,7 +157,7 @@ impl ProducerConfig {
             send_timeout_millis: DEFAULT_SEND_TIMEOUT_MILLIS,
             send_msg_max_timeout_per_request: -1,
             compress_threshold: DEFAULT_COMPRESS_THRESHOLD,
-            compress_type,
+            compress_type: SharedAtomicI32::new(compress_type.get_value()),
             compress_level,
             retry_times_when_send_failed: DEFAULT_SYNC_RETRIES,
             retry_times_when_send_async_failed: DEFAULT_ASYNC_RETRIES,
@@ -166,7 +166,7 @@ impl ProducerConfig {
             ),
             retry_another_broker_when_not_store_ok: false,
             max_message_size: DEFAULT_MAX_MESSAGE_SIZE,
-            auto_batch: false,
+            auto_batch: SharedAtomicBool::new(false),
             batch_max_delay_millis: None,
             batch_max_bytes: None,
             total_batch_max_bytes: None,
@@ -321,10 +321,14 @@ impl ProducerConfig {
         self.compress_threshold = value;
     }
     pub fn compress_type(&self) -> CompressionType {
-        self.compress_type
+        CompressionType::find_by_value(self.compress_type.load())
+            .expect("ProducerConfig stores a valid RocketMQ compression type")
     }
     pub fn set_compress_type(&mut self, value: CompressionType) {
-        self.compress_type = value;
+        self.compress_type.store(value.get_value());
+    }
+    pub(crate) fn set_compress_type_runtime(&self, value: CompressionType) {
+        self.compress_type.store(value.get_value());
     }
     pub fn compress_level(&self) -> i32 {
         self.compress_level
@@ -368,10 +372,13 @@ impl ProducerConfig {
         self.max_message_size = value;
     }
     pub fn auto_batch(&self) -> bool {
-        self.auto_batch
+        self.auto_batch.load()
     }
     pub fn set_auto_batch(&mut self, value: bool) {
-        self.auto_batch = value;
+        self.auto_batch.store(value);
+    }
+    pub(crate) fn set_auto_batch_runtime(&self, value: bool) {
+        self.auto_batch.store(value);
     }
     pub fn batch_max_delay_millis(&self) -> Option<i32> {
         self.batch_max_delay_millis

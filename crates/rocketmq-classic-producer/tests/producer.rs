@@ -31,6 +31,91 @@ fn java_default_settings_are_present() {
 }
 
 #[test]
+fn producer_compressor_snapshot_and_operations_match_java_fixture() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let producer = Producer::new(ProducerConfig::new("compressor-fixture").unwrap());
+    let input = [0, 1, 2, 3, 127, 255];
+
+    for row in fixture["compressorSettings"]["types"].as_array().unwrap() {
+        let kind = CompressionType::of(Some(row["type"].as_str().unwrap())).unwrap();
+        producer.set_compress_type(kind);
+        let compressor = producer.compressor();
+        assert_eq!(compressor.compression_type(), kind, "{row}");
+        assert!(row["roundTrip"].as_bool().unwrap(), "{row}");
+
+        let compressed = compressor.compress(&input, 5).unwrap();
+        assert_eq!(compressor.decompress(&compressed).unwrap(), input, "{row}");
+        let expected_class = match kind {
+            CompressionType::Lz4 => "Lz4Compressor",
+            CompressionType::Zstd => "ZstdCompressor",
+            CompressionType::Zlib => "ZlibCompressor",
+        };
+        assert_eq!(row["class"], expected_class, "{row}");
+    }
+
+    producer.set_compress_type(CompressionType::Zlib);
+    let retained = producer.compressor();
+    producer.set_compress_type(CompressionType::Lz4);
+    assert_eq!(retained.compression_type(), CompressionType::Zlib);
+    assert!(
+        fixture["compressorSettings"]["retainedRoundTripAfterUpdate"]
+            .as_bool()
+            .unwrap()
+    );
+    assert_eq!(
+        retained
+            .decompress(&retained.compress(&input, 5).unwrap())
+            .unwrap(),
+        input
+    );
+    let current = producer.compressor();
+    assert_eq!(
+        current.compression_type().name(),
+        fixture["compressorSettings"]["currentTypeAfterUpdate"]
+            .as_str()
+            .unwrap()
+    );
+    assert_eq!(
+        fixture["compressorSettings"]["retainedClassAfterUpdate"],
+        "ZlibCompressor"
+    );
+    assert_eq!(
+        fixture["compressorSettings"]["currentClassAfterUpdate"],
+        "Lz4Compressor"
+    );
+}
+
+#[test]
+fn producer_auto_batch_getter_and_setter_follow_accumulator_lifecycle() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let mut config = ProducerConfig::new("auto-batch-lifecycle-fixture").unwrap();
+    config.set_auto_batch(true);
+    let producer = Producer::new(config);
+
+    assert!(
+        !producer.auto_batch(),
+        "Java returns false before accumulator initialization"
+    );
+    producer.init_produce_accumulator();
+    assert_eq!(
+        producer.auto_batch(),
+        fixture["autoBatchLifecycle"]["enabledAfterAccumulator"]
+    );
+    producer.set_auto_batch(false);
+    assert_eq!(
+        producer.auto_batch(),
+        fixture["autoBatchLifecycle"]["disabledAfterRuntimeToggle"]
+    );
+    producer.set_auto_batch(true);
+    assert_eq!(
+        producer.auto_batch(),
+        fixture["autoBatchLifecycle"]["enabledAfterRuntimeToggle"]
+    );
+}
+
+#[test]
 fn java_validation_boundaries_and_reserved_topics_are_preserved() {
     let config = ProducerConfig::new("producer-test").unwrap();
     assert!(validate_group(&"g".repeat(120)).is_ok());

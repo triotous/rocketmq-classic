@@ -314,8 +314,7 @@ impl Producer {
     {
         let deadline = deadline_after(timeout);
         let wire_message = self.message_with_namespace(message)?;
-        let use_auto_batch =
-            auto_batch_enabled && mode != SendMode::Oneway && self.config.auto_batch();
+        let use_auto_batch = auto_batch_enabled && mode != SendMode::Oneway && self.auto_batch();
         let (backpressure_enabled, backpressure) = if mode == SendMode::Future && !use_auto_batch {
             self.acquire_async_backpressure(wire_message.body().len(), deadline)
                 .await?
@@ -388,7 +387,7 @@ impl Producer {
     ) -> Result<SendResult, ProducerError> {
         let wire_message = self.message_with_namespace(message)?;
         let timeout = Duration::from_millis(self.config.send_timeout_millis().max(0) as u64);
-        if mode == SendMode::Oneway || !self.config.auto_batch() || !can_accumulate(&wire_message) {
+        if mode == SendMode::Oneway || !self.auto_batch() || !can_accumulate(&wire_message) {
             return self
                 .send_message_direct_with_mode(&wire_message, queue.as_ref(), mode, timeout)
                 .await;
@@ -3021,9 +3020,11 @@ mod tests {
     #[tokio::test]
     async fn auto_batch_flushes_one_message_batch_and_fans_out_results() {
         let mut config = crate::ProducerConfig::new("scripted-auto-batch").unwrap();
-        config.set_auto_batch(true);
         config.set_batch_max_delay_millis(15);
         let (producer, _) = scripted_producer(config).await;
+        assert!(!producer.auto_batch());
+        producer.set_auto_batch(true);
+        assert!(producer.auto_batch());
         producer
             .scripted_transport
             .lock()
@@ -3034,6 +3035,12 @@ mod tests {
                 "offset-a,offset-b",
                 20,
             ))));
+        producer
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .push_back(Ok(Some(scripted_result("msg-c", "offset-c", 22))));
 
         let mut first = Message::new("orders", b"first".to_vec());
         first.set_tags("blue").unwrap();
@@ -3050,13 +3057,21 @@ mod tests {
         assert_eq!(first_result.queue_offset, 20);
         assert_eq!(second_result.queue_offset, 21);
 
+        producer.set_auto_batch(false);
+        assert!(!producer.auto_batch());
+        let third = Message::new("orders", b"third".to_vec());
+        let third_result = producer.send(&third).await.unwrap();
+        assert_eq!(third_result.msg_id, "msg-c");
+        assert_eq!(third_result.queue_offset, 22);
+
         let attempts = {
             let mut scripted = producer.scripted_transport.lock().unwrap();
             std::mem::take(&mut scripted.attempts)
         };
-        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts.len(), 2);
         assert!(attempts[0].batch);
         assert_eq!(attempts[0].mode, SendMode::Sync);
+        assert!(!attempts[1].batch);
         let properties = decode_properties(attempts[0].properties.as_deref().unwrap());
         assert_eq!(
             properties.get(PROPERTY_TAGS).map(String::as_str),

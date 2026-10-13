@@ -24,9 +24,10 @@ pub use rocketmq_classic_producer::validation;
 pub use rocketmq_classic_producer::{
     AsyncSenderExecutor, AsyncSenderTask, BackpressureReadGuard, CallbackExecutor,
     CheckForbiddenContext, CheckForbiddenHook, CommunicationMode, HookException, Producer,
-    ProducerConfig, ProducerError, RecallMessageHandle, RetryResponseCodes, SendMessageContext,
-    SendMessageHook, SendMessageType, SendResult, SendStatus, TransactionCheckListener,
-    TransactionExecutor, TransactionListener, TransactionProducer, TransactionSendResult,
+    ProducerCompressor, ProducerConfig, ProducerError, RecallMessageHandle, RetryResponseCodes,
+    SendMessageContext, SendMessageHook, SendMessageType, SendResult, SendStatus,
+    TransactionCheckListener, TransactionExecutor, TransactionListener, TransactionProducer,
+    TransactionSendResult,
 };
 pub use rocketmq_classic_producer::{TraceDispatcher, TraceDispatcherError, TraceProducerKind};
 pub use rocketmq_classic_protocol::NamespaceUtil;
