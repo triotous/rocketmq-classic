@@ -1169,6 +1169,43 @@ impl CommandHeader for GetConsumerStatusRequestHeader {
     }
 }
 
+/// Pinned Java `GetConsumerRunningInfoRequestHeader`, including the inherited
+/// `RpcRequestHeader` namespace and broker-routing fields.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct GetConsumerRunningInfoRequestHeader {
+    pub consumer_group: String,
+    pub client_id: String,
+    pub jstack_enable: bool,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
+}
+
+impl CommandHeader for GetConsumerRunningInfoRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("consumerGroup".into(), self.consumer_group.clone());
+        fields.insert("clientId".into(), self.client_id.clone());
+        fields.insert("jstackEnable".into(), self.jstack_enable.to_string());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
+            client_id: required_string(fields, "clientId")?.to_owned(),
+            jstack_enable: java_boolean(fields, "jstackEnable"),
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ConsumeMessageDirectlyResultRequestHeader {
     pub consumer_group: String,

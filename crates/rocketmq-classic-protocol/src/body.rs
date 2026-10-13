@@ -1,7 +1,7 @@
-use crate::{SharedValue, codes::JavaEnumLookupError};
+use crate::{SharedValue, codes::JavaEnumLookupError, heartbeat::SubscriptionData};
 use rocketmq_classic_common::{message::MessageQueue, serde_fastjson};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
-use std::hash::Hash;
+use std::{collections::BTreeMap, hash::Hash};
 
 macro_rules! impl_java_enum_api {
     ($enum_type:ident, $java_class:literal, $count:literal, $($variant:ident => $name:literal = $ordinal:literal),+ $(,)?) => {
@@ -3147,6 +3147,198 @@ impl<'de> Deserialize<'de> for GetConsumerStatusBody {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsumerProcessQueueInfo {
+    pub commit_offset: i64,
+    pub cached_msg_min_offset: i64,
+    pub cached_msg_max_offset: i64,
+    pub cached_msg_count: i32,
+    #[serde(rename = "cachedMsgSizeInMiB")]
+    pub cached_msg_size_in_mi_b: i32,
+    pub transaction_msg_min_offset: i64,
+    pub transaction_msg_max_offset: i64,
+    pub transaction_msg_count: i32,
+    pub locked: bool,
+    pub try_unlock_times: i64,
+    pub last_lock_timestamp: i64,
+    pub droped: bool,
+    pub last_pull_timestamp: i64,
+    pub last_consume_timestamp: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsumerPopProcessQueueInfo {
+    pub wait_ack_count: i32,
+    pub droped: bool,
+    pub last_pop_timestamp: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsumerConsumeStatus {
+    #[serde(rename = "pullRT")]
+    pub pull_rt: f64,
+    #[serde(rename = "pullTPS")]
+    pub pull_tps: f64,
+    #[serde(rename = "consumeRT")]
+    pub consume_rt: f64,
+    #[serde(rename = "consumeOKTPS")]
+    pub consume_ok_tps: f64,
+    #[serde(rename = "consumeFailedTPS")]
+    pub consume_failed_tps: f64,
+    pub consume_failed_msgs: i64,
+}
+
+/// Pinned Java `ConsumerRunningInfo` JSON body. Fastjson encodes the
+/// `MessageQueue` map keys as object values rather than quoted strings.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ConsumerRunningInfoBody {
+    pub properties: BTreeMap<String, String>,
+    pub subscription_set: Vec<SubscriptionData>,
+    pub mq_table: Vec<(MessageQueue, ConsumerProcessQueueInfo)>,
+    pub mq_pop_table: Vec<(MessageQueue, ConsumerPopProcessQueueInfo)>,
+    pub status_table: BTreeMap<String, ConsumerConsumeStatus>,
+    pub user_consumer_info: BTreeMap<String, String>,
+    pub jstack: Option<String>,
+}
+
+impl ConsumerRunningInfoBody {
+    pub fn encode_java_json(&self) -> Result<Vec<u8>, serde_json::Error> {
+        let mut subscription_set = self.subscription_set.clone();
+        subscription_set.sort_by(|left, right| left.java_compare_to(right).cmp(&0));
+        let subscription_set = subscription_set
+            .iter()
+            .map(encode_java_subscription_data)
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut queues = self.mq_table.iter().collect::<Vec<_>>();
+        queues.sort_by(|left, right| left.0.cmp(&right.0));
+        let mut mq_table = Vec::with_capacity(queues.len());
+        for (queue, info) in queues {
+            mq_table.push((queue.clone(), serde_json::to_string(info)?));
+        }
+        let mut pop_queues = self.mq_pop_table.iter().collect::<Vec<_>>();
+        pop_queues.sort_by(|left, right| left.0.cmp(&right.0));
+        let mut mq_pop_table = Vec::with_capacity(pop_queues.len());
+        for (queue, info) in pop_queues {
+            mq_pop_table.push((queue.clone(), serde_json::to_string(info)?));
+        }
+
+        let mut fields = Vec::with_capacity(7);
+        if let Some(jstack) = &self.jstack {
+            fields.push(format!("\"jstack\":{}", serde_json::to_string(jstack)?));
+        }
+        fields.push(format!(
+            "\"mqPopTable\":{}",
+            encode_java_object_key_map(&mq_pop_table)?
+        ));
+        fields.push(format!(
+            "\"mqTable\":{}",
+            encode_java_object_key_map(&mq_table)?
+        ));
+        fields.push(format!(
+            "\"properties\":{}",
+            serde_json::to_string(&self.properties)?
+        ));
+        fields.push(format!(
+            "\"statusTable\":{}",
+            serde_json::to_string(&self.status_table)?
+        ));
+        fields.push(format!(
+            "\"subscriptionSet\":{}",
+            serde_json::to_string(&subscription_set)?
+        ));
+        fields.push(format!(
+            "\"userConsumerInfo\":{}",
+            serde_json::to_string(&self.user_consumer_info)?
+        ));
+        Ok(format!("{{{}}}", fields.join(",")).into_bytes())
+    }
+
+    pub fn decode_java_json(input: &str) -> Result<serde_json::Value, serde_json::Error> {
+        let normalized = normalize_java_object_map_keys(input)?;
+        serde_json::from_str(&normalized)
+    }
+}
+
+fn encode_java_subscription_data(
+    subscription: &SubscriptionData,
+) -> Result<serde_json::Value, serde_json::Error> {
+    let mut fields = serde_json::Map::new();
+    fields.insert(
+        "classFilterMode".into(),
+        serde_json::Value::Bool(subscription.class_filter_mode),
+    );
+    if let Some(topic) = &subscription.topic {
+        fields.insert("topic".into(), serde_json::Value::String(topic.clone()));
+    }
+    if let Some(sub_string) = &subscription.sub_string {
+        fields.insert(
+            "subString".into(),
+            serde_json::Value::String(sub_string.clone()),
+        );
+    }
+    if let Some(tags) = &subscription.tags_set {
+        let mut tags = tags.snapshot().into_iter().collect::<Vec<_>>();
+        tags.sort_by(java_optional_string_cmp);
+        fields.insert("tagsSet".into(), serde_json::to_value(tags)?);
+    }
+    if let Some(codes) = &subscription.code_set {
+        let mut codes = codes.snapshot().into_iter().collect::<Vec<_>>();
+        codes.sort();
+        fields.insert("codeSet".into(), serde_json::to_value(codes)?);
+    }
+    fields.insert(
+        "subVersion".into(),
+        serde_json::Value::Number(subscription.sub_version.into()),
+    );
+    if let Some(expression_type) = &subscription.expression_type {
+        fields.insert(
+            "expressionType".into(),
+            serde_json::Value::String(expression_type.clone()),
+        );
+    }
+    Ok(serde_json::Value::Object(fields))
+}
+
+fn java_optional_string_cmp(left: &Option<String>, right: &Option<String>) -> std::cmp::Ordering {
+    match (left, right) {
+        (None, None) => std::cmp::Ordering::Equal,
+        (None, Some(_)) => std::cmp::Ordering::Less,
+        (Some(_), None) => std::cmp::Ordering::Greater,
+        (Some(left), Some(right)) => left.encode_utf16().cmp(right.encode_utf16()),
+    }
+}
+
+fn encode_java_object_key_map(
+    entries: &[(MessageQueue, String)],
+) -> Result<String, serde_json::Error> {
+    let parts = entries
+        .iter()
+        .map(|(queue, value)| Ok(format!("{}:{value}", encode_java_message_queue_key(queue)?)))
+        .collect::<Result<Vec<_>, serde_json::Error>>()?;
+    Ok(format!("{{{}}}", parts.join(",")))
+}
+
+fn encode_java_message_queue_key(queue: &MessageQueue) -> Result<String, serde_json::Error> {
+    let mut queue_fields = Vec::with_capacity(3);
+    if let Some(broker_name) = queue.broker_name() {
+        queue_fields.push(format!(
+            "\"brokerName\":{}",
+            serde_json::to_string(broker_name)?
+        ));
+    }
+    queue_fields.push(format!(
+        "\"queueId\":{}",
+        serde_json::to_string(&queue.queue_id())?
+    ));
+    if let Some(topic) = queue.topic() {
+        queue_fields.push(format!("\"topic\":{}", serde_json::to_string(topic)?));
+    }
+    Ok(format!("{{{}}}", queue_fields.join(",")))
+}
+
 fn normalize_java_object_map_keys(input: &str) -> Result<String, serde_json::Error> {
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum ObjectKind {
@@ -3206,9 +3398,10 @@ fn normalize_java_object_map_keys(input: &str) -> Result<String, serde_json::Err
                 None => ObjectKind::Root,
                 Some(parent) if previous_json_byte(bytes, index) == Some(b':') => {
                     match (parent.kind, parent.last_key.as_deref()) {
-                        (ObjectKind::Root, Some("messageQueueTable" | "offsetTable")) => {
-                            ObjectKind::QueueTable
-                        }
+                        (
+                            ObjectKind::Root,
+                            Some("messageQueueTable" | "offsetTable" | "mqTable" | "mqPopTable"),
+                        ) => ObjectKind::QueueTable,
                         (ObjectKind::Root, Some("consumerTable")) => ObjectKind::ConsumerTable,
                         (ObjectKind::ConsumerTable, _) => ObjectKind::QueueTable,
                         _ => ObjectKind::Other,

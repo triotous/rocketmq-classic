@@ -41,6 +41,7 @@ macro_rules! inventory {
             LockBatchMqRequestHeader => ("header-lock-batch-request", "typed-lock-batch-request.bin"),
             UnlockBatchMqRequestHeader => ("header-unlock-batch-request", "typed-unlock-batch-request.bin"),
             GetConsumerListByGroupRequestHeader => ("header-consumer-list-request", "typed-consumer-list-request.bin"),
+            GetConsumerRunningInfoRequestHeader => ("header-consumer-running-info-request", "typed-consumer-running-info-request.bin"),
             ConsumerSendMsgBackRequestHeader => ("header-send-back-request", "typed-send-back-request.bin"),
             UnregisterClientResponseHeader => ("header-unregister-response", "typed-unregister-response.bin"),
             EndTransactionRequestHeader => ("header-end-transaction-request", "typed-end-transaction.bin"),

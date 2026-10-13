@@ -54,6 +54,7 @@ import org.apache.rocketmq.remoting.protocol.header.PopLiteMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.PopLiteMessageResponseHeader;
 import org.apache.rocketmq.remoting.protocol.header.PopMessageResponseHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetConsumerStatusRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.GetConsumerRunningInfoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ConsumeMessageDirectlyResultRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.LiteSubscriptionCtlRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.LockBatchMqRequestHeader;
@@ -110,6 +111,10 @@ public final class Main {
         }
         if (args.length > 0 && "request-reply-fixture".equals(args[0])) {
             RequestReplyFixtures.main(Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
+        if (args.length > 0 && "consumer-running-info-fixture".equals(args[0])) {
+            ConsumerRunningInfoFixtures.main(Arrays.copyOfRange(args, 1, args.length));
             return;
         }
         if (args.length > 0 && "acl-fixture".equals(args[0])) {
@@ -604,6 +609,12 @@ public final class Main {
         GetConsumerStatusRequestHeader status = new GetConsumerStatusRequestHeader();
         status.setTopic("orders"); status.setGroup("workers");
         writeTypedHeaderFixture(output, "consumer-status-request", 221, status);
+        GetConsumerRunningInfoRequestHeader runningInfo = new GetConsumerRunningInfoRequestHeader();
+        runningInfo.setConsumerGroup("workers"); runningInfo.setClientId("client-running-info");
+        runningInfo.setJstackEnable(true); runningInfo.setNamespace("tenant");
+        runningInfo.setNamespaced(true); runningInfo.setBrokerName("broker-a");
+        runningInfo.setOneway(false);
+        writeTypedHeaderFixture(output, "consumer-running-info-request", 307, runningInfo);
         ConsumeMessageDirectlyResultRequestHeader direct = new ConsumeMessageDirectlyResultRequestHeader();
         direct.setConsumerGroup("workers");
         writeTypedHeaderFixture(output, "consume-directly-request", 309, direct);
@@ -797,6 +808,7 @@ public final class Main {
             assertAllExtFields(byName, "typed-unregister-response.bin", 0);
             assertAllExtFields(byName, "typed-end-transaction-response.bin", 0);
             assertAllExtFields(byName, "typed-consumer-status-request.bin", 221);
+            assertAllExtFields(byName, "typed-consumer-running-info-request.bin", 307);
             assertAllExtFields(byName, "typed-polling-request.bin", 200055);
             assertAllExtFields(byName, "typed-polling-response.bin", 0);
             assertAllExtFields(byName, "typed-pop-lite-request.bin", 200070);
@@ -910,6 +922,7 @@ public final class Main {
             case "typed-unregister-response.bin": fixtureStem = "header-unregister-response"; break;
             case "typed-end-transaction-response.bin": fixtureStem = "header-end-transaction-response"; break;
             case "typed-consumer-status-request.bin": fixtureStem = "header-consumer-status-request"; break;
+            case "typed-consumer-running-info-request.bin": fixtureStem = "header-consumer-running-info-request"; break;
             case "typed-polling-request.bin": fixtureStem = "header-polling-request"; break;
             case "typed-polling-response.bin": fixtureStem = "header-polling-response"; break;
             case "typed-pop-lite-request.bin": fixtureStem = "header-pop-lite-request"; break;

@@ -269,6 +269,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-consumer-running-info-fixture</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.ConsumerRunningInfoFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/consumer/running-info.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-java-lite-pop-fixture</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

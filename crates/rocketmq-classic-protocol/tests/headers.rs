@@ -1,9 +1,12 @@
+use rocketmq_classic_common::message::MessageQueue;
+use rocketmq_classic_protocol::{SharedValue, heartbeat::SubscriptionData};
 use rocketmq_classic_protocol::{
     body::{
         BatchAckMessageRequestBody, BitSet, ConsumeMessageDirectlyResult, ConsumeMessageResult,
-        ConsumerListByGroupResponseBody, GetConsumerStatusBody, LiteSubscriptionAction,
-        LiteSubscriptionCtlRequestBody, LockBatchRequestBody, LockBatchResponseBody,
-        MessageRequestMode, QueryAssignmentRequestBody, ResetOffsetBody,
+        ConsumerConsumeStatus, ConsumerListByGroupResponseBody, ConsumerPopProcessQueueInfo,
+        ConsumerProcessQueueInfo, ConsumerRunningInfoBody, GetConsumerStatusBody,
+        LiteSubscriptionAction, LiteSubscriptionCtlRequestBody, LockBatchRequestBody,
+        LockBatchResponseBody, MessageRequestMode, QueryAssignmentRequestBody, ResetOffsetBody,
         SetMessageRequestModeRequestBody, UnlockBatchRequestBody,
     },
     header::{
@@ -11,20 +14,21 @@ use rocketmq_classic_protocol::{
         CheckTransactionStateRequestHeader, CheckTransactionStateResponseHeader, CommandHeader,
         ConsumeMessageDirectlyResultRequestHeader, ConsumerSendMsgBackRequestHeader,
         CreateTopicRequestHeader, EndTransactionRequestHeader, EndTransactionResponseHeader,
-        GetConsumerListByGroupRequestHeader, GetConsumerStatusRequestHeader,
-        GetEarliestMsgStoretimeRequestHeader, GetEarliestMsgStoretimeResponseHeader,
-        GetMaxOffsetRequestHeader, GetMaxOffsetResponseHeader, GetMinOffsetRequestHeader,
-        GetMinOffsetResponseHeader, GetRouteInfoRequestHeader, HeaderMap,
-        LiteSubscriptionCtlRequestHeader, LockBatchMqRequestHeader, NotificationRequestHeader,
-        NotificationResponseHeader, NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader,
-        PollingInfoResponseHeader, PopLiteMessageRequestHeader, PopLiteMessageResponseHeader,
-        PopMessageRequestHeader, PopMessageResponseHeader, PullMessageRequestHeader,
-        PullMessageResponseHeader, QueryConsumerOffsetRequestHeader,
-        QueryConsumerOffsetResponseHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
-        RecallMessageRequestHeader, RecallMessageResponseHeader, ReplyMessageRequestHeader,
-        ResetOffsetRequestHeader, SearchOffsetRequestHeader, SearchOffsetResponseHeader,
-        SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
-        UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
+        GetConsumerListByGroupRequestHeader, GetConsumerRunningInfoRequestHeader,
+        GetConsumerStatusRequestHeader, GetEarliestMsgStoretimeRequestHeader,
+        GetEarliestMsgStoretimeResponseHeader, GetMaxOffsetRequestHeader,
+        GetMaxOffsetResponseHeader, GetMinOffsetRequestHeader, GetMinOffsetResponseHeader,
+        GetRouteInfoRequestHeader, HeaderMap, LiteSubscriptionCtlRequestHeader,
+        LockBatchMqRequestHeader, NotificationRequestHeader, NotificationResponseHeader,
+        NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader, PollingInfoResponseHeader,
+        PopLiteMessageRequestHeader, PopLiteMessageResponseHeader, PopMessageRequestHeader,
+        PopMessageResponseHeader, PullMessageRequestHeader, PullMessageResponseHeader,
+        QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
+        QueryMessageRequestHeader, QueryMessageResponseHeader, RecallMessageRequestHeader,
+        RecallMessageResponseHeader, ReplyMessageRequestHeader, ResetOffsetRequestHeader,
+        SearchOffsetRequestHeader, SearchOffsetResponseHeader, SendMessageRequestHeaderV1,
+        SendMessageRequestHeaderV2, SendMessageResponseHeader, UnlockBatchMqRequestHeader,
+        UnregisterClientRequestHeader, UnregisterClientResponseHeader,
         UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
     },
 };
@@ -556,6 +560,118 @@ fn java_json_body_fixtures_decode_to_typed_assignment_lite_and_batch_models() {
         serde_json::to_value(&direct).unwrap(),
         serde_json::from_slice::<serde_json::Value>(&java_body("body-consume-directly")).unwrap()
     );
+}
+
+#[test]
+fn consumer_running_info_body_matches_pinned_java_5_5_1_json() {
+    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
+    let fixture: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(format!("{root}/fixtures/consumer/running-info.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        fixture["client"],
+        "org.apache.rocketmq:rocketmq-client:5.5.1"
+    );
+    assert_eq!(
+        fixture["sourceCommit"],
+        "efa1be59d6fc747ad220f036c86030f05f0419f9"
+    );
+    assert_eq!(fixture["serverContacted"], false);
+
+    let queue = MessageQueue::new("orders", "broker-a", 1);
+    let pop_queue = MessageQueue::new("orders", "broker-a", 2);
+    let mut subscription = SubscriptionData::new(Some("orders".into()), Some("*".into()));
+    subscription.sub_version = 1_700_000_000_001;
+    subscription.tags_set = Some(SharedValue::new(std::collections::HashSet::from([
+        Some("blue".to_owned()),
+        Some("green".to_owned()),
+    ])));
+    let body = ConsumerRunningInfoBody {
+        properties: std::collections::BTreeMap::from([
+            ("PROP_NAMESERVER_ADDR".into(), "127.0.0.1:9876;".into()),
+            ("PROP_CONSUME_TYPE".into(), "CONSUME_PASSIVELY".into()),
+            ("PROP_CLIENT_VERSION".into(), "V5_5_1".into()),
+            (
+                "PROP_CONSUMER_START_TIMESTAMP".into(),
+                "1700000000000".into(),
+            ),
+        ]),
+        subscription_set: vec![subscription],
+        mq_table: vec![(
+            queue,
+            ConsumerProcessQueueInfo {
+                commit_offset: 17,
+                cached_msg_min_offset: 11,
+                cached_msg_max_offset: 20,
+                cached_msg_count: 3,
+                cached_msg_size_in_mi_b: 2,
+                transaction_msg_min_offset: 2,
+                transaction_msg_max_offset: 3,
+                transaction_msg_count: 1,
+                locked: true,
+                try_unlock_times: 4,
+                last_lock_timestamp: 1_700_000_000_002,
+                droped: false,
+                last_pull_timestamp: 1_700_000_000_003,
+                last_consume_timestamp: 1_700_000_000_004,
+            },
+        )],
+        mq_pop_table: vec![(
+            pop_queue,
+            ConsumerPopProcessQueueInfo {
+                wait_ack_count: 2,
+                droped: false,
+                last_pop_timestamp: 1_700_000_000_005,
+            },
+        )],
+        status_table: std::collections::BTreeMap::from([(
+            "orders".into(),
+            ConsumerConsumeStatus {
+                pull_rt: 0.5,
+                pull_tps: 2.5,
+                consume_rt: 3.5,
+                consume_ok_tps: 4.5,
+                consume_failed_tps: 0.25,
+                consume_failed_msgs: 6,
+            },
+        )]),
+        user_consumer_info: std::collections::BTreeMap::from([("fixture".into(), "value".into())]),
+        jstack: Some("jstack-fixture".into()),
+    };
+    let encoded = body.encode_java_json().unwrap();
+    let mut expected =
+        ConsumerRunningInfoBody::decode_java_json(fixture["body"].as_str().unwrap()).unwrap();
+    let mut actual =
+        ConsumerRunningInfoBody::decode_java_json(std::str::from_utf8(&encoded).unwrap()).unwrap();
+    sort_java_hash_set_fields(&mut expected);
+    sort_java_hash_set_fields(&mut actual);
+    assert_eq!(
+        actual, expected,
+        "only Java HashSet iteration order is normalized"
+    );
+}
+
+fn sort_java_hash_set_fields(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(fields) => {
+            for (name, value) in fields {
+                if matches!(name.as_str(), "tagsSet" | "codeSet") {
+                    if let serde_json::Value::Array(values) = value {
+                        values.sort_by_key(serde_json::Value::to_string);
+                    }
+                } else {
+                    sort_java_hash_set_fields(value);
+                }
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                sort_java_hash_set_fields(value);
+            }
+        }
+        _ => {}
+    }
 }
 
 #[test]
@@ -1168,6 +1284,15 @@ fn header_validation_matrix() {
             "",
             "clientAddr",
             ""
+        ),
+        row!(
+            GetConsumerRunningInfoRequestHeader,
+            "consumer-running-info-request",
+            "consumerGroup clientId",
+            "",
+            "",
+            "ns nsd bname oway",
+            "jstackEnable nsd oway"
         ),
         row!(
             GetConsumerListByGroupRequestHeader,
