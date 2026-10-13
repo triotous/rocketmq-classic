@@ -10,8 +10,8 @@ This standalone Maven project pins `org.apache.rocketmq:rocketmq-client:5.5.1`. 
 
 - Client binary SHA-256: `1c39c94a28e59b292e29d699872d693cdc2ce30bd54c4e0f95a4c377fd9dff84`
 - Client source SHA-256: `de63ae377bcc9b461b0d65b4cb77673d9daabb8f46caabef903826ea7c627e76`
-- Maven fixture runtime: Maven 3.10.0 with Homebrew OpenJDK 27 on macOS arm64 (2026-10-09). Runtime-generated fixtures record `java.runtime.version` and `java.vendor`; the shell's standalone `java` may use another JDK.
-- Full `verify` checks that recorded fixture runtime and its live macOS loopback scope case. Run it with the recorded Maven/JDK/OS when checking the complete fixture set; a different JDK/OS can intentionally report address-fixture drift. On Linux, the `linux-runtime-address-oracle` profile separately checks `address-linux.json` against the pinned Java `NetworkUtil` Linux loopback result.
+- Maven fixture runtime: Maven 3.10.0 with Homebrew OpenJDK 27 on macOS arm64 (2026-10-09). The checked-in macOS address fixture records `java.runtime.version` and `java.vendor`; the shell's standalone `java` may use another JDK.
+- On macOS, `mvn -f compat/java-reference/pom.xml verify` checks the complete recorded address fixture, including its vendor and named `lo0` scope. On Linux, the `linux-runtime-address-oracle` profile verifies portable address outcomes against the same Java major version, then checks Linux IPv6 loopback scope and `/proc/net/if_inet6` address/interface evidence in `address-linux.json`. Vendor strings, interface-specific numeric-scope resolution, macOS scope names and Linux `/proc` flags are not treated as portable client behavior.
 - Source paths verified in tag: `remoting/src/main/java/org/apache/rocketmq/remoting/protocol/RemotingCommand.java`, `RocketMQSerializable.java`, `RequestCode.java`, `ResponseCode.java`, and `client/src/main/java/org/apache/rocketmq/client/impl/MQClientAPIImpl.java`.
 - Maven dependency is pinned and build validation rejects a changed client version. Resolve/check source artifacts with `mvn -f compat/java-reference/pom.xml dependency:sources` when regenerating evidence.
 

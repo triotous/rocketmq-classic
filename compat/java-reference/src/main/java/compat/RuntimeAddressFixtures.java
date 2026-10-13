@@ -295,6 +295,8 @@ public final class RuntimeAddressFixtures {
         Path file = Path.of(args[0]);
         if (args.length > 1 && "--verify".equals(args[1])) {
             if (!json.equals(Files.readString(file))) throw new IllegalStateException("fixture drift: " + file);
+        } else if (args.length > 1 && "--verify-portable".equals(args[1])) {
+            verifyPortableFixture(fixture, file);
         } else {
             Files.createDirectories(file.getParent());
             Files.writeString(file, json);
@@ -305,6 +307,84 @@ public final class RuntimeAddressFixtures {
             + "; Java BMP port-digit code units verified: " + javaPortDigitCases.size()
             + "; Java BMP host code units verified: " + acceptedHostCodeUnitCount
             + "; Java Unicode host code points verified: " + acceptedHostCodePointCount);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void verifyPortableFixture(Map<String, Object> actual, Path file) throws Exception {
+        Map<String, Object> expected = (Map<String, Object>) com.alibaba.fastjson2.JSON.parseObject(
+            Files.readString(file), Map.class);
+        String expectedRuntime = runtimeMajor(String.valueOf(expected.get("javaRuntime")));
+        String actualRuntime = runtimeMajor(String.valueOf(actual.get("javaRuntime")));
+        if (!expectedRuntime.equals(actualRuntime)) {
+            throw new IllegalStateException("Java runtime major drift: expected " + expectedRuntime
+                + ", got " + actualRuntime);
+        }
+        expected.remove("javaRuntime");
+        expected.remove("javaVendor");
+        expected.remove("scopeCases");
+        Map<String, Object> portableActual = (Map<String, Object>) com.alibaba.fastjson2.JSON.parseObject(
+            com.alibaba.fastjson2.JSON.toJSONString(actual), Map.class);
+        portableActual.remove("javaRuntime");
+        portableActual.remove("javaVendor");
+        portableActual.remove("scopeCases");
+        removeNumericScopeResolution(expected);
+        removeNumericScopeResolution(portableActual);
+        if (!portableActual.equals(expected)) {
+            List<String> drift = new ArrayList<>();
+            findDifferences(expected, portableActual, "$", drift);
+            throw new IllegalStateException("portable fixture drift in " + drift + ": " + file);
+        }
+    }
+
+    private static void removeNumericScopeResolution(Map<String, Object> fixture) {
+        Object casesValue = fixture.get("clientAddressCases");
+        if (!(casesValue instanceof List<?>)) return;
+        for (Object caseValue : (List<?>) casesValue) {
+            if (caseValue instanceof Map<?, ?>) ((Map<?, ?>) caseValue).remove("scopedHostResolved");
+        }
+    }
+
+    private static void findDifferences(Object expected, Object actual, String path, List<String> differences) {
+        if (differences.size() >= 20) return;
+        if (expected instanceof Map<?, ?> && actual instanceof Map<?, ?>) {
+            Map<?, ?> expectedMap = (Map<?, ?>) expected;
+            Map<?, ?> actualMap = (Map<?, ?>) actual;
+            for (Map.Entry<?, ?> entry : expectedMap.entrySet()) {
+                Object key = entry.getKey();
+                if (!actualMap.containsKey(key)) {
+                    differences.add(path + "." + key + " is missing");
+                } else {
+                    findDifferences(entry.getValue(), actualMap.get(key), path + "." + key, differences);
+                }
+                if (differences.size() >= 20) return;
+            }
+            for (Object key : actualMap.keySet()) {
+                if (!expectedMap.containsKey(key)) differences.add(path + "." + key + " is unexpected");
+                if (differences.size() >= 20) return;
+            }
+            return;
+        }
+        if (expected instanceof List<?> && actual instanceof List<?>) {
+            List<?> expectedList = (List<?>) expected;
+            List<?> actualList = (List<?>) actual;
+            if (expectedList.size() != actualList.size()) {
+                differences.add(path + ".length expected=" + expectedList.size() + " actual=" + actualList.size());
+            }
+            int count = Math.min(expectedList.size(), actualList.size());
+            for (int index = 0; index < count; index++) {
+                findDifferences(expectedList.get(index), actualList.get(index), path + "[" + index + "]", differences);
+                if (differences.size() >= 20) return;
+            }
+            return;
+        }
+        if (!java.util.Objects.equals(expected, actual)) {
+            differences.add(path + " expected=" + expected + " actual=" + actual);
+        }
+    }
+
+    private static String runtimeMajor(String version) {
+        int separator = version.indexOf('.');
+        return separator < 0 ? version : version.substring(0, separator);
     }
 
     private static void add(List<Object> addresses, String literal, int scope, InetAddress ip) {

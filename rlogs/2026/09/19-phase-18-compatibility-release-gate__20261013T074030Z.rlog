@@ -4,3 +4,9 @@
 - Corrected the benchmark's reported Remoting input length to use the encoded frame size (427 bytes) and route-lookup input size to use the key length (10 bytes), with the 128-entry route dataset explicit in the benchmark name.
 - PASS: `cargo fmt --all -- --check`; `cargo bench -p rocketmq-classic --bench offline --locked`; `cargo clippy -p rocketmq-classic --bench offline --all-features --locked -- -D warnings`.
 - Recorded fixed-input latency and allocator observations, host/toolchain, sample counts, interpretation limits, and reproduction commands in `docs/compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`. The measurements are observations only and define no performance threshold.
+
+Linux server-free oracle/CI preparation (2026-10-13 07:50 UTC):
+- The existing Java address fixture embeds Homebrew/macOS interface details and Java vendor metadata; the Linux profile also compared the entire volatile `/proc/net/if_inet6` line. Added a Linux portable comparison that still requires the pinned Java major version 27 and exact stable API outcomes, while the Linux oracle checks loopback IPv6/interface identity and `/proc` address/interface evidence without machine-specific flags. macOS keeps strict full-fixture verification.
+- Added Java 27 setup and Phase 18 server-free Rust, Python, Maven, example, fuzz-smoke, stress-smoke, and benchmark-compilation commands to `.github/workflows/ci.yml`.
+- PASS: portable address oracle on the local Java 27 runtime via `mvn -f compat/java-reference/pom.xml compile exec:java@verify-runtime-address-fixtures -Druntime.address.fixture.verify.mode=--verify-portable`; strict complete `mvn -q -f compat/java-reference/pom.xml verify` on macOS (37 manifest scenarios, Java cross-decodes and generated-fixture checks).
+- Linux-specific Maven profile is not executable on this macOS host; CI is configured to execute it on Ubuntu. No Broker or Docker was started.

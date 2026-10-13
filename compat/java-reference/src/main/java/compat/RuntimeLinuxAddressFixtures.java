@@ -58,7 +58,8 @@ public final class RuntimeLinuxAddressFixtures {
             candidate.put("scopeId", ipv6.getScopeId());
             candidate.put("hostAddress", ipv6.getHostAddress());
             candidate.put("normalized", NetworkUtil.normalizeHostAddress(ipv6));
-            candidate.put("procRow", procRow);
+            candidate.put("procEntryAddress", expectedHex);
+            candidate.put("procEntryInterface", networkInterface.getName());
             loopbackCandidates.add(candidate);
         }
 

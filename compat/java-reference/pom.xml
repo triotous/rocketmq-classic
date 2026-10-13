@@ -9,6 +9,7 @@
     <maven.compiler.release>11</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <rocketmq.client.version>5.5.1</rocketmq.client.version>
+    <runtime.address.fixture.verify.mode>--verify</runtime.address.fixture.verify.mode>
     <!-- Set false only when regenerating the forked runtime-start fixture. -->
     <start.fixture.verify>true</start.fixture.verify>
     <!-- Set false only when regenerating the producer core fixture. -->
@@ -172,7 +173,7 @@
               <mainClass>compat.RuntimeAddressFixtures</mainClass>
               <arguments>
                 <argument>${project.basedir}/../../fixtures/runtime/address.json</argument>
-                <argument>--verify</argument>
+                <argument>${runtime.address.fixture.verify.mode}</argument>
               </arguments>
             </configuration>
           </execution>
@@ -617,6 +618,9 @@
       <activation>
         <os><name>Linux</name></os>
       </activation>
+      <properties>
+        <runtime.address.fixture.verify.mode>--verify-portable</runtime.address.fixture.verify.mode>
+      </properties>
       <build>
         <plugins>
           <plugin>
