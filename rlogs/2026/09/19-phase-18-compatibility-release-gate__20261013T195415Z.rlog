@@ -46,3 +46,8 @@
 - PASS: `cargo test --workspace --locked`; `cargo test --workspace --all-features --locked`; strict all-target/all-feature workspace Clippy; formatting and `git diff --check`; offline Java reference Maven verify; comparator self-test; 37-scenario manifest validation; workspace metadata/package checks; offline stress smoke (16 cases × 3); fuzz smoke (1,824 bounded mutations); facade examples build; offline release benchmark; and benchmark-target strict Clippy.
 - Latest local benchmark observations are recorded in `docs/compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`. Allocation counts and byte totals matched the prior capture; timing is host-specific and is not an acceptance threshold.
 - P18-V01 remains PARTIAL for the full Java↔Rust source, branch/input behavior, and Java reverse-export audit. No current-revision GitHub Ubuntu result is available without a pushed/triggered workflow. Phase 19 Broker/Docker runner and scenario execution remain outstanding; `0.1.0` release intent and crates.io dependency resolution remain unconfirmed. The final Windows IP Helper, non-macOS BSD address enumeration, and actual IPv6-only host checks remain manual validation.
+
+# Phase 18 cross-phase status audit correction — 2026-10-13
+
+- Read the current Phase 11 and Phase 12 matrices during the P18-V01 cross-phase audit. Phase 11 still described orderly assignment as PARTIAL until Phase 12, although Phase 12 now has Java-mapped lock renewal, expiry, queue serialization, callback and shutdown evidence. Replaced the stale statement with the current state and retained live mixed-client Broker contention as the Phase 19 handoff.
+- No implementation or plan change. Validation: `git diff --check`.

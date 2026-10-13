@@ -48,7 +48,11 @@ against the same pinned Java client. Fixture SHA-256:
 | P11-U02 | Pull rebalance settings and public registration/query API; broadcasting and clustering assignment, listener callbacks, safe offset removal and retry on unavailable membership | UNIT_VERIFIED — `pull_rebalance_settings_default_to_java_values_and_registration_sets_listener`, `pull_runtime_rebalance_assigns_all_broadcast_queues_and_persists_removals`, `pull_clustering_rebalance_uses_membership_and_keeps_assignment_when_unavailable`, and `startup_registration_and_shutdown_obey_consumer_lifecycle` |
 | P11-V03/P11-V04 | Live mixed-client and bidirectional Push scenarios | PENDING_PHASE_19 |
 
-Orderly assignment remains PARTIAL until Phase 12 activates Broker queue locks.
+Orderly assignment was partial at the Phase 11 checkpoint and was completed by
+Phase 12, which activates Java-compatible Broker queue locks and verifies lock
+renewal, expiry, queue serialization, callback outcomes, and shutdown cleanup
+with scripted RPC and paused-time tests. Live mixed-client Broker contention
+remains pending Phase 19 (`P12-V03`).
 
 ## Validation record
 
