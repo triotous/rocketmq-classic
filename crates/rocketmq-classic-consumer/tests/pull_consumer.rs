@@ -489,7 +489,7 @@ async fn pull_routes_per_queue_returns_decoded_messages_and_only_explicitly_pers
     );
     assert_eq!(
         store.all_persists.lock().unwrap().as_slice(),
-        &[vec![namespaced_queue0]]
+        &[Vec::<MessageQueue>::new()]
     );
 
     timeout(Duration::from_secs(3), nameserver_peer)

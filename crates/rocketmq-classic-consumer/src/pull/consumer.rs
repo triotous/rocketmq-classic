@@ -688,9 +688,9 @@ impl PullConsumer {
             }
         };
 
-        let queues = offset_store
-            .clone_offset_table(None)
-            .into_keys()
+        let queues = read_lock(&self.in_balance_queues)
+            .iter()
+            .cloned()
             .collect::<Vec<_>>();
         // Java shutdown swallows a persistence error, then still unregisters.
         let _ = offset_store.persist_all(&queues).await;
@@ -1495,9 +1495,9 @@ impl PullConsumer {
 
     pub async fn persist_consumer_offset(&self) -> Result<(), PullConsumerError> {
         let (_, store) = self.started_runtime().await?;
-        let queues = store
-            .clone_offset_table(None)
-            .into_keys()
+        let queues = read_lock(&self.in_balance_queues)
+            .iter()
+            .cloned()
             .collect::<Vec<_>>();
         store.persist_all(&queues).await?;
         Ok(())
@@ -1739,11 +1739,11 @@ impl ConsumerRuntime for PullConsumerRegistration {
         &self,
     ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>>> {
         let store = self.offset_store.upgrade()?;
+        let queues = read_lock(&self.in_balance_queues)
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
         Some(Box::pin(async move {
-            let queues = store
-                .clone_offset_table(None)
-                .into_keys()
-                .collect::<Vec<_>>();
             let _ = store.persist_all(&queues).await;
         }))
     }
@@ -3124,6 +3124,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn pull_persist_consumer_offset_uses_only_current_assignment() {
+        let mut config = PullConsumerConfig::new("pull-persist-assigned-offsets").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        config
+            .client_config_mut()
+            .set_persist_consumer_offset_interval(60_000);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PullConsumer::with_manager(config, manager));
+        let store = Arc::new(TestOffsetStore::default());
+        let store_trait: Arc<dyn OffsetStore> = store.clone();
+        consumer.set_offset_store(Some(store_trait)).await.unwrap();
+        consumer.start().await.unwrap();
+
+        let assigned = MessageQueue::new("orders", "broker-a", 0);
+        let unassigned = MessageQueue::new("orders", "broker-a", 1);
+        store.update_offset(&assigned, 10, false);
+        store.update_offset(&unassigned, 20, false);
+        write_lock(&consumer.in_balance_queues).insert(assigned.clone());
+
+        consumer.persist_consumer_offset().await.unwrap();
+        assert_eq!(*store.persisted.lock().unwrap(), vec![assigned.clone()]);
+
+        store.persisted.lock().unwrap().clear();
+        consumer.shutdown().await.unwrap();
+        assert_eq!(*store.persisted.lock().unwrap(), vec![assigned]);
+    }
+
+    #[tokio::test]
     async fn pull_runtime_rebalance_assigns_all_broadcast_queues_and_persists_removals() {
         let mut config = PullConsumerConfig::new("pull-rebalance-broadcast").unwrap();
         config.set_message_model(MessageModel::Broadcasting);
@@ -3143,8 +3171,10 @@ mod tests {
         });
         let first = MessageQueue::new("orders", "broker-a", 0);
         let second = MessageQueue::new("orders", "broker-a", 1);
+        let unassigned = MessageQueue::new("payments", "broker-a", 0);
         store.update_offset(&first, 11, false);
         store.update_offset(&second, 22, false);
+        store.update_offset(&unassigned, 33, false);
         let registration = Arc::new(PullConsumerRegistration {
             group: "pull-rebalance-broadcast".to_owned(),
             message_model: MessageModel::Broadcasting,
@@ -3203,7 +3233,13 @@ mod tests {
             read_lock(&registration.in_balance_queues).clone(),
             BTreeSet::from([first.clone(), second.clone()])
         );
-        assert!(store.values.lock().unwrap().is_empty());
+        assert_eq!(
+            store.values.lock().unwrap().get(&unassigned),
+            Some(&33),
+            "rebalance leaves the unrelated offset untouched"
+        );
+        assert!(!store.values.lock().unwrap().contains_key(&first));
+        assert!(!store.values.lock().unwrap().contains_key(&second));
         {
             let changes_guard = changes.lock().unwrap();
             assert!(changes_guard.iter().any(|(topic, all, assigned)| {
@@ -3219,6 +3255,15 @@ mod tests {
             1,
             "unchanged assignments do not notify"
         );
+
+        let persist = ConsumerRuntime::persist_consumer_offset(&*registration).unwrap();
+        persist.await;
+        assert_eq!(
+            store.persisted.lock().unwrap().as_slice(),
+            &[first.clone(), second.clone()],
+            "periodic persistence skips offsets outside the current assignment"
+        );
+        store.persisted.lock().unwrap().clear();
 
         write_lock(&registration.topic_queues)
             .insert("orders".to_owned(), BTreeSet::from([second.clone()]));

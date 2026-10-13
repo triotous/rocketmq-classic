@@ -1,5 +1,6 @@
 package compat;
 
+import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -11,7 +12,10 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import org.apache.rocketmq.client.consumer.DefaultMQPullConsumer;
 import org.apache.rocketmq.client.consumer.MessageSelector;
+import org.apache.rocketmq.client.consumer.store.OffsetStore;
 import org.apache.rocketmq.client.impl.consumer.DefaultMQPullConsumerImpl;
+import org.apache.rocketmq.client.impl.consumer.ProcessQueue;
+import org.apache.rocketmq.common.ServiceState;
 import org.apache.rocketmq.common.consumer.ConsumeFromWhere;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.message.MessageQueue;
@@ -144,6 +148,26 @@ public final class PullImplementationAccessorFixtures {
         first.updateTopicSubscribeInfo("not-subscribed", rebalanceInfo);
         boolean subscribeInfoStoredForUnsubscribedTopic = first.getRebalanceImpl()
             .getTopicSubscribeInfoTable().containsKey("not-subscribed");
+        List<String> persistedQueues = new ArrayList<>();
+        OffsetStore recordingOffsetStore = (OffsetStore) Proxy.newProxyInstance(
+            OffsetStore.class.getClassLoader(), new Class<?>[] {OffsetStore.class},
+            (proxy, method, arguments) -> {
+                if ("persistAll".equals(method.getName())) {
+                    for (Object queue : (Iterable<?>) arguments[0]) {
+                        persistedQueues.add(queueKey((MessageQueue) queue));
+                    }
+                }
+                return null;
+            });
+        MessageQueue assignedPersistQueue = new MessageQueue("assigned-topic", "broker-persist", 4);
+        first.setOffsetStore(recordingOffsetStore);
+        first.setServiceState(ServiceState.RUNNING);
+        first.getRebalanceImpl().getProcessQueueTable().put(assignedPersistQueue, new ProcessQueue());
+        first.persistConsumerOffset();
+        first.getRebalanceImpl().getProcessQueueTable().clear();
+        first.setServiceState(ServiceState.CREATE_JUST);
+        first.setOffsetStore(null);
+        persistedQueues.sort(String::compareTo);
         first.subscriptionAutomatically("raw-topic");
         SubscriptionData automaticSubscription = subscriptionInner.get("raw-topic");
         check(automaticSubscription != null, "automatic subscription inserted");
@@ -238,6 +262,7 @@ public final class PullImplementationAccessorFixtures {
         fixture.put("subscribeInfoStoredForSubscribedTopic", subscribeInfoStoredForSubscribedTopic);
         fixture.put("subscribedTopicNeedsUpdateAfterInfo", subscribedTopicNeedsUpdateAfterInfo);
         fixture.put("subscribeInfoStoredForUnsubscribedTopic", subscribeInfoStoredForUnsubscribedTopic);
+        fixture.put("persistConsumerOffsetOutputQueues", persistedQueues);
         fixture.put("groupNameBeforeStart", groupNameBeforeStart);
         fixture.put("messageModelBeforeMutation", messageModelBeforeMutation.name());
         fixture.put("messageModelAfterMutation", messageModelAfterMutation.name());
