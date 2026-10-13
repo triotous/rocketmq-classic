@@ -34,19 +34,23 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   Rust regression pass. The returned Push implementation's 71 declared public
   signatures are now captured from the pinned Java fixture and count-pinned in
   Rust. Its `consumerRunningInfo` method now has a direct Rust owner API and
-  fixture-backed running-flow checks. `adjustThreadPool` now has a direct
-  owner mapping and fixture evidence for the pinned built-in services' no-op
-  behavior. `RebalancePushImpl.messageQueueChanged` now has an invoked Java
-  fixture and Rust regression for global queue/size threshold scaling across
-  multiple topics, later assignment changes, empty-table retention, pull
-  backpressure, and running-info values; fixture SHA-256
-  `e3d24681be1616915fc68951c5ffb82c707be7785e069b36a288e454c5a6fe80`. Other
-  signatures still need
-  method-by-method mappings or internal-entrypoint dispositions. Pull
+  fixture-backed running-flow checks. `adjustThreadPool` has a direct owner
+  mapping and fixture evidence for the pinned built-in services' no-op
+  behavior. The raw `executeTask`/`executeTaskLater` methods map to the
+  owner-scoped runtime scheduler and now have invoked-fixture plus lifecycle /
+  delay regressions. The raw consume-service, stats-manager, and client-factory
+  accessors have source-backed internal-entrypoint dispositions: their owner
+  flows are covered, while mutable Java service/factory handles stay internal
+  to the Rust lifecycle owner. `RebalancePushImpl.messageQueueChanged` has an
+  invoked Java fixture and Rust regression for global queue/size threshold
+  scaling across multiple topics, later assignment changes, empty-table
+  retention, pull backpressure, and running-info values; fixture SHA-256
+  `c531359f6121cd35087a50150bebc14064f4a9d423825f2fdbb16aa7629adf67`. The
+  raw Push inventory now has a method-level mapping or reviewed disposition;
+  the broad Phase 6 source/API/input/reverse-export audit remains open. Pull
   `getRebalanceImpl`, both `pullKernelImpl` overloads, `popAsync`, and the
   `RebalanceImpl`/`RebalancePullImpl` surface now have source-based owner-flow
-  mappings or internal-entrypoint dispositions. The remaining Push signatures
-  and broad Phase 6 behavior reconciliation remain open. Pull
+  mappings or internal-entrypoint dispositions. Pull
   `sendMessageBack`/`maxReconsumeTimes` covers the 3000 ms timeout and logical
   Broker route lookup offline; its live Broker handoff remains pending.
 - [x] Register live cases in the Phase 19 scenario manifest and validate the

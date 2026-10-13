@@ -1358,6 +1358,43 @@ impl PushConsumer {
         Ok(self.running_info_body(&runtime, None, Some(offset_store)))
     }
 
+    /// Submits an owner task to the shared runtime's PullMessageService worker.
+    ///
+    /// This is the Rust owner equivalent of Java's raw implementation
+    /// `executeTask(Runnable)` entrypoint. Tasks share the client runtime and
+    /// are retired with that runtime's lifecycle.
+    pub async fn execute_task(
+        &self,
+        task: impl Future<Output = ()> + Send + 'static,
+    ) -> Result<(), PushConsumerError> {
+        self.active_client_runtime().await?.execute_task(task)?;
+        Ok(())
+    }
+
+    /// Schedules an owner task on the shared runtime after the requested
+    /// delay. Non-positive delays are immediately eligible, matching Java's
+    /// scheduled-executor behavior for negative and zero delays.
+    pub async fn execute_task_later(
+        &self,
+        task: impl Future<Output = ()> + Send + 'static,
+        delay_millis: i64,
+    ) -> Result<(), PushConsumerError> {
+        self.active_client_runtime()
+            .await?
+            .execute_task_later(task, delay_millis)?;
+        Ok(())
+    }
+
+    async fn active_client_runtime(&self) -> Result<Arc<ClientRuntime>, PushConsumerError> {
+        match &*self.state.lock().await {
+            State::Started { runtime, .. } => {
+                runtime.upgrade().ok_or(PushConsumerError::NotStarted)
+            }
+            State::Created => Err(PushConsumerError::NotStarted),
+            State::Shutdown => Err(PushConsumerError::Shutdown),
+        }
+    }
+
     pub(crate) fn running_info_body(
         &self,
         runtime: &ClientRuntime,
@@ -6103,6 +6140,17 @@ mod tests {
         assert_eq!(fixture["configuredConsumerGroup"], group);
         assert_eq!(fixture["rawFacadeConsumerIdentityStable"], true);
         assert_eq!(fixture["rawFacadeConsumerGroup"], group);
+        assert_eq!(fixture["clientFactoryInitiallyNull"], true);
+        assert_eq!(fixture["clientFactorySetterPreservesIdentity"], true);
+        assert_eq!(fixture["consumeMessageServiceInitiallyNull"], true);
+        assert_eq!(
+            fixture["consumeMessageServiceSetterPreservesIdentity"],
+            true
+        );
+        assert_eq!(
+            fixture["consumerStatsManagerGetterPreservesFactoryIdentity"],
+            true
+        );
         assert_eq!(
             fixture["rawImplementationPublicMethodSignatures"]
                 .as_array()
@@ -7831,6 +7879,112 @@ mod tests {
             .start(Arc::downgrade(consumer), pull_scheduler)
             .unwrap();
         runtime
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn raw_task_entrypoints_use_the_owner_runtime_and_lifecycle() {
+        let mut config = PushConsumerConfig::new("push-task-entrypoints").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/push-implementation-accessor.json"
+        ))
+        .unwrap();
+
+        assert_eq!(fixture["executeTaskRuns"], 1);
+        assert_eq!(fixture["executeTaskServiceCalls"], 1);
+        assert_eq!(fixture["executeTaskLaterRuns"], 1);
+        assert_eq!(fixture["executeTaskLaterDelayMillis"][0], 17);
+
+        assert!(matches!(
+            consumer.execute_task(async {}).await,
+            Err(PushConsumerError::NotStarted)
+        ));
+        assert!(matches!(
+            consumer.execute_task_later(async {}, 1).await,
+            Err(PushConsumerError::NotStarted)
+        ));
+
+        install_started_consumer(
+            &consumer,
+            &manager,
+            Arc::new(RecordingOffsetStore::default()),
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+
+        let immediate_ran = Arc::new(AtomicBool::new(false));
+        let task_flag = immediate_ran.clone();
+        consumer
+            .execute_task(async move {
+                task_flag.store(true, Ordering::Release);
+            })
+            .await
+            .unwrap();
+        for _ in 0..64 {
+            if immediate_ran.load(Ordering::Acquire) {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert!(immediate_ran.load(Ordering::Acquire));
+
+        let delayed_ran = Arc::new(AtomicBool::new(false));
+        let delayed_flag = delayed_ran.clone();
+        consumer
+            .execute_task_later(
+                async move {
+                    delayed_flag.store(true, Ordering::Release);
+                },
+                25,
+            )
+            .await
+            .unwrap();
+        for _ in 0..16 {
+            tokio::task::yield_now().await;
+        }
+        assert!(!delayed_ran.load(Ordering::Acquire));
+        tokio::time::advance(Duration::from_millis(24)).await;
+        for _ in 0..16 {
+            tokio::task::yield_now().await;
+        }
+        assert!(!delayed_ran.load(Ordering::Acquire));
+        tokio::time::advance(Duration::from_millis(1)).await;
+        for _ in 0..64 {
+            if delayed_ran.load(Ordering::Acquire) {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert!(delayed_ran.load(Ordering::Acquire));
+
+        let negative_delay_ran = Arc::new(AtomicBool::new(false));
+        let negative_delay_flag = negative_delay_ran.clone();
+        consumer
+            .execute_task_later(
+                async move {
+                    negative_delay_flag.store(true, Ordering::Release);
+                },
+                -1,
+            )
+            .await
+            .unwrap();
+        for _ in 0..64 {
+            if negative_delay_ran.load(Ordering::Acquire) {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert!(negative_delay_ran.load(Ordering::Acquire));
+
+        consumer.shutdown().await.unwrap();
+        assert!(matches!(
+            consumer.execute_task(async {}).await,
+            Err(PushConsumerError::Shutdown)
+        ));
     }
 
     async fn install_started_orderly_consumer(

@@ -36,6 +36,7 @@ import org.apache.rocketmq.client.impl.consumer.DefaultMQPushConsumerImpl;
 import org.apache.rocketmq.client.impl.consumer.PopProcessQueue;
 import org.apache.rocketmq.client.impl.consumer.ProcessQueue;
 import org.apache.rocketmq.client.impl.consumer.PullRequest;
+import org.apache.rocketmq.client.impl.consumer.PullMessageService;
 import org.apache.rocketmq.client.impl.consumer.RebalancePushImpl;
 import org.apache.rocketmq.client.impl.factory.MQClientInstance;
 import org.apache.rocketmq.client.stat.ConsumerStatsManager;
@@ -92,6 +93,7 @@ public final class PushImplementationAccessorFixtures {
         String consumeType = first.consumeType().name();
         String consumeFromWhere = first.consumeFromWhere().name();
         boolean unitMode = first.isUnitMode();
+        boolean clientFactoryInitiallyNull = first.getmQClientFactory() == null;
         boolean messageQueueListenerInitiallyNull = first.getMessageQueueListener() == null;
         boolean rawMessageListenerInitiallyNull = first.getMessageListenerInner() == null;
         MessageListenerConcurrently rawMessageListener =
@@ -101,8 +103,9 @@ public final class PushImplementationAccessorFixtures {
             first.getMessageListenerInner() == rawMessageListener;
         boolean rawFacadeConsumerIdentityStable = first.getDefaultMQPushConsumer() == consumer;
         String rawFacadeConsumerGroup = first.getDefaultMQPushConsumer().getConsumerGroup();
+        boolean consumeMessageServiceInitiallyNull = first.getConsumeMessageService() == null;
         AtomicInteger adjustThreadPoolDecreaseCalls = new AtomicInteger();
-        first.setConsumeMessageService((ConsumeMessageService) Proxy.newProxyInstance(
+        ConsumeMessageService rawConsumeMessageService = (ConsumeMessageService) Proxy.newProxyInstance(
             ConsumeMessageService.class.getClassLoader(),
             new Class<?>[] {ConsumeMessageService.class},
             (proxy, method, methodArgs) -> {
@@ -110,7 +113,10 @@ public final class PushImplementationAccessorFixtures {
                     adjustThreadPoolDecreaseCalls.incrementAndGet();
                 }
                 return "getCorePoolSize".equals(method.getName()) ? 7 : null;
-            }));
+            });
+        first.setConsumeMessageService(rawConsumeMessageService);
+        boolean consumeMessageServiceSetterPreservesIdentity =
+            first.getConsumeMessageService() == rawConsumeMessageService;
         int adjustThreadPoolCorePoolSizeBefore = first.getConsumeMessageService().getCorePoolSize();
         first.adjustThreadPool();
         int adjustThreadPoolCorePoolSizeAfter = first.getConsumeMessageService().getCorePoolSize();
@@ -144,6 +150,11 @@ public final class PushImplementationAccessorFixtures {
         first.resume();
         RecordingMqClientInstance resetFactory = recordingMqClientInstance();
         first.setmQClientFactory(resetFactory);
+        boolean clientFactorySetterPreservesIdentity = first.getmQClientFactory() == resetFactory;
+        AtomicInteger immediateTaskRuns = new AtomicInteger();
+        AtomicInteger delayedTaskRuns = new AtomicInteger();
+        first.executeTask(immediateTaskRuns::incrementAndGet);
+        first.executeTaskLater(delayedTaskRuns::incrementAndGet, 17L);
         first.getRebalanceImpl().setmQClientFactory(resetFactory);
         SubscriptionData emptySubscription = new SubscriptionData();
         emptySubscription.setTopic("empty");
@@ -262,6 +273,14 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("consumeType", consumeType);
         fixture.put("consumeFromWhere", consumeFromWhere);
         fixture.put("unitMode", unitMode);
+        fixture.put("clientFactoryInitiallyNull", clientFactoryInitiallyNull);
+        fixture.put("clientFactorySetterPreservesIdentity", clientFactorySetterPreservesIdentity);
+        fixture.put("executeTaskRuns", immediateTaskRuns.get());
+        fixture.put("executeTaskServiceCalls", resetFactory.pullMessageService.immediateTaskCalls);
+        fixture.put("executeTaskLaterRuns", delayedTaskRuns.get());
+        fixture.put("executeTaskLaterDelayMillis", resetFactory.pullMessageService.delayedTaskMillis);
+        fixture.put("consumeMessageServiceInitiallyNull", consumeMessageServiceInitiallyNull);
+        fixture.put("consumeMessageServiceSetterPreservesIdentity", consumeMessageServiceSetterPreservesIdentity);
         fixture.put("messageQueueListenerInitiallyNull", messageQueueListenerInitiallyNull);
         fixture.put("rawMessageListenerInitiallyNull", rawMessageListenerInitiallyNull);
         fixture.put("rawMessageListenerGetterPreservesIdentity", rawMessageListenerGetterPreservesIdentity);
@@ -559,6 +578,8 @@ public final class PushImplementationAccessorFixtures {
                 (proxy, method, methodArgs) -> "getCorePoolSize".equals(method.getName()) ? 7 : null));
             ConsumerRunningInfo info = implementation.consumerRunningInfo();
             Map<String, Object> result = new LinkedHashMap<>();
+            result.put("consumerStatsManagerGetterPreservesFactoryIdentity",
+                implementation.getConsumerStatsManager() == factory.stats);
             result.put("rawRunningInfoSubscriptionCount", info.getSubscriptionSet().size());
             result.put("rawRunningInfoQueueCount", info.getMqTable().size());
             result.put("rawRunningInfoPopQueueCount", info.getMqPopTable().size());
@@ -588,6 +609,7 @@ public final class PushImplementationAccessorFixtures {
         private List<Map<String, Object>> resets;
         private int heartbeatCalls;
         private MQAdminImpl admin;
+        private RecordingPullMessageService pullMessageService;
         private ScheduledExecutorService statsScheduler;
         private ConsumerStatsManager stats;
 
@@ -599,6 +621,7 @@ public final class PushImplementationAccessorFixtures {
             searches = new ArrayList<>();
             resets = new ArrayList<>();
             heartbeatCalls = 0;
+            pullMessageService = new RecordingPullMessageService();
             this.admin = new MQAdminImpl(this) {
                 @Override
                 public long searchOffset(MessageQueue queue, long timestamp) throws MQClientException {
@@ -612,6 +635,11 @@ public final class PushImplementationAccessorFixtures {
         @Override
         public MQAdminImpl getMQAdminImpl() {
             return admin;
+        }
+
+        @Override
+        public PullMessageService getPullMessageService() {
+            return pullMessageService;
         }
 
         @Override
@@ -653,6 +681,27 @@ public final class PushImplementationAccessorFixtures {
             reset.put("group", group);
             reset.put("offsets", offsets);
             resets.add(reset);
+        }
+    }
+
+    private static final class RecordingPullMessageService extends PullMessageService {
+        private int immediateTaskCalls;
+        private final List<Long> delayedTaskMillis = new ArrayList<>();
+
+        private RecordingPullMessageService() {
+            super(null);
+        }
+
+        @Override
+        public void executeTask(Runnable task) {
+            immediateTaskCalls++;
+            task.run();
+        }
+
+        @Override
+        public void executeTaskLater(Runnable task, long delayMillis) {
+            delayedTaskMillis.add(delayMillis);
+            task.run();
         }
     }
 }
