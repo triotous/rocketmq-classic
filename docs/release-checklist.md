@@ -52,12 +52,11 @@ Before any publication:
 
 ## Apache license files
 
-- [ ] Add the full Apache License 2.0 text at the repository root. The manifests
-  declare `Apache-2.0`, but no root `LICENSE` file is present.
-- [ ] Review whether this repository's Java reference fixtures or other
-  included material require attribution in a root `NOTICE` file. No root
-  `NOTICE` file is currently present; its absence is not evidence that no
-  attribution is required.
+- [x] Add the full Apache License 2.0 text at the repository root, matching
+  the workspace manifests' `Apache-2.0` declaration.
+- [x] Preserve the Apache RocketMQ reference `NOTICE` at the repository root
+  for the Java 5.5.1 compatibility harness and its source-derived fixtures.
+  The broader package-content and dependency provenance review remains open.
 
 ## Final release boundary
 

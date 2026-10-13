@@ -28,3 +28,8 @@ Pull implementation accessor/send-back follow-up (2026-10-13 08:34 UTC):
 - Initial `cargo fmt --all -- --check` found a formatting delta and was corrected with `cargo fmt --all`. The first consumer test compile exposed a test-only attempt to initialize private `RouteSnapshot` state; changed the test to start from `RouteSnapshot::default()` and populate its public topic table. These failures are retained here.
 - PASS: `cargo fmt --all -- --check`; `cargo test -p rocketmq-classic-consumer --locked` (168 unit tests plus all consumer integration targets); `cargo clippy -p rocketmq-classic-consumer --all-targets --all-features --locked -- -D warnings`; full workspace default and all-feature locked test suites; strict workspace Clippy before the final route-refresh removal; `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios, invoked Java 5.5.1 source fixtures and generated cross-decodes); `git diff --check`.
 - No Docker or live Broker was started. The documented logical Broker/timeout behavior is offline-verified; live send-back, the remaining raw API audit, P18-V01 and Phase 19 acceptance stay open.
+
+Apache license and attribution preparation (2026-10-13 08:37 UTC):
+- Added the full root Apache License 2.0 text and preserved the Apache RocketMQ reference NOTICE for the Java 5.5.1 compatibility harness/fixtures, copying both files from the read-only reference checkout. Marked those two release-checklist items complete; package contents and dependency license/provenance review remain open.
+- PASS: `cmp LICENSE /Users/bruce.tsai/Projects/3rd/rocketmq/LICENSE`; `cmp NOTICE /Users/bruce.tsai/Projects/3rd/rocketmq/NOTICE`; `git diff --check`.
+- No build or test was needed for these text-only additions.
