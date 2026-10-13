@@ -50,3 +50,8 @@
 
 - Updated the global Java compatibility summary for Push raw implementation and Pull scheduling: the Phase 10/11 method matrices now show the formerly cited 71-method Push audit complete and assignment locally verified. Changed those rows to `UNIT_VERIFIED` while retaining P10-V03's Broker retry/DLQ handoff under Phase 19.
 - No implementation or test changes. `git diff --check` is the validation for this documentation-only correction.
+
+# Phase 18 preliminary Rust public-name reverse scan — 2026-10-13T19:47:03Z
+
+- Ran a source-only heuristic scan of `pub fn` and public type/constant declarations under the producer, consumer, and facade crates, then searched for exact Rust identifier tokens in compatibility Markdown. It found 187 producer declaration names (129 absent as exact tokens), 336 consumer declaration names (145 absent), and no declarations directly in the re-export-only facade crate.
+- These counts are candidate evidence gaps, not confirmed missing APIs: the scan includes declarations in modules and names documented by behavior-family rather than exact token. P18-V01 still needs a re-export-aware, type/method-level Java source and unit-evidence crosswalk. No code or test changes were made; this scan alone does not change any compatibility status.
