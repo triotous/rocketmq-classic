@@ -1,0 +1,1 @@
+- Follow-up documentation commit `a22875d7` refreshes the P18-V01 release-checklist summary with the 527-case Route DTO corpus and 128 raw-control probes. `git diff --check` passed; no plan changed.
