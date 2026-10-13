@@ -167,3 +167,11 @@
 - Extended the invoked Java 5.5.1 Push implementation fixture to call `getRebalanceImpl()` twice and assert non-null stable object identity. Rust verifies both accessor results point to the same `PushConsumer`. Fixture SHA-256: `cfb8a5dcf402c21e620f4c1c2ebc260a954c4c68f028d93e385699d1a4a284ba`.
 - PASS: `cargo test -p rocketmq-classic-consumer raw_push_implementation_accessor_retains_identity --locked`; strict consumer Clippy (`--all-targets --all-features --locked -- -D warnings`); `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios and fixture drift); `cargo fmt --all -- --check`; `git diff --check`.
 - This closes accessor identity only. `RebalancePushImpl` method-flow reconciliation and the remaining Push raw surface stay open for P18-V01. The Java checkout was not modified.
+
+## P18-V01 Push POP consume-init mode mapping — 2026-10-13 UTC
+
+- Audited `RebalancePushImpl.getConsumeInitMode`: Java returns `MIN` (0) only for `CONSUME_FROM_FIRST_OFFSET`, and `MAX` (1) for the other five `ConsumeFromWhere` values. Added `PushConsumer::consume_init_mode` and routed POP header creation through that owner method.
+- Extended the invoked pinned Java fixture to call `getRebalanceImpl().getConsumeInitMode()` for every Java enum value. Rust compares all six results. Fixture SHA-256: `ba6729eefd9488face728d29910614dc4fe817adf686f33f9a279877c897b7c1`.
+- Initial Rust compile failed because the fixture's `i64` JSON number was compared with the API's `i32`; changed the assertion to compare `i64::from(...)`, then all checks passed.
+- PASS: `cargo test -p rocketmq-classic-consumer --locked` (192 unit tests plus all consumer integration/doc targets); strict consumer Clippy (`--all-targets --all-features --locked -- -D warnings`); `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios and fixture drift); `cargo fmt --all -- --check`; `git diff --check`.
+- The `getConsumeInitMode` flow is mapped; other `RebalancePushImpl` methods and the remaining Push raw implementation signatures remain under P18-V01 audit. No pinned Java sources were changed.

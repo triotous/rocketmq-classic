@@ -464,6 +464,16 @@ impl PushConsumer {
         self
     }
 
+    /// Returns Java `RebalancePushImpl.getConsumeInitMode()` (`MIN = 0`,
+    /// `MAX = 1`) for the configured consume origin.
+    pub fn consume_init_mode(&self) -> i32 {
+        if self.config.consume_from_where() == ConsumeFromWhere::ConsumeFromFirstOffset {
+            0
+        } else {
+            1
+        }
+    }
+
     /// Returns Java's `DefaultMQPushConsumerImpl.getServiceState()` value.
     pub fn service_state(&self) -> Option<ConsumerServiceState> {
         *read_lock(&self.service_state)
@@ -3814,13 +3824,7 @@ impl PushConsumer {
                 invisible_time: self.config.pop_invisible_time_millis(),
                 poll_time,
                 born_time: epoch_millis(),
-                init_mode: if self.config.consume_from_where()
-                    == ConsumeFromWhere::ConsumeFromFirstOffset
-                {
-                    0
-                } else {
-                    1
-                },
+                init_mode: self.consume_init_mode(),
                 expression_type: subscription.get_expression_type().map(str::to_owned),
                 expression: subscription.get_sub_string().map(str::to_owned),
                 order: Some(false),
@@ -6092,6 +6096,51 @@ mod tests {
         consumer.consume_core_pool_size.store(7, Ordering::Release);
         consumer.adjust_thread_pool();
         assert_eq!(consumer.consume_core_pool_size.load(Ordering::Acquire), 7);
+    }
+
+    #[test]
+    fn push_rebalance_consume_init_mode_matches_java_for_every_policy() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/push-implementation-accessor.json"
+        ))
+        .unwrap();
+        let cases = [
+            (
+                ConsumeFromWhere::ConsumeFromLastOffset,
+                "CONSUME_FROM_LAST_OFFSET",
+            ),
+            (
+                ConsumeFromWhere::ConsumeFromLastOffsetAndFromMinWhenBootFirst,
+                "CONSUME_FROM_LAST_OFFSET_AND_FROM_MIN_WHEN_BOOT_FIRST",
+            ),
+            (
+                ConsumeFromWhere::ConsumeFromMinOffset,
+                "CONSUME_FROM_MIN_OFFSET",
+            ),
+            (
+                ConsumeFromWhere::ConsumeFromMaxOffset,
+                "CONSUME_FROM_MAX_OFFSET",
+            ),
+            (
+                ConsumeFromWhere::ConsumeFromFirstOffset,
+                "CONSUME_FROM_FIRST_OFFSET",
+            ),
+            (
+                ConsumeFromWhere::ConsumeFromTimestamp,
+                "CONSUME_FROM_TIMESTAMP",
+            ),
+        ];
+
+        for (policy, java_name) in cases {
+            let mut config = PushConsumerConfig::new("phase18-pop-init-mode").unwrap();
+            config.set_consume_from_where(policy);
+            let consumer = PushConsumer::new(config);
+            assert_eq!(
+                i64::from(consumer.consume_init_mode()),
+                fixture["pushConsumeInitModes"][java_name].as_i64().unwrap(),
+                "consume init mode for {java_name}"
+            );
+        }
     }
 
     #[tokio::test]

@@ -37,6 +37,7 @@ import org.apache.rocketmq.client.impl.consumer.PullRequest;
 import org.apache.rocketmq.client.impl.factory.MQClientInstance;
 import org.apache.rocketmq.client.stat.ConsumerStatsManager;
 import org.apache.rocketmq.common.ServiceState;
+import org.apache.rocketmq.common.consumer.ConsumeFromWhere;
 import org.apache.rocketmq.common.message.MessageAccessor;
 import org.apache.rocketmq.common.message.MessageConst;
 import org.apache.rocketmq.common.message.MessageExt;
@@ -285,6 +286,7 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("pushPopFilterHookEvents", filterHookEvents);
         fixture.put("rawImplementationPublicMethodSignatures", publicMethodSignatures());
         fixture.putAll(classFilterSubscribeResults());
+        fixture.put("pushConsumeInitModes", pushConsumeInitModes());
         fixture.putAll(topicHelpers);
         fixture.putAll(orderlyLockedPullAttempts());
         String json = JSON.toJSONString(fixture) + "\n";
@@ -395,6 +397,17 @@ public final class PushImplementationAccessorFixtures {
         result.put("classFilterSourceSerialized",
             JSON.toJSONString(afterFactory).contains("filterClassSource"));
         return result;
+    }
+
+    private static Map<String, Object> pushConsumeInitModes() {
+        DefaultMQPushConsumer consumer = new DefaultMQPushConsumer("phase18-pop-init-mode");
+        DefaultMQPushConsumerImpl implementation = consumer.getDefaultMQPushConsumerImpl();
+        Map<String, Object> modes = new LinkedHashMap<>();
+        for (ConsumeFromWhere policy : ConsumeFromWhere.values()) {
+            consumer.setConsumeFromWhere(policy);
+            modes.put(policy.name(), implementation.getRebalanceImpl().getConsumeInitMode());
+        }
+        return modes;
     }
 
     private static Map<String, Object> orderlyLockedPullAttempts() {
