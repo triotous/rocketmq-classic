@@ -60,6 +60,10 @@ import org.apache.rocketmq.remoting.protocol.header.LockBatchMqRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.UnlockBatchMqRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.RecallMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.RecallMessageResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.CreateTopicRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.QueryMessageRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.QueryMessageResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.ViewMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.UnregisterClientResponseHeader;
 import org.apache.rocketmq.remoting.protocol.body.QueryAssignmentRequestBody;
 import org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody;
@@ -321,6 +325,37 @@ public final class Main {
         GetRouteInfoRequestHeader route = new GetRouteInfoRequestHeader();
         route.setTopic("orders");
         writeTypedHeaderFixture(output, "route-request", 105, route);
+
+        CreateTopicRequestHeader createTopic = new CreateTopicRequestHeader();
+        createTopic.setTopic("orders");
+        createTopic.setDefaultTopic("TBW102");
+        createTopic.setReadQueueNums(4);
+        createTopic.setWriteQueueNums(4);
+        createTopic.setPerm(6);
+        createTopic.setTopicFilterType("SINGLE_TAG");
+        createTopic.setTopicSysFlag(3);
+        createTopic.setAttributes("message.type=normal");
+        writeTypedHeaderFixture(output, "create-topic-request", 17, createTopic);
+
+        QueryMessageRequestHeader queryMessage = new QueryMessageRequestHeader();
+        queryMessage.setTopic("orders");
+        queryMessage.setKey("order-42");
+        queryMessage.setMaxNum(32);
+        queryMessage.setBeginTimestamp(1_712_345_678_000L);
+        queryMessage.setEndTimestamp(1_712_345_679_000L);
+        queryMessage.setIndexType("UNIQUE_KEY");
+        queryMessage.setLastKey("last-index-key");
+        writeTypedHeaderFixture(output, "query-message-request", 12, queryMessage);
+        QueryMessageResponseHeader queryMessageResponse = new QueryMessageResponseHeader();
+        queryMessageResponse.setIndexLastUpdateTimestamp(1_712_345_679_000L);
+        queryMessageResponse.setIndexLastUpdatePhyoffset(9876L);
+        writeTypedHeaderFixture(output, "query-message-response",
+            RemotingCommand.createResponseCommandWithHeader(0, queryMessageResponse));
+
+        ViewMessageRequestHeader viewMessage = new ViewMessageRequestHeader();
+        viewMessage.setTopic("orders");
+        viewMessage.setOffset(9876L);
+        writeTypedHeaderFixture(output, "view-message-request", 33, viewMessage);
 
         SendMessageRequestHeader send = new SendMessageRequestHeader();
         send.setProducerGroup("producers");
@@ -717,6 +752,10 @@ public final class Main {
                 }
             }
             assertAllExtFields(byName, "typed-route.bin", 105);
+            assertAllExtFields(byName, "typed-create-topic-request.bin", 17);
+            assertAllExtFields(byName, "typed-query-message-request.bin", 12);
+            assertAllExtFields(byName, "typed-query-message-response.bin", 0);
+            assertAllExtFields(byName, "typed-view-message-request.bin", 33);
             assertAllExtFields(byName, "typed-send-v1.bin", 10);
             assertAllExtFields(byName, "typed-send-v2.bin", 310);
             assertAllExtFields(byName, "typed-send-batch-v2.bin", 320);
@@ -765,6 +804,12 @@ public final class Main {
             assertAllExtFields(byName, "typed-notify-unsubscribe-lite-request.bin", 200073);
             assertAllExtFields(byName, "typed-consume-directly-request.bin", 309);
             assertExtField(byName, "typed-route.bin", 105, "topic", "orders");
+            assertExtField(byName, "typed-create-topic-request.bin", 17, "topic", "orders");
+            assertExtField(byName, "typed-create-topic-request.bin", 17, "defaultTopic", "TBW102");
+            assertExtField(byName, "typed-query-message-request.bin", 12, "key", "order-42");
+            assertExtField(byName, "typed-query-message-request.bin", 12, "indexType", "UNIQUE_KEY");
+            assertExtField(byName, "typed-query-message-response.bin", 0, "indexLastUpdateTimestamp", "1712345679000");
+            assertExtField(byName, "typed-view-message-request.bin", 33, "offset", "9876");
             assertExtField(byName, "typed-send-v1.bin", 10, "producerGroup", "producers");
             assertExtField(byName, "typed-send-v2.bin", 310, "a", "producers");
         assertExtField(byName, "typed-send-batch-v2.bin", 320, "a", "producers");
@@ -820,6 +865,10 @@ public final class Main {
         String fixtureStem;
         switch (name) {
             case "typed-route.bin": fixtureStem = "header-route-request"; break;
+            case "typed-create-topic-request.bin": fixtureStem = "header-create-topic-request"; break;
+            case "typed-query-message-request.bin": fixtureStem = "header-query-message-request"; break;
+            case "typed-query-message-response.bin": fixtureStem = "header-query-message-response"; break;
+            case "typed-view-message-request.bin": fixtureStem = "header-view-message-request"; break;
             case "typed-send-v1.bin": fixtureStem = "header-send-v1"; break;
             case "typed-send-v2.bin": fixtureStem = "header-send-v2"; break;
             case "typed-send-batch-v2.bin": fixtureStem = "header-send-batch-v2"; break;

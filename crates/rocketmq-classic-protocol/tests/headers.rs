@@ -10,7 +10,7 @@ use rocketmq_classic_protocol::{
         AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader,
         CheckTransactionStateRequestHeader, CheckTransactionStateResponseHeader, CommandHeader,
         ConsumeMessageDirectlyResultRequestHeader, ConsumerSendMsgBackRequestHeader,
-        EndTransactionRequestHeader, EndTransactionResponseHeader,
+        CreateTopicRequestHeader, EndTransactionRequestHeader, EndTransactionResponseHeader,
         GetConsumerListByGroupRequestHeader, GetConsumerStatusRequestHeader,
         GetEarliestMsgStoretimeRequestHeader, GetEarliestMsgStoretimeResponseHeader,
         GetMaxOffsetRequestHeader, GetMaxOffsetResponseHeader, GetMinOffsetRequestHeader,
@@ -20,11 +20,12 @@ use rocketmq_classic_protocol::{
         PollingInfoResponseHeader, PopLiteMessageRequestHeader, PopLiteMessageResponseHeader,
         PopMessageRequestHeader, PopMessageResponseHeader, PullMessageRequestHeader,
         PullMessageResponseHeader, QueryConsumerOffsetRequestHeader,
-        QueryConsumerOffsetResponseHeader, RecallMessageRequestHeader, RecallMessageResponseHeader,
-        ReplyMessageRequestHeader, ResetOffsetRequestHeader, SearchOffsetRequestHeader,
-        SearchOffsetResponseHeader, SendMessageRequestHeaderV1, SendMessageRequestHeaderV2,
-        SendMessageResponseHeader, UnlockBatchMqRequestHeader, UnregisterClientRequestHeader,
-        UnregisterClientResponseHeader, UpdateConsumerOffsetRequestHeader,
+        QueryConsumerOffsetResponseHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
+        RecallMessageRequestHeader, RecallMessageResponseHeader, ReplyMessageRequestHeader,
+        ResetOffsetRequestHeader, SearchOffsetRequestHeader, SearchOffsetResponseHeader,
+        SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
+        UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
+        UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
     },
 };
 
@@ -62,6 +63,50 @@ fn java_request_and_response_header_fixtures_decode() {
     let route =
         GetRouteInfoRequestHeader::decode_fields(&java_ext_fields("header-route-request")).unwrap();
     assert_eq!(route.topic, "orders");
+
+    let create_topic =
+        CreateTopicRequestHeader::decode_fields(&java_ext_fields("header-create-topic-request"))
+            .unwrap();
+    assert_eq!(create_topic.topic, "orders");
+    assert_eq!(create_topic.default_topic, "TBW102");
+    assert_eq!(create_topic.read_queue_nums, 4);
+    assert_eq!(create_topic.write_queue_nums, 4);
+    assert_eq!(create_topic.perm, 6);
+    assert_eq!(create_topic.topic_filter_type, "SINGLE_TAG");
+    assert_eq!(create_topic.topic_sys_flag, Some(3));
+    assert_eq!(
+        create_topic.attributes.as_deref(),
+        Some("message.type=normal")
+    );
+    assert_eq!(create_topic.order, Some(false));
+    assert_eq!(create_topic.force, Some(false));
+
+    let query_message =
+        QueryMessageRequestHeader::decode_fields(&java_ext_fields("header-query-message-request"))
+            .unwrap();
+    assert_eq!(query_message.topic, "orders");
+    assert_eq!(query_message.key, "order-42");
+    assert_eq!(query_message.max_num, 32);
+    assert_eq!(query_message.begin_timestamp, 1_712_345_678_000);
+    assert_eq!(query_message.end_timestamp, 1_712_345_679_000);
+    assert_eq!(query_message.index_type.as_deref(), Some("UNIQUE_KEY"));
+    assert_eq!(query_message.last_key.as_deref(), Some("last-index-key"));
+
+    let query_message_response = QueryMessageResponseHeader::decode_fields(&java_ext_fields(
+        "header-query-message-response",
+    ))
+    .unwrap();
+    assert_eq!(
+        query_message_response.index_last_update_timestamp,
+        1_712_345_679_000
+    );
+    assert_eq!(query_message_response.index_last_update_phyoffset, 9876);
+
+    let view_message =
+        ViewMessageRequestHeader::decode_fields(&java_ext_fields("header-view-message-request"))
+            .unwrap();
+    assert_eq!(view_message.topic.as_deref(), Some("orders"));
+    assert_eq!(view_message.offset, 9876);
 
     let lite_pop =
         PopLiteMessageResponseHeader::decode_fields(&java_ext_fields("header-pop-lite-response"))
@@ -686,6 +731,29 @@ fn required_header_fields_reject_absence_at_protocol_boundary() {
         .unwrap_err()
         .to_string();
     assert!(err.contains("offset"));
+    let err = QueryMessageRequestHeader::decode_fields(&empty)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("topic"));
+    let err = QueryMessageResponseHeader::decode_fields(&empty)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("indexLastUpdateTimestamp"));
+    let err = ViewMessageRequestHeader::decode_fields(&empty)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("offset"));
+    let err = CreateTopicRequestHeader::decode_fields(&empty)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("topicFilterType"));
+
+    let mut invalid_topic_filter = java_ext_fields("header-create-topic-request");
+    invalid_topic_filter.insert("topicFilterType".into(), "NOT_A_FILTER".into());
+    let err = CreateTopicRequestHeader::decode_fields(&invalid_topic_filter)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("topicFilterType"));
 
     let mut bad = HeaderMap::from([
         ("consumerGroup".into(), "g".into()),
@@ -794,6 +862,42 @@ fn header_validation_matrix() {
             "",
             "acceptStandardJsonOnly",
             "acceptStandardJsonOnly"
+        ),
+        row!(
+            CreateTopicRequestHeader,
+            "create-topic-request",
+            "topic defaultTopic readQueueNums writeQueueNums perm topicFilterType",
+            "readQueueNums writeQueueNums perm topicSysFlag",
+            "",
+            "topicSysFlag attributes ns nsd bname oway lo",
+            "order force nsd oway lo"
+        ),
+        row!(
+            QueryMessageRequestHeader,
+            "query-message-request",
+            "topic key maxNum beginTimestamp endTimestamp",
+            "maxNum",
+            "beginTimestamp endTimestamp",
+            "indexType lastKey ns nsd bname oway lo",
+            "nsd oway lo"
+        ),
+        row!(
+            QueryMessageResponseHeader,
+            "query-message-response",
+            "indexLastUpdateTimestamp indexLastUpdatePhyoffset",
+            "",
+            "indexLastUpdateTimestamp indexLastUpdatePhyoffset",
+            "",
+            ""
+        ),
+        row!(
+            ViewMessageRequestHeader,
+            "view-message-request",
+            "offset",
+            "",
+            "offset",
+            "topic",
+            ""
         ),
         row!(
             SendMessageRequestHeaderV1,
@@ -1306,7 +1410,9 @@ fn header_validation_matrix() {
             fields.insert(name.into(), "".into());
             assert_eq!(
                 (case.decode)(&fields).is_ok(),
-                !(i32_fields.contains(name) || i64_fields.contains(name)),
+                !(i32_fields.contains(name)
+                    || i64_fields.contains(name)
+                    || (case.model == "CreateTopicRequestHeader" && name == "topicFilterType")),
                 "{} empty required {name}",
                 case.fixture
             );

@@ -513,6 +513,195 @@ impl CommandHeader for GetRouteInfoRequestHeader {
     }
 }
 
+/// Pinned Java `CreateTopicRequestHeader` used by `UPDATE_AND_CREATE_TOPIC`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateTopicRequestHeader {
+    pub topic: String,
+    pub default_topic: String,
+    pub read_queue_nums: i32,
+    pub write_queue_nums: i32,
+    pub perm: i32,
+    pub topic_filter_type: String,
+    pub topic_sys_flag: Option<i32>,
+    pub order: Option<bool>,
+    pub attributes: Option<String>,
+    pub force: Option<bool>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
+    pub logical: Option<bool>,
+}
+
+impl Default for CreateTopicRequestHeader {
+    fn default() -> Self {
+        Self {
+            topic: String::new(),
+            default_topic: String::new(),
+            read_queue_nums: 0,
+            write_queue_nums: 0,
+            perm: 0,
+            topic_filter_type: String::new(),
+            topic_sys_flag: None,
+            order: Some(false),
+            attributes: None,
+            force: Some(false),
+            namespace: None,
+            namespaced: None,
+            broker_name: None,
+            oneway: None,
+            logical: None,
+        }
+    }
+}
+
+impl CommandHeader for CreateTopicRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("topic".into(), self.topic.clone());
+        fields.insert("defaultTopic".into(), self.default_topic.clone());
+        fields.insert("readQueueNums".into(), self.read_queue_nums.to_string());
+        fields.insert("writeQueueNums".into(), self.write_queue_nums.to_string());
+        fields.insert("perm".into(), self.perm.to_string());
+        fields.insert("topicFilterType".into(), self.topic_filter_type.clone());
+        put_optional(fields, "topicSysFlag", self.topic_sys_flag);
+        put_optional(fields, "order", self.order);
+        put_optional(fields, "attributes", self.attributes.as_deref());
+        put_optional(fields, "force", self.force);
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
+        put_optional(fields, "lo", self.logical);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        let topic_filter_type = required_string(fields, "topicFilterType")?.to_owned();
+        if !matches!(
+            topic_filter_type.as_str(),
+            "SINGLE_TAG" | "MULTI_TAG" | "SQL92"
+        ) {
+            return Err(ProtocolError::InvalidField {
+                field: "topicFilterType",
+                reason: format!("unknown Java TopicFilterType {topic_filter_type}"),
+            });
+        }
+        Ok(Self {
+            topic: required_string(fields, "topic")?.to_owned(),
+            default_topic: required_string(fields, "defaultTopic")?.to_owned(),
+            read_queue_nums: required_i32(fields, "readQueueNums")?,
+            write_queue_nums: required_i32(fields, "writeQueueNums")?,
+            perm: required_i32(fields, "perm")?,
+            topic_filter_type,
+            topic_sys_flag: optional_i32(fields, "topicSysFlag")?,
+            order: Some(optional_java_boolean(fields, "order").unwrap_or(false)),
+            attributes: optional_string(fields, "attributes"),
+            force: Some(optional_java_boolean(fields, "force").unwrap_or(false)),
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
+            logical: optional_java_boolean(fields, "lo"),
+        })
+    }
+}
+
+/// Pinned Java `QueryMessageRequestHeader` used by `QUERY_MESSAGE`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct QueryMessageRequestHeader {
+    pub topic: String,
+    pub key: String,
+    pub max_num: i32,
+    pub begin_timestamp: i64,
+    pub end_timestamp: i64,
+    pub index_type: Option<String>,
+    pub last_key: Option<String>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
+    pub logical: Option<bool>,
+}
+
+impl CommandHeader for QueryMessageRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("topic".into(), self.topic.clone());
+        fields.insert("key".into(), self.key.clone());
+        fields.insert("maxNum".into(), self.max_num.to_string());
+        fields.insert("beginTimestamp".into(), self.begin_timestamp.to_string());
+        fields.insert("endTimestamp".into(), self.end_timestamp.to_string());
+        put_optional(fields, "indexType", self.index_type.as_deref());
+        put_optional(fields, "lastKey", self.last_key.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
+        put_optional(fields, "lo", self.logical);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            topic: required_string(fields, "topic")?.to_owned(),
+            key: required_string(fields, "key")?.to_owned(),
+            max_num: required_i32(fields, "maxNum")?,
+            begin_timestamp: required_i64(fields, "beginTimestamp")?,
+            end_timestamp: required_i64(fields, "endTimestamp")?,
+            index_type: optional_string(fields, "indexType"),
+            last_key: optional_string(fields, "lastKey"),
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
+            logical: optional_java_boolean(fields, "lo"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct QueryMessageResponseHeader {
+    pub index_last_update_timestamp: i64,
+    pub index_last_update_phyoffset: i64,
+}
+
+impl CommandHeader for QueryMessageResponseHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert(
+            "indexLastUpdateTimestamp".into(),
+            self.index_last_update_timestamp.to_string(),
+        );
+        fields.insert(
+            "indexLastUpdatePhyoffset".into(),
+            self.index_last_update_phyoffset.to_string(),
+        );
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            index_last_update_timestamp: required_i64(fields, "indexLastUpdateTimestamp")?,
+            index_last_update_phyoffset: required_i64(fields, "indexLastUpdatePhyoffset")?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ViewMessageRequestHeader {
+    pub topic: Option<String>,
+    pub offset: i64,
+}
+
+impl CommandHeader for ViewMessageRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "topic", self.topic.as_deref());
+        fields.insert("offset".into(), self.offset.to_string());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            topic: optional_string(fields, "topic"),
+            offset: required_i64(fields, "offset")?,
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GetConsumerListByGroupRequestHeader {
     pub consumer_group: String,

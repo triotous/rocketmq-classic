@@ -15,7 +15,7 @@ use rocketmq_classic_protocol::{
         AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader,
         CheckTransactionStateRequestHeader, CheckTransactionStateResponseHeader, CommandHeader,
         ConsumeMessageDirectlyResultRequestHeader, ConsumerSendMsgBackRequestHeader,
-        EndTransactionRequestHeader, EndTransactionResponseHeader,
+        CreateTopicRequestHeader, EndTransactionRequestHeader, EndTransactionResponseHeader,
         GetConsumerListByGroupRequestHeader, GetConsumerStatusRequestHeader,
         GetEarliestMsgStoretimeRequestHeader, GetEarliestMsgStoretimeResponseHeader,
         GetMaxOffsetRequestHeader, GetMaxOffsetResponseHeader, GetMinOffsetRequestHeader,
@@ -25,11 +25,12 @@ use rocketmq_classic_protocol::{
         PopLiteMessageRequestHeader, PopLiteMessageResponseHeader, PopMessageRequestHeader,
         PopMessageResponseHeader, PullMessageRequestHeader, PullMessageResponseHeader,
         QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
-        RecallMessageRequestHeader, RecallMessageResponseHeader, ReplyMessageRequestHeader,
-        ResetOffsetRequestHeader, SearchOffsetRequestHeader, SearchOffsetResponseHeader,
-        SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
-        UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
-        UpdateConsumerOffsetRequestHeader,
+        QueryMessageRequestHeader, QueryMessageResponseHeader, RecallMessageRequestHeader,
+        RecallMessageResponseHeader, ReplyMessageRequestHeader, ResetOffsetRequestHeader,
+        SearchOffsetRequestHeader, SearchOffsetResponseHeader, SendMessageRequestHeaderV1,
+        SendMessageRequestHeaderV2, SendMessageResponseHeader, UnlockBatchMqRequestHeader,
+        UnregisterClientRequestHeader, UnregisterClientResponseHeader,
+        UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
     },
 };
 use rocketmq_classic_remoting::{codec::frame, command::RemotingCommand};
@@ -78,6 +79,30 @@ fn main() {
 fn generate_p4_headers(output: &std::path::Path) {
     // Decode the checked-in Java 5.5.1 oracle through each public Rust model,
     // then emit a Rust frame for the same request or response role.
+    write_oracle_header::<CreateTopicRequestHeader>(
+        output,
+        "typed-create-topic-request.bin",
+        "header-create-topic-request",
+        17,
+    );
+    write_oracle_header::<QueryMessageRequestHeader>(
+        output,
+        "typed-query-message-request.bin",
+        "header-query-message-request",
+        12,
+    );
+    write_oracle_header::<QueryMessageResponseHeader>(
+        output,
+        "typed-query-message-response.bin",
+        "header-query-message-response",
+        0,
+    );
+    write_oracle_header::<ViewMessageRequestHeader>(
+        output,
+        "typed-view-message-request.bin",
+        "header-view-message-request",
+        33,
+    );
     write_oracle_header::<QueryConsumerOffsetResponseHeader>(
         output,
         "typed-query-offset-response.bin",
