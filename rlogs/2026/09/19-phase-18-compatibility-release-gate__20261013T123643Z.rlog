@@ -68,3 +68,4 @@
 - One Maven `verify` attempt found fixture drift because search calls were emitted in `Set.of` iteration order. Sorted that fixture output, regenerated it, and reran Maven successfully; earlier failure retained here as required.
 - PASS after correction: `cargo test -p rocketmq-classic-consumer --locked` (184 library tests and all integration tests; 228 total); strict consumer Clippy; `mvn -f compat/java-reference/pom.xml verify` (37 scenarios and fixture drift); `cargo fmt --all -- --check`; `git diff --check`.
 - Updated Phase 10 matrix and release checklist. No live Broker or Docker was used. Commit follows final diff review.
+- Change commit: `dbda48ad` (`Add Push timestamp offset reset API`).
