@@ -33,6 +33,7 @@
 - `bash tests/stress/run-offline-smoke.sh`: PASS (16 race/leak cases × 3 repetitions).
 - `cargo build -p rocketmq-classic --examples --release --locked`: PASS.
 - `cargo bench -p rocketmq-classic --bench offline --locked --no-run`: PASS; the benchmark executable also ran successfully. The current-revision measurements were appended to `PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`; `cargo clippy -p rocketmq-classic --bench offline --all-features --locked -- -D warnings` passed.
+- `cargo package --workspace --list --locked --allow-dirty`: PASS; all seven unpublished package contents include `LICENSE` and `NOTICE`. Registry resolution remains unverified and was not attempted.
 - The remaining checklist gaps are P18-V01's full bidirectional source/input/branch audit and Java reverse-export reconciliation, current GitHub Ubuntu evidence, Phase 19 local Broker/Docker scenarios, and registry dependency/version resolution. Non-local owner validation remains a later manual handoff.
 
 ## Rustdoc method crosswalk status correction
