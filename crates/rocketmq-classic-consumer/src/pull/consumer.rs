@@ -50,6 +50,7 @@ use crate::{
     },
     push::{MessageQueueListener, PushConsumer, PushConsumerConfig, SendBackOptions},
     rebalance::AllocateMessageQueueStrategy,
+    service_state::ConsumerServiceState,
 };
 
 const MAX_PULL_MESSAGE_BYTES: i32 = i32::MAX;
@@ -110,6 +111,7 @@ pub struct PullConsumer {
     rpc_hook: Option<Arc<dyn RpcHook>>,
     consume_message_hooks: ConsumeMessageHookRegistry,
     state: tokio::sync::Mutex<State>,
+    service_state: RwLock<Option<ConsumerServiceState>>,
     pull_api: RwLock<Option<Arc<PullAPIWrapper>>>,
     pull_api_hooks: SharedFilterMessageHooks,
     pull_connect_broker_by_user: AtomicBool,
@@ -161,6 +163,7 @@ impl PullConsumer {
             rpc_hook,
             consume_message_hooks: ConsumeMessageHookRegistry::default(),
             state: tokio::sync::Mutex::new(State::Created),
+            service_state: RwLock::new(Some(ConsumerServiceState::CreateJust)),
             pull_api: RwLock::new(None),
             pull_api_hooks: Arc::new(RwLock::new(Vec::new())),
             pull_connect_broker_by_user: AtomicBool::new(false),
@@ -326,6 +329,15 @@ impl PullConsumer {
     /// before `start()` is called.
     pub fn consumer_start_timestamp(&self) -> i64 {
         self.consumer_start_timestamp.load(Ordering::Acquire)
+    }
+
+    pub fn service_state(&self) -> Option<ConsumerServiceState> {
+        *read_lock(&self.service_state)
+    }
+
+    /// Mirrors Java's deprecated raw implementation setter, including null.
+    pub fn set_service_state(&self, service_state: Option<ConsumerServiceState>) {
+        *write_lock(&self.service_state) = service_state;
     }
 
     /// Registers a Java-compatible hook around each pull result.
@@ -739,11 +751,16 @@ impl PullConsumer {
 
     pub async fn start(self: &Arc<Self>) -> Result<(), PullConsumerError> {
         let mut state = self.state.lock().await;
+        let service_state = self.service_state();
+        if service_state != Some(ConsumerServiceState::CreateJust) {
+            return Err(PullConsumerError::ServiceStateNotReady(service_state));
+        }
         match &*state {
             State::Started { .. } => return Err(PullConsumerError::AlreadyStarted),
             State::Shutdown => return Err(PullConsumerError::Shutdown),
             State::Created => {}
         }
+        self.set_service_state(Some(ConsumerServiceState::StartFailed));
         let mut client_config = self.config.client_config().clone();
         let consumer_group = client_config
             .with_namespace(Some(self.config.consumer_group()))?
@@ -787,7 +804,18 @@ impl PullConsumer {
             rebalance_membership: Mutex::new(HashMap::new()),
         });
         let owner: Arc<dyn ConsumerRuntime> = registration.clone();
-        let lease = runtime.register_consumer(&consumer_group, owner).await?;
+        let lease = match runtime.register_consumer(&consumer_group, owner).await {
+            Ok(lease) => lease,
+            Err(error) => {
+                if matches!(
+                    error,
+                    rocketmq_classic_core::runtime::RuntimeError::DuplicateGroup { .. }
+                ) {
+                    self.set_service_state(Some(ConsumerServiceState::CreateJust));
+                }
+                return Err(error.into());
+            }
+        };
         self.rebalance_active.store(true, Ordering::Release);
         if let Err(error) = runtime.start().await {
             self.rebalance_active.store(false, Ordering::Release);
@@ -802,6 +830,7 @@ impl PullConsumer {
             offset_store,
             registration,
         };
+        self.set_service_state(Some(ConsumerServiceState::Running));
         *write_lock(&self.runtime_for_wakeup) = Some(Arc::downgrade(&runtime));
         runtime.rebalance_immediately();
         Ok(())
@@ -809,9 +838,20 @@ impl PullConsumer {
 
     pub async fn shutdown(&self) -> Result<(), PullConsumerError> {
         let mut state = self.state.lock().await;
+        match self.service_state() {
+            Some(ConsumerServiceState::Running) => {}
+            Some(ConsumerServiceState::CreateJust)
+            | Some(ConsumerServiceState::StartFailed)
+            | Some(ConsumerServiceState::ShutdownAlready) => return Ok(()),
+            None => return Err(PullConsumerError::ServiceStateNotReady(None)),
+        }
         self.rebalance_active.store(false, Ordering::Release);
         let (runtime, lease, offset_store) = match &*state {
-            State::Created | State::Shutdown => return Ok(()),
+            State::Created | State::Shutdown => {
+                return Err(PullConsumerError::ServiceStateNotReady(
+                    self.service_state(),
+                ));
+            }
             State::Started {
                 runtime,
                 lease,
@@ -820,6 +860,7 @@ impl PullConsumer {
             } => {
                 let Some(runtime) = runtime.upgrade() else {
                     *state = State::Shutdown;
+                    self.set_service_state(Some(ConsumerServiceState::ShutdownAlready));
                     return Ok(());
                 };
                 (runtime, lease.clone(), offset_store.clone())
@@ -837,12 +878,13 @@ impl PullConsumer {
             .await?;
         runtime.shutdown().await?;
         *state = State::Shutdown;
+        self.set_service_state(Some(ConsumerServiceState::ShutdownAlready));
         *write_lock(&self.runtime_for_wakeup) = None;
         Ok(())
     }
 
     pub async fn is_running(&self) -> bool {
-        matches!(&*self.state.lock().await, State::Started { .. })
+        self.service_state() == Some(ConsumerServiceState::Running)
     }
 
     pub async fn update_name_server_address(
@@ -1602,7 +1644,8 @@ impl PullConsumer {
         queue: &MessageQueue,
         from_store: bool,
     ) -> Result<i64, PullConsumerError> {
-        let (_, store) = self.started_runtime().await?;
+        self.require_running_service_state()?;
+        let store = self.offset_store_for_implementation_call().await?;
         let queue = self.queue_with_namespace(queue)?;
         self.read_consume_offset(store.as_ref(), &queue, from_store)
             .await
@@ -1616,7 +1659,8 @@ impl PullConsumer {
         queue: &MessageQueue,
         from_store: bool,
     ) -> Result<i64, PullConsumerError> {
-        let (_, store) = self.started_runtime().await?;
+        self.require_running_service_state()?;
+        let store = self.offset_store_for_implementation_call().await?;
         self.read_consume_offset(store.as_ref(), queue, from_store)
             .await
     }
@@ -1706,6 +1750,7 @@ impl PullConsumer {
     async fn started_runtime(
         &self,
     ) -> Result<(Arc<ClientRuntime>, Arc<dyn OffsetStore>), PullConsumerError> {
+        self.require_running_service_state()?;
         let state = self.state.lock().await;
         match &*state {
             State::Created => Err(PullConsumerError::NotStarted),
@@ -1738,6 +1783,7 @@ impl PullConsumer {
     async fn started_registration(
         &self,
     ) -> Result<Arc<PullConsumerRegistration>, PullConsumerError> {
+        self.require_running_service_state()?;
         let state = self.state.lock().await;
         match &*state {
             State::Created => Err(PullConsumerError::NotStarted),
@@ -1755,6 +1801,15 @@ impl PullConsumer {
             .client_config()
             .clone()
             .queue_with_namespace(queue)?)
+    }
+
+    fn require_running_service_state(&self) -> Result<(), PullConsumerError> {
+        match self.service_state() {
+            Some(ConsumerServiceState::Running) => Ok(()),
+            Some(ConsumerServiceState::CreateJust) => Err(PullConsumerError::NotStarted),
+            Some(ConsumerServiceState::ShutdownAlready) => Err(PullConsumerError::Shutdown),
+            state => Err(PullConsumerError::ServiceStateNotReady(state)),
+        }
     }
 
     fn topic_with_namespace(&self, topic: &str) -> Result<String, PullConsumerError> {
@@ -3543,12 +3598,7 @@ mod tests {
             .update_consume_offset_to_broker(&raw_queue, 37, true)
             .await
             .unwrap();
-        assert!(matches!(
-            consumer.fetch_consume_offset_raw(&raw_queue, false).await,
-            Err(PullConsumerError::NotStarted)
-        ));
-
-        consumer.start().await.unwrap();
+        consumer.set_service_state(Some(ConsumerServiceState::Running));
         assert_eq!(
             consumer
                 .fetch_consume_offset_raw(&raw_queue, false)
@@ -3563,6 +3613,13 @@ mod tests {
                 .unwrap(),
             73
         );
+        consumer.set_service_state(Some(ConsumerServiceState::CreateJust));
+        assert!(matches!(
+            consumer.fetch_consume_offset_raw(&raw_queue, false).await,
+            Err(PullConsumerError::NotStarted)
+        ));
+
+        consumer.start().await.unwrap();
 
         let expected_calls = expected["rawOffsetStoreCalls"]
             .as_array()
@@ -3639,6 +3696,45 @@ mod tests {
         consumer.start().await.unwrap();
         assert_eq!(consumer.consumer_start_timestamp(), start_timestamp);
         consumer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn pull_service_state_accessor_matches_java_mutability_and_start_guard() {
+        let expected: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/pull-implementation-accessor.json"
+        ))
+        .unwrap();
+        let group = expected["consumerGroup"].as_str().unwrap();
+        let consumer = Arc::new(PullConsumer::new(PullConsumerConfig::new(group).unwrap()));
+        assert_eq!(
+            consumer.service_state().unwrap().as_java_name(),
+            expected["serviceStateBeforeStart"].as_str().unwrap()
+        );
+        consumer.set_service_state(None);
+        assert!(consumer.service_state().is_none());
+        assert!(expected["serviceStateSetterAcceptsNull"].as_bool().unwrap());
+
+        consumer.set_service_state(Some(ConsumerServiceState::StartFailed));
+        assert!(matches!(
+            consumer.start().await,
+            Err(PullConsumerError::ServiceStateNotReady(Some(
+                ConsumerServiceState::StartFailed
+            )))
+        ));
+        assert_eq!(
+            consumer.service_state().unwrap().as_java_name(),
+            expected["serviceStateAfterRejectedStart"].as_str().unwrap()
+        );
+        assert!(expected["serviceStateSetterBlocksStart"].as_bool().unwrap());
+
+        consumer.set_service_state(Some(ConsumerServiceState::Running));
+        assert_eq!(
+            consumer.service_state().unwrap().as_java_name(),
+            expected["serviceStateAfterSetter"].as_str().unwrap()
+        );
+        assert!(consumer.is_running().await);
+        consumer.set_service_state(Some(ConsumerServiceState::CreateJust));
+        assert!(!consumer.is_running().await);
     }
 
     #[tokio::test]
@@ -3923,6 +4019,10 @@ mod tests {
         let store = Arc::new(TestOffsetStore::default());
 
         assert_eq!(consumer.group_name(), "pull-lifecycle");
+        assert_eq!(
+            consumer.service_state(),
+            Some(ConsumerServiceState::CreateJust)
+        );
         assert!(consumer.get_offset_store().is_none());
         assert!(matches!(
             consumer.fetch_message_queues_in_balance("orders").await,
@@ -3934,6 +4034,10 @@ mod tests {
             .unwrap();
         consumer.register_topic("orders").unwrap();
         consumer.start().await.unwrap();
+        assert_eq!(
+            consumer.service_state(),
+            Some(ConsumerServiceState::Running)
+        );
         assert_eq!(consumer.group_name(), "tenant%pull-lifecycle");
         let runtime = consumer.started_runtime().await.unwrap().0;
         write_lock(&consumer.topic_queues).insert(
@@ -3967,7 +4071,9 @@ mod tests {
         assert!(consumer.is_running().await);
         assert!(matches!(
             consumer.start().await,
-            Err(PullConsumerError::AlreadyStarted)
+            Err(PullConsumerError::ServiceStateNotReady(Some(
+                ConsumerServiceState::Running
+            )))
         ));
         assert!(matches!(
             consumer.set_offset_store(None).await,
@@ -3975,6 +4081,10 @@ mod tests {
         ));
 
         consumer.shutdown().await.unwrap();
+        assert_eq!(
+            consumer.service_state(),
+            Some(ConsumerServiceState::ShutdownAlready)
+        );
         assert!(consumer.get_offset_store().is_some());
         assert!(!consumer.is_running().await);
         assert!(matches!(

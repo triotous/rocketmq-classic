@@ -13,6 +13,7 @@ import java.util.TreeSet;
 import org.apache.rocketmq.client.consumer.DefaultMQPullConsumer;
 import org.apache.rocketmq.client.consumer.MessageSelector;
 import org.apache.rocketmq.client.consumer.store.OffsetStore;
+import org.apache.rocketmq.client.exception.MQClientException;
 import org.apache.rocketmq.client.hook.ConsumeMessageContext;
 import org.apache.rocketmq.client.hook.ConsumeMessageHook;
 import org.apache.rocketmq.client.impl.consumer.DefaultMQPullConsumerImpl;
@@ -129,6 +130,18 @@ public final class PullImplementationAccessorFixtures {
         check(group.equals(first.groupName()), "implementation retains configured group");
         String serviceStateBeforeStart = first.getServiceState().name();
         check(serviceStateBeforeStart.equals("CREATE_JUST"), "initial implementation state");
+        first.setServiceState(null);
+        boolean serviceStateSetterAcceptsNull = first.getServiceState() == null;
+        first.setServiceState(ServiceState.CREATE_JUST);
+        first.setServiceState(ServiceState.START_FAILED);
+        boolean serviceStateSetterBlocksStart = false;
+        try {
+            first.start();
+        } catch (MQClientException expectedStateFailure) {
+            serviceStateSetterBlocksStart = true;
+        }
+        String serviceStateAfterRejectedStart = first.getServiceState().name();
+        first.setServiceState(ServiceState.CREATE_JUST);
         check(first.getOffsetStore() == null, "offset store absent before start");
         check(first.getPullAPIWrapper() == null, "pull API wrapper absent before start");
         PullAPIWrapper replacementPullAPIWrapper = new PullAPIWrapper(null, group, false);
@@ -346,6 +359,9 @@ public final class PullImplementationAccessorFixtures {
         fixture.put("implementationGroup", first.groupName());
         fixture.put("serviceStateBeforeStart", serviceStateBeforeStart);
         fixture.put("serviceStateAfterSetter", serviceStateAfterSetter);
+        fixture.put("serviceStateSetterAcceptsNull", serviceStateSetterAcceptsNull);
+        fixture.put("serviceStateSetterBlocksStart", serviceStateSetterBlocksStart);
+        fixture.put("serviceStateAfterRejectedStart", serviceStateAfterRejectedStart);
         fixture.put("offsetStoreIsNullBeforeStart", first.getOffsetStore() == null);
         fixture.put("pullApiWrapperIsNullBeforeStart", first.getPullAPIWrapper() == null);
         fixture.put("pullAPIWrapperSetterRetainsIdentity", pullAPIWrapperSetterRetainsIdentity);
