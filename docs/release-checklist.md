@@ -31,8 +31,9 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   first-lock offset refresh for orderly clustering pulls; its Java fixture and
   Rust regression pass. The returned Push implementation's 71 declared public
   signatures are now captured from the pinned Java fixture and count-pinned in
-  Rust; their method-by-method mappings or internal-entrypoint dispositions
-  remain under audit. Pull
+  Rust. Its `consumerRunningInfo` method now has a direct Rust owner API and
+  fixture-backed running-flow checks; other signatures still need
+  method-by-method mappings or internal-entrypoint dispositions. Pull
   `getRebalanceImpl`, the nested wrapper method inventory, and broad Phase 6
   behavior reconciliation remain open. Pull
   `sendMessageBack`/`maxReconsumeTimes` covers the 3000 ms timeout and logical

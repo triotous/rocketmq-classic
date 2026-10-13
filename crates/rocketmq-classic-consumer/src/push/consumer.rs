@@ -1254,6 +1254,26 @@ impl PushConsumer {
         result
     }
 
+    /// Returns the local equivalent of Java's
+    /// `DefaultMQPushConsumerImpl.consumerRunningInfo()` snapshot.
+    pub async fn consumer_running_info(
+        &self,
+    ) -> Result<ConsumerRunningInfoBody, PushConsumerError> {
+        let (runtime, offset_store) = match &*self.state.lock().await {
+            State::Started {
+                runtime,
+                offset_store,
+                ..
+            } => (
+                runtime.upgrade().ok_or(PushConsumerError::NotStarted)?,
+                offset_store.clone(),
+            ),
+            State::Created => return Err(PushConsumerError::NotStarted),
+            State::Shutdown => return Err(PushConsumerError::Shutdown),
+        };
+        Ok(self.running_info_body(&runtime, None, Some(offset_store)))
+    }
+
     pub(crate) fn running_info_body(
         &self,
         runtime: &ClientRuntime,
@@ -8521,6 +8541,11 @@ mod tests {
         let manager = ClientRuntimeManager::new();
         let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
         consumer.subscribe("orders", "blue").await.unwrap();
+        consumer.subscribe("empty", "*").await.unwrap();
+        assert!(matches!(
+            consumer.consumer_running_info().await,
+            Err(PushConsumerError::NotStarted)
+        ));
         let store = Arc::new(RecordingOffsetStore::default());
         let store_dyn: Arc<dyn OffsetStore> = store.clone();
         let queue = MessageQueue::new("orders", "broker-a", 0);
@@ -8570,6 +8595,43 @@ mod tests {
             1,
         );
 
+        consumer.consume_core_pool_size.store(7, Ordering::Release);
+        let raw_running_info = consumer.consumer_running_info().await.unwrap();
+        let raw_running_info_fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/push-implementation-accessor.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            raw_running_info.subscription_set.len(),
+            raw_running_info_fixture["rawRunningInfoSubscriptionCount"]
+                .as_u64()
+                .unwrap() as usize
+        );
+        assert_eq!(
+            raw_running_info.mq_table.len(),
+            raw_running_info_fixture["rawRunningInfoQueueCount"]
+                .as_u64()
+                .unwrap() as usize
+        );
+        assert_eq!(
+            raw_running_info.mq_pop_table.len(),
+            raw_running_info_fixture["rawRunningInfoPopQueueCount"]
+                .as_u64()
+                .unwrap() as usize
+        );
+        assert_eq!(
+            raw_running_info.status_table.len(),
+            raw_running_info_fixture["rawRunningInfoStatusCount"]
+                .as_u64()
+                .unwrap() as usize
+        );
+        assert_eq!(
+            raw_running_info.properties["PROP_THREADPOOL_CORE_SIZE"],
+            raw_running_info_fixture["rawRunningInfoCorePoolSize"]
+                .as_str()
+                .unwrap()
+        );
+
         let processor = crate::admin::ConsumerRunningInfoProcessor::for_push(
             Arc::downgrade(&consumer),
             Arc::downgrade(&store_dyn),
@@ -8603,7 +8665,7 @@ mod tests {
             r#"{"10.1.0.0/16":{"addr":"proxy.internal:1080","username":"reader","password":"secret"}}"#
         );
         assert!(properties.get("tlsConfig").is_none());
-        assert_eq!(json["subscriptionSet"].as_array().unwrap().len(), 1);
+        assert_eq!(json["subscriptionSet"].as_array().unwrap().len(), 2);
         assert_eq!(json["statusTable"]["orders"]["pullRT"], 500.0);
         assert!(json["statusTable"]["orders"]["pullTPS"].as_f64().unwrap() > 0.0);
         assert_eq!(json["statusTable"]["orders"]["consumeRT"], 8.0);
@@ -8667,6 +8729,10 @@ mod tests {
         );
 
         consumer.shutdown().await.unwrap();
+        assert!(matches!(
+            consumer.consumer_running_info().await,
+            Err(PushConsumerError::Shutdown)
+        ));
         runtime.shutdown().await.unwrap();
     }
 

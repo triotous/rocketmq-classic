@@ -13,30 +13,36 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import org.apache.rocketmq.client.ClientConfig;
 import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
+import org.apache.rocketmq.client.consumer.PopResult;
+import org.apache.rocketmq.client.consumer.PopStatus;
 import org.apache.rocketmq.client.consumer.store.OffsetStore;
+import org.apache.rocketmq.client.consumer.store.ReadOffsetType;
 import org.apache.rocketmq.client.exception.MQClientException;
 import org.apache.rocketmq.client.hook.ConsumeMessageContext;
 import org.apache.rocketmq.client.hook.ConsumeMessageHook;
 import org.apache.rocketmq.client.hook.FilterMessageContext;
 import org.apache.rocketmq.client.hook.FilterMessageHook;
 import org.apache.rocketmq.client.impl.MQAdminImpl;
-import org.apache.rocketmq.client.consumer.PopResult;
-import org.apache.rocketmq.client.consumer.PopStatus;
+import org.apache.rocketmq.client.impl.consumer.ConsumeMessageService;
 import org.apache.rocketmq.client.impl.consumer.DefaultMQPushConsumerImpl;
-import org.apache.rocketmq.client.impl.consumer.PullRequest;
+import org.apache.rocketmq.client.impl.consumer.PopProcessQueue;
 import org.apache.rocketmq.client.impl.consumer.ProcessQueue;
+import org.apache.rocketmq.client.impl.consumer.PullRequest;
 import org.apache.rocketmq.client.impl.factory.MQClientInstance;
-import org.apache.rocketmq.common.message.MessageQueue;
-import org.apache.rocketmq.common.message.MessageExt;
-import org.apache.rocketmq.common.message.MessageConst;
-import org.apache.rocketmq.common.message.MessageAccessor;
+import org.apache.rocketmq.client.stat.ConsumerStatsManager;
 import org.apache.rocketmq.common.ServiceState;
-import org.apache.rocketmq.client.consumer.store.ReadOffsetType;
+import org.apache.rocketmq.common.message.MessageAccessor;
+import org.apache.rocketmq.common.message.MessageConst;
+import org.apache.rocketmq.common.message.MessageExt;
+import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData;
-import java.util.concurrent.atomic.AtomicInteger;
+import org.apache.rocketmq.remoting.protocol.body.ConsumerRunningInfo;
 
 /** Invokes the deprecated Push consumer implementation accessor on Java 5.5.1. */
 public final class PushImplementationAccessorFixtures {
@@ -130,6 +136,8 @@ public final class PushImplementationAccessorFixtures {
                     MessageQueue queue = (MessageQueue) methodArgs[0];
                     offsetUpdates.add(queue.getTopic() + "|" + queue.getBrokerName() + "|"
                         + queue.getQueueId() + "|" + methodArgs[1] + "|" + methodArgs[2]);
+                } else if ("readOffset".equals(method.getName())) {
+                    return 41L;
                 } else if ("persistAll".equals(method.getName())) {
                     @SuppressWarnings("unchecked")
                     Set<MessageQueue> queues = (Set<MessageQueue>) methodArgs[0];
@@ -148,7 +156,10 @@ public final class PushImplementationAccessorFixtures {
         first.updateConsumeOffset(assignedQueue, 41);
         first.updateConsumeOffset(unassignedQueue, 99);
         first.getRebalanceImpl().getProcessQueueTable().put(assignedQueue, new ProcessQueue());
+        first.getRebalanceImpl().getPopProcessQueueTable().put(
+            new MessageQueue("orders", "broker-a", 4), new PopProcessQueue());
         first.setServiceState(ServiceState.RUNNING);
+        Map<String, Object> rawRunningInfo = rawRunningInfoResults(first, resetFactory);
         first.persistConsumerOffset();
         first.setServiceState(ServiceState.CREATE_JUST);
         first.setOffsetStore(null);
@@ -244,6 +255,7 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("offsetStoreSetterPreservesIdentity", offsetStoreSetterPreservesIdentity);
         fixture.put("offsetUpdates", offsetUpdates);
         fixture.put("persistedQueues", persistedQueues);
+        fixture.putAll(rawRunningInfo);
         fixture.put("offsetStoreSetterAcceptsNull", offsetStoreSetterAcceptsNull);
         fixture.put("hasConsumeHookBeforeRegistration", hasConsumeHookBeforeRegistration);
         fixture.put("directHookEvents", directHookEvents);
@@ -386,6 +398,32 @@ public final class PushImplementationAccessorFixtures {
         return delay.getLong(implementation);
     }
 
+    private static Map<String, Object> rawRunningInfoResults(
+        DefaultMQPushConsumerImpl implementation,
+        RecordingMqClientInstance factory) throws Exception {
+        try {
+            factory.initializeStats();
+            Field consumeServiceField = DefaultMQPushConsumerImpl.class
+                .getDeclaredField("consumeMessageService");
+            consumeServiceField.setAccessible(true);
+            consumeServiceField.set(implementation, Proxy.newProxyInstance(
+                ConsumeMessageService.class.getClassLoader(),
+                new Class<?>[] {ConsumeMessageService.class},
+                (proxy, method, methodArgs) -> "getCorePoolSize".equals(method.getName()) ? 7 : null));
+            ConsumerRunningInfo info = implementation.consumerRunningInfo();
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("rawRunningInfoSubscriptionCount", info.getSubscriptionSet().size());
+            result.put("rawRunningInfoQueueCount", info.getMqTable().size());
+            result.put("rawRunningInfoPopQueueCount", info.getMqPopTable().size());
+            result.put("rawRunningInfoStatusCount", info.getStatusTable().size());
+            result.put("rawRunningInfoCorePoolSize",
+                info.getProperties().getProperty("PROP_THREADPOOL_CORE_SIZE"));
+            return result;
+        } finally {
+            factory.shutdownStats();
+        }
+    }
+
     private static RecordingMqClientInstance recordingMqClientInstance() throws Exception {
         Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
         Field unsafeField = unsafeClass.getDeclaredField("theUnsafe");
@@ -402,6 +440,8 @@ public final class PushImplementationAccessorFixtures {
         private List<String> searches;
         private List<Map<String, Object>> resets;
         private MQAdminImpl admin;
+        private ScheduledExecutorService statsScheduler;
+        private ConsumerStatsManager stats;
 
         private RecordingMqClientInstance() {
             super(new ClientConfig(), 1, "phase18-push-offset-reset-fixture");
@@ -423,6 +463,20 @@ public final class PushImplementationAccessorFixtures {
         @Override
         public MQAdminImpl getMQAdminImpl() {
             return admin;
+        }
+
+        @Override
+        public ConsumerStatsManager getConsumerStatsManager() {
+            return stats;
+        }
+
+        private void initializeStats() {
+            statsScheduler = Executors.newSingleThreadScheduledExecutor();
+            stats = new ConsumerStatsManager(statsScheduler);
+        }
+
+        private void shutdownStats() {
+            if (statsScheduler != null) statsScheduler.shutdownNow();
         }
 
         @Override
