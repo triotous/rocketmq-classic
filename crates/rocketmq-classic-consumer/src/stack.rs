@@ -54,6 +54,7 @@ mod apple {
         fmt::Write as _,
         mem::size_of,
         ptr, slice,
+        sync::Mutex,
     };
 
     use mach2::{
@@ -74,6 +75,7 @@ mod apple {
     use mach2::{structs::x86_thread_state64_t, thread_status::x86_THREAD_STATE64};
 
     const MAX_FRAMES: usize = 128;
+    static CAPTURE_LOCK: Mutex<()> = Mutex::new(());
 
     struct RawStack {
         frames: [usize; MAX_FRAMES],
@@ -139,6 +141,9 @@ mod apple {
     }
 
     pub(super) fn dump() -> Result<String, &'static str> {
+        let _capture_guard = CAPTURE_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let task = unsafe { mach_task_self() };
         let mut ports = ptr::null_mut();
         let mut count = 0;
@@ -350,7 +355,7 @@ mod linux {
     const MAX_FRAME_GAP: u64 = 1024 * 1024;
     const MAX_STACK_SPAN: u64 = 32 * 1024 * 1024;
 
-    static CAPTURE_LOCK: Mutex<()> = Mutex::new(());
+    pub(super) static CAPTURE_LOCK: Mutex<()> = Mutex::new(());
     static ACTIVE_TID: AtomicI32 = AtomicI32::new(0);
     static ACTIVE_SIGNAL: AtomicI32 = AtomicI32::new(0);
     static ACTIVE_TOKEN: AtomicUsize = AtomicUsize::new(0);
@@ -409,8 +414,12 @@ mod linux {
 
     pub(super) fn dump() -> Result<String, String> {
         let _capture_guard = CAPTURE_LOCK
-            .try_lock()
-            .map_err(|_| "another Linux stack capture is in progress".to_owned())?;
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        dump_locked()
+    }
+
+    pub(super) fn dump_locked() -> Result<String, String> {
         let threads = enumerate_threads().map_err(|error| error.to_string())?;
         if threads.is_empty() {
             return Err("/proc/self/task returned no threads".into());
@@ -838,8 +847,8 @@ mod windows {
 
     pub(super) fn dump() -> Result<String, String> {
         let _capture_guard = CAPTURE_LOCK
-            .try_lock()
-            .map_err(|_| "another Windows stack capture is in progress".to_owned())?;
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let threads = enumerate_threads().map_err(|error| error.to_string())?;
         if threads.is_empty() {
             return Err("Toolhelp returned no process threads".into());
@@ -1136,6 +1145,10 @@ mod windows {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(all(
+        target_os = "linux",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )))]
     use super::dump_threads;
     use std::sync::{
         Arc,
@@ -1160,22 +1173,16 @@ mod tests {
             .unwrap();
         ready.recv().unwrap();
 
-        #[cfg(target_os = "linux")]
-        let original_winch_handler = signal_handler(libc::SIGWINCH);
         #[cfg(all(
             target_os = "linux",
             any(target_arch = "x86_64", target_arch = "aarch64")
         ))]
-        let dump = super::linux::dump()
-            .unwrap_or_else(|error| panic!("Linux all-thread stack capture failed: {error}"));
+        let dump = dump_with_restored_signal_handler();
         #[cfg(not(all(
             target_os = "linux",
             any(target_arch = "x86_64", target_arch = "aarch64")
         )))]
         let dump = dump_threads();
-        #[cfg(target_os = "linux")]
-        assert_eq!(signal_handler(libc::SIGWINCH), original_winch_handler);
-
         #[cfg(target_os = "linux")]
         let alternate_signal_dump = dump_with_custom_winch_handler();
 
@@ -1218,8 +1225,75 @@ mod tests {
         }
     }
 
+    #[cfg(all(
+        target_os = "linux",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
+    #[test]
+    fn concurrent_jstack_captures_are_serialized_without_losing_threads() {
+        let (started, ready) = mpsc::channel();
+        let release = Arc::new(AtomicBool::new(false));
+        let worker_release = release.clone();
+        let worker = std::thread::Builder::new()
+            .name("jstack-worker".to_owned())
+            .spawn(move || {
+                started.send(()).unwrap();
+                while !worker_release.load(Ordering::Acquire) {
+                    std::hint::spin_loop();
+                }
+            })
+            .unwrap();
+        ready.recv().unwrap();
+
+        let capture_guard = super::linux::CAPTURE_LOCK.lock().unwrap();
+        let barrier = Arc::new(std::sync::Barrier::new(3));
+        let spawn_capture = |barrier: Arc<std::sync::Barrier>| {
+            std::thread::spawn(move || {
+                barrier.wait();
+                super::linux::dump()
+            })
+        };
+        let first = spawn_capture(barrier.clone());
+        let second = spawn_capture(barrier.clone());
+        barrier.wait();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        drop(capture_guard);
+
+        let first = first.join().unwrap().unwrap();
+        let second = second.join().unwrap().unwrap();
+        release.store(true, Ordering::Release);
+        worker.join().unwrap();
+
+        for dump in [&first, &second] {
+            assert!(dump.contains("jstack-worker"), "{dump}");
+            let lines = dump.lines().collect::<Vec<_>>();
+            let worker_line = lines
+                .iter()
+                .position(|line| line.contains("jstack-worker"))
+                .unwrap();
+            assert!(
+                lines
+                    .get(worker_line + 1)
+                    .is_some_and(|line| !line.contains("native stack unavailable")),
+                "{dump}"
+            );
+        }
+    }
+
     #[cfg(target_os = "linux")]
     extern "C" fn custom_winch_handler(_signal: libc::c_int) {}
+
+    #[cfg(target_os = "linux")]
+    fn dump_with_restored_signal_handler() -> String {
+        let _capture_guard = super::linux::CAPTURE_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let original = signal_handler(libc::SIGWINCH);
+        let dump = super::linux::dump_locked()
+            .unwrap_or_else(|error| panic!("Linux all-thread stack capture failed: {error}"));
+        assert_eq!(signal_handler(libc::SIGWINCH), original);
+        dump
+    }
 
     #[cfg(target_os = "linux")]
     fn signal_handler(signal: libc::c_int) -> usize {
@@ -1233,6 +1307,9 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     fn dump_with_custom_winch_handler() -> String {
+        let _capture_guard = super::linux::CAPTURE_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut custom_action = unsafe { std::mem::zeroed::<libc::sigaction>() };
         custom_action.sa_sigaction = custom_winch_handler as usize;
         unsafe { libc::sigemptyset(&mut custom_action.sa_mask) };
@@ -1246,7 +1323,8 @@ mod tests {
             previous,
         };
 
-        let dump = dump_threads();
+        let dump = super::linux::dump_locked()
+            .unwrap_or_else(|error| panic!("Linux custom-signal stack capture failed: {error}"));
         let current = signal_handler(libc::SIGWINCH);
         assert_eq!(current, custom_action.sa_sigaction);
         dump
