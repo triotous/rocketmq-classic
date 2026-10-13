@@ -59,6 +59,7 @@ public final class PushImplementationAccessorFixtures {
         String consumeType = first.consumeType().name();
         String consumeFromWhere = first.consumeFromWhere().name();
         boolean unitMode = first.isUnitMode();
+        boolean messageQueueListenerInitiallyNull = first.getMessageQueueListener() == null;
         boolean pauseBeforeSet = first.isPause();
         first.setPause(true);
         boolean pauseAfterSetTrue = first.isPause();
@@ -130,6 +131,7 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("consumeType", consumeType);
         fixture.put("consumeFromWhere", consumeFromWhere);
         fixture.put("unitMode", unitMode);
+        fixture.put("messageQueueListenerInitiallyNull", messageQueueListenerInitiallyNull);
         fixture.put("pauseBeforeSet", pauseBeforeSet);
         fixture.put("pauseAfterSetTrue", pauseAfterSetTrue);
         fixture.put("pauseAfterSetFalse", pauseAfterSetFalse);

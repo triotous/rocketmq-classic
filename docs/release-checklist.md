@@ -16,7 +16,8 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   entrypoints, `consumerRunningInfo`, the construction-time start timestamp,
   `get/setPullAPIWrapper`, and Pull's `get/setServiceState`. The Push
   `getDefaultMQPushConsumerImpl()` alias, service-state, pause,
-  consume-orderly and exception-delay accessors, effective retry-limit getter,
+  consume-orderly, exception-delay, and message-queue-listener accessors,
+  effective retry-limit getter,
   offset-store accessors, consumer
   settings/subscriptions, and direct consume-hook entrypoints now have Java
   fixture/Rust evidence; its

@@ -77,7 +77,7 @@ use super::{
     listener::{
         ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus, ConsumeOrderlyContext,
         ConsumeOrderlyStatus, MessageListenerConcurrently, MessageListenerOrderly,
-        PushMessageListener,
+        MessageQueueListener, PushMessageListener,
     },
     pull_service::{
         PULL_TIME_DELAY_MILLIS_WHEN_BROKER_FLOW_CONTROL,
@@ -511,6 +511,11 @@ impl PushConsumer {
 
     pub fn is_unit_mode(&self) -> bool {
         self.config.unit_mode()
+    }
+
+    /// Returns the queue-assignment listener configured on the Push consumer.
+    pub fn get_message_queue_listener(&self) -> Option<MessageQueueListener> {
+        self.config.message_queue_listener()
     }
 
     /// Returns the message trace dispatcher after trace initialization.
@@ -5821,6 +5826,12 @@ mod tests {
         assert_eq!(
             consumer.is_unit_mode(),
             fixture["unitMode"].as_bool().unwrap()
+        );
+        assert_eq!(
+            consumer.get_message_queue_listener().is_none(),
+            fixture["messageQueueListenerInitiallyNull"]
+                .as_bool()
+                .unwrap()
         );
         assert_eq!(
             consumer.is_pause(),
