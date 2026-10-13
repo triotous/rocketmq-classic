@@ -9,3 +9,10 @@ Manifest handoff closure (2026-10-13 07:26:56 UTC):
 - Strengthened comparator validation for required fields, Java and Rust execution directions, assertion coverage, cleanup safety, and source-case coverage. Added negative self-tests for omitted P17-V02, absent assertions, and absent Rust execution direction.
 - PASS: `python3 tests/differential/compare.py --self-test`; `python3 tests/differential/compare.py --validate-manifest` (37 scenarios); `git diff --check`; `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios, Java 5.5.1 source probes, request/header/body cross-decodes). Maven emitted existing JDK Unsafe/final-field-mutation warnings but exited 0.
 - Phase 19 scenarios remain `PENDING_PHASE_19`; no live Broker/Docker tests were run.
+
+
+Deterministic fuzz smoke (2026-10-13 07:33:39 UTC):
+- Added fixture-seeded, fixed-budget mutation coverage for Remoting frames/JSON and private headers/ext fields, message records/properties, and bounded Zlib/LZ4/Zstd decompression. The same harness is part of ordinary Remoting tests and has an isolated `fuzz_smoke` example. Unknown 32-bit JSON and representable private-header request codes round-trip without registry filtering.
+- First run exposed the private-header signed 16-bit request-code encoding boundary when 987654 was selected for the binary codec. Kept the large unknown-code probe on JSON and added a private-header unknown code within its wire range; no implementation behavior was changed.
+- PASS: `cargo test -p rocketmq-classic-remoting --test fuzz_regressions --locked`; `cargo run -p rocketmq-classic-remoting --example fuzz_smoke --locked` (103 Remoting seeds, 10 message seeds, 1,808 mutations, 144 successful frame decodes, 95 successful message decodes); strict Remoting all-target/all-feature Clippy; `cargo fmt --all -- --check`.
+- The bounded decoder limits cap frame/record input at 64 KiB and decompressed bodies at 4 KiB.
