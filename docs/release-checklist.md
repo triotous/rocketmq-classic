@@ -82,12 +82,14 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   now have Rust APIs and fixture-backed unit evidence. `getCompressor`,
   `setCompressType`, `initProduceAccumulator`, and runtime auto-batch state now
   have Producer APIs, invoked Java fixtures and Rust differential tests. The
+  runtime `setCompressMsgBodyOverHowmuch` and `setCompressLevel` settings also
+  have live Producer APIs and Java/Rust regression coverage. The
   broad Java reverse-export, inherited/trait API, and source/input branch
   reconciliation remains local P18-V01 work, not manual validation.
 - [x] Register live cases in the Phase 19 scenario manifest and validate the
   manifest locally.
 - [x] Re-run full workspace/all-feature P18-V02 gates on the latest Producer
-  revision `d56e4094`. Default/all-feature workspace tests, strict workspace
+  revision `da683076`. Default/all-feature workspace tests, strict workspace
   Clippy, fmt/diff, Maven verify (37 scenarios), comparator self-test and
   37-scenario manifest validation, the 16-case race/leak smoke repeated three
   times, bounded fuzz smoke, release examples and benchmark compilation pass.
