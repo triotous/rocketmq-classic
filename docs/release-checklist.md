@@ -58,7 +58,10 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   Broker route lookup offline; its live Broker handoff remains pending.
 - [x] Register live cases in the Phase 19 scenario manifest and validate the
   manifest locally.
-- [ ] Obtain an Ubuntu CI result for the Linux-specific Java address profile.
+- [ ] Obtain a current GitHub Ubuntu CI result for the Linux-specific Java
+  address profile. Current-revision macOS workflow gates pass, and a native
+  Ubuntu ARM64 container passes the Core RPC integration suite; this does not
+  replace the required GitHub Ubuntu result.
 - [ ] Complete Phase 19 Broker/Docker scenarios before final compatibility or
   release acceptance. The owner must provide any deployment-only credentials,
   topology, and maintenance inputs at that phase.
