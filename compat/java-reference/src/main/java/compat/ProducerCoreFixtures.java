@@ -277,6 +277,7 @@ public final class ProducerCoreFixtures {
         compression.put("threshold", threshold);
         compression.put("cases", compressionCases(producer, threshold));
         result.put("compression", compression);
+        result.put("runtimeCompressionSettings", runtimeCompressionSettings());
         result.put("compressionProperties", compressionProperties());
 
         Map<String, Object> faultStrategy = new TreeMap<>();
@@ -484,6 +485,42 @@ public final class ProducerCoreFixtures {
                 cases.add(row);
             }
             return cases;
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalStateException("cannot invoke pinned producer compression method", error);
+        }
+    }
+
+    private static Map<String, Object> runtimeCompressionSettings() {
+        DefaultMQProducer producer = new DefaultMQProducer("runtime-compression-settings");
+        producer.setCompressMsgBodyOverHowmuch(8);
+        Map<String, Object> result = new TreeMap<>();
+        result.put("threshold", producer.getCompressMsgBodyOverHowmuch());
+        result.put("thresholdCases", compressionCases(producer, 8));
+
+        producer.setCompressMsgBodyOverHowmuch(1);
+        result.put("thresholdAfterUpdate", producer.getCompressMsgBodyOverHowmuch());
+        result.put("level1", compressionAtCurrentLevel(producer, 1));
+        result.put("level9", compressionAtCurrentLevel(producer, 9));
+        return result;
+    }
+
+    private static Map<String, Object> compressionAtCurrentLevel(DefaultMQProducer producer, int level) {
+        try {
+            Field implementationField = DefaultMQProducer.class.getDeclaredField("defaultMQProducerImpl");
+            implementationField.setAccessible(true);
+            Object implementation = implementationField.get(producer);
+            Method compress = implementation.getClass().getDeclaredMethod("tryToCompressMessage", Message.class);
+            compress.setAccessible(true);
+            byte[] body = new byte[16_384];
+            Arrays.fill(body, (byte) 'x');
+            Message message = new Message("orders", body);
+            producer.setCompressLevel(level);
+            boolean compressed = (Boolean) compress.invoke(implementation, message);
+            Map<String, Object> result = new TreeMap<>();
+            result.put("level", producer.getCompressLevel());
+            result.put("compressed", compressed);
+            result.put("compressedBodyLength", message.getBody().length);
+            return result;
         } catch (ReflectiveOperationException error) {
             throw new IllegalStateException("cannot invoke pinned producer compression method", error);
         }

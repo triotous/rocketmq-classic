@@ -92,9 +92,9 @@ pub struct ProducerConfig {
     default_topic_queue_nums: i32,
     send_timeout_millis: i32,
     send_msg_max_timeout_per_request: i32,
-    compress_threshold: i32,
+    compress_threshold: SharedAtomicI32,
     compress_type: SharedAtomicI32,
-    compress_level: i32,
+    compress_level: SharedAtomicI32,
     retry_times_when_send_failed: i32,
     retry_times_when_send_async_failed: i32,
     retry_response_codes: RetryResponseCodes,
@@ -122,9 +122,9 @@ impl Clone for ProducerConfig {
             default_topic_queue_nums: self.default_topic_queue_nums,
             send_timeout_millis: self.send_timeout_millis,
             send_msg_max_timeout_per_request: self.send_msg_max_timeout_per_request,
-            compress_threshold: self.compress_threshold,
+            compress_threshold: self.compress_threshold.clone(),
             compress_type: self.compress_type.clone(),
-            compress_level: self.compress_level,
+            compress_level: self.compress_level.clone(),
             retry_times_when_send_failed: self.retry_times_when_send_failed,
             retry_times_when_send_async_failed: self.retry_times_when_send_async_failed,
             retry_response_codes: self.retry_response_codes.detached_clone(),
@@ -156,9 +156,9 @@ impl ProducerConfig {
             default_topic_queue_nums: DEFAULT_TOPIC_QUEUE_COUNT,
             send_timeout_millis: DEFAULT_SEND_TIMEOUT_MILLIS,
             send_msg_max_timeout_per_request: -1,
-            compress_threshold: DEFAULT_COMPRESS_THRESHOLD,
+            compress_threshold: SharedAtomicI32::new(DEFAULT_COMPRESS_THRESHOLD),
             compress_type: SharedAtomicI32::new(compress_type.get_value()),
-            compress_level,
+            compress_level: SharedAtomicI32::new(compress_level),
             retry_times_when_send_failed: DEFAULT_SYNC_RETRIES,
             retry_times_when_send_async_failed: DEFAULT_ASYNC_RETRIES,
             retry_response_codes: RetryResponseCodes::new(
@@ -315,10 +315,13 @@ impl ProducerConfig {
         self.send_msg_max_timeout_per_request = value;
     }
     pub fn compress_threshold(&self) -> i32 {
-        self.compress_threshold
+        self.compress_threshold.load()
     }
     pub fn set_compress_threshold(&mut self, value: i32) {
-        self.compress_threshold = value;
+        self.compress_threshold.store(value);
+    }
+    pub(crate) fn set_compress_threshold_runtime(&self, value: i32) {
+        self.compress_threshold.store(value);
     }
     pub fn compress_type(&self) -> CompressionType {
         CompressionType::find_by_value(self.compress_type.load())
@@ -331,10 +334,13 @@ impl ProducerConfig {
         self.compress_type.store(value.get_value());
     }
     pub fn compress_level(&self) -> i32 {
-        self.compress_level
+        self.compress_level.load()
     }
     pub fn set_compress_level(&mut self, value: i32) {
-        self.compress_level = value;
+        self.compress_level.store(value);
+    }
+    pub(crate) fn set_compress_level_runtime(&self, value: i32) {
+        self.compress_level.store(value);
     }
     pub fn retry_times_when_send_failed(&self) -> i32 {
         self.retry_times_when_send_failed

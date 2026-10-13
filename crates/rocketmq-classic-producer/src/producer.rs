@@ -237,6 +237,26 @@ impl Producer {
         self.config.set_compress_type_runtime(value);
     }
 
+    /// Returns the minimum body size that the producer compresses.
+    pub fn compress_threshold(&self) -> i32 {
+        self.config.compress_threshold()
+    }
+
+    /// Changes the compression threshold for later sends.
+    pub fn set_compress_threshold(&self, value: i32) {
+        self.config.set_compress_threshold_runtime(value);
+    }
+
+    /// Returns the compression level used by later sends.
+    pub fn compress_level(&self) -> i32 {
+        self.config.compress_level()
+    }
+
+    /// Changes the compression level used by later sends.
+    pub fn set_compress_level(&self, value: i32) {
+        self.config.set_compress_level_runtime(value);
+    }
+
     /// Returns the current async backpressure mode. The value can be changed
     /// while the producer is running, like Java's
     /// `isEnableBackpressureForAsyncMode` setting.

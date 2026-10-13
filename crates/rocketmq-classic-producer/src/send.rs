@@ -3380,6 +3380,73 @@ mod tests {
         }
     }
 
+    #[test]
+    fn runtime_compression_settings_match_java_and_config_clones_are_snapshots() {
+        let config = crate::ProducerConfig::new("runtime-compression-test").unwrap();
+        let snapshot = config.clone();
+        let producer = crate::Producer::new(config);
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+        let runtime = &fixture["runtimeCompressionSettings"];
+
+        let threshold = runtime["threshold"].as_i64().unwrap() as i32;
+        producer.set_compress_threshold(threshold);
+        assert_eq!(producer.compress_threshold(), threshold);
+        for case in runtime["thresholdCases"].as_array().unwrap() {
+            let length = case["bodyLength"].as_u64().unwrap() as usize;
+            let expected = case["compressed"].as_bool().unwrap();
+            let original = Message::new("orders", vec![b'x'; length]);
+            let mut message = original.clone();
+            let flag = producer.compress_message_before_hook(&mut message, false);
+            let prepared = producer.prepare(&message, false, flag).unwrap();
+            assert_eq!(
+                message::has_compressed_flag(prepared.sys_flag),
+                expected,
+                "Java runtime compression threshold case {case}"
+            );
+        }
+
+        let updated_threshold = runtime["thresholdAfterUpdate"].as_i64().unwrap() as i32;
+        producer.set_compress_threshold(updated_threshold);
+        assert_eq!(producer.compress_threshold(), updated_threshold);
+
+        let body = vec![b'x'; 16_384];
+        let mut compressed_by_level = Vec::new();
+        for level_name in ["level1", "level9"] {
+            let level = runtime[level_name]["level"].as_i64().unwrap() as i32;
+            producer.set_compress_level(level);
+            assert_eq!(producer.compress_level(), level);
+            let original = Message::new("orders", body.clone());
+            let mut message = original.clone();
+            let flag = producer.compress_message_before_hook(&mut message, false);
+            let prepared = producer.prepare(&message, false, flag).unwrap();
+            assert_eq!(
+                message::has_compressed_flag(prepared.sys_flag),
+                runtime[level_name]["compressed"].as_bool().unwrap()
+            );
+            assert_eq!(
+                rocketmq_classic_common::compression::decompress(
+                    rocketmq_classic_common::sysflag::message::CompressionType::Zlib,
+                    &prepared.body
+                )
+                .unwrap(),
+                body
+            );
+            compressed_by_level.push(prepared.body);
+        }
+        assert_ne!(
+            compressed_by_level[0], compressed_by_level[1],
+            "runtime compression level changes subsequent compressed output"
+        );
+        assert_ne!(
+            runtime["level1"]["compressedBodyLength"], runtime["level9"]["compressedBodyLength"],
+            "the invoked Java fixture confirms these levels produce distinct output"
+        );
+
+        assert_eq!(snapshot.compress_threshold(), 4_096);
+        assert_eq!(snapshot.compress_level(), 5);
+    }
+
     #[tokio::test]
     async fn async_backpressure_uses_java_minimums_and_releases_permits_on_drop() {
         let mut config = crate::ProducerConfig::new("backpressure-producer").unwrap();
