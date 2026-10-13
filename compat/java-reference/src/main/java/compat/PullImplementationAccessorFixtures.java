@@ -10,9 +10,13 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import org.apache.rocketmq.client.consumer.DefaultMQPullConsumer;
+import org.apache.rocketmq.client.consumer.MessageSelector;
 import org.apache.rocketmq.client.impl.consumer.DefaultMQPullConsumerImpl;
+import org.apache.rocketmq.common.consumer.ConsumeFromWhere;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.message.MessageQueue;
+import org.apache.rocketmq.remoting.protocol.heartbeat.ConsumeType;
+import org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel;
 import org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData;
 
 /** Checks the deprecated facade accessor and its retained implementation identity. */
@@ -46,6 +50,30 @@ public final class PullImplementationAccessorFixtures {
         return topics;
     }
 
+    private static List<String> subscriptionRows(Iterable<SubscriptionData> subscriptions) {
+        List<String> rows = new ArrayList<>();
+        for (SubscriptionData subscription : subscriptions) {
+            TreeSet<String> tags = new TreeSet<>(subscription.getTagsSet());
+            TreeSet<Integer> codes = new TreeSet<>(subscription.getCodeSet());
+            String version = subscription.getSubVersion() == 0 ? "0" : "nonzero";
+            rows.add(subscription.getTopic() + "|" + subscription.getSubString() + "|"
+                + subscription.getExpressionType() + "|" + subscription.isClassFilterMode() + "|"
+                + version + "|" + tags + "|" + codes);
+        }
+        rows.sort(String::compareTo);
+        return rows;
+    }
+
+    private static SubscriptionData tagSubscription(String topic, String tag, long version) {
+        SubscriptionData subscription = new SubscriptionData();
+        subscription.setTopic(topic);
+        subscription.setSubString(tag);
+        subscription.setSubVersion(version);
+        subscription.getTagsSet().add(tag);
+        subscription.getCodeSet().add(tag.hashCode());
+        return subscription;
+    }
+
     public static void main(String[] args) throws Exception {
         check(args.length >= 1, "expected fixture path");
         Path path = Path.of(args[0]);
@@ -62,6 +90,16 @@ public final class PullImplementationAccessorFixtures {
         check(first.getOffsetStore() == null, "offset store absent before start");
         check(first.getPullAPIWrapper() == null, "pull API wrapper absent before start");
         check(first.getRebalanceImpl() != null, "rebalance implementation constructed");
+        String groupNameBeforeStart = first.groupName();
+        MessageModel messageModelBeforeMutation = first.messageModel();
+        boolean unitModeBeforeMutation = first.isUnitMode();
+        consumer.setMessageModel(MessageModel.BROADCASTING);
+        consumer.setUnitMode(true);
+        MessageModel messageModelAfterMutation = first.messageModel();
+        boolean unitModeAfterMutation = first.isUnitMode();
+        ConsumeType consumeType = first.consumeType();
+        ConsumeFromWhere consumeFromWhere = first.consumeFromWhere();
+        List<String> initialSubscriptions = subscriptionRows(first.subscriptions());
         int maxReconsumeTimesDefault = consumer.getMaxReconsumeTimes();
         consumer.setMaxReconsumeTimes(-3);
         check(consumer.getMaxReconsumeTimes() == -3, "max reconsume setting mutation");
@@ -124,6 +162,13 @@ public final class PullImplementationAccessorFixtures {
         check(!subscriptionInner.containsKey(registeredTopic), "unsubscribe removes namespaced key as supplied");
         check(consumer.getRegisterTopics().contains(registeredTopic),
             "unsubscribe leaves facade topic registration unchanged");
+        List<String> topicSubscriptions = subscriptionRows(first.subscriptions());
+        consumer.addRegisterSubscriptions("explicit-topic", MessageSelector.byTag("red"));
+        List<String> explicitSubscriptions = subscriptionRows(first.subscriptions());
+        consumer.getRegisterSubscriptions().clear();
+        consumer.getRegisterSubscriptions().add(tagSubscription("duplicate-topic", "red", 11));
+        consumer.getRegisterSubscriptions().add(tagSubscription("duplicate-topic", "red", 12));
+        List<String> duplicateVersionSubscriptions = subscriptionRows(first.subscriptions());
 
         Map<String, Object> provenance = new TreeMap<>();
         provenance.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
@@ -175,6 +220,17 @@ public final class PullImplementationAccessorFixtures {
         fixture.put("unsubscribeLeavesFacadeRegistration",
             consumer.getRegisterTopics().contains(registeredTopic));
         fixture.put("subscriptionAutomaticallyDoesNotNamespace", "raw-topic".equals(automaticSubscription.getTopic()));
+        fixture.put("groupNameBeforeStart", groupNameBeforeStart);
+        fixture.put("messageModelBeforeMutation", messageModelBeforeMutation.name());
+        fixture.put("messageModelAfterMutation", messageModelAfterMutation.name());
+        fixture.put("unitModeBeforeMutation", unitModeBeforeMutation);
+        fixture.put("unitModeAfterMutation", unitModeAfterMutation);
+        fixture.put("consumeType", consumeType.name());
+        fixture.put("consumeFromWhere", consumeFromWhere.name());
+        fixture.put("subscriptionsInitially", initialSubscriptions);
+        fixture.put("subscriptionsFromTopics", topicSubscriptions);
+        fixture.put("subscriptionsFromExplicit", explicitSubscriptions);
+        fixture.put("subscriptionsWithSameSpecDifferentVersions", duplicateVersionSubscriptions);
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture) + "\n";
         if (verify) {
             check(Files.exists(path) && json.equals(Files.readString(path)), "fixture drift: " + path);

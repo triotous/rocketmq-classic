@@ -117,11 +117,11 @@ impl PullConsumerConfig {
         self.message_model = value;
     }
 
-    pub const fn consume_from_where(&self) -> ConsumeFromWhere {
+    pub(crate) const fn consume_from_where(&self) -> ConsumeFromWhere {
         self.consume_from_where
     }
 
-    pub fn set_consume_from_where(&mut self, value: ConsumeFromWhere) {
+    pub(crate) fn set_consume_from_where(&mut self, value: ConsumeFromWhere) {
         self.consume_from_where = value;
     }
 

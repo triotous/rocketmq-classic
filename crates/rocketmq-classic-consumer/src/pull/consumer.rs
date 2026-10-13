@@ -54,8 +54,7 @@ const FIRST_BROKER_SUPPORTING_EXPRESSION_FILTER: i32 = 232;
 const PULL_SEND_BACK_TIMEOUT_MILLIS: u64 = 3_000;
 const LOGICAL_QUEUE_MOCK_BROKER_PREFIX: &str = "__syslo__";
 
-type RegisteredSubscriptionKey = (String, String, String);
-type RegisteredSubscriptions = Arc<RwLock<HashMap<RegisteredSubscriptionKey, SubscriptionData>>>;
+type RegisteredSubscriptions = Arc<RwLock<HashSet<SubscriptionData>>>;
 
 /// Selector API corresponding to Java `MessageSelector`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,6 +101,7 @@ enum State {
 /// the offset unchanged; applications choose when to update and persist it.
 pub struct PullConsumer {
     config: PullConsumerConfig,
+    current_group_name: RwLock<String>,
     manager: ClientRuntimeManager,
     rpc_hook: Option<Arc<dyn RpcHook>>,
     consume_message_hooks: ConsumeMessageHookRegistry,
@@ -144,11 +144,13 @@ impl PullConsumer {
         manager: ClientRuntimeManager,
         rpc_hook: Option<Arc<dyn RpcHook>>,
     ) -> Self {
+        let current_group_name = config.consumer_group().to_owned();
         let pull_api = PullAPIWrapper::new(config.unit_mode());
         let message_queue_listener = config.message_queue_listener();
         let enable_rebalance = config.enable_rebalance();
         Self {
             config,
+            current_group_name: RwLock::new(current_group_name),
             manager,
             rpc_hook,
             consume_message_hooks: ConsumeMessageHookRegistry::default(),
@@ -157,7 +159,7 @@ impl PullConsumer {
             offset_store: Mutex::new(None),
             retry_helper: Mutex::new(None),
             subscriptions: Arc::new(RwLock::new(HashMap::new())),
-            register_subscriptions: Arc::new(RwLock::new(HashMap::new())),
+            register_subscriptions: Arc::new(RwLock::new(HashSet::new())),
             additional_heartbeat_subscriptions: Arc::new(RwLock::new(
                 ConsumerSubscriptionDataSet::new(),
             )),
@@ -174,6 +176,28 @@ impl PullConsumer {
 
     pub fn config(&self) -> &PullConsumerConfig {
         &self.config
+    }
+
+    /// Returns the consumer group as exposed by Java's implementation getter.
+    /// It is raw before startup and namespace-wrapped once startup begins.
+    pub fn group_name(&self) -> String {
+        read_lock(&self.current_group_name).clone()
+    }
+
+    pub fn message_model(&self) -> MessageModel {
+        self.config.message_model()
+    }
+
+    pub fn is_unit_mode(&self) -> bool {
+        self.config.unit_mode()
+    }
+
+    pub const fn consume_type(&self) -> ConsumeType {
+        ConsumeType::ConsumeActively
+    }
+
+    pub const fn consume_from_where(&self) -> ConsumeFromWhere {
+        ConsumeFromWhere::ConsumeFromLastOffset
     }
 
     /// Returns the pull-consumer implementation represented by this facade.
@@ -297,7 +321,7 @@ impl PullConsumer {
         let removed_registered_subscriptions = {
             let mut subscriptions = write_lock(&self.register_subscriptions);
             let before = subscriptions.len();
-            subscriptions.retain(|(registered_topic, _, _), _| registered_topic != &topic);
+            subscriptions.retain(|subscription| subscription.get_topic() != Some(topic.as_str()));
             subscriptions.len() != before
         };
         if removed_registration || removed_subscription || removed_registered_subscriptions {
@@ -321,10 +345,31 @@ impl PullConsumer {
         read_lock(&self.register_topics).clone()
     }
 
-    pub fn register_subscriptions(&self) -> Vec<SubscriptionData> {
-        read_lock(&self.register_subscriptions)
-            .values()
-            .cloned()
+    // Java exposes a Set<SubscriptionData>; its shared tag/code fields are
+    // mutable even though set equality and version behavior must be retained.
+    #[allow(clippy::mutable_key_type)]
+    pub fn register_subscriptions(&self) -> HashSet<SubscriptionData> {
+        read_lock(&self.register_subscriptions).clone()
+    }
+
+    /// Returns configured subscription data, matching
+    /// `DefaultMQPullConsumerImpl.subscriptions`. Explicit subscriptions take
+    /// precedence over the wildcard entries built from registered topics.
+    // Preserve Java's Set<SubscriptionData> shape for this accessor.
+    #[allow(clippy::mutable_key_type)]
+    pub fn subscriptions(&self) -> HashSet<SubscriptionData> {
+        let registered_subscriptions = read_lock(&self.register_subscriptions);
+        if !registered_subscriptions.is_empty() {
+            return registered_subscriptions.clone();
+        }
+
+        read_lock(&self.register_topics)
+            .iter()
+            .map(|topic| {
+                let mut subscription = subscription_all(topic);
+                subscription.set_sub_version(0);
+                subscription
+            })
             .collect()
     }
 
@@ -342,12 +387,7 @@ impl PullConsumer {
             Some(selector.expression_type()),
         )
         .map_err(|error| PullConsumerError::InvalidSubscription(error.to_string()))?;
-        let key = (
-            topic,
-            selector.expression_type().to_owned(),
-            selector.expression().to_owned(),
-        );
-        write_lock(&self.register_subscriptions).insert(key, subscription);
+        write_lock(&self.register_subscriptions).insert(subscription);
         self.wakeup_rebalance();
         Ok(())
     }
@@ -572,6 +612,7 @@ impl PullConsumer {
         let consumer_group = client_config
             .with_namespace(Some(self.config.consumer_group()))?
             .ok_or(PullConsumerError::InvalidConsumerGroup)?;
+        *write_lock(&self.current_group_name) = consumer_group.clone();
         self.config.validate(&consumer_group)?;
 
         let runtime = self
@@ -1657,7 +1698,7 @@ impl ConsumerRuntime for PullConsumerRegistration {
                 .collect::<ConsumerSubscriptionDataSet>()
         } else {
             registered_subscriptions
-                .values()
+                .iter()
                 .cloned()
                 .map(|subscription| Some(SharedValue::from(subscription)))
                 .collect::<ConsumerSubscriptionDataSet>()
@@ -2437,6 +2478,147 @@ mod tests {
     }
 
     #[test]
+    fn raw_pull_state_getters_and_subscriptions_match_java_fixture() {
+        let expected: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/pull-implementation-accessor.json"
+        ))
+        .unwrap();
+        let mut config = PullConsumerConfig::new("phase18-pull-implementation-accessor").unwrap();
+        assert_eq!(config.message_model(), MessageModel::Clustering);
+        assert!(!config.unit_mode());
+        config
+            .client_config_mut()
+            .set_namespace(Some("tenant".into()));
+        config.set_message_model(MessageModel::Broadcasting);
+        config.set_unit_mode(true);
+        let consumer = PullConsumer::new(config);
+
+        assert_eq!(
+            consumer.group_name(),
+            expected["groupNameBeforeStart"].as_str().unwrap()
+        );
+        assert_eq!(
+            consumer.message_model().name(),
+            expected["messageModelAfterMutation"].as_str().unwrap()
+        );
+        assert_eq!(
+            consumer.is_unit_mode(),
+            expected["unitModeAfterMutation"].as_bool().unwrap()
+        );
+        assert_eq!(
+            consumer.consume_type().name(),
+            expected["consumeType"].as_str().unwrap()
+        );
+        assert_eq!(
+            consumer.consume_from_where().name(),
+            expected["consumeFromWhere"].as_str().unwrap()
+        );
+        assert_eq!(
+            expected["messageModelBeforeMutation"].as_str().unwrap(),
+            MessageModel::Clustering.name()
+        );
+        assert!(!expected["unitModeBeforeMutation"].as_bool().unwrap());
+
+        let rows = |subscriptions: HashSet<SubscriptionData>| {
+            let mut rows = subscriptions
+                .into_iter()
+                .map(|subscription| {
+                    let tags = subscription
+                        .get_tags_set()
+                        .map(|set| {
+                            let mut values = set
+                                .snapshot()
+                                .into_iter()
+                                .map(|value| value.unwrap_or_else(|| "null".to_owned()))
+                                .collect::<Vec<_>>();
+                            values.sort();
+                            format!("[{}]", values.join(", "))
+                        })
+                        .unwrap_or_else(|| "null".to_owned());
+                    let codes = subscription
+                        .get_code_set()
+                        .map(|set| {
+                            let mut values = set
+                                .snapshot()
+                                .into_iter()
+                                .map(|value| {
+                                    value.map_or_else(
+                                        || "null".to_owned(),
+                                        |value| value.to_string(),
+                                    )
+                                })
+                                .collect::<Vec<_>>();
+                            values.sort();
+                            format!("[{}]", values.join(", "))
+                        })
+                        .unwrap_or_else(|| "null".to_owned());
+                    let version = if subscription.get_sub_version() == 0 {
+                        "0"
+                    } else {
+                        "nonzero"
+                    };
+                    format!(
+                        "{}|{}|{}|{}|{}|{}|{}",
+                        subscription.get_topic().unwrap_or("null"),
+                        subscription.get_sub_string().unwrap_or("null"),
+                        subscription.get_expression_type().unwrap_or("null"),
+                        subscription.is_class_filter_mode(),
+                        version,
+                        tags,
+                        codes
+                    )
+                })
+                .collect::<Vec<_>>();
+            rows.sort();
+            rows
+        };
+        let expected_rows = |field: &str| {
+            expected[field]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_str().unwrap().to_owned())
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(
+            rows(consumer.subscriptions()),
+            expected_rows("subscriptionsInitially")
+        );
+        consumer.register_topic("registered-topic").unwrap();
+        assert_eq!(
+            rows(consumer.subscriptions()),
+            expected_rows("subscriptionsFromTopics")
+        );
+        let selector = MessageSelector::by_tag("red");
+        consumer
+            .add_register_subscriptions("explicit-topic", Some(&selector))
+            .unwrap();
+        assert_eq!(consumer.register_subscriptions().len(), 1);
+        assert_eq!(
+            rows(consumer.subscriptions()),
+            expected_rows("subscriptionsFromExplicit")
+        );
+
+        let mut first_version =
+            build_subscription("duplicate-topic", Some("red"), Some("TAG")).unwrap();
+        first_version.set_sub_version(11);
+        let mut second_version = first_version.clone();
+        second_version.set_sub_version(12);
+        {
+            let mut registered = write_lock(&consumer.register_subscriptions);
+            registered.clear();
+            registered.insert(first_version);
+            registered.insert(second_version);
+        }
+        assert_eq!(consumer.register_subscriptions().len(), 2);
+        assert_eq!(
+            rows(consumer.subscriptions()),
+            expected_rows("subscriptionsWithSameSpecDifferentVersions")
+        );
+    }
+
+    #[test]
     fn pull_sendback_resolves_logical_broker_through_topic_endpoints() {
         let logical_queue = MessageQueue::new("tenant%orders", "__syslo__logical", 2);
         let topic = TopicSnapshot {
@@ -2861,16 +3043,12 @@ mod tests {
         consumer
             .add_register_subscriptions("events", Some(&selector))
             .unwrap();
+        #[allow(clippy::mutable_key_type)]
         let registered_subscriptions = consumer.register_subscriptions();
         assert_eq!(registered_subscriptions.len(), 1);
-        assert_eq!(
-            registered_subscriptions[0].get_topic(),
-            Some("tenant%events")
-        );
-        assert_eq!(
-            registered_subscriptions[0].get_expression_type(),
-            Some("SQL92")
-        );
+        let registered_subscription = registered_subscriptions.iter().next().unwrap();
+        assert_eq!(registered_subscription.get_topic(), Some("tenant%events"));
+        assert_eq!(registered_subscription.get_expression_type(), Some("SQL92"));
         assert!(consumer.unregister_topic("events").unwrap());
         consumer.clear_register_subscriptions();
         assert!(consumer.register_subscriptions().is_empty());
@@ -2911,7 +3089,7 @@ mod tests {
             strategy: config.allocate_message_queue_strategy(),
             message_queue_listener: Arc::new(RwLock::new(Some(listener))),
             register_topics: Arc::new(RwLock::new(BTreeSet::from(["orders".to_owned()]))),
-            register_subscriptions: Arc::new(RwLock::new(HashMap::new())),
+            register_subscriptions: Arc::new(RwLock::new(HashSet::new())),
             additional_heartbeat_subscriptions: Arc::new(RwLock::new(
                 ConsumerSubscriptionDataSet::new(),
             )),
@@ -3022,7 +3200,7 @@ mod tests {
             strategy: config.allocate_message_queue_strategy(),
             message_queue_listener: Arc::new(RwLock::new(None)),
             register_topics: Arc::new(RwLock::new(BTreeSet::from(["orders".to_owned()]))),
-            register_subscriptions: Arc::new(RwLock::new(HashMap::new())),
+            register_subscriptions: Arc::new(RwLock::new(HashSet::new())),
             additional_heartbeat_subscriptions: Arc::new(RwLock::new(
                 ConsumerSubscriptionDataSet::new(),
             )),
@@ -3134,6 +3312,7 @@ mod tests {
         let consumer = Arc::new(PullConsumer::with_manager(config, manager));
         let store = Arc::new(TestOffsetStore::default());
 
+        assert_eq!(consumer.group_name(), "pull-lifecycle");
         assert!(consumer.get_offset_store().is_none());
         assert!(matches!(
             consumer.fetch_message_queues_in_balance("orders").await,
@@ -3145,6 +3324,7 @@ mod tests {
             .unwrap();
         consumer.register_topic("orders").unwrap();
         consumer.start().await.unwrap();
+        assert_eq!(consumer.group_name(), "tenant%pull-lifecycle");
         let runtime = consumer.started_runtime().await.unwrap().0;
         write_lock(&consumer.topic_queues).insert(
             "tenant%orders".to_owned(),
