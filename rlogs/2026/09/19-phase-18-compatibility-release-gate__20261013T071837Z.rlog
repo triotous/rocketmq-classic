@@ -1,0 +1,11 @@
+# Phase 18 — Compatibility release gate
+
+- Started 2026-10-13 07:18 UTC on `phase/19-phase-18-compatibility-release-gate`, based on completed Phase 17 commits `0b8e98c8`, `0b979961`, and `eddddfbc`. Worktree was clean before Phase 18.
+- Initial audit found the differential manifest has 32 cases and ends at Phase 12; `compare.py` only discovers pending handoffs through Phase 11. Phase 13–17 handoffs, fuzz/stress/benchmark harnesses, release checklist, bidirectional final matrix updates, and corresponding CI gates require review/implementation. README still describes Phases 16–18 as future/in progress. No plan file was edited.
+
+
+Manifest handoff closure (2026-10-13 07:26:56 UTC):
+- Extended the Phase 19 source-ID inventory through Phase 17 and added P13-V02 through P17-V02. The 37-row manifest now records each handoff's assertions, Java/Rust client directions, and exact compatibility-prefixed topic/group cleanup scope.
+- Strengthened comparator validation for required fields, Java and Rust execution directions, assertion coverage, cleanup safety, and source-case coverage. Added negative self-tests for omitted P17-V02, absent assertions, and absent Rust execution direction.
+- PASS: `python3 tests/differential/compare.py --self-test`; `python3 tests/differential/compare.py --validate-manifest` (37 scenarios); `git diff --check`; `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios, Java 5.5.1 source probes, request/header/body cross-decodes). Maven emitted existing JDK Unsafe/final-field-mutation warnings but exited 0.
+- Phase 19 scenarios remain `PENDING_PHASE_19`; no live Broker/Docker tests were run.

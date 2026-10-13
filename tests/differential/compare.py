@@ -31,10 +31,28 @@ def compare(left, right, unordered_paths=frozenset(), ignored=frozenset()):
 def pending_phase19_source_case_ids():
     pending = set()
     for plan_path in Path("plan/2026/09").glob("*-phase-*.md"):
-        match = re.search(r"phase-(\d+)-", plan_path.name)
-        if not match or int(match.group(1)) > 11:
+        if plan_path.name.endswith(".zh-tw.md"):
             continue
-        pending.update(re.findall(r"(?m)^- \[ \] \*\*(P\d+-V\d+)\*\*", plan_path.read_text()))
+        match = re.search(r"phase-(\d+)-", plan_path.name)
+        if not match:
+            continue
+        phase = int(match.group(1))
+        if phase > 17:
+            continue
+        plan = plan_path.read_text()
+        if phase <= 11:
+            # These early plans record their pending live gates as unchecked
+            # validation rows rather than in a dedicated Phase 19 section.
+            pending.update(re.findall(r"(?m)^- \[ \] \*\*(P\d+-V\d+)\*\*", plan))
+            continue
+        handoff = re.search(
+            r"(?ms)^### [^\n]*Phase 19 live-test handoff[^\n]*\n(.*?)(?=^## |\Z)",
+            plan,
+        )
+        if handoff:
+            pending.update(
+                re.findall(r"(?m)^- \[ \] \*\*(P\d+-V\d+)\*\*", handoff.group(1))
+            )
     return pending
 
 
@@ -46,12 +64,81 @@ def validate_manifest(manifest):
         raise ValueError("manifest scenarios must be a non-empty array")
     ids = set()
     for scenario in scenarios:
-        required = {"id", "phase", "execution_phase", "profile", "inputs", "normalization", "live_status"}
+        required = {
+            "id",
+            "phase",
+            "execution_phase",
+            "profile",
+            "inputs",
+            "assertions",
+            "client_directions",
+            "cleanup",
+            "normalization",
+            "live_status",
+        }
         if not isinstance(scenario, dict) or not required.issubset(scenario):
             raise ValueError("scenario is missing required fields")
         if scenario["id"] in ids:
             raise ValueError(f"duplicate scenario id: {scenario['id']}")
         ids.add(scenario["id"])
+        assertions = scenario["assertions"]
+        if not isinstance(assertions, list) or not assertions or not all(
+            isinstance(assertion, str) and assertion.strip()
+            for assertion in assertions
+        ):
+            raise ValueError(f"scenario has no explicit assertions: {scenario['id']}")
+        checks = scenario["inputs"].get("checks", [])
+        missing_assertions = set(checks) - set(assertions)
+        if missing_assertions:
+            missing = ", ".join(sorted(missing_assertions))
+            raise ValueError(
+                f"scenario assertions omit input checks for {scenario['id']}: {missing}"
+            )
+        directions = scenario["client_directions"]
+        if (
+            not isinstance(directions, list)
+            or not directions
+            or not all(isinstance(direction, str) and direction.strip() for direction in directions)
+            or not any("java" in direction.lower() for direction in directions)
+            or not any("rust" in direction.lower() for direction in directions)
+        ):
+            raise ValueError(
+                f"scenario must declare Java and Rust client directions: {scenario['id']}"
+            )
+        cleanup = scenario["cleanup"]
+        cleanup_fields = {"topics", "consumer_groups", "offsets_with_groups", "notes"}
+        if not isinstance(cleanup, dict) or not cleanup_fields.issubset(cleanup):
+            raise ValueError(f"scenario is missing cleanup instructions: {scenario['id']}")
+        if (
+            not isinstance(cleanup["topics"], list)
+            or not isinstance(cleanup["consumer_groups"], list)
+            or cleanup["offsets_with_groups"] is not True
+            or not isinstance(cleanup["notes"], str)
+            or not cleanup["notes"].strip()
+        ):
+            raise ValueError(f"scenario has invalid cleanup instructions: {scenario['id']}")
+        input_resources = set()
+        for name in ("topic", "group", "consumer_group", "producer_group"):
+            value = scenario["inputs"].get(name)
+            if isinstance(value, str):
+                input_resources.add(value)
+        for name in ("producer_groups", "topics", "groups"):
+            value = scenario["inputs"].get(name, [])
+            if isinstance(value, list):
+                input_resources.update(item for item in value if isinstance(item, str))
+        cleanup_resources = set(cleanup["topics"]) | set(cleanup["consumer_groups"])
+        if not input_resources.issubset(cleanup_resources):
+            missing = ", ".join(sorted(input_resources - cleanup_resources))
+            raise ValueError(
+                f"scenario cleanup omits input resources for {scenario['id']}: {missing}"
+            )
+        if not all(
+            isinstance(resource, str) and resource.startswith("compat_")
+            for resource in cleanup_resources
+        ):
+            raise ValueError(
+                f"scenario cleanup includes a non-isolated resource: {scenario['id']}"
+            )
         if scenario["execution_phase"] == 19 and scenario["live_status"] == "PASS":
             raise ValueError(f"unexecuted Phase 19 scenario cannot be PASS: {scenario['id']}")
     phase19_ids = {
@@ -110,6 +197,17 @@ def self_test():
                 "execution_phase": 19,
                 "profile": "basic",
                 "inputs": {},
+                "assertions": ["java-rust-result-equality"],
+                "client_directions": [
+                    "java-5.5.1-client->server-5.3.4",
+                    "rust-client->server-5.3.4",
+                ],
+                "cleanup": {
+                    "topics": [],
+                    "consumer_groups": [],
+                    "offsets_with_groups": True,
+                    "notes": "Delete only resources owned by this scenario.",
+                },
                 "normalization": [],
                 "live_status": "PENDING_PHASE_19",
             }
@@ -143,6 +241,44 @@ def self_test():
         raise AssertionError("manifest accepted an omitted Phase 11 live handoff")
     except ValueError as error:
         assert "P11-V04" in str(error)
+    missing_late_handoff = {
+        **checked_in,
+        "scenarios": [case for case in checked_in["scenarios"] if case["id"] != "P17-V02"],
+    }
+    try:
+        validate_manifest(missing_late_handoff)
+        raise AssertionError("manifest accepted an omitted Phase 17 live handoff")
+    except ValueError as error:
+        assert "P17-V02" in str(error)
+    missing_assertion = {
+        **checked_in,
+        "scenarios": [
+            {**case, "assertions": []} if case["id"] == "P17-V02" else case
+            for case in checked_in["scenarios"]
+        ],
+    }
+    try:
+        validate_manifest(missing_assertion)
+        raise AssertionError("manifest accepted a handoff without assertions")
+    except ValueError as error:
+        assert "P17-V02" in str(error)
+    missing_rust_direction = {
+        **checked_in,
+        "scenarios": [
+            {
+                **case,
+                "client_directions": ["java-5.5.1 client -> server-5.3.4"],
+            }
+            if case["id"] == "P17-V02"
+            else case
+            for case in checked_in["scenarios"]
+        ],
+    }
+    try:
+        validate_manifest(missing_rust_direction)
+        raise AssertionError("manifest accepted a handoff without a Rust direction")
+    except ValueError as error:
+        assert "P17-V02" in str(error)
     wrong_source_phase = {
         **checked_in,
         "scenarios": [
