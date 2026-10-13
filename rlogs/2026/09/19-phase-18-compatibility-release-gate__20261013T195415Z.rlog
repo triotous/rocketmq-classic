@@ -5,3 +5,10 @@
 - PASS: `cargo test -p rocketmq-classic-producer --locked` (92 unit tests and 34 integration tests); strict producer Clippy; focused getter fixture regression after the final lint annotation; `cargo fmt --all -- --check`; `git diff --check`.
 - Strict Clippy initially flagged the source-backed getter/setter asymmetry as `misnamed_getters`; added a narrowly scoped lint allowance with the Java behavior documented at the accessor. The final strict Clippy run passed.
 - P18-V01 remains partial for the broad bidirectional Java source/API/input/reverse-export audit. The new accessor correction is complete and locally verified; current-revision GitHub Ubuntu evidence, Phase 19 local Broker/Docker scenarios, registry resolution, and release-version confirmation remain open.
+
+# Phase 18 latest-revision server-free gate rerun — 2026-10-13T20:00:54Z
+
+- Revision under test: `8d700cd3` on `phase/19-phase-18-compatibility-release-gate`.
+- PASS: default and all-features locked workspace tests; strict all-target/all-feature workspace Clippy; fmt/diff checks; Java reference `mvn verify` (37 scenarios and fixture drift); comparator self-test; scenario manifest validation (37 scenarios); workspace metadata/package-content checks; fuzz smoke (1824 bounded mutations); offline deterministic race/leak smoke (16 cases × 3); facade release examples; offline benchmark compilation.
+- Read-only GitHub review found no run for `8d700cd3`. The latest prior Ubuntu workflow (`38099328502`, 2026-10-11) failed strict Clippy on Linux-only unused imports in `core/src/config/local_address.rs`; the current source cfg-gates those imports and the full local strict Clippy gate passes. No push or workflow dispatch was performed.
+- This rerun closes the latest-revision server-free gates. P18-V01's bidirectional source/API/input/reverse-export audit, a current GitHub Ubuntu result, Phase 19 Docker/Broker infrastructure and scenarios, and registry dependency/version confirmation remain open.
