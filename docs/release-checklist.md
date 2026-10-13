@@ -72,7 +72,17 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   audit remains open. A re-export-aware Rustdoc scan now has exact crosswalks
   for all producer and consumer inherent method names; Java-side reverse
   exports, inherited/trait methods, and source/input branch equivalence remain
-  part of P18-V01.
+  part of P18-V01. The previously unmapped Producer
+  `setCallbackExecutor`/`setAsyncSenderExecutor` surface now has pinned Java
+  fixture coverage, Rust facade methods, rejection/backpressure/deadline tests,
+  and a Phase 7 matrix entry. Rust keeps caller-Tokio execution as its default;
+  Java's private fixed-size sender pool is not reproduced. The reverse scan
+  identified additional local P18-V01 gaps: Java can resize active async-send
+  backpressure limits, toggle that mode at runtime, and mutate the live retry
+  response-code set. Rust currently exposes those configuration setters only
+  before Producer construction. The internal public backpressure lock/adjust
+  helpers and the compressor/accumulator hooks also need explicit source-backed
+  API dispositions. These are implementation/audit work, not manual validation.
 - [x] Register live cases in the Phase 19 scenario manifest and validate the
   manifest locally.
 - [ ] Obtain a current GitHub Ubuntu CI result for the Linux-specific Java
