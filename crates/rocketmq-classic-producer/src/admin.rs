@@ -1,0 +1,139 @@
+use std::collections::BTreeMap;
+
+use rocketmq_classic_core::route::broker_vip_channel;
+use rocketmq_classic_protocol::header::CreateTopicRequestHeader;
+use tokio::time::Instant;
+
+use crate::{Producer, ProducerError, validation};
+
+const ADMIN_TIMEOUT_MILLIS: u64 = 6_000;
+
+impl Producer {
+    /// Creates a topic on each master Broker advertising the supplied key.
+    /// A successful creation on any Broker makes the operation successful,
+    /// matching Java's partial-success rule. Java 5.5.1 accepts but discards
+    /// the producer facade's `attributes` argument.
+    pub async fn create_topic(
+        &self,
+        key: &str,
+        new_topic: &str,
+        queue_num: i32,
+        _attributes: Option<&BTreeMap<String, String>>,
+    ) -> Result<(), ProducerError> {
+        self.create_topic_with_sys_flag(key, new_topic, queue_num, 0, None)
+            .await
+    }
+
+    pub async fn create_topic_with_sys_flag(
+        &self,
+        key: &str,
+        new_topic: &str,
+        queue_num: i32,
+        topic_sys_flag: i32,
+        _attributes: Option<&BTreeMap<String, String>>,
+    ) -> Result<(), ProducerError> {
+        let runtime = self.started_runtime().await?;
+        let mut client_config = self.config.client_config().clone();
+        let route_topic = key.to_owned();
+        let topic = client_config
+            .with_namespace(Some(new_topic))?
+            .ok_or_else(|| ProducerError::NoRoute(new_topic.to_owned()))?;
+        validation::validate_topic(&topic)?;
+        validation::validate_system_topic(&topic)?;
+
+        let timeout = std::time::Duration::from_millis(ADMIN_TIMEOUT_MILLIS);
+        let route = runtime
+            .api()
+            .get_topic_route(&route_topic, Instant::now() + timeout)
+            .await?
+            .ok_or_else(|| ProducerError::NoRoute(route_topic.clone()))?;
+        let broker_rows = route
+            .broker_datas_snapshot()
+            .ok_or_else(|| ProducerError::NoRoute(route_topic.clone()))?;
+        let mut brokers = Vec::with_capacity(broker_rows.len());
+        for broker in broker_rows {
+            brokers.push(broker.ok_or(ProducerError::Runtime(
+                rocketmq_classic_core::runtime::RuntimeError::InvalidRoute(
+                    "null broker data during admin topic creation",
+                ),
+            ))?);
+        }
+        if brokers.is_empty() {
+            return Err(ProducerError::NoRoute(route_topic));
+        }
+        if brokers.iter().any(|broker| broker.broker_name.is_none()) {
+            return Err(ProducerError::Runtime(
+                rocketmq_classic_core::runtime::RuntimeError::InvalidRoute(
+                    "null broker name during admin topic creation",
+                ),
+            ));
+        }
+        brokers.sort_by(|left, right| {
+            left.broker_name
+                .as_deref()
+                .unwrap_or_default()
+                .encode_utf16()
+                .cmp(
+                    right
+                        .broker_name
+                        .as_deref()
+                        .unwrap_or_default()
+                        .encode_utf16(),
+                )
+        });
+
+        let header = CreateTopicRequestHeader {
+            topic,
+            default_topic: route_topic,
+            read_queue_nums: queue_num,
+            write_queue_nums: queue_num,
+            perm: 6,
+            topic_filter_type: "SINGLE_TAG".into(),
+            topic_sys_flag: Some(topic_sys_flag),
+            order: Some(false),
+            // DefaultMQProducer's public overloads accept the Java Map
+            // argument but pass null to MQAdminImpl in 5.5.1.
+            attributes: Some(String::new()),
+            force: Some(false),
+            ..Default::default()
+        };
+        let vip_enabled = runtime
+            .config()
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .vip_channel_enabled();
+        let mut created_at_least_once = false;
+        let mut last_error = None;
+        for broker in brokers {
+            let addresses = broker.broker_addrs.as_ref().ok_or(ProducerError::Runtime(
+                rocketmq_classic_core::runtime::RuntimeError::InvalidRoute(
+                    "null broker address map during admin topic creation",
+                ),
+            ))?;
+            let master = addresses.with(|addresses| addresses.get(&Some(0)).and_then(Clone::clone));
+            let Some(master) = master else {
+                continue;
+            };
+            let address = broker_vip_channel(vip_enabled, &master)?;
+            for _ in 0..5 {
+                match runtime
+                    .api()
+                    .create_topic(&address, &header, Instant::now() + timeout)
+                    .await
+                {
+                    Ok(()) => {
+                        created_at_least_once = true;
+                        break;
+                    }
+                    Err(error) => last_error = Some(error),
+                }
+            }
+        }
+        if !created_at_least_once {
+            if let Some(error) = last_error {
+                return Err(ProducerError::Rpc(error));
+            }
+        }
+        Ok(())
+    }
+}

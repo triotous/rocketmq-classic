@@ -1,4 +1,5 @@
 mod accumulator;
+mod admin;
 mod batch;
 mod config;
 mod error;
