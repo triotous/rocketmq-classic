@@ -1,3 +1,4 @@
+mod admin;
 pub mod config;
 mod consume;
 pub mod error;

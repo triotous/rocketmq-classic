@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     panic::AssertUnwindSafe,
     sync::{
         Arc, Mutex, RwLock, Weak,
@@ -815,6 +815,63 @@ impl PullConsumer {
             .api()
             .get_earliest_msg_storetime(&address, &header, deadline)
             .await?)
+    }
+
+    pub async fn create_topic(
+        &self,
+        key: &str,
+        new_topic: &str,
+        queue_num: i32,
+        _attributes: Option<&BTreeMap<String, String>>,
+    ) -> Result<(), PullConsumerError> {
+        self.create_topic_with_sys_flag(key, new_topic, queue_num, 0, None)
+            .await
+    }
+
+    pub async fn create_topic_with_sys_flag(
+        &self,
+        key: &str,
+        new_topic: &str,
+        queue_num: i32,
+        topic_sys_flag: i32,
+        _attributes: Option<&BTreeMap<String, String>>,
+    ) -> Result<(), PullConsumerError> {
+        let (runtime, _) = self.started_runtime().await?;
+        let mut client_config = self.config.client_config().clone();
+        let topic = client_config
+            .with_namespace(Some(new_topic))?
+            .filter(|topic| !topic.is_empty())
+            .ok_or(PullConsumerError::InvalidAdminTopic(
+                "The specified topic is blank.".into(),
+            ))?;
+        crate::admin::validate_topic(&topic).map_err(PullConsumerError::InvalidAdminTopic)?;
+        crate::admin::create_topic(&runtime, key, &topic, queue_num, topic_sys_flag).await?;
+        Ok(())
+    }
+
+    pub async fn fetch_subscribe_message_queues(
+        &self,
+        input_topic: &str,
+    ) -> Result<BTreeSet<MessageQueue>, PullConsumerError> {
+        let (runtime, _) = self.started_runtime().await?;
+        let mut client_config = self.config.client_config().clone();
+        let topic = self.topic_with_namespace(input_topic)?;
+        let timeout = Duration::from_millis(
+            i64::from(self.config.client_config().mq_client_api_timeout()).max(0) as u64,
+        );
+        crate::admin::fetch_subscribe_queues(&runtime, &topic, timeout)
+            .await?
+            .into_iter()
+            .map(|queue| {
+                let topic = client_config.without_namespace(queue.topic())?;
+                Ok(MessageQueue::new_nullable(
+                    topic,
+                    queue.broker_name().map(str::to_owned),
+                    queue.queue_id(),
+                ))
+            })
+            .collect::<Result<BTreeSet<_>, rocketmq_classic_core::config::ConfigError>>()
+            .map_err(PullConsumerError::from)
     }
 
     pub async fn query_message(

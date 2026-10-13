@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 use base64::Engine;
 use bytes::BytesMut;
@@ -195,6 +195,9 @@ async fn push_admin_offset_facade_routes_namespaced_queues_to_the_named_broker()
     config
         .client_config_mut()
         .set_namespace(Some("tenant".into()));
+    config
+        .client_config_mut()
+        .set_instance_name(Some("push-admin-offsets".into()));
     config.client_config_mut().set_namesrv_addr(Some(namesrv));
     let consumer = Arc::new(PushConsumer::new(config));
     consumer
@@ -260,6 +263,9 @@ async fn push_and_pull_query_facades_preserve_java_client_message_ids() {
         .set_namespace(Some("tenant".into()));
     push_config
         .client_config_mut()
+        .set_instance_name(Some("push-admin-query".into()));
+    push_config
+        .client_config_mut()
         .set_namesrv_addr(Some(push_namesrv));
     let push = Arc::new(PushConsumer::new(push_config));
     push.register_message_listener(PushMessageListener::concurrently(
@@ -311,6 +317,9 @@ async fn push_and_pull_query_facades_preserve_java_client_message_ids() {
         .set_namespace(Some("tenant".into()));
     pull_config
         .client_config_mut()
+        .set_instance_name(Some("pull-admin-query".into()));
+    pull_config
+        .client_config_mut()
         .set_namesrv_addr(Some(pull_namesrv));
     let pull = Arc::new(PullConsumer::new(pull_config));
     pull.start().await.unwrap();
@@ -343,6 +352,102 @@ async fn push_and_pull_query_facades_preserve_java_client_message_ids() {
     assert_eq!(fields.get("topic"), Some(&"tenant%orders".to_owned()));
     assert_eq!(fields.get("indexType"), Some(&"U".to_owned()));
     assert_eq!(fields.get("_UNIQUE_KEY_QUERY"), Some(&"true".to_owned()));
+    pull.shutdown().await.unwrap();
+    pull_namesrv_task.abort();
+    pull_broker_task.abort();
+}
+
+#[tokio::test]
+async fn push_and_pull_create_topic_and_fetch_subscribe_queues_match_java_facades() {
+    let (push_broker, push_broker_task, mut push_requests) = broker_peer().await;
+    let (push_namesrv, push_namesrv_task) = nameserver_peer(route_body(&push_broker)).await;
+    let mut push_config = PushConsumerConfig::new("push-admin-topic").unwrap();
+    push_config
+        .client_config_mut()
+        .set_namespace(Some("tenant".into()));
+    push_config
+        .client_config_mut()
+        .set_instance_name(Some("push-admin-topic".into()));
+    push_config
+        .client_config_mut()
+        .set_namesrv_addr(Some(push_namesrv));
+    let push = Arc::new(PushConsumer::new(push_config));
+    push.register_message_listener(PushMessageListener::concurrently(
+        |_messages: Vec<MessageExt>, context| async move {
+            (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+        },
+    ))
+    .await
+    .unwrap();
+    push.start().await.unwrap();
+
+    let attributes = BTreeMap::from([("+ignored".to_owned(), "true".to_owned())]);
+    push.create_topic("TBW102", "created", 3, Some(&attributes))
+        .await
+        .unwrap();
+    let push_create = timeout(Duration::from_secs(1), async {
+        loop {
+            let command = push_requests.recv().await.unwrap();
+            if command.code == request::UPDATE_AND_CREATE_TOPIC {
+                break command;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    let fields = push_create.ext_fields.unwrap();
+    assert_eq!(fields.get("topic"), Some(&"tenant%created".to_owned()));
+    assert_eq!(fields.get("defaultTopic"), Some(&"TBW102".to_owned()));
+    assert_eq!(fields.get("readQueueNums"), Some(&"3".to_owned()));
+    assert_eq!(fields.get("writeQueueNums"), Some(&"3".to_owned()));
+    assert_eq!(fields.get("topicSysFlag"), Some(&"0".to_owned()));
+    assert_eq!(fields.get("attributes"), Some(&String::new()));
+
+    let push_queues = push.fetch_subscribe_message_queues("orders").await.unwrap();
+    assert_eq!(push_queues.len(), 4);
+    assert!(push_queues.contains(&MessageQueue::new("orders", "broker-a", 0)));
+    push.shutdown().await.unwrap();
+    push_namesrv_task.abort();
+    push_broker_task.abort();
+
+    let (pull_broker, pull_broker_task, mut pull_requests) = broker_peer().await;
+    let (pull_namesrv, pull_namesrv_task) = nameserver_peer(route_body(&pull_broker)).await;
+    let mut pull_config = PullConsumerConfig::new("pull-admin-topic").unwrap();
+    pull_config
+        .client_config_mut()
+        .set_namespace(Some("tenant".into()));
+    pull_config
+        .client_config_mut()
+        .set_instance_name(Some("pull-admin-topic".into()));
+    pull_config
+        .client_config_mut()
+        .set_namesrv_addr(Some(pull_namesrv));
+    let pull = Arc::new(PullConsumer::new(pull_config));
+    pull.start().await.unwrap();
+
+    pull.create_topic_with_sys_flag("TBW102", "created", 2, 7, Some(&attributes))
+        .await
+        .unwrap();
+    let pull_create = timeout(Duration::from_secs(1), async {
+        loop {
+            let command = pull_requests.recv().await.unwrap();
+            if command.code == request::UPDATE_AND_CREATE_TOPIC {
+                break command;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    let fields = pull_create.ext_fields.unwrap();
+    assert_eq!(fields.get("topic"), Some(&"tenant%created".to_owned()));
+    assert_eq!(fields.get("defaultTopic"), Some(&"TBW102".to_owned()));
+    assert_eq!(fields.get("readQueueNums"), Some(&"2".to_owned()));
+    assert_eq!(fields.get("topicSysFlag"), Some(&"7".to_owned()));
+    assert_eq!(fields.get("attributes"), Some(&String::new()));
+
+    let pull_queues = pull.fetch_subscribe_message_queues("orders").await.unwrap();
+    assert_eq!(pull_queues.len(), 4);
+    assert!(pull_queues.contains(&MessageQueue::new("orders", "broker-a", 0)));
     pull.shutdown().await.unwrap();
     pull_namesrv_task.abort();
     pull_broker_task.abort();

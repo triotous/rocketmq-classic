@@ -41,6 +41,8 @@ pub enum PullConsumerError {
     OffsetStoreAfterStartup,
     #[error("message queue must have a topic and broker name")]
     InvalidQueue,
+    #[error("invalid topic for administrative creation: {0}")]
+    InvalidAdminTopic(String),
     #[error("pull offset must be nonnegative")]
     InvalidOffset,
     #[error("max message count must be positive")]
@@ -142,6 +144,8 @@ pub enum PushConsumerError {
     PopBrokerNotFound(String),
     #[error("push consumer requires a message queue with a topic and broker name")]
     InvalidQueue,
+    #[error("invalid topic for administrative creation: {0}")]
+    InvalidAdminTopic(String),
     #[error("push pull offset must be nonnegative")]
     InvalidOffset,
     #[error("queue topic `{0}` has no registered subscription")]
