@@ -64,6 +64,9 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   dispositions. Pull
   `sendMessageBack`/`maxReconsumeTimes` covers the 3000 ms timeout and logical
   Broker route lookup offline; its live Broker handoff remains pending.
+  The public `TopicValidator.ValidateResult(boolean, String)` constructor,
+  including null remarks, also has direct pinned-Java fixture and Rust
+  differential coverage.
 - [x] Register live cases in the Phase 19 scenario manifest and validate the
   manifest locally.
 - [ ] Obtain a current GitHub Ubuntu CI result for the Linux-specific Java

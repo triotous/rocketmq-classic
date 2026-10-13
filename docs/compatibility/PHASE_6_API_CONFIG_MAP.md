@@ -1099,3 +1099,16 @@ The direct fixture covers all four route-state constants and null, empty, unknow
 | inherited `decode` / `encode` with Fastjson object map keys | `decode_java_json` parses Java's object-valued MessageQueue keys; `encode_java_json` emits the same body syntax and null omissions |
 
 One hundred forty-three direct Java input cases cover decoded fields, accepted/rejected input shapes and exact body encoding. Additional pinned Java API cases cover constructor defaults, getter/setter values, null setters, and mutation through the assigned and returned outer/nested Maps; Rust preserves outer and non-null nested Map identity through shared handles, with `ptr_eq` and bidirectional mutation checks. `MessageQueue` key identity is not claimed. `BTreeMap` output is deterministic; Java HashMap iteration order is unspecified. See [ADR-0047](../architecture/ADR-0047-consumer-status-fastjson-map-input.md), [ADR-0057](../architecture/ADR-0057-runtime-map-body-public-api.md), and [ADR-0073](../architecture/ADR-0073-shared-runtime-map-body-aliases.md).
+
+## Common public API: TopicValidator
+
+| Pinned Java 5.5.1 API | Rust counterpart / current behavior |
+| --- | --- |
+| `AUTO_CREATE_TOPIC_KEY_TOPIC`, the `RMQ_SYS_*` constants, `SYSTEM_TOPIC_PREFIX`, `SYNC_BROKER_MEMBER_GROUP_PREFIX` | Matching `TopicValidator` associated constants |
+| `VALID_CHAR_BIT_MAP` | `valid_char_bit_map() -> &'static RwLock<[bool; 128]>`; mutation remains synchronized for Rust callers and affects subsequent validation |
+| `isTopicOrGroupIllegal(String)` | `is_topic_or_group_illegal(&str)` applies the Java 128-entry UTF-16 character table |
+| `validateTopic(String)` / `validateGroup(String)` | `validate_topic(Option<&str>)` / `validate_group(Option<&str>)` return the Java-compatible validation flag and remark |
+| `ValidateResult(boolean, String)` / `isValid()` / `getRemark()` | `ValidateResult::new(bool, Option<String>)`, `is_valid()`, and `remark() -> Option<&str>` preserve nullable constructor values |
+| `isSystemTopic`, `addSystemTopic`, `getSystemTopicSet`; `isNotAllowedSendTopic`, `getNotAllowedSendTopicSet` | `is_system_topic`, `add_system_topic`, `system_topic_set`; `is_not_allowed_send_topic`, `not_allowed_send_topic_set` use synchronized live sets |
+
+The pinned fixture invokes all constants, validation/classification methods, mutable table/set behavior, and six direct constructor cases covering both valid flags with null, empty, and non-empty remarks. `public_topic_validator_surface_matches_pinned_java_fixture` compares the Java-produced values, including null versus empty/non-null remarks. Fixture SHA-256: `7ea74b6b60b54f60c1b32de5b770474c849f143f4794b4f3aee05c48305dd5ce`.
