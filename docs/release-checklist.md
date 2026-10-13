@@ -35,7 +35,12 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   Rust. Its `consumerRunningInfo` method now has a direct Rust owner API and
   fixture-backed running-flow checks. `adjustThreadPool` now has a direct
   owner mapping and fixture evidence for the pinned built-in services' no-op
-  behavior; other signatures still need
+  behavior. `RebalancePushImpl.messageQueueChanged` now has an invoked Java
+  fixture and Rust regression for global queue/size threshold scaling across
+  multiple topics, later assignment changes, empty-table retention, pull
+  backpressure, and running-info values; fixture SHA-256
+  `e3f9d1766ddb010a530247066647b27149977bb11eda15df03576cd89f93e84c`. Other
+  signatures still need
   method-by-method mappings or internal-entrypoint dispositions. Pull
   `getRebalanceImpl`, both `pullKernelImpl` overloads, `popAsync`, and the
   `RebalanceImpl`/`RebalancePullImpl` surface now have source-based owner-flow

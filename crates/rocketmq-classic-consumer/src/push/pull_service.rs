@@ -823,11 +823,11 @@ pub(crate) enum PullFlowControlReason {
 
 pub(crate) fn effective_queue_thresholds(
     config: &PushConsumerConfig,
-    assigned_queue_count: usize,
+    process_queue_count: usize,
 ) -> EffectiveQueueThresholds {
     let scale = |topic_threshold: i32, queue_threshold: i32| {
-        if topic_threshold != -1 && assigned_queue_count > 0 {
-            (i64::from(topic_threshold) / assigned_queue_count.min(i64::MAX as usize) as i64).max(1)
+        if topic_threshold != -1 && process_queue_count > 0 {
+            (i64::from(topic_threshold) / process_queue_count.min(i64::MAX as usize) as i64).max(1)
                 as i32
         } else {
             queue_threshold
@@ -1022,7 +1022,7 @@ mod tests {
     }
 
     #[test]
-    fn topic_thresholds_scale_to_assigned_queues_and_queue_backlog_includes_in_flight() {
+    fn topic_thresholds_scale_to_process_queues_and_queue_backlog_includes_in_flight() {
         let mut config = PushConsumerConfig::new("orders-consumer").unwrap();
         config.set_pull_threshold_for_topic(7);
         config.set_pull_threshold_size_for_topic_mib(4);

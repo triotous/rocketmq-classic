@@ -83,7 +83,7 @@ use super::{
         MessageQueueListener, PushMessageListener,
     },
     pull_service::{
-        PULL_TIME_DELAY_MILLIS_WHEN_BROKER_FLOW_CONTROL,
+        EffectiveQueueThresholds, PULL_TIME_DELAY_MILLIS_WHEN_BROKER_FLOW_CONTROL,
         PULL_TIME_DELAY_MILLIS_WHEN_CACHE_FLOW_CONTROL, PULL_TIME_DELAY_MILLIS_WHEN_EXCEPTION,
         PULL_TIME_DELAY_MILLIS_WHEN_SUSPEND, PullRequest, PullRpcWorkers, PullScheduler,
         effective_queue_thresholds, flow_control_reason,
@@ -364,6 +364,8 @@ pub struct PushConsumer {
     consume_orderly: AtomicBool,
     consumer_start_timestamp: AtomicI64,
     consume_core_pool_size: AtomicI32,
+    active_pull_threshold_for_queue: AtomicI32,
+    active_pull_threshold_size_for_queue_mib: AtomicI32,
     #[cfg(test)]
     startup_failure: Mutex<Option<StartupStage>>,
     #[cfg(test)]
@@ -398,6 +400,8 @@ impl PushConsumer {
     ) -> Self {
         let pop_consume_limit = usize::try_from(config.consume_thread_max().max(1)).unwrap_or(1);
         let consume_core_pool_size = config.consume_thread_min();
+        let active_pull_threshold_for_queue = config.pull_threshold_for_queue();
+        let active_pull_threshold_size_for_queue_mib = config.pull_threshold_size_for_queue_mib();
         let pull_time_delay_millis_when_exception = config
             .client_config()
             .pull_time_delay_millis_when_exception();
@@ -435,6 +439,10 @@ impl PushConsumer {
             consume_orderly: AtomicBool::new(false),
             consumer_start_timestamp: AtomicI64::new(0),
             consume_core_pool_size: AtomicI32::new(consume_core_pool_size),
+            active_pull_threshold_for_queue: AtomicI32::new(active_pull_threshold_for_queue),
+            active_pull_threshold_size_for_queue_mib: AtomicI32::new(
+                active_pull_threshold_size_for_queue_mib,
+            ),
             #[cfg(test)]
             startup_failure: Mutex::new(None),
             #[cfg(test)]
@@ -472,6 +480,30 @@ impl PushConsumer {
         } else {
             1
         }
+    }
+
+    fn active_pull_queue_thresholds(&self) -> EffectiveQueueThresholds {
+        EffectiveQueueThresholds {
+            message_count: self.active_pull_threshold_for_queue.load(Ordering::Acquire),
+            size_mib: self
+                .active_pull_threshold_size_for_queue_mib
+                .load(Ordering::Acquire),
+            max_span: self.config.consume_concurrently_max_span(),
+        }
+    }
+
+    fn update_pull_thresholds_after_rebalance(&self) {
+        let process_queue_count = read_lock(&self.process_queues).len();
+        if process_queue_count == 0 {
+            // Java leaves the last per-queue value in place when its process
+            // queue table becomes empty.
+            return;
+        }
+        let thresholds = effective_queue_thresholds(&self.config, process_queue_count);
+        self.active_pull_threshold_for_queue
+            .store(thresholds.message_count, Ordering::Release);
+        self.active_pull_threshold_size_for_queue_mib
+            .store(thresholds.size_mib, Ordering::Release);
     }
 
     /// Returns Java's `DefaultMQPushConsumerImpl.getServiceState()` value.
@@ -1332,14 +1364,27 @@ impl PushConsumer {
         jstack: Option<String>,
         offset_store: Option<Arc<dyn OffsetStore>>,
     ) -> ConsumerRunningInfoBody {
+        let mut properties = crate::admin::push_running_info_properties(
+            &self.config,
+            runtime,
+            self.consumer_start_timestamp.load(Ordering::Acquire),
+            self.consume_orderly.load(Ordering::Acquire),
+            self.consume_core_pool_size.load(Ordering::Acquire),
+        );
+        properties.insert(
+            "pullThresholdForQueue".into(),
+            self.active_pull_threshold_for_queue
+                .load(Ordering::Acquire)
+                .to_string(),
+        );
+        properties.insert(
+            "pullThresholdSizeForQueue".into(),
+            self.active_pull_threshold_size_for_queue_mib
+                .load(Ordering::Acquire)
+                .to_string(),
+        );
         let mut body = ConsumerRunningInfoBody {
-            properties: crate::admin::push_running_info_properties(
-                &self.config,
-                runtime,
-                self.consumer_start_timestamp.load(Ordering::Acquire),
-                self.consume_orderly.load(Ordering::Acquire),
-                self.consume_core_pool_size.load(Ordering::Acquire),
-            ),
+            properties,
             subscription_set: read_lock(&self.subscriptions).values().cloned().collect(),
             jstack,
             ..ConsumerRunningInfoBody::default()
@@ -1907,11 +1952,7 @@ impl PushConsumer {
             }
         }
 
-        let assigned_queue_count = read_lock(&self.process_queues)
-            .keys()
-            .filter(|assigned| assigned.topic() == queue.topic())
-            .count();
-        let thresholds = effective_queue_thresholds(&self.config, assigned_queue_count);
+        let thresholds = self.active_pull_queue_thresholds();
         if let Ok(snapshot) = process_queue.snapshot(generation) {
             if let Some(reason) = flow_control_reason(&snapshot, thresholds) {
                 tracing::trace!(
@@ -5592,6 +5633,7 @@ impl PushConsumer {
         if let Some(subscription) = write_lock(&self.subscriptions).get_mut(&assignment.topic) {
             subscription.set_sub_version(epoch_millis());
         }
+        self.update_pull_thresholds_after_rebalance();
         let mut successful = true;
         if let Err(error) = runtime.send_heartbeat_to_all_brokers().await {
             tracing::warn!(topic = %assignment.topic, error = %error, "push subscription heartbeat after rebalance failed");
@@ -5996,6 +6038,7 @@ mod tests {
     use super::*;
     use crate::offset::OffsetStoreFuture;
     use crate::push::listener::MessageQueueListener;
+    use crate::push::pull_service::PullFlowControlReason;
     use bytes::BytesMut;
     use rocketmq_classic_common::message::{Message, MessageExt};
     use rocketmq_classic_core::api::consumer::PullResultExt;
@@ -6080,6 +6123,89 @@ mod tests {
         let custom_consumer = PushConsumer::new(custom_config);
         assert_eq!(fixture["effectiveMaxReconsumeTimesCustom"], 7);
         assert_eq!(custom_consumer.get_max_reconsume_times(), 7);
+    }
+
+    #[test]
+    fn push_topic_thresholds_match_java_global_process_queue_count() {
+        let mut config = PushConsumerConfig::new("phase18-push-queue-thresholds").unwrap();
+        config.set_pull_threshold_for_queue(777);
+        config.set_pull_threshold_size_for_queue_mib(77);
+        config.set_pull_threshold_for_topic(20);
+        config.set_pull_threshold_size_for_topic_mib(12);
+        let consumer = PushConsumer::new(config);
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/push-implementation-accessor.json"
+        ))
+        .unwrap();
+        let expected = |name: &str| {
+            let values = fixture[name].as_array().unwrap();
+            (
+                values[0].as_i64().unwrap() as i32,
+                values[1].as_i64().unwrap() as i32,
+            )
+        };
+        let active = || {
+            (
+                consumer
+                    .active_pull_threshold_for_queue
+                    .load(Ordering::Acquire),
+                consumer
+                    .active_pull_threshold_size_for_queue_mib
+                    .load(Ordering::Acquire),
+            )
+        };
+
+        consumer.update_pull_thresholds_after_rebalance();
+        assert_eq!(active(), expected("pushQueueThresholdZeroAssignment"));
+
+        let queues = [
+            MessageQueue::new("orders", "broker-a", 0),
+            MessageQueue::new("orders", "broker-a", 1),
+            MessageQueue::new("events", "broker-b", 0),
+            MessageQueue::new("events", "broker-b", 1),
+        ];
+        write_lock(&consumer.process_queues).insert(
+            queues[0].clone(),
+            Arc::new(ProcessQueue::new(queues[0].clone(), 1)),
+        );
+        consumer.update_pull_thresholds_after_rebalance();
+        assert_eq!(active(), expected("pushQueueThresholdSingleAssignment"));
+
+        for (generation, queue) in queues.iter().enumerate().skip(1) {
+            write_lock(&consumer.process_queues).insert(
+                queue.clone(),
+                Arc::new(ProcessQueue::new(queue.clone(), generation as u64 + 1)),
+            );
+        }
+        consumer.update_pull_thresholds_after_rebalance();
+        assert_eq!(
+            active(),
+            expected("pushQueueThresholdFourAssignmentsAcrossTopics")
+        );
+        let backlog = ProcessQueue::new(queues[0].clone(), 100);
+        backlog
+            .insert_messages(100, (0..6).map(message).collect())
+            .unwrap();
+        assert_eq!(
+            flow_control_reason(
+                &backlog.snapshot(100).unwrap(),
+                consumer.active_pull_queue_thresholds(),
+            ),
+            Some(PullFlowControlReason::MessageCount),
+            "the scaled global threshold must drive the actual queue flow-control decision"
+        );
+
+        write_lock(&consumer.process_queues).remove(&queues[3]);
+        consumer.update_pull_thresholds_after_rebalance();
+        assert_eq!(
+            active(),
+            expected("pushQueueThresholdThreeAssignmentsAcrossTopics")
+        );
+
+        write_lock(&consumer.process_queues).clear();
+        consumer.update_pull_thresholds_after_rebalance();
+        assert_eq!(active(), expected("pushQueueThresholdZeroAfterAssignment"));
+        assert_eq!(fixture["pushQueueThresholdHeartbeatCalls"], 5);
     }
 
     #[test]
@@ -8651,6 +8777,10 @@ mod tests {
     #[tokio::test]
     async fn running_info_returns_queue_snapshot_and_java_config_properties() {
         let mut config = PushConsumerConfig::new("running-info-snapshot").unwrap();
+        config.set_pull_threshold_for_queue(777);
+        config.set_pull_threshold_size_for_queue_mib(77);
+        config.set_pull_threshold_for_topic(20);
+        config.set_pull_threshold_size_for_topic_mib(12);
         config.client_config_mut().set_namesrv_addr(None);
         config
             .client_config_mut()
@@ -8674,6 +8804,7 @@ mod tests {
             .insert_messages(19, vec![message(11)])
             .unwrap();
         write_lock(&consumer.process_queues).insert(queue.clone(), process_queue);
+        consumer.update_pull_thresholds_after_rebalance();
 
         let pop_queue = MessageQueue::new("orders", "broker-a", 2);
         let pop_process_queue = Arc::new(PopProcessQueue::new(pop_queue.clone(), 23));
@@ -8778,7 +8909,20 @@ mod tests {
         let properties = json["properties"].as_object().unwrap();
         assert_eq!(properties["PROP_CONSUME_TYPE"], "CONSUME_PASSIVELY");
         assert_eq!(properties["PROP_CONSUMER_START_TIMESTAMP"], "1700000000000");
-        assert_eq!(properties["pullThresholdForQueue"], "1000");
+        assert_eq!(
+            properties["pullThresholdForQueue"],
+            raw_running_info_fixture["pushQueueThresholdSingleAssignment"][0]
+                .as_i64()
+                .unwrap()
+                .to_string()
+        );
+        assert_eq!(
+            properties["pullThresholdSizeForQueue"],
+            raw_running_info_fixture["pushQueueThresholdSingleAssignment"][1]
+                .as_i64()
+                .unwrap()
+                .to_string()
+        );
         assert_eq!(
             properties["socksProxyConfig"],
             r#"{"10.1.0.0/16":{"addr":"proxy.internal:1080","username":"reader","password":"secret"}}"#

@@ -34,6 +34,7 @@ import org.apache.rocketmq.client.impl.consumer.DefaultMQPushConsumerImpl;
 import org.apache.rocketmq.client.impl.consumer.PopProcessQueue;
 import org.apache.rocketmq.client.impl.consumer.ProcessQueue;
 import org.apache.rocketmq.client.impl.consumer.PullRequest;
+import org.apache.rocketmq.client.impl.consumer.RebalancePushImpl;
 import org.apache.rocketmq.client.impl.factory.MQClientInstance;
 import org.apache.rocketmq.client.stat.ConsumerStatsManager;
 import org.apache.rocketmq.common.ServiceState;
@@ -289,6 +290,7 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("pushConsumeInitModes", pushConsumeInitModes());
         fixture.putAll(topicHelpers);
         fixture.putAll(orderlyLockedPullAttempts());
+        fixture.putAll(pushQueueThresholdResults());
         String json = JSON.toJSONString(fixture) + "\n";
         if (verify) {
             check(Files.exists(path) && json.equals(Files.readString(path)), "fixture drift: " + path);
@@ -408,6 +410,66 @@ public final class PushImplementationAccessorFixtures {
             modes.put(policy.name(), implementation.getRebalanceImpl().getConsumeInitMode());
         }
         return modes;
+    }
+
+    private static Map<String, Object> pushQueueThresholdResults() throws Exception {
+        DefaultMQPushConsumer consumer = new DefaultMQPushConsumer("phase18-push-queue-thresholds");
+        consumer.setPullThresholdForQueue(777);
+        consumer.setPullThresholdSizeForQueue(77);
+        consumer.setPullThresholdForTopic(20);
+        consumer.setPullThresholdSizeForTopic(12);
+        consumer.subscribe("orders", "*");
+        consumer.subscribe("events", "*");
+
+        DefaultMQPushConsumerImpl implementation = consumer.getDefaultMQPushConsumerImpl();
+        RebalancePushImpl rebalance = (RebalancePushImpl) implementation.getRebalanceImpl();
+        RecordingMqClientInstance factory = recordingMqClientInstance();
+        implementation.setmQClientFactory(factory);
+        rebalance.setmQClientFactory(factory);
+
+        rebalance.messageQueueChanged("orders", Set.of(), Set.of());
+        int zeroAssignmentQueueThreshold = consumer.getPullThresholdForQueue();
+        int zeroAssignmentSizeThreshold = consumer.getPullThresholdSizeForQueue();
+
+        MessageQueue orders0 = new MessageQueue("orders", "broker-a", 0);
+        MessageQueue orders1 = new MessageQueue("orders", "broker-a", 1);
+        MessageQueue events0 = new MessageQueue("events", "broker-b", 0);
+        MessageQueue events1 = new MessageQueue("events", "broker-b", 1);
+        rebalance.getProcessQueueTable().put(orders0, new ProcessQueue());
+        rebalance.messageQueueChanged("orders", Set.of(orders0), Set.of(orders0));
+        int singleAssignmentQueueThreshold = consumer.getPullThresholdForQueue();
+        int singleAssignmentSizeThreshold = consumer.getPullThresholdSizeForQueue();
+
+        rebalance.getProcessQueueTable().put(orders1, new ProcessQueue());
+        rebalance.getProcessQueueTable().put(events0, new ProcessQueue());
+        rebalance.getProcessQueueTable().put(events1, new ProcessQueue());
+        rebalance.messageQueueChanged("orders", Set.of(orders0, orders1), Set.of(orders0, orders1));
+        int fourAssignmentQueueThreshold = consumer.getPullThresholdForQueue();
+        int fourAssignmentSizeThreshold = consumer.getPullThresholdSizeForQueue();
+
+        rebalance.getProcessQueueTable().remove(events1);
+        rebalance.messageQueueChanged("events", Set.of(events0), Set.of(events0));
+        int threeAssignmentQueueThreshold = consumer.getPullThresholdForQueue();
+        int threeAssignmentSizeThreshold = consumer.getPullThresholdSizeForQueue();
+
+        rebalance.getProcessQueueTable().clear();
+        rebalance.messageQueueChanged("orders", Set.of(), Set.of());
+        int zeroAfterAssignmentQueueThreshold = consumer.getPullThresholdForQueue();
+        int zeroAfterAssignmentSizeThreshold = consumer.getPullThresholdSizeForQueue();
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("pushQueueThresholdZeroAssignment", List.of(
+            zeroAssignmentQueueThreshold, zeroAssignmentSizeThreshold));
+        result.put("pushQueueThresholdSingleAssignment", List.of(
+            singleAssignmentQueueThreshold, singleAssignmentSizeThreshold));
+        result.put("pushQueueThresholdFourAssignmentsAcrossTopics", List.of(
+            fourAssignmentQueueThreshold, fourAssignmentSizeThreshold));
+        result.put("pushQueueThresholdThreeAssignmentsAcrossTopics", List.of(
+            threeAssignmentQueueThreshold, threeAssignmentSizeThreshold));
+        result.put("pushQueueThresholdZeroAfterAssignment", List.of(
+            zeroAfterAssignmentQueueThreshold, zeroAfterAssignmentSizeThreshold));
+        result.put("pushQueueThresholdHeartbeatCalls", factory.heartbeatCalls);
+        return result;
     }
 
     private static Map<String, Object> orderlyLockedPullAttempts() {
@@ -545,6 +607,12 @@ public final class PushImplementationAccessorFixtures {
 
         @Override
         public boolean sendHeartbeatToAllBrokerWithLock() {
+            heartbeatCalls++;
+            return true;
+        }
+
+        @Override
+        public boolean sendHeartbeatToAllBrokerWithLockV2(boolean isRebalance) {
             heartbeatCalls++;
             return true;
         }
