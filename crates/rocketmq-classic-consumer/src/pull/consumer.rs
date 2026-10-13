@@ -251,6 +251,16 @@ impl PullConsumer {
         self
     }
 
+    /// Returns this consumer's rebalance state through a stable owner reference.
+    ///
+    /// Java exposes a separate `RebalancePullImpl` from its raw implementation
+    /// accessor. Rust keeps the configuration, registration, routes, and
+    /// assignment lifecycle in the `PullConsumer` owner, so the rebalance
+    /// compatibility handle aliases that owner.
+    pub fn get_rebalance_impl(&self) -> &Self {
+        self
+    }
+
     pub(crate) fn running_info_body(
         &self,
         runtime: &ClientRuntime,
@@ -2486,16 +2496,32 @@ mod tests {
         consumer.set_pull_api_wrapper(None);
         assert!(consumer.pull_api_wrapper().is_none());
         let implementation = consumer.get_default_mq_pull_consumer_impl();
+        let rebalance_implementation = consumer.get_rebalance_impl();
 
         assert!(std::ptr::eq(implementation, &consumer));
         assert!(std::ptr::eq(
             consumer.get_default_mq_pull_consumer_impl(),
             implementation
         ));
+        assert!(std::ptr::eq(rebalance_implementation, &consumer));
+        assert!(std::ptr::eq(
+            consumer.get_rebalance_impl(),
+            rebalance_implementation
+        ));
         assert_eq!(consumer.config().consumer_group(), group);
         assert!(consumer.get_offset_store().is_none());
         assert!(expected["accessorNonNull"].as_bool().unwrap());
         assert!(expected["sameImplementationAcrossCalls"].as_bool().unwrap());
+        assert!(
+            expected["rebalanceImplementationPresent"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(
+            expected["rebalanceImplementationIdentityStable"]
+                .as_bool()
+                .unwrap()
+        );
         assert!(expected["offsetStoreIsNullBeforeStart"].as_bool().unwrap());
         assert!(
             expected["pullApiWrapperIsNullBeforeStart"]

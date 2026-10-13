@@ -108,6 +108,13 @@
 - Added a paused-time slow-listener regression with configured wait 0 and per-call wait 100 ms. The new test first failed to compile because the equivalent Rust API was absent, then passed after implementation and proved the explicit wait keeps the listener alive through its completion while all owned workers shut down.
 - Updated the Phase 10 method/settings matrix. PASS: `cargo test -p rocketmq-classic-consumer shutdown_with_explicit_wait_overrides_configured_wait --locked` (1 test).
 - Full consumer/workspace gates and the broader Push implementation method audit remain open. No Java reference files were changed.
+
+## P18-V01 Pull rebalance accessor — 2026-10-13 UTC
+
+- Re-ran the existing invoked `PullImplementationAccessorFixtures` evidence: Java creates one `RebalancePullImpl` before startup, reports a non-null/stable handle, and exercises its route/subscription/process-queue operations.
+- Added `PullConsumer::get_rebalance_impl` as a stable reference to the Rust owner, which holds the rebalance registration state; extended the existing fixture-backed Rust accessor test to assert presence and stable identity. The test failed before implementation because the equivalent accessor was absent, then passed after the owner alias was added.
+- Updated the Phase 9 matrix to distinguish the verified accessor from the remaining method-by-method disposition of raw Java rebalance tables, strategy/config/factory helpers and lock operations. PASS: `cargo test -p rocketmq-classic-consumer deprecated_java_impl_accessor_returns_the_same_pull_consumer --locked` (1 test).
+- Remaining broad Pull/Push raw surfaces and full Phase 18 gates stay open; no pinned Java source or plan file was modified.
 - The initial format check found two expected rustfmt layout changes in the new paused-time regression; `cargo fmt --all` applied them. PASS afterward: `cargo fmt --all -- --check`; `cargo test -p rocketmq-classic-consumer --locked` (189 unit tests and every consumer integration/doc target); `cargo clippy -p rocketmq-classic-consumer --all-targets --all-features --locked -- -D warnings`.
 
 ## P18-V03 Package content/provenance check — 2026-10-13 UTC
