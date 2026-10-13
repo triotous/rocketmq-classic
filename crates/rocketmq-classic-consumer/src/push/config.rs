@@ -513,7 +513,7 @@ pub(crate) fn parse_java_timestamp_millis(value: &str) -> Option<i64> {
             .checked_add(i64::from(hour) * 3_600)?
             .checked_add(i64::from(minute) * 60)?
             .checked_add(i64::from(second))?;
-        return seconds.checked_mul(1_000);
+        seconds.checked_mul(1_000)
     }
 }
 

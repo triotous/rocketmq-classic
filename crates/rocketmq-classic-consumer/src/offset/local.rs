@@ -631,7 +631,7 @@ fn sync_directory(path: &Path) -> Result<(), OffsetStoreError> {
     #[cfg(windows)]
     {
         let _ = path;
-        return Ok(());
+        Ok(())
     }
     #[cfg(not(windows))]
     match File::open(path).and_then(|directory| directory.sync_all()) {
@@ -676,7 +676,7 @@ fn replace_file(source: &Path, destination: &Path) -> Result<(), OffsetStoreErro
         if result == 0 {
             return Err(std::io::Error::last_os_error().into());
         }
-        return Ok(());
+        Ok(())
     }
     #[cfg(not(windows))]
     {
