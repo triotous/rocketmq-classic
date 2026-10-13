@@ -46,11 +46,13 @@ pub trait FilterMessageHook: Send + Sync {
     fn filter_message(&self, context: &mut FilterMessageContext);
 }
 
+pub type SharedFilterMessageHooks = Arc<RwLock<Vec<Arc<dyn FilterMessageHook>>>>;
+
 /// Pull-result processing state shared by pull consumers.
 #[derive(Default)]
 pub struct PullAPIWrapper {
     suggested_broker_ids: Mutex<HashMap<MessageQueue, i64>>,
-    hooks: RwLock<Vec<Arc<dyn FilterMessageHook>>>,
+    hooks: RwLock<SharedFilterMessageHooks>,
     unit_mode: bool,
     connect_broker_by_user: AtomicBool,
     default_broker_id: AtomicI64,
@@ -60,7 +62,7 @@ impl PullAPIWrapper {
     pub fn new(unit_mode: bool) -> Self {
         Self {
             suggested_broker_ids: Mutex::new(HashMap::new()),
-            hooks: RwLock::new(Vec::new()),
+            hooks: RwLock::new(Arc::new(RwLock::new(Vec::new()))),
             unit_mode,
             connect_broker_by_user: AtomicBool::new(false),
             default_broker_id: AtomicI64::new(0),
@@ -68,7 +70,66 @@ impl PullAPIWrapper {
     }
 
     pub fn register_filter_message_hook(&self, hook: Arc<dyn FilterMessageHook>) {
-        self.hooks.write().unwrap().push(hook);
+        self.hooks
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(hook);
+    }
+
+    /// Replaces the wrapper's live hook list. Sharing this handle matches Java's
+    /// `registerFilterMessageHook(ArrayList)` alias behavior.
+    pub fn set_filter_message_hooks(&self, hooks: SharedFilterMessageHooks) {
+        *self
+            .hooks
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = hooks;
+    }
+
+    pub fn has_hook(&self) -> bool {
+        !self
+            .hooks
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_empty()
+    }
+
+    pub fn execute_hook(&self, context: &mut FilterMessageContext) {
+        let hooks = self
+            .hooks
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        for hook in hooks {
+            let _ = catch_unwind(AssertUnwindSafe(|| hook.filter_message(context)));
+        }
+    }
+
+    pub fn update_pull_from_which_node(&self, queue: &MessageQueue, broker_id: i64) {
+        self.suggested_broker_ids
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(queue.clone(), broker_id);
+    }
+
+    pub fn is_connect_broker_by_user(&self) -> bool {
+        self.connect_broker_by_user.load(Ordering::Acquire)
+    }
+
+    pub fn default_broker_id(&self) -> i64 {
+        self.default_broker_id.load(Ordering::Acquire)
+    }
+
+    /// Returns a nonnegative random value, matching Java's `randomNum()` rule
+    /// for `Integer.MIN_VALUE` as well as ordinary negative values.
+    pub fn random_num(&self) -> i32 {
+        let value = rand::rng().random::<i32>();
+        if value == i32::MIN { 0 } else { value.abs() }
     }
 
     /// Returns the Broker ID most recently suggested for this queue, defaulting
@@ -129,8 +190,8 @@ impl PullAPIWrapper {
                 unit_mode: self.unit_mode,
                 messages,
             };
-            for hook in self.hooks.read().unwrap().iter() {
-                let _ = catch_unwind(AssertUnwindSafe(|| hook.filter_message(&mut context)));
+            if self.has_hook() {
+                self.execute_hook(&mut context);
             }
             enrich_messages(&mut context.messages, queue, &result);
             Some(context.messages)
@@ -443,6 +504,102 @@ mod tests {
         assert_eq!(
             wrapper.suggested_broker_ids.lock().unwrap().get(&queue),
             Some(&7)
+        );
+    }
+
+    #[test]
+    fn pull_api_wrapper_mutators_and_live_hook_list_match_java_entrypoints() {
+        use std::sync::atomic::AtomicBool;
+
+        let expected: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/pull-implementation-accessor.json"
+        ))
+        .unwrap();
+
+        struct UnitModeHook(Arc<AtomicBool>);
+
+        impl FilterMessageHook for UnitModeHook {
+            fn hook_name(&self) -> &str {
+                "pull-api-wrapper-test"
+            }
+
+            fn filter_message(&self, context: &mut FilterMessageContext) {
+                context.unit_mode = true;
+                self.0.store(true, Ordering::Release);
+            }
+        }
+
+        let wrapper = PullAPIWrapper::new(false);
+        let queue = MessageQueue::new("orders", "broker-a", 2);
+        assert_eq!(wrapper.default_broker_id(), 0);
+        assert_eq!(
+            wrapper.default_broker_id(),
+            expected["pullAPIWrapperDefaultBrokerId"].as_i64().unwrap()
+        );
+        assert!(!wrapper.is_connect_broker_by_user());
+        assert_eq!(
+            wrapper.is_connect_broker_by_user(),
+            expected["pullAPIWrapperConnectByUserBeforeMutation"]
+                .as_bool()
+                .unwrap()
+        );
+        assert_eq!(wrapper.recalculate_pull_from_which_node(&queue), 0);
+        wrapper.update_pull_from_which_node(&queue, 7);
+        assert_eq!(wrapper.recalculate_pull_from_which_node(&queue), 7);
+        assert_eq!(
+            wrapper.recalculate_pull_from_which_node(&queue),
+            expected["pullAPIWrapperSuggestedBrokerId"]
+                .as_i64()
+                .unwrap()
+        );
+        wrapper.set_default_broker_id(11);
+        wrapper.set_connect_broker_by_user(true);
+        assert_eq!(wrapper.default_broker_id(), 11);
+        assert!(wrapper.is_connect_broker_by_user());
+        assert_eq!(wrapper.recalculate_pull_from_which_node(&queue), 11);
+        assert_eq!(
+            wrapper.recalculate_pull_from_which_node(&queue),
+            expected["pullAPIWrapperBrokerIdAfterUserSelection"]
+                .as_i64()
+                .unwrap()
+        );
+        assert!(wrapper.random_num() >= 0);
+        assert!(
+            expected["pullAPIWrapperRandomNumNonnegative"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(!wrapper.has_hook());
+        assert!(
+            !expected["pullAPIWrapperHasHookBeforeRegistration"]
+                .as_bool()
+                .unwrap()
+        );
+
+        let hook_called = Arc::new(AtomicBool::new(false));
+        let hooks = Arc::new(RwLock::new(Vec::<Arc<dyn FilterMessageHook>>::new()));
+        wrapper.set_filter_message_hooks(hooks.clone());
+        hooks
+            .write()
+            .unwrap()
+            .push(Arc::new(UnitModeHook(hook_called.clone())));
+        assert!(wrapper.has_hook());
+        let mut context = FilterMessageContext {
+            unit_mode: false,
+            messages: Vec::new(),
+        };
+        wrapper.execute_hook(&mut context);
+        assert!(context.unit_mode);
+        assert!(hook_called.load(Ordering::Acquire));
+        assert!(
+            expected["pullAPIWrapperHasHookAfterRegistration"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(
+            expected["pullAPIWrapperHookMutatedContext"]
+                .as_bool()
+                .unwrap()
         );
     }
 

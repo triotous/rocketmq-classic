@@ -13,8 +13,10 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
 - [ ] Close P18-V01: complete bidirectional Java source/API/input reconciliation
   and reverse-audit all Rust public APIs and settings. The broad Phase 6 audit
   remains `PARTIAL`; Phase 9 now has fixture/unit coverage for raw Pull offset
-  entrypoints, `consumerRunningInfo`, and the construction-time start timestamp.
-  Mutable implementation-state accessors remain open. Pull
+  entrypoints, `consumerRunningInfo`, the construction-time start timestamp,
+  and `get/setPullAPIWrapper`. `get/setServiceState`, `getRebalanceImpl`, the
+  nested wrapper method inventory, and broad Phase 6 behavior reconciliation
+  remain open. Pull
   `sendMessageBack`/`maxReconsumeTimes` covers the 3000 ms timeout and logical
   Broker route lookup offline; its live Broker handoff remains pending.
 - [x] Register live cases in the Phase 19 scenario manifest and validate the

@@ -10,7 +10,7 @@ use rocketmq_classic_common::message::MessageQueue;
 use rocketmq_classic_consumer::{
     PullConsumerConfig, PullConsumerError,
     offset::{OffsetRead, OffsetStore, OffsetStoreFuture, ReadOffsetType},
-    pull::{FilterMessageContext, FilterMessageHook, PullConsumer},
+    pull::{FilterMessageContext, FilterMessageHook, PullAPIWrapper, PullConsumer},
 };
 use rocketmq_classic_protocol::{
     codes::{request, response},
@@ -402,6 +402,8 @@ async fn pull_routes_per_queue_returns_decoded_messages_and_only_explicitly_pers
 
     let store = Arc::new(RecordingOffsetStore::default());
     let consumer = Arc::new(PullConsumer::new(config));
+    let pre_start_wrapper = Arc::new(PullAPIWrapper::new(false));
+    consumer.set_pull_api_wrapper(Some(pre_start_wrapper.clone()));
     let hook_ran_in_unit_mode = Arc::new(std::sync::atomic::AtomicBool::new(false));
     consumer.register_filter_message_hook(Arc::new(UnitModeHook(hook_ran_in_unit_mode.clone())));
     consumer
@@ -409,6 +411,8 @@ async fn pull_routes_per_queue_returns_decoded_messages_and_only_explicitly_pers
         .await
         .unwrap();
     consumer.start().await.unwrap();
+    let started_wrapper = consumer.pull_api_wrapper().unwrap();
+    assert!(!Arc::ptr_eq(&started_wrapper, &pre_start_wrapper));
 
     let queue0 = MessageQueue::new("orders", "broker", 0);
     let queue1 = MessageQueue::new("orders", "broker", 1);

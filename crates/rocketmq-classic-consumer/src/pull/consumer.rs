@@ -44,7 +44,10 @@ use crate::{
     consume::{ConsumeMessageContext, ConsumeMessageHook, ConsumeMessageHookRegistry},
     error::PullConsumerError,
     offset::{LocalFileOffsetStore, OffsetStore, ReadOffsetType, RemoteBrokerOffsetStore},
-    pull::{FilterMessageHook, ProcessedPullResult, PullAPIWrapper, resolve_pull_broker_address},
+    pull::{
+        FilterMessageHook, ProcessedPullResult, PullAPIWrapper, SharedFilterMessageHooks,
+        resolve_pull_broker_address,
+    },
     push::{MessageQueueListener, PushConsumer, PushConsumerConfig, SendBackOptions},
     rebalance::AllocateMessageQueueStrategy,
 };
@@ -107,7 +110,10 @@ pub struct PullConsumer {
     rpc_hook: Option<Arc<dyn RpcHook>>,
     consume_message_hooks: ConsumeMessageHookRegistry,
     state: tokio::sync::Mutex<State>,
-    pull_api: PullAPIWrapper,
+    pull_api: RwLock<Option<Arc<PullAPIWrapper>>>,
+    pull_api_hooks: SharedFilterMessageHooks,
+    pull_connect_broker_by_user: AtomicBool,
+    pull_default_broker_id: AtomicI64,
     offset_store: Mutex<Option<Arc<dyn OffsetStore>>>,
     retry_helper: Mutex<Option<Arc<PushConsumer>>>,
     subscriptions: Arc<RwLock<HashMap<String, SubscriptionData>>>,
@@ -146,7 +152,6 @@ impl PullConsumer {
         rpc_hook: Option<Arc<dyn RpcHook>>,
     ) -> Self {
         let current_group_name = config.consumer_group().to_owned();
-        let pull_api = PullAPIWrapper::new(config.unit_mode());
         let message_queue_listener = config.message_queue_listener();
         let enable_rebalance = config.enable_rebalance();
         Self {
@@ -156,7 +161,10 @@ impl PullConsumer {
             rpc_hook,
             consume_message_hooks: ConsumeMessageHookRegistry::default(),
             state: tokio::sync::Mutex::new(State::Created),
-            pull_api,
+            pull_api: RwLock::new(None),
+            pull_api_hooks: Arc::new(RwLock::new(Vec::new())),
+            pull_connect_broker_by_user: AtomicBool::new(false),
+            pull_default_broker_id: AtomicI64::new(0),
             offset_store: Mutex::new(None),
             retry_helper: Mutex::new(None),
             subscriptions: Arc::new(RwLock::new(HashMap::new())),
@@ -334,13 +342,44 @@ impl PullConsumer {
     }
 
     pub fn register_filter_message_hook(&self, hook: Arc<dyn FilterMessageHook>) {
-        self.pull_api.register_filter_message_hook(hook);
+        write_lock(&self.pull_api_hooks).push(hook.clone());
     }
 
     pub(crate) fn configure_pull_api(&self, connect_broker_by_user: bool, default_broker_id: i64) {
-        self.pull_api
-            .set_connect_broker_by_user(connect_broker_by_user);
-        self.pull_api.set_default_broker_id(default_broker_id);
+        self.pull_connect_broker_by_user
+            .store(connect_broker_by_user, Ordering::Release);
+        self.pull_default_broker_id
+            .store(default_broker_id, Ordering::Release);
+        if let Some(pull_api) = self.pull_api_wrapper() {
+            pull_api.set_connect_broker_by_user(connect_broker_by_user);
+            pull_api.set_default_broker_id(default_broker_id);
+        }
+    }
+
+    /// Returns the current Pull API wrapper, or `None` before Java creates it
+    /// during startup (or after a caller clears it through the raw accessor).
+    pub fn pull_api_wrapper(&self) -> Option<Arc<PullAPIWrapper>> {
+        read_lock(&self.pull_api).clone()
+    }
+
+    /// Replaces the wrapper exposed by the deprecated Java implementation
+    /// accessor. Startup constructs a fresh wrapper, as Java does.
+    pub fn set_pull_api_wrapper(&self, pull_api: Option<Arc<PullAPIWrapper>>) {
+        *write_lock(&self.pull_api) = pull_api;
+    }
+
+    fn initialize_pull_api_wrapper(&self) {
+        let pull_api = Arc::new(PullAPIWrapper::new(self.config.unit_mode()));
+        pull_api
+            .set_connect_broker_by_user(self.pull_connect_broker_by_user.load(Ordering::Acquire));
+        pull_api.set_default_broker_id(self.pull_default_broker_id.load(Ordering::Acquire));
+        pull_api.set_filter_message_hooks(Arc::clone(&self.pull_api_hooks));
+        *write_lock(&self.pull_api) = Some(pull_api);
+    }
+
+    fn current_pull_api_wrapper(&self) -> Result<Arc<PullAPIWrapper>, PullConsumerError> {
+        self.pull_api_wrapper()
+            .ok_or(PullConsumerError::PullApiWrapperUnavailable)
     }
 
     pub(crate) fn set_additional_heartbeat_subscriptions(
@@ -720,6 +759,7 @@ impl PullConsumer {
                 self.config.tls_config().cloned(),
             )
             .await?;
+        self.initialize_pull_api_wrapper();
         let offset_store = self.select_offset_store(&runtime, &consumer_group)?;
         offset_store.load().await?;
 
@@ -1332,7 +1372,8 @@ impl PullConsumer {
         };
         let deadline = request_deadline(pull_timeout_millis)?;
 
-        let suggested_broker_id = self.pull_api.recalculate_pull_from_which_node(&queue);
+        let pull_api = self.current_pull_api_wrapper()?;
+        let suggested_broker_id = pull_api.recalculate_pull_from_which_node(&queue);
         let (route, broker) =
             find_pull_broker(&runtime, &queue, suggested_broker_id, deadline).await?;
         if !is_tag && broker.version < FIRST_BROKER_SUPPORTING_EXPRESSION_FILTER {
@@ -1396,7 +1437,7 @@ impl PullConsumer {
             decompress_body: client_config.decode_decompress_body,
             ..DecodeOptions::default()
         };
-        let mut processed = self.pull_api.process_pull_result(
+        let mut processed = pull_api.process_pull_result(
             &queue,
             pull_result,
             &subscription,
@@ -2380,6 +2421,15 @@ mod tests {
         config.set_max_reconsume_times(mutated_max_reconsume_times);
         assert_eq!(config.max_reconsume_times(), mutated_max_reconsume_times);
         let consumer = PullConsumer::new(config);
+        assert!(consumer.pull_api_wrapper().is_none());
+        let pull_api_wrapper = Arc::new(PullAPIWrapper::new(false));
+        consumer.set_pull_api_wrapper(Some(pull_api_wrapper.clone()));
+        assert!(Arc::ptr_eq(
+            &consumer.pull_api_wrapper().unwrap(),
+            &pull_api_wrapper
+        ));
+        consumer.set_pull_api_wrapper(None);
+        assert!(consumer.pull_api_wrapper().is_none());
         let implementation = consumer.get_default_mq_pull_consumer_impl();
 
         assert!(std::ptr::eq(implementation, &consumer));
@@ -2392,6 +2442,21 @@ mod tests {
         assert!(expected["accessorNonNull"].as_bool().unwrap());
         assert!(expected["sameImplementationAcrossCalls"].as_bool().unwrap());
         assert!(expected["offsetStoreIsNullBeforeStart"].as_bool().unwrap());
+        assert!(
+            expected["pullApiWrapperIsNullBeforeStart"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(
+            expected["pullAPIWrapperSetterRetainsIdentity"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(
+            expected["pullAPIWrapperSetterAcceptsNull"]
+                .as_bool()
+                .unwrap()
+        );
 
         let parse_input = expected["parseSubscribeMessageQueuesInput"]
             .as_array()

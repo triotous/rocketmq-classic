@@ -16,6 +16,8 @@ import org.apache.rocketmq.client.consumer.store.OffsetStore;
 import org.apache.rocketmq.client.hook.ConsumeMessageContext;
 import org.apache.rocketmq.client.hook.ConsumeMessageHook;
 import org.apache.rocketmq.client.impl.consumer.DefaultMQPullConsumerImpl;
+import org.apache.rocketmq.client.impl.consumer.PullAPIWrapper;
+import org.apache.rocketmq.client.impl.consumer.RebalanceImpl;
 import org.apache.rocketmq.client.impl.consumer.ProcessQueue;
 import org.apache.rocketmq.common.ServiceState;
 import org.apache.rocketmq.common.consumer.ConsumeFromWhere;
@@ -125,10 +127,51 @@ public final class PullImplementationAccessorFixtures {
         check(first != null, "implementation accessor non-null");
         check(first == second, "implementation accessor identity stable");
         check(group.equals(first.groupName()), "implementation retains configured group");
-        check(first.getServiceState().name().equals("CREATE_JUST"), "initial implementation state");
+        String serviceStateBeforeStart = first.getServiceState().name();
+        check(serviceStateBeforeStart.equals("CREATE_JUST"), "initial implementation state");
         check(first.getOffsetStore() == null, "offset store absent before start");
         check(first.getPullAPIWrapper() == null, "pull API wrapper absent before start");
-        check(first.getRebalanceImpl() != null, "rebalance implementation constructed");
+        PullAPIWrapper replacementPullAPIWrapper = new PullAPIWrapper(null, group, false);
+        MessageQueue wrapperQueue = new MessageQueue("orders", "broker-a", 2);
+        long wrapperDefaultBrokerId = replacementPullAPIWrapper.getDefaultBrokerId();
+        boolean wrapperConnectByUserBeforeMutation =
+            replacementPullAPIWrapper.isConnectBrokerByUser();
+        replacementPullAPIWrapper.updatePullFromWhichNode(wrapperQueue, 7L);
+        long wrapperSuggestedBrokerId =
+            replacementPullAPIWrapper.recalculatePullFromWhichNode(wrapperQueue);
+        replacementPullAPIWrapper.setDefaultBrokerId(11L);
+        replacementPullAPIWrapper.setConnectBrokerByUser(true);
+        long wrapperBrokerIdAfterUserSelection =
+            replacementPullAPIWrapper.recalculatePullFromWhichNode(wrapperQueue);
+        boolean wrapperHasHookBeforeRegistration = replacementPullAPIWrapper.hasHook();
+        ArrayList<org.apache.rocketmq.client.hook.FilterMessageHook> wrapperHooks = new ArrayList<>();
+        wrapperHooks.add(new org.apache.rocketmq.client.hook.FilterMessageHook() {
+            @Override
+            public String hookName() {
+                return "pull-api-wrapper-fixture";
+            }
+
+            @Override
+            public void filterMessage(org.apache.rocketmq.client.hook.FilterMessageContext context) {
+                context.setUnitMode(true);
+            }
+        });
+        replacementPullAPIWrapper.registerFilterMessageHook(wrapperHooks);
+        org.apache.rocketmq.client.hook.FilterMessageContext wrapperHookContext =
+            new org.apache.rocketmq.client.hook.FilterMessageContext();
+        replacementPullAPIWrapper.executeHook(wrapperHookContext);
+        boolean wrapperHookMutatedContext = wrapperHookContext.isUnitMode();
+        boolean wrapperHasHookAfterRegistration = replacementPullAPIWrapper.hasHook();
+        boolean wrapperRandomNumNonnegative = replacementPullAPIWrapper.randomNum() >= 0;
+        first.setPullAPIWrapper(replacementPullAPIWrapper);
+        boolean pullAPIWrapperSetterRetainsIdentity =
+            first.getPullAPIWrapper() == replacementPullAPIWrapper;
+        first.setPullAPIWrapper(null);
+        boolean pullAPIWrapperSetterAcceptsNull = first.getPullAPIWrapper() == null;
+        RebalanceImpl rebalanceImplementation = first.getRebalanceImpl();
+        check(rebalanceImplementation != null, "rebalance implementation constructed");
+        boolean rebalanceImplementationIdentityStable =
+            rebalanceImplementation == first.getRebalanceImpl();
         String groupNameBeforeStart = first.groupName();
         MessageModel messageModelBeforeMutation = first.messageModel();
         boolean unitModeBeforeMutation = first.isUnitMode();
@@ -243,6 +286,7 @@ public final class PullImplementationAccessorFixtures {
         MessageQueue rawOffsetQueue = new MessageQueue("raw-offset-topic", "broker-offset", 3);
         first.updateConsumeOffsetToBroker(rawOffsetQueue, 37L, true);
         first.setServiceState(ServiceState.RUNNING);
+        String serviceStateAfterSetter = first.getServiceState().name();
         long rawImplementationFetchOffset = first.fetchConsumeOffset(rawOffsetQueue, false);
         long facadeFetchOffset = consumer.fetchConsumeOffset(rawOffsetQueue, true);
         first.getRebalanceImpl().getProcessQueueTable().put(assignedPersistQueue, new ProcessQueue());
@@ -300,10 +344,23 @@ public final class PullImplementationAccessorFixtures {
         fixture.put("accessorNonNull", true);
         fixture.put("sameImplementationAcrossCalls", true);
         fixture.put("implementationGroup", first.groupName());
-        fixture.put("serviceStateBeforeStart", first.getServiceState().name());
+        fixture.put("serviceStateBeforeStart", serviceStateBeforeStart);
+        fixture.put("serviceStateAfterSetter", serviceStateAfterSetter);
         fixture.put("offsetStoreIsNullBeforeStart", first.getOffsetStore() == null);
         fixture.put("pullApiWrapperIsNullBeforeStart", first.getPullAPIWrapper() == null);
+        fixture.put("pullAPIWrapperSetterRetainsIdentity", pullAPIWrapperSetterRetainsIdentity);
+        fixture.put("pullAPIWrapperSetterAcceptsNull", pullAPIWrapperSetterAcceptsNull);
+        fixture.put("pullAPIWrapperDefaultBrokerId", wrapperDefaultBrokerId);
+        fixture.put("pullAPIWrapperConnectByUserBeforeMutation", wrapperConnectByUserBeforeMutation);
+        fixture.put("pullAPIWrapperSuggestedBrokerId", wrapperSuggestedBrokerId);
+        fixture.put("pullAPIWrapperBrokerIdAfterUserSelection", wrapperBrokerIdAfterUserSelection);
+        fixture.put("pullAPIWrapperHasHookBeforeRegistration", wrapperHasHookBeforeRegistration);
+        fixture.put("pullAPIWrapperHasHookAfterRegistration", wrapperHasHookAfterRegistration);
+        fixture.put("pullAPIWrapperHookMutatedContext", wrapperHookMutatedContext);
+        fixture.put("pullAPIWrapperRandomNumNonnegative", wrapperRandomNumNonnegative);
         fixture.put("rebalanceImplementationPresent", first.getRebalanceImpl() != null);
+        fixture.put("rebalanceImplementationClass", rebalanceImplementation.getClass().getSimpleName());
+        fixture.put("rebalanceImplementationIdentityStable", rebalanceImplementationIdentityStable);
         fixture.put("maxReconsumeTimesDefault", maxReconsumeTimesDefault);
         fixture.put("maxReconsumeTimesAfterMutation", consumer.getMaxReconsumeTimes());
         fixture.put("parseSubscribeMessageQueuesInput", queueKeys(parseInput));

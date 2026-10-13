@@ -39,6 +39,8 @@ pub enum PullConsumerError {
     AlreadyStarted,
     #[error("pull consumer has been shut down")]
     Shutdown,
+    #[error("pull API wrapper is unavailable")]
+    PullApiWrapperUnavailable,
     #[error("offset store must be configured before startup")]
     OffsetStoreAfterStartup,
     #[error("message queue must have a topic and broker name")]
