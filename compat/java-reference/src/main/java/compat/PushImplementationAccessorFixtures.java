@@ -97,6 +97,13 @@ public final class PushImplementationAccessorFixtures {
             .map(SubscriptionData::getTopic)
             .sorted()
             .collect(Collectors.toList());
+        boolean subscribeInfoNeededBeforeRoute = first.isSubscribeTopicNeedUpdate("orders");
+        first.updateTopicSubscribeInfo("orders", Set.of(new MessageQueue("orders", "broker-a", 1)));
+        boolean subscribeInfoNeededAfterRoute = first.isSubscribeTopicNeedUpdate("orders");
+        boolean unregisteredTopicNeedsRoute = first.isSubscribeTopicNeedUpdate("unregistered");
+        first.suspend();
+        boolean tryRebalanceWhilePaused = first.tryRebalance();
+        first.resume();
         RecordingMqClientInstance resetFactory = recordingMqClientInstance();
         first.setmQClientFactory(resetFactory);
         first.getRebalanceImpl().setmQClientFactory(resetFactory);
@@ -226,6 +233,10 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("subscriptionCountBefore", subscriptionCountBefore);
         fixture.put("subscriptionInnerIdentityStable", subscriptionInnerIdentityStable);
         fixture.put("subscriptionTopicsAfterSubscribe", subscriptionTopicsAfterSubscribe);
+        fixture.put("subscribeInfoNeededBeforeRoute", subscribeInfoNeededBeforeRoute);
+        fixture.put("subscribeInfoNeededAfterRoute", subscribeInfoNeededAfterRoute);
+        fixture.put("unregisteredTopicNeedsRoute", unregisteredTopicNeedsRoute);
+        fixture.put("tryRebalanceWhilePaused", tryRebalanceWhilePaused);
         fixture.put("offsetStoreInitiallyNull", offsetStoreInitiallyNull);
         fixture.put("offsetStoreSetterPreservesIdentity", offsetStoreSetterPreservesIdentity);
         fixture.put("offsetUpdates", offsetUpdates);

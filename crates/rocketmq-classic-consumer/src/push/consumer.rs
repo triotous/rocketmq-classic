@@ -961,6 +961,43 @@ impl PushConsumer {
         self.reset_retry_and_namespace_for_pop(messages, consumer_group);
     }
 
+    /// Reports whether a subscribed topic still needs route data, matching
+    /// `MQConsumerInner.isSubscribeTopicNeedUpdate`.
+    pub fn is_subscribe_topic_need_update(&self, topic: &str) -> bool {
+        read_lock(&self.subscriptions).contains_key(topic)
+            && !read_lock(&self.topic_queues).contains_key(topic)
+    }
+
+    /// Stores route queues for a subscribed topic and wakes the runtime's
+    /// rebalance worker when the route set changes.
+    pub async fn update_topic_subscribe_info(&self, topic: &str, queues: BTreeSet<MessageQueue>) {
+        if !read_lock(&self.subscriptions).contains_key(topic) {
+            return;
+        }
+        let previous = write_lock(&self.topic_queues).insert(topic.to_owned(), queues.clone());
+        if previous.as_ref() != Some(&queues) {
+            if let Some(context) = self.pull_context().await {
+                context.runtime.rebalance_immediately();
+            }
+        }
+    }
+
+    /// Runs one rebalance pass immediately, unless Push consumption is paused.
+    pub async fn do_rebalance(self: &Arc<Self>) {
+        if !self.paused.load(Ordering::Acquire) {
+            let _ = self.rebalance_service.rebalance(self).await;
+        }
+    }
+
+    /// Runs one rebalance pass and returns its result, matching Java's
+    /// `tryRebalance`; paused consumers return `false`.
+    pub async fn try_rebalance(self: &Arc<Self>) -> bool {
+        if self.paused.load(Ordering::Acquire) {
+            return false;
+        }
+        self.rebalance_service.rebalance(self).await
+    }
+
     pub async fn query_message(
         &self,
         topic: &str,
@@ -5505,6 +5542,22 @@ impl PushConsumer {
     }
 
     pub async fn shutdown(&self) -> Result<(), PushConsumerError> {
+        self.shutdown_with_await_termination_millis(
+            self.config.await_termination_millis_when_shutdown(),
+        )
+        .await
+    }
+
+    /// Shuts down using the supplied Java `shutdown(long)` wait in milliseconds.
+    ///
+    /// [`shutdown`](Self::shutdown) uses the configured
+    /// `awaitTerminationMillisWhenShutdown` value, matching the public consumer
+    /// facade. This method lets callers provide the implementation overload's
+    /// per-call wait value.
+    pub async fn shutdown_with_await_termination_millis(
+        &self,
+        await_termination_millis: i64,
+    ) -> Result<(), PushConsumerError> {
         let (
             runtime,
             lease,
@@ -5572,11 +5625,9 @@ impl PushConsumer {
             .drain(..)
             .collect::<Vec<_>>();
         for mut worker in pop_consume_workers {
-            if self.config.await_termination_millis_when_shutdown() > 0
+            if await_termination_millis > 0
                 && tokio::time::timeout(
-                    Duration::from_millis(
-                        self.config.await_termination_millis_when_shutdown() as u64
-                    ),
+                    Duration::from_millis(await_termination_millis as u64),
                     &mut worker,
                 )
                 .await
@@ -5597,12 +5648,8 @@ impl PushConsumer {
             pull_scheduler.cancel(queue, generation);
         }
         pull_scheduler.stop().await;
-        pull_rpc_workers
-            .stop(self.config.await_termination_millis_when_shutdown())
-            .await;
-        consume_service
-            .shutdown(self.config.await_termination_millis_when_shutdown())
-            .await;
+        pull_rpc_workers.stop(await_termination_millis).await;
+        consume_service.shutdown(await_termination_millis).await;
         let queues = process_queues
             .iter()
             .map(|(queue, _)| queue.clone())
@@ -6255,6 +6302,42 @@ mod tests {
             fixture["resetRetryAndNamespaceTopics"],
             serde_json::json!(reset_topics)
         );
+    }
+
+    #[tokio::test]
+    async fn push_raw_rebalance_route_entrypoints_match_java() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/push-implementation-accessor.json"
+        ))
+        .unwrap();
+        let consumer = Arc::new(PushConsumer::new(
+            PushConsumerConfig::new("phase18-push-implementation-accessor").unwrap(),
+        ));
+        consumer.subscribe("orders", "*").await.unwrap();
+
+        assert_eq!(
+            consumer.is_subscribe_topic_need_update("orders"),
+            fixture["subscribeInfoNeededBeforeRoute"]
+        );
+        assert!(!consumer.is_subscribe_topic_need_update("unregistered"));
+        assert_eq!(fixture["unregisteredTopicNeedsRoute"], false);
+        consumer
+            .update_topic_subscribe_info(
+                "orders",
+                BTreeSet::from([MessageQueue::new("orders", "broker-a", 1)]),
+            )
+            .await;
+        assert_eq!(
+            consumer.is_subscribe_topic_need_update("orders"),
+            fixture["subscribeInfoNeededAfterRoute"]
+        );
+        consumer.suspend().await;
+        assert_eq!(
+            consumer.try_rebalance().await,
+            fixture["tryRebalanceWhilePaused"]
+        );
+        consumer.do_rebalance().await;
+        consumer.resume().await;
     }
 
     #[tokio::test]
@@ -10257,6 +10340,91 @@ mod tests {
         assert_eq!(consume_service.worker_count(), 0);
         assert_eq!(scheduler.worker_count(), 0);
         assert_eq!(pull_rpc_workers.worker_count(), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn shutdown_with_explicit_wait_overrides_configured_wait() {
+        struct NotifyOnDrop(Arc<tokio::sync::Notify>);
+        impl Drop for NotifyOnDrop {
+            fn drop(&mut self) {
+                self.0.notify_one();
+            }
+        }
+
+        let started = Arc::new(tokio::sync::Notify::new());
+        let completed = Arc::new(AtomicBool::new(false));
+        let cancelled = Arc::new(tokio::sync::Notify::new());
+        let listener: Arc<dyn MessageListenerConcurrently> = {
+            let started = started.clone();
+            let completed = completed.clone();
+            let cancelled = cancelled.clone();
+            Arc::new(
+                move |_messages: Vec<MessageExt>, context: ConsumeConcurrentlyContext| {
+                    let started = started.clone();
+                    let completed = completed.clone();
+                    let cancelled = cancelled.clone();
+                    async move {
+                        let _drop_signal = NotifyOnDrop(cancelled);
+                        started.notify_one();
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                        completed.store(true, Ordering::Release);
+                        (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+                    }
+                },
+            )
+        };
+        let mut config = PushConsumerConfig::new("shutdown-explicit-wait-override").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        config.set_consume_thread_min(1);
+        config.set_consume_thread_max(1);
+        config.set_await_termination_millis_when_shutdown(0);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let offset_store = Arc::new(RecordingOffsetStore::default());
+        let offset_store_dyn: Arc<dyn OffsetStore> = offset_store.clone();
+        let consume_service = Arc::new(ConcurrentConsumeService::new(1, 1, listener));
+        let scheduler = Arc::new(PullScheduler::new());
+        let pull_rpc_workers = Arc::new(PullRpcWorkers::new());
+        let _runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            offset_store_dyn,
+            consume_service.clone(),
+            scheduler.clone(),
+            pull_rpc_workers.clone(),
+        )
+        .await;
+
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 40));
+        process_queue
+            .insert_messages(40, vec![retry_test_message(50)])
+            .unwrap();
+        write_lock(&consumer.process_queues).insert(queue, process_queue.clone());
+        consumer.submit_consume_batch(&consumer.pull_context().await.unwrap(), process_queue, 40);
+        started.notified().await;
+
+        let shutdown_consumer = consumer.clone();
+        let shutdown = tokio::spawn(async move {
+            shutdown_consumer
+                .shutdown_with_await_termination_millis(100)
+                .await
+                .unwrap();
+        });
+        tokio::task::yield_now().await;
+        assert!(!shutdown.is_finished());
+        tokio::time::advance(Duration::from_millis(50)).await;
+        shutdown.await.unwrap();
+
+        assert!(completed.load(Ordering::Acquire));
+        assert_eq!(consume_service.worker_count(), 0);
+        assert_eq!(scheduler.worker_count(), 0);
+        assert_eq!(pull_rpc_workers.worker_count(), 0);
+        assert!(
+            tokio::time::timeout(Duration::from_secs(1), cancelled.notified())
+                .await
+                .is_ok()
+        );
     }
 
     #[tokio::test]
