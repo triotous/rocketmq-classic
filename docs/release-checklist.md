@@ -99,7 +99,8 @@ Before any publication:
   the workspace manifests' `Apache-2.0` declaration.
 - [x] Preserve the Apache RocketMQ reference `NOTICE` at the repository root
   for the Java 5.5.1 compatibility harness and its source-derived fixtures.
-  The broader package-content and dependency provenance review remains open.
+  Package contents and external dependency provenance are reviewed above;
+  registry-resolvable workspace dependency versions remain release preparation.
 
 ## Final release boundary
 
