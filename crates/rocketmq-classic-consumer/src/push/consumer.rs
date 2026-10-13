@@ -66,7 +66,10 @@ use crate::{
     offset::{OffsetRead, ReadOffsetType},
     pop::{PopProcessQueue, PopReceipt, PopStatus, process_pop_reply},
     process_queue::{ConsumeBatch, LockAttemptResult, OrderlyCompletion, ProcessQueue},
-    pull::{PullAPIWrapper, build_subscription, resolve_pull_broker_address},
+    pull::{
+        FilterMessageContext, FilterMessageHook, PullAPIWrapper, build_subscription,
+        resolve_pull_broker_address,
+    },
     rebalance::RebalanceService,
     service_state::ConsumerServiceState,
     stats::global_consumer_stats,
@@ -594,6 +597,11 @@ impl PushConsumer {
         self.consume_message_hooks.register(hook);
     }
 
+    /// Registers a Java-compatible hook for decoded Pull and POP messages.
+    pub fn register_filter_message_hook(&self, hook: Arc<dyn FilterMessageHook>) {
+        self.pull_api.register_filter_message_hook(hook);
+    }
+
     /// Reports whether Java's Push implementation has a consume hook.
     pub fn has_hook(&self) -> bool {
         !self.consume_message_hooks.is_empty()
@@ -903,9 +911,20 @@ impl PushConsumer {
         let timeout = Duration::from_millis(
             i64::from(self.config.client_config().mq_client_api_timeout()).max(0) as u64,
         );
-        crate::admin::fetch_subscribe_queues(&context.runtime, &topic, timeout)
-            .await?
-            .into_iter()
+        let queues =
+            crate::admin::fetch_subscribe_queues(&context.runtime, &topic, timeout).await?;
+        self.parse_subscribe_message_queues(&queues)
+    }
+
+    /// Removes this consumer's namespace from queue topics returned by the
+    /// implementation's raw `parseSubscribeMessageQueues` entrypoint.
+    pub fn parse_subscribe_message_queues(
+        &self,
+        queue_set: &BTreeSet<MessageQueue>,
+    ) -> Result<BTreeSet<MessageQueue>, PushConsumerError> {
+        let mut client_config = self.config.client_config().clone();
+        queue_set
+            .iter()
             .map(|queue| {
                 let topic = client_config.without_namespace(queue.topic())?;
                 Ok(MessageQueue::new_nullable(
@@ -916,6 +935,30 @@ impl PushConsumer {
             })
             .collect::<Result<BTreeSet<_>, rocketmq_classic_core::config::ConfigError>>()
             .map_err(PushConsumerError::from)
+    }
+
+    /// Restores ordinary topic names from POP retry-topic names for this
+    /// consumer group, matching Java's `tryResetPopRetryTopic` helper.
+    pub fn try_reset_pop_retry_topic(&self, messages: &mut [MessageExt], consumer_group: &str) {
+        let prefix = format!("%RETRY%{consumer_group}_");
+        for message in messages {
+            if let Some(topic) = message
+                .message()
+                .topic()
+                .strip_prefix(&prefix)
+                .map(str::to_owned)
+            {
+                if !topic.is_empty() {
+                    message.message_mut().set_topic(topic);
+                }
+            }
+        }
+    }
+
+    /// Restores the original topic on group retry messages, then removes this
+    /// consumer's namespace, matching Java's `resetRetryAndNamespace` helper.
+    pub fn reset_retry_and_namespace(&self, messages: &mut [MessageExt], consumer_group: &str) {
+        self.reset_retry_and_namespace_for_pop(messages, consumer_group);
     }
 
     pub async fn query_message(
@@ -3839,12 +3882,36 @@ impl PushConsumer {
                     .message()
                     .tags()
                     .is_some_and(|tag| tags.contains(&Some(tag.to_owned())));
-            if !tag_matches || message.reconsume_times() > max_reconsume_times {
+            if !tag_matches {
                 discarded.push(message);
             } else {
                 accepted.push(message);
             }
         }
+
+        if self.pull_api.has_hook() {
+            let before_hooks = accepted.clone();
+            let mut context = FilterMessageContext {
+                unit_mode: self.config.unit_mode(),
+                messages: accepted,
+            };
+            self.pull_api.execute_hook(&mut context);
+            for message in before_hooks {
+                if !context.messages.contains(&message) {
+                    discarded.push(message);
+                }
+            }
+            accepted = context.messages;
+        }
+
+        accepted.retain(|message| {
+            if message.reconsume_times() > max_reconsume_times {
+                discarded.push(message.clone());
+                false
+            } else {
+                true
+            }
+        });
         (accepted, discarded)
     }
 
@@ -3921,7 +3988,7 @@ impl PushConsumer {
             );
             return;
         }
-        self.reset_retry_and_namespace_for_pop(&mut messages, &consumer_group);
+        self.reset_retry_and_namespace(&mut messages, &consumer_group);
         let mut consume_context = self.new_consume_message_context(messages.clone(), queue.clone());
         self.consume_message_hooks
             .execute_before(&mut consume_context);
@@ -6077,6 +6144,117 @@ mod tests {
         );
         assert_eq!(events, ["before:seed", "after:hook-before:true"]);
         assert_eq!(context.status.as_deref(), Some("hook-before"));
+    }
+
+    #[test]
+    fn push_raw_filter_hook_and_topic_helpers_match_java() {
+        struct FilterHook(Arc<std::sync::Mutex<Vec<String>>>);
+
+        impl FilterMessageHook for FilterHook {
+            fn hook_name(&self) -> &str {
+                "push-raw-filter-hook-fixture"
+            }
+
+            fn filter_message(&self, context: &mut FilterMessageContext) {
+                self.0.lock().unwrap().push(format!(
+                    "{}:{}",
+                    context.unit_mode,
+                    context.messages.len()
+                ));
+                context.messages.truncate(1);
+            }
+        }
+
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/push-implementation-accessor.json"
+        ))
+        .unwrap();
+        let group = "phase18-push-topic-helpers";
+        let mut config = PushConsumerConfig::new(group).unwrap();
+        config
+            .client_config_mut()
+            .set_namespace(Some("tenant".to_owned()));
+        let consumer = PushConsumer::new(config);
+
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        consumer.register_filter_message_hook(Arc::new(FilterHook(events.clone())));
+        assert!(consumer.pull_api.has_hook());
+        assert_eq!(
+            fixture["pushPopFilterHookEvents"],
+            serde_json::json!(["false:2"])
+        );
+        let first = MessageExt::new(Message::new("orders", b"one".to_vec()));
+        let second = MessageExt::new(Message::new("orders", b"two".to_vec()));
+        let (accepted, discarded) =
+            consumer.filter_pop_messages(&SubscriptionData::default(), vec![first, second]);
+        assert_eq!(*events.lock().unwrap(), ["false:2"]);
+        assert_eq!(accepted.len(), 1);
+        assert_eq!(accepted[0].message().body(), b"one");
+        assert_eq!(discarded.len(), 1);
+        assert_eq!(discarded[0].message().body(), b"two");
+
+        let queues = BTreeSet::from([
+            MessageQueue::new("tenant%orders", "broker-a", 1),
+            MessageQueue::new("orders", "broker-b", 2),
+            MessageQueue::new("other%events", "broker-c", 3),
+        ]);
+        let parsed = consumer
+            .parse_subscribe_message_queues(&queues)
+            .unwrap()
+            .iter()
+            .map(|queue| {
+                format!(
+                    "{}|{}|{}",
+                    queue.topic().unwrap_or_default(),
+                    queue.broker_name().unwrap_or_default(),
+                    queue.queue_id()
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(fixture["parsedSubscribeQueues"], serde_json::json!(parsed));
+
+        let mut pop_retry_messages = [
+            MessageExt::new(Message::new(
+                "%RETRY%phase18-push-topic-helpers_orders",
+                b"".to_vec(),
+            )),
+            MessageExt::new(Message::new("%RETRY%other_orders", b"".to_vec())),
+            MessageExt::new(Message::new("orders", b"".to_vec())),
+        ];
+        consumer.try_reset_pop_retry_topic(&mut pop_retry_messages, group);
+        let pop_retry_topics = pop_retry_messages
+            .iter()
+            .map(|message| message.message().topic())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            fixture["resetPopRetryTopics"],
+            serde_json::json!(pop_retry_topics)
+        );
+
+        let mut reset_messages = [
+            {
+                let mut message = MessageExt::new(Message::new(
+                    "%RETRY%phase18-push-topic-helpers",
+                    b"".to_vec(),
+                ));
+                message
+                    .message_mut()
+                    .set_system_property(PROPERTY_RETRY_TOPIC, "tenant%orders")
+                    .unwrap();
+                message
+            },
+            MessageExt::new(Message::new("tenant%events", b"".to_vec())),
+            MessageExt::new(Message::new("other%events", b"".to_vec())),
+        ];
+        consumer.reset_retry_and_namespace(&mut reset_messages, group);
+        let reset_topics = reset_messages
+            .iter()
+            .map(|message| message.message().topic())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            fixture["resetRetryAndNamespaceTopics"],
+            serde_json::json!(reset_topics)
+        );
     }
 
     #[tokio::test]

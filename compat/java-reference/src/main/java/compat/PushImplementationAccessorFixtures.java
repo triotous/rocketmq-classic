@@ -17,12 +17,19 @@ import org.apache.rocketmq.client.consumer.store.OffsetStore;
 import org.apache.rocketmq.client.exception.MQClientException;
 import org.apache.rocketmq.client.hook.ConsumeMessageContext;
 import org.apache.rocketmq.client.hook.ConsumeMessageHook;
+import org.apache.rocketmq.client.hook.FilterMessageContext;
+import org.apache.rocketmq.client.hook.FilterMessageHook;
 import org.apache.rocketmq.client.impl.MQAdminImpl;
+import org.apache.rocketmq.client.consumer.PopResult;
+import org.apache.rocketmq.client.consumer.PopStatus;
 import org.apache.rocketmq.client.impl.consumer.DefaultMQPushConsumerImpl;
 import org.apache.rocketmq.client.impl.consumer.PullRequest;
 import org.apache.rocketmq.client.impl.consumer.ProcessQueue;
 import org.apache.rocketmq.client.impl.factory.MQClientInstance;
 import org.apache.rocketmq.common.message.MessageQueue;
+import org.apache.rocketmq.common.message.MessageExt;
+import org.apache.rocketmq.common.message.MessageConst;
+import org.apache.rocketmq.common.message.MessageAccessor;
 import org.apache.rocketmq.common.ServiceState;
 import org.apache.rocketmq.client.consumer.store.ReadOffsetType;
 import org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData;
@@ -162,6 +169,32 @@ public final class PushImplementationAccessorFixtures {
         first.executeHookAfter(directHookContext);
         boolean hasConsumeHookAfterRegistration = first.hasHook();
 
+        List<String> filterHookEvents = new ArrayList<>();
+        first.registerFilterMessageHook(new FilterMessageHook() {
+            @Override
+            public String hookName() {
+                return "push-raw-filter-hook-fixture";
+            }
+
+            @Override
+            public void filterMessage(FilterMessageContext context) {
+                filterHookEvents.add(context.isUnitMode() + ":" + context.getMsgList().size());
+            }
+        });
+        List<MessageExt> popMessages = new ArrayList<>();
+        MessageExt popMessageA = new MessageExt();
+        popMessageA.setTopic("orders");
+        popMessages.add(popMessageA);
+        MessageExt popMessageB = new MessageExt();
+        popMessageB.setTopic("orders");
+        popMessages.add(popMessageB);
+        java.lang.reflect.Method processPopResult = DefaultMQPushConsumerImpl.class
+            .getDeclaredMethod("processPopResult", PopResult.class, SubscriptionData.class);
+        processPopResult.setAccessible(true);
+        processPopResult.invoke(first, new PopResult(PopStatus.FOUND, popMessages), new SubscriptionData());
+
+        Map<String, Object> topicHelpers = topicHelperResults();
+
         Map<String, Object> fixture = new LinkedHashMap<>();
         fixture.put("implementationNonNull", first != null);
         fixture.put("implementationIdentityStable", first == second);
@@ -201,6 +234,8 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("hasConsumeHookBeforeRegistration", hasConsumeHookBeforeRegistration);
         fixture.put("directHookEvents", directHookEvents);
         fixture.put("hasConsumeHookAfterRegistration", hasConsumeHookAfterRegistration);
+        fixture.put("pushPopFilterHookEvents", filterHookEvents);
+        fixture.putAll(topicHelpers);
         fixture.putAll(orderlyLockedPullAttempts());
         String json = JSON.toJSONString(fixture) + "\n";
         if (verify) {
@@ -210,6 +245,55 @@ public final class PushImplementationAccessorFixtures {
             Files.writeString(path, json);
         }
         System.out.println("Push implementation accessor verified");
+    }
+
+    private static Map<String, Object> topicHelperResults() {
+        String group = "phase18-push-topic-helpers";
+        DefaultMQPushConsumer consumer = new DefaultMQPushConsumer(group);
+        consumer.setNamespace("tenant");
+        DefaultMQPushConsumerImpl implementation = consumer.getDefaultMQPushConsumerImpl();
+
+        Set<MessageQueue> subscribedQueues = Set.of(
+            new MessageQueue("tenant%orders", "broker-a", 1),
+            new MessageQueue("orders", "broker-b", 2),
+            new MessageQueue("other%events", "broker-c", 3));
+        List<String> parsedQueues = implementation.parseSubscribeMessageQueues(subscribedQueues).stream()
+            .map(queue -> queue.getTopic() + "|" + queue.getBrokerName() + "|" + queue.getQueueId())
+            .sorted()
+            .collect(Collectors.toList());
+
+        List<MessageExt> popRetryMessages = new ArrayList<>();
+        for (String topic : List.of("%RETRY%" + group + "_orders", "%RETRY%other_orders", "orders")) {
+            MessageExt message = new MessageExt();
+            message.setTopic(topic);
+            popRetryMessages.add(message);
+        }
+        implementation.tryResetPopRetryTopic(popRetryMessages, group);
+        List<String> resetPopRetryTopics = popRetryMessages.stream()
+            .map(MessageExt::getTopic)
+            .collect(Collectors.toList());
+
+        List<MessageExt> retryAndNamespaceMessages = new ArrayList<>();
+        MessageExt retry = new MessageExt();
+        retry.setTopic("%RETRY%" + group);
+        MessageAccessor.putProperty(retry, MessageConst.PROPERTY_RETRY_TOPIC, "tenant%orders");
+        retryAndNamespaceMessages.add(retry);
+        MessageExt ordinary = new MessageExt();
+        ordinary.setTopic("tenant%events");
+        retryAndNamespaceMessages.add(ordinary);
+        MessageExt otherNamespace = new MessageExt();
+        otherNamespace.setTopic("other%events");
+        retryAndNamespaceMessages.add(otherNamespace);
+        implementation.resetRetryAndNamespace(retryAndNamespaceMessages, group);
+        List<String> resetRetryAndNamespaceTopics = retryAndNamespaceMessages.stream()
+            .map(MessageExt::getTopic)
+            .collect(Collectors.toList());
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("parsedSubscribeQueues", parsedQueues);
+        result.put("resetPopRetryTopics", resetPopRetryTopics);
+        result.put("resetRetryAndNamespaceTopics", resetRetryAndNamespaceTopics);
+        return result;
     }
 
     private static Map<String, Object> orderlyLockedPullAttempts() {
