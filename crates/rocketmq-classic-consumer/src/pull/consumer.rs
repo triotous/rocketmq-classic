@@ -1792,9 +1792,12 @@ impl PullConsumerRegistration {
             return true;
         }
 
-        let registered = read_lock(&self.register_topics).clone();
+        let subscribed = read_lock(&self.subscriptions)
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>();
         let previous = read_lock(&self.in_balance_queues).clone();
-        let mut topics = registered.clone();
+        let mut topics = subscribed.clone();
         topics.extend(
             previous
                 .iter()
@@ -1808,8 +1811,8 @@ impl PullConsumerRegistration {
             if !self.rebalance_active.load(Ordering::Acquire) {
                 return true;
             }
-            let is_registered = registered.contains(&topic);
-            if !is_registered {
+            let is_subscribed = subscribed.contains(&topic);
+            if !is_subscribed {
                 let changed = self
                     .reconcile_topic(&topic, Some(HashSet::new()), HashSet::new())
                     .await;
@@ -3296,7 +3299,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pull_clustering_rebalance_uses_membership_and_keeps_assignment_when_unavailable() {
+    async fn pull_rebalance_uses_implementation_subscription_map_and_membership() {
         let mut config = PullConsumerConfig::new("pull-rebalance-cluster").unwrap();
         config.client_config_mut().set_namesrv_addr(None);
         let manager = ClientRuntimeManager::new();
@@ -3315,7 +3318,7 @@ mod tests {
             rebalance_active: Arc::new(AtomicBool::new(true)),
             strategy: config.allocate_message_queue_strategy(),
             message_queue_listener: Arc::new(RwLock::new(None)),
-            register_topics: Arc::new(RwLock::new(BTreeSet::from(["orders".to_owned()]))),
+            register_topics: Arc::new(RwLock::new(BTreeSet::new())),
             subscriptions: Arc::new(RwLock::new(HashMap::from([(
                 "orders".to_owned(),
                 subscription_all("orders"),
