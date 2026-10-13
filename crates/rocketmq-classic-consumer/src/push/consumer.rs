@@ -67,8 +67,8 @@ use crate::{
     pop::{PopProcessQueue, PopReceipt, PopStatus, process_pop_reply},
     process_queue::{ConsumeBatch, LockAttemptResult, OrderlyCompletion, ProcessQueue},
     pull::{
-        FilterMessageContext, FilterMessageHook, PullAPIWrapper, build_subscription,
-        resolve_pull_broker_address,
+        FilterMessageContext, FilterMessageHook, PullAPIWrapper,
+        build_class_filter_subscription_data, build_subscription, resolve_pull_broker_address,
     },
     rebalance::RebalanceService,
     service_state::ConsumerServiceState,
@@ -679,6 +679,42 @@ impl PushConsumer {
         )?;
         let subscription = build_subscription(&topic, Some(expression), expression_type)
             .map_err(|error| PushConsumerError::InvalidSubscription(error.to_string()))?;
+        write_lock(&self.subscriptions).insert(topic, subscription);
+        if let Some(runtime) = runtime {
+            let heartbeat = runtime.send_heartbeat_to_all_brokers().await;
+            runtime.rebalance_immediately();
+            heartbeat?;
+        }
+        Ok(())
+    }
+
+    /// Subscribes using Java's class-filter overload. The class and source stay
+    /// on the local `SubscriptionData`; the source is omitted from heartbeat JSON.
+    pub async fn subscribe_with_class_filter(
+        &self,
+        topic: &str,
+        full_class_name: &str,
+        filter_class_source: &str,
+    ) -> Result<(), PushConsumerError> {
+        let runtime = {
+            let state = self.state.lock().await;
+            match &*state {
+                State::Created => None,
+                State::Started { runtime, .. } => {
+                    Some(runtime.upgrade().ok_or(PushConsumerError::NotStarted)?)
+                }
+                State::Shutdown => return Err(PushConsumerError::Shutdown),
+            }
+        };
+        let mut client_config = self.config.client_config().clone();
+        let topic = client_config.with_namespace(Some(topic))?.ok_or(
+            PushConsumerError::InvalidSubscription("topic is empty".to_owned()),
+        )?;
+        let subscription = build_class_filter_subscription_data(
+            topic.clone(),
+            full_class_name,
+            filter_class_source,
+        );
         write_lock(&self.subscriptions).insert(topic, subscription);
         if let Some(runtime) = runtime {
             let heartbeat = runtime.send_heartbeat_to_all_brokers().await;
@@ -10276,6 +10312,162 @@ mod tests {
                 .keys()
                 .any(|topic| topic.starts_with("%RETRY%"))
         );
+    }
+
+    #[tokio::test]
+    async fn class_filter_subscription_matches_java_facade_and_heartbeat_flow() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/push-implementation-accessor.json"
+        ))
+        .unwrap();
+        let mut config = PushConsumerConfig::new("phase18-class-filter-subscribe").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        config
+            .client_config_mut()
+            .set_namespace(Some("tenant".to_owned()));
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+
+        let before_class = fixture["classFilterBeforeStartClassName"].as_str().unwrap();
+        let before_source = fixture["classFilterBeforeStartSource"].as_str().unwrap();
+        consumer
+            .subscribe_with_class_filter("class-filter-orders", before_class, before_source)
+            .await
+            .unwrap();
+
+        let subscription_table = consumer.get_subscription_inner();
+        let before_start = read_lock(&subscription_table)
+            .get("tenant%class-filter-orders")
+            .cloned()
+            .expect("class-filter subscription is stored before start");
+        assert_eq!(
+            before_start.get_topic(),
+            fixture["classFilterBeforeStartTopic"].as_str()
+        );
+        assert_eq!(
+            before_start.get_sub_string(),
+            fixture["classFilterBeforeStartClassName"].as_str()
+        );
+        assert_eq!(
+            before_start.is_class_filter_mode(),
+            fixture["classFilterBeforeStartMode"].as_bool().unwrap()
+        );
+        assert_eq!(
+            before_start.get_filter_class_source(),
+            fixture["classFilterBeforeStartSource"].as_str()
+        );
+        let before_wire = serde_json::to_value(&before_start).unwrap();
+        assert_eq!(before_wire["topic"], fixture["classFilterBeforeStartTopic"]);
+        assert_eq!(
+            before_wire["subString"],
+            fixture["classFilterBeforeStartClassName"]
+        );
+        assert_eq!(
+            before_wire["classFilterMode"],
+            fixture["classFilterBeforeStartMode"]
+        );
+        assert!(before_wire.get("filterClassSource").is_none());
+        assert_eq!(
+            fixture["classFilterSourceSerialized"],
+            serde_json::json!(false)
+        );
+
+        consumer
+            .register_message_listener(PushMessageListener::concurrently(
+                |_messages: Vec<rocketmq_classic_common::message::MessageExt>, context| async move {
+                    (
+                        Some(super::super::listener::ConsumeConcurrentlyStatus::ConsumeSuccess),
+                        context,
+                    )
+                },
+            ))
+            .await
+            .unwrap();
+        consumer.start().await.unwrap();
+        let runtime = manager
+            .get_or_create(consumer.config().client_config())
+            .await
+            .unwrap();
+        let class_topic = fixture["classFilterBeforeStartTopic"].as_str().unwrap();
+        let registration = runtime
+            .select_consumer("tenant%phase18-class-filter-subscribe")
+            .unwrap()
+            .expect("started consumer is registered");
+        let heartbeat_subscription = registration
+            .heartbeat_data()
+            .subscription_data_set
+            .expect("Push heartbeat carries subscriptions")
+            .snapshot()
+            .into_iter()
+            .flatten()
+            .find_map(|subscription| {
+                let subscription = subscription.snapshot();
+                (subscription.topic.as_deref() == Some(class_topic)).then_some(subscription)
+            })
+            .expect("class-filter subscription is present in heartbeat state");
+        assert_eq!(
+            heartbeat_subscription.sub_string.as_deref(),
+            fixture["classFilterBeforeStartClassName"].as_str()
+        );
+        assert_eq!(
+            heartbeat_subscription.filter_class_source.as_deref(),
+            fixture["classFilterBeforeStartSource"].as_str()
+        );
+
+        let after_class = fixture["classFilterAfterFactoryClassName"]
+            .as_str()
+            .unwrap();
+        let after_source = fixture["classFilterAfterFactorySource"].as_str().unwrap();
+        consumer
+            .subscribe_with_class_filter("class-filter-orders", after_class, after_source)
+            .await
+            .unwrap();
+        let updated_registration = runtime
+            .select_consumer("tenant%phase18-class-filter-subscribe")
+            .unwrap()
+            .expect("started consumer remains registered");
+        let updated_heartbeat_subscription = updated_registration
+            .heartbeat_data()
+            .subscription_data_set
+            .expect("Push heartbeat carries subscriptions")
+            .snapshot()
+            .into_iter()
+            .flatten()
+            .find_map(|subscription| {
+                let subscription = subscription.snapshot();
+                (subscription.topic.as_deref() == Some(class_topic)).then_some(subscription)
+            })
+            .expect("class-filter update reaches heartbeat state");
+        assert_eq!(
+            updated_heartbeat_subscription.topic.as_deref(),
+            fixture["classFilterAfterFactoryTopic"].as_str()
+        );
+        assert_eq!(
+            updated_heartbeat_subscription.sub_string.as_deref(),
+            fixture["classFilterAfterFactoryClassName"].as_str()
+        );
+        assert_eq!(
+            updated_heartbeat_subscription.class_filter_mode,
+            fixture["classFilterAfterFactoryMode"].as_bool().unwrap()
+        );
+        assert_eq!(
+            updated_heartbeat_subscription
+                .filter_class_source
+                .as_deref(),
+            fixture["classFilterAfterFactorySource"].as_str()
+        );
+        assert_eq!(
+            fixture["classFilterAfterFactoryHeartbeatCalls"],
+            serde_json::json!(1)
+        );
+        let mut rust_wire = serde_json::to_value(&updated_heartbeat_subscription).unwrap();
+        let mut java_wire = fixture["classFilterAfterFactoryWireData"].clone();
+        assert!(rust_wire.get("filterClassSource").is_none());
+        rust_wire.as_object_mut().unwrap().remove("subVersion");
+        java_wire.as_object_mut().unwrap().remove("subVersion");
+        assert_eq!(rust_wire, java_wire);
+
+        consumer.shutdown().await.unwrap();
     }
 
     #[tokio::test]

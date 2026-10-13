@@ -278,6 +278,7 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("hasConsumeHookAfterRegistration", hasConsumeHookAfterRegistration);
         fixture.put("pushPopFilterHookEvents", filterHookEvents);
         fixture.put("rawImplementationPublicMethodSignatures", publicMethodSignatures());
+        fixture.putAll(classFilterSubscribeResults());
         fixture.putAll(topicHelpers);
         fixture.putAll(orderlyLockedPullAttempts());
         String json = JSON.toJSONString(fixture) + "\n";
@@ -352,6 +353,41 @@ public final class PushImplementationAccessorFixtures {
         result.put("parsedSubscribeQueues", parsedQueues);
         result.put("resetPopRetryTopics", resetPopRetryTopics);
         result.put("resetRetryAndNamespaceTopics", resetRetryAndNamespaceTopics);
+        return result;
+    }
+
+    private static Map<String, Object> classFilterSubscribeResults() throws Exception {
+        DefaultMQPushConsumer consumer = new DefaultMQPushConsumer("phase18-class-filter-subscribe");
+        consumer.setNamespace("tenant");
+        DefaultMQPushConsumerImpl implementation = consumer.getDefaultMQPushConsumerImpl();
+        consumer.subscribe("class-filter-orders", "compat.filters.OrderFilter", "source-v1");
+
+        SubscriptionData beforeStart = implementation.getSubscriptionInner()
+            .get("tenant%class-filter-orders");
+        check(beforeStart != null, "class-filter subscription stored before client factory");
+
+        RecordingMqClientInstance factory = recordingMqClientInstance();
+        implementation.setmQClientFactory(factory);
+        consumer.subscribe("class-filter-orders", "compat.filters.RiskFilter", "source-v2");
+        SubscriptionData afterFactory = implementation.getSubscriptionInner()
+            .get("tenant%class-filter-orders");
+        check(afterFactory != null, "class-filter subscription stored with client factory");
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("classFilterBeforeStartTopic", beforeStart.getTopic());
+        result.put("classFilterBeforeStartClassName", beforeStart.getSubString());
+        result.put("classFilterBeforeStartMode", beforeStart.isClassFilterMode());
+        result.put("classFilterBeforeStartSource", beforeStart.getFilterClassSource());
+        result.put("classFilterAfterFactoryTopic", afterFactory.getTopic());
+        result.put("classFilterAfterFactoryClassName", afterFactory.getSubString());
+        result.put("classFilterAfterFactoryMode", afterFactory.isClassFilterMode());
+        result.put("classFilterAfterFactorySource", afterFactory.getFilterClassSource());
+        result.put("classFilterAfterFactoryHeartbeatCalls", factory.heartbeatCalls);
+        com.alibaba.fastjson2.JSONObject wireData = JSON.parseObject(JSON.toJSONString(afterFactory));
+        wireData.put("subVersion", 0L);
+        result.put("classFilterAfterFactoryWireData", wireData);
+        result.put("classFilterSourceSerialized",
+            JSON.toJSONString(afterFactory).contains("filterClassSource"));
         return result;
     }
 
@@ -455,6 +491,7 @@ public final class PushImplementationAccessorFixtures {
     private static final class RecordingMqClientInstance extends MQClientInstance {
         private List<String> searches;
         private List<Map<String, Object>> resets;
+        private int heartbeatCalls;
         private MQAdminImpl admin;
         private ScheduledExecutorService statsScheduler;
         private ConsumerStatsManager stats;
@@ -466,6 +503,7 @@ public final class PushImplementationAccessorFixtures {
         private void initialize() {
             searches = new ArrayList<>();
             resets = new ArrayList<>();
+            heartbeatCalls = 0;
             this.admin = new MQAdminImpl(this) {
                 @Override
                 public long searchOffset(MessageQueue queue, long timestamp) throws MQClientException {
@@ -484,6 +522,12 @@ public final class PushImplementationAccessorFixtures {
         @Override
         public ConsumerStatsManager getConsumerStatsManager() {
             return stats;
+        }
+
+        @Override
+        public boolean sendHeartbeatToAllBrokerWithLock() {
+            heartbeatCalls++;
+            return true;
         }
 
         private void initializeStats() {

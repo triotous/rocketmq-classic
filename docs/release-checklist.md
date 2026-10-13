@@ -21,8 +21,9 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   offset-store accessors, direct/periodic/shutdown offset persistence scoped to
   active pull queues, timestamp offset reset, `queryConsumeTimeSpan` direct
   route lookup and ordered per-Broker requests with VIP handling, consumer
-  settings/subscriptions, and direct consume-hook entrypoints now have Java
-  fixture/Rust evidence. Push filter-hook registration and POP invocation,
+  settings/subscriptions (including the class-filter overload's namespace,
+  source retention and heartbeat path), and direct consume-hook entrypoints now
+  have Java fixture/Rust evidence. Push filter-hook registration and POP invocation,
   `parseSubscribeMessageQueues`, `tryResetPopRetryTopic`, and
   `resetRetryAndNamespace` also have invoked Java fixture/Rust checks. Push
   subscribe-route update and paused `tryRebalance` entrypoints now have direct
