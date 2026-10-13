@@ -5982,6 +5982,14 @@ mod tests {
         assert_eq!(fixture["implementationNonNull"], true);
         assert_eq!(fixture["implementationIdentityStable"], true);
         assert_eq!(fixture["configuredConsumerGroup"], group);
+        assert_eq!(
+            fixture["rawImplementationPublicMethodSignatures"]
+                .as_array()
+                .unwrap()
+                .len(),
+            71,
+            "pinned Java 5.5.1 raw implementation method inventory changed"
+        );
         assert_eq!(fixture["effectiveMaxReconsumeTimesDefault"], 16);
         assert!(Arc::ptr_eq(&consumer, &first));
         assert!(Arc::ptr_eq(&first, &second));

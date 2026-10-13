@@ -2,10 +2,13 @@ package compat;
 
 import com.alibaba.fastjson2.JSON;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -246,6 +249,7 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("directHookEvents", directHookEvents);
         fixture.put("hasConsumeHookAfterRegistration", hasConsumeHookAfterRegistration);
         fixture.put("pushPopFilterHookEvents", filterHookEvents);
+        fixture.put("rawImplementationPublicMethodSignatures", publicMethodSignatures());
         fixture.putAll(topicHelpers);
         fixture.putAll(orderlyLockedPullAttempts());
         String json = JSON.toJSONString(fixture) + "\n";
@@ -256,6 +260,22 @@ public final class PushImplementationAccessorFixtures {
             Files.writeString(path, json);
         }
         System.out.println("Push implementation accessor verified");
+    }
+
+    private static List<String> publicMethodSignatures() {
+        return Arrays.stream(DefaultMQPushConsumerImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> !method.isBridge() && !method.isSynthetic())
+            .map(PushImplementationAccessorFixtures::signature)
+            .sorted()
+            .collect(Collectors.toList());
+    }
+
+    private static String signature(Method method) {
+        String parameters = Arrays.stream(method.getParameterTypes())
+            .map(Class::getSimpleName)
+            .collect(Collectors.joining(","));
+        return method.getName() + "(" + parameters + ")";
     }
 
     private static Map<String, Object> topicHelperResults() {

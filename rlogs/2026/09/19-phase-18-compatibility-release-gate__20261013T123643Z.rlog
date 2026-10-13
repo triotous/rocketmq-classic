@@ -122,3 +122,11 @@
 - Added identical workspace `LICENSE` and `NOTICE` files to all seven crate roots; extended `check-workspace-metadata.py` to check their contents, Apache-2.0 metadata, and the existing crate dependency direction.
 - PASS: `python3 scripts/check-workspace-metadata.py`; `cargo package --workspace --list --locked --allow-dirty` (all seven crate file lists include `LICENSE`/`NOTICE`); locked Cargo metadata inspection reports 207 external packages, all from crates.io with license metadata.
 - Registry-compatible workspace dependency versions/requirements remain unselected; package-list/metadata evidence does not prove registry resolution. No crate was published and `publish = false` remains in effect.
+
+## P18-V01 Push raw signature inventory — 2026-10-13T15:12Z
+
+- Extended `PushImplementationAccessorFixtures` to enumerate all declared, non-bridge, non-synthetic public method signatures on pinned Java 5.5.1 `DefaultMQPushConsumerImpl`; the fixture records 71 signatures. The Rust accessor test pins the inventory count. Fixture SHA-256: `a6db2529a1124c9e660581fb620fcc8cf7189d05501c55c5056a2eb43d281566`.
+- Updated the Phase 10 matrix and release checklist to clarify that the signature inventory is now captured but method-by-method Rust mapping or an internal-entrypoint disposition remains open. This does not close P18-V01.
+- The first direct `exec:java` invocation reused the previous compiled `Main` and showed its usage; reran with `compile exec:java` and the documented `push-implementation-accessor-fixture` subcommand to regenerate the fixture.
+- PASS: `cargo test -p rocketmq-classic-consumer raw_push_implementation_accessor_retains_identity --locked`; `cargo clippy -p rocketmq-classic-consumer --all-targets --all-features --locked -- -D warnings`; `cargo fmt --all -- --check`; `git diff --check`; `mvn -f compat/java-reference/pom.xml verify` (37 scenarios, Java fixture drift, and cross-decodes).
+- Commit: pending final review.
