@@ -406,6 +406,22 @@ impl InvokeCallback for ContextCallback {
     }
 }
 
+async fn wait_for_callback_events(
+    events: &Arc<std::sync::Mutex<Vec<&'static str>>>,
+    expected: &[&'static str],
+) {
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if events.lock().unwrap().as_slice() == expected {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("callback event sequence was incomplete");
+}
+
 #[tokio::test]
 async fn p3_async_connect_failure_calls_fail_without_complete() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -471,7 +487,7 @@ async fn p3_shutdown_drains_callback_from_pending_invoke() {
         .expect("shutdown lost the pending invoke callback")
         .unwrap();
     assert_eq!(context.error, Some(TransportError::Shutdown));
-    assert_eq!(*events.lock().unwrap(), vec!["complete", "fail"]);
+    wait_for_callback_events(&events, &["complete", "fail"]).await;
     peer.abort();
 }
 
@@ -593,17 +609,7 @@ async fn p3_expired_async_callback_retains_request_and_timeout_metadata() {
     ));
     assert!(context.timed_out);
     assert!(context.send_request_ok);
-    tokio::time::timeout(Duration::from_secs(1), async {
-        loop {
-            if events.lock().unwrap().len() == 2 {
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
-    })
-    .await
-    .unwrap();
-    assert_eq!(*events.lock().unwrap(), vec!["complete", "fail"]);
+    wait_for_callback_events(&events, &["complete", "fail"]).await;
     client.shutdown().await;
 }
 
@@ -3265,14 +3271,7 @@ async fn p3_async_peer_close_preserves_public_wrapper_default_send_status() {
         })
     );
     assert!(context.send_request_ok);
-    tokio::time::timeout(Duration::from_secs(1), async {
-        while events.lock().unwrap().len() < 2 {
-            tokio::task::yield_now().await;
-        }
-    })
-    .await
-    .unwrap();
-    assert_eq!(*events.lock().unwrap(), vec!["complete", "fail"]);
+    wait_for_callback_events(&events, &["complete", "fail"]).await;
     peer.await.unwrap();
     client.shutdown().await;
 }
@@ -3309,7 +3308,7 @@ async fn p3_async_callback_completes_on_deadline_failure() {
             .unwrap()
             .is_timeout()
     );
-    assert_eq!(*events.lock().unwrap(), vec!["complete", "fail"]);
+    wait_for_callback_events(&events, &["complete", "fail"]).await;
     client.shutdown().await;
     peer.await.unwrap();
 }
@@ -3376,7 +3375,7 @@ async fn p3_async_go_away_retry_connect_failure_completes_before_failure() {
     );
     assert_eq!(context.request.body, Some(vec![7, 8, 9]));
     assert_eq!(context.request.opaque, peer.await.unwrap());
-    assert_eq!(*events.lock().unwrap(), vec!["complete", "fail"]);
+    wait_for_callback_events(&events, &["complete", "fail"]).await;
     client.shutdown().await;
 }
 
@@ -3448,7 +3447,7 @@ async fn p3_async_second_go_away_callback_retains_original_request() {
     );
     assert_eq!(context.request.body, Some(vec![7, 8, 9]));
     assert_eq!(context.request.opaque, peer.await.unwrap()[0]);
-    assert_eq!(*events.lock().unwrap(), vec!["complete", "fail"]);
+    wait_for_callback_events(&events, &["complete", "fail"]).await;
     client.shutdown().await;
 }
 
