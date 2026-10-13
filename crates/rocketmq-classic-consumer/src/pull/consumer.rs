@@ -426,8 +426,50 @@ impl PullConsumer {
             .map_err(PullConsumerError::from)
     }
 
-    /// Returns the route's full queue set, independently of this consumer's
-    /// current rebalance allocation.
+    /// Refreshes the route and returns the writable queues with the namespace
+    /// removed, matching Pull's Java implementation accessor.
+    pub async fn fetch_publish_message_queues(
+        &self,
+        input_topic: &str,
+    ) -> Result<Vec<MessageQueue>, PullConsumerError> {
+        let (runtime, _) = self.started_runtime().await?;
+        // The raw Java implementation entry point accepts the Broker topic as
+        // supplied. The public DefaultMQPullConsumer wrapper does not expose
+        // this method and therefore does not add a namespace before delegation.
+        let topic = input_topic.to_owned();
+        let timeout = Duration::from_millis(
+            i64::from(self.config.client_config().mq_client_api_timeout()).max(0) as u64,
+        );
+        let queues = runtime
+            .get_topic_publish_queues(&topic, Instant::now() + timeout)
+            .await
+            .map_err(|source| PullConsumerError::PublishMessageQueuesFailed {
+                topic: topic.clone(),
+                source,
+            })?;
+        let Some(queues) = queues else {
+            return Err(PullConsumerError::NoPublishMessageQueues(topic));
+        };
+        if queues.is_empty() {
+            return Err(PullConsumerError::NoPublishMessageQueues(topic));
+        }
+        let mut client_config = self.config.client_config().clone();
+        queues
+            .iter()
+            .map(|queue| {
+                let topic = client_config.without_namespace(queue.topic())?;
+                Ok(MessageQueue::new_nullable(
+                    topic,
+                    queue.broker_name().map(str::to_owned),
+                    queue.queue_id(),
+                ))
+            })
+            .collect::<Result<Vec<_>, rocketmq_classic_core::config::ConfigError>>()
+            .map_err(PullConsumerError::from)
+    }
+
+    /// Returns the route's full subscribe-queue set, independently of this
+    /// consumer's current rebalance allocation.
     pub async fn fetch_message_queues(
         &self,
         input_topic: &str,

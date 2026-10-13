@@ -45,6 +45,14 @@ pub enum PullConsumerError {
     InvalidQueue,
     #[error("Can not find Message Queue for this topic, {0} Namesrv return empty")]
     EmptyMessageQueues(String),
+    #[error("Unknow why, Can not find Message Queue for this topic, {0}")]
+    NoPublishMessageQueues(String),
+    #[error("Can not find Message Queue for this topic, {topic}")]
+    PublishMessageQueuesFailed {
+        topic: String,
+        #[source]
+        source: RuntimeError,
+    },
     #[error("invalid topic for administrative creation: {0}")]
     InvalidAdminTopic(String),
     #[error("pull offset must be nonnegative")]

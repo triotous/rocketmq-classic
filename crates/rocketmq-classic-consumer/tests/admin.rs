@@ -1,4 +1,10 @@
-use std::{collections::BTreeMap, fmt::Write as _, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    fmt::Write as _,
+    net::SocketAddr,
+    sync::Arc,
+    time::Duration,
+};
 
 use base64::Engine;
 use bytes::BytesMut;
@@ -19,6 +25,7 @@ use serde_json::json;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
+    sync::mpsc,
     task::JoinHandle,
     time::timeout,
 };
@@ -137,6 +144,47 @@ async fn nameserver_peer_with_response(
         }
     });
     (address, task)
+}
+
+async fn nameserver_peer_with_route_responses(
+    route_responses: Vec<(i32, Vec<u8>)>,
+) -> (
+    String,
+    JoinHandle<()>,
+    mpsc::UnboundedReceiver<Option<String>>,
+) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    let (topic_sender, topic_receiver) = mpsc::unbounded_channel();
+    let fallback = route_responses
+        .last()
+        .cloned()
+        .unwrap_or((response::TOPIC_NOT_EXIST, Vec::new()));
+    let task = tokio::spawn(async move {
+        let mut route_responses = VecDeque::from(route_responses);
+        loop {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                break;
+            };
+            while let Some(command) = read_command(&mut stream).await {
+                if command.code == request::GET_ROUTEINFO_BY_TOPIC {
+                    let topic = command
+                        .ext_fields
+                        .as_ref()
+                        .and_then(|fields| fields.get("topic"))
+                        .cloned();
+                    topic_sender.send(topic).unwrap();
+                    let (response_code, route) = route_responses
+                        .pop_front()
+                        .unwrap_or_else(|| fallback.clone());
+                    write_response(&mut stream, &command, response_code, Some(route), None).await;
+                } else if !command.is_oneway() {
+                    write_response(&mut stream, &command, response::SUCCESS, None, None).await;
+                }
+            }
+        }
+    });
+    (address, task, topic_receiver)
 }
 
 async fn nameserver_peer_with_topic_routes(
@@ -841,9 +889,81 @@ async fn push_and_pull_create_topic_and_fetch_subscribe_queues_match_java_facade
     let pull_queues = pull.fetch_subscribe_message_queues("orders").await.unwrap();
     assert_eq!(pull_queues.len(), 4);
     assert!(pull_queues.contains(&MessageQueue::new("orders", "broker-a", 0)));
+    let publish_queues = pull
+        .fetch_publish_message_queues("tenant%orders")
+        .await
+        .unwrap();
+    assert_eq!(
+        publish_queues,
+        (0..4)
+            .map(|queue_id| MessageQueue::new("orders", "broker-a", queue_id))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        pull.fetch_publish_message_queues("tenant%orders")
+            .await
+            .unwrap(),
+        publish_queues,
+        "an unchanged NameServer route still returns the cached publish queue list"
+    );
     pull.shutdown().await.unwrap();
     pull_namesrv_task.abort();
     pull_broker_task.abort();
+}
+
+#[tokio::test]
+async fn pull_publish_queue_refresh_rejects_a_route_removed_from_name_server() {
+    let route = route_body("unused");
+    let (namesrv, namesrv_task, mut requested_topics) = nameserver_peer_with_route_responses(vec![
+        (response::SUCCESS, route.clone()),
+        (response::TOPIC_NOT_EXIST, route),
+    ])
+    .await;
+    let mut config = PullConsumerConfig::new("pull-admin-publish-route-refresh").unwrap();
+    config
+        .client_config_mut()
+        .set_namespace(Some("tenant".into()));
+    config.client_config_mut().set_namesrv_addr(Some(namesrv));
+    config
+        .client_config_mut()
+        .set_instance_name(Some("pull-admin-publish-route-refresh".into()));
+    let pull = Arc::new(PullConsumer::new(config));
+    pull.start().await.unwrap();
+
+    let queues = pull
+        .fetch_publish_message_queues("tenant%orders")
+        .await
+        .unwrap();
+    assert_eq!(
+        queues,
+        (0..4)
+            .map(|queue_id| MessageQueue::new("orders", "broker-a", queue_id))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        requested_topics.recv().await.unwrap().as_deref(),
+        Some("tenant%orders")
+    );
+    let error = pull
+        .fetch_publish_message_queues("tenant%orders")
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Can not find Message Queue for this topic, tenant%orders"
+    );
+    assert!(matches!(
+        error,
+        rocketmq_classic_consumer::PullConsumerError::PublishMessageQueuesFailed { topic, .. }
+            if topic == "tenant%orders"
+    ));
+    assert_eq!(
+        requested_topics.recv().await.unwrap().as_deref(),
+        Some("tenant%orders")
+    );
+
+    pull.shutdown().await.unwrap();
+    namesrv_task.abort();
 }
 
 #[tokio::test]
@@ -938,6 +1058,19 @@ async fn push_and_pull_subscribe_queue_queries_handle_missing_empty_and_malforme
     let pull = Arc::new(PullConsumer::new(config));
     pull.start().await.unwrap();
     assert!(pull.fetch_subscribe_message_queues("orders").await.is_err());
+    let error = pull
+        .fetch_publish_message_queues("orders")
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Can not find Message Queue for this topic, orders"
+    );
+    assert!(matches!(
+        error,
+        rocketmq_classic_consumer::PullConsumerError::PublishMessageQueuesFailed { topic, .. }
+            if topic == "orders"
+    ));
     pull.shutdown().await.unwrap();
     namesrv_task.abort();
 
@@ -951,6 +1084,19 @@ async fn push_and_pull_subscribe_queue_queries_handle_missing_empty_and_malforme
     let pull = Arc::new(PullConsumer::new(config));
     pull.start().await.unwrap();
     assert!(pull.fetch_subscribe_message_queues("orders").await.is_err());
+    let error = pull
+        .fetch_publish_message_queues("orders")
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Can not find Message Queue for this topic, orders"
+    );
+    assert!(matches!(
+        error,
+        rocketmq_classic_consumer::PullConsumerError::PublishMessageQueuesFailed { topic, .. }
+            if topic == "orders"
+    ));
     pull.shutdown().await.unwrap();
     namesrv_task.abort();
 
@@ -965,6 +1111,19 @@ async fn push_and_pull_subscribe_queue_queries_handle_missing_empty_and_malforme
     assert!(matches!(
         pull.fetch_subscribe_message_queues("orders").await,
         Err(rocketmq_classic_consumer::PullConsumerError::EmptyMessageQueues(topic))
+            if topic == "orders"
+    ));
+    let error = pull
+        .fetch_publish_message_queues("orders")
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Unknow why, Can not find Message Queue for this topic, orders"
+    );
+    assert!(matches!(
+        error,
+        rocketmq_classic_consumer::PullConsumerError::NoPublishMessageQueues(topic)
             if topic == "orders"
     ));
     pull.shutdown().await.unwrap();

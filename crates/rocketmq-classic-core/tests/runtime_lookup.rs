@@ -947,6 +947,66 @@ async fn query_topic_route_refreshes_only_missing_cache_even_for_empty_brokers()
 }
 
 #[tokio::test]
+async fn direct_publish_queue_lookup_does_not_publish_route_cache() {
+    let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut config = ClientConfig::new("direct-publish-queue-lookup");
+    config.namesrv_addr = Some(nameserver.local_addr().unwrap().to_string());
+    config.enable_heartbeat_channel_event_listener = false;
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+    runtime.remoting().start().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut socket, _) = nameserver.accept().await.unwrap();
+        let command = read(&mut socket).await;
+        assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
+        assert_eq!(
+            command.ext_fields.as_ref().unwrap()["topic"],
+            "tenant%orders"
+        );
+        let route = serde_json::to_vec(&serde_json::json!({
+            "queueDatas": [{
+                "brokerName": "broker-a",
+                "readQueueNums": 2,
+                "writeQueueNums": 2,
+                "perm": 6,
+                "topicSysFlag": 0
+            }],
+            "brokerDatas": [{
+                "cluster": "cluster",
+                "brokerName": "broker-a",
+                "brokerAddrs": {"0": "127.0.0.1:10911"}
+            }],
+            "filterServerTable": {}
+        }))
+        .unwrap();
+        reply(&mut socket, &command, 0, Some(route)).await;
+    });
+
+    let queues = runtime
+        .get_topic_publish_queues("tenant%orders", Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        queues,
+        vec![
+            rocketmq_classic_common::message::MessageQueue::new("tenant%orders", "broker-a", 0,),
+            rocketmq_classic_common::message::MessageQueue::new("tenant%orders", "broker-a", 1,),
+        ]
+    );
+    assert!(runtime.route_snapshot().unwrap().topics.is_empty());
+    assert!(
+        runtime
+            .get_existing_topic_route("tenant%orders")
+            .unwrap()
+            .is_none()
+    );
+    peer.await.unwrap();
+}
+
+#[tokio::test]
 async fn default_topic_route_api_matches_invoked_java_api_fixture() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();

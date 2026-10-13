@@ -670,6 +670,20 @@ impl ClientRuntime {
         self.update_route(topic, None, deadline).await
     }
 
+    /// Queries NameServer and converts the writable queues without publishing
+    /// the result into the shared runtime route cache.
+    pub async fn get_topic_publish_queues(
+        &self,
+        topic: &str,
+        deadline: tokio::time::Instant,
+    ) -> Result<Option<Vec<rocketmq_classic_common::message::MessageQueue>>, RuntimeError> {
+        let Some(route) = self.api.get_topic_route(topic, deadline).await? else {
+            return Ok(None);
+        };
+        let snapshot = crate::route::TopicSnapshot::from_route_data(topic, &route)?;
+        Ok(Some(snapshot.publish_queues))
+    }
+
     /// Nullable Java entry point for `updateTopicRouteInfoFromNameServer`.
     /// Java sends the null topic to NameServer first: a missing route returns
     /// false, while a returned route reaches the null-key map lookup and fails.
