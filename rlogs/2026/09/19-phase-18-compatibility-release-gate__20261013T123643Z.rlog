@@ -109,3 +109,9 @@
 - Updated the Phase 10 method/settings matrix. PASS: `cargo test -p rocketmq-classic-consumer shutdown_with_explicit_wait_overrides_configured_wait --locked` (1 test).
 - Full consumer/workspace gates and the broader Push implementation method audit remain open. No Java reference files were changed.
 - The initial format check found two expected rustfmt layout changes in the new paused-time regression; `cargo fmt --all` applied them. PASS afterward: `cargo fmt --all -- --check`; `cargo test -p rocketmq-classic-consumer --locked` (189 unit tests and every consumer integration/doc target); `cargo clippy -p rocketmq-classic-consumer --all-targets --all-features --locked -- -D warnings`.
+
+## P18-V03 Package content/provenance check — 2026-10-13 UTC
+
+- Added identical workspace `LICENSE` and `NOTICE` files to all seven crate roots; extended `check-workspace-metadata.py` to check their contents, Apache-2.0 metadata, and the existing crate dependency direction.
+- PASS: `python3 scripts/check-workspace-metadata.py`; `cargo package --workspace --list --locked --allow-dirty` (all seven crate file lists include `LICENSE`/`NOTICE`); locked Cargo metadata inspection reports 207 external packages, all from crates.io with license metadata.
+- Registry-compatible workspace dependency versions/requirements remain unselected; package-list/metadata evidence does not prove registry resolution. No crate was published and `publish = false` remains in effect.

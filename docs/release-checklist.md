@@ -24,7 +24,9 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   settings/subscriptions, and direct consume-hook entrypoints now have Java
   fixture/Rust evidence. Push filter-hook registration and POP invocation,
   `parseSubscribeMessageQueues`, `tryResetPopRetryTopic`, and
-  `resetRetryAndNamespace` also have invoked Java fixture/Rust checks. The
+  `resetRetryAndNamespace` also have invoked Java fixture/Rust checks. Push
+  subscribe-route update and paused `tryRebalance` entrypoints now have direct
+  fixture checks; active assignment behavior is covered by Phase 11 tests. The
   `pullMessage` row also now covers Java's one-time
   first-lock offset refresh for orderly clustering pulls; its Java fixture and
   Rust regression pass. The returned Push implementation public method surface
@@ -61,8 +63,15 @@ Before any publication:
   registry-compatible version requirements in dependency order.
 - [x] Add package descriptions and repository metadata; verify them with
   `cargo metadata --locked`.
-- [ ] Review package contents and dependency license/provenance requirements;
-  local-path workspace dependencies do not prove registry resolution.
+- [x] Review package contents and dependency license/provenance metadata.
+  `cargo package --workspace --list --locked --allow-dirty` lists 7 crate
+  archives with per-crate `LICENSE` and `NOTICE`; contents are crate source,
+  examples/benches, tests, and synthetic TLS/fuzz fixtures. Locked Cargo
+  metadata reports 207 external crates, all from crates.io registry sources
+  with license metadata and no git/path overrides. The manifest license
+  expressions use permissive alternatives. Package path dependencies still do
+  not establish future registry resolution; choose versions and validate the
+  registry graph before publication.
 - [ ] Keep each package unpublished until all of its dependencies are available
   and its package contents have been inspected.
 
