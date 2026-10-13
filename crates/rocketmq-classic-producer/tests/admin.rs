@@ -1,5 +1,7 @@
 use std::{
     collections::BTreeMap,
+    fmt::Write as _,
+    net::SocketAddr,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -114,7 +116,32 @@ fn java_message_record(name: &str) -> Vec<u8> {
         .unwrap()
 }
 
+fn physical_message_id(address: &str, offset: i64) -> String {
+    let address: SocketAddr = address.parse().unwrap();
+    let mut bytes = match address.ip() {
+        std::net::IpAddr::V4(address) => address.octets().to_vec(),
+        std::net::IpAddr::V6(address) => address.octets().to_vec(),
+    };
+    bytes.extend_from_slice(&i32::from(address.port()).to_be_bytes());
+    bytes.extend_from_slice(&offset.to_be_bytes());
+    let mut message_id = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        write!(&mut message_id, "{byte:02X}").unwrap();
+    }
+    message_id
+}
+
 async fn query_broker_peer() -> (
+    String,
+    JoinHandle<()>,
+    mpsc::UnboundedReceiver<RemotingCommand>,
+) {
+    query_broker_peer_with_response(response::SUCCESS).await
+}
+
+async fn query_broker_peer_with_response(
+    query_response_code: i32,
+) -> (
     String,
     JoinHandle<()>,
     mpsc::UnboundedReceiver<RemotingCommand>,
@@ -128,17 +155,21 @@ async fn query_broker_peer() -> (
         while let Some(command) = read_command(&mut stream).await {
             let _ = sender.send(command.clone());
             if command.code == request::QUERY_MESSAGE {
-                write_response_body_fields(
-                    &mut stream,
-                    &command,
-                    response::SUCCESS,
-                    record.clone(),
-                    HeaderMap::from([
-                        ("indexLastUpdateTimestamp".into(), "200".into()),
-                        ("indexLastUpdatePhyoffset".into(), "100".into()),
-                    ]),
-                )
-                .await;
+                if query_response_code == response::SUCCESS {
+                    write_response_body_fields(
+                        &mut stream,
+                        &command,
+                        response::SUCCESS,
+                        record.clone(),
+                        HeaderMap::from([
+                            ("indexLastUpdateTimestamp".into(), "200".into()),
+                            ("indexLastUpdatePhyoffset".into(), "100".into()),
+                        ]),
+                    )
+                    .await;
+                } else {
+                    write_response(&mut stream, &command, query_response_code, None).await;
+                }
             } else if !command.is_oneway() {
                 write_response(&mut stream, &command, response::SUCCESS, None).await;
             }
@@ -154,6 +185,17 @@ async fn name_server_peer(
     JoinHandle<()>,
     mpsc::UnboundedReceiver<RemotingCommand>,
 ) {
+    name_server_peer_with_response(route, response::SUCCESS).await
+}
+
+async fn name_server_peer_with_response(
+    route: Vec<u8>,
+    response_code: i32,
+) -> (
+    String,
+    JoinHandle<()>,
+    mpsc::UnboundedReceiver<RemotingCommand>,
+) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap().to_string();
     let (sender, requests) = mpsc::unbounded_channel();
@@ -162,13 +204,7 @@ async fn name_server_peer(
         while let Some(command) = read_command(&mut stream).await {
             let _ = sender.send(command.clone());
             if command.code == request::GET_ROUTEINFO_BY_TOPIC {
-                write_response(
-                    &mut stream,
-                    &command,
-                    response::SUCCESS,
-                    Some(route.clone()),
-                )
-                .await;
+                write_response(&mut stream, &command, response_code, Some(route.clone())).await;
             } else if !command.is_oneway() {
                 write_response(&mut stream, &command, response::SUCCESS, None).await;
             }
@@ -277,6 +313,50 @@ fn producer_config(namesrv: String) -> ProducerConfig {
     config.client_config_mut().namesrv_addr = Some(namesrv);
     config.client_config_mut().instance_name = Some(format!("admin-{}-{id}", std::process::id()));
     config
+}
+
+#[tokio::test]
+async fn fetch_publish_queues_reports_missing_empty_and_malformed_routes() {
+    let not_found = route_body(&[]);
+    let (namesrv, namesrv_task, _) =
+        name_server_peer_with_response(not_found, response::TOPIC_NOT_EXIST).await;
+    let producer = Arc::new(Producer::new(producer_config(namesrv)));
+    producer.start().await.unwrap();
+    assert!(matches!(
+        producer.fetch_publish_message_queues("orders").await,
+        Err(ProducerError::NoRoute(topic)) if topic == "orders"
+    ));
+    producer.shutdown().await.unwrap();
+    namesrv_task.abort();
+
+    let (namesrv, namesrv_task, _) = name_server_peer(route_body(&[])).await;
+    let producer = Arc::new(Producer::new(producer_config(namesrv)));
+    producer.start().await.unwrap();
+    assert!(matches!(
+        producer.fetch_publish_message_queues("orders").await,
+        Err(ProducerError::NoRoute(topic)) if topic == "orders"
+    ));
+    producer.shutdown().await.unwrap();
+    namesrv_task.abort();
+
+    let (namesrv, namesrv_task, _) = name_server_peer(b"{".to_vec()).await;
+    let producer = Arc::new(Producer::new(producer_config(namesrv)));
+    producer.start().await.unwrap();
+    let malformed_result = producer.fetch_publish_message_queues("orders").await;
+    assert!(
+        matches!(
+            &malformed_result,
+            Err(ProducerError::Runtime(
+                rocketmq_classic_core::runtime::RuntimeError::Rpc(RpcError::MalformedResponse {
+                    request_code: request::GET_ROUTEINFO_BY_TOPIC,
+                    ..
+                })
+            ))
+        ),
+        "unexpected malformed-route result: {malformed_result:?}"
+    );
+    producer.shutdown().await.unwrap();
+    namesrv_task.abort();
 }
 
 #[tokio::test]
@@ -421,6 +501,100 @@ async fn query_facade_uses_namespaced_topic_and_java_client_message_ids() {
 }
 
 #[tokio::test]
+async fn unique_key_query_facade_preserves_java_terminal_no_message_error() {
+    let (broker, broker_task, _) =
+        query_broker_peer_with_response(response::SERVICE_NOT_AVAILABLE).await;
+    let (namesrv, namesrv_task, _) = name_server_peer(route_body(&[("broker-a", &broker)])).await;
+    let producer = Arc::new(Producer::new(producer_config(namesrv)));
+    producer.start().await.unwrap();
+
+    let query_error = producer
+        .query_message_by_unique_key("orders", "missing-unique-key", 32, 10, 99)
+        .await;
+    assert!(
+        matches!(
+            &query_error,
+            Err(ProducerError::AdminQuery(
+                rocketmq_classic_core::api::admin::AdminQueryError::Rpc(RpcError::Response {
+                    request_code: request::QUERY_MESSAGE,
+                    code: response::NO_MESSAGE,
+                    ..
+                })
+            ))
+        ),
+        "unexpected terminal query result: {query_error:?}"
+    );
+
+    producer.shutdown().await.unwrap();
+    namesrv_task.abort();
+    broker_task.abort();
+}
+
+#[tokio::test]
+async fn view_message_matches_java_physical_lookup_and_does_not_fallback() {
+    let (broker, broker_task, mut broker_requests) = query_broker_peer().await;
+    let (namesrv, namesrv_task, mut namesrv_requests) =
+        name_server_peer(route_body(&[("broker-a", &broker)])).await;
+    let mut config = producer_config(namesrv);
+    config
+        .client_config_mut()
+        .set_namespace(Some("tenant".into()));
+    let producer = Arc::new(Producer::new(config));
+    producer.start().await.unwrap();
+
+    let invalid = producer
+        .view_message("orders", "not-a-physical-message-id")
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        invalid,
+        ProducerError::Rpc(RpcError::Response {
+            request_code: request::VIEW_MESSAGE_BY_ID,
+            code: response::NO_MESSAGE,
+            remark: Some(remark),
+            ..
+        }) if remark == "query message by id finished, but no message."
+    ));
+
+    let message_id = physical_message_id(&broker, 77);
+    let direct = producer
+        .view_message("orders", &message_id)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        direct,
+        ProducerError::Rpc(RpcError::MalformedResponse {
+            request_code: request::VIEW_MESSAGE_BY_ID,
+            ..
+        })
+    ));
+    let request = timeout(Duration::from_secs(1), async {
+        loop {
+            let command = broker_requests.recv().await.unwrap();
+            if command.code == request::VIEW_MESSAGE_BY_ID {
+                break command;
+            }
+            assert_ne!(command.code, request::QUERY_MESSAGE);
+        }
+    })
+    .await
+    .unwrap();
+    let fields = request.ext_fields.unwrap();
+    assert_eq!(fields.get("topic"), Some(&"orders".to_owned()));
+    assert_eq!(fields.get("offset"), Some(&"77".to_owned()));
+    while let Ok(command) = broker_requests.try_recv() {
+        assert_ne!(command.code, request::QUERY_MESSAGE);
+    }
+    while let Ok(command) = namesrv_requests.try_recv() {
+        assert_ne!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
+    }
+
+    producer.shutdown().await.unwrap();
+    namesrv_task.abort();
+    broker_task.abort();
+}
+
+#[tokio::test]
 async fn create_topic_validates_topic_before_contacting_nameserver() {
     let (broker, broker_task, _) = broker_peer(vec![]).await;
     let (namesrv, namesrv_task, mut namesrv_requests) =
@@ -536,6 +710,38 @@ async fn producer_admin_offset_facade_routes_namespaced_queues_to_the_named_brok
             assert_eq!(fields.get("committed"), Some(&"true".to_owned()));
         }
     }
+
+    producer.shutdown().await.unwrap();
+    namesrv_task.abort();
+    broker_task.abort();
+}
+
+#[tokio::test]
+async fn producer_admin_facade_forwards_broker_permission_errors() {
+    let (broker, broker_task, _) = broker_peer(vec![response::NO_PERMISSION; 7]).await;
+    let (namesrv, namesrv_task, _) = name_server_peer(route_body(&[("broker-a", &broker)])).await;
+    let producer = Arc::new(Producer::new(producer_config(namesrv)));
+    producer.start().await.unwrap();
+
+    let queue = rocketmq_classic_common::message::MessageQueue::new("orders", "broker-a", 0);
+    assert!(matches!(
+        producer.get_max_offset(&queue).await,
+        Err(ProducerError::Rpc(RpcError::Response {
+            request_code: request::GET_MAX_OFFSET,
+            code: response::NO_PERMISSION,
+            ..
+        }))
+    ));
+    assert!(matches!(
+        producer
+            .create_topic("TBW102", "admin-permission-topic", 1, None)
+            .await,
+        Err(ProducerError::Rpc(RpcError::Response {
+            request_code: request::UPDATE_AND_CREATE_TOPIC,
+            code: response::NO_PERMISSION,
+            ..
+        }))
+    ));
 
     producer.shutdown().await.unwrap();
     namesrv_task.abort();
