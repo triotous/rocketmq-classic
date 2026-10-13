@@ -142,6 +142,8 @@ const CONSUMER_TIMEOUT_MILLIS_WHEN_SUSPEND: i64 = 30_000;
 const CONSUME_RETRY_DELAY_MILLIS: i64 = 5_000;
 const CONSUMER_SEND_BACK_TIMEOUT_MILLIS: u64 = 5_000;
 const CONSUME_TIME_SPAN_TIMEOUT: Duration = Duration::from_millis(3_000);
+const RESET_OFFSET_MAX_WAIT: Duration = Duration::from_secs(10);
+const ORDERLY_RESET_REMOVE_LOCK_WAIT: Duration = Duration::from_millis(500);
 
 struct PullContext {
     runtime: Arc<ClientRuntime>,
@@ -1301,43 +1303,156 @@ impl PushConsumer {
             .ok_or(PushConsumerError::NotStarted)?;
         self.suspend().await;
         let result = async {
-            for (queue, offset) in offsets {
-                let Some(offset) = offset.filter(|_| queue.topic() == Some(topic)) else {
+            // Java first marks every matching live ProcessQueue dropped and
+            // clears it, including rows whose nullable offset has no value.
+            // Offset-table rows without a live ProcessQueue are ignored.
+            let active_offsets = {
+                let process_queues = read_lock(&self.process_queues);
+                process_queues
+                    .iter()
+                    .filter_map(|(queue, process_queue)| {
+                        if queue.topic() != Some(topic) {
+                            return None;
+                        }
+                        let offset = offsets
+                            .iter()
+                            .rev()
+                            .find(|(candidate, _)| candidate == queue)?
+                            .1;
+                        Some((queue.clone(), process_queue.clone(), offset))
+                    })
+                    .collect::<Vec<_>>()
+            };
+            for (queue, process_queue, _) in &active_offsets {
+                let generation = process_queue.generation();
+                process_queue
+                    .drop_assignment(generation)
+                    .map_err(|error| PushConsumerError::PullScheduler(error.to_string()))?;
+                context.scheduler.cancel(queue, generation);
+                process_queue.clear();
+            }
+
+            let consume_orderly = matches!(&context.consume_service, ConsumeService::Orderly(_));
+            let orderly_clustering = consume_orderly
+                && self.config.message_model()
+                    == rocketmq_classic_protocol::heartbeat::MessageModel::Clustering;
+            if !consume_orderly {
+                // MQClientInstance.resetOffset drains concurrent callbacks for
+                // its complete process-queue snapshot before writing offsets.
+                tokio::time::sleep(RESET_OFFSET_MAX_WAIT).await;
+            }
+
+            let mut first_error = None;
+            for (queue, process_queue, offset) in active_offsets {
+                let Some(offset) = offset else {
                     continue;
                 };
-                context
-                    .offset_store
-                    .update_and_freeze_offset(&queue, offset);
-                let process_queue = { read_lock(&self.process_queues).get(&queue).cloned() };
-                if let Some(process_queue) = process_queue {
-                    let generation = process_queue.generation();
-                    process_queue
-                        .drop_assignment(generation)
-                        .map_err(|error| PushConsumerError::PullScheduler(error.to_string()))?;
-                    context.scheduler.cancel(&queue, generation);
-                    process_queue.clear();
-                    if !self
-                        .remove_process_queue_safely(&context, &queue, &process_queue)
-                        .await
+                if consume_orderly {
+                    // Java's waitResetOffsetReady ignores a failed 10-second
+                    // write-lock attempt and continues with the reset.
+                    let gate = process_queue.orderly_consume_gate();
+                    if let Ok(guard) =
+                        tokio::time::timeout(RESET_OFFSET_MAX_WAIT, gate.lock_owned()).await
                     {
-                        return Err(PushConsumerError::ProcessQueueRemovalPending(
-                            queue.to_string(),
-                        ));
+                        drop(guard);
+                    }
+                }
+
+                // Dropping the generation fences late callbacks and pull
+                // replies; ordinary updates then match Java's reset path and
+                // leave the next assignment free to advance this offset.
+                context.offset_store.update_offset(&queue, offset, false);
+                if let Err(error) = context.offset_store.persist(&queue).await {
+                    first_error.get_or_insert(error.into());
+                    continue;
+                }
+
+                let removed = if orderly_clustering {
+                    self.try_remove_orderly_queue_after_reset(&context, &queue, &process_queue)
+                        .await;
+                    let mut queues = write_lock(&self.process_queues);
+                    if queues
+                        .get(&queue)
+                        .is_some_and(|current| Arc::ptr_eq(current, &process_queue))
+                    {
+                        queues.remove(&queue);
+                        true
+                    } else {
+                        false
                     }
                 } else {
-                    context.offset_store.persist(&queue).await?;
+                    let mut queues = write_lock(&self.process_queues);
+                    if queues
+                        .get(&queue)
+                        .is_some_and(|current| Arc::ptr_eq(current, &process_queue))
+                    {
+                        context.offset_store.remove_offset(&queue);
+                        queues.remove(&queue);
+                        true
+                    } else {
+                        false
+                    }
+                };
+                if removed {
+                    write_lock(&self.offset_corrections_pending).remove(&queue);
                 }
-                // Keep the reset value available for the next assignment. Any
-                // old callback has already lost its ProcessQueue generation.
-                context
-                    .offset_store
-                    .update_and_freeze_offset(&queue, offset);
+            }
+            if let Some(error) = first_error {
+                return Err(error);
             }
             Ok(())
         }
         .await;
         self.resume().await;
         result
+    }
+
+    async fn try_remove_orderly_queue_after_reset(
+        &self,
+        context: &PullContext,
+        queue: &MessageQueue,
+        process_queue: &Arc<ProcessQueue>,
+    ) {
+        let generation = process_queue.generation();
+        let orderly_settings = self.current_orderly_lock_settings().await;
+        let force_unlock = orderly_settings.is_some_and(|settings| {
+            process_queue
+                .is_lock_older_than(generation, settings.unlock_delay_millis)
+                .unwrap_or(false)
+        });
+        let gate = process_queue.orderly_consume_gate();
+        let _consume_guard = if force_unlock {
+            None
+        } else {
+            match tokio::time::timeout(ORDERLY_RESET_REMOVE_LOCK_WAIT, gate.lock_owned()).await {
+                Ok(guard) => Some(guard),
+                Err(_) => {
+                    let _ = process_queue.increment_try_unlock_times(generation);
+                    return;
+                }
+            }
+        };
+
+        // RebalancePushImpl persists before and again inside the orderly
+        // unlock/removal attempt. The caller removes the local queue even if
+        // that second attempt fails, matching MQClientInstance.resetOffset.
+        if let Err(error) = context.offset_store.persist(queue).await {
+            tracing::warn!(queue = %queue, generation, error = %error, "orderly reset queue cleanup deferred");
+            let _ = process_queue.increment_try_unlock_times(generation);
+            return;
+        }
+        context.offset_store.remove_offset(queue);
+        let _ = process_queue.record_unlocked(generation);
+        write_lock(&self.pending_orderly_unlocks).insert(queue.clone());
+        let unlocked = self
+            .unlock_orderly_queues_raw(&context.runtime, std::slice::from_ref(queue))
+            .await
+            .contains(queue);
+        if unlocked {
+            write_lock(&self.pending_orderly_unlocks).remove(queue);
+        } else {
+            let _ = process_queue.increment_try_unlock_times(generation);
+        }
     }
 
     /// Returns the local equivalent of Java's
@@ -6956,6 +7071,7 @@ mod tests {
     struct RecordingOffsetStore {
         values: Mutex<HashMap<MessageQueue, i64>>,
         persisted: Mutex<HashMap<MessageQueue, i64>>,
+        frozen: Mutex<HashSet<MessageQueue>>,
         updates: Mutex<Vec<(MessageQueue, i64, bool)>>,
         reads: Mutex<Vec<(MessageQueue, ReadOffsetType)>>,
         persist_calls: Mutex<Vec<Vec<MessageQueue>>>,
@@ -6993,6 +7109,9 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push((queue.clone(), offset, increase_only));
+            if self.frozen.lock().unwrap().contains(queue) {
+                return;
+            }
             let mut values = self.values.lock().unwrap();
             if !increase_only || values.get(queue).is_none_or(|current| offset > *current) {
                 values.insert(queue.clone(), offset);
@@ -7000,7 +7119,12 @@ mod tests {
         }
 
         fn update_and_freeze_offset(&self, queue: &MessageQueue, offset: i64) {
-            self.update_offset(queue, offset, false);
+            self.updates
+                .lock()
+                .unwrap()
+                .push((queue.clone(), offset, false));
+            self.frozen.lock().unwrap().insert(queue.clone());
+            self.values.lock().unwrap().insert(queue.clone(), offset);
         }
 
         fn read_offset<'a>(
@@ -7060,6 +7184,7 @@ mod tests {
 
         fn remove_offset(&self, queue: &MessageQueue) {
             self.values.lock().unwrap().remove(queue);
+            self.frozen.lock().unwrap().remove(queue);
         }
 
         fn clone_offset_table(&self, topic: Option<&str>) -> HashMap<MessageQueue, i64> {
@@ -8769,7 +8894,7 @@ mod tests {
         consumer.shutdown().await.unwrap();
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn reset_offset_fences_a_slow_callback_and_persists_only_the_new_value() {
         let mut config = PushConsumerConfig::new("reset-offset-listener-race").unwrap();
         config.client_config_mut().set_namesrv_addr(None);
@@ -8816,22 +8941,223 @@ mod tests {
         });
         listener_started.wait().await;
 
-        consumer
-            .reset_consumer_offsets("orders", vec![(queue.clone(), Some(7))])
-            .await
-            .unwrap();
+        let reset_consumer = consumer.clone();
+        let reset_queue = queue.clone();
+        let reset = tokio::spawn(async move {
+            reset_consumer
+                .reset_consumer_offsets("orders", vec![(reset_queue, Some(7))])
+                .await
+        });
+        for _ in 0..4 {
+            tokio::task::yield_now().await;
+        }
+        assert!(process_queue.snapshot(73).unwrap().dropped);
+        assert_eq!(store.values.lock().unwrap().get(&queue), Some(&50));
+        assert_eq!(store.persisted.lock().unwrap().get(&queue), None);
+        tokio::time::advance(RESET_OFFSET_MAX_WAIT).await;
+        tokio::task::yield_now().await;
+        reset.await.unwrap().unwrap();
         assert!(!read_lock(&consumer.process_queues).contains_key(&queue));
-        assert_eq!(store.values.lock().unwrap().get(&queue), Some(&7));
+        assert_eq!(store.values.lock().unwrap().get(&queue), None);
         assert_eq!(store.persisted.lock().unwrap().get(&queue), Some(&7));
 
         listener_release.wait().await;
         listener_task.await.unwrap();
+        assert_eq!(store.values.lock().unwrap().get(&queue), None);
+        consumer.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn orderly_reset_waits_java_lock_window_then_removes_the_dropped_queue() {
+        let mut config = PushConsumerConfig::new("reset-offset-orderly-lock-window").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        config.set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::Clustering);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let store = Arc::new(RecordingOffsetStore::default());
+        let store_dyn: Arc<dyn OffsetStore> = store.clone();
+        let runtime = install_started_orderly_consumer(
+            &consumer,
+            &manager,
+            store_dyn,
+            Arc::new(EmptyOrderlyListener),
+            None,
+        )
+        .await;
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        store.update_offset(&queue, 50, false);
+        store.persist(&queue).await.unwrap();
+        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 73));
+        process_queue
+            .set_lock_state(73, true, epoch_millis())
+            .unwrap();
+        write_lock(&consumer.process_queues).insert(queue.clone(), process_queue.clone());
+
+        let consume_gate = process_queue.orderly_consume_gate();
+        let _consume_guard = consume_gate.lock_owned().await;
+        let reset_consumer = consumer.clone();
+        let reset_queue = queue.clone();
+        let reset = tokio::spawn(async move {
+            reset_consumer
+                .reset_consumer_offsets("orders", vec![(reset_queue, Some(7))])
+                .await
+        });
+        for _ in 0..4 {
+            tokio::task::yield_now().await;
+        }
+        assert!(process_queue.snapshot(73).unwrap().dropped);
+
+        tokio::time::advance(Duration::from_millis(9_999)).await;
+        tokio::task::yield_now().await;
+        assert!(
+            !reset.is_finished(),
+            "Java waits up to 10 seconds for orderly consumption"
+        );
+        assert!(read_lock(&consumer.process_queues).contains_key(&queue));
+
+        tokio::time::advance(Duration::from_millis(1)).await;
+        tokio::task::yield_now().await;
+        assert!(
+            !reset.is_finished(),
+            "Java's queue-removal path gets a further 500ms lock attempt"
+        );
+        tokio::time::advance(Duration::from_millis(500)).await;
+        tokio::task::yield_now().await;
+
+        assert!(reset.await.unwrap().is_ok());
+        assert!(!read_lock(&consumer.process_queues).contains_key(&queue));
         assert_eq!(store.values.lock().unwrap().get(&queue), Some(&7));
+        assert_eq!(store.persisted.lock().unwrap().get(&queue), Some(&7));
+        store.update_offset(&queue, 8, true);
+        assert_eq!(store.values.lock().unwrap().get(&queue), Some(&8));
         consumer.shutdown().await.unwrap();
         runtime.shutdown().await.unwrap();
     }
 
     #[tokio::test]
+    async fn orderly_reset_commits_then_unlocks_and_removes_when_the_gate_is_available() {
+        let mut config = PushConsumerConfig::new("reset-offset-orderly-removal").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        config.set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::Clustering);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let store = Arc::new(RecordingOffsetStore::default());
+        let store_dyn: Arc<dyn OffsetStore> = store.clone();
+        let runtime = install_started_orderly_consumer(
+            &consumer,
+            &manager,
+            store_dyn,
+            Arc::new(EmptyOrderlyListener),
+            None,
+        )
+        .await;
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        store.update_offset(&queue, 50, false);
+        store.persist(&queue).await.unwrap();
+        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 74));
+        process_queue
+            .set_lock_state(74, true, epoch_millis())
+            .unwrap();
+        write_lock(&consumer.process_queues).insert(queue.clone(), process_queue.clone());
+        consumer
+            .scripted_lock_transport
+            .lock()
+            .unwrap()
+            .unlock_results
+            .push_back(Ok(()));
+
+        consumer
+            .reset_consumer_offsets("orders", vec![(queue.clone(), Some(7))])
+            .await
+            .unwrap();
+
+        assert!(!read_lock(&consumer.process_queues).contains_key(&queue));
+        assert_eq!(store.values.lock().unwrap().get(&queue), None);
+        assert_eq!(store.persisted.lock().unwrap().get(&queue), Some(&7));
+        assert_eq!(
+            consumer
+                .scripted_lock_transport
+                .lock()
+                .unwrap()
+                .unlock_bodies
+                .len(),
+            1
+        );
+        consumer.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn reset_offset_ignores_queues_without_an_active_process_queue() {
+        let mut config = PushConsumerConfig::new("reset-offset-unassigned-queue").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        config.set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::Clustering);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let store = Arc::new(RecordingOffsetStore::default());
+        let store_dyn: Arc<dyn OffsetStore> = store.clone();
+        let runtime = install_started_orderly_consumer(
+            &consumer,
+            &manager,
+            store_dyn,
+            Arc::new(EmptyOrderlyListener),
+            None,
+        )
+        .await;
+        let queue = MessageQueue::new("orders", "broker-a", 1);
+        store.update_offset(&queue, 50, false);
+        store.persist(&queue).await.unwrap();
+
+        consumer
+            .reset_consumer_offsets("orders", vec![(queue.clone(), Some(7))])
+            .await
+            .unwrap();
+
+        assert_eq!(store.values.lock().unwrap().get(&queue), Some(&50));
+        assert_eq!(store.persisted.lock().unwrap().get(&queue), Some(&50));
+        consumer.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn reset_offset_with_null_value_drops_but_does_not_remove_the_queue() {
+        let mut config = PushConsumerConfig::new("reset-offset-null-value").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        config.set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::Clustering);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let store = Arc::new(RecordingOffsetStore::default());
+        let store_dyn: Arc<dyn OffsetStore> = store.clone();
+        let runtime = install_started_orderly_consumer(
+            &consumer,
+            &manager,
+            store_dyn,
+            Arc::new(EmptyOrderlyListener),
+            None,
+        )
+        .await;
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        store.update_offset(&queue, 50, false);
+        store.persist(&queue).await.unwrap();
+        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 73));
+        write_lock(&consumer.process_queues).insert(queue.clone(), process_queue.clone());
+
+        consumer
+            .reset_consumer_offsets("orders", vec![(queue.clone(), None)])
+            .await
+            .unwrap();
+
+        assert!(process_queue.snapshot(73).unwrap().dropped);
+        assert!(read_lock(&consumer.process_queues).contains_key(&queue));
+        assert_eq!(store.values.lock().unwrap().get(&queue), Some(&50));
+        assert_eq!(store.persisted.lock().unwrap().get(&queue), Some(&50));
+        write_lock(&consumer.process_queues).remove(&queue);
+        consumer.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn reset_offset_fences_a_late_pull_response_before_persisting_the_new_value() {
         let mut config = PushConsumerConfig::new("reset-offset-pull-race").unwrap();
         config.client_config_mut().set_namesrv_addr(None);
@@ -8871,6 +9197,12 @@ mod tests {
                 .reset_consumer_offsets("orders", vec![(reset_queue, Some(7))])
                 .await
         });
+        for _ in 0..4 {
+            tokio::task::yield_now().await;
+        }
+        assert!(process_queue.snapshot(73).unwrap().dropped);
+        tokio::time::advance(RESET_OFFSET_MAX_WAIT).await;
+        tokio::task::yield_now().await;
         persist_started.wait().await;
         assert!(process_queue.snapshot(73).unwrap().dropped);
         assert_eq!(store.values.lock().unwrap().get(&queue), Some(&7));
@@ -8898,7 +9230,7 @@ mod tests {
 
         persist_release.wait().await;
         reset_task.await.unwrap().unwrap();
-        assert_eq!(store.values.lock().unwrap().get(&queue), Some(&7));
+        assert_eq!(store.values.lock().unwrap().get(&queue), None);
         assert_eq!(store.persisted.lock().unwrap().get(&queue), Some(&7));
         assert!(!read_lock(&consumer.process_queues).contains_key(&queue));
         consumer.shutdown().await.unwrap();

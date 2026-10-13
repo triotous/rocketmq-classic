@@ -162,7 +162,7 @@ impl ProcessQueue {
                 last_consume_timestamp_millis: now,
                 locked: false,
                 last_lock_timestamp_millis: now,
-                last_lock_instant: None,
+                last_lock_instant: Some(Instant::now()),
                 lock_attempt_id: 0,
                 try_unlock_times: 0,
             }),
@@ -957,6 +957,16 @@ mod tests {
         assert!(!process_queue.is_lock_older_than(27, 20_000).unwrap());
         tokio::time::advance(std::time::Duration::from_millis(1)).await;
         assert!(process_queue.is_lock_older_than(27, 20_000).unwrap());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn never_locked_queue_unlock_delay_starts_at_process_queue_creation() {
+        let process_queue = process_queue(28);
+        assert!(!process_queue.is_lock_older_than(28, 20_000).unwrap());
+        tokio::time::advance(std::time::Duration::from_millis(20_000)).await;
+        assert!(!process_queue.is_lock_older_than(28, 20_000).unwrap());
+        tokio::time::advance(std::time::Duration::from_millis(1)).await;
+        assert!(process_queue.is_lock_older_than(28, 20_000).unwrap());
     }
 
     #[test]
