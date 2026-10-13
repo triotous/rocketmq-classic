@@ -25,3 +25,10 @@
 - Updated the producer owner inventory to combine namespaced constructor topics, cached/published topics, and every topic recorded before a send/fetch-queues/recall route attempt. Added `topic_without_route_stays_in_producer_refresh_inventory` using a scripted NameServer returning no route for both the requested topic and `TBW102`.
 - PASS: `cargo test -p rocketmq-classic-producer --locked` (93 unit, 35 integration, 0 doc-test failures); `cargo clippy -p rocketmq-classic-producer --all-targets --locked -- -D warnings`; `cargo fmt --all -- --check`; `git diff --check`.
 - No Broker was contacted. The broader P18-V01 bidirectional audit remains PARTIAL; consumer public-method crosswalk candidates remain under review. Existing P18-V02 server-free gate evidence is recorded above; no current-revision GitHub workflow run or Phase 19 Broker/Docker run is available.
+
+# Phase 18 consumer Rustdoc method crosswalk — 2026-10-13T20:29:22Z
+
+- Rechecked generated public Consumer Rustdoc pages after updating the Phase 9, 10, 11, and 13 matrices. The bounded scan covered 27 public type pages, 457 inherent method occurrences, and 287 distinct method identifiers. The compatibility Markdown now contains an exact Rust identifier mapping or explicit Rust-only disposition for every method in that scan; a repeat token scan found zero unmatched identifiers.
+- Added exact crosswalks for Pull facade selectors, batch offset persistence, route refresh/registration removal, the raw Pull implementation owner alias, offset helper boundaries, allocation-strategy settings, concurrent-consume context accessors, POP result/receipt methods, and the Lite heartbeat subscription handle.
+- This closes only the consumer Rust method-name reverse inventory. It does not close P18-V01's Java-to-Rust behavioral/source/input audit, Java reverse-export scan, inherited/Deref/trait coverage, or any unsupported-input/branch review. P18-V01 remains PARTIAL.
+- PASS: `git diff --check`. This documentation-only pass did not run tests or contact a Broker.

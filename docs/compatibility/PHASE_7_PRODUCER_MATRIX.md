@@ -35,9 +35,9 @@ required to construct/configure a producer, including `CompressionType`.
 | Java 5.5.1 source surface | Rust mapping | Evidence / scope |
 | --- | --- | --- |
 | `DefaultMQProducer` constructors, `start`, `shutdown`, `fetchPublishMessageQueues` | `ProducerConfig::new`, `Producer::{start,shutdown,fetch_publish_message_queues}` | `invalid_group_fails_before_creating_or_registering_runtime`, `invalid_accumulator_settings_fail_before_runtime_creation`, `repeated_start_is_rejected_and_shutdown_is_idempotent`, `shutdown_before_start_keeps_producer_startable`; scripted route cases below. `ProducerConfig` carries constructor settings; start validates and registers. |
-| `send` sync overloads, `sendOneway`, `sendDirect`, `sendByAccumulator`; explicit `MessageQueue` and `MessageQueueSelector` overloads | `send`, `send_with_timeout`, `send_oneway`, `send_to_queue`, `send_with_selector`, and `send_*_future` methods | Scripted cases cover retry, one-way, explicit queue, selector, and mode policy; `mode_specific_attempts_match_java_retry_budgets`, `sync_retries_configured_broker_codes_while_future_retries_transport_only`, `per_request_timeout_only_limits_sync_attempts_that_have_a_retry_after_them`. Rust futures are polled on the caller-selected Tokio runtime, replacing callback methods while preserving the mode-specific send/result flow. |
-| `send(Collection<Message>, ...)`, `MessageBatch`, `batch(Collection)` | `send_batch*`, `batch::create_batch` | `batch_body_matches_message_decoder_record_layout_and_does_not_mutate_inputs`, `batch_checks_source_supported_rejections_and_aggregate_size`, `encoded_batch_size_limit_includes_inserted_unique_ids`, and pinned Java batch fixture comparisons. |
-| `get/setProducerGroup`, `CreateTopicKey`, `Topics`, `DefaultTopicQueueNums`, `SendMsgTimeout`, `SendMsgMaxTimeoutPerRequest`, `CompressType/Level/MsgBodyOverHowmuch`, `RetryTimesWhenSendFailed/AsyncFailed`, `RetryResponseCodes`, `RetryAnotherBrokerWhenNotStoreOK`, `MaxMessageSize`, `SendMessageWithVIPChannel`, `LatencyMax`, `NotAvailableDuration`, `SendLatencyFaultEnable`, `StartDetectorEnable`, `AutoBatch`, batch delay/byte limits, async backpressure enable/limits | `ProducerConfig` getters/setters; inherited settings through `client_config` | `producer_defaults_match_pinned_java_551`, `remaining_producer_settings_preserve_java_values_and_clamps`, `accumulator_setting_validation_matches_java_ranges_and_sentinels`, `compression_system_properties_match_java_defaults_and_parsing`, fixture tests, and retry/fault/backpressure tests. Backpressure limit setters clamp to Java minima. |
+| `send` sync overloads, `sendOneway`, `sendDirect`, `sendByAccumulator`; explicit `MessageQueue` and `MessageQueueSelector` overloads | `Producer::{send,send_with_timeout,send_future,send_future_with_timeout,send_oneway,send_oneway_with_timeout,send_to_queue,send_to_queue_with_timeout,send_to_queue_future,send_to_queue_future_with_timeout,send_to_queue_oneway,send_with_selector,send_with_selector_with_timeout,send_future_with_selector,send_future_with_selector_with_timeout,send_oneway_with_selector}` | Scripted cases cover retry, one-way, explicit queue, selector, and mode policy; `mode_specific_attempts_match_java_retry_budgets`, `sync_retries_configured_broker_codes_while_future_retries_transport_only`, `per_request_timeout_only_limits_sync_attempts_that_have_a_retry_after_them`. Rust futures are polled on the caller-selected Tokio runtime, replacing callback methods while preserving the mode-specific send/result flow. |
+| `send(Collection<Message>, ...)`, `MessageBatch`, `batch(Collection)` | `Producer::{send_batch,send_batch_with_timeout,send_batch_future,send_batch_future_with_timeout,send_batch_to_queue,send_batch_to_queue_with_timeout,send_batch_to_queue_future,send_batch_to_queue_future_with_timeout}`; `batch::create_batch` | `batch_body_matches_message_decoder_record_layout_and_does_not_mutate_inputs`, `batch_checks_source_supported_rejections_and_aggregate_size`, `encoded_batch_size_limit_includes_inserted_unique_ids`, and pinned Java batch fixture comparisons. |
+| `get/setProducerGroup`, `CreateTopicKey`, `Topics`, `DefaultTopicQueueNums`, `SendMsgTimeout`, `SendMsgMaxTimeoutPerRequest`, `CompressType/Level/MsgBodyOverHowmuch`, `RetryTimesWhenSendFailed/AsyncFailed`, `RetryResponseCodes`, `RetryAnotherBrokerWhenNotStoreOK`, `MaxMessageSize`, `SendMessageWithVIPChannel`, `LatencyMax`, `NotAvailableDuration`, `SendLatencyFaultEnable`, `StartDetectorEnable`, `AutoBatch`, batch delay/byte limits, async backpressure enable/limits | `ProducerConfig` getter/setter pairs: `producer_group`, `create_topic_key`, `topics`, `default_topic_queue_nums`, `send_timeout_millis`, `send_msg_max_timeout_per_request`, `compress_type`, `compress_level`, `compress_threshold`, `retry_times_when_send_failed`, `retry_times_when_send_async_failed`, `retry_response_codes`/`add_retry_response_code`/`remove_retry_response_code`, `retry_another_broker_when_not_store_ok`, `max_message_size`, `send_message_with_vip_channel`, `latency_max_millis`, `not_available_duration_millis`, `send_latency_fault_enable`, `start_detector_enable`, `auto_batch`, batch limit accessors, and async backpressure accessors; inherited settings use `client_config`/`client_config_mut` | `producer_defaults_match_pinned_java_551`, `remaining_producer_settings_preserve_java_values_and_clamps`, `accumulator_setting_validation_matches_java_ranges_and_sentinels`, `compression_system_properties_match_java_defaults_and_parsing`, fixture tests, and retry/fault/backpressure tests. Backpressure limit setters clamp to Java minima. |
 | `setCallbackExecutor`, `setAsyncSenderExecutor` | No per-producer executor setting; a Rust caller chooses where to poll/spawn its returned future | Rust sends expose completion as futures. Executor placement is caller-owned rather than stored on `Producer`; there is no callback scheduling API. |
 | `getCompressor`, `initProduceAccumulator` | `compress_type` selects the common compression backend; `Producer` owns and shuts down its accumulator | The backend object and explicit Java accumulator initialization hook are implementation components; observable compression and auto-batch send behavior are covered above. |
 | `request*`, `sendMessageInTransaction`, admin/query/recall, trace/namespace/security | Later phase APIs | Request/reply Phase 15; transaction Phase 14; admin/query Phase 17; namespace/security/trace Phase 16. These are intentionally not claimed as Phase 7 deliverables. |
@@ -49,6 +49,41 @@ Rust-only `remove_retry_response_code` operation corresponds to removal from
 Java's live `getRetryResponseCodes()` set; public validation functions map the
 Java `Validators` entry points. Private scripted transport seams remain
 test-only.
+
+The complete public `ProducerConfig` accessor surface is grouped above by its
+Java property, including `set_tls_config`/`tls_config` for the shared TLS
+configuration adapter. Its API and fixture values are covered by the named
+configuration tests; inherited `ClientConfig` accessors are audited in the
+Phase 6 API/config map.
+
+Exact producer configuration methods in that mapping are `new`,
+`client_config`/`client_config_mut`, `tls_config`/`set_tls_config`,
+`producer_group`/`set_producer_group`, `create_topic_key`/`set_create_topic_key`,
+`topics`/`set_topics`,
+`default_topic_queue_nums`/`set_default_topic_queue_nums`,
+`send_timeout_millis`/`set_send_timeout_millis`,
+`send_msg_max_timeout_per_request`/`set_send_msg_max_timeout_per_request`,
+`compress_type`/`set_compress_type`, `compress_level`/`set_compress_level`,
+`compress_threshold`/`set_compress_threshold`,
+`retry_times_when_send_failed`/`set_retry_times_when_send_failed`,
+`retry_times_when_send_async_failed`/`set_retry_times_when_send_async_failed`,
+`retry_response_codes`/`add_retry_response_code`/`remove_retry_response_code`,
+`retry_another_broker_when_not_store_ok`/`set_retry_another_broker_when_not_store_ok`,
+`max_message_size`/`set_max_message_size`,
+`send_message_with_vip_channel`/`set_send_message_with_vip_channel`,
+`latency_max_millis`/`set_latency_max_millis`,
+`not_available_duration_millis`/`set_not_available_duration_millis`,
+`send_latency_fault_enable`/`set_send_latency_fault_enable`,
+`start_detector_enable`/`set_start_detector_enable`,
+`detect_timeout_millis`/`set_detect_timeout_millis`,
+`detect_interval_millis`/`set_detect_interval_millis`,
+`auto_batch`/`set_auto_batch`,
+`batch_max_delay_millis`/`set_batch_max_delay_millis`,
+`batch_max_bytes`/`set_batch_max_bytes`,
+`total_batch_max_bytes`/`set_total_batch_max_bytes`,
+`enable_backpressure_for_async_mode`/`set_enable_backpressure_for_async_mode`,
+`backpressure_async_send_num`/`set_backpressure_async_send_num`, and
+`backpressure_async_send_size`/`set_backpressure_async_send_size`.
 
 `ProducerConfig` is a pre-start builder, so its accumulator accessors expose
 the configured values as `Option`s. The pinned Java API has a getter/setter

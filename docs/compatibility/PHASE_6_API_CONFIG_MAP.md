@@ -711,6 +711,20 @@ Pinned `javap -p` on `MQClientManager`, `MQClientInstance`, `ClientConfig`, `Top
 
 This is a method-name/source-owner inventory, not a claim that later-phase methods are implemented here or that each Java private branch has full input parity. It closes the bounded non-public declaration scan for these reference classes; behavior evidence and downstream ownership remain as stated per row.
 
+## Rust producer owner contract
+
+The public `ProducerRuntime` trait is `ClientRuntime`'s Rust owner adapter for
+Java's internal `MQProducerInner` callbacks. Its methods supply producer route
+refresh and transaction-dispatch state.
+
+| Rust adapter method | Java source method / behavior | Evidence / disposition |
+| --- | --- | --- |
+| `ProducerRuntime::publish_topics` | `MQProducerInner.getPublishTopicList`; Java returns all keys in `DefaultMQProducerImpl.topicPublishInfoTable`, including empty entries retained after route lookup failure. Rust includes namespaced constructor topics, attempted topic lookups and every topic whose route snapshot has been published to this Producer. | `producer::tests::configured_publish_topics_are_namespace_wrapped_once`; `producer::tests::publish_topics_include_cached_dynamic_topics_and_configured_topics`; `scripted_send::topic_without_route_stays_in_producer_refresh_inventory`; Phase 6 all-topic refresh tests. This inventory feeds periodic route refresh. |
+| `ProducerRuntime::is_publish_topic_need_update` | `MQProducerInner.isPublishTopicNeedUpdate`; Java requests refresh when the entry is absent or `TopicPublishInfo.ok()` is false. | Producer's cached snapshot predicate uses missing or empty publish queues; Phase 6 route update callbacks and Phase 7 send-route evidence. |
+| `ProducerRuntime::update_topic_publish_info` | `MQProducerInner.updateTopicPublishInfo`; Java stores the latest publish-info value by topic. | `ClientRuntime::update_topic_route` publishes accepted route snapshots to registered producer owners; Phase 6 route publication and Phase 7 send-route checks. |
+| `ProducerRuntime::transaction_processor` | Java's `MQProducerInner.checkTransactionState` callback is invoked by `ClientRemotingProcessor.checkTransactionState`. Rust supplies the typed request processor when the TransactionProducer is configured. | Request code 39 routing is mapped above; actual transaction callback and state handling belong to Phase 14. |
+| `ProducerRuntime::map_value_equality_key` | No Java method with this name. This optional Rust adapter value models Java owner `equals()` for conditional producer/consumer registry operations; lifecycle ownership still uses object identity. | Registry equality and mutable-key differential cases in the Phase 6 requirement audit. |
+
 ## RPC API methods consumed by the runtime
 
 | Rust public API | Pinned Java API / behavior | Evidence / boundary |
