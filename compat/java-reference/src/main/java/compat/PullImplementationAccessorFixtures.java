@@ -103,6 +103,10 @@ public final class PullImplementationAccessorFixtures {
         boolean unitModeAfterMutation = first.isUnitMode();
         ConsumeType consumeType = first.consumeType();
         ConsumeFromWhere consumeFromWhere = first.consumeFromWhere();
+        consumer.setEnableRebalance(false);
+        boolean disabledTryRebalanceReturnsTrue = first.tryRebalance();
+        first.doRebalance();
+        consumer.setEnableRebalance(true);
         List<String> initialSubscriptions = subscriptionRows(first.subscriptions());
         int maxReconsumeTimesDefault = consumer.getMaxReconsumeTimes();
         consumer.setMaxReconsumeTimes(-3);
@@ -270,6 +274,7 @@ public final class PullImplementationAccessorFixtures {
         fixture.put("unitModeAfterMutation", unitModeAfterMutation);
         fixture.put("consumeType", consumeType.name());
         fixture.put("consumeFromWhere", consumeFromWhere.name());
+        fixture.put("disabledTryRebalanceReturnsTrue", disabledTryRebalanceReturnsTrue);
         fixture.put("subscriptionsInitially", initialSubscriptions);
         fixture.put("subscriptionsFromTopics", topicSubscriptions);
         fixture.put("subscriptionsFromExplicit", explicitSubscriptions);

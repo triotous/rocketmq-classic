@@ -93,6 +93,7 @@ enum State {
         runtime: Weak<ClientRuntime>,
         lease: GroupLease,
         offset_store: Arc<dyn OffsetStore>,
+        registration: Arc<PullConsumerRegistration>,
     },
     Shutdown,
 }
@@ -198,6 +199,35 @@ impl PullConsumer {
 
     pub const fn consume_from_where(&self) -> ConsumeFromWhere {
         ConsumeFromWhere::ConsumeFromLastOffset
+    }
+
+    pub fn is_subscribe_topic_need_update(&self, topic: &str) -> bool {
+        pull_subscription_info_needs_update(&self.subscriptions, &self.topic_queues, topic)
+    }
+
+    pub fn update_topic_subscribe_info(&self, topic: &str, subscribe_info: BTreeSet<MessageQueue>) {
+        pull_update_topic_subscribe_info(
+            &self.subscriptions,
+            &self.topic_queues,
+            topic,
+            subscribe_info,
+        );
+    }
+
+    /// Runs this consumer's rebalance immediately, as Java's raw
+    /// `DefaultMQPullConsumerImpl.doRebalance` does. The async result reports
+    /// lifecycle failures; individual balancing failures remain reflected by
+    /// the runtime's retained assignment.
+    pub async fn do_rebalance(&self) -> Result<(), PullConsumerError> {
+        let registration = self.started_registration().await?;
+        let _ = registration.rebalance_once().await;
+        Ok(())
+    }
+
+    /// Runs this consumer's rebalance and returns Java's `tryRebalance` result.
+    pub async fn try_rebalance(&self) -> Result<bool, PullConsumerError> {
+        let registration = self.started_registration().await?;
+        Ok(registration.rebalance_once().await)
     }
 
     /// Returns the pull-consumer implementation represented by this facade.
@@ -628,7 +658,7 @@ impl PullConsumer {
 
         self.consumer_start_timestamp
             .store(epoch_millis(), Ordering::Release);
-        let owner: Arc<dyn ConsumerRuntime> = Arc::new(PullConsumerRegistration {
+        let registration = Arc::new(PullConsumerRegistration {
             group: consumer_group.clone(),
             message_model: self.config.message_model(),
             consume_from_where: self.config.consume_from_where(),
@@ -651,6 +681,7 @@ impl PullConsumer {
             #[cfg(test)]
             rebalance_membership: Mutex::new(HashMap::new()),
         });
+        let owner: Arc<dyn ConsumerRuntime> = registration.clone();
         let lease = runtime.register_consumer(&consumer_group, owner).await?;
         self.rebalance_active.store(true, Ordering::Release);
         if let Err(error) = runtime.start().await {
@@ -664,6 +695,7 @@ impl PullConsumer {
             runtime: Arc::downgrade(&runtime),
             lease,
             offset_store,
+            registration,
         };
         *write_lock(&self.runtime_for_wakeup) = Some(Arc::downgrade(&runtime));
         runtime.rebalance_immediately();
@@ -679,6 +711,7 @@ impl PullConsumer {
                 runtime,
                 lease,
                 offset_store,
+                ..
             } => {
                 let Some(runtime) = runtime.upgrade() else {
                     *state = State::Shutdown;
@@ -1560,6 +1593,17 @@ impl PullConsumer {
         }
     }
 
+    async fn started_registration(
+        &self,
+    ) -> Result<Arc<PullConsumerRegistration>, PullConsumerError> {
+        let state = self.state.lock().await;
+        match &*state {
+            State::Created => Err(PullConsumerError::NotStarted),
+            State::Shutdown => Err(PullConsumerError::Shutdown),
+            State::Started { registration, .. } => Ok(registration.clone()),
+        }
+    }
+
     fn queue_with_namespace(
         &self,
         queue: &MessageQueue,
@@ -1639,6 +1683,27 @@ fn resolve_pull_send_back_address_broker_name_override(
         return Ok(None);
     }
     Ok(Some(route.broker_name(message_queue)?.map(str::to_owned)))
+}
+
+fn pull_subscription_info_needs_update(
+    subscriptions: &RwLock<HashMap<String, SubscriptionData>>,
+    topic_queues: &RwLock<HashMap<String, BTreeSet<MessageQueue>>>,
+    topic: &str,
+) -> bool {
+    read_lock(subscriptions).contains_key(topic) && !read_lock(topic_queues).contains_key(topic)
+}
+
+fn pull_update_topic_subscribe_info(
+    subscriptions: &RwLock<HashMap<String, SubscriptionData>>,
+    topic_queues: &RwLock<HashMap<String, BTreeSet<MessageQueue>>>,
+    topic: &str,
+    queues: BTreeSet<MessageQueue>,
+) -> bool {
+    if !read_lock(subscriptions).contains_key(topic) {
+        return false;
+    }
+    write_lock(topic_queues).insert(topic.to_owned(), queues);
+    true
 }
 
 struct PullConsumerRegistration {
@@ -1721,17 +1786,15 @@ impl ConsumerRuntime for PullConsumerRegistration {
     }
 
     fn is_subscribe_topic_need_update(&self, topic: &str) -> bool {
-        read_lock(&self.subscriptions).contains_key(topic)
-            && !read_lock(&self.topic_queues).contains_key(topic)
+        pull_subscription_info_needs_update(&self.subscriptions, &self.topic_queues, topic)
     }
 
     fn update_topic_subscribe_info(&self, topic: &str, queues: BTreeSet<MessageQueue>) {
-        if !read_lock(&self.subscriptions).contains_key(topic) {
-            return;
-        }
-        write_lock(&self.topic_queues).insert(topic.to_owned(), queues);
-        if let Some(runtime) = self.runtime.upgrade() {
-            runtime.rebalance_immediately();
+        if pull_update_topic_subscribe_info(&self.subscriptions, &self.topic_queues, topic, queues)
+        {
+            if let Some(runtime) = self.runtime.upgrade() {
+                runtime.rebalance_immediately();
+            }
         }
     }
 
@@ -3152,6 +3215,49 @@ mod tests {
         store.persisted.lock().unwrap().clear();
         consumer.shutdown().await.unwrap();
         assert_eq!(*store.persisted.lock().unwrap(), vec![assigned]);
+    }
+
+    #[tokio::test]
+    async fn pull_raw_rebalance_entrypoints_update_and_use_subscription_info() {
+        let mut config = PullConsumerConfig::new("pull-raw-rebalance-entrypoints").unwrap();
+        config.set_message_model(MessageModel::Broadcasting);
+        config.set_enable_rebalance(false);
+        config.client_config_mut().set_namesrv_addr(None);
+        config
+            .client_config_mut()
+            .set_persist_consumer_offset_interval(60_000);
+        let consumer = Arc::new(PullConsumer::with_manager(
+            config,
+            ClientRuntimeManager::new(),
+        ));
+        consumer.register_topic("orders").unwrap();
+        consumer.start().await.unwrap();
+
+        assert!(consumer.is_subscribe_topic_need_update("orders"));
+        assert!(!consumer.is_subscribe_topic_need_update("not-subscribed"));
+        let assigned = MessageQueue::new("orders", "broker-a", 0);
+        consumer.update_topic_subscribe_info("orders", BTreeSet::from([assigned.clone()]));
+        consumer.update_topic_subscribe_info(
+            "not-subscribed",
+            BTreeSet::from([MessageQueue::new("not-subscribed", "broker-a", 0)]),
+        );
+        assert!(!consumer.is_subscribe_topic_need_update("orders"));
+        assert!(!read_lock(&consumer.topic_queues).contains_key("not-subscribed"));
+
+        assert!(consumer.try_rebalance().await.unwrap());
+        assert!(read_lock(&consumer.in_balance_queues).is_empty());
+        consumer.set_enable_rebalance(true);
+        assert!(consumer.try_rebalance().await.unwrap());
+        assert_eq!(
+            read_lock(&consumer.in_balance_queues).clone(),
+            BTreeSet::from([assigned.clone()])
+        );
+        consumer.do_rebalance().await.unwrap();
+        assert_eq!(
+            read_lock(&consumer.in_balance_queues).clone(),
+            BTreeSet::from([assigned])
+        );
+        consumer.shutdown().await.unwrap();
     }
 
     #[tokio::test]
