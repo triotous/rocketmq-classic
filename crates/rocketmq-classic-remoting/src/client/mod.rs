@@ -1291,12 +1291,21 @@ impl RemotingClient {
         code: i32,
         processor: Arc<dyn RequestProcessor>,
     ) -> ProcessorLease {
+        self.register_owned_processor_with_executor(code, processor, None)
+    }
+
+    pub fn register_owned_processor_with_executor(
+        &self,
+        code: i32,
+        processor: Arc<dyn RequestProcessor>,
+        executor: Option<Arc<dyn RequestExecutor>>,
+    ) -> ProcessorLease {
         let identity = Arc::new(());
         self.inner.processors.lock().unwrap().insert(
             code,
             ProcessorRegistration {
                 processor,
-                executor: None,
+                executor,
                 identity: identity.clone(),
             },
         );
