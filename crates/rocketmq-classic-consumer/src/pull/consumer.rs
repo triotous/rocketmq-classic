@@ -450,6 +450,20 @@ impl PullConsumer {
         Ok(())
     }
 
+    /// Adds a wildcard subscription for a topic only when one is not already
+    /// present, matching `DefaultMQPullConsumerImpl.subscriptionAutomatically`.
+    pub fn subscription_automatically(&self, topic: &str) {
+        write_lock(&self.subscriptions)
+            .entry(topic.to_owned())
+            .or_insert_with(|| subscription_all(topic));
+    }
+
+    /// Removes only the raw implementation subscription entry for `topic`,
+    /// matching `DefaultMQPullConsumerImpl.unsubscribe`.
+    pub fn unsubscribe(&self, topic: &str) {
+        write_lock(&self.subscriptions).remove(topic);
+    }
+
     /// Refreshes the route and returns the writable queues with the namespace
     /// removed, matching Pull's Java implementation accessor.
     pub async fn fetch_publish_message_queues(
@@ -1158,7 +1172,7 @@ impl PullConsumer {
 
         let subscription = build_subscription(topic, expression, expression_type)?;
         let is_tag = is_tag_type(subscription.get_expression_type());
-        self.ensure_subscription(topic);
+        self.subscription_automatically(topic);
         let sub_version = if is_tag {
             0
         } else {
@@ -1566,12 +1580,6 @@ impl PullConsumer {
         request_deadline(i64::from(
             self.config.client_config().mq_client_api_timeout(),
         ))
-    }
-
-    fn ensure_subscription(&self, topic: &str) {
-        write_lock(&self.subscriptions)
-            .entry(topic.to_owned())
-            .or_insert_with(|| subscription_all(topic));
     }
 
     fn unregister_deadline(&self) -> Instant {
@@ -2270,6 +2278,161 @@ mod tests {
                 .iter()
                 .map(|value| value.as_str().unwrap().to_owned())
                 .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn raw_pull_subscription_helpers_match_java_accessor_fixture() {
+        let expected: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/pull-implementation-accessor.json"
+        ))
+        .unwrap();
+        let mut config = PullConsumerConfig::new("phase18-pull-implementation-accessor").unwrap();
+        config
+            .client_config_mut()
+            .set_namespace(Some("tenant".into()));
+        let consumer = PullConsumer::new(config);
+
+        let automatic_topic = expected["subscriptionAutomaticallyInputTopic"]
+            .as_str()
+            .unwrap();
+        consumer.subscription_automatically(automatic_topic);
+        let automatic = read_lock(&consumer.subscriptions)
+            .get(automatic_topic)
+            .cloned()
+            .unwrap();
+        assert_eq!(
+            automatic.get_topic(),
+            expected["subscriptionAutomaticallyTopic"].as_str()
+        );
+        assert_eq!(
+            automatic.get_sub_string(),
+            expected["subscriptionAutomaticallyExpression"].as_str()
+        );
+        assert_eq!(
+            automatic.get_expression_type(),
+            expected["subscriptionAutomaticallyExpressionType"].as_str()
+        );
+        assert_eq!(
+            automatic.is_class_filter_mode(),
+            expected["subscriptionAutomaticallyClassFilterMode"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(automatic.get_sub_version() > 0);
+        assert!(
+            expected["subscriptionAutomaticallyVersionPositive"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(automatic.get_tags_set().unwrap().snapshot().is_empty());
+        assert!(automatic.get_code_set().unwrap().snapshot().is_empty());
+        assert!(
+            expected["subscriptionAutomaticallyTags"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            expected["subscriptionAutomaticallyCodes"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            expected["subscriptionAutomaticallyDoesNotNamespace"]
+                .as_bool()
+                .unwrap()
+        );
+
+        consumer.subscription_automatically(automatic_topic);
+        assert_eq!(
+            read_lock(&consumer.subscriptions).get(automatic_topic),
+            Some(&automatic)
+        );
+        assert!(
+            expected["subscriptionAutomaticallyIdempotent"]
+                .as_bool()
+                .unwrap()
+        );
+
+        let empty_topic = expected["subscriptionAutomaticallyEmptyTopicInput"]
+            .as_str()
+            .unwrap();
+        consumer.subscription_automatically(empty_topic);
+        let empty_topic_subscription = read_lock(&consumer.subscriptions)
+            .get(empty_topic)
+            .cloned()
+            .unwrap();
+        assert_eq!(
+            empty_topic_subscription.get_topic(),
+            expected["subscriptionAutomaticallyEmptyTopicOutput"].as_str()
+        );
+
+        let existing_topic = expected["subscriptionAutomaticallyExistingTopic"]
+            .as_str()
+            .unwrap();
+        let mut existing = SubscriptionData::new(
+            Some(existing_topic.to_owned()),
+            Some(
+                expected["subscriptionAutomaticallyExistingExpression"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned(),
+            ),
+        );
+        existing.set_expression_type(Some(
+            expected["subscriptionAutomaticallyExistingExpressionType"]
+                .as_str()
+                .unwrap()
+                .to_owned(),
+        ));
+        existing.set_sub_version(
+            expected["subscriptionAutomaticallyExistingVersion"]
+                .as_i64()
+                .unwrap(),
+        );
+        write_lock(&consumer.subscriptions).insert(existing_topic.to_owned(), existing.clone());
+        consumer.subscription_automatically(existing_topic);
+        assert_eq!(
+            read_lock(&consumer.subscriptions).get(existing_topic),
+            Some(&existing)
+        );
+        assert!(
+            expected["subscriptionAutomaticallyCustomEntryPreserved"]
+                .as_bool()
+                .unwrap()
+        );
+
+        let registered_topic = "registered-topic";
+        consumer.register_topic(registered_topic).unwrap();
+        let namespaced_registered_topic = expected["unsubscribeRegisteredTopic"].as_str().unwrap();
+        assert!(
+            consumer
+                .register_topics()
+                .contains(namespaced_registered_topic)
+        );
+        consumer.unsubscribe(automatic_topic);
+        consumer.unsubscribe(empty_topic);
+        consumer.unsubscribe(namespaced_registered_topic);
+        consumer.unsubscribe("missing-topic");
+        let subscriptions = read_lock(&consumer.subscriptions);
+        assert!(!subscriptions.contains_key(automatic_topic));
+        assert!(!subscriptions.contains_key(empty_topic));
+        assert!(!subscriptions.contains_key(namespaced_registered_topic));
+        assert!(subscriptions.contains_key(existing_topic));
+        assert!(
+            consumer
+                .register_topics()
+                .contains(namespaced_registered_topic)
+        );
+        assert!(expected["unsubscribeRemovedExactTopic"].as_bool().unwrap());
+        assert!(expected["unsubscribeRemovedEmptyTopic"].as_bool().unwrap());
+        assert!(expected["unsubscribeLeavesOtherTopic"].as_bool().unwrap());
+        assert!(
+            expected["unsubscribeLeavesFacadeRegistration"]
+                .as_bool()
+                .unwrap()
         );
     }
 

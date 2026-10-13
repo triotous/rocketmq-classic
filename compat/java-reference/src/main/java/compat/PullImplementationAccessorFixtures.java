@@ -13,6 +13,7 @@ import org.apache.rocketmq.client.consumer.DefaultMQPullConsumer;
 import org.apache.rocketmq.client.impl.consumer.DefaultMQPullConsumerImpl;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.message.MessageQueue;
+import org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData;
 
 /** Checks the deprecated facade accessor and its retained implementation identity. */
 public final class PullImplementationAccessorFixtures {
@@ -91,6 +92,39 @@ public final class PullImplementationAccessorFixtures {
         List<MessageExt> noNamespaceMessages = new ArrayList<>(List.of(message("tenant%orders")));
         noNamespaceConsumer.getDefaultMQPullConsumerImpl().resetTopic(noNamespaceMessages);
 
+        Map<String, SubscriptionData> subscriptionInner = first.getRebalanceImpl().getSubscriptionInner();
+        first.subscriptionAutomatically("raw-topic");
+        SubscriptionData automaticSubscription = subscriptionInner.get("raw-topic");
+        check(automaticSubscription != null, "automatic subscription inserted");
+        check("raw-topic".equals(automaticSubscription.getTopic()), "automatic topic remains raw");
+        first.subscriptionAutomatically("raw-topic");
+        check(subscriptionInner.get("raw-topic") == automaticSubscription,
+            "automatic subscription preserves existing entry");
+        first.subscriptionAutomatically("");
+        SubscriptionData emptyTopicSubscription = subscriptionInner.get("");
+        check(emptyTopicSubscription != null, "empty topic subscription inserted");
+        SubscriptionData existingSubscription = new SubscriptionData();
+        existingSubscription.setTopic("existing-topic");
+        existingSubscription.setSubString("tag-a");
+        existingSubscription.setExpressionType("SQL92");
+        existingSubscription.setSubVersion(7L);
+        subscriptionInner.put("existing-topic", existingSubscription);
+        first.subscriptionAutomatically("existing-topic");
+        check(subscriptionInner.get("existing-topic") == existingSubscription,
+            "automatic subscription preserves custom entry");
+        first.unsubscribe("raw-topic");
+        check(!subscriptionInner.containsKey("raw-topic"), "unsubscribe removes exact topic");
+        first.unsubscribe("");
+        check(!subscriptionInner.containsKey(""), "unsubscribe removes empty topic");
+        first.unsubscribe("missing-topic");
+        consumer.registerMessageQueueListener("registered-topic", null);
+        String registeredTopic = "tenant%registered-topic";
+        first.subscriptionAutomatically(registeredTopic);
+        first.unsubscribe(registeredTopic);
+        check(!subscriptionInner.containsKey(registeredTopic), "unsubscribe removes namespaced key as supplied");
+        check(consumer.getRegisterTopics().contains(registeredTopic),
+            "unsubscribe leaves facade topic registration unchanged");
+
         Map<String, Object> provenance = new TreeMap<>();
         provenance.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         provenance.put("entrypoint", "DefaultMQPullConsumer.getDefaultMQPullConsumerImpl");
@@ -117,6 +151,30 @@ public final class PullImplementationAccessorFixtures {
         fixture.put("resetTopicOutput", messageTopics(resetInput));
         fixture.put("resetTopicNoNamespaceInput", List.of("tenant%orders"));
         fixture.put("resetTopicNoNamespaceOutput", messageTopics(noNamespaceMessages));
+        fixture.put("subscriptionAutomaticallyTopic", automaticSubscription.getTopic());
+        fixture.put("subscriptionAutomaticallyInputTopic", "raw-topic");
+        fixture.put("subscriptionAutomaticallyExpression", automaticSubscription.getSubString());
+        fixture.put("subscriptionAutomaticallyExpressionType", automaticSubscription.getExpressionType());
+        fixture.put("subscriptionAutomaticallyClassFilterMode", automaticSubscription.isClassFilterMode());
+        fixture.put("subscriptionAutomaticallyVersionPositive", automaticSubscription.getSubVersion() > 0);
+        fixture.put("subscriptionAutomaticallyTags", new TreeSet<>(automaticSubscription.getTagsSet()));
+        fixture.put("subscriptionAutomaticallyCodes", new TreeSet<>(automaticSubscription.getCodeSet()));
+        fixture.put("subscriptionAutomaticallyIdempotent", true);
+        fixture.put("subscriptionAutomaticallyEmptyTopicInput", "");
+        fixture.put("subscriptionAutomaticallyEmptyTopicOutput", emptyTopicSubscription.getTopic());
+        fixture.put("subscriptionAutomaticallyExistingTopic", "existing-topic");
+        fixture.put("subscriptionAutomaticallyExistingExpression", "tag-a");
+        fixture.put("subscriptionAutomaticallyExistingExpressionType", "SQL92");
+        fixture.put("subscriptionAutomaticallyExistingVersion", existingSubscription.getSubVersion());
+        fixture.put("subscriptionAutomaticallyCustomEntryPreserved",
+            subscriptionInner.get("existing-topic") == existingSubscription);
+        fixture.put("unsubscribeRemovedExactTopic", !subscriptionInner.containsKey("raw-topic"));
+        fixture.put("unsubscribeRemovedEmptyTopic", !subscriptionInner.containsKey(""));
+        fixture.put("unsubscribeLeavesOtherTopic", subscriptionInner.containsKey("existing-topic"));
+        fixture.put("unsubscribeRegisteredTopic", registeredTopic);
+        fixture.put("unsubscribeLeavesFacadeRegistration",
+            consumer.getRegisterTopics().contains(registeredTopic));
+        fixture.put("subscriptionAutomaticallyDoesNotNamespace", "raw-topic".equals(automaticSubscription.getTopic()));
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture) + "\n";
         if (verify) {
             check(Files.exists(path) && json.equals(Files.readString(path)), "fixture drift: " + path);
