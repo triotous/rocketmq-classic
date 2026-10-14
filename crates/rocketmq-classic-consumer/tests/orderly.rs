@@ -8,7 +8,7 @@ fn public_orderly_settings_context_and_statuses_match_java_551_fixture() {
     ))
     .expect("Java orderly fixture is valid JSON");
 
-    let mut config = PushConsumerConfig::new("orderly-fixture").unwrap();
+    let config = PushConsumerConfig::new("orderly-fixture").unwrap();
     let defaults = &fixture["pushConsumerDefaults"];
     assert_eq!(config.max_reconsume_times(), defaults["maxReconsumeTimes"]);
     assert_eq!(

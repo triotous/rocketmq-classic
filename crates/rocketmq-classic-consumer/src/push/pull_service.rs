@@ -1023,7 +1023,7 @@ mod tests {
 
     #[test]
     fn topic_thresholds_scale_to_process_queues_and_queue_backlog_includes_in_flight() {
-        let mut config = PushConsumerConfig::new("orders-consumer").unwrap();
+        let config = PushConsumerConfig::new("orders-consumer").unwrap();
         config.set_pull_threshold_for_topic(7);
         config.set_pull_threshold_size_for_topic_mib(4);
         let scaled = effective_queue_thresholds(&config, 3);

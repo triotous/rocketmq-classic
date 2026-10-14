@@ -368,8 +368,6 @@ pub struct PushConsumer {
     consume_orderly: AtomicBool,
     consumer_start_timestamp: AtomicI64,
     consume_core_pool_size: AtomicI32,
-    active_pull_threshold_for_queue: AtomicI32,
-    active_pull_threshold_size_for_queue_mib: AtomicI32,
     #[cfg(test)]
     startup_failure: Mutex<Option<StartupStage>>,
     #[cfg(test)]
@@ -404,13 +402,14 @@ impl PushConsumer {
     ) -> Self {
         let pop_consume_limit = usize::try_from(config.consume_thread_max().max(1)).unwrap_or(1);
         let consume_core_pool_size = config.consume_thread_min();
-        let active_pull_threshold_for_queue = config.pull_threshold_for_queue();
-        let active_pull_threshold_size_for_queue_mib = config.pull_threshold_size_for_queue_mib();
         let pull_time_delay_millis_when_exception = config
             .client_config()
             .pull_time_delay_millis_when_exception();
         let pull_api = PullAPIWrapper::new(config.unit_mode());
-        let rebalance_service = RebalanceService::new(config.allocate_message_queue_strategy());
+        let rebalance_service = RebalanceService::new(
+            config.allocate_message_queue_strategy(),
+            config.message_model(),
+        );
         Self {
             config,
             manager,
@@ -444,10 +443,6 @@ impl PushConsumer {
             consume_orderly: AtomicBool::new(false),
             consumer_start_timestamp: AtomicI64::new(0),
             consume_core_pool_size: AtomicI32::new(consume_core_pool_size),
-            active_pull_threshold_for_queue: AtomicI32::new(active_pull_threshold_for_queue),
-            active_pull_threshold_size_for_queue_mib: AtomicI32::new(
-                active_pull_threshold_size_for_queue_mib,
-            ),
             #[cfg(test)]
             startup_failure: Mutex::new(None),
             #[cfg(test)]
@@ -489,10 +484,8 @@ impl PushConsumer {
 
     fn active_pull_queue_thresholds(&self) -> EffectiveQueueThresholds {
         EffectiveQueueThresholds {
-            message_count: self.active_pull_threshold_for_queue.load(Ordering::Acquire),
-            size_mib: self
-                .active_pull_threshold_size_for_queue_mib
-                .load(Ordering::Acquire),
+            message_count: self.config.pull_threshold_for_queue(),
+            size_mib: self.config.pull_threshold_size_for_queue_mib(),
             max_span: self.config.consume_concurrently_max_span(),
         }
     }
@@ -505,10 +498,10 @@ impl PushConsumer {
             return;
         }
         let thresholds = effective_queue_thresholds(&self.config, process_queue_count);
-        self.active_pull_threshold_for_queue
-            .store(thresholds.message_count, Ordering::Release);
-        self.active_pull_threshold_size_for_queue_mib
-            .store(thresholds.size_mib, Ordering::Release);
+        self.config
+            .set_pull_threshold_for_queue(thresholds.message_count);
+        self.config
+            .set_pull_threshold_size_for_queue_mib(thresholds.size_mib);
     }
 
     /// Returns Java's `DefaultMQPushConsumerImpl.getServiceState()` value.
@@ -1530,15 +1523,11 @@ impl PushConsumer {
         );
         properties.insert(
             "pullThresholdForQueue".into(),
-            self.active_pull_threshold_for_queue
-                .load(Ordering::Acquire)
-                .to_string(),
+            self.config.pull_threshold_for_queue().to_string(),
         );
         properties.insert(
             "pullThresholdSizeForQueue".into(),
-            self.active_pull_threshold_size_for_queue_mib
-                .load(Ordering::Acquire)
-                .to_string(),
+            self.config.pull_threshold_size_for_queue_mib().to_string(),
         );
         let mut body = ConsumerRunningInfoBody {
             properties,
@@ -1745,6 +1734,9 @@ impl PushConsumer {
     /// Updates the active concurrent-consume worker count when the requested
     /// value satisfies Java 5.5.1's `updateCorePoolSize` bounds.
     pub async fn update_core_pool_size(&self, core_pool_size: i32) -> bool {
+        if core_pool_size >= self.config.consume_thread_max() {
+            return false;
+        }
         let state = self.state.lock().await;
         match &*state {
             State::Started {
@@ -3621,6 +3613,20 @@ impl PushConsumer {
             .with_namespace(Some(self.config.consumer_group()))?
             .ok_or(PushConsumerError::InvalidConsumerGroup)?;
         self.config.validate(&consumer_group)?;
+        self.pull_api.set_unit_mode(self.config.unit_mode());
+        let pop_consume_limit =
+            usize::try_from(self.config.consume_thread_max().max(1)).unwrap_or(1);
+        let available_pop_permits = self.pop_consume_semaphore.available_permits();
+        match pop_consume_limit.cmp(&available_pop_permits) {
+            std::cmp::Ordering::Greater => self
+                .pop_consume_semaphore
+                .add_permits(pop_consume_limit - available_pop_permits),
+            std::cmp::Ordering::Less => {
+                self.pop_consume_semaphore
+                    .forget_permits(available_pop_permits - pop_consume_limit);
+            }
+            std::cmp::Ordering::Equal => {}
+        }
         let listener = read_lock(&self.listener)
             .clone()
             .ok_or(PushConsumerError::MissingMessageListener)?;
@@ -3654,6 +3660,10 @@ impl PushConsumer {
         let pull_rpc_workers = Arc::new(PullRpcWorkers::new());
 
         self.copy_subscriptions(&consumer_group)?;
+        self.rebalance_service
+            .set_strategy(self.config.allocate_message_queue_strategy());
+        self.rebalance_service
+            .set_message_model(self.config.message_model());
 
         let runtime = self
             .manager
@@ -4632,6 +4642,7 @@ impl PushConsumer {
             .cloned()
             .collect::<Vec<_>>();
         subscriptions.sort_by(|left, right| java_string_cmp(left, right));
+        let message_model = self.rebalance_service.message_model();
         let subscribed_topics = subscriptions.iter().cloned().collect::<HashSet<_>>();
         let topic_queues = read_lock(&self.topic_queues).clone();
         let mut client_config = self.config.client_config().clone();
@@ -4652,7 +4663,6 @@ impl PushConsumer {
             if !self.rebalance_is_started().await {
                 return true;
             }
-            let message_model = self.config.message_model();
             if message_model == rocketmq_classic_protocol::heartbeat::MessageModel::LiteSelective
                 && (self.config.client_rebalance() || self.consume_orderly.load(Ordering::Acquire))
             {
@@ -4770,7 +4780,7 @@ impl PushConsumer {
                         topic,
                         &consumer_group,
                         strategy.name(),
-                        self.config.message_model(),
+                        message_model,
                         3_000,
                     )
                     .await;
@@ -5271,11 +5281,12 @@ impl PushConsumer {
         let retry_topic = queue
             .topic()
             .is_some_and(|topic| topic.starts_with("%RETRY%"));
+        let consume_timestamp = self.config.consume_timestamp();
         let plan = initial_offset_plan(
             self.config.consume_from_where(),
             retry_topic,
             stored,
-            self.config.consume_timestamp(),
+            &consume_timestamp,
         )?;
         let offset = match plan {
             InitialOffsetPlan::Stored(offset) | InitialOffsetPlan::Fixed(offset) => offset,
@@ -6021,6 +6032,17 @@ impl ConsumerRuntime for PushConsumerRegistration {
     }
 
     fn heartbeat_data(&self) -> ConsumerData {
+        let (message_model, consume_from_where, unit_mode) = self
+            .consumer
+            .upgrade()
+            .map(|consumer| {
+                (
+                    consumer.message_model(),
+                    consumer.consume_from_where(),
+                    consumer.is_unit_mode(),
+                )
+            })
+            .unwrap_or((self.message_model, self.consume_from_where, self.unit_mode));
         #[allow(clippy::mutable_key_type)]
         let subscription_data_set = read_lock(&self.subscriptions)
             .values()
@@ -6030,10 +6052,10 @@ impl ConsumerRuntime for PushConsumerRegistration {
         ConsumerData {
             group_name: Some(self.group.clone()),
             consume_type: Some(ConsumeType::ConsumePassively),
-            message_model: Some(self.message_model),
-            consume_from_where: Some(self.consume_from_where),
+            message_model: Some(message_model),
+            consume_from_where: Some(consume_from_where),
             subscription_data_set: Some(SharedValue::from(subscription_data_set)),
-            unit_mode: self.unit_mode,
+            unit_mode,
         }
     }
 
@@ -6286,8 +6308,7 @@ mod tests {
         assert_eq!(first.config().consumer_group(), group);
         assert_eq!(first.get_max_reconsume_times(), 16);
 
-        let mut custom_config =
-            PushConsumerConfig::new("phase18-push-max-reconsume-custom").unwrap();
+        let custom_config = PushConsumerConfig::new("phase18-push-max-reconsume-custom").unwrap();
         custom_config.set_max_reconsume_times(7);
         let custom_consumer = PushConsumer::new(custom_config);
         assert_eq!(fixture["effectiveMaxReconsumeTimesCustom"], 7);
@@ -6324,8 +6345,46 @@ mod tests {
     }
 
     #[test]
+    fn push_live_runtime_settings_drive_owner_flow_helpers() {
+        let consumer = PushConsumer::new(PushConsumerConfig::new("push-live-runtime").unwrap());
+        consumer
+            .config()
+            .set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting);
+        consumer
+            .config()
+            .set_consume_from_where(ConsumeFromWhere::ConsumeFromFirstOffset);
+        consumer.config().set_unit_mode(true);
+        consumer.config().set_max_reconsume_times(9);
+        consumer.config().set_pull_threshold_for_queue(10);
+        consumer.config().set_pull_threshold_size_for_queue_mib(100);
+        consumer.config().set_consume_concurrently_max_span(1);
+
+        assert_eq!(
+            consumer.message_model(),
+            rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting
+        );
+        assert_eq!(consumer.consume_init_mode(), 0);
+        assert!(consumer.is_unit_mode());
+        assert_eq!(consumer.get_max_reconsume_times(), 9);
+
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let process_queue = ProcessQueue::new(queue, 1);
+        process_queue
+            .insert_messages(1, (0..5).map(message).collect())
+            .unwrap();
+        let thresholds = consumer.active_pull_queue_thresholds();
+        assert_eq!(thresholds.message_count, 10);
+        assert_eq!(thresholds.size_mib, 100);
+        assert_eq!(thresholds.max_span, 1);
+        assert_eq!(
+            flow_control_reason(&process_queue.snapshot(1).unwrap(), thresholds),
+            Some(PullFlowControlReason::MaxSpan)
+        );
+    }
+
+    #[test]
     fn push_topic_thresholds_match_java_global_process_queue_count() {
-        let mut config = PushConsumerConfig::new("phase18-push-queue-thresholds").unwrap();
+        let config = PushConsumerConfig::new("phase18-push-queue-thresholds").unwrap();
         config.set_pull_threshold_for_queue(777);
         config.set_pull_threshold_size_for_queue_mib(77);
         config.set_pull_threshold_for_topic(20);
@@ -6344,12 +6403,8 @@ mod tests {
         };
         let active = || {
             (
-                consumer
-                    .active_pull_threshold_for_queue
-                    .load(Ordering::Acquire),
-                consumer
-                    .active_pull_threshold_size_for_queue_mib
-                    .load(Ordering::Acquire),
+                consumer.config.pull_threshold_for_queue(),
+                consumer.config.pull_threshold_size_for_queue_mib(),
             )
         };
 
@@ -6456,7 +6511,7 @@ mod tests {
         ];
 
         for (policy, java_name) in cases {
-            let mut config = PushConsumerConfig::new("phase18-pop-init-mode").unwrap();
+            let config = PushConsumerConfig::new("phase18-pop-init-mode").unwrap();
             config.set_consume_from_where(policy);
             let consumer = PushConsumer::new(config);
             assert_eq!(
@@ -6902,6 +6957,23 @@ mod tests {
             consumer: Arc::downgrade(&consumer),
             runtime: std::sync::Weak::new(),
         };
+        consumer
+            .config()
+            .set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting);
+        consumer
+            .config()
+            .set_consume_from_where(ConsumeFromWhere::ConsumeFromTimestamp);
+        consumer.config().set_unit_mode(true);
+        let heartbeat = ConsumerRuntime::heartbeat_data(&registration);
+        assert_eq!(
+            heartbeat.message_model,
+            Some(rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting)
+        );
+        assert_eq!(
+            heartbeat.consume_from_where,
+            Some(ConsumeFromWhere::ConsumeFromTimestamp)
+        );
+        assert!(heartbeat.unit_mode);
         ConsumerRuntime::persist_consumer_offset(&registration)
             .expect("running consumer registers periodic offset persistence")
             .await;
@@ -7704,6 +7776,9 @@ mod tests {
                         .await;
                     }
                     request::POP_MESSAGE => {
+                        let fields = incoming.ext_fields.as_ref().unwrap();
+                        assert_eq!(fields.get("maxMsgNums"), Some(&"7".to_owned()));
+                        assert_eq!(fields.get("invisibleTime"), Some(&"12345".to_owned()));
                         if peer_pop_request_count.fetch_add(1, Ordering::SeqCst) == 0 {
                             tokio::time::sleep(Duration::from_millis(20)).await;
                             write_remoting_reply_with_body(
@@ -7768,6 +7843,8 @@ mod tests {
             Arc::new(PullRpcWorkers::new()),
         )
         .await;
+        consumer.config().set_pop_batch_nums(7);
+        consumer.config().set_pop_invisible_time_millis(12_345);
         runtime.remoting().start().unwrap();
         runtime
             .update_topic_route("orders", Instant::now() + Duration::from_secs(3))
@@ -7965,6 +8042,12 @@ mod tests {
             .with_namespace(Some(consumer.config.consumer_group()))
             .unwrap()
             .unwrap();
+        consumer
+            .rebalance_service
+            .set_strategy(consumer.config.allocate_message_queue_strategy());
+        consumer
+            .rebalance_service
+            .set_message_model(consumer.config.message_model());
         let runtime = manager
             .get_or_create(consumer.config.client_config())
             .await
@@ -8247,9 +8330,9 @@ mod tests {
         for policy in policies {
             let mut config = PushConsumerConfig::new("initial-offset-stored").unwrap();
             config.client_config_mut().set_namesrv_addr(None);
-            config.set_consume_from_where(policy);
             let manager = ClientRuntimeManager::new();
             let consumer = PushConsumer::with_manager(config, manager.clone());
+            consumer.config().set_consume_from_where(policy);
             let runtime = manager
                 .get_or_create(consumer.config.client_config())
                 .await
@@ -8296,10 +8379,10 @@ mod tests {
         ] {
             let mut config = PushConsumerConfig::new("initial-offset-missing").unwrap();
             config.client_config_mut().set_namesrv_addr(None);
-            config.set_consume_from_where(policy);
-            config.set_consume_timestamp("20240229010203");
             let manager = ClientRuntimeManager::new();
             let consumer = PushConsumer::with_manager(config, manager.clone());
+            consumer.config().set_consume_from_where(policy);
+            consumer.config().set_consume_timestamp("20240229010203");
             let runtime = manager
                 .get_or_create(consumer.config.client_config())
                 .await
@@ -8337,9 +8420,11 @@ mod tests {
         config.client_config_mut().set_namesrv_addr(None);
         config.set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting);
         config.set_client_rebalance(false);
-        config.set_message_queue_listener(Some(queue_listener));
         let manager = ClientRuntimeManager::new();
         let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        consumer
+            .config()
+            .set_message_queue_listener(Some(queue_listener));
         let store = Arc::new(RecordingOffsetStore::default());
         let store_dyn: Arc<dyn OffsetStore> = store.clone();
         let scheduler = Arc::new(PullScheduler::new());
@@ -8691,9 +8776,9 @@ mod tests {
     async fn client_rebalance_false_uses_broker_assignment_unless_orderly_forces_local() {
         let mut config = PushConsumerConfig::new("rebalance-client-disabled").unwrap();
         config.client_config_mut().set_namesrv_addr(None);
-        config.set_client_rebalance(false);
         let manager = ClientRuntimeManager::new();
         let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        consumer.config().set_client_rebalance(false);
         let store = Arc::new(RecordingOffsetStore::default());
         let queue = MessageQueue::new("orders", "broker-a", 0);
         store.seed_persisted(queue.clone(), 19);
@@ -8713,7 +8798,11 @@ mod tests {
         )
         .await;
         let client_id = runtime.client_id().to_owned();
-        script_rebalance_membership(&consumer, "orders", [Some(vec![client_id])]);
+        script_rebalance_membership(
+            &consumer,
+            "orders",
+            [Some(vec![client_id.clone()]), Some(vec![client_id])],
+        );
         consumer.paused.store(true, Ordering::Release);
 
         assert!(!consumer.rebalance_service.rebalance(&consumer).await);
@@ -8726,13 +8815,17 @@ mod tests {
                 .get("orders")
                 .unwrap()
                 .len(),
-            1,
+            2,
             "broker assignment mode must not request the local membership list"
         );
 
-        consumer.consume_orderly.store(true, Ordering::Release);
+        consumer.config().set_client_rebalance(true);
         assert!(consumer.rebalance_service.rebalance(&consumer).await);
         assert!(read_lock(&consumer.process_queues).contains_key(&queue));
+
+        consumer.config().set_client_rebalance(false);
+        consumer.consume_orderly.store(true, Ordering::Release);
+        assert!(consumer.rebalance_service.rebalance(&consumer).await);
         consumer.shutdown().await.unwrap();
     }
 
@@ -9880,7 +9973,7 @@ mod tests {
         assert_eq!(failure.delay_millis, 1_000);
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn push_pull_outcomes_insert_found_messages_and_correct_only_drained_offsets() {
         let mut config = PushConsumerConfig::new("pull-outcomes").unwrap();
         config.client_config_mut().set_namesrv_addr(None);
@@ -9959,6 +10052,7 @@ mod tests {
         let active_found_request = scheduler.take_due().unwrap();
         let mut found = pull_result(PullStatus::Found, 42);
         found.messages = Some(vec![message(40)]);
+        consumer.config().set_pull_interval_millis(25);
         consumer
             .apply_pull_result(found_request.clone(), context(), found)
             .await;
@@ -9966,6 +10060,9 @@ mod tests {
         let snapshot = found_process_queue.snapshot(3).unwrap();
         assert_eq!(snapshot.cached_count, 1);
         assert_eq!(found_request.next_offset(), 42);
+        assert!(scheduler.take_due().is_none());
+        tokio::time::advance(Duration::from_millis(25)).await;
+        assert_eq!(scheduler.take_due().unwrap().next_offset(), 42);
     }
 
     #[tokio::test]
@@ -9997,6 +10094,13 @@ mod tests {
             let fields = incoming.ext_fields.as_ref().unwrap();
             assert_eq!(fields.get("maxMsgNums"), Some(&"7".to_owned()));
             assert_eq!(fields.get("maxMsgBytes"), Some(&"12345".to_owned()));
+            assert_eq!(fields.get("subscription"), Some(&"tagA".to_owned()));
+            assert_eq!(fields.get("commitOffset"), Some(&"42".to_owned()));
+            assert!(
+                rocketmq_classic_common::sysflag::pull::has_commit_offset_flag(
+                    fields.get("sysFlag").unwrap().parse().unwrap()
+                )
+            );
             write_remoting_reply(
                 stream.as_mut().unwrap(),
                 &incoming,
@@ -10036,10 +10140,16 @@ mod tests {
 
         consumer.config().set_pull_batch_size(7);
         consumer.config().set_pull_batch_size_in_bytes(12_345);
+        consumer
+            .config()
+            .set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::Clustering);
+        consumer.config().set_post_subscription_when_pull(true);
         assert_eq!(consumer.config().pull_batch_size(), 7);
         assert_eq!(consumer.config().pull_batch_size_in_bytes(), 12_345);
-
         let queue = MessageQueue::new("orders", "broker-a", 0);
+        let offset_store = Arc::new(RecordingOffsetStore::default());
+        offset_store.update_offset(&queue, 42, false);
+
         let request = PullRequest::new(
             "push-live-pull-batch",
             Arc::new(ProcessQueue::new(queue, 1)),
@@ -10047,11 +10157,11 @@ mod tests {
         );
         let context = PullContext {
             runtime: runtime.clone(),
-            offset_store: Arc::new(RecordingOffsetStore::default()),
+            offset_store,
             scheduler: Arc::new(PullScheduler::new()),
             consume_service: ConsumeService::Concurrent(idle_consume_service()),
         };
-        let subscription = SubscriptionData::new(Some("orders".into()), Some("*".into()));
+        let subscription = SubscriptionData::new(Some("orders".into()), Some("tagA".into()));
 
         let pull_result = consumer
             .fetch_push_result(&context, &request, &subscription)
@@ -10661,7 +10771,7 @@ mod tests {
 
         let mut config = PushConsumerConfig::new("consume-timeout-hook").unwrap();
         config.client_config_mut().set_namesrv_addr(None);
-        config.set_consume_timeout_minutes(1);
+        config.set_consume_timeout_minutes(2);
         let manager = ClientRuntimeManager::new();
         let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
         let events = Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -10693,6 +10803,7 @@ mod tests {
 
         tokio::time::advance(Duration::from_secs(60)).await;
         tokio::task::yield_now().await;
+        consumer.config().set_consume_timeout_minutes(1);
         assert!(
             !dropped.load(Ordering::Acquire),
             "consume timeout must classify a completed callback, not cancel it"
@@ -10716,6 +10827,7 @@ mod tests {
         config.client_config_mut().set_namesrv_addr(None);
         let manager = ClientRuntimeManager::new();
         let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        consumer.config().set_max_reconsume_times(2);
         let offset_store = Arc::new(RecordingOffsetStore::default());
         let offset_store_dyn: Arc<dyn OffsetStore> = offset_store.clone();
         let consume_service = idle_consume_service();
@@ -10755,6 +10867,7 @@ mod tests {
             let scripted = consumer.scripted_retry_transport.lock().unwrap();
             assert_eq!(scripted.broker_headers.len(), 1);
             assert_eq!(scripted.broker_headers[0].offset, 170);
+            assert_eq!(scripted.broker_headers[0].max_reconsume_times, Some(2));
         }
         assert_eq!(
             offset_store.updates.lock().unwrap().as_slice(),
@@ -10886,7 +10999,7 @@ mod tests {
 
     #[tokio::test]
     async fn broadcasting_drops_failed_messages_without_clustering_retry() {
-        let mut config = PushConsumerConfig::new("consume-broadcast-failure").unwrap();
+        let config = PushConsumerConfig::new("consume-broadcast-failure").unwrap();
         config.set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting);
         let manager = ClientRuntimeManager::new();
         let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
@@ -10952,6 +11065,85 @@ mod tests {
         consumer.start().await.unwrap();
         assert!(consumer.is_running().await);
         assert!(consumer.is_consume_orderly());
+        consumer.shutdown().await.unwrap();
+    }
+
+    struct NamedAllocationStrategy(&'static str);
+
+    impl crate::rebalance::AllocateMessageQueueStrategy for NamedAllocationStrategy {
+        fn allocate(
+            &self,
+            _consumer_group: &str,
+            _current_client_id: &str,
+            queues: &[MessageQueue],
+            _consumer_ids: &[String],
+        ) -> Result<Vec<MessageQueue>, crate::rebalance::RebalanceError> {
+            Ok(queues.to_vec())
+        }
+
+        fn name(&self) -> &str {
+            self.0
+        }
+    }
+
+    #[tokio::test]
+    async fn startup_snapshots_the_current_rebalance_settings() {
+        let mut config = PushConsumerConfig::new("rebalance-strategy-snapshot").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        let consumer = Arc::new(PushConsumer::with_manager(
+            config,
+            ClientRuntimeManager::new(),
+        ));
+        consumer
+            .config()
+            .set_allocate_message_queue_strategy(Arc::new(NamedAllocationStrategy(
+                "configured-before-start",
+            )));
+        consumer
+            .config()
+            .set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting);
+        consumer
+            .register_message_listener(PushMessageListener::concurrently(
+                |_messages: Vec<MessageExt>, context| async move {
+                    (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+                },
+            ))
+            .await
+            .unwrap();
+
+        consumer.start().await.unwrap();
+        assert_eq!(
+            consumer.rebalance_service.strategy_name(),
+            "configured-before-start"
+        );
+        assert_eq!(
+            consumer.rebalance_service.message_model_for_test(),
+            rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting
+        );
+
+        consumer
+            .config()
+            .set_allocate_message_queue_strategy(Arc::new(NamedAllocationStrategy(
+                "configured-after-start",
+            )));
+        consumer
+            .config()
+            .set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::Clustering);
+        assert_eq!(
+            consumer.rebalance_service.strategy_name(),
+            "configured-before-start",
+            "Java installs the configured strategy into RebalanceImpl during start"
+        );
+        assert_eq!(
+            consumer.rebalance_service.message_model_for_test(),
+            rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting,
+            "Java keeps RebalanceImpl's message-model snapshot after start"
+        );
+        assert_eq!(
+            consumer.message_model(),
+            rocketmq_classic_protocol::heartbeat::MessageModel::Clustering,
+            "the facade getter still reflects the live consumer setting"
+        );
         consumer.shutdown().await.unwrap();
     }
 
@@ -11185,7 +11377,7 @@ mod tests {
         clustering.copy_subscriptions("orders").unwrap();
         assert!(read_lock(&clustering.get_subscription_inner()).contains_key("%RETRY%orders"));
 
-        let mut config = PushConsumerConfig::new("broadcast-orders").unwrap();
+        let config = PushConsumerConfig::new("broadcast-orders").unwrap();
         config.set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting);
         let broadcasting = PushConsumer::with_manager(config, ClientRuntimeManager::new());
         broadcasting.copy_subscriptions("broadcast-orders").unwrap();

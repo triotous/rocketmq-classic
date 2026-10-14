@@ -1,6 +1,6 @@
 use std::sync::{
-    Arc,
-    atomic::{AtomicI32, Ordering},
+    Arc, RwLock,
+    atomic::{AtomicBool, AtomicI32, AtomicI64, Ordering},
 };
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -41,33 +41,33 @@ pub struct PushConsumerConfig {
     client: ClientConfig,
     tls_config: Option<TlsConfig>,
     consumer_group: String,
-    message_model: MessageModel,
-    consume_from_where: ConsumeFromWhere,
-    consume_timestamp: String,
+    message_model: AtomicI32,
+    consume_from_where: AtomicI32,
+    consume_timestamp: RwLock<String>,
     consume_thread_min: i32,
-    consume_thread_max: i32,
-    adjust_thread_pool_nums_threshold: i64,
-    consume_concurrently_max_span: i32,
-    pull_threshold_for_queue: i32,
-    pull_threshold_size_for_queue_mib: i32,
-    pull_threshold_for_topic: i32,
-    pull_threshold_size_for_topic_mib: i32,
-    pull_interval_millis: i64,
-    consume_message_batch_max_size: i32,
+    consume_thread_max: AtomicI32,
+    adjust_thread_pool_nums_threshold: AtomicI64,
+    consume_concurrently_max_span: AtomicI32,
+    pull_threshold_for_queue: AtomicI32,
+    pull_threshold_size_for_queue_mib: AtomicI32,
+    pull_threshold_for_topic: AtomicI32,
+    pull_threshold_size_for_topic_mib: AtomicI32,
+    pull_interval_millis: AtomicI64,
+    consume_message_batch_max_size: AtomicI32,
     pull_batch_size: AtomicI32,
     pull_batch_size_in_bytes: AtomicI32,
-    post_subscription_when_pull: bool,
-    unit_mode: bool,
-    max_reconsume_times: i32,
-    suspend_current_queue_time_millis: i64,
-    consume_timeout_minutes: i64,
-    await_termination_millis_when_shutdown: i64,
-    pop_threshold_for_queue: i32,
-    pop_invisible_time_millis: i64,
-    pop_batch_nums: i32,
-    allocate_message_queue_strategy: Arc<dyn AllocateMessageQueueStrategy>,
-    client_rebalance: bool,
-    message_queue_listener: Option<MessageQueueListener>,
+    post_subscription_when_pull: AtomicBool,
+    unit_mode: AtomicBool,
+    max_reconsume_times: AtomicI32,
+    suspend_current_queue_time_millis: AtomicI64,
+    consume_timeout_minutes: AtomicI64,
+    await_termination_millis_when_shutdown: AtomicI64,
+    pop_threshold_for_queue: AtomicI32,
+    pop_invisible_time_millis: AtomicI64,
+    pop_batch_nums: AtomicI32,
+    allocate_message_queue_strategy: RwLock<Arc<dyn AllocateMessageQueueStrategy>>,
+    client_rebalance: AtomicBool,
+    message_queue_listener: RwLock<Option<MessageQueueListener>>,
 }
 
 impl PushConsumerConfig {
@@ -76,33 +76,45 @@ impl PushConsumerConfig {
             client: ClientConfig::new_auto()?,
             tls_config: None,
             consumer_group: consumer_group.into(),
-            message_model: MessageModel::Clustering,
-            consume_from_where: ConsumeFromWhere::ConsumeFromLastOffset,
-            consume_timestamp: default_consume_timestamp(),
+            message_model: AtomicI32::new(message_model_to_ordinal(MessageModel::Clustering)),
+            consume_from_where: AtomicI32::new(consume_from_where_to_ordinal(
+                ConsumeFromWhere::ConsumeFromLastOffset,
+            )),
+            consume_timestamp: RwLock::new(default_consume_timestamp()),
             consume_thread_min: DEFAULT_CONSUME_THREAD_MIN,
-            consume_thread_max: DEFAULT_CONSUME_THREAD_MAX,
-            adjust_thread_pool_nums_threshold: DEFAULT_ADJUST_THREAD_POOL_NUMS_THRESHOLD,
-            consume_concurrently_max_span: DEFAULT_CONSUME_CONCURRENTLY_MAX_SPAN,
-            pull_threshold_for_queue: DEFAULT_PULL_THRESHOLD_FOR_QUEUE,
-            pull_threshold_size_for_queue_mib: DEFAULT_PULL_THRESHOLD_SIZE_FOR_QUEUE_MIB,
-            pull_threshold_for_topic: DEFAULT_PULL_THRESHOLD_FOR_TOPIC,
-            pull_threshold_size_for_topic_mib: DEFAULT_PULL_THRESHOLD_SIZE_FOR_TOPIC_MIB,
-            pull_interval_millis: DEFAULT_PULL_INTERVAL_MILLIS,
-            consume_message_batch_max_size: DEFAULT_CONSUME_MESSAGE_BATCH_MAX_SIZE,
+            consume_thread_max: AtomicI32::new(DEFAULT_CONSUME_THREAD_MAX),
+            adjust_thread_pool_nums_threshold: AtomicI64::new(
+                DEFAULT_ADJUST_THREAD_POOL_NUMS_THRESHOLD,
+            ),
+            consume_concurrently_max_span: AtomicI32::new(DEFAULT_CONSUME_CONCURRENTLY_MAX_SPAN),
+            pull_threshold_for_queue: AtomicI32::new(DEFAULT_PULL_THRESHOLD_FOR_QUEUE),
+            pull_threshold_size_for_queue_mib: AtomicI32::new(
+                DEFAULT_PULL_THRESHOLD_SIZE_FOR_QUEUE_MIB,
+            ),
+            pull_threshold_for_topic: AtomicI32::new(DEFAULT_PULL_THRESHOLD_FOR_TOPIC),
+            pull_threshold_size_for_topic_mib: AtomicI32::new(
+                DEFAULT_PULL_THRESHOLD_SIZE_FOR_TOPIC_MIB,
+            ),
+            pull_interval_millis: AtomicI64::new(DEFAULT_PULL_INTERVAL_MILLIS),
+            consume_message_batch_max_size: AtomicI32::new(DEFAULT_CONSUME_MESSAGE_BATCH_MAX_SIZE),
             pull_batch_size: AtomicI32::new(DEFAULT_PULL_BATCH_SIZE),
             pull_batch_size_in_bytes: AtomicI32::new(DEFAULT_PULL_BATCH_SIZE_IN_BYTES),
-            post_subscription_when_pull: false,
-            unit_mode: false,
-            max_reconsume_times: DEFAULT_MAX_RECONSUME_TIMES,
-            suspend_current_queue_time_millis: DEFAULT_SUSPEND_CURRENT_QUEUE_TIME_MILLIS,
-            consume_timeout_minutes: DEFAULT_CONSUME_TIMEOUT_MINUTES,
-            await_termination_millis_when_shutdown: DEFAULT_AWAIT_TERMINATION_MILLIS_WHEN_SHUTDOWN,
-            pop_threshold_for_queue: DEFAULT_POP_THRESHOLD_FOR_QUEUE,
-            pop_invisible_time_millis: DEFAULT_POP_INVISIBLE_TIME_MILLIS,
-            pop_batch_nums: DEFAULT_POP_BATCH_NUMS,
-            allocate_message_queue_strategy: Arc::new(AllocateMessageQueueAveragely),
-            client_rebalance: true,
-            message_queue_listener: None,
+            post_subscription_when_pull: AtomicBool::new(false),
+            unit_mode: AtomicBool::new(false),
+            max_reconsume_times: AtomicI32::new(DEFAULT_MAX_RECONSUME_TIMES),
+            suspend_current_queue_time_millis: AtomicI64::new(
+                DEFAULT_SUSPEND_CURRENT_QUEUE_TIME_MILLIS,
+            ),
+            consume_timeout_minutes: AtomicI64::new(DEFAULT_CONSUME_TIMEOUT_MINUTES),
+            await_termination_millis_when_shutdown: AtomicI64::new(
+                DEFAULT_AWAIT_TERMINATION_MILLIS_WHEN_SHUTDOWN,
+            ),
+            pop_threshold_for_queue: AtomicI32::new(DEFAULT_POP_THRESHOLD_FOR_QUEUE),
+            pop_invisible_time_millis: AtomicI64::new(DEFAULT_POP_INVISIBLE_TIME_MILLIS),
+            pop_batch_nums: AtomicI32::new(DEFAULT_POP_BATCH_NUMS),
+            allocate_message_queue_strategy: RwLock::new(Arc::new(AllocateMessageQueueAveragely)),
+            client_rebalance: AtomicBool::new(true),
+            message_queue_listener: RwLock::new(None),
         })
     }
 
@@ -133,55 +145,57 @@ impl PushConsumerConfig {
         self.consumer_group = value.into();
     }
 
-    pub const fn message_model(&self) -> MessageModel {
-        self.message_model
+    pub fn message_model(&self) -> MessageModel {
+        message_model_from_ordinal(self.message_model.load(Ordering::Acquire))
     }
 
-    pub fn set_message_model(&mut self, value: MessageModel) {
-        self.message_model = value;
+    pub fn set_message_model(&self, value: MessageModel) {
+        self.message_model
+            .store(message_model_to_ordinal(value), Ordering::Release);
     }
 
     pub fn allocate_message_queue_strategy(&self) -> Arc<dyn AllocateMessageQueueStrategy> {
-        self.allocate_message_queue_strategy.clone()
+        read_lock(&self.allocate_message_queue_strategy).clone()
     }
 
     pub fn set_allocate_message_queue_strategy(
-        &mut self,
+        &self,
         value: Arc<dyn AllocateMessageQueueStrategy>,
     ) {
-        self.allocate_message_queue_strategy = value;
+        *write_lock(&self.allocate_message_queue_strategy) = value;
     }
 
-    pub const fn client_rebalance(&self) -> bool {
-        self.client_rebalance
+    pub fn client_rebalance(&self) -> bool {
+        self.client_rebalance.load(Ordering::Acquire)
     }
 
-    pub fn set_client_rebalance(&mut self, value: bool) {
-        self.client_rebalance = value;
+    pub fn set_client_rebalance(&self, value: bool) {
+        self.client_rebalance.store(value, Ordering::Release);
     }
 
     pub fn message_queue_listener(&self) -> Option<MessageQueueListener> {
-        self.message_queue_listener.clone()
+        read_lock(&self.message_queue_listener).clone()
     }
 
-    pub fn set_message_queue_listener(&mut self, value: Option<MessageQueueListener>) {
-        self.message_queue_listener = value;
+    pub fn set_message_queue_listener(&self, value: Option<MessageQueueListener>) {
+        *write_lock(&self.message_queue_listener) = value;
     }
 
-    pub const fn consume_from_where(&self) -> ConsumeFromWhere {
+    pub fn consume_from_where(&self) -> ConsumeFromWhere {
+        consume_from_where_from_ordinal(self.consume_from_where.load(Ordering::Acquire))
+    }
+
+    pub fn set_consume_from_where(&self, value: ConsumeFromWhere) {
         self.consume_from_where
+            .store(consume_from_where_to_ordinal(value), Ordering::Release);
     }
 
-    pub fn set_consume_from_where(&mut self, value: ConsumeFromWhere) {
-        self.consume_from_where = value;
+    pub fn consume_timestamp(&self) -> String {
+        read_lock(&self.consume_timestamp).clone()
     }
 
-    pub fn consume_timestamp(&self) -> &str {
-        &self.consume_timestamp
-    }
-
-    pub fn set_consume_timestamp(&mut self, value: impl Into<String>) {
-        self.consume_timestamp = value.into();
+    pub fn set_consume_timestamp(&self, value: impl Into<String>) {
+        *write_lock(&self.consume_timestamp) = value.into();
     }
 
     pub const fn consume_thread_min(&self) -> i32 {
@@ -192,76 +206,86 @@ impl PushConsumerConfig {
         self.consume_thread_min = value;
     }
 
-    pub const fn consume_thread_max(&self) -> i32 {
-        self.consume_thread_max
+    pub fn consume_thread_max(&self) -> i32 {
+        self.consume_thread_max.load(Ordering::Acquire)
     }
 
-    pub fn set_consume_thread_max(&mut self, value: i32) {
-        self.consume_thread_max = value;
+    pub fn set_consume_thread_max(&self, value: i32) {
+        self.consume_thread_max.store(value, Ordering::Release);
     }
 
-    pub const fn adjust_thread_pool_nums_threshold(&self) -> i64 {
+    pub fn adjust_thread_pool_nums_threshold(&self) -> i64 {
         self.adjust_thread_pool_nums_threshold
+            .load(Ordering::Acquire)
     }
 
-    pub fn set_adjust_thread_pool_nums_threshold(&mut self, value: i64) {
-        self.adjust_thread_pool_nums_threshold = value;
+    pub fn set_adjust_thread_pool_nums_threshold(&self, value: i64) {
+        self.adjust_thread_pool_nums_threshold
+            .store(value, Ordering::Release);
     }
 
-    pub const fn consume_concurrently_max_span(&self) -> i32 {
+    pub fn consume_concurrently_max_span(&self) -> i32 {
+        self.consume_concurrently_max_span.load(Ordering::Acquire)
+    }
+
+    pub fn set_consume_concurrently_max_span(&self, value: i32) {
         self.consume_concurrently_max_span
+            .store(value, Ordering::Release);
     }
 
-    pub fn set_consume_concurrently_max_span(&mut self, value: i32) {
-        self.consume_concurrently_max_span = value;
+    pub fn pull_threshold_for_queue(&self) -> i32 {
+        self.pull_threshold_for_queue.load(Ordering::Acquire)
     }
 
-    pub const fn pull_threshold_for_queue(&self) -> i32 {
+    pub fn set_pull_threshold_for_queue(&self, value: i32) {
         self.pull_threshold_for_queue
+            .store(value, Ordering::Release);
     }
 
-    pub fn set_pull_threshold_for_queue(&mut self, value: i32) {
-        self.pull_threshold_for_queue = value;
-    }
-
-    pub const fn pull_threshold_size_for_queue_mib(&self) -> i32 {
+    pub fn pull_threshold_size_for_queue_mib(&self) -> i32 {
         self.pull_threshold_size_for_queue_mib
+            .load(Ordering::Acquire)
     }
 
-    pub fn set_pull_threshold_size_for_queue_mib(&mut self, value: i32) {
-        self.pull_threshold_size_for_queue_mib = value;
+    pub fn set_pull_threshold_size_for_queue_mib(&self, value: i32) {
+        self.pull_threshold_size_for_queue_mib
+            .store(value, Ordering::Release);
     }
 
-    pub const fn pull_threshold_for_topic(&self) -> i32 {
+    pub fn pull_threshold_for_topic(&self) -> i32 {
+        self.pull_threshold_for_topic.load(Ordering::Acquire)
+    }
+
+    pub fn set_pull_threshold_for_topic(&self, value: i32) {
         self.pull_threshold_for_topic
+            .store(value, Ordering::Release);
     }
 
-    pub fn set_pull_threshold_for_topic(&mut self, value: i32) {
-        self.pull_threshold_for_topic = value;
-    }
-
-    pub const fn pull_threshold_size_for_topic_mib(&self) -> i32 {
+    pub fn pull_threshold_size_for_topic_mib(&self) -> i32 {
         self.pull_threshold_size_for_topic_mib
+            .load(Ordering::Acquire)
     }
 
-    pub fn set_pull_threshold_size_for_topic_mib(&mut self, value: i32) {
-        self.pull_threshold_size_for_topic_mib = value;
+    pub fn set_pull_threshold_size_for_topic_mib(&self, value: i32) {
+        self.pull_threshold_size_for_topic_mib
+            .store(value, Ordering::Release);
     }
 
-    pub const fn pull_interval_millis(&self) -> i64 {
-        self.pull_interval_millis
+    pub fn pull_interval_millis(&self) -> i64 {
+        self.pull_interval_millis.load(Ordering::Acquire)
     }
 
-    pub fn set_pull_interval_millis(&mut self, value: i64) {
-        self.pull_interval_millis = value;
+    pub fn set_pull_interval_millis(&self, value: i64) {
+        self.pull_interval_millis.store(value, Ordering::Release);
     }
 
-    pub const fn consume_message_batch_max_size(&self) -> i32 {
+    pub fn consume_message_batch_max_size(&self) -> i32 {
+        self.consume_message_batch_max_size.load(Ordering::Acquire)
+    }
+
+    pub fn set_consume_message_batch_max_size(&self, value: i32) {
         self.consume_message_batch_max_size
-    }
-
-    pub fn set_consume_message_batch_max_size(&mut self, value: i32) {
-        self.consume_message_batch_max_size = value;
+            .store(value, Ordering::Release);
     }
 
     pub fn pull_batch_size(&self) -> i32 {
@@ -281,95 +305,101 @@ impl PushConsumerConfig {
             .store(value, Ordering::Release);
     }
 
-    pub const fn post_subscription_when_pull(&self) -> bool {
+    pub fn post_subscription_when_pull(&self) -> bool {
+        self.post_subscription_when_pull.load(Ordering::Acquire)
+    }
+
+    pub fn set_post_subscription_when_pull(&self, value: bool) {
         self.post_subscription_when_pull
+            .store(value, Ordering::Release);
     }
 
-    pub fn set_post_subscription_when_pull(&mut self, value: bool) {
-        self.post_subscription_when_pull = value;
+    pub fn unit_mode(&self) -> bool {
+        self.unit_mode.load(Ordering::Acquire)
     }
 
-    pub const fn unit_mode(&self) -> bool {
-        self.unit_mode
+    pub fn set_unit_mode(&self, value: bool) {
+        self.unit_mode.store(value, Ordering::Release);
     }
 
-    pub fn set_unit_mode(&mut self, value: bool) {
-        self.unit_mode = value;
-    }
-
-    pub const fn max_reconsume_times(&self) -> i32 {
-        self.max_reconsume_times
+    pub fn max_reconsume_times(&self) -> i32 {
+        self.max_reconsume_times.load(Ordering::Acquire)
     }
 
     /// Java `DefaultMQPushConsumerImpl.getMaxReconsumeTimes()` resolves only
     /// the `-1` default to 16 in concurrent mode.
-    pub const fn effective_max_reconsume_times(&self) -> i32 {
-        if self.max_reconsume_times == -1 {
+    pub fn effective_max_reconsume_times(&self) -> i32 {
+        if self.max_reconsume_times() == -1 {
             16
         } else {
-            self.max_reconsume_times
+            self.max_reconsume_times()
         }
     }
 
     /// Java orderly consumers interpret the `-1` default as unbounded retries.
-    pub(crate) const fn effective_orderly_max_reconsume_times(&self) -> i32 {
-        if self.max_reconsume_times == -1 {
+    pub(crate) fn effective_orderly_max_reconsume_times(&self) -> i32 {
+        if self.max_reconsume_times() == -1 {
             i32::MAX
         } else {
-            self.max_reconsume_times
+            self.max_reconsume_times()
         }
     }
 
-    pub fn set_max_reconsume_times(&mut self, value: i32) {
-        self.max_reconsume_times = value;
+    pub fn set_max_reconsume_times(&self, value: i32) {
+        self.max_reconsume_times.store(value, Ordering::Release);
     }
 
-    pub const fn suspend_current_queue_time_millis(&self) -> i64 {
+    pub fn suspend_current_queue_time_millis(&self) -> i64 {
         self.suspend_current_queue_time_millis
+            .load(Ordering::Acquire)
     }
 
-    pub fn set_suspend_current_queue_time_millis(&mut self, value: i64) {
-        self.suspend_current_queue_time_millis = value;
+    pub fn set_suspend_current_queue_time_millis(&self, value: i64) {
+        self.suspend_current_queue_time_millis
+            .store(value, Ordering::Release);
     }
 
-    pub const fn consume_timeout_minutes(&self) -> i64 {
-        self.consume_timeout_minutes
+    pub fn consume_timeout_minutes(&self) -> i64 {
+        self.consume_timeout_minutes.load(Ordering::Acquire)
     }
 
-    pub fn set_consume_timeout_minutes(&mut self, value: i64) {
-        self.consume_timeout_minutes = value;
+    pub fn set_consume_timeout_minutes(&self, value: i64) {
+        self.consume_timeout_minutes.store(value, Ordering::Release);
     }
 
-    pub const fn await_termination_millis_when_shutdown(&self) -> i64 {
+    pub fn await_termination_millis_when_shutdown(&self) -> i64 {
         self.await_termination_millis_when_shutdown
+            .load(Ordering::Acquire)
     }
 
-    pub fn set_await_termination_millis_when_shutdown(&mut self, value: i64) {
-        self.await_termination_millis_when_shutdown = value;
+    pub fn set_await_termination_millis_when_shutdown(&self, value: i64) {
+        self.await_termination_millis_when_shutdown
+            .store(value, Ordering::Release);
     }
 
-    pub const fn pop_threshold_for_queue(&self) -> i32 {
-        self.pop_threshold_for_queue
+    pub fn pop_threshold_for_queue(&self) -> i32 {
+        self.pop_threshold_for_queue.load(Ordering::Acquire)
     }
 
-    pub fn set_pop_threshold_for_queue(&mut self, value: i32) {
-        self.pop_threshold_for_queue = value;
+    pub fn set_pop_threshold_for_queue(&self, value: i32) {
+        self.pop_threshold_for_queue.store(value, Ordering::Release);
     }
 
-    pub const fn pop_invisible_time_millis(&self) -> i64 {
+    pub fn pop_invisible_time_millis(&self) -> i64 {
+        self.pop_invisible_time_millis.load(Ordering::Acquire)
+    }
+
+    pub fn set_pop_invisible_time_millis(&self, value: i64) {
         self.pop_invisible_time_millis
+            .store(value, Ordering::Release);
     }
 
-    pub fn set_pop_invisible_time_millis(&mut self, value: i64) {
-        self.pop_invisible_time_millis = value;
+    pub fn pop_batch_nums(&self) -> i32 {
+        self.pop_batch_nums.load(Ordering::Acquire)
     }
 
-    pub const fn pop_batch_nums(&self) -> i32 {
-        self.pop_batch_nums
-    }
-
-    pub fn set_pop_batch_nums(&mut self, value: i32) {
-        self.pop_batch_nums = value;
+    pub fn set_pop_batch_nums(&self, value: i32) {
+        self.pop_batch_nums.store(value, Ordering::Release);
     }
 
     pub(crate) fn validate(&self, effective_consumer_group: &str) -> Result<(), PushConsumerError> {
@@ -378,65 +408,113 @@ impl PushConsumerConfig {
         if effective_consumer_group == DEFAULT_PUSH_CONSUMER_GROUP {
             return Err(PushConsumerError::DefaultConsumerGroup);
         }
-        if parse_java_timestamp_millis(&self.consume_timestamp).is_none() {
+        if parse_java_timestamp_millis(&self.consume_timestamp()).is_none() {
             return Err(PushConsumerError::InvalidConsumeTimestamp);
         }
         for (name, value) in [
             ("consumeThreadMin", self.consume_thread_min),
-            ("consumeThreadMax", self.consume_thread_max),
+            ("consumeThreadMax", self.consume_thread_max()),
         ] {
             validate_range(name, i64::from(value), 1, 1_000)?;
         }
-        if self.consume_thread_min > self.consume_thread_max {
+        if self.consume_thread_min > self.consume_thread_max() {
             return Err(PushConsumerError::InvalidThreadBounds {
                 minimum: self.consume_thread_min,
-                maximum: self.consume_thread_max,
+                maximum: self.consume_thread_max(),
             });
         }
         validate_range(
             "consumeConcurrentlyMaxSpan",
-            i64::from(self.consume_concurrently_max_span),
+            i64::from(self.consume_concurrently_max_span()),
             1,
             65_535,
         )?;
         validate_range(
             "pullThresholdForQueue",
-            i64::from(self.pull_threshold_for_queue),
+            i64::from(self.pull_threshold_for_queue()),
             1,
             65_535,
         )?;
         validate_optional_range(
             "pullThresholdForTopic",
-            self.pull_threshold_for_topic,
+            self.pull_threshold_for_topic(),
             6_553_500,
         )?;
         validate_range(
             "pullThresholdSizeForQueue",
-            i64::from(self.pull_threshold_size_for_queue_mib),
+            i64::from(self.pull_threshold_size_for_queue_mib()),
             1,
             1_024,
         )?;
         validate_optional_range(
             "pullThresholdSizeForTopic",
-            self.pull_threshold_size_for_topic_mib,
+            self.pull_threshold_size_for_topic_mib(),
             102_400,
         )?;
-        validate_range("pullInterval", self.pull_interval_millis, 0, 65_535)?;
+        validate_range("pullInterval", self.pull_interval_millis(), 0, 65_535)?;
         validate_range(
             "consumeMessageBatchMaxSize",
-            i64::from(self.consume_message_batch_max_size),
+            i64::from(self.consume_message_batch_max_size()),
             1,
             1_024,
         )?;
         validate_range("pullBatchSize", i64::from(self.pull_batch_size()), 1, 1_024)?;
         validate_range(
             "popInvisibleTime",
-            self.pop_invisible_time_millis,
+            self.pop_invisible_time_millis(),
             5_000,
             300_000,
         )?;
-        validate_range("popBatchNums", i64::from(self.pop_batch_nums), 1, 32)?;
+        validate_range("popBatchNums", i64::from(self.pop_batch_nums()), 1, 32)?;
         Ok(())
+    }
+}
+
+fn read_lock<T>(lock: &RwLock<T>) -> std::sync::RwLockReadGuard<'_, T> {
+    lock.read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+fn write_lock<T>(lock: &RwLock<T>) -> std::sync::RwLockWriteGuard<'_, T> {
+    lock.write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+fn message_model_to_ordinal(value: MessageModel) -> i32 {
+    match value {
+        MessageModel::Broadcasting => 0,
+        MessageModel::Clustering => 1,
+        MessageModel::LiteSelective => 2,
+    }
+}
+
+fn message_model_from_ordinal(value: i32) -> MessageModel {
+    match value {
+        0 => MessageModel::Broadcasting,
+        2 => MessageModel::LiteSelective,
+        _ => MessageModel::Clustering,
+    }
+}
+
+fn consume_from_where_to_ordinal(value: ConsumeFromWhere) -> i32 {
+    match value {
+        ConsumeFromWhere::ConsumeFromLastOffset => 0,
+        ConsumeFromWhere::ConsumeFromLastOffsetAndFromMinWhenBootFirst => 1,
+        ConsumeFromWhere::ConsumeFromMinOffset => 2,
+        ConsumeFromWhere::ConsumeFromMaxOffset => 3,
+        ConsumeFromWhere::ConsumeFromFirstOffset => 4,
+        ConsumeFromWhere::ConsumeFromTimestamp => 5,
+    }
+}
+
+fn consume_from_where_from_ordinal(value: i32) -> ConsumeFromWhere {
+    match value {
+        1 => ConsumeFromWhere::ConsumeFromLastOffsetAndFromMinWhenBootFirst,
+        2 => ConsumeFromWhere::ConsumeFromMinOffset,
+        3 => ConsumeFromWhere::ConsumeFromMaxOffset,
+        4 => ConsumeFromWhere::ConsumeFromFirstOffset,
+        5 => ConsumeFromWhere::ConsumeFromTimestamp,
+        _ => ConsumeFromWhere::ConsumeFromLastOffset,
     }
 }
 
@@ -662,7 +740,7 @@ mod tests {
         assert_eq!(config.effective_max_reconsume_times(), 16);
         assert_eq!(config.effective_orderly_max_reconsume_times(), i32::MAX);
         assert_eq!(config.suspend_current_queue_time_millis(), 1_000);
-        let mut config = config;
+        let config = config;
         config.set_max_reconsume_times(-2);
         assert_eq!(config.effective_max_reconsume_times(), -2);
         assert_eq!(config.effective_orderly_max_reconsume_times(), -2);
@@ -675,7 +753,71 @@ mod tests {
         assert_eq!(config.pop_threshold_for_queue(), 96);
         assert_eq!(config.pop_invisible_time_millis(), 60_000);
         assert_eq!(config.pop_batch_nums(), 32);
-        assert!(parse_java_timestamp_millis(config.consume_timestamp()).is_some());
+        assert!(parse_java_timestamp_millis(&config.consume_timestamp()).is_some());
+    }
+
+    #[test]
+    fn live_runtime_settings_match_shared_java_enum_values() {
+        let config = PushConsumerConfig::new("live-settings").unwrap();
+        for model in [
+            MessageModel::Broadcasting,
+            MessageModel::Clustering,
+            MessageModel::LiteSelective,
+        ] {
+            config.set_message_model(model);
+            assert_eq!(config.message_model(), model);
+        }
+        for policy in [
+            ConsumeFromWhere::ConsumeFromLastOffset,
+            ConsumeFromWhere::ConsumeFromLastOffsetAndFromMinWhenBootFirst,
+            ConsumeFromWhere::ConsumeFromMinOffset,
+            ConsumeFromWhere::ConsumeFromMaxOffset,
+            ConsumeFromWhere::ConsumeFromFirstOffset,
+            ConsumeFromWhere::ConsumeFromTimestamp,
+        ] {
+            config.set_consume_from_where(policy);
+            assert_eq!(config.consume_from_where(), policy);
+        }
+
+        config.set_consume_thread_max(17);
+        config.set_adjust_thread_pool_nums_threshold(16_000);
+        config.set_consume_concurrently_max_span(18);
+        config.set_pull_threshold_for_queue(19);
+        config.set_pull_threshold_size_for_queue_mib(20);
+        config.set_pull_threshold_for_topic(21);
+        config.set_pull_threshold_size_for_topic_mib(22);
+        config.set_pull_interval_millis(23);
+        config.set_consume_message_batch_max_size(24);
+        config.set_post_subscription_when_pull(true);
+        config.set_unit_mode(true);
+        config.set_max_reconsume_times(25);
+        config.set_consume_timestamp("20240229010203");
+        config.set_suspend_current_queue_time_millis(26);
+        config.set_consume_timeout_minutes(27);
+        config.set_await_termination_millis_when_shutdown(28);
+        config.set_pop_threshold_for_queue(29);
+        config.set_pop_invisible_time_millis(30_000);
+        config.set_pop_batch_nums(31);
+
+        assert_eq!(config.consume_thread_max(), 17);
+        assert_eq!(config.adjust_thread_pool_nums_threshold(), 16_000);
+        assert_eq!(config.consume_concurrently_max_span(), 18);
+        assert_eq!(config.pull_threshold_for_queue(), 19);
+        assert_eq!(config.pull_threshold_size_for_queue_mib(), 20);
+        assert_eq!(config.pull_threshold_for_topic(), 21);
+        assert_eq!(config.pull_threshold_size_for_topic_mib(), 22);
+        assert_eq!(config.pull_interval_millis(), 23);
+        assert_eq!(config.consume_message_batch_max_size(), 24);
+        assert!(config.post_subscription_when_pull());
+        assert!(config.unit_mode());
+        assert_eq!(config.max_reconsume_times(), 25);
+        assert_eq!(config.consume_timestamp(), "20240229010203");
+        assert_eq!(config.suspend_current_queue_time_millis(), 26);
+        assert_eq!(config.consume_timeout_minutes(), 27);
+        assert_eq!(config.await_termination_millis_when_shutdown(), 28);
+        assert_eq!(config.pop_threshold_for_queue(), 29);
+        assert_eq!(config.pop_invisible_time_millis(), 30_000);
+        assert_eq!(config.pop_batch_nums(), 31);
     }
 
     #[test]
@@ -790,7 +932,7 @@ mod tests {
             Err(PushConsumerError::InvalidConsumerGroup)
         ));
 
-        let mut config = PushConsumerConfig::new("orders").unwrap();
+        let config = PushConsumerConfig::new("orders").unwrap();
         config.set_consume_timestamp("not-a-date");
         assert!(matches!(
             config.validate("orders"),

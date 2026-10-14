@@ -1264,7 +1264,7 @@ async fn explicit_lite_assignment_returns_the_callers_queue_topic_with_namespace
 fn push_pop_settings_match_pinned_java_defaults_and_setters() {
     let fixture = java_fixture();
     let defaults = &fixture["pushPopDefaults"];
-    let mut config = PushConsumerConfig::new("pop-workers").unwrap();
+    let config = PushConsumerConfig::new("pop-workers").unwrap();
     assert_eq!(
         config.pop_threshold_for_queue(),
         defaults["popThresholdForQueue"]

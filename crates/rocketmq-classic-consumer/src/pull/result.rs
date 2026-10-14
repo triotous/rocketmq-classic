@@ -53,7 +53,7 @@ pub type SharedFilterMessageHooks = Arc<RwLock<Vec<Arc<dyn FilterMessageHook>>>>
 pub struct PullAPIWrapper {
     suggested_broker_ids: Mutex<HashMap<MessageQueue, i64>>,
     hooks: RwLock<SharedFilterMessageHooks>,
-    unit_mode: bool,
+    unit_mode: AtomicBool,
     connect_broker_by_user: AtomicBool,
     default_broker_id: AtomicI64,
 }
@@ -63,10 +63,14 @@ impl PullAPIWrapper {
         Self {
             suggested_broker_ids: Mutex::new(HashMap::new()),
             hooks: RwLock::new(Arc::new(RwLock::new(Vec::new()))),
-            unit_mode,
+            unit_mode: AtomicBool::new(unit_mode),
             connect_broker_by_user: AtomicBool::new(false),
             default_broker_id: AtomicI64::new(0),
         }
+    }
+
+    pub(crate) fn set_unit_mode(&self, unit_mode: bool) {
+        self.unit_mode.store(unit_mode, Ordering::Release);
     }
 
     pub fn register_filter_message_hook(&self, hook: Arc<dyn FilterMessageHook>) {
@@ -186,7 +190,7 @@ impl PullAPIWrapper {
 
             filter_tags(&mut messages, subscription);
             let mut context = FilterMessageContext {
-                unit_mode: self.unit_mode,
+                unit_mode: self.unit_mode.load(Ordering::Acquire),
                 messages,
             };
             if self.has_hook() {
