@@ -198,6 +198,10 @@ public final class Main {
             ProducerCoreFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;
         }
+        if (args.length > 0 && "producer-lifecycle-fixtures".equals(args[0])) {
+            ProducerLifecycleFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "message-decode-fixtures".equals(args[0])) {
             MessageDecodeFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;

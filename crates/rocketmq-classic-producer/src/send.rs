@@ -2075,6 +2075,17 @@ mod tests {
             );
             assert_eq!(transport.attempts[1].producer_group, None);
         }
+        assert!(matches!(
+            producer.shutdown().await,
+            Err(crate::ProducerError::Runtime(
+                rocketmq_classic_core::runtime::RuntimeError::InvalidRoute("null producer group")
+            ))
+        ));
+        assert_eq!(
+            producer.service_state(),
+            Some(crate::ProducerServiceState::Running)
+        );
+        producer.set_producer_group(Some("live-producer-group-send".into()));
         producer.shutdown().await.unwrap();
     }
 

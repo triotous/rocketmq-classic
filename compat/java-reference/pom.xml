@@ -426,6 +426,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-java-producer-lifecycle-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.ProducerLifecycleFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/producer/lifecycle.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-java-transaction-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

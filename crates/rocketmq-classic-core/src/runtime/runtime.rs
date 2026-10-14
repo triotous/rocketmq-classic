@@ -1605,6 +1605,30 @@ mod tests {
         runtime.unregister_producer(&third, deadline).await.unwrap();
         assert!(runtime.reply_timeout_task.lock().await.is_none());
 
+        let fourth = runtime
+            .register_producer("fourth", Arc::new(RequestReplyProducer))
+            .await
+            .unwrap();
+        let pending_deadline = Instant::now() + Duration::from_secs(60);
+        let mut pending = runtime
+            .register_reply_request(&fourth, "group-unregister-pending", pending_deadline)
+            .await
+            .unwrap();
+        assert!(runtime.reply_timeout_task.lock().await.is_some());
+        assert!(
+            runtime
+                .unregister_producer_by_group("fourth", deadline)
+                .await
+                .unwrap()
+        );
+        assert!(runtime.reply_timeout_task.lock().await.is_none());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(1), pending.receive())
+                .await
+                .is_err()
+        );
+        assert!(pending.control().cancel());
+
         assert!(runtime.shutdown().await.unwrap());
         assert!(runtime.reply_timeout_task.lock().await.is_none());
     }

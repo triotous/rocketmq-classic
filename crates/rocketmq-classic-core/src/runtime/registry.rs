@@ -748,7 +748,7 @@ impl GroupRegistry {
         group: &str,
         kind: GroupKind,
     ) -> Result<bool, RuntimeError> {
-        let (removed, removed_producer, removed_consumer, removed_admin, cancelled) = {
+        let (removed, removed_producer, removed_consumer, removed_admin) = {
             let mut entries = self
                 .entries
                 .lock()
@@ -756,23 +756,18 @@ impl GroupRegistry {
             match kind {
                 GroupKind::Producer => {
                     let entry = entries.producers.remove(group);
-                    let cancelled = entry
-                        .as_ref()
-                        .map(|entry| take_pending_replies_for_owner(&mut entries, &entry.identity))
-                        .unwrap_or_default();
-                    (entry.is_some(), entry, None, None, cancelled)
+                    (entry.is_some(), entry, None, None)
                 }
                 GroupKind::Consumer => {
                     let entry = entries.consumers.remove(group);
-                    (entry.is_some(), None, entry, None, Vec::new())
+                    (entry.is_some(), None, entry, None)
                 }
                 GroupKind::Admin => {
                     let entry = entries.admins.remove(group);
-                    (entry.is_some(), None, None, entry, Vec::new())
+                    (entry.is_some(), None, None, entry)
                 }
             }
         };
-        notify_pending_reply_shutdown(cancelled);
         drop(removed_producer);
         drop(removed_consumer);
         drop(removed_admin);
@@ -1025,6 +1020,42 @@ mod pending_reply_admission_tests {
         assert!(matches!(
             shutdown_pending.receive().await.unwrap(),
             PendingReplyCompletion::ProducerShutdown
+        ));
+
+        let group_owner: Arc<dyn ProducerRuntime> = Arc::new(Producer);
+        let group_lease = registry
+            .register_producer("group-request-owner", group_owner)
+            .unwrap();
+        let group_unregistered_deadline = Instant::now() + Duration::from_secs(2);
+        let mut group_unregistered_pending = registry
+            .register_pending_reply(
+                &group_lease,
+                "group-unregistered",
+                group_unregistered_deadline,
+            )
+            .await
+            .unwrap();
+        assert!(
+            registry
+                .remove_by_group("group-request-owner", GroupKind::Producer)
+                .unwrap()
+        );
+        assert!(
+            tokio::time::timeout(
+                Duration::from_millis(1),
+                group_unregistered_pending.receive()
+            )
+            .await
+            .is_err()
+        );
+        assert!(
+            group_unregistered_pending
+                .control()
+                .fail_send("fixture cleanup".into())
+        );
+        assert!(matches!(
+            group_unregistered_pending.receive().await.unwrap(),
+            PendingReplyCompletion::SendFailed(cause) if cause == "fixture cleanup"
         ));
 
         let replacement: Arc<dyn ProducerRuntime> = Arc::new(Producer);

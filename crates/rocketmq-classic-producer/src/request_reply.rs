@@ -411,6 +411,44 @@ mod tests {
         panic!("scripted request send did not start");
     }
 
+    #[tokio::test]
+    async fn producer_shutdown_matches_java_pending_request_and_timeout_scanner_state() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/lifecycle.json"))
+                .unwrap();
+        let java = &fixture["requestFutureShutdown"];
+        assert_eq!(java["pendingRemainsAfterProducerShutdown"], true);
+        assert_eq!(java["callbackCountAfterProducerShutdown"], 0);
+        assert_eq!(java["timeoutScannerStopsAfterLastProducer"], true);
+
+        let mut config = ProducerConfig::new("request-future-shutdown").unwrap();
+        config.client_config_mut().namesrv_addr = Some(String::new());
+        let producer = Arc::new(Producer::with_runtime_manager(
+            config,
+            ClientRuntimeManager::new(),
+        ));
+        producer.start().await.unwrap();
+        let (runtime, lease) = producer.started_registration().await.unwrap();
+        let deadline = Instant::now() + Duration::from_secs(60);
+        let mut pending = runtime
+            .register_reply_request(&lease, "request-shutdown-pending", deadline)
+            .await
+            .unwrap();
+
+        producer.shutdown().await.unwrap();
+
+        assert_eq!(
+            runtime.state(),
+            rocketmq_classic_core::runtime::RuntimeState::Stopped
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), pending.receive())
+                .await
+                .is_err()
+        );
+        assert!(pending.control().cancel());
+    }
+
     fn assert_request_attempt(
         attempt: &crate::producer::ScriptedSendAttempt,
         client_id: &str,

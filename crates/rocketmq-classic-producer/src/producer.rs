@@ -1116,7 +1116,11 @@ impl Producer {
                     return Ok(());
                 };
                 let deadline = self.unregister_deadline();
-                match runtime_arc.unregister_producer(&lease, deadline).await {
+                let current_group = self.producer_group();
+                match runtime_arc
+                    .unregister_producer_by_group_nullable(current_group.as_deref(), deadline)
+                    .await
+                {
                     Ok(_) => {}
                     Err(error) => {
                         *state = State::Started { runtime, lease };
@@ -1595,6 +1599,110 @@ mod tests {
         ));
         producer.start().await.unwrap();
         producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn shutdown_unregisters_the_live_group_like_pinned_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/lifecycle.json"))
+                .unwrap();
+        let java_missing = &fixture["changedToMissingGroup"];
+        assert_eq!(java_missing["shutdownException"], "");
+        assert_eq!(java_missing["originalGroupRemains"], true);
+        assert_eq!(java_missing["currentGroupRemains"], false);
+        assert_eq!(java_missing["serviceState"], "SHUTDOWN_ALREADY");
+        let java = &fixture["changedToOtherProducerGroup"];
+        assert_eq!(java["shutdownException"], "");
+        assert_eq!(java["originalGroupRemains"], true);
+        assert_eq!(java["otherGroupRemains"], false);
+        assert_eq!(java["serviceState"], "SHUTDOWN_ALREADY");
+
+        let missing_manager = ClientRuntimeManager::new();
+        let mut missing_config = ProducerConfig::new("original-group").unwrap();
+        missing_config.client_config_mut().namesrv_addr = Some(String::new());
+        let missing = Arc::new(Producer::with_runtime_manager(
+            missing_config,
+            missing_manager,
+        ));
+        missing.start().await.unwrap();
+        let (missing_runtime, missing_lease) = missing.started_registration().await.unwrap();
+        missing.set_producer_group(Some("missing-current-group".into()));
+        missing.shutdown().await.unwrap();
+        assert!(
+            missing_runtime
+                .select_producer("original-group")
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            missing_runtime
+                .select_producer("missing-current-group")
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            missing_runtime.state(),
+            rocketmq_classic_core::runtime::RuntimeState::Running
+        );
+        assert!(
+            missing_runtime
+                .unregister_producer(&missing_lease, tokio::time::Instant::now())
+                .await
+                .unwrap()
+        );
+        assert!(missing_runtime.shutdown().await.unwrap());
+
+        let manager = ClientRuntimeManager::new();
+        let mut first_config = ProducerConfig::new("original-group-collision").unwrap();
+        first_config.client_config_mut().namesrv_addr = Some(String::new());
+        let mut second_config = ProducerConfig::new("other-group").unwrap();
+        *second_config.client_config_mut() = first_config.client_config().clone();
+        let first = Arc::new(Producer::with_runtime_manager(
+            first_config,
+            manager.clone(),
+        ));
+        let second = Arc::new(Producer::with_runtime_manager(second_config, manager));
+        first.start().await.unwrap();
+        second.start().await.unwrap();
+        let (runtime, first_lease) = first.started_registration().await.unwrap();
+        let (second_runtime, _) = second.started_registration().await.unwrap();
+        assert!(Arc::ptr_eq(&runtime, &second_runtime));
+        assert!(
+            runtime
+                .select_producer("original-group-collision")
+                .unwrap()
+                .is_some()
+        );
+        assert!(runtime.select_producer("other-group").unwrap().is_some());
+
+        first.set_producer_group(Some("other-group".into()));
+        first.shutdown().await.unwrap();
+
+        assert!(
+            runtime
+                .select_producer("original-group-collision")
+                .unwrap()
+                .is_some()
+        );
+        assert!(runtime.select_producer("other-group").unwrap().is_none());
+        assert_eq!(
+            runtime.state(),
+            rocketmq_classic_core::runtime::RuntimeState::Running
+        );
+        assert_eq!(
+            first.service_state(),
+            Some(ProducerServiceState::ShutdownAlready)
+        );
+        assert_eq!(second.service_state(), Some(ProducerServiceState::Running));
+
+        second.shutdown().await.unwrap();
+        assert!(
+            runtime
+                .unregister_producer(&first_lease, tokio::time::Instant::now())
+                .await
+                .unwrap()
+        );
+        assert!(runtime.shutdown().await.unwrap());
     }
 
     #[tokio::test]
