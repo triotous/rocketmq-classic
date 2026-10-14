@@ -44,3 +44,27 @@
 - The full Phase 18 source/API/settings/overload/input/error/control-flow and
   reverse-export audit remains open; these gates validate the nullable-group
   correction only and do not close P18-V01 or any Phase 19 requirement.
+
+# Current-revision Phase 18 server-free gate rerun — 2026-10-14T22:43:51Z
+
+- Revision under validation: `8f530402` (Push consumer canonical nullable group
+  API correction); Java source remains read-only at
+  `efa1be59d6fc747ad220f036c86030f05f0419f9`.
+- PASS: `cargo test --workspace --locked` and
+  `cargo test --workspace --all-features --locked`.
+- PASS: strict all-target/all-feature workspace Clippy,
+  `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`;
+  `cargo fmt --all -- --check`; `git diff --check`.
+- PASS: `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios,
+  fixture drift, source probes and Java/Rust cross-decodes); differential
+  comparator self-test; 37-scenario manifest validation; workspace metadata,
+  licenses and dependency direction.
+- PASS: `bash tests/stress/run-offline-smoke.sh` (16 cases × 3); remoting fuzz
+  smoke (104 frame seeds, 10 message seeds, 1,824 bounded mutations); release
+  example build; offline benchmark compilation; seven workspace package-content
+  listings.
+- P18-V02 server-free gates now pass on this revision. P18-V01 remains open for
+  complete source/API/settings/overload/input/error/control-flow and Rust
+  reverse-export reconciliation. P18-V04 still lacks a GitHub Ubuntu
+  address-profile result. Phase 19 local Docker/Broker setup and scenarios have
+  not run. No push, publication or tag was performed.

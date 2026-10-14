@@ -514,6 +514,16 @@ the required full Phase 18 gates on the final revision.
   seven package-content listings, and `git diff --check` all pass. This closes
   the current-revision P18-V02 server-free rerun; broad P18-V01 and the required
   GitHub Ubuntu address-profile result remain open.
+- Current-revision server-free gate rerun (`8f530402`, 2026-10-14): default and
+  all-feature workspace tests, strict all-target/all-feature workspace Clippy,
+  formatting and diff checks, Maven `verify` (37 scenarios, fixture drift and
+  Java/Rust cross-decodes), differential self-test and 37-scenario manifest,
+  fuzz smoke (104 frame seeds, 10 message seeds, 1,824 mutations), 16
+  deterministic race/leak cases repeated three times, release examples, offline
+  benchmark compilation, workspace metadata/license/dependency checks, and
+  seven package-content listings all pass. This closes the current-revision
+  P18-V02 server-free rerun only; P18-V01, the GitHub Ubuntu address-profile
+  result, and Phase 19 Broker/Docker validation remain open.
 
 ## Package graph and metadata
 
