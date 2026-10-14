@@ -3850,6 +3850,7 @@ mod tests {
         let mut config = crate::ProducerConfig::new("runtime-resize-fixture").unwrap();
         config.set_enable_backpressure_for_async_mode(true);
         config.set_backpressure_async_send_num(20);
+        config.set_backpressure_async_send_size(2 * 1024 * 1024);
         let producer = Producer::new(config);
         let mut held_count_permits = Vec::new();
 
@@ -3866,12 +3867,16 @@ mod tests {
 
         producer.set_backpressure_async_send_num(12);
         assert_eq!(
-            producer.backpressure_send_num.available_permits(),
+            i64::from(producer.semaphore_async_send_num_available_permits()),
             runtime["sendNumPermitsAfterResize"].as_i64().unwrap()
+        );
+        assert_eq!(
+            i64::from(producer.semaphore_async_send_size_available_permits()),
+            runtime["sendSizePermitsAfterUpdate"].as_i64().unwrap()
         );
         drop(held_count_permits);
         assert_eq!(
-            producer.backpressure_send_num.available_permits(),
+            i64::from(producer.semaphore_async_send_num_available_permits()),
             runtime["sendNumPermitsAfterInFlightRelease"]
                 .as_i64()
                 .unwrap()

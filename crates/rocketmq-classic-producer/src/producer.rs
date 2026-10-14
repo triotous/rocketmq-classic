@@ -327,6 +327,12 @@ impl Producer {
         self.config.backpressure_async_send_num()
     }
 
+    /// Returns the currently available async-send count permits, matching
+    /// Java's `DefaultMQProducerImpl.getSemaphoreAsyncSendNumAvailablePermits`.
+    pub fn semaphore_async_send_num_available_permits(&self) -> i32 {
+        self.backpressure_send_num.available_permits() as i32
+    }
+
     /// Resizes the live async-send count limit while preserving permits held
     /// by sends already in flight. Values below Java's minimum clamp to 10.
     pub fn set_backpressure_async_send_num(&self, value: i32) {
@@ -339,6 +345,12 @@ impl Producer {
     /// Returns the current maximum number of bytes held by async sends.
     pub fn backpressure_async_send_size(&self) -> i32 {
         self.config.backpressure_async_send_size()
+    }
+
+    /// Returns the currently available async-send byte permits, matching
+    /// Java's `DefaultMQProducerImpl.getSemaphoreAsyncSendSizeAvailablePermits`.
+    pub fn semaphore_async_send_size_available_permits(&self) -> i32 {
+        self.backpressure_send_size.available_permits() as i32
     }
 
     /// Resizes the live async-send byte limit while preserving permits held by

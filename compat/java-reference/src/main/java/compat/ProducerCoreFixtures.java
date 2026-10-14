@@ -363,6 +363,8 @@ public final class ProducerCoreFixtures {
         producer.setBackPressureForAsyncSendSize(2 * 1024 * 1024);
         result.put("sendNumAfterUpdate", producer.getBackPressureForAsyncSendNum());
         result.put("sendSizeAfterUpdate", producer.getBackPressureForAsyncSendSize());
+        result.put("sendSizePermitsAfterUpdate", producer.getDefaultMQProducerImpl()
+            .getSemaphoreAsyncSendSizeAvailablePermits());
         producer.setBackPressureForAsyncSendNum(1);
         producer.setBackPressureForAsyncSendSize(1);
         result.put("clampedSendNumAfterUpdate", producer.getBackPressureForAsyncSendNum());

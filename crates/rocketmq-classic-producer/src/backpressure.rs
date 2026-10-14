@@ -87,7 +87,6 @@ impl AdjustableSemaphore {
         self.lock_state().capacity as i32
     }
 
-    #[cfg(test)]
     pub(crate) fn available_permits(&self) -> i64 {
         self.lock_state().available
     }
