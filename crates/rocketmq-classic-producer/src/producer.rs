@@ -365,6 +365,21 @@ impl Producer {
         &self.config
     }
 
+    /// Borrows the Java `DefaultMQProducerImpl` view exposed by
+    /// `DefaultMQProducer.getDefaultMQProducerImpl()`.
+    ///
+    /// The Rust `Producer` owns both facade and implementation behavior, so
+    /// this returns the same owner without allocating a second handle.
+    pub fn default_mq_producer_impl(&self) -> &Self {
+        self
+    }
+
+    /// Borrows the Java `DefaultMQProducer` facade returned by
+    /// `DefaultMQProducerImpl.getDefaultMQProducer()`.
+    pub fn default_mq_producer(&self) -> &Self {
+        self
+    }
+
     /// Returns the configured producer topics. Changes after start are
     /// retained by this accessor but do not alter the runtime's topic set.
     pub fn topics(&self) -> Option<Vec<String>> {

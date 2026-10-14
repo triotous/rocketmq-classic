@@ -897,6 +897,13 @@ fn implementation_state_accessors_match_pinned_java_fixture() {
     );
     assert_eq!(producer.is_unit_mode(), expected["unitMode"]);
     assert!(expected["defaultProducerIdentity"].as_bool().unwrap());
+    assert!(expected["defaultProducerImplIdentity"].as_bool().unwrap());
+    let implementation = producer.default_mq_producer_impl();
+    assert!(std::ptr::eq(&producer, implementation));
+    assert!(std::ptr::eq(
+        &producer,
+        implementation.default_mq_producer()
+    ));
     assert!(expected["clientFactoryInitiallyNull"].as_bool().unwrap());
 
     let states = ProducerServiceState::values();

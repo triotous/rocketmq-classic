@@ -1151,6 +1151,7 @@ public final class ProducerCoreFixtures {
             .map(ServiceState::ordinal)
             .collect(java.util.stream.Collectors.toList()));
         result.put("defaultProducerIdentity", implementation.getDefaultMQProducer() == producer);
+        result.put("defaultProducerImplIdentity", producer.getDefaultMQProducerImpl() == implementation);
         result.put("defaultProducerGroup", implementation.getDefaultMQProducer().getProducerGroup());
         result.put("unitMode", implementation.isUnitMode());
         result.put("clientFactoryInitiallyNull",
