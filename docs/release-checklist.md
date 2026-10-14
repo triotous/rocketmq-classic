@@ -389,7 +389,13 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   `57fe1527`. Default and all-feature workspace tests, strict workspace
   Clippy, Maven fixture verification, and Core/Producer/Consumer rustdoc JSON
   generation pass; Core JSON shows stripped fields. These bounded corrections
-  leave P18-V01 open.
+  leave P18-V01 open. The Pull facade's Rust-only singular `register_topic`
+  helper is now private, and the combined `unregister_topic` convenience
+  method was removed because pinned Java has no corresponding public API; the
+  Java `registerMessageQueueListener`, register-topic set, subscription, and
+  clear-subscriptions entrypoints remain available. Code commit `2bfa4c16`;
+  Consumer locked tests/doctests, strict Consumer Clippy, formatting, and diff
+  checks pass.
 - [x] **P18-V02** — Current-worktree unit, differential, race/leak, fuzz,
   shutdown, and fixture gates pass; see the run recorded above.
 - [x] **P18-V03** — Facade examples, package graph/content/provenance, license
