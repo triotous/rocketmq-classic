@@ -53,3 +53,20 @@
 - PASS: `cargo clippy -p rocketmq-classic-producer --all-targets --all-features --locked -- -D warnings`.
 - PASS: `cargo fmt --all -- --check`; `git diff --check`.
 - P18-V01 remains PARTIAL: raw route/state/runtime accessor dispositions and per-overload input/branch reconciliation, plus the broader bidirectional Java/Rust audit, remain open. Full workspace P18-V02 gates still need a final rerun after the remaining audit work.
+
+## P18-V01 Producer service-state accessor follow-up — 2026-10-14T02:12:49Z
+
+- Added public `ProducerServiceState` with Java names, ordinal order, enum lookup and comparison; added nullable `Producer::service_state` / `set_service_state` and `is_unit_mode`. Producer lifecycle now reports `CREATE_JUST`, `START_FAILED`, `RUNNING`, and `SHUTDOWN_ALREADY`; duplicate group registration restores `CREATE_JUST`, and a failed start remains `START_FAILED`.
+- Extended the pinned Java fixture for default producer identity/config, unit mode, nullable state, and all Java `ServiceState` names/ordinals. The 82-method Java inventory is unchanged; the existing methods now have a direct Rust state/configuration mapping.
+- The initial state accessor test failed against the old fixture because the fixture had not yet been regenerated. After generation, the fixture-backed test passed. Preserve the sequencing failure here.
+- Fixture SHA-256: `04bd2ccab1dbf48ba1101f3a1df84e6e16ae9ac339f2ca69a4724dbc5e16c14f`.
+- Code/test/fixture commit: `b9e69c3e` (`feat(producer): expose implementation service state`). Matrix/checklist and this log are committed separately.
+
+### Verification
+
+- PASS: `mvn -q -f compat/java-reference/pom.xml -Dproducer.core.fixture.verify=false verify` (Java fixture regeneration and reference checks).
+- PASS: `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios and fixture drift checks).
+- PASS: `cargo test -p rocketmq-classic-producer --locked` (114 unit tests and all Producer integration/doc targets).
+- PASS: `cargo clippy -p rocketmq-classic-producer --all-targets --all-features --locked -- -D warnings`.
+- PASS: `cargo fmt --all -- --check`; `git diff --check`.
+- P18-V01 remains PARTIAL. The live Java topic-publish table alias and returned client-factory surface still need a method-level mapping/disposition; nested `MQFaultStrategy` helper methods and per-overload branches remain under audit. Full workspace P18-V02 gates are deferred until this audit slice is complete.
