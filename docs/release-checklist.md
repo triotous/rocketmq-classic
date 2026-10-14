@@ -490,6 +490,20 @@ the required full Phase 18 gates on the final revision.
   targets and doctests), strict Consumer Clippy, Maven verify (37 scenarios and
   fixture/cross-decode checks), formatting, and diff checks pass. This closes
   the identified consume-stat group timing paths only; P18-V01 remains open.
+- Live consumer-group flow follow-up (2026-10-14): Push callback hook contexts
+  and trace records now read the current nullable facade group; Broker send-back
+  uses the live group while fallback retry topics apply the configured
+  namespace. Pull send-back keeps the current/default or explicit group in the
+  Broker request, while a failed request falls back to Pull's default facade
+  group even when the request used a custom override. Invoked Java fixtures and
+  Rust regressions cover those paths, including retry-topic fallback after
+  facade mutation. Consumer all-feature tests (219 unit tests, all integration
+  targets and doctests), strict Consumer Clippy, Maven verify (37 scenarios,
+  fixture drift and Java/Rust cross-decodes), formatting and diff checks pass.
+  Push fixture SHA-256 `4d98b6989130933d91831cbe20c671ba389e4e61f129153843d5fe5be8c981e5`;
+  Pull fixture SHA-256 `1090617637533587bc425acaf1862521b7d2826c8747839a14a6e985fbdd4c78`.
+  This closes only the audited group-timing paths; the broad P18-V01 audit and
+  full workspace gates on the final revision remain open.
 
 ## Package graph and metadata
 
