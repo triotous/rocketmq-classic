@@ -6,6 +6,7 @@ Java source baseline: Apache RocketMQ client 5.5.1, commit `efa1be59d6fc747ad220
 
 | Java source method or behavior | Rust owner | Evidence |
 | --- | --- | --- |
+| `common/.../message/Message` constructors, property accessors, Buyer ID / instance ID, delay-level and timer-delay accessors, and `toString()`; `MessageExt` inherits this surface | `Message::{new, new_nullable, with_fields, with_nullable_fields, topic, topic_nullable, set_topic, set_topic_nullable, body, body_nullable, set_body, set_body_nullable, flag, set_flag, properties, properties_nullable, get_properties, properties_mut, get_property, get_user_property, has_property, set_keys_from, buyer_id, set_buyer_id, set_buyer_id_nullable, set_instance_id, set_instance_id_nullable, delay_time_level, set_delay_time_level, delay_time_sec, set_delay_time_sec, delay_time_ms, set_delay_time_ms, deliver_time_ms, set_deliver_time_ms, java_to_string}`; `MessageExt` dereferences to its owned `Message` | Invoked Java `messagePublicApi` fixture compares non-null and null constructor/setter inputs, default null topic/body/properties, lazy property-map initialization, null-valued system properties, user-property null rejection, nullable JSON round-trips, collection keys, signed integer boundaries, Unicode decimal digits, malformed/overflow errors, timer properties and diagnostic text. `message_public_api_matches_java_551_fixture` also checks inherited access on `MessageExt`. Fixture SHA-256: `ba0564cda79e16a506a1987330330b22cfc5bf0da2111f9a024ae0247816f9e5`. Remaining overload, inherited API, and reverse-export branches stay under P18-V01. |
 | `common/.../message/MessageDecoder.decode(ByteBuffer, readBody, decompressBody, isClient, isSetPropertiesString, checkCRC)` | `rocketmq_classic_common::message::decode_one` plus consumer client-ID enrichment | P8-V01 compares ten pinned records with CRC enabled and checks metadata, body, properties and generic IDs. Pull processing adds `MessageClientExt` ID semantics before filtering/hooks; `isSetPropertiesString` remains false there, as in `PullAPIWrapper`. Rust returns typed errors for malformed records instead of Java's `null` plus cursor-to-limit behavior, as required by the phase contract. |
 | `MessageDecoder.decodesBatch` | `decode_many` | P8-V01/P8-V02 cover concatenated golden records, checked record progress, aggregate limits and every truncated prefix. |
 | `MessageVersion.valueOfMagicCode/getTopicLength` | `decode_one` | V1 magic `-626843481` uses signed 8-bit topic length; V2 `-626843477` uses signed 16-bit length. |
@@ -34,6 +35,11 @@ Java source baseline: Apache RocketMQ client 5.5.1, commit `efa1be59d6fc747ad220
 | `PullAPIWrapper::{process_pull_result, register_filter_message_hook}` and `FilterMessageHook` | `PullAPIWrapper.processPullResult`, `registerFilterMessageHook`, and `FilterMessageHook` | P8-V03 pull-result and hook checks |
 | `ProcessedPullResult` | Rust wrapper for Java `PullResultExt` plus `msgFoundList` | P8-V03 status and message-list checks |
 | `build_class_filter_subscription_data` | Public class-filter overload's local `SubscriptionData` construction | P8-V03 class-filter setup and tag-filter suppression |
+
+The Message API row covers the valid, non-null model values currently represented
+by Rust. Java's `Message` also permits null topic/body and null property values;
+those public input and default-state branches are not covered by this row and
+must be dispositioned or implemented before P18-V01 closes.
 
 The public decoder signatures are `decode_one(record, options)` and
 `decode_many(records, options)`. Fixed internal bounds cap each record at 16 MiB,

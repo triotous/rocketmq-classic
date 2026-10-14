@@ -123,6 +123,19 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   messages with multiple properties, Rust uses its stable map order because
   Java `HashMap` order is unspecified. The broad source/API/input/reverse-export
   reconciliation remains open.
+  The Java `Message` user API now also has direct Rust mappings for property
+  lookup/mutation, Buyer ID and instance ID, collection-based keys, delay-level
+  and timer-delay accessors, signed Java integer parsing and `toString()`;
+  `MessageExt` exposes inherited Message methods through Rust deref. The
+  invoked `messagePublicApi` fixture checks default null topic/body/properties,
+  nullable constructor/setter values, lazy property-map creation, null-valued
+  system properties, user-property null rejection, nullable JSON round-trips,
+  numeric bounds, Unicode digits, malformed/overflow values and map mutation;
+  fixture SHA-256 is
+  `ba0564cda79e16a506a1987330330b22cfc5bf0da2111f9a024ae0247816f9e5`.
+  This closes that Message null-state slice only; remaining constructor
+  overloads, inherited APIs and reverse-export reconciliation remain local
+  P18-V01 work.
   The public-surface reverse scan also found caller-configurable decoder limits
   and a limited decompression function with no Java API counterpart. Those
   controls are now internal fixed safety bounds; decoder and pull-result public
