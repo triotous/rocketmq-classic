@@ -25,6 +25,25 @@ by the Phase 7 plan; future scheduling is selected by the caller's Tokio
 runtime. Rust `Producer` is itself the implementation handle, so the deprecated
 Java `getDefaultMQProducerImpl()` wrapper is not duplicated.
 
+## `DefaultMQProducerImpl` declared-public surface review
+
+The invoked Java fixture now records both public constructors and all declared
+public method signatures on the pinned implementation class. The pinned artifact
+has 2 public constructors and 82 declared public methods; the Rust inventory
+regression pins the count and the presence of direct hook and state/table
+accessors. This is a declaration inventory, not proof that every entrypoint's
+inputs and branches are equivalent.
+
+| Java implementation entrypoints | Rust owner mapping | P18-V01 disposition |
+| --- | --- | --- |
+| `start`, `shutdown`, `send*`, queue selection, route refresh, fault updates, topic/admin queries | `Producer` lifecycle/send owner; route and RPC operations are mapped in this matrix and Phase 17 | Main owner flows have fixture/unit evidence. Boolean lifecycle overloads and each raw implementation helper still need an exact call-site and input-branch crosswalk. |
+| `registerCheckForbiddenHook`, `hasCheckForbiddenHook`, `executeCheckForbiddenHook`; `registerSendMessageHook`, `hasSendMessageHook`, `executeSendMessageHookBefore/After` | `Producer::{register_check_forbidden_hook,register_send_message_hook}` and owner-side hook execution in `send.rs` | Registration and actual send-path behavior are covered. The Java implementation's direct `has/execute` helper entrypoints have no Rust public method mapping or explicit internal-entrypoint disposition yet. |
+| `registerEndTransactionHook`, `hasEndTransactionHook`, `executeEndTransactionHook`, `doExecuteEndTransactionHook` | `Producer` end-transaction hook APIs and public context | Fixture-backed local, Broker-check, direct execution and trace cases are recorded above and in Phase 14. |
+| `getTopicPublishInfoTable`, `get/setServiceState`, `getMqClientFactory/getmQClientFactory`, `getDefaultMQProducer`, `getMqFaultStrategy`, `isUnitMode` | Owner-private route cache, lifecycle state, shared runtime, producer config and live fault settings | Rust keeps these implementation owners private or exposes their settings through the Producer facade. The Java source call sites and mutable table/state boundaries still need a method-level disposition and branch review; no equivalence is claimed by the signature inventory. |
+| `executeAsyncMessageSend`, `set/getAsyncSenderExecutor`, semaphore helpers | `AsyncSenderExecutor`, Producer runtime backpressure APIs and owned send lifecycle | Submission, rejection, backpressure and deadline behavior are fixture/unit covered. The raw helper callback overload still needs an explicit entrypoint disposition. |
+| `init/destroyTransactionEnv`, `checkTransactionState`, `endTransaction`, transaction sends | Phase 14 `TransactionProducer` and producer-owned transaction runtime | Transaction worker/lifecycle and request flows map in the Phase 14 matrix; broad overload/input reconciliation remains part of P18-V01. |
+| `request*`, `recallMessage`, trace hooks | Phase 15 request/reply, Producer recall, and Phase 16 trace owners | Owner-level behavior is mapped in their phase matrices; inherited/helper overload and reverse-export reconciliation remains open. |
+
 ## Pinned producer API and settings inventory
 
 This inventory was checked against the pinned `DefaultMQProducer`,
