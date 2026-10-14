@@ -1,4 +1,20 @@
 //! Client-side ACL request signing compatible with Java 5.5.1.
+//!
+//! Java's public helpers are exposed through [`AclUtils`] and [`AclSigner`].
+//! Implementation-only helpers and a non-Java one-argument adapter are not public:
+//!
+//! ```compile_fail
+//! use rocketmq_classic_core::auth::cal_signature;
+//! ```
+//!
+//! The Java `AclUtils.combineRequestContent` overload requires an explicit
+//! field map:
+//!
+//! ```compile_fail
+//! use rocketmq_classic_core::auth::AclUtils;
+//! use rocketmq_classic_remoting::RemotingCommand;
+//! AclUtils::combine_request_content(&RemotingCommand::default());
+//! ```
 
 use std::{
     borrow::Cow,
@@ -258,6 +274,24 @@ impl fmt::Display for SigningAlgorithm {
 /// Credentials used by Java's `SessionCredentials` and `AclClientRPCHook`.
 ///
 /// Debug output redacts every credential value.
+/// The Rust-only token builder stays internal:
+///
+/// ```compile_fail
+/// use rocketmq_classic_core::auth::SessionCredentials;
+/// let credentials = SessionCredentials::new("access", "secret").with_security_token("token");
+/// ```
+///
+/// The Java YAML factories are on `AclUtils`, not this type:
+///
+/// ```compile_fail
+/// use rocketmq_classic_core::auth::SessionCredentials;
+/// let _ = SessionCredentials::acl_rpc_hook_from_yaml("AccessKey: access");
+/// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_core::auth::SessionCredentials;
+/// let _ = SessionCredentials::acl_rpc_hook_from_yaml_file("acl.yml");
+/// ```
 #[derive(Clone)]
 pub struct SessionCredentials {
     access_key: Option<String>,
@@ -336,11 +370,6 @@ impl SessionCredentials {
         }
     }
 
-    pub fn with_security_token(mut self, token: impl Into<String>) -> Self {
-        self.security_token = Some(token.into());
-        self
-    }
-
     pub fn access_key(&self) -> Option<&str> {
         self.access_key.as_deref()
     }
@@ -397,7 +426,7 @@ impl SessionCredentials {
     /// `null` result. Only accessKey and secretKey are consumed by the Java
     /// factory; an optional SecurityToken remains available through the direct
     /// `SessionCredentials` constructors.
-    pub fn acl_rpc_hook_from_yaml(yaml: &str) -> Option<AclClientRpcHook> {
+    fn acl_rpc_hook_from_yaml(yaml: &str) -> Option<AclClientRpcHook> {
         let document: yaml_serde::Value = yaml_serde::from_str(yaml).ok()?;
         let fields = document.as_mapping()?;
         let access_key =
@@ -410,12 +439,6 @@ impl SessionCredentials {
             return None;
         }
         Some(AclClientRpcHook::new(Self::new(access_key, secret_key)))
-    }
-
-    /// Java's `AclUtils.getAclRPCHook(String)` path for YAML credential files.
-    pub fn acl_rpc_hook_from_yaml_file(path: impl AsRef<Path>) -> Option<AclClientRpcHook> {
-        let yaml = std::fs::read_to_string(path).ok()?;
-        Self::acl_rpc_hook_from_yaml(&yaml)
     }
 }
 
@@ -441,12 +464,12 @@ impl fmt::Debug for SessionCredentials {
 }
 
 /// Signs a byte string using Java ACL's HMAC algorithms and padded Base64.
-pub fn cal_signature(data: &[u8], secret_key: &str, algorithm: SigningAlgorithm) -> String {
+fn cal_signature(data: &[u8], secret_key: &str, algorithm: SigningAlgorithm) -> String {
     cal_signature_with_key_bytes(data, secret_key.as_bytes(), algorithm)
 }
 
 /// Signs the exact bytes supplied by Java's Charset overloads.
-pub fn cal_signature_with_key_bytes(
+fn cal_signature_with_key_bytes(
     data: &[u8],
     secret_key: &[u8],
     algorithm: SigningAlgorithm,
@@ -475,12 +498,12 @@ pub fn cal_signature_with_key_bytes(
 }
 
 /// Java `AclSigner.calSignature(byte[], String)` with its default HmacSHA1 algorithm.
-pub fn cal_signature_default(data: &[u8], secret_key: &str) -> String {
+fn cal_signature_default(data: &[u8], secret_key: &str) -> String {
     cal_signature(data, secret_key, SigningAlgorithm::DEFAULT_ALGORITHM)
 }
 
 /// Java `AclSigner.calSignature(String, String)` using UTF-8 for both values.
-pub fn cal_signature_text_default(data: &str, secret_key: &str) -> String {
+fn cal_signature_text_default(data: &str, secret_key: &str) -> String {
     cal_signature_default(data.as_bytes(), secret_key)
 }
 
@@ -507,6 +530,8 @@ impl AclSigner {
         cal_signature(data, secret_key, algorithm)
     }
 
+    /// Signs pre-encoded input and key bytes, matching Java's explicit-Charset
+    /// overloads without choosing a Rust encoding library for callers.
     pub fn cal_signature_with_material(
         data: &[u8],
         secret_key: &[u8],
@@ -518,7 +543,7 @@ impl AclSigner {
 
 /// Java `AclUtils.combineRequestContent` canonicalizes ext-field values and
 /// appends the request body. Keys use Java's UTF-16 `String` ordering.
-pub fn combine_request_content(request: &RemotingCommand) -> Vec<u8> {
+fn combine_request_content(request: &RemotingCommand) -> Vec<u8> {
     let mut fields = request
         .ext_fields
         .as_ref()
@@ -537,7 +562,7 @@ pub fn combine_request_content(request: &RemotingCommand) -> Vec<u8> {
 /// Java `AclUtils.combineRequestContent(RemotingCommand, SortedMap)` overload.
 /// The caller supplies fields in the desired iteration order; `Signature` is
 /// excluded and the request body is appended after all remaining values.
-pub fn combine_request_content_with_fields<'a, I>(request: &RemotingCommand, fields: I) -> Vec<u8>
+fn combine_request_content_with_fields<'a, I>(request: &RemotingCommand, fields: I) -> Vec<u8>
 where
     I: IntoIterator<Item = (&'a str, &'a str)>,
 {
@@ -555,10 +580,7 @@ where
 
 /// Java `AclUtils.combineBytes`, preserving the input buffer when only one side
 /// contains bytes and allocating only when both sides are non-empty.
-pub fn combine_bytes<'a>(
-    first: Option<&'a [u8]>,
-    second: Option<&'a [u8]>,
-) -> Option<Cow<'a, [u8]>> {
+fn combine_bytes<'a>(first: Option<&'a [u8]>, second: Option<&'a [u8]>) -> Option<Cow<'a, [u8]>> {
     match (first, second) {
         (None, second) => second.map(Cow::Borrowed),
         (Some([]), second) => second.map(Cow::Borrowed),
@@ -573,27 +595,27 @@ pub fn combine_bytes<'a>(
     }
 }
 
-pub fn is_colon(value: &str) -> bool {
+fn is_colon(value: &str) -> bool {
     value.contains(':')
 }
 
-pub fn is_asterisk(value: &str) -> bool {
+fn is_asterisk(value: &str) -> bool {
     value.contains('*')
 }
 
-pub fn is_comma(value: &str) -> bool {
+fn is_comma(value: &str) -> bool {
     value.contains(',')
 }
 
-pub fn is_minus(value: &str) -> bool {
+fn is_minus(value: &str) -> bool {
     value.contains('-')
 }
 
-pub fn is_scope_value(value: i32) -> bool {
+fn is_scope_value(value: i32) -> bool {
     (0..=255).contains(&value)
 }
 
-pub fn is_scope_token(value: &str) -> Result<bool, AclUtilsError> {
+fn is_scope_token(value: &str) -> Result<bool, AclUtilsError> {
     let trimmed = value.trim_matches(|character: char| character <= '\u{20}');
     let parsed = trimmed
         .parse::<i32>()
@@ -601,7 +623,7 @@ pub fn is_scope_token(value: &str) -> Result<bool, AclUtilsError> {
     Ok(is_scope_value(parsed))
 }
 
-pub fn is_scope_segments(values: &[&str], index: usize) -> Result<bool, AclUtilsError> {
+fn is_scope_segments(values: &[&str], index: usize) -> Result<bool, AclUtilsError> {
     if index > values.len() {
         return Err(AclUtilsError::ScopeIndexOutOfBounds {
             index,
@@ -616,17 +638,17 @@ pub fn is_scope_segments(values: &[&str], index: usize) -> Result<bool, AclUtils
     Ok(true)
 }
 
-pub fn is_ipv6_scope_value(value: i32) -> bool {
+fn is_ipv6_scope_value(value: i32) -> bool {
     (0..=0xffff).contains(&value)
 }
 
-pub fn is_ipv6_scope_segment(value: &str) -> bool {
+fn is_ipv6_scope_segment(value: &str) -> bool {
     i32::from_str_radix(value, 16)
         .map(is_ipv6_scope_value)
         .unwrap_or(false)
 }
 
-pub fn is_ipv6_scope_segments(values: &[&str], index: usize) -> Result<bool, AclUtilsError> {
+fn is_ipv6_scope_segments(values: &[&str], index: usize) -> Result<bool, AclUtilsError> {
     if index > values.len() {
         return Err(AclUtilsError::ScopeIndexOutOfBounds {
             index,
@@ -639,7 +661,7 @@ pub fn is_ipv6_scope_segments(values: &[&str], index: usize) -> Result<bool, Acl
         .all(|value| is_ipv6_scope_segment(value)))
 }
 
-pub fn is_scope_address(address: &str, index: usize) -> Result<bool, AclUtilsError> {
+fn is_scope_address(address: &str, index: usize) -> Result<bool, AclUtilsError> {
     if is_colon(address) {
         let expanded = expand_ip(address, 8);
         let parts = expanded
@@ -658,7 +680,7 @@ pub fn is_scope_address(address: &str, index: usize) -> Result<bool, AclUtilsErr
     is_scope_segments(&parts, index)
 }
 
-pub fn verify_scope(address: &str, index: usize) -> Result<(), AclUtilsError> {
+fn verify_scope(address: &str, index: usize) -> Result<(), AclUtilsError> {
     if is_scope_address(address, index)? {
         Ok(())
     } else {
@@ -666,7 +688,7 @@ pub fn verify_scope(address: &str, index: usize) -> Result<(), AclUtilsError> {
     }
 }
 
-pub fn ipv6_address_check(address: &str) -> Result<(), AclUtilsError> {
+fn ipv6_address_check(address: &str) -> Result<(), AclUtilsError> {
     if !is_asterisk(address) && !is_minus(address) {
         return Ok(());
     }
@@ -690,7 +712,7 @@ pub fn ipv6_address_check(address: &str) -> Result<(), AclUtilsError> {
     Ok(())
 }
 
-pub fn expand_ip(address: &str, part: i32) -> String {
+fn expand_ip(address: &str, part: i32) -> String {
     let mut expanded = address.to_uppercase();
     let separator_count = expanded.matches(':').count() as i32;
     let pad_count = part - separator_count;
@@ -710,7 +732,7 @@ pub fn expand_ip(address: &str, part: i32) -> String {
         .join(":")
 }
 
-pub fn v6_ip_process(address: &str) -> Result<String, AclUtilsError> {
+fn v6_ip_process(address: &str) -> Result<String, AclUtilsError> {
     let has_asterisk = is_asterisk(address);
     let has_minus = is_minus(address);
     let (part, sub_address) = if has_asterisk && has_minus {
@@ -732,7 +754,7 @@ pub fn v6_ip_process(address: &str) -> Result<String, AclUtilsError> {
     Ok(expand_ip(sub_address, part))
 }
 
-pub fn get_addresses(address: &str, partial_address: &str) -> Result<Vec<String>, AclUtilsError> {
+fn get_addresses(address: &str, partial_address: &str) -> Result<Vec<String>, AclUtilsError> {
     if partial_address.len() < 2 {
         return Err(AclUtilsError::InvalidAddressScope(address.to_owned()));
     }
@@ -751,10 +773,6 @@ pub fn get_addresses(address: &str, partial_address: &str) -> Result<Vec<String>
 pub struct AclUtils;
 
 impl AclUtils {
-    pub fn combine_request_content(request: &RemotingCommand) -> Vec<u8> {
-        combine_request_content(request)
-    }
-
     pub fn combine_request_content_with_fields<'a, I>(
         request: &RemotingCommand,
         fields: I,
@@ -865,7 +883,7 @@ impl AclUtils {
     }
 }
 
-pub fn get_yaml_data_object<R, T>(mut reader: R) -> Result<Option<T>, AclUtilsError>
+fn get_yaml_data_object<R, T>(mut reader: R) -> Result<Option<T>, AclUtilsError>
 where
     R: Read,
     T: serde::de::DeserializeOwned,
@@ -878,7 +896,7 @@ where
         .map_err(|error| AclUtilsError::Yaml(error.to_string()))
 }
 
-pub fn get_yaml_data_object_from_path<T>(path: impl AsRef<Path>) -> Result<Option<T>, AclUtilsError>
+fn get_yaml_data_object_from_path<T>(path: impl AsRef<Path>) -> Result<Option<T>, AclUtilsError>
 where
     T: serde::de::DeserializeOwned,
 {
@@ -890,14 +908,14 @@ where
     get_yaml_data_object(file)
 }
 
-pub fn get_acl_rpc_hook_from_reader<R: Read>(reader: R) -> Option<AclClientRpcHook> {
+fn get_acl_rpc_hook_from_reader<R: Read>(reader: R) -> Option<AclClientRpcHook> {
     let mut content = String::new();
     let mut reader = reader;
     reader.read_to_string(&mut content).ok()?;
     SessionCredentials::acl_rpc_hook_from_yaml(&content)
 }
 
-pub fn get_acl_rpc_hook_from_file(path: impl AsRef<Path>) -> Option<AclClientRpcHook> {
+fn get_acl_rpc_hook_from_file(path: impl AsRef<Path>) -> Option<AclClientRpcHook> {
     let file = std::fs::File::open(path).ok()?;
     get_acl_rpc_hook_from_reader(file)
 }
@@ -1160,7 +1178,7 @@ mod tests {
         let fixture = fixture();
         for algorithm in SigningAlgorithm::values() {
             assert_eq!(
-                cal_signature(b"RocketMQ", "12345678", algorithm),
+                AclSigner::cal_signature_with_algorithm(b"RocketMQ", "12345678", algorithm),
                 fixture["algorithmSignatures"][algorithm.java_name()]
             );
         }
@@ -1168,8 +1186,11 @@ mod tests {
 
     #[test]
     fn credential_debug_output_redacts_secret_material() {
-        let credentials =
-            SessionCredentials::new("visible", "secret-value").with_security_token("token-value");
+        let credentials = SessionCredentials::new_with_security_token(
+            "visible",
+            "secret-value",
+            Some("token-value".to_owned()),
+        );
         let debug = format!("{credentials:?}");
         assert!(debug.contains("[REDACTED]"));
         assert!(!debug.contains("visible"));
@@ -1213,8 +1234,10 @@ mod tests {
             states["keyFileProperties"]
         );
 
-        let token_a = SessionCredentials::new("ak", "sk").with_security_token("token-a");
-        let token_b = SessionCredentials::new("ak", "sk").with_security_token("token-b");
+        let token_a =
+            SessionCredentials::new_with_security_token("ak", "sk", Some("token-a".to_owned()));
+        let token_b =
+            SessionCredentials::new_with_security_token("ak", "sk", Some("token-b".to_owned()));
         assert_eq!(
             token_a == token_b,
             states["tokenIgnoredByEquality"].as_bool().unwrap()
@@ -1286,7 +1309,7 @@ mod tests {
         );
         let path = std::env::temp_dir().join(unique);
         std::fs::write(&path, "accessKey: yaml-file-ak\nsecretKey: yaml-file-sk\n").unwrap();
-        let hook = SessionCredentials::acl_rpc_hook_from_yaml_file(&path).unwrap();
+        let hook = AclUtils::get_acl_rpc_hook_from_file(&path).unwrap();
         assert_eq!(
             hook.session_credentials().access_key(),
             Some("yaml-file-ak")
@@ -1296,7 +1319,7 @@ mod tests {
             Some("yaml-file-sk")
         );
         std::fs::remove_file(&path).unwrap();
-        assert!(SessionCredentials::acl_rpc_hook_from_yaml_file(&path).is_none());
+        assert!(AclUtils::get_acl_rpc_hook_from_file(&path).is_none());
     }
 
     #[test]
@@ -1310,7 +1333,7 @@ mod tests {
             utilities["defaultSignature"]
         );
         assert_eq!(
-            cal_signature_with_key_bytes(&[0xe9], &[0xe7], SigningAlgorithm::HmacSha256),
+            AclSigner::cal_signature_with_material(&[0xe9], &[0xe7], SigningAlgorithm::HmacSha256),
             utilities["customCharsetSignature"]
         );
         let custom_content = &utilities["customRequestContent"];

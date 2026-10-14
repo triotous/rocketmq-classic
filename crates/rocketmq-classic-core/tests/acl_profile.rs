@@ -63,10 +63,13 @@ async fn scripted_acl_profile_rejects_wrong_secret_and_tampered_body() {
             }
             let fields = request.ext_fields.as_ref().unwrap();
             let actual_signature = fields.get(SIGNATURE).map(String::as_str);
-            let expected_signature = AclSigner::cal_signature(
-                &AclUtils::combine_request_content(&request),
-                SERVER_SECRET,
-            );
+            let ordered_fields = fields
+                .iter()
+                .map(|(key, value)| (key.as_str(), value.as_str()))
+                .collect::<Vec<_>>();
+            let canonical_content =
+                AclUtils::combine_request_content_with_fields(&request, ordered_fields);
+            let expected_signature = AclSigner::cal_signature(&canonical_content, SERVER_SECRET);
             let accepted = fields.get(ACCESS_KEY).map(String::as_str) == Some(ACCESS_KEY_VALUE)
                 && actual_signature == Some(expected_signature.as_str());
             decisions.push(accepted);
