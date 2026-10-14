@@ -139,14 +139,13 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   release examples and benchmark compilation pass. The new runtime fault
   fixture SHA-256 is
   `2f8c6d40c4669a6a662085e8cddef749338c91fcbb1bf64829ef1f59f77a284e`.
-- [x] Repeat full workspace/all-feature P18-V02 gates on current Producer
-  revision `52ef36ab`. Default and all-feature workspace tests, the scoped
-  Producer suite (113 unit tests and all integration/doc targets), strict
+- [x] Repeat full workspace/all-feature P18-V02 gates on current revision
+  `6c62ebf2`. Sequential default and all-feature workspace tests pass; the
+  Producer suite passes 120 unit tests and all integration/doc targets. Strict
   workspace Clippy, Maven verify (37 scenarios), comparator self-test and
   manifest validation, 16 race/leak cases repeated three times, 1,824-mutation
   fuzz smoke, release examples, benchmark compilation, formatting and diff
-  checks pass. The initial default test run overlapped the all-feature run and
-  two Pull tests reported `OffsetStore(AlreadyOpen)`; the serial rerun passed.
+  checks pass. Workspace metadata and all seven package contents also pass.
 - [ ] Obtain a current GitHub Ubuntu CI result for the Linux-specific Java
   address profile. A native Ubuntu ARM64 container passes the Core RPC
   integration suite; this does not replace the required GitHub Ubuntu result.

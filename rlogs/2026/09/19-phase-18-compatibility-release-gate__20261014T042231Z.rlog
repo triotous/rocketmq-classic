@@ -18,3 +18,18 @@
 - PASS: `cargo clippy -p rocketmq-classic-producer --all-targets --all-features --locked -- -D warnings`.
 - PASS: focused helper-path regression; `cargo fmt --all -- --check`; `git diff --check`.
 - Earlier in this session, default `mvn -q -f compat/java-reference/pom.xml verify` passed at the same fixture revision (37 scenarios, drift and cross-decode checks); producer source/test/doc changes since then did not modify oracle fixture output.
+
+## Current revision P18 server-free gate rerun — 2026-10-14T04:34:35Z
+
+Revision: `6c62ebf2` (`feat(producer): expose direct and forced accumulator sends`).
+
+- PASS: `cargo test --workspace --locked` (serial run).
+- PASS: `cargo test --workspace --all-features --locked` (serial run).
+- PASS: `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`.
+- PASS: `cargo fmt --all -- --check`; `git diff --check`.
+- PASS: `mvn -q -f compat/java-reference/pom.xml verify` (fixture drift, Java/Rust cross-decodes, 37 scenarios).
+- PASS: comparator self-test; 37-scenario manifest validation.
+- PASS: `bash tests/stress/run-offline-smoke.sh` (16 deterministic cases × 3 repetitions).
+- PASS: `cargo run -p rocketmq-classic-remoting --example fuzz_smoke --locked` (1,824 bounded mutations).
+- PASS: release facade examples; offline benchmark compilation; workspace metadata/package-license/dependency-direction check; seven package contents via `cargo package --workspace --list --locked --allow-dirty`.
+- P18-V02 and P18-V03 server-free evidence is current at this revision. P18-V01 remains PARTIAL for broad source/API/setting/overload/input/branch and reverse-export reconciliation. P18-V04 still lacks current GitHub Ubuntu CI evidence. Phase 19 local Docker/Broker integration is not yet provisioned or run; registry version/dependency resolution remains unconfirmed.
