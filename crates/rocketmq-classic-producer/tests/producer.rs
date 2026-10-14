@@ -1642,7 +1642,7 @@ fn producer_auto_batch_getter_and_setter_follow_accumulator_lifecycle() {
         !producer.auto_batch(),
         "Java returns false before accumulator initialization"
     );
-    producer.init_produce_accumulator();
+    producer.init_produce_accumulator().unwrap();
     assert_eq!(
         producer.auto_batch(),
         fixture["autoBatchLifecycle"]["enabledAfterAccumulator"]
@@ -1656,6 +1656,122 @@ fn producer_auto_batch_getter_and_setter_follow_accumulator_lifecycle() {
     assert_eq!(
         producer.auto_batch(),
         fixture["autoBatchLifecycle"]["enabledAfterRuntimeToggle"]
+    );
+}
+
+#[test]
+fn producer_runtime_accumulator_settings_match_java_fixture() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let expected = &fixture["runtimeAccumulatorSettings"];
+    let producer = Producer::new(ProducerConfig::new("runtime-accumulator-fixture").unwrap());
+
+    assert_eq!(producer.batch_max_delay_millis(), 0);
+    assert_eq!(producer.batch_max_bytes(), 0);
+    assert_eq!(producer.total_batch_max_bytes(), 0);
+    producer.init_produce_accumulator().unwrap();
+    assert_eq!(
+        producer.batch_max_delay_millis(),
+        expected["initializedDelay"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        producer.batch_max_bytes(),
+        expected["initializedBytes"].as_i64().unwrap()
+    );
+    assert_eq!(
+        producer.total_batch_max_bytes(),
+        expected["initializedTotalGetterBytes"].as_i64().unwrap()
+    );
+
+    producer.set_batch_max_delay_millis(25).unwrap();
+    producer.set_batch_max_bytes(65_536).unwrap();
+    producer.set_total_batch_max_bytes(1_048_576).unwrap();
+    assert_eq!(
+        producer.batch_max_delay_millis(),
+        expected["updatedDelay"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        producer.batch_max_bytes(),
+        expected["updatedBytes"].as_i64().unwrap()
+    );
+    assert_eq!(
+        producer.total_batch_max_bytes(),
+        expected["updatedTotalGetterBytes"].as_i64().unwrap()
+    );
+
+    assert!(matches!(
+        producer.set_batch_max_delay_millis(0),
+        Err(ProducerError::InvalidBatchMaxDelay(0))
+    ));
+    assert_eq!(
+        producer.batch_max_delay_millis(),
+        expected["delayAfterInvalidUpdate"].as_i64().unwrap() as i32
+    );
+    assert!(matches!(
+        producer.set_batch_max_bytes(0),
+        Err(ProducerError::InvalidBatchMaxBytes(0))
+    ));
+    assert_eq!(
+        producer.batch_max_bytes(),
+        expected["bytesAfterInvalidUpdate"].as_i64().unwrap()
+    );
+    assert!(matches!(
+        producer.set_total_batch_max_bytes(0),
+        Err(ProducerError::InvalidTotalBatchMaxBytes(0))
+    ));
+    assert_eq!(
+        producer.total_batch_max_bytes(),
+        expected["updatedTotalGetterBytes"].as_i64().unwrap()
+    );
+    assert!(matches!(
+        producer.init_produce_accumulator(),
+        Err(ProducerError::InvalidBatchMaxDelay(0))
+    ));
+    assert_eq!(
+        producer.batch_max_delay_millis(),
+        expected["delayAfterReinitializationFailure"]
+            .as_i64()
+            .unwrap() as i32
+    );
+
+    let configured = Producer::new(ProducerConfig::new("configured-before-accumulator").unwrap());
+    configured.set_batch_max_delay_millis(25).unwrap();
+    configured.set_batch_max_bytes(65_536).unwrap();
+    configured.set_total_batch_max_bytes(1_048_576).unwrap();
+    assert_eq!(configured.batch_max_delay_millis(), 0);
+    assert_eq!(configured.batch_max_bytes(), 0);
+    assert_eq!(configured.total_batch_max_bytes(), 0);
+    configured.init_produce_accumulator().unwrap();
+    assert_eq!(
+        configured.batch_max_delay_millis(),
+        expected["configuredAfterInitializationDelay"]
+            .as_i64()
+            .unwrap() as i32
+    );
+    assert_eq!(
+        configured.batch_max_bytes(),
+        expected["configuredAfterInitializationBytes"]
+            .as_i64()
+            .unwrap()
+    );
+    assert_eq!(
+        configured.total_batch_max_bytes(),
+        expected["configuredAfterInitializationTotalGetterBytes"]
+            .as_i64()
+            .unwrap()
+    );
+
+    let invalid = Producer::new(ProducerConfig::new("invalid-before-accumulator").unwrap());
+    assert!(invalid.set_batch_max_delay_millis(0).is_ok());
+    assert!(matches!(
+        invalid.init_produce_accumulator(),
+        Err(ProducerError::InvalidBatchMaxDelay(0))
+    ));
+    assert_eq!(
+        invalid.batch_max_delay_millis(),
+        expected["invalidBeforeInitializationEffectiveDelay"]
+            .as_i64()
+            .unwrap() as i32
     );
 }
 

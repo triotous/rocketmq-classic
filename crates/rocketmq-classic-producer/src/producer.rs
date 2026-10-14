@@ -2,7 +2,7 @@ use std::{
     collections::BTreeSet,
     sync::{
         Arc, OnceLock, RwLock, Weak,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicI32, AtomicI64, Ordering},
     },
     time::{Duration, Instant as StdInstant},
 };
@@ -24,6 +24,7 @@ use crate::{
     TopicPublishInfoTable,
     accumulator::AutoBatchAccumulator,
     backpressure::{AdjustableSemaphore, BackpressureReadGuard},
+    config::AccumulatorSettings,
     executor::TokioAsyncSenderExecutor,
     fault::FaultStrategy,
     selector::RoundRobinSelector,
@@ -73,6 +74,11 @@ pub struct Producer {
     detector_task: tokio::sync::Mutex<Option<JoinHandle<()>>>,
     pub(crate) auto_batch_accumulator: AutoBatchAccumulator,
     accumulator_initialized: AtomicBool,
+    batch_max_delay_millis: AtomicI32,
+    batch_max_bytes: AtomicI64,
+    total_batch_max_bytes: AtomicI64,
+    live_accumulator_settings: RwLock<AccumulatorSettings>,
+    accumulator_settings_changed: tokio::sync::watch::Sender<u64>,
     pub(crate) auto_batch_tasks: tokio::sync::Mutex<Vec<JoinHandle<()>>>,
     pub(crate) self_weak: OnceLock<Weak<Producer>>,
     pub(crate) transaction: OnceLock<Arc<crate::transaction::TransactionRuntime>>,
@@ -285,6 +291,11 @@ impl Producer {
         rpc_hook: Option<Arc<dyn RpcHook>>,
     ) -> Self {
         let ids = UniqueIdGenerator::new(config.client_config().client_ip());
+        let batch_max_delay_millis = config.batch_max_delay_millis().unwrap_or(-1);
+        let batch_max_bytes = config.batch_max_bytes().unwrap_or(-1);
+        let total_batch_max_bytes = config.total_batch_max_bytes_input().unwrap_or(-1);
+        let accumulator_settings = config.accumulator_settings().unwrap_or_default();
+        let (accumulator_settings_changed, _) = tokio::sync::watch::channel(0);
         let backpressure_send_num = Arc::new(AdjustableSemaphore::new(
             config.backpressure_async_send_num(),
         ));
@@ -308,6 +319,11 @@ impl Producer {
             detector_task: tokio::sync::Mutex::new(None),
             auto_batch_accumulator: AutoBatchAccumulator::default(),
             accumulator_initialized: AtomicBool::new(false),
+            batch_max_delay_millis: AtomicI32::new(batch_max_delay_millis),
+            batch_max_bytes: AtomicI64::new(batch_max_bytes),
+            total_batch_max_bytes: AtomicI64::new(total_batch_max_bytes),
+            live_accumulator_settings: RwLock::new(accumulator_settings),
+            accumulator_settings_changed,
             auto_batch_tasks: tokio::sync::Mutex::new(Vec::new()),
             self_weak: OnceLock::new(),
             transaction: OnceLock::new(),
@@ -379,11 +395,161 @@ impl Producer {
         self.config.set_auto_batch_runtime(value);
     }
 
+    /// Returns the effective accumulator hold delay, or zero before
+    /// initialization, matching Java `getBatchMaxDelayMs()`.
+    pub fn batch_max_delay_millis(&self) -> i32 {
+        if !self.accumulator_initialized.load(Ordering::SeqCst) {
+            return 0;
+        }
+        self.live_accumulator_settings
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .max_delay_millis
+    }
+
+    /// Updates the live accumulator hold delay. Before initialization the
+    /// value is retained for `init_produce_accumulator`; afterward it must be
+    /// in Java's inclusive 1–30,000 ms range.
+    pub fn set_batch_max_delay_millis(&self, value: i32) -> Result<(), ProducerError> {
+        self.batch_max_delay_millis.store(value, Ordering::SeqCst);
+        if !self.accumulator_initialized.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        if !(1..=30_000).contains(&value) {
+            return Err(ProducerError::InvalidBatchMaxDelay(value));
+        }
+        self.live_accumulator_settings
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .max_delay_millis = value;
+        self.notify_accumulator_settings_changed();
+        Ok(())
+    }
+
+    /// Returns the effective per-batch byte threshold, or zero before
+    /// accumulator initialization, matching Java `getBatchMaxBytes()`.
+    pub fn batch_max_bytes(&self) -> i64 {
+        if !self.accumulator_initialized.load(Ordering::SeqCst) {
+            return 0;
+        }
+        self.live_accumulator_settings
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .max_bytes as i64
+    }
+
+    /// Updates the live per-batch byte threshold. After initialization Java
+    /// accepts values from 1 byte through 2 MiB.
+    pub fn set_batch_max_bytes(&self, value: i64) -> Result<(), ProducerError> {
+        self.batch_max_bytes.store(value, Ordering::SeqCst);
+        if !self.accumulator_initialized.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        if !(1..=2 * 1024 * 1024).contains(&value) {
+            return Err(ProducerError::InvalidBatchMaxBytes(value));
+        }
+        self.live_accumulator_settings
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .max_bytes = value as usize;
+        self.notify_accumulator_settings_changed();
+        Ok(())
+    }
+
+    /// Returns Java's `getTotalBatchMaxBytes()` value. That getter reports
+    /// the per-batch threshold; the actual aggregate cap is controlled by
+    /// `set_total_batch_max_bytes`.
+    pub fn total_batch_max_bytes(&self) -> i64 {
+        self.batch_max_bytes()
+    }
+
+    /// Updates the live aggregate accumulator byte cap. Java accepts any
+    /// positive signed-long value.
+    pub fn set_total_batch_max_bytes(&self, value: i64) -> Result<(), ProducerError> {
+        self.total_batch_max_bytes.store(value, Ordering::SeqCst);
+        if !self.accumulator_initialized.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        if value <= 0 {
+            return Err(ProducerError::InvalidTotalBatchMaxBytes(value));
+        }
+        let value = usize::try_from(value).unwrap_or(usize::MAX);
+        self.live_accumulator_settings
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .total_max_bytes = value;
+        self.notify_accumulator_settings_changed();
+        Ok(())
+    }
+
+    fn configured_accumulator_settings(&self) -> Result<AccumulatorSettings, ProducerError> {
+        ProducerConfig::accumulator_settings_from_raw(
+            self.batch_max_delay_millis.load(Ordering::SeqCst),
+            self.batch_max_bytes.load(Ordering::SeqCst),
+            self.total_batch_max_bytes.load(Ordering::SeqCst),
+        )
+    }
+
+    pub(crate) fn effective_accumulator_settings(&self) -> AccumulatorSettings {
+        *self
+            .live_accumulator_settings
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    pub(crate) fn subscribe_accumulator_settings(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.accumulator_settings_changed.subscribe()
+    }
+
+    fn notify_accumulator_settings_changed(&self) {
+        self.accumulator_settings_changed
+            .send_modify(|revision| *revision = revision.wrapping_add(1));
+    }
+
     /// Initializes the producer-owned accumulator. This is idempotent and is
     /// called by [`Self::start`] at the same point that Java creates its
     /// `ProduceAccumulator`.
-    pub fn init_produce_accumulator(&self) {
-        self.accumulator_initialized.store(true, Ordering::SeqCst);
+    pub fn init_produce_accumulator(&self) -> Result<(), ProducerError> {
+        let was_initialized = self.accumulator_initialized.swap(true, Ordering::SeqCst);
+        let mut settings = self
+            .live_accumulator_settings
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !was_initialized {
+            *settings = AccumulatorSettings::default();
+        }
+
+        let delay = self.batch_max_delay_millis.load(Ordering::SeqCst);
+        if delay > -1 {
+            if !(1..=30_000).contains(&delay) {
+                return Err(ProducerError::InvalidBatchMaxDelay(delay));
+            }
+            settings.max_delay_millis = delay;
+            if was_initialized {
+                self.notify_accumulator_settings_changed();
+            }
+        }
+        let max_bytes = self.batch_max_bytes.load(Ordering::SeqCst);
+        if max_bytes > -1 {
+            if !(1..=2 * 1024 * 1024).contains(&max_bytes) {
+                return Err(ProducerError::InvalidBatchMaxBytes(max_bytes));
+            }
+            settings.max_bytes = max_bytes as usize;
+            if was_initialized {
+                self.notify_accumulator_settings_changed();
+            }
+        }
+        let total_max_bytes = self.total_batch_max_bytes.load(Ordering::SeqCst);
+        if total_max_bytes > -1 {
+            if total_max_bytes <= 0 {
+                return Err(ProducerError::InvalidTotalBatchMaxBytes(total_max_bytes));
+            }
+            settings.total_max_bytes = usize::try_from(total_max_bytes).unwrap_or(usize::MAX);
+            if was_initialized {
+                self.notify_accumulator_settings_changed();
+            }
+        }
+        Ok(())
     }
 
     /// Returns a compression backend snapshot for the current configured type.
@@ -683,7 +849,7 @@ impl Producer {
             .unwrap_or_else(|| self.config.producer_group().to_owned());
         let _ = self.namespaced_group.set(group);
         validation::validate_group(self.producer_group())?;
-        self.config.accumulator_settings()?;
+        self.configured_accumulator_settings()?;
 
         let runtime = self
             .manager
@@ -693,7 +859,7 @@ impl Producer {
                 self.config.tls_config().cloned(),
             )
             .await?;
-        self.init_produce_accumulator();
+        self.init_produce_accumulator()?;
         let owner: Arc<dyn ProducerRuntime> = self.clone();
         let lease = match runtime
             .register_producer(self.producer_group(), owner)

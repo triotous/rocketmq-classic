@@ -137,6 +137,7 @@ public final class ProducerCoreFixtures {
         result.put("producerImplementationApi", producerImplementationApi());
         result.put("producerFacadeApi", producerFacadeApi());
         result.put("producerConstructorCases", producerConstructorCases());
+        result.put("runtimeAccumulatorSettings", runtimeAccumulatorSettings());
         result.put("implementationHookExecution", implementationHookExecution());
         result.put("implementationStateAccessors", implementationStateAccessors());
         result.put("implementationPublishInfoTable", implementationPublishInfoTable());
@@ -465,6 +466,76 @@ public final class ProducerCoreFixtures {
             return field.get(implementation);
         } catch (ReflectiveOperationException error) {
             throw new IllegalStateException("Could not inspect producer implementation field " + fieldName, error);
+        }
+    }
+
+    private static Map<String, Object> runtimeAccumulatorSettings() {
+        DefaultMQProducer producer = new DefaultMQProducer("runtime-accumulator-settings");
+        producer.setInstanceName("runtime-accumulator-settings");
+        Map<String, Object> result = new TreeMap<>();
+        result.put("beforeInitializationDelay", producer.getBatchMaxDelayMs());
+        result.put("beforeInitializationBytes", producer.getBatchMaxBytes());
+        result.put("beforeInitializationTotalBytes", producer.getTotalBatchMaxBytes());
+
+        producer.initProduceAccumulator();
+        result.put("initializedDelay", producer.getBatchMaxDelayMs());
+        result.put("initializedBytes", producer.getBatchMaxBytes());
+        result.put("initializedTotalGetterBytes", producer.getTotalBatchMaxBytes());
+        result.put("initializedTotalHoldBytes", totalAccumulatorHoldBytes(producer));
+
+        producer.batchMaxDelayMs(25);
+        producer.batchMaxBytes(65_536);
+        producer.totalBatchMaxBytes(1_048_576);
+        result.put("updatedDelay", producer.getBatchMaxDelayMs());
+        result.put("updatedBytes", producer.getBatchMaxBytes());
+        result.put("updatedTotalGetterBytes", producer.getTotalBatchMaxBytes());
+        result.put("updatedTotalHoldBytes", totalAccumulatorHoldBytes(producer));
+
+        result.put("invalidDelayFailure", failureType(() -> producer.batchMaxDelayMs(0)));
+        result.put("delayAfterInvalidUpdate", producer.getBatchMaxDelayMs());
+        result.put("requestedDelayAfterInvalidUpdate", readProducerField(producer, "batchMaxDelayMs"));
+        result.put("invalidBytesFailure", failureType(() -> producer.batchMaxBytes(0)));
+        result.put("bytesAfterInvalidUpdate", producer.getBatchMaxBytes());
+        result.put("requestedBytesAfterInvalidUpdate", readProducerField(producer, "batchMaxBytes"));
+        result.put("invalidTotalBytesFailure", failureType(() -> producer.totalBatchMaxBytes(0)));
+        result.put("totalHoldBytesAfterInvalidUpdate", totalAccumulatorHoldBytes(producer));
+        result.put("requestedTotalBytesAfterInvalidUpdate", readProducerField(producer, "totalBatchMaxBytes"));
+        result.put("reinitializationAfterInvalidUpdateFailure", failureType(producer::initProduceAccumulator));
+        result.put("delayAfterReinitializationFailure", producer.getBatchMaxDelayMs());
+        producer.shutdown();
+
+        DefaultMQProducer configured = new DefaultMQProducer("configured-before-accumulator");
+        configured.setInstanceName("configured-before-accumulator");
+        configured.batchMaxDelayMs(25);
+        configured.batchMaxBytes(65_536);
+        configured.totalBatchMaxBytes(1_048_576);
+        result.put("configuredBeforeInitializationDelay", configured.getBatchMaxDelayMs());
+        result.put("configuredBeforeInitializationBytes", configured.getBatchMaxBytes());
+        result.put("configuredBeforeInitializationTotalBytes", configured.getTotalBatchMaxBytes());
+        configured.initProduceAccumulator();
+        result.put("configuredAfterInitializationDelay", configured.getBatchMaxDelayMs());
+        result.put("configuredAfterInitializationBytes", configured.getBatchMaxBytes());
+        result.put("configuredAfterInitializationTotalGetterBytes", configured.getTotalBatchMaxBytes());
+        result.put("configuredAfterInitializationTotalHoldBytes", totalAccumulatorHoldBytes(configured));
+        configured.shutdown();
+
+        DefaultMQProducer invalidBeforeInitialization = new DefaultMQProducer("invalid-before-accumulator");
+        invalidBeforeInitialization.setInstanceName("invalid-before-accumulator");
+        invalidBeforeInitialization.batchMaxDelayMs(0);
+        result.put("invalidBeforeInitializationSetterFailure", "none");
+        result.put("invalidBeforeInitializationInitFailure",
+            failureType(invalidBeforeInitialization::initProduceAccumulator));
+        result.put("invalidBeforeInitializationEffectiveDelay", invalidBeforeInitialization.getBatchMaxDelayMs());
+        invalidBeforeInitialization.shutdown();
+        return result;
+    }
+
+    private static String failureType(Check check) {
+        try {
+            check.run();
+            return "none";
+        } catch (Throwable error) {
+            return error.getClass().getName();
         }
     }
 

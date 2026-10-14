@@ -82,6 +82,15 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   now have Rust APIs and fixture-backed unit evidence. `getCompressor`,
   `setCompressType`, `initProduceAccumulator`, and runtime auto-batch state now
   have Producer APIs, invoked Java fixtures and Rust differential tests. The
+  runtime batch delay, per-batch byte threshold, and aggregate hold cap also
+  have invoked Java fixture coverage and live Producer APIs. Rust tests compare
+  pre-init/default/runtime values, preserve effective settings after invalid
+  updates, flush pending batches after a lower byte threshold, reschedule a
+  pending delay, and apply aggregate-cap changes to later enqueue decisions.
+  Reinitializing after an invalid runtime setter retains the already active
+  accumulator values, matching Java. Fixture SHA-256 is
+  `4b166c789a8698ac5600667e2594d7025f7c1b90dd67b2949719269cb6d8160c`.
+  The
   runtime `setCompressMsgBodyOverHowmuch` and `setCompressLevel` settings also
   have live Producer APIs and Java/Rust regression coverage. The
   broad Java reverse-export, inherited/trait API, and source/input branch
@@ -153,6 +162,16 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   manifest validation, 16 race/leak cases repeated three times, 1,824-mutation
   fuzz smoke, release examples, benchmark compilation, formatting and diff
   checks pass. Workspace metadata and all seven package contents also pass.
+- [x] Re-run server-free P18-V02 gates with the runtime Producer accumulator
+  parity change on the worktree based on `454d57cf`, before its feature commit.
+  Default and all-feature workspace tests, Producer tests (123 unit tests and
+  all integration/doc targets), strict workspace Clippy, default Maven verify
+  with fixture drift checking (37 scenarios), comparator self-test and
+  37-scenario manifest validation, 16 race/leak cases repeated three times,
+  1,824-mutation fuzz smoke, release examples, benchmark compilation, package
+  metadata/content checks, formatting and diff checks all pass. The updated
+  Producer fixture SHA-256 is
+  `4b166c789a8698ac5600667e2594d7025f7c1b90dd67b2949719269cb6d8160c`.
 - [ ] Obtain a current GitHub Ubuntu CI result for the Linux-specific Java
   address profile. A native Ubuntu ARM64 container passes the Core RPC
   integration suite; this does not replace the required GitHub Ubuntu result.

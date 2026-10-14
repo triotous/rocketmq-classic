@@ -20,7 +20,7 @@ use tokio::time::Instant;
 
 use crate::{
     AsyncSenderTask, Producer, ProducerError,
-    accumulator::{BatchKey, EnqueueResult, ReadyBatch},
+    accumulator::{BatchKey, EnqueueResult, PendingBatchStatus, ReadyBatch},
     backpressure::AdjustablePermit,
     batch::create_batch,
     hooks::{CheckForbiddenContext, SendMessageContext, SendMessageType},
@@ -568,7 +568,8 @@ impl Producer {
 
         self.started_runtime().await?;
         validation::validate_message(Some(&wire_message), &self.config)?;
-        let settings = self.config.accumulator_settings()?;
+        let accumulator_settings_changed = self.subscribe_accumulator_settings();
+        let settings = self.effective_accumulator_settings();
         let mut accumulated_message = wire_message.clone();
         self.ids.set_if_missing(&mut accumulated_message);
         let queued = self
@@ -596,8 +597,13 @@ impl Producer {
                 schedule_timer,
             } => {
                 if schedule_timer {
-                    self.schedule_auto_batch_timer(key, generation, flush_at)
-                        .await?;
+                    self.schedule_auto_batch_timer(
+                        key,
+                        generation,
+                        flush_at,
+                        accumulator_settings_changed,
+                    )
+                    .await?;
                 }
                 receive_auto_batch_result(receiver).await
             }
@@ -629,6 +635,7 @@ impl Producer {
         key: BatchKey,
         generation: u64,
         flush_at: Instant,
+        mut settings_changed: tokio::sync::watch::Receiver<u64>,
     ) -> Result<(), ProducerError> {
         let producer = self
             .self_weak
@@ -636,9 +643,37 @@ impl Producer {
             .cloned()
             .ok_or(ProducerError::NotStarted)?;
         self.track_auto_batch_task(async move {
-            tokio::time::sleep_until(flush_at).await;
-            if let Some(producer) = producer.upgrade() {
-                producer.flush_auto_batch_generation(&key, generation).await;
+            let mut next_flush = flush_at;
+            loop {
+                tokio::select! {
+                    _ = tokio::time::sleep_until(next_flush) => {}
+                    changed = settings_changed.changed() => {
+                        if changed.is_err() {
+                            return;
+                        }
+                    }
+                }
+                let Some(producer) = producer.upgrade() else {
+                    return;
+                };
+                let settings = producer.effective_accumulator_settings();
+                match producer
+                    .auto_batch_accumulator
+                    .recheck(
+                        &key,
+                        generation,
+                        Duration::from_millis(settings.max_delay_millis as u64),
+                        settings.max_bytes,
+                    )
+                    .await
+                {
+                    PendingBatchStatus::Missing => return,
+                    PendingBatchStatus::Ready(batch) => {
+                        producer.flush_auto_batch(batch).await;
+                        return;
+                    }
+                    PendingBatchStatus::WaitUntil(deadline) => next_flush = deadline,
+                }
             }
         })
         .await;
@@ -668,12 +703,6 @@ impl Producer {
         let handle = tokio::spawn(task);
         tasks.retain(|task| !task.is_finished());
         tasks.push(handle);
-    }
-
-    async fn flush_auto_batch_generation(&self, key: &BatchKey, generation: u64) {
-        if let Some(batch) = self.auto_batch_accumulator.take_due(key, generation).await {
-            self.flush_auto_batch(batch).await;
-        }
     }
 
     async fn flush_auto_batch(&self, accumulated: ReadyBatch) {
@@ -1958,6 +1987,19 @@ mod tests {
         });
         producer.cache_publish_info(&topic, snapshot);
         (producer, queues)
+    }
+
+    async fn wait_for_scheduled_auto_batch_timer(producer: &Producer) {
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if !producer.auto_batch_tasks.lock().await.is_empty() {
+                    return;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the pending batch should own a timer task");
     }
 
     #[tokio::test]
@@ -3336,6 +3378,129 @@ mod tests {
         );
         assert_eq!(first.body(), b"first");
         assert_eq!(second.body(), b"second");
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn lowering_runtime_batch_byte_limit_flushes_pending_batch() {
+        let mut config = crate::ProducerConfig::new("runtime-batch-byte-limit").unwrap();
+        config.set_batch_max_delay_millis(5_000);
+        let (producer, _) = scripted_producer(config).await;
+        producer.set_auto_batch(true);
+        producer
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .push_back(Ok(Some(scripted_result("dynamic-batch", "offset", 9))));
+
+        let send = {
+            let producer = producer.clone();
+            tokio::spawn(async move {
+                producer
+                    .send(&Message::new("orders", b"pending".to_vec()))
+                    .await
+            })
+        };
+        wait_for_scheduled_auto_batch_timer(&producer).await;
+        assert!(
+            producer
+                .scripted_transport
+                .lock()
+                .unwrap()
+                .attempts
+                .is_empty()
+        );
+
+        producer.set_batch_max_bytes(1).unwrap();
+        let result = tokio::time::timeout(Duration::from_secs(1), send)
+            .await
+            .expect("a lower live threshold should flush the pending batch")
+            .unwrap()
+            .unwrap();
+        assert_eq!(result.msg_id, "dynamic-batch");
+        {
+            let scripted = producer.scripted_transport.lock().unwrap();
+            assert_eq!(scripted.attempts.len(), 1);
+            assert!(scripted.attempts[0].batch);
+        }
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn runtime_batch_delay_reschedules_and_aggregate_limit_gates_next_enqueue() {
+        let mut config = crate::ProducerConfig::new("runtime-batch-delay-total-limit").unwrap();
+        config.set_batch_max_delay_millis(10);
+        let (producer, _) = scripted_producer(config).await;
+        producer.set_auto_batch(true);
+        {
+            let mut scripted = producer.scripted_transport.lock().unwrap();
+            scripted.responses.push_back(Ok(Some(scripted_result(
+                "direct-after-limit",
+                "offset-direct",
+                10,
+            ))));
+            scripted.responses.push_back(Ok(Some(scripted_result(
+                "pending-batch",
+                "offset-batch",
+                11,
+            ))));
+        }
+
+        let pending = {
+            let producer = producer.clone();
+            tokio::spawn(async move {
+                producer
+                    .send(&Message::new("orders", b"one".to_vec()))
+                    .await
+            })
+        };
+        wait_for_scheduled_auto_batch_timer(&producer).await;
+
+        producer.set_batch_max_delay_millis(50).unwrap();
+        producer.set_total_batch_max_bytes(3).unwrap();
+        let direct_result = producer
+            .send(&Message::new("orders", b"next".to_vec()))
+            .await
+            .unwrap();
+        assert_eq!(direct_result.msg_id, "direct-after-limit");
+        {
+            let scripted = producer.scripted_transport.lock().unwrap();
+            assert_eq!(scripted.attempts.len(), 1);
+            assert!(!scripted.attempts[0].batch);
+        }
+
+        tokio::time::advance(Duration::from_millis(10)).await;
+        for _ in 0..4 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(
+            producer.scripted_transport.lock().unwrap().attempts.len(),
+            1
+        );
+
+        tokio::time::advance(Duration::from_millis(39)).await;
+        for _ in 0..4 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(
+            producer.scripted_transport.lock().unwrap().attempts.len(),
+            1
+        );
+
+        tokio::time::advance(Duration::from_millis(1)).await;
+        let pending_result = tokio::time::timeout(Duration::from_secs(1), pending)
+            .await
+            .expect("the rescheduled batch should flush at the updated delay")
+            .unwrap()
+            .unwrap();
+        assert_eq!(pending_result.msg_id, "pending-batch");
+        {
+            let scripted = producer.scripted_transport.lock().unwrap();
+            assert_eq!(scripted.attempts.len(), 2);
+            assert!(!scripted.attempts[0].batch);
+            assert!(scripted.attempts[1].batch);
+        }
         producer.shutdown().await.unwrap();
     }
 

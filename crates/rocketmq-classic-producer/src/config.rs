@@ -82,6 +82,16 @@ pub(crate) struct AccumulatorSettings {
     pub(crate) total_max_bytes: usize,
 }
 
+impl Default for AccumulatorSettings {
+    fn default() -> Self {
+        Self {
+            max_delay_millis: DEFAULT_BATCH_MAX_DELAY_MILLIS,
+            max_bytes: DEFAULT_BATCH_MAX_BYTES as usize,
+            total_max_bytes: DEFAULT_TOTAL_BATCH_MAX_BYTES as usize,
+        }
+    }
+}
+
 /// Producer settings from Java 5.5.1. Client-level transport settings stay
 /// in the embedded `ClientConfig`.
 pub struct ProducerConfig {
@@ -201,33 +211,41 @@ impl ProducerConfig {
     }
 
     pub(crate) fn accumulator_settings(&self) -> Result<AccumulatorSettings, ProducerError> {
-        let max_delay_millis = match self.batch_max_delay_millis {
-            Some(value) if value > -1 => {
-                if !(1..=30_000).contains(&value) {
-                    return Err(ProducerError::InvalidBatchMaxDelay(value));
-                }
-                value
+        Self::accumulator_settings_from_raw(
+            self.batch_max_delay_millis.unwrap_or(-1),
+            self.batch_max_bytes.unwrap_or(-1),
+            self.total_batch_max_bytes.unwrap_or(-1),
+        )
+    }
+
+    pub(crate) fn accumulator_settings_from_raw(
+        max_delay_millis: i32,
+        max_bytes: i64,
+        total_max_bytes: i64,
+    ) -> Result<AccumulatorSettings, ProducerError> {
+        let max_delay_millis = if max_delay_millis > -1 {
+            if !(1..=30_000).contains(&max_delay_millis) {
+                return Err(ProducerError::InvalidBatchMaxDelay(max_delay_millis));
             }
-            _ => DEFAULT_BATCH_MAX_DELAY_MILLIS,
+            max_delay_millis
+        } else {
+            DEFAULT_BATCH_MAX_DELAY_MILLIS
         };
-        let max_bytes = match self.batch_max_bytes {
-            Some(value) if value > -1 => {
-                if !(1..=2 * 1024 * 1024).contains(&value) {
-                    return Err(ProducerError::InvalidBatchMaxBytes(value));
-                }
-                value as usize
+        let max_bytes = if max_bytes > -1 {
+            if !(1..=2 * 1024 * 1024).contains(&max_bytes) {
+                return Err(ProducerError::InvalidBatchMaxBytes(max_bytes));
             }
-            _ => DEFAULT_BATCH_MAX_BYTES as usize,
+            max_bytes as usize
+        } else {
+            DEFAULT_BATCH_MAX_BYTES as usize
         };
-        let total_max_bytes = match self.total_batch_max_bytes {
-            Some(value) if value > -1 => {
-                if value <= 0 {
-                    return Err(ProducerError::InvalidTotalBatchMaxBytes(value));
-                }
-                usize::try_from(value)
-                    .map_err(|_| ProducerError::InvalidTotalBatchMaxBytes(value))?
+        let total_max_bytes = if total_max_bytes > -1 {
+            if total_max_bytes <= 0 {
+                return Err(ProducerError::InvalidTotalBatchMaxBytes(total_max_bytes));
             }
-            _ => DEFAULT_TOTAL_BATCH_MAX_BYTES as usize,
+            usize::try_from(total_max_bytes).unwrap_or(usize::MAX)
+        } else {
+            DEFAULT_TOTAL_BATCH_MAX_BYTES as usize
         };
         Ok(AccumulatorSettings {
             max_delay_millis,
@@ -406,6 +424,9 @@ impl ProducerConfig {
     }
     pub fn set_total_batch_max_bytes(&mut self, value: i64) {
         self.total_batch_max_bytes = Some(value);
+    }
+    pub(crate) fn total_batch_max_bytes_input(&self) -> Option<i64> {
+        self.total_batch_max_bytes
     }
     pub fn enable_backpressure_for_async_mode(&self) -> bool {
         self.enable_backpressure_for_async_mode.load()

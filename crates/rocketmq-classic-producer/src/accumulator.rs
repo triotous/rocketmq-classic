@@ -67,6 +67,12 @@ pub(crate) enum EnqueueResult {
     },
 }
 
+pub(crate) enum PendingBatchStatus {
+    Missing,
+    WaitUntil(Instant),
+    Ready(ReadyBatch),
+}
+
 #[derive(Default)]
 struct AccumulatorState {
     entries: HashMap<BatchKey, PendingBatch>,
@@ -157,22 +163,34 @@ impl AutoBatchAccumulator {
         }
     }
 
-    pub(crate) async fn take_due(&self, key: &BatchKey, generation: u64) -> Option<ReadyBatch> {
+    pub(crate) async fn recheck(
+        &self,
+        key: &BatchKey,
+        generation: u64,
+        max_delay: Duration,
+        max_bytes: usize,
+    ) -> PendingBatchStatus {
         let mut state = self.state.lock().await;
-        let is_due = state
+        let Some(pending) = state
             .entries
             .get(key)
-            .is_some_and(|batch| batch.generation == generation);
-        if !is_due {
-            return None;
+            .filter(|batch| batch.generation == generation)
+        else {
+            return PendingBatchStatus::Missing;
+        };
+        let deadline = pending.created_at + max_delay;
+        if pending.body_bytes > max_bytes || Instant::now() >= deadline {
+            let Some(batch) = state.entries.remove(key) else {
+                return PendingBatchStatus::Missing;
+            };
+            return PendingBatchStatus::Ready(ReadyBatch {
+                key: key.clone(),
+                messages: batch.messages,
+                waiters: batch.waiters,
+                body_bytes: batch.body_bytes,
+            });
         }
-        let batch = state.entries.remove(key)?;
-        Some(ReadyBatch {
-            key: key.clone(),
-            messages: batch.messages,
-            waiters: batch.waiters,
-            body_bytes: batch.body_bytes,
-        })
+        PendingBatchStatus::WaitUntil(deadline)
     }
 
     pub(crate) async fn release(&self, body_bytes: usize) {
@@ -263,7 +281,12 @@ mod tests {
         };
         assert_ne!(key, different_key);
 
-        let ready = accumulator.take_due(&key, generation).await.unwrap();
+        let PendingBatchStatus::Ready(ready) = accumulator
+            .recheck(&key, generation, Duration::ZERO, 1_000)
+            .await
+        else {
+            panic!("zero hold delay should make the queued batch ready");
+        };
         assert_eq!(ready.messages.len(), 2);
         assert_eq!(ready.body_bytes, 20);
         assert_eq!(ready.waiters.len(), 2);
@@ -335,7 +358,12 @@ mod tests {
         };
 
         tokio::time::sleep_until(flush_at).await;
-        let ready = accumulator.take_due(&key, generation).await.unwrap();
+        let PendingBatchStatus::Ready(ready) = accumulator
+            .recheck(&key, generation, Duration::from_millis(1), 1_000)
+            .await
+        else {
+            panic!("the batch should be ready at its hold deadline");
+        };
         assert_eq!(ready.messages.len(), 1);
         assert_eq!(ready.body_bytes, 8);
     }
