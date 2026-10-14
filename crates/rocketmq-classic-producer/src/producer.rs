@@ -783,6 +783,14 @@ impl Producer {
         self.backpressure_send_num.available_permits() as i32
     }
 
+    /// Replaces the raw async-send count semaphore's available permits, matching
+    /// `DefaultMQProducerImpl.setSemaphoreAsyncSendNum`. This does not change
+    /// the configured facade limit returned by `backpressure_async_send_num`.
+    pub fn set_semaphore_async_send_num(&self, available: i32) {
+        self.backpressure_send_num
+            .reset_available_permits(available);
+    }
+
     /// Resizes the live async-send count limit while preserving permits held
     /// by sends already in flight. Values below Java's minimum clamp to 10.
     pub fn set_backpressure_async_send_num(&self, value: i32) {
@@ -801,6 +809,14 @@ impl Producer {
     /// Java's `DefaultMQProducerImpl.getSemaphoreAsyncSendSizeAvailablePermits`.
     pub fn semaphore_async_send_size_available_permits(&self) -> i32 {
         self.backpressure_send_size.available_permits() as i32
+    }
+
+    /// Replaces the raw async-send byte semaphore's available permits, matching
+    /// `DefaultMQProducerImpl.setSemaphoreAsyncSendSize`. This does not change
+    /// the configured facade limit returned by `backpressure_async_send_size`.
+    pub fn set_semaphore_async_send_size(&self, available: i32) {
+        self.backpressure_send_size
+            .reset_available_permits(available);
     }
 
     /// Resizes the live async-send byte limit while preserving permits held by

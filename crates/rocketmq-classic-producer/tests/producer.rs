@@ -94,6 +94,43 @@ fn pinned_java_default_producer_impl_public_surface_is_recorded() {
 }
 
 #[test]
+fn implementation_raw_semaphore_setters_match_pinned_java_fixture() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let expected = &fixture["implementationSemaphoreSettings"];
+    let producer =
+        Producer::new(ProducerConfig::new("producer-implementation-semaphores").unwrap());
+
+    assert_eq!(
+        producer.semaphore_async_send_num_available_permits(),
+        expected["initialCountAvailable"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        producer.semaphore_async_send_size_available_permits(),
+        expected["initialByteAvailable"].as_i64().unwrap() as i32
+    );
+    producer.set_semaphore_async_send_num(7);
+    assert_eq!(producer.semaphore_async_send_num_available_permits(), 7);
+    assert_eq!(producer.backpressure_async_send_num(), 1024);
+    producer.set_semaphore_async_send_num(-3);
+    assert_eq!(
+        producer.semaphore_async_send_num_available_permits(),
+        expected["negativeCountAvailable"].as_i64().unwrap() as i32
+    );
+    producer.set_semaphore_async_send_size(4096);
+    assert_eq!(
+        producer.semaphore_async_send_size_available_permits(),
+        expected["byteAvailableAfterRawReplace"].as_i64().unwrap() as i32
+    );
+    producer.set_semaphore_async_send_size(-8192);
+    assert_eq!(
+        producer.semaphore_async_send_size_available_permits(),
+        expected["negativeByteAvailable"].as_i64().unwrap() as i32
+    );
+    assert_eq!(producer.backpressure_async_send_size(), 100 * 1024 * 1024);
+}
+
+#[test]
 fn pinned_java_default_producer_facade_and_inherited_interfaces_are_recorded() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();

@@ -105,6 +105,18 @@ impl AdjustableSemaphore {
         Self::wake_front(&state);
     }
 
+    /// Replaces the Java implementation's raw semaphore count while retaining
+    /// the logical capacity used by the facade setting. Java computes the
+    /// in-flight delta as `capacity - availablePermits`, so preserve that
+    /// accounting relation for later permit releases and facade resizes.
+    pub(crate) fn reset_available_permits(&self, available: i32) {
+        let _writer = self.gate.write_lock();
+        let mut state = self.lock_state();
+        state.available = i64::from(available);
+        state.in_flight = state.capacity - state.available;
+        Self::wake_front(&state);
+    }
+
     pub(crate) async fn acquire(
         self: &Arc<Self>,
         permits: usize,

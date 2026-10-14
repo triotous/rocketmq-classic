@@ -143,6 +143,7 @@ public final class ProducerCoreFixtures {
         result.put("runtimeAccumulatorSettings", runtimeAccumulatorSettings());
         result.put("implementationHookExecution", implementationHookExecution());
         result.put("implementationStateAccessors", implementationStateAccessors());
+        result.put("implementationSemaphoreSettings", implementationSemaphoreSettings());
         result.put("implementationPublishInfoTable", implementationPublishInfoTable());
         result.put("implementationPublishInfoTableAdvanced", implementationPublishInfoTableAdvanced());
         result.put("implementationQueueFilterSelection", implementationQueueFilterSelection());
@@ -1148,6 +1149,33 @@ public final class ProducerCoreFixtures {
             implementation.getMqClientFactory() == null && implementation.getmQClientFactory() == null);
         implementation.setServiceState(null);
         result.put("nullServiceState", implementation.getServiceState() == null);
+        return result;
+    }
+
+    private static Map<String, Object> implementationSemaphoreSettings() throws InterruptedException {
+        DefaultMQProducer producer = new DefaultMQProducer("producer-implementation-semaphores");
+        DefaultMQProducerImpl implementation = producer.getDefaultMQProducerImpl();
+        Map<String, Object> result = new TreeMap<>();
+        result.put("initialCountAvailable", implementation.getSemaphoreAsyncSendNumAvailablePermits());
+        result.put("initialByteAvailable", implementation.getSemaphoreAsyncSendSizeAvailablePermits());
+
+        Semaphore currentCount = asyncSendNumSemaphore(producer);
+        currentCount.acquire(2);
+        implementation.setSemaphoreAsyncSendNum(7);
+        asyncSendNumSemaphore(producer).release(2);
+        result.put("countAfterRawReplaceAndInFlightRelease",
+            implementation.getSemaphoreAsyncSendNumAvailablePermits());
+        producer.setBackPressureForAsyncSendNum(20);
+        result.put("countAfterFacadeResize", implementation.getSemaphoreAsyncSendNumAvailablePermits());
+        result.put("facadeCountLimitAfterResize", producer.getBackPressureForAsyncSendNum());
+
+        implementation.setSemaphoreAsyncSendNum(-3);
+        implementation.setSemaphoreAsyncSendSize(4096);
+        result.put("negativeCountAvailable", implementation.getSemaphoreAsyncSendNumAvailablePermits());
+        result.put("byteAvailableAfterRawReplace", implementation.getSemaphoreAsyncSendSizeAvailablePermits());
+        implementation.setSemaphoreAsyncSendSize(-8192);
+        result.put("negativeByteAvailable", implementation.getSemaphoreAsyncSendSizeAvailablePermits());
+        result.put("facadeByteLimitUnchanged", producer.getBackPressureForAsyncSendSize());
         return result;
     }
 

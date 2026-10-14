@@ -4655,6 +4655,37 @@ mod tests {
         );
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn raw_semaphore_replacement_preserves_java_in_flight_accounting() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+        let expected = &fixture["implementationSemaphoreSettings"];
+        let producer = Producer::new(crate::ProducerConfig::new("raw-semaphore-replace").unwrap());
+        let permit = producer
+            .backpressure_send_num
+            .clone()
+            .acquire(2, Instant::now() + Duration::from_secs(1))
+            .await
+            .unwrap();
+
+        producer.set_semaphore_async_send_num(7);
+        assert_eq!(producer.semaphore_async_send_num_available_permits(), 7);
+        drop(permit);
+        assert_eq!(
+            producer.semaphore_async_send_num_available_permits(),
+            expected["countAfterRawReplaceAndInFlightRelease"]
+                .as_i64()
+                .unwrap() as i32
+        );
+
+        producer.set_backpressure_async_send_num(20);
+        assert_eq!(
+            producer.semaphore_async_send_num_available_permits(),
+            expected["countAfterFacadeResize"].as_i64().unwrap() as i32
+        );
+        assert_eq!(producer.backpressure_async_send_num(), 20);
+    }
+
     #[test]
     fn producer_retry_response_codes_are_live_for_sync_retry_decisions() {
         let producer = Producer::new(crate::ProducerConfig::new("runtime-retry-codes").unwrap());
