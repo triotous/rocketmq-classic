@@ -274,6 +274,8 @@ public final class ProducerCoreFixtures {
         result.put("backpressureSettings", backpressure);
         result.put("runtimeSettings", runtimeSettings());
         result.put("perRequestTimeoutRetry", perRequestTimeoutRetry());
+        result.put("missingBrokerAddressRetry", missingBrokerAddressRetry());
+        result.put("missingBrokerAddressExplicit", missingBrokerAddressExplicit());
         result.put("checkForbiddenRetry", checkForbiddenRetry());
         result.put("checkForbiddenDefaultAsync", checkForbiddenDefaultAsync());
         result.put("checkForbiddenExplicitAsync", checkForbiddenExplicitAsync());
@@ -1428,6 +1430,81 @@ public final class ProducerCoreFixtures {
         result.put("outcome", outcome);
         result.put("responseCode", responseCode);
         result.put("messageContainsAttemptCount", finalMessage.contains("Send [2] times"));
+        return result;
+    }
+
+    private static Map<String, Object> missingBrokerAddressRetry() throws Exception {
+        DefaultMQProducer producer = new DefaultMQProducer("producer-missing-broker-address-fixture");
+        producer.setSendMsgTimeout(3_000);
+        producer.setRetryTimesWhenSendFailed(1);
+        DefaultMQProducerImpl implementation = producer.getDefaultMQProducerImpl();
+        MQClientInstance client = installProducerSendFixtureRoute(
+            producer, implementation, "orders", "producer-missing-broker-address-fixture");
+
+        Field brokerAddressTable = MQClientInstance.class.getDeclaredField("brokerAddrTable");
+        brokerAddressTable.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        ConcurrentMap<String, HashMap<Long, String>> addresses =
+            (ConcurrentMap<String, HashMap<Long, String>>) brokerAddressTable.get(client);
+        addresses.clear();
+
+        MQClientException failure = null;
+        try {
+            implementation.send(new Message("orders", new byte[] {1}));
+        } catch (MQClientException expected) {
+            failure = expected;
+        } finally {
+            shutdownUnstartedClientExecutors(client);
+        }
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("retryTimesWhenSendFailed", producer.getRetryTimesWhenSendFailed());
+        result.put("outcome", failure == null ? "success" : failure.getClass().getSimpleName());
+        result.put("responseCode", failure == null ? -1 : failure.getResponseCode());
+        result.put("messageContainsAttemptCount",
+            failure != null && failure.getMessage().contains("Send [2] times"));
+        result.put("messageContainsBothBrokers", failure != null
+            && failure.getMessage().contains("broker-a")
+            && failure.getMessage().contains("broker-b"));
+        result.put("causeClass", failure != null && failure.getCause() != null
+            ? failure.getCause().getClass().getSimpleName() : "none");
+        result.put("causeMessageContainsBrokerFailure", failure != null && failure.getCause() != null
+            && failure.getCause().getMessage().contains("The broker[")
+            && failure.getCause().getMessage().contains(" not exist"));
+        return result;
+    }
+
+    private static Map<String, Object> missingBrokerAddressExplicit() throws Exception {
+        DefaultMQProducer producer = new DefaultMQProducer("producer-missing-broker-explicit-fixture");
+        producer.setSendMsgTimeout(3_000);
+        DefaultMQProducerImpl implementation = producer.getDefaultMQProducerImpl();
+        MQClientInstance client = installProducerSendFixtureRoute(
+            producer, implementation, "orders", "producer-missing-broker-explicit-fixture");
+
+        Field brokerAddressTable = MQClientInstance.class.getDeclaredField("brokerAddrTable");
+        brokerAddressTable.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        ConcurrentMap<String, HashMap<Long, String>> addresses =
+            (ConcurrentMap<String, HashMap<Long, String>>) brokerAddressTable.get(client);
+        addresses.clear();
+
+        MQClientException failure = null;
+        try {
+            implementation.send(new Message("orders", new byte[] {1}),
+                new MessageQueue("orders", "broker-a", 0), 3_000L);
+        } catch (MQClientException expected) {
+            failure = expected;
+        } finally {
+            shutdownUnstartedClientExecutors(client);
+        }
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("outcome", failure == null ? "success" : failure.getClass().getSimpleName());
+        result.put("responseCode", failure == null ? -1 : failure.getResponseCode());
+        result.put("messageContainsMissingBroker", failure != null
+            && failure.getMessage().contains("The broker[broker-a] not exist"));
+        result.put("causeClass", failure != null && failure.getCause() != null
+            ? failure.getCause().getClass().getSimpleName() : "none");
         return result;
     }
 
