@@ -292,6 +292,18 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   strict all-target/all-feature Producer Clippy, formatting and diff checks.
   The full workspace/all-feature, Maven, race/leak, fuzz and package gates above
   were run on parent `39afef81`; this follow-up only changes a Producer test.
+- [x] Close the missing Broker publish-address branch (`e48fb323`, 2026-10-14).
+  The default send path now retries the Java `MQClientException` and returns the
+  response-code-10003 wrapper with attempt/Broker metadata; explicit queue and
+  selector sends expose Java's `The broker[broker] not exist` error. The route
+  fixture preserves the writable queue with a null master address, and asserts
+  no redundant NameServer fetch. Default/all-feature workspace tests, strict
+  workspace Clippy, Maven fixture/differential verification, comparator and
+  37-scenario manifest checks, race/leak and fuzz smoke, release examples,
+  benchmark compilation, metadata and package-content checks all pass on
+  `e48fb323`; the selector regression and full Producer suite also pass on
+  follow-up test commit `28d28377`. Producer core fixture SHA-256:
+  `725af3b3887f7a4ec6f6d72a23188e4fb80206e50c98b113b015d76917fedfd8`.
 - [ ] Obtain a current GitHub Ubuntu CI result for the Linux-specific Java
   address profile. A native Ubuntu ARM64 container passes the Core RPC
   integration suite; this does not replace the required GitHub Ubuntu result.
