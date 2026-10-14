@@ -288,6 +288,8 @@ fn receive_reply_message(runtime: &ClientRuntime, command: &RemotingCommand) -> 
             .ok_or_else(|| "reply request has no ext fields".to_owned())?;
         let header =
             ReplyMessageRequestHeader::decode_fields(fields).map_err(|error| error.to_string())?;
+        validate_reply_host_address(&header.born_host)?;
+        validate_reply_host_address(&header.store_host)?;
         let mut body = command.body.clone().unwrap_or_default();
         if header.sys_flag & rocketmq_classic_common::sysflag::message::COMPRESSED_FLAG != 0 {
             let compression_type =
@@ -339,6 +341,21 @@ fn receive_reply_message(runtime: &ClientRuntime, command: &RemotingCommand) -> 
         },
         Err(_) => error(response::SYSTEM_ERROR, "process reply message fail"),
     }
+}
+
+/// Validate the parts of Java's `NetworkUtil.string2SocketAddress` that can
+/// fail before `InetSocketAddress` retains a resolved or unresolved host.
+fn validate_reply_host_address(value: &str) -> Result<(), String> {
+    let (_, raw_port) = value
+        .rsplit_once(':')
+        .ok_or_else(|| "reply host address has no port separator".to_owned())?;
+    let port = crate::java_number::parse_long(raw_port)
+        .and_then(|port| i32::try_from(port).ok())
+        .ok_or_else(|| "reply host address has an invalid Java integer port".to_owned())?;
+    if !(0..=i32::from(u16::MAX)).contains(&port) {
+        return Err("reply host address port is outside the socket range".to_owned());
+    }
+    Ok(())
 }
 
 fn epoch_millis_now() -> i64 {
@@ -1138,6 +1155,53 @@ mod tests {
         result
     }
 
+    fn dispatch_reply_with_hosts(
+        runtime: &Arc<ClientRuntime>,
+        born_host: &str,
+        store_host: &str,
+    ) -> RemotingCommand {
+        use rocketmq_classic_common::message::{
+            constants::{PROPERTY_CORRELATION_ID, PROPERTY_MESSAGE_TYPE},
+            encode_properties,
+        };
+        let properties = std::collections::BTreeMap::from([
+            (
+                PROPERTY_CORRELATION_ID.to_owned(),
+                "unmatched-reply-fixture".to_owned(),
+            ),
+            (PROPERTY_MESSAGE_TYPE.to_owned(), "reply".to_owned()),
+        ]);
+        let header = ReplyMessageRequestHeader {
+            producer_group: "response-producer".into(),
+            topic: "cluster-a_REPLY_TOPIC".into(),
+            default_topic: "TBW102".into(),
+            default_topic_queue_nums: 4,
+            queue_id: 1,
+            born_timestamp: 1_700_000_000_123,
+            flag: 0,
+            properties: Some(encode_properties(&properties)),
+            born_host: born_host.to_owned(),
+            store_host: store_host.to_owned(),
+            store_timestamp: 1_700_000_001_234,
+            ..Default::default()
+        };
+        let mut fields = rocketmq_classic_protocol::header::HeaderMap::new();
+        header.encode_fields(&mut fields);
+        runtime
+            .inbound
+            .process_with_context(
+                "broker:10911",
+                RemotingCommand {
+                    code: request::PUSH_REPLY_MESSAGE_TO_CLIENT,
+                    ext_fields: Some(fields),
+                    body: Some(Vec::new()),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .unwrap()
+    }
+
     #[tokio::test]
     async fn consumer_slots_route_group_with_registry_reentry_and_do_not_cross_runtime_identity() {
         let runtime = runtime("consumer-slots").await;
@@ -1314,6 +1378,33 @@ mod tests {
         }
 
         unregister(&runtime, &lease, true).await;
+        assert!(runtime.shutdown().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn reply_host_addresses_match_invoked_java_validation() {
+        let runtime = runtime("reply-host-addresses").await;
+        for case in fixtures()["replyAddressCases"].as_array().unwrap() {
+            let response = dispatch_reply_with_hosts(
+                &runtime,
+                case["bornHost"].as_str().unwrap(),
+                case["storeHost"].as_str().unwrap(),
+            );
+            let expected = match case["outcome"].as_str().unwrap() {
+                "SUCCESS" => response::SUCCESS,
+                "SYSTEM_ERROR" => response::SYSTEM_ERROR,
+                other => panic!("unexpected Java reply-address outcome: {other}"),
+            };
+            assert_eq!(response.code, expected, "case {}", case["case"]);
+            if expected == response::SYSTEM_ERROR {
+                assert_eq!(
+                    response.remark.as_deref(),
+                    Some("process reply message fail"),
+                    "case {}",
+                    case["case"]
+                );
+            }
+        }
         assert!(runtime.shutdown().await.unwrap());
     }
 

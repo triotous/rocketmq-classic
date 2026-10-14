@@ -21,7 +21,10 @@ import org.apache.rocketmq.client.impl.factory.MQClientInstance;
 import org.apache.rocketmq.common.message.MessageDecoder;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.sysflag.MessageSysFlag;
+import org.apache.rocketmq.remoting.protocol.RequestCode;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
+import org.apache.rocketmq.remoting.protocol.ResponseCode;
+import org.apache.rocketmq.remoting.protocol.header.ReplyMessageRequestHeader;
 
 /** Routing metadata only; payload decoding/transaction handling belongs to later phases. */
 public final class RuntimeInboundRoutingFixtures {
@@ -67,6 +70,39 @@ public final class RuntimeInboundRoutingFixtures {
             cleanup.setAccessible(true);
             cleanup.invoke(runtime, original, new IllegalStateException("inbound code 40 fixture teardown"));
         }
+    }
+
+    private static Map<String, Object> replyAddressCase(
+        String name, String bornHost, String storeHost) throws Exception {
+        ReplyMessageRequestHeader header = new ReplyMessageRequestHeader();
+        header.setProducerGroup("reply-producer");
+        header.setTopic("cluster-east_REPLY_TOPIC");
+        header.setDefaultTopic("TBW102");
+        header.setDefaultTopicQueueNums(4);
+        header.setQueueId(2);
+        header.setSysFlag(0);
+        header.setBornTimestamp(1_700_000_000_123L);
+        header.setFlag(7);
+        header.setProperties("CORRELATION_ID\u0001unmatched-reply-fixture\u0002MSG_TYPE\u0001reply\u0002");
+        header.setBornHost(bornHost);
+        header.setStoreHost(storeHost);
+        header.setStoreTimestamp(1_700_000_001_234L);
+
+        RemotingCommand request = RemotingCommand.createRequestCommand(
+            RequestCode.PUSH_REPLY_MESSAGE_TO_CLIENT, header);
+        request.makeCustomHeaderToNet();
+        request.setBody(new byte[0]);
+        RemotingCommand response = new ClientRemotingProcessor(null).processRequest(null, request);
+
+        Map<String, Object> item = new TreeMap<>();
+        item.put("case", name);
+        item.put("bornHost", bornHost);
+        item.put("storeHost", storeHost);
+        item.put("responseCode", response.getCode());
+        item.put("outcome", response.getCode() == ResponseCode.SUCCESS
+            ? "SUCCESS" : response.getCode() == ResponseCode.SYSTEM_ERROR
+            ? "SYSTEM_ERROR" : "OTHER");
+        return item;
     }
 
     public static void main(String[] args) throws Exception {
@@ -120,14 +156,23 @@ public final class RuntimeInboundRoutingFixtures {
         List<Object> consumerIdsChangedCases = List.of(
             consumerIdsChanged(true),
             consumerIdsChanged(false));
+        List<Object> replyAddressCases = List.of(
+            replyAddressCase("ipv4", "127.0.0.1:10911", "127.0.0.1:10912"),
+            replyAddressCase("unbracketed-ipv6", "::1:10911", "::1:10912"),
+            replyAddressCase("missing-separator", "127.0.0.1", "127.0.0.1:10912"),
+            replyAddressCase("invalid-port", "127.0.0.1:10911", "127.0.0.1:port"),
+            replyAddressCase("port-overflow", "127.0.0.1:65536", "127.0.0.1:10912"),
+            replyAddressCase("unicode-decimal-port", "127.0.0.1:\u0661\u0660\u0669\u0661\u0661", "127.0.0.1:10912"),
+            replyAddressCase("zero-port", "127.0.0.1:0", "127.0.0.1:65535"));
         Map<String,Object> fixture = new TreeMap<>(); fixture.put("client","org.apache.rocketmq:rocketmq-client:5.5.1");
-        fixture.put("sourceCommit","efa1be59d6fc747ad220f036c86030f05f0419f9"); fixture.put("entrypoint","MessageDecoder.encode/decodeProperties/string2messageProperties; MessageVersion; ClientRemotingProcessor.processRequest");
+        fixture.put("sourceCommit","efa1be59d6fc747ad220f036c86030f05f0419f9"); fixture.put("entrypoint","MessageDecoder.encode/decodeProperties/string2messageProperties; MessageVersion; NetworkUtil.string2SocketAddress; ClientRemotingProcessor.processRequest/receiveReplyMessage");
         fixture.put("serverBaselineContacted",false); fixture.put("cases",cases); fixture.put("propertyCases",propertyCases);
         fixture.put("undispatchedCases",List.of(undispatchedCase)); fixture.put("consumerIdsChangedCases",consumerIdsChangedCases);
+        fixture.put("replyAddressCases", replyAddressCases);
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture) + "\n"; Path file = Path.of(args[0]);
         if (args.length > 1 && "--verify".equals(args[1])) {
             if (!json.equals(Files.readString(file))) throw new IllegalStateException("fixture drift: " + file);
         } else { Files.createDirectories(file.getParent()); Files.writeString(file,json); }
-        System.out.println("Runtime inbound routing invoked cases verified: " + (cases.size() + consumerIdsChangedCases.size()));
+        System.out.println("Runtime inbound routing invoked cases verified: " + (cases.size() + consumerIdsChangedCases.size() + replyAddressCases.size()));
     }
 }
