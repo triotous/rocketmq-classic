@@ -178,6 +178,10 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   message-size limit now have live `Producer` setters and fixture-backed send,
   retry, deadline, and validation regressions (code commit `781bf6f0`; fixture
   SHA-256 `46c9c9522317d72d2942fab4abae0caf9c6fd9bf76a179ea90a6ec453b041f3c`).
+  Follow-up oracle and regressions now cover per-request timeout setter inputs
+  `-2`, `-1`, `0`, `125`, and `6000`; a deterministic zero-cap case confirms
+  sync retries continue while the outer timeout remains. This closes that
+  timeout/retry slice only; broad P18-V01 reconciliation remains open.
   Live Producer group and topics setters now have fixture-backed behavior:
   group changes reach subsequent headers (including null-field omission), and
   topic getters reflect setter calls while the started runtime retains its
