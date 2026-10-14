@@ -128,6 +128,51 @@ fn pinned_java_producer_impl_method_names_have_phase_crosswalks() {
 }
 
 #[test]
+fn pinned_java_producer_callable_method_names_have_phase_crosswalks() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let surfaces = &fixture["producerFacadeApi"];
+    let crosswalks = [
+        include_str!("../../../docs/compatibility/PHASE_7_PRODUCER_MATRIX.md"),
+        include_str!("../../../docs/compatibility/PHASE_14_TRANSACTION_MATRIX.md"),
+        include_str!("../../../docs/compatibility/PHASE_15_REQUEST_REPLY_MATRIX.md"),
+        include_str!(
+            "../../../docs/compatibility/PHASE_16_NAMESPACE_SECURITY_OPERATIONS_MATRIX.md"
+        ),
+        include_str!("../../../docs/compatibility/PHASE_17_ADMIN_MATRIX.md"),
+        include_str!("../../../docs/compatibility/PHASE_6_API_CONFIG_MAP.md"),
+    ]
+    .join("\n");
+
+    for (owner, expected_count) in [
+        ("DefaultMQProducer", 183),
+        ("MQProducer", 42),
+        ("MQAdmin", 8),
+    ] {
+        let methods = surfaces[owner]["publicMethods"].as_array().unwrap();
+        assert_eq!(
+            methods.len(),
+            expected_count,
+            "unexpected {owner} method count"
+        );
+        for signature in methods {
+            let signature = signature.as_str().unwrap();
+            let method_name = signature
+                .split('(')
+                .next()
+                .unwrap()
+                .rsplit('.')
+                .next()
+                .unwrap();
+            assert!(
+                crosswalks.contains(method_name),
+                "Java facade/inherited method has no phase crosswalk: {signature}"
+            );
+        }
+    }
+}
+
+#[test]
 fn implementation_raw_semaphore_setters_match_pinned_java_fixture() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
