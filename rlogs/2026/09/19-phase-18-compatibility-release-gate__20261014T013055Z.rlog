@@ -26,3 +26,13 @@
 - No current GitHub Ubuntu workflow result exists for the Linux-specific Java address profile.
 - Phase 19 Docker/Broker scenarios and release version/registry dependency checks remain open; production-only validation stays outside this Phase 18 session.
 - No push, publication or release tag was performed.
+
+## P18-V01 Producer implementation inventory follow-up — 2026-10-14
+
+- Added pinned Java reflection evidence for `DefaultMQProducerImpl`: 2 public constructors and 82 declared public method signatures. Rust integration test `pinned_java_default_producer_impl_public_surface_is_recorded` pins the count and selected hook, route-table, and lifecycle accessor signatures.
+- The first fixture-generation compile failed because Java 11 does not provide `Stream.toList()`. Replaced it with `Collectors.toList()`; Java 11 compilation then succeeded. Record the initial compile failure rather than silently dropping it.
+- Regenerated `fixtures/producer/core.json`; SHA-256 `f1fb6863e432b5ae9c372b3ef8862c46d1dc80025cd3fcda7e443488356cc2cb`. `mvn -q -f compat/java-reference/pom.xml -Dproducer.core.fixture.verify=false verify` passed; subsequent default `mvn -q -f compat/java-reference/pom.xml verify` passed with drift checks and cross-decodes.
+- PASS: `cargo test -p rocketmq-classic-producer --locked` (113 unit tests and Producer integration/doc targets), including the 9-test Producer integration file and new method inventory assertion.
+- PASS: `cargo clippy -p rocketmq-classic-producer --all-targets --all-features --locked -- -D warnings`; `cargo fmt --all -- --check`; `git diff --check`.
+- Updated the Phase 7 matrix, Phase 6 audit, and release checklist with the inventory and explicit unresolved method dispositions. The direct CheckForbidden/SendMessage helper APIs, raw table/state/runtime accessors, and per-overload input/branch crosswalk are still P18-V01 work.
+- The full workspace P18-V02 suite most recently passed on runtime revision `52ef36ab`; this follow-up adds fixture/test inventory only. Rerun final workspace gates after the remaining P18-V01 implementation work.

@@ -1,9 +1,11 @@
 package compat;
 
 import com.alibaba.fastjson2.JSON;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -116,6 +118,7 @@ public final class ProducerCoreFixtures {
             "LatencyFaultToleranceImpl.detectByOneRound", "MQClientAPIImpl.getMaxOffset"));
         provenance.put("serverContacted", false);
         result.put("provenance", provenance);
+        result.put("producerImplementationApi", producerImplementationApi());
 
         Map<String, Object> defaults = new TreeMap<>();
         defaults.put("producerGroup", producer.getProducerGroup());
@@ -312,6 +315,41 @@ public final class ProducerCoreFixtures {
         result.put("batchValidation", batchCases());
         result.put("batchEncoding", batchEncoding());
         return result;
+    }
+
+    private static Map<String, Object> producerImplementationApi() {
+        Object implementation = new DefaultMQProducer("producer-implementation-api")
+            .getDefaultMQProducerImpl();
+        Class<?> implementationClass = implementation.getClass();
+        List<String> constructors = Arrays.stream(implementationClass.getConstructors())
+            .filter(constructor -> Modifier.isPublic(constructor.getModifiers()))
+            .map(ProducerCoreFixtures::constructorSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList());
+        List<String> methods = Arrays.stream(implementationClass.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList());
+        Map<String, Object> result = new TreeMap<>();
+        result.put("className", implementationClass.getName());
+        result.put("publicConstructors", constructors);
+        result.put("publicMethods", methods);
+        result.put("publicMethodCount", methods.size());
+        return result;
+    }
+
+    private static String constructorSignature(Constructor<?> constructor) {
+        return constructor.getDeclaringClass().getName() + "(" + Arrays.stream(constructor.getParameterTypes())
+            .map(Class::getName)
+            .collect(java.util.stream.Collectors.joining(",")) + ")";
+    }
+
+    private static String methodSignature(Method method) {
+        return method.getReturnType().getName() + " " + method.getDeclaringClass().getName() + "."
+            + method.getName() + "(" + Arrays.stream(method.getParameterTypes())
+            .map(Class::getName)
+            .collect(java.util.stream.Collectors.joining(",")) + ")";
     }
 
     private static Map<String, Object> executorSettings() {

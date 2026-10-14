@@ -31,6 +31,39 @@ fn java_default_settings_are_present() {
 }
 
 #[test]
+fn pinned_java_default_producer_impl_public_surface_is_recorded() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let inventory = &fixture["producerImplementationApi"];
+    let methods = inventory["publicMethods"].as_array().unwrap();
+    let constructors = inventory["publicConstructors"].as_array().unwrap();
+
+    assert_eq!(
+        inventory["className"],
+        "org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl"
+    );
+    assert_eq!(inventory["publicMethodCount"].as_u64(), Some(82));
+    assert_eq!(methods.len(), 82);
+    assert_eq!(constructors.len(), 2);
+    assert!(constructors.iter().any(|constructor| {
+        constructor
+            == "org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl(org.apache.rocketmq.client.producer.DefaultMQProducer,org.apache.rocketmq.remoting.RPCHook)"
+    }));
+    for method in [
+        "boolean org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl.hasCheckForbiddenHook()",
+        "boolean org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl.hasSendMessageHook()",
+        "java.util.concurrent.ConcurrentMap org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl.getTopicPublishInfoTable()",
+        "org.apache.rocketmq.common.ServiceState org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl.getServiceState()",
+        "void org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl.setServiceState(org.apache.rocketmq.common.ServiceState)",
+    ] {
+        assert!(
+            methods.iter().any(|candidate| candidate == method),
+            "missing {method}"
+        );
+    }
+}
+
+#[test]
 fn producer_compressor_snapshot_and_operations_match_java_fixture() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
