@@ -138,7 +138,7 @@ impl ProducerQueueIndex {
         indexes.insert(thread, AtomicI32::new(random_i32() & i32::MAX));
     }
 
-    pub fn current(&self) -> Option<i32> {
+    pub(crate) fn current(&self) -> Option<i32> {
         self.0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -419,7 +419,7 @@ impl TopicPublishInfo {
         Ok(-1)
     }
 
-    pub fn snapshot(&self) -> Result<TopicSnapshot, RuntimeError> {
+    pub(crate) fn snapshot(&self) -> Result<TopicSnapshot, RuntimeError> {
         let data = self
             .0
             .read()
@@ -1086,7 +1086,7 @@ impl TopicPublishInfoTable {
         }
     }
 
-    pub fn snapshot(&self) -> BTreeMap<String, TopicPublishInfo> {
+    pub(crate) fn snapshot(&self) -> BTreeMap<String, TopicPublishInfo> {
         self.entries
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -1095,7 +1095,7 @@ impl TopicPublishInfoTable {
             .collect()
     }
 
-    pub fn keys(&self) -> BTreeSet<String> {
+    pub(crate) fn keys(&self) -> BTreeSet<String> {
         self.snapshot().into_keys().collect()
     }
 

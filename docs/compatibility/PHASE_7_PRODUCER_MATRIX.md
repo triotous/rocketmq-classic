@@ -23,6 +23,12 @@ HEAD in the Java checkout.
 `TopicPublishInfo::from_snapshot` is an internal adapter from the shared runtime
 route snapshot and has no Java public constructor equivalent. It is
 crate-private so it does not expand the exported Producer API.
+The implementation-only `ProducerQueueIndex::current`,
+`TopicPublishInfo::snapshot`, and `TopicPublishInfoTable::{snapshot,keys}` are
+also crate-private. Java exposes `ThreadLocalIndex.incrementAndGet/reset`, the
+individual `TopicPublishInfo` state accessors, and live Map views; Rust uses
+these snapshot/current helpers only for diagnostic text and internal runtime
+route/topic enumeration.
 
 Java callback overloads are represented by Rust future-mode methods as allowed
 by the Phase 7 plan; future scheduling is selected by the caller's Tokio

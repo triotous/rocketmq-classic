@@ -33,3 +33,17 @@ Open work
 - Phase 19 Docker/Broker and cross-language scenarios, current release-version/registry dependency-resolution checks, and owner-environment validations remain outstanding. Publication/tagging is outside this work.
 
 End state at `b4e681a5`: worktree clean; no plan edits, push, publication, or tag.
+
+Phase 18 continuation — Producer publish-info export surface
+Session date: 2026-10-14 UTC
+Time: 16:23 UTC
+Branch: `phase/19-phase-18-compatibility-release-gate`
+Starting revision: `197bafc9`
+
+Changes and validation
+- Reverse API review found `ProducerQueueIndex::current`, `TopicPublishInfo::{from_snapshot,snapshot}`, and `TopicPublishInfoTable::{snapshot,keys}` are implementation helpers with no Java public counterparts. The four helpers newly surfaced in this continuation are now crate-private; existing `from_snapshot` visibility was already crate-private.
+- Updated the Phase 6 audit, Phase 7 matrix, and release checklist to record the scope and preserve P18-V01 as open.
+- PASS: `cargo test -p rocketmq-classic-producer --locked` — 139 unit and 60 integration tests.
+- PASS: `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`.
+- PASS: `cargo fmt --all -- --check` and `git diff --check`.
+- This is a bounded public-surface correction; full Java overload/input/error/flow and bidirectional API reconciliation remains open.
