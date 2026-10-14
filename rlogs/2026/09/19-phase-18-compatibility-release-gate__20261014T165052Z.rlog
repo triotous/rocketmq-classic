@@ -51,3 +51,9 @@ Still open
 - The intended `0.1.0` release version and registry dependency resolution remain to be confirmed before any publication.
 
 No push, publication, tag, plan edit, or Java oracle modification was made.
+
+Current-tree audit correction — 2026-10-14 UTC
+
+- The preceding continuation incorrectly listed a non-macOS all-thread `jstackEnable` implementation gap. Current `stack.rs` contains macOS (ARM64/x86_64), Linux (AArch64/x86_64), and Windows (ARM64/x86_64) process-thread capture. Commits `0b8e98c8` and `93473a3e` are ancestors of the current Phase 18 branch; `cargo test -p rocketmq-classic-consumer stack::tests --locked` passes on the current macOS ARM64 host. The Phase 17 matrix records Linux runtime tests on both architectures and Windows cross-target checks. Native Windows runtime execution remains a final platform validation item.
+- Re-read the Phase 15, 16, and 17 matrices against their plans and execution records. Phase 15 P15-V01/V02/U01 are locally verified and P15-V03 is Phase 19; Phase 16 records all local acceptance gates passed and live/owner checks in Phase 19; Phase 17 records local P17-V01/V03/U01 evidence and assigns Broker-backed P17-V02 to Phase 19. Updated the release checklist to mark that local cross-phase reconciliation complete; plans remain untouched.
+- P18-V01's broader Phase 6 source/API/input/branch and Rust reverse-export reconciliation remains open. P18-V04 still lacks current-revision GitHub Ubuntu evidence. Phase 19 Broker/Docker and pre-publication version/registry checks remain outstanding.

@@ -10,13 +10,14 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   provenance.
 - [x] Record the server-free tests, fuzz/race smoke runs, benchmark observations,
   and CI commands in the Phase 18 execution log and compatibility docs.
-- [ ] Complete the requirement-by-requirement reconciliation of Phase 15–17
-  plans, matrices, execution records, and current artifacts. Phase 15's local
-  request/reply gate is recorded as verified; Phase 16 still records a partial
-  source/API/settings audit and incomplete final-gate reconciliation; Phase 17
-  still has a non-macOS all-thread `jstackEnable` gap and incomplete phase
-  closure evidence. Their Broker-backed cases remain Phase 19 work; plans stay
-  unchanged.
+- [x] Reconcile the Phase 15–17 local matrices and execution records against
+  current artifacts. Phase 15's P15-V01/V02/U01 local gates are verified;
+  P15-V03 remains Phase 19. Phase 16 records all local acceptance gates as
+  passed; Broker and owner-environment cases remain Phase 19. Phase 17 records
+  P17-V01/V03/U01 local evidence; `jstackEnable` enumerates threads on macOS,
+  Linux and Windows, with Linux runtime coverage on both architectures and
+  Windows cross-target compile evidence. Native Windows stack runtime and
+  Broker-backed query checks remain later validation. Plans remain unchanged.
 - [ ] Close P18-V01: complete bidirectional Java source/API/input reconciliation
   and reverse-audit all Rust public APIs and settings. The broad Phase 6 audit
   remains `PARTIAL`; Phase 9 now has fixture/unit coverage for raw Pull offset
