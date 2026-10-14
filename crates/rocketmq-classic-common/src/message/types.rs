@@ -336,6 +336,30 @@ impl Message {
     pub fn get_properties(&self) -> Option<&MessageProperties> {
         self.properties_nullable()
     }
+    /// Returns stored property entries, including Java-style null values, in
+    /// deterministic key order. `properties()` and `get_properties()` retain
+    /// the Rust string-to-string map view; this iterator exposes the entries
+    /// that Java callers can observe through `Message.getProperties()`.
+    pub fn property_entries(&self) -> impl Iterator<Item = (&str, Option<&str>)> + '_ {
+        let mut entries = self
+            .properties
+            .iter()
+            .flat_map(|properties| {
+                properties
+                    .iter()
+                    .map(|(key, value)| (key.as_str(), Some(value.as_str())))
+            })
+            .chain(self.null_properties.iter().filter_map(|key| {
+                (!self
+                    .properties
+                    .as_ref()
+                    .is_some_and(|properties| properties.contains_key(key)))
+                .then_some((key.as_str(), None))
+            }))
+            .collect::<Vec<_>>();
+        entries.sort_unstable_by(|left, right| left.0.cmp(right.0));
+        entries.into_iter()
+    }
     pub fn properties_mut(&mut self) -> &mut MessageProperties {
         self.properties.get_or_insert_with(MessageProperties::new)
     }

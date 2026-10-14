@@ -177,6 +177,10 @@ public final class MessageDecodeFixtures {
         expected.put("nullInstanceGetterIsNull",
             nullableProperties.getProperty("INSTANCE_ID") == null);
         expected.put("nullInstanceRemainsPresent", nullableProperties.hasProperty("INSTANCE_ID"));
+        expected.put("nullablePropertyEntries", nullableProperties.getProperties().entrySet().stream()
+            .sorted(Map.Entry.comparingByKey())
+            .map(entry -> java.util.Arrays.asList(entry.getKey(), entry.getValue()))
+            .collect(java.util.stream.Collectors.toList()));
         Message nullableString = new Message();
         nullableString.setTags(null);
         expected.put("nullablePropertyString", nullableString.toString());

@@ -328,6 +328,10 @@ fn message_public_api_matches_java_551_fixture() {
         );
         assert_eq!(expected[getter_is_null], true);
     }
+    assert_eq!(
+        serde_json::to_value(nullable_properties.property_entries().collect::<Vec<_>>()).unwrap(),
+        expected["nullablePropertyEntries"]
+    );
     let nullable_map = serde_json::to_value(&nullable_properties).unwrap();
     assert!(nullable_map["topic"].is_null());
     assert!(nullable_map["body"].is_null());
