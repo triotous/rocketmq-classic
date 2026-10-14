@@ -200,7 +200,7 @@ mod tests {
             .set_system_property(PROPERTY_MSG_REGION, "region-a")
             .unwrap();
         let mut context = ConsumeMessageContext::new(
-            "tenant%workers",
+            Some("tenant%workers".to_owned()),
             Some(vec![message]),
             MessageQueue::new("tenant%orders", "broker-a", 0),
             Some("tenant".into()),

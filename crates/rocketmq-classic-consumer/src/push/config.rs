@@ -40,7 +40,7 @@ pub const DEFAULT_POP_BATCH_NUMS: i32 = 32;
 pub struct PushConsumerConfig {
     client: ClientConfig,
     tls_config: Option<TlsConfig>,
-    consumer_group: String,
+    consumer_group: RwLock<Option<String>>,
     message_model: AtomicI32,
     consume_from_where: AtomicI32,
     consume_timestamp: RwLock<String>,
@@ -75,7 +75,7 @@ impl PushConsumerConfig {
         Ok(Self {
             client: ClientConfig::new_auto()?,
             tls_config: None,
-            consumer_group: consumer_group.into(),
+            consumer_group: RwLock::new(Some(consumer_group.into())),
             message_model: AtomicI32::new(message_model_to_ordinal(MessageModel::Clustering)),
             consume_from_where: AtomicI32::new(consume_from_where_to_ordinal(
                 ConsumeFromWhere::ConsumeFromLastOffset,
@@ -118,6 +118,12 @@ impl PushConsumerConfig {
         })
     }
 
+    /// Creates the Java-default Push configuration. Java's default group is
+    /// `DEFAULT_CONSUMER`; startup rejects it until the caller changes it.
+    pub fn new_default() -> Result<Self, PushConsumerError> {
+        Self::new(DEFAULT_PUSH_CONSUMER_GROUP)
+    }
+
     pub fn client_config(&self) -> &ClientConfig {
         &self.client
     }
@@ -137,12 +143,28 @@ impl PushConsumerConfig {
         self.tls_config = value;
     }
 
-    pub fn consumer_group(&self) -> &str {
-        &self.consumer_group
+    /// Returns the current consumer group as an owned string.
+    ///
+    /// Use [`consumer_group_nullable`](Self::consumer_group_nullable) when the
+    /// Java-compatible null state itself must be observed.
+    pub fn consumer_group(&self) -> String {
+        self.consumer_group_nullable().unwrap_or_default()
     }
 
-    pub fn set_consumer_group(&mut self, value: impl Into<String>) {
-        self.consumer_group = value.into();
+    /// Returns the current Java-compatible consumer group, including null.
+    pub fn consumer_group_nullable(&self) -> Option<String> {
+        read_lock(&self.consumer_group).clone()
+    }
+
+    /// Updates the consumer group. The retained Push consumer configuration
+    /// remains live after construction, matching Java's facade setter.
+    pub fn set_consumer_group(&self, value: impl Into<String>) {
+        self.set_consumer_group_nullable(Some(value.into()));
+    }
+
+    /// Nullable counterpart of Java's `setConsumerGroup(String)`.
+    pub fn set_consumer_group_nullable(&self, value: Option<String>) {
+        *write_lock(&self.consumer_group) = value;
     }
 
     pub fn message_model(&self) -> MessageModel {

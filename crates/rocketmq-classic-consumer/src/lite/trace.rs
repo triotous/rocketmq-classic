@@ -674,7 +674,7 @@ mod tests {
             .set_system_property(PROPERTY_MSG_REGION, "region-a")
             .unwrap();
         let mut context = ConsumeMessageContext::new(
-            "ns%workers",
+            Some("ns%workers".to_owned()),
             Some(vec![message]),
             rocketmq_classic_common::message::MessageQueue::new("ns%orders", "broker-a", 0),
             Some("ns".to_owned()),

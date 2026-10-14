@@ -835,7 +835,7 @@ impl LitePullConsumer {
                     .with_namespace(Some(self.config.consumer_group()))?
                     .unwrap_or_else(|| self.config.consumer_group().to_owned());
                 let mut consume_context =
-                    ConsumeMessageContext::new(consumer_group, Some(batch), queue, namespace);
+                    ConsumeMessageContext::new(Some(consumer_group), Some(batch), queue, namespace);
                 self.consume_message_hooks
                     .execute_before(&mut consume_context);
                 consume_context.status = Some("CONSUME_SUCCESS".to_owned());
@@ -1790,7 +1790,7 @@ mod tests {
                 assert!(!context.success);
                 assert!(context.properties.is_none());
                 assert!(context.access_channel.is_none());
-                assert_eq!(context.consumer_group, "tenant%lite-hook");
+                assert_eq!(context.consumer_group.as_deref(), Some("tenant%lite-hook"));
                 assert_eq!(context.namespace.as_deref(), Some("tenant"));
                 context.properties = Some(std::collections::HashMap::new());
                 context

@@ -1515,7 +1515,7 @@ impl PullConsumer {
     ) -> Result<(), PullConsumerError> {
         let mut client_config = self.config.client_config().clone();
         let mut consume_context = ConsumeMessageContext::new(
-            self.effective_consumer_group()?,
+            Some(self.effective_consumer_group()?),
             processed.messages.take(),
             queue.clone(),
             client_config.get_namespace()?.map(str::to_owned),
@@ -3135,7 +3135,10 @@ mod tests {
                 assert!(!context.success);
                 assert!(context.properties.is_none());
                 assert!(context.access_channel.is_none());
-                assert_eq!(context.consumer_group, "tenant%pull-hook-lifecycle");
+                assert_eq!(
+                    context.consumer_group.as_deref(),
+                    Some("tenant%pull-hook-lifecycle")
+                );
                 assert_eq!(context.namespace.as_deref(), Some("tenant"));
                 context.properties = Some(HashMap::new());
                 context
@@ -3226,7 +3229,7 @@ mod tests {
         let events = Arc::new(Mutex::new(Vec::new()));
         consumer.register_consume_message_hook(Arc::new(Hook(events.clone())));
         let mut context = ConsumeMessageContext::new(
-            "pull-raw-hook-entrypoint",
+            Some("pull-raw-hook-entrypoint".to_owned()),
             None,
             MessageQueue::new("orders", "broker-a", 0),
             None,

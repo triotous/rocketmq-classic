@@ -11,7 +11,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import org.apache.rocketmq.client.ClientConfig;
+import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
 import org.apache.rocketmq.client.impl.consumer.MQConsumerInner;
+import org.apache.rocketmq.client.impl.consumer.DefaultMQPushConsumerImpl;
 import org.apache.rocketmq.client.impl.factory.MQClientInstance;
 import org.apache.rocketmq.client.producer.DefaultMQProducer;
 import org.apache.rocketmq.remoting.protocol.heartbeat.ConsumeType;
@@ -1316,6 +1318,50 @@ public final class RuntimeHeartbeatFixtures {
         return item;
     }
 
+    private static Map<String, Object> pushGroupNameMutationCase() throws Exception {
+        ClientConfig config = new ClientConfig();
+        config.setClientIP("push-group-name-mutation");
+        MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+        DefaultMQPushConsumer facade = new DefaultMQPushConsumer("push-group-before");
+        DefaultMQPushConsumerImpl impl = facade.getDefaultMQPushConsumerImpl();
+        Map<String, Object> item = new TreeMap<>();
+        try {
+            item.put("defaultConstructorGroup", new DefaultMQPushConsumer().getConsumerGroup());
+            item.put("facadeGroupBefore", facade.getConsumerGroup());
+            item.put("implementationGroupBefore", impl.groupName());
+            if (!runtime.registerConsumer("push-group-before", impl))
+                throw new IllegalStateException("push group mutation registration");
+            Method prepare = MQClientInstance.class.getDeclaredMethod("prepareHeartbeatData", boolean.class);
+            prepare.setAccessible(true);
+            HeartbeatData before = (HeartbeatData) prepare.invoke(runtime, false);
+            item.put("heartbeatGroupBefore", before.getConsumerDataSet().iterator().next().getGroupName());
+
+            facade.setConsumerGroup("push-group-after");
+            item.put("facadeGroupAfter", facade.getConsumerGroup());
+            item.put("implementationGroupAfter", impl.groupName());
+            HeartbeatData after = (HeartbeatData) prepare.invoke(runtime, false);
+            item.put("heartbeatGroupAfter", after.getConsumerDataSet().iterator().next().getGroupName());
+
+            runtime.unregisterConsumer("push-group-after");
+            item.put("originalRegistrationRemainsAfterCurrentGroupUnregister",
+                runtime.selectConsumer("push-group-before") != null);
+
+            facade.setConsumerGroup(null);
+            item.put("facadeGroupNull", facade.getConsumerGroup() == null);
+            item.put("implementationGroupNull", impl.groupName() == null);
+            HeartbeatData afterNull = (HeartbeatData) prepare.invoke(runtime, false);
+            item.put("heartbeatGroupNull", afterNull.getConsumerDataSet().iterator().next().getGroupName() == null);
+
+            runtime.unregisterConsumer("push-group-before");
+        } finally {
+            Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure",
+                org.apache.rocketmq.client.impl.MQClientAPIImpl.class, Throwable.class);
+            cleanup.setAccessible(true);
+            cleanup.invoke(runtime, runtime.getMQClientAPIImpl(), new IllegalStateException("fixture teardown"));
+        }
+        return item;
+    }
+
     private static void record(List<Object> cases, MQClientInstance runtime, String name,
         boolean withoutSub) throws Exception {
         Method prepare = MQClientInstance.class.getDeclaredMethod("prepareHeartbeatData", boolean.class);
@@ -1441,6 +1487,7 @@ public final class RuntimeHeartbeatFixtures {
         fixture.put("primitiveNullCases", primitiveNullCases());
         fixture.put("heartbeatDtoInputCases", heartbeatDtoInputCases());
         fixture.put("nullOwnerSubscriptionPreparation", nullOwnerSubscriptionPreparation());
+        fixture.put("pushGroupNameMutation", pushGroupNameMutationCase());
         fixture.put("channelEventListenerCases", channelEventListenerCases());
         fixture.put("heartbeatV2SettingMutation", heartbeatV2SettingMutation());
         fixture.put("heartbeatVipAddress", heartbeatVipAddress());

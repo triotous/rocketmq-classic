@@ -278,7 +278,7 @@ enum State {
     Created,
     Started {
         runtime: Weak<ClientRuntime>,
-        lease: GroupLease,
+        _lease: GroupLease,
         offset_store: Arc<dyn OffsetStore>,
         consume_service: ConsumeService,
         orderly_lock_settings: Option<OrderlyLockSettings>,
@@ -458,6 +458,22 @@ impl PushConsumer {
         &self.config
     }
 
+    /// Returns the current Java-compatible facade consumer group, including
+    /// the nullable state accepted by `DefaultMQPushConsumer`.
+    pub fn get_consumer_group(&self) -> Option<String> {
+        self.config.consumer_group_nullable()
+    }
+
+    /// Updates the live facade consumer group.
+    pub fn set_consumer_group(&self, value: impl Into<String>) {
+        self.config.set_consumer_group(value);
+    }
+
+    /// Nullable form of Java's `setConsumerGroup(String)`.
+    pub fn set_consumer_group_nullable(&self, value: Option<String>) {
+        self.config.set_consumer_group_nullable(value);
+    }
+
     /// Returns the retained implementation handle exposed by Java's
     /// deprecated `DefaultMQPushConsumer.getDefaultMQPushConsumerImpl()`.
     /// `PushConsumer` owns both the facade behavior and implementation state,
@@ -543,8 +559,8 @@ impl PushConsumer {
         PullAttemptError::from_rpc_with_delay(error, self.pull_time_delay_millis_when_exception())
     }
 
-    pub fn group_name(&self) -> &str {
-        self.config.consumer_group()
+    pub fn group_name(&self) -> Option<String> {
+        self.config.consumer_group_nullable()
     }
 
     pub fn message_model(&self) -> rocketmq_classic_protocol::heartbeat::MessageModel {
@@ -674,9 +690,8 @@ impl PushConsumer {
             .expect("the consumer namespace was validated before consume workers start")
             .map(str::to_owned);
         let consumer_group = client_config
-            .with_namespace(Some(self.config.consumer_group()))
-            .expect("the consumer namespace was validated before consume workers start")
-            .unwrap_or_else(|| self.config.consumer_group().to_owned());
+            .with_namespace(self.config.consumer_group_nullable().as_deref())
+            .expect("the consumer namespace was validated before consume workers start");
         ConsumeMessageContext::new(consumer_group, Some(messages), queue, namespace)
             .with_properties(HashMap::new())
     }
@@ -1122,7 +1137,7 @@ impl PushConsumer {
         )?;
         let header = QueryConsumeTimeSpanRequestHeader {
             topic: topic.to_owned(),
-            group: self.group_name().to_owned(),
+            group: self.group_name().unwrap_or_default(),
         };
         let mut spans = Vec::new();
         for broker in brokers {
@@ -1543,8 +1558,11 @@ impl PushConsumer {
                 subscription.topic.as_ref().map(|topic| {
                     (
                         topic.clone(),
-                        self.stats
-                            .status(runtime.client_id(), self.config.consumer_group(), topic),
+                        self.stats.status(
+                            runtime.client_id(),
+                            &self.config.consumer_group(),
+                            topic,
+                        ),
                     )
                 })
             })
@@ -1867,7 +1885,7 @@ impl PushConsumer {
         }
         let mut group_config = self.config.client_config().clone();
         let consumer_group = group_config
-            .with_namespace(Some(self.config.consumer_group()))?
+            .with_namespace(Some(&self.config.consumer_group()))?
             .ok_or(PushConsumerError::InvalidConsumerGroup)?;
         if read_lock(&self.offset_corrections_pending).contains(&queue) {
             return Err(PushConsumerError::OffsetCorrectionPending(
@@ -2251,7 +2269,7 @@ impl PushConsumer {
         let mut client_config = self.config.client_config().clone();
         let mut group_config = client_config.clone();
         let consumer_group = group_config
-            .with_namespace(Some(self.config.consumer_group()))
+            .with_namespace(Some(&self.config.consumer_group()))
             .map_err(|error| self.pull_retry_error(error.to_string()))?
             .ok_or_else(|| self.pull_retry_error("consumer group is empty"))?;
         let header = PullMessageRequestHeader {
@@ -2305,7 +2323,7 @@ impl PushConsumer {
             let message_count = processed.messages.as_ref().map_or(0, Vec::len);
             self.stats.record_pull(
                 context.runtime.client_id(),
-                self.config.consumer_group(),
+                &self.config.consumer_group(),
                 topic,
                 pull_started.elapsed(),
                 message_count,
@@ -2607,7 +2625,7 @@ impl PushConsumer {
         if let Some(topic) = request.batch.queue().topic() {
             self.stats.record_consume_rt(
                 context.runtime.client_id(),
-                self.config.consumer_group(),
+                &self.config.consumer_group(),
                 topic,
                 callback_started.elapsed(),
             );
@@ -2763,7 +2781,7 @@ impl PushConsumer {
             if let Some(topic) = queue.topic() {
                 self.stats.record_consume_rt(
                     context.runtime.client_id(),
-                    self.config.consumer_group(),
+                    &self.config.consumer_group(),
                     topic,
                     callback_started.elapsed(),
                 );
@@ -2825,7 +2843,7 @@ impl PushConsumer {
                 };
                 self.stats.record_orderly_result(
                     context.runtime.client_id(),
-                    self.config.consumer_group(),
+                    &self.config.consumer_group(),
                     topic,
                     acknowledged,
                     failed,
@@ -2914,7 +2932,7 @@ impl PushConsumer {
     fn reset_retry_and_namespace_for_orderly(&self, messages: &mut [MessageExt]) {
         let mut config = self.config.client_config().clone();
         let consumer_group = config
-            .with_namespace(Some(self.config.consumer_group()))
+            .with_namespace(Some(&self.config.consumer_group()))
             .ok()
             .flatten();
         let retry_topic = consumer_group.map(|group| format!("%RETRY%{group}"));
@@ -3064,7 +3082,7 @@ impl PushConsumer {
             let successful_result = status == Some(ConsumeConcurrentlyStatus::ConsumeSuccess);
             self.stats.record_concurrent_result(
                 context.runtime.client_id(),
-                self.config.consumer_group(),
+                &self.config.consumer_group(),
                 topic,
                 successful_result.then_some(acknowledged),
                 batch_len.saturating_sub(acknowledged),
@@ -3159,7 +3177,7 @@ impl PushConsumer {
             .map(str::to_owned)
             .or_else(|| {
                 client_config
-                    .with_namespace(Some(self.config.consumer_group()))
+                    .with_namespace(Some(&self.config.consumer_group()))
                     .ok()
                     .flatten()
             });
@@ -3609,9 +3627,11 @@ impl PushConsumer {
         self.set_service_state(Some(ConsumerServiceState::StartFailed));
 
         let mut client_config = self.config.client_config().clone();
-        let consumer_group = client_config
-            .with_namespace(Some(self.config.consumer_group()))?
-            .ok_or(PushConsumerError::InvalidConsumerGroup)?;
+        let consumer_group =
+            client_config.with_namespace(self.config.consumer_group_nullable().as_deref())?;
+        self.config
+            .set_consumer_group_nullable(consumer_group.clone());
+        let consumer_group = consumer_group.ok_or(PushConsumerError::InvalidConsumerGroup)?;
         self.config.validate(&consumer_group)?;
         self.pull_api.set_unit_mode(self.config.unit_mode());
         let pop_consume_limit =
@@ -3703,7 +3723,7 @@ impl PushConsumer {
             Ok(lease) => {
                 *state = State::Started {
                     runtime: Arc::downgrade(&runtime),
-                    lease,
+                    _lease: lease,
                     offset_store,
                     consume_service,
                     orderly_lock_settings,
@@ -3750,7 +3770,7 @@ impl PushConsumer {
         }
         let dispatcher = match rocketmq_classic_producer::TraceDispatcher::new(
             client_config,
-            self.config.consumer_group(),
+            &self.config.consumer_group(),
             rocketmq_classic_producer::TraceProducerKind::Consume,
             client_config.trace_topic(),
             self.manager.clone(),
@@ -4647,7 +4667,7 @@ impl PushConsumer {
         let topic_queues = read_lock(&self.topic_queues).clone();
         let mut client_config = self.config.client_config().clone();
         let Some(consumer_group) = client_config
-            .with_namespace(Some(self.config.consumer_group()))
+            .with_namespace(Some(&self.config.consumer_group()))
             .ok()
             .flatten()
         else {
@@ -5484,7 +5504,7 @@ impl PushConsumer {
     ) -> Result<(String, String), PushConsumerError> {
         let mut config = self.config.client_config().clone();
         let group = config
-            .with_namespace(Some(self.config.consumer_group()))?
+            .with_namespace(Some(&self.config.consumer_group()))?
             .ok_or(PushConsumerError::InvalidConsumerGroup)?;
         Ok((group, runtime.client_id().to_owned()))
     }
@@ -5840,7 +5860,6 @@ impl PushConsumer {
     ) -> Result<(), PushConsumerError> {
         let (
             runtime,
-            lease,
             offset_store,
             consume_service,
             orderly_lock_settings,
@@ -5863,7 +5882,7 @@ impl PushConsumer {
             match std::mem::replace(&mut *state, State::Shutdown) {
                 State::Started {
                     runtime,
-                    lease,
+                    _lease: _,
                     offset_store,
                     consume_service,
                     orderly_lock_settings,
@@ -5871,7 +5890,6 @@ impl PushConsumer {
                     pull_rpc_workers,
                 } => (
                     runtime.upgrade(),
-                    lease,
                     offset_store,
                     consume_service,
                     orderly_lock_settings,
@@ -5956,7 +5974,10 @@ impl PushConsumer {
         let (unregister, shutdown) = if let Some(runtime) = runtime {
             (
                 runtime
-                    .unregister_consumer(&lease, self.unregister_deadline())
+                    .unregister_consumer_by_group_nullable(
+                        self.config.consumer_group_nullable().as_deref(),
+                        self.unregister_deadline(),
+                    )
                     .await,
                 runtime.shutdown().await,
             )
@@ -6050,7 +6071,11 @@ impl ConsumerRuntime for PushConsumerRegistration {
             .map(|subscription| Some(SharedValue::from(subscription)))
             .collect::<ConsumerSubscriptionDataSet>();
         ConsumerData {
-            group_name: Some(self.group.clone()),
+            group_name: self
+                .consumer
+                .upgrade()
+                .map(|consumer| consumer.group_name())
+                .unwrap_or_else(|| Some(self.group.clone())),
             consume_type: Some(ConsumeType::ConsumePassively),
             message_model: Some(message_model),
             consume_from_where: Some(consume_from_where),
@@ -6699,7 +6724,7 @@ mod tests {
         consumer.register_consume_message_hook(Arc::new(Hook(events.clone())));
         assert!(consumer.has_hook());
         let mut context = ConsumeMessageContext::new(
-            "phase18-push-implementation-accessor",
+            None,
             None,
             MessageQueue::new("orders", "broker-a", 0),
             None,
@@ -6711,12 +6736,31 @@ mod tests {
 
         let events = events.lock().unwrap().clone();
         assert_eq!(fixture["hasConsumeHookAfterRegistration"], true);
+        assert_eq!(fixture["directHookConsumerGroupNull"], true);
         assert_eq!(
             fixture["directHookEvents"],
             serde_json::json!(["before:seed", "after:hook-before:true"])
         );
         assert_eq!(events, ["before:seed", "after:hook-before:true"]);
         assert_eq!(context.status.as_deref(), Some("hook-before"));
+        assert_eq!(context.consumer_group, None);
+    }
+
+    #[test]
+    fn push_consume_message_context_preserves_a_live_null_group() {
+        let mut config = PushConsumerConfig::new("push-null-consume-context").unwrap();
+        config
+            .client_config_mut()
+            .set_namespace(Some("tenant".to_owned()));
+        let consumer = PushConsumer::new(config);
+        consumer.set_consumer_group_nullable(None);
+
+        let context = consumer.new_consume_message_context(
+            Vec::new(),
+            MessageQueue::new("tenant%orders", "broker-a", 0),
+        );
+        assert_eq!(context.consumer_group, None);
+        assert_eq!(context.namespace.as_deref(), Some("tenant"));
     }
 
     #[test]
@@ -6945,7 +6989,7 @@ mod tests {
         );
 
         let registration = PushConsumerRegistration {
-            group: consumer.group_name().to_owned(),
+            group: consumer.group_name().unwrap_or_default(),
             message_model: consumer.message_model(),
             consume_from_where: consumer.consume_from_where(),
             unit_mode: consumer.is_unit_mode(),
@@ -6983,6 +7027,109 @@ mod tests {
         );
     }
 
+    #[test]
+    fn push_facade_group_getter_and_heartbeat_follow_live_java_group() {
+        let oracle: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
+                .unwrap();
+        let oracle = &oracle["pushGroupNameMutation"];
+        assert_eq!(oracle["defaultConstructorGroup"], "DEFAULT_CONSUMER");
+
+        let config = PushConsumerConfig::new("push-group-before").unwrap();
+        let consumer = Arc::new(PushConsumer::new(config));
+        let store: Arc<dyn OffsetStore> = Arc::new(RecordingOffsetStore::default());
+        let registration = PushConsumerRegistration {
+            group: "push-group-before".to_owned(),
+            message_model: consumer.message_model(),
+            consume_from_where: consumer.consume_from_where(),
+            unit_mode: consumer.is_unit_mode(),
+            subscriptions: consumer.subscriptions.clone(),
+            topic_queues: consumer.topic_queues.clone(),
+            pull_scheduler: Arc::new(PullScheduler::new()),
+            pull_rpc_workers: Arc::new(PullRpcWorkers::new()),
+            offset_store: Arc::downgrade(&store),
+            consumer: Arc::downgrade(&consumer),
+            runtime: std::sync::Weak::new(),
+        };
+
+        assert_eq!(
+            consumer.get_consumer_group().as_deref(),
+            Some("push-group-before")
+        );
+        assert_eq!(consumer.group_name().as_deref(), Some("push-group-before"));
+        assert_eq!(oracle["facadeGroupBefore"], "push-group-before");
+        assert_eq!(oracle["implementationGroupBefore"], "push-group-before");
+        assert_eq!(
+            ConsumerRuntime::heartbeat_data(&registration)
+                .group_name
+                .as_deref(),
+            Some(oracle["heartbeatGroupBefore"].as_str().unwrap())
+        );
+
+        consumer.set_consumer_group("push-group-after");
+        assert_eq!(
+            consumer.get_consumer_group().as_deref(),
+            Some("push-group-after")
+        );
+        assert_eq!(consumer.group_name().as_deref(), Some("push-group-after"));
+        assert_eq!(oracle["facadeGroupAfter"], "push-group-after");
+        assert_eq!(oracle["implementationGroupAfter"], "push-group-after");
+        assert_eq!(
+            ConsumerRuntime::heartbeat_data(&registration)
+                .group_name
+                .as_deref(),
+            Some(oracle["heartbeatGroupAfter"].as_str().unwrap())
+        );
+
+        consumer.set_consumer_group_nullable(None);
+        assert_eq!(consumer.get_consumer_group(), None);
+        assert_eq!(consumer.group_name(), None);
+        assert_eq!(oracle["facadeGroupNull"], true);
+        assert_eq!(oracle["implementationGroupNull"], true);
+        assert_eq!(
+            ConsumerRuntime::heartbeat_data(&registration).group_name,
+            None
+        );
+        assert_eq!(oracle["heartbeatGroupNull"], true);
+        assert_eq!(
+            oracle["originalRegistrationRemainsAfterCurrentGroupUnregister"],
+            true
+        );
+    }
+
+    #[tokio::test]
+    async fn push_start_namespaces_and_retains_group_before_consumer_validation() {
+        let mut config = PushConsumerConfig::new("push-start-group").unwrap();
+        config
+            .client_config_mut()
+            .set_namespace(Some("tenant".to_owned()));
+        let consumer = Arc::new(PushConsumer::new(config));
+        assert_eq!(consumer.group_name().as_deref(), Some("push-start-group"));
+
+        assert!(matches!(
+            consumer.start().await,
+            Err(PushConsumerError::MissingMessageListener)
+        ));
+        assert_eq!(
+            consumer.group_name().as_deref(),
+            Some("tenant%push-start-group")
+        );
+        assert_eq!(
+            consumer.config().consumer_group_nullable().as_deref(),
+            Some("tenant%push-start-group")
+        );
+
+        let default = PushConsumerConfig::new_default().unwrap();
+        assert_eq!(
+            default.consumer_group_nullable().as_deref(),
+            Some("DEFAULT_CONSUMER")
+        );
+        assert!(matches!(
+            default.validate("DEFAULT_CONSUMER"),
+            Err(PushConsumerError::DefaultConsumerGroup)
+        ));
+    }
+
     #[tokio::test]
     async fn push_raw_consumer_inner_accessors_match_java() {
         let config = PushConsumerConfig::new("phase18-push-implementation-accessor").unwrap();
@@ -6994,7 +7141,7 @@ mod tests {
 
         assert_eq!(
             consumer.group_name(),
-            fixture["groupName"].as_str().unwrap()
+            Some(fixture["groupName"].as_str().unwrap().to_owned())
         );
         assert_eq!(fixture["messageModel"], "CLUSTERING");
         assert_eq!(
@@ -8039,7 +8186,7 @@ mod tests {
         );
         let mut client_config = consumer.config.client_config().clone();
         let consumer_group = client_config
-            .with_namespace(Some(consumer.config.consumer_group()))
+            .with_namespace(Some(&consumer.config.consumer_group()))
             .unwrap()
             .unwrap();
         consumer
@@ -8071,7 +8218,7 @@ mod tests {
             .unwrap();
         *consumer.state.lock().await = State::Started {
             runtime: Arc::downgrade(&runtime),
-            lease,
+            _lease: lease,
             offset_store,
             consume_service: consume_service.clone(),
             orderly_lock_settings,
@@ -8870,7 +9017,7 @@ mod tests {
             consumer
                 .config
                 .allocate_message_queue_strategy()
-                .allocate(consumer.config.consumer_group(), &current_id, &all, &ids)
+                .allocate(&consumer.config.consumer_group(), &current_id, &all, &ids)
                 .unwrap()
                 .into_iter()
                 .collect::<HashSet<_>>()
@@ -10642,7 +10789,10 @@ mod tests {
                 assert!(!context.success);
                 assert!(context.status.is_none());
                 assert!(context.access_channel.is_none());
-                assert_eq!(context.consumer_group, "tenant%consume-hook-lifecycle");
+                assert_eq!(
+                    context.consumer_group.as_deref(),
+                    Some("tenant%consume-hook-lifecycle")
+                );
                 assert_eq!(context.namespace.as_deref(), Some("tenant"));
                 assert_eq!(context.properties, Some(HashMap::new()));
                 context
@@ -11268,6 +11418,66 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn push_shutdown_unregisters_the_current_java_group() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
+                .unwrap();
+        let expected_retained = fixture["pushGroupNameMutation"]
+            ["originalRegistrationRemainsAfterCurrentGroupUnregister"]
+            .as_bool()
+            .unwrap();
+
+        let mut config = PushConsumerConfig::new("push-shutdown-group-before").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let offset_store: Arc<dyn OffsetStore> = Arc::new(RecordingOffsetStore::default());
+        let listener: Arc<dyn super::super::listener::MessageListenerConcurrently> = Arc::new(
+            |_messages: Vec<rocketmq_classic_common::message::MessageExt>, context| async move {
+                (
+                    Some(super::super::listener::ConsumeConcurrentlyStatus::ConsumeSuccess),
+                    context,
+                )
+            },
+        );
+        let consume_service = Arc::new(ConcurrentConsumeService::new(1, 1, listener));
+        let pull_scheduler = Arc::new(PullScheduler::new());
+        let pull_rpc_workers = Arc::new(PullRpcWorkers::new());
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            offset_store,
+            consume_service,
+            pull_scheduler,
+            pull_rpc_workers,
+        )
+        .await;
+
+        assert!(
+            runtime
+                .select_consumer("push-shutdown-group-before")
+                .unwrap()
+                .is_some()
+        );
+        consumer.set_consumer_group("push-shutdown-group-after");
+        consumer.shutdown().await.unwrap();
+
+        assert!(
+            runtime
+                .select_consumer("push-shutdown-group-after")
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            runtime
+                .select_consumer("push-shutdown-group-before")
+                .unwrap()
+                .is_some(),
+            expected_retained
+        );
+    }
+
+    #[tokio::test]
     async fn duplicate_group_registration_rolls_back_without_running_state() {
         let manager = ClientRuntimeManager::new();
         let make_consumer = || {
@@ -11344,7 +11554,7 @@ mod tests {
                 .unwrap();
             assert!(
                 runtime
-                    .select_consumer(consumer.config().consumer_group())
+                    .select_consumer(&consumer.config().consumer_group())
                     .unwrap()
                     .is_none()
             );
@@ -11581,7 +11791,7 @@ mod tests {
         let consumer = PushConsumer::with_manager(config, ClientRuntimeManager::new());
         let mut client_config = consumer.config.client_config().clone();
         let namespaced_group = client_config
-            .with_namespace(Some(consumer.config.consumer_group()))
+            .with_namespace(Some(&consumer.config.consumer_group()))
             .unwrap()
             .unwrap();
 

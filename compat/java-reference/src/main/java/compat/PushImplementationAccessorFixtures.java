@@ -229,6 +229,7 @@ public final class PushImplementationAccessorFixtures {
         directHookContext.setSuccess(true);
         first.executeHookAfter(directHookContext);
         boolean hasConsumeHookAfterRegistration = first.hasHook();
+        boolean directHookConsumerGroupNull = directHookContext.getConsumerGroup() == null;
 
         List<String> filterHookEvents = new ArrayList<>();
         first.registerFilterMessageHook(new FilterMessageHook() {
@@ -317,6 +318,7 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("offsetStoreSetterAcceptsNull", offsetStoreSetterAcceptsNull);
         fixture.put("hasConsumeHookBeforeRegistration", hasConsumeHookBeforeRegistration);
         fixture.put("directHookEvents", directHookEvents);
+        fixture.put("directHookConsumerGroupNull", directHookConsumerGroupNull);
         fixture.put("hasConsumeHookAfterRegistration", hasConsumeHookAfterRegistration);
         fixture.put("pushPopFilterHookEvents", filterHookEvents);
         fixture.put("rawImplementationPublicMethodSignatures", publicMethodSignatures());

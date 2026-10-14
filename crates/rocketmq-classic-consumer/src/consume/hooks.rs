@@ -14,7 +14,7 @@ use rocketmq_classic_core::config::AccessChannel;
 /// `properties` or `trace_context` during `consume_message_before` remain
 /// available in `consume_message_after`.
 pub struct ConsumeMessageContext {
-    pub consumer_group: String,
+    pub consumer_group: Option<String>,
     pub messages: Option<Vec<MessageExt>>,
     pub message_queue: MessageQueue,
     pub success: bool,
@@ -29,13 +29,13 @@ pub struct ConsumeMessageContext {
 
 impl ConsumeMessageContext {
     pub fn new(
-        consumer_group: impl Into<String>,
+        consumer_group: Option<String>,
         messages: Option<Vec<MessageExt>>,
         message_queue: MessageQueue,
         namespace: Option<String>,
     ) -> Self {
         Self {
-            consumer_group: consumer_group.into(),
+            consumer_group,
             messages,
             message_queue,
             success: false,
@@ -156,7 +156,7 @@ mod tests {
         registry.register(Arc::new(PanickingHook));
         registry.register(Arc::new(RecordingHook(calls.clone())));
         let mut context = ConsumeMessageContext::new(
-            "group",
+            Some("group".to_owned()),
             None,
             MessageQueue::new("topic", "broker", 0),
             None,
