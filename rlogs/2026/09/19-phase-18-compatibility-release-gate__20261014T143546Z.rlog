@@ -65,3 +65,8 @@ Follow-up — Producer facade/implementation identity accessors (2026-10-14 15:0
 - Updated the Phase 7 producer matrix, Phase 6 API/config map, and requirement audit. Fixture SHA-256: `12c6f78ba79bda9d50ccec5ebeacbfbcf3ce102e60b9ee5ad05f83510a3fe0b1`.
 - PASS: `cargo test -p rocketmq-classic-producer --locked`; `cargo clippy -p rocketmq-classic-producer --all-targets --all-features --locked -- -D warnings`; `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios, fixture drift and cross-decodes); `cargo fmt --all -- --check`; `git diff --check`.
 - P18-V01 remains open for broad Java/Rust source, overload input/error/control-flow, inherited/trait API and reverse-export reconciliation. Current-revision GitHub Ubuntu evidence, Phase 19 Docker/Broker automation, and pre-publication registry checks remain outstanding; Windows IP Helper, non-macOS BSD enumeration and a real IPv6-only host remain environment checks.
+
+Current revision workspace retest (2026-10-14 15:13 UTC; code revision `ed76df95`)
+- PASS: `cargo test --workspace --locked` and `cargo test --workspace --all-features --locked`.
+- PASS: `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`.
+- Updated the Phase 7 lifecycle accessor row to use the current producer fixture SHA-256 after the identity case was added. This retest does not replace Phase 19 Broker/Docker execution or current-revision GitHub Ubuntu evidence.
