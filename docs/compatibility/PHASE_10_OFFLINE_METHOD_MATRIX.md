@@ -126,6 +126,40 @@ the Java implementation getter's concurrent-mode `-1` resolution; the
 orderly-only helper is crate-private. Inherited Java settings are available
 through `client_config`/`client_config_mut`.
 
+The pinned `DefaultMQPushConsumer` JavaBean surface is crosswalked to that
+configuration and owner API as follows. `getAdjustThreadPoolNumsThreshold` /
+`setAdjustThreadPoolNumsThreshold`, `getAwaitTerminationMillisWhenShutdown` /
+`setAwaitTerminationMillisWhenShutdown`, `getConsumeConcurrentlyMaxSpan` /
+`setConsumeConcurrentlyMaxSpan`, `getConsumeFromWhere` /
+`setConsumeFromWhere`, `getConsumeMessageBatchMaxSize` /
+`setConsumeMessageBatchMaxSize`, `getConsumeThreadMax` / `setConsumeThreadMax`,
+`getConsumeThreadMin` / `setConsumeThreadMin`, `getConsumeTimeout` /
+`setConsumeTimeout`, `getConsumeTimestamp` / `setConsumeTimestamp`,
+`getConsumerGroup` / `setConsumerGroup`, `getMessageModel` / `setMessageModel`,
+`getPopBatchNums` / `setPopBatchNums`, `getPopInvisibleTime` /
+`setPopInvisibleTime`, `getPopThresholdForQueue` / `setPopThresholdForQueue`,
+`getPullBatchSize` / `setPullBatchSize`, `getPullBatchSizeInBytes` /
+`setPullBatchSizeInBytes`, `getPullInterval` / `setPullInterval`,
+`getPullThresholdForQueue` / `setPullThresholdForQueue`,
+`getPullThresholdForTopic` / `setPullThresholdForTopic`,
+`getPullThresholdSizeForQueue` / `setPullThresholdSizeForQueue`,
+`getPullThresholdSizeForTopic` / `setPullThresholdSizeForTopic`, and
+`getSuspendCurrentQueueTimeMillis` / `setSuspendCurrentQueueTimeMillis` map to
+the matching snake-case `PushConsumerConfig` getter/setter pairs. The facade's
+`getAllocateMessageQueueStrategy` and `setMessageQueueListener` map to the
+`PushConsumerConfig` strategy/listener accessors;
+`getTraceDispatcher` maps to `PushConsumer::trace_dispatcher`;
+`isClientRebalance` / `setClientRebalance` and
+`isPostSubscriptionWhenPull` / `setPostSubscriptionWhenPull` map to
+`client_rebalance` and `post_subscription_when_pull` config accessors;
+`isConsumeOrderly` maps to `PushConsumer::{is_consume_orderly,
+set_consume_orderly}`. The pinned facade reflection inventory is
+`fixtures/consumer/facade-api.json`; config defaults/ranges and live runtime
+effects are covered by the Phase 10 configuration, consumer, and pipeline
+checks, while strategy/listener and trace behavior is covered in Phases 11
+and 16. This is a callable-name crosswalk; it does not replace the broader
+per-input and per-branch P18-V01 audit.
+
 ## Case ownership and status
 
 | Case | Check required here | Execution boundary | Status |

@@ -59,3 +59,64 @@ fn pinned_java_consumer_facade_inventory_covers_declared_and_inherited_methods()
         );
     }
 }
+
+#[test]
+fn pinned_java_consumer_callable_method_names_have_phase_crosswalks() {
+    let fixture: Value = serde_json::from_str(JAVA_FACADE_API).expect("valid Java API fixture");
+    let apis = &fixture["apis"];
+    let crosswalks = [
+        include_str!("../../../docs/compatibility/PHASE_6_API_CONFIG_MAP.md"),
+        include_str!("../../../docs/compatibility/PHASE_9_OFFLINE_METHOD_MATRIX.md"),
+        include_str!("../../../docs/compatibility/PHASE_10_OFFLINE_METHOD_MATRIX.md"),
+        include_str!("../../../docs/compatibility/PHASE_11_OFFLINE_METHOD_MATRIX.md"),
+        include_str!("../../../docs/compatibility/PHASE_12_ORDERLY_MATRIX.md"),
+        include_str!("../../../docs/compatibility/PHASE_13_LITE_POP_MATRIX.md"),
+        include_str!("../../../docs/compatibility/PHASE_14_TRANSACTION_MATRIX.md"),
+        include_str!("../../../docs/compatibility/PHASE_15_REQUEST_REPLY_MATRIX.md"),
+        include_str!(
+            "../../../docs/compatibility/PHASE_16_NAMESPACE_SECURITY_OPERATIONS_MATRIX.md"
+        ),
+        include_str!("../../../docs/compatibility/PHASE_17_ADMIN_MATRIX.md"),
+    ]
+    .join("\n");
+
+    let mut missing = Vec::new();
+    for (owner, expected_count) in [
+        ("DefaultMQPushConsumer", 165),
+        ("MQPushConsumer", 23),
+        ("DefaultMQPullConsumer", 135),
+        ("MQPullConsumer", 31),
+        ("DefaultLitePullConsumer", 155),
+        ("LitePullConsumer", 31),
+        ("MQAdmin", 8),
+    ] {
+        let methods = apis[owner]["publicMethods"]
+            .as_array()
+            .expect("Java callable methods");
+        assert_eq!(
+            methods.len(),
+            expected_count,
+            "unexpected {owner} method count"
+        );
+
+        for signature in methods {
+            let signature = signature.as_str().expect("Java method signature");
+            let method_name = signature
+                .split('(')
+                .next()
+                .expect("method name")
+                .rsplit('.')
+                .next()
+                .expect("declaring type and method name");
+            if !crosswalks.contains(method_name) {
+                missing.push(signature);
+            }
+        }
+    }
+
+    assert!(
+        missing.is_empty(),
+        "Java consumer facade/inherited methods have no phase crosswalk:\n{}",
+        missing.join("\n")
+    );
+}

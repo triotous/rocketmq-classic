@@ -96,6 +96,27 @@ The Java `maxSizeInBytes` overload is callback-based in the pinned source. Rust 
 
 The complete public `PullConsumerConfig` accessor map is `tls_config`/`set_tls_config`, `consumer_group`/`set_consumer_group`, `broker_suspend_max_time_millis`/`set_broker_suspend_max_time_millis`, `consumer_timeout_millis_when_suspend`/`set_consumer_timeout_millis_when_suspend`, `consumer_pull_timeout_millis`/`set_consumer_pull_timeout_millis`, `max_reconsume_times`/`set_max_reconsume_times`, `message_model`/`set_message_model`, `unit_mode`/`set_unit_mode`, `enable_rebalance`/`set_enable_rebalance`, `allocate_message_queue_strategy`/`set_allocate_message_queue_strategy`, and `message_queue_listener`/`set_message_queue_listener`. `client_config`/`client_config_mut` expose inherited Java `ClientConfig`. The internal `consume_from_where` bridge is crate-private and is not part of this public inventory.
 
+The pinned `DefaultMQPullConsumer` and `MQPullConsumer` Java facade names for
+these settings and registered subscriptions are `getConsumerGroup`,
+`setConsumerGroup`, `getConsumerPullTimeoutMillis`,
+`setConsumerPullTimeoutMillis`, `getConsumerTimeoutMillisWhenSuspend`,
+`setConsumerTimeoutMillisWhenSuspend`, `setBrokerSuspendMaxTimeMillis`,
+`getMessageModel`, `setMessageModel`, `getAllocateMessageQueueStrategy`,
+`setMessageQueueListener`, `setMaxReconsumeTimes`, `getRegisterTopics`,
+`setRegisterTopics`, `getRegisterSubscriptions`,
+`addRegisterSubscriptions`, and `clearRegisterSubscriptions`. They map to
+`PullConsumerConfig`'s group/timeout/model/strategy/listener/retry accessors
+and `PullConsumer::{register_topics,set_register_topics,
+register_subscriptions,add_register_subscriptions,
+clear_register_subscriptions}`. Java's synchronous and callback overloads
+`pullBlockIfNotFoundWithMessageSelector` map to the Future-returning
+`PullConsumer::pull_block_with_selector`; this carries the same selector and
+blocking pull flow with Rust's async completion model. The pinned facade
+reflection inventory is `fixtures/consumer/facade-api.json`. Config default,
+validation, registration, selector, pull-result, and offset behavior is
+covered by the Phase 9 settings table and P9-U01 checks. This name crosswalk
+does not close the wider P18-V01 input/branch audit.
+
 ### Phase 11 Pull rebalance settings
 
 | Java setting/API | Java 5.5.1 default/behavior | Rust setting and evidence |

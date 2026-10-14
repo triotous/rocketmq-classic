@@ -46,6 +46,36 @@ The post-construction setter audit used the pinned `DefaultLitePullConsumer` cal
 
 Inherited Java `ClientConfig` settings map to the same-named Rust properties and accessors: name-server address, client IP, instance name, callback thread count, namespace/namespace-v2, access channel, name-server/heartbeat/offset intervals, pull exception delay, trace batch count, unit mode/name, body decode/decompress, VIP channel, heartbeat v2, TLS, SOCKS proxy, MQ API timeout, detector timeout/interval, language, stream request type, send-latency/start-detector/channel-event/concurrent-heartbeat controls, trace enable/topic, and metadata page size. Lite's `unitMode`, `enableMsgTrace`, and customized trace topic use the corresponding `ClientConfig` fields as Java does. `inherited_java_client_config_is_copied_to_the_pull_engine` sets these values and checks the complete cloned config, including the Lite unit-mode value passed to the Pull runtime.
 
+The pinned `DefaultLitePullConsumer` getter/setter names also map directly to
+the config and facade accessors: `getAllocateMessageQueueStrategy`,
+`getAutoCommitIntervalMillis`, `getConsumeFromWhere`, `getConsumeMaxSpan`,
+`getConsumeTimestamp`, `getConsumerGroup`, `getConsumerPullTimeoutMillis`,
+`getConsumerTimeoutMillisWhenSuspend`, `getCustomizedTraceTopic`,
+`getDefaultBrokerId`, `getMessageModel`, `getPollTimeoutMillis`,
+`getPullBatchSize`, `getPullThreadNums`, `getPullThresholdForAll`,
+`getPullThresholdForQueue`, `getPullThresholdSizeForQueue`,
+`getSubscriptionsForHeartbeat`, `getTopicMetadataCheckIntervalMillis`,
+`getTraceDispatcher`, `isConnectBrokerByUser`, and `isEnableMsgTrace`, plus
+`setAutoCommitIntervalMillis`, `setConsumeFromWhere`, `setConsumeMaxSpan`,
+`setConsumeTimestamp`, `setConsumerGroup`, `setConsumerPullTimeoutMillis`,
+`setConsumerTimeoutMillisWhenSuspend`, `setCustomizedTraceTopic`,
+`setEnableMsgTrace`, `setMessageModel`, `setMessageQueueListener`,
+`setPollTimeoutMillis`, `setPullBatchSize`, `setPullThreadNums`,
+`setPullThresholdForAll`, `setPullThresholdForQueue`,
+`setPullThresholdSizeForQueue`, and
+`setTopicMetadataCheckIntervalMillis`. Configuration methods map to
+`LitePullConsumerConfig`'s corresponding snake-case accessors. The facade's
+live settings map to `LitePullConsumer` getters/setters for auto-commit
+interval, pull threads/batch, queue thresholds, consume span, poll and
+consumer timeouts, broker selection and message-queue listener;
+`getSubscriptionsForHeartbeat` and `getTraceDispatcher` map to the retained
+subscription handle and owned dispatcher. The pinned Java reflection
+inventory is `fixtures/consumer/facade-api.json`; defaults/validation,
+post-construction reads, runtime effects, trace lifecycle, and subscription
+identity are covered by the existing Lite config, `lite_pop`, and trace tests.
+The callable-name crosswalk does not replace the broader P18-V01
+per-input/branch review.
+
 The Push POP defaults are queue wait-ACK threshold 96, invisibility 60000 ms, and POP batch count 32. The Java `ExtraInfoUtil` fixture records the unmodified receipt string and each decoded routing/offset field. `PopResult` exposes `FOUND`, `NO_NEW_MSG`, `POLLING_FULL`, and `POLLING_NOT_FOUND` plus pop time, invisibility, remaining count and message list.
 
 Typed request/response bodies and low-level POP/ACK RPCs are already present in protocol/core crates. The Rust tree has a Lite scheduler/polling facade with consume trace dispatch and a Push POP worker/receipt path, backed by pinned Java fixtures, state tests, controlled expiry checks and scripted peers. Local P13-V01 and P13-V03 Lite API/configuration gates and P13-U01 expiry/redelivery/replacement checks are covered. P13-V02 remains pending as a Phase 19 live Broker/Docker gate; local scripted POP success, expiry, malformed receipt, mixed-queue, ACK and replacement evidence is recorded above and does not count as live evidence.
