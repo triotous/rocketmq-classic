@@ -377,7 +377,13 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   removed boundaries. Code commit `6893f14b`; the Phase 16 ACL matrix and
   security usage guide name the retained Java-mapped entrypoints. The full
   Core locked test suite, strict Core Clippy, format and diff checks pass for
-  this slice.
+  this slice. Core `AdminQueryRequest` now keeps derived route/LMQ metadata
+  private, preserves Java's nullable cluster/index-type/pagination inputs with
+  builders, and matches the null-index result filter; LMQ and wheel-timer route
+  tests cover the derived behavior. Code commits `e7dcdf63` and `daef67eb`;
+  Core/Producer/Consumer locked tests, strict workspace Clippy, format, diff,
+  and rustdoc JSON surface inspection pass for this slice. These bounded
+  corrections leave P18-V01 open.
 - [x] **P18-V02** — Current-worktree unit, differential, race/leak, fuzz,
   shutdown, and fixture gates pass; see the run recorded above.
 - [x] **P18-V03** — Facade examples, package graph/content/provenance, license
