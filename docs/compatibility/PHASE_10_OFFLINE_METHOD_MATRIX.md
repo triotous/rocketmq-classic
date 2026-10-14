@@ -172,7 +172,12 @@ configuration and owner API as follows. `getAdjustThreadPoolNumsThreshold` /
 `getPullThresholdSizeForQueue` / `setPullThresholdSizeForQueue`,
 `getPullThresholdSizeForTopic` / `setPullThresholdSizeForTopic`, and
 `getSuspendCurrentQueueTimeMillis` / `setSuspendCurrentQueueTimeMillis` map to
-the matching snake-case `PushConsumerConfig` getter/setter pairs. The facade's
+the matching snake-case `PushConsumerConfig` getter/setter pairs. The group
+getter returns `Option<String>` and the single setter accepts `Option<String>`,
+so Java null is represented on the mapped methods without Rust-only nullable
+aliases. `push_facade_group_getter_and_heartbeat_follow_live_java_group`
+compares the invoked Java fixture's value, null-clearing, and heartbeat results.
+The facade's
 `getAllocateMessageQueueStrategy` and `setMessageQueueListener` map to the
 `PushConsumerConfig` strategy/listener accessors;
 `getTraceDispatcher` maps to `PushConsumer::trace_dispatcher`;

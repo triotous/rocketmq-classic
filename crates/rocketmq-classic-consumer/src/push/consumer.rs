@@ -338,6 +338,17 @@ impl StartupStage {
 }
 
 /// Java-compatible Push startup, assignment lifecycle, listener modes, and POP flow.
+///
+/// Java's nullable consumer-group setter is represented by
+/// `set_consumer_group(Option<String>)`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_consumer::PushConsumer;
+///
+/// fn removed_nullable_alias(consumer: &PushConsumer) {
+///     consumer.set_consumer_group_nullable(None);
+/// }
+/// ```
 pub struct PushConsumer {
     config: PushConsumerConfig,
     manager: ClientRuntimeManager,
@@ -464,23 +475,20 @@ impl PushConsumer {
     /// Returns the current Java-compatible facade consumer group, including
     /// the nullable state accepted by `DefaultMQPushConsumer`.
     pub fn get_consumer_group(&self) -> Option<String> {
-        self.config.consumer_group_nullable()
+        self.config.consumer_group()
     }
 
     /// Updates the live facade consumer group.
-    pub fn set_consumer_group(&self, value: impl Into<String>) {
+    /// `None` represents the null value accepted by Java's
+    /// `DefaultMQPushConsumer.setConsumerGroup(String)`.
+    pub fn set_consumer_group(&self, value: Option<String>) {
         self.config.set_consumer_group(value);
-    }
-
-    /// Nullable form of Java's `setConsumerGroup(String)`.
-    pub fn set_consumer_group_nullable(&self, value: Option<String>) {
-        self.config.set_consumer_group_nullable(value);
     }
 
     fn consume_stats_group(&self) -> String {
         read_lock(&self.consume_stats_group)
             .clone()
-            .unwrap_or_else(|| self.config.consumer_group())
+            .unwrap_or_else(|| self.config.consumer_group().unwrap_or_default())
     }
 
     /// Returns the retained implementation handle exposed by Java's
@@ -569,7 +577,7 @@ impl PushConsumer {
     }
 
     pub fn group_name(&self) -> Option<String> {
-        self.config.consumer_group_nullable()
+        self.config.consumer_group()
     }
 
     pub fn message_model(&self) -> rocketmq_classic_protocol::heartbeat::MessageModel {
@@ -698,7 +706,7 @@ impl PushConsumer {
             .get_namespace()
             .expect("the consumer namespace was validated before consume workers start")
             .map(str::to_owned);
-        let consumer_group = self.config.consumer_group_nullable();
+        let consumer_group = self.config.consumer_group();
         ConsumeMessageContext::new(consumer_group, Some(messages), queue, namespace)
             .with_properties(HashMap::new())
     }
@@ -1567,7 +1575,7 @@ impl PushConsumer {
                         topic.clone(),
                         self.stats.status(
                             runtime.client_id(),
-                            &self.config.consumer_group(),
+                            &self.config.consumer_group().unwrap_or_default(),
                             topic,
                         ),
                     )
@@ -2576,7 +2584,10 @@ impl PushConsumer {
             .map(|message| message.as_ref().clone())
             .collect::<Vec<_>>();
         self.try_reset_pop_retry_topic(&mut messages, &self.consume_stats_group());
-        self.reset_retry_and_namespace(&mut messages, &self.config.consumer_group());
+        self.reset_retry_and_namespace(
+            &mut messages,
+            &self.config.consumer_group().unwrap_or_default(),
+        );
         let mut consume_context =
             self.new_consume_message_context(messages, request.batch.queue().clone());
         self.consume_message_hooks
@@ -2727,7 +2738,10 @@ impl PushConsumer {
                 .iter()
                 .map(|message| message.as_ref().clone())
                 .collect::<Vec<_>>();
-            self.reset_retry_and_namespace_for_group(&mut messages, &self.config.consumer_group());
+            self.reset_retry_and_namespace_for_group(
+                &mut messages,
+                &self.config.consumer_group().unwrap_or_default(),
+            );
             let mut consume_context =
                 self.new_consume_message_context(messages.clone(), queue.clone());
             self.consume_message_hooks
@@ -3193,7 +3207,7 @@ impl PushConsumer {
             .consumer_group_override
             .filter(|group| !group.trim().is_empty())
             .map(str::to_owned)
-            .or_else(|| self.config.consumer_group_nullable());
+            .or_else(|| self.config.consumer_group());
         let origin_topic = client_config
             .with_namespace(Some(message.message().topic()))
             .ok()
@@ -3207,7 +3221,7 @@ impl PushConsumer {
             return false;
         };
         let Some(retry_group) = client_config
-            .with_namespace(self.config.consumer_group_nullable().as_deref())
+            .with_namespace(self.config.consumer_group().as_deref())
             .ok()
             .flatten()
         else {
@@ -3649,9 +3663,8 @@ impl PushConsumer {
 
         let mut client_config = self.config.client_config().clone();
         let consumer_group =
-            client_config.with_namespace(self.config.consumer_group_nullable().as_deref())?;
-        self.config
-            .set_consumer_group_nullable(consumer_group.clone());
+            client_config.with_namespace(self.config.consumer_group().as_deref())?;
+        self.config.set_consumer_group(consumer_group.clone());
         let consumer_group = consumer_group.ok_or(PushConsumerError::InvalidConsumerGroup)?;
         self.config.validate(&consumer_group)?;
         self.pull_api.set_unit_mode(self.config.unit_mode());
@@ -3792,7 +3805,7 @@ impl PushConsumer {
         }
         let dispatcher = match rocketmq_classic_producer::TraceDispatcher::new(
             client_config,
-            &self.config.consumer_group(),
+            &self.config.consumer_group().unwrap_or_default(),
             rocketmq_classic_producer::TraceProducerKind::Consume,
             client_config.trace_topic(),
             self.manager.clone(),
@@ -5995,7 +6008,7 @@ impl PushConsumer {
             (
                 runtime
                     .unregister_consumer_by_group_nullable(
-                        self.config.consumer_group_nullable().as_deref(),
+                        self.config.consumer_group().as_deref(),
                         self.unregister_deadline(),
                     )
                     .await,
@@ -6350,7 +6363,7 @@ mod tests {
         assert!(std::ptr::eq(first.config(), second.config()));
         assert!(std::ptr::eq(first_rebalance, consumer.as_ref()));
         assert!(std::ptr::eq(second_rebalance, first_rebalance));
-        assert_eq!(first.config().consumer_group(), group);
+        assert_eq!(first.config().consumer_group(), Some(group.to_owned()));
         assert_eq!(first.get_max_reconsume_times(), 16);
 
         let custom_config = PushConsumerConfig::new("phase18-push-max-reconsume-custom").unwrap();
@@ -6676,7 +6689,7 @@ mod tests {
         )
         .await;
         runtime.remoting().start().unwrap();
-        consumer.set_consumer_group_nullable(None);
+        consumer.set_consumer_group(None);
 
         let spans = consumer.query_consume_time_span("orders").await.unwrap();
         nameserver_peer.await.unwrap();
@@ -6701,7 +6714,7 @@ mod tests {
         assert_eq!(spans[0].as_ref().unwrap().delay_time, 4);
         assert_eq!(spans[1].as_ref().unwrap().delay_time, 3);
 
-        consumer.set_consumer_group("consume-time-span-group");
+        consumer.set_consumer_group(Some("consume-time-span-group".into()));
         consumer.shutdown().await.unwrap();
         let _ = runtime.shutdown().await;
     }
@@ -6774,7 +6787,7 @@ mod tests {
             .client_config_mut()
             .set_namespace(Some("tenant".to_owned()));
         let consumer = PushConsumer::new(config);
-        consumer.set_consumer_group_nullable(None);
+        consumer.set_consumer_group(None);
 
         let context = consumer.new_consume_message_context(
             Vec::new(),
@@ -7087,7 +7100,7 @@ mod tests {
             Some(oracle["heartbeatGroupBefore"].as_str().unwrap())
         );
 
-        consumer.set_consumer_group("push-group-after");
+        consumer.set_consumer_group(Some("push-group-after".into()));
         assert_eq!(
             consumer.get_consumer_group().as_deref(),
             Some("push-group-after")
@@ -7102,7 +7115,7 @@ mod tests {
             Some(oracle["heartbeatGroupAfter"].as_str().unwrap())
         );
 
-        consumer.set_consumer_group_nullable(None);
+        consumer.set_consumer_group(None);
         assert_eq!(consumer.get_consumer_group(), None);
         assert_eq!(consumer.group_name(), None);
         assert_eq!(oracle["facadeGroupNull"], true);
@@ -7136,13 +7149,13 @@ mod tests {
             Some("tenant%push-start-group")
         );
         assert_eq!(
-            consumer.config().consumer_group_nullable().as_deref(),
+            consumer.config().consumer_group().as_deref(),
             Some("tenant%push-start-group")
         );
 
         let default = PushConsumerConfig::new_default().unwrap();
         assert_eq!(
-            default.consumer_group_nullable().as_deref(),
+            default.consumer_group().as_deref(),
             Some("DEFAULT_CONSUMER")
         );
         assert!(matches!(
@@ -7823,7 +7836,7 @@ mod tests {
             .unwrap();
         nameserver_peer.await.unwrap();
         *write_lock(&consumer.consume_stats_group) = Some("pop-lifecycle-group".to_owned());
-        consumer.set_consumer_group("pop-lifecycle-live-group");
+        consumer.set_consumer_group(Some("pop-lifecycle-live-group".into()));
 
         let queue = MessageQueue::new("orders", "broker-a", 0);
         let successful_queue = Arc::new(PopProcessQueue::new(queue.clone(), 1));
@@ -8303,12 +8316,12 @@ mod tests {
         );
         let mut client_config = consumer.config.client_config().clone();
         let consumer_group = client_config
-            .with_namespace(Some(&consumer.config.consumer_group()))
+            .with_namespace(consumer.config.consumer_group().as_deref())
             .unwrap()
             .unwrap();
         consumer
             .config
-            .set_consumer_group_nullable(Some(consumer_group.clone()));
+            .set_consumer_group(Some(consumer_group.clone()));
         *write_lock(&consumer.consume_stats_group) = Some(consumer_group.clone());
         consumer
             .rebalance_service
@@ -9138,7 +9151,12 @@ mod tests {
             consumer
                 .config
                 .allocate_message_queue_strategy()
-                .allocate(&consumer.config.consumer_group(), &current_id, &all, &ids)
+                .allocate(
+                    consumer.config.consumer_group().as_deref().unwrap(),
+                    &current_id,
+                    &all,
+                    &ids,
+                )
                 .unwrap()
                 .into_iter()
                 .collect::<HashSet<_>>()
@@ -9757,7 +9775,7 @@ mod tests {
             assert_eq!(fixture[key], fixture["consumeServiceGroupBeforeMutation"]);
         }
 
-        consumer.set_consumer_group("consume-stats-live-group");
+        consumer.set_consumer_group(Some("consume-stats-live-group".into()));
         let queue = MessageQueue::new("orders", "broker-a", 0);
         let request = consume_request(queue, 191, vec![message(1)]);
         let listener: Arc<dyn MessageListenerConcurrently> = Arc::new(
@@ -9806,7 +9824,7 @@ mod tests {
             Arc::new(PullRpcWorkers::new()),
         )
         .await;
-        consumer.set_consumer_group(live_group);
+        consumer.set_consumer_group(Some(live_group.to_owned()));
         let hook_before_groups = Arc::new(std::sync::Mutex::new(Vec::new()));
         let hook_after_groups = Arc::new(std::sync::Mutex::new(Vec::new()));
         consumer.register_consume_message_hook(Arc::new(ConsumerGroupHookRecorder {
@@ -9906,7 +9924,7 @@ mod tests {
             Arc::new(PullRpcWorkers::new()),
         )
         .await;
-        consumer.set_consumer_group("phase18-consume-retry-live");
+        consumer.set_consumer_group(Some("phase18-consume-retry-live".into()));
 
         let result = consumer
             .consume_message_directly(
@@ -9970,7 +9988,7 @@ mod tests {
         let runtime =
             install_started_orderly_consumer(&consumer, &manager, store, listener.clone(), None)
                 .await;
-        consumer.set_consumer_group(live_group);
+        consumer.set_consumer_group(Some(live_group.to_owned()));
         let hook_before_groups = Arc::new(std::sync::Mutex::new(Vec::new()));
         let hook_after_groups = Arc::new(std::sync::Mutex::new(Vec::new()));
         consumer.register_consume_message_hook(Arc::new(ConsumerGroupHookRecorder {
@@ -10061,7 +10079,7 @@ mod tests {
             install_started_orderly_consumer(&consumer, &manager, store, listener.clone(), None)
                 .await;
 
-        consumer.set_consumer_group("orderly-stats-live-group");
+        consumer.set_consumer_group(Some("orderly-stats-live-group".into()));
         let queue = MessageQueue::new("orders", "broker-a", 0);
         let process_queue = Arc::new(ProcessQueue::new(queue, 192));
         process_queue
@@ -10308,6 +10326,16 @@ mod tests {
                 .as_str()
                 .is_some_and(|stack| stack.contains("running_info_returns_queue_snapshot"))
         );
+
+        consumer.set_consumer_group(None);
+        let null_group_running_info =
+            consumer.running_info_body(&runtime, None, Some(store_dyn.clone()));
+        assert!(
+            !null_group_running_info
+                .properties
+                .contains_key("consumerGroup")
+        );
+        consumer.set_consumer_group(Some("running-info-snapshot".into()));
 
         consumer.shutdown().await.unwrap();
         assert!(matches!(
@@ -10800,7 +10828,7 @@ mod tests {
             Arc::new(ProcessQueue::new(queue, 1)),
             0,
         );
-        consumer.set_consumer_group("push-live-pull-mutated-group");
+        consumer.set_consumer_group(Some("push-live-pull-mutated-group".into()));
         let context = PullContext {
             runtime: runtime.clone(),
             offset_store,
@@ -10834,7 +10862,7 @@ mod tests {
             Arc::new(PullRpcWorkers::new()),
         )
         .await;
-        consumer.set_consumer_group("pull-request-live-group");
+        consumer.set_consumer_group(Some("pull-request-live-group".into()));
 
         let queue = MessageQueue::new("orders", "broker-a", 0);
         consumer.activate_process_queue(&queue, 0).await.unwrap();
@@ -10944,7 +10972,7 @@ mod tests {
             )),
             0,
         );
-        consumer.set_consumer_group("pull-stats-mutated-group");
+        consumer.set_consumer_group(Some("pull-stats-mutated-group".into()));
         consumer.record_pull_result_stats(
             &request,
             "pull-stats-client",
@@ -11211,7 +11239,7 @@ mod tests {
             Arc::new(PullRpcWorkers::new()),
         )
         .await;
-        consumer.set_consumer_group("phase18-consume-retry-live");
+        consumer.set_consumer_group(Some("phase18-consume-retry-live".into()));
 
         let offset_store = Arc::new(RecordingOffsetStore::default());
         let context = PullContext {
@@ -12103,7 +12131,7 @@ mod tests {
                 .unwrap()
                 .is_some()
         );
-        consumer.set_consumer_group("push-shutdown-group-after");
+        consumer.set_consumer_group(Some("push-shutdown-group-after".into()));
         consumer.shutdown().await.unwrap();
 
         assert!(
@@ -12198,7 +12226,7 @@ mod tests {
                 .unwrap();
             assert!(
                 runtime
-                    .select_consumer(&consumer.config().consumer_group())
+                    .select_consumer(consumer.config().consumer_group().as_deref().unwrap())
                     .unwrap()
                     .is_none()
             );
@@ -12435,7 +12463,7 @@ mod tests {
         let consumer = PushConsumer::with_manager(config, ClientRuntimeManager::new());
         let mut client_config = consumer.config.client_config().clone();
         let namespaced_group = client_config
-            .with_namespace(Some(&consumer.config.consumer_group()))
+            .with_namespace(consumer.config.consumer_group().as_deref())
             .unwrap()
             .unwrap();
 
@@ -12450,8 +12478,10 @@ mod tests {
                 .unwrap();
 
             let mut dlq = retry_test_message(2);
-            dlq.message_mut()
-                .set_topic(format!("%DLQ%tenant%{}", consumer.config.consumer_group()));
+            dlq.message_mut().set_topic(format!(
+                "%DLQ%tenant%{}",
+                consumer.config().consumer_group().unwrap()
+            ));
 
             let mut normal = retry_test_message(3);
             normal.message_mut().set_topic("tenant%orders");
@@ -12716,7 +12746,7 @@ mod tests {
         let store: Arc<dyn OffsetStore> = Arc::new(RecordingOffsetStore::default());
         let runtime =
             install_started_orderly_consumer(&consumer, &manager, store, listener, None).await;
-        consumer.set_consumer_group("phase18-consume-service-group-mutated");
+        consumer.set_consumer_group(Some("phase18-consume-service-group-mutated".into()));
 
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
             "../../../../fixtures/consumer/push-implementation-accessor.json"

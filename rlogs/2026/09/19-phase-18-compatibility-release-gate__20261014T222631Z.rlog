@@ -21,3 +21,26 @@
   CI result for the address profile; no workflow run exists for this local
   branch. Phase 19 Docker/Broker validation and pre-publication registry checks
   remain future acceptance work. No push, publication, or tag was performed.
+
+# Push consumer nullable-group surface correction — 2026-10-14T22:38:45Z
+
+- Removed the Rust-only nullable getter/setter aliases. The canonical Push
+  config/facade group getter and setter now use `Option<String>` to preserve
+  Java `String` nullability; updated Phase 10 crosswalk and compile-fail docs.
+- Java oracle: `MixAll.object2Properties` omits null fields (`common/.../MixAll.java:348`),
+  so Push running-info omits `consumerGroup` when the live group is null. Added a
+  regression assertion against the local running-info body.
+- First consumer compile exposed two running-info `BTreeMap` conversions and
+  three tests expecting old getter/setter types; corrected those call sites.
+  An initial null-group running-info test used the broker-routed API and failed
+  with `InvalidRoute("null consumer group")`; moved the assertion to local body
+  construction and restored a valid group before shutdown.
+- PASS: `cargo test -p rocketmq-classic-consumer --all-features --locked`
+  (219 unit, 9 admin, 2 facade API, 19 Lite/POP, 3 offsets, 1 orderly, 2 pull
+  consumer, 7 pull-result, 1 push-pipeline, 2 rebalance, and 8 doctests).
+- PASS: `cargo test --workspace --all-features --locked`;
+  `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`;
+  `cargo fmt --all -- --check`; `git diff --check`.
+- The full Phase 18 source/API/settings/overload/input/error/control-flow and
+  reverse-export audit remains open; these gates validate the nullable-group
+  correction only and do not close P18-V01 or any Phase 19 requirement.

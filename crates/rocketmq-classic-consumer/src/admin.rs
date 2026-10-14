@@ -295,7 +295,9 @@ pub(crate) fn push_running_info_properties(
     core_pool_size: i32,
 ) -> BTreeMap<String, String> {
     let mut properties = BTreeMap::new();
-    properties.insert("consumerGroup".into(), config.consumer_group().to_owned());
+    if let Some(consumer_group) = config.consumer_group() {
+        properties.insert("consumerGroup".into(), consumer_group);
+    }
     properties.insert("messageModel".into(), config.message_model().name().into());
     properties.insert(
         "consumeFromWhere".into(),

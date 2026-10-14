@@ -37,6 +37,25 @@ pub const DEFAULT_POP_INVISIBLE_TIME_MILLIS: i64 = 60_000;
 pub const DEFAULT_POP_BATCH_NUMS: i32 = 32;
 
 /// Java 5.5.1 `DefaultMQPushConsumer` settings used by the pull and POP paths.
+///
+/// The consumer group accessor and setter preserve Java's nullable `String`
+/// through `Option<String>`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_consumer::PushConsumerConfig;
+///
+/// fn removed_nullable_alias(config: &PushConsumerConfig) {
+///     config.consumer_group_nullable();
+/// }
+/// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_consumer::PushConsumerConfig;
+///
+/// fn removed_nullable_setter(config: &PushConsumerConfig) {
+///     config.set_consumer_group_nullable(None);
+/// }
+/// ```
 pub struct PushConsumerConfig {
     client: ClientConfig,
     tls_config: Option<TlsConfig>,
@@ -143,27 +162,14 @@ impl PushConsumerConfig {
         self.tls_config = value;
     }
 
-    /// Returns the current consumer group as an owned string.
-    ///
-    /// Use [`consumer_group_nullable`](Self::consumer_group_nullable) when the
-    /// Java-compatible null state itself must be observed.
-    pub fn consumer_group(&self) -> String {
-        self.consumer_group_nullable().unwrap_or_default()
-    }
-
     /// Returns the current Java-compatible consumer group, including null.
-    pub fn consumer_group_nullable(&self) -> Option<String> {
+    pub fn consumer_group(&self) -> Option<String> {
         read_lock(&self.consumer_group).clone()
     }
 
     /// Updates the consumer group. The retained Push consumer configuration
-    /// remains live after construction, matching Java's facade setter.
-    pub fn set_consumer_group(&self, value: impl Into<String>) {
-        self.set_consumer_group_nullable(Some(value.into()));
-    }
-
-    /// Nullable counterpart of Java's `setConsumerGroup(String)`.
-    pub fn set_consumer_group_nullable(&self, value: Option<String>) {
+    /// remains live after construction. `None` represents Java's null value.
+    pub fn set_consumer_group(&self, value: Option<String>) {
         *write_lock(&self.consumer_group) = value;
     }
 
