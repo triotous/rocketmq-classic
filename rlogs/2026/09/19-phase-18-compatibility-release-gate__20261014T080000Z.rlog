@@ -58,3 +58,13 @@ Base revision: dd3b2b6e docs(compat): record producer lifecycle gates
 
 - Updated `docs/release-checklist.md` to record that the targeted trait slices have method/source crosswalks without claiming the full P18-V01 inherited or Java/Rust reverse-export audit is closed.
 - PASS: `git diff --check` after the release-checklist status update.
+
+## Current-tree server-free P18-V02 gates — 2026-10-14
+
+- Revision: clean tree at `450ed704`; implementation/test revision is `c8e47357` with documentation-only commits afterward.
+- PASS: `cargo test --workspace --locked` and `cargo test --workspace --all-features --locked`.
+- PASS: `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`; `cargo fmt --all -- --check`; `git diff --check`.
+- PASS: `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios, fixture drift and Java/Rust cross-decodes); `python3 tests/differential/compare.py --self-test`; `python3 tests/differential/compare.py --validate-manifest` (37 scenarios).
+- PASS: `bash tests/stress/run-offline-smoke.sh` (16 deterministic cases × 3 repetitions); `cargo run -p rocketmq-classic-remoting --example fuzz_smoke --locked` (104 frame seeds, 10 message seeds, 1,824 bounded mutations).
+- PASS: `cargo build -p rocketmq-classic --examples --release --locked`; `cargo bench -p rocketmq-classic --bench offline --locked --no-run`; `python3 scripts/check-workspace-metadata.py`; `cargo metadata --locked --format-version 1 --no-deps`; `cargo package --workspace --list --locked --allow-dirty` (seven packages).
+- The gate script used `set -e` and reached its final package-content command. Maven/JDK emitted existing `Unsafe` and reflective-final-field warnings but returned successfully. Git status after validation is clean. P18-V01 remains PARTIAL; this server-free rerun does not provide the required GitHub Ubuntu result or Phase 19 Broker/Docker evidence.
