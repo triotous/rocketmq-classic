@@ -504,6 +504,16 @@ the required full Phase 18 gates on the final revision.
   Pull fixture SHA-256 `1090617637533587bc425acaf1862521b7d2826c8747839a14a6e985fbdd4c78`.
   This closes only the audited group-timing paths; the broad P18-V01 audit and
   full workspace gates on the final revision remain open.
+- Current-revision server-free gate rerun (`2c87e4ed`, 2026-10-14): default and
+  all-feature workspace tests, strict all-target/all-feature workspace Clippy,
+  `cargo fmt --all -- --check`, pinned Maven `verify` (37 scenarios, fixture
+  drift and Java/Rust cross-decodes), differential self-test and 37-scenario
+  manifest, fuzz smoke (104 frame seeds, 10 message seeds, 1,824 mutations),
+  16 deterministic race/leak cases repeated three times, release examples,
+  offline benchmark compilation, workspace metadata/license/dependency checks,
+  seven package-content listings, and `git diff --check` all pass. This closes
+  the current-revision P18-V02 server-free rerun; broad P18-V01 and the required
+  GitHub Ubuntu address-profile result remain open.
 
 ## Package graph and metadata
 

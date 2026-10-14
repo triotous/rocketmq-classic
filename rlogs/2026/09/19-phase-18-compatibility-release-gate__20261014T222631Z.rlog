@@ -1,0 +1,23 @@
+# Phase 18 current-revision server-free gates — 2026-10-14T22:26:31Z
+
+- Branch `phase/19-phase-18-compatibility-release-gate`, HEAD `2c87e4ed`;
+  working tree was clean before this documentation update. Java source remains
+  read-only at `efa1be59d6fc747ad220f036c86030f05f0419f9`.
+- PASS: `cargo test --workspace --locked` and
+  `cargo test --workspace --all-features --locked`.
+- PASS: strict workspace Clippy,
+  `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`;
+  `cargo fmt --all -- --check`; differential comparator self-test; 37-scenario
+  manifest validation; workspace metadata/license/dependency direction.
+- PASS: `mvn -f compat/java-reference/pom.xml verify` (37 scenarios, fixture
+  drift checks and Java/Rust cross-decodes); fuzz smoke (104 frame seeds, 10
+  message seeds, 1,824 bounded mutations); offline deterministic race/leak
+  smoke (16 cases × 3); release example build; offline benchmark compilation;
+  seven `cargo package --workspace --list --locked --allow-dirty` listings;
+  `git diff --check`.
+- P18-V02 server-free gates are verified on this revision. P18-V01 remains open
+  for complete source/API/settings/overload/input/error/control-flow and
+  reverse-export reconciliation. P18-V04 still lacks a current GitHub Ubuntu
+  CI result for the address profile; no workflow run exists for this local
+  branch. Phase 19 Docker/Broker validation and pre-publication registry checks
+  remain future acceptance work. No push, publication, or tag was performed.
