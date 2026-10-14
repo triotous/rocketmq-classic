@@ -53,3 +53,8 @@ Base revision: dd3b2b6e docs(compat): record producer lifecycle gates
 ## Validation addendum — runtime and protocol trait crosswalk
 
 - PASS: inspected the Rust request-dispatch implementation and its FIFO/delayed/group-replacement regression, the pinned Java `MQConsumerInner` / `MessageRequest` / `PullMessageService` source, the Java `CommandCustomHeader` declaration, and existing protocol fixture inventory. `git diff --check` passes for the documentation and log changes.
+
+## Release status cross-reference
+
+- Updated `docs/release-checklist.md` to record that the targeted trait slices have method/source crosswalks without claiming the full P18-V01 inherited or Java/Rust reverse-export audit is closed.
+- PASS: `git diff --check` after the release-checklist status update.

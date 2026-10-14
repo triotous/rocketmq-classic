@@ -142,6 +142,11 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   slice; malformed-input and broad P18-V01 reconciliation remain open.
   Per-overload input/branch mappings, Java reverse-export, inherited/trait API,
   and broad source/input reconciliation remain local P18-V01 work.
+  A targeted trait pass now maps the custom consistent-hash constructor,
+  `CommandHeader`, consumer runtime/request adapters, TLS decrypt strategy, and
+  listener/transaction executor callbacks; no missing capability was confirmed
+  in those slices. The full inherited and Rust/Java reverse-export audit is
+  still open.
   Runtime Producer scalar settings for create-topic key/queue count, send and
   per-request timeouts, sync/async retry counts, retry-after-non-OK-store, and
   message-size limit now have live `Producer` setters and fixture-backed send,
