@@ -34,6 +34,11 @@ regression pins the count and the presence of direct hook and state/table
 accessors. This is a declaration inventory, not proof that every entrypoint's
 inputs and branches are equivalent.
 
+`pinned_java_producer_impl_method_names_have_phase_crosswalks` checks all 82
+fixture signatures (61 distinct Java method names) against the Phase 7 and
+owning Phase 14–17 matrices. This guards method-name inventory coverage only;
+per-overload input, error and control-flow branches remain part of P18-V01.
+
 | Java implementation entrypoints | Rust owner mapping | P18-V01 disposition |
 | --- | --- | --- |
 | `start`, `start(boolean)`, `shutdown`, `shutdown(boolean)`, `send*`, queue selection, route refresh, fault updates, topic/admin queries | `Producer` lifecycle/send owner; route and RPC operations are mapped in this matrix and Phase 17 | The no-argument start/shutdown methods delegate with `true`; pinned `MQClientInstance.start()` invokes `start(false)` for its internal Producer, while client-factory teardown invokes `shutdown(false)` to avoid recursively stopping the factory. Rust models factory lifecycle once through `ClientRuntimeManager` and owner leases; these booleans remain internal lifecycle controls rather than public Producer settings. Producer lifecycle transition and start-failure cleanup tests cover the owner flow. Per-overload input/branch crosswalks for other raw helpers remain open. |
