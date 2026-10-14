@@ -1,5 +1,6 @@
 package compat;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -16,12 +17,17 @@ import org.apache.rocketmq.client.consumer.store.OffsetStore;
 import org.apache.rocketmq.client.exception.MQClientException;
 import org.apache.rocketmq.client.hook.ConsumeMessageContext;
 import org.apache.rocketmq.client.hook.ConsumeMessageHook;
+import org.apache.rocketmq.client.impl.MQClientAPIImpl;
+import org.apache.rocketmq.client.impl.factory.MQClientInstance;
 import org.apache.rocketmq.client.impl.consumer.DefaultMQPullConsumerImpl;
 import org.apache.rocketmq.client.impl.consumer.PullAPIWrapper;
 import org.apache.rocketmq.client.impl.consumer.RebalanceImpl;
 import org.apache.rocketmq.client.impl.consumer.ProcessQueue;
+import org.apache.rocketmq.client.producer.DefaultMQProducer;
+import org.apache.rocketmq.client.producer.SendResult;
 import org.apache.rocketmq.common.ServiceState;
 import org.apache.rocketmq.common.consumer.ConsumeFromWhere;
+import org.apache.rocketmq.common.message.Message;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.remoting.protocol.body.ConsumerRunningInfo;
@@ -114,6 +120,63 @@ public final class PullImplementationAccessorFixtures {
         subscription.getTagsSet().add(tag);
         subscription.getCodeSet().add(tag.hashCode());
         return subscription;
+    }
+
+    private static Map<String, Object> pullSendBackResults() throws Exception {
+        String group = "pull-sendback";
+        String namespacedGroup = "tenant%" + group;
+        DefaultMQPullConsumer consumer = new DefaultMQPullConsumer(group);
+        consumer.setNamespace("tenant");
+        // Pull start stores the namespaced group on the live facade.
+        consumer.setConsumerGroup(namespacedGroup);
+        DefaultMQPullConsumerImpl implementation = consumer.getDefaultMQPullConsumerImpl();
+
+        RecordingMqClientInstance factory = recordingMqClientInstance();
+        RecordingMqClientAPIImpl clientApi = recordingMqClientAPIImpl();
+        RecordingDefaultMQProducer producer = new RecordingDefaultMQProducer("tenant");
+        factory.clientApi = clientApi;
+        factory.defaultMQProducer = producer;
+        Field factoryField = DefaultMQPullConsumerImpl.class.getDeclaredField("mQClientFactory");
+        factoryField.setAccessible(true);
+        factoryField.set(implementation, factory);
+
+        MessageExt message = message("tenant%orders");
+        message.setBody(new byte[] {1});
+        message.setCommitLogOffset(71);
+        message.setMsgId("phase18-pull-sendback-message");
+        implementation.sendMessageBack(message, 2, "broker-a");
+        implementation.sendMessageBack(message, 3, "broker-a", "override-group");
+        clientApi.failNextSendBack = true;
+        implementation.sendMessageBack(message, 4, "broker-a", "override-group");
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("pullSendBackBrokerGroups", new ArrayList<>(clientApi.consumerGroups));
+        result.put("pullSendBackFallbackRetryTopics", new ArrayList<>(producer.sentTopics));
+        return result;
+    }
+
+    private static RecordingMqClientInstance recordingMqClientInstance() throws Exception {
+        Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
+        Field unsafeField = unsafeClass.getDeclaredField("theUnsafe");
+        unsafeField.setAccessible(true);
+        Object unsafe = unsafeField.get(null);
+        RecordingMqClientInstance factory = (RecordingMqClientInstance) unsafeClass
+            .getMethod("allocateInstance", Class.class)
+            .invoke(unsafe, RecordingMqClientInstance.class);
+        factory.initialize();
+        return factory;
+    }
+
+    private static RecordingMqClientAPIImpl recordingMqClientAPIImpl() throws Exception {
+        Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
+        Field unsafeField = unsafeClass.getDeclaredField("theUnsafe");
+        unsafeField.setAccessible(true);
+        Object unsafe = unsafeField.get(null);
+        RecordingMqClientAPIImpl clientApi = (RecordingMqClientAPIImpl) unsafeClass
+            .getMethod("allocateInstance", Class.class)
+            .invoke(unsafe, RecordingMqClientAPIImpl.class);
+        clientApi.initialize();
+        return clientApi;
     }
 
     public static void main(String[] args) throws Exception {
@@ -438,6 +501,7 @@ public final class PullImplementationAccessorFixtures {
         fixture.put("subscriptionsFromTopics", topicSubscriptions);
         fixture.put("subscriptionsFromExplicit", explicitSubscriptions);
         fixture.put("subscriptionsWithSameSpecDifferentVersions", duplicateVersionSubscriptions);
+        fixture.putAll(pullSendBackResults());
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture) + "\n";
         if (verify) {
             check(Files.exists(path) && json.equals(Files.readString(path)), "fixture drift: " + path);
@@ -446,5 +510,80 @@ public final class PullImplementationAccessorFixtures {
             Files.writeString(path, json);
         }
         System.out.println("Pull implementation accessor verified");
+    }
+
+    private static final class RecordingMqClientInstance extends MQClientInstance {
+        private DefaultMQProducer defaultMQProducer;
+        private MQClientAPIImpl clientApi;
+
+        private RecordingMqClientInstance() {
+            super(null, 1, "phase18-pull-sendback-fixture");
+        }
+
+        private void initialize() {
+            defaultMQProducer = null;
+            clientApi = null;
+        }
+
+        @Override
+        public DefaultMQProducer getDefaultMQProducer() {
+            return defaultMQProducer;
+        }
+
+        @Override
+        public MQClientAPIImpl getMQClientAPIImpl() {
+            return clientApi;
+        }
+
+        @Override
+        public String findBrokerAddressInPublish(String brokerName) {
+            return "broker-address";
+        }
+    }
+
+    private static final class RecordingMqClientAPIImpl extends MQClientAPIImpl {
+        private List<String> consumerGroups;
+        private boolean failNextSendBack;
+
+        private RecordingMqClientAPIImpl() {
+            super(null, null, null, null, null, null);
+        }
+
+        private void initialize() {
+            consumerGroups = new ArrayList<>();
+            failNextSendBack = false;
+        }
+
+        @Override
+        public void consumerSendMessageBack(
+            String addr,
+            String brokerName,
+            MessageExt message,
+            String consumerGroup,
+            int delayLevel,
+            long timeoutMillis,
+            int maxConsumeRetryTimes
+        ) {
+            consumerGroups.add(consumerGroup);
+            if (failNextSendBack) {
+                failNextSendBack = false;
+                throw new IllegalStateException("scripted Broker rejection");
+            }
+        }
+    }
+
+    private static final class RecordingDefaultMQProducer extends DefaultMQProducer {
+        private final List<String> sentTopics = new ArrayList<>();
+
+        private RecordingDefaultMQProducer(String namespace) {
+            super("phase18-pull-sendback-fixture");
+            setNamespace(namespace);
+        }
+
+        @Override
+        public SendResult send(Message message) {
+            sentTopics.add(withNamespace(message.getTopic()));
+            return null;
+        }
     }
 }

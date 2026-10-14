@@ -9,13 +9,17 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Executors;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import org.apache.rocketmq.client.ClientConfig;
 import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
@@ -33,6 +37,7 @@ import org.apache.rocketmq.client.hook.ConsumeMessageHook;
 import org.apache.rocketmq.client.hook.FilterMessageContext;
 import org.apache.rocketmq.client.hook.FilterMessageHook;
 import org.apache.rocketmq.client.impl.MQAdminImpl;
+import org.apache.rocketmq.client.impl.MQClientAPIImpl;
 import org.apache.rocketmq.client.impl.consumer.ConsumeMessageConcurrentlyService;
 import org.apache.rocketmq.client.impl.consumer.ConsumeMessageOrderlyService;
 import org.apache.rocketmq.client.impl.consumer.ConsumeMessagePopConcurrentlyService;
@@ -45,13 +50,19 @@ import org.apache.rocketmq.client.impl.consumer.PullRequest;
 import org.apache.rocketmq.client.impl.consumer.PullMessageService;
 import org.apache.rocketmq.client.impl.consumer.RebalancePushImpl;
 import org.apache.rocketmq.client.impl.factory.MQClientInstance;
+import org.apache.rocketmq.client.producer.DefaultMQProducer;
+import org.apache.rocketmq.client.producer.SendResult;
 import org.apache.rocketmq.client.stat.ConsumerStatsManager;
+import org.apache.rocketmq.client.trace.TraceContext;
+import org.apache.rocketmq.client.trace.hook.ConsumeMessageTraceHookImpl;
 import org.apache.rocketmq.common.ServiceState;
 import org.apache.rocketmq.common.consumer.ConsumeFromWhere;
+import org.apache.rocketmq.common.message.Message;
 import org.apache.rocketmq.common.message.MessageAccessor;
 import org.apache.rocketmq.common.message.MessageConst;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.message.MessageQueue;
+import org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel;
 import org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData;
 import org.apache.rocketmq.remoting.protocol.body.ConsumerRunningInfo;
 import org.apache.rocketmq.remoting.protocol.RequestCode;
@@ -344,6 +355,8 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("pushConsumeInitModes", pushConsumeInitModes());
         fixture.putAll(topicHelpers);
         fixture.putAll(consumeServiceGroupSnapshots());
+        fixture.putAll(consumeServiceRetryTopicResults());
+        fixture.putAll(consumeTraceGroupResults());
         fixture.putAll(orderlyLockedPullAttempts());
         fixture.putAll(pushQueueThresholdResults());
         String json = JSON.toJSONString(fixture) + "\n";
@@ -605,6 +618,7 @@ public final class PushImplementationAccessorFixtures {
             new ConsumeMessagePopConcurrentlyService(implementation, concurrentListener);
         ConsumeMessagePopOrderlyService popOrderly =
             new ConsumeMessagePopOrderlyService(implementation, orderlyListener);
+        implementation.getRebalanceImpl().setConsumerGroup(group);
         consumer.setConsumerGroup("phase18-consume-service-group-mutated");
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -614,6 +628,7 @@ public final class PushImplementationAccessorFixtures {
         result.put("orderlyConsumeServiceGroup", serviceConsumerGroup(orderly));
         result.put("popConcurrentConsumeServiceGroup", serviceConsumerGroup(popConcurrent));
         result.put("popOrderlyConsumeServiceGroup", serviceConsumerGroup(popOrderly));
+        result.put("rebalanceConsumerGroupAfterFacadeMutation", implementation.getRebalanceImpl().getConsumerGroup());
         concurrent.shutdown(100);
         orderly.shutdown(100);
         popConcurrent.shutdown(100);
@@ -625,6 +640,146 @@ public final class PushImplementationAccessorFixtures {
         Field group = service.getClass().getDeclaredField("consumerGroup");
         group.setAccessible(true);
         return (String) group.get(service);
+    }
+
+    private static Map<String, Object> consumeServiceRetryTopicResults() throws Exception {
+        String group = "phase18-consume-retry-snapshot";
+        String namespacedGroup = "tenant%" + group;
+        String liveGroup = "phase18-consume-retry-live";
+        DefaultMQPushConsumer consumer = new DefaultMQPushConsumer(group);
+        consumer.setNamespace("tenant");
+        consumer.setConsumeMessageBatchMaxSize(3);
+        consumer.setMessageModel(MessageModel.BROADCASTING);
+        // DefaultMQPushConsumer.start() applies the namespace before creating
+        // the consume services. Keep that captured group, then mutate the live
+        // facade to exercise the service call paths after startup.
+        consumer.setConsumerGroup(namespacedGroup);
+        DefaultMQPushConsumerImpl implementation = consumer.getDefaultMQPushConsumerImpl();
+
+        List<String> consumeHookBeforeGroups = Collections.synchronizedList(new ArrayList<>());
+        List<String> consumeHookAfterGroups = Collections.synchronizedList(new ArrayList<>());
+        CountDownLatch consumeHookAfterCallbacks = new CountDownLatch(2);
+        implementation.registerConsumeMessageHook(new ConsumeMessageHook() {
+            @Override
+            public String hookName() {
+                return "phase18-live-group-hook-fixture";
+            }
+
+            @Override
+            public void consumeMessageBefore(ConsumeMessageContext context) {
+                consumeHookBeforeGroups.add(context.getConsumerGroup());
+            }
+
+            @Override
+            public void consumeMessageAfter(ConsumeMessageContext context) {
+                consumeHookAfterGroups.add(context.getConsumerGroup());
+                consumeHookAfterCallbacks.countDown();
+            }
+        });
+
+        AtomicReference<List<String>> concurrentCallbackTopics = new AtomicReference<>();
+        CountDownLatch concurrentCallback = new CountDownLatch(1);
+        MessageListenerConcurrently concurrentListener = (messages, context) -> {
+            concurrentCallbackTopics.set(messages.stream().map(MessageExt::getTopic).collect(Collectors.toList()));
+            concurrentCallback.countDown();
+            return ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
+        };
+        AtomicReference<List<String>> concurrentDirectTopics = new AtomicReference<>();
+        MessageListenerConcurrently concurrentDirectListener = (messages, context) -> {
+            concurrentDirectTopics.set(messages.stream().map(MessageExt::getTopic).collect(Collectors.toList()));
+            return ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
+        };
+        AtomicReference<List<String>> orderlyDirectTopics = new AtomicReference<>();
+        MessageListenerOrderly orderlyDirectListener = (messages, context) -> {
+            orderlyDirectTopics.set(messages.stream().map(MessageExt::getTopic).collect(Collectors.toList()));
+            return ConsumeOrderlyStatus.SUCCESS;
+        };
+        AtomicReference<List<String>> orderlyCallbackTopics = new AtomicReference<>();
+        CountDownLatch orderlyCallback = new CountDownLatch(1);
+        MessageListenerOrderly orderlyListener = (messages, context) -> {
+            orderlyCallbackTopics.set(messages.stream().map(MessageExt::getTopic).collect(Collectors.toList()));
+            orderlyCallback.countDown();
+            return ConsumeOrderlyStatus.SUCCESS;
+        };
+        ConsumeMessageConcurrentlyService concurrent =
+            new ConsumeMessageConcurrentlyService(implementation, concurrentListener);
+        ConsumeMessageConcurrentlyService concurrentDirect =
+            new ConsumeMessageConcurrentlyService(implementation, concurrentDirectListener);
+        ConsumeMessageOrderlyService orderlyDirect =
+            new ConsumeMessageOrderlyService(implementation, orderlyDirectListener);
+        ConsumeMessageOrderlyService orderly = new ConsumeMessageOrderlyService(implementation, orderlyListener);
+
+        consumer.setConsumerGroup(liveGroup);
+        List<MessageExt> callbackMessages = List.of(
+            retryTopicMessage("%RETRY%" + namespacedGroup + "_orders", null),
+            retryTopicMessage("%RETRY%" + liveGroup, "tenant%retry"),
+            retryTopicMessage("tenant%events", null));
+        concurrent.submitConsumeRequest(callbackMessages, new ProcessQueue(),
+            new MessageQueue("tenant%orders", "broker-a", 0), true);
+        check(concurrentCallback.await(5, TimeUnit.SECONDS), "concurrent consume callback completed");
+
+        ProcessQueue orderlyProcessQueue = new ProcessQueue();
+        orderlyProcessQueue.putMessage(List.of(retryTopicMessage(
+            "%RETRY%" + liveGroup, "tenant%orderly-live")));
+        orderly.submitConsumeRequest(null, orderlyProcessQueue,
+            new MessageQueue("tenant%orders", "broker-a", 0), true);
+        check(orderlyCallback.await(5, TimeUnit.SECONDS), "orderly consume callback completed");
+        check(consumeHookAfterCallbacks.await(5, TimeUnit.SECONDS), "consume hooks completed");
+
+        concurrentDirect.consumeMessageDirectly(
+            retryTopicMessage("%RETRY%" + namespacedGroup, "tenant%direct-concurrent"), "broker-a");
+        orderlyDirect.consumeMessageDirectly(
+            retryTopicMessage("%RETRY%" + namespacedGroup, "tenant%direct-orderly"), "broker-a");
+
+        RecordingMqClientInstance factory = recordingMqClientInstance();
+        RecordingDefaultMQProducer producer = new RecordingDefaultMQProducer("tenant");
+        RecordingMqClientAPIImpl clientApi = recordingMqClientAPIImpl();
+        factory.defaultMQProducer = producer;
+        factory.clientApi = clientApi;
+        implementation.setmQClientFactory(factory);
+        implementation.sendMessageBack(retryTopicMessage("tenant%orders", null), 3, "broker-a");
+        Method sendBackAsNormalMessage = DefaultMQPushConsumerImpl.class
+            .getDeclaredMethod("sendMessageBackAsNormalMessage", MessageExt.class);
+        sendBackAsNormalMessage.setAccessible(true);
+        MessageExt sendBackMessage = retryTopicMessage("tenant%orders", null);
+        sendBackMessage.setBody(new byte[] {1});
+        sendBackAsNormalMessage.invoke(implementation, sendBackMessage);
+
+        concurrent.shutdown(100);
+        concurrentDirect.shutdown(100);
+        orderlyDirect.shutdown(100);
+        orderly.shutdown(100);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("concurrentConsumeCallbackTopics", concurrentCallbackTopics.get());
+        result.put("concurrentConsumeDirectTopics", concurrentDirectTopics.get());
+        result.put("orderlyConsumeDirectTopics", orderlyDirectTopics.get());
+        result.put("orderlyConsumeCallbackTopics", orderlyCallbackTopics.get());
+        result.put("consumeHookBeforeGroups", new ArrayList<>(consumeHookBeforeGroups));
+        result.put("consumeHookAfterGroups", new ArrayList<>(consumeHookAfterGroups));
+        result.put("brokerSendBackConsumerGroups", clientApi.consumerGroups);
+        result.put("sendBackFallbackRetryTopics", producer.sentTopics);
+        return result;
+    }
+
+    private static Map<String, Object> consumeTraceGroupResults() {
+        MessageExt message = retryTopicMessage("tenant%orders", null);
+        MessageAccessor.putProperty(message, MessageConst.PROPERTY_TRACE_SWITCH, "false");
+        ConsumeMessageContext context = new ConsumeMessageContext();
+        context.setConsumerGroup("phase18-consume-retry-live");
+        context.setMsgList(List.of(message));
+        new ConsumeMessageTraceHookImpl(null).consumeMessageBefore(context);
+        TraceContext traceContext = (TraceContext) context.getMqTraceContext();
+        return Map.of("consumeTraceHookGroup", traceContext.getGroupName());
+    }
+
+    private static MessageExt retryTopicMessage(String topic, String retryTopic) {
+        MessageExt message = new MessageExt();
+        message.setTopic(topic);
+        if (retryTopic != null) {
+            MessageAccessor.putProperty(message, MessageConst.PROPERTY_RETRY_TOPIC, retryTopic);
+        }
+        return message;
     }
 
     private static Map<String, Object> rawRunningInfoResults(
@@ -683,6 +838,18 @@ public final class PushImplementationAccessorFixtures {
         return factory;
     }
 
+    private static RecordingMqClientAPIImpl recordingMqClientAPIImpl() throws Exception {
+        Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
+        Field unsafeField = unsafeClass.getDeclaredField("theUnsafe");
+        unsafeField.setAccessible(true);
+        Object unsafe = unsafeField.get(null);
+        RecordingMqClientAPIImpl clientApi = (RecordingMqClientAPIImpl) unsafeClass
+            .getMethod("allocateInstance", Class.class)
+            .invoke(unsafe, RecordingMqClientAPIImpl.class);
+        clientApi.initialize();
+        return clientApi;
+    }
+
     private static final class RecordingMqClientInstance extends MQClientInstance {
         private List<String> searches;
         private List<Map<String, Object>> resets;
@@ -691,6 +858,8 @@ public final class PushImplementationAccessorFixtures {
         private RecordingPullMessageService pullMessageService;
         private ScheduledExecutorService statsScheduler;
         private ConsumerStatsManager stats;
+        private DefaultMQProducer defaultMQProducer;
+        private MQClientAPIImpl clientApi;
 
         private RecordingMqClientInstance() {
             super(new ClientConfig(), 1, "phase18-push-offset-reset-fixture");
@@ -727,6 +896,21 @@ public final class PushImplementationAccessorFixtures {
         }
 
         @Override
+        public DefaultMQProducer getDefaultMQProducer() {
+            return defaultMQProducer;
+        }
+
+        @Override
+        public MQClientAPIImpl getMQClientAPIImpl() {
+            return clientApi;
+        }
+
+        @Override
+        public String findBrokerAddressInPublish(String brokerName) {
+            return "broker-address";
+        }
+
+        @Override
         public boolean sendHeartbeatToAllBrokerWithLock() {
             heartbeatCalls++;
             return true;
@@ -760,6 +944,46 @@ public final class PushImplementationAccessorFixtures {
             reset.put("group", group);
             reset.put("offsets", offsets);
             resets.add(reset);
+        }
+    }
+
+    private static final class RecordingMqClientAPIImpl extends MQClientAPIImpl {
+        private List<String> consumerGroups;
+
+        private RecordingMqClientAPIImpl() {
+            super(null, null, null, null, null, null);
+        }
+
+        private void initialize() {
+            consumerGroups = new ArrayList<>();
+        }
+
+        @Override
+        public void consumerSendMessageBack(
+            String addr,
+            String brokerName,
+            MessageExt message,
+            String consumerGroup,
+            int delayLevel,
+            long timeoutMillis,
+            int maxConsumeRetryTimes
+        ) {
+            consumerGroups.add(consumerGroup);
+        }
+    }
+
+    private static final class RecordingDefaultMQProducer extends DefaultMQProducer {
+        private final List<String> sentTopics = new ArrayList<>();
+
+        private RecordingDefaultMQProducer(String namespace) {
+            super("phase18-send-back-fixture");
+            setNamespace(namespace);
+        }
+
+        @Override
+        public SendResult send(Message message) {
+            sentTopics.add(withNamespace(message.getTopic()));
+            return null;
         }
     }
 
