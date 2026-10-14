@@ -35,3 +35,14 @@ Commit status
 - Code/Java fixture/Rust regression commit: `6330c54a` (`feat(common): preserve nullable Java message state`).
 - Documentation/checksum commit: `b61ed8e8` (`docs(compat): record nullable Message parity`).
 - Append-only execution record committed separately after this entry.
+
+Follow-up: Java Message constructor and collection boundaries
+- Added mappings for the nullable 3-argument and 4-argument Java constructors, null-name property lookups, and `setKeys(Collection)` null collection/null element behavior.
+- Added typed Rust null-collection error and nullable-key collection conversion (`null` element becomes the Java String.join text `null`). Updated the invoked fixture, checksum, Phase 6/8 matrix, and release checklist.
+- PASS: focused `cargo test -p rocketmq-classic-common --test message_decode --locked` (7 tests).
+- PASS: `cargo test --workspace --all-features --locked`.
+- PASS: `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`.
+- PASS: `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios and fixture drift).
+- PASS: `cargo fmt --all -- --check`, `git diff --check`; fixture SHA-256 `6ec3f130f86c25b12b08f5d5d51f5b43c0bab1a2e77738208909959bbef79db5`.
+- Follow-up code/fixture commit: `4603fc24`; documentation commit: `1fc61269`.
+- P18-V01 remains open for broader Java/Rust inherited API and reverse-export/source/input reconciliation.
