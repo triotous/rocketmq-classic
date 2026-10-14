@@ -104,6 +104,23 @@ enum State {
 
 /// Explicit Pull Consumer facade. Pulling returns decoded messages but leaves
 /// the offset unchanged; applications choose when to update and persist it.
+///
+/// Topic registration follows the Java listener and topic-set methods; helper
+/// methods that combine registration and unregistration are not public API.
+///
+/// ```compile_fail
+/// use rocketmq_classic_consumer::PullConsumer;
+/// fn register_single_topic(consumer: &PullConsumer) {
+///     let _ = consumer.register_topic("orders");
+/// }
+/// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_consumer::PullConsumer;
+/// fn unregister_single_topic(consumer: &PullConsumer) {
+///     let _ = consumer.unregister_topic("orders");
+/// }
+/// ```
 pub struct PullConsumer {
     config: PullConsumerConfig,
     current_group_name: RwLock<String>,
@@ -462,7 +479,7 @@ impl PullConsumer {
         Ok(())
     }
 
-    pub fn register_topic(&self, topic: &str) -> Result<(), PullConsumerError> {
+    pub(crate) fn register_topic(&self, topic: &str) -> Result<(), PullConsumerError> {
         let topic = self.topic_with_namespace(topic)?;
         let registered = write_lock(&self.register_topics).insert(topic.clone());
         write_lock(&self.subscriptions).insert(topic.clone(), subscription_all(&topic));
@@ -472,7 +489,7 @@ impl PullConsumer {
         Ok(())
     }
 
-    pub fn unregister_topic(&self, topic: &str) -> Result<bool, PullConsumerError> {
+    pub(crate) fn unregister_topic(&self, topic: &str) -> Result<bool, PullConsumerError> {
         let topic = self.topic_with_namespace(topic)?;
         let removed_registration = write_lock(&self.register_topics).remove(&topic);
         let removed_subscription = write_lock(&self.subscriptions).remove(&topic).is_some();
@@ -3449,7 +3466,6 @@ mod tests {
         let registered_subscription = registered_subscriptions.iter().next().unwrap();
         assert_eq!(registered_subscription.get_topic(), Some("tenant%events"));
         assert_eq!(registered_subscription.get_expression_type(), Some("SQL92"));
-        assert!(consumer.unregister_topic("events").unwrap());
         consumer.clear_register_subscriptions();
         assert!(consumer.register_subscriptions().is_empty());
         consumer.set_enable_rebalance(false);
