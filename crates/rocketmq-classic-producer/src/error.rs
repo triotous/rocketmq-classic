@@ -63,6 +63,8 @@ pub enum ProducerError {
     InvalidQueue,
     #[error("broker `{broker}` was not found in the current route")]
     BrokerNotFound { broker: String },
+    #[error("The broker[{broker}] not exist")]
+    BrokerAddressNotFound { broker: String },
     #[error(transparent)]
     AdminQuery(#[from] rocketmq_classic_core::api::admin::AdminQueryError),
     #[error("TopicPublishInfo message queue list is null")]

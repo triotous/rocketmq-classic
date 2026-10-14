@@ -67,7 +67,7 @@ fn selector_panic_message(payload: &(dyn std::any::Any + Send)) -> String {
         .unwrap_or_else(|| "non-string selector panic payload".to_owned())
 }
 
-fn check_forbidden_retries_exhausted(
+fn client_retries_exhausted(
     error: ProducerError,
     attempts: usize,
     started: StdInstant,
@@ -529,9 +529,7 @@ impl Producer {
             .broker_name()
             .ok_or_else(|| ProducerError::NoRoute(wire_message.topic().to_owned()))?
             .to_owned();
-        let address = self
-            .broker_address(&runtime, &info, &queue)?
-            .ok_or_else(|| ProducerError::NoRoute(wire_message.topic().to_owned()))?;
+        let address = self.broker_address_or_error(&runtime, &info, &queue)?;
         if mode == SendMode::Future {
             let mut hooked_message = wire_message;
             return self
@@ -957,9 +955,7 @@ impl Producer {
             .broker_name()
             .ok_or_else(|| ProducerError::NoRoute(wire_message.topic().to_owned()))?
             .to_owned();
-        let address = self
-            .broker_address(&runtime, &info, &wire_queue)?
-            .ok_or_else(|| ProducerError::NoRoute(wire_message.topic().to_owned()))?;
+        let address = self.broker_address_or_error(&runtime, &info, &wire_queue)?;
         if mode == SendMode::Future {
             let mut hooked_message = wire_message;
             return self
@@ -1080,12 +1076,14 @@ impl Producer {
             last_broker = Some(broker.clone());
             brokers_sent.push(Some(broker.clone()));
 
+            let attempt_started = StdInstant::now();
             let Some(address) = self.broker_address(&runtime, &info, &queue)? else {
-                // Java refreshes publish info once from sendKernelImpl when the
-                // broker address is absent, then lets the retry loop decide.
-                let _ = runtime.update_topic_route(&topic, deadline).await?;
-                info = self.current_publish_info(&runtime, &topic)?.unwrap_or(info);
-                last_error = Some(ProducerError::NoRoute(topic));
+                // Java sendKernelImpl rechecks its cached TopicPublishInfo and
+                // throws MQClientException when the selected Broker has no
+                // publish address. The default send loop retries that client
+                // error and wraps the final failure with the attempts/Broker list.
+                self.update_fault(&broker, attempt_started.elapsed(), false, true)?;
+                last_error = Some(ProducerError::BrokerAddressNotFound { broker });
                 continue;
             };
 
@@ -1186,7 +1184,7 @@ impl Producer {
                             // exhausted overall deadline before invoking another hook.
                             return Err(ProducerError::Timeout);
                         }
-                        return Err(check_forbidden_retries_exhausted(
+                        return Err(client_retries_exhausted(
                             error,
                             attempt + 1,
                             send_started,
@@ -1201,7 +1199,18 @@ impl Producer {
         if let Some(send_result) = last_send_result {
             return Ok(Some(send_result));
         }
-        Err(last_error.unwrap_or_else(|| ProducerError::NoRoute(hooked_message.topic().to_owned())))
+        let error =
+            last_error.unwrap_or_else(|| ProducerError::NoRoute(hooked_message.topic().to_owned()));
+        if matches!(error, ProducerError::BrokerAddressNotFound { .. }) {
+            return Err(client_retries_exhausted(
+                error,
+                brokers_sent.len(),
+                send_started,
+                hooked_message.topic(),
+                &brokers_sent,
+            ));
+        }
+        Err(error)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1365,7 +1374,7 @@ impl Producer {
         {
             if wrap_check_forbidden_error {
                 self.update_fault(broker, check_started.elapsed(), false, true)?;
-                return Err(check_forbidden_retries_exhausted(
+                return Err(client_retries_exhausted(
                     error,
                     1,
                     check_started,
@@ -1764,6 +1773,17 @@ impl Producer {
             return Ok(None);
         };
         Ok(Some(broker_vip_channel(vip_enabled, address)?))
+    }
+
+    fn broker_address_or_error(
+        &self,
+        runtime: &ClientRuntime,
+        info: &TopicSnapshot,
+        queue: &MessageQueue,
+    ) -> Result<String, ProducerError> {
+        let broker = queue.broker_name().unwrap_or("null").to_owned();
+        self.broker_address(runtime, info, queue)?
+            .ok_or(ProducerError::BrokerAddressNotFound { broker })
     }
 
     fn request_deadline(

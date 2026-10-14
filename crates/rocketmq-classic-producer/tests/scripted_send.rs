@@ -141,7 +141,9 @@ fn route_body_without_publish_addresses() -> Vec<u8> {
             json!({
                 "cluster": "DefaultCluster",
                 "brokerName": name,
-                "brokerAddrs": {},
+                // Preserve the Java publish queue while modeling the missing
+                // master address-table entry after that route was installed.
+                "brokerAddrs": {"0": null},
                 "enableActingMaster": false
             })
         })
@@ -757,7 +759,8 @@ async fn topic_without_route_stays_in_producer_refresh_inventory() {
 #[tokio::test]
 async fn default_send_missing_broker_addresses_matches_java_retry_error() {
     let route = route_body_without_publish_addresses();
-    let (nameserver, nameserver_task, _) = name_server_peer(route, BTreeSet::new()).await;
+    let (nameserver, nameserver_task, route_requests) =
+        name_server_peer(route, BTreeSet::new()).await;
     let mut config = producer_config("missing-broker-address-retry", &nameserver);
     config.set_retry_times_when_send_failed(1);
     let producer = Arc::new(Producer::new(config));
@@ -782,7 +785,10 @@ async fn default_send_missing_broker_addresses_matches_java_retry_error() {
             response_code,
             source,
         } => {
-            assert_eq!(*response_code, expected["responseCode"].as_i64().unwrap() as i32);
+            assert_eq!(
+                *response_code,
+                expected["responseCode"].as_i64().unwrap() as i32
+            );
             assert!(message.contains("Send [2] times"));
             assert!(message.contains("broker-a") && message.contains("broker-b"));
             assert!(source.to_string().contains("The broker["));
@@ -790,6 +796,7 @@ async fn default_send_missing_broker_addresses_matches_java_retry_error() {
         }
         other => panic!("expected Java retry-exhausted error, got {other:?}"),
     }
+    assert_eq!(route_requests.lock().unwrap().as_slice(), ["orders"]);
 
     producer.shutdown().await.unwrap();
     nameserver_task.abort();
@@ -798,7 +805,8 @@ async fn default_send_missing_broker_addresses_matches_java_retry_error() {
 #[tokio::test]
 async fn explicit_queue_missing_broker_address_matches_java_error() {
     let route = route_body_without_publish_addresses();
-    let (nameserver, nameserver_task, _) = name_server_peer(route, BTreeSet::new()).await;
+    let (nameserver, nameserver_task, route_requests) =
+        name_server_peer(route, BTreeSet::new()).await;
     let producer = Arc::new(Producer::new(producer_config(
         "missing-broker-address-explicit",
         &nameserver,
@@ -807,7 +815,10 @@ async fn explicit_queue_missing_broker_address_matches_java_error() {
 
     let queue = MessageQueue::new("orders", "broker-a", 0);
     let error = producer
-        .send_to_queue(&Message::new("orders", b"missing broker address".to_vec()), &queue)
+        .send_to_queue(
+            &Message::new("orders", b"missing broker address".to_vec()),
+            &queue,
+        )
         .await
         .unwrap_err();
     let fixture: serde_json::Value =
@@ -818,6 +829,7 @@ async fn explicit_queue_missing_broker_address_matches_java_error() {
     assert_eq!(expected["messageContainsMissingBroker"], true);
     assert_eq!(expected["causeClass"], "none");
     assert!(error.to_string().contains("The broker[broker-a] not exist"));
+    assert_eq!(route_requests.lock().unwrap().as_slice(), ["orders"]);
 
     producer.shutdown().await.unwrap();
     nameserver_task.abort();
@@ -838,7 +850,7 @@ async fn oneway_sends_once_and_unknown_explicit_broker_fails_before_io() {
     let invalid_queue = MessageQueue::new("orders", "not-in-route", 0);
     assert!(matches!(
         producer.send_to_queue(&message, &invalid_queue).await,
-        Err(ProducerError::NoRoute(topic)) if topic == "orders"
+        Err(ProducerError::BrokerAddressNotFound { broker }) if broker == "not-in-route"
     ));
     assert!(requests.lock().unwrap().is_empty());
 
