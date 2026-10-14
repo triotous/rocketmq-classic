@@ -128,14 +128,14 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   and timer-delay accessors, signed Java integer parsing and `toString()`;
   `MessageExt` exposes inherited Message methods through Rust deref. The
   invoked `messagePublicApi` fixture checks default null topic/body/properties,
-  nullable constructor/setter values, lazy property-map creation, null-valued
-  system properties, user-property null rejection, nullable JSON round-trips,
+  default plus all four parameterized constructor forms, nullable setter values, lazy property-map
+  creation after null-name lookups, null-valued system properties, user-property
+  null rejection, null collection/null-element keys, nullable JSON round-trips,
   numeric bounds, Unicode digits, malformed/overflow values and map mutation;
   fixture SHA-256 is
-  `ba0564cda79e16a506a1987330330b22cfc5bf0da2111f9a024ae0247816f9e5`.
-  This closes that Message null-state slice only; remaining constructor
-  overloads, inherited APIs and reverse-export reconciliation remain local
-  P18-V01 work.
+  `6ec3f130f86c25b12b08f5d5d51f5b43c0bab1a2e77738208909959bbef79db5`.
+  This closes the Message constructor/null-state slice only; broader inherited
+  API and reverse-export reconciliation remain local P18-V01 work.
   The public-surface reverse scan also found caller-configurable decoder limits
   and a limited decompression function with no Java API counterpart. Those
   controls are now internal fixed safety bounds; decoder and pull-result public
