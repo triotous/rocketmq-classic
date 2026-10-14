@@ -3194,6 +3194,7 @@ mod tests {
         let mut config = crate::ProducerConfig::new("check-forbidden-async").unwrap();
         config.set_retry_times_when_send_async_failed(3);
         let (producer, _) = scripted_producer(config).await;
+        producer.set_send_latency_fault_enable(true);
         let hook_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         producer.register_check_forbidden_hook(Arc::new(Reject(hook_calls.clone())));
 
@@ -3242,6 +3243,14 @@ mod tests {
         assert!(message.contains("broker-a") || message.contains("broker-b"));
         assert!(matches!(source.as_ref(), ProducerError::ForbiddenTopic));
         assert_eq!(hook_calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(
+            producer
+                .fault
+                .take_due_for_detection(StdInstant::now(), Duration::from_secs(2))
+                .len(),
+            1,
+            "default async hook failures update the reachable Broker fault entry"
+        );
         assert!(
             producer
                 .scripted_transport
