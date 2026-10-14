@@ -27,8 +27,24 @@ static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 /// honors Java's `rocketmq.client.localOffsetStoreDir` property through the
 /// same-named process environment variable, then falls back to the user's home
 /// directory plus `.rocketmq_offsets`.
+///
+/// Internal file/group inspection helpers are not public Java `OffsetStore`
+/// API.
+///
+/// ```compile_fail
+/// use rocketmq_classic_consumer::offset::LocalFileOffsetStore;
+/// fn inspect_group(store: &LocalFileOffsetStore) {
+///     let _ = store.group_name();
+/// }
+/// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_consumer::offset::LocalFileOffsetStore;
+/// fn inspect_path(store: &LocalFileOffsetStore) {
+///     let _ = store.storage_path();
+/// }
+/// ```
 pub struct LocalFileOffsetStore {
-    group_name: String,
     path: PathBuf,
     offsets: OffsetTable,
     _writer_lease: StoreWriterLease,
@@ -131,7 +147,6 @@ impl LocalFileOffsetStore {
         };
 
         Ok(Self {
-            group_name: group_name.as_ref().to_owned(),
             path: owned_path.clone(),
             offsets: OffsetTable::default(),
             _writer_lease: StoreWriterLease {
@@ -140,14 +155,6 @@ impl LocalFileOffsetStore {
                 lock_file: Some(lock_file),
             },
         })
-    }
-
-    pub fn group_name(&self) -> &str {
-        &self.group_name
-    }
-
-    pub fn storage_path(&self) -> &Path {
-        &self.path
     }
 
     fn read_store(&self) -> Result<HashMap<MessageQueue, i64>, OffsetStoreError> {
@@ -754,8 +761,8 @@ mod tests {
     async fn fixture_load_read_modes_and_restart_persist_match_java_layout() {
         let root = temporary_root();
         let store = LocalFileOffsetStore::with_root(&root, "client", "group").unwrap();
-        fs::create_dir_all(store.storage_path().parent().unwrap()).unwrap();
-        fs::write(store.storage_path(), fixture()).unwrap();
+        fs::create_dir_all(store.path.parent().unwrap()).unwrap();
+        fs::write(&store.path, fixture()).unwrap();
         store.load().await.unwrap();
 
         let orders = MessageQueue::new("orders", "broker-a", 2);
