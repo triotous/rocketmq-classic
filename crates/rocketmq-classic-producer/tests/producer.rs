@@ -94,6 +94,40 @@ fn pinned_java_default_producer_impl_public_surface_is_recorded() {
 }
 
 #[test]
+fn pinned_java_producer_impl_method_names_have_phase_crosswalks() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let methods = fixture["producerImplementationApi"]["publicMethods"]
+        .as_array()
+        .unwrap();
+    let crosswalks = [
+        include_str!("../../../docs/compatibility/PHASE_7_PRODUCER_MATRIX.md"),
+        include_str!("../../../docs/compatibility/PHASE_14_TRANSACTION_MATRIX.md"),
+        include_str!("../../../docs/compatibility/PHASE_15_REQUEST_REPLY_MATRIX.md"),
+        include_str!(
+            "../../../docs/compatibility/PHASE_16_NAMESPACE_SECURITY_OPERATIONS_MATRIX.md"
+        ),
+        include_str!("../../../docs/compatibility/PHASE_17_ADMIN_MATRIX.md"),
+    ]
+    .join("\n");
+
+    for signature in methods {
+        let signature = signature.as_str().unwrap();
+        let method_name = signature
+            .split('(')
+            .next()
+            .unwrap()
+            .rsplit('.')
+            .next()
+            .unwrap();
+        assert!(
+            crosswalks.contains(method_name),
+            "Java implementation method has no phase crosswalk: {signature}"
+        );
+    }
+}
+
+#[test]
 fn implementation_raw_semaphore_setters_match_pinned_java_fixture() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
