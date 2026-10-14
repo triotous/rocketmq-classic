@@ -42,3 +42,11 @@ Current-revision workspace gate — 2026-10-14 17:23 UTC
 
 - PASS on revision `17eb59df`: `cargo test --workspace --all-features --locked` completed successfully across all workspace unit, integration, and doctest targets after the Producer API surface cleanup. This supplies a current-tree P18-V02 test run.
 - No further source changes. P18-V01's broad bidirectional source/API/overload/input/error/flow and Rust/Java reverse-export reconciliation remains local work; P18-V04 still lacks current-revision GitHub Ubuntu CI. Phase 19 Broker/Docker cases and release-version/registry resolution remain outstanding.
+
+Common API reverse-scan follow-up — 2026-10-14 17:40 UTC
+
+- Removed the Rust-only public `Message::{take_body, take_body_nullable, set_property, properties_mut}` helpers and `MessageQueue::new_nullable_broker`, which have no distinct public Java 5.5.1 counterparts. Internal nullable queue construction now uses `MessageQueue::new_nullable`; property writes use the Java-mapped `put_user_property`; the mutable property-map test uses `get_properties_mut`. Compile-fail rustdoc examples guard all five removed public boundaries.
+- PASS on code revision `2618fd1c`: `cargo test --workspace --all-features --locked`, strict workspace/all-target/all-feature Clippy, `cargo fmt --all -- --check`, `git diff --check`, and workspace rustdoc JSON public-surface inspection. The public Common surface no longer exposes the five helpers.
+- Updated the Phase 6 requirement audit and release checklist to record the exact closure and its scope. Documentation commit: `df4c9293 docs(compat): record Common API reverse scan`.
+- This closes only the surfaced Common API extras; P18-V01 still requires the complete bidirectional Java/Rust API, configuration, overload/input/error/flow, inherited/trait, and reverse-export reconciliation. P18-V04 still lacks current-revision GitHub Ubuntu evidence. Phase 19 Broker/Docker scenarios and release-version/registry resolution remain outstanding.
+- No plan edit, Java oracle modification, push, publication, tag, or GitHub CI run was made.
