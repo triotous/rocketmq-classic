@@ -63,6 +63,7 @@ fn pinned_java_default_producer_impl_public_surface_is_recorded() {
         "org.apache.rocketmq.common.ServiceState org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl.getServiceState()",
         "void org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl.setServiceState(org.apache.rocketmq.common.ServiceState)",
         "boolean org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl.isUnitMode()",
+        "org.apache.rocketmq.common.message.MessageQueue org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl.invokeMessageQueueSelector(org.apache.rocketmq.common.message.Message,org.apache.rocketmq.client.producer.MessageQueueSelector,java.lang.Object,long)",
         "org.apache.rocketmq.client.producer.DefaultMQProducer org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl.getDefaultMQProducer()",
         "org.apache.rocketmq.client.latency.MQFaultStrategy org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl.getMqFaultStrategy()",
         "org.apache.rocketmq.client.impl.factory.MQClientInstance org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl.getMqClientFactory()",

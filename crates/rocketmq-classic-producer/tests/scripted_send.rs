@@ -895,6 +895,65 @@ async fn explicit_and_selected_queue_ids_outside_the_route_are_sent_to_the_route
 }
 
 #[tokio::test]
+async fn invoke_message_queue_selector_returns_the_namespaced_queue_without_sending() {
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let (broker, broker_task) =
+        broker_peer("broker-a", attempts.clone(), 0, false, requests.clone()).await;
+    let route = route_body(&[("broker-a", &broker)]);
+    let (nameserver, nameserver_task, _) = name_server_peer(route, BTreeSet::new()).await;
+    let mut config = producer_config("selector-api", &nameserver);
+    config
+        .client_config_mut()
+        .set_namespace(Some("tenant".into()));
+    let producer = Arc::new(Producer::new(config));
+    producer.start().await.unwrap();
+
+    let message = Message::new("orders", b"select-only".to_vec());
+    let selected = producer
+        .invoke_message_queue_selector(
+            &message,
+            |queues, selected_message| {
+                assert_eq!(selected_message.topic(), "orders");
+                assert_eq!(queues.len(), 1);
+                assert_eq!(queues[0].topic(), Some("orders"));
+                queues.first().cloned()
+            },
+            std::time::Duration::from_secs(1),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(message.topic(), "orders");
+    assert_eq!(selected.topic(), Some("tenant%orders"));
+    assert_eq!(selected.broker_name(), Some("broker-a"));
+    assert_eq!(selected.queue_id(), 0);
+
+    let no_queue = producer
+        .invoke_message_queue_selector(&message, |_, _| None, std::time::Duration::from_secs(1))
+        .await;
+    assert!(matches!(no_queue, Err(ProducerError::NoQueueSelected)));
+
+    let timed_out = producer
+        .invoke_message_queue_selector(
+            &message,
+            |queues, _| {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+                queues.first().cloned()
+            },
+            std::time::Duration::from_millis(1),
+        )
+        .await;
+    assert!(matches!(timed_out, Err(ProducerError::Timeout)));
+
+    assert!(requests.lock().unwrap().is_empty());
+
+    producer.shutdown().await.unwrap();
+    nameserver_task.abort();
+    broker_task.abort();
+}
+
+#[tokio::test]
 async fn stored_message_with_lost_ack_can_be_retried_and_duplicated() {
     let attempts = Arc::new(AtomicUsize::new(0));
     let requests = Arc::new(Mutex::new(Vec::new()));

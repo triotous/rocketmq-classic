@@ -214,6 +214,36 @@ impl Producer {
         .map(|_| ())
     }
 
+    /// Invokes a queue selector for the current writable route without sending.
+    /// The selector receives unnamespaced queues and the caller's message;
+    /// the returned queue is namespaced for use with this producer. Values
+    /// captured by the closure serve the role of Java's selector `arg`.
+    pub async fn invoke_message_queue_selector<F>(
+        &self,
+        message: &Message,
+        selector: F,
+        timeout: Duration,
+    ) -> Result<MessageQueue, ProducerError>
+    where
+        F: FnOnce(&[MessageQueue], &Message) -> Option<MessageQueue> + Send,
+    {
+        let started = Instant::now();
+        let deadline = deadline_after(timeout);
+        let runtime = self.started_runtime().await?;
+        let wire_message = self.message_with_namespace(message)?;
+        validation::validate_message(Some(&wire_message), &self.config)?;
+        let info = self
+            .acquire_publish_info(&runtime, wire_message.topic(), deadline)
+            .await?;
+        let selected = self.select_queue_with_selector(&info, message, selector)?;
+        if Instant::now().duration_since(started) > timeout {
+            return Err(ProducerError::Timeout);
+        }
+        selected
+            .map(|(_, queue)| queue)
+            .ok_or(ProducerError::NoQueueSelected)
+    }
+
     /// Runs a custom queue selector against the current writable route and
     /// sends to the returned queue when its Broker address is known.
     pub async fn send_with_selector<F>(
@@ -326,14 +356,9 @@ impl Producer {
         let info = self
             .acquire_publish_info(&runtime, wire_message.topic(), deadline)
             .await?;
-        let logical_queues = info
-            .publish_queues
-            .iter()
-            .map(|queue| self.queue_without_namespace(queue))
-            .collect::<Result<Vec<_>, _>>()?;
-        let logical_queue =
-            selector(&logical_queues, message).ok_or(ProducerError::NoQueueSelected)?;
-        let mut queue = self.queue_with_namespace(&logical_queue)?;
+        let (logical_queue, mut queue) = self
+            .select_queue_with_selector(&info, message, selector)?
+            .ok_or(ProducerError::NoQueueSelected)?;
         if use_auto_batch {
             return self
                 .send_auto_or_direct(message, Some(logical_queue), mode)
@@ -1393,6 +1418,28 @@ impl Producer {
             self.cache_publish_info(topic, info.clone());
         }
         Ok(info)
+    }
+
+    fn select_queue_with_selector<F>(
+        &self,
+        info: &TopicSnapshot,
+        message: &Message,
+        selector: F,
+    ) -> Result<Option<(MessageQueue, MessageQueue)>, ProducerError>
+    where
+        F: FnOnce(&[MessageQueue], &Message) -> Option<MessageQueue>,
+    {
+        let logical_queues = info
+            .publish_queues
+            .iter()
+            .map(|queue| self.queue_without_namespace(queue))
+            .collect::<Result<Vec<_>, _>>()?;
+        selector(&logical_queues, message)
+            .map(|logical_queue| {
+                self.queue_with_namespace(&logical_queue)
+                    .map(|queue| (logical_queue, queue))
+            })
+            .transpose()
     }
 
     fn next_publish_queue_index(&self, topic: &str, queue_count: usize) -> usize {
