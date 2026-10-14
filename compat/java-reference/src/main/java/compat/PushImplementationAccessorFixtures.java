@@ -546,6 +546,7 @@ public final class PushImplementationAccessorFixtures {
         request.setMessageQueue(queue);
         request.setProcessQueue(processQueue);
         request.setNextOffset(8L);
+        consumer.setConsumerGroup("phase18-orderly-pull-offset-mutated");
 
         try {
             implementation.pullMessage(request);
@@ -569,6 +570,8 @@ public final class PushImplementationAccessorFixtures {
         result.put("orderlyFirstLockedPullStoreReads", storeReadsAfterFirstAttempt);
         result.put("orderlySecondLockedPullOffset", request.getNextOffset());
         result.put("orderlySecondLockedPullStoreReads", storeReads.get());
+        result.put("orderlyPullStatsGroup", request.getConsumerGroup());
+        result.put("orderlyPullFacadeGroupAfterMutation", consumer.getConsumerGroup());
         return result;
     }
 

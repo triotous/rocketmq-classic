@@ -2321,15 +2321,32 @@ impl PushConsumer {
         }
         if processed.result.status == PullStatus::Found {
             let message_count = processed.messages.as_ref().map_or(0, Vec::len);
-            self.stats.record_pull(
+            self.record_pull_result_stats(
+                request,
                 context.runtime.client_id(),
-                &self.config.consumer_group(),
                 topic,
                 pull_started.elapsed(),
                 message_count,
             );
         }
         Ok(processed)
+    }
+
+    fn record_pull_result_stats(
+        &self,
+        request: &PullRequest,
+        client_id: &str,
+        topic: &str,
+        elapsed: Duration,
+        message_count: usize,
+    ) {
+        self.stats.record_pull(
+            client_id,
+            request.consumer_group(),
+            topic,
+            elapsed,
+            message_count,
+        );
     }
 
     async fn apply_pull_result(
@@ -10358,6 +10375,14 @@ mod tests {
             "../../../../fixtures/consumer/push-implementation-accessor.json"
         ))
         .unwrap();
+        assert_eq!(
+            fixture["orderlyPullStatsGroup"],
+            "phase18-orderly-pull-offset"
+        );
+        assert_eq!(
+            fixture["orderlyPullFacadeGroupAfterMutation"],
+            "phase18-orderly-pull-offset-mutated"
+        );
 
         consumer
             .clone()
@@ -10392,6 +10417,43 @@ mod tests {
 
         consumer.shutdown().await.unwrap();
         runtime.shutdown().await.unwrap();
+    }
+
+    #[test]
+    fn pull_result_stats_use_the_request_group_snapshot() {
+        let consumer = PushConsumer::new(PushConsumerConfig::new("pull-stats-live-group").unwrap());
+        let request_group = "pull-stats-request-group";
+        let request = PullRequest::new(
+            request_group,
+            Arc::new(ProcessQueue::new(
+                MessageQueue::new("orders", "broker-a", 0),
+                1,
+            )),
+            0,
+        );
+        consumer.set_consumer_group("pull-stats-mutated-group");
+        consumer.record_pull_result_stats(
+            &request,
+            "pull-stats-client",
+            "orders",
+            Duration::from_millis(2),
+            1,
+        );
+
+        assert!(
+            consumer
+                .stats
+                .status("pull-stats-client", request_group, "orders")
+                .pull_tps
+                > 0.0
+        );
+        assert_eq!(
+            consumer
+                .stats
+                .status("pull-stats-client", "pull-stats-mutated-group", "orders")
+                .pull_tps,
+            0.0
+        );
     }
 
     #[tokio::test]
