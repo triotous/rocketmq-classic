@@ -462,6 +462,14 @@ the required full Phase 18 gates on the final revision.
   and Java/Rust cross-decodes), formatting, and diff checks pass for this
   slice. This does not close P18-V01 or replace full workspace gates on the
   final revision.
+- Query-consume-time-span nullable group follow-up (`633b94bc`, 2026-10-14):
+  the public request header retains nullable topic/group fields, and Push uses
+  the current group. Pinned Java header conversion and the Rust loopback
+  request both verify that a null group is omitted from ext fields. Protocol
+  tests (including header inventory/validation), the Core API regression, the
+  Consumer loopback case, strict Clippy for Protocol/Core/Consumer, Maven
+  verify (37 scenarios and fixture/cross-decode checks), formatting, and diff
+  checks pass. P18-V01 remains open beyond this path.
 
 ## Package graph and metadata
 
