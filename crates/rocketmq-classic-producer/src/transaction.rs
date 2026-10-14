@@ -1157,13 +1157,12 @@ mod tests {
                     .map(String::as_str),
                 Some("transaction-producer")
             );
-            assert_eq!(
-                message
-                    .properties()
-                    .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
-                    .map(String::as_str),
-                Some(MESSAGE_ID)
-            );
+            let unique_id = message
+                .properties()
+                .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+                .expect("Java half-send retains the generated or caller-provided ID");
+            assert!(!unique_id.is_empty());
+            assert_eq!(message.transaction_id(), Some(unique_id.as_str()));
             Ok(self.local_state)
         }
 
@@ -1481,14 +1480,12 @@ mod tests {
                     .map(String::as_str),
                 Some("transaction-producer")
             );
-            assert_eq!(
-                message
-                    .properties()
-                    .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
-                    .map(String::as_str),
-                Some(MESSAGE_ID)
-            );
-            assert_eq!(message.transaction_id(), Some(MESSAGE_ID));
+            let unique_id = message
+                .properties()
+                .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+                .expect("Java half-send retains the generated or caller-provided ID");
+            assert!(matches!(unique_id.len(), 32 | 56));
+            assert_eq!(message.transaction_id(), Some(unique_id.as_str()));
 
             {
                 let attempts = producer.producer.scripted_transport.lock().unwrap();
@@ -1541,6 +1538,9 @@ mod tests {
             .responses
             .push_back(Ok(Some(scripted_result(SendStatus::SendOk, "orders"))));
         let mut message = Message::new("orders", b"half-message".to_vec());
+        message
+            .set_system_property(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX, MESSAGE_ID)
+            .unwrap();
         producer
             .send_message_in_transaction(&mut message, None)
             .await

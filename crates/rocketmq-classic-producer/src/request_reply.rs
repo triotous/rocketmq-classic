@@ -166,11 +166,18 @@ impl Producer {
         callback: RequestCallback,
     ) -> Result<(), ProducerError> {
         let (pending, deadline) = self.prepare_request(message, timeout).await?;
-        let request_message = message.clone();
+        let mut request_message = message.clone();
         let producer = self.clone();
         let task = tokio::spawn(async move {
             let result = producer
-                .wait_for_reply(request_message, pending, deadline, timeout, false, route)
+                .wait_for_reply(
+                    &mut request_message,
+                    pending,
+                    deadline,
+                    timeout,
+                    false,
+                    route,
+                )
                 .await;
             drop(producer);
             callback(result);
@@ -186,7 +193,7 @@ impl Producer {
         route: RequestRoute<'a>,
     ) -> Result<MessageExt, ProducerError> {
         let (pending, deadline) = self.prepare_request(message, timeout).await?;
-        self.wait_for_reply(message.clone(), pending, deadline, timeout, true, route)
+        self.wait_for_reply(message, pending, deadline, timeout, true, route)
             .await
     }
 
@@ -234,7 +241,7 @@ impl Producer {
 
     async fn wait_for_reply(
         &self,
-        message: Message,
+        message: &mut Message,
         mut pending: PendingReplyRequest,
         deadline: Instant,
         timeout: Duration,
@@ -245,14 +252,15 @@ impl Producer {
         let topic = message.topic().to_owned();
         let remaining = deadline.saturating_duration_since(Instant::now());
         let send = match route {
-            RequestRoute::Default => Box::pin(self.send_future_with_timeout(&message, remaining))
-                as RequestSendFuture<'_>,
+            RequestRoute::Default => {
+                Box::pin(self.send_future_with_timeout(message, remaining)) as RequestSendFuture<'_>
+            }
             RequestRoute::Queue(queue) => Box::pin(async move {
-                self.send_to_queue_future_with_timeout(&message, &queue, remaining)
+                self.send_to_queue_future_with_timeout(message, &queue, remaining)
                     .await
             }) as RequestSendFuture<'_>,
             RequestRoute::Selector(selector) => {
-                Box::pin(self.send_future_with_selector_with_timeout(&message, selector, remaining))
+                Box::pin(self.send_future_with_selector_with_timeout(message, selector, remaining))
                     as RequestSendFuture<'_>
             }
         };

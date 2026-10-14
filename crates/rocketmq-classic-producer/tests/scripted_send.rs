@@ -7,7 +7,9 @@ use std::{
 };
 
 use bytes::BytesMut;
-use rocketmq_classic_common::message::{Message, MessageQueue, decode_properties};
+use rocketmq_classic_common::message::{
+    Message, MessageQueue, constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX, decode_properties,
+};
 use rocketmq_classic_core::{
     runtime::{ClientRuntimeManager, ProducerRuntime},
     trace::{MessageType, TraceBean, TraceContext, TraceType},
@@ -643,15 +645,18 @@ async fn sync_send_retries_across_two_brokers_and_preserves_one_prepared_message
     let producer = Arc::new(Producer::new(producer_config("sync-retry", &nameserver)));
     producer.start().await.unwrap();
 
-    let message = Message::new("orders", b"immutable-body".to_vec());
-    let result = producer.send(&message).await.unwrap();
+    let mut message = Message::new("orders", b"immutable-body".to_vec());
+    let result = producer.send(&mut message).await.unwrap();
     assert_eq!(result.status, SendStatus::SendOk);
     assert_eq!(result.offset_msg_id, "offset-id");
     assert_eq!(result.queue_offset, 7);
     assert!(matches!(result.msg_id.len(), 32 | 56));
     assert_eq!(attempts.load(Ordering::SeqCst), 3);
     assert_eq!(message.body(), b"immutable-body");
-    assert!(!message.properties().contains_key("UNIQ_KEY"));
+    let unique_id = message
+        .properties()
+        .get("UNIQ_KEY")
+        .expect("Java send should put the generated ID on the caller message");
 
     let sent = requests.lock().unwrap().clone();
     assert_eq!(sent.len(), 3);
@@ -660,6 +665,10 @@ async fn sync_send_retries_across_two_brokers_and_preserves_one_prepared_message
             .map(|request| request.unique_id.as_deref())
             .collect::<BTreeSet<_>>(),
         BTreeSet::from([Some(result.msg_id.as_str())])
+    );
+    assert!(
+        sent.iter()
+            .all(|request| { request.unique_id.as_deref() == Some(unique_id.as_str()) })
     );
     assert!(
         sent.iter()
@@ -679,12 +688,47 @@ async fn sync_send_retries_across_two_brokers_and_preserves_one_prepared_message
     producer.shutdown().await.unwrap();
     producer.shutdown().await.unwrap();
     assert!(matches!(
-        producer.send(&message).await,
+        producer.send(&mut message).await,
         Err(ProducerError::Shutdown)
     ));
     nameserver_task.abort();
     broker_a_task.abort();
     broker_b_task.abort();
+}
+
+#[tokio::test]
+async fn direct_send_preserves_existing_unique_id_on_caller_and_wire() {
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let (broker, broker_task) =
+        broker_peer("broker-a", attempts.clone(), 0, false, requests.clone()).await;
+    let route = route_body(&[("broker-a", &broker)]);
+    let (nameserver, nameserver_task, _) = name_server_peer(route, BTreeSet::new()).await;
+    let producer = Arc::new(Producer::new(producer_config(
+        "preserve-existing-unique-id",
+        &nameserver,
+    )));
+    producer.start().await.unwrap();
+
+    let mut message = Message::new("orders", b"caller-id-body".to_vec());
+    message
+        .set_system_property(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX, "caller-provided-id")
+        .unwrap();
+    producer.send_direct(&mut message).await.unwrap();
+
+    assert_eq!(
+        message
+            .properties()
+            .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+            .map(String::as_str),
+        Some("caller-provided-id")
+    );
+    let sent = requests.lock().unwrap().clone();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].unique_id.as_deref(), Some("caller-provided-id"));
+    producer.shutdown().await.unwrap();
+    nameserver_task.abort();
+    broker_task.abort();
 }
 
 #[tokio::test]
@@ -701,8 +745,8 @@ async fn default_topic_route_fallback_and_async_mode_response_policy_match_java(
     let producer = Arc::new(Producer::new(config));
     producer.start().await.unwrap();
 
-    let message = Message::new("orders", b"future-body".to_vec());
-    let result = producer.send_future(&message).await;
+    let mut message = Message::new("orders", b"future-body".to_vec());
+    let result = producer.send_future(&mut message).await;
     assert!(matches!(result, Err(ProducerError::Rpc(_))));
     assert_eq!(attempts.load(Ordering::SeqCst), 1);
     assert!(
@@ -734,7 +778,7 @@ async fn topic_without_route_stays_in_producer_refresh_inventory() {
 
     assert!(matches!(
         producer
-            .send(&Message::new("orders", b"no-route".to_vec()))
+            .send(&mut Message::new("orders", b"no-route".to_vec()))
             .await,
         Err(ProducerError::NoRoute(_))
     ));
@@ -767,7 +811,10 @@ async fn default_send_missing_broker_addresses_matches_java_retry_error() {
     producer.start().await.unwrap();
 
     let error = producer
-        .send(&Message::new("orders", b"missing broker address".to_vec()))
+        .send(&mut Message::new(
+            "orders",
+            b"missing broker address".to_vec(),
+        ))
         .await
         .unwrap_err();
     let fixture: serde_json::Value =
@@ -816,7 +863,7 @@ async fn explicit_queue_missing_broker_address_matches_java_error() {
     let queue = MessageQueue::new("orders", "broker-a", 0);
     let error = producer
         .send_to_queue(
-            &Message::new("orders", b"missing broker address".to_vec()),
+            &mut Message::new("orders", b"missing broker address".to_vec()),
             &queue,
         )
         .await
@@ -848,7 +895,7 @@ async fn selector_send_missing_broker_address_matches_java_error() {
 
     let error = producer
         .send_with_selector(
-            &Message::new("orders", b"missing broker address".to_vec()),
+            &mut Message::new("orders", b"missing broker address".to_vec()),
             |queues, _| queues.first().cloned(),
         )
         .await
@@ -874,15 +921,15 @@ async fn oneway_sends_once_and_unknown_explicit_broker_fails_before_io() {
     let producer = Arc::new(Producer::new(producer_config("oneway", &nameserver)));
     producer.start().await.unwrap();
 
-    let message = Message::new("orders", b"oneway-body".to_vec());
+    let mut message = Message::new("orders", b"oneway-body".to_vec());
     let invalid_queue = MessageQueue::new("orders", "not-in-route", 0);
     assert!(matches!(
-        producer.send_to_queue(&message, &invalid_queue).await,
+        producer.send_to_queue(&mut message, &invalid_queue).await,
         Err(ProducerError::BrokerAddressNotFound { broker }) if broker == "not-in-route"
     ));
     assert!(requests.lock().unwrap().is_empty());
 
-    producer.send_oneway(&message).await.unwrap();
+    producer.send_oneway(&mut message).await.unwrap();
     wait_for_attempts(&attempts, 1).await;
     assert_eq!(attempts.load(Ordering::SeqCst), 1);
     assert_eq!(requests.lock().unwrap().len(), 1);
@@ -913,43 +960,43 @@ async fn public_queue_selector_and_batch_modes_use_the_scripted_route() {
         .unwrap();
     assert_eq!(queues.len(), 1);
     let queue = queues[0].clone();
-    let message = Message::new("orders", b"single-mode".to_vec());
+    let mut message = Message::new("orders", b"single-mode".to_vec());
 
-    producer.send_to_queue(&message, &queue).await.unwrap();
+    producer.send_to_queue(&mut message, &queue).await.unwrap();
     producer
-        .send_to_queue_future(&message, &queue)
+        .send_to_queue_future(&mut message, &queue)
         .await
         .unwrap();
     producer
-        .send_to_queue_future_with_timeout(&message, &queue, std::time::Duration::from_secs(1))
+        .send_to_queue_future_with_timeout(&mut message, &queue, std::time::Duration::from_secs(1))
         .await
         .unwrap();
     producer
-        .send_to_queue_oneway(&message, &queue)
+        .send_to_queue_oneway(&mut message, &queue)
         .await
         .unwrap();
     producer
-        .send_oneway_with_timeout(&message, std::time::Duration::from_secs(1))
+        .send_oneway_with_timeout(&mut message, std::time::Duration::from_secs(1))
         .await
         .unwrap();
     producer
-        .send_with_selector(&message, |queues, _| queues.first().cloned())
+        .send_with_selector(&mut message, |queues, _| queues.first().cloned())
         .await
         .unwrap();
     producer
-        .send_future_with_selector(&message, |queues, _| queues.first().cloned())
+        .send_future_with_selector(&mut message, |queues, _| queues.first().cloned())
         .await
         .unwrap();
     producer
         .send_future_with_selector_with_timeout(
-            &message,
+            &mut message,
             |queues, _| queues.first().cloned(),
             std::time::Duration::from_secs(1),
         )
         .await
         .unwrap();
     producer
-        .send_oneway_with_selector(&message, |queues, _| queues.first().cloned())
+        .send_oneway_with_selector(&mut message, |queues, _| queues.first().cloned())
         .await
         .unwrap();
 
@@ -1010,37 +1057,40 @@ async fn explicit_and_selected_queue_ids_outside_the_route_are_sent_to_the_route
     )));
     producer.start().await.unwrap();
 
-    let message = Message::new("orders", b"selected-outside-route".to_vec());
+    let mut message = Message::new("orders", b"selected-outside-route".to_vec());
     let explicit = MessageQueue::new("orders", "broker-a", 7);
-    producer.send_to_queue(&message, &explicit).await.unwrap();
+    producer
+        .send_to_queue(&mut message, &explicit)
+        .await
+        .unwrap();
     producer
         .send_to_queue_future_with_timeout(
-            &message,
+            &mut message,
             &MessageQueue::new("orders", "broker-a", 8),
             std::time::Duration::from_secs(1),
         )
         .await
         .unwrap();
     producer
-        .send_to_queue_oneway(&message, &MessageQueue::new("orders", "broker-a", 9))
+        .send_to_queue_oneway(&mut message, &MessageQueue::new("orders", "broker-a", 9))
         .await
         .unwrap();
     producer
-        .send_with_selector(&message, |_, _| {
+        .send_with_selector(&mut message, |_, _| {
             Some(MessageQueue::new("orders", "broker-a", 10))
         })
         .await
         .unwrap();
     producer
         .send_future_with_selector_with_timeout(
-            &message,
+            &mut message,
             |_, _| Some(MessageQueue::new("orders", "broker-a", 11)),
             std::time::Duration::from_secs(1),
         )
         .await
         .unwrap();
     producer
-        .send_oneway_with_selector(&message, |_, _| {
+        .send_oneway_with_selector(&mut message, |_, _| {
             Some(MessageQueue::new("orders", "broker-a", 12))
         })
         .await
@@ -1077,7 +1127,7 @@ async fn invoke_message_queue_selector_returns_the_namespaced_queue_without_send
     let producer = Arc::new(Producer::new(config));
     producer.start().await.unwrap();
 
-    let message = Message::new("orders", b"select-only".to_vec());
+    let mut message = Message::new("orders", b"select-only".to_vec());
     let selected = producer
         .invoke_message_queue_selector(
             &message,
@@ -1128,7 +1178,7 @@ async fn invoke_message_queue_selector_returns_the_namespaced_queue_without_send
     let java_send = &java_fixture["implementationSelectorFailure"]["send"];
     assert_eq!(java_send["errorMessage"], java_invoke["errorMessage"]);
     let selector_send_failure = producer
-        .send_with_selector(&message, |_, _| panic!("fixture-selector-failure"))
+        .send_with_selector(&mut message, |_, _| panic!("fixture-selector-failure"))
         .await
         .unwrap_err();
     assert_eq!(
@@ -1177,8 +1227,8 @@ async fn stored_message_with_lost_ack_can_be_retried_and_duplicated() {
     let producer = Arc::new(Producer::new(config));
     producer.start().await.unwrap();
 
-    let message = Message::new("orders", b"store-before-timeout".to_vec());
-    let result = producer.send(&message).await.unwrap();
+    let mut message = Message::new("orders", b"store-before-timeout".to_vec());
+    let result = producer.send(&mut message).await.unwrap();
     assert_eq!(result.status, SendStatus::SendOk);
     assert_eq!(attempts.load(Ordering::SeqCst), 2);
     let sent = requests.lock().unwrap().clone();

@@ -807,7 +807,7 @@ async fn send_trace_message(
         tracing::debug!(error = %error, "trace message key assignment failed");
         return;
     }
-    if let Err(error) = producer.send_future(&message).await {
+    if let Err(error) = producer.send_future(&mut message).await {
         tracing::debug!(error = %error, "trace message send failed");
     }
 }

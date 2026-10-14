@@ -553,7 +553,7 @@ async fn send_contexts(
             tracing::debug!(error = %error, "Lite trace message key assignment failed");
             continue;
         }
-        if let Err(error) = producer.send_future(&message).await {
+        if let Err(error) = producer.send_future(&mut message).await {
             tracing::debug!(error = %error, "Lite trace message send failed");
         }
     }

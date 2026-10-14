@@ -139,14 +139,14 @@ impl Producer {
 
     /// Sync-mode send. The returned future waits for the Java sync-mode result
     /// and uses the configured synchronous retry budget.
-    pub async fn send(&self, message: &Message) -> Result<SendResult, ProducerError> {
+    pub async fn send(&self, message: &mut Message) -> Result<SendResult, ProducerError> {
         self.send_auto_or_direct(message, None, SendMode::Sync)
             .await
     }
 
     pub async fn send_with_timeout(
         &self,
-        message: &Message,
+        message: &mut Message,
         timeout: Duration,
     ) -> Result<SendResult, ProducerError> {
         self.send_default(message, false, SendMode::Sync, timeout)
@@ -156,7 +156,7 @@ impl Producer {
 
     /// Sends one message directly, bypassing the producer auto-batch
     /// accumulator, like Java's `DefaultMQProducer.sendDirect` helper.
-    pub async fn send_direct(&self, message: &Message) -> Result<SendResult, ProducerError> {
+    pub async fn send_direct(&self, message: &mut Message) -> Result<SendResult, ProducerError> {
         self.send_direct_with_timeout(
             message,
             Duration::from_millis(self.config.send_timeout_millis().max(0) as u64),
@@ -166,7 +166,7 @@ impl Producer {
 
     pub async fn send_direct_with_timeout(
         &self,
-        message: &Message,
+        message: &mut Message,
         timeout: Duration,
     ) -> Result<SendResult, ProducerError> {
         self.send_message_direct_with_mode(message, None, SendMode::Sync, timeout)
@@ -174,7 +174,10 @@ impl Producer {
     }
 
     /// Future-mode counterpart to [`Self::send_direct`].
-    pub async fn send_direct_future(&self, message: &Message) -> Result<SendResult, ProducerError> {
+    pub async fn send_direct_future(
+        &self,
+        message: &mut Message,
+    ) -> Result<SendResult, ProducerError> {
         self.send_direct_future_with_timeout(
             message,
             Duration::from_millis(self.config.send_timeout_millis().max(0) as u64),
@@ -184,7 +187,7 @@ impl Producer {
 
     pub async fn send_direct_future_with_timeout(
         &self,
-        message: &Message,
+        message: &mut Message,
         timeout: Duration,
     ) -> Result<SendResult, ProducerError> {
         self.send_message_direct_with_mode(message, None, SendMode::Future, timeout)
@@ -193,14 +196,14 @@ impl Producer {
 
     /// Future-mode send. Like Java's callback send, it retries asynchronous
     /// failures up to the configured budget and resolves with the terminal result.
-    pub async fn send_future(&self, message: &Message) -> Result<SendResult, ProducerError> {
+    pub async fn send_future(&self, message: &mut Message) -> Result<SendResult, ProducerError> {
         self.send_auto_or_direct(message, None, SendMode::Future)
             .await
     }
 
     pub async fn send_future_with_timeout(
         &self,
-        message: &Message,
+        message: &mut Message,
         timeout: Duration,
     ) -> Result<SendResult, ProducerError> {
         self.send_default(message, false, SendMode::Future, timeout)
@@ -208,7 +211,7 @@ impl Producer {
             .ok_or(ProducerError::Timeout)
     }
 
-    pub async fn send_oneway(&self, message: &Message) -> Result<(), ProducerError> {
+    pub async fn send_oneway(&self, message: &mut Message) -> Result<(), ProducerError> {
         self.send_oneway_with_timeout(
             message,
             Duration::from_millis(self.config.send_timeout_millis().max(0) as u64),
@@ -218,7 +221,7 @@ impl Producer {
 
     pub async fn send_oneway_with_timeout(
         &self,
-        message: &Message,
+        message: &mut Message,
         timeout: Duration,
     ) -> Result<(), ProducerError> {
         self.send_default(message, false, SendMode::Oneway, timeout)
@@ -230,7 +233,7 @@ impl Producer {
     /// current route. This overload makes one Broker attempt.
     pub async fn send_to_queue(
         &self,
-        message: &Message,
+        message: &mut Message,
         queue: &MessageQueue,
     ) -> Result<SendResult, ProducerError> {
         self.send_auto_or_direct(message, Some(queue.clone()), SendMode::Sync)
@@ -239,7 +242,7 @@ impl Producer {
 
     pub async fn send_to_queue_with_timeout(
         &self,
-        message: &Message,
+        message: &mut Message,
         queue: &MessageQueue,
         timeout: Duration,
     ) -> Result<SendResult, ProducerError> {
@@ -251,7 +254,7 @@ impl Producer {
     /// Sends directly to a selected queue, bypassing auto-batching.
     pub async fn send_to_queue_direct(
         &self,
-        message: &Message,
+        message: &mut Message,
         queue: &MessageQueue,
     ) -> Result<SendResult, ProducerError> {
         self.send_to_queue_direct_with_timeout(
@@ -264,7 +267,7 @@ impl Producer {
 
     pub async fn send_to_queue_direct_with_timeout(
         &self,
-        message: &Message,
+        message: &mut Message,
         queue: &MessageQueue,
         timeout: Duration,
     ) -> Result<SendResult, ProducerError> {
@@ -275,7 +278,7 @@ impl Producer {
     /// Future-mode direct send to a selected queue.
     pub async fn send_to_queue_direct_future(
         &self,
-        message: &Message,
+        message: &mut Message,
         queue: &MessageQueue,
     ) -> Result<SendResult, ProducerError> {
         self.send_to_queue_direct_future_with_timeout(
@@ -288,7 +291,7 @@ impl Producer {
 
     pub async fn send_to_queue_direct_future_with_timeout(
         &self,
-        message: &Message,
+        message: &mut Message,
         queue: &MessageQueue,
         timeout: Duration,
     ) -> Result<SendResult, ProducerError> {
@@ -300,7 +303,7 @@ impl Producer {
     /// disabled. Ineligible or over-capacity messages follow the direct path.
     pub async fn send_by_accumulator(
         &self,
-        message: &Message,
+        message: &mut Message,
     ) -> Result<SendResult, ProducerError> {
         self.send_accumulator_or_direct(message, None, SendMode::Sync)
             .await
@@ -309,7 +312,7 @@ impl Producer {
     /// Future-mode counterpart to [`Self::send_by_accumulator`].
     pub async fn send_by_accumulator_future(
         &self,
-        message: &Message,
+        message: &mut Message,
     ) -> Result<SendResult, ProducerError> {
         self.send_accumulator_or_direct(message, None, SendMode::Future)
             .await
@@ -319,7 +322,7 @@ impl Producer {
     /// `auto_batch` is disabled.
     pub async fn send_to_queue_by_accumulator(
         &self,
-        message: &Message,
+        message: &mut Message,
         queue: &MessageQueue,
     ) -> Result<SendResult, ProducerError> {
         self.send_accumulator_or_direct(message, Some(queue.clone()), SendMode::Sync)
@@ -329,7 +332,7 @@ impl Producer {
     /// Future-mode counterpart to [`Self::send_to_queue_by_accumulator`].
     pub async fn send_to_queue_by_accumulator_future(
         &self,
-        message: &Message,
+        message: &mut Message,
         queue: &MessageQueue,
     ) -> Result<SendResult, ProducerError> {
         self.send_accumulator_or_direct(message, Some(queue.clone()), SendMode::Future)
@@ -340,7 +343,7 @@ impl Producer {
     /// Failed attempts retry the selected Broker up to the configured budget.
     pub async fn send_to_queue_future(
         &self,
-        message: &Message,
+        message: &mut Message,
         queue: &MessageQueue,
     ) -> Result<SendResult, ProducerError> {
         self.send_auto_or_direct(message, Some(queue.clone()), SendMode::Future)
@@ -349,7 +352,7 @@ impl Producer {
 
     pub async fn send_to_queue_future_with_timeout(
         &self,
-        message: &Message,
+        message: &mut Message,
         queue: &MessageQueue,
         timeout: Duration,
     ) -> Result<SendResult, ProducerError> {
@@ -360,7 +363,7 @@ impl Producer {
 
     pub async fn send_to_queue_oneway(
         &self,
-        message: &Message,
+        message: &mut Message,
         queue: &MessageQueue,
     ) -> Result<(), ProducerError> {
         self.send_to_queue_mode(
@@ -408,7 +411,7 @@ impl Producer {
     /// sends to the returned queue when its Broker address is known.
     pub async fn send_with_selector<F>(
         &self,
-        message: &Message,
+        message: &mut Message,
         selector: F,
     ) -> Result<SendResult, ProducerError>
     where
@@ -427,7 +430,7 @@ impl Producer {
 
     pub async fn send_with_selector_with_timeout<F>(
         &self,
-        message: &Message,
+        message: &mut Message,
         selector: F,
         timeout: Duration,
     ) -> Result<SendResult, ProducerError>
@@ -441,7 +444,7 @@ impl Producer {
 
     pub async fn send_future_with_selector<F>(
         &self,
-        message: &Message,
+        message: &mut Message,
         selector: F,
     ) -> Result<SendResult, ProducerError>
     where
@@ -460,7 +463,7 @@ impl Producer {
 
     pub async fn send_future_with_selector_with_timeout<F>(
         &self,
-        message: &Message,
+        message: &mut Message,
         selector: F,
         timeout: Duration,
     ) -> Result<SendResult, ProducerError>
@@ -474,7 +477,7 @@ impl Producer {
 
     pub async fn send_oneway_with_selector<F>(
         &self,
-        message: &Message,
+        message: &mut Message,
         selector: F,
     ) -> Result<(), ProducerError>
     where
@@ -493,7 +496,7 @@ impl Producer {
 
     async fn send_with_selector_mode<F>(
         &self,
-        message: &Message,
+        message: &mut Message,
         selector: F,
         mode: SendMode,
         timeout: Duration,
@@ -566,7 +569,7 @@ impl Producer {
 
     async fn send_auto_or_direct(
         &self,
-        message: &Message,
+        message: &mut Message,
         queue: Option<MessageQueue>,
         mode: SendMode,
     ) -> Result<SendResult, ProducerError> {
@@ -576,7 +579,7 @@ impl Producer {
 
     async fn send_accumulator_or_direct(
         &self,
-        message: &Message,
+        message: &mut Message,
         queue: Option<MessageQueue>,
         mode: SendMode,
     ) -> Result<SendResult, ProducerError> {
@@ -586,7 +589,7 @@ impl Producer {
 
     async fn send_with_accumulator_policy(
         &self,
-        message: &Message,
+        message: &mut Message,
         queue: Option<MessageQueue>,
         mode: SendMode,
         force_accumulate: bool,
@@ -598,16 +601,21 @@ impl Producer {
             || !can_accumulate(&wire_message)
         {
             return self
-                .send_message_direct_with_mode(&wire_message, queue.as_ref(), mode, timeout)
+                .send_message_direct_with_mode(message, queue.as_ref(), mode, timeout)
                 .await;
         }
 
-        self.started_runtime().await?;
         validation::validate_message(Some(&wire_message), &self.config)?;
+        let mut accumulated_message = wire_message.clone();
+        self.set_unique_id_on_input_and_copy_to_wire(message, &mut accumulated_message);
+
+        // Java's sendByAccumulator validates and writes UNIQ_KEY on the
+        // caller's Message before handing it to the accumulator. Preserve that
+        // mutation even when dispatch subsequently fails because the producer
+        // has not been started.
+        self.started_runtime().await?;
         let accumulator_settings_changed = self.subscribe_accumulator_settings();
         let settings = self.effective_accumulator_settings();
-        let mut accumulated_message = wire_message.clone();
-        self.ids.set_if_missing(&mut accumulated_message);
         let queued = self
             .auto_batch_accumulator
             .enqueue(
@@ -622,7 +630,7 @@ impl Producer {
 
         match queued {
             EnqueueResult::Bypass => {
-                self.send_message_direct_with_mode(&wire_message, queue.as_ref(), mode, timeout)
+                self.send_message_direct_with_mode(message, queue.as_ref(), mode, timeout)
                     .await
             }
             EnqueueResult::Queued {
@@ -652,7 +660,7 @@ impl Producer {
 
     async fn send_message_direct_with_mode(
         &self,
-        message: &Message,
+        message: &mut Message,
         queue: Option<&MessageQueue>,
         mode: SendMode,
         timeout: Duration,
@@ -800,10 +808,10 @@ impl Producer {
 
         let timeout = Duration::from_millis(self.config.send_timeout_millis().max(0) as u64);
         let result = if let Some(queue) = &accumulated.key.queue {
-            self.send_to_queue_mode(&batch, queue, true, accumulated.key.mode, timeout)
+            self.send_to_queue_mode(&mut batch, queue, true, accumulated.key.mode, timeout)
                 .await?
         } else {
-            self.send_default(&batch, true, accumulated.key.mode, timeout)
+            self.send_default(&mut batch, true, accumulated.key.mode, timeout)
                 .await?
         };
         result.ok_or(ProducerError::Timeout)
@@ -825,8 +833,8 @@ impl Producer {
     ) -> Result<SendResult, ProducerError> {
         let deadline = deadline_after(timeout);
         let namespaced_messages = self.messages_with_namespace(messages)?;
-        let batch = create_batch(&namespaced_messages, &self.config, &self.ids)?;
-        self.send_default_until(&batch, true, SendMode::Sync, deadline)
+        let mut batch = create_batch(&namespaced_messages, &self.config, &self.ids)?;
+        self.send_default_until(&mut batch, true, SendMode::Sync, deadline)
             .await?
             .ok_or(ProducerError::Timeout)
     }
@@ -849,8 +857,8 @@ impl Producer {
     ) -> Result<SendResult, ProducerError> {
         let deadline = deadline_after(timeout);
         let namespaced_messages = self.messages_with_namespace(messages)?;
-        let batch = create_batch(&namespaced_messages, &self.config, &self.ids)?;
-        self.send_default_until(&batch, true, SendMode::Future, deadline)
+        let mut batch = create_batch(&namespaced_messages, &self.config, &self.ids)?;
+        self.send_default_until(&mut batch, true, SendMode::Future, deadline)
             .await?
             .ok_or(ProducerError::Timeout)
     }
@@ -912,14 +920,14 @@ impl Producer {
     ) -> Result<Option<SendResult>, ProducerError> {
         let deadline = deadline_after(timeout);
         let namespaced_messages = self.messages_with_namespace(messages)?;
-        let batch = create_batch(&namespaced_messages, &self.config, &self.ids)?;
-        self.send_to_queue_until(&batch, queue, true, mode, deadline)
+        let mut batch = create_batch(&namespaced_messages, &self.config, &self.ids)?;
+        self.send_to_queue_until(&mut batch, queue, true, mode, deadline)
             .await
     }
 
     async fn send_to_queue_mode(
         &self,
-        message: &Message,
+        message: &mut Message,
         queue: &MessageQueue,
         batch: bool,
         mode: SendMode,
@@ -932,7 +940,7 @@ impl Producer {
 
     async fn send_to_queue_until(
         &self,
-        message: &Message,
+        message: &mut Message,
         queue: &MessageQueue,
         batch: bool,
         mode: SendMode,
@@ -956,8 +964,9 @@ impl Producer {
             .ok_or_else(|| ProducerError::NoRoute(wire_message.topic().to_owned()))?
             .to_owned();
         let address = self.broker_address_or_error(&runtime, &info, &wire_queue)?;
+        let mut hooked_message = wire_message;
+        self.set_unique_id_on_input_and_copy_to_wire(message, &mut hooked_message);
         if mode == SendMode::Future {
-            let mut hooked_message = wire_message;
             return self
                 .send_future_attempts(
                     runtime.clone(),
@@ -974,7 +983,6 @@ impl Producer {
                 )
                 .await;
         }
-        let mut hooked_message = wire_message;
         let mut check_forbidden_rejected = false;
         self.send_one_attempt_with_hooks(
             &runtime,
@@ -992,7 +1000,7 @@ impl Producer {
 
     async fn send_default(
         &self,
-        message: &Message,
+        message: &mut Message,
         batch: bool,
         mode: SendMode,
         timeout: Duration,
@@ -1004,7 +1012,7 @@ impl Producer {
 
     async fn send_default_until(
         &self,
-        message: &Message,
+        message: &mut Message,
         batch: bool,
         mode: SendMode,
         deadline: Instant,
@@ -1023,7 +1031,7 @@ impl Producer {
             .acquire_publish_info(&runtime, wire_message.topic(), deadline)
             .await?;
         let mut hooked_message = wire_message;
-        self.ids.set_if_missing(&mut hooked_message);
+        let mut caller_unique_id_set = false;
         let attempts = attempt_count(mode, &self.config);
         if attempts == 0 {
             return Err(ProducerError::NoSendAttempt);
@@ -1086,6 +1094,11 @@ impl Producer {
                 last_error = Some(ProducerError::BrokerAddressNotFound { broker });
                 continue;
             };
+
+            if !caller_unique_id_set {
+                self.set_unique_id_on_input_and_copy_to_wire(message, &mut hooked_message);
+                caller_unique_id_set = true;
+            }
 
             if mode == SendMode::Future {
                 return self
@@ -1821,6 +1834,15 @@ impl Producer {
         Ok(namespaced)
     }
 
+    fn set_unique_id_on_input_and_copy_to_wire(
+        &self,
+        message: &mut Message,
+        wire_message: &mut Message,
+    ) {
+        let unique_id = self.ids.set_if_missing(message);
+        let _ = wire_message.set_system_property(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX, unique_id);
+    }
+
     fn messages_with_namespace(&self, messages: &[Message]) -> Result<Vec<Message>, ProducerError> {
         messages
             .iter()
@@ -2151,7 +2173,7 @@ mod tests {
             .push_back(Ok(Some(scripted_result("live-route", "offset", 1))));
 
         producer
-            .send(&Message::new("orders", b"live route table".to_vec()))
+            .send(&mut Message::new("orders", b"live route table".to_vec()))
             .await
             .unwrap();
 
@@ -2175,7 +2197,7 @@ mod tests {
             .responses
             .push_back(Ok(Some(scripted_result("group-one", "offset-one", 1))));
         producer
-            .send(&Message::new("orders", b"new producer group".to_vec()))
+            .send(&mut Message::new("orders", b"new producer group".to_vec()))
             .await
             .unwrap();
 
@@ -2187,7 +2209,7 @@ mod tests {
             .responses
             .push_back(Ok(Some(scripted_result("group-null", "offset-null", 2))));
         producer
-            .send(&Message::new("orders", b"null producer group".to_vec()))
+            .send(&mut Message::new("orders", b"null producer group".to_vec()))
             .await
             .unwrap();
 
@@ -2228,7 +2250,7 @@ mod tests {
             .push_back(Ok(Some(scripted_result("vip-send", "vip-offset", 1))));
 
         producer
-            .send(&Message::new("orders", b"vip channel".to_vec()))
+            .send(&mut Message::new("orders", b"vip channel".to_vec()))
             .await
             .unwrap();
 
@@ -2260,7 +2282,7 @@ mod tests {
             .push_back(Ok(Some(scripted_result("runtime-route", "offset", 0))));
 
         producer
-            .send(&Message::new("orders", b"runtime settings".to_vec()))
+            .send(&mut Message::new("orders", b"runtime settings".to_vec()))
             .await
             .unwrap();
 
@@ -2286,7 +2308,7 @@ mod tests {
         producer.set_send_timeout_millis(0);
 
         let result = producer
-            .send_direct(&Message::new("orders", b"expired".to_vec()))
+            .send_direct(&mut Message::new("orders", b"expired".to_vec()))
             .await;
 
         assert!(matches!(result, Err(ProducerError::Timeout)));
@@ -2372,9 +2394,9 @@ mod tests {
             producer.producer_group().as_deref(),
             Some("tenant%namespace-send")
         );
-        let message = Message::new("orders", b"namespaced body".to_vec());
+        let mut message = Message::new("orders", b"namespaced body".to_vec());
         let result = producer
-            .send_with_timeout(&message, Duration::from_secs(1))
+            .send_with_timeout(&mut message, Duration::from_secs(1))
             .await
             .unwrap();
         assert_eq!(message.topic(), "orders");
@@ -2404,7 +2426,7 @@ mod tests {
             .responses
             .push_back(Ok(Some(response)));
         let queue_result = producer
-            .send_to_queue_with_timeout(&message, &logical_queue, Duration::from_secs(1))
+            .send_to_queue_with_timeout(&mut message, &logical_queue, Duration::from_secs(1))
             .await
             .unwrap();
         assert_eq!(logical_queue.topic(), Some("orders"));
@@ -2420,7 +2442,7 @@ mod tests {
             .push_back(Ok(Some(response)));
         let selector_result = producer
             .send_with_selector_with_timeout(
-                &message,
+                &mut message,
                 |logical_queues, selected_message| {
                     assert_eq!(selected_message.topic(), "orders");
                     assert_eq!(logical_queues[0].topic(), Some("orders"));
@@ -2475,7 +2497,7 @@ mod tests {
         producer.set_async_sender_executor(Some(Arc::new(TokioSender(calls.clone()))));
 
         let result = producer
-            .send_future(&Message::new("orders", b"executor task".to_vec()))
+            .send_future(&mut Message::new("orders", b"executor task".to_vec()))
             .await
             .unwrap();
 
@@ -2519,7 +2541,7 @@ mod tests {
         let sending_producer = producer.clone();
         let send_future = tokio::spawn(async move {
             sending_producer
-                .send_future(&Message::new("orders", b"drop result future".to_vec()))
+                .send_future(&mut Message::new("orders", b"drop result future".to_vec()))
                 .await
         });
         started_rx.await.unwrap();
@@ -2562,7 +2584,7 @@ mod tests {
             scripted_producer(crate::ProducerConfig::new("async-reject").unwrap()).await;
         producer.set_async_sender_executor(Some(Arc::new(RejectSender)));
         let error = producer
-            .send_future(&Message::new("orders", b"rejected".to_vec()))
+            .send_future(&mut Message::new("orders", b"rejected".to_vec()))
             .await
             .unwrap_err();
         assert!(matches!(error, ProducerError::AsyncSenderExecutorRejected));
@@ -2587,7 +2609,7 @@ mod tests {
             .push_back(Ok(Some(scripted_result("inline-fallback", "offset", 2))));
         producer.set_async_sender_executor(Some(Arc::new(RejectSender)));
         let result = producer
-            .send_future(&Message::new("orders", b"inline fallback".to_vec()))
+            .send_future(&mut Message::new("orders", b"inline fallback".to_vec()))
             .await
             .unwrap();
         assert_eq!(result.msg_id, "inline-fallback");
@@ -2615,12 +2637,12 @@ mod tests {
         producer.set_async_sender_executor(Some(Arc::new(HeldSender(held_task.clone()))));
         let initial_count_permits = producer.backpressure_send_num.available_permits();
         let initial_size_permits = producer.backpressure_send_size.available_permits();
-        let message = Message::new("orders", b"deadline before executor runs".to_vec());
+        let mut message = Message::new("orders", b"deadline before executor runs".to_vec());
         let message_size = message.body().len().max(1);
 
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(2),
-            producer.send_future_with_timeout(&message, std::time::Duration::from_millis(15)),
+            producer.send_future_with_timeout(&mut message, std::time::Duration::from_millis(15)),
         )
         .await
         .expect("the send should observe its deadline without executor progress");
@@ -2714,18 +2736,18 @@ mod tests {
             ]);
         }
 
-        let message = Message::new("orders", b"same immutable body".to_vec());
+        let mut message = Message::new("orders", b"same immutable body".to_vec());
         let result = producer
-            .send_with_timeout(&message, Duration::from_secs(1))
+            .send_with_timeout(&mut message, Duration::from_secs(1))
             .await
             .unwrap();
         assert_eq!(result.msg_id, "msg-1");
         assert_eq!(message.body(), b"same immutable body");
-        assert!(
-            !message
-                .properties()
-                .contains_key(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
-        );
+        let unique_id = message
+            .properties()
+            .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+            .expect("Java send writes its prepared ID to the caller message");
+        assert!(matches!(unique_id.len(), 32 | 56));
 
         let attempts = {
             let mut scripted = producer.scripted_transport.lock().unwrap();
@@ -2736,6 +2758,7 @@ mod tests {
         assert_ne!(attempts[0].address, attempts[1].address);
         assert_eq!(attempts[0].body, attempts[1].body);
         assert_eq!(attempts[0].unique_id, attempts[1].unique_id);
+        assert_eq!(attempts[0].unique_id.as_str(), unique_id.as_str());
         assert_eq!(attempts[0].mode, SendMode::Sync);
         assert_eq!(attempts[1].mode, SendMode::Sync);
         producer.shutdown().await.unwrap();
@@ -2760,7 +2783,7 @@ mod tests {
 
         let result = producer
             .send_with_timeout(
-                &Message::new("orders", b"retry a stored response".to_vec()),
+                &mut Message::new("orders", b"retry a stored response".to_vec()),
                 Duration::from_secs(1),
             )
             .await
@@ -2808,7 +2831,7 @@ mod tests {
 
         let result = producer
             .send_with_timeout(
-                &Message::new("orders", b"zero per-request timeout".to_vec()),
+                &mut Message::new("orders", b"zero per-request timeout".to_vec()),
                 Duration::from_secs(3),
             )
             .await;
@@ -2904,9 +2927,9 @@ mod tests {
             ]);
         }
 
-        let message = Message::new("orders", b"hook body".to_vec());
+        let mut message = Message::new("orders", b"hook body".to_vec());
         producer
-            .send_with_timeout(&message, Duration::from_secs(1))
+            .send_with_timeout(&mut message, Duration::from_secs(1))
             .await
             .unwrap();
         assert_eq!(
@@ -2977,7 +3000,7 @@ mod tests {
 
         let result = producer
             .send_with_timeout(
-                &Message::new("orders", b"hook body".to_vec()),
+                &mut Message::new("orders", b"hook body".to_vec()),
                 Duration::from_secs(1),
             )
             .await
@@ -3012,7 +3035,7 @@ mod tests {
 
         producer
             .send_with_timeout(
-                &Message::new("orders", b"hook queue".to_vec()),
+                &mut Message::new("orders", b"hook queue".to_vec()),
                 Duration::from_secs(1),
             )
             .await
@@ -3054,7 +3077,7 @@ mod tests {
 
         let result = producer
             .send_with_timeout(
-                &Message::new("orders", b"hook result".to_vec()),
+                &mut Message::new("orders", b"hook result".to_vec()),
                 Duration::from_secs(1),
             )
             .await
@@ -3130,7 +3153,7 @@ mod tests {
 
         producer
             .send_to_queue_with_timeout(
-                &Message::new("orders", b"checked body".to_vec()),
+                &mut Message::new("orders", b"checked body".to_vec()),
                 &queues[0],
                 Duration::from_secs(1),
             )
@@ -3175,7 +3198,7 @@ mod tests {
         producer.register_check_forbidden_hook(Arc::new(Reject));
         let error = producer
             .send_to_queue_with_timeout(
-                &Message::new("orders", b"blocked body".to_vec()),
+                &mut Message::new("orders", b"blocked body".to_vec()),
                 &queues[0],
                 Duration::from_secs(1),
             )
@@ -3220,7 +3243,7 @@ mod tests {
 
         let error = producer
             .send_future_with_timeout(
-                &Message::new("orders", b"blocked by async check hook".to_vec()),
+                &mut Message::new("orders", b"blocked by async check hook".to_vec()),
                 Duration::from_secs(3),
             )
             .await
@@ -3307,7 +3330,7 @@ mod tests {
 
         let error = producer
             .send_to_queue_direct_future_with_timeout(
-                &Message::new("orders", b"blocked by explicit async hook".to_vec()),
+                &mut Message::new("orders", b"blocked by explicit async hook".to_vec()),
                 &queues[0],
                 Duration::from_secs(3),
             )
@@ -3368,7 +3391,7 @@ mod tests {
 
         let error = producer
             .send_with_timeout(
-                &Message::new("orders", b"blocked by check hook".to_vec()),
+                &mut Message::new("orders", b"blocked by check hook".to_vec()),
                 Duration::from_secs(3),
             )
             .await
@@ -3447,7 +3470,7 @@ mod tests {
 
         let error = producer
             .send_with_timeout(
-                &Message::new("orders", b"deadline exhausted in hook".to_vec()),
+                &mut Message::new("orders", b"deadline exhausted in hook".to_vec()),
                 Duration::from_millis(20),
             )
             .await
@@ -3521,7 +3544,7 @@ mod tests {
         let body = vec![b'x'; 2048];
         producer
             .send_with_timeout(
-                &Message::new("orders", body.clone()),
+                &mut Message::new("orders", body.clone()),
                 Duration::from_secs(1),
             )
             .await
@@ -3607,7 +3630,7 @@ mod tests {
 
         producer
             .send_future_with_timeout(
-                &Message::new("orders", b"async body".to_vec()),
+                &mut Message::new("orders", b"async body".to_vec()),
                 Duration::from_secs(1),
             )
             .await
@@ -3678,7 +3701,7 @@ mod tests {
 
         producer
             .send_to_queue_future_with_timeout(
-                &Message::new("orders", b"async body".to_vec()),
+                &mut Message::new("orders", b"async body".to_vec()),
                 &queues[0],
                 Duration::from_secs(1),
             )
@@ -3748,7 +3771,7 @@ mod tests {
         assert!(matches!(
             producer
                 .send_future_with_timeout(
-                    &Message::new("orders", b"async body".to_vec()),
+                    &mut Message::new("orders", b"async body".to_vec()),
                     Duration::from_secs(1)
                 )
                 .await,
@@ -3784,7 +3807,7 @@ mod tests {
         assert!(matches!(
             producer
                 .send_future_with_timeout(
-                    &Message::new("orders", b"async".to_vec()),
+                    &mut Message::new("orders", b"async".to_vec()),
                     Duration::from_secs(1)
                 )
                 .await,
@@ -3801,7 +3824,7 @@ mod tests {
             scripted.responses.push_back(Ok(None));
         }
         producer
-            .send_to_queue_oneway(&Message::new("orders", b"oneway".to_vec()), &queues[0])
+            .send_to_queue_oneway(&mut Message::new("orders", b"oneway".to_vec()), &queues[0])
             .await
             .unwrap();
         {
@@ -3822,7 +3845,7 @@ mod tests {
         }
         producer
             .send_with_selector_with_timeout(
-                &Message::new("orders", b"selected".to_vec()),
+                &mut Message::new("orders", b"selected".to_vec()),
                 |publish_queues, _| Some(publish_queues[1].clone()),
                 Duration::from_secs(1),
             )
@@ -3844,7 +3867,7 @@ mod tests {
         }
         producer
             .send_to_queue_with_timeout(
-                &Message::new("orders", b"queue".to_vec()),
+                &mut Message::new("orders", b"queue".to_vec()),
                 &queues[0],
                 Duration::from_secs(1),
             )
@@ -3896,7 +3919,7 @@ mod tests {
             .push_back(Ok(None));
 
         producer
-            .send_to_queue_oneway(&Message::new("orders", b"oneway".to_vec()), &queues[0])
+            .send_to_queue_oneway(&mut Message::new("orders", b"oneway".to_vec()), &queues[0])
             .await
             .unwrap();
         assert_eq!(
@@ -4005,18 +4028,33 @@ mod tests {
         second.set_tags("blue").unwrap();
         second.set_keys("key-b").unwrap();
         let (first_result, second_result) =
-            tokio::join!(producer.send(&first), producer.send(&second));
+            tokio::join!(producer.send(&mut first), producer.send(&mut second));
         let first_result = first_result.unwrap();
         let second_result = second_result.unwrap();
         assert_eq!(first_result.msg_id, "msg-a");
         assert_eq!(second_result.msg_id, "msg-b");
         assert_eq!(first_result.queue_offset, 20);
         assert_eq!(second_result.queue_offset, 21);
+        let first_unique_id = first
+            .properties()
+            .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+            .expect("auto-batched Java send mutates the first caller message");
+        let second_unique_id = second
+            .properties()
+            .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+            .expect("auto-batched Java send mutates the second caller message");
+        assert_ne!(first_unique_id, second_unique_id);
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+        let expected_id_length = fixture["uniqueId"]["length"].as_u64().unwrap() as usize;
+        assert!(matches!(expected_id_length, 32 | 56));
+        assert!(matches!(first_unique_id.len(), 32 | 56));
+        assert!(matches!(second_unique_id.len(), 32 | 56));
 
         producer.set_auto_batch(false);
         assert!(!producer.auto_batch());
-        let third = Message::new("orders", b"third".to_vec());
-        let third_result = producer.send(&third).await.unwrap();
+        let mut third = Message::new("orders", b"third".to_vec());
+        let third_result = producer.send(&mut third).await.unwrap();
         assert_eq!(third_result.msg_id, "msg-c");
         assert_eq!(third_result.queue_offset, 22);
 
@@ -4059,7 +4097,7 @@ mod tests {
             let producer = producer.clone();
             tokio::spawn(async move {
                 producer
-                    .send(&Message::new("orders", b"pending".to_vec()))
+                    .send(&mut Message::new("orders", b"pending".to_vec()))
                     .await
             })
         };
@@ -4112,7 +4150,7 @@ mod tests {
             let producer = producer.clone();
             tokio::spawn(async move {
                 producer
-                    .send(&Message::new("orders", b"one".to_vec()))
+                    .send(&mut Message::new("orders", b"one".to_vec()))
                     .await
             })
         };
@@ -4121,7 +4159,7 @@ mod tests {
         producer.set_batch_max_delay_millis(50).unwrap();
         producer.set_total_batch_max_bytes(3).unwrap();
         let direct_result = producer
-            .send(&Message::new("orders", b"next".to_vec()))
+            .send(&mut Message::new("orders", b"next".to_vec()))
             .await
             .unwrap();
         assert_eq!(direct_result.msg_id, "direct-after-limit");
@@ -4197,41 +4235,44 @@ mod tests {
 
         producer.set_auto_batch(true);
         producer
-            .send_direct(&Message::new("orders", b"direct".to_vec()))
+            .send_direct(&mut Message::new("orders", b"direct".to_vec()))
             .await
             .unwrap();
         producer
-            .send_direct_future(&Message::new("orders", b"direct future".to_vec()))
+            .send_direct_future(&mut Message::new("orders", b"direct future".to_vec()))
             .await
             .unwrap();
         producer
             .send_direct_with_timeout(
-                &Message::new("orders", b"direct sync timeout".to_vec()),
+                &mut Message::new("orders", b"direct sync timeout".to_vec()),
                 Duration::from_secs(1),
             )
             .await
             .unwrap();
         producer
             .send_direct_future_with_timeout(
-                &Message::new("orders", b"direct future timeout".to_vec()),
+                &mut Message::new("orders", b"direct future timeout".to_vec()),
                 Duration::from_secs(1),
             )
             .await
             .unwrap();
         producer
             .send_to_queue_direct(
-                &Message::new("orders", b"direct queue sync".to_vec()),
+                &mut Message::new("orders", b"direct queue sync".to_vec()),
                 &queue,
             )
             .await
             .unwrap();
         producer
-            .send_to_queue_direct_future(&Message::new("orders", b"direct queue".to_vec()), &queue)
+            .send_to_queue_direct_future(
+                &mut Message::new("orders", b"direct queue".to_vec()),
+                &queue,
+            )
             .await
             .unwrap();
         producer
             .send_to_queue_direct_with_timeout(
-                &Message::new("orders", b"direct queue sync timeout".to_vec()),
+                &mut Message::new("orders", b"direct queue sync timeout".to_vec()),
                 &queue,
                 Duration::from_secs(1),
             )
@@ -4239,7 +4280,7 @@ mod tests {
             .unwrap();
         producer
             .send_to_queue_direct_future_with_timeout(
-                &Message::new("orders", b"direct queue future timeout".to_vec()),
+                &mut Message::new("orders", b"direct queue future timeout".to_vec()),
                 &queue,
                 Duration::from_secs(1),
             )
@@ -4248,23 +4289,23 @@ mod tests {
 
         producer.set_auto_batch(false);
         producer
-            .send_by_accumulator(&Message::new("orders", b"accumulate".to_vec()))
+            .send_by_accumulator(&mut Message::new("orders", b"accumulate".to_vec()))
             .await
             .unwrap();
         producer
-            .send_by_accumulator_future(&Message::new("orders", b"accumulate future".to_vec()))
+            .send_by_accumulator_future(&mut Message::new("orders", b"accumulate future".to_vec()))
             .await
             .unwrap();
         producer
             .send_to_queue_by_accumulator(
-                &Message::new("orders", b"accumulate queue sync".to_vec()),
+                &mut Message::new("orders", b"accumulate queue sync".to_vec()),
                 &queue,
             )
             .await
             .unwrap();
         producer
             .send_to_queue_by_accumulator_future(
-                &Message::new("orders", b"accumulate queue".to_vec()),
+                &mut Message::new("orders", b"accumulate queue".to_vec()),
                 &queue,
             )
             .await
@@ -4346,6 +4387,71 @@ mod tests {
                 "{row}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn accumulator_send_mutates_caller_before_runtime_dispatch_like_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+        let expected = &fixture["sendInputMutation"];
+        let producer =
+            Producer::new(crate::ProducerConfig::new("accumulator-input-mutation").unwrap());
+        let mut message = Message::new("orders", vec![1, 2, 3]);
+
+        assert!(matches!(
+            producer.send_by_accumulator(&mut message).await,
+            Err(ProducerError::NotStarted)
+        ));
+        let unique_id = message
+            .properties()
+            .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+            .expect("pinned Java assigns UNIQ_KEY before accumulator dispatch");
+        assert_eq!(
+            expected["uniqueIdPresent"].as_bool(),
+            Some(true),
+            "{expected}"
+        );
+        assert_eq!(
+            expected["sendOutcome"].as_str(),
+            Some("MQClientException"),
+            "{expected}"
+        );
+        let java_id_length = expected["uniqueIdLength"].as_u64().unwrap() as usize;
+        assert!(matches!(java_id_length, 32 | 56), "{expected}");
+        assert!(matches!(unique_id.len(), 32 | 56));
+        assert_eq!(
+            expected["topic"].as_str(),
+            Some(message.topic()),
+            "{expected}"
+        );
+
+        let mut existing = Message::new("orders", vec![1, 2, 3]);
+        existing
+            .set_system_property(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX, "existing-id")
+            .unwrap();
+        assert!(matches!(
+            producer.send_by_accumulator(&mut existing).await,
+            Err(ProducerError::NotStarted)
+        ));
+        assert_eq!(
+            existing
+                .properties()
+                .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+                .map(String::as_str),
+            Some("existing-id")
+        );
+
+        let mut direct = Message::new("orders", vec![1, 2, 3]);
+        assert!(matches!(
+            producer.send_direct(&mut direct).await,
+            Err(ProducerError::NotStarted)
+        ));
+        assert!(
+            !direct
+                .properties()
+                .contains_key(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX),
+            "Java direct send fails service-state validation before assigning UNIQ_KEY"
+        );
     }
 
     #[test]

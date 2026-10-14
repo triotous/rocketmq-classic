@@ -216,6 +216,7 @@ public final class ProducerCoreFixtures {
         autoBatchLifecycle.setAutoBatch(true);
         autoBatch.put("enabledAfterRuntimeToggle", autoBatchLifecycle.getAutoBatch());
         result.put("autoBatchLifecycle", autoBatch);
+        result.put("sendInputMutation", sendInputMutation());
 
         DefaultMQProducer compressorProducer = new DefaultMQProducer("compressor-settings");
         List<Map<String, Object>> compressorTypes = new ArrayList<>();
@@ -354,6 +355,27 @@ public final class ProducerCoreFixtures {
 
         result.put("batchValidation", batchCases());
         result.put("batchEncoding", batchEncoding());
+        return result;
+    }
+
+    private static Map<String, Object> sendInputMutation() {
+        DefaultMQProducer producer = new DefaultMQProducer("send-input-mutation");
+        producer.setInstanceName("send-input-mutation");
+        producer.batchMaxBytes(1);
+        producer.initProduceAccumulator();
+        Message message = new Message("orders", new byte[] {1, 2, 3});
+        String sendOutcome = "returned";
+        try {
+            producer.sendByAccumulator(message, null, null);
+        } catch (Throwable error) {
+            sendOutcome = error.getClass().getSimpleName();
+        }
+        String uniqueId = message.getProperty("UNIQ_KEY");
+        Map<String, Object> result = new TreeMap<>();
+        result.put("uniqueIdPresent", uniqueId != null);
+        result.put("uniqueIdLength", uniqueId == null ? 0 : uniqueId.length());
+        result.put("topic", message.getTopic());
+        result.put("sendOutcome", sendOutcome);
         return result;
     }
 
