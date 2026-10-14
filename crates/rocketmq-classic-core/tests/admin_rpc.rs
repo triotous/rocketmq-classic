@@ -617,6 +617,54 @@ async fn query_fanout_returns_java_no_message_error_after_filtering() {
 }
 
 #[tokio::test]
+async fn query_fanout_matches_java_null_index_type_filter() {
+    let message_record = java_message_record("ipv4-v1");
+    let mut header = HeaderMap::new();
+    QueryMessageResponseHeader {
+        index_last_update_timestamp: 100,
+        index_last_update_phyoffset: 1,
+    }
+    .encode_fields(&mut header);
+    let (address, peer) =
+        scripted_peer(response::SUCCESS, Some(header), Some(message_record)).await;
+    let route = TopicRouteData::java_decode(
+        serde_json::json!({
+            "queueDatas": [],
+            "brokerDatas": [{"cluster": "cluster-a", "brokerName": "broker-a", "brokerAddrs": {"0": address}}],
+            "filterServerTable": {}
+        })
+        .to_string()
+        .as_bytes(),
+    )
+    .unwrap();
+    let query = AdminQueryRequest::by_key("orders", "order-key", 32, 10, 99)
+        .with_index_type(None)
+        .with_last_key(None);
+    let (api, client) = api().await;
+
+    let error = api
+        .query_message_across_brokers(&route, &query, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        RpcError::Response {
+            request_code: request::QUERY_MESSAGE,
+            code: response::NO_MESSAGE,
+            remark: Some(remark),
+            ..
+        } if remark == "query message by key finished, but no message."
+    ));
+    let command = peer.await.unwrap();
+    let fields = command.ext_fields.unwrap();
+    assert!(!fields.contains_key("indexType"));
+    assert!(!fields.contains_key("lastKey"));
+    assert_eq!(fields.get("_UNIQUE_KEY_QUERY"), Some(&"false".to_owned()));
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn query_fanout_returns_java_no_message_error_for_empty_routes() {
     let route = TopicRouteData::java_decode(
         br#"{"queueDatas":[],"brokerDatas":[],"filterServerTable":{}}"#,
@@ -667,9 +715,9 @@ async fn query_fanout_applies_java_cluster_filter_and_last_key() {
         .as_bytes(),
     )
     .unwrap();
-    let mut query = AdminQueryRequest::by_unique_key("orders", "producer-unique-1", 32, 10, 99)
-        .in_cluster("cluster-a");
-    query.last_key = Some("page-token".into());
+    let query = AdminQueryRequest::by_unique_key("orders", "producer-unique-1", 32, 10, 99)
+        .in_cluster("cluster-a")
+        .with_last_key(Some("page-token".into()));
     let (api, client) = api().await;
 
     let result = api

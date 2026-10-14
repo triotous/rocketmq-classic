@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use rocketmq_classic_common::message::{MessageExt, MessageQueue, constants};
+use rocketmq_classic_common::message::{MessageExt, MessageQueue};
 use rocketmq_classic_core::{
     api::admin::{AdminQueryRequest, QueryResult, decode_message_id},
     error::RpcError,
@@ -95,17 +95,10 @@ impl Producer {
         let topic = client_config
             .with_namespace(Some(topic))?
             .ok_or_else(|| ProducerError::NoRoute(topic.to_owned()))?;
-        let logical_message_queue = topic.starts_with("%LMQ%");
-        let mut query = if unique_key {
+        let query = if unique_key {
             AdminQueryRequest::by_unique_key(&topic, key, max_num, begin_timestamp, end_timestamp)
         } else {
             AdminQueryRequest::by_key(&topic, key, max_num, begin_timestamp, end_timestamp)
-        };
-        query.logical_message_queue = logical_message_queue;
-        query.index_type = if unique_key {
-            constants::INDEX_UNIQUE_TYPE.to_owned()
-        } else {
-            constants::INDEX_KEY_TYPE.to_owned()
         };
         let timeout_millis =
             i64::from(self.config.client_config().mq_client_api_timeout()).max(0) as u64;

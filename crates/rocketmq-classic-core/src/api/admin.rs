@@ -111,19 +111,28 @@ fn hex_nibble(value: u8) -> Option<u8> {
 }
 
 /// One Java MQAdmin key or unique-key query across a topic route.
+/// The route topic and logical-topic flag are derived from Java's query inputs
+/// and stay internal. Builder methods retain the nullable cluster, index-type,
+/// and pagination inputs of Java's full `MQAdminImpl.queryMessage` overload:
+///
+/// ```compile_fail
+/// use rocketmq_classic_core::api::admin::AdminQueryRequest;
+/// let mut request = AdminQueryRequest::by_key("orders", "k", 32, 0, 1);
+/// request.logical_message_queue = true;
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AdminQueryRequest {
-    pub route_topic: String,
-    pub topic: String,
-    pub key: String,
-    pub max_num: i32,
-    pub begin_timestamp: i64,
-    pub end_timestamp: i64,
-    pub index_type: String,
-    pub last_key: Option<String>,
-    pub unique_key: bool,
-    pub cluster_name: Option<String>,
-    pub logical_message_queue: bool,
+    pub(crate) route_topic: String,
+    pub(crate) topic: String,
+    pub(crate) key: String,
+    pub(crate) max_num: i32,
+    pub(crate) begin_timestamp: i64,
+    pub(crate) end_timestamp: i64,
+    pub(crate) index_type: Option<String>,
+    pub(crate) last_key: Option<String>,
+    pub(crate) unique_key: bool,
+    pub(crate) cluster_name: Option<String>,
+    pub(crate) logical_message_queue: bool,
 }
 
 impl AdminQueryRequest {
@@ -143,7 +152,7 @@ impl AdminQueryRequest {
             max_num,
             begin_timestamp,
             end_timestamp,
-            index_type: constants::INDEX_KEY_TYPE.to_owned(),
+            index_type: Some(constants::INDEX_KEY_TYPE.to_owned()),
             last_key: None,
             unique_key: false,
             cluster_name: None,
@@ -166,7 +175,7 @@ impl AdminQueryRequest {
             max_num,
             begin_timestamp,
             end_timestamp,
-            index_type: constants::INDEX_UNIQUE_TYPE.to_owned(),
+            index_type: Some(constants::INDEX_UNIQUE_TYPE.to_owned()),
             last_key: None,
             unique_key: true,
             cluster_name: None,
@@ -176,14 +185,35 @@ impl AdminQueryRequest {
     /// Applies Java's optional cluster selector. Logical topics and the wheel
     /// timer use the supplied cluster as their route topic; ordinary topics
     /// keep their own route and use the cluster only to filter Brokers.
-    pub fn in_cluster(mut self, cluster_name: impl Into<String>) -> Self {
-        let cluster_name = cluster_name.into();
-        if !cluster_name.is_empty()
-            && (self.logical_message_queue || self.topic == "rmq_sys_wheel_timer")
-        {
-            self.route_topic = cluster_name.clone();
+    pub fn in_cluster(self, cluster_name: impl Into<String>) -> Self {
+        self.with_cluster_name(Some(cluster_name.into()))
+    }
+
+    /// Applies Java's nullable `clusterName` query input.
+    pub fn with_cluster_name(mut self, cluster_name: Option<String>) -> Self {
+        self.route_topic = self.topic.clone();
+        if self.logical_message_queue || self.topic == "rmq_sys_wheel_timer" {
+            if let Some(cluster) = cluster_name
+                .as_deref()
+                .filter(|cluster| !cluster.is_empty())
+            {
+                self.route_topic = cluster.to_owned();
+            }
         }
-        self.cluster_name = Some(cluster_name);
+        self.cluster_name = cluster_name;
+        self
+    }
+
+    /// Applies Java's nullable `indexType` query input. A null or empty value
+    /// causes the Java query-result filter to return no key matches.
+    pub fn with_index_type(mut self, index_type: Option<String>) -> Self {
+        self.index_type = index_type;
+        self
+    }
+
+    /// Applies Java's nullable `lastKey` pagination input.
+    pub fn with_last_key(mut self, last_key: Option<String>) -> Self {
+        self.last_key = last_key;
         self
     }
 }
@@ -264,7 +294,7 @@ impl MQClientApi {
             max_num: query.max_num,
             begin_timestamp: query.begin_timestamp,
             end_timestamp: query.end_timestamp,
-            index_type: Some(query.index_type.clone()),
+            index_type: query.index_type.clone(),
             last_key: query.last_key.clone(),
             ..QueryMessageRequestHeader::default()
         };
@@ -424,12 +454,12 @@ fn query_message_matches(message: &MessageExt, query: &AdminQueryRequest) -> boo
     if !topic_matches {
         return false;
     }
-    match query.index_type.as_str() {
-        constants::INDEX_KEY_TYPE => message.message().keys().is_some_and(|keys| {
+    match query.index_type.as_deref() {
+        Some(constants::INDEX_KEY_TYPE) => message.message().keys().is_some_and(|keys| {
             keys.split(constants::KEY_SEPARATOR)
                 .any(|key| key == query.key)
         }),
-        constants::INDEX_TAG_TYPE => message
+        Some(constants::INDEX_TAG_TYPE) => message
             .message()
             .tags()
             .is_some_and(|tags| tags == query.key),

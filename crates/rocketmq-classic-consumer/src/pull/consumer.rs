@@ -1328,12 +1328,11 @@ impl PullConsumer {
     ) -> Result<QueryResult, PullConsumerError> {
         let (runtime, _) = self.started_runtime().await?;
         let topic = self.topic_with_namespace(topic)?;
-        let mut query = if unique_key {
+        let query = if unique_key {
             AdminQueryRequest::by_unique_key(&topic, key, max_num, begin_timestamp, end_timestamp)
         } else {
             AdminQueryRequest::by_key(&topic, key, max_num, begin_timestamp, end_timestamp)
         };
-        query.logical_message_queue = topic.starts_with("%LMQ%");
         let timeout_millis =
             i64::from(self.config.client_config().mq_client_api_timeout()).max(0) as u64;
         let deadline = Instant::now() + Duration::from_millis(timeout_millis).saturating_mul(4);
