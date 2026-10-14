@@ -108,7 +108,11 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   controls are now internal fixed safety bounds; decoder and pull-result public
   calls no longer accept them. Low-cap regressions run inside the common crate.
   This closes the identified decoder API difference only; full P18-V01 remains
-  open. Producer `EndTransactionHook` registration, context and direct execution
+  open. The reverse-scan finding that `serde_fastjson` was an externally public
+  helper module with no matching Java utility API is now closed: both the common
+  and protocol adapters are crate-private, and rustdoc compile-fail cases check
+  that downstream imports fail. Code commit: `b62e66c1`. Producer
+  `EndTransactionHook` registration, context and direct execution
   now have fixture-backed local and Broker-check path coverage, including ordered
   execution and hook-failure isolation; this closes that API slice only and
   leaves broad P18-V01 reconciliation open. The pinned
