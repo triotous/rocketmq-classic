@@ -37,3 +37,8 @@ Phase 7 Producer API reverse-scan follow-up — 2026-10-14 UTC
 - PASS: all-workspace rustdoc JSON generation and Producer `TopicPublishInfo` public-surface inspection confirm both Rust-only convenience methods are absent while `set_message_queue_list` and nullable filter selection remain public. Existing workspace manifest and Consumer deprecation warnings remain.
 - P18-V01 remains open for broad Java source/API/overload/input/error/flow and Rust reverse-export/configuration reconciliation. P18-V04 still lacks current-revision Ubuntu CI evidence; no push or CI run was made.
 - Implementation commit: `59518089 fix(compat): remove extra publish info helpers`. This record update is committed separately.
+
+Current-revision workspace gate — 2026-10-14 17:23 UTC
+
+- PASS on revision `17eb59df`: `cargo test --workspace --all-features --locked` completed successfully across all workspace unit, integration, and doctest targets after the Producer API surface cleanup. This supplies a current-tree P18-V02 test run.
+- No further source changes. P18-V01's broad bidirectional source/API/overload/input/error/flow and Rust/Java reverse-export reconciliation remains local work; P18-V04 still lacks current-revision GitHub Ubuntu CI. Phase 19 Broker/Docker cases and release-version/registry resolution remain outstanding.
