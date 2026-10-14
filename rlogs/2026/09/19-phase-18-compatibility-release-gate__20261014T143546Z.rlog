@@ -70,3 +70,8 @@ Current revision workspace retest (2026-10-14 15:13 UTC; code revision `ed76df95
 - PASS: `cargo test --workspace --locked` and `cargo test --workspace --all-features --locked`.
 - PASS: `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`.
 - Updated the Phase 7 lifecycle accessor row to use the current producer fixture SHA-256 after the identity case was added. This retest does not replace Phase 19 Broker/Docker execution or current-revision GitHub Ubuntu evidence.
+
+Current code revision full P18-V02 server-free rerun (`3f57e7ec`, 2026-10-14 15:15 UTC)
+- PASS: sequential `cargo test --workspace --locked` and `cargo test --workspace --all-features --locked`; strict all-target/all-feature workspace Clippy; Producer crate suite; Maven verify (37 scenarios, fixture drift and Java/Rust cross-decodes); format and diff checks.
+- PASS: `bash tests/stress/run-offline-smoke.sh` (16 deterministic race/leak cases × 3); `cargo run -p rocketmq-classic-remoting --example fuzz_smoke --locked` (104 frame seeds, 10 message seeds, 1,824 mutations); comparator self-test and 37-scenario manifest; release examples; offline benchmark compilation; workspace metadata audit, locked Cargo metadata, and seven package-content listings.
+- This closes local P18-V02 server-free evidence at the current code revision. P18-V01 remains PARTIAL; current-revision GitHub Ubuntu evidence, Phase 19 Docker/Broker execution, and pre-publication release-version/registry checks remain outstanding.
