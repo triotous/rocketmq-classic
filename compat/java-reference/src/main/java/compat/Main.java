@@ -114,6 +114,10 @@ public final class Main {
             PushImplementationAccessorFixtures.main(Arrays.copyOfRange(args, 1, args.length));
             return;
         }
+        if (args.length > 0 && "consumer-facade-api-fixture".equals(args[0])) {
+            ConsumerFacadeApiFixtures.main(Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "transaction-fixture".equals(args[0])) {
             TransactionFixtures.main(Arrays.copyOfRange(args, 1, args.length));
             return;
