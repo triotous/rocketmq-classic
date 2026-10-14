@@ -11,7 +11,7 @@ pub use decoder::{
 pub use host_address::{MessageHostAddress, MessageHostAddressBytesError, MessageHostAddressError};
 pub use properties::{decode_properties, encode_properties};
 pub use types::{
-    Message, MessageExt, MessageProperties, MessagePropertyError, MessageQueue,
-    MessageQueueCompareError, MessageSysFlagParseError, NAME_VALUE_SEPARATOR, PROPERTY_SEPARATOR,
-    TopicFilterType,
+    Message, MessageExt, MessageProperties, MessagePropertyError, MessagePropertyParseError,
+    MessageQueue, MessageQueueCompareError, MessageSysFlagParseError, NAME_VALUE_SEPARATOR,
+    PROPERTY_SEPARATOR, TopicFilterType,
 };

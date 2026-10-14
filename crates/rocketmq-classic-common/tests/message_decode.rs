@@ -242,6 +242,234 @@ fn message_ext_socket_address_api_matches_java_551() {
 }
 
 #[test]
+fn message_public_api_matches_java_551_fixture() {
+    let expected = &fixture()["messagePublicApi"];
+    let default_message = Message::default();
+    assert_eq!(default_message.topic_nullable(), None);
+    assert_eq!(default_message.body_nullable(), None);
+    assert_eq!(default_message.get_properties(), None);
+    assert_eq!(default_message.to_string(), expected["defaultToString"]);
+    let default_after_lookup = default_message.clone();
+    assert_eq!(default_after_lookup.get_property("missing"), None);
+    assert_eq!(
+        default_after_lookup
+            .get_properties()
+            .map(|properties| properties.is_empty()),
+        Some(true)
+    );
+    assert_eq!(expected["defaultTopicIsNull"], true);
+    assert_eq!(expected["defaultBodyIsNull"], true);
+    assert_eq!(expected["defaultPropertiesIsNull"], true);
+    assert_eq!(expected["propertyLookupInitializesProperties"], true);
+
+    let nullable_constructor = Message::new_nullable(None, None);
+    assert_eq!(nullable_constructor.topic_nullable(), None);
+    assert_eq!(nullable_constructor.body_nullable(), None);
+    assert!(nullable_constructor.is_wait_store_msg_ok());
+    assert_eq!(expected["nullableConstructorTopicIsNull"], true);
+    assert_eq!(expected["nullableConstructorBodyIsNull"], true);
+    assert_eq!(expected["nullableConstructorWaitStore"], true);
+
+    let nullable_fields = Message::with_nullable_fields(None, None, None, -3, None, false);
+    assert_eq!(nullable_fields.topic_nullable(), None);
+    assert_eq!(nullable_fields.body_nullable(), None);
+    assert!(!nullable_fields.is_wait_store_msg_ok());
+    assert_eq!(expected["nullableFieldsTopicIsNull"], true);
+    assert_eq!(expected["nullableFieldsBodyIsNull"], true);
+    assert_eq!(expected["nullableFieldsWaitStore"], false);
+
+    let mut nullable_setters = Message::new("before", [1]);
+    nullable_setters.set_topic_nullable(None);
+    nullable_setters.set_body_nullable(None);
+    assert_eq!(nullable_setters.topic_nullable(), None);
+    assert_eq!(nullable_setters.body_nullable(), None);
+    assert_eq!(expected["nullableSetterTopicIsNull"], true);
+    assert_eq!(expected["nullableSetterBodyIsNull"], true);
+
+    let mut nullable_properties = Message::default();
+    nullable_properties.set_tags_nullable(None);
+    nullable_properties.set_buyer_id_nullable(None);
+    nullable_properties.set_instance_id_nullable(None);
+    for (property, getter_is_null, remains_present) in [
+        ("TAGS", "nullTagsGetterIsNull", "nullTagsRemainsPresent"),
+        (
+            "BUYER_ID",
+            "nullBuyerGetterIsNull",
+            "nullBuyerRemainsPresent",
+        ),
+        (
+            "INSTANCE_ID",
+            "nullInstanceGetterIsNull",
+            "nullInstanceRemainsPresent",
+        ),
+    ] {
+        assert_eq!(nullable_properties.get_property(property), None);
+        assert_eq!(
+            nullable_properties.has_property(property),
+            expected[remains_present]
+        );
+        assert_eq!(expected[getter_is_null], true);
+    }
+    let nullable_map = serde_json::to_value(&nullable_properties).unwrap();
+    assert!(nullable_map["topic"].is_null());
+    assert!(nullable_map["body"].is_null());
+    assert!(nullable_map["properties"]["TAGS"].is_null());
+    let nullable_round_trip: Message = serde_json::from_value(nullable_map).unwrap();
+    assert!(nullable_round_trip.topic_nullable().is_none());
+    assert!(nullable_round_trip.body_nullable().is_none());
+    assert!(nullable_round_trip.has_property("TAGS"));
+    assert_eq!(nullable_round_trip.get_property("TAGS"), None);
+
+    let mut nullable_tag_string = Message::default();
+    nullable_tag_string.set_tags_nullable(None);
+    assert_eq!(
+        nullable_tag_string.to_string(),
+        expected["nullablePropertyString"]
+    );
+    assert_eq!(
+        nullable_properties.put_user_property_nullable(None, Some("value".to_owned())),
+        Err(rocketmq_classic_common::message::MessagePropertyError::EmptyKey)
+    );
+    assert_eq!(
+        nullable_properties.put_user_property_nullable(Some("key".to_owned()), None),
+        Err(rocketmq_classic_common::message::MessagePropertyError::EmptyValue)
+    );
+    assert_eq!(expected["nullPropertyNameRejected"], true);
+    assert_eq!(expected["nullPropertyValueRejected"], true);
+
+    let mut message = Message::with_fields(
+        "orders",
+        Some("green"),
+        Some("first second"),
+        17,
+        [0, 255, 42],
+        false,
+    );
+    assert_eq!(message.topic(), expected["topic"]);
+    assert_eq!(message.tags(), expected["tags"].as_str());
+    assert_eq!(message.keys(), expected["keys"].as_str());
+    assert_eq!(message.flag(), expected["flag"]);
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD.encode(message.body()),
+        expected["body"]
+    );
+    assert_eq!(message.is_wait_store_msg_ok(), expected["waitStore"]);
+    assert_eq!(
+        message.get_property("TAGS"),
+        expected["propertyTags"].as_str()
+    );
+    assert_eq!(
+        message.get_user_property("TAGS"),
+        expected["userPropertyTags"].as_str()
+    );
+    assert_eq!(message.get_property("missing"), None);
+    assert_eq!(message.has_property("TAGS"), expected["hasTags"]);
+    assert_eq!(message.has_property("missing"), expected["hasMissing"]);
+
+    message.set_keys_from(["third", "fourth"]);
+    assert_eq!(message.keys(), expected["collectionKeys"].as_str());
+    message.set_buyer_id("buyer-1");
+    message.set_instance_id("instance-1");
+    assert_eq!(message.buyer_id(), expected["buyerId"].as_str());
+    assert_eq!(
+        message.get_property("INSTANCE_ID"),
+        expected["instanceIdProperty"].as_str()
+    );
+
+    message.set_delay_time_level(-7);
+    message.set_delay_time_sec(i64::MIN);
+    message.set_delay_time_ms(9_007_199_254_740_993);
+    message.set_deliver_time_ms(i64::MAX);
+    assert_eq!(
+        message.delay_time_level().unwrap(),
+        expected["delayTimeLevel"]
+    );
+    assert_eq!(message.delay_time_sec().unwrap(), expected["delayTimeSec"]);
+    assert_eq!(message.delay_time_ms().unwrap(), expected["delayTimeMs"]);
+    assert_eq!(
+        message.deliver_time_ms().unwrap(),
+        expected["deliverTimeMs"]
+    );
+
+    let absent = Message::default();
+    assert_eq!(
+        absent.delay_time_level().unwrap(),
+        expected["absentDelayTimeLevel"]
+    );
+    assert_eq!(
+        absent.delay_time_sec().unwrap(),
+        expected["absentDelayTimeSec"]
+    );
+    assert_eq!(
+        absent.delay_time_ms().unwrap(),
+        expected["absentDelayTimeMs"]
+    );
+    assert_eq!(
+        absent.deliver_time_ms().unwrap(),
+        expected["absentDeliverTimeMs"]
+    );
+
+    let mut unicode = Message::default();
+    unicode.set_system_property("DELAY", "١٢").unwrap();
+    unicode
+        .set_system_property("TIMER_DELAY_SEC", "+٣٤")
+        .unwrap();
+    assert_eq!(
+        unicode.delay_time_level().unwrap(),
+        expected["unicodeDelayTimeLevel"]
+    );
+    assert_eq!(
+        unicode.delay_time_sec().unwrap(),
+        expected["unicodeDelayTimeSec"]
+    );
+
+    unicode.set_system_property("DELAY", "2147483648").unwrap();
+    assert_eq!(
+        unicode.delay_time_level().is_err(),
+        expected["overflowDelayTimeLevelThrows"]
+    );
+    unicode
+        .set_system_property("TIMER_DELAY_MS", "9223372036854775808")
+        .unwrap();
+    assert_eq!(
+        unicode.delay_time_ms().is_err(),
+        expected["overflowDelayTimeMsThrows"]
+    );
+
+    for case in expected["numericPropertyInputs"].as_array().unwrap() {
+        let property = case["property"].as_str().unwrap();
+        let input = case["input"].as_str().unwrap();
+        let mut candidate = Message::default();
+        candidate.set_system_property(property, input).unwrap();
+        let parsed = match property {
+            "DELAY" => candidate.delay_time_level().map(i64::from),
+            "TIMER_DELAY_SEC" => candidate.delay_time_sec(),
+            "TIMER_DELAY_MS" => candidate.delay_time_ms(),
+            "TIMER_DELIVER_MS" => candidate.deliver_time_ms(),
+            _ => panic!("unexpected Java property {property}"),
+        };
+        assert_eq!(parsed.is_ok(), case["accepted"], "{property}={input:?}");
+        if let Some(value) = case["value"].as_i64() {
+            assert_eq!(parsed.unwrap(), value, "{property}={input:?}");
+        }
+    }
+
+    let mut diagnostic = Message::new("invoice", [0, 255, 42]);
+    assert_eq!(diagnostic.to_string(), expected["messageToString"]);
+    diagnostic
+        .properties_mut()
+        .insert("DIRECT".to_owned(), "through-map".to_owned());
+    assert_eq!(
+        diagnostic.get_property("DIRECT"),
+        expected["directMapMutation"].as_str()
+    );
+
+    let mut extended = MessageExt::new(message);
+    extended.set_topic("changed-through-inherited-api");
+    assert_eq!(extended.topic(), "changed-through-inherited-api");
+}
+
+#[test]
 fn message_ext_system_flag_helpers_match_java_551() {
     let expected = &fixture()["messageExtSystemFlagsApi"];
     let mut message = MessageExt::default();

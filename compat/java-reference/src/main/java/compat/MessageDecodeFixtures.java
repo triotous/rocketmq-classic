@@ -54,6 +54,7 @@ public final class MessageDecodeFixtures {
         ));
         root.put("messageExtHostApi", messageExtHostApi());
         root.put("messageExtSystemFlagsApi", messageExtSystemFlagsApi());
+        root.put("messagePublicApi", messagePublicApi());
         List<Map<String, Object>> cases = new ArrayList<>();
         cases.add(record("ipv4-v1", message("orders", "hello-v1", 17, 41,
             InetAddress.getByName("192.0.2.10"), 10911,
@@ -125,6 +126,165 @@ public final class MessageDecodeFixtures {
             Files.createDirectories(output.getParent());
             Files.writeString(output, json, StandardCharsets.UTF_8);
             System.out.println("wrote " + cases.size() + " Java message decode fixtures to " + output);
+        }
+    }
+
+    private static Map<String, Object> messagePublicApi() {
+        Message message = new Message("orders", "green", "first second", 17,
+            new byte[] {0, -1, 42}, false);
+        Map<String, Object> expected = new TreeMap<>();
+        Message defaultMessage = new Message();
+        expected.put("defaultTopicIsNull", defaultMessage.getTopic() == null);
+        expected.put("defaultBodyIsNull", defaultMessage.getBody() == null);
+        expected.put("defaultPropertiesIsNull", defaultMessage.getProperties() == null);
+        expected.put("defaultToString", defaultMessage.toString());
+        defaultMessage.getProperty("missing");
+        expected.put("propertyLookupInitializesProperties",
+            defaultMessage.getProperties() != null && defaultMessage.getProperties().isEmpty());
+
+        Message nullableConstructor = new Message(null, (byte[]) null);
+        expected.put("nullableConstructorTopicIsNull", nullableConstructor.getTopic() == null);
+        expected.put("nullableConstructorBodyIsNull", nullableConstructor.getBody() == null);
+        expected.put("nullableConstructorWaitStore", nullableConstructor.isWaitStoreMsgOK());
+        Message nullableFields = new Message(null, null, null, -3, null, false);
+        expected.put("nullableFieldsTopicIsNull", nullableFields.getTopic() == null);
+        expected.put("nullableFieldsBodyIsNull", nullableFields.getBody() == null);
+        expected.put("nullableFieldsWaitStore", nullableFields.isWaitStoreMsgOK());
+
+        Message nullableSetters = new Message("before", new byte[] {1});
+        nullableSetters.setTopic(null);
+        nullableSetters.setBody(null);
+        expected.put("nullableSetterTopicIsNull", nullableSetters.getTopic() == null);
+        expected.put("nullableSetterBodyIsNull", nullableSetters.getBody() == null);
+
+        Message nullableProperties = new Message();
+        nullableProperties.setTags(null);
+        nullableProperties.setBuyerId(null);
+        nullableProperties.setInstanceId(null);
+        expected.put("nullTagsGetterIsNull", nullableProperties.getTags() == null);
+        expected.put("nullTagsRemainsPresent", nullableProperties.hasProperty("TAGS"));
+        expected.put("nullBuyerGetterIsNull", nullableProperties.getBuyerId() == null);
+        expected.put("nullBuyerRemainsPresent", nullableProperties.hasProperty("BUYER_ID"));
+        expected.put("nullInstanceGetterIsNull",
+            nullableProperties.getProperty("INSTANCE_ID") == null);
+        expected.put("nullInstanceRemainsPresent", nullableProperties.hasProperty("INSTANCE_ID"));
+        Message nullableString = new Message();
+        nullableString.setTags(null);
+        expected.put("nullablePropertyString", nullableString.toString());
+        expected.put("nullPropertyNameRejected",
+            throwsIllegalArgument(() -> nullableProperties.putUserProperty(null, "value")));
+        expected.put("nullPropertyValueRejected",
+            throwsIllegalArgument(() -> nullableProperties.putUserProperty("key", null)));
+
+        expected.put("topic", message.getTopic());
+        expected.put("tags", message.getTags());
+        expected.put("keys", message.getKeys());
+        expected.put("flag", message.getFlag());
+        expected.put("body", Base64.getEncoder().encodeToString(message.getBody()));
+        expected.put("waitStore", message.isWaitStoreMsgOK());
+        expected.put("propertyTags", message.getProperty("TAGS"));
+        expected.put("userPropertyTags", message.getUserProperty("TAGS"));
+        expected.put("missingProperty", message.getProperty("missing"));
+        expected.put("hasTags", message.hasProperty("TAGS"));
+        expected.put("hasMissing", message.hasProperty("missing"));
+
+        message.setKeys(List.of("third", "fourth"));
+        expected.put("collectionKeys", message.getKeys());
+        message.setBuyerId("buyer-1");
+        message.setInstanceId("instance-1");
+        expected.put("buyerId", message.getBuyerId());
+        expected.put("instanceIdProperty", message.getProperty("INSTANCE_ID"));
+
+        message.setDelayTimeLevel(-7);
+        message.setDelayTimeSec(Long.MIN_VALUE);
+        message.setDelayTimeMs(9007199254740993L);
+        message.setDeliverTimeMs(Long.MAX_VALUE);
+        expected.put("delayTimeLevel", message.getDelayTimeLevel());
+        expected.put("delayTimeSec", message.getDelayTimeSec());
+        expected.put("delayTimeMs", message.getDelayTimeMs());
+        expected.put("deliverTimeMs", message.getDeliverTimeMs());
+
+        Message absent = new Message();
+        expected.put("absentDelayTimeLevel", absent.getDelayTimeLevel());
+        expected.put("absentDelayTimeSec", absent.getDelayTimeSec());
+        expected.put("absentDelayTimeMs", absent.getDelayTimeMs());
+        expected.put("absentDeliverTimeMs", absent.getDeliverTimeMs());
+        MessageAccessor.putProperty(absent, "DELAY", "\u0661\u0662");
+        MessageAccessor.putProperty(absent, "TIMER_DELAY_SEC", "+\u0663\u0664");
+        expected.put("unicodeDelayTimeLevel", absent.getDelayTimeLevel());
+        expected.put("unicodeDelayTimeSec", absent.getDelayTimeSec());
+        MessageAccessor.putProperty(absent, "DELAY", "2147483648");
+        expected.put("overflowDelayTimeLevelThrows", throwsNumberFormat(absent, "DELAY"));
+        MessageAccessor.putProperty(absent, "TIMER_DELAY_MS", "9223372036854775808");
+        expected.put("overflowDelayTimeMsThrows", throwsNumberFormat(absent, "TIMER_DELAY_MS"));
+
+        List<Map<String, Object>> numericInputs = new ArrayList<>();
+        for (String value : List.of("", " ", "+", "++1", "+1", "-1", "2147483647",
+            "-2147483648", "2147483648", "-2147483649", "\u0661\u0662")) {
+            numericInputs.add(numericPropertyInput("DELAY", value));
+        }
+        for (String value : List.of("", " ", "+", "++1", "+1", "-1", "9223372036854775807",
+            "-9223372036854775808", "9223372036854775808", "-9223372036854775809", "+\u0663\u0664")) {
+            numericInputs.add(numericPropertyInput("TIMER_DELAY_SEC", value));
+            numericInputs.add(numericPropertyInput("TIMER_DELAY_MS", value));
+            numericInputs.add(numericPropertyInput("TIMER_DELIVER_MS", value));
+        }
+        expected.put("numericPropertyInputs", numericInputs);
+
+        Message diagnostic = new Message("invoice", new byte[] {0, -1, 42});
+        expected.put("messageToString", diagnostic.toString());
+        diagnostic.getProperties().put("DIRECT", "through-map");
+        expected.put("directMapMutation", diagnostic.getProperty("DIRECT"));
+        return expected;
+    }
+
+    private static Map<String, Object> numericPropertyInput(String property, String value) {
+        Message message = new Message();
+        MessageAccessor.putProperty(message, property, value);
+        Map<String, Object> result = new TreeMap<>();
+        result.put("property", property);
+        result.put("input", value);
+        try {
+            long parsed = 0;
+            switch (property) {
+                case "DELAY":
+                    parsed = message.getDelayTimeLevel();
+                    break;
+                case "TIMER_DELAY_SEC":
+                    parsed = message.getDelayTimeSec();
+                    break;
+                case "TIMER_DELAY_MS":
+                    parsed = message.getDelayTimeMs();
+                    break;
+                default:
+                    parsed = message.getDeliverTimeMs();
+            }
+            result.put("accepted", true);
+            result.put("value", parsed);
+        } catch (NumberFormatException expected) {
+            result.put("accepted", false);
+        }
+        return result;
+    }
+
+    private static boolean throwsNumberFormat(Message message, String property) {
+        try {
+            if ("DELAY".equals(property)) message.getDelayTimeLevel();
+            else if ("TIMER_DELAY_SEC".equals(property)) message.getDelayTimeSec();
+            else if ("TIMER_DELAY_MS".equals(property)) message.getDelayTimeMs();
+            else message.getDeliverTimeMs();
+            return false;
+        } catch (NumberFormatException expected) {
+            return true;
+        }
+    }
+
+    private static boolean throwsIllegalArgument(Runnable action) {
+        try {
+            action.run();
+            return false;
+        } catch (IllegalArgumentException expected) {
+            return true;
         }
     }
 

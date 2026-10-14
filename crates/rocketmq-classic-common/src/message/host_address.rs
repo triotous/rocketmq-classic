@@ -324,6 +324,37 @@ pub(super) fn parse_java_i32(value: &str) -> Option<i32> {
     Some(if negative { result } else { -result })
 }
 
+pub(super) fn parse_java_i64(value: &str) -> Option<i64> {
+    let mut units = value.encode_utf16().peekable();
+    let negative = match units.peek().copied()? {
+        0x2d => {
+            units.next();
+            true
+        }
+        0x2b => {
+            units.next();
+            false
+        }
+        _ => false,
+    };
+    units.peek()?;
+    let limit = if negative { i64::MIN } else { -i64::MAX };
+    let multiply_limit = limit / 10;
+    let mut result = 0_i64;
+    for unit in units {
+        let digit = i64::from(java_decimal_digit(unit)?);
+        if result < multiply_limit {
+            return None;
+        }
+        result *= 10;
+        if result < limit + digit {
+            return None;
+        }
+        result -= digit;
+    }
+    Some(if negative { result } else { -result })
+}
+
 fn java_decimal_digit(unit: u16) -> Option<u16> {
     const ZEROS: &[u16] = &[
         0x0030, 0x0660, 0x06f0, 0x07c0, 0x0966, 0x09e6, 0x0a66, 0x0ae6, 0x0b66, 0x0be6, 0x0c66,
