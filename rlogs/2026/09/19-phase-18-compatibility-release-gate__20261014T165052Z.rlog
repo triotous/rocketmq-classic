@@ -1,0 +1,24 @@
+Phase 18 continuation — Producer QueueFilter API crosswalk — 2026-10-14 UTC
+
+Starting state
+- Branch `phase/19-phase-18-compatibility-release-gate`; prior HEAD `a6abeb38`.
+- Java oracle remains pinned at `efa1be59d6fc747ad220f036c86030f05f0419f9` and read-only.
+- The pending slice inventories the public nested `TopicPublishInfo.QueueFilter.filter` signature and Rust nullable callback aliases.
+
+Changes
+- `aa26bc90` — `test(producer): pin publish queue filter surface`. The invoked Java Producer fixture now records the nested functional interface's exact public method signature. Rust tests require the fixture and the Phase 7 matrix crosswalk for the Java method and Rust callback aliases. Phase 6/7 audit text records the refreshed fixture digest.
+- Fixture SHA-256: `f998d5e4d5d716d3cb0aa4f510f574960cb499a80b728f24ea7b8b150114e04e`.
+
+Validation
+- PASS: `cargo test -p rocketmq-classic-producer --locked publish_info` — 6 unit tests and 7 integration tests.
+- PASS: `mvn -q -f compat/java-reference/pom.xml verify` — Java self-test, 37 scenarios, runtime fixture probes, fixture drift validation and Rust/Java cross-decodes.
+- PASS: `cargo fmt --all -- --check` and `git diff --check` after formatting.
+
+Remaining work
+- P18-V01 remains open for broad overload/input/error/control-flow, inherited/deprecated API and Rust reverse-export/configuration reconciliation.
+- P18-V04 still needs current GitHub Ubuntu evidence for the Java address profile.
+- Reconcile Phase 15–17 verification evidence requirement by requirement; targeted Phase 17 query/error/reset-race checks have some evidence, but the complete reconciliation is not recorded.
+- Phase 19 local Docker/Broker interoperability matrix remains to be built and executed. It is separate from the final owner-run deployment/production manual items.
+- Confirm intended `0.1.0` release version and registry dependency resolution before any eventual publication; publication/tagging is outside this task.
+
+No push, publication, tag, plan-file edit, or Java oracle modification was made.
