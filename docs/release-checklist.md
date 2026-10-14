@@ -91,9 +91,12 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   execution and hook-failure isolation; this closes that API slice only and
   leaves broad P18-V01 reconciliation open. The pinned
   `DefaultMQProducerImpl` fixture now records its 2 public constructors and 82
-  declared public methods; direct check/send hook helpers, mutable route/state
-  accessors, raw runtime handles and per-overload branch mappings still need
-  explicit source-backed dispositions in the Phase 7 matrix.
+  declared public methods. Direct CheckForbidden/SendMessage presence and
+  execution helpers now map to public Rust methods, with fixture-backed tests
+  for hook ordering, rejection short-circuit, context mutation and panic
+  isolation. Mutable route/state accessors, raw runtime handles and per-overload
+  branch mappings still need explicit source-backed dispositions in the Phase 7
+  matrix; broad P18-V01 reconciliation remains open.
 - [x] Map runtime Producer fault-strategy settings: live latency-fault and
   detector toggles, mutable `long[]` table aliasing/replacement, and subsequent
   Broker selection. Null setter/getter behavior, deferred null-table NPEs,
