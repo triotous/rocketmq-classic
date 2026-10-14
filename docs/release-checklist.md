@@ -108,7 +108,11 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   confirms that neither path sends a Broker request. `fixtures/producer/core.json`
   SHA-256: `d1b05a04ed53dde2820647bd964ea2092592b35d51de90273f5b22f77ded0fe7`.
   This closes that selector failure branch only; broad P18-V01 reconciliation
-  remains open.
+  remains open. Reply-host conversion now also has an invoked Java processor
+  differential for valid IPv4/unbracketed IPv6, Unicode decimal ports, range
+  boundaries, missing separators and invalid/out-of-range ports; it closes that
+  Phase 15 error branch only. `fixtures/runtime/inbound-routing.json` SHA-256:
+  `614adec3fe0eb41a261000744602f0247aa3ddaf03fdd42fdabf9ee9b8785eb2`.
   The public-surface reverse scan also found caller-configurable decoder limits
   and a limited decompression function with no Java API counterpart. Those
   controls are now internal fixed safety bounds; decoder and pull-result public
