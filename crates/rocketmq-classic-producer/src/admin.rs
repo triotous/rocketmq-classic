@@ -104,10 +104,17 @@ impl Producer {
             i64::from(self.config.client_config().mq_client_api_timeout()).max(0) as u64;
         let deadline =
             Instant::now() + std::time::Duration::from_millis(timeout_millis).saturating_mul(4);
-        let mut result = runtime.query_message(&query, deadline).await?;
-        for message in &mut result.message_list {
-            if let Some(topic) = client_config.without_namespace(Some(message.message().topic()))? {
-                message.message_mut().set_topic(topic);
+        let result = runtime.query_message(&query, deadline).await?;
+        if let Some(messages) = result.get_message_list() {
+            for message in messages.snapshot().into_iter().flatten() {
+                message.with_mut(|message| {
+                    if let Some(topic) =
+                        client_config.without_namespace(Some(message.message().topic()))?
+                    {
+                        message.message_mut().set_topic(topic);
+                    }
+                    Ok::<(), ProducerError>(())
+                })?;
             }
         }
         Ok(result)

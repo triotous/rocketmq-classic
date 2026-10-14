@@ -1336,8 +1336,13 @@ impl PullConsumer {
         let timeout_millis =
             i64::from(self.config.client_config().mq_client_api_timeout()).max(0) as u64;
         let deadline = Instant::now() + Duration::from_millis(timeout_millis).saturating_mul(4);
-        let mut result = runtime.query_message(&query, deadline).await?;
-        self.reset_topic(Some(&mut result.message_list))?;
+        let result = runtime.query_message(&query, deadline).await?;
+        if let Some(messages) = result.get_message_list() {
+            for message in messages.snapshot().into_iter().flatten() {
+                message
+                    .with_mut(|message| self.reset_topic(Some(std::slice::from_mut(message))))?;
+            }
+        }
         Ok(result)
     }
 

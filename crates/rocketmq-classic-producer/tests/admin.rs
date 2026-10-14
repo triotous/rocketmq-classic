@@ -444,15 +444,14 @@ async fn query_facade_uses_namespaced_topic_and_java_client_message_ids() {
         .query_message_by_unique_key("orders", "producer-unique-1", 32, 10, 99)
         .await
         .unwrap();
-    assert_eq!(result.index_last_update_timestamp, 200);
-    assert_eq!(result.message_list.len(), 1);
-    assert_eq!(result.message_list[0].message().topic(), "orders");
+    assert_eq!(result.get_index_last_update_timestamp(), 200);
+    let messages = result.get_message_list().unwrap().snapshot();
+    assert_eq!(messages.len(), 1);
+    let message = messages[0].as_ref().unwrap().snapshot();
+    assert_eq!(message.message().topic(), "orders");
+    assert_eq!(message.message_id(), Some("producer-unique-1"));
     assert_eq!(
-        result.message_list[0].message_id(),
-        Some("producer-unique-1")
-    );
-    assert_eq!(
-        result.message_list[0].offset_message_id(),
+        message.offset_message_id(),
         Some("C633641400002A9F0000018BCFE56829")
     );
 

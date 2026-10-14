@@ -295,7 +295,7 @@ async fn query_message_sets_unique_flag_and_decodes_java_message_records() {
     header.encode_fields(&mut expected_fields);
     expected_fields.insert("_UNIQUE_KEY_QUERY".into(), "true".into());
     assert_eq!(command.ext_fields, Some(expected_fields));
-    assert_eq!(result.index_last_update_timestamp, 1_700_000_200_041);
+    assert_eq!(result.get_index_last_update_timestamp(), 1_700_000_200_041);
     let mut messages: Vec<MessageExt> = decode_many(&message_record, Default::default()).unwrap();
     for message in &mut messages {
         let offset_id = message.message_id().map(str::to_owned);
@@ -308,7 +308,15 @@ async fn query_message_sets_unique_flag_and_decodes_java_message_records() {
         message.set_offset_message_id(offset_id);
         message.set_message_id(client_id);
     }
-    assert_eq!(result.message_list, messages);
+    let returned_messages = result
+        .get_message_list()
+        .unwrap()
+        .snapshot()
+        .into_iter()
+        .flatten()
+        .map(|message| message.snapshot())
+        .collect::<Vec<_>>();
+    assert_eq!(returned_messages, messages);
     client.shutdown().await;
 }
 
@@ -443,11 +451,14 @@ async fn query_fanout_filters_unique_key_merges_watermarks_and_keeps_partial_suc
         .await
         .unwrap();
 
-    assert_eq!(result.index_last_update_timestamp, 200);
-    assert_eq!(result.message_list.len(), 2);
-    assert!(result.message_list.iter().all(|message| {
-        message.message_id() == Some(unique_key.as_str())
-            && message.offset_message_id() == Some(offset_message_id.as_str())
+    assert_eq!(result.get_index_last_update_timestamp(), 200);
+    let messages = result.get_message_list().unwrap().snapshot();
+    assert_eq!(messages.len(), 2);
+    assert!(messages.iter().flatten().all(|message| {
+        message.with(|message| {
+            message.message_id() == Some(unique_key.as_str())
+                && message.offset_message_id() == Some(offset_message_id.as_str())
+        })
     }));
     for peer in [first_peer, second_peer] {
         let command = peer.await.unwrap();
@@ -521,10 +532,21 @@ async fn query_fanout_preserves_java_response_completion_order_and_time_bounds()
         .await
         .unwrap();
 
-    assert_eq!(result.index_last_update_timestamp, 200);
-    assert_eq!(result.message_list.len(), 2);
-    assert_eq!(result.message_list[0].message().body(), b"hello-v2");
-    assert_eq!(result.message_list[1].message().body(), b"hello-v1");
+    assert_eq!(result.get_index_last_update_timestamp(), 200);
+    let messages = result.get_message_list().unwrap().snapshot();
+    assert_eq!(messages.len(), 2);
+    assert!(
+        messages[0]
+            .as_ref()
+            .unwrap()
+            .with(|message| message.message().body() == b"hello-v2")
+    );
+    assert!(
+        messages[1]
+            .as_ref()
+            .unwrap()
+            .with(|message| message.message().body() == b"hello-v1")
+    );
     for peer in [first_peer, second_peer] {
         let command = peer.await.unwrap();
         let fields = command.ext_fields.unwrap();
@@ -725,7 +747,7 @@ async fn query_fanout_applies_java_cluster_filter_and_last_key() {
         .await
         .unwrap();
 
-    assert_eq!(result.message_list.len(), 1);
+    assert_eq!(result.get_message_list().unwrap().snapshot().len(), 1);
     let command = selected_peer.await.unwrap();
     assert_eq!(command.code, request::QUERY_MESSAGE);
     let fields = command.ext_fields.unwrap();
@@ -770,7 +792,7 @@ async fn query_fanout_uses_cluster_for_logical_topic_route_and_request() {
         .await
         .unwrap();
 
-    assert_eq!(result.message_list.len(), 1);
+    assert_eq!(result.get_message_list().unwrap().snapshot().len(), 1);
     let command = peer.await.unwrap();
     let fields = command.ext_fields.unwrap();
     assert_eq!(fields.get("topic"), Some(&"parent".to_owned()));

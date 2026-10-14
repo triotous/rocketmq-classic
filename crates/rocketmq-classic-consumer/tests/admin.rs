@@ -634,14 +634,13 @@ async fn push_and_pull_query_facades_preserve_java_client_message_ids() {
         .query_message_by_unique_key("orders", "producer-unique-1", 32, 10, 99)
         .await
         .unwrap();
-    assert_eq!(push_result.message_list.len(), 1);
-    assert_eq!(push_result.message_list[0].message().topic(), "orders");
+    let push_messages = push_result.get_message_list().unwrap().snapshot();
+    assert_eq!(push_messages.len(), 1);
+    let push_message = push_messages[0].as_ref().unwrap().snapshot();
+    assert_eq!(push_message.message().topic(), "orders");
+    assert_eq!(push_message.message_id(), Some("producer-unique-1"));
     assert_eq!(
-        push_result.message_list[0].message_id(),
-        Some("producer-unique-1")
-    );
-    assert_eq!(
-        push_result.message_list[0].offset_message_id(),
+        push_message.offset_message_id(),
         Some("C633641400002A9F0000018BCFE56829")
     );
     let push_query = timeout(Duration::from_secs(1), async {
@@ -681,14 +680,13 @@ async fn push_and_pull_query_facades_preserve_java_client_message_ids() {
         .query_message_by_unique_key("orders", "producer-unique-1", 32, 10, 99)
         .await
         .unwrap();
-    assert_eq!(pull_result.message_list.len(), 1);
-    assert_eq!(pull_result.message_list[0].message().topic(), "orders");
+    let pull_messages = pull_result.get_message_list().unwrap().snapshot();
+    assert_eq!(pull_messages.len(), 1);
+    let pull_message = pull_messages[0].as_ref().unwrap().snapshot();
+    assert_eq!(pull_message.message().topic(), "orders");
+    assert_eq!(pull_message.message_id(), Some("producer-unique-1"));
     assert_eq!(
-        pull_result.message_list[0].message_id(),
-        Some("producer-unique-1")
-    );
-    assert_eq!(
-        pull_result.message_list[0].offset_message_id(),
+        pull_message.offset_message_id(),
         Some("C633641400002A9F0000018BCFE56829")
     );
     let pull_query = timeout(Duration::from_secs(1), async {

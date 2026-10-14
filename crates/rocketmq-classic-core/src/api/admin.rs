@@ -2,6 +2,7 @@ use rocketmq_classic_common::message::{
     DecodeOptions, MessageExt, constants, decode_many, decode_one,
 };
 use rocketmq_classic_protocol::{
+    SharedValue,
     codes::{request, response},
     header::{
         CommandHeader, CreateTopicRequestHeader, QueryMessageRequestHeader,
@@ -19,11 +20,23 @@ use super::{MQClientApi, classify, decode_header};
 use crate::error::RpcError;
 
 /// The index watermark and matching messages returned by a Broker query.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// Its read-only result fields match Java's constructor/getter surface; the
+/// optional list and shared element handles preserve Java null and alias
+/// behavior.
+///
+/// ```compile_fail
+/// use rocketmq_classic_core::api::admin::QueryResult;
+/// let mut result = QueryResult::new(17, None);
+/// result.index_last_update_timestamp = 18;
+/// ```
+#[derive(Debug)]
 pub struct QueryResult {
-    pub index_last_update_timestamp: i64,
-    pub message_list: Vec<MessageExt>,
+    pub(crate) index_last_update_timestamp: i64,
+    pub(crate) message_list: Option<QueryMessageList>,
 }
+
+/// A mutable list handle corresponding to Java's retained `List<MessageExt>`.
+pub type QueryMessageList = SharedValue<Vec<Option<SharedValue<MessageExt>>>>;
 
 /// A decoded Java RocketMQ physical message ID.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -228,16 +241,48 @@ pub enum AdminQueryError {
 }
 
 impl QueryResult {
+    /// Constructs a query result from Java's nullable message-list input.
+    pub fn new(index_last_update_timestamp: i64, message_list: Option<QueryMessageList>) -> Self {
+        Self {
+            index_last_update_timestamp,
+            message_list,
+        }
+    }
+
     pub fn get_index_last_update_timestamp(&self) -> i64 {
         self.index_last_update_timestamp
     }
 
-    pub fn get_message_list(&self) -> &Vec<MessageExt> {
-        &self.message_list
+    /// Returns a shared mutable list handle, preserving Java's getter alias.
+    pub fn get_message_list(&self) -> Option<QueryMessageList> {
+        self.message_list.clone()
     }
+}
 
-    pub fn get_message_list_mut(&mut self) -> &mut Vec<MessageExt> {
-        &mut self.message_list
+impl std::fmt::Display for QueryResult {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "QueryResult [indexLastUpdateTimestamp={}, messageList=",
+            self.index_last_update_timestamp
+        )?;
+        match &self.message_list {
+            None => formatter.write_str("null")?,
+            Some(messages) => {
+                formatter.write_str("[")?;
+                for (index, message) in messages.snapshot().iter().enumerate() {
+                    if index > 0 {
+                        formatter.write_str(", ")?;
+                    }
+                    match message {
+                        Some(message) => message.with(|message| write!(formatter, "{message}"))?,
+                        None => formatter.write_str("null")?,
+                    }
+                }
+                formatter.write_str("]")?;
+            }
+        }
+        formatter.write_str("]")
     }
 }
 
@@ -323,12 +368,13 @@ impl MQClientApi {
                 None => break,
                 Some(Ok(Ok(result))) => {
                     watermark = watermark.max(result.index_last_update_timestamp);
-                    messages.extend(
-                        result
-                            .message_list
-                            .into_iter()
-                            .filter(|message| query_message_matches(message, query)),
-                    );
+                    if let Some(result_messages) = result.message_list {
+                        for message in result_messages.snapshot().into_iter().flatten() {
+                            if message.with(|message| query_message_matches(message, query)) {
+                                messages.push(Some(message));
+                            }
+                        }
+                    }
                 }
                 Some(_) => continue,
             }
@@ -342,10 +388,10 @@ impl MQClientApi {
                 remark: Some("query message by key finished, but no message.".into()),
             });
         }
-        Ok(QueryResult {
-            index_last_update_timestamp: watermark,
-            message_list: messages,
-        })
+        Ok(QueryResult::new(
+            watermark,
+            Some(SharedValue::from(messages)),
+        ))
     }
 
     /// Sends Java `MQClientAPIImpl.createTopic` to one Broker.
@@ -398,10 +444,15 @@ impl MQClientApi {
         for message in &mut message_list {
             client_decode_message(message);
         }
-        Ok(QueryResult {
-            index_last_update_timestamp: response_header.index_last_update_timestamp,
-            message_list,
-        })
+        Ok(QueryResult::new(
+            response_header.index_last_update_timestamp,
+            Some(SharedValue::from(
+                message_list
+                    .into_iter()
+                    .map(|message| Some(SharedValue::from(message)))
+                    .collect::<Vec<_>>(),
+            )),
+        ))
     }
 
     /// Views one physical message by the Broker's commit-log offset.
@@ -486,7 +537,7 @@ fn client_decode_message(message: &mut MessageExt) {
 mod tests {
     use super::{
         AdminQueryRequest, DecodedMessageId, MessageExt, MessageIdDecodeError, QueryResult,
-        decode_message_id,
+        SharedValue, decode_message_id,
     };
     use std::{net::SocketAddr, str::FromStr};
 
@@ -519,14 +570,29 @@ mod tests {
 
     #[test]
     fn query_result_java_getters_expose_the_stored_values() {
-        let mut result = QueryResult {
-            index_last_update_timestamp: 17,
-            message_list: Vec::new(),
-        };
+        let messages = SharedValue::from(Vec::new());
+        let result = QueryResult::new(17, Some(messages.clone()));
         assert_eq!(result.get_index_last_update_timestamp(), 17);
-        assert!(result.get_message_list().is_empty());
-        result.get_message_list_mut().push(MessageExt::default());
-        assert_eq!(result.get_message_list().len(), 1);
+        let returned = result.get_message_list().unwrap();
+        assert!(returned.ptr_eq(&messages));
+        returned.with_mut(|messages| messages.push(Some(SharedValue::from(MessageExt::default()))));
+        assert_eq!(messages.snapshot().len(), 1);
+    }
+
+    #[test]
+    fn query_result_preserves_java_null_list_elements_and_to_string() {
+        let null_list = QueryResult::new(17, None);
+        assert!(null_list.get_message_list().is_none());
+        assert_eq!(
+            null_list.to_string(),
+            "QueryResult [indexLastUpdateTimestamp=17, messageList=null]"
+        );
+
+        let null_element = QueryResult::new(18, Some(SharedValue::from(vec![None])));
+        assert_eq!(
+            null_element.to_string(),
+            "QueryResult [indexLastUpdateTimestamp=18, messageList=[null]]"
+        );
     }
 
     #[test]

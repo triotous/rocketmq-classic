@@ -12,6 +12,7 @@
     <runtime.address.fixture.verify.mode>--verify</runtime.address.fixture.verify.mode>
     <!-- Set false only when regenerating the forked runtime-start fixture. -->
     <start.fixture.verify>true</start.fixture.verify>
+    <query.result.fixture.verify>true</query.result.fixture.verify>
     <!-- Set false only when regenerating the producer core fixture. -->
     <producer.core.fixture.verify>true</producer.core.fixture.verify>
   </properties>
@@ -422,6 +423,18 @@
               <arguments>
                 <argument>${project.basedir}/../../fixtures/producer/core.json</argument>
                 <argument>${producer.core.fixture.verify}</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>verify-java-query-result-fixture</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.QueryResultFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/admin/query-result.json</argument>
+                <argument>${query.result.fixture.verify}</argument>
               </arguments>
             </configuration>
           </execution>
