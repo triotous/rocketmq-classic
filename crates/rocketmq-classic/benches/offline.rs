@@ -120,7 +120,9 @@ fn main() {
         || {
             let mut message = Message::new("bench-topic", body.clone());
             message.set_tags("bench-tag").unwrap();
-            message.set_property("bench-key", "bench-value").unwrap();
+            message
+                .put_user_property("bench-key", "bench-value")
+                .unwrap();
             let properties = encode_properties(message.properties());
             let header = SendMessageRequestHeaderV1 {
                 producer_group: Some("bench-producer".into()),

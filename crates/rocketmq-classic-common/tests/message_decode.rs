@@ -512,7 +512,8 @@ fn message_public_api_matches_java_551_fixture() {
     let mut diagnostic = Message::new("invoice", [0, 255, 42]);
     assert_eq!(diagnostic.to_string(), expected["messageToString"]);
     diagnostic
-        .properties_mut()
+        .get_properties_mut()
+        .unwrap()
         .insert("DIRECT".to_owned(), "through-map".to_owned());
     assert_eq!(
         diagnostic.get_property("DIRECT"),

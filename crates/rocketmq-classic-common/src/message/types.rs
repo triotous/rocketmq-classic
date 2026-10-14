@@ -51,6 +51,31 @@ pub struct MessageSysFlagParseError {
     value: String,
 }
 
+/// RocketMQ message value corresponding to Java's `Message` API.
+///
+/// ```compile_fail
+/// use rocketmq_classic_common::message::Message;
+/// let mut message = Message::default();
+/// let _body = message.take_body();
+/// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_common::message::Message;
+/// let mut message = Message::default();
+/// let _body = message.take_body_nullable();
+/// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_common::message::Message;
+/// let mut message = Message::default();
+/// message.set_property("key", "value");
+/// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_common::message::Message;
+/// let mut message = Message::default();
+/// message.properties_mut();
+/// ```
 #[derive(Debug)]
 pub struct Message {
     topic: Option<String>,
@@ -312,12 +337,6 @@ impl Message {
     pub fn set_body_nullable(&mut self, body: Option<Vec<u8>>) {
         self.body = body;
     }
-    pub fn take_body(&mut self) -> Vec<u8> {
-        self.body.take().unwrap_or_default()
-    }
-    pub fn take_body_nullable(&mut self) -> Option<Vec<u8>> {
-        self.body.take()
-    }
     pub fn flag(&self) -> i32 {
         self.flag
     }
@@ -359,9 +378,6 @@ impl Message {
             .collect::<Vec<_>>();
         entries.sort_unstable_by(|left, right| left.0.cmp(right.0));
         entries.into_iter()
-    }
-    pub fn properties_mut(&mut self) -> &mut MessageProperties {
-        self.properties.get_or_insert_with(MessageProperties::new)
     }
     pub fn get_properties_mut(&mut self) -> Option<&mut MessageProperties> {
         if self.properties.is_none()
@@ -486,14 +502,6 @@ impl Message {
     pub fn set_transaction_id(&mut self, transaction_id: Option<String>) {
         self.transaction_id = transaction_id;
     }
-    pub fn set_property(
-        &mut self,
-        key: impl Into<String>,
-        value: impl Into<String>,
-    ) -> Result<Option<String>, MessagePropertyError> {
-        self.put_user_property(key, value)
-    }
-
     pub fn put_user_property_nullable(
         &mut self,
         key: Option<String>,
@@ -1059,6 +1067,12 @@ fn set_transient_sys_flag(message: &mut Message, key: &str, value: Option<i32>) 
     }
 }
 
+/// Queue identity corresponding to Java's `MessageQueue` constructors.
+///
+/// ```compile_fail
+/// use rocketmq_classic_common::message::MessageQueue;
+/// let _queue = MessageQueue::new_nullable_broker("topic", None, 0);
+/// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize)]
 pub struct MessageQueue {
     #[serde(
@@ -1131,17 +1145,6 @@ impl MessageQueue {
         Self {
             topic: Some(topic.into()),
             broker_name: Some(broker_name.into()),
-            queue_id,
-        }
-    }
-    pub fn new_nullable_broker(
-        topic: impl Into<String>,
-        broker_name: Option<String>,
-        queue_id: i32,
-    ) -> Self {
-        Self {
-            topic: Some(topic.into()),
-            broker_name,
             queue_id,
         }
     }
@@ -1375,18 +1378,18 @@ mod tests {
     #[test]
     fn java_property_setters_accept_wire_separators() {
         let mut message = Message::new("topic", vec![]);
-        message.set_property("key", "bad\u{2}value").unwrap();
+        message.put_user_property("key", "bad\u{2}value").unwrap();
         assert_eq!(message.properties().get("key").unwrap(), "bad\u{2}value");
         assert_eq!(
-            message.set_property("", "value"),
+            message.put_user_property("", "value"),
             Err(MessagePropertyError::EmptyKey)
         );
         assert_eq!(
-            message.set_property("KEYS", "user-value"),
+            message.put_user_property("KEYS", "user-value"),
             Err(MessagePropertyError::ReservedProperty)
         );
         assert_eq!(
-            message.set_property("custom", "  "),
+            message.put_user_property("custom", "  "),
             Err(MessagePropertyError::EmptyValue)
         );
     }

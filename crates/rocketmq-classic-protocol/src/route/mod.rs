@@ -3124,7 +3124,11 @@ impl TopicRouteData {
             })
             .flat_map(|data| {
                 (0..data.write_queue_nums).map(|queue_id| {
-                    MessageQueue::new_nullable_broker(topic, data.broker_name.clone(), queue_id)
+                    MessageQueue::new_nullable(
+                        Some(topic.to_owned()),
+                        data.broker_name.clone(),
+                        queue_id,
+                    )
                 })
             })
             .collect()
@@ -3155,7 +3159,11 @@ impl TopicRouteData {
             .into_iter()
             .flat_map(|(broker, count)| {
                 (0..count).map(move |queue_id| {
-                    MessageQueue::new_nullable_broker(topic, broker.map(str::to_owned), queue_id)
+                    MessageQueue::new_nullable(
+                        Some(topic.to_owned()),
+                        broker.map(str::to_owned),
+                        queue_id,
+                    )
                 })
             })
             .collect()

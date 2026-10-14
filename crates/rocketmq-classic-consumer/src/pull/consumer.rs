@@ -1590,13 +1590,13 @@ impl PullConsumer {
                 Some(broker_name) => broker_name.map(str::to_owned),
                 None => namespaced_message.broker_name().map(str::to_owned),
             };
-            let queue = MessageQueue::new_nullable_broker(
-                namespaced_topic,
+            let queue = MessageQueue::new_nullable(
+                Some(namespaced_topic),
                 effective_broker.clone(),
                 namespaced_message.queue_id(),
             );
-            let route_queue = MessageQueue::new_nullable_broker(
-                namespaced_message.message().topic().to_owned(),
+            let route_queue = MessageQueue::new_nullable(
+                Some(namespaced_message.message().topic().to_owned()),
                 namespaced_message.broker_name().map(str::to_owned),
                 namespaced_message.queue_id(),
             );

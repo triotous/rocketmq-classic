@@ -1807,8 +1807,8 @@ impl PushConsumer {
             Some(broker_name) => broker_name.map(str::to_owned),
             None => message.broker_name().map(str::to_owned),
         };
-        let queue = MessageQueue::new_nullable_broker(
-            message.message().topic().to_owned(),
+        let queue = MessageQueue::new_nullable(
+            Some(message.message().topic().to_owned()),
             effective_broker,
             message.queue_id(),
         );
