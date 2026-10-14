@@ -88,18 +88,20 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   reconciliation remains local P18-V01 work, not manual validation.
 - [x] Map runtime Producer fault-strategy settings: live latency-fault and
   detector toggles, mutable `long[]` table aliasing/replacement, and subsequent
-  Broker selection. Java null-array setter inputs remain uncovered; see the
-  Phase 7 matrix and Phase 6 audit.
+  Broker selection. Null setter/getter behavior, deferred null-table NPEs,
+  short duration-table AIOOBE, and ignored extra duration entries now have
+  invoked Java fixtures and Rust differentials; see the Phase 7 matrix and
+  Phase 6 audit.
 - [x] Register live cases in the Phase 19 scenario manifest and validate the
   manifest locally.
 - [x] Re-run full workspace/all-feature P18-V02 gates on the latest Producer
-  revision `1ced0a32`. Default/all-feature workspace tests, the 111-test
-  Producer suite, strict workspace Clippy, fmt/diff, Maven verify (37
-  scenarios), comparator self-test and 37-scenario manifest validation, the
+  revision `1845c55a`. Default/all-feature workspace tests, the 112-unit-test
+  Producer suite and integration targets, strict workspace Clippy, fmt/diff,
+  Maven verify (37 scenarios), comparator self-test and 37-scenario manifest validation, the
   16-case race/leak smoke repeated three times, 1,824-mutation fuzz smoke,
   release examples and benchmark compilation pass. The new runtime fault
   fixture SHA-256 is
-  `f36efc8dd13a8b669bb79303687a242b0907dd5e9b045508bbc3e7db08d49f9d`.
+  `2f8c6d40c4669a6a662085e8cddef749338c91fcbb1bf64829ef1f59f77a284e`.
 - [ ] Obtain a current GitHub Ubuntu CI result for the Linux-specific Java
   address profile. A native Ubuntu ARM64 container passes the Core RPC
   integration suite; this does not replace the required GitHub Ubuntu result.
