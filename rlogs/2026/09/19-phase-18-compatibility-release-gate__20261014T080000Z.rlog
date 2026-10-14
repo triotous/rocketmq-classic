@@ -35,3 +35,9 @@ Base revision: dd3b2b6e docs(compat): record producer lifecycle gates
 - PASS: the focused source scan finds direct test references for all 37 public send methods after the update.
 - PASS: `cargo clippy -p rocketmq-classic-producer --all-targets --all-features --locked -- -D warnings`; `cargo fmt --all -- --check`; `git diff --check`.
 - The earlier API scan also found seven future/direct/accumulator convenience methods without direct test calls; those are now directly exercised alongside the seven explicit-timeout wrappers identified by the test-target-only scan.
+
+## Inherited and trait API audit — consistent-hash callback
+
+- The Phase 11 matrix incorrectly described Rust `HashFunction` as having no Java public equivalent. Pinned Java 5.5.1 `AllocateMessageQueueConsistentHash` declares `(int, HashFunction)`, and `HashFunction.hash(String)` returns Java `long`; Rust `with_hash_function(i32, Arc<dyn HashFunction>)` and `HashFunction::hash(&str) -> i64` are the corresponding API.
+- `compat.RebalanceFixtures` invokes the Java custom-hash constructor, while `crates/rocketmq-classic-consumer/tests/rebalance.rs` differentially exercises it using Java-compatible `String.hashCode`. Updated `docs/compatibility/PHASE_11_OFFLINE_METHOD_MATRIX.md` to record the correct constructor mapping. No implementation gap was found in this slice.
+- PASS: inspected the pinned Java 5.5.1 constructor/interface source and the existing invoked Java fixture plus Rust differential path; no fixture change was needed. `git diff --check` passes for the matrix/log update.
