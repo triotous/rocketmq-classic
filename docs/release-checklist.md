@@ -382,8 +382,14 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   builders, and matches the null-index result filter; LMQ and wheel-timer route
   tests cover the derived behavior. Code commits `e7dcdf63` and `daef67eb`;
   Core/Producer/Consumer locked tests, strict workspace Clippy, format, diff,
-  and rustdoc JSON surface inspection pass for this slice. These bounded
-  corrections leave P18-V01 open.
+  and rustdoc JSON surface inspection pass for this slice. `QueryResult` now
+  also matches Java's private fields, public constructor/getters, nullable
+  list/elements, shared mutable list alias, and `toString`; invoked Java
+  reflection/behavior fixtures guard the surface. Code commits `ba2589ec` and
+  `57fe1527`. Default and all-feature workspace tests, strict workspace
+  Clippy, Maven fixture verification, and Core/Producer/Consumer rustdoc JSON
+  generation pass; Core JSON shows stripped fields. These bounded corrections
+  leave P18-V01 open.
 - [x] **P18-V02** — Current-worktree unit, differential, race/leak, fuzz,
   shutdown, and fixture gates pass; see the run recorded above.
 - [x] **P18-V03** — Facade examples, package graph/content/provenance, license
