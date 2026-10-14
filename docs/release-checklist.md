@@ -341,10 +341,11 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   passes (139 unit tests and 60 integration tests); strict all-target/all-feature
   workspace Clippy, Maven verify (37 scenarios, fixture drift and Java/Rust
   cross-decodes), formatting, and diff checks pass. The invoked Java fixture
-  verifies accumulator mutation before a failed dispatch; scripted Rust tests
-  cover that boundary, direct-send timing, retry ID reuse, auto-batch IDs, and
+  verifies accumulator mutation before a failed dispatch and direct-send
+  service-state failure before mutation; scripted Rust tests cover these
+  boundaries, direct-send timing, retry ID reuse, auto-batch IDs, and
   caller-supplied ID preservation. Producer fixture SHA-256:
-  `e21c6322b398196f2ce7df81b96023e5af42a5c7131d980d7baef1eb7180c32d`.
+  `079e9fcac47f97f4921a823c10b02a3b0ec882c42b85c85695663530047cd23d`.
 - [ ] Obtain a current GitHub Ubuntu CI result for the Linux-specific Java
   address profile. A native Ubuntu ARM64 container passes the Core RPC
   integration suite; this does not replace the required GitHub Ubuntu result.
