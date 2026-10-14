@@ -357,7 +357,9 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
 
 - [ ] **P18-V01** — Broad Java/Rust source, overload input/error/flow, inherited
   API, and reverse-export reconciliation remains open; this is local parity
-  work, not final manual validation.
+  work, not final manual validation. The producer send mutation branch is now
+  oracle-backed, and the surfaced Rust-only `TopicPublishInfo::from_snapshot`
+  constructor is crate-private; the broad reverse-export audit remains open.
 - [x] **P18-V02** — Current-worktree unit, differential, race/leak, fuzz,
   shutdown, and fixture gates pass; see the run recorded above.
 - [x] **P18-V03** — Facade examples, package graph/content/provenance, license
