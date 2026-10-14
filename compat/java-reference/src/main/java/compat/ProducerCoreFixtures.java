@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -55,7 +56,7 @@ import org.apache.rocketmq.remoting.protocol.RequestCode;
 import org.apache.rocketmq.remoting.protocol.route.QueueData;
 import org.apache.rocketmq.remoting.protocol.route.TopicRouteData;
 
-/** Offline Java 5.5.1 producer defaults and pre-I/O validation oracle. */
+/** Offline Java 5.5.1 producer API and send-flow oracle. */
 public final class ProducerCoreFixtures {
     private ProducerCoreFixtures() { }
 
@@ -272,6 +273,7 @@ public final class ProducerCoreFixtures {
         backpressure.put("clampedSendSize", backpressureSettings.getBackPressureForAsyncSendSize());
         result.put("backpressureSettings", backpressure);
         result.put("runtimeSettings", runtimeSettings());
+        result.put("perRequestTimeoutRetry", perRequestTimeoutRetry());
 
         List<Map<String, Object>> groups = new ArrayList<>();
         for (String value : Arrays.asList(" ", "g".repeat(120), "g".repeat(121), "bad.group", "a|b_%")) {
@@ -1267,6 +1269,90 @@ public final class ProducerCoreFixtures {
         result.put("addMethodVisibleThroughExistingSet", liveRetryCodes.contains(9002));
         liveRetryCodes.remove(9001);
         result.put("setRemovalVisibleThroughGetter", !producer.getRetryResponseCodes().contains(9001));
+        return result;
+    }
+
+    private static void shutdownUnstartedClientExecutors(MQClientInstance client) {
+        client.getScheduledExecutorService().shutdownNow();
+    }
+
+    private static Map<String, Object> perRequestTimeoutRetry() throws Exception {
+        DefaultMQProducer producer = new DefaultMQProducer("producer-timeout-retry-fixture");
+        producer.setSendMsgTimeout(3_000);
+        List<Map<String, Object>> configuredValues = new ArrayList<>();
+        for (int timeoutMs : List.of(-2, -1, 0, 125, 6_000)) {
+            producer.setSendMsgMaxTimeoutPerRequest(timeoutMs);
+            Map<String, Object> value = new TreeMap<>();
+            value.put("input", timeoutMs);
+            value.put("readback", producer.getSendMsgMaxTimeoutPerRequest());
+            configuredValues.add(value);
+        }
+        producer.setSendMsgMaxTimeoutPerRequest(0);
+        producer.setRetryTimesWhenSendFailed(1);
+        DefaultMQProducerImpl implementation = producer.getDefaultMQProducerImpl();
+        implementation.setServiceState(ServiceState.RUNNING);
+
+        MQClientInstance client = new MQClientInstance(producer, 0, "producer-timeout-retry-fixture");
+        Field clientFactory = DefaultMQProducerImpl.class.getDeclaredField("mQClientFactory");
+        clientFactory.setAccessible(true);
+        clientFactory.set(implementation, client);
+
+        Field brokerAddressTable = MQClientInstance.class.getDeclaredField("brokerAddrTable");
+        brokerAddressTable.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        ConcurrentMap<String, HashMap<Long, String>> addresses =
+            (ConcurrentMap<String, HashMap<Long, String>>) brokerAddressTable.get(client);
+        addresses.put("broker-a", new HashMap<>(Map.of(MixAll.MASTER_ID, "127.0.0.1:10911")));
+        addresses.put("broker-b", new HashMap<>(Map.of(MixAll.MASTER_ID, "127.0.0.1:20911")));
+
+        TopicPublishInfo topicInfo = new TopicPublishInfo();
+        topicInfo.setMessageQueueList(List.of(
+            new MessageQueue("orders", "broker-a", 0),
+            new MessageQueue("orders", "broker-b", 0)));
+        implementation.updateTopicPublishInfo("orders", topicInfo);
+
+        AtomicInteger beforeAttempts = new AtomicInteger();
+        AtomicInteger afterAttempts = new AtomicInteger();
+        implementation.registerSendMessageHook(new SendMessageHook() {
+            @Override
+            public String hookName() {
+                return "per-request-timeout-retry-fixture";
+            }
+
+            @Override
+            public void sendMessageBefore(SendMessageContext context) {
+                beforeAttempts.incrementAndGet();
+                try {
+                    // Ensure sendKernelImpl consumes the zero request budget before transport.
+                    Thread.sleep(5);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+
+            @Override
+            public void sendMessageAfter(SendMessageContext context) {
+                afterAttempts.incrementAndGet();
+            }
+        });
+
+        String outcome;
+        try {
+            implementation.send(new Message("orders", new byte[] {1}));
+            outcome = "success";
+        } catch (Exception expected) {
+            outcome = expected.getClass().getSimpleName();
+        } finally {
+            shutdownUnstartedClientExecutors(client);
+        }
+        Map<String, Object> result = new TreeMap<>();
+        result.put("retryTimesWhenSendFailed", producer.getRetryTimesWhenSendFailed());
+        result.put("sendMsgTimeout", producer.getSendMsgTimeout());
+        result.put("sendMsgMaxTimeoutPerRequest", producer.getSendMsgMaxTimeoutPerRequest());
+        result.put("configuredValues", configuredValues);
+        result.put("beforeAttempts", beforeAttempts.get());
+        result.put("afterAttempts", afterAttempts.get());
+        result.put("outcome", outcome);
         return result;
     }
 
