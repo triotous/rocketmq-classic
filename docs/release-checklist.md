@@ -452,6 +452,17 @@ source, public API/settings, overload/input/error/control-flow and reverse
 export audit; the current consumer-scoped test and Clippy pass do not replace
 the required full Phase 18 gates on the final revision.
 
+- Push consumer-group follow-up (`bd869fae`, 2026-10-14): the retained facade
+  group is nullable and live; startup writes back the namespaced group,
+  heartbeat preparation and shutdown use the current group, and consume-hook
+  context preserves Java null. Pinned Java heartbeat and Push implementation
+  fixtures cover mutation, unregister-by-current-group, and nullable context.
+  Consumer all-feature tests (209 unit tests plus integration targets and
+  doctests), strict Consumer Clippy, Maven verify (37 scenarios, fixture drift
+  and Java/Rust cross-decodes), formatting, and diff checks pass for this
+  slice. This does not close P18-V01 or replace full workspace gates on the
+  final revision.
+
 ## Package graph and metadata
 
 Current Cargo metadata reports seven workspace packages, all at version
