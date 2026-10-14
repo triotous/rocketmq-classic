@@ -527,6 +527,7 @@ impl Producer {
                 .await;
         }
         let mut hooked_message = wire_message;
+        let mut check_forbidden_rejected = false;
         self.send_one_attempt_with_hooks(
             &runtime,
             &mut queue,
@@ -536,6 +537,7 @@ impl Producer {
             false,
             mode,
             deadline,
+            &mut check_forbidden_rejected,
         )
         .await
     }
@@ -952,6 +954,7 @@ impl Producer {
                 .await;
         }
         let mut hooked_message = wire_message;
+        let mut check_forbidden_rejected = false;
         self.send_one_attempt_with_hooks(
             &runtime,
             &mut wire_queue,
@@ -961,6 +964,7 @@ impl Producer {
             batch,
             mode,
             deadline,
+            &mut check_forbidden_rejected,
         )
         .await
     }
@@ -1076,6 +1080,7 @@ impl Producer {
 
             let request_deadline = self.request_deadline(mode, deadline, attempt, attempts);
             let started = StdInstant::now();
+            let mut check_forbidden_rejected = false;
             let result = self
                 .send_one_attempt_with_hooks(
                     &runtime,
@@ -1086,6 +1091,7 @@ impl Producer {
                     batch,
                     mode,
                     request_deadline,
+                    &mut check_forbidden_rejected,
                 )
                 .await;
             let latency = started.elapsed();
@@ -1112,12 +1118,13 @@ impl Producer {
                     // deadline can expire during hooks/message preparation before the
                     // remoting layer runs, so preserve that retry path for local timeouts.
                     let now = Instant::now();
-                    let request_timeout_can_retry = mode == SendMode::Sync
+                    let sync_retry_remains =
+                        mode == SendMode::Sync && attempt + 1 < attempts && now < deadline;
+                    let request_timeout_can_retry = sync_retry_remains
                         && request_deadline < deadline
                         && now >= request_deadline
-                        && now < deadline
-                        && attempt + 1 < attempts
                         && matches!(&error, ProducerError::Timeout);
+                    let check_forbidden_can_retry = sync_retry_remains && check_forbidden_rejected;
                     let (isolation, reachable, retry) = match &error {
                         ProducerError::Rpc(rpc) => {
                             let (isolation, reachable) =
@@ -1128,7 +1135,11 @@ impl Producer {
                                 attempt + 1 < attempts && should_retry(mode, rpc, &self.config),
                             )
                         }
-                        _ => (false, true, request_timeout_can_retry),
+                        _ => (
+                            false,
+                            true,
+                            request_timeout_can_retry || check_forbidden_can_retry,
+                        ),
                     };
                     self.update_fault(&broker, latency, isolation, reachable)?;
                     if retry {
@@ -1159,11 +1170,15 @@ impl Producer {
         batch: bool,
         mode: SendMode,
         deadline: Instant,
+        check_forbidden_rejected: &mut bool,
     ) -> Result<Option<SendResult>, ProducerError> {
         self.ids.set_if_missing(message);
         let mut original_body = Some(message.body().to_vec());
         let compression_sys_flag = self.compress_message_before_hook(message, batch);
-        self.execute_check_forbidden_hooks(message, queue, address, mode)?;
+        if let Err(error) = self.execute_check_forbidden_hooks(message, queue, address, mode) {
+            *check_forbidden_rejected = true;
+            return Err(error);
+        }
         let hooks = self.send_message_hook_snapshot();
         let mut context = self.send_message_context(message, queue, address, mode);
         Self::execute_send_message_hook_before_snapshot(&hooks, &mut context);
@@ -3084,6 +3099,67 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(error, ProducerError::ForbiddenTopic));
+        assert!(
+            producer
+                .scripted_transport
+                .lock()
+                .unwrap()
+                .attempts
+                .is_empty()
+        );
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn default_sync_send_retries_check_forbidden_hook_errors_like_java() {
+        struct Reject(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+        impl CheckForbiddenHook for Reject {
+            fn hook_name(&self) -> &str {
+                "default-send-reject-retry"
+            }
+
+            fn check_forbidden(
+                &self,
+                _context: &mut CheckForbiddenContext<'_>,
+            ) -> Result<(), ProducerError> {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Err(ProducerError::ForbiddenTopic)
+            }
+        }
+
+        let mut config = crate::ProducerConfig::new("check-forbidden-retry").unwrap();
+        config.set_retry_times_when_send_failed(1);
+        let (producer, _) = scripted_producer(config).await;
+        let hook_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        producer.register_check_forbidden_hook(Arc::new(Reject(hook_calls.clone())));
+
+        let error = producer
+            .send_with_timeout(
+                &Message::new("orders", b"blocked by check hook".to_vec()),
+                Duration::from_secs(3),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(error, ProducerError::ForbiddenTopic));
+
+        let java: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+        assert_eq!(java["checkForbiddenRetry"]["retryTimesWhenSendFailed"], 1);
+        assert_eq!(java["checkForbiddenRetry"]["checkCalls"], 2);
+        assert_eq!(java["checkForbiddenRetry"]["sendBeforeCalls"], 0);
+        assert_eq!(java["checkForbiddenRetry"]["sendAfterCalls"], 0);
+        assert_eq!(java["checkForbiddenRetry"]["outcome"], "MQClientException");
+        assert_eq!(java["checkForbiddenRetry"]["responseCode"], 10003);
+        assert_eq!(
+            java["checkForbiddenRetry"]["messageContainsAttemptCount"],
+            true
+        );
+        assert_eq!(
+            hook_calls.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "Java retries a synchronous MQClientException from CheckForbiddenHook"
+        );
         assert!(
             producer
                 .scripted_transport
