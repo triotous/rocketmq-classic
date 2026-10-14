@@ -264,6 +264,15 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   (16 cases × 3), fuzz smoke (104 frame seeds, 10 message seeds, 1,824
   mutations), release examples, offline benchmark compilation, workspace
   metadata, and seven package-content listings all completed successfully.
+- [x] Re-run server-free P18-V02 gates for the CheckForbidden synchronous
+  retry slice on the worktree based on `3695b821` (2026-10-14). Default and
+  all-features workspace tests, strict all-target/all-feature workspace
+  Clippy, fmt/diff checks, Maven verify (37 scenarios with fixture drift and
+  Java/Rust cross-decodes), comparator self-test and 37-scenario manifest,
+  16 deterministic race/leak cases repeated three times, 1,824-mutation fuzz
+  smoke, release examples, offline benchmark compilation, and workspace
+  metadata all pass. `fixtures/producer/core.json` SHA-256:
+  `ec20ff084ee066fc71de15e9d744bc091aaced07d1038a8389f12a79d5985b08`.
 - [ ] Obtain a current GitHub Ubuntu CI result for the Linux-specific Java
   address profile. A native Ubuntu ARM64 container passes the Core RPC
   integration suite; this does not replace the required GitHub Ubuntu result.
