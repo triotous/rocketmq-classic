@@ -87,6 +87,12 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   pre-init/default/runtime values, preserve effective settings after invalid
   updates, flush pending batches after a lower byte threshold, reschedule a
   pending delay, and apply aggregate-cap changes to later enqueue decisions.
+  The implementation-level `setSemaphoreAsyncSendNum/Size` helpers now also
+  have direct Rust APIs and invoked fixture evidence for raw replacement,
+  negative permits, releases into the replacement semaphore, later facade
+  resize accounting, and unchanged facade limits. The updated Producer core
+  fixture SHA-256 is
+  `defd34c1ebf1fc81bb6cdbed4406c40bf5794c73bdf7ef6a85d1e37b84cecbe5`.
   Reinitializing after an invalid runtime setter retains the already active
   accumulator values, matching Java. Fixture SHA-256 is
   `4b166c789a8698ac5600667e2594d7025f7c1b90dd67b2949719269cb6d8160c`.
