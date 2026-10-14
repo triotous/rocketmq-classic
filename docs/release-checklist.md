@@ -10,10 +10,12 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   provenance.
 - [x] Record the server-free tests, fuzz/race smoke runs, benchmark observations,
   and CI commands in the Phase 18 execution log and compatibility docs.
-- [x] Reconcile the Phase 15–17 local matrices and execution records: Phase 15
-  request/reply, Phase 16 namespace/security/hooks/trace, and Phase 17 local
-  admin/reset/query evidence are recorded as verified. Their Broker-backed
-  cross-language cases remain Phase 19 work; the implementation plans remain
+- [ ] Complete the requirement-by-requirement reconciliation of Phase 15–17
+  plans, matrices, execution records, and current artifacts. Phase 15's local
+  request/reply gate is recorded as verified; Phase 16 still records a partial
+  source/API/settings audit and incomplete final-gate reconciliation; Phase 17
+  still has a non-macOS all-thread `jstackEnable` gap and incomplete phase
+  closure evidence. Their Broker-backed cases remain Phase 19 work; plans stay
   unchanged.
 - [ ] Close P18-V01: complete bidirectional Java source/API/input reconciliation
   and reverse-audit all Rust public APIs and settings. The broad Phase 6 audit
@@ -399,9 +401,21 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   removed from the public surface because pinned Java exposes neither getter;
   compile-fail doctests guard both boundaries. Code commit `e8582a22`; Consumer
   locked tests/doctests, strict Clippy, rustdoc JSON, formatting, and diff
-  checks pass.
-- [x] **P18-V02** — Current-worktree unit, differential, race/leak, fuzz,
-  shutdown, and fixture gates pass; see the run recorded above.
+  checks pass. The pinned Java Push/Pull facade inventory now records declared
+  and inherited signatures and confirms neither facade declares a separate
+  `queryMessageByUniqKey`; Rust's extra `query_message_by_unique_key` methods
+  are removed. All three Rust `view_message` facades now fall back from an
+  invalid physical ID or failed physical lookup to Java's unique-key query
+  defaults (32 results, three-day lower bound, `Long.MAX_VALUE` upper bound),
+  returning the first nullable result. Scripted tests cover fallback fields,
+  namespaced topics, physical lookup, and terminal errors. The Pull example
+  now registers through the Java-mapped listener API. This closes those facade
+  methods and branches only; broad P18-V01 reconciliation remains open.
+- [x] **P18-V02** — Current-worktree default/all-feature workspace tests,
+  strict all-target/all-feature Clippy, Maven verification (37 scenarios),
+  differential self-test and manifest, 16 race/leak cases × 3, fuzz smoke,
+  release examples, benchmark compilation, metadata, and format/diff checks
+  passed on 2026-10-14 before the code/documentation commits.
 - [x] **P18-V03** — Facade examples, package graph/content/provenance, license
   files, compatibility baselines, and existing usage/behavior documentation
   have been reviewed. No release or compatibility claim is made.
