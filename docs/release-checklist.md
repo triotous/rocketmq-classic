@@ -421,6 +421,16 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   `pullBatchSizeInBytes` and adds a scripted wire assertion for post-construction
   updates. Default and all-feature workspace tests, strict Clippy, Maven
   verification (37 scenarios), format, and diff checks pass for this correction.
+- Follow-up commit `f0eaf53e` reconciles Push runtime setting read timing against
+  the pinned Java call sites. Pull/flow-control/POP/consume/heartbeat settings
+  now read live values where Java does; `PullAPIWrapper` unit mode and the
+  rebalance message model/allocation strategy take Java's start-time snapshots.
+  Queue listener and `clientRebalance` changes after consumer construction
+  reach later rebalance calls. `cargo test -p rocketmq-classic-consumer
+  --all-features --locked` passes (205 unit tests, all consumer integration
+  targets and doctests), as does strict all-target/all-feature Consumer Clippy.
+  Formatting and diff checks pass. These setting-timing rows are closed; the
+  broader P18-V01 audit remains open.
 - [x] **P18-V03** — Facade examples, package graph/content/provenance, license
   files, compatibility baselines, and existing usage/behavior documentation
   have been reviewed. No release or compatibility claim is made.
@@ -428,11 +438,11 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   suites pass locally. A current GitHub Ubuntu result for the address profile
   is still absent.
 
-P18-V01 still requires timing reconciliation for other pinned Java runtime
-reads, including `pullInterval`, pull flow-control thresholds, `messageModel`,
-POP batch/invisibility settings, `consumeTimeout`, `consumeThreadMax`, and
-`consumeFromWhere`. Their Java call sites are identified; Rust post-construction
-update behavior has not yet been fully reconciled for each setting.
+The Push runtime-setting timing rows listed in the prior audit checkpoint were
+reconciled in commit `f0eaf53e`. P18-V01 remains open for the full Java/Rust
+source, public API/settings, overload/input/error/control-flow and reverse
+export audit; the current consumer-scoped test and Clippy pass do not replace
+the required full Phase 18 gates on the final revision.
 
 ## Package graph and metadata
 
