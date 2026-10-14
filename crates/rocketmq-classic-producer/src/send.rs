@@ -799,11 +799,14 @@ impl Producer {
                     .map(Some)
                     .ok_or_else(|| last_error.unwrap_or(ProducerError::Timeout));
             }
+            let topic = hooked_message.topic().to_owned();
             let latency_fault_enabled = self.send_latency_fault_enable();
             if attempt > 0 && latency_fault_enabled {
-                self.selector.reset(hooked_message.topic());
+                self.reset_publish_queue_index(&topic);
             }
-            let topic = hooked_message.topic().to_owned();
+            if let Some(current_info) = self.current_publish_info(&runtime, &topic)? {
+                info = current_info;
+            }
             if !info
                 .publish_queues
                 .iter()
@@ -817,7 +820,7 @@ impl Producer {
                 &info.publish_queues,
                 last_broker.as_deref(),
                 latency_fault_enabled,
-                |length| self.selector.next_index(&topic, length),
+                |length| self.next_publish_queue_index(&topic, length),
                 StdInstant::now(),
             );
             let Some(mut queue) = selected else {
@@ -1158,13 +1161,17 @@ impl Producer {
                         break;
                     }
 
-                    if let Some(info) = publish_info {
-                        let topic = prepared.topic.clone();
+                    let topic = prepared.topic.clone();
+                    let current_info = publish_info.and_then(|original| {
+                        self.cached_publish_info(&topic)
+                            .or_else(|| Some(Arc::new(original.clone())))
+                    });
+                    if let Some(info) = current_info.as_deref() {
                         let selected = self.fault.select(
                             &info.publish_queues,
                             Some(&current_broker),
                             self.send_latency_fault_enable(),
-                            |length| self.selector.next_index(&topic, length),
+                            |length| self.next_publish_queue_index(&topic, length),
                             StdInstant::now(),
                         );
                         let Some(selected) = selected else {
@@ -1388,6 +1395,21 @@ impl Producer {
             self.cache_publish_info(topic, info.clone());
         }
         Ok(info)
+    }
+
+    fn next_publish_queue_index(&self, topic: &str, queue_count: usize) -> usize {
+        self.cached_publish_info_value(topic).map_or_else(
+            || self.selector.next_index(topic, queue_count),
+            |info| info.next_index(queue_count),
+        )
+    }
+
+    fn reset_publish_queue_index(&self, topic: &str) {
+        if let Some(info) = self.cached_publish_info_value(topic) {
+            info.reset_index();
+        } else {
+            self.selector.reset(topic);
+        }
     }
 
     fn broker_address(
@@ -1691,7 +1713,10 @@ fn classify_fault(error: &RpcError, mode: SendMode, detector_enabled: bool) -> (
 
 #[cfg(test)]
 mod tests {
-    use crate::{CheckForbiddenContext, CheckForbiddenHook, CommunicationMode, SendMessageHook};
+    use crate::{
+        CheckForbiddenContext, CheckForbiddenHook, CommunicationMode, ProducerQueueIndex,
+        SendMessageHook,
+    };
     use rocketmq_classic_common::message::decode_properties;
     use rocketmq_classic_core::api::producer::SendStatus;
     use rocketmq_classic_core::error::RpcError;
@@ -1747,6 +1772,71 @@ mod tests {
         });
         producer.cache_publish_info(&topic, snapshot);
         (producer, queues)
+    }
+
+    #[tokio::test]
+    async fn publish_info_queue_list_mutation_changes_the_next_default_send_queue() {
+        let (producer, queues) =
+            scripted_producer(crate::ProducerConfig::new("publish-info-live-send").unwrap()).await;
+        let info = producer
+            .get_topic_publish_info_table()
+            .get("orders")
+            .unwrap();
+        let selected_queue = queues[1].clone();
+        info.message_queue_list()
+            .unwrap()
+            .with_mut(|queues| *queues = vec![selected_queue]);
+        producer
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .push_back(Ok(Some(scripted_result("live-route", "offset", 1))));
+
+        producer
+            .send(&Message::new("orders", b"live route table".to_vec()))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            producer.scripted_transport.lock().unwrap().attempts[0].queue,
+            queues[1]
+        );
+        producer.shutdown().await.unwrap();
+    }
+
+    #[test]
+    fn live_publish_info_mutations_feed_send_routes_and_queue_cursor() {
+        let producer = Producer::new(crate::ProducerConfig::new("publish-info-send").unwrap());
+        let topic = "orders";
+        let first = MessageQueue::new(topic, "broker-a", 0);
+        let second = MessageQueue::new(topic, "broker-b", 0);
+        let snapshot = Arc::new(TopicSnapshot {
+            route: Arc::new(rocketmq_classic_protocol::route::TopicRouteData::default()),
+            publish_queues: vec![first, second.clone()],
+            subscribe_queues: Default::default(),
+            endpoints: BTreeMap::new(),
+            order_topic: false,
+        });
+        producer.cache_publish_info(topic, snapshot);
+        let table = producer.get_topic_publish_info_table();
+        let info = table.get(topic).unwrap();
+        let list = info.message_queue_list().unwrap();
+        list.with_mut(|queues| *queues = vec![second.clone()]);
+        assert_eq!(
+            producer.cached_publish_info(topic).unwrap().publish_queues,
+            [second]
+        );
+
+        let cursor = ProducerQueueIndex::default();
+        info.set_send_which_queue(cursor.clone());
+        assert!(cursor.current().is_none());
+        let index = producer.next_publish_queue_index(topic, 2);
+        assert_eq!(
+            index,
+            (cursor.current().unwrap() & i32::MAX) as usize % 2,
+            "fault selection advances the live TopicPublishInfo ThreadLocalIndex"
+        );
     }
 
     #[tokio::test]

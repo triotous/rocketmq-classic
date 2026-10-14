@@ -9,6 +9,7 @@ mod executor;
 mod fault;
 mod hooks;
 mod producer;
+mod publish_info;
 mod recall;
 mod request_reply;
 mod retry_response_codes;
@@ -30,6 +31,9 @@ pub use hooks::{
     EndTransactionHook, HookException, SendMessageContext, SendMessageHook, SendMessageType,
 };
 pub use producer::Producer;
+pub use publish_info::{
+    ProducerPublishQueueList, ProducerQueueIndex, TopicPublishInfo, TopicPublishInfoTable,
+};
 pub use recall::RecallMessageHandle;
 pub use request_reply::{ReplyMessageError, RequestCallback, create_reply_message};
 pub use retry_response_codes::RetryResponseCodes;

@@ -4,15 +4,18 @@ use rocketmq_classic_common::{
     message::{Message, MessageQueue},
     sysflag::message::CompressionType,
 };
+use rocketmq_classic_core::route::TopicRouteDataHandle;
 use rocketmq_classic_producer::{
     AsyncSenderExecutor, AsyncSenderTask, CheckForbiddenContext, CheckForbiddenHook,
-    CommunicationMode, Producer, ProducerConfig, ProducerError, ProducerServiceState,
-    SendMessageContext, SendMessageHook, SendMessageType,
+    CommunicationMode, Producer, ProducerConfig, ProducerError, ProducerPublishQueueList,
+    ProducerQueueIndex, ProducerServiceState, SendMessageContext, SendMessageHook, SendMessageType,
+    TopicPublishInfo,
     validation::{
         validate_group, validate_message, validate_send_topic, validate_system_topic,
         validate_topic,
     },
 };
+use rocketmq_classic_protocol::route::{QueueData, TopicRouteData};
 
 #[test]
 fn java_default_settings_are_present() {
@@ -350,6 +353,114 @@ fn implementation_state_accessors_match_pinned_java_fixture() {
     producer.set_service_state(None);
     assert!(expected["nullServiceState"].as_bool().unwrap());
     assert_eq!(producer.service_state(), None);
+}
+
+#[test]
+fn implementation_publish_info_table_and_nested_aliases_match_java_fixture() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let expected = &fixture["implementationPublishInfoTable"];
+    let producer = Producer::new(ProducerConfig::new("producer-publish-info-table").unwrap());
+    let table = producer.get_topic_publish_info_table();
+    let info = TopicPublishInfo::default();
+    let original = MessageQueue::new("orders", "broker-a", 0);
+    let replacement = MessageQueue::new("orders", "broker-b", 1);
+    let original_list = ProducerPublishQueueList::new(vec![original.clone()]);
+    info.set_message_queue_list(Some(original_list.clone()));
+
+    let mut route = TopicRouteData::default();
+    route.set_queue_datas_owned(Some(vec![Some(QueueData {
+        broker_name: Some("broker-b".to_owned()),
+        write_queue_nums: 3,
+        ..QueueData::default()
+    })]));
+    let route = TopicRouteDataHandle::new(route);
+    info.set_topic_route_data(Some(route.clone()));
+    info.set_order_topic(true);
+    info.set_have_topic_router_info(true);
+    let send_index = ProducerQueueIndex::default();
+    info.set_send_which_queue(send_index.clone());
+
+    assert!(table.put("orders", info.clone()).is_none());
+    let from_table = producer
+        .get_topic_publish_info_table()
+        .get("orders")
+        .unwrap();
+    assert_eq!(
+        table.get("orders").unwrap().ptr_eq(&info),
+        expected["tableValueRetainsIdentity"]
+    );
+    assert!(from_table.ptr_eq(&info));
+    assert!(
+        from_table
+            .message_queue_list()
+            .unwrap()
+            .ptr_eq(&original_list)
+    );
+    assert!(from_table.topic_route_data().unwrap().ptr_eq(&route));
+    assert!(from_table.send_which_queue().ptr_eq(&send_index));
+
+    let retained_list = from_table.message_queue_list().unwrap();
+    retained_list.with_mut(|queues| {
+        queues.clear();
+        queues.push(replacement.clone());
+    });
+    assert_eq!(
+        from_table.ok(),
+        expected["queueListMutationAffectsOk"].as_bool().unwrap()
+    );
+    assert_eq!(
+        from_table.select_one_message_queue().unwrap(),
+        replacement,
+        "the same live queue-list mutation must change subsequent selection"
+    );
+    assert_eq!(
+        from_table.is_order_topic(),
+        expected["orderTopic"].as_bool().unwrap()
+    );
+    assert_eq!(
+        from_table.have_topic_router_info(),
+        expected["haveTopicRouterInfo"].as_bool().unwrap()
+    );
+    assert_eq!(
+        from_table
+            .get_write_queue_nums_by_broker("broker-b")
+            .unwrap(),
+        expected["writeQueueNumsByBroker"].as_i64().unwrap() as i32
+    );
+    assert!(from_table.to_string().contains("haveTopicRouterInfo=true"));
+
+    let stale_list = from_table.message_queue_list().unwrap();
+    from_table.set_message_queues(Some(vec![original.clone()]));
+    stale_list.with_mut(Vec::clear);
+    let current_list = from_table.message_queue_list().unwrap();
+    assert!(!current_list.ptr_eq(&stale_list));
+    assert_eq!(current_list.snapshot(), [original]);
+
+    let replacement_info = TopicPublishInfo::default();
+    let previous = table.put("orders", replacement_info.clone()).unwrap();
+    assert!(previous.ptr_eq(&info));
+    assert!(table.get("orders").unwrap().ptr_eq(&replacement_info));
+    assert!(table.remove("orders").is_some());
+    assert!(table.is_empty());
+    assert!(expected["getterReturnsLiveMap"].as_bool().unwrap());
+    assert!(expected["queueListRetainsIdentity"].as_bool().unwrap());
+    assert!(
+        expected["queueListMutationAffectsSelection"]
+            .as_bool()
+            .unwrap()
+    );
+    assert!(expected["sendIndexRetainsIdentity"].as_bool().unwrap());
+    assert!(expected["routeDataRetainsIdentity"].as_bool().unwrap());
+    assert!(expected["listSetterReplacesAlias"].as_bool().unwrap());
+    assert!(
+        expected["tablePutReturnsPreviousIdentity"]
+            .as_bool()
+            .unwrap()
+    );
+    assert!(expected["replacementValueIsVisible"].as_bool().unwrap());
+    assert!(expected["removeAffectsRetainedMap"].as_bool().unwrap());
+    assert!(expected["toStringContainsState"].as_bool().unwrap());
 }
 
 #[test]

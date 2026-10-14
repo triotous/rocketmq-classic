@@ -58,6 +58,16 @@ pub enum ProducerError {
     AdminQuery(#[from] rocketmq_classic_core::api::admin::AdminQueryError),
     #[error("selected queue does not belong to the topic writable queues")]
     QueueNotInRoute,
+    #[error("TopicPublishInfo message queue list is null")]
+    NullPublishInfoQueueList,
+    #[error("TopicPublishInfo message queue list is empty")]
+    EmptyPublishInfoQueueList,
+    #[error("TopicPublishInfo route data is null")]
+    NullPublishInfoRouteData,
+    #[error("TopicPublishInfo route queue data is null")]
+    NullPublishInfoQueueData,
+    #[error("TopicPublishInfo route broker name is null")]
+    NullPublishInfoBrokerName,
     #[error("queue selector did not choose a writable queue")]
     NoQueueSelected,
     #[error("send deadline expired")]

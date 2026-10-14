@@ -18,6 +18,7 @@ import java.util.TreeSet;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.ConcurrentMap;
 import org.apache.rocketmq.client.exception.MQClientException;
 import org.apache.rocketmq.client.Validators;
 import org.apache.rocketmq.client.hook.CheckForbiddenContext;
@@ -25,6 +26,8 @@ import org.apache.rocketmq.client.hook.CheckForbiddenHook;
 import org.apache.rocketmq.client.hook.SendMessageContext;
 import org.apache.rocketmq.client.hook.SendMessageHook;
 import org.apache.rocketmq.client.impl.CommunicationMode;
+import org.apache.rocketmq.client.impl.producer.TopicPublishInfo;
+import org.apache.rocketmq.client.common.ThreadLocalIndex;
 import org.apache.rocketmq.client.producer.DefaultMQProducer;
 import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.common.ServiceState;
@@ -39,6 +42,8 @@ import org.apache.rocketmq.common.message.MessageConst;
 import org.apache.rocketmq.common.message.MessageType;
 import org.apache.rocketmq.common.topic.TopicValidator;
 import org.apache.rocketmq.remoting.protocol.RequestCode;
+import org.apache.rocketmq.remoting.protocol.route.QueueData;
+import org.apache.rocketmq.remoting.protocol.route.TopicRouteData;
 
 /** Offline Java 5.5.1 producer defaults and pre-I/O validation oracle. */
 public final class ProducerCoreFixtures {
@@ -125,6 +130,7 @@ public final class ProducerCoreFixtures {
         result.put("producerImplementationApi", producerImplementationApi());
         result.put("implementationHookExecution", implementationHookExecution());
         result.put("implementationStateAccessors", implementationStateAccessors());
+        result.put("implementationPublishInfoTable", implementationPublishInfoTable());
 
         Map<String, Object> defaults = new TreeMap<>();
         defaults.put("producerGroup", producer.getProducerGroup());
@@ -342,6 +348,59 @@ public final class ProducerCoreFixtures {
         result.put("publicConstructors", constructors);
         result.put("publicMethods", methods);
         result.put("publicMethodCount", methods.size());
+        return result;
+    }
+
+    private static Map<String, Object> implementationPublishInfoTable() {
+        DefaultMQProducer producer = new DefaultMQProducer("producer-publish-info-table");
+        var implementation = producer.getDefaultMQProducerImpl();
+        ConcurrentMap<String, TopicPublishInfo> table = implementation.getTopicPublishInfoTable();
+        TopicPublishInfo info = new TopicPublishInfo();
+        MessageQueue original = new MessageQueue("orders", "broker-a", 0);
+        MessageQueue replacement = new MessageQueue("orders", "broker-b", 1);
+        List<MessageQueue> originalList = new ArrayList<>(List.of(original));
+        info.setMessageQueueList(originalList);
+        TopicRouteData route = new TopicRouteData();
+        QueueData queueData = new QueueData();
+        queueData.setBrokerName("broker-b");
+        queueData.setWriteQueueNums(3);
+        route.setQueueDatas(new ArrayList<>(List.of(queueData)));
+        info.setTopicRouteData(route);
+        info.setOrderTopic(true);
+        info.setHaveTopicRouterInfo(true);
+        ThreadLocalIndex sendIndex = new ThreadLocalIndex();
+        info.setSendWhichQueue(sendIndex);
+
+        table.put("orders", info);
+        TopicPublishInfo fromTable = table.get("orders");
+        List<MessageQueue> retainedList = fromTable.getMessageQueueList();
+        retainedList.clear();
+        retainedList.add(replacement);
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("getterReturnsLiveMap", table == implementation.getTopicPublishInfoTable());
+        result.put("tableValueRetainsIdentity", fromTable == info);
+        result.put("queueListRetainsIdentity", retainedList == fromTable.getMessageQueueList());
+        result.put("queueListMutationAffectsOk", fromTable.ok());
+        result.put("queueListMutationAffectsSelection", fromTable.selectOneMessageQueue() == replacement);
+        result.put("orderTopic", fromTable.isOrderTopic());
+        result.put("haveTopicRouterInfo", fromTable.isHaveTopicRouterInfo());
+        result.put("sendIndexRetainsIdentity", fromTable.getSendWhichQueue() == sendIndex);
+        result.put("writeQueueNumsByBroker", fromTable.getWriteQueueNumsByBroker("broker-b"));
+        result.put("routeDataRetainsIdentity", fromTable.getTopicRouteData() == route);
+
+        List<MessageQueue> staleList = fromTable.getMessageQueueList();
+        fromTable.setMessageQueueList(new ArrayList<>(List.of(original)));
+        staleList.clear();
+        result.put("listSetterReplacesAlias", fromTable.getMessageQueueList().size() == 1
+            && fromTable.getMessageQueueList().get(0) == original);
+        TopicPublishInfo replacementInfo = new TopicPublishInfo();
+        TopicPublishInfo previous = table.put("orders", replacementInfo);
+        result.put("tablePutReturnsPreviousIdentity", previous == info);
+        result.put("replacementValueIsVisible", table.get("orders") == replacementInfo);
+        result.put("toStringContainsState", fromTable.toString().contains("haveTopicRouterInfo=true"));
+        table.remove("orders");
+        result.put("removeAffectsRetainedMap", !table.containsKey("orders") && table.isEmpty());
         return result;
     }
 

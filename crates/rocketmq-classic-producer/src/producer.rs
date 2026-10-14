@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::BTreeSet,
     sync::{
         Arc, OnceLock, RwLock, Weak,
         atomic::{AtomicBool, Ordering},
@@ -20,7 +20,8 @@ use rocketmq_classic_core::api::producer::{SendMode, SendResult};
 use crate::{
     AsyncSenderExecutor, CheckForbiddenContext, EndTransactionContext, EndTransactionHook,
     ProducerCompressor, ProducerConfig, ProducerError, ProducerLongArray, ProducerServiceState,
-    RetryResponseCodes, SendMessageContext, SendMessageHook,
+    RetryResponseCodes, SendMessageContext, SendMessageHook, TopicPublishInfo,
+    TopicPublishInfoTable,
     accumulator::AutoBatchAccumulator,
     backpressure::{AdjustableSemaphore, BackpressureReadGuard},
     executor::TokioAsyncSenderExecutor,
@@ -83,8 +84,7 @@ pub struct Producer {
     pub(crate) end_transaction_hooks: crate::hooks::EndTransactionHookList,
     pub(crate) backpressure_send_num: Arc<AdjustableSemaphore>,
     pub(crate) backpressure_send_size: Arc<AdjustableSemaphore>,
-    publish_info: RwLock<HashMap<String, Arc<TopicSnapshot>>>,
-    known_publish_topics: RwLock<BTreeSet<String>>,
+    publish_info: TopicPublishInfoTable,
     default_async_sender_executor: Arc<dyn AsyncSenderExecutor>,
     async_sender_executor: RwLock<Option<Arc<dyn AsyncSenderExecutor>>>,
     pub(crate) selector: RoundRobinSelector,
@@ -319,8 +319,7 @@ impl Producer {
             end_transaction_hooks: Default::default(),
             backpressure_send_num,
             backpressure_send_size,
-            publish_info: RwLock::new(HashMap::new()),
-            known_publish_topics: RwLock::new(BTreeSet::new()),
+            publish_info: TopicPublishInfoTable::default(),
             default_async_sender_executor: Arc::new(TokioAsyncSenderExecutor),
             async_sender_executor: RwLock::new(None),
             selector: RoundRobinSelector::default(),
@@ -336,6 +335,12 @@ impl Producer {
 
     pub fn config(&self) -> &ProducerConfig {
         &self.config
+    }
+
+    /// Returns the shared producer route table corresponding to Java's
+    /// `DefaultMQProducerImpl.getTopicPublishInfoTable()`.
+    pub fn get_topic_publish_info_table(&self) -> TopicPublishInfoTable {
+        self.publish_info.clone()
     }
 
     /// Returns the Java implementation lifecycle state, including a caller-set
@@ -913,13 +918,7 @@ impl Producer {
         if due_brokers.is_empty() {
             return;
         }
-        let topic = self
-            .publish_info
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .keys()
-            .next()
-            .cloned();
+        let topic = self.publish_info.keys().into_iter().next();
         let Some(topic) = topic else {
             return;
         };
@@ -953,26 +952,24 @@ impl Producer {
     }
 
     pub(crate) fn cached_publish_info(&self, topic: &str) -> Option<Arc<TopicSnapshot>> {
-        self.publish_info
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get(topic)
-            .cloned()
+        self.publish_info.get(topic)?.snapshot().ok().map(Arc::new)
+    }
+
+    pub(crate) fn cached_publish_info_value(&self, topic: &str) -> Option<TopicPublishInfo> {
+        self.publish_info.get(topic)
     }
 
     pub(crate) fn remember_publish_topic(&self, topic: &str) {
-        self.known_publish_topics
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(topic.to_owned());
+        self.publish_info
+            .put_if_absent(topic.to_owned(), TopicPublishInfo::default());
     }
 
     pub(crate) fn cache_publish_info(&self, topic: &str, info: Arc<TopicSnapshot>) {
         self.remember_publish_topic(topic);
-        self.publish_info
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(topic.to_owned(), info);
+        self.publish_info.put(
+            topic.to_owned(),
+            TopicPublishInfo::from_snapshot((*info).clone(), true),
+        );
     }
 }
 
@@ -986,18 +983,7 @@ impl ProducerRuntime for Producer {
     }
 
     fn publish_topics(&self) -> BTreeSet<String> {
-        let mut topics = self
-            .known_publish_topics
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
-        topics.extend(
-            self.publish_info
-                .read()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .keys()
-                .cloned(),
-        );
+        let mut topics = self.publish_info.keys();
         let mut client_config = self.config.client_config().clone();
         topics.extend(
             self.config
