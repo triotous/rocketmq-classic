@@ -112,6 +112,10 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   surfaces. Their raw mutable factory, filter, and ThreadLocal objects remain
   owned by Rust runtime/Producer lifecycle owners; each pinned Producer call
   site maps to an owner flow. This closes those surface-disposition slices.
+  The boolean `start`/`shutdown` overloads and raw
+  `executeAsyncMessageSend` helper now also have pinned call-site and owner
+  dispositions in the Phase 7 matrix; their use is confined to shared factory
+  lifecycle and typed async Producer send paths.
   Per-overload input/branch mappings, Java reverse-export, inherited/trait API,
   and broad source/input reconciliation remain local P18-V01 work.
 - [x] Map runtime Producer fault-strategy settings: live latency-fault and
