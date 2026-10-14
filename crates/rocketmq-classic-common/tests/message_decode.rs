@@ -270,6 +270,24 @@ fn message_public_api_matches_java_551_fixture() {
     assert_eq!(expected["nullableConstructorBodyIsNull"], true);
     assert_eq!(expected["nullableConstructorWaitStore"], true);
 
+    let nullable_tags_constructor = Message::with_tags(None, None, None);
+    assert_eq!(nullable_tags_constructor.topic_nullable(), None);
+    assert_eq!(nullable_tags_constructor.body_nullable(), None);
+    assert!(!nullable_tags_constructor.has_property("TAGS"));
+    assert_eq!(expected["nullableTagsConstructorTopicIsNull"], true);
+    assert_eq!(expected["nullableTagsConstructorBodyIsNull"], true);
+    assert_eq!(expected["nullableTagsConstructorHasTags"], false);
+
+    let nullable_keys_constructor = Message::with_tags_and_keys(None, None, None, None);
+    assert_eq!(nullable_keys_constructor.topic_nullable(), None);
+    assert_eq!(nullable_keys_constructor.body_nullable(), None);
+    assert!(!nullable_keys_constructor.has_property("TAGS"));
+    assert!(!nullable_keys_constructor.has_property("KEYS"));
+    assert_eq!(expected["nullableKeysConstructorTopicIsNull"], true);
+    assert_eq!(expected["nullableKeysConstructorBodyIsNull"], true);
+    assert_eq!(expected["nullableKeysConstructorHasTags"], false);
+    assert_eq!(expected["nullableKeysConstructorHasKeys"], false);
+
     let nullable_fields = Message::with_nullable_fields(None, None, None, -3, None, false);
     assert_eq!(nullable_fields.topic_nullable(), None);
     assert_eq!(nullable_fields.body_nullable(), None);
@@ -336,6 +354,39 @@ fn message_public_api_matches_java_551_fixture() {
     );
     assert_eq!(expected["nullPropertyNameRejected"], true);
     assert_eq!(expected["nullPropertyValueRejected"], true);
+    let null_name_lookup = Message::default();
+    assert_eq!(null_name_lookup.get_nullable_property(None), None);
+    assert_eq!(
+        null_name_lookup
+            .get_properties()
+            .map(|properties| properties.is_empty()),
+        Some(true)
+    );
+    assert_eq!(expected["nullNameLookupIsNull"], true);
+    assert_eq!(expected["nullNameLookupInitializesProperties"], true);
+    let null_name_contains = Message::default();
+    assert!(!null_name_contains.has_nullable_property(None));
+    assert_eq!(null_name_contains.get_properties(), None);
+    assert_eq!(expected["nullNameContainsIsFalse"], true);
+    assert_eq!(expected["nullNameContainsKeepsPropertiesNull"], true);
+    let null_user_name = Message::default();
+    assert_eq!(null_user_name.get_nullable_user_property(None), None);
+    assert_eq!(expected["nullUserNameLookupIsNull"], true);
+    let mut collection_with_null = Message::default();
+    collection_with_null
+        .set_keys_from_nullable(Some(vec![Some("left"), None, Some("right")]))
+        .unwrap();
+    assert_eq!(
+        collection_with_null.keys(),
+        expected["collectionKeysWithNullMember"].as_str()
+    );
+    assert_eq!(expected["collectionKeysWithNullMember"], "left null right");
+    let mut null_collection = Message::default();
+    assert_eq!(
+        null_collection.set_keys_from_nullable(None::<Vec<Option<&str>>>),
+        Err(rocketmq_classic_common::message::MessageKeyCollectionError::NullCollection)
+    );
+    assert_eq!(expected["nullCollectionKeysThrows"], true);
 
     let mut message = Message::with_fields(
         "orders",

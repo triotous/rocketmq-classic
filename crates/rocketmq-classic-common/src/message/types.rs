@@ -32,6 +32,12 @@ pub enum MessagePropertyError {
     ReservedProperty,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum MessageKeyCollectionError {
+    #[error("Java Message.setKeys(Collection) rejects a null collection")]
+    NullCollection,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("invalid Java integer in message property {property}: {value:?}")]
 pub struct MessagePropertyParseError {
@@ -219,6 +225,21 @@ impl Message {
         Self::with_nullable_fields(topic, None, None, 0, body, true)
     }
 
+    /// Java's `Message(topic, tags, body)` constructor, including null inputs.
+    pub fn with_tags(topic: Option<String>, tags: Option<String>, body: Option<Vec<u8>>) -> Self {
+        Self::with_nullable_fields(topic, tags, None, 0, body, true)
+    }
+
+    /// Java's `Message(topic, tags, keys, body)` constructor, including null inputs.
+    pub fn with_tags_and_keys(
+        topic: Option<String>,
+        tags: Option<String>,
+        keys: Option<String>,
+        body: Option<Vec<u8>>,
+    ) -> Self {
+        Self::with_nullable_fields(topic, tags, keys, 0, body, true)
+    }
+
     /// Java's six-argument `Message(topic, tags, keys, flag, body, waitStoreMsgOK)`
     /// constructor, with Rust-owned values and optional tag/key properties.
     pub fn with_fields(
@@ -339,10 +360,22 @@ impl Message {
             .map(String::as_str)
     }
     pub fn get_nullable_property(&self, key: Option<&str>) -> Option<&str> {
-        key.and_then(|key| self.get_property(key))
+        match key {
+            Some(key) => self.get_property(key),
+            None => {
+                if self.properties.is_none() {
+                    self.properties_read_initialized
+                        .store(true, AtomicOrdering::Relaxed);
+                }
+                None
+            }
+        }
     }
     pub fn get_user_property(&self, key: &str) -> Option<&str> {
         self.get_property(key)
+    }
+    pub fn get_nullable_user_property(&self, key: Option<&str>) -> Option<&str> {
+        self.get_nullable_property(key)
     }
     pub fn has_property(&self, key: &str) -> bool {
         self.properties
@@ -526,6 +559,29 @@ impl Message {
             .collect::<Vec<_>>()
             .join(crate::message::constants::KEY_SEPARATOR);
         self.put_property_value(crate::message::constants::PROPERTY_KEYS, Some(joined));
+    }
+
+    /// Java's `String.join` collection overload: null elements become `"null"`;
+    /// a null collection is reported as an error instead of panicking.
+    pub fn set_keys_from_nullable<I, S>(
+        &mut self,
+        keys: Option<I>,
+    ) -> Result<(), MessageKeyCollectionError>
+    where
+        I: IntoIterator<Item = Option<S>>,
+        S: AsRef<str>,
+    {
+        let keys = keys.ok_or(MessageKeyCollectionError::NullCollection)?;
+        let joined = keys
+            .into_iter()
+            .map(|key| {
+                key.map(|key| key.as_ref().to_owned())
+                    .unwrap_or_else(|| "null".to_owned())
+            })
+            .collect::<Vec<_>>()
+            .join(crate::message::constants::KEY_SEPARATOR);
+        self.put_property_value(crate::message::constants::PROPERTY_KEYS, Some(joined));
+        Ok(())
     }
 
     pub fn set_wait_store_msg_ok(

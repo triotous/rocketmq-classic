@@ -146,6 +146,15 @@ public final class MessageDecodeFixtures {
         expected.put("nullableConstructorTopicIsNull", nullableConstructor.getTopic() == null);
         expected.put("nullableConstructorBodyIsNull", nullableConstructor.getBody() == null);
         expected.put("nullableConstructorWaitStore", nullableConstructor.isWaitStoreMsgOK());
+        Message nullableTagsConstructor = new Message(null, null, (byte[]) null);
+        expected.put("nullableTagsConstructorTopicIsNull", nullableTagsConstructor.getTopic() == null);
+        expected.put("nullableTagsConstructorBodyIsNull", nullableTagsConstructor.getBody() == null);
+        expected.put("nullableTagsConstructorHasTags", nullableTagsConstructor.hasProperty("TAGS"));
+        Message nullableKeysConstructor = new Message(null, null, null, (byte[]) null);
+        expected.put("nullableKeysConstructorTopicIsNull", nullableKeysConstructor.getTopic() == null);
+        expected.put("nullableKeysConstructorBodyIsNull", nullableKeysConstructor.getBody() == null);
+        expected.put("nullableKeysConstructorHasTags", nullableKeysConstructor.hasProperty("TAGS"));
+        expected.put("nullableKeysConstructorHasKeys", nullableKeysConstructor.hasProperty("KEYS"));
         Message nullableFields = new Message(null, null, null, -3, null, false);
         expected.put("nullableFieldsTopicIsNull", nullableFields.getTopic() == null);
         expected.put("nullableFieldsBodyIsNull", nullableFields.getBody() == null);
@@ -175,6 +184,19 @@ public final class MessageDecodeFixtures {
             throwsIllegalArgument(() -> nullableProperties.putUserProperty(null, "value")));
         expected.put("nullPropertyValueRejected",
             throwsIllegalArgument(() -> nullableProperties.putUserProperty("key", null)));
+
+        Message nullNameLookup = new Message();
+        expected.put("nullNameLookupIsNull", nullNameLookup.getProperty(null) == null);
+        expected.put("nullNameLookupInitializesProperties", nullNameLookup.getProperties() != null);
+        Message nullNameContains = new Message();
+        expected.put("nullNameContainsIsFalse", !nullNameContains.hasProperty(null));
+        expected.put("nullNameContainsKeepsPropertiesNull", nullNameContains.getProperties() == null);
+        expected.put("nullUserNameLookupIsNull", new Message().getUserProperty(null) == null);
+        Message collectionWithNull = new Message();
+        collectionWithNull.setKeys(java.util.Arrays.asList("left", null, "right"));
+        expected.put("collectionKeysWithNullMember", collectionWithNull.getKeys());
+        expected.put("nullCollectionKeysThrows",
+            throwsNullPointer(() -> new Message().setKeys((java.util.Collection<String>) null)));
 
         expected.put("topic", message.getTopic());
         expected.put("tags", message.getTags());
@@ -284,6 +306,15 @@ public final class MessageDecodeFixtures {
             action.run();
             return false;
         } catch (IllegalArgumentException expected) {
+            return true;
+        }
+    }
+
+    private static boolean throwsNullPointer(Runnable action) {
+        try {
+            action.run();
+            return false;
+        } catch (NullPointerException expected) {
             return true;
         }
     }
