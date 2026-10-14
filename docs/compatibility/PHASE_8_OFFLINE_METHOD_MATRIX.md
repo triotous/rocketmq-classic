@@ -11,7 +11,7 @@ Java source baseline: Apache RocketMQ client 5.5.1, commit `efa1be59d6fc747ad220
 | `MessageVersion.valueOfMagicCode/getTopicLength` | `decode_one` | V1 magic `-626843481` uses signed 8-bit topic length; V2 `-626843477` uses signed 16-bit length. |
 | `MessageDecoder.createMessageId` | `decode_one` | Store-host IP bytes + big-endian port + commit-log offset, upper-case hex; producer `UNIQ_KEY` is kept separate. IPv4 and IPv6 lengths are checked against Java. |
 | `MessageClientExt.getMsgId` / `getOffsetMsgId` | consumer client-ID enrichment / `MessageExt::{message_id, offset_message_id}` | Java `getMsgId` returns `UNIQ_KEY` when present, otherwise `offsetMsgId`; `getOffsetMsgId` retains the store-host/offset ID. Fixtures carry both generic and client-decoded expectations. |
-| `MessageSysFlag` host/compression bits and `CompressorFactory` | `sysflag::message` and `compression::decompress_limited` | P8-V01 covers independent born/store IPv6 flags and ZLIB, LZ4 and ZSTD; P8-V02 covers output caps and unsupported compressor values. |
+| `MessageSysFlag` host/compression bits and `CompressorFactory` | `sysflag::message` and bounded internal decompression | P8-V01 covers independent born/store IPv6 flags and ZLIB, LZ4 and ZSTD; P8-V02 covers output caps and unsupported compressor values. |
 | `PullAPIWrapper.processPullResult` | `rocketmq_classic_consumer::pull::PullAPIWrapper::process_pull_result` | P8-V03 covers status/suggested broker handling, FOUND decode, optional inner-batch unwrap, tag filtering, hooks, transaction/min/max/broker/queue enrichment, offset delta and raw-buffer release. |
 | `DefaultMQPushConsumerImpl.subscribe(topic, fullClassName, filterClassSource)` | `build_class_filter_subscription_data`; Phase 10 Push facade `PushConsumer::subscribe_with_class_filter` | Builds the same local `SubscriptionData` fields and retains the source while excluding it from heartbeat JSON. Phase 10 fixture coverage invokes the Java facade overload, checks namespace application and pre-start storage, then verifies heartbeat publication once a client factory is available. The pinned 5.5.1 client source has no class-filter upload API or call; Filter Server routing is covered below. |
 | `PullAPIWrapper.computePullFromWhichFilterServer` and `PullSysFlag` | crate-internal `resolve_pull_broker_address` / `select_filter_server`, existing `sysflag::pull` | P8-V03 covers normal pulls keeping the Broker address, class-filter pulls choosing from the route's broker-address entry, and missing/empty filter-server lists. These are internal helpers, not additional Rust public API. |
@@ -20,16 +20,21 @@ Java source baseline: Apache RocketMQ client 5.5.1, commit `efa1be59d6fc747ad220
 
 | Rust public surface | Java source/API or required phase behavior | Unit evidence |
 | --- | --- | --- |
-| `DecodeOptions::{read_body, decompress_body, set_properties_string}` | `ClientConfig.decodeReadBody/decodeDecompressBody`; `MessageDecoder.decode` parameters | P8-V01 `body_decode_options_match_java_and_limits_reject_oversized_fields` |
+| `DecodeOptions::{read_body, decompress_body, set_properties_string}` | `ClientConfig.decodeReadBody/decodeDecompressBody`; `MessageDecoder.decode` parameters | P8-V01 `body_decode_options_match_java_and_reject_truncated_topics` |
 | `DecodeOptions::verify_crc` | `MessageDecoder.decode(..., checkCRC)`; pull wrapper uses Java's `false` default | P8-V01 fixture decoding; P8-V02 opt-in mismatch behavior |
-| `DecodeLimits::{max_record_bytes, max_decompressed_body_bytes, max_total_decoded_bytes}` | Bounded allocation required by Phase 8; no fields are added to `ClientConfig` | P8-V02 record, decompressed-output and aggregate caps |
 | `decode_one` / `decode_many` | `MessageDecoder.decode` / `MessageDecoder.decodesBatch` | P8-V01/P8-V02 |
 | `MessageExt::{message_id, offset_message_id}` | Generic `MessageExt.getMsgId`; client `MessageClientExt.getMsgId/getOffsetMsgId` with Java's `UNIQ_KEY` fallback | P8-V01 generic ID fixture; P8-V03 client and inner-batch ID assertions |
 | `PullAPIWrapper::{process_pull_result, register_filter_message_hook}` and `FilterMessageHook` | `PullAPIWrapper.processPullResult`, `registerFilterMessageHook`, and `FilterMessageHook` | P8-V03 pull-result and hook checks |
 | `ProcessedPullResult` | Rust wrapper for Java `PullResultExt` plus `msgFoundList` | P8-V03 status and message-list checks |
 | `build_class_filter_subscription_data` | Public class-filter overload's local `SubscriptionData` construction | P8-V03 class-filter setup and tag-filter suppression |
 
-The three `DecodeLimits` parameters are per-decode safety bounds required by this phase; they are not client-wide settings. Record subfields are bounded by the declared record size, with no independent public body/topic/property limits.
+The public decoder signatures are `decode_one(record, options)` and
+`decode_many(records, options)`. Fixed internal bounds cap each record at 16 MiB,
+each decompressed body at 64 MiB, and aggregate decoded data at 64 MiB. No public
+`DecodeLimits` type or per-call limit argument is exposed. The limited
+decompression helper is crate-internal; the public decompressor uses the same
+fixed output cap. Record subfields are bounded by the declared record size,
+with no independent public body/topic/property limits.
 
 ## Record layout captured by the fixture generator
 

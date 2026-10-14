@@ -102,9 +102,14 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   confirms that neither path sends a Broker request. `fixtures/producer/core.json`
   SHA-256: `d1b05a04ed53dde2820647bd964ea2092592b35d51de90273f5b22f77ded0fe7`.
   This closes that selector failure branch only; broad P18-V01 reconciliation
-  remains open. Producer
-  `EndTransactionHook` registration, context and direct execution now have
-  fixture-backed local and Broker-check path coverage, including ordered
+  remains open.
+  The public-surface reverse scan also found caller-configurable decoder limits
+  and a limited decompression function with no Java API counterpart. Those
+  controls are now internal fixed safety bounds; decoder and pull-result public
+  calls no longer accept them. Low-cap regressions run inside the common crate.
+  This closes the identified decoder API difference only; full P18-V01 remains
+  open. Producer `EndTransactionHook` registration, context and direct execution
+  now have fixture-backed local and Broker-check path coverage, including ordered
   execution and hook-failure isolation; this closes that API slice only and
   leaves broad P18-V01 reconciliation open. The pinned
   `DefaultMQProducerImpl` fixture now records its 2 public constructors and 82
