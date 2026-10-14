@@ -485,7 +485,8 @@ fn client_decode_message(message: &mut MessageExt) {
 #[cfg(test)]
 mod tests {
     use super::{
-        DecodedMessageId, MessageExt, MessageIdDecodeError, QueryResult, decode_message_id,
+        AdminQueryRequest, DecodedMessageId, MessageExt, MessageIdDecodeError, QueryResult,
+        decode_message_id,
     };
     use std::{net::SocketAddr, str::FromStr};
 
@@ -526,5 +527,25 @@ mod tests {
         assert!(result.get_message_list().is_empty());
         result.get_message_list_mut().push(MessageExt::default());
         assert_eq!(result.get_message_list().len(), 1);
+    }
+
+    #[test]
+    fn query_cluster_inputs_derive_java_route_topic() {
+        let logical = AdminQueryRequest::by_key("%LMQ%child", "k", 32, 0, 1)
+            .with_cluster_name(Some("parent".into()));
+        assert!(logical.logical_message_queue);
+        assert_eq!(logical.route_topic, "parent");
+
+        let logical_without_cluster = logical.with_cluster_name(None);
+        assert_eq!(logical_without_cluster.route_topic, "%LMQ%child");
+
+        let wheel_timer = AdminQueryRequest::by_key("rmq_sys_wheel_timer", "k", 32, 0, 1)
+            .with_cluster_name(Some("cluster-a".into()));
+        assert!(!wheel_timer.logical_message_queue);
+        assert_eq!(wheel_timer.route_topic, "cluster-a");
+
+        let ordinary = AdminQueryRequest::by_key("orders", "k", 32, 0, 1)
+            .with_cluster_name(Some("cluster-a".into()));
+        assert_eq!(ordinary.route_topic, "orders");
     }
 }

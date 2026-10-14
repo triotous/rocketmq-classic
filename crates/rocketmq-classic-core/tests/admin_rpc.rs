@@ -741,6 +741,44 @@ async fn query_fanout_applies_java_cluster_filter_and_last_key() {
 }
 
 #[tokio::test]
+async fn query_fanout_uses_cluster_for_logical_topic_route_and_request() {
+    let message_record = java_message_record("ipv4-v1");
+    let mut header = HeaderMap::new();
+    QueryMessageResponseHeader {
+        index_last_update_timestamp: 100,
+        index_last_update_phyoffset: 1,
+    }
+    .encode_fields(&mut header);
+    let (address, peer) =
+        scripted_peer(response::SUCCESS, Some(header), Some(message_record)).await;
+    let route = TopicRouteData::java_decode(
+        serde_json::json!({
+            "queueDatas": [],
+            "brokerDatas": [{"cluster": "other-cluster", "brokerName": "broker-a", "brokerAddrs": {"0": address}}],
+            "filterServerTable": {}
+        })
+        .to_string()
+        .as_bytes(),
+    )
+    .unwrap();
+    let query = AdminQueryRequest::by_unique_key("%LMQ%child", "producer-unique-1", 32, 10, 99)
+        .with_cluster_name(Some("parent".into()));
+    let (api, client) = api().await;
+
+    let result = api
+        .query_message_across_brokers(&route, &query, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap();
+
+    assert_eq!(result.message_list.len(), 1);
+    let command = peer.await.unwrap();
+    let fields = command.ext_fields.unwrap();
+    assert_eq!(fields.get("topic"), Some(&"parent".to_owned()));
+    assert_eq!(fields.get("_UNIQUE_KEY_QUERY"), Some(&"true".to_owned()));
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn view_message_sends_physical_offset_and_decodes_one_java_message() {
     let message_record = java_message_record("ipv4-v1");
     let (addr, peer) = scripted_peer(response::SUCCESS, None, Some(message_record)).await;
