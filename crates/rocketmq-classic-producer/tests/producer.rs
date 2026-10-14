@@ -5,8 +5,9 @@ use rocketmq_classic_common::{
     sysflag::message::CompressionType,
 };
 use rocketmq_classic_producer::{
-    AsyncSenderExecutor, AsyncSenderTask, CheckForbiddenContext, CommunicationMode, Producer,
-    ProducerConfig, ProducerError, SendMessageContext, SendMessageType,
+    AsyncSenderExecutor, AsyncSenderTask, CheckForbiddenContext, CheckForbiddenHook,
+    CommunicationMode, Producer, ProducerConfig, ProducerError, SendMessageContext,
+    SendMessageHook, SendMessageType,
     validation::{
         validate_group, validate_message, validate_send_topic, validate_system_topic,
         validate_topic,
@@ -61,6 +62,239 @@ fn pinned_java_default_producer_impl_public_surface_is_recorded() {
             "missing {method}"
         );
     }
+}
+
+#[test]
+fn implementation_hook_helpers_match_pinned_java_fixture() {
+    use std::sync::Mutex;
+
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let expected = &fixture["implementationHookExecution"];
+    let producer = Producer::new(ProducerConfig::new("producer-implementation-hooks").unwrap());
+
+    assert_eq!(
+        producer.has_check_forbidden_hook(),
+        expected["checkForbiddenInitiallyPresent"]
+    );
+    assert_eq!(
+        producer.has_send_message_hook(),
+        expected["sendMessageInitiallyPresent"]
+    );
+
+    let check_events = Arc::new(Mutex::new(Vec::<String>::new()));
+    struct CheckFirst(Arc<Mutex<Vec<String>>>);
+    impl CheckForbiddenHook for CheckFirst {
+        fn hook_name(&self) -> &str {
+            "fixture-check-first"
+        }
+
+        fn check_forbidden(
+            &self,
+            context: &mut CheckForbiddenContext<'_>,
+        ) -> Result<(), ProducerError> {
+            self.0.lock().unwrap().push("first".into());
+            context
+                .message
+                .set_system_property("DIRECT_CHECK_HOOK", "mutated")
+                .unwrap();
+            context.queue.set_queue_id(4);
+            Ok(())
+        }
+    }
+    struct CheckReject(Arc<Mutex<Vec<String>>>);
+    impl CheckForbiddenHook for CheckReject {
+        fn hook_name(&self) -> &str {
+            "fixture-check-reject"
+        }
+
+        fn check_forbidden(
+            &self,
+            context: &mut CheckForbiddenContext<'_>,
+        ) -> Result<(), ProducerError> {
+            self.0.lock().unwrap().push(format!(
+                "reject:{}",
+                context
+                    .message
+                    .properties()
+                    .get("DIRECT_CHECK_HOOK")
+                    .map(String::as_str)
+                    .unwrap_or("<null>")
+            ));
+            Err(ProducerError::ForbiddenTopic)
+        }
+    }
+    struct CheckLast(Arc<Mutex<Vec<String>>>);
+    impl CheckForbiddenHook for CheckLast {
+        fn hook_name(&self) -> &str {
+            "fixture-check-last"
+        }
+
+        fn check_forbidden(
+            &self,
+            _context: &mut CheckForbiddenContext<'_>,
+        ) -> Result<(), ProducerError> {
+            self.0.lock().unwrap().push("unreached".into());
+            Ok(())
+        }
+    }
+
+    producer.register_check_forbidden_hook(Arc::new(CheckFirst(check_events.clone())));
+    producer.register_check_forbidden_hook(Arc::new(CheckReject(check_events.clone())));
+    producer.register_check_forbidden_hook(Arc::new(CheckLast(check_events.clone())));
+    assert_eq!(
+        producer.has_check_forbidden_hook(),
+        expected["checkForbiddenPresentAfterRegistration"]
+    );
+
+    let mut check_message = Message::new("orders", [1]);
+    let mut check_queue = MessageQueue::new("orders", "broker-a", 1);
+    let check_result = {
+        let mut context = CheckForbiddenContext {
+            name_srv_addr: None,
+            group: "producer-implementation-hooks".into(),
+            message: &mut check_message,
+            queue: &mut check_queue,
+            broker_addr: "127.0.0.1:10911".into(),
+            communication_mode: CommunicationMode::Sync,
+            send_result: None,
+            exception: None,
+            arg: None,
+            unit_mode: false,
+        };
+        producer.execute_check_forbidden_hook(&mut context)
+    };
+    assert!(check_result.is_err());
+    assert!(expected["checkFailure"].is_string());
+    assert_eq!(
+        *check_events.lock().unwrap(),
+        expected["checkEvents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|event| event.as_str().unwrap().to_owned())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        check_message
+            .properties()
+            .get("DIRECT_CHECK_HOOK")
+            .map(String::as_str),
+        expected["checkMessageMarker"].as_str()
+    );
+    assert_eq!(
+        check_queue.queue_id(),
+        expected["checkQueueId"].as_i64().unwrap() as i32
+    );
+
+    let send_events = Arc::new(Mutex::new(Vec::<String>::new()));
+    struct SendFirst(Arc<Mutex<Vec<String>>>);
+    impl SendMessageHook for SendFirst {
+        fn hook_name(&self) -> &str {
+            "fixture-send-first"
+        }
+
+        fn send_message_before(&self, context: &mut SendMessageContext<'_>) {
+            self.0.lock().unwrap().push("before:first".into());
+            context
+                .message
+                .set_system_property("DIRECT_SEND_HOOK", "before")
+                .unwrap();
+        }
+
+        fn send_message_after(&self, context: &mut SendMessageContext<'_>) {
+            self.0.lock().unwrap().push("after:first".into());
+            context
+                .message
+                .set_system_property("DIRECT_SEND_HOOK", "after")
+                .unwrap();
+        }
+    }
+    struct SendPanics(Arc<Mutex<Vec<String>>>);
+    impl SendMessageHook for SendPanics {
+        fn hook_name(&self) -> &str {
+            "fixture-send-throws"
+        }
+
+        fn send_message_before(&self, _context: &mut SendMessageContext<'_>) {
+            self.0.lock().unwrap().push("before:throws".into());
+            panic!("fixture before failure");
+        }
+
+        fn send_message_after(&self, _context: &mut SendMessageContext<'_>) {
+            self.0.lock().unwrap().push("after:throws".into());
+            panic!("fixture after failure");
+        }
+    }
+    struct SendLast(Arc<Mutex<Vec<String>>>);
+    impl SendMessageHook for SendLast {
+        fn hook_name(&self) -> &str {
+            "fixture-send-last"
+        }
+
+        fn send_message_before(&self, context: &mut SendMessageContext<'_>) {
+            let marker = context
+                .message
+                .properties()
+                .get("DIRECT_SEND_HOOK")
+                .map(String::as_str)
+                .unwrap_or("<null>");
+            self.0.lock().unwrap().push(format!("before:last:{marker}"));
+        }
+
+        fn send_message_after(&self, context: &mut SendMessageContext<'_>) {
+            let marker = context
+                .message
+                .properties()
+                .get("DIRECT_SEND_HOOK")
+                .map(String::as_str)
+                .unwrap_or("<null>");
+            self.0.lock().unwrap().push(format!("after:last:{marker}"));
+        }
+    }
+
+    producer.register_send_message_hook(Arc::new(SendFirst(send_events.clone())));
+    producer.register_send_message_hook(Arc::new(SendPanics(send_events.clone())));
+    producer.register_send_message_hook(Arc::new(SendLast(send_events.clone())));
+    assert_eq!(
+        producer.has_send_message_hook(),
+        expected["sendMessagePresentAfterRegistration"]
+    );
+    let mut send_message = Message::new("orders", [2]);
+    let mut send_context = SendMessageContext {
+        producer_group: "producer-implementation-hooks".into(),
+        producer: &producer,
+        message: &mut send_message,
+        queue: MessageQueue::new("orders", "broker-a", 2),
+        broker_addr: "127.0.0.1:10911".into(),
+        born_host: None,
+        communication_mode: CommunicationMode::Sync,
+        send_result: None,
+        exception: None,
+        message_type: SendMessageType::Normal,
+        namespace: None,
+        trace_context: None,
+        properties: None,
+    };
+    producer.execute_send_message_hook_before(&mut send_context);
+    producer.execute_send_message_hook_after(&mut send_context);
+
+    assert_eq!(
+        *send_events.lock().unwrap(),
+        expected["sendEvents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|event| event.as_str().unwrap().to_owned())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        send_message
+            .properties()
+            .get("DIRECT_SEND_HOOK")
+            .map(String::as_str),
+        expected["sendMessageMarker"].as_str()
+    );
 }
 
 #[test]

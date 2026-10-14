@@ -18,9 +18,12 @@ import java.util.TreeSet;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
+import org.apache.rocketmq.client.exception.MQClientException;
 import org.apache.rocketmq.client.Validators;
 import org.apache.rocketmq.client.hook.CheckForbiddenContext;
+import org.apache.rocketmq.client.hook.CheckForbiddenHook;
 import org.apache.rocketmq.client.hook.SendMessageContext;
+import org.apache.rocketmq.client.hook.SendMessageHook;
 import org.apache.rocketmq.client.impl.CommunicationMode;
 import org.apache.rocketmq.client.producer.DefaultMQProducer;
 import org.apache.rocketmq.common.MixAll;
@@ -119,6 +122,7 @@ public final class ProducerCoreFixtures {
         provenance.put("serverContacted", false);
         result.put("provenance", provenance);
         result.put("producerImplementationApi", producerImplementationApi());
+        result.put("implementationHookExecution", implementationHookExecution());
 
         Map<String, Object> defaults = new TreeMap<>();
         defaults.put("producerGroup", producer.getProducerGroup());
@@ -350,6 +354,139 @@ public final class ProducerCoreFixtures {
             + method.getName() + "(" + Arrays.stream(method.getParameterTypes())
             .map(Class::getName)
             .collect(java.util.stream.Collectors.joining(",")) + ")";
+    }
+
+    private static Map<String, Object> implementationHookExecution() {
+        DefaultMQProducer producer = new DefaultMQProducer("producer-implementation-hooks");
+        var implementation = producer.getDefaultMQProducerImpl();
+        Map<String, Object> result = new TreeMap<>();
+        result.put("checkForbiddenInitiallyPresent", implementation.hasCheckForbiddenHook());
+        result.put("sendMessageInitiallyPresent", implementation.hasSendMessageHook());
+
+        List<String> checkEvents = new ArrayList<>();
+        implementation.registerCheckForbiddenHook(new CheckForbiddenHook() {
+            @Override
+            public String hookName() {
+                return "fixture-check-first";
+            }
+
+            @Override
+            public void checkForbidden(CheckForbiddenContext context) {
+                checkEvents.add("first");
+                MessageAccessor.putProperty(context.getMessage(), "DIRECT_CHECK_HOOK", "mutated");
+                context.getMq().setQueueId(4);
+            }
+        });
+        implementation.registerCheckForbiddenHook(new CheckForbiddenHook() {
+            @Override
+            public String hookName() {
+                return "fixture-check-reject";
+            }
+
+            @Override
+            public void checkForbidden(CheckForbiddenContext context) throws MQClientException {
+                checkEvents.add("reject:" + context.getMessage().getProperty("DIRECT_CHECK_HOOK"));
+                throw new MQClientException("fixture forbidden", null);
+            }
+        });
+        implementation.registerCheckForbiddenHook(new CheckForbiddenHook() {
+            @Override
+            public String hookName() {
+                return "fixture-check-last";
+            }
+
+            @Override
+            public void checkForbidden(CheckForbiddenContext context) {
+                checkEvents.add("unreached");
+            }
+        });
+        Message checkMessage = new Message("orders", new byte[] {1});
+        MessageQueue checkQueue = new MessageQueue("orders", "broker-a", 1);
+        CheckForbiddenContext checkContext = new CheckForbiddenContext();
+        checkContext.setGroup("producer-implementation-hooks");
+        checkContext.setMessage(checkMessage);
+        checkContext.setMq(checkQueue);
+        checkContext.setBrokerAddr("127.0.0.1:10911");
+        checkContext.setCommunicationMode(CommunicationMode.SYNC);
+        String checkFailure = null;
+        try {
+            implementation.executeCheckForbiddenHook(checkContext);
+        } catch (MQClientException expected) {
+            checkFailure = expected.getMessage();
+        }
+        result.put("checkForbiddenPresentAfterRegistration", implementation.hasCheckForbiddenHook());
+        result.put("checkEvents", checkEvents);
+        result.put("checkFailure", checkFailure);
+        result.put("checkMessageMarker", checkMessage.getProperty("DIRECT_CHECK_HOOK"));
+        result.put("checkQueueId", checkQueue.getQueueId());
+
+        List<String> sendEvents = new ArrayList<>();
+        implementation.registerSendMessageHook(new SendMessageHook() {
+            @Override
+            public String hookName() {
+                return "fixture-send-first";
+            }
+
+            @Override
+            public void sendMessageBefore(SendMessageContext context) {
+                sendEvents.add("before:first");
+                MessageAccessor.putProperty(context.getMessage(), "DIRECT_SEND_HOOK", "before");
+            }
+
+            @Override
+            public void sendMessageAfter(SendMessageContext context) {
+                sendEvents.add("after:first");
+                MessageAccessor.putProperty(context.getMessage(), "DIRECT_SEND_HOOK", "after");
+            }
+        });
+        implementation.registerSendMessageHook(new SendMessageHook() {
+            @Override
+            public String hookName() {
+                return "fixture-send-throws";
+            }
+
+            @Override
+            public void sendMessageBefore(SendMessageContext context) {
+                sendEvents.add("before:throws");
+                throw new IllegalStateException("fixture before failure");
+            }
+
+            @Override
+            public void sendMessageAfter(SendMessageContext context) {
+                sendEvents.add("after:throws");
+                throw new IllegalStateException("fixture after failure");
+            }
+        });
+        implementation.registerSendMessageHook(new SendMessageHook() {
+            @Override
+            public String hookName() {
+                return "fixture-send-last";
+            }
+
+            @Override
+            public void sendMessageBefore(SendMessageContext context) {
+                sendEvents.add("before:last:" + context.getMessage().getProperty("DIRECT_SEND_HOOK"));
+            }
+
+            @Override
+            public void sendMessageAfter(SendMessageContext context) {
+                sendEvents.add("after:last:" + context.getMessage().getProperty("DIRECT_SEND_HOOK"));
+            }
+        });
+        Message sendMessage = new Message("orders", new byte[] {2});
+        SendMessageContext sendContext = new SendMessageContext();
+        sendContext.setProducer(implementation);
+        sendContext.setProducerGroup("producer-implementation-hooks");
+        sendContext.setMessage(sendMessage);
+        sendContext.setMq(new MessageQueue("orders", "broker-a", 2));
+        sendContext.setBrokerAddr("127.0.0.1:10911");
+        sendContext.setCommunicationMode(CommunicationMode.SYNC);
+        implementation.executeSendMessageHookBefore(sendContext);
+        implementation.executeSendMessageHookAfter(sendContext);
+        result.put("sendMessagePresentAfterRegistration", implementation.hasSendMessageHook());
+        result.put("sendEvents", sendEvents);
+        result.put("sendMessageMarker", sendMessage.getProperty("DIRECT_SEND_HOOK"));
+        return result;
     }
 
     private static Map<String, Object> executorSettings() {

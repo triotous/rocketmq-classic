@@ -939,11 +939,7 @@ impl Producer {
         self.execute_check_forbidden_hooks(message, queue, address, mode)?;
         let hooks = self.send_message_hook_snapshot();
         let mut context = self.send_message_context(message, queue, address, mode);
-        for hook in &hooks {
-            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                hook.send_message_before(&mut context);
-            }));
-        }
+        Self::execute_send_message_hook_before_snapshot(&hooks, &mut context);
         // Java passes the selected MessageQueue object itself through the hook
         // context, so in-place queue edits affect the ensuing request.
         *queue = context.queue.clone();
@@ -982,11 +978,7 @@ impl Producer {
             Ok(None) => {}
         }
         if !matches!(&result, Err(ProducerError::InvalidRetryMetadata)) {
-            for hook in &hooks {
-                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    hook.send_message_after(&mut context);
-                }));
-            }
+            Self::execute_send_message_hook_after_snapshot(&hooks, &mut context);
         }
         if let Some(original_body) = original_body {
             context.message.set_body(original_body);
@@ -1080,11 +1072,7 @@ impl Producer {
         self.execute_check_forbidden_hooks(message, queue, address, SendMode::Future)?;
         let hooks = self.send_message_hook_snapshot();
         let mut context = self.send_message_context(message, queue, address, SendMode::Future);
-        for hook in &hooks {
-            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                hook.send_message_before(&mut context);
-            }));
-        }
+        Self::execute_send_message_hook_before_snapshot(&hooks, &mut context);
         // Preserve Java's shared MessageQueue mutation semantics before the
         // asynchronous submission and any retry setup.
         *queue = context.queue.clone();
@@ -1098,11 +1086,7 @@ impl Producer {
             }
             Err(error) => {
                 context.exception = Some(&error);
-                for hook in &hooks {
-                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        hook.send_message_after(&mut context);
-                    }));
-                }
+                Self::execute_send_message_hook_after_snapshot(&hooks, &mut context);
                 drop(context);
                 return Err(error);
             }
@@ -1123,11 +1107,7 @@ impl Producer {
                 break;
             }
             if !pending_after_called {
-                for hook in &hooks {
-                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        hook.send_message_after(&mut context);
-                    }));
-                }
+                Self::execute_send_message_hook_after_snapshot(&hooks, &mut context);
                 pending_after_called = true;
             }
             let started = StdInstant::now();
@@ -1213,11 +1193,7 @@ impl Producer {
             Err(error) => context.exception = Some(error),
             Ok(None) => {}
         }
-        for hook in &hooks {
-            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                hook.send_message_after(&mut context);
-            }));
-        }
+        Self::execute_send_message_hook_after_snapshot(&hooks, &mut context);
         let hook_result = context.send_result.take();
         drop(context);
         if let (Ok(Some(send_result)), Some(hook_result)) = (&mut outcome, hook_result) {
@@ -1249,10 +1225,7 @@ impl Producer {
             arg: None,
             unit_mode: self.config.client_config().unit_mode(),
         };
-        for hook in hooks {
-            hook.check_forbidden(&mut context)?;
-        }
-        Ok(())
+        Self::execute_check_forbidden_hook_snapshot(&hooks, &mut context)
     }
 
     fn send_message_context<'a>(

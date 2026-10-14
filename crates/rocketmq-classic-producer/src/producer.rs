@@ -18,8 +18,9 @@ use rocketmq_classic_remoting::client::{CallbackExecutor, RpcHook};
 use rocketmq_classic_core::api::producer::{SendMode, SendResult};
 
 use crate::{
-    AsyncSenderExecutor, EndTransactionContext, EndTransactionHook, ProducerCompressor,
-    ProducerConfig, ProducerError, ProducerLongArray, RetryResponseCodes,
+    AsyncSenderExecutor, CheckForbiddenContext, EndTransactionContext, EndTransactionHook,
+    ProducerCompressor, ProducerConfig, ProducerError, ProducerLongArray, RetryResponseCodes,
+    SendMessageContext, SendMessageHook,
     accumulator::AutoBatchAccumulator,
     backpressure::{AdjustableSemaphore, BackpressureReadGuard},
     executor::TokioAsyncSenderExecutor,
@@ -111,6 +112,33 @@ impl Producer {
             .push(hook);
     }
 
+    /// Returns whether a pre-send forbidden hook is registered.
+    pub fn has_check_forbidden_hook(&self) -> bool {
+        !self
+            .check_forbidden_hooks
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_empty()
+    }
+
+    /// Runs forbidden hooks in registration order and stops at the first error.
+    pub fn execute_check_forbidden_hook(
+        &self,
+        context: &mut CheckForbiddenContext<'_>,
+    ) -> Result<(), ProducerError> {
+        Self::execute_check_forbidden_hook_snapshot(&self.check_forbidden_hook_snapshot(), context)
+    }
+
+    pub(crate) fn execute_check_forbidden_hook_snapshot(
+        hooks: &[Arc<dyn crate::CheckForbiddenHook>],
+        context: &mut CheckForbiddenContext<'_>,
+    ) -> Result<(), ProducerError> {
+        for hook in hooks {
+            hook.check_forbidden(context)?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn check_forbidden_hook_snapshot(&self) -> Vec<Arc<dyn crate::CheckForbiddenHook>> {
         self.check_forbidden_hooks
             .read()
@@ -124,6 +152,50 @@ impl Producer {
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(hook);
+    }
+
+    /// Returns whether a send-message hook is registered.
+    pub fn has_send_message_hook(&self) -> bool {
+        !self
+            .send_message_hooks
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_empty()
+    }
+
+    /// Runs before-send callbacks in registration order, isolating each panic.
+    pub fn execute_send_message_hook_before(&self, context: &mut SendMessageContext<'_>) {
+        Self::execute_send_message_hook_before_snapshot(
+            &self.send_message_hook_snapshot(),
+            context,
+        );
+    }
+
+    /// Runs after-send callbacks in registration order, isolating each panic.
+    pub fn execute_send_message_hook_after(&self, context: &mut SendMessageContext<'_>) {
+        Self::execute_send_message_hook_after_snapshot(&self.send_message_hook_snapshot(), context);
+    }
+
+    pub(crate) fn execute_send_message_hook_before_snapshot(
+        hooks: &[Arc<dyn SendMessageHook>],
+        context: &mut SendMessageContext<'_>,
+    ) {
+        for hook in hooks {
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                hook.send_message_before(context);
+            }));
+        }
+    }
+
+    pub(crate) fn execute_send_message_hook_after_snapshot(
+        hooks: &[Arc<dyn SendMessageHook>],
+        context: &mut SendMessageContext<'_>,
+    ) {
+        for hook in hooks {
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                hook.send_message_after(context);
+            }));
+        }
     }
 
     /// Registers a hook invoked before each transaction completion request.
