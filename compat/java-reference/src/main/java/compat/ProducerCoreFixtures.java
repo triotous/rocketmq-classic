@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
@@ -28,11 +29,13 @@ import org.apache.rocketmq.client.hook.CheckForbiddenHook;
 import org.apache.rocketmq.client.hook.SendMessageContext;
 import org.apache.rocketmq.client.hook.SendMessageHook;
 import org.apache.rocketmq.client.impl.CommunicationMode;
+import org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl;
 import org.apache.rocketmq.client.impl.producer.TopicPublishInfo;
 import org.apache.rocketmq.client.impl.factory.MQClientInstance;
 import org.apache.rocketmq.client.latency.MQFaultStrategy;
 import org.apache.rocketmq.client.common.ThreadLocalIndex;
 import org.apache.rocketmq.client.producer.DefaultMQProducer;
+import org.apache.rocketmq.client.producer.MessageQueueSelector;
 import org.apache.rocketmq.client.producer.MQProducer;
 import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.common.ServiceState;
@@ -143,6 +146,7 @@ public final class ProducerCoreFixtures {
         result.put("implementationPublishInfoTable", implementationPublishInfoTable());
         result.put("implementationPublishInfoTableAdvanced", implementationPublishInfoTableAdvanced());
         result.put("implementationQueueFilterSelection", implementationQueueFilterSelection());
+        result.put("implementationSelectorFailure", implementationSelectorFailure());
         result.put("producerClientFactoryApi", publicApiSurface(MQClientInstance.class));
         result.put("mqFaultStrategyApi", publicApiSurface(MQFaultStrategy.class));
         result.put("mqFaultStrategyBrokerFilterApi", publicApiSurface(MQFaultStrategy.BrokerFilter.class));
@@ -869,6 +873,72 @@ public final class ProducerCoreFixtures {
         };
         result.put("nonShortCircuitSelection", queueId(info.selectOneMessageQueue(filters)));
         result.put("nonShortCircuitFilterOrder", filterOrder);
+        return result;
+    }
+
+    private static Map<String, Object> implementationSelectorFailure() throws Exception {
+        DefaultMQProducer producer = new DefaultMQProducer("producer-selector-failure");
+        DefaultMQProducerImpl implementation = producer.getDefaultMQProducerImpl();
+        org.apache.rocketmq.client.ClientConfig clientConfig = new org.apache.rocketmq.client.ClientConfig();
+        clientConfig.setClientIP("producer-selector-failure");
+        MQClientInstance factory = new MQClientInstance(clientConfig, 0, clientConfig.buildMQClientId());
+        try {
+            Field factoryField = DefaultMQProducerImpl.class.getDeclaredField("mQClientFactory");
+            factoryField.setAccessible(true);
+            factoryField.set(implementation, factory);
+            implementation.setServiceState(ServiceState.RUNNING);
+
+            TopicPublishInfo topicPublishInfo = new TopicPublishInfo();
+            topicPublishInfo.setMessageQueueList(new ArrayList<>(List.of(
+                new MessageQueue("orders", "broker-a", 0))));
+            implementation.updateTopicPublishInfo("orders", topicPublishInfo);
+
+            Map<String, Object> result = new TreeMap<>();
+            Message message = new Message("orders", new byte[] {1});
+            result.put("invoke", selectorFailureCase(implementation, message, true));
+            result.put("send", selectorFailureCase(implementation, message, false));
+            return result;
+        } finally {
+            implementation.setServiceState(ServiceState.SHUTDOWN_ALREADY);
+            Field factoryState = MQClientInstance.class.getDeclaredField("serviceState");
+            factoryState.setAccessible(true);
+            factoryState.set(factory, ServiceState.RUNNING);
+            factory.shutdown();
+        }
+    }
+
+    private static Map<String, Object> selectorFailureCase(DefaultMQProducerImpl implementation,
+        Message message, boolean invokeOnly) {
+        Map<String, Object> result = new TreeMap<>();
+        AtomicInteger selectorCalls = new AtomicInteger();
+        List<Integer> queueCounts = new ArrayList<>();
+        Object selectorArgument = new Object();
+        MessageQueueSelector selector = (queues, selectedMessage, argument) -> {
+            selectorCalls.incrementAndGet();
+            queueCounts.add(queues.size());
+            if (selectedMessage == message || !"orders".equals(selectedMessage.getTopic())
+                || argument != selectorArgument) {
+                throw new IllegalStateException("selector inputs did not match");
+            }
+            throw new IllegalStateException("fixture-selector-failure");
+        };
+        Throwable failure = null;
+        try {
+            if (invokeOnly) {
+                implementation.invokeMessageQueueSelector(message, selector, selectorArgument, 10_000);
+            } else {
+                implementation.send(message, selector, selectorArgument, 10_000);
+            }
+        } catch (Throwable error) {
+            failure = error;
+        }
+        result.put("selectorCalls", selectorCalls.get());
+        result.put("queueCounts", queueCounts);
+        result.put("errorClass", failure == null ? "none" : failure.getClass().getSimpleName());
+        result.put("errorMessage", failure == null ? "" : failure.getMessage());
+        Throwable cause = failure == null ? null : failure.getCause();
+        result.put("causeClass", cause == null ? "none" : cause.getClass().getSimpleName());
+        result.put("causeMessage", cause == null ? "" : cause.getMessage());
         return result;
     }
 
