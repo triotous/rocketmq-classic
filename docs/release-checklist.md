@@ -147,8 +147,18 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   message-size limit now have live `Producer` setters and fixture-backed send,
   retry, deadline, and validation regressions (code commit `781bf6f0`; fixture
   SHA-256 `46c9c9522317d72d2942fab4abae0caf9c6fd9bf76a179ea90a6ec453b041f3c`).
-  Producer-group, VIP-channel, and topic-list live setter semantics plus the
-  broader Java API/input/branch reconciliation remain open under P18-V01.
+  Live Producer group and topics setters now have fixture-backed behavior:
+  group changes reach subsequent headers (including null-field omission), and
+  topic getters reflect setter calls while the started runtime retains its
+  startup topic snapshot. VIP getter mutation is also covered; the active
+  runtime keeps the ClientConfig snapshot copied at start, matching Java's
+  `MQClientManager.getOrCreateMQClientInstance`. The Producer fixture SHA-256
+  is `1ed0060666e8ee2a6b5b82b3088b22cb41a9a690bc291a96e56e51d16e7f7d76`.
+  Whether post-start Producer-group mutation should affect Java's shutdown
+  unregister lookup remains to be reconciled against Rust's owner-scoped
+  registration lease. Per-overload input/branch mappings, Java reverse-export,
+  inherited/trait API, and broad source/input reconciliation remain local
+  P18-V01 work.
 - [x] Map runtime Producer fault-strategy settings: live latency-fault and
   detector toggles, mutable `long[]` table aliasing/replacement, and subsequent
   Broker selection. Null setter/getter behavior, deferred null-table NPEs,
@@ -191,6 +201,15 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   benchmark compilation, and workspace metadata/license/dependency checks pass.
   The Producer fixture SHA-256 is
   `b0a59a0c084fc24ddff5c4947e7064d20311fe0dcf38306b8ac45ee15546c4fc`.
+- [x] Re-run current-revision server-free P18-V02 gates on `f3d5b44d` after
+  Producer group, VIP-channel and topic setter compatibility updates. Default
+  and all-feature workspace tests, strict all-target/all-feature Clippy,
+  formatting/diff checks, Maven verify (37 scenarios, fixture drift and Java /
+  Rust cross-decodes), comparator self-test, 37-scenario manifest validation,
+  16 race/leak cases repeated three times, 1,824-mutation fuzz smoke, release
+  example build, offline benchmark compilation, and workspace metadata checks
+  pass. Producer fixture SHA-256:
+  `1ed0060666e8ee2a6b5b82b3088b22cb41a9a690bc291a96e56e51d16e7f7d76`.
 - [ ] Obtain a current GitHub Ubuntu CI result for the Linux-specific Java
   address profile. A native Ubuntu ARM64 container passes the Core RPC
   integration suite; this does not replace the required GitHub Ubuntu result.
