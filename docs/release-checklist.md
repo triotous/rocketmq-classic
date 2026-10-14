@@ -103,13 +103,17 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   value/result branches, ordered `putAll` null-row behavior, and retained
   key/value/entry view single, bulk, `removeIf`, and `setValue` mutations now
   have invoked Java fixture and Rust differential evidence. Fixture SHA-256 is
-  `d8e0fb04555fa9e730277d2230f37b48eb0ae159f9f49610d96eff3c369de051`.
+  `9c8b0b55a958804b131d64cfeb8883c53ff2af5f652d1b8b01f25dcd4509a0ef`.
   `TopicPublishInfo.selectOneMessageQueue(QueueFilter...)` also has direct
   null/empty array, null filter, null/empty queue-list and non-short-circuit
   filter-order differentials in that fixture.
-  The returned client-factory surface, nested `MQFaultStrategy` helpers, and
-  per-overload input/branch mappings also remain open; broad P18-V01
-  reconciliation remains open.
+  The pinned fixture now inventories the `MQClientInstance` returned by the
+  Producer client-factory getter and the `MQFaultStrategy`/`BrokerFilter`
+  surfaces. Their raw mutable factory, filter, and ThreadLocal objects remain
+  owned by Rust runtime/Producer lifecycle owners; each pinned Producer call
+  site maps to an owner flow. This closes those surface-disposition slices.
+  Per-overload input/branch mappings, Java reverse-export, inherited/trait API,
+  and broad source/input reconciliation remain local P18-V01 work.
 - [x] Map runtime Producer fault-strategy settings: live latency-fault and
   detector toggles, mutable `long[]` table aliasing/replacement, and subsequent
   Broker selection. Null setter/getter behavior, deferred null-table NPEs,
