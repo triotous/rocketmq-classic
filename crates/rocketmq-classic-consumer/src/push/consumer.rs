@@ -13,7 +13,10 @@ use std::{
 use std::collections::VecDeque;
 
 use rocketmq_classic_common::{
-    message::{DecodeOptions, Message, MessageExt, MessageQueue, constants::*, encode_properties},
+    message::{
+        DecodeOptions, Message, MessageExt, MessageHostAddress, MessageQueue, constants::*,
+        encode_properties,
+    },
     sysflag::pull::{build_pull_sys_flag, clear_commit_offset_flag},
 };
 use rocketmq_classic_core::api::extensions::AckStatus;
@@ -3224,6 +3227,9 @@ impl PushConsumer {
             max_reconsume_times: Some(max_reconsume_times),
             unit_mode: self.config.unit_mode(),
         };
+        let store_host = message
+            .store_host()
+            .and_then(MessageHostAddress::socket_address_string);
 
         match self
             .try_send_message_back_to_broker(
@@ -3231,7 +3237,7 @@ impl PushConsumer {
                 &header,
                 broker_name.as_deref(),
                 options.address_broker_name_override,
-                message.store_host(),
+                store_host.as_deref(),
                 options.timeout_millis,
             )
             .await
@@ -10286,7 +10292,7 @@ mod tests {
             .unwrap();
         let mut store_host_message = retry_test_message(8);
         store_host_message.set_broker_name(None);
-        store_host_message.set_store_host(Some("127.0.0.1:10911".to_owned()));
+        store_host_message.set_store_host(Some(MessageHostAddress::new("127.0.0.1", 10911)));
         consumer
             .send_message_back_to_broker(&store_host_message, 4, None)
             .await

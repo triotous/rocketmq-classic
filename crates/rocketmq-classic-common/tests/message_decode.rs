@@ -1,9 +1,13 @@
 use base64::Engine;
 use rocketmq_classic_common::{
-    message::{DecodeError, DecodeOptions, decode_many, decode_one},
+    message::{
+        DecodeError, DecodeOptions, Message, MessageExt, MessageHostAddress,
+        MessageHostAddressBytesError, TopicFilterType, decode_many, decode_one,
+    },
     sysflag::message,
 };
 use serde_json::Value;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 fn fixture() -> Value {
     serde_json::from_str(include_str!("../../../fixtures/messages/records.json")).unwrap()
@@ -71,8 +75,14 @@ fn java_551_message_records_decode_to_the_pinned_results() {
         assert_eq!(decoded.sys_flag(), expected["sysFlag"]);
         assert_eq!(decoded.born_timestamp(), expected["bornTimestamp"]);
         assert_eq!(decoded.store_timestamp(), expected["storeTimestamp"]);
-        assert_eq!(decoded.born_host().unwrap(), expected["bornHost"]);
-        assert_eq!(decoded.store_host().unwrap(), expected["storeHost"]);
+        assert_eq!(
+            decoded.born_host().unwrap().to_string(),
+            expected["bornHost"]
+        );
+        assert_eq!(
+            decoded.store_host().unwrap().to_string(),
+            expected["storeHost"]
+        );
         assert_eq!(decoded.reconsume_times(), expected["reconsumeTimes"]);
         assert_eq!(
             decoded.prepared_transaction_offset(),
@@ -85,6 +95,237 @@ fn java_551_message_records_decode_to_the_pinned_results() {
         );
         assert_eq!(decoded.store_size() as usize, bytes.len());
     }
+}
+
+#[test]
+fn message_ext_socket_address_api_matches_java_551() {
+    let fixture = fixture();
+    let expected = &fixture["messageExtHostApi"];
+    let born = MessageHostAddress::from_ip_address(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10)), 10911);
+    let store = MessageHostAddress::unresolved("broker.invalid", 10912);
+    let mut message = MessageExt::default();
+    message.set_born_host(Some(born.clone()));
+    message.set_store_host(Some(store.clone()));
+
+    assert_eq!(expected["bornHostClass"], "java.net.InetSocketAddress");
+    assert_eq!(born.to_string(), expected["bornHostToString"]);
+    assert_eq!(
+        message.born_host_string().as_deref(),
+        expected["bornHostString"].as_str()
+    );
+    assert_eq!(
+        message.born_host_name_string(),
+        expected["bornHostNameString"].as_str()
+    );
+    assert_eq!(
+        born.socket_address_string(),
+        expected["ipv4SocketAddressString"]
+            .as_str()
+            .map(str::to_owned)
+    );
+    let born_bytes = born.network_bytes().unwrap();
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD.encode(&born_bytes),
+        expected["bornHostBytes"]
+    );
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD.encode(&born_bytes),
+        expected["bornHostBufferBytes"]
+    );
+    assert_eq!(message.born_host_bytes().unwrap(), born_bytes);
+    let mut born_output = [0_u8; 8];
+    assert_eq!(message.write_born_host_bytes(&mut born_output), Ok(8));
+    assert_eq!(born_output.as_slice(), born_bytes);
+    let mut short_output = [0_u8; 7];
+    assert_eq!(
+        message.write_born_host_bytes(&mut short_output),
+        Err(MessageHostAddressBytesError::BufferTooSmall {
+            needed: 8,
+            actual: 7
+        })
+    );
+    assert_eq!(expected["bornHostGetterRetainsObject"], true);
+    assert_eq!(expected["storeHostClass"], "java.net.InetSocketAddress");
+    assert_eq!(store.to_string(), expected["storeHostToString"]);
+    assert!(!store.is_resolved());
+    assert_eq!(store.socket_address_string(), None);
+    assert_eq!(expected["storeHostUnresolved"], true);
+    assert_eq!(expected["storeHostGetterRetainsObject"], true);
+    assert_eq!(
+        message.store_host_bytes(),
+        Err(MessageHostAddressBytesError::UnresolvedAddress)
+    );
+    assert_eq!(expected["unresolvedHostBytesThrow"], true);
+    let constructed = MessageExt::with_socket_addresses(
+        7,
+        13,
+        Some(born.clone()),
+        17,
+        Some(store.clone()),
+        Some("message-id".to_owned()),
+    );
+    assert_eq!(constructed.queue_id(), expected["constructorQueueId"]);
+    assert_eq!(
+        constructed.born_timestamp(),
+        expected["constructorBornTimestamp"]
+    );
+    assert_eq!(
+        constructed.born_host().unwrap().to_string(),
+        expected["constructorBornHost"]
+    );
+    assert_eq!(
+        constructed.store_timestamp(),
+        expected["constructorStoreTimestamp"]
+    );
+    assert_eq!(
+        constructed.store_host().unwrap().to_string(),
+        expected["constructorStoreHost"]
+    );
+    assert_eq!(
+        constructed.message_id(),
+        expected["constructorMessageId"].as_str()
+    );
+
+    let ipv6 = MessageHostAddress::from_ip_address(
+        IpAddr::V6("2001:db8::20".parse::<Ipv6Addr>().unwrap()),
+        10915,
+    );
+    assert_eq!(ipv6.to_string(), expected["ipv6HostToString"]);
+    assert_eq!(
+        ipv6.host_address_string().as_deref(),
+        expected["ipv6HostString"].as_str()
+    );
+    assert_eq!(
+        ipv6.host_name(),
+        expected["ipv6HostNameString"].as_str().unwrap()
+    );
+    assert_eq!(
+        ipv6.socket_address_string(),
+        expected["ipv6SocketAddressString"]
+            .as_str()
+            .map(str::to_owned)
+    );
+    let ipv6_bytes = ipv6.network_bytes().unwrap();
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD.encode(&ipv6_bytes),
+        expected["ipv6HostBytes"]
+    );
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD.encode(&ipv6_bytes),
+        expected["ipv6HostBufferBytes"]
+    );
+    let mut ipv6_message = MessageExt::default();
+    ipv6_message.set_store_host(Some(ipv6.clone()));
+    assert_eq!(ipv6_message.store_host_bytes().unwrap(), ipv6_bytes);
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD.encode(ipv6_message.store_host_bytes().unwrap()),
+        expected["ipv6StoreHostBytes"]
+    );
+
+    let from_host = MessageHostAddress::new("127.0.0.1", 10913);
+    assert_eq!(from_host.to_string(), expected["stringHostToString"]);
+    assert_eq!(
+        from_host.host_address_string().as_deref(),
+        expected["stringHostAddress"].as_str()
+    );
+    assert_eq!(
+        from_host.host_name(),
+        expected["stringHostName"].as_str().unwrap()
+    );
+
+    let encoded = serde_json::to_value(&message).unwrap();
+    assert_eq!(encoded["bornHost"], expected["bornHostToString"]);
+    assert_eq!(encoded["storeHost"], expected["storeHostToString"]);
+    let decoded: MessageExt = serde_json::from_value(encoded).unwrap();
+    assert_eq!(decoded.born_host(), Some(&born));
+    assert_eq!(decoded.store_host(), Some(&store));
+}
+
+#[test]
+fn message_ext_system_flag_helpers_match_java_551() {
+    let expected = &fixture()["messageExtSystemFlagsApi"];
+    let mut message = MessageExt::default();
+    assert_eq!(expected["topicSysFlagAbsentIsNull"], true);
+    assert_eq!(expected["groupSysFlagAbsentIsNull"], true);
+    assert_eq!(message.topic_sys_flag().unwrap(), None);
+    assert_eq!(message.group_sys_flag().unwrap(), None);
+
+    message.set_topic_sys_flag(Some(73));
+    message.set_group_sys_flag(Some(-19));
+    assert_eq!(message.topic_sys_flag().unwrap(), Some(73));
+    assert_eq!(message.group_sys_flag().unwrap(), Some(-19));
+    assert_eq!(expected["topicSysFlagSet"], 73);
+    assert_eq!(expected["groupSysFlagSet"], -19);
+    message.set_topic_sys_flag(None);
+    message.set_group_sys_flag(None);
+    assert_eq!(expected["topicSysFlagCleared"], true);
+    assert_eq!(expected["groupSysFlagCleared"], true);
+    assert_eq!(message.topic_sys_flag().unwrap(), None);
+    assert_eq!(message.group_sys_flag().unwrap(), None);
+
+    for key in [
+        rocketmq_classic_common::message::constants::PROPERTY_TRANSIENT_TOPIC_CONFIG,
+        rocketmq_classic_common::message::constants::PROPERTY_TRANSIENT_GROUP_CONFIG,
+    ] {
+        message.message_mut().set_system_property(key, "").unwrap();
+    }
+    assert_eq!(expected["topicSysFlagEmptyIsNull"], true);
+    assert_eq!(expected["groupSysFlagEmptyIsNull"], true);
+    assert_eq!(message.topic_sys_flag().unwrap(), None);
+    assert_eq!(message.group_sys_flag().unwrap(), None);
+
+    for key in [
+        rocketmq_classic_common::message::constants::PROPERTY_TRANSIENT_TOPIC_CONFIG,
+        rocketmq_classic_common::message::constants::PROPERTY_TRANSIENT_GROUP_CONFIG,
+    ] {
+        message
+            .message_mut()
+            .set_system_property(key, "bad")
+            .unwrap();
+    }
+    assert_eq!(expected["topicSysFlagMalformedThrows"], true);
+    assert_eq!(expected["groupSysFlagMalformedThrows"], true);
+    assert!(message.topic_sys_flag().is_err());
+    assert!(message.group_sys_flag().is_err());
+    message.set_topic_sys_flag(Some(1));
+    message
+        .message_mut()
+        .set_system_property(
+            rocketmq_classic_common::message::constants::PROPERTY_TRANSIENT_TOPIC_CONFIG,
+            "١",
+        )
+        .unwrap();
+    assert_eq!(
+        message.topic_sys_flag().unwrap(),
+        Some(expected["topicSysFlagUnicodeDigit"].as_i64().unwrap() as i32)
+    );
+
+    message.set_sys_flag(0x40);
+    message.set_born_host_v6_flag();
+    assert_eq!(message.sys_flag(), expected["bornV6FlagAfterSetter"]);
+    message.set_store_host_address_v6_flag();
+    assert_eq!(message.sys_flag(), expected["storeV6FlagAfterSetter"]);
+    assert_eq!(expected["singleTagFilterType"], "SINGLE_TAG");
+    assert_eq!(
+        MessageExt::parse_topic_filter_type(0x42),
+        TopicFilterType::MultiTag
+    );
+    assert_eq!(expected["multiTagFilterType"], "MULTI_TAG");
+    assert_eq!(
+        MessageExt::parse_topic_filter_type(0),
+        TopicFilterType::SingleTag
+    );
+
+    let mut diagnostic = Message::default();
+    diagnostic.set_topic("invoice");
+    diagnostic.set_body(vec![0, 255, 42]);
+    diagnostic.set_flag(5);
+    diagnostic.set_system_property("KEY", "value").unwrap();
+    let diagnostic = MessageExt::new(diagnostic);
+    assert_eq!(
+        diagnostic.to_string(),
+        expected["messageExtToString"].as_str().unwrap()
+    );
 }
 
 #[test]

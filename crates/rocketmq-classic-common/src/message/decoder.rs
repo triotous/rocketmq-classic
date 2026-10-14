@@ -2,7 +2,7 @@ use std::io;
 
 use thiserror::Error;
 
-use super::{MessageExt, decode_properties};
+use super::{MessageExt, MessageHostAddress, decode_properties};
 use crate::{
     compression::{DEFAULT_MAX_DECOMPRESSED_BODY_BYTES, decompress_limited},
     sysflag::message,
@@ -75,6 +75,8 @@ pub enum DecodeError {
     },
     #[error("message record has {remaining} trailing bytes after its properties")]
     TrailingBytes { remaining: usize },
+    #[error("message record {field} port {port} is outside the socket range")]
+    InvalidSocketPort { field: &'static str, port: i32 },
     #[error("body CRC does not match the record CRC field")]
     CrcMismatch,
     #[error("message record uses an unsupported compression type: {0}")]
@@ -407,11 +409,11 @@ impl<'a> Cursor<'a> {
         ))
     }
 
-    fn host(&mut self, field: &'static str, ipv6: bool) -> Result<String, DecodeError> {
+    fn host(&mut self, field: &'static str, ipv6: bool) -> Result<MessageHostAddress, DecodeError> {
         let ip_length = if ipv6 { 16 } else { 4 };
         let start = self.position;
         let ip_bytes = self.bytes(ip_length, field)?;
-        let ip = if ipv6 {
+        let address = if ipv6 {
             let address =
                 std::net::Ipv6Addr::from(<[u8; 16]>::try_from(ip_bytes).map_err(|_| {
                     DecodeError::Truncated {
@@ -419,23 +421,23 @@ impl<'a> Cursor<'a> {
                         field,
                     }
                 })?);
-            address
-                .segments()
-                .iter()
-                .map(|segment| format!("{segment:x}"))
-                .collect::<Vec<_>>()
-                .join(":")
+            std::net::IpAddr::V6(address)
         } else {
-            std::net::Ipv4Addr::new(ip_bytes[0], ip_bytes[1], ip_bytes[2], ip_bytes[3]).to_string()
+            std::net::IpAddr::V4(std::net::Ipv4Addr::new(
+                ip_bytes[0],
+                ip_bytes[1],
+                ip_bytes[2],
+                ip_bytes[3],
+            ))
         };
-        let port = self.i32(field)?;
+        let raw_port = self.i32(field)?;
+        let port = u16::try_from(raw_port).map_err(|_| DecodeError::InvalidSocketPort {
+            field,
+            port: raw_port,
+        })?;
         self.store_host_start = start;
         self.store_host_length = ip_length + 4;
-        if ipv6 {
-            Ok(format!("/[{ip}]:{port}"))
-        } else {
-            Ok(format!("/{ip}:{port}"))
-        }
+        Ok(MessageHostAddress::from_ip_address(address, port))
     }
 }
 

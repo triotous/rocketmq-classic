@@ -445,9 +445,9 @@ fn decode_inner_batch(outer: &MessageExt) -> Result<Vec<MessageExt>, ProcessPull
         inner.set_queue_offset(outer.queue_offset().wrapping_add(messages.len() as i64));
         inner.set_sys_flag(outer.sys_flag());
         inner.set_born_timestamp(outer.born_timestamp());
-        inner.set_born_host(outer.born_host().map(str::to_owned));
+        inner.set_born_host(outer.born_host().cloned());
         inner.set_store_timestamp(outer.store_timestamp());
-        inner.set_store_host(outer.store_host().map(str::to_owned));
+        inner.set_store_host(outer.store_host().cloned());
         inner.set_commit_log_offset(outer.commit_log_offset());
         messages.push(inner);
         offset += size;

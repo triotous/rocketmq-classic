@@ -1,6 +1,6 @@
 use super::{ClientRuntime, ConsumerOperation, RuntimeState};
 use rocketmq_classic_common::message::{
-    Message, MessageExt,
+    Message, MessageExt, MessageHostAddress,
     constants::{PROPERTY_CORRELATION_ID, PROPERTY_PRODUCER_GROUP},
     decode_properties,
 };
@@ -288,8 +288,10 @@ fn receive_reply_message(runtime: &ClientRuntime, command: &RemotingCommand) -> 
             .ok_or_else(|| "reply request has no ext fields".to_owned())?;
         let header =
             ReplyMessageRequestHeader::decode_fields(fields).map_err(|error| error.to_string())?;
-        validate_reply_host_address(&header.born_host)?;
-        validate_reply_host_address(&header.store_host)?;
+        let born_host = MessageHostAddress::parse_java_socket_address(&header.born_host)
+            .map_err(|error| error.to_string())?;
+        let store_host = MessageHostAddress::parse_java_socket_address(&header.store_host)
+            .map_err(|error| error.to_string())?;
         let mut body = command.body.clone().unwrap_or_default();
         if header.sys_flag & rocketmq_classic_common::sysflag::message::COMPRESSED_FLAG != 0 {
             let compression_type =
@@ -320,9 +322,9 @@ fn receive_reply_message(runtime: &ClientRuntime, command: &RemotingCommand) -> 
         reply.set_queue_id(header.queue_id);
         reply.set_sys_flag(header.sys_flag);
         reply.set_born_timestamp(header.born_timestamp);
-        reply.set_born_host(Some(header.born_host));
+        reply.set_born_host(Some(born_host));
         reply.set_store_timestamp(header.store_timestamp);
-        reply.set_store_host(Some(header.store_host));
+        reply.set_store_host(Some(store_host));
         reply.set_reconsume_times(header.reconsume_times.unwrap_or_default());
         Ok::<_, String>((reply, correlation_id))
     })();
@@ -341,21 +343,6 @@ fn receive_reply_message(runtime: &ClientRuntime, command: &RemotingCommand) -> 
         },
         Err(_) => error(response::SYSTEM_ERROR, "process reply message fail"),
     }
-}
-
-/// Validate the parts of Java's `NetworkUtil.string2SocketAddress` that can
-/// fail before `InetSocketAddress` retains a resolved or unresolved host.
-fn validate_reply_host_address(value: &str) -> Result<(), String> {
-    let (_, raw_port) = value
-        .rsplit_once(':')
-        .ok_or_else(|| "reply host address has no port separator".to_owned())?;
-    let port = crate::java_number::parse_long(raw_port)
-        .and_then(|port| i32::try_from(port).ok())
-        .ok_or_else(|| "reply host address has an invalid Java integer port".to_owned())?;
-    if !(0..=i32::from(u16::MAX)).contains(&port) {
-        return Err("reply host address port is outside the socket range".to_owned());
-    }
-    Ok(())
 }
 
 fn epoch_millis_now() -> i64 {

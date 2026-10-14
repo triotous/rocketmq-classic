@@ -4,10 +4,18 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
+use super::host_address::{MessageHostAddress, MessageHostAddressBytesError, parse_java_i32};
+
 pub const NAME_VALUE_SEPARATOR: char = '\u{1}';
 pub const PROPERTY_SEPARATOR: char = '\u{2}';
 
 pub type MessageProperties = BTreeMap<String, String>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TopicFilterType {
+    SingleTag,
+    MultiTag,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum MessagePropertyError {
@@ -15,6 +23,12 @@ pub enum MessagePropertyError {
     EmptyKey,
     #[error("user property name is reserved by RocketMQ")]
     ReservedProperty,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("invalid Java integer value: {value:?}")]
+pub struct MessageSysFlagParseError {
+    value: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -179,11 +193,11 @@ pub struct MessageExt {
     #[serde(rename = "bornTimestamp")]
     born_timestamp: i64,
     #[serde(rename = "bornHost", skip_serializing_if = "Option::is_none")]
-    born_host: Option<String>,
+    born_host: Option<MessageHostAddress>,
     #[serde(rename = "storeTimestamp")]
     store_timestamp: i64,
     #[serde(rename = "storeHost", skip_serializing_if = "Option::is_none")]
-    store_host: Option<String>,
+    store_host: Option<MessageHostAddress>,
     #[serde(rename = "msgId", skip_serializing_if = "Option::is_none")]
     message_id: Option<String>,
     #[serde(rename = "offsetMsgId", skip_serializing_if = "Option::is_none")]
@@ -202,6 +216,36 @@ impl MessageExt {
     pub fn new(message: Message) -> Self {
         Self {
             message,
+            ..Self::default()
+        }
+    }
+    /// Java `MessageExt.parseTopicFilterType(int)`.
+    pub fn parse_topic_filter_type(sys_flag: i32) -> TopicFilterType {
+        if sys_flag & crate::sysflag::message::MULTI_TAGS_FLAG
+            == crate::sysflag::message::MULTI_TAGS_FLAG
+        {
+            TopicFilterType::MultiTag
+        } else {
+            TopicFilterType::SingleTag
+        }
+    }
+    /// Constructor equivalent to Java's
+    /// `MessageExt(int, long, SocketAddress, long, SocketAddress, String)`.
+    pub fn with_socket_addresses(
+        queue_id: i32,
+        born_timestamp: i64,
+        born_host: Option<MessageHostAddress>,
+        store_timestamp: i64,
+        store_host: Option<MessageHostAddress>,
+        message_id: Option<String>,
+    ) -> Self {
+        Self {
+            queue_id,
+            born_timestamp,
+            born_host,
+            store_timestamp,
+            store_host,
+            message_id,
             ..Self::default()
         }
     }
@@ -244,11 +288,61 @@ impl MessageExt {
     pub fn body_crc(&self) -> i32 {
         self.body_crc
     }
-    pub fn born_host(&self) -> Option<&str> {
-        self.born_host.as_deref()
+    /// Java `MessageExt.getBornHost()`, represented as a resolved or unresolved
+    /// Rust `MessageHostAddress` value.
+    pub fn born_host(&self) -> Option<&MessageHostAddress> {
+        self.born_host.as_ref()
     }
-    pub fn store_host(&self) -> Option<&str> {
-        self.store_host.as_deref()
+    /// Java `MessageExt.getStoreHost()`, represented as a resolved or unresolved
+    /// Rust `MessageHostAddress` value.
+    pub fn store_host(&self) -> Option<&MessageHostAddress> {
+        self.store_host.as_ref()
+    }
+    /// Java `MessageExt.getBornHostString()`; unresolved hosts return `None`.
+    pub fn born_host_string(&self) -> Option<String> {
+        self.born_host
+            .as_ref()
+            .and_then(MessageHostAddress::host_address_string)
+    }
+    /// Java `MessageExt.getBornHostNameString()` without reverse DNS lookup.
+    pub fn born_host_name_string(&self) -> Option<&str> {
+        self.born_host.as_ref().map(MessageHostAddress::host_name)
+    }
+    /// Java `MessageExt.getBornHostBytes()` in network byte order.
+    pub fn born_host_bytes(&self) -> Result<Vec<u8>, MessageHostAddressBytesError> {
+        self.born_host
+            .as_ref()
+            .ok_or(MessageHostAddressBytesError::MissingAddress)?
+            .network_bytes()
+            .ok_or(MessageHostAddressBytesError::UnresolvedAddress)
+    }
+    /// Java `MessageExt.getStoreHostBytes()` in network byte order.
+    pub fn store_host_bytes(&self) -> Result<Vec<u8>, MessageHostAddressBytesError> {
+        self.store_host
+            .as_ref()
+            .ok_or(MessageHostAddressBytesError::MissingAddress)?
+            .network_bytes()
+            .ok_or(MessageHostAddressBytesError::UnresolvedAddress)
+    }
+    /// Fill a Rust byte slice with the Java `getBornHostBytes(ByteBuffer)` layout.
+    pub fn write_born_host_bytes(
+        &self,
+        output: &mut [u8],
+    ) -> Result<usize, MessageHostAddressBytesError> {
+        self.born_host
+            .as_ref()
+            .ok_or(MessageHostAddressBytesError::MissingAddress)?
+            .write_network_bytes(output)
+    }
+    /// Fill a Rust byte slice with the Java `getStoreHostBytes(ByteBuffer)` layout.
+    pub fn write_store_host_bytes(
+        &self,
+        output: &mut [u8],
+    ) -> Result<usize, MessageHostAddressBytesError> {
+        self.store_host
+            .as_ref()
+            .ok_or(MessageHostAddressBytesError::MissingAddress)?
+            .write_network_bytes(output)
     }
     pub fn message_id(&self) -> Option<&str> {
         self.message_id.as_deref()
@@ -274,6 +368,14 @@ impl MessageExt {
     pub fn set_sys_flag(&mut self, value: i32) {
         self.sys_flag = value;
     }
+    /// Set the Java `BORNHOST_V6_FLAG` bit without changing other system flags.
+    pub fn set_born_host_v6_flag(&mut self) {
+        self.sys_flag |= crate::sysflag::message::BORNHOST_V6_FLAG;
+    }
+    /// Set the Java `STOREHOSTADDRESS_V6_FLAG` bit without changing other flags.
+    pub fn set_store_host_address_v6_flag(&mut self) {
+        self.sys_flag |= crate::sysflag::message::STOREHOSTADDRESS_V6_FLAG;
+    }
     pub fn set_born_timestamp(&mut self, value: i64) {
         self.born_timestamp = value;
     }
@@ -289,10 +391,12 @@ impl MessageExt {
     pub fn set_body_crc(&mut self, value: i32) {
         self.body_crc = value;
     }
-    pub fn set_born_host(&mut self, value: Option<String>) {
+    /// Java `MessageExt.setBornHost(SocketAddress)` using Rust value semantics.
+    pub fn set_born_host(&mut self, value: Option<MessageHostAddress>) {
         self.born_host = value;
     }
-    pub fn set_store_host(&mut self, value: Option<String>) {
+    /// Java `MessageExt.setStoreHost(SocketAddress)` using Rust value semantics.
+    pub fn set_store_host(&mut self, value: Option<MessageHostAddress>) {
         self.store_host = value;
     }
     pub fn set_message_id(&mut self, value: Option<String>) {
@@ -303,6 +407,118 @@ impl MessageExt {
     }
     pub fn set_prepared_transaction_offset(&mut self, value: i64) {
         self.prepared_transaction_offset = value;
+    }
+    /// Read Java's transient topic system flag property. An empty property is
+    /// treated as absent; malformed decimal input is returned as a parse error.
+    pub fn topic_sys_flag(&self) -> Result<Option<i32>, MessageSysFlagParseError> {
+        parse_transient_sys_flag(
+            self.message
+                .properties
+                .get(crate::message::constants::PROPERTY_TRANSIENT_TOPIC_CONFIG),
+        )
+    }
+    /// Set or clear Java's transient topic system flag property.
+    pub fn set_topic_sys_flag(&mut self, value: Option<i32>) {
+        set_transient_sys_flag(
+            &mut self.message.properties,
+            crate::message::constants::PROPERTY_TRANSIENT_TOPIC_CONFIG,
+            value,
+        );
+    }
+    /// Read Java's transient group system flag property. An empty property is
+    /// treated as absent; malformed decimal input is returned as a parse error.
+    pub fn group_sys_flag(&self) -> Result<Option<i32>, MessageSysFlagParseError> {
+        parse_transient_sys_flag(
+            self.message
+                .properties
+                .get(crate::message::constants::PROPERTY_TRANSIENT_GROUP_CONFIG),
+        )
+    }
+    /// Set or clear Java's transient group system flag property.
+    pub fn set_group_sys_flag(&mut self, value: Option<i32>) {
+        set_transient_sys_flag(
+            &mut self.message.properties,
+            crate::message::constants::PROPERTY_TRANSIENT_GROUP_CONFIG,
+            value,
+        );
+    }
+
+    /// Java-style diagnostic string. Property entries are emitted in Rust's
+    /// deterministic map order; Java's backing `HashMap` does not promise an
+    /// iteration order when multiple properties are present.
+    pub fn java_to_string(&self) -> String {
+        let properties = self
+            .message
+            .properties
+            .iter()
+            .map(|(key, value)| format!("{key}={value}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let body = self
+            .message
+            .body
+            .iter()
+            .map(|byte| (*byte as i8).to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let born_host = self
+            .born_host
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| "null".to_owned());
+        let store_host = self
+            .store_host
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| "null".to_owned());
+        let message_id = self.message_id.as_deref().unwrap_or("null");
+        let broker_name = self.broker_name.as_deref().unwrap_or("null");
+        let transaction_id = self.message.transaction_id.as_deref().unwrap_or("null");
+        format!(
+            "MessageExt [brokerName={broker_name}, queueId={}, storeSize={}, queueOffset={}, sysFlag={}, bornTimestamp={}, bornHost={born_host}, storeTimestamp={}, storeHost={store_host}, msgId={message_id}, commitLogOffset={}, bodyCRC={}, reconsumeTimes={}, preparedTransactionOffset={}, toString()=Message{{topic='{}', flag={}, properties={{{properties}}}, body=[{body}], transactionId='{transaction_id}'}}]",
+            self.queue_id,
+            self.store_size,
+            self.queue_offset,
+            self.sys_flag,
+            self.born_timestamp,
+            self.store_timestamp,
+            self.commit_log_offset,
+            self.body_crc,
+            self.reconsume_times,
+            self.prepared_transaction_offset,
+            self.message.topic,
+            self.message.flag,
+        )
+    }
+}
+
+impl std::fmt::Display for MessageExt {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.java_to_string())
+    }
+}
+
+fn parse_transient_sys_flag(
+    value: Option<&String>,
+) -> Result<Option<i32>, MessageSysFlagParseError> {
+    let Some(value) = value.filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    parse_java_i32(value)
+        .map(Some)
+        .ok_or_else(|| MessageSysFlagParseError {
+            value: value.clone(),
+        })
+}
+
+fn set_transient_sys_flag(properties: &mut MessageProperties, key: &str, value: Option<i32>) {
+    match value {
+        Some(value) => {
+            properties.insert(key.to_owned(), value.to_string());
+        }
+        None => {
+            properties.remove(key);
+        }
     }
 }
 

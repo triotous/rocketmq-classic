@@ -21,6 +21,7 @@ import org.apache.rocketmq.common.message.MessageAccessor;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.sysflag.MessageSysFlag;
 import org.apache.rocketmq.common.UtilAll;
+import org.apache.rocketmq.common.utils.NetworkUtil;
 
 /** Deterministic Java 5.5.1 message-record bytes and decoded outcomes. */
 public final class MessageDecodeFixtures {
@@ -51,6 +52,8 @@ public final class MessageDecodeFixtures {
             "serverContacted", false,
             "generator", "compat.MessageDecodeFixtures"
         ));
+        root.put("messageExtHostApi", messageExtHostApi());
+        root.put("messageExtSystemFlagsApi", messageExtSystemFlagsApi());
         List<Map<String, Object>> cases = new ArrayList<>();
         cases.add(record("ipv4-v1", message("orders", "hello-v1", 17, 41,
             InetAddress.getByName("192.0.2.10"), 10911,
@@ -123,6 +126,122 @@ public final class MessageDecodeFixtures {
             Files.writeString(output, json, StandardCharsets.UTF_8);
             System.out.println("wrote " + cases.size() + " Java message decode fixtures to " + output);
         }
+    }
+
+    private static Map<String, Object> messageExtHostApi() throws Exception {
+        InetSocketAddress born = new InetSocketAddress(
+            InetAddress.getByAddress(new byte[] {(byte) 192, 0, 2, 10}), 10911);
+        InetSocketAddress unresolved = InetSocketAddress.createUnresolved("broker.invalid", 10912);
+        MessageExt message = new MessageExt();
+        message.setBornHost(born);
+        message.setStoreHost(unresolved);
+
+        Map<String, Object> expected = new TreeMap<>();
+        expected.put("bornHostClass", message.getBornHost().getClass().getName());
+        expected.put("bornHostToString", message.getBornHost().toString());
+        expected.put("bornHostString", message.getBornHostString());
+        expected.put("bornHostNameString", message.getBornHostNameString());
+        expected.put("bornHostGetterRetainsObject", message.getBornHost() == born);
+        expected.put("ipv4SocketAddressString", NetworkUtil.socketAddress2String(born));
+        expected.put("bornHostBytes", byteBufferBase64(message.getBornHostBytes()));
+        expected.put("bornHostBufferBytes", byteBufferBase64(message.getBornHostBytes(ByteBuffer.allocate(8))));
+        expected.put("storeHostClass", message.getStoreHost().getClass().getName());
+        expected.put("storeHostToString", message.getStoreHost().toString());
+        expected.put("storeHostUnresolved", ((InetSocketAddress) message.getStoreHost()).isUnresolved());
+        expected.put("storeHostGetterRetainsObject", message.getStoreHost() == unresolved);
+
+        InetSocketAddress ipv6 = new InetSocketAddress(InetAddress.getByName("2001:db8::20"), 10915);
+        MessageExt ipv6Message = new MessageExt();
+        ipv6Message.setBornHost(ipv6);
+        expected.put("ipv6HostToString", ipv6Message.getBornHost().toString());
+        expected.put("ipv6HostString", ipv6Message.getBornHostString());
+        expected.put("ipv6HostNameString", ipv6Message.getBornHostNameString());
+        expected.put("ipv6SocketAddressString", NetworkUtil.socketAddress2String(ipv6));
+        expected.put("ipv6HostBytes", byteBufferBase64(ipv6Message.getBornHostBytes()));
+        expected.put("ipv6HostBufferBytes", byteBufferBase64(ipv6Message.getBornHostBytes(ByteBuffer.allocate(20))));
+        ipv6Message.setStoreHost(ipv6);
+        expected.put("ipv6StoreHostBytes", byteBufferBase64(ipv6Message.getStoreHostBytes()));
+
+        boolean unresolvedBytesThrow = false;
+        try {
+            message.getStoreHostBytes();
+        } catch (NullPointerException expectedFailure) {
+            unresolvedBytesThrow = true;
+        }
+        expected.put("unresolvedHostBytesThrow", unresolvedBytesThrow);
+
+        InetSocketAddress fromHost = new InetSocketAddress("127.0.0.1", 10913);
+        MessageExt fromHostMessage = new MessageExt();
+        fromHostMessage.setBornHost(fromHost);
+        expected.put("stringHostToString", fromHostMessage.getBornHost().toString());
+        expected.put("stringHostAddress", fromHostMessage.getBornHostString());
+        expected.put("stringHostName", fromHostMessage.getBornHostNameString());
+
+        MessageExt constructed = new MessageExt(7, 13L, born, 17L, unresolved, "message-id");
+        expected.put("constructorQueueId", constructed.getQueueId());
+        expected.put("constructorBornTimestamp", constructed.getBornTimestamp());
+        expected.put("constructorBornHost", constructed.getBornHost().toString());
+        expected.put("constructorStoreTimestamp", constructed.getStoreTimestamp());
+        expected.put("constructorStoreHost", constructed.getStoreHost().toString());
+        expected.put("constructorMessageId", constructed.getMsgId());
+        return expected;
+    }
+
+    private static Map<String, Object> messageExtSystemFlagsApi() {
+        MessageExt message = new MessageExt();
+        Map<String, Object> expected = new TreeMap<>();
+        expected.put("topicSysFlagAbsentIsNull", message.getTopicSysFlag() == null);
+        expected.put("groupSysFlagAbsentIsNull", message.getGroupSysFlag() == null);
+        message.setTopicSysFlag(73);
+        message.setGroupSysFlag(-19);
+        expected.put("topicSysFlagSet", message.getTopicSysFlag());
+        expected.put("groupSysFlagSet", message.getGroupSysFlag());
+        message.setTopicSysFlag(null);
+        message.setGroupSysFlag(null);
+        expected.put("topicSysFlagCleared", message.getTopicSysFlag() == null);
+        expected.put("groupSysFlagCleared", message.getGroupSysFlag() == null);
+
+        MessageAccessor.putProperty(message, org.apache.rocketmq.common.message.MessageConst.PROPERTY_TRANSIENT_TOPIC_CONFIG, "");
+        MessageAccessor.putProperty(message, org.apache.rocketmq.common.message.MessageConst.PROPERTY_TRANSIENT_GROUP_CONFIG, "");
+        expected.put("topicSysFlagEmptyIsNull", message.getTopicSysFlag() == null);
+        expected.put("groupSysFlagEmptyIsNull", message.getGroupSysFlag() == null);
+        MessageAccessor.putProperty(message, org.apache.rocketmq.common.message.MessageConst.PROPERTY_TRANSIENT_TOPIC_CONFIG, "bad");
+        MessageAccessor.putProperty(message, org.apache.rocketmq.common.message.MessageConst.PROPERTY_TRANSIENT_GROUP_CONFIG, "bad");
+        expected.put("topicSysFlagMalformedThrows", throwsNumberFormat(message, true));
+        expected.put("groupSysFlagMalformedThrows", throwsNumberFormat(message, false));
+        MessageAccessor.putProperty(message, org.apache.rocketmq.common.message.MessageConst.PROPERTY_TRANSIENT_TOPIC_CONFIG, "\u0661");
+        expected.put("topicSysFlagUnicodeDigit", message.getTopicSysFlag());
+
+        message.setSysFlag(0x40);
+        message.setBornHostV6Flag();
+        expected.put("bornV6FlagAfterSetter", message.getSysFlag());
+        message.setStoreHostAddressV6Flag();
+        expected.put("storeV6FlagAfterSetter", message.getSysFlag());
+        expected.put("singleTagFilterType", MessageExt.parseTopicFilterType(0).name());
+        expected.put("multiTagFilterType", MessageExt.parseTopicFilterType(0x42).name());
+
+        MessageExt diagnostic = new MessageExt();
+        diagnostic.setTopic("invoice");
+        diagnostic.setBody(new byte[] {0, -1, 42});
+        diagnostic.setFlag(5);
+        MessageAccessor.putProperty(diagnostic, "KEY", "value");
+        expected.put("messageExtToString", diagnostic.toString());
+        return expected;
+    }
+
+    private static boolean throwsNumberFormat(MessageExt message, boolean topic) {
+        try {
+            if (topic) message.getTopicSysFlag(); else message.getGroupSysFlag();
+            return false;
+        } catch (NumberFormatException expected) {
+            return true;
+        }
+    }
+
+    private static String byteBufferBase64(ByteBuffer buffer) {
+        byte[] bytes = new byte[buffer.remaining()];
+        buffer.get(bytes);
+        return Base64.getEncoder().encodeToString(bytes);
     }
 
     private static MessageExt message(String topic, String body, int queueId, long queueOffset,
