@@ -836,6 +836,34 @@ async fn explicit_queue_missing_broker_address_matches_java_error() {
 }
 
 #[tokio::test]
+async fn selector_send_missing_broker_address_matches_java_error() {
+    let route = route_body_without_publish_addresses();
+    let (nameserver, nameserver_task, route_requests) =
+        name_server_peer(route, BTreeSet::new()).await;
+    let producer = Arc::new(Producer::new(producer_config(
+        "missing-broker-address-selector",
+        &nameserver,
+    )));
+    producer.start().await.unwrap();
+
+    let error = producer
+        .send_with_selector(
+            &Message::new("orders", b"missing broker address".to_vec()),
+            |queues, _| queues.first().cloned(),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        ProducerError::BrokerAddressNotFound { broker } if broker == "broker-a"
+    ));
+    assert_eq!(route_requests.lock().unwrap().as_slice(), ["orders"]);
+
+    producer.shutdown().await.unwrap();
+    nameserver_task.abort();
+}
+
+#[tokio::test]
 async fn oneway_sends_once_and_unknown_explicit_broker_fails_before_io() {
     let attempts = Arc::new(AtomicUsize::new(0));
     let requests = Arc::new(Mutex::new(Vec::new()));
