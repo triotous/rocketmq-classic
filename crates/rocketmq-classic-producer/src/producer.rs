@@ -18,8 +18,8 @@ use rocketmq_classic_remoting::client::{CallbackExecutor, RpcHook};
 use rocketmq_classic_core::api::producer::{SendMode, SendResult};
 
 use crate::{
-    AsyncSenderExecutor, ProducerCompressor, ProducerConfig, ProducerError, ProducerLongArray,
-    RetryResponseCodes,
+    AsyncSenderExecutor, EndTransactionContext, EndTransactionHook, ProducerCompressor,
+    ProducerConfig, ProducerError, ProducerLongArray, RetryResponseCodes,
     accumulator::AutoBatchAccumulator,
     backpressure::{AdjustableSemaphore, BackpressureReadGuard},
     executor::TokioAsyncSenderExecutor,
@@ -78,6 +78,7 @@ pub struct Producer {
     pub(crate) request_callback_tasks: tokio::sync::Mutex<Vec<JoinHandle<()>>>,
     pub(crate) check_forbidden_hooks: crate::hooks::CheckForbiddenHookList,
     pub(crate) send_message_hooks: crate::hooks::SendMessageHookList,
+    pub(crate) end_transaction_hooks: crate::hooks::EndTransactionHookList,
     pub(crate) backpressure_send_num: Arc<AdjustableSemaphore>,
     pub(crate) backpressure_send_size: Arc<AdjustableSemaphore>,
     publish_info: RwLock<HashMap<String, Arc<TopicSnapshot>>>,
@@ -123,6 +124,61 @@ impl Producer {
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(hook);
+    }
+
+    /// Registers a hook invoked before each transaction completion request.
+    pub fn register_end_transaction_hook(&self, hook: Arc<dyn EndTransactionHook>) {
+        self.end_transaction_hooks
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(hook);
+    }
+
+    /// Returns whether any end-transaction hooks are registered.
+    pub fn has_end_transaction_hook(&self) -> bool {
+        !self
+            .end_transaction_hooks
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_empty()
+    }
+
+    /// Runs registered hooks in registration order. A panicking hook is
+    /// isolated so later hooks still receive the same context, matching Java.
+    pub fn execute_end_transaction_hook(&self, context: &mut EndTransactionContext<'_>) {
+        let hooks = self
+            .end_transaction_hooks
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        for hook in hooks {
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                hook.end_transaction(context);
+            }));
+        }
+    }
+
+    /// Builds the Java implementation hook context and runs it before an
+    /// end-transaction RPC. The RPC header is prepared by the caller first.
+    pub fn do_execute_end_transaction_hook(
+        &self,
+        message: &mut rocketmq_classic_common::message::Message,
+        message_id: &str,
+        broker_addr: &str,
+        transaction_state: crate::LocalTransactionState,
+        from_transaction_check: bool,
+    ) {
+        let transaction_id = message.transaction_id().map(str::to_owned);
+        let mut context = EndTransactionContext {
+            producer_group: self.producer_group().to_owned(),
+            message,
+            broker_addr: broker_addr.to_owned(),
+            message_id: message_id.to_owned(),
+            transaction_id,
+            transaction_state,
+            from_transaction_check,
+        };
+        self.execute_end_transaction_hook(&mut context);
     }
 
     pub(crate) fn send_message_hook_snapshot(&self) -> Vec<Arc<dyn crate::SendMessageHook>> {
@@ -186,6 +242,7 @@ impl Producer {
             request_callback_tasks: tokio::sync::Mutex::new(Vec::new()),
             check_forbidden_hooks: Default::default(),
             send_message_hooks: Default::default(),
+            end_transaction_hooks: Default::default(),
             backpressure_send_num,
             backpressure_send_size,
             publish_info: RwLock::new(HashMap::new()),
@@ -570,6 +627,13 @@ impl Producer {
             self.producer_group(),
             self.config.client.clone(),
         )));
+        self.register_end_transaction_hook(Arc::new(
+            crate::trace::ProducerEndTransactionTraceHook::new(
+                dispatcher.clone(),
+                self.producer_group(),
+                self.config.client.clone(),
+            ),
+        ));
         let _ = self.trace_dispatcher.set(dispatcher);
         if crate::trace::recall_trace_property_enabled() {
             self.register_recall_trace_hook(
@@ -1017,6 +1081,16 @@ mod tests {
         let dispatcher = producer.trace_dispatcher().unwrap();
         let trace_producer = dispatcher.trace_producer().unwrap();
         assert_eq!(producer.send_message_hook_snapshot().len(), 1);
+        assert_eq!(
+            producer
+                .end_transaction_hooks
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .iter()
+                .map(|hook| hook.hook_name())
+                .collect::<Vec<_>>(),
+            ["EndTransactionTraceHook"]
+        );
         assert!(
             dispatcher.append(rocketmq_classic_core::trace::TraceContext {
                 trace_type: Some(rocketmq_classic_core::trace::TraceType::Recall),

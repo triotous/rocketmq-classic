@@ -29,7 +29,10 @@ use tokio::{
 
 #[cfg(test)]
 use crate::SendMessageType;
-use crate::{Producer, ProducerConfig, ProducerError, SendMessageContext, SendMessageHook};
+use crate::{
+    EndTransactionContext, EndTransactionHook, Producer, ProducerConfig, ProducerError,
+    SendMessageContext, SendMessageHook,
+};
 
 const TRACE_TOPIC: &str = "RMQ_SYS_TRACE_TOPIC";
 const TRACE_TOPIC_PREFIX: &str = "RMQ_SYS_TRACE_DATA_";
@@ -45,6 +48,26 @@ pub(crate) struct ProducerSendTraceHook {
     dispatcher: Arc<TraceDispatcher>,
     producer_group: String,
     client_config: ClientConfig,
+}
+
+pub(crate) struct ProducerEndTransactionTraceHook {
+    dispatcher: Arc<TraceDispatcher>,
+    producer_group: String,
+    client_config: ClientConfig,
+}
+
+impl ProducerEndTransactionTraceHook {
+    pub(crate) fn new(
+        dispatcher: Arc<TraceDispatcher>,
+        producer_group: impl Into<String>,
+        client_config: ClientConfig,
+    ) -> Self {
+        Self {
+            dispatcher,
+            producer_group: producer_group.into(),
+            client_config,
+        }
+    }
 }
 
 impl ProducerSendTraceHook {
@@ -215,36 +238,32 @@ impl SendMessageHook for ProducerSendTraceHook {
     }
 }
 
-impl Producer {
-    pub(crate) fn append_end_transaction_trace(
-        &self,
-        message: &Message,
-        message_id: &str,
-        broker_addr: &str,
-        transaction_id: Option<&str>,
-        state: crate::LocalTransactionState,
-        from_transaction_check: bool,
-    ) {
-        let Some(dispatcher) = self.trace_dispatcher.get() else {
-            return;
-        };
-        let trace_topic_name = dispatcher.trace_topic_name();
-        if message.topic().starts_with(&trace_topic_name) {
+impl EndTransactionHook for ProducerEndTransactionTraceHook {
+    fn hook_name(&self) -> &str {
+        "EndTransactionTraceHook"
+    }
+
+    fn end_transaction(&self, context: &mut EndTransactionContext<'_>) {
+        if context
+            .message
+            .topic()
+            .starts_with(&self.dispatcher.trace_topic_name())
+        {
             return;
         }
         let trace = end_transaction_trace_context(
-            self.config().client_config(),
-            self.producer_group(),
-            message,
+            &self.client_config,
+            &self.producer_group,
+            context.message,
             EndTransactionTraceData {
-                message_id,
-                broker_addr,
-                transaction_id,
-                state,
-                from_transaction_check,
+                message_id: &context.message_id,
+                broker_addr: &context.broker_addr,
+                transaction_id: context.transaction_id.as_deref(),
+                state: context.transaction_state,
+                from_transaction_check: context.from_transaction_check,
             },
         );
-        let _ = dispatcher.append(trace);
+        let _ = self.dispatcher.append(trace);
     }
 }
 

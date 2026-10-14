@@ -5,18 +5,21 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import org.apache.rocketmq.client.exception.MQClientException;
+import org.apache.rocketmq.client.hook.EndTransactionContext;
+import org.apache.rocketmq.client.hook.EndTransactionHook;
 import org.apache.rocketmq.client.producer.LocalTransactionState;
 import org.apache.rocketmq.client.producer.TransactionCheckListener;
 import org.apache.rocketmq.client.producer.TransactionListener;
@@ -168,6 +171,7 @@ public final class TransactionFixtures {
             MessageDecoder.decodeMessageId("7F00000100002A9F000000000000303A").getOffset());
         transactionFlow.put("commitLogOffsetDecode", decodedOffsets);
         transactionFlow.put("initialEndTransaction", initialEndTransactionFields());
+        transactionFlow.put("endTransactionHooks", endTransactionHooks());
         Map<String, Object> brokerCheckMessage = brokerCheckMessage();
         transactionFlow.put("brokerCheckMessage", brokerCheckMessage);
         transactionFlow.put("brokerCheckRequest", brokerCheckRequestFields());
@@ -241,6 +245,89 @@ public final class TransactionFixtures {
         startOutcome.put("error", startError);
         result.put("startWithoutListener", startOutcome);
 
+        return result;
+    }
+
+    private static Map<String, Object> endTransactionHooks() {
+        TransactionMQProducer producer = new TransactionMQProducer("transaction-producer");
+        var implementation = producer.getDefaultMQProducerImpl();
+        Map<String, Object> result = new TreeMap<>();
+        result.put("initiallyPresent", implementation.hasEndTransactionHook());
+        List<String> events = new ArrayList<>();
+        List<Map<String, Object>> contexts = new ArrayList<>();
+        Message message = new Message("orders", new byte[] {1});
+        message.setTransactionId("MSG-001");
+        implementation.registerEndTransactionHook(new EndTransactionHook() {
+            @Override
+            public String hookName() {
+                return "fixture-first";
+            }
+
+            @Override
+            public void endTransaction(EndTransactionContext context) {
+                String phase = context.isFromTransactionCheck() ? "check" : "local";
+                events.add("first:" + phase);
+                MessageAccessor.putProperty(context.getMessage(), "END_HOOK_MARKER", phase);
+            }
+        });
+        implementation.registerEndTransactionHook(new EndTransactionHook() {
+            @Override
+            public String hookName() {
+                return "fixture-throws";
+            }
+
+            @Override
+            public void endTransaction(EndTransactionContext context) {
+                String phase = context.isFromTransactionCheck() ? "check" : "local";
+                events.add("throws:" + phase);
+                throw new IllegalStateException("fixture hook failure");
+            }
+        });
+        implementation.registerEndTransactionHook(new EndTransactionHook() {
+            @Override
+            public String hookName() {
+                return "fixture-last";
+            }
+
+            @Override
+            public void endTransaction(EndTransactionContext context) {
+                String phase = context.isFromTransactionCheck() ? "check" : "local";
+                events.add("last:" + phase);
+                Map<String, Object> observed = new TreeMap<>();
+                observed.put("producerGroup", context.getProducerGroup());
+                observed.put("topic", context.getMessage().getTopic());
+                observed.put("brokerAddr", context.getBrokerAddr());
+                observed.put("msgId", context.getMsgId());
+                observed.put("transactionIdPresent", context.getTransactionId() != null);
+                if (context.getTransactionId() != null) {
+                    observed.put("transactionId", context.getTransactionId());
+                }
+                observed.put("transactionState", context.getTransactionState().name());
+                observed.put("fromTransactionCheck", context.isFromTransactionCheck());
+                observed.put("messageMutation", context.getMessage().getProperty("END_HOOK_MARKER"));
+                contexts.add(observed);
+            }
+        });
+        result.put("presentAfterRegistration", implementation.hasEndTransactionHook());
+        implementation.doExecuteEndTransactionHook(message, "MSG-001", "10.0.0.1:10911",
+            LocalTransactionState.COMMIT_MESSAGE, false);
+        Message checkMessage = new Message("orders", new byte[] {1});
+        checkMessage.setTransactionId("id");
+        implementation.doExecuteEndTransactionHook(checkMessage, "id", "127.0.0.1:10911",
+            LocalTransactionState.ROLLBACK_MESSAGE, true);
+        Message manualMessage = new Message("orders", new byte[] {1});
+        EndTransactionContext manualContext = new EndTransactionContext();
+        manualContext.setProducerGroup("direct-producer");
+        manualContext.setMessage(manualMessage);
+        manualContext.setBrokerAddr("192.0.2.1:10911");
+        manualContext.setMsgId("manual-msg");
+        manualContext.setTransactionId("TX-MANUAL");
+        manualContext.setTransactionState(LocalTransactionState.UNKNOW);
+        manualContext.setFromTransactionCheck(true);
+        implementation.executeEndTransactionHook(manualContext);
+        result.put("events", events);
+        result.put("contexts", contexts);
+        result.put("finalMessageMarker", manualMessage.getProperty("END_HOOK_MARKER"));
         return result;
     }
 

@@ -331,7 +331,7 @@ impl TransactionProducer {
 
     async fn send_initial_end_transaction(
         &self,
-        message: &Message,
+        message: &mut Message,
         send_result: &SendResult,
         state: LocalTransactionState,
         callback_error: Option<&str>,
@@ -376,11 +376,10 @@ impl TransactionProducer {
         };
         let remark =
             callback_error.map(|error| format!("executeLocalTransactionBranch exception: {error}"));
-        self.producer.append_end_transaction_trace(
+        self.producer.do_execute_end_transaction_hook(
             message,
             &header.msg_id,
             &broker_addr,
-            header.transaction_id.as_deref(),
             state,
             false,
         );
@@ -713,7 +712,7 @@ impl TransactionRuntime {
                             &remote,
                             &header,
                             LocalTransactionState::Unknown,
-                            Some(&callback_message_backup),
+                            Some(callback_message_backup),
                             Some("transaction executor rejected check"),
                         )
                         .await;
@@ -733,7 +732,7 @@ impl TransactionRuntime {
                                 &remote,
                                 &header,
                                 outcome.state,
-                                Some(&outcome.message),
+                                Some(outcome.message),
                                 outcome.error.as_deref(),
                             )
                             .await;
@@ -745,7 +744,7 @@ impl TransactionRuntime {
                                 &remote,
                                 &header,
                                 LocalTransactionState::Unknown,
-                                Some(&callback_message_backup),
+                                Some(callback_message_backup),
                                 Some("transaction executor dropped check callback"),
                             )
                             .await;
@@ -770,7 +769,7 @@ impl TransactionRuntime {
                 &job.remote,
                 &header,
                 outcome.state,
-                Some(&outcome.message),
+                Some(outcome.message),
                 outcome.error.as_deref(),
             )
             .await;
@@ -783,13 +782,13 @@ impl TransactionRuntime {
         remote: &str,
         check_header: &CheckTransactionStateRequestHeader,
         state: LocalTransactionState,
-        message: Option<&MessageExt>,
+        message: Option<MessageExt>,
         callback_error: Option<&str>,
     ) {
         if remote.is_empty() {
             return;
         }
-        let Some(message) = message else {
+        let Some(mut message) = message else {
             return;
         };
         let unique_key = message
@@ -812,11 +811,10 @@ impl TransactionRuntime {
         };
         let remark =
             callback_error.map(|error| format!("checkLocalTransactionState Exception: {error}"));
-        producer.append_end_transaction_trace(
-            message.message(),
+        producer.do_execute_end_transaction_hook(
+            message.message_mut(),
             &header.msg_id,
             remote,
-            header.transaction_id.as_deref(),
             state,
             true,
         );
@@ -996,6 +994,7 @@ fn decode_message_id_offset(message_id: &str) -> Option<i64> {
 #[allow(deprecated)]
 mod tests {
     use super::*;
+    use crate::{EndTransactionContext, EndTransactionHook};
     use base64::Engine as _;
     use rocketmq_classic_common::message::{MessageQueue, decode_properties};
     use rocketmq_classic_core::{route::TopicSnapshot, runtime::ClientRuntimeManager};
@@ -1035,6 +1034,109 @@ mod tests {
                 check_panic: false,
                 check_message: Mutex::new(None),
             }
+        }
+    }
+
+    #[derive(Clone, Default)]
+    struct EndHookProbe {
+        events: Arc<Mutex<Vec<String>>>,
+        contexts: Arc<Mutex<Vec<serde_json::Value>>>,
+    }
+
+    impl EndHookProbe {
+        fn install(&self, producer: &TransactionProducer) {
+            producer.register_end_transaction_hook(Arc::new(FirstEndHook(self.clone())));
+            producer.register_end_transaction_hook(Arc::new(PanickingEndHook(self.clone())));
+            producer.register_end_transaction_hook(Arc::new(LastEndHook(self.clone())));
+        }
+    }
+
+    fn end_hook_phase(context: &EndTransactionContext<'_>) -> &'static str {
+        if context.from_transaction_check {
+            "check"
+        } else {
+            "local"
+        }
+    }
+
+    fn end_hook_state(context: &EndTransactionContext<'_>) -> &'static str {
+        match context.transaction_state {
+            LocalTransactionState::Commit => "COMMIT_MESSAGE",
+            LocalTransactionState::Rollback => "ROLLBACK_MESSAGE",
+            LocalTransactionState::Unknown => "UNKNOW",
+        }
+    }
+
+    struct FirstEndHook(EndHookProbe);
+
+    impl EndTransactionHook for FirstEndHook {
+        fn hook_name(&self) -> &str {
+            "fixture-first"
+        }
+
+        fn end_transaction(&self, context: &mut EndTransactionContext<'_>) {
+            let phase = end_hook_phase(context);
+            self.0
+                .events
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(format!("first:{phase}"));
+            let _ = context
+                .message
+                .set_system_property("END_HOOK_MARKER", phase);
+        }
+    }
+
+    struct PanickingEndHook(EndHookProbe);
+
+    impl EndTransactionHook for PanickingEndHook {
+        fn hook_name(&self) -> &str {
+            "fixture-throws"
+        }
+
+        fn end_transaction(&self, context: &mut EndTransactionContext<'_>) {
+            let phase = end_hook_phase(context);
+            self.0
+                .events
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(format!("throws:{phase}"));
+            panic!("fixture hook failure");
+        }
+    }
+
+    struct LastEndHook(EndHookProbe);
+
+    impl EndTransactionHook for LastEndHook {
+        fn hook_name(&self) -> &str {
+            "fixture-last"
+        }
+
+        fn end_transaction(&self, context: &mut EndTransactionContext<'_>) {
+            let phase = end_hook_phase(context);
+            self.0
+                .events
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(format!("last:{phase}"));
+            let mut observed = serde_json::json!({
+                "producerGroup": context.producer_group.as_str(),
+                "topic": context.message.topic(),
+                "brokerAddr": context.broker_addr.as_str(),
+                "msgId": context.message_id.as_str(),
+                "transactionIdPresent": context.transaction_id.is_some(),
+                "transactionState": end_hook_state(context),
+                "fromTransactionCheck": context.from_transaction_check,
+                "messageMutation": context.message.properties().get("END_HOOK_MARKER"),
+            });
+            if let Some(transaction_id) = &context.transaction_id {
+                observed["transactionId"] = serde_json::json!(transaction_id);
+            }
+            self.0
+                .contexts
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(observed);
         }
     }
 
@@ -1434,6 +1536,79 @@ mod tests {
             assert_eq!(actual, expected);
             producer.shutdown().await.unwrap();
         }
+    }
+
+    #[tokio::test]
+    async fn p18_end_transaction_hooks_match_java_context_order_and_exception_isolation() {
+        let mut listener = TestListener::new(Some(LocalTransactionState::Commit));
+        listener.check_state = Some(LocalTransactionState::Rollback);
+        let producer =
+            started_producer("transaction-producer", "orders", Some(Arc::new(listener))).await;
+        let probe = EndHookProbe::default();
+        assert!(!producer.has_end_transaction_hook());
+        probe.install(&producer);
+        assert!(producer.has_end_transaction_hook());
+
+        producer
+            .producer
+            .scripted_transport
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .responses
+            .push_back(Ok(Some(scripted_result(SendStatus::SendOk, "orders"))));
+        let mut message = Message::new("orders", b"half-message".to_vec());
+        producer
+            .send_message_in_transaction(&mut message, None)
+            .await
+            .unwrap();
+
+        producer
+            .transaction
+            .request_processor()
+            .process_with_context("127.0.0.1:10911", check_command())
+            .unwrap();
+        wait_for_end_transactions(&producer, 2).await;
+
+        let mut manual_message = Message::new("orders", b"manual-message".to_vec());
+        let mut manual_context = EndTransactionContext {
+            producer_group: "direct-producer".into(),
+            message: &mut manual_message,
+            broker_addr: "192.0.2.1:10911".into(),
+            message_id: "manual-msg".into(),
+            transaction_id: Some("TX-MANUAL".into()),
+            transaction_state: LocalTransactionState::Unknown,
+            from_transaction_check: true,
+        };
+        producer.execute_end_transaction_hook(&mut manual_context);
+
+        let expected = transaction_fixture()["transactionFlow"]["endTransactionHooks"].clone();
+        let events = probe
+            .events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        let contexts = probe
+            .contexts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        assert_eq!(serde_json::json!(events), expected["events"]);
+        assert_eq!(serde_json::json!(contexts), expected["contexts"]);
+        assert_eq!(
+            message
+                .properties()
+                .get("END_HOOK_MARKER")
+                .map(String::as_str),
+            Some("local")
+        );
+        assert_eq!(
+            manual_message
+                .properties()
+                .get("END_HOOK_MARKER")
+                .map(String::as_str),
+            expected["finalMessageMarker"].as_str()
+        );
+        producer.shutdown().await.unwrap();
     }
 
     #[tokio::test]

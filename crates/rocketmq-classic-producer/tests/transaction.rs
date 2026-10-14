@@ -1,12 +1,36 @@
-use std::{any::Any, sync::Arc};
+use std::{
+    any::Any,
+    sync::{Arc, Mutex},
+};
 
 use rocketmq_classic_common::message::{Message, MessageExt};
 use rocketmq_classic_producer::{
-    LocalTransactionState, ProducerConfig, ProducerError, RpcHook, TransactionCallbackError,
-    TransactionListener, TransactionProducer,
+    EndTransactionContext, EndTransactionHook, LocalTransactionState, Producer, ProducerConfig,
+    ProducerError, RpcHook, TransactionCallbackError, TransactionListener, TransactionProducer,
 };
 
 struct NoopListener;
+
+struct CaptureEndTransactionHook(Arc<Mutex<Vec<String>>>);
+
+impl EndTransactionHook for CaptureEndTransactionHook {
+    fn hook_name(&self) -> &str {
+        "public-api-capture"
+    }
+
+    fn end_transaction(&self, context: &mut EndTransactionContext<'_>) {
+        self.0.lock().unwrap().push(format!(
+            "{}:{}:{}:{}:{}:{}",
+            context.producer_group,
+            context.message_id,
+            context.broker_addr,
+            context.transaction_id.as_deref().unwrap_or("<null>"),
+            context.transaction_state.java_name(),
+            context.from_transaction_check,
+        ));
+        let _ = context.message.set_system_property("HOOKED", "true");
+    }
+}
 
 impl TransactionListener for NoopListener {
     fn execute_local_transaction(
@@ -43,6 +67,59 @@ fn java_rpc_hook_constructor_is_available_from_the_public_crate_api() {
         Some(Arc::new(Hook)),
     );
     assert!(producer.executor_service().is_none());
+}
+
+#[test]
+fn end_transaction_hook_context_and_methods_are_available_from_the_public_crate_api() {
+    let producer = Producer::new(ProducerConfig::new("end-hook-public-api").unwrap());
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    assert!(!producer.has_end_transaction_hook());
+    producer.register_end_transaction_hook(Arc::new(CaptureEndTransactionHook(observed.clone())));
+    assert!(producer.has_end_transaction_hook());
+
+    let mut direct_message = Message::new("orders", b"direct".to_vec());
+    let mut direct_context = EndTransactionContext {
+        producer_group: "direct-group".into(),
+        message: &mut direct_message,
+        broker_addr: "192.0.2.10:10911".into(),
+        message_id: "direct-id".into(),
+        transaction_id: None,
+        transaction_state: LocalTransactionState::Rollback,
+        from_transaction_check: true,
+    };
+    producer.execute_end_transaction_hook(&mut direct_context);
+
+    let mut automatic_message = Message::new("orders", b"automatic".to_vec());
+    automatic_message.set_transaction_id(Some("transaction-id".into()));
+    producer.do_execute_end_transaction_hook(
+        &mut automatic_message,
+        "automatic-id",
+        "192.0.2.11:10911",
+        LocalTransactionState::Commit,
+        false,
+    );
+
+    assert_eq!(
+        observed.lock().unwrap().as_slice(),
+        [
+            "direct-group:direct-id:192.0.2.10:10911:<null>:ROLLBACK_MESSAGE:true",
+            "end-hook-public-api:automatic-id:192.0.2.11:10911:transaction-id:COMMIT_MESSAGE:false",
+        ]
+    );
+    assert_eq!(
+        direct_message
+            .properties()
+            .get("HOOKED")
+            .map(String::as_str),
+        Some("true")
+    );
+    assert_eq!(
+        automatic_message
+            .properties()
+            .get("HOOKED")
+            .map(String::as_str),
+        Some("true")
+    );
 }
 
 #[test]

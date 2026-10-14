@@ -8,7 +8,7 @@ use rocketmq_classic_common::message::{Message, MessageQueue};
 use rocketmq_classic_core::api::producer::{SendMode, SendResult};
 use rocketmq_classic_protocol::codes::JavaEnumLookupError;
 
-use crate::{Producer, ProducerError};
+use crate::{LocalTransactionState, Producer, ProducerError};
 
 /// Borrowed error object exposed to a synchronous send hook, preserving its
 /// concrete Rust error type for inspection or downcasting.
@@ -126,6 +126,30 @@ pub trait SendMessageHook: Send + Sync + 'static {
 }
 
 pub(crate) type SendMessageHookList = RwLock<Vec<Arc<dyn SendMessageHook>>>;
+
+/// Transaction completion context corresponding to Java's
+/// `EndTransactionContext`. Hooks run immediately before the end-transaction
+/// request is sent. The message is mutable, while the already prepared RPC
+/// header retains the values captured before hook execution, as in Java.
+pub struct EndTransactionContext<'a> {
+    pub producer_group: String,
+    pub message: &'a mut Message,
+    pub broker_addr: String,
+    pub message_id: String,
+    pub transaction_id: Option<String>,
+    pub transaction_state: LocalTransactionState,
+    pub from_transaction_check: bool,
+}
+
+/// Observes a local transaction result or a Broker transaction check before
+/// the client sends its end-transaction request.
+pub trait EndTransactionHook: Send + Sync + 'static {
+    fn hook_name(&self) -> &str;
+
+    fn end_transaction(&self, _context: &mut EndTransactionContext<'_>) {}
+}
+
+pub(crate) type EndTransactionHookList = RwLock<Vec<Arc<dyn EndTransactionHook>>>;
 
 #[cfg(test)]
 mod tests {

@@ -25,8 +25,8 @@ pub use error::ProducerError;
 pub use executor::{AsyncSenderExecutor, AsyncSenderTask};
 pub use fault::ProducerLongArray;
 pub use hooks::{
-    CheckForbiddenContext, CheckForbiddenHook, CommunicationMode, HookException,
-    SendMessageContext, SendMessageHook, SendMessageType,
+    CheckForbiddenContext, CheckForbiddenHook, CommunicationMode, EndTransactionContext,
+    EndTransactionHook, HookException, SendMessageContext, SendMessageHook, SendMessageType,
 };
 pub use producer::Producer;
 pub use recall::RecallMessageHandle;
