@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use crate::SharedValue;
+use crate::serde_fastjson;
 use rocketmq_classic_common::message::MessageQueue;
-use rocketmq_classic_common::serde_fastjson;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::DeserializeOwned};
 
 pub type SharedBrokerAddressMap = SharedValue<serde_fastjson::NullableLongStringMap>;

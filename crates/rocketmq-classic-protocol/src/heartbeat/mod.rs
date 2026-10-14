@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 
 use crate::SharedValue;
 use crate::codes::JavaEnumLookupError;
-use rocketmq_classic_common::serde_fastjson;
+use crate::serde_fastjson;
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, de};
 use std::fmt;
@@ -1248,7 +1248,7 @@ impl<'de> Deserialize<'de> for HeartbeatData {
 #[cfg(test)]
 mod fastjson_dto_input_tests {
     use super::{ConsumerData, HeartbeatData, ProducerData, SubscriptionData};
-    use rocketmq_classic_common::serde_fastjson;
+    use crate::serde_fastjson;
 
     fn normalize_json(value: &mut serde_json::Value) {
         match value {

@@ -1,5 +1,5 @@
-use crate::{SharedValue, codes::JavaEnumLookupError, heartbeat::SubscriptionData};
-use rocketmq_classic_common::{message::MessageQueue, serde_fastjson};
+use crate::{SharedValue, codes::JavaEnumLookupError, heartbeat::SubscriptionData, serde_fastjson};
+use rocketmq_classic_common::message::MessageQueue;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use std::{collections::BTreeMap, hash::Hash};
 
@@ -2349,12 +2349,12 @@ impl BitSet {
 mod bitset_base64 {
     use super::BitSet;
     use crate::SharedValue;
+    use crate::serde_fastjson;
     use base64::{
         Engine as _, alphabet, engine::general_purpose::GeneralPurpose,
         engine::general_purpose::GeneralPurposeConfig, engine::general_purpose::NO_PAD,
         engine::general_purpose::STANDARD,
     };
-    use rocketmq_classic_common::serde_fastjson;
     use serde::{Deserializer, Serializer};
 
     // Java's Basic decoder ignores unused low bits in the final Base64 symbol.
