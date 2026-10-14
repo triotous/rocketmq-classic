@@ -799,7 +799,7 @@ impl Producer {
                     .map(Some)
                     .ok_or_else(|| last_error.unwrap_or(ProducerError::Timeout));
             }
-            let latency_fault_enabled = self.config.client_config().send_latency_enable();
+            let latency_fault_enabled = self.send_latency_fault_enable();
             if attempt > 0 && latency_fault_enabled {
                 self.selector.reset(hooked_message.topic());
             }
@@ -893,11 +893,8 @@ impl Producer {
                 Err(error) => {
                     let (isolation, reachable, retry) = match &error {
                         ProducerError::Rpc(rpc) => {
-                            let (isolation, reachable) = classify_fault(
-                                rpc,
-                                mode,
-                                self.config.client_config().start_detector_enable(),
-                            );
+                            let (isolation, reachable) =
+                                classify_fault(rpc, mode, self.start_detector_enable());
                             (
                                 isolation,
                                 reachable,
@@ -1166,11 +1163,8 @@ impl Producer {
                 }
                 Err(error) => {
                     if let ProducerError::Rpc(rpc) = &error {
-                        let (isolation, reachable) = classify_fault(
-                            rpc,
-                            SendMode::Future,
-                            self.config.client_config().start_detector_enable(),
-                        );
+                        let (isolation, reachable) =
+                            classify_fault(rpc, SendMode::Future, self.start_detector_enable());
                         self.update_fault(&current_broker, latency, isolation, reachable);
                     }
                     outcome = Err(error);
@@ -1189,7 +1183,7 @@ impl Producer {
                         let selected = self.fault.select(
                             &info.publish_queues,
                             Some(&current_broker),
-                            self.config.client_config().send_latency_enable(),
+                            self.send_latency_fault_enable(),
                             |length| self.selector.next_index(&topic, length),
                             StdInstant::now(),
                         );
@@ -1591,7 +1585,7 @@ impl Producer {
     }
 
     fn update_fault(&self, broker: &str, latency: Duration, isolation: bool, reachable: bool) {
-        if self.config.client_config().send_latency_enable() {
+        if self.send_latency_fault_enable() {
             self.fault
                 .update(broker, latency, isolation, reachable, StdInstant::now());
         }
@@ -3445,6 +3439,215 @@ mod tests {
 
         assert_eq!(snapshot.compress_threshold(), 4_096);
         assert_eq!(snapshot.compress_level(), 5);
+    }
+
+    #[test]
+    fn runtime_fault_strategy_settings_match_java_and_change_later_selection() {
+        let producer =
+            crate::Producer::new(crate::ProducerConfig::new("runtime-fault-settings").unwrap());
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+        let runtime = &fixture["runtimeFaultStrategy"];
+        let defaults = &fixture["faultStrategy"];
+        let values = |name: &str| {
+            runtime[name]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_i64().unwrap())
+                .collect::<Vec<_>>()
+        };
+
+        let latency_input = crate::ProducerLongArray::new(values("initialLatencyMaxMillis"));
+        let duration_input =
+            crate::ProducerLongArray::new(values("initialNotAvailableDurationMillis"));
+        assert_eq!(
+            producer.latency_max_millis().snapshot(),
+            defaults["latencyMaxMillis"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_i64().unwrap())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            producer.not_available_duration_millis().snapshot(),
+            defaults["notAvailableDurationMillis"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_i64().unwrap())
+                .collect::<Vec<_>>()
+        );
+        producer.set_latency_max_millis(latency_input.clone());
+        producer.set_not_available_duration_millis(duration_input.clone());
+        producer.set_send_latency_fault_enable(true);
+        producer.set_start_detector_enable(true);
+        let mutation = |name: &str| {
+            let mutation = &runtime[name];
+            (
+                mutation["index"].as_u64().unwrap() as usize,
+                mutation["value"].as_i64().unwrap(),
+            )
+        };
+        let (index, value) = mutation("latencyInputMutation");
+        let previous = latency_input.get(index);
+        assert_eq!(latency_input.set(index, value), previous);
+        let (index, value) = mutation("latencyGetterMutation");
+        let latency_getter = producer.latency_max_millis();
+        let previous = latency_getter.get(index);
+        assert_eq!(latency_getter.set(index, value), previous);
+        let (index, value) = mutation("durationInputMutation");
+        let previous = duration_input.get(index);
+        assert_eq!(duration_input.set(index, value), previous);
+        let (index, value) = mutation("durationGetterMutation");
+        let duration_getter = producer.not_available_duration_millis();
+        let previous = duration_getter.get(index);
+        assert_eq!(duration_getter.set(index, value), previous);
+        assert_eq!(producer.latency_max_millis(), latency_input);
+        assert_eq!(producer.not_available_duration_millis(), duration_input);
+        assert_eq!(latency_getter.snapshot(), values("latencyMaxMillis"));
+        assert_eq!(
+            duration_getter.snapshot(),
+            values("notAvailableDurationMillis")
+        );
+        assert!(runtime["latencyArrayIdentityRetained"].as_bool().unwrap());
+        assert!(runtime["durationArrayIdentityRetained"].as_bool().unwrap());
+        assert!(runtime["latencyGetterIdentityRetained"].as_bool().unwrap());
+        assert!(runtime["durationGetterIdentityRetained"].as_bool().unwrap());
+        assert_eq!(
+            producer.send_latency_fault_enable(),
+            runtime["sendLatencyFaultEnableAfterToggle"]
+        );
+        assert_eq!(
+            producer.start_detector_enable(),
+            runtime["startDetectorEnableAfterToggle"]
+        );
+
+        producer.update_fault("enabled-broker", Duration::from_millis(18), false, true);
+        let available_queues = [
+            MessageQueue::new("orders", "enabled-broker", 0),
+            MessageQueue::new("orders", "fallback-broker", 0),
+        ];
+        let mut index = 0;
+        let selected = producer
+            .fault
+            .select(
+                &available_queues,
+                None,
+                producer.send_latency_fault_enable(),
+                |length| {
+                    let current = index;
+                    index += 1;
+                    current % length
+                },
+                StdInstant::now(),
+            )
+            .unwrap();
+        assert_eq!(
+            selected.broker_name(),
+            Some(if runtime["enabledBrokerAvailable"].as_bool().unwrap() {
+                "enabled-broker"
+            } else {
+                "fallback-broker"
+            })
+        );
+
+        producer.set_send_latency_fault_enable(false);
+        producer.update_fault("disabled-broker", Duration::from_millis(15), false, true);
+        assert_eq!(
+            producer.send_latency_fault_enable(),
+            runtime["sendLatencyFaultEnableAfterDisable"]
+        );
+        producer.set_send_latency_fault_enable(true);
+        let disabled_queues = [
+            MessageQueue::new("orders", "disabled-broker", 0),
+            MessageQueue::new("orders", "fallback-broker", 0),
+        ];
+        assert_eq!(
+            producer
+                .fault
+                .select(
+                    &disabled_queues,
+                    None,
+                    producer.send_latency_fault_enable(),
+                    |_| 0,
+                    StdInstant::now(),
+                )
+                .unwrap()
+                .broker_name(),
+            Some(if runtime["disabledBrokerAvailable"].as_bool().unwrap() {
+                "disabled-broker"
+            } else {
+                "fallback-broker"
+            })
+        );
+
+        let prior_latency = producer.latency_max_millis();
+        let replacement_latency = crate::ProducerLongArray::new(vec![20]);
+        producer.set_latency_max_millis(replacement_latency.clone());
+        assert!(prior_latency.set(0, 0).is_some());
+        assert_eq!(
+            replacement_latency.snapshot(),
+            values("latencyReplacementValues")
+        );
+        assert!(
+            runtime["latencyReplacementIdentityRetained"]
+                .as_bool()
+                .unwrap()
+        );
+        let prior_duration = producer.not_available_duration_millis();
+        let replacement_duration = crate::ProducerLongArray::new(vec![0]);
+        producer.set_not_available_duration_millis(replacement_duration.clone());
+        assert!(prior_duration.set(0, 999).is_some());
+        assert_eq!(
+            replacement_duration.snapshot(),
+            values("durationReplacementValues")
+        );
+        assert!(
+            runtime["durationReplacementIdentityRetained"]
+                .as_bool()
+                .unwrap()
+        );
+        producer.update_fault(
+            "updated-table-broker",
+            Duration::from_millis(15),
+            false,
+            true,
+        );
+        let updated_table_queues = [
+            MessageQueue::new("orders", "updated-table-broker", 0),
+            MessageQueue::new("orders", "fallback-broker", 0),
+        ];
+        assert_eq!(
+            producer
+                .fault
+                .select(
+                    &updated_table_queues,
+                    None,
+                    producer.send_latency_fault_enable(),
+                    |_| 0,
+                    StdInstant::now(),
+                )
+                .unwrap()
+                .broker_name(),
+            Some(
+                if runtime["updatedTableBrokerAvailable"].as_bool().unwrap() {
+                    "updated-table-broker"
+                } else {
+                    "fallback-broker"
+                }
+            )
+        );
+        assert_eq!(
+            producer.send_latency_fault_enable(),
+            runtime["sendLatencyFaultEnableAfterReenable"]
+        );
+        producer.set_start_detector_enable(false);
+        assert_eq!(
+            producer.start_detector_enable(),
+            runtime["startDetectorEnableAfterDisable"]
+        );
     }
 
     #[tokio::test]

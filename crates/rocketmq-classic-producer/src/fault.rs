@@ -1,11 +1,95 @@
 use std::{
     collections::HashMap,
-    sync::Mutex,
+    fmt,
+    sync::{
+        Arc, Mutex, PoisonError, RwLock,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 
 use crate::config::{DEFAULT_LATENCY_MAX_MILLIS, DEFAULT_NOT_AVAILABLE_DURATION_MILLIS};
 use rocketmq_classic_common::message::MessageQueue;
+
+/// A shared, safely mutable producer fault-strategy array.
+///
+/// Cloned handles refer to the same values. This matches Java's producer API,
+/// where setters retain the supplied `long[]` and getters return that same
+/// array for later fault updates to read.
+#[derive(Clone)]
+pub struct ProducerLongArray {
+    values: Arc<RwLock<Vec<i64>>>,
+}
+
+impl ProducerLongArray {
+    pub fn new(values: Vec<i64>) -> Self {
+        Self {
+            values: Arc::new(RwLock::new(values)),
+        }
+    }
+
+    /// Returns a detached copy of the current array values.
+    pub fn snapshot(&self) -> Vec<i64> {
+        self.values
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Returns one value, or `None` when `index` is outside the fixed array.
+    pub fn get(&self, index: usize) -> Option<i64> {
+        self.values
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(index)
+            .copied()
+    }
+
+    /// Replaces one value and returns its previous value, or `None` when
+    /// `index` is outside the fixed array.
+    pub fn set(&self, index: usize, value: i64) -> Option<i64> {
+        let mut values = self.values.write().unwrap_or_else(PoisonError::into_inner);
+        let slot = values.get_mut(index)?;
+        Some(std::mem::replace(slot, value))
+    }
+
+    pub fn len(&self) -> usize {
+        self.values
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.values
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_empty()
+    }
+}
+
+impl From<Vec<i64>> for ProducerLongArray {
+    fn from(values: Vec<i64>) -> Self {
+        Self::new(values)
+    }
+}
+
+impl fmt::Debug for ProducerLongArray {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("ProducerLongArray")
+            .field(&self.snapshot())
+            .finish()
+    }
+}
+
+impl PartialEq for ProducerLongArray {
+    fn eq(&self, other: &Self) -> bool {
+        self.snapshot() == other.snapshot()
+    }
+}
+
+impl Eq for ProducerLongArray {}
 
 #[derive(Clone, Copy, Debug)]
 struct FaultItem {
@@ -20,8 +104,10 @@ struct FaultItem {
 /// checked without sleeping.
 pub(crate) struct FaultStrategy {
     items: Mutex<HashMap<String, FaultItem>>,
-    latency_max_millis: Vec<i64>,
-    not_available_duration_millis: Vec<i64>,
+    latency_max_millis: RwLock<ProducerLongArray>,
+    not_available_duration_millis: RwLock<ProducerLongArray>,
+    send_latency_fault_enable: AtomicBool,
+    start_detector_enable: AtomicBool,
 }
 
 impl Default for FaultStrategy {
@@ -40,9 +126,58 @@ impl FaultStrategy {
     ) -> Self {
         Self {
             items: Mutex::new(HashMap::new()),
-            latency_max_millis,
-            not_available_duration_millis,
+            latency_max_millis: RwLock::new(ProducerLongArray::new(latency_max_millis)),
+            not_available_duration_millis: RwLock::new(ProducerLongArray::new(
+                not_available_duration_millis,
+            )),
+            send_latency_fault_enable: AtomicBool::new(false),
+            start_detector_enable: AtomicBool::new(false),
         }
+    }
+
+    pub(crate) fn latency_max_millis(&self) -> ProducerLongArray {
+        self.latency_max_millis
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    pub(crate) fn set_latency_max_millis(&self, value: ProducerLongArray) {
+        *self
+            .latency_max_millis
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = value;
+    }
+
+    pub(crate) fn not_available_duration_millis(&self) -> ProducerLongArray {
+        self.not_available_duration_millis
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    pub(crate) fn set_not_available_duration_millis(&self, value: ProducerLongArray) {
+        *self
+            .not_available_duration_millis
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = value;
+    }
+
+    pub(crate) fn send_latency_fault_enable(&self) -> bool {
+        self.send_latency_fault_enable.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn set_send_latency_fault_enable(&self, value: bool) {
+        self.send_latency_fault_enable
+            .store(value, Ordering::SeqCst);
+    }
+
+    pub(crate) fn start_detector_enable(&self) -> bool {
+        self.start_detector_enable.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn set_start_detector_enable(&self, value: bool) {
+        self.start_detector_enable.store(value, Ordering::SeqCst);
     }
 
     pub(crate) fn update(
@@ -58,11 +193,32 @@ impl FaultStrategy {
         } else {
             latency.as_millis().min(u128::from(u64::MAX)) as u64
         };
-        let duration = unavailable_duration(
-            duration_key,
-            &self.latency_max_millis,
-            &self.not_available_duration_millis,
-        )
+        let latency_max_millis = self.latency_max_millis();
+        let not_available_duration_millis = self.not_available_duration_millis();
+        let duration = if Arc::ptr_eq(
+            &latency_max_millis.values,
+            &not_available_duration_millis.values,
+        ) {
+            let values = latency_max_millis
+                .values
+                .read()
+                .unwrap_or_else(PoisonError::into_inner);
+            unavailable_duration(duration_key, &values, &values)
+        } else {
+            let latency_max_values = latency_max_millis
+                .values
+                .read()
+                .unwrap_or_else(PoisonError::into_inner);
+            let not_available_duration_values = not_available_duration_millis
+                .values
+                .read()
+                .unwrap_or_else(PoisonError::into_inner);
+            unavailable_duration(
+                duration_key,
+                &latency_max_values,
+                &not_available_duration_values,
+            )
+        }
         .max(0) as u64;
         let mut items = self
             .items
@@ -300,6 +456,22 @@ mod tests {
         assert_eq!(
             fault.item("broker-a").unwrap().1,
             now + Duration::from_millis(300)
+        );
+    }
+
+    #[test]
+    fn same_shared_handle_can_supply_both_java_latency_arrays() {
+        let now = Instant::now();
+        let values = ProducerLongArray::new(vec![10, 30, 100]);
+        let fault = FaultStrategy::new(Vec::new(), Vec::new());
+        fault.set_latency_max_millis(values.clone());
+        fault.set_not_available_duration_millis(values);
+
+        fault.update("broker-a", Duration::from_millis(20), false, true, now);
+
+        assert_eq!(
+            fault.item("broker-a").unwrap().1,
+            now + Duration::from_millis(10)
         );
     }
 

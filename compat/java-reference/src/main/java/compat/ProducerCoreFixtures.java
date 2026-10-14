@@ -293,6 +293,7 @@ public final class ProducerCoreFixtures {
         faultStrategy.put("probeQueueId", 0);
         faultStrategy.put("probeCommitted", true);
         result.put("faultStrategy", faultStrategy);
+        result.put("runtimeFaultStrategy", runtimeFaultStrategy());
 
         String uniqueId = MessageClientIDSetter.createUniqID();
         int ipBytes = MessageClientIDSetter.getIPFromID(uniqueId).length;
@@ -524,6 +525,86 @@ public final class ProducerCoreFixtures {
         } catch (ReflectiveOperationException error) {
             throw new IllegalStateException("cannot invoke pinned producer compression method", error);
         }
+    }
+
+    private static Map<String, Object> runtimeFaultStrategy() {
+        try {
+            DefaultMQProducer producer = new DefaultMQProducer("runtime-fault-strategy");
+            long[] latencyMax = {10, 20};
+            long[] notAvailable = {100, 300};
+            producer.setLatencyMax(latencyMax);
+            producer.setNotAvailableDuration(notAvailable);
+            producer.setSendLatencyFaultEnable(true);
+            producer.setStartDetectorEnable(true);
+            long[] returnedLatencyMax = producer.getLatencyMax();
+            long[] returnedNotAvailable = producer.getNotAvailableDuration();
+            latencyMax[1] = 16;
+            returnedLatencyMax[0] = 12;
+            notAvailable[0] = 200;
+            returnedNotAvailable[1] = 400;
+
+            Field implementationField = DefaultMQProducer.class.getDeclaredField("defaultMQProducerImpl");
+            implementationField.setAccessible(true);
+            Object implementation = implementationField.get(producer);
+            Object fault = implementation.getClass().getMethod("getMqFaultStrategy").invoke(implementation);
+            Method update = fault.getClass().getMethod("updateFaultItem",
+                String.class, long.class, boolean.class, boolean.class);
+            update.invoke(fault, "enabled-broker", 18L, false, true);
+            Field toleranceField = fault.getClass().getDeclaredField("latencyFaultTolerance");
+            toleranceField.setAccessible(true);
+            Object tolerance = toleranceField.get(fault);
+            Method isAvailable = tolerance.getClass().getMethod("isAvailable", String.class);
+
+            Map<String, Object> result = new TreeMap<>();
+            result.put("initialLatencyMaxMillis", longs(new long[] {10, 20}));
+            result.put("initialNotAvailableDurationMillis", longs(new long[] {100, 300}));
+            result.put("latencyInputMutation", indexedValue(1, 16));
+            result.put("latencyGetterMutation", indexedValue(0, 12));
+            result.put("durationInputMutation", indexedValue(0, 200));
+            result.put("durationGetterMutation", indexedValue(1, 400));
+            result.put("latencyMaxMillis", longs(producer.getLatencyMax()));
+            result.put("notAvailableDurationMillis", longs(producer.getNotAvailableDuration()));
+            result.put("latencyArrayIdentityRetained", producer.getLatencyMax() == latencyMax);
+            result.put("durationArrayIdentityRetained", producer.getNotAvailableDuration() == notAvailable);
+            result.put("latencyGetterIdentityRetained", producer.getLatencyMax() == returnedLatencyMax);
+            result.put("durationGetterIdentityRetained", producer.getNotAvailableDuration() == returnedNotAvailable);
+            result.put("sendLatencyFaultEnableAfterToggle", producer.isSendLatencyFaultEnable());
+            result.put("enabledBrokerAvailable", isAvailable.invoke(tolerance, "enabled-broker"));
+
+            producer.setSendLatencyFaultEnable(false);
+            update.invoke(fault, "disabled-broker", 15L, false, true);
+            result.put("sendLatencyFaultEnableAfterDisable", producer.isSendLatencyFaultEnable());
+            result.put("disabledBrokerAvailable", isAvailable.invoke(tolerance, "disabled-broker"));
+            producer.setSendLatencyFaultEnable(true);
+            long[] priorLatencyMax = producer.getLatencyMax();
+            long[] replacementLatencyMax = {20};
+            producer.setLatencyMax(replacementLatencyMax);
+            priorLatencyMax[0] = 0;
+            long[] priorNotAvailable = producer.getNotAvailableDuration();
+            long[] replacementNotAvailable = {0};
+            producer.setNotAvailableDuration(replacementNotAvailable);
+            priorNotAvailable[0] = 999;
+            update.invoke(fault, "updated-table-broker", 15L, false, true);
+            result.put("sendLatencyFaultEnableAfterReenable", producer.isSendLatencyFaultEnable());
+            result.put("latencyReplacementValues", longs(producer.getLatencyMax()));
+            result.put("durationReplacementValues", longs(producer.getNotAvailableDuration()));
+            result.put("latencyReplacementIdentityRetained", producer.getLatencyMax() == replacementLatencyMax);
+            result.put("durationReplacementIdentityRetained", producer.getNotAvailableDuration() == replacementNotAvailable);
+            result.put("updatedTableBrokerAvailable", isAvailable.invoke(tolerance, "updated-table-broker"));
+            result.put("startDetectorEnableAfterToggle", producer.isStartDetectorEnable());
+            producer.setStartDetectorEnable(false);
+            result.put("startDetectorEnableAfterDisable", producer.isStartDetectorEnable());
+            return result;
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalStateException("cannot invoke pinned producer fault strategy", error);
+        }
+    }
+
+    private static Map<String, Object> indexedValue(int index, long value) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("index", index);
+        result.put("value", value);
+        return result;
     }
 
     private static Map<String, Object> compressionProperties() {

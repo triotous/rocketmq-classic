@@ -18,7 +18,8 @@ use rocketmq_classic_remoting::client::{CallbackExecutor, RpcHook};
 use rocketmq_classic_core::api::producer::{SendMode, SendResult};
 
 use crate::{
-    AsyncSenderExecutor, ProducerCompressor, ProducerConfig, ProducerError, RetryResponseCodes,
+    AsyncSenderExecutor, ProducerCompressor, ProducerConfig, ProducerError, ProducerLongArray,
+    RetryResponseCodes,
     accumulator::AutoBatchAccumulator,
     backpressure::{AdjustableSemaphore, BackpressureReadGuard},
     executor::TokioAsyncSenderExecutor,
@@ -165,6 +166,8 @@ impl Producer {
             config.latency_max_millis().to_vec(),
             config.not_available_duration_millis().to_vec(),
         );
+        fault.set_send_latency_fault_enable(config.send_latency_fault_enable());
+        fault.set_start_detector_enable(config.start_detector_enable());
         Self {
             ids,
             config,
@@ -255,6 +258,50 @@ impl Producer {
     /// Changes the compression level used by later sends.
     pub fn set_compress_level(&self, value: i32) {
         self.config.set_compress_level_runtime(value);
+    }
+
+    /// Returns whether later sends use latency and reachability based Broker
+    /// selection.
+    pub fn send_latency_fault_enable(&self) -> bool {
+        self.fault.send_latency_fault_enable()
+    }
+
+    /// Changes latency and reachability based Broker selection for later sends.
+    pub fn set_send_latency_fault_enable(&self, value: bool) {
+        self.fault.set_send_latency_fault_enable(value);
+    }
+
+    /// Returns the current latency thresholds used by the Producer fault
+    /// strategy.
+    pub fn latency_max_millis(&self) -> ProducerLongArray {
+        self.fault.latency_max_millis()
+    }
+
+    /// Changes the latency thresholds used for subsequent fault updates.
+    pub fn set_latency_max_millis(&self, value: impl Into<ProducerLongArray>) {
+        self.fault.set_latency_max_millis(value.into());
+    }
+
+    /// Returns the current Broker unavailability durations used by the
+    /// Producer fault strategy.
+    pub fn not_available_duration_millis(&self) -> ProducerLongArray {
+        self.fault.not_available_duration_millis()
+    }
+
+    /// Changes the Broker unavailability durations used for subsequent fault
+    /// updates.
+    pub fn set_not_available_duration_millis(&self, value: impl Into<ProducerLongArray>) {
+        self.fault.set_not_available_duration_millis(value.into());
+    }
+
+    /// Returns whether periodic Broker reachability checks are enabled.
+    pub fn start_detector_enable(&self) -> bool {
+        self.fault.start_detector_enable()
+    }
+
+    /// Changes whether the owned periodic task probes due Brokers.
+    pub fn set_start_detector_enable(&self, value: bool) {
+        self.fault.set_start_detector_enable(value);
     }
 
     /// Returns the current async backpressure mode. The value can be changed
@@ -474,10 +521,8 @@ impl Producer {
             lease,
         };
         self.start_trace_dispatcher(&runtime).await;
-        if self.config.client.start_detector_enable() {
-            let task = self.spawn_detector_task(Arc::downgrade(&runtime));
-            *self.detector_task.lock().await = Some(task);
-        }
+        let task = self.spawn_detector_task(Arc::downgrade(&runtime));
+        *self.detector_task.lock().await = Some(task);
         Ok(())
     }
 
@@ -615,7 +660,9 @@ impl Producer {
                 let Some(runtime) = runtime.upgrade() else {
                     break;
                 };
-                producer.detect_brokers(&runtime).await;
+                if producer.start_detector_enable() {
+                    producer.detect_brokers(&runtime).await;
+                }
             }
         })
     }
@@ -637,6 +684,9 @@ impl Producer {
     }
 
     async fn detect_brokers(&self, runtime: &ClientRuntime) {
+        if !self.start_detector_enable() {
+            return;
+        }
         let interval = Duration::from_millis(self.config.client.detect_interval().max(0) as u64);
         let due_brokers = self
             .fault
@@ -882,6 +932,42 @@ mod tests {
             producer.start().await,
             Err(ProducerError::Shutdown)
         ));
+    }
+
+    #[tokio::test]
+    async fn runtime_detector_toggle_skips_disabled_due_work_and_joins_on_shutdown() {
+        let manager = ClientRuntimeManager::new();
+        let producer = Arc::new(Producer::with_runtime_manager(
+            ProducerConfig::new("runtime-detector-toggle").unwrap(),
+            manager,
+        ));
+
+        assert!(!producer.start_detector_enable());
+        producer.start().await.unwrap();
+        assert!(producer.detector_task.lock().await.is_some());
+        let runtime = producer.started_runtime().await.unwrap();
+        producer.fault.update(
+            "disabled-detector-broker",
+            Duration::from_millis(100),
+            false,
+            true,
+            StdInstant::now(),
+        );
+        producer.detect_brokers(&runtime).await;
+        assert_eq!(
+            producer.fault.take_due_for_detection(
+                StdInstant::now() + Duration::from_secs(1),
+                Duration::from_secs(3)
+            ),
+            ["disabled-detector-broker"]
+        );
+        producer.set_start_detector_enable(true);
+        assert!(producer.start_detector_enable());
+        producer.set_start_detector_enable(false);
+        assert!(!producer.start_detector_enable());
+
+        producer.shutdown().await.unwrap();
+        assert!(producer.detector_task.lock().await.is_none());
     }
 
     #[tokio::test]
