@@ -599,6 +599,26 @@ fn publish_info_table_remapping_and_live_views_match_java_fixture() {
     assert!(table.get("entry-bulk-retain").unwrap().ptr_eq(&third));
     assert!(expected["entryViewBulkMutation"].as_bool().unwrap());
 
+    table.put("key-remove-if", first.clone());
+    assert_eq!(keys.remove_if(|topic| topic == "key-remove-if"), 1);
+    assert!(!table.contains_key("key-remove-if"));
+    table.put("value-remove-if-match", first.clone());
+    table.put("value-remove-if-keep", second.clone());
+    assert_eq!(values.remove_if(|value| value.ptr_eq(&first)), 1);
+    assert!(!table.contains_key("value-remove-if-match"));
+    assert!(table.get("value-remove-if-keep").unwrap().ptr_eq(&second));
+    table.put("entry-remove-if-match", first.clone());
+    table.put("entry-remove-if-keep", third.clone());
+    assert_eq!(
+        entries.remove_if(|topic, _| topic == "entry-remove-if-match"),
+        1
+    );
+    assert!(!table.contains_key("entry-remove-if-match"));
+    assert!(table.get("entry-remove-if-keep").unwrap().ptr_eq(&third));
+    assert!(expected["keyViewRemoveIfMutation"].as_bool().unwrap());
+    assert!(expected["valuesViewRemoveIfMutation"].as_bool().unwrap());
+    assert!(expected["entryViewRemoveIfMutation"].as_bool().unwrap());
+
     table.clear();
     assert!(keys.is_empty());
     assert!(values.is_empty());
@@ -616,6 +636,399 @@ fn publish_info_table_remapping_and_live_views_match_java_fixture() {
             .unwrap()
     );
     assert!(expected["clearAffectsRetainedViews"].as_bool().unwrap());
+
+    assert!(
+        table
+            .get_or_default("missing", second.clone())
+            .ptr_eq(&second)
+    );
+    table.put("map-op-present", first.clone());
+    assert!(
+        table
+            .get_or_default("map-op-present", second.clone())
+            .ptr_eq(&first)
+    );
+    assert!(table.contains_value(&first));
+    assert!(
+        table
+            .put_if_absent("map-op-present", second.clone())
+            .unwrap()
+            .ptr_eq(&first)
+    );
+    assert!(
+        table
+            .put_if_absent("map-op-absent", second.clone())
+            .is_none()
+    );
+    assert!(table.get("map-op-absent").unwrap().ptr_eq(&second));
+    assert!(table.remove_if_equal("map-op-absent", &second));
+    assert!(!table.contains_key("map-op-absent"));
+    table.put("for-each-a", first.clone());
+    table.put("for-each-b", second.clone());
+    let mut for_each_rows = Vec::new();
+    table.for_each(|key, value| {
+        for_each_rows.push(format!(
+            "{key}:{}",
+            if value.ptr_eq(&first) {
+                "first"
+            } else {
+                "other"
+            }
+        ));
+    });
+    assert_eq!(for_each_rows.len(), 3);
+    assert!(for_each_rows.contains(&"map-op-present:first".to_owned()));
+    assert!(for_each_rows.contains(&"for-each-a:first".to_owned()));
+    assert!(for_each_rows.contains(&"for-each-b:other".to_owned()));
+    assert!(expected["getOrDefaultMissingIdentity"].as_bool().unwrap());
+    assert!(expected["getOrDefaultPresentIdentity"].as_bool().unwrap());
+    assert!(expected["containsValueIdentity"].as_bool().unwrap());
+    assert!(
+        expected["putIfAbsentKeepsCurrentIdentity"]
+            .as_bool()
+            .unwrap()
+    );
+    assert!(expected["putIfAbsentInserts"].as_bool().unwrap());
+    assert!(expected["conditionalRemoveUsesIdentity"].as_bool().unwrap());
+    assert!(expected["forEachVisitsLiveEntries"].as_bool().unwrap());
+    assert!(expected["sizeAndEmptyMatch"].as_bool().unwrap());
+    table.clear();
+    assert!(table.is_empty());
+    assert!(expected["clearEmptiesLiveMap"].as_bool().unwrap());
+}
+
+#[test]
+fn publish_info_table_nullable_arguments_match_java_fixture() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let expected = &fixture["implementationPublishInfoTableAdvanced"];
+    let table = Producer::new(ProducerConfig::new("publish-info-table-nullable").unwrap())
+        .get_topic_publish_info_table();
+    let first = TopicPublishInfo::default();
+    let second = TopicPublishInfo::default();
+    table.put("nullable", first.clone());
+
+    macro_rules! assert_table_error {
+        ($actual:expr, $expected:pat) => {
+            assert!(matches!($actual, Err($expected)));
+        };
+    }
+
+    for name in [
+        "nullGetKey",
+        "nullGetOrDefaultKey",
+        "nullContainsKey",
+        "nullContainsValue",
+        "nullPutKey",
+        "nullPutValue",
+        "nullPutIfAbsentKey",
+        "nullPutIfAbsentValue",
+        "nullPutAllMap",
+        "nullRemoveKey",
+        "nullReplaceKey",
+        "nullReplaceValue",
+        "nullConditionalReplaceExpected",
+        "nullConditionalReplaceValue",
+        "nullComputeIfAbsentKey",
+        "nullComputeIfPresentKey",
+        "nullComputeKey",
+        "nullMergeKey",
+        "nullMergeValue",
+        "nullComputeIfAbsentCallback",
+        "nullComputeIfPresentCallback",
+        "nullComputeCallback",
+        "nullMergeCallback",
+        "nullForEachCallback",
+        "nullReplaceAllCallback",
+        "nullKeySetContains",
+        "nullKeySetRemove",
+        "nullValuesContains",
+        "nullKeySetRemoveAll",
+        "nullKeySetRetainAll",
+        "nullValuesRemoveAll",
+        "nullValuesRetainAll",
+        "nullEntrySetRemoveAll",
+        "nullEntrySetRetainAll",
+        "nullKeySetRemoveIf",
+        "nullValuesRemoveIf",
+        "nullEntrySetRemoveIf",
+        "nullEntrySetValue",
+        "nullReplaceAllResult",
+    ] {
+        assert_eq!(
+            expected[name].as_str(),
+            Some("NullPointerException"),
+            "{name}"
+        );
+    }
+
+    assert_eq!(expected["nullConditionalRemoveValue"], true);
+    assert_eq!(expected["nullGetOrDefaultFallbackAllowed"], true);
+    assert_eq!(expected["nullValuesRemove"], true);
+    assert_eq!(expected["nullEntrySetContains"], true);
+    assert_eq!(expected["nullEntrySetRemove"], true);
+    assert_eq!(expected["nullKeyEntrySetContains"], true);
+    assert_eq!(expected["nullValueEntrySetContains"], true);
+    assert_eq!(expected["nullKeyEntrySetRemove"], true);
+    assert_eq!(expected["nullValueEntrySetRemove"], true);
+    assert_eq!(expected["nullArgumentsPreserveMapping"], true);
+    assert_eq!(expected["nullEntrySetValuePreservesMapping"], true);
+    assert_eq!(expected["nullReplaceAllResultPreservesMapping"], true);
+    assert_eq!(expected["computeIfAbsentNullResultAllowed"], true);
+    assert_eq!(expected["computeIfPresentNullResultRemoves"], true);
+    assert_eq!(expected["computeNullResultRemoves"], true);
+    assert_eq!(expected["mergeNullResultRemoves"], true);
+
+    assert_table_error!(
+        table.get_nullable(None),
+        TopicPublishInfoTableError::NullKey
+    );
+    assert!(matches!(
+        table.get_or_default_nullable(Some("missing"), None),
+        Ok(None)
+    ));
+    assert_table_error!(
+        table.contains_key_nullable(None),
+        TopicPublishInfoTableError::NullKey
+    );
+    assert_table_error!(
+        table.contains_value_nullable(None),
+        TopicPublishInfoTableError::NullValue
+    );
+    assert_table_error!(
+        table.put_nullable(None, Some(second.clone())),
+        TopicPublishInfoTableError::NullKey
+    );
+    assert_table_error!(
+        table.put_nullable(Some("nullable-value"), None),
+        TopicPublishInfoTableError::NullValue
+    );
+    assert_table_error!(
+        table.put_if_absent_nullable(None, Some(second.clone())),
+        TopicPublishInfoTableError::NullKey
+    );
+    assert_table_error!(
+        table.put_if_absent_nullable(Some("nullable"), None),
+        TopicPublishInfoTableError::NullValue
+    );
+    assert_table_error!(
+        table.get_or_default_nullable(None, None),
+        TopicPublishInfoTableError::NullKey
+    );
+    assert_table_error!(
+        table.put_all_nullable_rows(None),
+        TopicPublishInfoTableError::NullMap
+    );
+    assert_table_error!(
+        table.remove_nullable(None),
+        TopicPublishInfoTableError::NullKey
+    );
+    assert!(
+        !table
+            .remove_if_equal_nullable(Some("nullable"), None)
+            .unwrap()
+    );
+    assert_table_error!(
+        table.remove_if_equal_nullable(None, None),
+        TopicPublishInfoTableError::NullKey
+    );
+    assert_table_error!(
+        table.replace_nullable(None, Some(second.clone())),
+        TopicPublishInfoTableError::NullKey
+    );
+    assert_table_error!(
+        table.replace_nullable(Some("nullable"), None),
+        TopicPublishInfoTableError::NullValue
+    );
+    assert_table_error!(
+        table.replace_if_equal_nullable(Some("nullable"), None, Some(second.clone())),
+        TopicPublishInfoTableError::NullValue
+    );
+    assert_table_error!(
+        table.replace_if_equal_nullable(None, None, None),
+        TopicPublishInfoTableError::NullKey
+    );
+    assert_table_error!(
+        table.replace_if_equal_nullable(Some("nullable"), Some(&first), None),
+        TopicPublishInfoTableError::NullValue
+    );
+    assert_table_error!(
+        table.compute_if_absent_nullable(None, |_| Some(second.clone())),
+        TopicPublishInfoTableError::NullKey
+    );
+    assert_table_error!(
+        table.compute_if_present_nullable(None, |_, _| Some(second.clone())),
+        TopicPublishInfoTableError::NullKey
+    );
+    assert_table_error!(
+        table.compute_nullable(None, |_, _| Some(second.clone())),
+        TopicPublishInfoTableError::NullKey
+    );
+    assert_table_error!(
+        table.merge_nullable(
+            None,
+            Some(second.clone()),
+            None::<&mut fn(&TopicPublishInfo, &TopicPublishInfo) -> Option<TopicPublishInfo>>
+        ),
+        TopicPublishInfoTableError::NullKey
+    );
+    assert_table_error!(
+        table.merge_nullable(
+            Some("nullable"),
+            None,
+            None::<&mut fn(&TopicPublishInfo, &TopicPublishInfo) -> Option<TopicPublishInfo>>
+        ),
+        TopicPublishInfoTableError::NullValue
+    );
+    assert_table_error!(
+        table.merge_nullable(
+            Some("nullable"),
+            Some(second.clone()),
+            None::<&mut fn(&TopicPublishInfo, &TopicPublishInfo) -> Option<TopicPublishInfo>>,
+        ),
+        TopicPublishInfoTableError::NullCallback
+    );
+    assert_table_error!(
+        table.compute_if_absent_with_nullable_callback(
+            Some("nullable"),
+            None::<&mut fn(&str) -> Option<TopicPublishInfo>>,
+        ),
+        TopicPublishInfoTableError::NullCallback
+    );
+    assert_table_error!(
+        table.compute_if_present_with_nullable_callback(
+            Some("nullable"),
+            None::<&mut fn(&str, &TopicPublishInfo) -> Option<TopicPublishInfo>>,
+        ),
+        TopicPublishInfoTableError::NullCallback
+    );
+    assert_table_error!(
+        table.compute_with_nullable_callback(
+            Some("nullable"),
+            None::<&mut fn(&str, Option<&TopicPublishInfo>) -> Option<TopicPublishInfo>>,
+        ),
+        TopicPublishInfoTableError::NullCallback
+    );
+    assert_table_error!(
+        table.replace_all_with_nullable_callback(
+            None::<&mut fn(&str, &TopicPublishInfo) -> Option<TopicPublishInfo>>,
+        ),
+        TopicPublishInfoTableError::NullCallback
+    );
+    assert_table_error!(
+        table.for_each_nullable(None::<&mut fn(&str, &TopicPublishInfo)>),
+        TopicPublishInfoTableError::NullCallback
+    );
+
+    let keys = table.key_set_view();
+    let values = table.values_view();
+    let entries = table.entry_set_view();
+    assert_table_error!(
+        keys.contains_nullable(None),
+        TopicPublishInfoTableError::NullKey
+    );
+    assert_table_error!(
+        keys.remove_nullable(None),
+        TopicPublishInfoTableError::NullKey
+    );
+    assert_table_error!(
+        keys.remove_all_nullable(None),
+        TopicPublishInfoTableError::NullCollection
+    );
+    assert_table_error!(
+        keys.retain_all_nullable(None),
+        TopicPublishInfoTableError::NullCollection
+    );
+    assert_table_error!(
+        keys.remove_if_with_nullable_callback(None::<&mut fn(&str) -> bool>),
+        TopicPublishInfoTableError::NullCallback
+    );
+    assert_table_error!(
+        values.contains_nullable(None),
+        TopicPublishInfoTableError::NullValue
+    );
+    assert!(matches!(values.remove_nullable(None), Ok(false)));
+    assert_table_error!(
+        values.remove_all_nullable(None),
+        TopicPublishInfoTableError::NullCollection
+    );
+    assert_table_error!(
+        values.retain_all_nullable(None),
+        TopicPublishInfoTableError::NullCollection
+    );
+    assert_table_error!(
+        values.remove_if_with_nullable_callback(None::<&mut fn(&TopicPublishInfo) -> bool>),
+        TopicPublishInfoTableError::NullCallback
+    );
+    assert!(!entries.contains_nullable(None));
+    assert!(!entries.contains_entry_nullable(None, Some(&first)));
+    assert!(!entries.contains_entry_nullable(Some("nullable"), None));
+    assert!(!entries.remove_nullable(None));
+    assert!(!entries.remove_entry_nullable(None, Some(&first)));
+    assert!(!entries.remove_entry_nullable(Some("nullable"), None));
+    assert_table_error!(
+        entries.remove_all_nullable(None),
+        TopicPublishInfoTableError::NullCollection
+    );
+    assert_table_error!(
+        entries.retain_all_nullable(None),
+        TopicPublishInfoTableError::NullCollection
+    );
+    assert_table_error!(
+        entries.remove_if_with_nullable_callback(None::<&mut fn(&str, &TopicPublishInfo) -> bool>),
+        TopicPublishInfoTableError::NullCallback
+    );
+    let entry = entries.snapshot().into_iter().next().unwrap();
+    assert_table_error!(
+        entry.set_value_nullable(None),
+        TopicPublishInfoTableError::NullValue
+    );
+    assert!(entry.value().ptr_eq(&first));
+    assert!(table.get("nullable").unwrap().ptr_eq(&first));
+
+    assert!(
+        table
+            .compute_if_absent_nullable(Some("compute-absent-null"), |_| None)
+            .unwrap()
+            .is_none()
+    );
+    table.put("compute-present-null", second.clone());
+    assert!(
+        table
+            .compute_if_present_nullable(Some("compute-present-null"), |_, _| None)
+            .unwrap()
+            .is_none()
+    );
+    assert!(!table.contains_key("compute-present-null"));
+    table.put("compute-null-result", second.clone());
+    assert!(
+        table
+            .compute_nullable(Some("compute-null-result"), |_, _| None)
+            .unwrap()
+            .is_none()
+    );
+    assert!(!table.contains_key("compute-null-result"));
+    table.put("merge-null-result", second);
+    let mut drop_merge = |_: &TopicPublishInfo, _: &TopicPublishInfo| None;
+    assert!(
+        table
+            .merge_nullable(
+                Some("merge-null-result"),
+                Some(first.clone()),
+                Some(&mut drop_merge)
+            )
+            .unwrap()
+            .is_none()
+    );
+    assert!(!table.contains_key("merge-null-result"));
+
+    table.clear();
+    table.put("replace-all-null-result", first.clone());
+    assert_table_error!(
+        table.replace_all_nullable(|_, _| None),
+        TopicPublishInfoTableError::NullRemappingResult
+    );
+    assert!(table.get("replace-all-null-result").unwrap().ptr_eq(&first));
 }
 
 #[test]

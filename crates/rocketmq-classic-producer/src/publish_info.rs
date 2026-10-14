@@ -473,6 +473,8 @@ pub enum TopicPublishInfoTableError {
     NullValue,
     #[error("TopicPublishInfoTable putAll source is null")]
     NullMap,
+    #[error("TopicPublishInfoTable view collection is null")]
+    NullCollection,
     #[error("TopicPublishInfoTable callback is null")]
     NullCallback,
     #[error("TopicPublishInfoTable remapping callback returned null")]
@@ -688,7 +690,9 @@ impl TopicPublishInfoTable {
             return Err(TopicPublishInfoTableError::NullKey);
         };
         let Some(expected) = expected else {
-            return Err(TopicPublishInfoTableError::NullValue);
+            // ConcurrentHashMap.remove(key, null) returns false after checking
+            // the key; null values can never match a stored mapping.
+            return Ok(false);
         };
         Ok(self.remove_if_equal(topic, expected))
     }
@@ -796,6 +800,31 @@ impl TopicPublishInfoTable {
         Some(value)
     }
 
+    pub fn compute_if_absent_nullable(
+        &self,
+        topic: Option<&str>,
+        mapping: impl FnOnce(&str) -> Option<TopicPublishInfo>,
+    ) -> Result<Option<TopicPublishInfo>, TopicPublishInfoTableError> {
+        let Some(topic) = topic else {
+            return Err(TopicPublishInfoTableError::NullKey);
+        };
+        Ok(self.compute_if_absent(topic, mapping))
+    }
+
+    pub fn compute_if_absent_with_nullable_callback<F>(
+        &self,
+        topic: Option<&str>,
+        mapping: Option<&mut F>,
+    ) -> Result<Option<TopicPublishInfo>, TopicPublishInfoTableError>
+    where
+        F: FnMut(&str) -> Option<TopicPublishInfo>,
+    {
+        let Some(mapping) = mapping else {
+            return Err(TopicPublishInfoTableError::NullCallback);
+        };
+        self.compute_if_absent_nullable(topic, |key| mapping(key))
+    }
+
     pub fn compute_if_present(
         &self,
         topic: &str,
@@ -824,6 +853,31 @@ impl TopicPublishInfoTable {
         }
     }
 
+    pub fn compute_if_present_nullable(
+        &self,
+        topic: Option<&str>,
+        remapping: impl FnOnce(&str, &TopicPublishInfo) -> Option<TopicPublishInfo>,
+    ) -> Result<Option<TopicPublishInfo>, TopicPublishInfoTableError> {
+        let Some(topic) = topic else {
+            return Err(TopicPublishInfoTableError::NullKey);
+        };
+        Ok(self.compute_if_present(topic, remapping))
+    }
+
+    pub fn compute_if_present_with_nullable_callback<F>(
+        &self,
+        topic: Option<&str>,
+        remapping: Option<&mut F>,
+    ) -> Result<Option<TopicPublishInfo>, TopicPublishInfoTableError>
+    where
+        F: FnMut(&str, &TopicPublishInfo) -> Option<TopicPublishInfo>,
+    {
+        let Some(remapping) = remapping else {
+            return Err(TopicPublishInfoTableError::NullCallback);
+        };
+        self.compute_if_present_nullable(topic, |key, current| remapping(key, current))
+    }
+
     pub fn compute(
         &self,
         topic: &str,
@@ -850,6 +904,31 @@ impl TopicPublishInfoTable {
                 None
             }
         }
+    }
+
+    pub fn compute_nullable(
+        &self,
+        topic: Option<&str>,
+        remapping: impl FnOnce(&str, Option<&TopicPublishInfo>) -> Option<TopicPublishInfo>,
+    ) -> Result<Option<TopicPublishInfo>, TopicPublishInfoTableError> {
+        let Some(topic) = topic else {
+            return Err(TopicPublishInfoTableError::NullKey);
+        };
+        Ok(self.compute(topic, remapping))
+    }
+
+    pub fn compute_with_nullable_callback<F>(
+        &self,
+        topic: Option<&str>,
+        remapping: Option<&mut F>,
+    ) -> Result<Option<TopicPublishInfo>, TopicPublishInfoTableError>
+    where
+        F: FnMut(&str, Option<&TopicPublishInfo>) -> Option<TopicPublishInfo>,
+    {
+        let Some(remapping) = remapping else {
+            return Err(TopicPublishInfoTableError::NullCallback);
+        };
+        self.compute_nullable(topic, |key, current| remapping(key, current))
     }
 
     pub fn merge(
@@ -939,6 +1018,19 @@ impl TopicPublishInfoTable {
         Ok(())
     }
 
+    pub fn replace_all_with_nullable_callback<F>(
+        &self,
+        remapping: Option<&mut F>,
+    ) -> Result<(), TopicPublishInfoTableError>
+    where
+        F: FnMut(&str, &TopicPublishInfo) -> Option<TopicPublishInfo>,
+    {
+        let Some(remapping) = remapping else {
+            return Err(TopicPublishInfoTableError::NullCallback);
+        };
+        self.replace_all_nullable(|key, current| remapping(key, current))
+    }
+
     pub fn for_each(&self, mut action: impl FnMut(&str, &TopicPublishInfo)) {
         for (topic, value) in self.snapshot() {
             action(&topic, &value);
@@ -1001,6 +1093,16 @@ impl TopicPublishInfoKeySetView {
         self.0.contains_key(topic)
     }
 
+    pub fn contains_nullable(
+        &self,
+        topic: Option<&str>,
+    ) -> Result<bool, TopicPublishInfoTableError> {
+        let Some(topic) = topic else {
+            return Err(TopicPublishInfoTableError::NullKey);
+        };
+        Ok(self.contains(topic))
+    }
+
     pub fn snapshot(&self) -> BTreeSet<String> {
         self.0.keys()
     }
@@ -1017,12 +1119,49 @@ impl TopicPublishInfoKeySetView {
         self.0.remove(topic).is_some()
     }
 
+    pub fn remove_nullable(&self, topic: Option<&str>) -> Result<bool, TopicPublishInfoTableError> {
+        let Some(topic) = topic else {
+            return Err(TopicPublishInfoTableError::NullKey);
+        };
+        Ok(self.remove(topic))
+    }
+
     pub fn clear(&self) {
         self.0.clear();
     }
 
+    pub fn remove_if(&self, mut predicate: impl FnMut(&str) -> bool) -> usize {
+        self.snapshot()
+            .into_iter()
+            .filter(|topic| predicate(topic) && self.remove(topic))
+            .count()
+    }
+
+    pub fn remove_if_with_nullable_callback<F>(
+        &self,
+        predicate: Option<&mut F>,
+    ) -> Result<usize, TopicPublishInfoTableError>
+    where
+        F: FnMut(&str) -> bool,
+    {
+        let Some(predicate) = predicate else {
+            return Err(TopicPublishInfoTableError::NullCallback);
+        };
+        Ok(self.remove_if(|topic| predicate(topic)))
+    }
+
     pub fn remove_all(&self, topics: &BTreeSet<String>) -> usize {
         topics.iter().filter(|topic| self.remove(topic)).count()
+    }
+
+    pub fn remove_all_nullable(
+        &self,
+        topics: Option<&BTreeSet<String>>,
+    ) -> Result<usize, TopicPublishInfoTableError> {
+        let Some(topics) = topics else {
+            return Err(TopicPublishInfoTableError::NullCollection);
+        };
+        Ok(self.remove_all(topics))
     }
 
     pub fn retain_all(&self, topics: &BTreeSet<String>) -> usize {
@@ -1030,6 +1169,16 @@ impl TopicPublishInfoKeySetView {
             .into_iter()
             .filter(|topic| !topics.contains(topic) && self.remove(topic))
             .count()
+    }
+
+    pub fn retain_all_nullable(
+        &self,
+        topics: Option<&BTreeSet<String>>,
+    ) -> Result<usize, TopicPublishInfoTableError> {
+        let Some(topics) = topics else {
+            return Err(TopicPublishInfoTableError::NullCollection);
+        };
+        Ok(self.retain_all(topics))
     }
 }
 
@@ -1055,6 +1204,16 @@ impl TopicPublishInfoValuesView {
         self.0.contains_value(value)
     }
 
+    pub fn contains_nullable(
+        &self,
+        value: Option<&TopicPublishInfo>,
+    ) -> Result<bool, TopicPublishInfoTableError> {
+        let Some(value) = value else {
+            return Err(TopicPublishInfoTableError::NullValue);
+        };
+        Ok(self.contains(value))
+    }
+
     pub fn remove(&self, value: &TopicPublishInfo) -> bool {
         self.0
             .snapshot()
@@ -1067,8 +1226,37 @@ impl TopicPublishInfoValuesView {
             .unwrap_or(false)
     }
 
+    pub fn remove_nullable(
+        &self,
+        value: Option<&TopicPublishInfo>,
+    ) -> Result<bool, TopicPublishInfoTableError> {
+        // ConcurrentHashMap's values view returns false for remove(null).
+        Ok(value.is_some_and(|value| self.remove(value)))
+    }
+
     pub fn clear(&self) {
         self.0.clear();
+    }
+
+    pub fn remove_if(&self, mut predicate: impl FnMut(&TopicPublishInfo) -> bool) -> usize {
+        self.0
+            .snapshot()
+            .into_iter()
+            .filter(|(topic, current)| predicate(current) && self.0.remove_if_equal(topic, current))
+            .count()
+    }
+
+    pub fn remove_if_with_nullable_callback<F>(
+        &self,
+        predicate: Option<&mut F>,
+    ) -> Result<usize, TopicPublishInfoTableError>
+    where
+        F: FnMut(&TopicPublishInfo) -> bool,
+    {
+        let Some(predicate) = predicate else {
+            return Err(TopicPublishInfoTableError::NullCallback);
+        };
+        Ok(self.remove_if(|value| predicate(value)))
     }
 
     pub fn remove_all(&self, values: &[TopicPublishInfo]) -> usize {
@@ -1080,6 +1268,16 @@ impl TopicPublishInfoValuesView {
                     && self.0.remove_if_equal(topic, current)
             })
             .count()
+    }
+
+    pub fn remove_all_nullable(
+        &self,
+        values: Option<&[TopicPublishInfo]>,
+    ) -> Result<usize, TopicPublishInfoTableError> {
+        let Some(values) = values else {
+            return Err(TopicPublishInfoTableError::NullCollection);
+        };
+        Ok(self.remove_all(values))
     }
 
     pub fn remove_all_iter<I>(&self, values: I) -> usize
@@ -1108,6 +1306,16 @@ impl TopicPublishInfoValuesView {
             }
         }
         removed
+    }
+
+    pub fn retain_all_nullable(
+        &self,
+        values: Option<&[TopicPublishInfo]>,
+    ) -> Result<usize, TopicPublishInfoTableError> {
+        let Some(values) = values else {
+            return Err(TopicPublishInfoTableError::NullCollection);
+        };
+        Ok(self.retain_all(values))
     }
 }
 
@@ -1143,6 +1351,16 @@ impl TopicPublishInfoEntryHandle {
         self.table.put(self.topic.clone(), value);
         previous
     }
+
+    pub fn set_value_nullable(
+        &self,
+        value: Option<TopicPublishInfo>,
+    ) -> Result<TopicPublishInfo, TopicPublishInfoTableError> {
+        let Some(value) = value else {
+            return Err(TopicPublishInfoTableError::NullValue);
+        };
+        Ok(self.set_value(value))
+    }
 }
 
 /// Live `Map.entrySet()` counterpart. Traversal produces detached entries;
@@ -1171,14 +1389,42 @@ impl TopicPublishInfoEntrySetView {
         self.0.is_empty()
     }
 
+    pub fn contains_nullable(&self, entry: Option<&(String, TopicPublishInfo)>) -> bool {
+        entry.is_some_and(|(topic, value)| self.contains(topic, value))
+    }
+
     pub fn contains(&self, topic: &str, value: &TopicPublishInfo) -> bool {
         self.0
             .get(topic)
             .is_some_and(|current| current.ptr_eq(value))
     }
 
+    pub fn contains_entry_nullable(
+        &self,
+        topic: Option<&str>,
+        value: Option<&TopicPublishInfo>,
+    ) -> bool {
+        topic
+            .zip(value)
+            .is_some_and(|(topic, value)| self.contains(topic, value))
+    }
+
     pub fn remove(&self, topic: &str, value: &TopicPublishInfo) -> bool {
         self.0.remove_if_equal(topic, value)
+    }
+
+    pub fn remove_nullable(&self, entry: Option<&(String, TopicPublishInfo)>) -> bool {
+        entry.is_some_and(|(topic, value)| self.remove(topic, value))
+    }
+
+    pub fn remove_entry_nullable(
+        &self,
+        topic: Option<&str>,
+        value: Option<&TopicPublishInfo>,
+    ) -> bool {
+        topic
+            .zip(value)
+            .is_some_and(|(topic, value)| self.remove(topic, value))
     }
 
     pub fn remove_all(&self, entries: &[(String, TopicPublishInfo)]) -> usize {
@@ -1186,6 +1432,16 @@ impl TopicPublishInfoEntrySetView {
             .iter()
             .filter(|(topic, value)| self.remove(topic, value))
             .count()
+    }
+
+    pub fn remove_all_nullable(
+        &self,
+        entries: Option<&[(String, TopicPublishInfo)]>,
+    ) -> Result<usize, TopicPublishInfoTableError> {
+        let Some(entries) = entries else {
+            return Err(TopicPublishInfoTableError::NullCollection);
+        };
+        Ok(self.remove_all(entries))
     }
 
     pub fn retain_all(&self, entries: &[(String, TopicPublishInfo)]) -> usize {
@@ -1204,8 +1460,39 @@ impl TopicPublishInfoEntrySetView {
             .count()
     }
 
+    pub fn retain_all_nullable(
+        &self,
+        entries: Option<&[(String, TopicPublishInfo)]>,
+    ) -> Result<usize, TopicPublishInfoTableError> {
+        let Some(entries) = entries else {
+            return Err(TopicPublishInfoTableError::NullCollection);
+        };
+        Ok(self.retain_all(entries))
+    }
+
     pub fn clear(&self) {
         self.0.clear();
+    }
+
+    pub fn remove_if(&self, mut predicate: impl FnMut(&str, &TopicPublishInfo) -> bool) -> usize {
+        self.0
+            .snapshot()
+            .into_iter()
+            .filter(|(topic, value)| predicate(topic, value) && self.remove(topic, value))
+            .count()
+    }
+
+    pub fn remove_if_with_nullable_callback<F>(
+        &self,
+        predicate: Option<&mut F>,
+    ) -> Result<usize, TopicPublishInfoTableError>
+    where
+        F: FnMut(&str, &TopicPublishInfo) -> bool,
+    {
+        let Some(predicate) = predicate else {
+            return Err(TopicPublishInfoTableError::NullCallback);
+        };
+        Ok(self.remove_if(|topic, value| predicate(topic, value)))
     }
 }
 

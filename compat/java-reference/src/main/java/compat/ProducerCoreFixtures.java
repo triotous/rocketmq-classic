@@ -496,9 +496,144 @@ public final class ProducerCoreFixtures {
             new java.util.AbstractMap.SimpleEntry<>("entry-bulk-retain", third)));
         result.put("entryViewBulkMutation", entryRemoveAll && entryRetainAll
             && table.size() == 1 && table.get("entry-bulk-retain") == third);
+        table.put("key-remove-if", first);
+        result.put("keyViewRemoveIfMutation",
+            keys.removeIf("key-remove-if"::equals) && !table.containsKey("key-remove-if"));
+        table.put("value-remove-if-match", first);
+        table.put("value-remove-if-keep", second);
+        result.put("valuesViewRemoveIfMutation", values.removeIf(value -> value == first)
+            && !table.containsKey("value-remove-if-match")
+            && table.get("value-remove-if-keep") == second);
+        table.put("entry-remove-if-match", first);
+        table.put("entry-remove-if-keep", third);
+        result.put("entryViewRemoveIfMutation", entries.removeIf(candidate ->
+            "entry-remove-if-match".equals(candidate.getKey()))
+            && !table.containsKey("entry-remove-if-match")
+            && table.get("entry-remove-if-keep") == third);
         table.clear();
         result.put("clearAffectsRetainedViews", keys.isEmpty() && values.isEmpty() && entries.isEmpty());
+
+        result.put("getOrDefaultMissingIdentity", table.getOrDefault("missing", second) == second);
+        table.put("map-op-present", first);
+        result.put("getOrDefaultPresentIdentity",
+            table.getOrDefault("map-op-present", second) == first);
+        result.put("containsValueIdentity", table.containsValue(first));
+        TopicPublishInfo putIfAbsentPrevious = table.putIfAbsent("map-op-present", second);
+        result.put("putIfAbsentKeepsCurrentIdentity",
+            putIfAbsentPrevious == first && table.get("map-op-present") == first);
+        TopicPublishInfo absentPrevious = table.putIfAbsent("map-op-absent", second);
+        result.put("putIfAbsentInserts", absentPrevious == null
+            && table.get("map-op-absent") == second);
+        result.put("conditionalRemoveUsesIdentity",
+            table.remove("map-op-absent", second) && !table.containsKey("map-op-absent"));
+        table.put("for-each-a", first);
+        table.put("for-each-b", second);
+        List<String> forEachRows = new ArrayList<>();
+        table.forEach((key, value) -> forEachRows.add(key + ":" + (value == first ? "first" : "other")));
+        result.put("forEachVisitsLiveEntries", forEachRows.size() == 3
+            && forEachRows.contains("map-op-present:first")
+            && forEachRows.contains("for-each-a:first")
+            && forEachRows.contains("for-each-b:other"));
+        result.put("sizeAndEmptyMatch", table.size() == 3 && !table.isEmpty());
+        table.clear();
+        result.put("clearEmptiesLiveMap", table.isEmpty() && table.size() == 0);
+
+        table.put("nullable", first);
+        result.put("nullGetKey", nullPointerClass(() -> table.get(null)));
+        result.put("nullGetOrDefaultKey", nullPointerClass(() -> table.getOrDefault(null, second)));
+        result.put("nullContainsKey", nullPointerClass(() -> table.containsKey(null)));
+        result.put("nullContainsValue", nullPointerClass(() -> table.containsValue(null)));
+        result.put("nullPutKey", nullPointerClass(() -> table.put(null, second)));
+        result.put("nullPutValue", nullPointerClass(() -> table.put("nullable-value", null)));
+        result.put("nullPutIfAbsentKey", nullPointerClass(() -> table.putIfAbsent(null, second)));
+        result.put("nullPutIfAbsentValue", nullPointerClass(() -> table.putIfAbsent("nullable", null)));
+        result.put("nullPutAllMap", nullPointerClass(() -> table.putAll(null)));
+        result.put("nullRemoveKey", nullPointerClass(() -> table.remove(null)));
+        result.put("nullConditionalRemoveValue", !table.remove("nullable", null));
+        result.put("nullReplaceKey", nullPointerClass(() -> table.replace(null, second)));
+        result.put("nullReplaceValue", nullPointerClass(() -> table.replace("nullable", null)));
+        result.put("nullConditionalReplaceExpected",
+            nullPointerClass(() -> table.replace("nullable", null, second)));
+        result.put("nullConditionalReplaceValue",
+            nullPointerClass(() -> table.replace("nullable", first, null)));
+        result.put("nullComputeIfAbsentKey",
+            nullPointerClass(() -> table.computeIfAbsent(null, key -> second)));
+        result.put("nullComputeIfPresentKey",
+            nullPointerClass(() -> table.computeIfPresent(null, (key, old) -> second)));
+        result.put("nullComputeKey", nullPointerClass(() -> table.compute(null, (key, old) -> second)));
+        result.put("nullMergeKey", nullPointerClass(() -> table.merge(null, second, (old, value) -> value)));
+        result.put("nullMergeValue",
+            nullPointerClass(() -> table.merge("nullable", null, (old, value) -> value)));
+        result.put("nullComputeIfAbsentCallback",
+            nullPointerClass(() -> table.computeIfAbsent("nullable", null)));
+        result.put("nullComputeIfPresentCallback",
+            nullPointerClass(() -> table.computeIfPresent("nullable", null)));
+        result.put("nullComputeCallback", nullPointerClass(() -> table.compute("nullable", null)));
+        result.put("nullMergeCallback",
+            nullPointerClass(() -> table.merge("nullable", second, null)));
+        result.put("nullForEachCallback", nullPointerClass(() -> table.forEach(null)));
+        result.put("nullReplaceAllCallback", nullPointerClass(() -> table.replaceAll(null)));
+        table.put("compute-present-null", second);
+        result.put("computeIfAbsentNullResultAllowed",
+            table.computeIfAbsent("compute-absent-null", key -> null) == null
+                && !table.containsKey("compute-absent-null"));
+        result.put("computeIfPresentNullResultRemoves",
+            table.computeIfPresent("compute-present-null", (key, old) -> null) == null
+                && !table.containsKey("compute-present-null"));
+        table.put("compute-null-result", second);
+        result.put("computeNullResultRemoves",
+            table.compute("compute-null-result", (key, old) -> null) == null
+                && !table.containsKey("compute-null-result"));
+        table.put("merge-null-result", second);
+        result.put("mergeNullResultRemoves",
+            table.merge("merge-null-result", first, (old, value) -> null) == null
+                && !table.containsKey("merge-null-result"));
+        table.put("replace-all-null-result", first);
+        result.put("nullReplaceAllResult",
+            nullPointerClass(() -> table.replaceAll((key, value) -> null)));
+        result.put("nullReplaceAllResultPreservesMapping",
+            table.get("replace-all-null-result") == first);
+        result.put("nullGetOrDefaultFallbackAllowed",
+            table.getOrDefault("missing", null) == null);
+        result.put("nullArgumentsPreserveMapping", table.get("nullable") == first);
+        result.put("nullKeySetContains", nullPointerClass(() -> table.keySet().contains(null)));
+        result.put("nullKeySetRemove", nullPointerClass(() -> table.keySet().remove(null)));
+        result.put("nullValuesContains", nullPointerClass(() -> table.values().contains(null)));
+        result.put("nullValuesRemove", !table.values().remove(null));
+        result.put("nullEntrySetContains", !table.entrySet().contains(null));
+        result.put("nullEntrySetRemove", !table.entrySet().remove(null));
+        result.put("nullKeyEntrySetContains",
+            !table.entrySet().contains(new java.util.AbstractMap.SimpleEntry<>(null, first)));
+        result.put("nullValueEntrySetContains",
+            !table.entrySet().contains(new java.util.AbstractMap.SimpleEntry<>("nullable", null)));
+        result.put("nullKeyEntrySetRemove",
+            !table.entrySet().remove(new java.util.AbstractMap.SimpleEntry<>(null, first)));
+        result.put("nullValueEntrySetRemove",
+            !table.entrySet().remove(new java.util.AbstractMap.SimpleEntry<>("nullable", null)));
+        result.put("nullKeySetRemoveAll", nullPointerClass(() -> table.keySet().removeAll(null)));
+        result.put("nullKeySetRetainAll", nullPointerClass(() -> table.keySet().retainAll(null)));
+        result.put("nullValuesRemoveAll", nullPointerClass(() -> table.values().removeAll(null)));
+        result.put("nullValuesRetainAll", nullPointerClass(() -> table.values().retainAll(null)));
+        result.put("nullEntrySetRemoveAll", nullPointerClass(() -> table.entrySet().removeAll(null)));
+        result.put("nullEntrySetRetainAll", nullPointerClass(() -> table.entrySet().retainAll(null)));
+        result.put("nullKeySetRemoveIf", nullPointerClass(() -> table.keySet().removeIf(null)));
+        result.put("nullValuesRemoveIf", nullPointerClass(() -> table.values().removeIf(null)));
+        result.put("nullEntrySetRemoveIf", nullPointerClass(() -> table.entrySet().removeIf(null)));
+        var nullableEntry = table.entrySet().stream()
+            .filter(candidate -> "nullable".equals(candidate.getKey())).findFirst().orElseThrow();
+        result.put("nullEntrySetValue", nullPointerClass(() -> nullableEntry.setValue(null)));
+        result.put("nullEntrySetValuePreservesMapping",
+            nullableEntry.getValue() == first && table.get("nullable") == first);
         return result;
+    }
+
+    private static String nullPointerClass(Runnable action) {
+        try {
+            action.run();
+            return "none";
+        } catch (NullPointerException expected) {
+            return expected.getClass().getSimpleName();
+        }
     }
 
     private static String constructorSignature(Constructor<?> constructor) {
