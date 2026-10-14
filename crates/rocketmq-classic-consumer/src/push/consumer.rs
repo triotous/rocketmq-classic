@@ -159,6 +159,7 @@ struct PopConsumeBatchContext {
     queue: MessageQueue,
     route_topic: String,
     consumer_group: String,
+    stats_consumer_group: String,
 }
 
 struct DesiredAssignment {
@@ -343,6 +344,7 @@ pub struct PushConsumer {
     rpc_hook: Option<Arc<dyn RpcHook>>,
     consume_message_hooks: ConsumeMessageHookRegistry,
     stats: ConsumerStatsManager,
+    consume_stats_group: RwLock<Option<String>>,
     trace_dispatcher: OnceLock<Arc<rocketmq_classic_producer::TraceDispatcher>>,
     state: tokio::sync::Mutex<State>,
     service_state: RwLock<Option<ConsumerServiceState>>,
@@ -416,6 +418,7 @@ impl PushConsumer {
             rpc_hook,
             consume_message_hooks: ConsumeMessageHookRegistry::default(),
             stats: ConsumerStatsManager::default(),
+            consume_stats_group: RwLock::new(None),
             trace_dispatcher: OnceLock::new(),
             state: tokio::sync::Mutex::new(State::Created),
             service_state: RwLock::new(Some(ConsumerServiceState::CreateJust)),
@@ -472,6 +475,12 @@ impl PushConsumer {
     /// Nullable form of Java's `setConsumerGroup(String)`.
     pub fn set_consumer_group_nullable(&self, value: Option<String>) {
         self.config.set_consumer_group_nullable(value);
+    }
+
+    fn consume_stats_group(&self) -> String {
+        read_lock(&self.consume_stats_group)
+            .clone()
+            .unwrap_or_else(|| self.config.consumer_group())
     }
 
     /// Returns the retained implementation handle exposed by Java's
@@ -2642,7 +2651,7 @@ impl PushConsumer {
         if let Some(topic) = request.batch.queue().topic() {
             self.stats.record_consume_rt(
                 context.runtime.client_id(),
-                &self.config.consumer_group(),
+                &self.consume_stats_group(),
                 topic,
                 callback_started.elapsed(),
             );
@@ -2798,7 +2807,7 @@ impl PushConsumer {
             if let Some(topic) = queue.topic() {
                 self.stats.record_consume_rt(
                     context.runtime.client_id(),
-                    &self.config.consumer_group(),
+                    &self.consume_stats_group(),
                     topic,
                     callback_started.elapsed(),
                 );
@@ -2860,7 +2869,7 @@ impl PushConsumer {
                 };
                 self.stats.record_orderly_result(
                     context.runtime.client_id(),
-                    &self.config.consumer_group(),
+                    &self.consume_stats_group(),
                     topic,
                     acknowledged,
                     failed,
@@ -3099,7 +3108,7 @@ impl PushConsumer {
             let successful_result = status == Some(ConsumeConcurrentlyStatus::ConsumeSuccess);
             self.stats.record_concurrent_result(
                 context.runtime.client_id(),
-                &self.config.consumer_group(),
+                &self.consume_stats_group(),
                 topic,
                 successful_result.then_some(acknowledged),
                 batch_len.saturating_sub(acknowledged),
@@ -3677,6 +3686,7 @@ impl PushConsumer {
         };
         self.consume_orderly
             .store(orderly_lock_settings.is_some(), Ordering::Release);
+        *write_lock(&self.consume_stats_group) = Some(consumer_group.clone());
         let consume_service = match listener {
             PushMessageListener::Concurrently(listener) => {
                 ConsumeService::Concurrent(Arc::new(ConcurrentConsumeService::new(
@@ -4291,6 +4301,7 @@ impl PushConsumer {
             let queue = queue.clone();
             let route_topic = route_topic.clone();
             let consumer_group = consumer_group.clone();
+            let stats_consumer_group = self.consume_stats_group();
             let listener = listener.clone();
             let messages = batch.to_vec();
             let batch_context = PopConsumeBatchContext {
@@ -4299,6 +4310,7 @@ impl PushConsumer {
                 queue,
                 route_topic,
                 consumer_group,
+                stats_consumer_group,
             };
             let worker = tokio::spawn(async move {
                 let _permit = permit;
@@ -4327,6 +4339,7 @@ impl PushConsumer {
             queue,
             route_topic,
             consumer_group,
+            stats_consumer_group,
         } = batch_context;
         if process_queue.is_dropped() {
             return;
@@ -4341,6 +4354,7 @@ impl PushConsumer {
             return;
         }
         self.reset_retry_and_namespace(&mut messages, &consumer_group);
+        let record_consume_stats = matches!(&listener, PushMessageListener::Concurrently(_));
         let mut consume_context = self.new_consume_message_context(messages.clone(), queue.clone());
         self.consume_message_hooks
             .execute_before(&mut consume_context);
@@ -4466,34 +4480,36 @@ impl PushConsumer {
             .execute_after(&mut consume_context);
 
         let message_count = messages.len();
-        if let Some(topic) = queue.topic() {
-            let stats = &self.stats;
-            stats.record_consume_rt(
-                runtime.client_id(),
-                &consumer_group,
-                topic,
-                consume_started.elapsed(),
-            );
-            if message_count > 0 && return_type != "TIME_OUT" && !process_queue.is_dropped() {
-                if success {
-                    let acknowledged = usize::try_from(ack_index.saturating_add(1))
-                        .unwrap_or(0)
-                        .min(message_count);
-                    stats.record_concurrent_result(
-                        runtime.client_id(),
-                        &consumer_group,
-                        topic,
-                        Some(acknowledged),
-                        message_count.saturating_sub(acknowledged),
-                    );
-                } else {
-                    stats.record_concurrent_result(
-                        runtime.client_id(),
-                        &consumer_group,
-                        topic,
-                        None,
-                        message_count,
-                    );
+        if record_consume_stats {
+            if let Some(topic) = queue.topic() {
+                let stats = &self.stats;
+                stats.record_consume_rt(
+                    runtime.client_id(),
+                    &stats_consumer_group,
+                    topic,
+                    consume_started.elapsed(),
+                );
+                if message_count > 0 && return_type != "TIME_OUT" && !process_queue.is_dropped() {
+                    if success {
+                        let acknowledged = usize::try_from(ack_index.saturating_add(1))
+                            .unwrap_or(0)
+                            .min(message_count);
+                        stats.record_concurrent_result(
+                            runtime.client_id(),
+                            &stats_consumer_group,
+                            topic,
+                            Some(acknowledged),
+                            message_count.saturating_sub(acknowledged),
+                        );
+                    } else {
+                        stats.record_concurrent_result(
+                            runtime.client_id(),
+                            &stats_consumer_group,
+                            topic,
+                            None,
+                            message_count,
+                        );
+                    }
                 }
             }
         }
@@ -7636,6 +7652,7 @@ mod tests {
                     queue,
                     route_topic: "orders".to_owned(),
                     consumer_group: "expired-pop-batch".to_owned(),
+                    stats_consumer_group: "expired-pop-batch".to_owned(),
                 },
                 listener,
                 vec![pop_receipt_message(Some("10 1000 50 2 0 broker-a 0 10"))],
@@ -7645,6 +7662,50 @@ mod tests {
         assert!(!listener_called.load(Ordering::Acquire));
         assert_eq!(process_queue.wait_ack_count(), 0);
         let _ = runtime.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn pop_orderly_consumption_does_not_record_concurrent_service_stats() {
+        let mut config = PushConsumerConfig::new("pop-orderly-stats-group").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let runtime = manager
+            .get_or_create(consumer.config.client_config())
+            .await
+            .unwrap();
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let process_queue = Arc::new(PopProcessQueue::new(queue.clone(), 2));
+        process_queue.inc_found_messages(1);
+        let receipt = format!("10 {} 60000 2 0 broker-a 0 10", epoch_millis());
+        let listener = PushMessageListener::orderly(
+            |_messages: Vec<MessageExt>, context: ConsumeOrderlyContext| async move {
+                (Some(ConsumeOrderlyStatus::Success), context)
+            },
+        );
+
+        consumer
+            .clone()
+            .consume_pop_batch(
+                PopConsumeBatchContext {
+                    process_queue,
+                    runtime: runtime.clone(),
+                    queue,
+                    route_topic: "orders".to_owned(),
+                    consumer_group: "pop-orderly-stats-group".to_owned(),
+                    stats_consumer_group: "pop-orderly-stats-group".to_owned(),
+                },
+                listener,
+                vec![pop_receipt_message(Some(&receipt))],
+            )
+            .await;
+
+        assert!(!consumer.stats.contains_topic(
+            runtime.client_id(),
+            "pop-orderly-stats-group",
+            "orders"
+        ));
+        runtime.shutdown().await.unwrap();
     }
 
     #[tokio::test]
@@ -7774,6 +7835,8 @@ mod tests {
             .await
             .unwrap();
         nameserver_peer.await.unwrap();
+        *write_lock(&consumer.consume_stats_group) = Some("pop-lifecycle-group".to_owned());
+        consumer.set_consumer_group("pop-lifecycle-live-group");
 
         let queue = MessageQueue::new("orders", "broker-a", 0);
         let successful_queue = Arc::new(PopProcessQueue::new(queue.clone(), 1));
@@ -7795,6 +7858,7 @@ mod tests {
                     queue: queue.clone(),
                     route_topic: "orders".into(),
                     consumer_group: "pop-lifecycle-group".into(),
+                    stats_consumer_group: consumer.consume_stats_group(),
                 },
                 successful_listener,
                 vec![pop_receipt_message(Some(&initial_receipt))],
@@ -7802,6 +7866,16 @@ mod tests {
             .await;
         assert_eq!(listener_calls.load(Ordering::SeqCst), 1);
         assert_eq!(successful_queue.wait_ack_count(), 0);
+        assert!(consumer.stats.contains_topic(
+            runtime.client_id(),
+            "pop-lifecycle-group",
+            "orders"
+        ));
+        assert!(!consumer.stats.contains_topic(
+            runtime.client_id(),
+            "pop-lifecycle-live-group",
+            "orders"
+        ));
 
         let retry_queue = Arc::new(PopProcessQueue::new(queue.clone(), 2));
         retry_queue.inc_found_messages(1);
@@ -7817,6 +7891,7 @@ mod tests {
                     queue: queue.clone(),
                     route_topic: "orders".into(),
                     consumer_group: "pop-lifecycle-group".into(),
+                    stats_consumer_group: consumer.consume_stats_group(),
                 },
                 retry_listener,
                 vec![pop_receipt_message(Some(&initial_receipt))],
@@ -8207,6 +8282,7 @@ mod tests {
             .with_namespace(Some(&consumer.config.consumer_group()))
             .unwrap()
             .unwrap();
+        *write_lock(&consumer.consume_stats_group) = Some(consumer_group.clone());
         consumer
             .rebalance_service
             .set_strategy(consumer.config.allocate_message_queue_strategy());
@@ -9614,6 +9690,119 @@ mod tests {
 
         first_runtime.shutdown().await.unwrap();
         second_runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn concurrent_consume_stats_keep_the_start_group_after_facade_mutation() {
+        let mut config = PushConsumerConfig::new("consume-stats-snapshot-group").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        config.set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let store: Arc<dyn OffsetStore> = Arc::new(RecordingOffsetStore::default());
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            store,
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/push-implementation-accessor.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            fixture["consumeServiceGroupBeforeMutation"],
+            "phase18-consume-service-group"
+        );
+        assert_eq!(
+            fixture["consumeServiceFacadeGroupAfterMutation"],
+            "phase18-consume-service-group-mutated"
+        );
+        for key in [
+            "concurrentConsumeServiceGroup",
+            "orderlyConsumeServiceGroup",
+            "popConcurrentConsumeServiceGroup",
+            "popOrderlyConsumeServiceGroup",
+        ] {
+            assert_eq!(fixture[key], fixture["consumeServiceGroupBeforeMutation"]);
+        }
+
+        consumer.set_consumer_group("consume-stats-live-group");
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let request = consume_request(queue, 191, vec![message(1)]);
+        let listener: Arc<dyn MessageListenerConcurrently> = Arc::new(
+            |_messages: Vec<MessageExt>, context: ConsumeConcurrentlyContext| async move {
+                (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+            },
+        );
+        consumer
+            .clone()
+            .run_consume_request(request, listener)
+            .await;
+
+        assert!(consumer.stats.contains_topic(
+            runtime.client_id(),
+            "consume-stats-snapshot-group",
+            "orders"
+        ));
+        assert!(!consumer.stats.contains_topic(
+            runtime.client_id(),
+            "consume-stats-live-group",
+            "orders"
+        ));
+        consumer.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn orderly_consume_stats_keep_the_start_group_after_facade_mutation() {
+        let mut config = PushConsumerConfig::new("orderly-stats-snapshot-group").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        config.set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let store: Arc<dyn OffsetStore> = Arc::new(RecordingOffsetStore::default());
+        let listener: Arc<dyn MessageListenerOrderly> = Arc::new(
+            |_messages: Vec<MessageExt>, context: ConsumeOrderlyContext| async move {
+                (Some(ConsumeOrderlyStatus::Success), context)
+            },
+        );
+        let runtime =
+            install_started_orderly_consumer(&consumer, &manager, store, listener.clone(), None)
+                .await;
+
+        consumer.set_consumer_group("orderly-stats-live-group");
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let process_queue = Arc::new(ProcessQueue::new(queue, 192));
+        process_queue
+            .insert_messages(192, vec![message(1)])
+            .unwrap();
+        consumer
+            .clone()
+            .run_orderly_consume_request(
+                OrderlyConsumeRequest {
+                    process_queue,
+                    generation: 192,
+                },
+                listener,
+            )
+            .await;
+
+        assert!(consumer.stats.contains_topic(
+            runtime.client_id(),
+            "orderly-stats-snapshot-group",
+            "orders"
+        ));
+        assert!(!consumer.stats.contains_topic(
+            runtime.client_id(),
+            "orderly-stats-live-group",
+            "orders"
+        ));
+        consumer.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
     }
 
     #[tokio::test]

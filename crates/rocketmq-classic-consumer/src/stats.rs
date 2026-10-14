@@ -92,6 +92,12 @@ impl ConsumerStatsManager {
         self.status_at(client_id, group, topic, Instant::now())
     }
 
+    #[cfg(test)]
+    pub(crate) fn contains_topic(&self, client_id: &str, group: &str, topic: &str) -> bool {
+        self.lock_topics()
+            .contains_key(&(client_id.to_owned(), group.to_owned(), topic.to_owned()))
+    }
+
     fn status_at(
         &self,
         client_id: &str,

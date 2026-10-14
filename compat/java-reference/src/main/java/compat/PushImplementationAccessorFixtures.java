@@ -22,7 +22,9 @@ import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
 import org.apache.rocketmq.client.consumer.PopResult;
 import org.apache.rocketmq.client.consumer.PopStatus;
 import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyStatus;
+import org.apache.rocketmq.client.consumer.listener.ConsumeOrderlyStatus;
 import org.apache.rocketmq.client.consumer.listener.MessageListenerConcurrently;
+import org.apache.rocketmq.client.consumer.listener.MessageListenerOrderly;
 import org.apache.rocketmq.client.consumer.store.OffsetStore;
 import org.apache.rocketmq.client.consumer.store.ReadOffsetType;
 import org.apache.rocketmq.client.exception.MQClientException;
@@ -31,6 +33,10 @@ import org.apache.rocketmq.client.hook.ConsumeMessageHook;
 import org.apache.rocketmq.client.hook.FilterMessageContext;
 import org.apache.rocketmq.client.hook.FilterMessageHook;
 import org.apache.rocketmq.client.impl.MQAdminImpl;
+import org.apache.rocketmq.client.impl.consumer.ConsumeMessageConcurrentlyService;
+import org.apache.rocketmq.client.impl.consumer.ConsumeMessageOrderlyService;
+import org.apache.rocketmq.client.impl.consumer.ConsumeMessagePopConcurrentlyService;
+import org.apache.rocketmq.client.impl.consumer.ConsumeMessagePopOrderlyService;
 import org.apache.rocketmq.client.impl.consumer.ConsumeMessageService;
 import org.apache.rocketmq.client.impl.consumer.DefaultMQPushConsumerImpl;
 import org.apache.rocketmq.client.impl.consumer.PopProcessQueue;
@@ -337,6 +343,7 @@ public final class PushImplementationAccessorFixtures {
         fixture.putAll(classFilterSubscribeResults());
         fixture.put("pushConsumeInitModes", pushConsumeInitModes());
         fixture.putAll(topicHelpers);
+        fixture.putAll(consumeServiceGroupSnapshots());
         fixture.putAll(orderlyLockedPullAttempts());
         fixture.putAll(pushQueueThresholdResults());
         String json = JSON.toJSONString(fixture) + "\n";
@@ -580,6 +587,44 @@ public final class PushImplementationAccessorFixtures {
         Field delay = DefaultMQPushConsumerImpl.class.getDeclaredField("pullTimeDelayMillsWhenException");
         delay.setAccessible(true);
         return delay.getLong(implementation);
+    }
+
+    private static Map<String, Object> consumeServiceGroupSnapshots() throws Exception {
+        String group = "phase18-consume-service-group";
+        DefaultMQPushConsumer consumer = new DefaultMQPushConsumer(group);
+        DefaultMQPushConsumerImpl implementation = consumer.getDefaultMQPushConsumerImpl();
+        MessageListenerConcurrently concurrentListener =
+            (messages, context) -> ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
+        MessageListenerOrderly orderlyListener =
+            (messages, context) -> ConsumeOrderlyStatus.SUCCESS;
+        ConsumeMessageConcurrentlyService concurrent =
+            new ConsumeMessageConcurrentlyService(implementation, concurrentListener);
+        ConsumeMessageOrderlyService orderly =
+            new ConsumeMessageOrderlyService(implementation, orderlyListener);
+        ConsumeMessagePopConcurrentlyService popConcurrent =
+            new ConsumeMessagePopConcurrentlyService(implementation, concurrentListener);
+        ConsumeMessagePopOrderlyService popOrderly =
+            new ConsumeMessagePopOrderlyService(implementation, orderlyListener);
+        consumer.setConsumerGroup("phase18-consume-service-group-mutated");
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("consumeServiceGroupBeforeMutation", group);
+        result.put("consumeServiceFacadeGroupAfterMutation", consumer.getConsumerGroup());
+        result.put("concurrentConsumeServiceGroup", serviceConsumerGroup(concurrent));
+        result.put("orderlyConsumeServiceGroup", serviceConsumerGroup(orderly));
+        result.put("popConcurrentConsumeServiceGroup", serviceConsumerGroup(popConcurrent));
+        result.put("popOrderlyConsumeServiceGroup", serviceConsumerGroup(popOrderly));
+        concurrent.shutdown(100);
+        orderly.shutdown(100);
+        popConcurrent.shutdown(100);
+        popOrderly.shutdown(100);
+        return result;
+    }
+
+    private static String serviceConsumerGroup(Object service) throws Exception {
+        Field group = service.getClass().getDeclaredField("consumerGroup");
+        group.setAccessible(true);
+        return (String) group.get(service);
     }
 
     private static Map<String, Object> rawRunningInfoResults(
