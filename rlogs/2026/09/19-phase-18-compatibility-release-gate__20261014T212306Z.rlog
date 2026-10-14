@@ -1,0 +1,27 @@
+# Phase 18 execution session — 2026-10-14T21:23:06Z
+
+Branch: `phase/19-phase-18-compatibility-release-gate`
+Starting revision: `e7909189`
+Java oracle: `/Users/bruce.tsai/Projects/3rd/rocketmq`, pinned source commit `efa1be59d6fc747ad220f036c86030f05f0419f9` (read-only).
+Plan files left unchanged.
+
+## Pull statistics group snapshot
+
+- Java `DefaultMQPushConsumerImpl.pullMessage` records Pull RT/TPS with `pullRequest.getConsumerGroup()`. Rust had read the mutable facade configuration after the reply. Rust now records these statistics with the request's retained group.
+- Extended the invoked Java Push implementation fixture to mutate the facade group after constructing a PullRequest and record both values. Rust regression verifies the stats manager records under the retained request group after facade mutation.
+- Code commit: `b05dff72 fix(consumer): use pull request group for pull stats`.
+- Fixture SHA-256: `f1385a7061449c1e713050ed8658516678f17ba44f8fbf6630a7489b4eea0a7f`.
+- Toolchain: Rust/Cargo 1.85.0; Apache Maven 3.10.0.
+
+## Validation
+
+- PASS: `cargo test -p rocketmq-classic-consumer --all-features --locked` (210 unit tests, all Consumer integration targets, and doctests).
+- PASS: `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios, fixture drift checks, and Java/Rust cross-decodes).
+- PASS: `cargo clippy -p rocketmq-classic-consumer --all-targets --all-features --locked -- -D warnings`.
+- PASS: `cargo fmt --all -- --check`; `git diff --check`.
+- Fixture regeneration command initially failed because `exec:java` ran `compat.Main` with an incomplete argument list. Corrected with `mvn -q -f compat/java-reference/pom.xml -Dexec.args='push-implementation-accessor-fixture /Users/bruce.tsai/Projects/trio/rocketmq-classic/fixtures/consumer/push-implementation-accessor.json' exec:java`; the Java fixture then completed successfully.
+
+## Remaining
+
+- P18-V01 remains open. This closes the Pull statistics key path only; concurrent/orderly/POP consume-stat group snapshots and other post-start group call paths still need pinned-source comparison and regression evidence.
+- Full workspace P18-V02 gates have not been rerun on this revision. Current-revision GitHub Ubuntu CI and Phase 19 local Broker/Docker work remain outstanding. No push, publication, or tag action was taken.

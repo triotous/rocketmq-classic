@@ -470,6 +470,16 @@ the required full Phase 18 gates on the final revision.
   Consumer loopback case, strict Clippy for Protocol/Core/Consumer, Maven
   verify (37 scenarios and fixture/cross-decode checks), formatting, and diff
   checks pass. P18-V01 remains open beyond this path.
+- Pull statistics group follow-up (`b05dff72`, 2026-10-14): Push now indexes a
+  successful pull's statistics with the group retained by its `PullRequest`,
+  matching Java's `incPullRT`/`incPullTPS` call sites. The invoked Java fixture
+  mutates the facade group after creating the request and confirms the request
+  keeps the original group; the Rust regression confirms statistics use that
+  request group after facade mutation. Consumer all-feature tests (210 unit
+  tests plus integration targets and doctests), strict Consumer Clippy, Maven
+  verify (37 scenarios and fixture/cross-decode checks), formatting, and diff
+  checks pass. This closes only the Pull statistics key path; consume-service
+  statistics and the broad P18-V01 audit remain open.
 
 ## Package graph and metadata
 
