@@ -71,6 +71,12 @@ impl Drop for PublishInfoRemapGuard {
 
 /// Shared mutable queue-list handle corresponding to
 /// `TopicPublishInfo.getMessageQueueList()`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_producer::publish_info::ProducerPublishQueueList;
+/// let queues = ProducerPublishQueueList::default();
+/// queues.ptr_eq(&queues);
+/// ```
 #[derive(Clone, Default)]
 pub struct ProducerPublishQueueList(Arc<RwLock<Vec<MessageQueue>>>);
 
@@ -97,10 +103,6 @@ impl ProducerPublishQueueList {
         self.len() == 0
     }
 
-    pub fn ptr_eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
-    }
-
     /// Mutates the Java list object retained by every alias to this handle.
     pub fn with_mut<R>(&self, update: impl FnOnce(&mut Vec<MessageQueue>) -> R) -> R {
         update(
@@ -113,6 +115,12 @@ impl ProducerPublishQueueList {
 }
 
 /// Shared mutable counterpart to Java's `ThreadLocalIndex`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_producer::publish_info::ProducerQueueIndex;
+/// let index = ProducerQueueIndex::default();
+/// index.ptr_eq(&index);
+/// ```
 #[derive(Clone, Default)]
 pub struct ProducerQueueIndex(Arc<Mutex<HashMap<ThreadId, AtomicI32>>>);
 
@@ -145,10 +153,6 @@ impl ProducerQueueIndex {
             .get(&std::thread::current().id())
             .map(|index| index.load(Ordering::Relaxed))
     }
-
-    pub fn ptr_eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
-    }
 }
 
 impl std::fmt::Display for ProducerQueueIndex {
@@ -180,6 +184,12 @@ struct PublishInfoData {
 /// Mutable producer route value corresponding to Java's `TopicPublishInfo`.
 /// Cloned handles share the same mutable value, queue list, route data, and
 /// per-thread queue cursor.
+///
+/// ```compile_fail
+/// use rocketmq_classic_producer::publish_info::TopicPublishInfo;
+/// let info = TopicPublishInfo::default();
+/// info.ptr_eq(&info);
+/// ```
 #[derive(Clone)]
 pub struct TopicPublishInfo(Arc<RwLock<PublishInfoData>>);
 
@@ -214,7 +224,7 @@ impl TopicPublishInfo {
         })))
     }
 
-    pub fn ptr_eq(&self, other: &Self) -> bool {
+    pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
     }
 

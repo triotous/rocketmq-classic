@@ -8,6 +8,12 @@ use std::{
 
 /// Shared, safely mutable route DTO, matching the object identity Java stores
 /// in its raw topic route table.
+///
+/// ```compile_fail
+/// use rocketmq_classic_core::route::TopicRouteDataHandle;
+/// let route = TopicRouteDataHandle::new(Default::default());
+/// route.ptr_eq(&route);
+/// ```
 #[derive(Clone, Debug)]
 pub struct TopicRouteDataHandle(Arc<RwLock<TopicRouteData>>);
 
@@ -99,7 +105,7 @@ impl TopicRouteDataHandle {
             .map_err(|_| RuntimeError::RegistryPoisoned)
     }
 
-    pub fn ptr_eq(&self, other: &Self) -> bool {
+    pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
     }
 

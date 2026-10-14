@@ -15,6 +15,9 @@ use std::{
     time::Duration,
 };
 
+mod support;
+use support::{same_route_handle, same_route_option};
+
 fn broker_handle(route: &TopicRouteData, index: usize) -> SharedBrokerDataHandle {
     route
         .broker_datas
@@ -226,14 +229,10 @@ async fn raw_clear_query_refetches_once_and_retained_table_observes_wire_refresh
         serde_json::from_value(case["replacementInput"].clone()).unwrap(),
     );
     table.put("topic", replacement.clone()).unwrap();
-    assert!(
-        runtime
-            .query_topic_route("topic")
-            .await
-            .unwrap()
-            .unwrap()
-            .ptr_eq(&replacement)
-    );
+    assert!(same_route_handle(
+        &runtime.query_topic_route("topic").await.unwrap().unwrap(),
+        &replacement
+    ));
     table.clear().unwrap();
     assert!(runtime.get_existing_topic_route("topic").unwrap().is_none());
     assert_eq!(
@@ -246,7 +245,7 @@ async fn raw_clear_query_refetches_once_and_retained_table_observes_wire_refresh
             .unwrap()
             .unwrap()
             .unwrap();
-    assert!(table.get("topic").unwrap().unwrap().ptr_eq(&refreshed));
+    assert!(same_route_option(table.get("topic").unwrap(), &refreshed));
     assert_eq!(
         refreshed
             .snapshot()
@@ -261,14 +260,10 @@ async fn raw_clear_query_refetches_once_and_retained_table_observes_wire_refresh
             .with(|addresses| addresses.get(&Some(0)).cloned().flatten()),
         Some("master:10911".to_owned())
     );
-    assert!(
-        runtime
-            .query_topic_route("topic")
-            .await
-            .unwrap()
-            .unwrap()
-            .ptr_eq(&refreshed)
-    );
+    assert!(same_route_handle(
+        &runtime.query_topic_route("topic").await.unwrap().unwrap(),
+        &refreshed
+    ));
     runtime.remoting().shutdown().await;
     tokio::time::timeout(Duration::from_secs(5), peer)
         .await
@@ -336,9 +331,7 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
         .unwrap();
     let table = runtime.topic_route_table();
     let retained = table.clone();
-    let same = |value: Option<TopicRouteDataHandle>, expected: &TopicRouteDataHandle| {
-        value.is_some_and(|value| value.ptr_eq(expected))
-    };
+    let same = same_route_option;
     let mut outcomes = BTreeMap::new();
     outcomes.insert("initialEmpty", table.is_empty().unwrap());
     outcomes.insert(
@@ -657,24 +650,24 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
     );
     outcomes.insert(
         "getOrDefaultPresent",
-        table
-            .get_or_default("topic", second.clone())
-            .unwrap()
-            .ptr_eq(&first),
+        same_route_handle(
+            &table.get_or_default("topic", second.clone()).unwrap(),
+            &first,
+        ),
     );
     outcomes.insert(
         "getOrDefaultAbsent",
-        table
-            .get_or_default("missing", second.clone())
-            .unwrap()
-            .ptr_eq(&second),
+        same_route_handle(
+            &table.get_or_default("missing", second.clone()).unwrap(),
+            &second,
+        ),
     );
     outcomes.insert(
         "getOrDefaultNullDefaultPresent",
-        table
-            .get_or_default_nullable(Some("topic"), None)
-            .unwrap()
-            .is_some_and(|value| value.ptr_eq(&first)),
+        same_route_option(
+            table.get_or_default_nullable(Some("topic"), None).unwrap(),
+            &first,
+        ),
     );
     outcomes.insert(
         "getOrDefaultNullDefaultAbsent",
@@ -951,7 +944,7 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
                 reentered_len == expected_routes.len()
                     && expected_routes
                         .get(key)
-                        .is_some_and(|expected| value.ptr_eq(expected)),
+                        .is_some_and(|expected| same_route_handle(value, expected)),
             );
         })
         .unwrap();
@@ -1171,16 +1164,10 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
     outcomes.insert(
         "replaceAllNullResultVisitsPrefixOnly",
         native_visit_order == native_order[..2]
-            && native_order.first().is_some_and(|key| {
-                table
-                    .get(key)
-                    .unwrap()
-                    .is_some_and(|value| value.ptr_eq(&second))
-            })
-            && table
-                .get(&failing_key)
-                .unwrap()
-                .is_some_and(|value| value.ptr_eq(&first)),
+            && native_order
+                .first()
+                .is_some_and(|key| same_route_option(table.get(key).unwrap(), &second))
+            && same_route_option(table.get(&failing_key).unwrap(), &first),
     );
     outcomes.insert(
         "replaceAllNullResultStopsBeforeSuffix",
@@ -1192,12 +1179,7 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
     assert_ne!(java_visit_order[0], java_visit_order[1]);
     let native_updated_keys: Vec<String> = native_order
         .iter()
-        .filter(|key| {
-            table
-                .get(key)
-                .unwrap()
-                .is_some_and(|value| value.ptr_eq(&second))
-        })
+        .filter(|key| same_route_option(table.get(key).unwrap(), &second))
         .cloned()
         .collect();
     assert_eq!(expected_updated_keys.len(), 1);
@@ -1221,8 +1203,8 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
             callback_calls_for_task.fetch_add(1, Ordering::SeqCst);
             callback_read_for_task.store(
                 old.zip(callback_read_table.get(key).ok().flatten().as_ref())
-                    .is_some_and(|(old, observed)| old.ptr_eq(observed))
-                    && old.is_some_and(|old| old.ptr_eq(&callback_first)),
+                    .is_some_and(|(old, observed)| same_route_handle(old, observed))
+                    && old.is_some_and(|old| same_route_handle(old, &callback_first)),
                 Ordering::SeqCst,
             );
             callback_started_tx.send(()).unwrap();
@@ -1523,34 +1505,28 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
     let entry = entry_view.entry_snapshots().unwrap().pop().unwrap();
     outcomes.insert(
         "entrySetValueReturnsPrevious",
-        entry.set_value(second.clone()).unwrap().ptr_eq(&first),
+        same_route_handle(&entry.set_value(second.clone()).unwrap(), &first),
     );
     outcomes.insert(
         "entrySetValueUpdatesEntry",
-        entry.value().unwrap().ptr_eq(&second),
+        same_route_handle(&entry.value().unwrap(), &second),
     );
     outcomes.insert(
         "entrySetValueUpdatesTable",
-        table
-            .get("entry-set-value")
-            .unwrap()
-            .is_some_and(|value| value.ptr_eq(&second)),
+        same_route_option(table.get("entry-set-value").unwrap(), &second),
     );
     table.put("entry-set-value", equal_second.clone()).unwrap();
     outcomes.insert(
         "entrySetValueEntryIsSnapshot",
-        entry.value().unwrap().ptr_eq(&second),
+        same_route_handle(&entry.value().unwrap(), &second),
     );
     outcomes.insert(
         "entrySetValueReturnsCapturedPrevious",
-        entry.set_value(first.clone()).unwrap().ptr_eq(&second),
+        same_route_handle(&entry.set_value(first.clone()).unwrap(), &second),
     );
     outcomes.insert(
         "entrySetValueReplacesCurrentMapping",
-        table
-            .get("entry-set-value")
-            .unwrap()
-            .is_some_and(|value| value.ptr_eq(&first)),
+        same_route_option(table.get("entry-set-value").unwrap(), &first),
     );
     outcomes.insert(
         "entrySetValueNullThrowsNullPointer",
@@ -1561,14 +1537,11 @@ async fn retained_raw_topic_table_matches_invoked_java_primitives_and_cached_que
     );
     outcomes.insert(
         "entrySetValueNullLeavesEntry",
-        entry.value().unwrap().ptr_eq(&first),
+        same_route_handle(&entry.value().unwrap(), &first),
     );
     outcomes.insert(
         "entrySetValueNullLeavesMapping",
-        table
-            .get("entry-set-value")
-            .unwrap()
-            .is_some_and(|value| value.ptr_eq(&first)),
+        same_route_option(table.get("entry-set-value").unwrap(), &first),
     );
     table.clear().unwrap();
     // Rust uses explicit live-view removals in place of Java Iterator.remove; snapshot traversal

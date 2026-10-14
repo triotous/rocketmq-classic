@@ -82,6 +82,12 @@ methods, and the surfaced Rust adapters. Several Java owners are inherited
 and require each listed Rust API and Java counterpart on the same matrix row.
 The Java `ThreadLocalIndex` class is signature-pinned; its increment masking,
 reset, and `toString()` behavior are compared with `ProducerQueueIndex`.
+Rust-only `ptr_eq` methods were removed from the public surfaces of
+`ProducerPublishQueueList`, `ProducerQueueIndex`, `TopicPublishInfo`, and
+`TopicRouteDataHandle`; crate-internal identity checks remain for Java
+map/view semantics. Producer/Core compile-fail doctests and mutation-
+based integration assertions guard the external boundary and retained-alias
+behavior.
 
 | Rust public API | Java 5.5.1 API | Mapping note |
 | --- | --- | --- |

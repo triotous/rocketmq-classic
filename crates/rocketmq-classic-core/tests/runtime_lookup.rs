@@ -21,6 +21,9 @@ use tokio::{
     time::{Duration, Instant},
 };
 
+mod support;
+use support::same_route_option;
+
 async fn read(socket: &mut TcpStream) -> RemotingCommand {
     let mut length = [0; 4];
     socket.read_exact(&mut length).await.unwrap();
@@ -939,9 +942,9 @@ async fn query_topic_route_refreshes_only_missing_cache_even_for_empty_brokers()
             .is_empty()
     );
     let cached = runtime.get_existing_topic_route("topic").unwrap().unwrap();
-    assert!(first.ptr_eq(&cached));
+    assert!(same_route_option(Some(cached.clone()), &first));
     let queried = runtime.query_topic_route("topic").await.unwrap().unwrap();
-    assert!(first.ptr_eq(&queried));
+    assert!(same_route_option(Some(queried), &first));
     runtime.remoting().shutdown().await;
     name_peer.await.unwrap();
 }

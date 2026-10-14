@@ -1342,18 +1342,49 @@ fn implementation_publish_info_table_and_nested_aliases_match_java_fixture() {
         .get("orders")
         .unwrap();
     assert_eq!(
-        table.get("orders").unwrap().ptr_eq(&info),
-        expected["tableValueRetainsIdentity"]
+        Some(from_table.is_order_topic()),
+        expected["tableValueRetainsIdentity"].as_bool()
     );
-    assert!(from_table.ptr_eq(&info));
-    assert!(
+    from_table.set_order_topic(false);
+    assert!(!info.is_order_topic());
+    from_table.set_order_topic(true);
+
+    let table_queue_list = from_table.message_queue_list().unwrap();
+    table_queue_list.with_mut(|queues| queues.push(replacement.clone()));
+    assert_eq!(
+        original_list.snapshot(),
+        [original.clone(), replacement.clone()]
+    );
+    original_list.with_mut(|queues| queues.retain(|queue| queue == &original));
+
+    route
+        .with_mut(|route| {
+            route.set_queue_datas_owned(Some(vec![
+                Some(QueueData {
+                    broker_name: Some("broker-b".to_owned()),
+                    write_queue_nums: 3,
+                    ..QueueData::default()
+                }),
+                Some(QueueData {
+                    broker_name: Some("broker-c".to_owned()),
+                    write_queue_nums: 4,
+                    ..QueueData::default()
+                }),
+            ]));
+        })
+        .unwrap();
+    assert_eq!(
         from_table
-            .message_queue_list()
-            .unwrap()
-            .ptr_eq(&original_list)
+            .get_write_queue_nums_by_broker("broker-c")
+            .unwrap(),
+        4
     );
-    assert!(from_table.topic_route_data().unwrap().ptr_eq(&route));
-    assert!(from_table.send_which_queue().ptr_eq(&send_index));
+
+    let table_send_index = from_table.send_which_queue();
+    let initial_index = send_index.to_string();
+    table_send_index.increment_and_get();
+    assert_ne!(send_index.to_string(), initial_index);
+    assert_eq!(send_index.to_string(), table_send_index.to_string());
 
     let retained_list = from_table.message_queue_list().unwrap();
     retained_list.with_mut(|queues| {
@@ -1389,13 +1420,24 @@ fn implementation_publish_info_table_and_nested_aliases_match_java_fixture() {
     from_table.set_message_queues(Some(vec![original.clone()]));
     stale_list.with_mut(Vec::clear);
     let current_list = from_table.message_queue_list().unwrap();
-    assert!(!current_list.ptr_eq(&stale_list));
     assert_eq!(current_list.snapshot(), [original]);
 
     let replacement_info = TopicPublishInfo::default();
+    replacement_info.set_message_queue_list(Some(ProducerPublishQueueList::new(vec![
+        replacement.clone(),
+    ])));
     let previous = table.put("orders", replacement_info.clone()).unwrap();
-    assert!(previous.ptr_eq(&info));
-    assert!(table.get("orders").unwrap().ptr_eq(&replacement_info));
+    previous.set_order_topic(false);
+    assert!(!info.is_order_topic());
+    assert_eq!(
+        table
+            .get("orders")
+            .unwrap()
+            .message_queue_list()
+            .unwrap()
+            .snapshot(),
+        [replacement]
+    );
     assert!(table.remove("orders").is_some());
     assert!(table.is_empty());
     assert!(expected["getterReturnsLiveMap"].as_bool().unwrap());
@@ -1429,31 +1471,29 @@ fn publish_info_table_remapping_and_live_views_match_java_fixture() {
     let second = TopicPublishInfo::default();
     let third = TopicPublishInfo::default();
 
-    assert!(
-        table
-            .compute_if_absent("compute", |_| Some(first.clone()))
-            .unwrap()
-            .ptr_eq(&first)
-    );
-    assert!(
-        table
-            .compute_if_present("compute", |_, _| Some(second.clone()))
-            .unwrap()
-            .ptr_eq(&second)
-    );
+    let computed = table
+        .compute_if_absent("compute", |_| Some(first.clone()))
+        .unwrap();
+    computed.set_order_topic(true);
+    assert!(first.is_order_topic());
+    let replaced = table
+        .compute_if_present("compute", |_, _| Some(second.clone()))
+        .unwrap();
+    replaced.set_order_topic(true);
+    assert!(second.is_order_topic());
     assert_eq!(
         expected["computeIfPresentIdentity"].as_bool(),
-        Some(table.get("compute").unwrap().ptr_eq(&second))
+        Some(table.get("compute").unwrap().is_order_topic())
     );
-    assert!(
-        table
-            .merge("compute", third.clone(), |current, _| Some(current.clone()))
-            .unwrap()
-            .ptr_eq(&second)
-    );
+    second.set_order_topic(false);
+    let merged = table
+        .merge("compute", third.clone(), |current, _| Some(current.clone()))
+        .unwrap();
+    merged.set_order_topic(true);
+    assert!(second.is_order_topic());
     assert_eq!(
         expected["mergeKeepsCurrentIdentity"].as_bool(),
-        Some(table.get("compute").unwrap().ptr_eq(&second))
+        Some(table.get("compute").unwrap().is_order_topic())
     );
     assert!(table.compute("compute", |_, _| None).is_none());
     assert!(!table.contains_key("compute"));
@@ -1461,20 +1501,21 @@ fn publish_info_table_remapping_and_live_views_match_java_fixture() {
     assert!(expected["computeNullRemoves"].as_bool().unwrap());
 
     table.put("replace", first.clone());
-    assert!(
-        table
-            .replace("replace", second.clone())
-            .unwrap()
-            .ptr_eq(&first)
-    );
-    assert!(table.replace_if_equal("replace", &second, third.clone()));
-    table.replace_all(|_, _| second.clone());
-    assert!(table.get("replace").unwrap().ptr_eq(&second));
+    first.set_order_topic(false);
+    let previous = table.replace("replace", second.clone()).unwrap();
+    previous.set_order_topic(true);
+    assert!(first.is_order_topic());
     assert!(
         expected["replaceReturnsPreviousIdentity"]
             .as_bool()
             .unwrap()
     );
+    let different_value = TopicPublishInfo::default();
+    assert!(!table.replace_if_equal("replace", &different_value, third.clone()));
+    assert!(table.replace_if_equal("replace", &second, third.clone()));
+    table.replace_all(|_, _| second.clone());
+    table.get("replace").unwrap().set_order_topic(true);
+    assert!(second.is_order_topic());
     assert!(
         expected["conditionalReplaceUsesIdentity"]
             .as_bool()
@@ -1533,8 +1574,13 @@ fn publish_info_table_remapping_and_live_views_match_java_fixture() {
         .into_iter()
         .find(|entry| entry.key() == "entry-view")
         .unwrap();
-    assert!(entry.set_value(third.clone()).ptr_eq(&first));
-    assert!(table.get("entry-view").unwrap().ptr_eq(&third));
+    let previous = entry.set_value(third.clone());
+    previous.set_order_topic(true);
+    assert!(first.is_order_topic());
+    entry.value().set_order_topic(true);
+    assert!(third.is_order_topic());
+    table.get("entry-view").unwrap().set_order_topic(false);
+    assert!(!third.is_order_topic());
     assert!(entries.remove("entry-view", &third));
     assert!(!table.contains_key("entry-view"));
     table.put("entry-bulk-remove", first.clone());
@@ -1548,17 +1594,24 @@ fn publish_info_table_remapping_and_live_views_match_java_fixture() {
         1
     );
     assert_eq!(table.len(), 1);
-    assert!(table.get("entry-bulk-retain").unwrap().ptr_eq(&third));
+    table
+        .get("entry-bulk-retain")
+        .unwrap()
+        .set_order_topic(true);
+    assert!(third.is_order_topic());
     assert!(expected["entryViewBulkMutation"].as_bool().unwrap());
 
     table.put("key-remove-if", first.clone());
     assert_eq!(keys.remove_if(|topic| topic == "key-remove-if"), 1);
     assert!(!table.contains_key("key-remove-if"));
+    first.set_order_topic(true);
+    second.set_order_topic(false);
+    third.set_order_topic(false);
     table.put("value-remove-if-match", first.clone());
     table.put("value-remove-if-keep", second.clone());
-    assert_eq!(values.remove_if(|value| value.ptr_eq(&first)), 1);
+    assert_eq!(values.remove_if(TopicPublishInfo::is_order_topic), 1);
     assert!(!table.contains_key("value-remove-if-match"));
-    assert!(table.get("value-remove-if-keep").unwrap().ptr_eq(&second));
+    assert!(!table.get("value-remove-if-keep").unwrap().is_order_topic());
     table.put("entry-remove-if-match", first.clone());
     table.put("entry-remove-if-keep", third.clone());
     assert_eq!(
@@ -1566,7 +1619,11 @@ fn publish_info_table_remapping_and_live_views_match_java_fixture() {
         1
     );
     assert!(!table.contains_key("entry-remove-if-match"));
-    assert!(table.get("entry-remove-if-keep").unwrap().ptr_eq(&third));
+    table
+        .get("entry-remove-if-keep")
+        .unwrap()
+        .set_order_topic(true);
+    assert!(third.is_order_topic());
     assert!(expected["keyViewRemoveIfMutation"].as_bool().unwrap());
     assert!(expected["valuesViewRemoveIfMutation"].as_bool().unwrap());
     assert!(expected["entryViewRemoveIfMutation"].as_bool().unwrap());
@@ -1589,39 +1646,37 @@ fn publish_info_table_remapping_and_live_views_match_java_fixture() {
     );
     assert!(expected["clearAffectsRetainedViews"].as_bool().unwrap());
 
-    assert!(
-        table
-            .get_or_default("missing", second.clone())
-            .ptr_eq(&second)
-    );
+    let missing_default = table.get_or_default("missing", second.clone());
+    missing_default.set_order_topic(true);
+    assert!(second.is_order_topic());
     table.put("map-op-present", first.clone());
-    assert!(
-        table
-            .get_or_default("map-op-present", second.clone())
-            .ptr_eq(&first)
-    );
+    let present_value = table.get_or_default("map-op-present", second.clone());
+    present_value.set_order_topic(true);
+    assert!(first.is_order_topic());
     assert!(table.contains_value(&first));
-    assert!(
-        table
-            .put_if_absent("map-op-present", second.clone())
-            .unwrap()
-            .ptr_eq(&first)
-    );
+    let current_value = table
+        .put_if_absent("map-op-present", second.clone())
+        .unwrap();
+    current_value.set_order_topic(false);
+    assert!(!first.is_order_topic());
     assert!(
         table
             .put_if_absent("map-op-absent", second.clone())
             .is_none()
     );
-    assert!(table.get("map-op-absent").unwrap().ptr_eq(&second));
+    table.get("map-op-absent").unwrap().set_order_topic(true);
+    assert!(second.is_order_topic());
     assert!(table.remove_if_equal("map-op-absent", &second));
     assert!(!table.contains_key("map-op-absent"));
+    first.set_order_topic(true);
+    second.set_order_topic(false);
     table.put("for-each-a", first.clone());
     table.put("for-each-b", second.clone());
     let mut for_each_rows = Vec::new();
     table.for_each(|key, value| {
         for_each_rows.push(format!(
             "{key}:{}",
-            if value.ptr_eq(&first) {
+            if value.is_order_topic() {
                 "first"
             } else {
                 "other"
@@ -1935,8 +1990,10 @@ fn publish_info_table_nullable_arguments_match_java_fixture() {
         entry.set_value_nullable(None),
         TopicPublishInfoTableError::NullValue
     );
-    assert!(entry.value().ptr_eq(&first));
-    assert!(table.get("nullable").unwrap().ptr_eq(&first));
+    entry.value().set_order_topic(true);
+    assert!(first.is_order_topic());
+    table.get("nullable").unwrap().set_order_topic(false);
+    assert!(!first.is_order_topic());
 
     assert!(
         table
@@ -1980,7 +2037,11 @@ fn publish_info_table_nullable_arguments_match_java_fixture() {
         table.replace_all_nullable(|_, _| None),
         TopicPublishInfoTableError::NullRemappingResult
     );
-    assert!(table.get("replace-all-null-result").unwrap().ptr_eq(&first));
+    table
+        .get("replace-all-null-result")
+        .unwrap()
+        .set_order_topic(true);
+    assert!(first.is_order_topic());
 }
 
 #[test]
