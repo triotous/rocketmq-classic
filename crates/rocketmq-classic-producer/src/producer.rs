@@ -19,8 +19,8 @@ use rocketmq_classic_core::api::producer::{SendMode, SendResult};
 
 use crate::{
     AsyncSenderExecutor, CheckForbiddenContext, EndTransactionContext, EndTransactionHook,
-    ProducerCompressor, ProducerConfig, ProducerError, ProducerLongArray, RetryResponseCodes,
-    SendMessageContext, SendMessageHook,
+    ProducerCompressor, ProducerConfig, ProducerError, ProducerLongArray, ProducerServiceState,
+    RetryResponseCodes, SendMessageContext, SendMessageHook,
     accumulator::AutoBatchAccumulator,
     backpressure::{AdjustableSemaphore, BackpressureReadGuard},
     executor::TokioAsyncSenderExecutor,
@@ -68,6 +68,7 @@ pub struct Producer {
     manager: ClientRuntimeManager,
     rpc_hook: Option<Arc<dyn RpcHook>>,
     state: tokio::sync::Mutex<State>,
+    service_state: RwLock<Option<ProducerServiceState>>,
     detector_task: tokio::sync::Mutex<Option<JoinHandle<()>>>,
     pub(crate) auto_batch_accumulator: AutoBatchAccumulator,
     accumulator_initialized: AtomicBool,
@@ -303,6 +304,7 @@ impl Producer {
             manager,
             rpc_hook,
             state: tokio::sync::Mutex::new(State::Created),
+            service_state: RwLock::new(Some(ProducerServiceState::CreateJust)),
             detector_task: tokio::sync::Mutex::new(None),
             auto_batch_accumulator: AutoBatchAccumulator::default(),
             accumulator_initialized: AtomicBool::new(false),
@@ -334,6 +336,30 @@ impl Producer {
 
     pub fn config(&self) -> &ProducerConfig {
         &self.config
+    }
+
+    /// Returns the Java implementation lifecycle state, including a caller-set
+    /// null value.
+    pub fn service_state(&self) -> Option<ProducerServiceState> {
+        *self
+            .service_state
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Sets the Java implementation lifecycle state. The setter mirrors the
+    /// nullable Java field; normal Producer lifecycle methods update it as
+    /// startup and shutdown progress.
+    pub fn set_service_state(&self, value: Option<ProducerServiceState>) {
+        *self
+            .service_state
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = value;
+    }
+
+    /// Returns the producer's client unit-mode setting.
+    pub fn is_unit_mode(&self) -> bool {
+        self.config.client_config().unit_mode()
     }
 
     /// Returns whether auto-batching is enabled after the accumulator has
@@ -630,11 +656,21 @@ impl Producer {
 
     pub async fn start(self: &Arc<Self>) -> Result<(), ProducerError> {
         let mut state = self.state.lock().await;
+        let service_state = self.service_state();
+        match service_state {
+            Some(ProducerServiceState::CreateJust) => {}
+            Some(ProducerServiceState::Running) => return Err(ProducerError::AlreadyStarted),
+            Some(ProducerServiceState::ShutdownAlready) => return Err(ProducerError::Shutdown),
+            Some(ProducerServiceState::StartFailed) | None => {
+                return Err(ProducerError::ServiceStateNotReady(service_state));
+            }
+        }
         match &*state {
             State::Started { .. } => return Err(ProducerError::AlreadyStarted),
             State::Shutdown => return Err(ProducerError::Shutdown),
             State::Created => {}
         }
+        self.set_service_state(Some(ProducerServiceState::StartFailed));
         let _ = self.self_weak.set(Arc::downgrade(self));
         let mut client_config = self.config.client_config().clone();
         let group = client_config
@@ -654,9 +690,21 @@ impl Producer {
             .await?;
         self.init_produce_accumulator();
         let owner: Arc<dyn ProducerRuntime> = self.clone();
-        let lease = runtime
+        let lease = match runtime
             .register_producer(self.producer_group(), owner)
-            .await?;
+            .await
+        {
+            Ok(lease) => lease,
+            Err(error) => {
+                if matches!(
+                    &error,
+                    rocketmq_classic_core::runtime::RuntimeError::DuplicateGroup { .. }
+                ) {
+                    self.set_service_state(Some(ProducerServiceState::CreateJust));
+                }
+                return Err(error.into());
+            }
+        };
         if let Err(error) = runtime.start().await {
             let deadline = self.unregister_deadline();
             let _ = runtime.unregister_producer(&lease, deadline).await;
@@ -669,6 +717,7 @@ impl Producer {
         self.start_trace_dispatcher(&runtime).await;
         let task = self.spawn_detector_task(Arc::downgrade(&runtime));
         *self.detector_task.lock().await = Some(task);
+        self.set_service_state(Some(ProducerServiceState::Running));
         Ok(())
     }
 
@@ -720,9 +769,24 @@ impl Producer {
     }
 
     pub async fn shutdown(&self) -> Result<(), ProducerError> {
+        match self.service_state() {
+            Some(ProducerServiceState::Running) => {}
+            Some(
+                ProducerServiceState::CreateJust
+                | ProducerServiceState::StartFailed
+                | ProducerServiceState::ShutdownAlready,
+            ) => return Ok(()),
+            None => return Err(ProducerError::ServiceStateNotReady(None)),
+        }
         let mut state = self.state.lock().await;
-        if matches!(&*state, State::Created) {
-            return Ok(());
+        match &*state {
+            State::Created => {
+                return Err(ProducerError::ServiceStateNotReady(Some(
+                    ProducerServiceState::Running,
+                )));
+            }
+            State::Shutdown => return Err(ProducerError::Shutdown),
+            State::Started { .. } => {}
         }
         let previous = std::mem::replace(&mut *state, State::Shutdown);
         match previous {
@@ -741,6 +805,7 @@ impl Producer {
                     self.stop_detector_task().await;
                     self.retire_request_callback_tasks().await;
                     self.shutdown_trace_dispatcher().await;
+                    self.set_service_state(Some(ProducerServiceState::ShutdownAlready));
                     return Ok(());
                 };
                 let deadline = self.unregister_deadline();
@@ -766,6 +831,7 @@ impl Producer {
                 self.stop_detector_task().await;
                 self.retire_request_callback_tasks().await;
                 self.shutdown_trace_dispatcher().await;
+                self.set_service_state(Some(ProducerServiceState::ShutdownAlready));
                 Ok(())
             }
         }
@@ -1038,6 +1104,16 @@ mod tests {
             producer.start().await,
             Err(ProducerError::InvalidBatchMaxDelay(0))
         ));
+        assert_eq!(
+            producer.service_state(),
+            Some(ProducerServiceState::StartFailed)
+        );
+        assert!(matches!(
+            producer.start().await,
+            Err(ProducerError::ServiceStateNotReady(Some(
+                ProducerServiceState::StartFailed
+            )))
+        ));
         assert_eq!(manager.factory_table().len().unwrap(), 0);
     }
 
@@ -1059,6 +1135,10 @@ mod tests {
             ))
         ));
         assert_eq!(runtime.producer_table().len().unwrap(), 0);
+        assert_eq!(
+            producer.service_state(),
+            Some(ProducerServiceState::StartFailed)
+        );
         assert!(matches!(
             producer.started_runtime().await,
             Err(ProducerError::NotStarted)
@@ -1072,19 +1152,55 @@ mod tests {
         config.client_config_mut().set_start_detector_enable(true);
         let producer = Arc::new(Producer::with_runtime_manager(config, manager));
 
+        assert_eq!(
+            producer.service_state(),
+            Some(ProducerServiceState::CreateJust)
+        );
         producer.start().await.unwrap();
+        assert_eq!(
+            producer.service_state(),
+            Some(ProducerServiceState::Running)
+        );
         assert!(matches!(
             producer.start().await,
             Err(ProducerError::AlreadyStarted)
         ));
         assert!(producer.detector_task.lock().await.is_some());
         producer.shutdown().await.unwrap();
+        assert_eq!(
+            producer.service_state(),
+            Some(ProducerServiceState::ShutdownAlready)
+        );
         assert!(producer.detector_task.lock().await.is_none());
         producer.shutdown().await.unwrap();
         assert!(matches!(
             producer.start().await,
             Err(ProducerError::Shutdown)
         ));
+    }
+
+    #[tokio::test]
+    async fn duplicate_group_registration_resets_the_public_service_state() {
+        let manager = ClientRuntimeManager::new();
+        let config = ProducerConfig::new("duplicate-producer-state").unwrap();
+        let first = Arc::new(Producer::with_runtime_manager(
+            config.clone(),
+            manager.clone(),
+        ));
+        let second = Arc::new(Producer::with_runtime_manager(config, manager));
+
+        first.start().await.unwrap();
+        assert!(matches!(
+            second.start().await,
+            Err(ProducerError::Runtime(
+                rocketmq_classic_core::runtime::RuntimeError::DuplicateGroup { .. }
+            ))
+        ));
+        assert_eq!(
+            second.service_state(),
+            Some(ProducerServiceState::CreateJust)
+        );
+        first.shutdown().await.unwrap();
     }
 
     #[tokio::test]
@@ -1133,6 +1249,10 @@ mod tests {
         let producer = Arc::new(Producer::with_runtime_manager(config, manager));
 
         producer.shutdown().await.unwrap();
+        assert_eq!(
+            producer.service_state(),
+            Some(ProducerServiceState::CreateJust)
+        );
         assert!(matches!(
             producer.started_runtime().await,
             Err(ProducerError::NotStarted)

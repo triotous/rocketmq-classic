@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use crate::ProducerServiceState;
+
 #[derive(Debug, Error)]
 pub enum ProducerError {
     #[error("producer group is blank")]
@@ -42,6 +44,8 @@ pub enum ProducerError {
     AlreadyStarted,
     #[error("producer is already shut down")]
     Shutdown,
+    #[error("producer service state does not allow this operation: {0:?}")]
+    ServiceStateNotReady(Option<ProducerServiceState>),
     #[error("{0}")]
     FaultStrategy(String),
     #[error("no writable route for topic {0}")]

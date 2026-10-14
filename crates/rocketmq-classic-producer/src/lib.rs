@@ -14,6 +14,7 @@ mod request_reply;
 mod retry_response_codes;
 mod selector;
 mod send;
+mod service_state;
 mod trace;
 mod transaction;
 pub mod validation;
@@ -36,6 +37,7 @@ pub use rocketmq_classic_common::sysflag::message::CompressionType;
 pub use rocketmq_classic_core::api::admin::QueryResult;
 pub use rocketmq_classic_core::api::producer::{SendResult, SendStatus};
 pub use rocketmq_classic_remoting::client::{CallbackExecutor, RpcHook};
+pub use service_state::ProducerServiceState;
 pub use trace::{TraceDispatcher, TraceDispatcherError, TraceProducerKind};
 #[allow(deprecated)]
 pub use transaction::{

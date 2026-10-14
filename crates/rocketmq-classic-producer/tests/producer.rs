@@ -6,8 +6,8 @@ use rocketmq_classic_common::{
 };
 use rocketmq_classic_producer::{
     AsyncSenderExecutor, AsyncSenderTask, CheckForbiddenContext, CheckForbiddenHook,
-    CommunicationMode, Producer, ProducerConfig, ProducerError, SendMessageContext,
-    SendMessageHook, SendMessageType,
+    CommunicationMode, Producer, ProducerConfig, ProducerError, ProducerServiceState,
+    SendMessageContext, SendMessageHook, SendMessageType,
     validation::{
         validate_group, validate_message, validate_send_topic, validate_system_topic,
         validate_topic,
@@ -56,6 +56,11 @@ fn pinned_java_default_producer_impl_public_surface_is_recorded() {
         "java.util.concurrent.ConcurrentMap org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl.getTopicPublishInfoTable()",
         "org.apache.rocketmq.common.ServiceState org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl.getServiceState()",
         "void org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl.setServiceState(org.apache.rocketmq.common.ServiceState)",
+        "boolean org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl.isUnitMode()",
+        "org.apache.rocketmq.client.producer.DefaultMQProducer org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl.getDefaultMQProducer()",
+        "org.apache.rocketmq.client.latency.MQFaultStrategy org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl.getMqFaultStrategy()",
+        "org.apache.rocketmq.client.impl.factory.MQClientInstance org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl.getMqClientFactory()",
+        "org.apache.rocketmq.client.impl.factory.MQClientInstance org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl.getmQClientFactory()",
     ] {
         assert!(
             methods.iter().any(|candidate| candidate == method),
@@ -295,6 +300,56 @@ fn implementation_hook_helpers_match_pinned_java_fixture() {
             .map(String::as_str),
         expected["sendMessageMarker"].as_str()
     );
+}
+
+#[test]
+fn implementation_state_accessors_match_pinned_java_fixture() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let expected = &fixture["implementationStateAccessors"];
+    let mut config = ProducerConfig::new("producer-implementation-state").unwrap();
+    config.client_config_mut().set_unit_mode(true);
+    let producer = Producer::new(config);
+
+    assert_eq!(
+        producer.service_state().unwrap().as_java_name(),
+        expected["initialServiceState"]
+    );
+    assert_eq!(
+        producer.config().producer_group(),
+        expected["defaultProducerGroup"]
+    );
+    assert_eq!(producer.is_unit_mode(), expected["unitMode"]);
+    assert!(expected["defaultProducerIdentity"].as_bool().unwrap());
+    assert!(expected["clientFactoryInitiallyNull"].as_bool().unwrap());
+
+    let states = ProducerServiceState::values();
+    let expected_states = expected["serviceStateValues"].as_array().unwrap();
+    let expected_ordinals = expected["serviceStateOrdinals"].as_array().unwrap();
+    assert_eq!(states.len(), expected_states.len());
+    assert_eq!(states.len(), expected_ordinals.len());
+    for ((state, expected_name), expected_ordinal) in states
+        .into_iter()
+        .zip(expected_states)
+        .zip(expected_ordinals)
+    {
+        assert_eq!(state.as_java_name(), expected_name.as_str().unwrap());
+        assert_eq!(state.name(), expected_name.as_str().unwrap());
+        assert_eq!(state.ordinal(), expected_ordinal.as_i64().unwrap() as i32);
+        assert_eq!(
+            ProducerServiceState::value_of_name(expected_name.as_str()),
+            Ok(state)
+        );
+        producer.set_service_state(Some(state));
+        assert_eq!(producer.service_state(), Some(state));
+    }
+    assert_eq!(
+        ProducerServiceState::value_of_name(None),
+        Err(rocketmq_classic_protocol::codes::JavaEnumLookupError::NullName)
+    );
+    producer.set_service_state(None);
+    assert!(expected["nullServiceState"].as_bool().unwrap());
+    assert_eq!(producer.service_state(), None);
 }
 
 #[test]

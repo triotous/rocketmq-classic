@@ -27,6 +27,7 @@ import org.apache.rocketmq.client.hook.SendMessageHook;
 import org.apache.rocketmq.client.impl.CommunicationMode;
 import org.apache.rocketmq.client.producer.DefaultMQProducer;
 import org.apache.rocketmq.common.MixAll;
+import org.apache.rocketmq.common.ServiceState;
 import org.apache.rocketmq.common.compression.Compressor;
 import org.apache.rocketmq.common.compression.CompressionType;
 import org.apache.rocketmq.common.message.Message;
@@ -123,6 +124,7 @@ public final class ProducerCoreFixtures {
         result.put("provenance", provenance);
         result.put("producerImplementationApi", producerImplementationApi());
         result.put("implementationHookExecution", implementationHookExecution());
+        result.put("implementationStateAccessors", implementationStateAccessors());
 
         Map<String, Object> defaults = new TreeMap<>();
         defaults.put("producerGroup", producer.getProducerGroup());
@@ -486,6 +488,28 @@ public final class ProducerCoreFixtures {
         result.put("sendMessagePresentAfterRegistration", implementation.hasSendMessageHook());
         result.put("sendEvents", sendEvents);
         result.put("sendMessageMarker", sendMessage.getProperty("DIRECT_SEND_HOOK"));
+        return result;
+    }
+
+    private static Map<String, Object> implementationStateAccessors() {
+        DefaultMQProducer producer = new DefaultMQProducer("producer-implementation-state");
+        producer.setUnitMode(true);
+        var implementation = producer.getDefaultMQProducerImpl();
+        Map<String, Object> result = new TreeMap<>();
+        result.put("initialServiceState", implementation.getServiceState().name());
+        result.put("serviceStateValues", Arrays.stream(ServiceState.values())
+            .map(ServiceState::name)
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("serviceStateOrdinals", Arrays.stream(ServiceState.values())
+            .map(ServiceState::ordinal)
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("defaultProducerIdentity", implementation.getDefaultMQProducer() == producer);
+        result.put("defaultProducerGroup", implementation.getDefaultMQProducer().getProducerGroup());
+        result.put("unitMode", implementation.isUnitMode());
+        result.put("clientFactoryInitiallyNull",
+            implementation.getMqClientFactory() == null && implementation.getmQClientFactory() == null);
+        implementation.setServiceState(null);
+        result.put("nullServiceState", implementation.getServiceState() == null);
         return result;
     }
 
