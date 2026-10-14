@@ -22,3 +22,10 @@
 - PASS: `cargo test --workspace --locked`; `cargo test --workspace --all-features --locked`; `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`; producer-specific all-target/all-feature Clippy; format and diff checks.
 - PASS: `mvn -q -f compat/java-reference/pom.xml verify` with fixture drift checks, Java/Rust cross-decodes, and 37 differential scenarios.
 - P18-V01 remains open for Producer group/VIP/topic-list live-setting behavior and the broad Java reverse-export, overload/input/branch, inherited/trait and source reconciliation. P18-V04 GitHub Ubuntu evidence and Phase 19 Docker/Broker runs remain pending. Race/leak, fuzz-smoke, release-example and benchmark gates were not rerun on this new code commit.
+
+## Current-revision offline gates — 2026-10-14T06:26:37Z
+
+- Re-ran the deterministic race/leak smoke on current `HEAD` `dc82d57e`: 16 cases × 3 repetitions passed.
+- Re-ran bounded fuzz smoke on current `HEAD`: 104 frame seeds, 10 message seeds, and 1,824 mutations passed.
+- PASS: release example builds, offline benchmark compilation, workspace metadata check, comparator self-test, and seven package-content manifest checks.
+- These results close the current-revision rerun gap for those offline gates. They do not close P18-V01, the required GitHub Ubuntu result (P18-V04), Phase 19 Docker/Broker runs, or release version/registry checks.
