@@ -1,0 +1,28 @@
+# Phase 18 Producer end-transaction hook and P18-V02 rerun — 2026-10-14T01:30:55Z
+
+- Resumed `phase/19-phase-18-compatibility-release-gate` from `192724bf`. The pinned RocketMQ Java client source/artifact baseline is 5.5.1 at `efa1be59d6fc747ad220f036c86030f05f0419f9`; the external checkout remains read-only.
+- Reviewed and committed the Producer `EndTransactionHook` API, transaction and Broker-check invocation, shared ordered trace-hook list, invoked Java fixture and Rust tests as `52ef36ab` (`feat(producer): expose end transaction hooks`). The fixture SHA-256 is `69185081811cea48e5b0f3f0f6bc17fd37e7faec6f802a98ec670e4d5d355a47`.
+- Updated Phase 7 Producer and Phase 14 transaction matrices, the Phase 6 audit, and `docs/release-checklist.md`. The release checklist records P18-V01 as open and distinguishes the prior full workspace gate revision from `52ef36ab`.
+- Appended this session log; the Phase 18 plan files were not changed.
+
+## Verification
+
+- PASS: `cargo test -p rocketmq-classic-producer --locked` (113 unit tests and all Producer integration/doc targets).
+- PASS: `cargo clippy -p rocketmq-classic-producer --all-targets --all-features --locked -- -D warnings`.
+- PASS: `cargo fmt --all -- --check`; `git diff --check`.
+- PASS: `cargo test --workspace --all-features --locked` on `52ef36ab`.
+- PASS: `cargo test --workspace --locked` on `52ef36ab` when run serially. The initial concurrent default/all-feature invocations made two Pull tests report `OffsetStore(AlreadyOpen)`; both same cases passed in the all-feature run and the serial default rerun. Keep the initial result visible here as a test-process overlap, not a code fix.
+- PASS: `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`.
+- PASS: `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios, fixture drift checks and Java/Rust cross-decodes).
+- PASS: `python3 tests/differential/compare.py --self-test`; `python3 tests/differential/compare.py --validate-manifest` (37 scenarios).
+- PASS: `bash tests/stress/run-offline-smoke.sh` (16 deterministic race/leak cases × 3 repetitions).
+- PASS: `cargo run -p rocketmq-classic-remoting --example fuzz_smoke --locked` (1,824 bounded mutations).
+- PASS: `cargo build -p rocketmq-classic --examples --release --locked`; `cargo bench -p rocketmq-classic --bench offline --locked --no-run`.
+- PASS: final format and diff checks.
+
+## Remaining work
+
+- P18-V01 remains PARTIAL: complete bidirectional Java source/API/input/control-flow reconciliation and Rust reverse-export audit, including inherited/trait API disposition.
+- No current GitHub Ubuntu workflow result exists for the Linux-specific Java address profile.
+- Phase 19 Docker/Broker scenarios and release version/registry dependency checks remain open; production-only validation stays outside this Phase 18 session.
+- No push, publication or release tag was performed.

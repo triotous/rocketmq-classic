@@ -85,7 +85,11 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   runtime `setCompressMsgBodyOverHowmuch` and `setCompressLevel` settings also
   have live Producer APIs and Java/Rust regression coverage. The
   broad Java reverse-export, inherited/trait API, and source/input branch
-  reconciliation remains local P18-V01 work, not manual validation.
+  reconciliation remains local P18-V01 work, not manual validation. Producer
+  `EndTransactionHook` registration, context and direct execution now have
+  fixture-backed local and Broker-check path coverage, including ordered
+  execution and hook-failure isolation; this closes that API slice only and
+  leaves broad P18-V01 reconciliation open.
 - [x] Map runtime Producer fault-strategy settings: live latency-fault and
   detector toggles, mutable `long[]` table aliasing/replacement, and subsequent
   Broker selection. Null setter/getter behavior, deferred null-table NPEs,
@@ -94,14 +98,22 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   Phase 6 audit.
 - [x] Register live cases in the Phase 19 scenario manifest and validate the
   manifest locally.
-- [x] Re-run full workspace/all-feature P18-V02 gates on the latest Producer
-  revision `1845c55a`. Default/all-feature workspace tests, the 112-unit-test
+- [x] Re-run full workspace/all-feature P18-V02 gates on Producer revision
+  `1845c55a`. Default/all-feature workspace tests, the 112-unit-test
   Producer suite and integration targets, strict workspace Clippy, fmt/diff,
   Maven verify (37 scenarios), comparator self-test and 37-scenario manifest validation, the
   16-case race/leak smoke repeated three times, 1,824-mutation fuzz smoke,
   release examples and benchmark compilation pass. The new runtime fault
   fixture SHA-256 is
   `2f8c6d40c4669a6a662085e8cddef749338c91fcbb1bf64829ef1f59f77a284e`.
+- [x] Repeat full workspace/all-feature P18-V02 gates on current Producer
+  revision `52ef36ab`. Default and all-feature workspace tests, the scoped
+  Producer suite (113 unit tests and all integration/doc targets), strict
+  workspace Clippy, Maven verify (37 scenarios), comparator self-test and
+  manifest validation, 16 race/leak cases repeated three times, 1,824-mutation
+  fuzz smoke, release examples, benchmark compilation, formatting and diff
+  checks pass. The initial default test run overlapped the all-feature run and
+  two Pull tests reported `OffsetStore(AlreadyOpen)`; the serial rerun passed.
 - [ ] Obtain a current GitHub Ubuntu CI result for the Linux-specific Java
   address profile. A native Ubuntu ARM64 container passes the Core RPC
   integration suite; this does not replace the required GitHub Ubuntu result.
