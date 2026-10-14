@@ -133,8 +133,8 @@ fn java_request_and_response_header_fixtures_decode() {
         "header-query-consume-time-span-request",
     ))
     .unwrap();
-    assert_eq!(query_time_span.topic, "orders");
-    assert_eq!(query_time_span.group, "workers");
+    assert_eq!(query_time_span.topic.as_deref(), Some("orders"));
+    assert_eq!(query_time_span.group.as_deref(), Some("workers"));
 
     let update = UpdateConsumerOffsetRequestHeader::decode_fields(&java_ext_fields(
         "header-update-offset-request",
@@ -1079,10 +1079,10 @@ fn header_validation_matrix() {
         row!(
             QueryConsumeTimeSpanRequestHeader,
             "query-consume-time-span-request",
+            "",
+            "",
+            "",
             "topic group",
-            "",
-            "",
-            "",
             ""
         ),
         row!(

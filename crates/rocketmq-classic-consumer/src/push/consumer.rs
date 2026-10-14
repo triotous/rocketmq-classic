@@ -1136,8 +1136,8 @@ impl PushConsumer {
             ),
         )?;
         let header = QueryConsumeTimeSpanRequestHeader {
-            topic: topic.to_owned(),
-            group: self.group_name().unwrap_or_default(),
+            topic: Some(topic.to_owned()),
+            group: self.group_name(),
         };
         let mut spans = Vec::new();
         for broker in brokers {
@@ -6549,6 +6549,11 @@ mod tests {
 
     #[tokio::test]
     async fn query_consume_time_span_queries_fresh_route_in_order_and_uses_vip_addresses() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/push-implementation-accessor.json"
+        ))
+        .unwrap();
+        assert_eq!(fixture["queryConsumeTimeSpanNullGroupOmitted"], true);
         let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let nameserver_address = nameserver.local_addr().unwrap().to_string();
         let first_broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -6602,10 +6607,7 @@ mod tests {
             assert_eq!(incoming.code, request::QUERY_CONSUME_TIME_SPAN);
             let fields = incoming.ext_fields.as_ref().unwrap();
             assert_eq!(fields.get("topic").map(String::as_str), Some("orders"));
-            assert_eq!(
-                fields.get("group").map(String::as_str),
-                Some("consume-time-span-group")
-            );
+            assert!(!fields.contains_key("group"));
             write_remoting_reply_with_body(
                 &mut stream,
                 &incoming,
@@ -6623,10 +6625,7 @@ mod tests {
             assert_eq!(incoming.code, request::QUERY_CONSUME_TIME_SPAN);
             let fields = incoming.ext_fields.as_ref().unwrap();
             assert_eq!(fields.get("topic").map(String::as_str), Some("orders"));
-            assert_eq!(
-                fields.get("group").map(String::as_str),
-                Some("consume-time-span-group")
-            );
+            assert!(!fields.contains_key("group"));
             write_remoting_reply_with_body(
                 &mut stream,
                 &incoming,
@@ -6657,6 +6656,7 @@ mod tests {
         )
         .await;
         runtime.remoting().start().unwrap();
+        consumer.set_consumer_group_nullable(None);
 
         let spans = consumer.query_consume_time_span("orders").await.unwrap();
         nameserver_peer.await.unwrap();
@@ -6681,6 +6681,7 @@ mod tests {
         assert_eq!(spans[0].as_ref().unwrap().delay_time, 4);
         assert_eq!(spans[1].as_ref().unwrap().delay_time, 3);
 
+        consumer.set_consumer_group("consume-time-span-group");
         consumer.shutdown().await.unwrap();
         let _ = runtime.shutdown().await;
     }

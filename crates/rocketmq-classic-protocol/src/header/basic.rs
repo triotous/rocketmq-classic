@@ -87,20 +87,20 @@ impl CommandHeader for QueryConsumerOffsetResponseHeader {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct QueryConsumeTimeSpanRequestHeader {
-    pub topic: String,
-    pub group: String,
+    pub topic: Option<String>,
+    pub group: Option<String>,
 }
 
 impl CommandHeader for QueryConsumeTimeSpanRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        fields.insert("topic".into(), self.topic.clone());
-        fields.insert("group".into(), self.group.clone());
+        put_optional(fields, "topic", self.topic.as_deref());
+        put_optional(fields, "group", self.group.as_deref());
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
-            topic: required_string(fields, "topic")?.to_owned(),
-            group: required_string(fields, "group")?.to_owned(),
+            topic: optional_string(fields, "topic"),
+            group: optional_string(fields, "group"),
         })
     }
 }

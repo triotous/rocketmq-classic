@@ -507,8 +507,8 @@ mod tests {
         remoting.start().unwrap();
         let api = MQClientApi::new(remoting.clone());
         let header = QueryConsumeTimeSpanRequestHeader {
-            topic: "orders".into(),
-            group: "consumer-a".into(),
+            topic: Some("orders".into()),
+            group: Some("consumer-a".into()),
         };
         let spans = api
             .query_consume_time_span(

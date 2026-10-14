@@ -48,6 +48,9 @@ import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData;
 import org.apache.rocketmq.remoting.protocol.body.ConsumerRunningInfo;
+import org.apache.rocketmq.remoting.protocol.RequestCode;
+import org.apache.rocketmq.remoting.protocol.RemotingCommand;
+import org.apache.rocketmq.remoting.protocol.header.QueryConsumeTimeSpanRequestHeader;
 
 /** Invokes the deprecated Push consumer implementation accessor on Java 5.5.1. */
 public final class PushImplementationAccessorFixtures {
@@ -230,6 +233,14 @@ public final class PushImplementationAccessorFixtures {
         first.executeHookAfter(directHookContext);
         boolean hasConsumeHookAfterRegistration = first.hasHook();
         boolean directHookConsumerGroupNull = directHookContext.getConsumerGroup() == null;
+        QueryConsumeTimeSpanRequestHeader nullGroupTimeSpanHeader = new QueryConsumeTimeSpanRequestHeader();
+        nullGroupTimeSpanHeader.setTopic("orders");
+        nullGroupTimeSpanHeader.setGroup(null);
+        RemotingCommand nullGroupTimeSpanRequest = RemotingCommand.createRequestCommand(
+            RequestCode.QUERY_CONSUME_TIME_SPAN, nullGroupTimeSpanHeader);
+        nullGroupTimeSpanRequest.makeCustomHeaderToNet();
+        boolean queryConsumeTimeSpanNullGroupOmitted = nullGroupTimeSpanRequest.getExtFields() != null
+            && !nullGroupTimeSpanRequest.getExtFields().containsKey("group");
 
         List<String> filterHookEvents = new ArrayList<>();
         first.registerFilterMessageHook(new FilterMessageHook() {
@@ -319,6 +330,7 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("hasConsumeHookBeforeRegistration", hasConsumeHookBeforeRegistration);
         fixture.put("directHookEvents", directHookEvents);
         fixture.put("directHookConsumerGroupNull", directHookConsumerGroupNull);
+        fixture.put("queryConsumeTimeSpanNullGroupOmitted", queryConsumeTimeSpanNullGroupOmitted);
         fixture.put("hasConsumeHookAfterRegistration", hasConsumeHookAfterRegistration);
         fixture.put("pushPopFilterHookEvents", filterHookEvents);
         fixture.put("rawImplementationPublicMethodSignatures", publicMethodSignatures());
