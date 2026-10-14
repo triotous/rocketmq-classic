@@ -43,7 +43,7 @@ route and queue fields have been set.
 use std::sync::Arc;
 
 use rocketmq_classic::{
-    AclClientRpcHook, Producer, ProducerConfig, RpcHook, SessionCredentials,
+    AclClientRpcHook, AclUtils, Producer, ProducerConfig, RpcHook, SessionCredentials,
 };
 
 let credentials = SessionCredentials::new(access_key, secret_key);
@@ -56,7 +56,7 @@ producer.start().await?;
 ```
 
 For a Java-compatible ACL YAML file, use
-`SessionCredentials::acl_rpc_hook_from_yaml_file(path)`. Treat a `None` result
+`AclUtils::get_acl_rpc_hook_from_file(path)`. Treat a `None` result
 as a configuration error and stop startup; do not silently create an unsigned
 client. `SessionCredentials::Debug` redacts credential values. Keep secret
 files outside source control and restrict their filesystem permissions.

@@ -369,7 +369,15 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   by Producer tests. The full 17-method `TopicPublishInfo` and 3-method
   `ThreadLocalIndex` Java surfaces are fixture-pinned; cursor overflow and
   `toString()` formatting are checked against Java. The broad reverse-export
-  and overload/input/error/flow audit remains open.
+  and overload/input/error/flow audit remains open. The Phase 16 ACL reverse
+  scan also removed duplicate public module helpers, the non-Java one-argument
+  `AclUtils::combine_request_content`, and `SessionCredentials` builder/YAML
+  exports while preserving the Java static `AclUtils`/`AclSigner` mapping and
+  pre-encoded Java-Charset signer adapter; compile-fail doctests guard the
+  removed boundaries. Code commit `6893f14b`; the Phase 16 ACL matrix and
+  security usage guide name the retained Java-mapped entrypoints. The full
+  Core locked test suite, strict Core Clippy, format and diff checks pass for
+  this slice.
 - [x] **P18-V02** — Current-worktree unit, differential, race/leak, fuzz,
   shutdown, and fixture gates pass; see the run recorded above.
 - [x] **P18-V03** — Facade examples, package graph/content/provenance, license
