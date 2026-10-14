@@ -275,6 +275,9 @@ public final class ProducerCoreFixtures {
         result.put("runtimeSettings", runtimeSettings());
         result.put("perRequestTimeoutRetry", perRequestTimeoutRetry());
         result.put("checkForbiddenRetry", checkForbiddenRetry());
+        result.put("checkForbiddenDefaultAsync", checkForbiddenDefaultAsync());
+        result.put("checkForbiddenExplicitAsync", checkForbiddenExplicitAsync());
+        result.put("checkForbiddenDeadline", checkForbiddenDeadline());
 
         List<Map<String, Object>> groups = new ArrayList<>();
         for (String value : Arrays.asList(" ", "g".repeat(120), "g".repeat(121), "bad.group", "a|b_%")) {
@@ -1425,6 +1428,206 @@ public final class ProducerCoreFixtures {
         result.put("outcome", outcome);
         result.put("responseCode", responseCode);
         result.put("messageContainsAttemptCount", finalMessage.contains("Send [2] times"));
+        return result;
+    }
+
+    private static Map<String, Object> checkForbiddenDefaultAsync() throws Exception {
+        DefaultMQProducer producer = new DefaultMQProducer("producer-check-forbidden-async-fixture");
+        producer.setSendMsgTimeout(3_000);
+        producer.setRetryTimesWhenSendAsyncFailed(3);
+        DefaultMQProducerImpl implementation = producer.getDefaultMQProducerImpl();
+        MQClientInstance client = installProducerSendFixtureRoute(
+            producer, implementation, "orders", "producer-check-forbidden-async-fixture");
+
+        AtomicInteger checkCalls = new AtomicInteger();
+        AtomicInteger sendBeforeCalls = new AtomicInteger();
+        AtomicInteger sendAfterCalls = new AtomicInteger();
+        implementation.registerCheckForbiddenHook(new CheckForbiddenHook() {
+            @Override
+            public String hookName() {
+                return "check-forbidden-default-async-fixture";
+            }
+
+            @Override
+            public void checkForbidden(CheckForbiddenContext context) throws MQClientException {
+                checkCalls.incrementAndGet();
+                throw new MQClientException("fixture forbidden", null);
+            }
+        });
+        implementation.registerSendMessageHook(new SendMessageHook() {
+            @Override
+            public String hookName() {
+                return "send-hook-after-forbidden-default-async-fixture";
+            }
+
+            @Override
+            public void sendMessageBefore(SendMessageContext context) {
+                sendBeforeCalls.incrementAndGet();
+            }
+
+            @Override
+            public void sendMessageAfter(SendMessageContext context) {
+                sendAfterCalls.incrementAndGet();
+            }
+        });
+
+        Throwable failure = null;
+        try {
+            Method sendDefaultImpl = DefaultMQProducerImpl.class.getDeclaredMethod(
+                "sendDefaultImpl", Message.class, CommunicationMode.class,
+                org.apache.rocketmq.client.producer.SendCallback.class, long.class);
+            sendDefaultImpl.setAccessible(true);
+            sendDefaultImpl.invoke(implementation, new Message("orders", new byte[] {1}),
+                CommunicationMode.ASYNC, null, 3_000L);
+        } catch (InvocationTargetException expected) {
+            failure = expected.getCause();
+        } finally {
+            shutdownUnstartedClientExecutors(client);
+        }
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("retryTimesWhenSendAsyncFailed", producer.getRetryTimesWhenSendAsyncFailed());
+        result.put("checkCalls", checkCalls.get());
+        result.put("sendBeforeCalls", sendBeforeCalls.get());
+        result.put("sendAfterCalls", sendAfterCalls.get());
+        result.put("outcome", failure == null ? "success" : failure.getClass().getSimpleName());
+        result.put("responseCode", failure instanceof MQClientException
+            ? ((MQClientException) failure).getResponseCode() : -1);
+        result.put("messageContainsAttemptCount",
+            failure != null && failure.getMessage().contains("Send [1] times"));
+        result.put("causeClass", failure != null && failure.getCause() != null
+            ? failure.getCause().getClass().getSimpleName() : "none");
+        return result;
+    }
+
+    private static Map<String, Object> checkForbiddenExplicitAsync() throws Exception {
+        DefaultMQProducer producer = new DefaultMQProducer("producer-check-forbidden-explicit-async-fixture");
+        producer.setSendMsgTimeout(3_000);
+        DefaultMQProducerImpl implementation = producer.getDefaultMQProducerImpl();
+        MQClientInstance client = installProducerSendFixtureRoute(
+            producer, implementation, "orders", "producer-check-forbidden-explicit-async-fixture");
+
+        AtomicInteger checkCalls = new AtomicInteger();
+        AtomicInteger sendBeforeCalls = new AtomicInteger();
+        AtomicInteger sendAfterCalls = new AtomicInteger();
+        implementation.registerCheckForbiddenHook(new CheckForbiddenHook() {
+            @Override
+            public String hookName() {
+                return "check-forbidden-explicit-async-fixture";
+            }
+
+            @Override
+            public void checkForbidden(CheckForbiddenContext context) throws MQClientException {
+                checkCalls.incrementAndGet();
+                throw new MQClientException("fixture forbidden", null);
+            }
+        });
+        implementation.registerSendMessageHook(new SendMessageHook() {
+            @Override
+            public String hookName() {
+                return "send-hook-after-forbidden-explicit-async-fixture";
+            }
+
+            @Override
+            public void sendMessageBefore(SendMessageContext context) {
+                sendBeforeCalls.incrementAndGet();
+            }
+
+            @Override
+            public void sendMessageAfter(SendMessageContext context) {
+                sendAfterCalls.incrementAndGet();
+            }
+        });
+
+        Throwable failure = null;
+        try {
+            Method sendKernelImpl = DefaultMQProducerImpl.class.getDeclaredMethod(
+                "sendKernelImpl", Message.class, MessageQueue.class, CommunicationMode.class,
+                org.apache.rocketmq.client.producer.SendCallback.class, TopicPublishInfo.class, long.class);
+            sendKernelImpl.setAccessible(true);
+            sendKernelImpl.invoke(implementation, new Message("orders", new byte[] {1}),
+                new MessageQueue("orders", "broker-a", 0), CommunicationMode.ASYNC, null, null, 3_000L);
+        } catch (InvocationTargetException expected) {
+            failure = expected.getCause();
+        } finally {
+            shutdownUnstartedClientExecutors(client);
+        }
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("checkCalls", checkCalls.get());
+        result.put("sendBeforeCalls", sendBeforeCalls.get());
+        result.put("sendAfterCalls", sendAfterCalls.get());
+        result.put("outcome", failure == null ? "success" : failure.getClass().getSimpleName());
+        result.put("responseCode", failure instanceof MQClientException
+            ? ((MQClientException) failure).getResponseCode() : -1);
+        result.put("messageContainsAttemptCount",
+            failure != null && failure.getMessage().contains("Send [1] times"));
+        result.put("causeClass", failure != null && failure.getCause() != null
+            ? failure.getCause().getClass().getSimpleName() : "none");
+        return result;
+    }
+
+    private static Map<String, Object> checkForbiddenDeadline() throws Exception {
+        DefaultMQProducer producer = new DefaultMQProducer("producer-check-forbidden-deadline-fixture");
+        producer.setSendMsgTimeout(20);
+        producer.setRetryTimesWhenSendFailed(1);
+        DefaultMQProducerImpl implementation = producer.getDefaultMQProducerImpl();
+        MQClientInstance client = installProducerSendFixtureRoute(
+            producer, implementation, "orders", "producer-check-forbidden-deadline-fixture");
+
+        AtomicInteger checkCalls = new AtomicInteger();
+        AtomicInteger sendBeforeCalls = new AtomicInteger();
+        AtomicInteger sendAfterCalls = new AtomicInteger();
+        implementation.registerCheckForbiddenHook(new CheckForbiddenHook() {
+            @Override
+            public String hookName() {
+                return "check-forbidden-deadline-fixture";
+            }
+
+            @Override
+            public void checkForbidden(CheckForbiddenContext context) throws MQClientException {
+                checkCalls.incrementAndGet();
+                try {
+                    Thread.sleep(80);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
+                throw new MQClientException("fixture forbidden", null);
+            }
+        });
+        implementation.registerSendMessageHook(new SendMessageHook() {
+            @Override
+            public String hookName() {
+                return "send-hook-after-forbidden-deadline-fixture";
+            }
+
+            @Override
+            public void sendMessageBefore(SendMessageContext context) {
+                sendBeforeCalls.incrementAndGet();
+            }
+
+            @Override
+            public void sendMessageAfter(SendMessageContext context) {
+                sendAfterCalls.incrementAndGet();
+            }
+        });
+
+        String outcome;
+        try {
+            implementation.send(new Message("orders", new byte[] {1}));
+            outcome = "success";
+        } catch (Exception expected) {
+            outcome = expected.getClass().getSimpleName();
+        } finally {
+            shutdownUnstartedClientExecutors(client);
+        }
+        Map<String, Object> result = new TreeMap<>();
+        result.put("sendMsgTimeout", producer.getSendMsgTimeout());
+        result.put("retryTimesWhenSendFailed", producer.getRetryTimesWhenSendFailed());
+        result.put("checkCalls", checkCalls.get());
+        result.put("sendBeforeCalls", sendBeforeCalls.get());
+        result.put("sendAfterCalls", sendAfterCalls.get());
+        result.put("outcome", outcome);
         return result;
     }
 
