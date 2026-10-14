@@ -10,6 +10,11 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   provenance.
 - [x] Record the server-free tests, fuzz/race smoke runs, benchmark observations,
   and CI commands in the Phase 18 execution log and compatibility docs.
+- [x] Reconcile the Phase 15–17 local matrices and execution records: Phase 15
+  request/reply, Phase 16 namespace/security/hooks/trace, and Phase 17 local
+  admin/reset/query evidence are recorded as verified. Their Broker-backed
+  cross-language cases remain Phase 19 work; the implementation plans remain
+  unchanged.
 - [ ] Close P18-V01: complete bidirectional Java source/API/input reconciliation
   and reverse-audit all Rust public APIs and settings. The broad Phase 6 audit
   remains `PARTIAL`; Phase 9 now has fixture/unit coverage for raw Pull offset
@@ -331,6 +336,15 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   `e48fb323`; the selector regression and full Producer suite also pass on
   follow-up test commit `28d28377`. Producer core fixture SHA-256:
   `725af3b3887f7a4ec6f6d72a23188e4fb80206e50c98b113b015d76917fedfd8`.
+- [x] Re-run Producer checks after caller-visible `UNIQ_KEY` mutation parity
+  (`4b311231`, 2026-10-14). `cargo test -p rocketmq-classic-producer --locked`
+  passes (139 unit tests and 60 integration tests); strict all-target/all-feature
+  workspace Clippy, Maven verify (37 scenarios, fixture drift and Java/Rust
+  cross-decodes), formatting, and diff checks pass. The invoked Java fixture
+  verifies accumulator mutation before a failed dispatch; scripted Rust tests
+  cover that boundary, direct-send timing, retry ID reuse, auto-batch IDs, and
+  caller-supplied ID preservation. Producer fixture SHA-256:
+  `e21c6322b398196f2ce7df81b96023e5af42a5c7131d980d7baef1eb7180c32d`.
 - [ ] Obtain a current GitHub Ubuntu CI result for the Linux-specific Java
   address profile. A native Ubuntu ARM64 container passes the Core RPC
   integration suite; this does not replace the required GitHub Ubuntu result.
