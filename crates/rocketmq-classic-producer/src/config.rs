@@ -75,6 +75,35 @@ impl Clone for SharedAtomicI32 {
     }
 }
 
+struct SharedString(Arc<std::sync::RwLock<String>>);
+
+impl SharedString {
+    fn new(value: impl Into<String>) -> Self {
+        Self(Arc::new(std::sync::RwLock::new(value.into())))
+    }
+
+    fn load(&self) -> String {
+        self.0
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    fn store(&self, value: impl Into<String>) {
+        let value = value.into();
+        *self
+            .0
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = value;
+    }
+}
+
+impl Clone for SharedString {
+    fn clone(&self) -> Self {
+        Self::new(self.load())
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct AccumulatorSettings {
     pub(crate) max_delay_millis: i32,
@@ -98,18 +127,18 @@ pub struct ProducerConfig {
     pub(crate) client: ClientConfig,
     tls_config: Option<TlsConfig>,
     producer_group: Option<String>,
-    create_topic_key: String,
-    default_topic_queue_nums: i32,
-    send_timeout_millis: i32,
-    send_msg_max_timeout_per_request: i32,
+    create_topic_key: SharedString,
+    default_topic_queue_nums: SharedAtomicI32,
+    send_timeout_millis: SharedAtomicI32,
+    send_msg_max_timeout_per_request: SharedAtomicI32,
     compress_threshold: SharedAtomicI32,
     compress_type: SharedAtomicI32,
     compress_level: SharedAtomicI32,
-    retry_times_when_send_failed: i32,
-    retry_times_when_send_async_failed: i32,
+    retry_times_when_send_failed: SharedAtomicI32,
+    retry_times_when_send_async_failed: SharedAtomicI32,
     retry_response_codes: RetryResponseCodes,
-    retry_another_broker_when_not_store_ok: bool,
-    max_message_size: i32,
+    retry_another_broker_when_not_store_ok: SharedAtomicBool,
+    max_message_size: SharedAtomicI32,
     auto_batch: SharedAtomicBool,
     batch_max_delay_millis: Option<i32>,
     batch_max_bytes: Option<i64>,
@@ -129,17 +158,19 @@ impl Clone for ProducerConfig {
             tls_config: self.tls_config.clone(),
             producer_group: self.producer_group.clone(),
             create_topic_key: self.create_topic_key.clone(),
-            default_topic_queue_nums: self.default_topic_queue_nums,
-            send_timeout_millis: self.send_timeout_millis,
-            send_msg_max_timeout_per_request: self.send_msg_max_timeout_per_request,
+            default_topic_queue_nums: self.default_topic_queue_nums.clone(),
+            send_timeout_millis: self.send_timeout_millis.clone(),
+            send_msg_max_timeout_per_request: self.send_msg_max_timeout_per_request.clone(),
             compress_threshold: self.compress_threshold.clone(),
             compress_type: self.compress_type.clone(),
             compress_level: self.compress_level.clone(),
-            retry_times_when_send_failed: self.retry_times_when_send_failed,
-            retry_times_when_send_async_failed: self.retry_times_when_send_async_failed,
+            retry_times_when_send_failed: self.retry_times_when_send_failed.clone(),
+            retry_times_when_send_async_failed: self.retry_times_when_send_async_failed.clone(),
             retry_response_codes: self.retry_response_codes.detached_clone(),
-            retry_another_broker_when_not_store_ok: self.retry_another_broker_when_not_store_ok,
-            max_message_size: self.max_message_size,
+            retry_another_broker_when_not_store_ok: self
+                .retry_another_broker_when_not_store_ok
+                .clone(),
+            max_message_size: self.max_message_size.clone(),
             auto_batch: self.auto_batch.clone(),
             batch_max_delay_millis: self.batch_max_delay_millis,
             batch_max_bytes: self.batch_max_bytes,
@@ -169,20 +200,20 @@ impl ProducerConfig {
             client: ClientConfig::new_auto()?,
             tls_config: None,
             producer_group: group,
-            create_topic_key: DEFAULT_CREATE_TOPIC_KEY.into(),
-            default_topic_queue_nums: DEFAULT_TOPIC_QUEUE_COUNT,
-            send_timeout_millis: DEFAULT_SEND_TIMEOUT_MILLIS,
-            send_msg_max_timeout_per_request: -1,
+            create_topic_key: SharedString::new(DEFAULT_CREATE_TOPIC_KEY),
+            default_topic_queue_nums: SharedAtomicI32::new(DEFAULT_TOPIC_QUEUE_COUNT),
+            send_timeout_millis: SharedAtomicI32::new(DEFAULT_SEND_TIMEOUT_MILLIS),
+            send_msg_max_timeout_per_request: SharedAtomicI32::new(-1),
             compress_threshold: SharedAtomicI32::new(DEFAULT_COMPRESS_THRESHOLD),
             compress_type: SharedAtomicI32::new(compress_type.get_value()),
             compress_level: SharedAtomicI32::new(compress_level),
-            retry_times_when_send_failed: DEFAULT_SYNC_RETRIES,
-            retry_times_when_send_async_failed: DEFAULT_ASYNC_RETRIES,
+            retry_times_when_send_failed: SharedAtomicI32::new(DEFAULT_SYNC_RETRIES),
+            retry_times_when_send_async_failed: SharedAtomicI32::new(DEFAULT_ASYNC_RETRIES),
             retry_response_codes: RetryResponseCodes::new(
                 [17, 14, 1, 2, 16, 204, 205, 1500].into(),
             ),
-            retry_another_broker_when_not_store_ok: false,
-            max_message_size: DEFAULT_MAX_MESSAGE_SIZE,
+            retry_another_broker_when_not_store_ok: SharedAtomicBool::new(false),
+            max_message_size: SharedAtomicI32::new(DEFAULT_MAX_MESSAGE_SIZE),
             auto_batch: SharedAtomicBool::new(false),
             batch_max_delay_millis: None,
             batch_max_bytes: None,
@@ -316,29 +347,41 @@ impl ProducerConfig {
     pub fn set_producer_group(&mut self, value: Option<String>) {
         self.producer_group = value;
     }
-    pub fn create_topic_key(&self) -> &str {
-        &self.create_topic_key
+    pub fn create_topic_key(&self) -> String {
+        self.create_topic_key.load()
     }
     pub fn set_create_topic_key(&mut self, value: impl Into<String>) {
-        self.create_topic_key = value.into();
+        self.create_topic_key.store(value);
+    }
+    pub(crate) fn set_create_topic_key_runtime(&self, value: impl Into<String>) {
+        self.create_topic_key.store(value);
     }
     pub fn default_topic_queue_nums(&self) -> i32 {
-        self.default_topic_queue_nums
+        self.default_topic_queue_nums.load()
     }
     pub fn set_default_topic_queue_nums(&mut self, value: i32) {
-        self.default_topic_queue_nums = value;
+        self.default_topic_queue_nums.store(value);
+    }
+    pub(crate) fn set_default_topic_queue_nums_runtime(&self, value: i32) {
+        self.default_topic_queue_nums.store(value);
     }
     pub fn send_timeout_millis(&self) -> i32 {
-        self.send_timeout_millis
+        self.send_timeout_millis.load()
     }
     pub fn set_send_timeout_millis(&mut self, value: i32) {
-        self.send_timeout_millis = value;
+        self.send_timeout_millis.store(value);
+    }
+    pub(crate) fn set_send_timeout_millis_runtime(&self, value: i32) {
+        self.send_timeout_millis.store(value);
     }
     pub fn send_msg_max_timeout_per_request(&self) -> i32 {
-        self.send_msg_max_timeout_per_request
+        self.send_msg_max_timeout_per_request.load()
     }
     pub fn set_send_msg_max_timeout_per_request(&mut self, value: i32) {
-        self.send_msg_max_timeout_per_request = value;
+        self.send_msg_max_timeout_per_request.store(value);
+    }
+    pub(crate) fn set_send_msg_max_timeout_per_request_runtime(&self, value: i32) {
+        self.send_msg_max_timeout_per_request.store(value);
     }
     pub fn compress_threshold(&self) -> i32 {
         self.compress_threshold.load()
@@ -369,16 +412,22 @@ impl ProducerConfig {
         self.compress_level.store(value);
     }
     pub fn retry_times_when_send_failed(&self) -> i32 {
-        self.retry_times_when_send_failed
+        self.retry_times_when_send_failed.load()
     }
     pub fn set_retry_times_when_send_failed(&mut self, value: i32) {
-        self.retry_times_when_send_failed = value;
+        self.retry_times_when_send_failed.store(value);
+    }
+    pub(crate) fn set_retry_times_when_send_failed_runtime(&self, value: i32) {
+        self.retry_times_when_send_failed.store(value);
     }
     pub fn retry_times_when_send_async_failed(&self) -> i32 {
-        self.retry_times_when_send_async_failed
+        self.retry_times_when_send_async_failed.load()
     }
     pub fn set_retry_times_when_send_async_failed(&mut self, value: i32) {
-        self.retry_times_when_send_async_failed = value;
+        self.retry_times_when_send_async_failed.store(value);
+    }
+    pub(crate) fn set_retry_times_when_send_async_failed_runtime(&self, value: i32) {
+        self.retry_times_when_send_async_failed.store(value);
     }
     /// Returns a shared live set. Mutations through the returned handle affect
     /// retry decisions of any Producer using this configuration.
@@ -392,16 +441,22 @@ impl ProducerConfig {
         self.retry_response_codes.remove(&value);
     }
     pub fn retry_another_broker_when_not_store_ok(&self) -> bool {
-        self.retry_another_broker_when_not_store_ok
+        self.retry_another_broker_when_not_store_ok.load()
     }
     pub fn set_retry_another_broker_when_not_store_ok(&mut self, value: bool) {
-        self.retry_another_broker_when_not_store_ok = value;
+        self.retry_another_broker_when_not_store_ok.store(value);
+    }
+    pub(crate) fn set_retry_another_broker_when_not_store_ok_runtime(&self, value: bool) {
+        self.retry_another_broker_when_not_store_ok.store(value);
     }
     pub fn max_message_size(&self) -> i32 {
-        self.max_message_size
+        self.max_message_size.load()
     }
     pub fn set_max_message_size(&mut self, value: i32) {
-        self.max_message_size = value;
+        self.max_message_size.store(value);
+    }
+    pub(crate) fn set_max_message_size_runtime(&self, value: i32) {
+        self.max_message_size.store(value);
     }
     pub fn auto_batch(&self) -> bool {
         self.auto_batch.load()

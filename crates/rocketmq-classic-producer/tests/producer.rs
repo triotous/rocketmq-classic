@@ -1951,6 +1951,70 @@ fn pinned_java_producer_core_fixture_matches_defaults_and_validation() {
 
     let runtime = &fixture["runtimeSettings"];
     let producer = Producer::new(ProducerConfig::new("runtime-settings-fixture").unwrap());
+    let runtime_config_snapshot = producer.config().clone();
+    producer.set_create_topic_key(runtime["createTopicKey"].as_str().unwrap());
+    producer
+        .set_default_topic_queue_nums(runtime["defaultTopicQueueNums"].as_i64().unwrap() as i32);
+    producer.set_send_timeout_millis(runtime["sendMsgTimeout"].as_i64().unwrap() as i32);
+    producer.set_send_msg_max_timeout_per_request(
+        runtime["sendMsgMaxTimeoutPerRequest"].as_i64().unwrap() as i32,
+    );
+    producer.set_retry_times_when_send_failed(
+        runtime["retryTimesWhenSendFailed"].as_i64().unwrap() as i32,
+    );
+    producer.set_retry_times_when_send_async_failed(
+        runtime["retryTimesWhenSendAsyncFailed"].as_i64().unwrap() as i32,
+    );
+    producer.set_retry_another_broker_when_not_store_ok(
+        runtime["retryAnotherBrokerWhenNotStoreOK"]
+            .as_bool()
+            .unwrap(),
+    );
+    producer.set_max_message_size(runtime["maxMessageSize"].as_i64().unwrap() as i32);
+    assert_eq!(producer.create_topic_key(), runtime["createTopicKey"]);
+    assert_eq!(
+        producer.default_topic_queue_nums(),
+        runtime["defaultTopicQueueNums"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        producer.send_timeout_millis(),
+        runtime["sendMsgTimeout"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        producer.send_msg_max_timeout_per_request(),
+        runtime["sendMsgMaxTimeoutPerRequest"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        producer.retry_times_when_send_failed(),
+        runtime["retryTimesWhenSendFailed"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        producer.retry_times_when_send_async_failed(),
+        runtime["retryTimesWhenSendAsyncFailed"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        producer.retry_another_broker_when_not_store_ok(),
+        runtime["retryAnotherBrokerWhenNotStoreOK"]
+    );
+    assert_eq!(
+        producer.max_message_size(),
+        runtime["maxMessageSize"].as_i64().unwrap() as i32
+    );
+    assert_eq!(runtime_config_snapshot.default_topic_queue_nums(), 4);
+    assert_eq!(runtime_config_snapshot.create_topic_key(), "TBW102");
+    assert_eq!(runtime_config_snapshot.send_timeout_millis(), 3_000);
+    assert_eq!(
+        runtime_config_snapshot.send_msg_max_timeout_per_request(),
+        -1
+    );
+    assert_eq!(runtime_config_snapshot.retry_times_when_send_failed(), 2);
+    assert_eq!(
+        runtime_config_snapshot.retry_times_when_send_async_failed(),
+        2
+    );
+    assert!(!runtime_config_snapshot.retry_another_broker_when_not_store_ok());
+    assert_eq!(runtime_config_snapshot.max_message_size(), 4 * 1024 * 1024);
+
     producer.set_enable_backpressure_for_async_mode(true);
     producer
         .set_backpressure_async_send_num(runtime["sendNumAfterUpdate"].as_i64().unwrap() as i32);

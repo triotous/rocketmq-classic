@@ -1489,6 +1489,21 @@ impl Producer {
         if Instant::now() >= attempt.deadline {
             return Err(ProducerError::Timeout);
         }
+        let header = SendMessageRequestHeaderV1 {
+            producer_group: self.required_producer_group()?.to_owned(),
+            topic: attempt.prepared.topic.clone(),
+            default_topic: self.config.create_topic_key(),
+            default_topic_queue_nums: self.config.default_topic_queue_nums(),
+            queue_id: attempt.queue.queue_id(),
+            sys_flag: attempt.prepared.sys_flag,
+            born_timestamp: attempt.prepared.born_timestamp,
+            flag: attempt.prepared.flag,
+            properties: attempt.prepared.properties.clone(),
+            reconsume_times: attempt.prepared.reconsume_times,
+            unit_mode: Some(self.config.client_config().unit_mode()),
+            max_reconsume_times: attempt.prepared.max_reconsume_times,
+            batch: Some(attempt.prepared.batch),
+        };
         #[cfg(test)]
         {
             let mut scripted = self
@@ -1499,6 +1514,8 @@ impl Producer {
                 broker: attempt.broker.to_owned(),
                 address: attempt.address.to_owned(),
                 queue: attempt.queue.clone(),
+                default_topic: header.default_topic.clone(),
+                default_topic_queue_nums: header.default_topic_queue_nums,
                 body: attempt.prepared.body.clone(),
                 topic: attempt.prepared.topic.clone(),
                 properties: attempt.prepared.properties.clone(),
@@ -1511,21 +1528,6 @@ impl Producer {
                 return result;
             }
         }
-        let header = SendMessageRequestHeaderV1 {
-            producer_group: self.required_producer_group()?.to_owned(),
-            topic: attempt.prepared.topic.clone(),
-            default_topic: self.config.create_topic_key().to_owned(),
-            default_topic_queue_nums: self.config.default_topic_queue_nums(),
-            queue_id: attempt.queue.queue_id(),
-            sys_flag: attempt.prepared.sys_flag,
-            born_timestamp: attempt.prepared.born_timestamp,
-            flag: attempt.prepared.flag,
-            properties: attempt.prepared.properties.clone(),
-            reconsume_times: attempt.prepared.reconsume_times,
-            unit_mode: Some(self.config.client_config().unit_mode()),
-            max_reconsume_times: attempt.prepared.max_reconsume_times,
-            batch: Some(attempt.prepared.batch),
-        };
         let kind = if attempt.prepared.batch {
             SendKind::Batch
         } else {
@@ -2033,6 +2035,66 @@ mod tests {
         producer.shutdown().await.unwrap();
     }
 
+    #[tokio::test]
+    async fn runtime_default_topic_settings_reach_later_send_headers() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+        let expected = &fixture["runtimeSettings"];
+        let (producer, _) =
+            scripted_producer(crate::ProducerConfig::new("runtime-route-settings").unwrap()).await;
+        producer.set_create_topic_key(expected["createTopicKey"].as_str().unwrap());
+        producer.set_default_topic_queue_nums(
+            expected["defaultTopicQueueNums"].as_i64().unwrap() as i32
+        );
+        producer
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .push_back(Ok(Some(scripted_result("runtime-route", "offset", 0))));
+
+        producer
+            .send(&Message::new("orders", b"runtime settings".to_vec()))
+            .await
+            .unwrap();
+
+        {
+            let transport = producer.scripted_transport.lock().unwrap();
+            assert_eq!(transport.attempts.len(), 1);
+            assert_eq!(
+                transport.attempts[0].default_topic,
+                expected["createTopicKey"]
+            );
+            assert_eq!(
+                transport.attempts[0].default_topic_queue_nums,
+                expected["defaultTopicQueueNums"].as_i64().unwrap() as i32
+            );
+        }
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn runtime_send_timeout_applies_to_later_default_send() {
+        let (producer, _) =
+            scripted_producer(crate::ProducerConfig::new("runtime-send-timeout").unwrap()).await;
+        producer.set_send_timeout_millis(0);
+
+        let result = producer
+            .send_direct(&Message::new("orders", b"expired".to_vec()))
+            .await;
+
+        assert!(matches!(result, Err(ProducerError::Timeout)));
+        assert!(
+            producer
+                .scripted_transport
+                .lock()
+                .unwrap()
+                .attempts
+                .is_empty()
+        );
+        producer.shutdown().await.unwrap();
+    }
+
     #[test]
     fn live_publish_info_mutations_feed_send_routes_and_queue_cursor() {
         let producer = Producer::new(crate::ProducerConfig::new("publish-info-send").unwrap());
@@ -2427,8 +2489,9 @@ mod tests {
     #[tokio::test]
     async fn scripted_two_broker_retry_preserves_body_and_unique_id() {
         let mut config = crate::ProducerConfig::new("scripted-retry").unwrap();
-        config.set_retry_times_when_send_failed(1);
+        config.set_retry_times_when_send_failed(0);
         let (producer, _) = scripted_producer(config).await;
+        producer.set_retry_times_when_send_failed(1);
         {
             let mut scripted = producer.scripted_transport.lock().unwrap();
             scripted.responses.extend([
@@ -2466,6 +2529,40 @@ mod tests {
         assert_eq!(attempts[0].unique_id, attempts[1].unique_id);
         assert_eq!(attempts[0].mode, SendMode::Sync);
         assert_eq!(attempts[1].mode, SendMode::Sync);
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn runtime_non_ok_store_retry_switches_brokers_on_later_sends() {
+        let (producer, _) =
+            scripted_producer(crate::ProducerConfig::new("runtime-non-ok-retry").unwrap()).await;
+        producer.set_retry_another_broker_when_not_store_ok(true);
+        let mut stored_not_ok = scripted_result("not-ok", "offset-1", 1);
+        stored_not_ok.status = SendStatus::FlushDiskTimeout;
+        producer
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .extend([
+                Ok(Some(stored_not_ok)),
+                Ok(Some(scripted_result("retry-ok", "offset-2", 2))),
+            ]);
+
+        let result = producer
+            .send_with_timeout(
+                &Message::new("orders", b"retry a stored response".to_vec()),
+                Duration::from_secs(1),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result.msg_id, "retry-ok");
+        {
+            let transport = producer.scripted_transport.lock().unwrap();
+            assert_eq!(transport.attempts.len(), 2);
+            assert_ne!(transport.attempts[0].broker, transport.attempts[1].broker);
+        }
         producer.shutdown().await.unwrap();
     }
 
@@ -3651,6 +3748,12 @@ mod tests {
         assert_eq!(attempt_count(SendMode::Future, &config), 3);
         assert_eq!(attempt_count(SendMode::Oneway, &config), 1);
 
+        let producer = crate::Producer::new(config.clone());
+        producer.set_retry_times_when_send_failed(0);
+        producer.set_retry_times_when_send_async_failed(4);
+        assert_eq!(attempt_count(SendMode::Sync, producer.config()), 1);
+        assert_eq!(attempt_count(SendMode::Future, producer.config()), 5);
+
         let mut no_attempts = config.clone();
         no_attempts.set_retry_times_when_send_failed(-1);
         assert_eq!(attempt_count(SendMode::Sync, &no_attempts), 0);
@@ -3803,9 +3906,8 @@ mod tests {
 
     #[test]
     fn per_request_timeout_only_limits_sync_attempts_that_have_a_retry_after_them() {
-        let mut config = crate::ProducerConfig::new("producer").unwrap();
-        config.set_send_msg_max_timeout_per_request(500);
-        let producer = crate::Producer::new(config);
+        let producer = crate::Producer::new(crate::ProducerConfig::new("producer").unwrap());
+        producer.set_send_msg_max_timeout_per_request(500);
         let now = Instant::now();
         let deadline = now + Duration::from_secs(5);
         assert_eq!(
@@ -3819,6 +3921,11 @@ mod tests {
         assert_eq!(
             producer.request_deadline_at(SendMode::Future, deadline, now, 0, 3),
             deadline
+        );
+        producer.set_send_msg_max_timeout_per_request(125);
+        assert_eq!(
+            producer.request_deadline_at(SendMode::Sync, deadline, now, 0, 3),
+            now + Duration::from_millis(125)
         );
     }
 

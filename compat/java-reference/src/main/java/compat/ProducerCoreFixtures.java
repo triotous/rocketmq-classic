@@ -1108,6 +1108,23 @@ public final class ProducerCoreFixtures {
     private static Map<String, Object> runtimeSettings() {
         DefaultMQProducer producer = new DefaultMQProducer("producer-runtime-settings");
         Map<String, Object> result = new TreeMap<>();
+        producer.setCreateTopicKey("runtime-default-topic");
+        producer.setDefaultTopicQueueNums(7);
+        producer.setSendMsgTimeout(6_100);
+        producer.setSendMsgMaxTimeoutPerRequest(800);
+        producer.setRetryTimesWhenSendFailed(3);
+        producer.setRetryTimesWhenSendAsyncFailed(4);
+        producer.setRetryAnotherBrokerWhenNotStoreOK(true);
+        producer.setMaxMessageSize(123_456);
+        result.put("createTopicKey", producer.getCreateTopicKey());
+        result.put("defaultTopicQueueNums", producer.getDefaultTopicQueueNums());
+        result.put("sendMsgTimeout", producer.getSendMsgTimeout());
+        result.put("sendMsgMaxTimeoutPerRequest", producer.getSendMsgMaxTimeoutPerRequest());
+        result.put("retryTimesWhenSendFailed", producer.getRetryTimesWhenSendFailed());
+        result.put("retryTimesWhenSendAsyncFailed", producer.getRetryTimesWhenSendAsyncFailed());
+        result.put("retryAnotherBrokerWhenNotStoreOK", producer.isRetryAnotherBrokerWhenNotStoreOK());
+        result.put("maxMessageSize", producer.getMaxMessageSize());
+
         producer.setEnableBackpressureForAsyncMode(true);
         result.put("backpressureEnabledAfterToggle", producer.isEnableBackpressureForAsyncMode());
 

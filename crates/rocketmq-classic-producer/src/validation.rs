@@ -168,4 +168,21 @@ mod tests {
             Err(ProducerError::BodyTooLarge { .. })
         ));
     }
+
+    #[test]
+    fn runtime_message_size_limit_applies_to_later_validation() {
+        let producer = crate::Producer::new(config());
+        producer.set_max_message_size(4);
+        let five_bytes = Message::new("orders", vec![0; 5]);
+        assert!(matches!(
+            validate_message(Some(&five_bytes), producer.config()),
+            Err(ProducerError::BodyTooLarge {
+                maximum: 4,
+                actual: 5
+            })
+        ));
+
+        producer.set_max_message_size(5);
+        assert!(validate_message(Some(&five_bytes), producer.config()).is_ok());
+    }
 }

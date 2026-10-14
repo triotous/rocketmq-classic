@@ -37,6 +37,8 @@ pub(crate) struct ScriptedSendAttempt {
     pub(crate) broker: String,
     pub(crate) address: String,
     pub(crate) queue: rocketmq_classic_common::message::MessageQueue,
+    pub(crate) default_topic: String,
+    pub(crate) default_topic_queue_nums: i32,
     pub(crate) body: Vec<u8>,
     pub(crate) topic: String,
     pub(crate) properties: Option<String>,
@@ -351,6 +353,89 @@ impl Producer {
 
     pub fn config(&self) -> &ProducerConfig {
         &self.config
+    }
+
+    /// Returns the topic key used by later route lookups.
+    pub fn create_topic_key(&self) -> String {
+        self.config.create_topic_key()
+    }
+
+    /// Changes the topic key used by later route lookups.
+    pub fn set_create_topic_key(&self, value: impl Into<String>) {
+        self.config.set_create_topic_key_runtime(value);
+    }
+
+    /// Returns the queue count used when a route is created from the default topic.
+    pub fn default_topic_queue_nums(&self) -> i32 {
+        self.config.default_topic_queue_nums()
+    }
+
+    /// Changes the queue count used by subsequent default-topic route lookups.
+    pub fn set_default_topic_queue_nums(&self, value: i32) {
+        self.config.set_default_topic_queue_nums_runtime(value);
+    }
+
+    /// Returns the timeout used by send methods without an explicit timeout.
+    pub fn send_timeout_millis(&self) -> i32 {
+        self.config.send_timeout_millis()
+    }
+
+    /// Changes the timeout used by subsequent send methods without an explicit timeout.
+    pub fn set_send_timeout_millis(&self, value: i32) {
+        self.config.set_send_timeout_millis_runtime(value);
+    }
+
+    /// Returns the maximum timeout for an individual synchronous retry request.
+    pub fn send_msg_max_timeout_per_request(&self) -> i32 {
+        self.config.send_msg_max_timeout_per_request()
+    }
+
+    /// Changes the maximum timeout used by later synchronous retry requests.
+    pub fn set_send_msg_max_timeout_per_request(&self, value: i32) {
+        self.config
+            .set_send_msg_max_timeout_per_request_runtime(value);
+    }
+
+    /// Returns the synchronous send retry count.
+    pub fn retry_times_when_send_failed(&self) -> i32 {
+        self.config.retry_times_when_send_failed()
+    }
+
+    /// Changes the retry count used by subsequent synchronous sends.
+    pub fn set_retry_times_when_send_failed(&self, value: i32) {
+        self.config.set_retry_times_when_send_failed_runtime(value);
+    }
+
+    /// Returns the future-mode send retry count.
+    pub fn retry_times_when_send_async_failed(&self) -> i32 {
+        self.config.retry_times_when_send_async_failed()
+    }
+
+    /// Changes the retry count used by subsequent future-mode sends.
+    pub fn set_retry_times_when_send_async_failed(&self, value: i32) {
+        self.config
+            .set_retry_times_when_send_async_failed_runtime(value);
+    }
+
+    /// Returns whether a later send retries another Broker after a non-OK store result.
+    pub fn retry_another_broker_when_not_store_ok(&self) -> bool {
+        self.config.retry_another_broker_when_not_store_ok()
+    }
+
+    /// Changes the retry behavior for subsequent send attempts.
+    pub fn set_retry_another_broker_when_not_store_ok(&self, value: bool) {
+        self.config
+            .set_retry_another_broker_when_not_store_ok_runtime(value);
+    }
+
+    /// Returns the current maximum message size in bytes.
+    pub fn max_message_size(&self) -> i32 {
+        self.config.max_message_size()
+    }
+
+    /// Changes the message-size limit used by subsequent validation.
+    pub fn set_max_message_size(&self, value: i32) {
+        self.config.set_max_message_size_runtime(value);
     }
 
     /// Returns the shared producer route table corresponding to Java's
