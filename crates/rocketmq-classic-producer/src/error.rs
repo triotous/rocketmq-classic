@@ -4,7 +4,9 @@ use crate::ProducerServiceState;
 
 #[derive(Debug, Error)]
 pub enum ProducerError {
-    #[error("producer group is blank")]
+    #[error(
+        "the specified group is blank\nFor more information, please visit the url, https://rocketmq.apache.org/docs/faq/"
+    )]
     BlankGroup,
     #[error("producer group exceeds Java's 120-character limit")]
     GroupTooLong,

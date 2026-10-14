@@ -744,6 +744,7 @@ mod tests {
             dispatcher
                 .producer_config
                 .producer_group()
+                .expect("the lite trace producer group is always configured")
                 .starts_with("_INNER_TRACE_PRODUCER-tenant%workers-CONSUME-")
         );
         assert_eq!(dispatcher.producer_config.client_config().namespace, None);

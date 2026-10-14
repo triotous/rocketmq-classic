@@ -119,7 +119,7 @@ impl Producer {
         };
 
         let header = RecallMessageRequestHeader {
-            producer_group: Some(self.producer_group().to_owned()),
+            producer_group: Some(self.required_producer_group()?.to_owned()),
             topic,
             recall_handle: recall_handle.to_owned(),
             broker_name: Some(decoded_handle.broker_name().to_owned()),

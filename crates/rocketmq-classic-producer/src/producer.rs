@@ -66,7 +66,7 @@ enum State {
 /// Java-compatible producer lifecycle and send surface.
 pub struct Producer {
     pub(crate) config: ProducerConfig,
-    namespaced_group: OnceLock<String>,
+    namespaced_group: OnceLock<Option<String>>,
     manager: ClientRuntimeManager,
     rpc_hook: Option<Arc<dyn RpcHook>>,
     state: tokio::sync::Mutex<State>,
@@ -249,7 +249,7 @@ impl Producer {
     ) {
         let transaction_id = message.transaction_id().map(str::to_owned);
         let mut context = EndTransactionContext {
-            producer_group: self.producer_group().to_owned(),
+            producer_group: self.producer_group().map(str::to_owned),
             message,
             broker_addr: broker_addr.to_owned(),
             message_id: message_id.to_owned(),
@@ -766,11 +766,15 @@ impl Producer {
     }
 
     /// Returns the Java-compatible producer group, namespace-wrapped after start.
-    pub fn producer_group(&self) -> &str {
-        self.namespaced_group
-            .get()
-            .map(String::as_str)
-            .unwrap_or_else(|| self.config.producer_group())
+    pub fn producer_group(&self) -> Option<&str> {
+        match self.namespaced_group.get() {
+            Some(group) => group.as_deref(),
+            None => self.config.producer_group(),
+        }
+    }
+
+    pub(crate) fn required_producer_group(&self) -> Result<&str, ProducerError> {
+        self.producer_group().ok_or(ProducerError::BlankGroup)
     }
 
     pub(crate) async fn started_runtime(&self) -> Result<Arc<ClientRuntime>, ProducerError> {
@@ -844,11 +848,9 @@ impl Producer {
         self.set_service_state(Some(ProducerServiceState::StartFailed));
         let _ = self.self_weak.set(Arc::downgrade(self));
         let mut client_config = self.config.client_config().clone();
-        let group = client_config
-            .with_namespace(Some(self.config.producer_group()))?
-            .unwrap_or_else(|| self.config.producer_group().to_owned());
-        let _ = self.namespaced_group.set(group);
-        validation::validate_group(self.producer_group())?;
+        let group = client_config.with_namespace(self.config.producer_group())?;
+        let _ = self.namespaced_group.set(group.clone());
+        validation::validate_group(group.as_deref().unwrap_or(""))?;
         self.configured_accumulator_settings()?;
 
         let runtime = self
@@ -861,10 +863,8 @@ impl Producer {
             .await?;
         self.init_produce_accumulator()?;
         let owner: Arc<dyn ProducerRuntime> = self.clone();
-        let lease = match runtime
-            .register_producer(self.producer_group(), owner)
-            .await
-        {
+        let producer_group = self.required_producer_group()?;
+        let lease = match runtime.register_producer(producer_group, owner).await {
             Ok(lease) => lease,
             Err(error) => {
                 if matches!(
@@ -885,20 +885,20 @@ impl Producer {
             runtime: Arc::downgrade(&runtime),
             lease,
         };
-        self.start_trace_dispatcher(&runtime).await;
+        self.start_trace_dispatcher(&runtime, producer_group).await;
         let task = self.spawn_detector_task(Arc::downgrade(&runtime));
         *self.detector_task.lock().await = Some(task);
         self.set_service_state(Some(ProducerServiceState::Running));
         Ok(())
     }
 
-    async fn start_trace_dispatcher(&self, runtime: &Arc<ClientRuntime>) {
+    async fn start_trace_dispatcher(&self, runtime: &Arc<ClientRuntime>, producer_group: &str) {
         if !self.config.client.enable_trace() {
             return;
         }
         let dispatcher = match crate::trace::TraceDispatcher::new(
             &self.config.client,
-            self.producer_group(),
+            producer_group,
             crate::TraceProducerKind::Produce,
             self.config.client.trace_topic(),
             self.manager.clone(),
@@ -916,13 +916,13 @@ impl Producer {
         }
         self.register_send_message_hook(Arc::new(crate::trace::ProducerSendTraceHook::new(
             dispatcher.clone(),
-            self.producer_group(),
+            producer_group,
             self.config.client.clone(),
         )));
         self.register_end_transaction_hook(Arc::new(
             crate::trace::ProducerEndTransactionTraceHook::new(
                 dispatcher.clone(),
-                self.producer_group(),
+                producer_group,
                 self.config.client.clone(),
             ),
         ));
@@ -1504,7 +1504,9 @@ mod tests {
         let dispatcher = Arc::new(
             crate::trace::TraceDispatcher::new(
                 config.client_config(),
-                config.producer_group(),
+                config
+                    .producer_group()
+                    .expect("the trace producer fixture has a configured group"),
                 crate::TraceProducerKind::Produce,
                 None,
                 manager,

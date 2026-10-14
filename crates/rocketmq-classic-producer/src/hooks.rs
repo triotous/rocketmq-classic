@@ -71,7 +71,7 @@ impl From<SendMode> for CommunicationMode {
 
 /// Mutable context passed to producer hooks before and after each send attempt.
 pub struct SendMessageContext<'a> {
-    pub producer_group: String,
+    pub producer_group: Option<String>,
     pub producer: &'a Producer,
     pub message: &'a mut Message,
     pub queue: MessageQueue,
@@ -89,7 +89,7 @@ pub struct SendMessageContext<'a> {
 /// Mutable pre-send context corresponding to Java `CheckForbiddenContext`.
 pub struct CheckForbiddenContext<'a> {
     pub name_srv_addr: Option<String>,
-    pub group: String,
+    pub group: Option<String>,
     pub message: &'a mut Message,
     pub queue: &'a mut MessageQueue,
     pub broker_addr: String,
@@ -132,7 +132,7 @@ pub(crate) type SendMessageHookList = RwLock<Vec<Arc<dyn SendMessageHook>>>;
 /// request is sent. The message is mutable, while the already prepared RPC
 /// header retains the values captured before hook execution, as in Java.
 pub struct EndTransactionContext<'a> {
-    pub producer_group: String,
+    pub producer_group: Option<String>,
     pub message: &'a mut Message,
     pub broker_addr: String,
     pub message_id: String,

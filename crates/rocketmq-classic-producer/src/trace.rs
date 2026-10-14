@@ -909,6 +909,7 @@ mod tests {
         assert!(
             producer_config
                 .producer_group()
+                .expect("the trace producer group is always configured")
                 .starts_with("_INNER_TRACE_PRODUCER-tenant%orders-producer-PRODUCE-")
         );
         assert_eq!(producer_config.client_config().namespace, None);
@@ -964,7 +965,7 @@ mod tests {
         message.set_tags("paid").unwrap();
         message.set_keys("order-1").unwrap();
         let mut context = SendMessageContext {
-            producer_group: "trace-hook-producer".into(),
+            producer_group: Some("trace-hook-producer".into()),
             producer: &producer,
             message: &mut message,
             queue: MessageQueue::new("orders", "broker-a", 0),

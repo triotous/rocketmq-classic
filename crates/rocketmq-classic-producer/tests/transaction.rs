@@ -21,7 +21,7 @@ impl EndTransactionHook for CaptureEndTransactionHook {
     fn end_transaction(&self, context: &mut EndTransactionContext<'_>) {
         self.0.lock().unwrap().push(format!(
             "{}:{}:{}:{}:{}:{}",
-            context.producer_group,
+            context.producer_group.as_deref().unwrap_or("<null>"),
             context.message_id,
             context.broker_addr,
             context.transaction_id.as_deref().unwrap_or("<null>"),
@@ -79,7 +79,7 @@ fn end_transaction_hook_context_and_methods_are_available_from_the_public_crate_
 
     let mut direct_message = Message::new("orders", b"direct".to_vec());
     let mut direct_context = EndTransactionContext {
-        producer_group: "direct-group".into(),
+        producer_group: Some("direct-group".into()),
         message: &mut direct_message,
         broker_addr: "192.0.2.10:10911".into(),
         message_id: "direct-id".into(),

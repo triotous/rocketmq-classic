@@ -414,6 +414,15 @@ public final class ProducerCoreFixtures {
         List<Map<String, Object>> nullableCases = new ArrayList<>();
         nullableCases.add(producerConstructorCase("null-producer-group",
             new DefaultMQProducer((String) null), null, null));
+        nullableCases.add(producerConstructorCase("null-producer-group-with-namespace",
+            new DefaultMQProducer("constructor-null-group-namespace", (String) null), null, null));
+        DefaultMQProducer nullGroupSetter = new DefaultMQProducer("constructor-group-before-null");
+        String groupBeforeSetter = nullGroupSetter.getProducerGroup();
+        nullGroupSetter.setProducerGroup(null);
+        Map<String, Object> nullGroupSetterCase = producerConstructorCase(
+            "null-producer-group-setter", nullGroupSetter, null, null);
+        nullGroupSetterCase.put("producerGroupBeforeSetter", groupBeforeSetter);
+        nullableCases.add(nullGroupSetterCase);
         nullableCases.add(producerConstructorCase("null-namespace",
             new DefaultMQProducer((String) null, "constructor-null-namespace-group"), null, null));
         nullableCases.add(producerConstructorCase("null-initial-topics",
@@ -422,6 +431,23 @@ public final class ProducerCoreFixtures {
             new DefaultMQProducer("constructor-null-trace-topic", hook, true, null), hook, null));
         result.put("nullableCases", nullableCases);
         result.put("nullableCaseCount", nullableCases.size());
+        result.put("nullProducerGroupStart", producerStartOutcome(new DefaultMQProducer((String) null)));
+        result.put("nullNamespacedProducerGroupStart", producerStartOutcome(
+            new DefaultMQProducer("constructor-null-group-namespace", (String) null)));
+        return result;
+    }
+
+    private static Map<String, Object> producerStartOutcome(DefaultMQProducer producer) {
+        Map<String, Object> result = new TreeMap<>();
+        try {
+            producer.start();
+            result.put("failureClass", "");
+            result.put("failureMessage", "");
+        } catch (Throwable failure) {
+            result.put("failureClass", failure.getClass().getName());
+            result.put("failureMessage", failure.getMessage() == null ? "" : failure.getMessage());
+        }
+        result.put("serviceState", producer.getDefaultMQProducerImpl().getServiceState().name());
         return result;
     }
 
@@ -1122,6 +1148,8 @@ public final class ProducerCoreFixtures {
     }
 
     private static Map<String, Object> checkForbiddenContext() {
+        CheckForbiddenContext nullGroup = new CheckForbiddenContext();
+        nullGroup.setGroup(null);
         CheckForbiddenContext context = new CheckForbiddenContext();
         context.setNameSrvAddr("namesrv.example:9876");
         context.setGroup("producer-group");
@@ -1135,6 +1163,7 @@ public final class ProducerCoreFixtures {
         context.setUnitMode(true);
 
         Map<String, Object> result = new TreeMap<>();
+        result.put("nullGroupIsNull", nullGroup.getGroup() == null);
         result.put("nameSrvAddr", context.getNameSrvAddr());
         result.put("group", context.getGroup());
         result.put("messageTopic", context.getMessage().getTopic());

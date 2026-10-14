@@ -117,10 +117,11 @@ impl TransactionProducer {
     ) -> Self {
         let mut client_config = config.client_config().clone();
         let producer_group = client_config
-            .with_namespace(Some(config.producer_group()))
+            .with_namespace(config.producer_group())
             .ok()
             .flatten()
-            .unwrap_or_else(|| config.producer_group().to_owned());
+            .or_else(|| config.producer_group().map(str::to_owned))
+            .unwrap_or_default();
         let producer = Arc::new(Producer::new_with_rpc_hook(config, rpc_hook));
         let transaction = Arc::new(TransactionRuntime::new(
             Arc::downgrade(&producer),
@@ -176,8 +177,10 @@ impl TransactionProducer {
         crate::validation::validate_message(Some(message), self.producer.config())?;
 
         let _ = message.set_system_property(PROPERTY_TRANSACTION_PREPARED, "true");
-        let _ =
-            message.set_system_property(PROPERTY_PRODUCER_GROUP, self.producer.producer_group());
+        let _ = message.set_system_property(
+            PROPERTY_PRODUCER_GROUP,
+            self.producer.required_producer_group()?,
+        );
 
         let timeout =
             Duration::from_millis(self.producer.config().send_timeout_millis().max(0) as u64);
@@ -364,7 +367,7 @@ impl TransactionProducer {
             .ok_or_else(|| ProducerError::NoRoute(message.topic().to_owned()))?;
         let header = EndTransactionRequestHeader {
             topic: Some(message.topic().to_owned()),
-            producer_group: self.producer.producer_group().to_owned(),
+            producer_group: self.producer.required_producer_group()?.to_owned(),
             transaction_state_table_offset: send_result.queue_offset,
             commit_log_offset,
             commit_or_rollback: transaction_flag(state),
@@ -1120,7 +1123,7 @@ mod tests {
                 .unwrap_or_else(PoisonError::into_inner)
                 .push(format!("last:{phase}"));
             let mut observed = serde_json::json!({
-                "producerGroup": context.producer_group.as_str(),
+                "producerGroup": context.producer_group.as_deref(),
                 "topic": context.message.topic(),
                 "brokerAddr": context.broker_addr.as_str(),
                 "msgId": context.message_id.as_str(),
@@ -1257,10 +1260,11 @@ mod tests {
     fn transaction_producer(config: ProducerConfig) -> TransactionProducer {
         let mut client_config = config.client_config().clone();
         let group = client_config
-            .with_namespace(Some(config.producer_group()))
+            .with_namespace(config.producer_group())
             .ok()
             .flatten()
-            .unwrap_or_else(|| config.producer_group().to_owned());
+            .or_else(|| config.producer_group().map(str::to_owned))
+            .unwrap_or_default();
         let manager = ClientRuntimeManager::new();
         let producer = Arc::new(Producer::with_runtime_manager(config, manager));
         let transaction = Arc::new(TransactionRuntime::new(Arc::downgrade(&producer), group));
@@ -1571,7 +1575,7 @@ mod tests {
 
         let mut manual_message = Message::new("orders", b"manual-message".to_vec());
         let mut manual_context = EndTransactionContext {
-            producer_group: "direct-producer".into(),
+            producer_group: Some("direct-producer".into()),
             message: &mut manual_message,
             broker_addr: "192.0.2.1:10911".into(),
             message_id: "manual-msg".into(),

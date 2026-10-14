@@ -34,7 +34,7 @@ type ProducerConstructorCase<'a> = (
 #[test]
 fn java_default_settings_are_present() {
     let config = ProducerConfig::new("producer-test").unwrap();
-    assert_eq!(config.producer_group(), "producer-test");
+    assert_eq!(config.producer_group(), Some("producer-test"));
     assert_eq!(config.create_topic_key(), "TBW102");
     assert_eq!(config.default_topic_queue_nums(), 4);
     assert_eq!(config.send_timeout_millis(), 3_000);
@@ -356,7 +356,7 @@ fn pinned_java_producer_constructor_values_map_to_rust_configuration() {
             .client_config_mut()
             .set_trace_topic(trace_topic.map(str::to_owned));
 
-        assert_eq!(config.producer_group(), group);
+        assert_eq!(config.producer_group(), Some(group));
         assert_eq!(config.client_config().namespace.as_deref(), namespace);
         assert_eq!(
             config
@@ -373,9 +373,9 @@ fn pinned_java_producer_constructor_values_map_to_rust_configuration() {
         .unwrap();
     assert_eq!(
         fixture["producerConstructorCases"]["nullableCaseCount"].as_u64(),
-        Some(4)
+        Some(6)
     );
-    assert_eq!(nullable_cases.len(), 4);
+    assert_eq!(nullable_cases.len(), 6);
     let null_group = &nullable_cases[0];
     assert_eq!(null_group["name"].as_str(), Some("null-producer-group"));
     assert_eq!(null_group["producerGroupIsNull"].as_bool(), Some(true));
@@ -383,6 +383,45 @@ fn pinned_java_producer_constructor_values_map_to_rust_configuration() {
     assert_eq!(null_group["topicsIsNull"].as_bool(), Some(true));
     assert_eq!(null_group["enableTrace"].as_bool(), Some(false));
     assert_eq!(null_group["traceTopicIsNull"].as_bool(), Some(true));
+
+    let mut null_group_config = ProducerConfig::new_nullable(None).unwrap();
+    assert_eq!(null_group_config.producer_group(), None);
+    assert_eq!(null_group_config.clone().producer_group(), None);
+
+    let namespaced_null_group = &nullable_cases[1];
+    assert_eq!(
+        namespaced_null_group["name"].as_str(),
+        Some("null-producer-group-with-namespace")
+    );
+    assert_eq!(
+        namespaced_null_group["producerGroupIsNull"].as_bool(),
+        Some(true)
+    );
+    null_group_config
+        .client_config_mut()
+        .set_namespace(Some("constructor-null-group-namespace".to_owned()));
+    assert_eq!(null_group_config.producer_group(), None);
+    assert_eq!(
+        null_group_config.client_config().namespace.as_deref(),
+        Some("constructor-null-group-namespace")
+    );
+
+    let null_group_setter = &nullable_cases[2];
+    assert_eq!(
+        null_group_setter["name"].as_str(),
+        Some("null-producer-group-setter")
+    );
+    assert_eq!(
+        null_group_setter["producerGroupBeforeSetter"].as_str(),
+        Some("constructor-group-before-null")
+    );
+    let mut setter_config = ProducerConfig::new("constructor-group-before-null").unwrap();
+    assert_eq!(
+        setter_config.producer_group(),
+        null_group_setter["producerGroupBeforeSetter"].as_str()
+    );
+    setter_config.set_producer_group(None);
+    assert_eq!(setter_config.producer_group(), None);
 
     let nullable_rust_cases = [
         (
@@ -414,7 +453,7 @@ fn pinned_java_producer_constructor_values_map_to_rust_configuration() {
         ),
     ];
     for ((name, group, namespace, topics, trace_enabled, trace_topic, rpc_hook_supplied), java) in
-        nullable_rust_cases.into_iter().zip(&nullable_cases[1..])
+        nullable_rust_cases.into_iter().zip(&nullable_cases[3..])
     {
         assert_eq!(java["name"].as_str(), Some(name));
         assert_eq!(java["producerGroupIsNull"].as_bool(), Some(false));
@@ -623,7 +662,7 @@ fn implementation_hook_helpers_match_pinned_java_fixture() {
     let check_result = {
         let mut context = CheckForbiddenContext {
             name_srv_addr: None,
-            group: "producer-implementation-hooks".into(),
+            group: Some("producer-implementation-hooks".into()),
             message: &mut check_message,
             queue: &mut check_queue,
             broker_addr: "127.0.0.1:10911".into(),
@@ -733,7 +772,7 @@ fn implementation_hook_helpers_match_pinned_java_fixture() {
     );
     let mut send_message = Message::new("orders", [2]);
     let mut send_context = SendMessageContext {
-        producer_group: "producer-implementation-hooks".into(),
+        producer_group: Some("producer-implementation-hooks".into()),
         producer: &producer,
         message: &mut send_message,
         queue: MessageQueue::new("orders", "broker-a", 2),
@@ -783,7 +822,7 @@ fn implementation_state_accessors_match_pinned_java_fixture() {
     );
     assert_eq!(
         producer.config().producer_group(),
-        expected["defaultProducerGroup"]
+        expected["defaultProducerGroup"].as_str()
     );
     assert_eq!(producer.is_unit_mode(), expected["unitMode"]);
     assert!(expected["defaultProducerIdentity"].as_bool().unwrap());
@@ -816,6 +855,41 @@ fn implementation_state_accessors_match_pinned_java_fixture() {
     producer.set_service_state(None);
     assert!(expected["nullServiceState"].as_bool().unwrap());
     assert_eq!(producer.service_state(), None);
+}
+
+#[tokio::test]
+async fn null_producer_group_start_matches_pinned_java_validation() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let constructor_cases = &fixture["producerConstructorCases"];
+    let cases = [
+        ("nullProducerGroupStart", None),
+        (
+            "nullNamespacedProducerGroupStart",
+            Some("constructor-null-group-namespace"),
+        ),
+    ];
+
+    for (fixture_case, namespace) in cases {
+        let expected = &constructor_cases[fixture_case];
+        let mut config = ProducerConfig::new_nullable(None).unwrap();
+        config
+            .client_config_mut()
+            .set_namespace(namespace.map(str::to_owned));
+        let producer = Arc::new(Producer::new(config));
+        assert_eq!(producer.producer_group(), None);
+
+        let error = producer.start().await.unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            expected["failureMessage"].as_str().unwrap()
+        );
+        assert_eq!(
+            producer.service_state().unwrap().as_java_name(),
+            expected["serviceState"].as_str().unwrap()
+        );
+        assert_eq!(producer.producer_group(), None);
+    }
 }
 
 #[test]
@@ -1846,7 +1920,7 @@ fn pinned_java_producer_core_fixture_matches_defaults_and_validation() {
             .unwrap(),
     );
     config.set_max_message_size(defaults["maxMessageSize"].as_i64().unwrap() as i32);
-    assert_eq!(config.producer_group(), "DEFAULT_PRODUCER");
+    assert_eq!(config.producer_group(), Some("DEFAULT_PRODUCER"));
     assert_eq!(config.create_topic_key(), "TBW102");
     assert_eq!(config.default_topic_queue_nums(), 4);
     assert_eq!(config.send_timeout_millis(), 3_000);
@@ -2030,7 +2104,7 @@ fn check_forbidden_context_and_modes_match_pinned_java_fixture() {
     let mut queue = rocketmq_classic_common::message::MessageQueue::new("orders", "broker-a", 7);
     let context = CheckForbiddenContext {
         name_srv_addr: Some("namesrv.example:9876".into()),
-        group: "producer-group".into(),
+        group: Some("producer-group".into()),
         message: &mut message,
         queue: &mut queue,
         broker_addr: "broker.example:10911".into(),
@@ -2040,12 +2114,34 @@ fn check_forbidden_context_and_modes_match_pinned_java_fixture() {
         arg: Some(Box::new("opaque-argument".to_owned())),
         unit_mode: true,
     };
+    let mut null_group_message = Message::new("orders", b"body".to_vec());
+    let mut null_group_queue =
+        rocketmq_classic_common::message::MessageQueue::new("orders", "broker-a", 7);
+    let null_group_context = CheckForbiddenContext {
+        name_srv_addr: None,
+        group: None,
+        message: &mut null_group_message,
+        queue: &mut null_group_queue,
+        broker_addr: String::new(),
+        communication_mode: CommunicationMode::Async,
+        send_result: None,
+        exception: None,
+        arg: None,
+        unit_mode: false,
+    };
 
     assert_eq!(
         context.name_srv_addr.as_deref(),
         expected["nameSrvAddr"].as_str()
     );
-    assert_eq!(context.group, expected["group"].as_str().unwrap());
+    assert_eq!(
+        context.group.as_deref(),
+        expected["group"].as_str().map(Some).unwrap()
+    );
+    assert_eq!(
+        null_group_context.group.is_none(),
+        expected["nullGroupIsNull"].as_bool().unwrap()
+    );
     assert_eq!(context.message.topic(), expected["messageTopic"]);
     assert_eq!(
         context.message.body(),
@@ -2109,7 +2205,7 @@ fn send_message_context_surface_matches_pinned_java_fixture() {
     let mut message = Message::new("orders", b"body".to_vec());
     let hook_failure = std::io::Error::other("hook failure");
     let context = SendMessageContext {
-        producer_group: "producer-group".into(),
+        producer_group: Some("producer-group".into()),
         producer: &producer,
         message: &mut message,
         queue: MessageQueue::new("orders", "broker-a", 7),
@@ -2123,9 +2219,34 @@ fn send_message_context_surface_matches_pinned_java_fixture() {
         trace_context: Some(Box::new("trace-context".to_owned())),
         properties: Some(HashMap::from([("source".to_owned(), "hook".to_owned())])),
     };
+    let mut null_group_message = Message::new("orders", b"body".to_vec());
+    let null_group_context = SendMessageContext {
+        producer_group: None,
+        producer: &producer,
+        message: &mut null_group_message,
+        queue: MessageQueue::new("orders", "broker-a", 7),
+        broker_addr: String::new(),
+        born_host: None,
+        communication_mode: CommunicationMode::Async,
+        send_result: None,
+        exception: None,
+        message_type: SendMessageType::Normal,
+        namespace: None,
+        trace_context: None,
+        properties: None,
+    };
 
-    assert_eq!(context.producer_group, expected["producerGroup"]);
-    assert_eq!(context.producer.producer_group(), "producer-group");
+    assert_eq!(
+        context.producer_group.as_deref(),
+        expected["producerGroup"].as_str()
+    );
+    assert_eq!(
+        null_group_context.producer_group.is_none(),
+        fixture["sendMessageContext"]["defaults"]["producerGroupIsNull"]
+            .as_bool()
+            .unwrap()
+    );
+    assert_eq!(context.producer.producer_group(), Some("producer-group"));
     assert_eq!(context.message.topic(), expected["messageTopic"]);
     assert_eq!(
         context.message.body(),

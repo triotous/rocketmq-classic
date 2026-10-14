@@ -97,7 +97,7 @@ impl Default for AccumulatorSettings {
 pub struct ProducerConfig {
     pub(crate) client: ClientConfig,
     tls_config: Option<TlsConfig>,
-    producer_group: String,
+    producer_group: Option<String>,
     create_topic_key: String,
     default_topic_queue_nums: i32,
     send_timeout_millis: i32,
@@ -156,12 +156,19 @@ impl Clone for ProducerConfig {
 
 impl ProducerConfig {
     pub fn new(group: impl Into<String>) -> Result<Self, ProducerError> {
+        Self::new_nullable(Some(group.into()))
+    }
+
+    /// Builds a producer configuration from Java's nullable producer-group
+    /// constructor/setter input. Use [`ProducerConfig::new`] for the common
+    /// non-null case.
+    pub fn new_nullable(group: Option<String>) -> Result<Self, ProducerError> {
         let (compress_type, compress_level) =
             Self::compression_settings(|key| std::env::var(key).ok())?;
         Ok(Self {
             client: ClientConfig::new_auto()?,
             tls_config: None,
-            producer_group: group.into(),
+            producer_group: group,
             create_topic_key: DEFAULT_CREATE_TOPIC_KEY.into(),
             default_topic_queue_nums: DEFAULT_TOPIC_QUEUE_COUNT,
             send_timeout_millis: DEFAULT_SEND_TIMEOUT_MILLIS,
@@ -302,11 +309,12 @@ impl ProducerConfig {
     pub fn set_detect_interval_millis(&mut self, value: i32) {
         self.client.set_detect_interval(value);
     }
-    pub fn producer_group(&self) -> &str {
-        &self.producer_group
+    pub fn producer_group(&self) -> Option<&str> {
+        self.producer_group.as_deref()
     }
-    pub fn set_producer_group(&mut self, value: impl Into<String>) {
-        self.producer_group = value.into();
+    /// Sets the producer group using Java's nullable setter input.
+    pub fn set_producer_group(&mut self, value: Option<String>) {
+        self.producer_group = value;
     }
     pub fn create_topic_key(&self) -> &str {
         &self.create_topic_key

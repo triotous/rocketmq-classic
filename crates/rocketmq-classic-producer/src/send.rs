@@ -1423,7 +1423,7 @@ impl Producer {
         }
         let mut context = CheckForbiddenContext {
             name_srv_addr: self.config.client_config().get_namesrv_addr(),
-            group: self.producer_group().to_owned(),
+            group: self.producer_group().map(str::to_owned),
             message,
             queue,
             broker_addr: address.to_owned(),
@@ -1466,7 +1466,7 @@ impl Producer {
             SendMessageType::Normal
         };
         SendMessageContext {
-            producer_group: self.producer_group().to_owned(),
+            producer_group: self.producer_group().map(str::to_owned),
             producer: self,
             message,
             queue: queue.clone(),
@@ -1512,7 +1512,7 @@ impl Producer {
             }
         }
         let header = SendMessageRequestHeaderV1 {
-            producer_group: self.producer_group().to_owned(),
+            producer_group: self.required_producer_group()?.to_owned(),
             topic: attempt.prepared.topic.clone(),
             default_topic: self.config.create_topic_key().to_owned(),
             default_topic_queue_nums: self.config.default_topic_queue_nums(),
@@ -2100,7 +2100,7 @@ mod tests {
             .responses
             .push_back(Ok(Some(response)));
 
-        assert_eq!(producer.producer_group(), "tenant%namespace-send");
+        assert_eq!(producer.producer_group(), Some("tenant%namespace-send"));
         let message = Message::new("orders", b"namespaced body".to_vec());
         let result = producer
             .send_with_timeout(&message, Duration::from_secs(1))
@@ -2708,7 +2708,7 @@ mod tests {
                 context: &mut CheckForbiddenContext<'_>,
             ) -> Result<(), ProducerError> {
                 assert_eq!(context.name_srv_addr, None);
-                assert_eq!(context.group, "check-forbidden-order");
+                assert_eq!(context.group.as_deref(), Some("check-forbidden-order"));
                 assert_eq!(context.communication_mode, CommunicationMode::Sync);
                 assert_eq!(context.broker_addr, "10.0.0.1:10911");
                 assert_eq!(context.queue.broker_name(), Some("broker-a"));
