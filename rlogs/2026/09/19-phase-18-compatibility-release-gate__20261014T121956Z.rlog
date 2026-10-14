@@ -1,0 +1,28 @@
+Phase 18 continuation — CheckForbidden async fault-update evidence — 2026-10-14 UTC
+
+Starting state
+- Branch `phase/19-phase-18-compatibility-release-gate`; initial HEAD `39afef818629e1e0b9f92140587b4092f0a60260`.
+- The prior uncommitted code change only strengthened an existing Producer ASYNC CheckForbidden test. Four compatibility/release documents also had pending Phase 18 updates.
+- The Java reference repository remains read-only. Phase plans were not modified.
+
+Changes
+- `f314116a` — `test(producer): assert async hook fault update parity`. The default-route ASYNC hook-error test now enables latency fault detection and asserts one reachable Broker entry is due for detection after the rejected attempt.
+- `20365fed` — `docs(compat): record CheckForbidden release gate`. Records the benchmark observation, source/API matrix update, release-checklist disposition, and the scope of the incremental verification.
+
+Validation on the updated Producer test worktree
+- PASS: `cargo test -p rocketmq-classic-producer --locked` — 138 unit tests, 55 integration/doc targets.
+- PASS: `cargo clippy -p rocketmq-classic-producer --all-targets --all-features --locked -- -D warnings`.
+- PASS: `cargo fmt --all -- --check`.
+- PASS: `git diff --check`.
+- Existing full-workspace/default+all-feature, Maven, differential, manifest, race/leak, fuzz, examples, benchmark, metadata and package gates were run on parent revision `39afef81` as already recorded in the checklist; they were not rerun for this test-only assertion.
+
+Plan audit findings
+- P18-V01 remains open: broad Java/Rust overload input/error/control-flow, inherited/trait API and reverse-export reconciliation remains local work.
+- P18-V04 still lacks a current GitHub Ubuntu result for the Java address profile.
+- Phase 19 Docker/Broker automation remains unbuilt and unrun; deployment-only owner checks are distinct from these local requirements.
+- `0.1.0` release-version intent and registry dependency resolution remain unconfirmed. Publication/tagging is not part of this work.
+- The Phase 15–17 plans still contain unchecked verification boxes. Their matrices/logs need a requirement-by-requirement evidence reconciliation before claiming the overall Phase 15–18 goal complete; Phase 17 plan lists local query/error and reset-race criteria that must be verified against current artifacts.
+
+Current status
+- CheckForbidden test and documentation changes are committed separately. Execution log is a separate append-only commit.
+- No push, publication, tag, or Java repository changes were made.
