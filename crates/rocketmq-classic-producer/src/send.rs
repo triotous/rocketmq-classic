@@ -1107,6 +1107,17 @@ impl Producer {
                     return Ok(None);
                 }
                 Err(error) => {
+                    // Java catches a request-scoped RemotingTooMuchRequestException and
+                    // retries while the outer send deadline still has time. A capped
+                    // deadline can expire during hooks/message preparation before the
+                    // remoting layer runs, so preserve that retry path for local timeouts.
+                    let now = Instant::now();
+                    let request_timeout_can_retry = mode == SendMode::Sync
+                        && request_deadline < deadline
+                        && now >= request_deadline
+                        && now < deadline
+                        && attempt + 1 < attempts
+                        && matches!(&error, ProducerError::Timeout);
                     let (isolation, reachable, retry) = match &error {
                         ProducerError::Rpc(rpc) => {
                             let (isolation, reachable) =
@@ -1117,7 +1128,7 @@ impl Producer {
                                 attempt + 1 < attempts && should_retry(mode, rpc, &self.config),
                             )
                         }
-                        _ => (false, true, false),
+                        _ => (false, true, request_timeout_can_retry),
                     };
                     self.update_fault(&broker, latency, isolation, reachable)?;
                     if retry {
@@ -2667,6 +2678,70 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn zero_per_request_timeout_retries_sync_attempts_within_total_budget() {
+        struct Hook(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+        impl SendMessageHook for Hook {
+            fn hook_name(&self) -> &str {
+                "zero-per-request-timeout-retry"
+            }
+
+            fn send_message_before(&self, _context: &mut SendMessageContext<'_>) {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+
+            fn send_message_after(&self, _context: &mut SendMessageContext<'_>) {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+
+        let mut config = crate::ProducerConfig::new("zero-per-request-timeout-retry").unwrap();
+        config.set_send_msg_max_timeout_per_request(0);
+        config.set_retry_times_when_send_failed(1);
+        let (producer, _) = scripted_producer(config).await;
+        let hook_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        producer.register_send_message_hook(Arc::new(Hook(hook_calls.clone())));
+        producer
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .push_back(Err(ProducerError::Timeout));
+
+        let result = producer
+            .send_with_timeout(
+                &Message::new("orders", b"zero per-request timeout".to_vec()),
+                Duration::from_secs(3),
+            )
+            .await;
+        assert!(matches!(result, Err(ProducerError::Timeout)), "{result:?}");
+
+        let java: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+        assert_eq!(
+            java["perRequestTimeoutRetry"]["retryTimesWhenSendFailed"],
+            1
+        );
+        assert_eq!(java["perRequestTimeoutRetry"]["sendMsgTimeout"], 3_000);
+        assert_eq!(
+            java["perRequestTimeoutRetry"]["sendMsgMaxTimeoutPerRequest"],
+            0
+        );
+        assert_eq!(java["perRequestTimeoutRetry"]["beforeAttempts"], 2);
+        assert_eq!(java["perRequestTimeoutRetry"]["afterAttempts"], 2);
+        assert_eq!(
+            hook_calls.load(std::sync::atomic::Ordering::SeqCst),
+            4,
+            "Java retries the local request-timeout exception while total budget remains"
+        );
+        assert_eq!(
+            producer.scripted_transport.lock().unwrap().attempts.len(),
+            1
+        );
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn send_message_hooks_run_in_order_for_each_attempt_and_keep_context_state() {
         struct Hook(Arc<std::sync::Mutex<Vec<String>>>);
 
@@ -4088,25 +4163,43 @@ mod tests {
     #[test]
     fn per_request_timeout_only_limits_sync_attempts_that_have_a_retry_after_them() {
         let producer = crate::Producer::new(crate::ProducerConfig::new("producer").unwrap());
-        producer.set_send_msg_max_timeout_per_request(500);
         let now = Instant::now();
         let deadline = now + Duration::from_secs(5);
-        assert_eq!(
-            producer.request_deadline_at(SendMode::Sync, deadline, now, 0, 3),
-            now + Duration::from_millis(500)
-        );
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+        for case in fixture["perRequestTimeoutRetry"]["configuredValues"]
+            .as_array()
+            .unwrap()
+        {
+            let value = case["input"].as_i64().unwrap() as i32;
+            producer.set_send_msg_max_timeout_per_request(value);
+            assert_eq!(
+                producer.send_msg_max_timeout_per_request(),
+                case["readback"].as_i64().unwrap() as i32
+            );
+            let expected = if value <= -1 {
+                deadline
+            } else {
+                (now + Duration::from_millis(value as u64)).min(deadline)
+            };
+            assert_eq!(
+                producer.request_deadline_at(SendMode::Sync, deadline, now, 0, 3),
+                expected,
+                "request timeout input {value}"
+            );
+        }
         assert_eq!(
             producer.request_deadline_at(SendMode::Sync, deadline, now, 2, 3),
             deadline
         );
+        producer.set_send_msg_max_timeout_per_request(125);
         assert_eq!(
             producer.request_deadline_at(SendMode::Future, deadline, now, 0, 3),
             deadline
         );
-        producer.set_send_msg_max_timeout_per_request(125);
         assert_eq!(
-            producer.request_deadline_at(SendMode::Sync, deadline, now, 0, 3),
-            now + Duration::from_millis(125)
+            producer.request_deadline_at(SendMode::Oneway, deadline, now, 0, 1),
+            deadline
         );
     }
 
