@@ -362,10 +362,6 @@ fn rust_publish_info_method_names_have_java_crosswalks() {
             "TopicPublishInfo.setMessageQueueList",
         ),
         (
-            "TopicPublishInfo::set_message_queues",
-            "TopicPublishInfo.setMessageQueueList",
-        ),
-        (
             "TopicPublishInfo::send_which_queue",
             "TopicPublishInfo.getSendWhichQueue",
         ),
@@ -384,10 +380,6 @@ fn rust_publish_info_method_names_have_java_crosswalks() {
         (
             "TopicPublishInfo::select_one_message_queue",
             "TopicPublishInfo.selectOneMessageQueue()",
-        ),
-        (
-            "TopicPublishInfo::select_one_message_queue_with_filter",
-            "TopicPublishInfo.selectOneMessageQueue(QueueFilter...)",
         ),
         (
             "TopicPublishInfo::select_one_message_queue_with_nullable_filters",
@@ -1417,7 +1409,7 @@ fn implementation_publish_info_table_and_nested_aliases_match_java_fixture() {
     assert!(from_table.to_string().contains("haveTopicRouterInfo=true"));
 
     let stale_list = from_table.message_queue_list().unwrap();
-    from_table.set_message_queues(Some(vec![original.clone()]));
+    from_table.set_message_queue_list(Some(ProducerPublishQueueList::new(vec![original.clone()])));
     stale_list.with_mut(Vec::clear);
     let current_list = from_table.message_queue_list().unwrap();
     assert_eq!(current_list.snapshot(), [original]);

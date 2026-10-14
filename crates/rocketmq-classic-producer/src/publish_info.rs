@@ -190,6 +190,20 @@ struct PublishInfoData {
 /// let info = TopicPublishInfo::default();
 /// info.ptr_eq(&info);
 /// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_producer::publish_info::TopicPublishInfo;
+/// let info = TopicPublishInfo::default();
+/// info.set_message_queues(None);
+/// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_common::message::MessageQueue;
+/// use rocketmq_classic_producer::publish_info::TopicPublishInfo;
+/// let info = TopicPublishInfo::default();
+/// let filters = [|_: &MessageQueue| true];
+/// info.select_one_message_queue_with_filter(&filters).unwrap();
+/// ```
 #[derive(Clone)]
 pub struct TopicPublishInfo(Arc<RwLock<PublishInfoData>>);
 
@@ -260,10 +274,6 @@ impl TopicPublishInfo {
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .message_queue_list = queues;
-    }
-
-    pub fn set_message_queues(&self, queues: Option<Vec<MessageQueue>>) {
-        self.set_message_queue_list(queues.map(ProducerPublishQueueList::new));
     }
 
     pub fn send_which_queue(&self) -> ProducerQueueIndex {
@@ -339,22 +349,6 @@ impl TopicPublishInfo {
         let position =
             (data.send_which_queue.increment_and_get() & i32::MAX) as usize % queue_count;
         Ok(queues.snapshot()[position].clone())
-    }
-
-    /// Applies all filters for each candidate, matching Java's non-short-
-    /// circuit boolean accumulation and returning `None` when no queue passes.
-    pub fn select_one_message_queue_with_filter<F>(
-        &self,
-        filters: &[F],
-    ) -> Result<Option<MessageQueue>, ProducerError>
-    where
-        F: Fn(&MessageQueue) -> bool,
-    {
-        let filters = filters
-            .iter()
-            .map(|filter| Some(filter as &dyn Fn(&MessageQueue) -> bool))
-            .collect::<Vec<_>>();
-        self.select_one_message_queue_with_nullable_filters(Some(&filters))
     }
 
     /// Maps Java's nullable `QueueFilter...` input and nullable filter entries.

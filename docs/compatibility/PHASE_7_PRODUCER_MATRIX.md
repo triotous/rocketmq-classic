@@ -96,13 +96,11 @@ behavior.
 | `TopicPublishInfo::ok` | `TopicPublishInfo.ok()` | True only when the queue list exists and is nonempty. |
 | `TopicPublishInfo::message_queue_list` | `TopicPublishInfo.getMessageQueueList()` | Returns the retained live queue-list handle; `None` maps to Java null. |
 | `TopicPublishInfo::set_message_queue_list` | `TopicPublishInfo.setMessageQueueList(List<MessageQueue>)` | Installs or clears the retained live queue-list handle. |
-| `TopicPublishInfo::set_message_queues` | `TopicPublishInfo.setMessageQueueList(List<MessageQueue>)` | Vec convenience adapter to the Java queue-list setter. |
 | `TopicPublishInfo::send_which_queue` | `TopicPublishInfo.getSendWhichQueue()` | Returns the retained cursor handle. |
 | `TopicPublishInfo::set_send_which_queue` | `TopicPublishInfo.setSendWhichQueue(ThreadLocalIndex)` | Replaces the retained cursor handle. |
 | `TopicPublishInfo::have_topic_router_info` | `TopicPublishInfo.isHaveTopicRouterInfo()` | JavaBean getter for route-data presence. |
 | `TopicPublishInfo::set_have_topic_router_info` | `TopicPublishInfo.setHaveTopicRouterInfo(boolean)` | Updates route-data presence. |
 | `TopicPublishInfo::select_one_message_queue` | `TopicPublishInfo.selectOneMessageQueue()` | Increment-first cursor selection; Rust returns typed errors for null/empty lists. |
-| `TopicPublishInfo::select_one_message_queue_with_filter` | `TopicPublishInfo.selectOneMessageQueue(QueueFilter...)` | Typed Rust filter slice. |
 | `TopicPublishInfo::select_one_message_queue_with_nullable_filters` | `TopicPublishInfo.selectOneMessageQueue(QueueFilter...)` | Preserves nullable varargs and nullable filter elements. |
 | `TopicPublishInfo::select_one_message_queue_avoiding` | `TopicPublishInfo.selectOneMessageQueue(String lastBrokerName)` | Avoids the previous Broker when possible. |
 | `TopicPublishInfo::reset_index` | `TopicPublishInfo.resetIndex()` | Resets the retained `ThreadLocalIndex`. |
@@ -115,7 +113,6 @@ behavior.
 | `ProducerQueueIndex::increment_and_get` | `ThreadLocalIndex.incrementAndGet()` | Stores the wrapped `i32` value and returns `value & 0x7fffffff`; the fixture pins overflow from `i32::MAX` to `0`, then `1`. |
 | `ProducerQueueIndex::reset` | `ThreadLocalIndex.reset()` | Replaces the current thread's cursor with a nonnegative random value. |
 | `Display for ProducerQueueIndex` | `ThreadLocalIndex.toString()` | Preserves Java's `null` before the first initialization and formats the raw current `i32`. |
-| `ProducerQueueIndex::ptr_eq` | Java reference identity for `ThreadLocalIndex` (`==`) | Rust helper used to assert alias identity; Java identity comparison is a language operation, not a declared method. |
 | `TopicPublishInfoTable::replace_all_with_nullable_callback` | `Map.replaceAll(BiFunction)` | Nullable callback adapter on the live `ConcurrentMap` counterpart. |
 | `TopicPublishInfoKeySetView::remove_if_with_nullable_callback` | `Map.keySet().removeIf(Predicate)` | Nullable callback adapter on the live key view. |
 | `TopicPublishInfoValuesView::remove_if_with_nullable_callback` | `Map.values().removeIf(Predicate)` | Nullable callback adapter on the live values view. |
