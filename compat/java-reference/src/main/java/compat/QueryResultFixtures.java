@@ -24,10 +24,11 @@ public final class QueryResultFixtures {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 1) {
-            throw new IllegalArgumentException("usage: QueryResultFixtures <fixture.json> [--verify]");
+            throw new IllegalArgumentException("usage: QueryResultFixtures <fixture.json> [true|false|--verify]");
         }
         Path output = Path.of(args[0]);
-        boolean verify = args.length > 1 && "--verify".equals(args[1]);
+        boolean verify = args.length > 1
+            && (Boolean.parseBoolean(args[1]) || "--verify".equals(args[1]));
         String json = JSON.toJSONString(generate()) + "\n";
         if (verify) {
             if (!Files.exists(output) || !json.equals(Files.readString(output))) {
