@@ -153,7 +153,10 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   A targeted trait pass now maps the custom consistent-hash constructor,
   `CommandHeader`, consumer runtime/request adapters, TLS decrypt strategy, and
   listener/transaction executor callbacks; no missing capability was confirmed
-  in those slices. The full inherited and Rust/Java reverse-export audit is
+  in those slices. Phase 10 and 12 now include method-level crosswalks for the
+  public concurrent and orderly listener traits, their returned status/context,
+  null/panic disposition, and owning callback tests. The full inherited and
+  Rust/Java reverse-export audit is
   still open.
   Runtime Producer scalar settings for create-topic key/queue count, send and
   per-request timeouts, sync/async retry counts, retry-after-non-OK-store, and
