@@ -62,6 +62,8 @@ pub enum ProducerError {
     NullPublishInfoQueueList,
     #[error("TopicPublishInfo message queue list is empty")]
     EmptyPublishInfoQueueList,
+    #[error("TopicPublishInfo queue filter is null")]
+    NullPublishInfoQueueFilter,
     #[error("TopicPublishInfo route data is null")]
     NullPublishInfoRouteData,
     #[error("TopicPublishInfo route queue data is null")]

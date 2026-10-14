@@ -11,8 +11,8 @@ use rocketmq_classic_core::route::TopicRouteDataHandle;
 use rocketmq_classic_producer::{
     AsyncSenderExecutor, AsyncSenderTask, CheckForbiddenContext, CheckForbiddenHook,
     CommunicationMode, Producer, ProducerConfig, ProducerError, ProducerPublishQueueList,
-    ProducerQueueIndex, ProducerServiceState, SendMessageContext, SendMessageHook, SendMessageType,
-    TopicPublishInfo, TopicPublishInfoTableError,
+    ProducerQueueIndex, ProducerServiceState, PublishInfoQueueFilter, SendMessageContext,
+    SendMessageHook, SendMessageType, TopicPublishInfo, TopicPublishInfoTableError,
     validation::{
         validate_group, validate_message, validate_send_topic, validate_system_topic,
         validate_topic,
@@ -1029,6 +1029,89 @@ fn publish_info_table_nullable_arguments_match_java_fixture() {
         TopicPublishInfoTableError::NullRemappingResult
     );
     assert!(table.get("replace-all-null-result").unwrap().ptr_eq(&first));
+}
+
+#[test]
+fn publish_info_queue_filter_nullability_and_order_match_java_fixture() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let expected = &fixture["implementationQueueFilterSelection"];
+    let info = TopicPublishInfo::default();
+    let queue = MessageQueue::new("orders", "broker-a", 2);
+    info.set_message_queue_list(Some(ProducerPublishQueueList::new(vec![queue.clone()])));
+
+    assert_eq!(
+        info.select_one_message_queue_with_nullable_filters(None)
+            .unwrap(),
+        Some(queue.clone())
+    );
+    assert_eq!(
+        info.select_one_message_queue_with_nullable_filters(Some(&[]))
+            .unwrap(),
+        Some(queue.clone())
+    );
+    assert_eq!(
+        expected["nullFilterArraySelection"].as_i64(),
+        Some(i64::from(queue.queue_id()))
+    );
+    assert_eq!(
+        expected["emptyFilterArraySelection"].as_i64(),
+        Some(i64::from(queue.queue_id()))
+    );
+
+    let null_filter = [None];
+    assert!(matches!(
+        info.select_one_message_queue_with_nullable_filters(Some(&null_filter)),
+        Err(ProducerError::NullPublishInfoQueueFilter)
+    ));
+    assert_eq!(
+        expected["nullFilterWithQueue"].as_str(),
+        Some("NullPointerException")
+    );
+
+    info.set_message_queue_list(Some(ProducerPublishQueueList::default()));
+    assert!(
+        info.select_one_message_queue_with_nullable_filters(Some(&null_filter))
+            .unwrap()
+            .is_none()
+    );
+    assert!(expected["nullFilterWithEmptyQueueList"].is_null());
+
+    info.set_message_queue_list(None);
+    assert!(
+        info.select_one_message_queue_with_nullable_filters(Some(&null_filter))
+            .unwrap()
+            .is_none()
+    );
+    assert!(expected["nullFilterWithNullQueueList"].is_null());
+
+    let calls = std::sync::Mutex::new(Vec::new());
+    let reject = |_: &MessageQueue| {
+        calls.lock().unwrap().push("reject");
+        false
+    };
+    let accept = |_: &MessageQueue| {
+        calls.lock().unwrap().push("accept");
+        true
+    };
+    let filters: [Option<PublishInfoQueueFilter<'_>>; 2] = [Some(&reject), Some(&accept)];
+    info.set_message_queue_list(Some(ProducerPublishQueueList::new(vec![queue.clone()])));
+    assert!(
+        info.select_one_message_queue_with_nullable_filters(Some(&filters))
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(*calls.lock().unwrap(), ["reject", "accept"]);
+    assert!(expected["nonShortCircuitSelection"].is_null());
+    assert_eq!(
+        *calls.lock().unwrap(),
+        expected["nonShortCircuitFilterOrder"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry.as_str().unwrap())
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]

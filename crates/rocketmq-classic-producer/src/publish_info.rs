@@ -17,6 +17,12 @@ use rocketmq_classic_protocol::route::TopicRouteData;
 
 use crate::ProducerError;
 
+/// One Java-compatible queue-filter callback.
+pub type PublishInfoQueueFilter<'a> = &'a dyn Fn(&MessageQueue) -> bool;
+
+/// Nullable `QueueFilter...` input, including Java's nullable filter elements.
+pub type NullablePublishInfoQueueFilters<'a> = Option<&'a [Option<PublishInfoQueueFilter<'a>>]>;
+
 thread_local! {
     static ACTIVE_PUBLISH_INFO_REMAPS: RefCell<BTreeSet<(usize, String)>> = const {
         RefCell::new(BTreeSet::new())
@@ -325,11 +331,32 @@ impl TopicPublishInfo {
     where
         F: Fn(&MessageQueue) -> bool,
     {
-        let data = self
-            .0
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let Some(queues) = &data.message_queue_list else {
+        let filters = filters
+            .iter()
+            .map(|filter| Some(filter as &dyn Fn(&MessageQueue) -> bool))
+            .collect::<Vec<_>>();
+        self.select_one_message_queue_with_nullable_filters(Some(&filters))
+    }
+
+    /// Maps Java's nullable `QueueFilter...` input and nullable filter entries.
+    /// A null filter array acts like no filters; a null element fails only when
+    /// a nonempty queue list causes Java to evaluate the filters.
+    pub fn select_one_message_queue_with_nullable_filters(
+        &self,
+        filters: NullablePublishInfoQueueFilters<'_>,
+    ) -> Result<Option<MessageQueue>, ProducerError> {
+        let filters = filters.filter(|filters| !filters.is_empty());
+        let (queues, send_which_queue) = {
+            let data = self
+                .0
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            (
+                data.message_queue_list.clone(),
+                data.send_which_queue.clone(),
+            )
+        };
+        let Some(queues) = queues else {
             return Ok(None);
         };
         let queues = queues.snapshot();
@@ -337,11 +364,13 @@ impl TopicPublishInfo {
             return Ok(None);
         }
         for _ in 0..queues.len() {
-            let index =
-                (data.send_which_queue.increment_and_get() & i32::MAX) as usize % queues.len();
+            let index = (send_which_queue.increment_and_get() & i32::MAX) as usize % queues.len();
             let queue = &queues[index];
             let mut accepted = true;
-            for filter in filters {
+            for filter in filters.into_iter().flatten() {
+                let Some(filter) = filter else {
+                    return Err(ProducerError::NullPublishInfoQueueFilter);
+                };
                 accepted &= filter(queue);
             }
             if accepted {

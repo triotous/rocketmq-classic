@@ -133,6 +133,7 @@ public final class ProducerCoreFixtures {
         result.put("implementationStateAccessors", implementationStateAccessors());
         result.put("implementationPublishInfoTable", implementationPublishInfoTable());
         result.put("implementationPublishInfoTableAdvanced", implementationPublishInfoTableAdvanced());
+        result.put("implementationQueueFilterSelection", implementationQueueFilterSelection());
 
         Map<String, Object> defaults = new TreeMap<>();
         defaults.put("producerGroup", producer.getProducerGroup());
@@ -625,6 +626,43 @@ public final class ProducerCoreFixtures {
         result.put("nullEntrySetValuePreservesMapping",
             nullableEntry.getValue() == first && table.get("nullable") == first);
         return result;
+    }
+
+    private static Map<String, Object> implementationQueueFilterSelection() {
+        TopicPublishInfo info = new TopicPublishInfo();
+        MessageQueue queue = new MessageQueue("orders", "broker-a", 2);
+        info.setMessageQueueList(new ArrayList<>(List.of(queue)));
+        Map<String, Object> result = new TreeMap<>();
+        result.put("nullFilterArraySelection", queueId(info.selectOneMessageQueue((TopicPublishInfo.QueueFilter[]) null)));
+        result.put("emptyFilterArraySelection", queueId(info.selectOneMessageQueue(new TopicPublishInfo.QueueFilter[0])));
+        result.put("nullFilterWithQueue", nullPointerClass(() -> info.selectOneMessageQueue((TopicPublishInfo.QueueFilter) null)));
+
+        TopicPublishInfo empty = new TopicPublishInfo();
+        empty.setMessageQueueList(new ArrayList<>());
+        result.put("nullFilterWithEmptyQueueList", queueId(empty.selectOneMessageQueue((TopicPublishInfo.QueueFilter) null)));
+
+        TopicPublishInfo missing = new TopicPublishInfo();
+        missing.setMessageQueueList(null);
+        result.put("nullFilterWithNullQueueList", queueId(missing.selectOneMessageQueue((TopicPublishInfo.QueueFilter) null)));
+
+        List<String> filterOrder = new ArrayList<>();
+        TopicPublishInfo.QueueFilter[] filters = {
+            candidate -> {
+                filterOrder.add("reject");
+                return false;
+            },
+            candidate -> {
+                filterOrder.add("accept");
+                return true;
+            }
+        };
+        result.put("nonShortCircuitSelection", queueId(info.selectOneMessageQueue(filters)));
+        result.put("nonShortCircuitFilterOrder", filterOrder);
+        return result;
+    }
+
+    private static Integer queueId(MessageQueue queue) {
+        return queue == null ? null : queue.getQueueId();
     }
 
     private static String nullPointerClass(Runnable action) {

@@ -32,7 +32,8 @@ pub use hooks::{
 };
 pub use producer::Producer;
 pub use publish_info::{
-    ProducerPublishQueueList, ProducerQueueIndex, TopicPublishInfo, TopicPublishInfoEntryHandle,
+    NullablePublishInfoQueueFilters, ProducerPublishQueueList, ProducerQueueIndex,
+    PublishInfoQueueFilter, TopicPublishInfo, TopicPublishInfoEntryHandle,
     TopicPublishInfoEntrySetView, TopicPublishInfoKeySetView, TopicPublishInfoTable,
     TopicPublishInfoTableError, TopicPublishInfoValuesView,
 };
