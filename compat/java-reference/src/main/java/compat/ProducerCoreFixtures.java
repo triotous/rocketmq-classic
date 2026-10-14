@@ -141,6 +141,8 @@ public final class ProducerCoreFixtures {
         result.put("producerImplementationApi", producerImplementationApi());
         result.put("producerFacadeApi", producerFacadeApi());
         result.put("topicPublishInfoApi", publicApiSurface(TopicPublishInfo.class));
+        result.put("topicPublishInfoQueueFilterApi",
+            publicApiSurface(TopicPublishInfo.QueueFilter.class));
         result.put("threadLocalIndexApi", threadLocalIndexApi());
         result.put("producerConstructorCases", producerConstructorCases());
         result.put("runtimeAccumulatorSettings", runtimeAccumulatorSettings());

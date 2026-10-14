@@ -157,6 +157,35 @@ fn pinned_java_topic_publish_info_surface_has_phase_crosswalks() {
 }
 
 #[test]
+fn pinned_java_topic_publish_info_queue_filter_surface_has_phase_crosswalks() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let inventory = &fixture["topicPublishInfoQueueFilterApi"];
+    let methods = inventory["publicMethods"].as_array().unwrap();
+    let matrix = include_str!("../../../docs/compatibility/PHASE_7_PRODUCER_MATRIX.md");
+
+    assert_eq!(
+        inventory["className"],
+        "org.apache.rocketmq.client.impl.producer.TopicPublishInfo$QueueFilter"
+    );
+    assert_eq!(inventory["publicMethodCount"].as_u64(), Some(1));
+    assert_eq!(methods.len(), 1);
+    assert!(
+        inventory["publicConstructors"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let signature = "boolean org.apache.rocketmq.client.impl.producer.TopicPublishInfo$QueueFilter.filter(org.apache.rocketmq.common.message.MessageQueue)";
+    assert!(
+        methods
+            .iter()
+            .any(|candidate| candidate.as_str() == Some(signature))
+    );
+    assert!(matrix.contains("TopicPublishInfo.QueueFilter.filter"));
+}
+
+#[test]
 fn pinned_java_thread_local_index_surface_and_format_match_rust() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
@@ -387,6 +416,14 @@ fn rust_publish_info_method_names_have_java_crosswalks() {
         (
             "TopicPublishInfo::set_topic_route_data",
             "TopicPublishInfo.setTopicRouteData",
+        ),
+        (
+            "PublishInfoQueueFilter",
+            "TopicPublishInfo.QueueFilter.filter(MessageQueue)",
+        ),
+        (
+            "NullablePublishInfoQueueFilters",
+            "TopicPublishInfo.selectOneMessageQueue(QueueFilter...)",
         ),
         (
             "ProducerQueueIndex::increment_and_get",
