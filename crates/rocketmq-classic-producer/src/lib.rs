@@ -32,7 +32,9 @@ pub use hooks::{
 };
 pub use producer::Producer;
 pub use publish_info::{
-    ProducerPublishQueueList, ProducerQueueIndex, TopicPublishInfo, TopicPublishInfoTable,
+    ProducerPublishQueueList, ProducerQueueIndex, TopicPublishInfo, TopicPublishInfoEntryHandle,
+    TopicPublishInfoEntrySetView, TopicPublishInfoKeySetView, TopicPublishInfoTable,
+    TopicPublishInfoTableError, TopicPublishInfoValuesView,
 };
 pub use recall::RecallMessageHandle;
 pub use request_reply::{ReplyMessageError, RequestCallback, create_reply_message};

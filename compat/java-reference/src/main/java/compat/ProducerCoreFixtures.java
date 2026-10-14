@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -131,6 +132,7 @@ public final class ProducerCoreFixtures {
         result.put("implementationHookExecution", implementationHookExecution());
         result.put("implementationStateAccessors", implementationStateAccessors());
         result.put("implementationPublishInfoTable", implementationPublishInfoTable());
+        result.put("implementationPublishInfoTableAdvanced", implementationPublishInfoTableAdvanced());
 
         Map<String, Object> defaults = new TreeMap<>();
         defaults.put("producerGroup", producer.getProducerGroup());
@@ -401,6 +403,101 @@ public final class ProducerCoreFixtures {
         result.put("toStringContainsState", fromTable.toString().contains("haveTopicRouterInfo=true"));
         table.remove("orders");
         result.put("removeAffectsRetainedMap", !table.containsKey("orders") && table.isEmpty());
+        return result;
+    }
+
+    private static Map<String, Object> implementationPublishInfoTableAdvanced() {
+        DefaultMQProducer producer = new DefaultMQProducer("producer-publish-info-table-advanced");
+        ConcurrentMap<String, TopicPublishInfo> table =
+            producer.getDefaultMQProducerImpl().getTopicPublishInfoTable();
+        TopicPublishInfo first = new TopicPublishInfo();
+        TopicPublishInfo second = new TopicPublishInfo();
+        TopicPublishInfo third = new TopicPublishInfo();
+        Map<String, Object> result = new TreeMap<>();
+
+        TopicPublishInfo computed = table.computeIfAbsent("compute", key -> first);
+        TopicPublishInfo replaced = table.computeIfPresent("compute", (key, current) -> second);
+        boolean computeIfPresentIdentity = replaced == second && table.get("compute") == second;
+        TopicPublishInfo merged = table.merge("compute", third, (current, incoming) -> current);
+        boolean mergeKeepsCurrentIdentity = merged == second && table.get("compute") == second;
+        boolean computeRemoved = table.compute("compute", (key, current) -> null) == null
+            && !table.containsKey("compute");
+        result.put("computeIfAbsentIdentity", computed == first);
+        result.put("computeIfPresentIdentity", computeIfPresentIdentity);
+        result.put("mergeKeepsCurrentIdentity", mergeKeepsCurrentIdentity);
+        result.put("computeNullRemoves", computeRemoved);
+
+        table.put("replace", first);
+        TopicPublishInfo replacedValue = table.replace("replace", second);
+        boolean conditionalReplace = table.replace("replace", second, third)
+            && table.get("replace") == third;
+        result.put("replaceReturnsPreviousIdentity", replacedValue == first);
+        result.put("conditionalReplaceUsesIdentity", conditionalReplace);
+        table.replaceAll((key, current) -> second);
+        result.put("replaceAllUsesLiveValues", table.get("replace") == second);
+
+        Set<String> keys = table.keySet();
+        table.put("key-view", first);
+        result.put("keyViewRemovesFromMap", keys.remove("key-view") && !table.containsKey("key-view"));
+        table.put("key-bulk-remove", first);
+        table.put("key-bulk-retain", second);
+        boolean keyBulk = keys.removeAll(Set.of("key-bulk-remove"))
+            && !table.containsKey("key-bulk-remove")
+            && keys.retainAll(Set.of("key-bulk-retain"))
+            && !table.containsKey("replace") && table.containsKey("key-bulk-retain")
+            && table.size() == 1;
+        result.put("keyViewBulkMutation", keyBulk);
+
+        Map<String, TopicPublishInfo> putAllRows = new LinkedHashMap<>();
+        putAllRows.put("put-all-before", first);
+        putAllRows.put("put-all-null", null);
+        putAllRows.put("put-all-after", third);
+        boolean putAllRejected = false;
+        try {
+            table.putAll(putAllRows);
+        } catch (NullPointerException expected) {
+            putAllRejected = true;
+        }
+        result.put("putAllNullValueKeepsEarlier", putAllRejected
+            && table.containsKey("put-all-before") && !table.containsKey("put-all-after"));
+        table.remove("put-all-before");
+
+        var values = table.values();
+        table.put("value-view", first);
+        result.put("valuesViewRemovesByIdentity", values.remove(first) && !table.containsKey("value-view"));
+        table.put("value-bulk-a", first);
+        table.put("value-bulk-b", first);
+        table.put("value-bulk-c", second);
+        boolean valuesRemoveAll = values.removeAll(List.of(first))
+            && !table.containsKey("value-bulk-a") && !table.containsKey("value-bulk-b")
+            && table.containsKey("value-bulk-c");
+        table.put("value-retain-a", first);
+        table.put("value-retain-b", second);
+        boolean valuesRetainAll = values.retainAll(List.of(first))
+            && table.containsKey("value-retain-a") && !table.containsKey("value-retain-b")
+            && !table.containsKey("replace") && !table.containsKey("key-bulk-retain")
+            && !table.containsKey("value-bulk-c");
+        result.put("valuesViewBulkMutation", valuesRemoveAll && valuesRetainAll);
+        var entries = table.entrySet();
+        table.put("entry-view", first);
+        var entry = entries.stream().filter(candidate -> "entry-view".equals(candidate.getKey()))
+            .findFirst().orElseThrow();
+        TopicPublishInfo entryPrevious = entry.setValue(third);
+        boolean entryWrite = entryPrevious == first && table.get("entry-view") == third;
+        result.put("entryViewSetValueWritesThrough", entryWrite);
+        result.put("entryViewRemoveUsesKeyAndIdentity",
+            entries.remove(new java.util.AbstractMap.SimpleEntry<>("entry-view", third))
+                && !table.containsKey("entry-view"));
+        table.put("entry-bulk-remove", first);
+        table.put("entry-bulk-retain", third);
+        boolean entryRemoveAll = entries.removeAll(Set.of(
+            new java.util.AbstractMap.SimpleEntry<>("entry-bulk-remove", first)));
+        boolean entryRetainAll = entries.retainAll(Set.of(
+            new java.util.AbstractMap.SimpleEntry<>("entry-bulk-retain", third)));
+        result.put("entryViewBulkMutation", entryRemoveAll && entryRetainAll
+            && table.size() == 1 && table.get("entry-bulk-retain") == third);
+        table.clear();
+        result.put("clearAffectsRetainedViews", keys.isEmpty() && values.isEmpty() && entries.isEmpty());
         return result;
     }
 

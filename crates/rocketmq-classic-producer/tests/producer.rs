@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{BTreeSet, HashMap},
+    sync::Arc,
+};
 
 use rocketmq_classic_common::{
     message::{Message, MessageQueue},
@@ -9,7 +12,7 @@ use rocketmq_classic_producer::{
     AsyncSenderExecutor, AsyncSenderTask, CheckForbiddenContext, CheckForbiddenHook,
     CommunicationMode, Producer, ProducerConfig, ProducerError, ProducerPublishQueueList,
     ProducerQueueIndex, ProducerServiceState, SendMessageContext, SendMessageHook, SendMessageType,
-    TopicPublishInfo,
+    TopicPublishInfo, TopicPublishInfoTableError,
     validation::{
         validate_group, validate_message, validate_send_topic, validate_system_topic,
         validate_topic,
@@ -461,6 +464,158 @@ fn implementation_publish_info_table_and_nested_aliases_match_java_fixture() {
     assert!(expected["replacementValueIsVisible"].as_bool().unwrap());
     assert!(expected["removeAffectsRetainedMap"].as_bool().unwrap());
     assert!(expected["toStringContainsState"].as_bool().unwrap());
+}
+
+#[test]
+fn publish_info_table_remapping_and_live_views_match_java_fixture() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let expected = &fixture["implementationPublishInfoTableAdvanced"];
+    let table = Producer::new(ProducerConfig::new("publish-info-table-advanced").unwrap())
+        .get_topic_publish_info_table();
+    let first = TopicPublishInfo::default();
+    let second = TopicPublishInfo::default();
+    let third = TopicPublishInfo::default();
+
+    assert!(
+        table
+            .compute_if_absent("compute", |_| Some(first.clone()))
+            .unwrap()
+            .ptr_eq(&first)
+    );
+    assert!(
+        table
+            .compute_if_present("compute", |_, _| Some(second.clone()))
+            .unwrap()
+            .ptr_eq(&second)
+    );
+    assert_eq!(
+        expected["computeIfPresentIdentity"].as_bool(),
+        Some(table.get("compute").unwrap().ptr_eq(&second))
+    );
+    assert!(
+        table
+            .merge("compute", third.clone(), |current, _| Some(current.clone()))
+            .unwrap()
+            .ptr_eq(&second)
+    );
+    assert_eq!(
+        expected["mergeKeepsCurrentIdentity"].as_bool(),
+        Some(table.get("compute").unwrap().ptr_eq(&second))
+    );
+    assert!(table.compute("compute", |_, _| None).is_none());
+    assert!(!table.contains_key("compute"));
+    assert!(expected["computeIfAbsentIdentity"].as_bool().unwrap());
+    assert!(expected["computeNullRemoves"].as_bool().unwrap());
+
+    table.put("replace", first.clone());
+    assert!(
+        table
+            .replace("replace", second.clone())
+            .unwrap()
+            .ptr_eq(&first)
+    );
+    assert!(table.replace_if_equal("replace", &second, third.clone()));
+    table.replace_all(|_, _| second.clone());
+    assert!(table.get("replace").unwrap().ptr_eq(&second));
+    assert!(
+        expected["replaceReturnsPreviousIdentity"]
+            .as_bool()
+            .unwrap()
+    );
+    assert!(
+        expected["conditionalReplaceUsesIdentity"]
+            .as_bool()
+            .unwrap()
+    );
+    assert!(expected["replaceAllUsesLiveValues"].as_bool().unwrap());
+
+    let keys = table.key_set_view();
+    table.put("key-view", first.clone());
+    assert!(keys.remove("key-view"));
+    assert!(!table.contains_key("key-view"));
+    table.put("key-bulk-remove", first.clone());
+    table.put("key-bulk-retain", second.clone());
+    assert_eq!(
+        keys.remove_all(&BTreeSet::from(["key-bulk-remove".to_owned()])),
+        1
+    );
+    assert_eq!(
+        keys.retain_all(&BTreeSet::from(["key-bulk-retain".to_owned()])),
+        1
+    );
+    assert!(matches!(
+        table.put_all_nullable_rows(Some(&[
+            (Some("put-all-before".to_owned()), Some(first.clone())),
+            (Some("put-all-null".to_owned()), None),
+            (Some("put-all-after".to_owned()), Some(third.clone())),
+        ])),
+        Err(TopicPublishInfoTableError::NullValue)
+    ));
+    assert!(table.contains_key("put-all-before"));
+    assert!(!table.contains_key("put-all-after"));
+    table.remove("put-all-before");
+    assert!(expected["keyViewBulkMutation"].as_bool().unwrap());
+    assert!(expected["putAllNullValueKeepsEarlier"].as_bool().unwrap());
+
+    let values = table.values_view();
+    table.put("value-view", first.clone());
+    assert!(values.contains(&first));
+    assert!(values.remove(&first));
+    assert!(!table.contains_key("value-view"));
+    table.put("value-bulk-a", first.clone());
+    table.put("value-bulk-b", first.clone());
+    table.put("value-bulk-c", second.clone());
+    assert_eq!(values.remove_all(&[first.clone()]), 2);
+    assert!(table.contains_key("value-bulk-c"));
+    table.put("value-retain-a", first.clone());
+    table.put("value-retain-b", second.clone());
+    assert_eq!(values.retain_all(&[first.clone()]), 3);
+    assert!(table.contains_key("value-retain-a"));
+    assert!(expected["valuesViewBulkMutation"].as_bool().unwrap());
+
+    let entries = table.entry_set_view();
+    table.put("entry-view", first.clone());
+    let entry = entries
+        .snapshot()
+        .into_iter()
+        .find(|entry| entry.key() == "entry-view")
+        .unwrap();
+    assert!(entry.set_value(third.clone()).ptr_eq(&first));
+    assert!(table.get("entry-view").unwrap().ptr_eq(&third));
+    assert!(entries.remove("entry-view", &third));
+    assert!(!table.contains_key("entry-view"));
+    table.put("entry-bulk-remove", first.clone());
+    table.put("entry-bulk-retain", third.clone());
+    assert_eq!(
+        entries.remove_all(&[("entry-bulk-remove".to_owned(), first.clone())]),
+        1
+    );
+    assert_eq!(
+        entries.retain_all(&[("entry-bulk-retain".to_owned(), third.clone())]),
+        1
+    );
+    assert_eq!(table.len(), 1);
+    assert!(table.get("entry-bulk-retain").unwrap().ptr_eq(&third));
+    assert!(expected["entryViewBulkMutation"].as_bool().unwrap());
+
+    table.clear();
+    assert!(keys.is_empty());
+    assert!(values.is_empty());
+    assert!(entries.is_empty());
+    assert!(expected["keyViewRemovesFromMap"].as_bool().unwrap());
+    assert!(expected["valuesViewRemovesByIdentity"].as_bool().unwrap());
+    assert!(
+        expected["entryViewSetValueWritesThrough"]
+            .as_bool()
+            .unwrap()
+    );
+    assert!(
+        expected["entryViewRemoveUsesKeyAndIdentity"]
+            .as_bool()
+            .unwrap()
+    );
+    assert!(expected["clearAffectsRetainedViews"].as_bool().unwrap());
 }
 
 #[test]

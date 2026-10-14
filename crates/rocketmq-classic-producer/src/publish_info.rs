@@ -1,7 +1,8 @@
 use std::{
+    cell::RefCell,
     collections::{BTreeMap, BTreeSet, HashMap},
     sync::{
-        Arc, Mutex, RwLock,
+        Arc, Mutex, RwLock, Weak,
         atomic::{AtomicI32, Ordering},
     },
     thread::ThreadId,
@@ -15,6 +16,52 @@ use rocketmq_classic_core::{
 use rocketmq_classic_protocol::route::TopicRouteData;
 
 use crate::ProducerError;
+
+thread_local! {
+    static ACTIVE_PUBLISH_INFO_REMAPS: RefCell<BTreeSet<(usize, String)>> = const {
+        RefCell::new(BTreeSet::new())
+    };
+}
+
+struct PublishInfoRemapGuard {
+    table_id: usize,
+    topic: String,
+}
+
+impl PublishInfoRemapGuard {
+    fn enter(table_id: usize, topic: &str) -> Self {
+        let key = (table_id, topic.to_owned());
+        let inserted =
+            ACTIVE_PUBLISH_INFO_REMAPS.with(|active| active.borrow_mut().insert(key.clone()));
+        assert!(
+            inserted,
+            "recursive update to TopicPublishInfoTable key `{topic}`"
+        );
+        Self {
+            table_id,
+            topic: topic.to_owned(),
+        }
+    }
+
+    fn assert_not_active(table_id: usize, topic: &str) {
+        let active = ACTIVE_PUBLISH_INFO_REMAPS
+            .with(|active| active.borrow().contains(&(table_id, topic.to_owned())));
+        assert!(
+            !active,
+            "recursive update to TopicPublishInfoTable key `{topic}`"
+        );
+    }
+}
+
+impl Drop for PublishInfoRemapGuard {
+    fn drop(&mut self) {
+        ACTIVE_PUBLISH_INFO_REMAPS.with(|active| {
+            active
+                .borrow_mut()
+                .remove(&(self.table_id, self.topic.clone()));
+        });
+    }
+}
 
 /// Shared mutable queue-list handle corresponding to
 /// `TopicPublishInfo.getMessageQueueList()`.
@@ -413,26 +460,133 @@ fn java_queue_string(queue: &MessageQueue) -> String {
 /// Shared live topic-to-publish-info table corresponding to
 /// `DefaultMQProducerImpl.getTopicPublishInfoTable()`.
 #[derive(Clone, Default)]
-pub struct TopicPublishInfoTable(Arc<RwLock<HashMap<String, TopicPublishInfo>>>);
+pub struct TopicPublishInfoTable {
+    entries: Arc<RwLock<HashMap<String, TopicPublishInfo>>>,
+    mutation_gates: Arc<Mutex<HashMap<String, Weak<Mutex<()>>>>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum TopicPublishInfoTableError {
+    #[error("TopicPublishInfoTable key is null")]
+    NullKey,
+    #[error("TopicPublishInfoTable value is null")]
+    NullValue,
+    #[error("TopicPublishInfoTable putAll source is null")]
+    NullMap,
+    #[error("TopicPublishInfoTable callback is null")]
+    NullCallback,
+    #[error("TopicPublishInfoTable remapping callback returned null")]
+    NullRemappingResult,
+}
 
 impl TopicPublishInfoTable {
+    fn table_id(&self) -> usize {
+        Arc::as_ptr(&self.entries) as usize
+    }
+
+    fn remap_scope(&self, topic: &str) -> PublishInfoRemapGuard {
+        PublishInfoRemapGuard::enter(self.table_id(), topic)
+    }
+
+    fn key_gate(&self, key: &str) -> Arc<Mutex<()>> {
+        let mut gates = self
+            .mutation_gates
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(gate) = gates.get(key).and_then(Weak::upgrade) {
+            return gate;
+        }
+        let gate = Arc::new(Mutex::new(()));
+        gates.insert(key.to_owned(), Arc::downgrade(&gate));
+        gate
+    }
+
+    fn with_key_gate<R>(
+        &self,
+        key: &str,
+        update: impl FnOnce(&mut HashMap<String, TopicPublishInfo>) -> R,
+    ) -> R {
+        PublishInfoRemapGuard::assert_not_active(self.table_id(), key);
+        let gate = self.key_gate(key);
+        let _guard = gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        update(
+            &mut self
+                .entries
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
+    }
+
     pub fn get(&self, topic: &str) -> Option<TopicPublishInfo> {
-        self.0
+        self.entries
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get(topic)
             .cloned()
     }
 
+    pub fn get_nullable(
+        &self,
+        topic: Option<&str>,
+    ) -> Result<Option<TopicPublishInfo>, TopicPublishInfoTableError> {
+        let Some(topic) = topic else {
+            return Err(TopicPublishInfoTableError::NullKey);
+        };
+        Ok(self.get(topic))
+    }
+
+    pub fn get_or_default(&self, topic: &str, default: TopicPublishInfo) -> TopicPublishInfo {
+        self.get(topic).unwrap_or(default)
+    }
+
+    pub fn get_or_default_nullable(
+        &self,
+        topic: Option<&str>,
+        default: Option<TopicPublishInfo>,
+    ) -> Result<Option<TopicPublishInfo>, TopicPublishInfoTableError> {
+        let Some(topic) = topic else {
+            return Err(TopicPublishInfoTableError::NullKey);
+        };
+        Ok(self.get(topic).or(default))
+    }
+
     pub fn contains_key(&self, topic: &str) -> bool {
-        self.0
+        self.entries
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .contains_key(topic)
     }
 
+    pub fn contains_key_nullable(
+        &self,
+        topic: Option<&str>,
+    ) -> Result<bool, TopicPublishInfoTableError> {
+        let Some(topic) = topic else {
+            return Err(TopicPublishInfoTableError::NullKey);
+        };
+        Ok(self.contains_key(topic))
+    }
+
+    pub fn contains_value(&self, value: &TopicPublishInfo) -> bool {
+        self.snapshot()
+            .values()
+            .any(|current| current.ptr_eq(value))
+    }
+
+    pub fn contains_value_nullable(
+        &self,
+        value: Option<&TopicPublishInfo>,
+    ) -> Result<bool, TopicPublishInfoTableError> {
+        let Some(value) = value else {
+            return Err(TopicPublishInfoTableError::NullValue);
+        };
+        Ok(self.contains_value(value))
+    }
+
     pub fn len(&self) -> usize {
-        self.0
+        self.entries
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .len()
@@ -447,10 +601,22 @@ impl TopicPublishInfoTable {
         topic: impl Into<String>,
         info: TopicPublishInfo,
     ) -> Option<TopicPublishInfo> {
-        self.0
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(topic.into(), info)
+        let topic = topic.into();
+        self.with_key_gate(&topic, |entries| entries.insert(topic.clone(), info))
+    }
+
+    pub fn put_nullable(
+        &self,
+        topic: Option<&str>,
+        info: Option<TopicPublishInfo>,
+    ) -> Result<Option<TopicPublishInfo>, TopicPublishInfoTableError> {
+        let Some(topic) = topic else {
+            return Err(TopicPublishInfoTableError::NullKey);
+        };
+        let Some(info) = info else {
+            return Err(TopicPublishInfoTableError::NullValue);
+        };
+        Ok(self.put(topic, info))
     }
 
     pub fn put_if_absent(
@@ -458,37 +624,349 @@ impl TopicPublishInfoTable {
         topic: impl Into<String>,
         info: TopicPublishInfo,
     ) -> Option<TopicPublishInfo> {
-        use std::collections::hash_map::Entry;
-        match self
-            .0
+        let topic = topic.into();
+        self.with_key_gate(&topic, |entries| {
+            use std::collections::hash_map::Entry;
+            match entries.entry(topic.clone()) {
+                Entry::Occupied(entry) => Some(entry.get().clone()),
+                Entry::Vacant(entry) => {
+                    entry.insert(info);
+                    None
+                }
+            }
+        })
+    }
+
+    pub fn put_if_absent_nullable(
+        &self,
+        topic: Option<&str>,
+        info: Option<TopicPublishInfo>,
+    ) -> Result<Option<TopicPublishInfo>, TopicPublishInfoTableError> {
+        let Some(topic) = topic else {
+            return Err(TopicPublishInfoTableError::NullKey);
+        };
+        let Some(info) = info else {
+            return Err(TopicPublishInfoTableError::NullValue);
+        };
+        Ok(self.put_if_absent(topic, info))
+    }
+
+    pub fn remove(&self, topic: &str) -> Option<TopicPublishInfo> {
+        self.with_key_gate(topic, |entries| entries.remove(topic))
+    }
+
+    pub fn remove_nullable(
+        &self,
+        topic: Option<&str>,
+    ) -> Result<Option<TopicPublishInfo>, TopicPublishInfoTableError> {
+        let Some(topic) = topic else {
+            return Err(TopicPublishInfoTableError::NullKey);
+        };
+        Ok(self.remove(topic))
+    }
+
+    pub fn remove_if_equal(&self, topic: &str, expected: &TopicPublishInfo) -> bool {
+        self.with_key_gate(topic, |entries| {
+            if entries
+                .get(topic)
+                .is_some_and(|current| current.ptr_eq(expected))
+            {
+                entries.remove(topic);
+                true
+            } else {
+                false
+            }
+        })
+    }
+
+    pub fn remove_if_equal_nullable(
+        &self,
+        topic: Option<&str>,
+        expected: Option<&TopicPublishInfo>,
+    ) -> Result<bool, TopicPublishInfoTableError> {
+        let Some(topic) = topic else {
+            return Err(TopicPublishInfoTableError::NullKey);
+        };
+        let Some(expected) = expected else {
+            return Err(TopicPublishInfoTableError::NullValue);
+        };
+        Ok(self.remove_if_equal(topic, expected))
+    }
+
+    pub fn replace(&self, topic: &str, info: TopicPublishInfo) -> Option<TopicPublishInfo> {
+        self.with_key_gate(topic, |entries| {
+            entries
+                .get_mut(topic)
+                .map(|current| std::mem::replace(current, info))
+        })
+    }
+
+    pub fn replace_nullable(
+        &self,
+        topic: Option<&str>,
+        info: Option<TopicPublishInfo>,
+    ) -> Result<Option<TopicPublishInfo>, TopicPublishInfoTableError> {
+        let Some(topic) = topic else {
+            return Err(TopicPublishInfoTableError::NullKey);
+        };
+        let Some(info) = info else {
+            return Err(TopicPublishInfoTableError::NullValue);
+        };
+        Ok(self.replace(topic, info))
+    }
+
+    pub fn replace_if_equal(
+        &self,
+        topic: &str,
+        expected: &TopicPublishInfo,
+        replacement: TopicPublishInfo,
+    ) -> bool {
+        self.with_key_gate(topic, |entries| {
+            let Some(current) = entries.get_mut(topic) else {
+                return false;
+            };
+            if !current.ptr_eq(expected) {
+                return false;
+            }
+            *current = replacement;
+            true
+        })
+    }
+
+    pub fn replace_if_equal_nullable(
+        &self,
+        topic: Option<&str>,
+        expected: Option<&TopicPublishInfo>,
+        replacement: Option<TopicPublishInfo>,
+    ) -> Result<bool, TopicPublishInfoTableError> {
+        let Some(topic) = topic else {
+            return Err(TopicPublishInfoTableError::NullKey);
+        };
+        let Some(expected) = expected else {
+            return Err(TopicPublishInfoTableError::NullValue);
+        };
+        let Some(replacement) = replacement else {
+            return Err(TopicPublishInfoTableError::NullValue);
+        };
+        Ok(self.replace_if_equal(topic, expected, replacement))
+    }
+
+    pub fn put_all<I>(&self, entries: I)
+    where
+        I: IntoIterator<Item = (String, TopicPublishInfo)>,
+    {
+        for (topic, info) in entries {
+            self.put(topic, info);
+        }
+    }
+
+    /// Applies nullable source rows in iteration order. Earlier writes remain
+    /// visible if a later Java-incompatible null key/value is encountered.
+    pub fn put_all_nullable_rows(
+        &self,
+        rows: Option<&[(Option<String>, Option<TopicPublishInfo>)]>,
+    ) -> Result<(), TopicPublishInfoTableError> {
+        let Some(rows) = rows else {
+            return Err(TopicPublishInfoTableError::NullMap);
+        };
+        for (topic, info) in rows {
+            self.put_nullable(topic.as_deref(), info.clone())?;
+        }
+        Ok(())
+    }
+
+    pub fn compute_if_absent(
+        &self,
+        topic: &str,
+        mapping: impl FnOnce(&str) -> Option<TopicPublishInfo>,
+    ) -> Option<TopicPublishInfo> {
+        let _remap = self.remap_scope(topic);
+        let gate = self.key_gate(topic);
+        let _guard = gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(current) = self.get(topic) {
+            return Some(current);
+        }
+        let value = mapping(topic)?;
+        self.entries
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .entry(topic.into())
-        {
-            Entry::Occupied(entry) => Some(entry.get().clone()),
-            Entry::Vacant(entry) => {
-                entry.insert(info);
+            .insert(topic.to_owned(), value.clone());
+        Some(value)
+    }
+
+    pub fn compute_if_present(
+        &self,
+        topic: &str,
+        remapping: impl FnOnce(&str, &TopicPublishInfo) -> Option<TopicPublishInfo>,
+    ) -> Option<TopicPublishInfo> {
+        let _remap = self.remap_scope(topic);
+        let gate = self.key_gate(topic);
+        let _guard = gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let current = self.get(topic)?;
+        let replacement = remapping(topic, &current);
+        let mut entries = self
+            .entries
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match replacement {
+            Some(value) => {
+                entries.insert(topic.to_owned(), value.clone());
+                Some(value)
+            }
+            None => {
+                entries.remove(topic);
                 None
             }
         }
     }
 
-    pub fn remove(&self, topic: &str) -> Option<TopicPublishInfo> {
-        self.0
+    pub fn compute(
+        &self,
+        topic: &str,
+        remapping: impl FnOnce(&str, Option<&TopicPublishInfo>) -> Option<TopicPublishInfo>,
+    ) -> Option<TopicPublishInfo> {
+        let _remap = self.remap_scope(topic);
+        let gate = self.key_gate(topic);
+        let _guard = gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let current = self.get(topic);
+        let replacement = remapping(topic, current.as_ref());
+        let mut entries = self
+            .entries
             .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(topic)
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match replacement {
+            Some(value) => {
+                entries.insert(topic.to_owned(), value.clone());
+                Some(value)
+            }
+            None => {
+                entries.remove(topic);
+                None
+            }
+        }
+    }
+
+    pub fn merge(
+        &self,
+        topic: &str,
+        value: TopicPublishInfo,
+        remapping: impl FnOnce(&TopicPublishInfo, &TopicPublishInfo) -> Option<TopicPublishInfo>,
+    ) -> Option<TopicPublishInfo> {
+        let _remap = self.remap_scope(topic);
+        let gate = self.key_gate(topic);
+        let _guard = gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let current = self.get(topic);
+        let replacement = current
+            .as_ref()
+            .map_or_else(|| Some(value.clone()), |current| remapping(current, &value));
+        let mut entries = self
+            .entries
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match replacement {
+            Some(info) => {
+                entries.insert(topic.to_owned(), info.clone());
+                Some(info)
+            }
+            None => {
+                entries.remove(topic);
+                None
+            }
+        }
+    }
+
+    pub fn merge_nullable<F>(
+        &self,
+        topic: Option<&str>,
+        value: Option<TopicPublishInfo>,
+        remapping: Option<&mut F>,
+    ) -> Result<Option<TopicPublishInfo>, TopicPublishInfoTableError>
+    where
+        F: FnMut(&TopicPublishInfo, &TopicPublishInfo) -> Option<TopicPublishInfo>,
+    {
+        let Some(topic) = topic else {
+            return Err(TopicPublishInfoTableError::NullKey);
+        };
+        let Some(value) = value else {
+            return Err(TopicPublishInfoTableError::NullValue);
+        };
+        let Some(remapping) = remapping else {
+            return Err(TopicPublishInfoTableError::NullCallback);
+        };
+        Ok(self.merge(topic, value, |current, incoming| {
+            remapping(current, incoming)
+        }))
+    }
+
+    pub fn replace_all(
+        &self,
+        mut remapping: impl FnMut(&str, &TopicPublishInfo) -> TopicPublishInfo,
+    ) {
+        for (topic, _) in self.snapshot() {
+            self.compute_if_present(&topic, |key, current| Some(remapping(key, current)));
+        }
+    }
+
+    pub fn replace_all_nullable(
+        &self,
+        mut remapping: impl FnMut(&str, &TopicPublishInfo) -> Option<TopicPublishInfo>,
+    ) -> Result<(), TopicPublishInfoTableError> {
+        for (topic, _) in self.snapshot() {
+            let _remap = self.remap_scope(&topic);
+            let gate = self.key_gate(&topic);
+            let _guard = gate
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let Some(current) = self.get(&topic) else {
+                continue;
+            };
+            let Some(value) = remapping(&topic, &current) else {
+                return Err(TopicPublishInfoTableError::NullRemappingResult);
+            };
+            self.entries
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(topic, value);
+        }
+        Ok(())
+    }
+
+    pub fn for_each(&self, mut action: impl FnMut(&str, &TopicPublishInfo)) {
+        for (topic, value) in self.snapshot() {
+            action(&topic, &value);
+        }
+    }
+
+    pub fn for_each_nullable<F>(
+        &self,
+        action: Option<&mut F>,
+    ) -> Result<(), TopicPublishInfoTableError>
+    where
+        F: FnMut(&str, &TopicPublishInfo),
+    {
+        let Some(action) = action else {
+            return Err(TopicPublishInfoTableError::NullCallback);
+        };
+        self.for_each(|topic, value| action(topic, value));
+        Ok(())
     }
 
     pub fn clear(&self) {
-        self.0
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clear();
+        for topic in self.keys() {
+            self.remove(&topic);
+        }
     }
 
     pub fn snapshot(&self) -> BTreeMap<String, TopicPublishInfo> {
-        self.0
+        self.entries
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .iter()
@@ -498,5 +976,287 @@ impl TopicPublishInfoTable {
 
     pub fn keys(&self) -> BTreeSet<String> {
         self.snapshot().into_keys().collect()
+    }
+
+    pub fn key_set_view(&self) -> TopicPublishInfoKeySetView {
+        TopicPublishInfoKeySetView(self.clone())
+    }
+
+    pub fn values_view(&self) -> TopicPublishInfoValuesView {
+        TopicPublishInfoValuesView(self.clone())
+    }
+
+    pub fn entry_set_view(&self) -> TopicPublishInfoEntrySetView {
+        TopicPublishInfoEntrySetView(self.clone())
+    }
+}
+
+/// Live `Map.keySet()` counterpart. Snapshot iteration is weakly consistent;
+/// key removals mutate the shared backing table.
+#[derive(Clone)]
+pub struct TopicPublishInfoKeySetView(TopicPublishInfoTable);
+
+impl TopicPublishInfoKeySetView {
+    pub fn contains(&self, topic: &str) -> bool {
+        self.0.contains_key(topic)
+    }
+
+    pub fn snapshot(&self) -> BTreeSet<String> {
+        self.0.keys()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn remove(&self, topic: &str) -> bool {
+        self.0.remove(topic).is_some()
+    }
+
+    pub fn clear(&self) {
+        self.0.clear();
+    }
+
+    pub fn remove_all(&self, topics: &BTreeSet<String>) -> usize {
+        topics.iter().filter(|topic| self.remove(topic)).count()
+    }
+
+    pub fn retain_all(&self, topics: &BTreeSet<String>) -> usize {
+        self.snapshot()
+            .into_iter()
+            .filter(|topic| !topics.contains(topic) && self.remove(topic))
+            .count()
+    }
+}
+
+/// Live `Map.values()` counterpart. Values are shared handles; removing a
+/// value removes one mapping with the same Java object identity.
+#[derive(Clone)]
+pub struct TopicPublishInfoValuesView(TopicPublishInfoTable);
+
+impl TopicPublishInfoValuesView {
+    pub fn snapshot(&self) -> Vec<TopicPublishInfo> {
+        self.0.snapshot().into_values().collect()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn contains(&self, value: &TopicPublishInfo) -> bool {
+        self.0.contains_value(value)
+    }
+
+    pub fn remove(&self, value: &TopicPublishInfo) -> bool {
+        self.0
+            .snapshot()
+            .into_iter()
+            .find_map(|(topic, current)| {
+                current
+                    .ptr_eq(value)
+                    .then(|| self.0.remove_if_equal(&topic, value))
+            })
+            .unwrap_or(false)
+    }
+
+    pub fn clear(&self) {
+        self.0.clear();
+    }
+
+    pub fn remove_all(&self, values: &[TopicPublishInfo]) -> usize {
+        self.0
+            .snapshot()
+            .into_iter()
+            .filter(|(topic, current)| {
+                values.iter().any(|value| value.ptr_eq(current))
+                    && self.0.remove_if_equal(topic, current)
+            })
+            .count()
+    }
+
+    pub fn remove_all_iter<I>(&self, values: I) -> usize
+    where
+        I: IntoIterator<Item = TopicPublishInfo>,
+    {
+        let values = values.into_iter().collect::<Vec<_>>();
+        self.remove_all(&values)
+    }
+
+    pub fn retain_all(&self, values: &[TopicPublishInfo]) -> usize {
+        let retained = self
+            .0
+            .snapshot()
+            .into_iter()
+            .filter(|(_, current)| values.iter().any(|value| value.ptr_eq(current)))
+            .collect::<BTreeMap<_, _>>();
+        let mut removed = 0;
+        for (topic, current) in self.0.snapshot() {
+            if !retained
+                .get(&topic)
+                .is_some_and(|retained| retained.ptr_eq(&current))
+                && self.0.remove_if_equal(&topic, &current)
+            {
+                removed += 1;
+            }
+        }
+        removed
+    }
+}
+
+/// Detached entry carrying its captured value. `set_value` updates the entry
+/// capture and unconditionally writes the new value to the shared table.
+#[derive(Clone)]
+pub struct TopicPublishInfoEntryHandle {
+    table: TopicPublishInfoTable,
+    topic: String,
+    value: Arc<RwLock<TopicPublishInfo>>,
+}
+
+impl TopicPublishInfoEntryHandle {
+    pub fn key(&self) -> &str {
+        &self.topic
+    }
+
+    pub fn value(&self) -> TopicPublishInfo {
+        self.value
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    pub fn set_value(&self, value: TopicPublishInfo) -> TopicPublishInfo {
+        let previous = {
+            let mut captured = self
+                .value
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            std::mem::replace(&mut *captured, value.clone())
+        };
+        self.table.put(self.topic.clone(), value);
+        previous
+    }
+}
+
+/// Live `Map.entrySet()` counterpart. Traversal produces detached entries;
+/// each entry's `set_value` still writes through to the backing table.
+#[derive(Clone)]
+pub struct TopicPublishInfoEntrySetView(TopicPublishInfoTable);
+
+impl TopicPublishInfoEntrySetView {
+    pub fn snapshot(&self) -> Vec<TopicPublishInfoEntryHandle> {
+        self.0
+            .snapshot()
+            .into_iter()
+            .map(|(topic, value)| TopicPublishInfoEntryHandle {
+                table: self.0.clone(),
+                topic,
+                value: Arc::new(RwLock::new(value)),
+            })
+            .collect()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn contains(&self, topic: &str, value: &TopicPublishInfo) -> bool {
+        self.0
+            .get(topic)
+            .is_some_and(|current| current.ptr_eq(value))
+    }
+
+    pub fn remove(&self, topic: &str, value: &TopicPublishInfo) -> bool {
+        self.0.remove_if_equal(topic, value)
+    }
+
+    pub fn remove_all(&self, entries: &[(String, TopicPublishInfo)]) -> usize {
+        entries
+            .iter()
+            .filter(|(topic, value)| self.remove(topic, value))
+            .count()
+    }
+
+    pub fn retain_all(&self, entries: &[(String, TopicPublishInfo)]) -> usize {
+        let keep = entries
+            .iter()
+            .map(|(topic, value)| (topic.as_str(), value))
+            .collect::<Vec<_>>();
+        self.0
+            .snapshot()
+            .into_iter()
+            .filter(|(topic, value)| {
+                !keep.iter().any(|(keep_topic, keep_value)| {
+                    *keep_topic == topic && keep_value.ptr_eq(value)
+                }) && self.0.remove_if_equal(topic, value)
+            })
+            .count()
+    }
+
+    pub fn clear(&self) {
+        self.0.clear();
+    }
+}
+
+#[cfg(test)]
+mod table_tests {
+    use super::*;
+
+    #[test]
+    fn remapping_callback_can_update_a_different_topic() {
+        let table = TopicPublishInfoTable::default();
+        let first = TopicPublishInfo::default();
+        let second = TopicPublishInfo::default();
+
+        let computed = table.compute_if_absent("first", |_| {
+            table.put("second", second.clone());
+            Some(first.clone())
+        });
+
+        assert!(computed.unwrap().ptr_eq(&first));
+        assert!(table.get("second").unwrap().ptr_eq(&second));
+    }
+
+    #[test]
+    fn recursive_same_topic_mutation_fails_instead_of_deadlocking() {
+        let table = TopicPublishInfoTable::default();
+        let nested_table = table.clone();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            table.compute_if_absent("same", |_| {
+                nested_table.put("same", TopicPublishInfo::default());
+                Some(TopicPublishInfo::default())
+            });
+        }));
+
+        assert!(result.is_err());
+        assert!(table.is_empty());
+    }
+
+    #[test]
+    fn replace_all_null_result_keeps_prior_updates() {
+        let table = TopicPublishInfoTable::default();
+        let old_a = TopicPublishInfo::default();
+        let old_b = TopicPublishInfo::default();
+        let replacement = TopicPublishInfo::default();
+        table.put("a", old_a.clone());
+        table.put("b", old_b.clone());
+
+        let result =
+            table.replace_all_nullable(|topic, _| (topic == "a").then(|| replacement.clone()));
+
+        assert_eq!(result, Err(TopicPublishInfoTableError::NullRemappingResult));
+        assert!(table.get("a").unwrap().ptr_eq(&replacement));
+        assert!(table.get("b").unwrap().ptr_eq(&old_b));
     }
 }
