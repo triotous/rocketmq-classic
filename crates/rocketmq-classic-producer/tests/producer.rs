@@ -76,6 +76,87 @@ fn pinned_java_default_producer_impl_public_surface_is_recorded() {
 }
 
 #[test]
+fn pinned_java_returned_runtime_and_fault_strategy_surfaces_are_recorded() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let client_factory = &fixture["producerClientFactoryApi"];
+    assert_eq!(
+        client_factory["className"],
+        "org.apache.rocketmq.client.impl.factory.MQClientInstance"
+    );
+    assert_eq!(
+        client_factory["publicConstructors"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(client_factory["publicMethodCount"].as_u64(), Some(51));
+    assert_eq!(
+        client_factory["publicMethods"].as_array().unwrap().len(),
+        51
+    );
+    for method in [
+        "java.lang.String org.apache.rocketmq.client.impl.factory.MQClientInstance.getClientId()",
+        "org.apache.rocketmq.remoting.protocol.route.TopicRouteData org.apache.rocketmq.client.impl.factory.MQClientInstance.queryTopicRouteData(java.lang.String)",
+        "boolean org.apache.rocketmq.client.impl.factory.MQClientInstance.sendHeartbeatToAllBrokerWithLock()",
+        "org.apache.rocketmq.client.impl.MQClientAPIImpl org.apache.rocketmq.client.impl.factory.MQClientInstance.getMQClientAPIImpl()",
+    ] {
+        assert!(
+            client_factory["publicMethods"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|candidate| candidate.as_str() == Some(method)),
+            "missing {method}"
+        );
+    }
+
+    let strategy = &fixture["mqFaultStrategyApi"];
+    assert_eq!(
+        strategy["className"],
+        "org.apache.rocketmq.client.latency.MQFaultStrategy"
+    );
+    assert_eq!(strategy["publicConstructors"].as_array().unwrap().len(), 2);
+    assert_eq!(strategy["declaredPublicMethodCount"].as_u64(), Some(16));
+    assert_eq!(strategy["publicMethodCount"].as_u64(), Some(17));
+    assert!(
+        strategy["publicMethods"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|method| {
+                method.as_str()
+                    == Some("void org.apache.rocketmq.client.latency.MQFaultStrategy.start()")
+            })
+    );
+    assert!(
+        strategy["publicMethods"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|method| {
+                method.as_str()
+                    == Some("void org.apache.rocketmq.common.utils.StartAndShutdown.preShutdown()")
+            })
+    );
+
+    let broker_filter = &fixture["mqFaultStrategyBrokerFilterApi"];
+    assert_eq!(
+        broker_filter["className"],
+        "org.apache.rocketmq.client.latency.MQFaultStrategy$BrokerFilter"
+    );
+    assert_eq!(
+        broker_filter["publicConstructors"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(broker_filter["publicMethodCount"].as_u64(), Some(2));
+}
+
+#[test]
 fn implementation_hook_helpers_match_pinned_java_fixture() {
     use std::sync::Mutex;
 

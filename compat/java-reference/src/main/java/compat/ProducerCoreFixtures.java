@@ -28,6 +28,8 @@ import org.apache.rocketmq.client.hook.SendMessageContext;
 import org.apache.rocketmq.client.hook.SendMessageHook;
 import org.apache.rocketmq.client.impl.CommunicationMode;
 import org.apache.rocketmq.client.impl.producer.TopicPublishInfo;
+import org.apache.rocketmq.client.impl.factory.MQClientInstance;
+import org.apache.rocketmq.client.latency.MQFaultStrategy;
 import org.apache.rocketmq.client.common.ThreadLocalIndex;
 import org.apache.rocketmq.client.producer.DefaultMQProducer;
 import org.apache.rocketmq.common.MixAll;
@@ -134,6 +136,9 @@ public final class ProducerCoreFixtures {
         result.put("implementationPublishInfoTable", implementationPublishInfoTable());
         result.put("implementationPublishInfoTableAdvanced", implementationPublishInfoTableAdvanced());
         result.put("implementationQueueFilterSelection", implementationQueueFilterSelection());
+        result.put("producerClientFactoryApi", publicApiSurface(MQClientInstance.class));
+        result.put("mqFaultStrategyApi", publicApiSurface(MQFaultStrategy.class));
+        result.put("mqFaultStrategyBrokerFilterApi", publicApiSurface(MQFaultStrategy.BrokerFilter.class));
 
         Map<String, Object> defaults = new TreeMap<>();
         defaults.put("producerGroup", producer.getProducerGroup());
@@ -685,6 +690,34 @@ public final class ProducerCoreFixtures {
             + method.getName() + "(" + Arrays.stream(method.getParameterTypes())
             .map(Class::getName)
             .collect(java.util.stream.Collectors.joining(",")) + ")";
+    }
+
+    private static Map<String, Object> publicApiSurface(Class<?> apiType) {
+        List<String> constructors = Arrays.stream(apiType.getDeclaredConstructors())
+            .filter(constructor -> Modifier.isPublic(constructor.getModifiers()))
+            .map(ProducerCoreFixtures::constructorSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList());
+        List<String> declaredMethods = Arrays.stream(apiType.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList());
+        List<String> methods = Arrays.stream(apiType.getMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getDeclaringClass() != Object.class)
+            .map(ProducerCoreFixtures::methodSignature)
+            .distinct()
+            .sorted()
+            .collect(java.util.stream.Collectors.toList());
+        Map<String, Object> result = new TreeMap<>();
+        result.put("className", apiType.getName());
+        result.put("publicConstructors", constructors);
+        result.put("declaredPublicMethods", declaredMethods);
+        result.put("declaredPublicMethodCount", declaredMethods.size());
+        result.put("publicMethods", methods);
+        result.put("publicMethodCount", methods.size());
+        return result;
     }
 
     private static Map<String, Object> implementationHookExecution() {
