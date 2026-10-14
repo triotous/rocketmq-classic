@@ -26,3 +26,11 @@ Plan audit findings
 Current status
 - CheckForbidden test and documentation changes are committed separately. Execution log is a separate append-only commit.
 - No push, publication, tag, or Java repository changes were made.
+
+Continuation — prior-phase local acceptance spot checks
+- PASS: `cargo test -p rocketmq-classic-core --test admin_rpc query_fanout --locked` — 6 query fan-out tests.
+- PASS: `cargo test -p rocketmq-classic-consumer reset_offset_fences --locked` — slow-callback and late-pull reset-fencing tests.
+- PASS: `cargo test -p rocketmq-classic-consumer direct_consume --locked` — direct-consume offset-isolation and status-responsiveness tests.
+- PASS: reran `consumer_status_stays_responsive_during_a_slow_direct_consume_callback` by its exact name.
+- Phase 17 matrix independently records P17-V01/V03/U01 local coverage; P17-V02 remains the Phase 19 Broker query case. Phase 15 and Phase 16 matrices record their local fixture/race/TLS/auth/trace gates as verified, with live Broker checks separated into Phase 19.
+- Re-read pinned Java `AllocateMessageQueueConsistentHash` source at `efa1be59d6fc747ad220f036c86030f05f0419f9`; its public `(int, HashFunction)` constructor corresponds to the Rust `with_hash_function` API already mapped in the Phase 11 matrix. External Java checkout is unchanged; its pre-existing untracked broker test file remains untouched.
