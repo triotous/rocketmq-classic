@@ -480,6 +480,16 @@ the required full Phase 18 gates on the final revision.
   verify (37 scenarios and fixture/cross-decode checks), formatting, and diff
   checks pass. This closes only the Pull statistics key path; consume-service
   statistics and the broad P18-V01 audit remain open.
+- Consume-service statistics group follow-up (`edef3bd3`, 2026-10-14): Rust
+  snapshots the namespaced group when Push services are created and uses it for
+  concurrent/orderly consume metrics and POP-concurrent batch metrics. The
+  pinned Java fixture constructs all four services, mutates the facade group,
+  and confirms their retained group. POP-orderly consume metrics remain absent,
+  matching its Java service flow; RunningInfo continues to look up the current
+  facade group. Consumer all-feature tests (213 unit tests plus integration
+  targets and doctests), strict Consumer Clippy, Maven verify (37 scenarios and
+  fixture/cross-decode checks), formatting, and diff checks pass. This closes
+  the identified consume-stat group timing paths only; P18-V01 remains open.
 
 ## Package graph and metadata
 
