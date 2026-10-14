@@ -395,6 +395,10 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   Java `registerMessageQueueListener`, register-topic set, subscription, and
   clear-subscriptions entrypoints remain available. Code commit `2bfa4c16`;
   Consumer locked tests/doctests, strict Consumer Clippy, formatting, and diff
+  checks pass. `LocalFileOffsetStore::group_name` and `storage_path` were also
+  removed from the public surface because pinned Java exposes neither getter;
+  compile-fail doctests guard both boundaries. Code commit `e8582a22`; Consumer
+  locked tests/doctests, strict Clippy, rustdoc JSON, formatting, and diff
   checks pass.
 - [x] **P18-V02** — Current-worktree unit, differential, race/leak, fuzz,
   shutdown, and fixture gates pass; see the run recorded above.
