@@ -34,6 +34,13 @@ pub enum ProducerError {
     RecallBrokerAddressNotFound,
     #[error("sending to this system topic is forbidden")]
     ForbiddenTopic,
+    #[error("{message}")]
+    SendRetriesExhausted {
+        message: String,
+        response_code: i32,
+        #[source]
+        source: Box<ProducerError>,
+    },
     #[error("message body is empty")]
     EmptyBody,
     #[error("message body size {actual} exceeds configured maximum {maximum}")]

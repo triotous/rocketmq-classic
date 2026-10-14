@@ -67,6 +67,29 @@ fn selector_panic_message(payload: &(dyn std::any::Any + Send)) -> String {
         .unwrap_or_else(|| "non-string selector panic payload".to_owned())
 }
 
+fn check_forbidden_retries_exhausted(
+    error: ProducerError,
+    attempts: usize,
+    started: StdInstant,
+    topic: &str,
+    brokers_sent: &[Option<String>],
+) -> ProducerError {
+    let brokers = brokers_sent
+        .iter()
+        .map(|broker| broker.as_deref().unwrap_or("null"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let message = format!(
+        "Send [{attempts}] times, still failed, cost [{}]ms, Topic: {topic}, BrokersSent: [{brokers}]\nSee https://rocketmq.apache.org/docs/faq/ for further details.",
+        started.elapsed().as_millis()
+    );
+    ProducerError::SendRetriesExhausted {
+        message,
+        response_code: 10003,
+        source: Box::new(error),
+    }
+}
+
 impl Producer {
     async fn acquire_async_backpressure(
         &self,
@@ -523,6 +546,7 @@ impl Producer {
                     deadline,
                     backpressure,
                     backpressure_enabled,
+                    false,
                 )
                 .await;
         }
@@ -950,6 +974,7 @@ impl Producer {
                     deadline,
                     backpressure,
                     backpressure_enabled,
+                    false,
                 )
                 .await;
         }
@@ -997,6 +1022,7 @@ impl Producer {
         };
         let runtime = self.started_runtime().await?;
         validation::validate_message(Some(&wire_message), &self.config)?;
+        let send_started = StdInstant::now();
         let mut info = self
             .acquire_publish_info(&runtime, wire_message.topic(), deadline)
             .await?;
@@ -1007,6 +1033,7 @@ impl Producer {
             return Err(ProducerError::NoSendAttempt);
         }
 
+        let mut brokers_sent = Vec::with_capacity(attempts);
         let mut last_broker = None;
         let mut last_error = None;
         let mut last_send_result = None;
@@ -1051,6 +1078,7 @@ impl Producer {
                     .ok_or_else(|| ProducerError::NoRoute(topic.clone()));
             };
             last_broker = Some(broker.clone());
+            brokers_sent.push(Some(broker.clone()));
 
             let Some(address) = self.broker_address(&runtime, &info, &queue)? else {
                 // Java refreshes publish info once from sendKernelImpl when the
@@ -1074,6 +1102,7 @@ impl Producer {
                         deadline,
                         backpressure,
                         backpressure_enabled,
+                        true,
                     )
                     .await;
             }
@@ -1124,22 +1153,24 @@ impl Producer {
                         && request_deadline < deadline
                         && now >= request_deadline
                         && matches!(&error, ProducerError::Timeout);
-                    let check_forbidden_can_retry = sync_retry_remains && check_forbidden_rejected;
-                    let (isolation, reachable, retry) = match &error {
-                        ProducerError::Rpc(rpc) => {
-                            let (isolation, reachable) =
-                                classify_fault(rpc, mode, self.start_detector_enable());
-                            (
-                                isolation,
-                                reachable,
-                                attempt + 1 < attempts && should_retry(mode, rpc, &self.config),
-                            )
+                    let (isolation, reachable, retry) = if check_forbidden_rejected {
+                        // Java's CheckForbiddenHook declares MQClientException, so the
+                        // failure is a reachable-client error even if a Rust hook uses
+                        // another ProducerError variant to describe its cause.
+                        (false, true, sync_retry_remains)
+                    } else {
+                        match &error {
+                            ProducerError::Rpc(rpc) => {
+                                let (isolation, reachable) =
+                                    classify_fault(rpc, mode, self.start_detector_enable());
+                                (
+                                    isolation,
+                                    reachable,
+                                    attempt + 1 < attempts && should_retry(mode, rpc, &self.config),
+                                )
+                            }
+                            _ => (false, true, request_timeout_can_retry),
                         }
-                        _ => (
-                            false,
-                            true,
-                            request_timeout_can_retry || check_forbidden_can_retry,
-                        ),
                     };
                     self.update_fault(&broker, latency, isolation, reachable)?;
                     if retry {
@@ -1148,6 +1179,20 @@ impl Producer {
                     }
                     if let Some(send_result) = last_send_result.take() {
                         return Ok(Some(send_result));
+                    }
+                    if check_forbidden_rejected {
+                        if mode == SendMode::Sync && attempt + 1 < attempts && now >= deadline {
+                            // Java advances to the next loop iteration and reports the
+                            // exhausted overall deadline before invoking another hook.
+                            return Err(ProducerError::Timeout);
+                        }
+                        return Err(check_forbidden_retries_exhausted(
+                            error,
+                            attempt + 1,
+                            send_started,
+                            hooked_message.topic(),
+                            &brokers_sent,
+                        ));
                     }
                     return Err(error);
                 }
@@ -1246,6 +1291,7 @@ impl Producer {
         deadline: Instant,
         backpressure: Option<AsyncBackpressurePermit>,
         backpressure_enabled: bool,
+        wrap_check_forbidden_error: bool,
     ) -> Result<Option<SendResult>, ProducerError> {
         let executor = self.async_sender_executor();
         let producer = self
@@ -1271,6 +1317,7 @@ impl Producer {
                     batch,
                     publish_info.as_ref(),
                     deadline,
+                    wrap_check_forbidden_error,
                 )
                 .await;
             drop(backpressure);
@@ -1303,6 +1350,7 @@ impl Producer {
         batch: bool,
         publish_info: Option<&TopicSnapshot>,
         deadline: Instant,
+        wrap_check_forbidden_error: bool,
     ) -> Result<Option<SendResult>, ProducerError> {
         if Instant::now() >= deadline {
             return Err(ProducerError::Timeout);
@@ -1311,7 +1359,22 @@ impl Producer {
         self.ids.set_if_missing(message);
         let original_body = message.body().to_vec();
         let compression_sys_flag = self.compress_message_before_hook(message, batch);
-        self.execute_check_forbidden_hooks(message, queue, address, SendMode::Future)?;
+        let check_started = StdInstant::now();
+        if let Err(error) =
+            self.execute_check_forbidden_hooks(message, queue, address, SendMode::Future)
+        {
+            if wrap_check_forbidden_error {
+                self.update_fault(broker, check_started.elapsed(), false, true)?;
+                return Err(check_forbidden_retries_exhausted(
+                    error,
+                    1,
+                    check_started,
+                    message.topic(),
+                    &[Some(broker.to_owned())],
+                ));
+            }
+            return Err(error);
+        }
         let hooks = self.send_message_hook_snapshot();
         let mut context = self.send_message_context(message, queue, address, SendMode::Future);
         Self::execute_send_message_hook_before_snapshot(&hooks, &mut context);
@@ -3111,6 +3174,146 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn default_future_check_forbidden_error_matches_java_async_wrapper() {
+        struct Reject(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+        impl CheckForbiddenHook for Reject {
+            fn hook_name(&self) -> &str {
+                "default-future-reject"
+            }
+
+            fn check_forbidden(
+                &self,
+                _context: &mut CheckForbiddenContext<'_>,
+            ) -> Result<(), ProducerError> {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Err(ProducerError::ForbiddenTopic)
+            }
+        }
+
+        let mut config = crate::ProducerConfig::new("check-forbidden-async").unwrap();
+        config.set_retry_times_when_send_async_failed(3);
+        let (producer, _) = scripted_producer(config).await;
+        let hook_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        producer.register_check_forbidden_hook(Arc::new(Reject(hook_calls.clone())));
+
+        let error = producer
+            .send_future_with_timeout(
+                &Message::new("orders", b"blocked by async check hook".to_vec()),
+                Duration::from_secs(3),
+            )
+            .await
+            .unwrap_err();
+        let ProducerError::SendRetriesExhausted {
+            message,
+            response_code,
+            source,
+        } = &error
+        else {
+            panic!("expected Java-compatible async wrapper, got {error:?}");
+        };
+
+        let java: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+        assert_eq!(
+            java["checkForbiddenDefaultAsync"]["retryTimesWhenSendAsyncFailed"],
+            3
+        );
+        assert_eq!(java["checkForbiddenDefaultAsync"]["checkCalls"], 1);
+        assert_eq!(java["checkForbiddenDefaultAsync"]["sendBeforeCalls"], 0);
+        assert_eq!(java["checkForbiddenDefaultAsync"]["sendAfterCalls"], 0);
+        assert_eq!(
+            java["checkForbiddenDefaultAsync"]["outcome"],
+            "MQClientException"
+        );
+        assert_eq!(java["checkForbiddenDefaultAsync"]["responseCode"], 10003);
+        assert_eq!(
+            java["checkForbiddenDefaultAsync"]["messageContainsAttemptCount"],
+            true
+        );
+        assert_eq!(
+            java["checkForbiddenDefaultAsync"]["causeClass"],
+            "MQClientException"
+        );
+        assert_eq!(*response_code, 10003);
+        assert!(message.contains("Send [1] times, still failed"));
+        assert!(message.contains("Topic: orders"));
+        assert!(message.contains("BrokersSent: ["));
+        assert!(message.contains("broker-a") || message.contains("broker-b"));
+        assert!(matches!(source.as_ref(), ProducerError::ForbiddenTopic));
+        assert_eq!(hook_calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(
+            producer
+                .scripted_transport
+                .lock()
+                .unwrap()
+                .attempts
+                .is_empty()
+        );
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn explicit_queue_future_check_forbidden_keeps_java_kernel_error() {
+        struct Reject(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+        impl CheckForbiddenHook for Reject {
+            fn hook_name(&self) -> &str {
+                "explicit-future-reject"
+            }
+
+            fn check_forbidden(
+                &self,
+                _context: &mut CheckForbiddenContext<'_>,
+            ) -> Result<(), ProducerError> {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Err(ProducerError::ForbiddenTopic)
+            }
+        }
+
+        let (producer, queues) =
+            scripted_producer(crate::ProducerConfig::new("explicit-future-reject").unwrap()).await;
+        let hook_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        producer.register_check_forbidden_hook(Arc::new(Reject(hook_calls.clone())));
+
+        let error = producer
+            .send_to_queue_direct_future_with_timeout(
+                &Message::new("orders", b"blocked by explicit async hook".to_vec()),
+                &queues[0],
+                Duration::from_secs(3),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(error, ProducerError::ForbiddenTopic));
+
+        let java: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+        assert_eq!(java["checkForbiddenExplicitAsync"]["checkCalls"], 1);
+        assert_eq!(java["checkForbiddenExplicitAsync"]["sendBeforeCalls"], 0);
+        assert_eq!(java["checkForbiddenExplicitAsync"]["sendAfterCalls"], 0);
+        assert_eq!(
+            java["checkForbiddenExplicitAsync"]["outcome"],
+            "MQClientException"
+        );
+        assert_eq!(java["checkForbiddenExplicitAsync"]["responseCode"], -1);
+        assert_eq!(
+            java["checkForbiddenExplicitAsync"]["messageContainsAttemptCount"],
+            false
+        );
+        assert_eq!(java["checkForbiddenExplicitAsync"]["causeClass"], "none");
+        assert_eq!(hook_calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(
+            producer
+                .scripted_transport
+                .lock()
+                .unwrap()
+                .attempts
+                .is_empty()
+        );
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn default_sync_send_retries_check_forbidden_hook_errors_like_java() {
         struct Reject(std::sync::Arc<std::sync::atomic::AtomicUsize>);
 
@@ -3141,7 +3344,14 @@ mod tests {
             )
             .await
             .unwrap_err();
-        assert!(matches!(error, ProducerError::ForbiddenTopic));
+        let ProducerError::SendRetriesExhausted {
+            message,
+            response_code,
+            source,
+        } = &error
+        else {
+            panic!("expected Java-compatible retry exhaustion, got {error:?}");
+        };
 
         let java: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
@@ -3151,14 +3361,88 @@ mod tests {
         assert_eq!(java["checkForbiddenRetry"]["sendAfterCalls"], 0);
         assert_eq!(java["checkForbiddenRetry"]["outcome"], "MQClientException");
         assert_eq!(java["checkForbiddenRetry"]["responseCode"], 10003);
+        assert_eq!(*response_code, java["checkForbiddenRetry"]["responseCode"]);
         assert_eq!(
             java["checkForbiddenRetry"]["messageContainsAttemptCount"],
             true
+        );
+        assert!(message.contains("Topic: orders"));
+        assert!(message.contains("BrokersSent: ["));
+        assert!(message.contains("broker-a"));
+        assert!(message.contains("broker-b"));
+        assert!(matches!(source.as_ref(), ProducerError::ForbiddenTopic));
+        assert!(
+            error.to_string().contains("Send [2] times, still failed"),
+            "the Java retry-exhausted MQClientException includes the attempt count"
         );
         assert_eq!(
             hook_calls.load(std::sync::atomic::Ordering::SeqCst),
             2,
             "Java retries a synchronous MQClientException from CheckForbiddenHook"
+        );
+        assert!(
+            producer
+                .scripted_transport
+                .lock()
+                .unwrap()
+                .attempts
+                .is_empty()
+        );
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn default_sync_check_forbidden_deadline_exhaustion_matches_java() {
+        struct SlowReject(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+        impl CheckForbiddenHook for SlowReject {
+            fn hook_name(&self) -> &str {
+                "default-send-slow-reject-deadline"
+            }
+
+            fn check_forbidden(
+                &self,
+                _context: &mut CheckForbiddenContext<'_>,
+            ) -> Result<(), ProducerError> {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                std::thread::sleep(Duration::from_millis(80));
+                Err(ProducerError::ForbiddenTopic)
+            }
+        }
+
+        let mut config = crate::ProducerConfig::new("check-forbidden-deadline").unwrap();
+        config.set_retry_times_when_send_failed(1);
+        let (producer, _) = scripted_producer(config).await;
+        let hook_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        producer.register_check_forbidden_hook(Arc::new(SlowReject(hook_calls.clone())));
+
+        let error = producer
+            .send_with_timeout(
+                &Message::new("orders", b"deadline exhausted in hook".to_vec()),
+                Duration::from_millis(20),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(error, ProducerError::Timeout));
+
+        let java: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+        assert_eq!(java["checkForbiddenDeadline"]["sendMsgTimeout"], 20);
+        assert_eq!(
+            java["checkForbiddenDeadline"]["retryTimesWhenSendFailed"],
+            1
+        );
+        assert_eq!(java["checkForbiddenDeadline"]["checkCalls"], 1);
+        assert_eq!(java["checkForbiddenDeadline"]["sendBeforeCalls"], 0);
+        assert_eq!(java["checkForbiddenDeadline"]["sendAfterCalls"], 0);
+        assert_eq!(
+            java["checkForbiddenDeadline"]["outcome"],
+            "RemotingTooMuchRequestException"
+        );
+        assert_eq!(
+            hook_calls.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "the overall deadline prevents Java's next retry attempt"
         );
         assert!(
             producer
