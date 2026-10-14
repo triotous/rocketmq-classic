@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use base64::Engine;
-use rocketmq_classic_common::message::{DecodeLimits, DecodeOptions, MessageQueue};
+use rocketmq_classic_common::message::{DecodeOptions, MessageQueue};
 use rocketmq_classic_consumer::pull::{
     FilterMessageContext, FilterMessageHook, PullAPIWrapper, build_class_filter_subscription_data,
 };
@@ -85,7 +85,6 @@ fn found_results_filter_enrich_run_hooks_and_drop_raw_bytes() {
             result(PullStatus::Found, Some(record("ipv4-v1"))),
             &subscription,
             DecodeOptions::default(),
-            DecodeLimits::default(),
         )
         .unwrap();
     assert!(processed.result.raw_messages.is_none());
@@ -142,7 +141,6 @@ fn prepared_transactions_get_the_producer_unique_id_as_transaction_id() {
             result(PullStatus::Found, Some(record("store-ipv6-v2"))),
             &subscription,
             DecodeOptions::default(),
-            DecodeLimits::default(),
         )
         .unwrap();
     let messages = processed.messages.unwrap();
@@ -171,7 +169,6 @@ fn tag_filter_discards_messages_without_a_tag_and_empty_tag_filters_keep_them() 
             result(PullStatus::Found, Some(bytes.clone())),
             &tagged_subscription,
             DecodeOptions::default(),
-            DecodeLimits::default(),
         )
         .unwrap();
     assert!(filtered.messages.unwrap().is_empty());
@@ -181,7 +178,6 @@ fn tag_filter_discards_messages_without_a_tag_and_empty_tag_filters_keep_them() 
             result(PullStatus::Found, Some(bytes)),
             &SubscriptionData::default(),
             DecodeOptions::default(),
-            DecodeLimits::default(),
         )
         .unwrap();
     let unfiltered_message = unfiltered.messages.unwrap().into_iter().next().unwrap();
@@ -226,7 +222,6 @@ fn class_filter_subscription_keeps_source_and_skips_tag_filtering() {
             result(PullStatus::Found, Some(record("ipv4-v1"))),
             &subscription,
             DecodeOptions::default(),
-            DecodeLimits::default(),
         )
         .unwrap();
     assert_eq!(processed.messages.unwrap().len(), 1);
@@ -247,7 +242,6 @@ fn inner_batches_unwrap_when_both_flags_are_set_and_fall_back_as_a_unit() {
             result(PullStatus::Found, Some(outer.clone())),
             &class_filter,
             DecodeOptions::default(),
-            DecodeLimits::default(),
         )
         .unwrap();
     let messages = processed.messages.unwrap();
@@ -277,7 +271,6 @@ fn inner_batches_unwrap_when_both_flags_are_set_and_fall_back_as_a_unit() {
             result(PullStatus::Found, Some(outer)),
             &SubscriptionData::default(),
             DecodeOptions::default(),
-            DecodeLimits::default(),
         )
         .unwrap()
         .messages
@@ -301,7 +294,6 @@ fn non_found_statuses_preserve_offsets_update_broker_and_release_raw_bytes() {
                 result(status, Some(vec![1, 2, 3])),
                 &SubscriptionData::default(),
                 DecodeOptions::default(),
-                DecodeLimits::default(),
             )
             .unwrap();
         assert_eq!(processed.result.status, status);
@@ -324,7 +316,6 @@ fn found_without_message_binary_returns_an_error_after_suggested_broker_update()
             result(PullStatus::Found, None),
             &SubscriptionData::default(),
             DecodeOptions::default(),
-            DecodeLimits::default(),
         )
         .unwrap_err();
     assert_eq!(error.to_string(), "FOUND pull result has no message binary");

@@ -2,9 +2,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use rocketmq_classic_common::message::{
-    DecodeError, DecodeLimits, DecodeOptions, MessageExt, decode_many,
-};
+use rocketmq_classic_common::message::{DecodeError, DecodeOptions, MessageExt, decode_many};
 use rocketmq_classic_core::api::extensions::PopReply;
 use rocketmq_classic_protocol::header::{
     AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader,
@@ -186,7 +184,6 @@ pub(crate) fn process_pop_reply(
     request: &PopMessageRequestHeader,
     broker_name: &str,
     options: DecodeOptions,
-    limits: DecodeLimits,
 ) -> Result<PopResult, PopProcessError> {
     let status = reply.status.clone();
     let mut result = PopResult::new(status.clone(), None);
@@ -202,7 +199,7 @@ pub(crate) fn process_pop_reply(
         .raw_messages
         .take()
         .ok_or(PopProcessError::MissingResponseData)?;
-    let mut messages = decode_many(&raw, options, limits)?;
+    let mut messages = decode_many(&raw, options)?;
     add_receipts(&mut messages, &header, request, broker_name)?;
     result.set_messages(Some(messages));
     Ok(result)

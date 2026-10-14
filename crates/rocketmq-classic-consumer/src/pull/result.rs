@@ -8,7 +8,7 @@ use std::{
 use rand::Rng;
 use rocketmq_classic_common::{
     message::{
-        DecodeError, DecodeLimits, DecodeOptions, Message, MessageExt, MessageQueue, decode_many,
+        DecodeError, DecodeOptions, Message, MessageExt, MessageQueue, decode_many,
         decode_properties,
     },
     sysflag::message::{INNER_BATCH_FLAG, NEED_UNWRAP_FLAG},
@@ -25,7 +25,7 @@ pub enum ProcessPullError {
     MessageDecode(#[from] DecodeError),
     #[error("inner batch is malformed at byte {offset}: {reason}")]
     MalformedInnerBatch { offset: usize, reason: &'static str },
-    #[error("inner batch decoded size exceeds configured limit {limit}")]
+    #[error("inner batch decoded size exceeds safety limit {limit}")]
     InnerBatchLimitExceeded { limit: usize },
 }
 
@@ -161,7 +161,6 @@ impl PullAPIWrapper {
         mut result: PullResultExt,
         subscription: &SubscriptionData,
         options: DecodeOptions,
-        limits: DecodeLimits,
     ) -> Result<ProcessedPullResult, ProcessPullError> {
         self.suggested_broker_ids
             .lock()
@@ -173,12 +172,12 @@ impl PullAPIWrapper {
                 .raw_messages
                 .take()
                 .ok_or(ProcessPullError::MissingMessageBinary)?;
-            let mut messages = decode_many(&raw, options, limits)?;
+            let mut messages = decode_many(&raw, options)?;
             if messages.iter().any(|message| {
                 message.sys_flag() & INNER_BATCH_FLAG != 0
                     && message.sys_flag() & NEED_UNWRAP_FLAG != 0
             }) {
-                if let Ok(unwrapped) = unwrap_messages(&messages, options, limits) {
+                if let Ok(unwrapped) = unwrap_messages(&messages, options) {
                     messages = unwrapped;
                 }
             }
@@ -334,7 +333,6 @@ fn enrich_messages(messages: &mut [MessageExt], queue: &MessageQueue, result: &P
 fn unwrap_messages(
     messages: &[MessageExt],
     options: DecodeOptions,
-    limits: DecodeLimits,
 ) -> Result<Vec<MessageExt>, ProcessPullError> {
     if !options.read_body {
         return Err(ProcessPullError::MalformedInnerBatch {
@@ -345,7 +343,7 @@ fn unwrap_messages(
     let mut unwrapped = Vec::new();
     for outer in messages {
         if outer.sys_flag() & INNER_BATCH_FLAG != 0 && outer.sys_flag() & NEED_UNWRAP_FLAG != 0 {
-            unwrapped.extend(decode_inner_batch(outer, limits)?);
+            unwrapped.extend(decode_inner_batch(outer)?);
         } else {
             unwrapped.push(outer.clone());
         }
@@ -353,10 +351,10 @@ fn unwrap_messages(
     Ok(unwrapped)
 }
 
-fn decode_inner_batch(
-    outer: &MessageExt,
-    limits: DecodeLimits,
-) -> Result<Vec<MessageExt>, ProcessPullError> {
+const MAX_INNER_BATCH_RECORD_BYTES: usize = 16 * 1024 * 1024;
+const MAX_INNER_BATCH_DECODED_BYTES: usize = 64 * 1024 * 1024;
+
+fn decode_inner_batch(outer: &MessageExt) -> Result<Vec<MessageExt>, ProcessPullError> {
     let bytes = outer.message().body();
     let mut offset = 0usize;
     let mut total_decoded = 0usize;
@@ -370,9 +368,9 @@ fn decode_inner_batch(
             offset,
             reason: "negative record size",
         })?;
-        if size > limits.max_record_bytes {
+        if size > MAX_INNER_BATCH_RECORD_BYTES {
             return Err(ProcessPullError::InnerBatchLimitExceeded {
-                limit: limits.max_record_bytes,
+                limit: MAX_INNER_BATCH_RECORD_BYTES,
             });
         }
         if size < 22 || offset.checked_add(size).is_none_or(|end| end > bytes.len()) {
@@ -427,11 +425,11 @@ fn decode_inner_batch(
             .checked_add(body_size)
             .and_then(|size| size.checked_add(properties_size))
             .ok_or(ProcessPullError::InnerBatchLimitExceeded {
-                limit: limits.max_total_decoded_bytes,
+                limit: MAX_INNER_BATCH_DECODED_BYTES,
             })?;
-        if total_decoded > limits.max_total_decoded_bytes {
+        if total_decoded > MAX_INNER_BATCH_DECODED_BYTES {
             return Err(ProcessPullError::InnerBatchLimitExceeded {
-                limit: limits.max_total_decoded_bytes,
+                limit: MAX_INNER_BATCH_DECODED_BYTES,
             });
         }
         let properties = String::from_utf8_lossy(&record[properties_start..properties_end]);
@@ -497,7 +495,6 @@ mod tests {
                 empty_pull_result(PullStatus::NoNewMessage),
                 &SubscriptionData::default(),
                 DecodeOptions::default(),
-                DecodeLimits::default(),
             )
             .unwrap();
         assert_eq!(processed.result.next_begin_offset, 100);
@@ -613,7 +610,6 @@ mod tests {
                 empty_pull_result(PullStatus::Found),
                 &SubscriptionData::default(),
                 DecodeOptions::default(),
-                DecodeLimits::default(),
             ),
             Err(ProcessPullError::MissingMessageBinary)
         ));

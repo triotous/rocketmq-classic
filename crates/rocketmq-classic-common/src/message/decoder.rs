@@ -3,7 +3,10 @@ use std::io;
 use thiserror::Error;
 
 use super::{MessageExt, decode_properties};
-use crate::{compression::decompress_limited, sysflag::message};
+use crate::{
+    compression::{DEFAULT_MAX_DECOMPRESSED_BODY_BYTES, decompress_limited},
+    sysflag::message,
+};
 
 pub const MESSAGE_MAGIC_CODE_V1: i32 = -626_843_481;
 pub const MESSAGE_MAGIC_CODE_V2: i32 = -626_843_477;
@@ -29,17 +32,17 @@ impl Default for DecodeOptions {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DecodeLimits {
-    pub max_record_bytes: usize,
-    pub max_decompressed_body_bytes: usize,
-    pub max_total_decoded_bytes: usize,
+struct DecodeLimits {
+    max_record_bytes: usize,
+    max_decompressed_body_bytes: usize,
+    max_total_decoded_bytes: usize,
 }
 
 impl Default for DecodeLimits {
     fn default() -> Self {
         Self {
             max_record_bytes: 16 * 1024 * 1024,
-            max_decompressed_body_bytes: 64 * 1024 * 1024,
+            max_decompressed_body_bytes: DEFAULT_MAX_DECOMPRESSED_BODY_BYTES,
             max_total_decoded_bytes: 64 * 1024 * 1024,
         }
     }
@@ -85,6 +88,13 @@ pub enum DecodeError {
 /// Decode one complete Broker message record at the start of `record`.
 /// Returns the decoded message and number of consumed bytes.
 pub fn decode_one(
+    record: &[u8],
+    options: DecodeOptions,
+) -> Result<(MessageExt, usize), DecodeError> {
+    decode_one_with_limits(record, options, DecodeLimits::default())
+}
+
+fn decode_one_with_limits(
     record: &[u8],
     options: DecodeOptions,
     limits: DecodeLimits,
@@ -230,7 +240,11 @@ pub fn decode_one(
 }
 
 /// Decode concatenated Broker records, requiring each iteration to progress.
-pub fn decode_many(
+pub fn decode_many(records: &[u8], options: DecodeOptions) -> Result<Vec<MessageExt>, DecodeError> {
+    decode_many_with_limits(records, options, DecodeLimits::default())
+}
+
+fn decode_many_with_limits(
     records: &[u8],
     options: DecodeOptions,
     limits: DecodeLimits,
@@ -239,7 +253,7 @@ pub fn decode_many(
     let mut offset = 0usize;
     let mut decoded_bytes = 0usize;
     while offset < records.len() {
-        let (message, consumed) = decode_one(&records[offset..], options, limits)?;
+        let (message, consumed) = decode_one_with_limits(&records[offset..], options, limits)?;
         if consumed == 0 {
             return Err(DecodeError::InvalidStoreSize { offset, size: 0 });
         }
@@ -422,5 +436,89 @@ impl<'a> Cursor<'a> {
         } else {
             Ok(format!("/{ip}:{port}"))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    use serde_json::Value;
+
+    use super::*;
+
+    fn fixture_cases() -> Vec<(String, Vec<u8>)> {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../../../../fixtures/messages/records.json"))
+                .expect("message fixture is valid JSON");
+        fixture["cases"]
+            .as_array()
+            .expect("message fixture has cases")
+            .iter()
+            .map(|case| {
+                (
+                    case["name"]
+                        .as_str()
+                        .expect("case name is a string")
+                        .to_owned(),
+                    STANDARD
+                        .decode(
+                            case["recordBase64"]
+                                .as_str()
+                                .expect("recordBase64 is a string"),
+                        )
+                        .expect("fixture record is valid Base64"),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn internal_decode_bounds_reject_oversized_records_and_decompressed_bodies() {
+        let cases = fixture_cases();
+        let plain = &cases[0].1;
+        let limits = DecodeLimits {
+            max_record_bytes: 8,
+            ..DecodeLimits::default()
+        };
+        assert!(matches!(
+            decode_one_with_limits(plain, DecodeOptions::default(), limits),
+            Err(DecodeError::LimitExceeded {
+                field: "record",
+                ..
+            })
+        ));
+
+        let limits = DecodeLimits {
+            max_decompressed_body_bytes: 12,
+            ..DecodeLimits::default()
+        };
+        for (name, record) in cases
+            .iter()
+            .filter(|(name, _)| name.starts_with("compressed-"))
+        {
+            assert!(
+                matches!(
+                    decode_one_with_limits(record, DecodeOptions::default(), limits),
+                    Err(DecodeError::LimitExceeded {
+                        field: "decompressed body",
+                        ..
+                    })
+                ),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn internal_decode_bounds_reject_oversized_aggregate_results() {
+        let record = &fixture_cases()[0].1;
+        let limits = DecodeLimits {
+            max_total_decoded_bytes: 16,
+            ..DecodeLimits::default()
+        };
+        assert!(matches!(
+            decode_many_with_limits(record, DecodeOptions::default(), limits),
+            Err(DecodeError::AggregateLimitExceeded { .. })
+        ));
     }
 }

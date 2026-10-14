@@ -12,7 +12,7 @@ use std::{
 use std::collections::VecDeque;
 
 use rocketmq_classic_common::{
-    message::{DecodeLimits, DecodeOptions, MessageExt, MessageQueue},
+    message::{DecodeOptions, MessageExt, MessageQueue},
     sysflag::pull::{build_pull_sys_flag_with_lite, clear_commit_offset_flag},
 };
 use rocketmq_classic_core::{
@@ -1489,13 +1489,8 @@ impl PullConsumer {
             decompress_body: client_config.decode_decompress_body,
             ..DecodeOptions::default()
         };
-        let mut processed = pull_api.process_pull_result(
-            &queue,
-            pull_result,
-            &subscription,
-            options,
-            DecodeLimits::default(),
-        )?;
+        let mut processed =
+            pull_api.process_pull_result(&queue, pull_result, &subscription, options)?;
         self.reset_topic(processed.messages.as_deref_mut())?;
         self.execute_consume_message_hooks(input_queue, &mut processed)?;
         Ok(processed)

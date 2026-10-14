@@ -9,9 +9,7 @@ use std::{
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 use bytes::BytesMut;
-use rocketmq_classic_common::message::{
-    DecodeLimits, DecodeOptions, Message, decode_one, encode_properties,
-};
+use rocketmq_classic_common::message::{DecodeOptions, Message, decode_one, encode_properties};
 use rocketmq_classic_core::route::RouteSnapshot;
 use rocketmq_classic_protocol::{
     codes::SerializeType,
@@ -108,12 +106,8 @@ fn main() {
         MESSAGE_ITERATIONS,
         message_record.len(),
         || {
-            let (message, consumed) = decode_one(
-                &message_record,
-                DecodeOptions::default(),
-                DecodeLimits::default(),
-            )
-            .unwrap();
+            let (message, consumed) =
+                decode_one(&message_record, DecodeOptions::default()).unwrap();
             black_box((message.message().body().len(), consumed));
         },
     );

@@ -293,12 +293,9 @@ fn receive_reply_message(runtime: &ClientRuntime, command: &RemotingCommand) -> 
             let compression_type =
                 rocketmq_classic_common::sysflag::message::compression_type(header.sys_flag)
                     .map_err(|error| error.to_string())?;
-            if let Ok(uncompressed) = rocketmq_classic_common::compression::decompress_limited(
-                compression_type,
-                &body,
-                rocketmq_classic_common::message::DecodeLimits::default()
-                    .max_decompressed_body_bytes,
-            ) {
+            if let Ok(uncompressed) =
+                rocketmq_classic_common::compression::decompress(compression_type, &body)
+            {
                 body = uncompressed;
             }
         }

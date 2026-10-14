@@ -1,8 +1,7 @@
 use base64::Engine;
 use rocketmq_classic_common::{
-    compression::{compress, decompress_limited},
-    message::{DecodeError, DecodeLimits, DecodeOptions, decode_many, decode_one},
-    sysflag::message::{self, CompressionType},
+    message::{DecodeError, DecodeOptions, decode_many, decode_one},
+    sysflag::message,
 };
 use serde_json::Value;
 
@@ -53,7 +52,6 @@ fn java_551_message_records_decode_to_the_pinned_results() {
                 verify_crc: true,
                 ..DecodeOptions::default()
             },
-            DecodeLimits::default(),
         )
         .unwrap_or_else(|error| panic!("{}: {error}", case["name"]));
         let expected = &case["decoded"];
@@ -94,19 +92,14 @@ fn decode_many_handles_concatenated_records_and_requires_complete_progress() {
     let fixture = fixture();
     let cases = fixture["cases"].as_array().unwrap();
     let joined: Vec<u8> = cases.iter().flat_map(record).collect();
-    let decoded = decode_many(&joined, DecodeOptions::default(), DecodeLimits::default()).unwrap();
+    let decoded = decode_many(&joined, DecodeOptions::default()).unwrap();
     assert_eq!(decoded.len(), cases.len());
     let mut offset = 0;
     for case in cases {
         let bytes = record(case);
         for end in 0..bytes.len() {
             assert!(
-                decode_one(
-                    &bytes[..end],
-                    DecodeOptions::default(),
-                    DecodeLimits::default()
-                )
-                .is_err(),
+                decode_one(&bytes[..end], DecodeOptions::default()).is_err(),
                 "{} prefix length {end}",
                 case["name"]
             );
@@ -117,7 +110,7 @@ fn decode_many_handles_concatenated_records_and_requires_complete_progress() {
 }
 
 #[test]
-fn body_decode_options_match_java_and_limits_reject_oversized_fields() {
+fn body_decode_options_match_java_and_reject_truncated_topics() {
     let fixture = fixture();
     let cases = fixture["cases"].as_array().unwrap();
     for case in cases {
@@ -131,7 +124,6 @@ fn body_decode_options_match_java_and_limits_reject_oversized_fields() {
                     set_properties_string: false,
                     verify_crc: true,
                 },
-                DecodeLimits::default(),
             )
             .unwrap_or_else(|error| panic!("{}: {error}", case["name"]))
             .0;
@@ -167,7 +159,6 @@ fn body_decode_options_match_java_and_limits_reject_oversized_fields() {
                 verify_crc: true,
                 ..DecodeOptions::default()
             },
-            DecodeLimits::default(),
         )
         .unwrap_or_else(|error| panic!("{}: {error}", case["name"]))
         .0;
@@ -193,7 +184,6 @@ fn body_decode_options_match_java_and_limits_reject_oversized_fields() {
                 set_properties_string: false,
                 verify_crc: true,
             },
-            DecodeLimits::default(),
         )
         .unwrap_or_else(|error| panic!("{}: {error}", case["name"]))
         .0;
@@ -208,7 +198,6 @@ fn body_decode_options_match_java_and_limits_reject_oversized_fields() {
                     set_properties_string: false,
                     verify_crc: true,
                 },
-                DecodeLimits::default(),
             )
             .unwrap_or_else(|error| panic!("{}: {error}", case["name"]))
             .0;
@@ -240,35 +229,9 @@ fn body_decode_options_match_java_and_limits_reject_oversized_fields() {
     let mut invalid_topic_size = topic_record;
     invalid_topic_size[topic_length_offset] = i8::MAX as u8;
     assert!(matches!(
-        decode_one(
-            &invalid_topic_size,
-            DecodeOptions::default(),
-            DecodeLimits::default()
-        ),
+        decode_one(&invalid_topic_size, DecodeOptions::default()),
         Err(DecodeError::Truncated { field: "topic", .. })
     ));
-    let limits = DecodeLimits {
-        max_decompressed_body_bytes: 12,
-        ..DecodeLimits::default()
-    };
-    for case in cases.iter().filter(|case| {
-        case["name"]
-            .as_str()
-            .is_some_and(|name| name.starts_with("compressed-"))
-    }) {
-        assert!(
-            matches!(
-                decode_one(&record(case), DecodeOptions::default(), limits),
-                Err(DecodeError::LimitExceeded {
-                    field: "decompressed body",
-                    ..
-                })
-            ),
-            "{}",
-            case["name"]
-        );
-    }
-
     let mut empty_compressed = record(
         cases
             .iter()
@@ -293,21 +256,11 @@ fn body_decode_options_match_java_and_limits_reject_oversized_fields() {
             verify_crc: true,
             ..DecodeOptions::default()
         },
-        DecodeLimits::default(),
     )
     .unwrap()
     .0;
     assert!(decoded_empty.message().body().is_empty());
     assert_ne!(decoded_empty.sys_flag() & message::COMPRESSED_FLAG, 0);
-
-    let limits = DecodeLimits {
-        max_total_decoded_bytes: 16,
-        ..DecodeLimits::default()
-    };
-    assert!(matches!(
-        decode_many(&record(&cases[0]), DecodeOptions::default(), limits),
-        Err(DecodeError::AggregateLimitExceeded { .. })
-    ));
 }
 
 #[test]
@@ -315,33 +268,18 @@ fn malformed_magic_lengths_and_crc_fail_as_structured_errors() {
     let case = &fixture()["cases"][0];
     let valid = record(case);
     for end in 0..valid.len() {
-        assert!(
-            decode_one(
-                &valid[..end],
-                DecodeOptions::default(),
-                DecodeLimits::default()
-            )
-            .is_err()
-        );
+        assert!(decode_one(&valid[..end], DecodeOptions::default()).is_err());
     }
     let mut bad_magic = valid.clone();
     bad_magic[4..8].copy_from_slice(&0_i32.to_be_bytes());
     assert!(matches!(
-        decode_one(
-            &bad_magic,
-            DecodeOptions::default(),
-            DecodeLimits::default()
-        ),
+        decode_one(&bad_magic, DecodeOptions::default()),
         Err(DecodeError::UnknownMagic { .. })
     ));
     let mut bad_store_size = valid.clone();
     bad_store_size[..4].copy_from_slice(&i32::MAX.to_be_bytes());
     assert!(matches!(
-        decode_one(
-            &bad_store_size,
-            DecodeOptions::default(),
-            DecodeLimits::default()
-        ),
+        decode_one(&bad_store_size, DecodeOptions::default()),
         Err(DecodeError::LimitExceeded {
             field: "record",
             ..
@@ -351,14 +289,7 @@ fn malformed_magic_lengths_and_crc_fail_as_structured_errors() {
     let body_length_offset = 4 + 4 + 4 + 4 + 4 + 8 + 8 + 4 + 8 + 8 + 8 + 8 + 4 + 8;
     bad_body_length[body_length_offset..body_length_offset + 4]
         .copy_from_slice(&i32::MAX.to_be_bytes());
-    assert!(
-        decode_one(
-            &bad_body_length,
-            DecodeOptions::default(),
-            DecodeLimits::default()
-        )
-        .is_err()
-    );
+    assert!(decode_one(&bad_body_length, DecodeOptions::default()).is_err());
     let mut bad_properties_length = valid.clone();
     let body_length_offset = 4 + 4 + 4 + 4 + 4 + 8 + 8 + 4 + 8 + 8 + 8 + 8 + 4 + 8;
     let body_length = i32::from_be_bytes(
@@ -372,11 +303,7 @@ fn malformed_magic_lengths_and_crc_fail_as_structured_errors() {
     bad_properties_length[properties_length_offset..properties_length_offset + 2]
         .copy_from_slice(&(-1_i16).to_be_bytes());
     assert!(matches!(
-        decode_one(
-            &bad_properties_length,
-            DecodeOptions::default(),
-            DecodeLimits::default()
-        ),
+        decode_one(&bad_properties_length, DecodeOptions::default()),
         Err(DecodeError::NegativeLength {
             field: "properties",
             ..
@@ -396,11 +323,7 @@ fn malformed_magic_lengths_and_crc_fail_as_structured_errors() {
         &((sys_flag & !message::COMPRESSION_TYPE_COMPARATOR) | (4 << 8)).to_be_bytes(),
     );
     assert!(matches!(
-        decode_one(
-            &unknown_compression,
-            DecodeOptions::default(),
-            DecodeLimits::default()
-        ),
+        decode_one(&unknown_compression, DecodeOptions::default()),
         Err(DecodeError::CompressionType(_))
     ));
     let mut bad_crc = valid.clone();
@@ -413,18 +336,8 @@ fn malformed_magic_lengths_and_crc_fail_as_structured_errors() {
                 decompress_body: true,
                 set_properties_string: false,
                 verify_crc: true
-            },
-            DecodeLimits::default()
+            }
         ),
         Err(DecodeError::CrcMismatch)
     ));
-}
-
-#[test]
-fn all_message_codecs_stop_when_the_decompressed_output_cap_is_exceeded() {
-    let input = vec![b'X'; 32 * 1024];
-    for codec in CompressionType::values() {
-        let encoded = compress(codec, &input, 3).unwrap();
-        assert!(decompress_limited(codec, &encoded, 128).is_err(), "{codec}");
-    }
 }

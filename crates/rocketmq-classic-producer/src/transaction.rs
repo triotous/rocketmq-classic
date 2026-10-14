@@ -10,7 +10,7 @@ use std::{
 };
 
 use rocketmq_classic_common::{
-    message::{DecodeLimits, DecodeOptions, Message, MessageExt, constants::*, decode_one},
+    message::{DecodeOptions, Message, MessageExt, constants::*, decode_one},
     sysflag::message as message_sys_flag,
 };
 use rocketmq_classic_core::api::producer::{SendResult, SendStatus};
@@ -639,9 +639,7 @@ impl TransactionRuntime {
         let Some(body) = job.command.body.as_deref() else {
             return;
         };
-        let Ok((mut message, _consumed)) =
-            decode_one(body, DecodeOptions::default(), DecodeLimits::default())
-        else {
+        let Ok((mut message, _consumed)) = decode_one(body, DecodeOptions::default()) else {
             return;
         };
         let mut client_config = producer.config().client_config().clone();
@@ -1834,16 +1832,13 @@ mod tests {
         let fixture = transaction_fixture();
         let mut command = check_command();
         remove_unique_key(command.body.as_mut().unwrap());
-        let expected_message_id = decode_one(
-            command.body.as_deref().unwrap(),
-            DecodeOptions::default(),
-            DecodeLimits::default(),
-        )
-        .unwrap()
-        .0
-        .message_id()
-        .unwrap()
-        .to_owned();
+        let expected_message_id =
+            decode_one(command.body.as_deref().unwrap(), DecodeOptions::default())
+                .unwrap()
+                .0
+                .message_id()
+                .unwrap()
+                .to_owned();
         let mut expected = fixture_fields(
             &fixture["transactionFlow"]["brokerCheckEndTransaction"]["withoutUniqueKey"]["commit"],
         );

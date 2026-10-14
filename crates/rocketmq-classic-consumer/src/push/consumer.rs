@@ -13,10 +13,7 @@ use std::{
 use std::collections::VecDeque;
 
 use rocketmq_classic_common::{
-    message::{
-        DecodeLimits, DecodeOptions, Message, MessageExt, MessageQueue, constants::*,
-        encode_properties,
-    },
+    message::{DecodeOptions, Message, MessageExt, MessageQueue, constants::*, encode_properties},
     sysflag::pull::{build_pull_sys_flag, clear_commit_offset_flag},
 };
 use rocketmq_classic_core::api::extensions::AckStatus;
@@ -2293,7 +2290,6 @@ impl PushConsumer {
                     decompress_body: client_config.decode_decompress_body,
                     ..DecodeOptions::default()
                 },
-                DecodeLimits::default(),
             )
             .map_err(|error| self.pull_retry_error(error.to_string()))?;
         if let Some(messages) = processed.messages.as_mut() {
@@ -4063,7 +4059,6 @@ impl PushConsumer {
                     decompress_body: self.config.client_config().decode_decompress_body,
                     ..DecodeOptions::default()
                 },
-                DecodeLimits::default(),
             ) {
                 Ok(result) => result,
                 Err(error) => {

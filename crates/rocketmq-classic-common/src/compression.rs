@@ -2,6 +2,8 @@ use std::io::{self, Read, Write};
 
 use crate::sysflag::message::CompressionType;
 
+pub(crate) const DEFAULT_MAX_DECOMPRESSED_BODY_BYTES: usize = 64 * 1024 * 1024;
+
 /// Compress a message body using the RocketMQ wire format selected by sysFlag.
 /// The LZ4 backend emits the framed format used by RocketMQ 5.5.1.
 pub fn compress(compression_type: CompressionType, body: &[u8], level: i32) -> io::Result<Vec<u8>> {
@@ -28,11 +30,11 @@ pub fn compress(compression_type: CompressionType, body: &[u8], level: i32) -> i
 
 /// Decompress the RocketMQ message body according to its compression type.
 pub fn decompress(compression_type: CompressionType, body: &[u8]) -> io::Result<Vec<u8>> {
-    decompress_limited(compression_type, body, usize::MAX)
+    decompress_limited(compression_type, body, DEFAULT_MAX_DECOMPRESSED_BODY_BYTES)
 }
 
 /// Decompress a message body while capping the decoded bytes.
-pub fn decompress_limited(
+pub(crate) fn decompress_limited(
     compression_type: CompressionType,
     body: &[u8],
     max_output_bytes: usize,
@@ -259,5 +261,14 @@ mod tests {
             io::ErrorKind::InvalidInput
         );
         assert!(compress(CompressionType::Zlib, b"body", -1).is_ok());
+    }
+
+    #[test]
+    fn every_java_compression_type_stops_at_the_internal_output_cap() {
+        let input = vec![b'X'; 32 * 1024];
+        for codec in CompressionType::values() {
+            let encoded = compress(codec, &input, 3).unwrap();
+            assert!(decompress_limited(codec, &encoded, 128).is_err(), "{codec}");
+        }
     }
 }

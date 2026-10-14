@@ -7,8 +7,8 @@ use std::{
 use base64::{Engine, engine::general_purpose::STANDARD};
 use bytes::BytesMut;
 use rocketmq_classic_common::{
-    compression::decompress_limited,
-    message::{DecodeLimits, DecodeOptions, decode_many, decode_one, decode_properties},
+    compression::decompress,
+    message::{DecodeOptions, decode_many, decode_one, decode_properties},
     sysflag::message::CompressionType,
 };
 use rocketmq_classic_protocol::{
@@ -23,7 +23,7 @@ use rocketmq_classic_remoting::{
 const MAX_SEED_BYTES: usize = 1024 * 1024;
 const MAX_FRAME_BYTES: usize = 64 * 1024;
 const MAX_MESSAGE_BYTES: usize = 64 * 1024;
-const MAX_DECOMPRESSED_BYTES: usize = 4096;
+const MAX_DECOMPRESSED_BYTES: usize = 64 * 1024 * 1024;
 const MAX_FRAME_SEEDS: usize = 256;
 const MUTATIONS_PER_SEED: usize = 16;
 
@@ -194,19 +194,14 @@ fn exercise_trust_boundaries(input: &[u8]) -> (usize, usize) {
         }
     }
 
-    let limits = DecodeLimits {
-        max_record_bytes: MAX_MESSAGE_BYTES,
-        max_decompressed_body_bytes: MAX_DECOMPRESSED_BYTES,
-        max_total_decoded_bytes: MAX_MESSAGE_BYTES,
-    };
     let options = DecodeOptions::default();
     let mut message_decodes = 0;
-    if let Ok((message, consumed)) = decode_one(bounded, options, limits) {
+    if let Ok((message, consumed)) = decode_one(bounded, options) {
         message_decodes += 1;
         assert!(consumed <= bounded.len());
         assert!(message.message().body().len() <= MAX_DECOMPRESSED_BYTES);
     }
-    if let Ok(messages) = decode_many(bounded, options, limits) {
+    if let Ok(messages) = decode_many(bounded, options) {
         message_decodes += messages.len();
         assert!(
             messages
@@ -220,7 +215,7 @@ fn exercise_trust_boundaries(input: &[u8]) -> (usize, usize) {
         CompressionType::Lz4,
         CompressionType::Zstd,
     ] {
-        let _ = decompress_limited(compression, bounded, MAX_DECOMPRESSED_BYTES);
+        let _ = decompress(compression, bounded);
     }
     (frame_decodes, message_decodes)
 }

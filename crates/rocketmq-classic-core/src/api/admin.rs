@@ -1,5 +1,5 @@
 use rocketmq_classic_common::message::{
-    DecodeLimits, DecodeOptions, MessageExt, constants, decode_many, decode_one,
+    DecodeOptions, MessageExt, constants, decode_many, decode_one,
 };
 use rocketmq_classic_protocol::{
     codes::{request, response},
@@ -358,12 +358,13 @@ impl MQClientApi {
                 peer: addr.to_owned(),
                 reason: "missing response body".into(),
             })?;
-        let mut message_list = decode_many(body, DecodeOptions::default(), DecodeLimits::default())
-            .map_err(|error| RpcError::MalformedResponse {
+        let mut message_list = decode_many(body, DecodeOptions::default()).map_err(|error| {
+            RpcError::MalformedResponse {
                 request_code: code,
                 peer: addr.to_owned(),
                 reason: error.to_string(),
-            })?;
+            }
+        })?;
         for message in &mut message_list {
             client_decode_message(message);
         }
@@ -391,7 +392,7 @@ impl MQClientApi {
                 peer: addr.to_owned(),
                 reason: "missing response body".into(),
             })?;
-        decode_one(body, DecodeOptions::default(), DecodeLimits::default())
+        decode_one(body, DecodeOptions::default())
             .map(|(mut message, _)| {
                 client_decode_message(&mut message);
                 message
