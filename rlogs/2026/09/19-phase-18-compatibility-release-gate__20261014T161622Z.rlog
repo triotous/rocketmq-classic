@@ -47,3 +47,20 @@ Changes and validation
 - PASS: `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`.
 - PASS: `cargo fmt --all -- --check` and `git diff --check`.
 - This is a bounded public-surface correction; full Java overload/input/error/flow and bidirectional API reconciliation remains open.
+
+Phase 18 continuation — Producer publish-info Rust reverse crosswalk
+Session date: 2026-10-14 UTC
+Time: 16:25 UTC
+Branch: `phase/19-phase-18-compatibility-release-gate`
+Starting revision: `7ce8bf8d`
+
+Changes
+- Added exact Rust-to-Java rows for 11 surfaced publish-info APIs: queue-list setter, cursor accessors, filtered/previous-Broker selectors, Map.replaceAll, live-view removeIf callbacks, and values-view removeAll iterator adapter.
+- Added `rust_publish_info_method_names_have_java_crosswalks`, which requires each listed Rust API and Java counterpart on the same Phase 7 matrix row.
+- Updated the Phase 6 requirement audit and P18-V01 checklist. Full reverse export and overload/input/error/flow reconciliation remains open.
+
+Validation
+- PASS: focused crosswalk guard.
+- PASS: `cargo test -p rocketmq-classic-producer --locked` — 139 unit and 61 integration tests.
+- PASS: strict all-target/all-feature workspace Clippy.
+- PASS: formatting and `git diff --check`.

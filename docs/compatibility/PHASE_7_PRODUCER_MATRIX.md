@@ -68,6 +68,31 @@ per-overload input, error and control-flow branches remain part of P18-V01.
 | `initTransactionEnv`, `destroyTransactionEnv`, `checkTransactionState`, `endTransaction`, transaction sends | Phase 14 `TransactionProducer` and producer-owned transaction runtime | Transaction worker/lifecycle and request flows map in the Phase 14 matrix; broad overload/input reconciliation remains part of P18-V01. |
 | `request*`, `recallMessage`, trace hooks | Phase 15 request/reply, Producer recall, and Phase 16 trace owners | Owner-level behavior is mapped in their phase matrices; inherited/helper overload and reverse-export reconciliation remains open. |
 
+## Rust publish-info reverse crosswalk
+
+The Java-side fixture guards Java method names against the phase matrices. The
+following reverse-scan findings now also have exact Rust-to-Java rows; several
+Java owners are inherited `Map`/`Collection` methods on the live table views.
+The guard `rust_publish_info_method_names_have_java_crosswalks` requires each
+listed Rust API and Java counterpart to appear on the same matrix row.
+
+| Rust public API | Java 5.5.1 API | Mapping note |
+| --- | --- | --- |
+| `TopicPublishInfo::set_message_queues` | `TopicPublishInfo.setMessageQueueList(List<MessageQueue>)` | Vec convenience adapter to the Java queue-list setter. |
+| `TopicPublishInfo::send_which_queue` | `TopicPublishInfo.getSendWhichQueue()` | Returns the retained cursor handle. |
+| `TopicPublishInfo::set_send_which_queue` | `TopicPublishInfo.setSendWhichQueue(ThreadLocalIndex)` | Replaces the retained cursor handle. |
+| `TopicPublishInfo::select_one_message_queue_with_filter` | `TopicPublishInfo.selectOneMessageQueue(QueueFilter...)` | Typed Rust filter slice. |
+| `TopicPublishInfo::select_one_message_queue_with_nullable_filters` | `TopicPublishInfo.selectOneMessageQueue(QueueFilter...)` | Preserves nullable varargs and nullable filter elements. |
+| `TopicPublishInfo::select_one_message_queue_avoiding` | `TopicPublishInfo.selectOneMessageQueue(String lastBrokerName)` | Avoids the previous Broker when possible. |
+| `TopicPublishInfoTable::replace_all_with_nullable_callback` | `Map.replaceAll(BiFunction)` | Nullable callback adapter on the live `ConcurrentMap` counterpart. |
+| `TopicPublishInfoKeySetView::remove_if_with_nullable_callback` | `Map.keySet().removeIf(Predicate)` | Nullable callback adapter on the live key view. |
+| `TopicPublishInfoValuesView::remove_if_with_nullable_callback` | `Map.values().removeIf(Predicate)` | Nullable callback adapter on the live values view. |
+| `TopicPublishInfoEntrySetView::remove_if_with_nullable_callback` | `Map.entrySet().removeIf(Predicate)` | Nullable callback adapter on the live entry view. |
+| `TopicPublishInfoValuesView::remove_all_iter` | `Map.values().removeAll(Collection)` | Iterator input adapter to the inherited collection operation. |
+
+This closes only these surfaced name crosswalks; Rust public API reverse export
+and Java overload/input/error/flow reconciliation remain open under P18-V01.
+
 ## Pinned producer API and settings inventory
 
 This inventory was checked against the pinned `DefaultMQProducer`,

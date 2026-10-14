@@ -173,6 +173,66 @@ fn pinned_java_producer_callable_method_names_have_phase_crosswalks() {
 }
 
 #[test]
+fn rust_publish_info_method_names_have_java_crosswalks() {
+    const RUST_TO_JAVA: &[(&str, &str)] = &[
+        (
+            "TopicPublishInfo::set_message_queues",
+            "TopicPublishInfo.setMessageQueueList",
+        ),
+        (
+            "TopicPublishInfo::send_which_queue",
+            "TopicPublishInfo.getSendWhichQueue",
+        ),
+        (
+            "TopicPublishInfo::set_send_which_queue",
+            "TopicPublishInfo.setSendWhichQueue",
+        ),
+        (
+            "TopicPublishInfo::select_one_message_queue_with_filter",
+            "TopicPublishInfo.selectOneMessageQueue(QueueFilter...)",
+        ),
+        (
+            "TopicPublishInfo::select_one_message_queue_with_nullable_filters",
+            "TopicPublishInfo.selectOneMessageQueue(QueueFilter...)",
+        ),
+        (
+            "TopicPublishInfo::select_one_message_queue_avoiding",
+            "TopicPublishInfo.selectOneMessageQueue(String lastBrokerName)",
+        ),
+        (
+            "TopicPublishInfoTable::replace_all_with_nullable_callback",
+            "Map.replaceAll(BiFunction)",
+        ),
+        (
+            "TopicPublishInfoKeySetView::remove_if_with_nullable_callback",
+            "Map.keySet().removeIf(Predicate)",
+        ),
+        (
+            "TopicPublishInfoValuesView::remove_if_with_nullable_callback",
+            "Map.values().removeIf(Predicate)",
+        ),
+        (
+            "TopicPublishInfoEntrySetView::remove_if_with_nullable_callback",
+            "Map.entrySet().removeIf(Predicate)",
+        ),
+        (
+            "TopicPublishInfoValuesView::remove_all_iter",
+            "Map.values().removeAll(Collection)",
+        ),
+    ];
+    let matrix = include_str!("../../../docs/compatibility/PHASE_7_PRODUCER_MATRIX.md");
+
+    for (rust_api, java_api) in RUST_TO_JAVA {
+        assert!(
+            matrix
+                .lines()
+                .any(|line| line.contains(rust_api) && line.contains(java_api)),
+            "Rust Producer API has no Java crosswalk: {rust_api} -> {java_api}"
+        );
+    }
+}
+
+#[test]
 fn implementation_raw_semaphore_setters_match_pinned_java_fixture() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
