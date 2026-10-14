@@ -41,3 +41,22 @@ Java source baseline: efa1be59d6fc747ad220f036c86030f05f0419f9
 - PASS: `cargo fmt --all -- --check` and `git diff --check`.
 - Maven emitted existing JDK/Netty `Unsafe` and reflective-final-field warnings;
   both verify invocations exited successfully.
+
+## Inherited listener trait crosswalk
+
+- Compared the public Rust trait inventory with compatibility matrices. The
+  concurrent and orderly listener traits were the only public Rust traits
+  without their exact Java interface method recorded in those matrices.
+- Read the pinned Java `MessageListenerConcurrently` and `MessageListenerOrderly`
+  declarations and `ConsumeRequest.run` call sites. Both inherit only the
+  methodless `MessageListener` marker and declare one callback. Existing Rust
+  flows preserve the queue/context ownership; concurrent absent-status or
+  panic maps to retry, and orderly absent-status or panic maps to suspension.
+- Added method-level Java-to-Rust rows to Phase 10 and Phase 12, with links to
+  the existing context/status and callback tests. No missing capability was
+  confirmed in this trait slice; broad P18-V01 remains open.
+- After the selector implementation commits, PASS:
+  `cargo test --workspace --locked`,
+  `cargo test --workspace --all-features --locked`, and
+  `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`.
+  These ran before the documentation-only listener crosswalk update.
