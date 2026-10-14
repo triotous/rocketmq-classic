@@ -35,6 +35,7 @@ use tokio::{
 struct SentRequest {
     broker: String,
     request_code: i32,
+    queue_id: Option<i32>,
     producer_group: Option<String>,
     topic: Option<String>,
     body: Option<Vec<u8>>,
@@ -204,6 +205,11 @@ async fn broker_peer(
             requests.lock().unwrap().push(SentRequest {
                 broker: broker.to_owned(),
                 request_code: command.code,
+                queue_id: command
+                    .ext_fields
+                    .as_ref()
+                    .and_then(|fields| fields.get("e"))
+                    .and_then(|value| value.parse().ok()),
                 producer_group,
                 topic,
                 body: command.body.clone(),
@@ -714,7 +720,7 @@ async fn topic_without_route_stays_in_producer_refresh_inventory() {
 }
 
 #[tokio::test]
-async fn oneway_sends_once_and_custom_queue_membership_is_checked_before_io() {
+async fn oneway_sends_once_and_unknown_explicit_broker_fails_before_io() {
     let attempts = Arc::new(AtomicUsize::new(0));
     let requests = Arc::new(Mutex::new(Vec::new()));
     let (broker, broker_task) =
@@ -728,7 +734,7 @@ async fn oneway_sends_once_and_custom_queue_membership_is_checked_before_io() {
     let invalid_queue = MessageQueue::new("orders", "not-in-route", 0);
     assert!(matches!(
         producer.send_to_queue(&message, &invalid_queue).await,
-        Err(ProducerError::QueueNotInRoute)
+        Err(ProducerError::NoRoute(topic)) if topic == "orders"
     ));
     assert!(requests.lock().unwrap().is_empty());
 
@@ -816,6 +822,72 @@ async fn public_queue_selector_and_batch_modes_use_the_scripted_route() {
     );
     assert_eq!(sent.iter().filter(|request| request.oneway).count(), 2);
     assert!(sent.iter().all(|request| request.body.is_some()));
+
+    producer.shutdown().await.unwrap();
+    nameserver_task.abort();
+    broker_task.abort();
+}
+
+#[tokio::test]
+async fn explicit_and_selected_queue_ids_outside_the_route_are_sent_to_the_routed_broker() {
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let (broker, broker_task) =
+        broker_peer("broker-a", attempts.clone(), 0, false, requests.clone()).await;
+    let route = route_body(&[("broker-a", &broker)]);
+    let (nameserver, nameserver_task, _) = name_server_peer(route, BTreeSet::new()).await;
+    let producer = Arc::new(Producer::new(producer_config(
+        "caller-selected-queue",
+        &nameserver,
+    )));
+    producer.start().await.unwrap();
+
+    let message = Message::new("orders", b"selected-outside-route".to_vec());
+    let explicit = MessageQueue::new("orders", "broker-a", 7);
+    producer.send_to_queue(&message, &explicit).await.unwrap();
+    producer
+        .send_to_queue_future_with_timeout(
+            &message,
+            &MessageQueue::new("orders", "broker-a", 8),
+            std::time::Duration::from_secs(1),
+        )
+        .await
+        .unwrap();
+    producer
+        .send_to_queue_oneway(&message, &MessageQueue::new("orders", "broker-a", 9))
+        .await
+        .unwrap();
+    producer
+        .send_with_selector(&message, |_, _| {
+            Some(MessageQueue::new("orders", "broker-a", 10))
+        })
+        .await
+        .unwrap();
+    producer
+        .send_future_with_selector_with_timeout(
+            &message,
+            |_, _| Some(MessageQueue::new("orders", "broker-a", 11)),
+            std::time::Duration::from_secs(1),
+        )
+        .await
+        .unwrap();
+    producer
+        .send_oneway_with_selector(&message, |_, _| {
+            Some(MessageQueue::new("orders", "broker-a", 12))
+        })
+        .await
+        .unwrap();
+    wait_for_attempts(&attempts, 6).await;
+
+    let sent = requests.lock().unwrap().clone();
+    assert_eq!(sent.len(), 6);
+    assert!(sent.iter().all(|request| request.broker == "broker-a"));
+    assert_eq!(
+        sent.iter()
+            .map(|request| request.queue_id.unwrap())
+            .collect::<BTreeSet<_>>(),
+        (7..=12).collect()
+    );
 
     producer.shutdown().await.unwrap();
     nameserver_task.abort();

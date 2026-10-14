@@ -154,8 +154,8 @@ impl Producer {
             .map(|_| ())
     }
 
-    /// Sends to a caller-selected queue after validating membership in the
-    /// current writable route. This overload makes one Broker attempt.
+    /// Sends to a caller-selected queue using its Broker address from the
+    /// current route. This overload makes one Broker attempt.
     pub async fn send_to_queue(
         &self,
         message: &Message,
@@ -215,7 +215,7 @@ impl Producer {
     }
 
     /// Runs a custom queue selector against the current writable route and
-    /// rejects a queue that does not belong to that route.
+    /// sends to the returned queue when its Broker address is known.
     pub async fn send_with_selector<F>(
         &self,
         message: &Message,
@@ -334,7 +334,6 @@ impl Producer {
         let logical_queue =
             selector(&logical_queues, message).ok_or(ProducerError::NoQueueSelected)?;
         let mut queue = self.queue_with_namespace(&logical_queue)?;
-        ensure_queue_member(&queue, &info)?;
         if use_auto_batch {
             return self
                 .send_auto_or_direct(message, Some(logical_queue), mode)
@@ -713,7 +712,6 @@ impl Producer {
         let info = self
             .acquire_publish_info(&runtime, wire_message.topic(), deadline)
             .await?;
-        ensure_queue_member(&wire_queue, &info)?;
         let broker = wire_queue
             .broker_name()
             .ok_or_else(|| ProducerError::NoRoute(wire_message.topic().to_owned()))?
@@ -1594,14 +1592,6 @@ impl Producer {
                 })?;
         }
         Ok(())
-    }
-}
-
-fn ensure_queue_member(queue: &MessageQueue, info: &TopicSnapshot) -> Result<(), ProducerError> {
-    if info.publish_queues.contains(queue) {
-        Ok(())
-    } else {
-        Err(ProducerError::QueueNotInRoute)
     }
 }
 

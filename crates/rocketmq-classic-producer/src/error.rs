@@ -56,8 +56,6 @@ pub enum ProducerError {
     BrokerNotFound { broker: String },
     #[error(transparent)]
     AdminQuery(#[from] rocketmq_classic_core::api::admin::AdminQueryError),
-    #[error("selected queue does not belong to the topic writable queues")]
-    QueueNotInRoute,
     #[error("TopicPublishInfo message queue list is null")]
     NullPublishInfoQueueList,
     #[error("TopicPublishInfo message queue list is empty")]
