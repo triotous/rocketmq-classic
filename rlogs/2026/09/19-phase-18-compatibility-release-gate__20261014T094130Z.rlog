@@ -55,3 +55,10 @@ Pinned Java client source: efa1be59d6fc747ad220f036c86030f05f0419f9
   evidence remain outstanding.
 - Phase 19 Broker/Docker scenarios remain an automated integration gate; no
   Broker or Docker was used in this session.
+
+## Workspace gate addendum
+
+- PASS: `cargo test --workspace --all-features --locked`; all workspace unit,
+  integration and doctest targets completed successfully.
+- PASS: `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`.
+- PASS: the final worktree remained clean before this append-only log update.
