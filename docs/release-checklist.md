@@ -417,6 +417,14 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   differential self-test and manifest, 16 race/leak cases × 3, fuzz smoke,
   release examples, benchmark compilation, metadata, and format/diff checks
   passed on 2026-10-14 before the code/documentation commits.
+- [x] Re-run the full server-free P18-V02 gates on current revision `15f8494b`
+  after the Push runtime-setting correction (2026-10-14): default and
+  all-feature workspace tests, strict all-target/all-feature Clippy, Maven
+  verify (37 scenarios and Java/Rust fixture cross-decodes), comparator
+  self-test, 37-scenario manifest, 16 race/leak cases × 3, fuzz smoke (104
+  frame seeds, 10 message seeds, 1,824 mutations), release examples, offline
+  benchmark compilation, workspace metadata/license/dependency checks, seven
+  package-content listings, formatting, and diff checks all pass.
 - Follow-up commit `7ece0e66` pins Java's per-pull reads of `pullBatchSize` and
   `pullBatchSizeInBytes` and adds a scripted wire assertion for post-construction
   updates. Default and all-feature workspace tests, strict Clippy, Maven
