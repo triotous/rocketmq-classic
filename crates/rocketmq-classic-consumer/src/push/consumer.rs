@@ -9969,6 +9969,99 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn push_pull_request_uses_live_batch_settings_from_consumer_config() {
+        let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let nameserver_address = nameserver.local_addr().unwrap().to_string();
+        let broker_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let broker_address = broker_listener.local_addr().unwrap().to_string();
+        let broker_route = pop_test_route(&broker_address);
+
+        let nameserver_peer = tokio::spawn(async move {
+            let (mut stream, _) = nameserver.accept().await.unwrap();
+            let incoming = read_remoting_command(&mut stream).await;
+            assert_eq!(incoming.code, request::GET_ROUTEINFO_BY_TOPIC);
+            write_remoting_reply_with_body(
+                &mut stream,
+                &incoming,
+                response::SUCCESS,
+                None,
+                Some(broker_route),
+            )
+            .await;
+        });
+
+        let broker_peer = tokio::spawn(async move {
+            let mut stream = None;
+            let incoming = accept_remoting_request(&broker_listener, &mut stream).await;
+            assert_eq!(incoming.code, request::PULL_MESSAGE);
+            let fields = incoming.ext_fields.as_ref().unwrap();
+            assert_eq!(fields.get("maxMsgNums"), Some(&"7".to_owned()));
+            assert_eq!(fields.get("maxMsgBytes"), Some(&"12345".to_owned()));
+            write_remoting_reply(
+                stream.as_mut().unwrap(),
+                &incoming,
+                response::PULL_NOT_FOUND,
+                Some(HeaderMap::from([
+                    ("nextBeginOffset".into(), "0".into()),
+                    ("minOffset".into(), "0".into()),
+                    ("maxOffset".into(), "0".into()),
+                    ("suggestWhichBrokerId".into(), "0".into()),
+                ])),
+            )
+            .await;
+        });
+
+        let mut config = PushConsumerConfig::new("push-live-pull-batch").unwrap();
+        config
+            .client_config_mut()
+            .set_namesrv_addr(Some(nameserver_address));
+        config
+            .client_config_mut()
+            .set_instance_name(Some("push-live-pull-batch".into()));
+        config.set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting);
+        config.set_pull_batch_size(3);
+        config.set_pull_batch_size_in_bytes(4_096);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let runtime = manager
+            .get_or_create(consumer.config().client_config())
+            .await
+            .unwrap();
+        runtime.remoting().start().unwrap();
+        runtime
+            .update_topic_route("orders", Instant::now() + Duration::from_secs(3))
+            .await
+            .unwrap();
+        nameserver_peer.await.unwrap();
+
+        consumer.config().set_pull_batch_size(7);
+        consumer.config().set_pull_batch_size_in_bytes(12_345);
+        assert_eq!(consumer.config().pull_batch_size(), 7);
+        assert_eq!(consumer.config().pull_batch_size_in_bytes(), 12_345);
+
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let request = PullRequest::new(
+            "push-live-pull-batch",
+            Arc::new(ProcessQueue::new(queue, 1)),
+            0,
+        );
+        let context = PullContext {
+            runtime: runtime.clone(),
+            offset_store: Arc::new(RecordingOffsetStore::default()),
+            scheduler: Arc::new(PullScheduler::new()),
+            consume_service: ConsumeService::Concurrent(idle_consume_service()),
+        };
+        let subscription = SubscriptionData::new(Some("orders".into()), Some("*".into()));
+
+        let pull_result = consumer
+            .fetch_push_result(&context, &request, &subscription)
+            .await;
+        assert!(pull_result.is_ok());
+        broker_peer.await.unwrap();
+        runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn first_orderly_locked_pull_refreshes_offset_once_like_java() {
         let mut config = PushConsumerConfig::new("orderly-first-lock-offset").unwrap();
         config.client_config_mut().set_namesrv_addr(None);

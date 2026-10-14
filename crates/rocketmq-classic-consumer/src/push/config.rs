@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicI32, Ordering},
+};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rocketmq_classic_core::config::ClientConfig;
@@ -51,8 +54,8 @@ pub struct PushConsumerConfig {
     pull_threshold_size_for_topic_mib: i32,
     pull_interval_millis: i64,
     consume_message_batch_max_size: i32,
-    pull_batch_size: i32,
-    pull_batch_size_in_bytes: i32,
+    pull_batch_size: AtomicI32,
+    pull_batch_size_in_bytes: AtomicI32,
     post_subscription_when_pull: bool,
     unit_mode: bool,
     max_reconsume_times: i32,
@@ -86,8 +89,8 @@ impl PushConsumerConfig {
             pull_threshold_size_for_topic_mib: DEFAULT_PULL_THRESHOLD_SIZE_FOR_TOPIC_MIB,
             pull_interval_millis: DEFAULT_PULL_INTERVAL_MILLIS,
             consume_message_batch_max_size: DEFAULT_CONSUME_MESSAGE_BATCH_MAX_SIZE,
-            pull_batch_size: DEFAULT_PULL_BATCH_SIZE,
-            pull_batch_size_in_bytes: DEFAULT_PULL_BATCH_SIZE_IN_BYTES,
+            pull_batch_size: AtomicI32::new(DEFAULT_PULL_BATCH_SIZE),
+            pull_batch_size_in_bytes: AtomicI32::new(DEFAULT_PULL_BATCH_SIZE_IN_BYTES),
             post_subscription_when_pull: false,
             unit_mode: false,
             max_reconsume_times: DEFAULT_MAX_RECONSUME_TIMES,
@@ -261,20 +264,21 @@ impl PushConsumerConfig {
         self.consume_message_batch_max_size = value;
     }
 
-    pub const fn pull_batch_size(&self) -> i32 {
-        self.pull_batch_size
+    pub fn pull_batch_size(&self) -> i32 {
+        self.pull_batch_size.load(Ordering::Acquire)
     }
 
-    pub fn set_pull_batch_size(&mut self, value: i32) {
-        self.pull_batch_size = value;
+    pub fn set_pull_batch_size(&self, value: i32) {
+        self.pull_batch_size.store(value, Ordering::Release);
     }
 
-    pub const fn pull_batch_size_in_bytes(&self) -> i32 {
+    pub fn pull_batch_size_in_bytes(&self) -> i32 {
+        self.pull_batch_size_in_bytes.load(Ordering::Acquire)
+    }
+
+    pub fn set_pull_batch_size_in_bytes(&self, value: i32) {
         self.pull_batch_size_in_bytes
-    }
-
-    pub fn set_pull_batch_size_in_bytes(&mut self, value: i32) {
-        self.pull_batch_size_in_bytes = value;
+            .store(value, Ordering::Release);
     }
 
     pub const fn post_subscription_when_pull(&self) -> bool {
@@ -424,7 +428,7 @@ impl PushConsumerConfig {
             1,
             1_024,
         )?;
-        validate_range("pullBatchSize", i64::from(self.pull_batch_size), 1, 1_024)?;
+        validate_range("pullBatchSize", i64::from(self.pull_batch_size()), 1, 1_024)?;
         validate_range(
             "popInvisibleTime",
             self.pop_invisible_time_millis,

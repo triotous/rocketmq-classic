@@ -3,12 +3,16 @@
   "pushConsumerDefaults": {
     "maxReconsumeTimes": -1,
     "suspendCurrentQueueTimeMillis": 1000,
+    "pullBatchSize": 32,
+    "pullBatchSizeInBytes": 262144,
     "consumeTimeoutMinutes": 15,
     "consumeMessageBatchMaxSize": 1
   },
   "configuredPublicSettings": {
     "maxReconsumeTimes": 7,
-    "suspendCurrentQueueTimeMillis": 4321
+    "suspendCurrentQueueTimeMillis": 4321,
+    "pullBatchSize": 7,
+    "pullBatchSizeInBytes": 12345
   },
   "orderlyContextDefaults": {
     "autoCommit": true,

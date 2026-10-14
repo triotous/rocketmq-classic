@@ -43,6 +43,8 @@ public final class OrderlyConsumerFixtures {
         ConsumeOrderlyContext context = new ConsumeOrderlyContext(queue);
         int defaultMaxReconsumeTimes = consumer.getMaxReconsumeTimes();
         long defaultSuspendTime = consumer.getSuspendCurrentQueueTimeMillis();
+        int defaultPullBatchSize = consumer.getPullBatchSize();
+        int defaultPullBatchSizeInBytes = consumer.getPullBatchSizeInBytes();
         boolean defaultAutoCommit = context.isAutoCommit();
         long defaultContextSuspendTime = context.getSuspendCurrentQueueTimeMillis();
         String statuses = Arrays.stream(ConsumeOrderlyStatus.values())
@@ -51,6 +53,8 @@ public final class OrderlyConsumerFixtures {
             .collect(Collectors.joining(", "));
         consumer.setMaxReconsumeTimes(7);
         consumer.setSuspendCurrentQueueTimeMillis(4321);
+        consumer.setPullBatchSize(7);
+        consumer.setPullBatchSizeInBytes(12345);
         context.setAutoCommit(false);
         context.setSuspendCurrentQueueTimeMillis(7654);
         return "{\n"
@@ -58,12 +62,16 @@ public final class OrderlyConsumerFixtures {
             + "  \"pushConsumerDefaults\": {\n"
             + "    \"maxReconsumeTimes\": " + defaultMaxReconsumeTimes + ",\n"
             + "    \"suspendCurrentQueueTimeMillis\": " + defaultSuspendTime + ",\n"
+            + "    \"pullBatchSize\": " + defaultPullBatchSize + ",\n"
+            + "    \"pullBatchSizeInBytes\": " + defaultPullBatchSizeInBytes + ",\n"
             + "    \"consumeTimeoutMinutes\": " + consumer.getConsumeTimeout() + ",\n"
             + "    \"consumeMessageBatchMaxSize\": " + consumer.getConsumeMessageBatchMaxSize() + "\n"
             + "  },\n"
             + "  \"configuredPublicSettings\": {\n"
             + "    \"maxReconsumeTimes\": " + consumer.getMaxReconsumeTimes() + ",\n"
-            + "    \"suspendCurrentQueueTimeMillis\": " + consumer.getSuspendCurrentQueueTimeMillis() + "\n"
+            + "    \"suspendCurrentQueueTimeMillis\": " + consumer.getSuspendCurrentQueueTimeMillis() + ",\n"
+            + "    \"pullBatchSize\": " + consumer.getPullBatchSize() + ",\n"
+            + "    \"pullBatchSizeInBytes\": " + consumer.getPullBatchSizeInBytes() + "\n"
             + "  },\n"
             + "  \"orderlyContextDefaults\": {\n"
             + "    \"autoCommit\": " + defaultAutoCommit + ",\n"

@@ -23,6 +23,11 @@ fn public_orderly_settings_context_and_statuses_match_java_551_fixture() {
         config.consume_message_batch_max_size(),
         defaults["consumeMessageBatchMaxSize"]
     );
+    assert_eq!(config.pull_batch_size(), defaults["pullBatchSize"]);
+    assert_eq!(
+        config.pull_batch_size_in_bytes(),
+        defaults["pullBatchSizeInBytes"]
+    );
 
     config.set_max_reconsume_times(
         fixture["configuredPublicSettings"]["maxReconsumeTimes"]
@@ -34,7 +39,19 @@ fn public_orderly_settings_context_and_statuses_match_java_551_fixture() {
             .as_i64()
             .unwrap(),
     );
+    config.set_pull_batch_size(
+        fixture["configuredPublicSettings"]["pullBatchSize"]
+            .as_i64()
+            .unwrap() as i32,
+    );
+    config.set_pull_batch_size_in_bytes(
+        fixture["configuredPublicSettings"]["pullBatchSizeInBytes"]
+            .as_i64()
+            .unwrap() as i32,
+    );
     assert_eq!(config.max_reconsume_times(), 7);
+    assert_eq!(config.pull_batch_size(), 7);
+    assert_eq!(config.pull_batch_size_in_bytes(), 12_345);
 
     let queue_fixture = &fixture["orderlyContextDefaults"]["messageQueue"];
     let queue = MessageQueue::new(
