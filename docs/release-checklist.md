@@ -126,7 +126,9 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   declared public methods. Direct CheckForbidden/SendMessage presence and
   execution helpers now map to public Rust methods, with fixture-backed tests
   for hook ordering, rejection short-circuit, context mutation and panic
-  isolation. Producer service-state getters/setters now map to a nullable Rust
+  isolation. The latest fixture adds default-route ASYNC CheckForbidden
+  wrapping and explicit-queue ASYNC pass-through cases. Producer service-state
+  getters/setters now map to a nullable Rust
   enum with fixture-backed Java names/ordinals and lifecycle transitions;
   `isUnitMode` maps to the Producer config view. `getTopicPublishInfoTable`
   now returns a shared `TopicPublishInfoTable`; Java fixture/Rust tests cover
@@ -273,12 +275,43 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   smoke, release examples, offline benchmark compilation, and workspace
   metadata all pass. `fixtures/producer/core.json` SHA-256:
   `ec20ff084ee066fc71de15e9d744bc091aaced07d1038a8389f12a79d5985b08`.
+- [x] Re-run current-worktree server-free P18-V02 gates after default-route
+  ASYNC and explicit-queue ASYNC CheckForbidden parity (`39afef81`, based on
+  `051c01a3`, 2026-10-14). Default and all-features workspace tests, the
+  Producer suite (138 unit tests and 55 integration/doc targets), strict
+  all-target/all-feature workspace Clippy, fmt/diff, Maven verify (37
+  scenarios with fixture drift and cross-decodes), comparator self-test and
+  37-scenario manifest validation, deterministic race/leak smoke (16 cases ×
+  3), fuzz smoke (104 frame seeds, 10 message seeds, 1,824 mutations), release
+  examples, offline benchmark compilation, workspace metadata/license checks,
+  and seven package-content listings pass. `fixtures/producer/core.json`
+  SHA-256: `d4ef907983f88f7948c4b143fbcd061115cca4ebdc03c19e6acae52e0dc30408`.
+- [x] Re-run Producer-scoped checks after the final ASYNC fault-entry assertion
+  (`f314116a`, 2026-10-14): `cargo test -p rocketmq-classic-producer
+  --locked` passes (138 unit tests and 55 integration/doc targets), as do
+  strict all-target/all-feature Producer Clippy, formatting and diff checks.
+  The full workspace/all-feature, Maven, race/leak, fuzz and package gates above
+  were run on parent `39afef81`; this follow-up only changes a Producer test.
 - [ ] Obtain a current GitHub Ubuntu CI result for the Linux-specific Java
   address profile. A native Ubuntu ARM64 container passes the Core RPC
   integration suite; this does not replace the required GitHub Ubuntu result.
 - [ ] Complete Phase 19 Broker/Docker scenarios before final compatibility or
   release acceptance. The owner must provide any deployment-only credentials,
   topology, and maintenance inputs at that phase.
+
+## Phase 18 verification disposition
+
+- [ ] **P18-V01** — Broad Java/Rust source, overload input/error/flow, inherited
+  API, and reverse-export reconciliation remains open; this is local parity
+  work, not final manual validation.
+- [x] **P18-V02** — Current-worktree unit, differential, race/leak, fuzz,
+  shutdown, and fixture gates pass; see the run recorded above.
+- [x] **P18-V03** — Facade examples, package graph/content/provenance, license
+  files, compatibility baselines, and existing usage/behavior documentation
+  have been reviewed. No release or compatibility claim is made.
+- [ ] **P18-V04** — The 37-scenario handoff manifest validates and server-free
+  suites pass locally. A current GitHub Ubuntu result for the address profile
+  is still absent.
 
 ## Package graph and metadata
 
