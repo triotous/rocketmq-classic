@@ -27,3 +27,13 @@ No plan-file edit, Java oracle modification, push, publication, or tag was made.
 Commit status
 - `73700d56` — `fix(compat): keep handle identity helpers internal` contains the implementation, regression tests and Phase 6/7 matrix updates.
 - This append-only execution record is committed separately.
+
+Phase 7 Producer API reverse-scan follow-up — 2026-10-14 UTC
+
+- Removed the public Rust-only `TopicPublishInfo::set_message_queues` Vec adapter and redundant `select_one_message_queue_with_filter` closure-slice adapter. Producer tests now call the Java-mapped queue-list setter directly, and Phase 7's crosswalk no longer maps either extra method to an unrelated Java overload. Added compile-fail rustdoc examples to guard both external method boundaries. Also removed the stale `ProducerQueueIndex::ptr_eq` row from the public API matrix.
+- PASS: `cargo test -p rocketmq-classic-producer --locked` — 140 unit tests, all 64 integration tests, and the then-current 3 compile-fail doctests.
+- PASS: `cargo test -p rocketmq-classic-producer --doc --locked` after adding the two new boundary doctests — all 5 compile-fail doctests.
+- PASS: `cargo clippy -p rocketmq-classic-producer --all-targets --all-features --locked -- -D warnings`; `cargo fmt --all -- --check`; `git diff --check`.
+- PASS: all-workspace rustdoc JSON generation and Producer `TopicPublishInfo` public-surface inspection confirm both Rust-only convenience methods are absent while `set_message_queue_list` and nullable filter selection remain public. Existing workspace manifest and Consumer deprecation warnings remain.
+- P18-V01 remains open for broad Java source/API/overload/input/error/flow and Rust reverse-export/configuration reconciliation. P18-V04 still lacks current-revision Ubuntu CI evidence; no push or CI run was made.
+- Implementation commit: `59518089 fix(compat): remove extra publish info helpers`. This record update is committed separately.
