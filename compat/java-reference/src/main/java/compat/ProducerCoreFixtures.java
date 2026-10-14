@@ -46,6 +46,8 @@ import org.apache.rocketmq.common.message.MessageClientIDSetter;
 import org.apache.rocketmq.common.message.MessageConst;
 import org.apache.rocketmq.common.message.MessageType;
 import org.apache.rocketmq.common.topic.TopicValidator;
+import org.apache.rocketmq.remoting.RPCHook;
+import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.remoting.protocol.RequestCode;
 import org.apache.rocketmq.remoting.protocol.route.QueueData;
 import org.apache.rocketmq.remoting.protocol.route.TopicRouteData;
@@ -134,6 +136,7 @@ public final class ProducerCoreFixtures {
         result.put("provenance", provenance);
         result.put("producerImplementationApi", producerImplementationApi());
         result.put("producerFacadeApi", producerFacadeApi());
+        result.put("producerConstructorCases", producerConstructorCases());
         result.put("implementationHookExecution", implementationHookExecution());
         result.put("implementationStateAccessors", implementationStateAccessors());
         result.put("implementationPublishInfoTable", implementationPublishInfoTable());
@@ -368,6 +371,101 @@ public final class ProducerCoreFixtures {
         result.put("MQProducer", publicApiSurface(MQProducer.class));
         result.put("MQAdmin", publicApiSurface(MQAdmin.class));
         return result;
+    }
+
+    private static Map<String, Object> producerConstructorCases() {
+        RPCHook hook = new RPCHook() {
+            @Override
+            public void doBeforeRequest(String remoteAddr, RemotingCommand request) { }
+
+            @Override
+            public void doAfterResponse(String remoteAddr, RemotingCommand request,
+                RemotingCommand response) { }
+        };
+        List<String> topics = new ArrayList<>(List.of("constructor-topic-a", "constructor-topic-b"));
+        List<Map<String, Object>> cases = new ArrayList<>();
+        cases.add(producerConstructorCase("no-arg", new DefaultMQProducer(), null, null));
+        cases.add(producerConstructorCase("rpc-hook", new DefaultMQProducer(hook), hook, null));
+        cases.add(producerConstructorCase("group", new DefaultMQProducer("constructor-group"), null, null));
+        cases.add(producerConstructorCase("group-rpc-hook",
+            new DefaultMQProducer("constructor-group-hook", hook), hook, null));
+        cases.add(producerConstructorCase("group-rpc-hook-topics",
+            new DefaultMQProducer("constructor-group-topics", hook, topics), hook, topics));
+        cases.add(producerConstructorCase("group-trace",
+            new DefaultMQProducer("constructor-group-trace", true, "constructor-trace-topic"), null, null));
+        cases.add(producerConstructorCase("group-rpc-hook-trace",
+            new DefaultMQProducer("constructor-group-hook-trace", hook, true,
+                "constructor-hook-trace-topic"), hook, null));
+        cases.add(producerConstructorCase("group-rpc-hook-topics-trace",
+            new DefaultMQProducer("constructor-group-full", hook, topics, true,
+                "constructor-full-trace-topic"), hook, topics));
+        cases.add(producerConstructorCase("namespace-group",
+            new DefaultMQProducer("constructor-namespace", "constructor-legacy-group"), null, null));
+        cases.add(producerConstructorCase("namespace-group-rpc-hook",
+            new DefaultMQProducer("constructor-namespace-hook", "constructor-legacy-hook-group", hook),
+            hook, null));
+        cases.add(producerConstructorCase("namespace-group-rpc-hook-trace",
+            new DefaultMQProducer("constructor-namespace-trace", "constructor-legacy-trace-group", hook,
+                true, "constructor-legacy-trace-topic"), hook, null));
+        Map<String, Object> result = new TreeMap<>();
+        result.put("cases", cases);
+        result.put("count", cases.size());
+        List<Map<String, Object>> nullableCases = new ArrayList<>();
+        nullableCases.add(producerConstructorCase("null-producer-group",
+            new DefaultMQProducer((String) null), null, null));
+        nullableCases.add(producerConstructorCase("null-namespace",
+            new DefaultMQProducer((String) null, "constructor-null-namespace-group"), null, null));
+        nullableCases.add(producerConstructorCase("null-initial-topics",
+            new DefaultMQProducer("constructor-null-topics", hook, (List<String>) null), hook, null));
+        nullableCases.add(producerConstructorCase("null-trace-topic",
+            new DefaultMQProducer("constructor-null-trace-topic", hook, true, null), hook, null));
+        result.put("nullableCases", nullableCases);
+        result.put("nullableCaseCount", nullableCases.size());
+        return result;
+    }
+
+    private static Map<String, Object> producerConstructorCase(String name, DefaultMQProducer producer,
+        RPCHook suppliedHook, List<String> suppliedTopics) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("name", name);
+        result.put("producerGroupIsNull", producer.getProducerGroup() == null);
+        result.put("producerGroup", producer.getProducerGroup() == null ? "" : producer.getProducerGroup());
+        result.put("namespaceIsNull", producer.getNamespace() == null);
+        result.put("namespace", producer.getNamespace() == null ? "" : producer.getNamespace());
+        result.put("rpcHookSupplied", suppliedHook != null);
+        result.put("rpcHookRetainedByFacade", suppliedHook != null
+            && readProducerField(producer, "rpcHook") == suppliedHook);
+        result.put("rpcHookRetainedByImplementation",
+            suppliedHook != null && readImplementationField(producer, "rpcHook") == suppliedHook);
+        result.put("topicsIsNull", producer.getTopics() == null);
+        result.put("topics", producer.getTopics() == null ? List.of() : new ArrayList<>(producer.getTopics()));
+        result.put("topicsInputIdentityRetained", suppliedTopics != null
+            && suppliedTopics == producer.getTopics());
+        result.put("enableTrace", producer.isEnableTrace());
+        result.put("traceTopicIsNull", producer.getTraceTopic() == null);
+        result.put("traceTopic", producer.getTraceTopic() == null ? "" : producer.getTraceTopic());
+        return result;
+    }
+
+    private static Object readProducerField(DefaultMQProducer producer, String fieldName) {
+        try {
+            Field field = DefaultMQProducer.class.getDeclaredField(fieldName);
+            field.setAccessible(true);
+            return field.get(producer);
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalStateException("Could not inspect producer constructor field " + fieldName, error);
+        }
+    }
+
+    private static Object readImplementationField(DefaultMQProducer producer, String fieldName) {
+        try {
+            Object implementation = producer.getDefaultMQProducerImpl();
+            Field field = implementation.getClass().getDeclaredField(fieldName);
+            field.setAccessible(true);
+            return field.get(implementation);
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalStateException("Could not inspect producer implementation field " + fieldName, error);
+        }
     }
 
     private static Map<String, Object> implementationPublishInfoTable() {

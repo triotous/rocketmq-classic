@@ -41,3 +41,21 @@ Revision: `6c62ebf2` (`feat(producer): expose direct and forced accumulator send
 - PASS: `cargo fmt --all -- --check`.
 - PASS: `cargo test -p rocketmq-classic-producer --test producer pinned_java_default_producer_facade_and_inherited_interfaces_are_recorded --locked` (1 passed).
 - Signature presence and source-derived field disposition are recorded; value-by-value constructor differentials remain P18-V01 work. The release checklist and broader P18-V01 status remain open.
+
+## Producer constructor value differential — 2026-10-14T04:50:27Z
+
+- Re-read `DefaultMQProducer` and `ClientConfig` from pinned Java commit `efa1be59d6fc747ad220f036c86030f05f0419f9` with `git show`; the external checkout is currently at a different HEAD and contains an unrelated untracked file, which was left untouched.
+- Added `producerConstructorCases` to the invoked Java core fixture. It constructs all 11 overloads and records producer group, legacy namespace, trace values, initial topics and RPC-hook identity at both facade and implementation. Four nullable-input cases check null producer group, namespace, topic list and trace topic.
+- Added a Rust differential mapping for all 11 normal constructor cases plus nullable namespace/topic/trace fields. Java's retained mutable topic-list identity maps to Rust-owned vector values. Java can store a null producer group before start; Rust requires a `String`, so this invalid Java value is recorded as a type-level input restriction without claiming equivalent start behavior.
+- Added an owner-level Rust regression for retaining the supplied `RpcHook`.
+- PASS: `mvn -q -f compat/java-reference/pom.xml -Dproducer.core.fixture.verify=false verify` (37 scenarios and all fixture/cross-decode gates).
+- PASS: `cargo test -p rocketmq-classic-producer --locked` (121 unit tests and all producer integration/doc targets; this run preceded the additional nullable-case assertions).
+- PASS: `cargo test -p rocketmq-classic-producer --locked constructor` (Rust RPC-hook constructor tests and the final normal/nullable constructor differential).
+- PASS: `cargo fmt --all -- --check`; `git diff --check`.
+- The constructor field slice is now covered; Java-null group is an explicit Rust type-level restriction. Broad P18-V01 source/API/input/branch and reverse-export reconciliation remains open.
+- Fixture SHA-256 after regeneration: `7e66d2392de9e8028fd77d0ae0b9fb92e2d012856c80780425091efbbf270365`.
+- PASS: default `mvn -q -f compat/java-reference/pom.xml verify` with producer fixture drift checking enabled (37 scenarios).
+- PASS: strict `cargo clippy -p rocketmq-classic-producer --all-targets --all-features --locked -- -D warnings`. An initial run identified a test tuple type-complexity lint; naming the constructor-case type resolved it.
+- PASS after nullable-case assertions: `cargo test -p rocketmq-classic-producer --locked constructor` (3 matching tests across unit/integration targets).
+- PASS: final `cargo fmt --all -- --check`; `git diff --check`.
+- Correction: the constructor-filtered Cargo run matched 4 tests (2 unit, 1 Producer integration, 1 TransactionProducer integration).

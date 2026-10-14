@@ -1015,6 +1015,26 @@ impl ProducerRuntime for Producer {
 mod tests {
     use super::*;
 
+    struct ConstructorRpcHook;
+
+    impl RpcHook for ConstructorRpcHook {}
+
+    #[test]
+    fn rpc_hook_constructor_path_retains_the_supplied_owner() {
+        let config = ProducerConfig::new("producer-rpc-hook-constructor").unwrap();
+        let hook: Arc<dyn RpcHook> = Arc::new(ConstructorRpcHook);
+        let producer = Producer::with_runtime_manager_and_hook(
+            config,
+            ClientRuntimeManager::new(),
+            Some(hook.clone()),
+        );
+
+        assert!(Arc::ptr_eq(
+            producer.rpc_hook.as_ref().expect("RPC hook is retained"),
+            &hook
+        ));
+    }
+
     #[test]
     fn configured_publish_topics_are_namespace_wrapped_once() {
         let mut config = ProducerConfig::new("namespace-publish-topics").unwrap();

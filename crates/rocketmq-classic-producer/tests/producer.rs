@@ -10,15 +10,26 @@ use rocketmq_classic_common::{
 use rocketmq_classic_core::route::TopicRouteDataHandle;
 use rocketmq_classic_producer::{
     AsyncSenderExecutor, AsyncSenderTask, CheckForbiddenContext, CheckForbiddenHook,
-    CommunicationMode, Producer, ProducerConfig, ProducerError, ProducerPublishQueueList,
-    ProducerQueueIndex, ProducerServiceState, PublishInfoQueueFilter, SendMessageContext,
-    SendMessageHook, SendMessageType, TopicPublishInfo, TopicPublishInfoTableError,
+    CommunicationMode, DEFAULT_PRODUCER_GROUP, Producer, ProducerConfig, ProducerError,
+    ProducerPublishQueueList, ProducerQueueIndex, ProducerServiceState, PublishInfoQueueFilter,
+    SendMessageContext, SendMessageHook, SendMessageType, TopicPublishInfo,
+    TopicPublishInfoTableError,
     validation::{
         validate_group, validate_message, validate_send_topic, validate_system_topic,
         validate_topic,
     },
 };
 use rocketmq_classic_protocol::route::{QueueData, TopicRouteData};
+
+type ProducerConstructorCase<'a> = (
+    &'a str,
+    &'a str,
+    Option<&'a str>,
+    Option<Vec<&'a str>>,
+    bool,
+    Option<&'a str>,
+    bool,
+);
 
 #[test]
 fn java_default_settings_are_present() {
@@ -187,6 +198,260 @@ fn pinned_java_default_producer_facade_and_inherited_interfaces_are_recorded() {
             .unwrap()
             .is_empty()
     );
+}
+
+#[test]
+fn pinned_java_producer_constructor_values_map_to_rust_configuration() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let java_cases = fixture["producerConstructorCases"]["cases"]
+        .as_array()
+        .unwrap();
+    assert_eq!(
+        fixture["producerConstructorCases"]["count"].as_u64(),
+        Some(11)
+    );
+    assert_eq!(java_cases.len(), 11);
+
+    let cases: [ProducerConstructorCase<'_>; 11] = [
+        (
+            "no-arg",
+            DEFAULT_PRODUCER_GROUP,
+            None,
+            None,
+            false,
+            None,
+            false,
+        ),
+        (
+            "rpc-hook",
+            DEFAULT_PRODUCER_GROUP,
+            None,
+            None,
+            false,
+            None,
+            true,
+        ),
+        ("group", "constructor-group", None, None, false, None, false),
+        (
+            "group-rpc-hook",
+            "constructor-group-hook",
+            None,
+            None,
+            false,
+            None,
+            true,
+        ),
+        (
+            "group-rpc-hook-topics",
+            "constructor-group-topics",
+            None,
+            Some(vec!["constructor-topic-a", "constructor-topic-b"]),
+            false,
+            None,
+            true,
+        ),
+        (
+            "group-trace",
+            "constructor-group-trace",
+            None,
+            None,
+            true,
+            Some("constructor-trace-topic"),
+            false,
+        ),
+        (
+            "group-rpc-hook-trace",
+            "constructor-group-hook-trace",
+            None,
+            None,
+            true,
+            Some("constructor-hook-trace-topic"),
+            true,
+        ),
+        (
+            "group-rpc-hook-topics-trace",
+            "constructor-group-full",
+            None,
+            Some(vec!["constructor-topic-a", "constructor-topic-b"]),
+            true,
+            Some("constructor-full-trace-topic"),
+            true,
+        ),
+        (
+            "namespace-group",
+            "constructor-legacy-group",
+            Some("constructor-namespace"),
+            None,
+            false,
+            None,
+            false,
+        ),
+        (
+            "namespace-group-rpc-hook",
+            "constructor-legacy-hook-group",
+            Some("constructor-namespace-hook"),
+            None,
+            false,
+            None,
+            true,
+        ),
+        (
+            "namespace-group-rpc-hook-trace",
+            "constructor-legacy-trace-group",
+            Some("constructor-namespace-trace"),
+            None,
+            true,
+            Some("constructor-legacy-trace-topic"),
+            true,
+        ),
+    ];
+
+    for ((name, group, namespace, topics, trace_enabled, trace_topic, rpc_hook_supplied), java) in
+        cases.into_iter().zip(java_cases)
+    {
+        assert_eq!(java["name"].as_str(), Some(name));
+        assert_eq!(java["producerGroupIsNull"].as_bool(), Some(false));
+        assert_eq!(java["producerGroup"].as_str(), Some(group));
+        assert_eq!(java["namespaceIsNull"].as_bool(), Some(namespace.is_none()));
+        assert_eq!(
+            java["namespace"].as_str(),
+            Some(namespace.unwrap_or_default())
+        );
+        assert_eq!(java["rpcHookSupplied"].as_bool(), Some(rpc_hook_supplied));
+        assert_eq!(
+            java["rpcHookRetainedByFacade"].as_bool(),
+            Some(rpc_hook_supplied)
+        );
+        assert_eq!(
+            java["rpcHookRetainedByImplementation"].as_bool(),
+            Some(rpc_hook_supplied)
+        );
+        assert_eq!(java["topicsIsNull"].as_bool(), Some(topics.is_none()));
+        assert_eq!(
+            java["topicsInputIdentityRetained"].as_bool(),
+            Some(topics.is_some())
+        );
+        assert_eq!(java["enableTrace"].as_bool(), Some(trace_enabled));
+        assert_eq!(
+            java["traceTopicIsNull"].as_bool(),
+            Some(trace_topic.is_none())
+        );
+        assert_eq!(
+            java["traceTopic"].as_str(),
+            Some(trace_topic.unwrap_or_default())
+        );
+
+        let mut config = ProducerConfig::new(group).unwrap();
+        config
+            .client_config_mut()
+            .set_namespace(namespace.map(str::to_owned));
+        config.set_topics(
+            topics
+                .clone()
+                .map(|topics| topics.into_iter().map(str::to_owned).collect()),
+        );
+        config.client_config_mut().set_enable_trace(trace_enabled);
+        config
+            .client_config_mut()
+            .set_trace_topic(trace_topic.map(str::to_owned));
+
+        assert_eq!(config.producer_group(), group);
+        assert_eq!(config.client_config().namespace.as_deref(), namespace);
+        assert_eq!(
+            config
+                .topics()
+                .map(|topics| topics.iter().map(String::as_str).collect::<Vec<_>>()),
+            topics
+        );
+        assert_eq!(config.client_config().enable_trace(), trace_enabled);
+        assert_eq!(config.client_config().trace_topic(), trace_topic);
+    }
+
+    let nullable_cases = fixture["producerConstructorCases"]["nullableCases"]
+        .as_array()
+        .unwrap();
+    assert_eq!(
+        fixture["producerConstructorCases"]["nullableCaseCount"].as_u64(),
+        Some(4)
+    );
+    assert_eq!(nullable_cases.len(), 4);
+    let null_group = &nullable_cases[0];
+    assert_eq!(null_group["name"].as_str(), Some("null-producer-group"));
+    assert_eq!(null_group["producerGroupIsNull"].as_bool(), Some(true));
+    assert_eq!(null_group["namespaceIsNull"].as_bool(), Some(true));
+    assert_eq!(null_group["topicsIsNull"].as_bool(), Some(true));
+    assert_eq!(null_group["enableTrace"].as_bool(), Some(false));
+    assert_eq!(null_group["traceTopicIsNull"].as_bool(), Some(true));
+
+    let nullable_rust_cases = [
+        (
+            "null-namespace",
+            "constructor-null-namespace-group",
+            None,
+            None,
+            false,
+            None,
+            false,
+        ),
+        (
+            "null-initial-topics",
+            "constructor-null-topics",
+            None,
+            None,
+            false,
+            None,
+            true,
+        ),
+        (
+            "null-trace-topic",
+            "constructor-null-trace-topic",
+            None,
+            None,
+            true,
+            None,
+            true,
+        ),
+    ];
+    for ((name, group, namespace, topics, trace_enabled, trace_topic, rpc_hook_supplied), java) in
+        nullable_rust_cases.into_iter().zip(&nullable_cases[1..])
+    {
+        assert_eq!(java["name"].as_str(), Some(name));
+        assert_eq!(java["producerGroupIsNull"].as_bool(), Some(false));
+        assert_eq!(java["producerGroup"].as_str(), Some(group));
+        assert_eq!(java["namespaceIsNull"].as_bool(), Some(namespace.is_none()));
+        assert_eq!(java["rpcHookSupplied"].as_bool(), Some(rpc_hook_supplied));
+        assert_eq!(
+            java["rpcHookRetainedByFacade"].as_bool(),
+            Some(rpc_hook_supplied)
+        );
+        assert_eq!(
+            java["rpcHookRetainedByImplementation"].as_bool(),
+            Some(rpc_hook_supplied)
+        );
+        assert_eq!(java["topicsIsNull"].as_bool(), Some(topics.is_none()));
+        assert_eq!(java["enableTrace"].as_bool(), Some(trace_enabled));
+        assert_eq!(
+            java["traceTopicIsNull"].as_bool(),
+            Some(trace_topic.is_none())
+        );
+
+        let mut config = ProducerConfig::new(group).unwrap();
+        config
+            .client_config_mut()
+            .set_namespace(namespace.map(str::to_owned));
+        config.set_topics(
+            topics.map(|topics: Vec<&str>| topics.into_iter().map(str::to_owned).collect()),
+        );
+        config.client_config_mut().set_enable_trace(trace_enabled);
+        config
+            .client_config_mut()
+            .set_trace_topic(trace_topic.map(str::to_owned));
+        assert_eq!(config.client_config().namespace.as_deref(), namespace);
+        assert_eq!(config.topics(), None);
+        assert_eq!(config.client_config().enable_trace(), trace_enabled);
+        assert_eq!(config.client_config().trace_topic(), trace_topic);
+    }
 }
 
 #[test]

@@ -73,6 +73,20 @@ belong to P18-V01.
 
 The 11 facade constructor signatures are pinned individually by
 `pinned_java_default_producer_facade_and_inherited_interfaces_are_recorded`.
+`producerConstructorCases` invokes all 11 constructors and records group,
+namespace, RPC-hook retention by both facade and implementation, initial topic
+values, and trace settings. The Rust differential
+`pinned_java_producer_constructor_values_map_to_rust_configuration` compares
+those values with `ProducerConfig`/`ClientConfig`; an owner-level regression
+also proves the supplied Rust RPC hook is retained. Invoked nullable cases
+cover null namespace, null topic list and enabled tracing with a null trace
+topic. Java retains its caller-owned topic `List`; Rust takes ownership of its
+`Vec<String>`, so identity is replaced by value equivalence. Java also permits
+a null producer group at construction, while Rust's required `String` group
+type has no null representation; the Java observation is recorded as a
+type-level input restriction, and no Rust start behavior is claimed for that
+invalid input.
+
 Their parameter-to-owner mapping is:
 
 | Java `DefaultMQProducer` constructor | Java field effect | Rust construction mapping |
@@ -85,10 +99,9 @@ Their parameter-to-owner mapping is:
 | Deprecated `(String namespace, String producerGroup, RPCHook, boolean enableMsgTrace, String customizedTraceTopic)` | Set namespace, group, hook and trace settings | Set `ClientConfig` namespace/trace settings and Producer group; pass hook to `Producer::new_with_rpc_hook` |
 
 Rust represents these Java overloads as configuration plus owner construction,
-not matching constructor overloads. The table records source-derived field
-disposition; current fixture assertions pin the Java signatures, while
-constructor-by-constructor value and branch differentials remain part of the
-broader P18-V01 audit.
+not matching constructor overloads. The table and fixture cover the constructor
+field effects and listed null branches; untested malformed inputs and the
+broader overload/source branch audit remain P18-V01 work.
 
 | Java 5.5.1 source surface | Rust mapping | Evidence / scope |
 | --- | --- | --- |

@@ -122,8 +122,12 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   accumulator paths, with scripted coverage for both choices under opposite
   `autoBatch` settings. All 11 constructor signatures are individually pinned,
   and their group, RPC-hook, topic, namespace and trace-field mappings are now
-  recorded in the Phase 7 matrix; value-by-value constructor differentials are
-  still part of P18-V01. This closes those bounded Producer API slices only.
+  invoked against Java and differentially checked against Rust configuration,
+  including nullable namespace/topic/trace values. Java's retained topic-list
+  identity maps to Rust-owned values; Java's nullable producer group has no
+  representation in Rust's required `String` API and is recorded as a
+  type-level input restriction. This closes the valid constructor field-mapping
+  slice only; malformed-input and broad P18-V01 reconciliation remain open.
   Per-overload input/branch mappings, Java reverse-export, inherited/trait API,
   and broad source/input reconciliation remain local P18-V01 work.
 - [x] Map runtime Producer fault-strategy settings: live latency-fault and
