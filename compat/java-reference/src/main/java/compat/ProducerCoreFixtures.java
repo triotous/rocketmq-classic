@@ -371,11 +371,23 @@ public final class ProducerCoreFixtures {
             sendOutcome = error.getClass().getSimpleName();
         }
         String uniqueId = message.getProperty("UNIQ_KEY");
+
+        Message directMessage = new Message("orders", new byte[] {1, 2, 3});
+        String directSendOutcome = "returned";
+        try {
+            producer.sendDirect(directMessage, null, null);
+        } catch (Throwable error) {
+            directSendOutcome = error.getClass().getSimpleName();
+        }
+        String directUniqueId = directMessage.getProperty("UNIQ_KEY");
+
         Map<String, Object> result = new TreeMap<>();
         result.put("uniqueIdPresent", uniqueId != null);
         result.put("uniqueIdLength", uniqueId == null ? 0 : uniqueId.length());
         result.put("topic", message.getTopic());
         result.put("sendOutcome", sendOutcome);
+        result.put("directUniqueIdPresent", directUniqueId != null);
+        result.put("directSendOutcome", directSendOutcome);
         return result;
     }
 

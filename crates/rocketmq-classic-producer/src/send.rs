@@ -4452,6 +4452,16 @@ mod tests {
                 .contains_key(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX),
             "Java direct send fails service-state validation before assigning UNIQ_KEY"
         );
+        assert_eq!(
+            expected["directUniqueIdPresent"].as_bool(),
+            Some(false),
+            "{expected}"
+        );
+        assert_eq!(
+            expected["directSendOutcome"].as_str(),
+            Some("MQClientException"),
+            "{expected}"
+        );
     }
 
     #[test]
