@@ -261,3 +261,41 @@ check does not change P7-V02–V04's Phase 19 live Broker status.
 The dedicated offline Java producer fixture generator and its drift verification
 pass. `mvn -f compat/java-reference/pom.xml verify` also passed, including the
 runtime-config loopback fixture and Java decoding of Rust-generated fixtures.
+
+## P18-V01 producer facade reverse-scan follow-up
+
+The pinned `ProducerCoreFixtures.producerFacadeApi()` reflection inventory
+records `DefaultMQProducer` (107 declared / 183 callable methods), `MQProducer`
+(34 declared / 42 callable methods), and `MQAdmin` (8 methods). The Rust test
+`pinned_java_default_producer_facade_and_inherited_interfaces_are_recorded`
+pins those counts and representative inherited signatures. Re-export-aware
+Rustdoc scanning found no unmatched inherent Producer method names. The exact
+Java-token scan produced the following naming candidates; each was checked
+against its owner API and the evidence rows above. These are JavaBean/fluent
+names whose Rust equivalents use property-oriented accessors, units, futures,
+or ownership guards:
+
+| Java 5.5.1 names | Rust owner mapping | Evidence |
+| --- | --- | --- |
+| `getBackPressureForAsyncSendNum/Size`, `setBackPressureForAsyncSendSize`, `setBackPressureForAsyncSendNum/SizeInsideAdjust`, `acquireBackPressureForAsyncSendNum/SizeLock`, `releaseBackPressureForAsyncSendNum/SizeLock` | `Producer::{backpressure_async_send_num,backpressure_async_send_size,set_backpressure_async_send_num,set_backpressure_async_send_size,set_backpressure_for_async_send_num_inside_adjust,set_backpressure_for_async_send_size_inside_adjust,acquire_backpressure_for_async_send_num_lock,acquire_backpressure_for_async_send_size_lock}`; dropping `BackpressureReadGuard` releases the corresponding Java read lock | `runtimeSettings`; `producer_runtime_backpressure_settings_update_live_limits_and_mode`; `runtime_resize_preserves_in_flight_count_like_the_java_fixture`; `runtime_resize_waits_for_a_public_read_lock_guard` |
+| `batchMaxDelayMs`, `getBatchMaxDelayMs`, `getBatchMaxBytes`, `getTotalBatchMaxBytes`, `totalBatchMaxBytes` | `Producer::{batch_max_delay_millis,set_batch_max_delay_millis,batch_max_bytes,set_batch_max_bytes,total_batch_max_bytes,set_total_batch_max_bytes}`; the Java getter/setter naming mismatch for the aggregate hold cap is documented above | `runtimeAccumulatorSettings`; `producer_runtime_accumulator_settings_match_java_fixture`; `lowering_runtime_batch_byte_limit_flushes_pending_batch`; `runtime_batch_delay_reschedules_and_aggregate_limit_gates_next_enqueue` |
+| `getCompressType`, `setCompressType`, `getCompressor`, `getCompressLevel`, `getCompressMsgBodyOverHowmuch` | `Producer::{compressor,set_compress_type,compress_level,set_compress_level,compress_threshold,set_compress_threshold}` and `ProducerCompressor::compression_type`; `ProducerConfig` supplies construction-time getters | `compressorSettings`; `runtimeCompressionSettings`; `producer_compressor_snapshot_and_operations_match_java_fixture`; `runtime_compression_settings_match_java_and_config_clones_are_snapshots` |
+| `getCreateTopicKey`, `getDefaultTopicQueueNums`, `getMaxMessageSize`, `getRetryTimesWhenSendFailed/AsyncFailed`, `getSendMsgTimeout`, `getSendMsgMaxTimeoutPerRequest`, `isRetryAnotherBrokerWhenNotStoreOK`, `setRetryAnotherBrokerWhenNotStoreOK`, `isSendMessageWithVIPChannel`, `setSendMsgTimeout` | Matching `Producer` live getters/setters and `ProducerConfig` construction-time accessors; time values are explicitly named in milliseconds | `runtimeSettings`; `runtime_default_topic_settings_reach_later_send_headers`; `runtime_send_timeout_applies_to_later_default_send`; `mode_specific_attempts_match_java_retry_budgets`; `runtime_non_ok_store_retry_switches_brokers_on_later_sends`; `runtime_message_size_limit_applies_to_later_validation`; `vip_channel_setter_after_start_only_changes_getter_not_runtime_config` |
+| `getLatencyMax`, `setLatencyMax`, `getNotAvailableDuration`, `setNotAvailableDuration`, `isSendLatencyFaultEnable`, `setSendLatencyFaultEnable` | `Producer::{latency_max_millis,not_available_duration_millis,send_latency_fault_enable,set_latency_max_millis,set_not_available_duration_millis,set_send_latency_fault_enable}`; nullable mutable arrays use `ProducerLongArray` | `runtimeFaultStrategy` and `runtimeFaultStrategyNullArrays`; `runtime_fault_strategy_settings_match_java_and_change_later_selection`; `runtime_fault_strategy_null_and_mismatched_arrays_match_java` |
+| `getTopics`, `setTopics`, `getTraceDispatcher` | `Producer::{topics,set_topics,trace_dispatcher}`; topic updates after start affect the facade getter while runtime route registration retains its startup snapshot | `runtimeSettings`; `topic_setter_after_start_changes_getter_but_not_runtime_topics`; `enabled_trace_starts_and_stops_its_owned_dispatcher` |
+| `isEnableBackpressureForAsyncMode`, `setEnableBackpressureForAsyncMode` | `Producer::{enable_backpressure_for_async_mode,set_enable_backpressure_for_async_mode}` | `runtimeSettings`; `producer_runtime_backpressure_settings_update_live_limits_and_mode` |
+
+The send/request overload groups are mapped separately above: the six Java
+request overload signatures are pinned, and Rust scripted tests cover all six
+paths and compare their metadata with the Java oracle. Send, explicit queue,
+selector, oneway, collection/batch, and direct/accumulator paths have scripted
+transport or unit coverage. Java callback overloads map to Rust future methods,
+with executor submission, cancellation, rejection, and deadline behavior
+covered by the named executor and send tests. The inherited `MQAdmin` methods
+map to all three client facades in the Phase 17 matrix; transaction and
+namespace/security/trace owners are mapped in Phases 14 and 16.
+
+This closes the reviewed Producer facade token-scan candidates and the bounded
+name reverse scan only. It does not close per-overload input/error/control-flow
+crosswalks or the Java reverse-export, inherited/trait, and whole-client
+source/input reconciliation required by P18-V01.
