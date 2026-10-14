@@ -1626,6 +1626,10 @@ impl PullConsumer {
                 None
             };
             let helper = self.retry_helper()?;
+            let effective_consumer_group = self.effective_consumer_group()?;
+            let broker_consumer_group = consumer_group_override
+                .filter(|group| !group.trim().is_empty())
+                .unwrap_or(&effective_consumer_group);
             if helper
                 .send_message_back_for_consume(
                     &runtime,
@@ -1637,7 +1641,7 @@ impl PullConsumer {
                         address_broker_name_override: address_broker_name_override
                             .as_ref()
                             .map(|broker| broker.as_deref()),
-                        consumer_group_override,
+                        consumer_group_override: Some(broker_consumer_group),
                         max_reconsume_times_override: Some(self.config.max_reconsume_times()),
                         timeout_millis: PULL_SEND_BACK_TIMEOUT_MILLIS,
                         orderly: false,
@@ -2981,6 +2985,10 @@ mod tests {
 
     #[tokio::test]
     async fn pull_sendback_matches_java_retry_fallback_and_restores_message_topic() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/pull-implementation-accessor.json"
+        ))
+        .unwrap();
         let mut config = PullConsumerConfig::new("pull-sendback").unwrap();
         config
             .client_config_mut()
@@ -3027,7 +3035,10 @@ mod tests {
             let scripted = helper.scripted_retry_transport.lock().unwrap();
             assert_eq!(scripted.broker_headers.len(), 2);
             assert_eq!(scripted.broker_timeouts_millis, vec![3_000, 3_000]);
-            assert_eq!(scripted.broker_headers[0].group, "tenant%pull-sendback");
+            assert_eq!(
+                fixture["pullSendBackBrokerGroups"][0].as_str(),
+                Some(scripted.broker_headers[0].group.as_str())
+            );
             assert_eq!(scripted.broker_headers[0].origin_topic, "tenant%orders");
             assert_eq!(
                 scripted.broker_headers[0].broker_name.as_deref(),
@@ -3035,14 +3046,22 @@ mod tests {
             );
             assert_eq!(scripted.broker_headers[0].offset, 71);
             assert_eq!(scripted.broker_headers[0].max_reconsume_times, Some(-3));
-            assert_eq!(scripted.broker_headers[1].group, "override-group");
+            assert_eq!(
+                fixture["pullSendBackBrokerGroups"][1].as_str(),
+                Some(scripted.broker_headers[1].group.as_str())
+            );
             assert_eq!(
                 scripted.broker_headers[1].broker_name.as_deref(),
                 Some("broker-override")
             );
             assert_eq!(scripted.broker_headers[1].delay_level, 5);
             let retry = &scripted.retry_messages[0];
-            assert_eq!(retry.topic(), "%RETRY%override-group");
+            assert_eq!(
+                retry.topic(),
+                fixture["pullSendBackFallbackRetryTopics"][0]
+                    .as_str()
+                    .unwrap()
+            );
             assert_eq!(
                 retry
                     .properties()

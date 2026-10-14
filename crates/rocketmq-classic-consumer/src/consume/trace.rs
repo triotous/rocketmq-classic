@@ -11,19 +11,13 @@ use super::{ConsumeMessageContext, ConsumeMessageHook};
 
 pub(crate) struct ConsumeTraceHook {
     dispatcher: Arc<TraceDispatcher>,
-    consumer_group: String,
     client_config: ClientConfig,
 }
 
 impl ConsumeTraceHook {
-    pub(crate) fn new(
-        dispatcher: Arc<TraceDispatcher>,
-        consumer_group: impl Into<String>,
-        client_config: ClientConfig,
-    ) -> Self {
+    pub(crate) fn new(dispatcher: Arc<TraceDispatcher>, client_config: ClientConfig) -> Self {
         Self {
             dispatcher,
-            consumer_group: consumer_group.into(),
             client_config,
         }
     }
@@ -42,7 +36,10 @@ impl ConsumeMessageHook for ConsumeTraceHook {
             return;
         }
         let mut before = TraceContext::new(TraceType::SubBefore);
-        before.group_name = Some(without_namespace(&self.client_config, &self.consumer_group));
+        before.group_name = context
+            .consumer_group
+            .as_deref()
+            .map(|group| without_namespace(&self.client_config, group));
         let mut region_id = None;
         let mut trace_beans = Vec::with_capacity(messages.len());
         for message in messages {
@@ -188,7 +185,7 @@ mod tests {
             )
             .unwrap(),
         );
-        let hook = ConsumeTraceHook::new(dispatcher, "tenant%workers", client_config);
+        let hook = ConsumeTraceHook::new(dispatcher, client_config);
         let mut message = MessageExt::new(Message::new("tenant%orders", b"body".to_vec()));
         message.set_message_id(Some("message-1".into()));
         message.set_store_size(4);
@@ -264,5 +261,22 @@ mod tests {
         assert_eq!(trace_off_context.trace_type, Some(TraceType::SubBefore));
         assert_eq!(trace_off_context.region_id.as_deref(), Some(""));
         assert!(trace_off_context.trace_beans.is_none());
+
+        let live_group_fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/push-implementation-accessor.json"
+        ))
+        .unwrap();
+        context.consumer_group = Some("phase18-consume-retry-live".to_owned());
+        context.trace_context = None;
+        hook.consume_message_before(&mut context);
+        let live_group_context = context
+            .trace_context
+            .as_ref()
+            .and_then(|value| value.downcast_ref::<TraceContext>())
+            .expect("trace hook creates a before context for live group");
+        assert_eq!(
+            live_group_fixture["consumeTraceHookGroup"].as_str(),
+            live_group_context.group_name.as_deref()
+        );
     }
 }
