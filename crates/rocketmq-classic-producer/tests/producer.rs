@@ -101,7 +101,28 @@ fn pinned_java_default_producer_facade_and_inherited_interfaces_are_recorded() {
         producer["declaredPublicMethods"].as_array().unwrap().len(),
         107
     );
-    assert_eq!(producer["publicConstructors"].as_array().unwrap().len(), 11);
+    let constructors = producer["publicConstructors"].as_array().unwrap();
+    assert_eq!(constructors.len(), 11);
+    for constructor in [
+        "org.apache.rocketmq.client.producer.DefaultMQProducer()",
+        "org.apache.rocketmq.client.producer.DefaultMQProducer(java.lang.String)",
+        "org.apache.rocketmq.client.producer.DefaultMQProducer(java.lang.String,boolean,java.lang.String)",
+        "org.apache.rocketmq.client.producer.DefaultMQProducer(java.lang.String,java.lang.String)",
+        "org.apache.rocketmq.client.producer.DefaultMQProducer(java.lang.String,java.lang.String,org.apache.rocketmq.remoting.RPCHook)",
+        "org.apache.rocketmq.client.producer.DefaultMQProducer(java.lang.String,java.lang.String,org.apache.rocketmq.remoting.RPCHook,boolean,java.lang.String)",
+        "org.apache.rocketmq.client.producer.DefaultMQProducer(java.lang.String,org.apache.rocketmq.remoting.RPCHook)",
+        "org.apache.rocketmq.client.producer.DefaultMQProducer(java.lang.String,org.apache.rocketmq.remoting.RPCHook,boolean,java.lang.String)",
+        "org.apache.rocketmq.client.producer.DefaultMQProducer(java.lang.String,org.apache.rocketmq.remoting.RPCHook,java.util.List)",
+        "org.apache.rocketmq.client.producer.DefaultMQProducer(java.lang.String,org.apache.rocketmq.remoting.RPCHook,java.util.List,boolean,java.lang.String)",
+        "org.apache.rocketmq.client.producer.DefaultMQProducer(org.apache.rocketmq.remoting.RPCHook)",
+    ] {
+        assert!(
+            constructors
+                .iter()
+                .any(|candidate| candidate.as_str() == Some(constructor)),
+            "missing constructor {constructor}"
+        );
+    }
     for method in [
         "void org.apache.rocketmq.client.ClientConfig.setNamesrvAddr(java.lang.String)",
         "org.apache.rocketmq.client.producer.SendResult org.apache.rocketmq.client.producer.DefaultMQProducer.send(org.apache.rocketmq.common.message.Message,org.apache.rocketmq.client.producer.MessageQueueSelector,java.lang.Object)",

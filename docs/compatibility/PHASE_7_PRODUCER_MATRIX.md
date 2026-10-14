@@ -71,6 +71,25 @@ methods; the scripted regression below checks their sync/future, default/queue,
 and live-setting behavior. Remaining overload/input/branch crosswalks still
 belong to P18-V01.
 
+The 11 facade constructor signatures are pinned individually by
+`pinned_java_default_producer_facade_and_inherited_interfaces_are_recorded`.
+Their parameter-to-owner mapping is:
+
+| Java `DefaultMQProducer` constructor | Java field effect | Rust construction mapping |
+| --- | --- | --- |
+| `()`; `(RPCHook)`; `(String producerGroup)`; `(String producerGroup, RPCHook)` | Default group is `DEFAULT_PRODUCER` when omitted; otherwise set the group; hook is null unless supplied | `ProducerConfig::new(DEFAULT_PRODUCER_GROUP)` or `ProducerConfig::new(group)`, then `Producer::new` or `Producer::new_with_rpc_hook` |
+| `(String producerGroup, RPCHook, List<String> topics)` | Set group, hook and initial topic list; trace remains disabled | Set `ProducerConfig::producer_group` and `topics`; pass hook to `Producer::new_with_rpc_hook` |
+| `(String producerGroup, boolean enableMsgTrace, String customizedTraceTopic)`; `(String producerGroup, RPCHook, boolean enableMsgTrace, String customizedTraceTopic)` | Set group, trace flag and optional trace topic; the second form also sets the hook | Set group, `ClientConfig::set_enable_trace` and `set_trace_topic`; pass the optional hook to `Producer::new_with_rpc_hook` |
+| `(String producerGroup, RPCHook, List<String> topics, boolean enableMsgTrace, String customizedTraceTopic)` | Set group, hook, initial topic list and trace settings | Set `ProducerConfig` group/topics and `ClientConfig` trace settings; pass hook to `Producer::new_with_rpc_hook` |
+| Deprecated `(String namespace, String producerGroup)`; `(String namespace, String producerGroup, RPCHook)` | Set legacy namespace and group; optional hook is retained | Set `ClientConfig::set_namespace` and Producer group; optional hook goes to `Producer::new_with_rpc_hook` |
+| Deprecated `(String namespace, String producerGroup, RPCHook, boolean enableMsgTrace, String customizedTraceTopic)` | Set namespace, group, hook and trace settings | Set `ClientConfig` namespace/trace settings and Producer group; pass hook to `Producer::new_with_rpc_hook` |
+
+Rust represents these Java overloads as configuration plus owner construction,
+not matching constructor overloads. The table records source-derived field
+disposition; current fixture assertions pin the Java signatures, while
+constructor-by-constructor value and branch differentials remain part of the
+broader P18-V01 audit.
+
 | Java 5.5.1 source surface | Rust mapping | Evidence / scope |
 | --- | --- | --- |
 | `DefaultMQProducer` constructors, `start`, `shutdown`, `fetchPublishMessageQueues` | `ProducerConfig::new`, `Producer::{start,shutdown,fetch_publish_message_queues}` | `invalid_group_fails_before_creating_or_registering_runtime`, `invalid_accumulator_settings_fail_before_runtime_creation`, `repeated_start_is_rejected_and_shutdown_is_idempotent`, `shutdown_before_start_keeps_producer_startable`; scripted route cases below. `ProducerConfig` carries constructor settings; start validates and registers. |

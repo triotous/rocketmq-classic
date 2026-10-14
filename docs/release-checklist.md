@@ -120,7 +120,10 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   107 declared/183 callable methods, 34 declared/42 callable `MQProducer`
   methods, and 8 `MQAdmin` methods. Rust also exposes direct-send and forced
   accumulator paths, with scripted coverage for both choices under opposite
-  `autoBatch` settings. This closes those bounded Producer API slices only.
+  `autoBatch` settings. All 11 constructor signatures are individually pinned,
+  and their group, RPC-hook, topic, namespace and trace-field mappings are now
+  recorded in the Phase 7 matrix; value-by-value constructor differentials are
+  still part of P18-V01. This closes those bounded Producer API slices only.
   Per-overload input/branch mappings, Java reverse-export, inherited/trait API,
   and broad source/input reconciliation remain local P18-V01 work.
 - [x] Map runtime Producer fault-strategy settings: live latency-fault and

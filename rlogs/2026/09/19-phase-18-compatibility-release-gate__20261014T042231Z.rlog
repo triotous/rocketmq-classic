@@ -33,3 +33,11 @@ Revision: `6c62ebf2` (`feat(producer): expose direct and forced accumulator send
 - PASS: `cargo run -p rocketmq-classic-remoting --example fuzz_smoke --locked` (1,824 bounded mutations).
 - PASS: release facade examples; offline benchmark compilation; workspace metadata/package-license/dependency-direction check; seven package contents via `cargo package --workspace --list --locked --allow-dirty`.
 - P18-V02 and P18-V03 server-free evidence is current at this revision. P18-V01 remains PARTIAL for broad source/API/setting/overload/input/branch and reverse-export reconciliation. P18-V04 still lacks current GitHub Ubuntu CI evidence. Phase 19 local Docker/Broker integration is not yet provisioned or run; registry version/dependency resolution remains unconfirmed.
+
+## Producer constructor inventory follow-up — 2026-10-14T04:39:13Z
+
+- The Rust fixture regression now checks all 11 pinned `DefaultMQProducer` constructor signatures individually.
+- The Phase 7 matrix maps constructor arguments to `ProducerConfig`, `ClientConfig` namespace/trace fields, the optional RPC hook, and the initial topic list. It explicitly records that Rust composes config and owner construction instead of mirroring Java overloads.
+- PASS: `cargo fmt --all -- --check`.
+- PASS: `cargo test -p rocketmq-classic-producer --test producer pinned_java_default_producer_facade_and_inherited_interfaces_are_recorded --locked` (1 passed).
+- Signature presence and source-derived field disposition are recorded; value-by-value constructor differentials remain P18-V01 work. The release checklist and broader P18-V01 status remain open.
