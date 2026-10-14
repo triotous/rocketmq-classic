@@ -875,7 +875,7 @@ impl Producer {
             let latency = started.elapsed();
             match result {
                 Ok(Some(send_result)) => {
-                    self.update_fault(&broker, latency, false, true);
+                    self.update_fault(&broker, latency, false, true)?;
                     if mode == SendMode::Sync
                         && send_result.status != SendStatus::SendOk
                         && self.config.retry_another_broker_when_not_store_ok()
@@ -887,7 +887,7 @@ impl Producer {
                     return Ok(Some(send_result));
                 }
                 Ok(None) => {
-                    self.update_fault(&broker, latency, false, true);
+                    self.update_fault(&broker, latency, false, true)?;
                     return Ok(None);
                 }
                 Err(error) => {
@@ -903,7 +903,7 @@ impl Producer {
                         }
                         _ => (false, true, false),
                     };
-                    self.update_fault(&broker, latency, isolation, reachable);
+                    self.update_fault(&broker, latency, isolation, reachable)?;
                     if retry {
                         last_error = Some(error);
                         continue;
@@ -1152,12 +1152,12 @@ impl Producer {
                             break;
                         }
                     };
-                    self.update_fault(&current_broker, latency, false, true);
+                    self.update_fault(&current_broker, latency, false, true)?;
                     outcome = Ok(Some(send_result));
                     break;
                 }
                 Ok(None) => {
-                    self.update_fault(&current_broker, latency, false, true);
+                    self.update_fault(&current_broker, latency, false, true)?;
                     outcome = Ok(None);
                     break;
                 }
@@ -1165,7 +1165,7 @@ impl Producer {
                     if let ProducerError::Rpc(rpc) = &error {
                         let (isolation, reachable) =
                             classify_fault(rpc, SendMode::Future, self.start_detector_enable());
-                        self.update_fault(&current_broker, latency, isolation, reachable);
+                        self.update_fault(&current_broker, latency, isolation, reachable)?;
                     }
                     outcome = Err(error);
                     if attempt + 1 >= attempts
@@ -1584,11 +1584,21 @@ impl Producer {
         })
     }
 
-    fn update_fault(&self, broker: &str, latency: Duration, isolation: bool, reachable: bool) {
+    fn update_fault(
+        &self,
+        broker: &str,
+        latency: Duration,
+        isolation: bool,
+        reachable: bool,
+    ) -> Result<(), ProducerError> {
         if self.send_latency_fault_enable() {
             self.fault
-                .update(broker, latency, isolation, reachable, StdInstant::now());
+                .update(broker, latency, isolation, reachable, StdInstant::now())
+                .map_err(|error| {
+                    ProducerError::FaultStrategy(error.java_exception_name().to_owned())
+                })?;
         }
+        Ok(())
     }
 }
 
@@ -3463,21 +3473,25 @@ mod tests {
             crate::ProducerLongArray::new(values("initialNotAvailableDurationMillis"));
         assert_eq!(
             producer.latency_max_millis().snapshot(),
-            defaults["latencyMaxMillis"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|value| value.as_i64().unwrap())
-                .collect::<Vec<_>>()
+            Some(
+                defaults["latencyMaxMillis"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|value| value.as_i64().unwrap())
+                    .collect::<Vec<_>>(),
+            )
         );
         assert_eq!(
             producer.not_available_duration_millis().snapshot(),
-            defaults["notAvailableDurationMillis"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|value| value.as_i64().unwrap())
-                .collect::<Vec<_>>()
+            Some(
+                defaults["notAvailableDurationMillis"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|value| value.as_i64().unwrap())
+                    .collect::<Vec<_>>(),
+            )
         );
         producer.set_latency_max_millis(latency_input.clone());
         producer.set_not_available_duration_millis(duration_input.clone());
@@ -3506,10 +3520,10 @@ mod tests {
         assert_eq!(duration_getter.set(index, value), previous);
         assert_eq!(producer.latency_max_millis(), latency_input);
         assert_eq!(producer.not_available_duration_millis(), duration_input);
-        assert_eq!(latency_getter.snapshot(), values("latencyMaxMillis"));
+        assert_eq!(latency_getter.snapshot(), Some(values("latencyMaxMillis")));
         assert_eq!(
             duration_getter.snapshot(),
-            values("notAvailableDurationMillis")
+            Some(values("notAvailableDurationMillis"))
         );
         assert!(runtime["latencyArrayIdentityRetained"].as_bool().unwrap());
         assert!(runtime["durationArrayIdentityRetained"].as_bool().unwrap());
@@ -3524,7 +3538,9 @@ mod tests {
             runtime["startDetectorEnableAfterToggle"]
         );
 
-        producer.update_fault("enabled-broker", Duration::from_millis(18), false, true);
+        producer
+            .update_fault("enabled-broker", Duration::from_millis(18), false, true)
+            .unwrap();
         let available_queues = [
             MessageQueue::new("orders", "enabled-broker", 0),
             MessageQueue::new("orders", "fallback-broker", 0),
@@ -3554,7 +3570,9 @@ mod tests {
         );
 
         producer.set_send_latency_fault_enable(false);
-        producer.update_fault("disabled-broker", Duration::from_millis(15), false, true);
+        producer
+            .update_fault("disabled-broker", Duration::from_millis(15), false, true)
+            .unwrap();
         assert_eq!(
             producer.send_latency_fault_enable(),
             runtime["sendLatencyFaultEnableAfterDisable"]
@@ -3589,7 +3607,7 @@ mod tests {
         assert!(prior_latency.set(0, 0).is_some());
         assert_eq!(
             replacement_latency.snapshot(),
-            values("latencyReplacementValues")
+            Some(values("latencyReplacementValues"))
         );
         assert!(
             runtime["latencyReplacementIdentityRetained"]
@@ -3602,19 +3620,21 @@ mod tests {
         assert!(prior_duration.set(0, 999).is_some());
         assert_eq!(
             replacement_duration.snapshot(),
-            values("durationReplacementValues")
+            Some(values("durationReplacementValues"))
         );
         assert!(
             runtime["durationReplacementIdentityRetained"]
                 .as_bool()
                 .unwrap()
         );
-        producer.update_fault(
-            "updated-table-broker",
-            Duration::from_millis(15),
-            false,
-            true,
-        );
+        producer
+            .update_fault(
+                "updated-table-broker",
+                Duration::from_millis(15),
+                false,
+                true,
+            )
+            .unwrap();
         let updated_table_queues = [
             MessageQueue::new("orders", "updated-table-broker", 0),
             MessageQueue::new("orders", "fallback-broker", 0),
@@ -3648,6 +3668,100 @@ mod tests {
             producer.start_detector_enable(),
             runtime["startDetectorEnableAfterDisable"]
         );
+    }
+
+    #[test]
+    fn runtime_fault_strategy_null_and_mismatched_arrays_match_java() {
+        let producer =
+            crate::Producer::new(crate::ProducerConfig::new("fault-table-null-inputs").unwrap());
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+        let runtime = &fixture["runtimeFaultStrategyNullArrays"];
+        producer.set_send_latency_fault_enable(true);
+
+        producer.set_latency_max_millis(None);
+        let null_latency_max = producer.latency_max_millis();
+        assert!(null_latency_max.is_null());
+        assert_eq!(null_latency_max.snapshot(), None);
+        assert_eq!(null_latency_max.len(), 0);
+        assert!(null_latency_max.is_empty());
+        assert!(null_latency_max.get(0).is_none());
+        assert!(null_latency_max.set(0, 10).is_none());
+        assert_eq!(
+            producer
+                .update_fault("null-latency-max", Duration::from_millis(10), false, true)
+                .unwrap_err()
+                .to_string(),
+            runtime["nullLatencyMaxUpdateFailure"].as_str().unwrap()
+        );
+
+        producer.set_latency_max_millis(vec![10]);
+        producer.set_not_available_duration_millis(None);
+        let null_duration = producer.not_available_duration_millis();
+        assert!(null_duration.is_null());
+        assert_eq!(null_duration.snapshot(), None);
+        assert!(
+            producer
+                .update_fault(
+                    "null-duration-unmatched",
+                    Duration::from_millis(9),
+                    false,
+                    true
+                )
+                .is_ok()
+        );
+        assert_eq!(
+            producer
+                .update_fault(
+                    "null-duration-matched",
+                    Duration::from_millis(10),
+                    false,
+                    true
+                )
+                .unwrap_err()
+                .to_string(),
+            runtime["matchedLatencyWithNullDurationFailure"]
+                .as_str()
+                .unwrap()
+        );
+
+        producer.set_latency_max_millis(vec![10, 20]);
+        producer.set_not_available_duration_millis(vec![100]);
+        assert_eq!(
+            producer
+                .update_fault(
+                    "short-duration-table",
+                    Duration::from_millis(20),
+                    false,
+                    true
+                )
+                .unwrap_err()
+                .to_string(),
+            runtime["shortDurationTableFailure"].as_str().unwrap()
+        );
+
+        producer.set_latency_max_millis(vec![20]);
+        producer.set_not_available_duration_millis(vec![100, 200]);
+        assert!(
+            producer
+                .update_fault(
+                    "extra-duration-rows",
+                    Duration::from_millis(20),
+                    false,
+                    true
+                )
+                .is_ok()
+        );
+        assert_eq!(
+            runtime["latencyMaxGetterIsNull"],
+            serde_json::Value::Bool(true)
+        );
+        assert_eq!(
+            runtime["notAvailableDurationGetterIsNull"],
+            serde_json::Value::Bool(true)
+        );
+        assert_eq!(runtime["unmatchedLatencyWithNullDurationFailure"], "none");
+        assert_eq!(runtime["extraDurationRowsFailure"], "none");
     }
 
     #[tokio::test]

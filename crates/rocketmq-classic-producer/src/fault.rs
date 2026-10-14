@@ -18,59 +18,81 @@ use rocketmq_classic_common::message::MessageQueue;
 /// array for later fault updates to read.
 #[derive(Clone)]
 pub struct ProducerLongArray {
-    values: Arc<RwLock<Vec<i64>>>,
+    values: Option<Arc<RwLock<Vec<i64>>>>,
 }
 
 impl ProducerLongArray {
     pub fn new(values: Vec<i64>) -> Self {
         Self {
-            values: Arc::new(RwLock::new(values)),
+            values: Some(Arc::new(RwLock::new(values))),
         }
     }
 
-    /// Returns a detached copy of the current array values.
-    pub fn snapshot(&self) -> Vec<i64> {
-        self.values
-            .read()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+    /// Returns a detached copy of the current array values, or `None` when
+    /// this handle represents Java's null array value.
+    pub fn snapshot(&self) -> Option<Vec<i64>> {
+        Some(
+            self.values
+                .as_ref()?
+                .read()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone(),
+        )
     }
 
-    /// Returns one value, or `None` when `index` is outside the fixed array.
+    /// Returns whether this handle represents Java's null array value.
+    pub fn is_null(&self) -> bool {
+        self.values.is_none()
+    }
+
+    /// Returns one value, or `None` when this is a null handle or `index` is
+    /// outside the fixed array.
     pub fn get(&self, index: usize) -> Option<i64> {
         self.values
+            .as_ref()?
             .read()
             .unwrap_or_else(PoisonError::into_inner)
             .get(index)
             .copied()
     }
 
-    /// Replaces one value and returns its previous value, or `None` when
-    /// `index` is outside the fixed array.
+    /// Replaces one value and returns its previous value, or `None` when this
+    /// is a null handle or `index` is outside the fixed array.
     pub fn set(&self, index: usize, value: i64) -> Option<i64> {
-        let mut values = self.values.write().unwrap_or_else(PoisonError::into_inner);
+        let mut values = self
+            .values
+            .as_ref()?
+            .write()
+            .unwrap_or_else(PoisonError::into_inner);
         let slot = values.get_mut(index)?;
         Some(std::mem::replace(slot, value))
     }
 
     pub fn len(&self) -> usize {
-        self.values
-            .read()
-            .unwrap_or_else(PoisonError::into_inner)
-            .len()
+        self.values.as_ref().map_or(0, |values| {
+            values.read().unwrap_or_else(PoisonError::into_inner).len()
+        })
     }
 
     pub fn is_empty(&self) -> bool {
-        self.values
-            .read()
-            .unwrap_or_else(PoisonError::into_inner)
-            .is_empty()
+        self.values.as_ref().is_none_or(|values| {
+            values
+                .read()
+                .unwrap_or_else(PoisonError::into_inner)
+                .is_empty()
+        })
     }
 }
 
 impl From<Vec<i64>> for ProducerLongArray {
     fn from(values: Vec<i64>) -> Self {
         Self::new(values)
+    }
+}
+
+impl From<Option<ProducerLongArray>> for ProducerLongArray {
+    fn from(values: Option<ProducerLongArray>) -> Self {
+        values.unwrap_or(Self { values: None })
     }
 }
 
@@ -108,6 +130,24 @@ pub(crate) struct FaultStrategy {
     not_available_duration_millis: RwLock<ProducerLongArray>,
     send_latency_fault_enable: AtomicBool,
     start_detector_enable: AtomicBool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FaultStrategyUpdateError {
+    NullLatencyMax,
+    NullNotAvailableDuration,
+    DurationIndexOutOfBounds,
+}
+
+impl FaultStrategyUpdateError {
+    pub(crate) fn java_exception_name(self) -> &'static str {
+        match self {
+            Self::NullLatencyMax | Self::NullNotAvailableDuration => {
+                "java.lang.NullPointerException"
+            }
+            Self::DurationIndexOutOfBounds => "java.lang.ArrayIndexOutOfBoundsException",
+        }
+    }
 }
 
 impl Default for FaultStrategy {
@@ -187,38 +227,22 @@ impl FaultStrategy {
         isolation: bool,
         reachable: bool,
         now: Instant,
-    ) {
+    ) -> Result<(), FaultStrategyUpdateError> {
         let duration_key = if isolation {
             10_000
         } else {
             latency.as_millis().min(u128::from(u64::MAX)) as u64
         };
-        let latency_max_millis = self.latency_max_millis();
-        let not_available_duration_millis = self.not_available_duration_millis();
-        let duration = if Arc::ptr_eq(
-            &latency_max_millis.values,
-            &not_available_duration_millis.values,
-        ) {
-            let values = latency_max_millis
-                .values
-                .read()
-                .unwrap_or_else(PoisonError::into_inner);
-            unavailable_duration(duration_key, &values, &values)
-        } else {
-            let latency_max_values = latency_max_millis
-                .values
-                .read()
-                .unwrap_or_else(PoisonError::into_inner);
-            let not_available_duration_values = not_available_duration_millis
-                .values
-                .read()
-                .unwrap_or_else(PoisonError::into_inner);
-            unavailable_duration(
-                duration_key,
-                &latency_max_values,
-                &not_available_duration_values,
-            )
-        }
+        let latency_max_millis = self
+            .latency_max_millis()
+            .snapshot()
+            .ok_or(FaultStrategyUpdateError::NullLatencyMax)?;
+        let not_available_duration_millis = self.not_available_duration_millis().snapshot();
+        let duration = unavailable_duration(
+            duration_key,
+            &latency_max_millis,
+            not_available_duration_millis.as_deref(),
+        )?
         .max(0) as u64;
         let mut items = self
             .items
@@ -235,6 +259,7 @@ impl FaultStrategy {
             .unavailable_until
             .max(now + Duration::from_millis(duration));
         entry.reachable = reachable;
+        Ok(())
     }
 
     pub(crate) fn take_due_for_detection(&self, now: Instant, interval: Duration) -> Vec<String> {
@@ -366,17 +391,21 @@ fn choose_matching(
 fn unavailable_duration(
     latency_millis: u64,
     latency_max_millis: &[i64],
-    not_available_duration_millis: &[i64],
-) -> i64 {
-    (0..latency_max_millis.len())
-        .rev()
-        .find(|index| {
-            let threshold = latency_max_millis[*index];
-            threshold <= 0
-                || u64::try_from(threshold).is_ok_and(|threshold| latency_millis >= threshold)
-        })
-        .and_then(|index| not_available_duration_millis.get(index).copied())
-        .unwrap_or(0)
+    not_available_duration_millis: Option<&[i64]>,
+) -> Result<i64, FaultStrategyUpdateError> {
+    let Some(index) = (0..latency_max_millis.len()).rev().find(|index| {
+        let threshold = latency_max_millis[*index];
+        threshold <= 0
+            || u64::try_from(threshold).is_ok_and(|threshold| latency_millis >= threshold)
+    }) else {
+        return Ok(0);
+    };
+    let not_available_duration_millis =
+        not_available_duration_millis.ok_or(FaultStrategyUpdateError::NullNotAvailableDuration)?;
+    not_available_duration_millis
+        .get(index)
+        .copied()
+        .ok_or(FaultStrategyUpdateError::DurationIndexOutOfBounds)
 }
 
 #[cfg(test)]
@@ -405,9 +434,9 @@ mod tests {
                 unavailable_duration(
                     latency,
                     &DEFAULT_LATENCY_MAX_MILLIS,
-                    &DEFAULT_NOT_AVAILABLE_DURATION_MILLIS,
+                    Some(&DEFAULT_NOT_AVAILABLE_DURATION_MILLIS),
                 ),
-                expected,
+                Ok(expected),
                 "{latency}"
             );
         }
@@ -452,7 +481,9 @@ mod tests {
     fn configured_latency_tables_control_unavailable_duration() {
         let now = Instant::now();
         let fault = FaultStrategy::new(vec![10, 20], vec![100, 300]);
-        fault.update("broker-a", Duration::from_millis(25), false, true, now);
+        fault
+            .update("broker-a", Duration::from_millis(25), false, true, now)
+            .unwrap();
         assert_eq!(
             fault.item("broker-a").unwrap().1,
             now + Duration::from_millis(300)
@@ -467,7 +498,9 @@ mod tests {
         fault.set_latency_max_millis(values.clone());
         fault.set_not_available_duration_millis(values);
 
-        fault.update("broker-a", Duration::from_millis(20), false, true, now);
+        fault
+            .update("broker-a", Duration::from_millis(20), false, true, now)
+            .unwrap();
 
         assert_eq!(
             fault.item("broker-a").unwrap().1,
@@ -479,7 +512,9 @@ mod tests {
     fn latency_selection_prefers_available_and_skips_the_previous_broker() {
         let now = Instant::now();
         let fault = FaultStrategy::default();
-        fault.update("broker-a", Duration::from_millis(3_000), true, true, now);
+        fault
+            .update("broker-a", Duration::from_millis(3_000), true, true, now)
+            .unwrap();
         let queues = [queue("broker-a", 0), queue("broker-b", 0)];
         let picked = fault
             .select(&queues, Some("broker-b"), true, |_| 0, now)
@@ -491,7 +526,9 @@ mod tests {
     fn unavailable_reachable_brokers_are_fallbacks_before_all_routes() {
         let now = Instant::now();
         let fault = FaultStrategy::default();
-        fault.update("broker-a", Duration::from_millis(3_000), true, true, now);
+        fault
+            .update("broker-a", Duration::from_millis(3_000), true, true, now)
+            .unwrap();
         let queues = [queue("broker-a", 0), queue("broker-b", 0)];
         let picked = fault
             .select(&queues, Some("broker-b"), true, |_| 0, now)
@@ -504,7 +541,9 @@ mod tests {
     fn broker_becomes_available_at_the_isolation_deadline() {
         let now = Instant::now();
         let fault = FaultStrategy::default();
-        fault.update("broker-a", Duration::from_millis(600), false, true, now);
+        fault
+            .update("broker-a", Duration::from_millis(600), false, true, now)
+            .unwrap();
         let queues = [queue("broker-a", 0), queue("broker-b", 0)];
         let mut index = 0;
         assert_eq!(
@@ -561,7 +600,9 @@ mod tests {
     fn detector_candidates_are_rate_limited_and_success_restores_reachability() {
         let now = Instant::now();
         let fault = FaultStrategy::default();
-        fault.update("broker-a", Duration::from_millis(600), true, false, now);
+        fault
+            .update("broker-a", Duration::from_millis(600), true, false, now)
+            .unwrap();
         assert_eq!(
             fault.take_due_for_detection(now, Duration::from_secs(2)),
             ["broker-a"]
@@ -585,9 +626,13 @@ mod tests {
     fn unreachable_flag_is_preserved_until_a_success_or_detector_update() {
         let now = Instant::now();
         let fault = FaultStrategy::default();
-        fault.update("broker-a", Duration::ZERO, true, false, now);
+        fault
+            .update("broker-a", Duration::ZERO, true, false, now)
+            .unwrap();
         assert!(!fault.item("broker-a").unwrap().2);
-        fault.update("broker-a", Duration::ZERO, false, true, now);
+        fault
+            .update("broker-a", Duration::ZERO, false, true, now)
+            .unwrap();
         assert!(fault.item("broker-a").unwrap().2);
     }
 }

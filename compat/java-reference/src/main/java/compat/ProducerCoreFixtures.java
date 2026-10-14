@@ -2,6 +2,7 @@ package compat;
 
 import com.alibaba.fastjson2.JSON;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -294,6 +295,7 @@ public final class ProducerCoreFixtures {
         faultStrategy.put("probeCommitted", true);
         result.put("faultStrategy", faultStrategy);
         result.put("runtimeFaultStrategy", runtimeFaultStrategy());
+        result.put("runtimeFaultStrategyNullArrays", runtimeFaultStrategyNullArrays());
 
         String uniqueId = MessageClientIDSetter.createUniqID();
         int ipBytes = MessageClientIDSetter.getIPFromID(uniqueId).length;
@@ -597,6 +599,52 @@ public final class ProducerCoreFixtures {
             return result;
         } catch (ReflectiveOperationException error) {
             throw new IllegalStateException("cannot invoke pinned producer fault strategy", error);
+        }
+    }
+
+    private static Map<String, Object> runtimeFaultStrategyNullArrays() {
+        try {
+            DefaultMQProducer producer = new DefaultMQProducer("runtime-fault-null-arrays");
+            producer.setSendLatencyFaultEnable(true);
+            Field implementationField = DefaultMQProducer.class.getDeclaredField("defaultMQProducerImpl");
+            implementationField.setAccessible(true);
+            Object implementation = implementationField.get(producer);
+            Object fault = implementation.getClass().getMethod("getMqFaultStrategy").invoke(implementation);
+            Method update = fault.getClass().getMethod("updateFaultItem",
+                String.class, long.class, boolean.class, boolean.class);
+
+            Map<String, Object> result = new TreeMap<>();
+            producer.setLatencyMax(null);
+            result.put("latencyMaxGetterIsNull", producer.getLatencyMax() == null);
+            result.put("nullLatencyMaxUpdateFailure", invokeFaultUpdate(update, fault, 10L));
+
+            producer.setLatencyMax(new long[] {10L});
+            producer.setNotAvailableDuration(null);
+            result.put("notAvailableDurationGetterIsNull", producer.getNotAvailableDuration() == null);
+            result.put("unmatchedLatencyWithNullDurationFailure", invokeFaultUpdate(update, fault, 9L));
+            result.put("matchedLatencyWithNullDurationFailure", invokeFaultUpdate(update, fault, 10L));
+
+            producer.setNotAvailableDuration(new long[] {100L});
+            producer.setLatencyMax(new long[] {10L, 20L});
+            result.put("shortDurationTableFailure", invokeFaultUpdate(update, fault, 20L));
+
+            producer.setLatencyMax(new long[] {20L});
+            producer.setNotAvailableDuration(new long[] {100L, 200L});
+            result.put("extraDurationRowsFailure", invokeFaultUpdate(update, fault, 20L));
+            return result;
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalStateException("cannot invoke pinned producer null fault-table cases", error);
+        }
+    }
+
+    private static String invokeFaultUpdate(Method update, Object fault, long latency) {
+        try {
+            update.invoke(fault, "fault-table-input", latency, false, true);
+            return "none";
+        } catch (InvocationTargetException error) {
+            return error.getCause().getClass().getName();
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalStateException("cannot invoke pinned producer fault-table update", error);
         }
     }
 

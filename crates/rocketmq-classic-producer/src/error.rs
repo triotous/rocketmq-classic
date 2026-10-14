@@ -42,6 +42,8 @@ pub enum ProducerError {
     AlreadyStarted,
     #[error("producer is already shut down")]
     Shutdown,
+    #[error("{0}")]
+    FaultStrategy(String),
     #[error("no writable route for topic {0}")]
     NoRoute(String),
     #[error("message queue must have a topic and broker name")]

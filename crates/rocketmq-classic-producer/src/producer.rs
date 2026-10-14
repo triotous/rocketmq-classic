@@ -278,6 +278,9 @@ impl Producer {
     }
 
     /// Changes the latency thresholds used for subsequent fault updates.
+    /// Passing `None` preserves Java's nullable-array setting; a later fault
+    /// update reports the corresponding Java null-pointer failure if it reads
+    /// that table.
     pub fn set_latency_max_millis(&self, value: impl Into<ProducerLongArray>) {
         self.fault.set_latency_max_millis(value.into());
     }
@@ -289,7 +292,9 @@ impl Producer {
     }
 
     /// Changes the Broker unavailability durations used for subsequent fault
-    /// updates.
+    /// updates. Passing `None` preserves Java's nullable-array setting; a
+    /// matching latency threshold later reports the corresponding Java
+    /// null-pointer failure if it reads that table.
     pub fn set_not_available_duration_millis(&self, value: impl Into<ProducerLongArray>) {
         self.fault.set_not_available_duration_millis(value.into());
     }
@@ -946,13 +951,16 @@ mod tests {
         producer.start().await.unwrap();
         assert!(producer.detector_task.lock().await.is_some());
         let runtime = producer.started_runtime().await.unwrap();
-        producer.fault.update(
-            "disabled-detector-broker",
-            Duration::from_millis(100),
-            false,
-            true,
-            StdInstant::now(),
-        );
+        producer
+            .fault
+            .update(
+                "disabled-detector-broker",
+                Duration::from_millis(100),
+                false,
+                true,
+                StdInstant::now(),
+            )
+            .unwrap();
         producer.detect_brokers(&runtime).await;
         assert_eq!(
             producer.fault.take_due_for_detection(
