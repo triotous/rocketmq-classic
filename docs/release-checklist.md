@@ -142,6 +142,13 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   slice; malformed-input and broad P18-V01 reconciliation remain open.
   Per-overload input/branch mappings, Java reverse-export, inherited/trait API,
   and broad source/input reconciliation remain local P18-V01 work.
+  Runtime Producer scalar settings for create-topic key/queue count, send and
+  per-request timeouts, sync/async retry counts, retry-after-non-OK-store, and
+  message-size limit now have live `Producer` setters and fixture-backed send,
+  retry, deadline, and validation regressions (code commit `781bf6f0`; fixture
+  SHA-256 `46c9c9522317d72d2942fab4abae0caf9c6fd9bf76a179ea90a6ec453b041f3c`).
+  Producer-group, VIP-channel, and topic-list live setter semantics plus the
+  broader Java API/input/branch reconciliation remain open under P18-V01.
 - [x] Map runtime Producer fault-strategy settings: live latency-fault and
   detector toggles, mutable `long[]` table aliasing/replacement, and subsequent
   Broker selection. Null setter/getter behavior, deferred null-table NPEs,
