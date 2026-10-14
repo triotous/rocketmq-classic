@@ -190,7 +190,7 @@ impl Default for TopicPublishInfo {
 }
 
 impl TopicPublishInfo {
-    pub fn from_snapshot(snapshot: TopicSnapshot, have_topic_router_info: bool) -> Self {
+    pub(crate) fn from_snapshot(snapshot: TopicSnapshot, have_topic_router_info: bool) -> Self {
         let topic_route_data = Some(TopicRouteDataHandle::new((*snapshot.route).clone()));
         let message_queue_list = Some(ProducerPublishQueueList::new(
             snapshot.publish_queues.clone(),
