@@ -1,0 +1,20 @@
+# Phase 18 producer facade inventory — 2026-10-14T04:22:31Z
+
+- Pinned Java client 5.5.1 reflection inventory now records `DefaultMQProducer` (11 public constructors, 107 declared/183 callable public methods), `MQProducer` (34 declared/42 callable methods), and `MQAdmin` (8 methods). The Rust integration test pins these counts, representative inherited signatures, and the public `sendDirect`/`sendByAccumulator` signatures.
+- Source review confirms `sendDirect` bypasses auto-batching; `sendByAccumulator` tries to accumulate an eligible individual message even when normal wrapper dispatch would take the non-auto-batch path. Rust's current normal send and explicit batch surfaces do not expose those choices as direct public entrypoints. This is recorded as an unresolved P18-V01 API/behavior gap; no parity claim is made.
+- Updated the Phase 7 producer matrix and Java oracle fixture. `fixtures/producer/core.json` SHA-256 recorded by the fixture drift gate.
+- Fixture SHA-256: `3815a09b647c39d68ae6bb3538e3d026eb48dd9dc12135c16d50c2a1c9f04ca2`.
+- PASS: `cargo test -p rocketmq-classic-producer --test producer pinned_java_default_producer_facade_and_inherited_interfaces_are_recorded --locked` (1 passed).
+- PASS: `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios, fixture drift, Java/Rust cross-decodes; exit 0).
+- PASS: `cargo fmt --all -- --check`; `git diff --check`.
+- P18-V01 remains PARTIAL; current-revision GitHub Ubuntu CI is still unavailable, and Phase 19 Docker/Broker integration remains the next automated gate. Manual platform checks remain separate.
+
+## Producer helper path follow-up — 2026-10-14T04:26:26Z
+
+- Added Rust `Producer` direct send methods that bypass auto-batching and forced-accumulator methods that enqueue eligible messages when `auto_batch` is false. Explicit-queue and future-mode counterparts map Java's optional queue and callback choices to the Rust owner API.
+- Added `direct_and_forced_accumulator_helpers_keep_java_path_choices`, covering sync/future and default/explicit-queue flows; direct attempts are unbatched with auto-batch enabled, and forced accumulator attempts are batched with it disabled.
+- Updated the Phase 7 matrix and release checklist. The broader P18-V01 source/API/input/branch and reverse-export audit remains PARTIAL.
+- PASS: `cargo test -p rocketmq-classic-producer --locked` (120 unit tests; all producer integration targets passed).
+- PASS: `cargo clippy -p rocketmq-classic-producer --all-targets --all-features --locked -- -D warnings`.
+- PASS: focused helper-path regression; `cargo fmt --all -- --check`; `git diff --check`.
+- Earlier in this session, default `mvn -q -f compat/java-reference/pom.xml verify` passed at the same fixture revision (37 scenarios, drift and cross-decode checks); producer source/test/doc changes since then did not modify oracle fixture output.

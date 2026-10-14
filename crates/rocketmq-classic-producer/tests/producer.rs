@@ -83,6 +83,92 @@ fn pinned_java_default_producer_impl_public_surface_is_recorded() {
 }
 
 #[test]
+fn pinned_java_default_producer_facade_and_inherited_interfaces_are_recorded() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let surfaces = &fixture["producerFacadeApi"];
+    let producer = &surfaces["DefaultMQProducer"];
+    let producer_methods = producer["publicMethods"].as_array().unwrap();
+
+    assert_eq!(
+        producer["className"],
+        "org.apache.rocketmq.client.producer.DefaultMQProducer"
+    );
+    assert_eq!(producer["publicMethodCount"].as_u64(), Some(183));
+    assert_eq!(producer_methods.len(), 183);
+    assert_eq!(producer["declaredPublicMethodCount"].as_u64(), Some(107));
+    assert_eq!(
+        producer["declaredPublicMethods"].as_array().unwrap().len(),
+        107
+    );
+    assert_eq!(producer["publicConstructors"].as_array().unwrap().len(), 11);
+    for method in [
+        "void org.apache.rocketmq.client.ClientConfig.setNamesrvAddr(java.lang.String)",
+        "org.apache.rocketmq.client.producer.SendResult org.apache.rocketmq.client.producer.DefaultMQProducer.send(org.apache.rocketmq.common.message.Message,org.apache.rocketmq.client.producer.MessageQueueSelector,java.lang.Object)",
+    ] {
+        assert!(
+            producer_methods
+                .iter()
+                .any(|candidate| candidate.as_str() == Some(method)),
+            "missing {method}"
+        );
+    }
+    let declared_methods = producer["declaredPublicMethods"].as_array().unwrap();
+    for method in [
+        "org.apache.rocketmq.client.producer.SendResult org.apache.rocketmq.client.producer.DefaultMQProducer.sendDirect(org.apache.rocketmq.common.message.Message,org.apache.rocketmq.common.message.MessageQueue,org.apache.rocketmq.client.producer.SendCallback)",
+        "org.apache.rocketmq.client.producer.SendResult org.apache.rocketmq.client.producer.DefaultMQProducer.sendByAccumulator(org.apache.rocketmq.common.message.Message,org.apache.rocketmq.common.message.MessageQueue,org.apache.rocketmq.client.producer.SendCallback)",
+    ] {
+        assert!(
+            declared_methods
+                .iter()
+                .any(|candidate| candidate.as_str() == Some(method)),
+            "missing {method}"
+        );
+    }
+
+    let mq_producer = &surfaces["MQProducer"];
+    assert_eq!(
+        mq_producer["className"],
+        "org.apache.rocketmq.client.producer.MQProducer"
+    );
+    assert_eq!(mq_producer["publicMethodCount"].as_u64(), Some(42));
+    assert_eq!(mq_producer["publicMethods"].as_array().unwrap().len(), 42);
+    assert_eq!(mq_producer["declaredPublicMethodCount"].as_u64(), Some(34));
+    assert_eq!(
+        mq_producer["declaredPublicMethods"]
+            .as_array()
+            .unwrap()
+            .len(),
+        34
+    );
+    assert!(
+        mq_producer["publicConstructors"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert!(mq_producer["publicMethods"].as_array().unwrap().iter().any(|candidate| {
+        candidate.as_str()
+            == Some("long org.apache.rocketmq.client.MQAdmin.maxOffset(org.apache.rocketmq.common.message.MessageQueue)")
+    }));
+    let mq_admin = &surfaces["MQAdmin"];
+    assert_eq!(mq_admin["className"], "org.apache.rocketmq.client.MQAdmin");
+    assert_eq!(mq_admin["publicMethodCount"].as_u64(), Some(8));
+    assert_eq!(mq_admin["publicMethods"].as_array().unwrap().len(), 8);
+    assert_eq!(mq_admin["declaredPublicMethodCount"].as_u64(), Some(8));
+    assert_eq!(
+        mq_admin["declaredPublicMethods"].as_array().unwrap().len(),
+        8
+    );
+    assert!(
+        mq_admin["publicConstructors"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
 fn pinned_java_returned_runtime_and_fault_strategy_surfaces_are_recorded() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();

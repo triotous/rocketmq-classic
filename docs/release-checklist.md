@@ -103,7 +103,7 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   value/result branches, ordered `putAll` null-row behavior, and retained
   key/value/entry view single, bulk, `removeIf`, and `setValue` mutations now
   have invoked Java fixture and Rust differential evidence. Fixture SHA-256 is
-  `9c8b0b55a958804b131d64cfeb8883c53ff2af5f652d1b8b01f25dcd4509a0ef`.
+  `3815a09b647c39d68ae6bb3538e3d026eb48dd9dc12135c16d50c2a1c9f04ca2`.
   `TopicPublishInfo.selectOneMessageQueue(QueueFilter...)` also has direct
   null/empty array, null filter, null/empty queue-list and non-short-circuit
   filter-order differentials in that fixture.
@@ -116,6 +116,11 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   `executeAsyncMessageSend` helper now also have pinned call-site and owner
   dispositions in the Phase 7 matrix; their use is confined to shared factory
   lifecycle and typed async Producer send paths.
+  The facade inventory now pins 11 `DefaultMQProducer` constructors,
+  107 declared/183 callable methods, 34 declared/42 callable `MQProducer`
+  methods, and 8 `MQAdmin` methods. Rust also exposes direct-send and forced
+  accumulator paths, with scripted coverage for both choices under opposite
+  `autoBatch` settings. This closes those bounded Producer API slices only.
   Per-overload input/branch mappings, Java reverse-export, inherited/trait API,
   and broad source/input reconciliation remain local P18-V01 work.
 - [x] Map runtime Producer fault-strategy settings: live latency-fault and

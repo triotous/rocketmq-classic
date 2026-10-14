@@ -22,6 +22,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.ConcurrentMap;
 import org.apache.rocketmq.client.exception.MQClientException;
 import org.apache.rocketmq.client.Validators;
+import org.apache.rocketmq.client.MQAdmin;
 import org.apache.rocketmq.client.hook.CheckForbiddenContext;
 import org.apache.rocketmq.client.hook.CheckForbiddenHook;
 import org.apache.rocketmq.client.hook.SendMessageContext;
@@ -32,6 +33,7 @@ import org.apache.rocketmq.client.impl.factory.MQClientInstance;
 import org.apache.rocketmq.client.latency.MQFaultStrategy;
 import org.apache.rocketmq.client.common.ThreadLocalIndex;
 import org.apache.rocketmq.client.producer.DefaultMQProducer;
+import org.apache.rocketmq.client.producer.MQProducer;
 import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.common.ServiceState;
 import org.apache.rocketmq.common.compression.Compressor;
@@ -131,6 +133,7 @@ public final class ProducerCoreFixtures {
         provenance.put("serverContacted", false);
         result.put("provenance", provenance);
         result.put("producerImplementationApi", producerImplementationApi());
+        result.put("producerFacadeApi", producerFacadeApi());
         result.put("implementationHookExecution", implementationHookExecution());
         result.put("implementationStateAccessors", implementationStateAccessors());
         result.put("implementationPublishInfoTable", implementationPublishInfoTable());
@@ -356,6 +359,14 @@ public final class ProducerCoreFixtures {
         result.put("publicConstructors", constructors);
         result.put("publicMethods", methods);
         result.put("publicMethodCount", methods.size());
+        return result;
+    }
+
+    private static Map<String, Object> producerFacadeApi() {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("DefaultMQProducer", publicApiSurface(DefaultMQProducer.class));
+        result.put("MQProducer", publicApiSurface(MQProducer.class));
+        result.put("MQAdmin", publicApiSurface(MQAdmin.class));
         return result;
     }
 

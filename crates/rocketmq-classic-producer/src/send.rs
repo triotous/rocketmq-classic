@@ -119,6 +119,43 @@ impl Producer {
             .ok_or(ProducerError::Timeout)
     }
 
+    /// Sends one message directly, bypassing the producer auto-batch
+    /// accumulator, like Java's `DefaultMQProducer.sendDirect` helper.
+    pub async fn send_direct(&self, message: &Message) -> Result<SendResult, ProducerError> {
+        self.send_direct_with_timeout(
+            message,
+            Duration::from_millis(self.config.send_timeout_millis().max(0) as u64),
+        )
+        .await
+    }
+
+    pub async fn send_direct_with_timeout(
+        &self,
+        message: &Message,
+        timeout: Duration,
+    ) -> Result<SendResult, ProducerError> {
+        self.send_message_direct_with_mode(message, None, SendMode::Sync, timeout)
+            .await
+    }
+
+    /// Future-mode counterpart to [`Self::send_direct`].
+    pub async fn send_direct_future(&self, message: &Message) -> Result<SendResult, ProducerError> {
+        self.send_direct_future_with_timeout(
+            message,
+            Duration::from_millis(self.config.send_timeout_millis().max(0) as u64),
+        )
+        .await
+    }
+
+    pub async fn send_direct_future_with_timeout(
+        &self,
+        message: &Message,
+        timeout: Duration,
+    ) -> Result<SendResult, ProducerError> {
+        self.send_message_direct_with_mode(message, None, SendMode::Future, timeout)
+            .await
+    }
+
     /// Future-mode send. Like Java's callback send, it retries asynchronous
     /// failures up to the configured budget and resolves with the terminal result.
     pub async fn send_future(&self, message: &Message) -> Result<SendResult, ProducerError> {
@@ -174,6 +211,94 @@ impl Producer {
         self.send_to_queue_mode(message, queue, false, SendMode::Sync, timeout)
             .await?
             .ok_or(ProducerError::Timeout)
+    }
+
+    /// Sends directly to a selected queue, bypassing auto-batching.
+    pub async fn send_to_queue_direct(
+        &self,
+        message: &Message,
+        queue: &MessageQueue,
+    ) -> Result<SendResult, ProducerError> {
+        self.send_to_queue_direct_with_timeout(
+            message,
+            queue,
+            Duration::from_millis(self.config.send_timeout_millis().max(0) as u64),
+        )
+        .await
+    }
+
+    pub async fn send_to_queue_direct_with_timeout(
+        &self,
+        message: &Message,
+        queue: &MessageQueue,
+        timeout: Duration,
+    ) -> Result<SendResult, ProducerError> {
+        self.send_message_direct_with_mode(message, Some(queue), SendMode::Sync, timeout)
+            .await
+    }
+
+    /// Future-mode direct send to a selected queue.
+    pub async fn send_to_queue_direct_future(
+        &self,
+        message: &Message,
+        queue: &MessageQueue,
+    ) -> Result<SendResult, ProducerError> {
+        self.send_to_queue_direct_future_with_timeout(
+            message,
+            queue,
+            Duration::from_millis(self.config.send_timeout_millis().max(0) as u64),
+        )
+        .await
+    }
+
+    pub async fn send_to_queue_direct_future_with_timeout(
+        &self,
+        message: &Message,
+        queue: &MessageQueue,
+        timeout: Duration,
+    ) -> Result<SendResult, ProducerError> {
+        self.send_message_direct_with_mode(message, Some(queue), SendMode::Future, timeout)
+            .await
+    }
+
+    /// Sends one message through the accumulator even when `auto_batch` is
+    /// disabled. Ineligible or over-capacity messages follow the direct path.
+    pub async fn send_by_accumulator(
+        &self,
+        message: &Message,
+    ) -> Result<SendResult, ProducerError> {
+        self.send_accumulator_or_direct(message, None, SendMode::Sync)
+            .await
+    }
+
+    /// Future-mode counterpart to [`Self::send_by_accumulator`].
+    pub async fn send_by_accumulator_future(
+        &self,
+        message: &Message,
+    ) -> Result<SendResult, ProducerError> {
+        self.send_accumulator_or_direct(message, None, SendMode::Future)
+            .await
+    }
+
+    /// Sends one message to a selected queue through the accumulator even when
+    /// `auto_batch` is disabled.
+    pub async fn send_to_queue_by_accumulator(
+        &self,
+        message: &Message,
+        queue: &MessageQueue,
+    ) -> Result<SendResult, ProducerError> {
+        self.send_accumulator_or_direct(message, Some(queue.clone()), SendMode::Sync)
+            .await
+    }
+
+    /// Future-mode counterpart to [`Self::send_to_queue_by_accumulator`].
+    pub async fn send_to_queue_by_accumulator_future(
+        &self,
+        message: &Message,
+        queue: &MessageQueue,
+    ) -> Result<SendResult, ProducerError> {
+        self.send_accumulator_or_direct(message, Some(queue.clone()), SendMode::Future)
+            .await
     }
 
     /// Future-mode counterpart to Java's explicit-queue callback overload.
@@ -409,9 +534,33 @@ impl Producer {
         queue: Option<MessageQueue>,
         mode: SendMode,
     ) -> Result<SendResult, ProducerError> {
+        self.send_with_accumulator_policy(message, queue, mode, false)
+            .await
+    }
+
+    async fn send_accumulator_or_direct(
+        &self,
+        message: &Message,
+        queue: Option<MessageQueue>,
+        mode: SendMode,
+    ) -> Result<SendResult, ProducerError> {
+        self.send_with_accumulator_policy(message, queue, mode, true)
+            .await
+    }
+
+    async fn send_with_accumulator_policy(
+        &self,
+        message: &Message,
+        queue: Option<MessageQueue>,
+        mode: SendMode,
+        force_accumulate: bool,
+    ) -> Result<SendResult, ProducerError> {
         let wire_message = self.message_with_namespace(message)?;
         let timeout = Duration::from_millis(self.config.send_timeout_millis().max(0) as u64);
-        if mode == SendMode::Oneway || !self.auto_batch() || !can_accumulate(&wire_message) {
+        if mode == SendMode::Oneway
+            || (!force_accumulate && !self.auto_batch())
+            || !can_accumulate(&wire_message)
+        {
             return self
                 .send_message_direct_with_mode(&wire_message, queue.as_ref(), mode, timeout)
                 .await;
@@ -3187,6 +3336,76 @@ mod tests {
         );
         assert_eq!(first.body(), b"first");
         assert_eq!(second.body(), b"second");
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn direct_and_forced_accumulator_helpers_keep_java_path_choices() {
+        let mut config = crate::ProducerConfig::new("scripted-explicit-batch-paths").unwrap();
+        config.set_batch_max_delay_millis(10);
+        let (producer, _) = scripted_producer(config).await;
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        {
+            let mut scripted = producer.scripted_transport.lock().unwrap();
+            for (msg_id, offset) in [
+                ("direct-default", 10),
+                ("direct-queue", 11),
+                ("accumulator-default", 12),
+                ("accumulator-queue", 13),
+            ] {
+                scripted.responses.push_back(Ok(Some(scripted_result(
+                    msg_id,
+                    &offset.to_string(),
+                    offset,
+                ))));
+            }
+        }
+
+        producer.set_auto_batch(true);
+        producer
+            .send_direct(&Message::new("orders", b"direct".to_vec()))
+            .await
+            .unwrap();
+        producer
+            .send_to_queue_direct_future(&Message::new("orders", b"direct queue".to_vec()), &queue)
+            .await
+            .unwrap();
+
+        producer.set_auto_batch(false);
+        producer
+            .send_by_accumulator(&Message::new("orders", b"accumulate".to_vec()))
+            .await
+            .unwrap();
+        producer
+            .send_to_queue_by_accumulator_future(
+                &Message::new("orders", b"accumulate queue".to_vec()),
+                &queue,
+            )
+            .await
+            .unwrap();
+
+        let attempts = {
+            let scripted = producer.scripted_transport.lock().unwrap();
+            scripted.attempts.clone()
+        };
+        assert_eq!(attempts.len(), 4);
+        assert_eq!(attempts[0].mode, SendMode::Sync);
+        assert!(
+            !attempts[0].batch,
+            "direct must bypass enabled auto-batching"
+        );
+        assert_eq!(attempts[1].mode, SendMode::Future);
+        assert!(!attempts[1].batch);
+        assert_eq!(attempts[1].queue, queue);
+        assert_eq!(attempts[2].mode, SendMode::Sync);
+        assert!(
+            attempts[2].batch,
+            "forced accumulation must ignore auto_batch=false"
+        );
+        assert_eq!(attempts[3].mode, SendMode::Future);
+        assert!(attempts[3].batch);
+        assert_eq!(attempts[3].queue, queue);
+
         producer.shutdown().await.unwrap();
     }
 
