@@ -72,6 +72,10 @@ pub enum ProducerError {
     NullPublishInfoBrokerName,
     #[error("queue selector did not choose a writable queue")]
     NoQueueSelected,
+    #[error(
+        "select message queue threw exception.\nFor more information, please visit the url, https://rocketmq.apache.org/docs/faq/"
+    )]
+    SelectorPanicked(String),
     #[error("send deadline expired")]
     Timeout,
     #[error("asynchronous send executor rejected the task")]

@@ -958,6 +958,45 @@ async fn invoke_message_queue_selector_returns_the_namespaced_queue_without_send
         .await;
     assert!(matches!(no_queue, Err(ProducerError::NoQueueSelected)));
 
+    let java_fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let java_invoke = &java_fixture["implementationSelectorFailure"]["invoke"];
+    assert_eq!(java_invoke["errorClass"], "MQClientException");
+    assert_eq!(java_invoke["causeClass"], "IllegalStateException");
+    let selector_failure = producer
+        .invoke_message_queue_selector(
+            &message,
+            |_, _| panic!("fixture-selector-failure"),
+            std::time::Duration::from_secs(1),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        selector_failure.to_string(),
+        java_invoke["errorMessage"].as_str().unwrap()
+    );
+    assert!(matches!(
+        selector_failure,
+        ProducerError::SelectorPanicked(ref message)
+            if message == java_invoke["causeMessage"].as_str().unwrap()
+    ));
+
+    let java_send = &java_fixture["implementationSelectorFailure"]["send"];
+    assert_eq!(java_send["errorMessage"], java_invoke["errorMessage"]);
+    let selector_send_failure = producer
+        .send_with_selector(&message, |_, _| panic!("fixture-selector-failure"))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        selector_send_failure.to_string(),
+        java_send["errorMessage"].as_str().unwrap()
+    );
+    assert!(matches!(
+        selector_send_failure,
+        ProducerError::SelectorPanicked(ref message)
+            if message == java_send["causeMessage"].as_str().unwrap()
+    ));
+
     let timed_out = producer
         .invoke_message_queue_selector(
             &message,
@@ -971,6 +1010,7 @@ async fn invoke_message_queue_selector_returns_the_namespaced_queue_without_send
     assert!(matches!(timed_out, Err(ProducerError::Timeout)));
 
     assert!(requests.lock().unwrap().is_empty());
+    assert_eq!(attempts.load(Ordering::SeqCst), 0);
 
     producer.shutdown().await.unwrap();
     nameserver_task.abort();

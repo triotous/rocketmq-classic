@@ -55,6 +55,18 @@ struct SendAttempt<'a> {
 
 type AsyncBackpressurePermit = (AdjustablePermit, AdjustablePermit);
 
+fn selector_panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    payload
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| {
+            payload
+                .downcast_ref::<&'static str>()
+                .map(|message| (*message).to_owned())
+        })
+        .unwrap_or_else(|| "non-string selector panic payload".to_owned())
+}
+
 impl Producer {
     async fn acquire_async_backpressure(
         &self,
@@ -1615,12 +1627,15 @@ impl Producer {
             .iter()
             .map(|queue| self.queue_without_namespace(queue))
             .collect::<Result<Vec<_>, _>>()?;
-        selector(&logical_queues, message)
-            .map(|logical_queue| {
-                self.queue_with_namespace(&logical_queue)
-                    .map(|queue| (logical_queue, queue))
-            })
-            .transpose()
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            selector(&logical_queues, message)
+        }))
+        .map_err(|payload| ProducerError::SelectorPanicked(selector_panic_message(&*payload)))?
+        .map(|logical_queue| {
+            self.queue_with_namespace(&logical_queue)
+                .map(|queue| (logical_queue, queue))
+        })
+        .transpose()
     }
 
     fn next_publish_queue_index(&self, topic: &str, queue_count: usize) -> usize {
