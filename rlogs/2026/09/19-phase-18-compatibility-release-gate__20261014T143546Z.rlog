@@ -46,3 +46,10 @@ Follow-up: Java Message constructor and collection boundaries
 - PASS: `cargo fmt --all -- --check`, `git diff --check`; fixture SHA-256 `6ec3f130f86c25b12b08f5d5d51f5b43c0bab1a2e77738208909959bbef79db5`.
 - Follow-up code/fixture commit: `4603fc24`; documentation commit: `1fc61269`.
 - P18-V01 remains open for broader Java/Rust inherited API and reverse-export/source/input reconciliation.
+
+Follow-up: Java Message.getProperties null-entry iteration
+- Invoked pinned Java `Message.getProperties().entrySet()` over null TAGS, BUYER_ID, and INSTANCE_ID values. Added `Message::property_entries()` to expose all present/null rows in deterministic key order while retaining the existing Rust string-to-string map API; the Rust regression compares the full row set against the fixture.
+- Updated the Phase 6 audit and Phase 8 method matrix. Fixture SHA-256: `c5e62b863f0af70d0b9378df123b8d5073a008c257dc8348184f9ef85828d031`.
+- PASS: focused `cargo test -p rocketmq-classic-common --test message_decode --locked` (7 tests); `cargo test --workspace --all-features --locked`; strict workspace all-target/all-feature Clippy; `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios, fixture drift and cross-decodes); `cargo fmt --all -- --check`; `git diff --check`.
+- Code/fixture/test commit: `0416e7f4`; compatibility documentation commit: `ae924891`.
+- P18-V01 remains open for broad Java source/API/overload/input/error/flow and Rust reverse-export reconciliation. Current-revision GitHub Ubuntu CI, Phase 19 Docker/Broker scenarios, and pre-publication version/registry checks remain outstanding. Windows IP Helper, non-macOS BSD enumeration, and a real IPv6-only host remain environment-specific validation items.
