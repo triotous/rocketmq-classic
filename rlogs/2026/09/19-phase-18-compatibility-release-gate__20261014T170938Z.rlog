@@ -1,0 +1,29 @@
+Phase 18 continuation — remove Rust-only handle identity methods — 2026-10-14 UTC
+
+Starting state
+- Branch `phase/19-phase-18-compatibility-release-gate`; HEAD `7580896a`.
+- Java oracle remains pinned at `efa1be59d6fc747ad220f036c86030f05f0419f9` and read-only.
+- Rustdoc JSON inspection found public `ptr_eq` helpers on Producer and Core handle types, with no corresponding pinned Java API method.
+
+Changes
+- `ProducerPublishQueueList::ptr_eq` and `ProducerQueueIndex::ptr_eq` were removed; `TopicPublishInfo::ptr_eq` and `TopicRouteDataHandle::ptr_eq` are now crate-private for Java reference-identity implementation details.
+- Producer/Core integration tests now verify returned-handle aliasing by mutating and reading shared values. Core route-table tests use a test-only marker mutation helper that restores the original route after each identity probe.
+- Compile-fail rustdoc examples guard all four external method boundaries. Phase 6/7 compatibility records the scope of this reverse-scan closure.
+
+Validation
+- PASS: `RUSTDOCFLAGS='-Z unstable-options --output-format json' cargo +nightly doc --workspace --all-features --locked --no-deps` (Rust 1.101.0-nightly) generated public-surface JSON for all 7 workspace crates; the four types no longer list public `ptr_eq` methods. Nightly documentation emitted existing workspace-manifest and consumer `AtomicU64::fetch_update` deprecation warnings.
+- PASS: `cargo test -p rocketmq-classic-producer --locked` — 140 unit tests, all 64 integration tests, and 3 compile-fail doctests.
+- PASS: `cargo test -p rocketmq-classic-core --locked` — all 157 unit tests, integration targets, and compile-fail doctest.
+- PASS: focused Core route table (6 tests) and cached-query regression; full Core suite also passed.
+- PASS: `cargo clippy -p rocketmq-classic-producer -p rocketmq-classic-core --all-targets --all-features --locked -- -D warnings`.
+- PASS: `cargo fmt --all -- --check` and `git diff --check`.
+
+Remaining work
+- This closes four surfaced Rust-only helper methods only; P18-V01 remains open for Java source/API/overload/input/error/flow and complete Rust reverse-export/configuration reconciliation.
+- No remote branch or GitHub Actions run exists for the current local branch; current-revision Ubuntu evidence for P18-V04 remains outstanding. No push was made.
+
+No plan-file edit, Java oracle modification, push, publication, or tag was made.
+
+Commit status
+- `73700d56` — `fix(compat): keep handle identity helpers internal` contains the implementation, regression tests and Phase 6/7 matrix updates.
+- This append-only execution record is committed separately.
