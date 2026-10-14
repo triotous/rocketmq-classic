@@ -80,8 +80,8 @@ is minutes; pull interval and shutdown wait are milliseconds.
 | `pullInterval` | `0` ms | Implement and validate `[0,65535]` |
 | `pullTimeDelayMillsWhenException` (inherited `ClientConfig`) | `1000` ms | Copy into the Push implementation delay; the raw implementation setter affects subsequent pull/POP retries |
 | `consumeMessageBatchMaxSize` | `1` | Implement and validate `[1,1024]` |
-| `pullBatchSize` | `32` | Implement and validate `[1,1024]` |
-| `pullBatchSizeInBytes` | `262144` bytes | Implement as pull request size; Java `checkConfig` does not range-check it |
+| `pullBatchSize` | `32` | Implement and validate `[1,1024]`; read from the live config for each pull request |
+| `pullBatchSizeInBytes` | `262144` bytes | Read from the live config for each pull request; Java `checkConfig` does not range-check it |
 | `unitMode` | `false` | Implement in heartbeat and pull headers |
 | `maxReconsumeTimes` | `-1` (concurrent effective default `16`) | Implement for clustering retry/send-back |
 | `consumeTimeout` | `15` minutes | Implement for callback timing/expiry policy |
@@ -93,6 +93,13 @@ is minutes; pull interval and shutdown wait are milliseconds.
 | `allocateMessageQueueStrategy`, `clientRebalance`, `messageQueueListener` | average strategy, `true`, unset | Phase 11 owns real allocation and assignment callbacks |
 | orderly listener and `suspendCurrentQueueTimeMillis` | no listener, `1000` ms | Reject orderly startup until Phase 12 |
 | trace dispatcher / consume hooks | unset/empty | Phase 16 |
+
+The pinned `DefaultMQPushConsumerImpl.pullMessage` reads both batch-size
+settings when it creates each pull header. The test
+`push_pull_request_uses_live_batch_settings_from_consumer_config` verifies that
+mutating them after consumer construction reaches the Broker request as
+`maxMsgNums=7` and `maxMsgBytes=12345`; the Java defaults and configured values
+are pinned in `fixtures/consumer/orderly-settings.json`.
 
 The complete public `PushConsumerConfig` mapping is `new`,
 `client_config`/`client_config_mut`, `tls_config`/`set_tls_config`,

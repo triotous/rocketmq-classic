@@ -417,12 +417,22 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   differential self-test and manifest, 16 race/leak cases × 3, fuzz smoke,
   release examples, benchmark compilation, metadata, and format/diff checks
   passed on 2026-10-14 before the code/documentation commits.
+- Follow-up commit `7ece0e66` pins Java's per-pull reads of `pullBatchSize` and
+  `pullBatchSizeInBytes` and adds a scripted wire assertion for post-construction
+  updates. Default and all-feature workspace tests, strict Clippy, Maven
+  verification (37 scenarios), format, and diff checks pass for this correction.
 - [x] **P18-V03** — Facade examples, package graph/content/provenance, license
   files, compatibility baselines, and existing usage/behavior documentation
   have been reviewed. No release or compatibility claim is made.
 - [ ] **P18-V04** — The 37-scenario handoff manifest validates and server-free
   suites pass locally. A current GitHub Ubuntu result for the address profile
   is still absent.
+
+P18-V01 still requires timing reconciliation for other pinned Java runtime
+reads, including `pullInterval`, pull flow-control thresholds, `messageModel`,
+POP batch/invisibility settings, `consumeTimeout`, `consumeThreadMax`, and
+`consumeFromWhere`. Their Java call sites are identified; Rust post-construction
+update behavior has not yet been fully reconciled for each setting.
 
 ## Package graph and metadata
 
